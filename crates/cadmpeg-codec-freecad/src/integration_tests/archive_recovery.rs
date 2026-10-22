@@ -77,7 +77,7 @@ fn an_unframeable_optional_header_gives_up_its_archive_and_no_document_records_e
     assert!(part.parent().is_none());
     assert_eq!(part.offset(), 0);
     assert_eq!(part.byte_len(), u64::try_from(bytes.len()).unwrap());
-    assert_eq!(fidelity.parts().len(), 6);
+    assert_eq!(fidelity.parts().len(), 7);
     for (id, child) in fidelity.parts().iter().filter(|(id, _)| *id != &unknown.id) {
         assert_ne!(id, &unknown.id);
         assert_eq!(
@@ -86,7 +86,13 @@ fn an_unframeable_optional_header_gives_up_its_archive_and_no_document_records_e
                 by: unknown.id.clone()
             }
         );
-        if child.level().as_str() == "freecad.document_xml" {
+        if child.level().as_str() == "freecad.document" {
+            let parent = &fidelity.parts()[child.parent().unwrap()];
+            assert_eq!(parent.level().as_str(), "freecad.document_xml");
+            let member = &fidelity.parts()[parent.parent().unwrap()];
+            assert_eq!(member.level().as_str(), "zip.entry");
+            assert_eq!(member.parent(), Some(&unknown.id));
+        } else if child.level().as_str() == "freecad.document_xml" {
             let parent = &fidelity.parts()[child.parent().unwrap()];
             assert_eq!(parent.level().as_str(), "zip.entry");
             assert_eq!(parent.parent(), Some(&unknown.id));

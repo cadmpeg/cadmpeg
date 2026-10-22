@@ -79,11 +79,16 @@ pub(super) struct Document<'source> {
     pub(super) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
+pub(super) struct DocumentRead<'source> {
+    pub(super) document: Option<Document<'source>>,
+    pub(super) pointers: BTreeMap<String, BTreeMap<String, u64>>,
+}
+
 pub(super) fn document<'source>(
     ctx: &DecodeContext<'source>,
     archive: &ArchiveSnapshot<'source>,
     stage: &mut PartOutput,
-) -> Result<Option<Document<'source>>, CodecError> {
+) -> Result<DocumentRead<'source>, CodecError> {
     let index = archive
         .entries()
         .iter()
@@ -97,32 +102,64 @@ pub(super) fn document<'source>(
         archive.read_member_header(ctx, frame)
     })?;
     let Some(payload) = payload else {
-        return Ok(None);
+        return Ok(DocumentRead {
+            document: None,
+            pointers: BTreeMap::new(),
+        });
     };
     let result = ctx.decode_part(stage, payload.view(), spec("zip.entry")?, |member| {
         let view = archive.open_member(ctx, payload)?;
-        ctx.decode_part(member, view, spec("freecad.document_xml")?, |_document| {
-            let xml = super::admit_document(ctx, view.window())?;
-            if let Some((_, count)) = super::xml_envelope_counts(view.window()) {
-                ctx.charge_entities(count, "admit FCStd document objects")?;
-            }
-            let mut losses = Vec::new();
-            let source = crate::persistence::source::Source::new(ctx, view, &xml)?;
-            let (facts, schema) = source.record(
-                &crate::native::native_id("document", "0"),
-                xml.root_element(),
-                || super::parse_document_impl(&xml, &mut losses, Some(&source)),
-            )?;
-            Ok(Document {
-                view,
-                xml,
-                facts,
-                schema,
-                losses,
+        let document = ctx
+            .decode_part(member, view, spec("freecad.document_xml")?, |document| {
+                let xml = super::admit_document(ctx, view.window())?;
+                if let Some((_, count)) = super::xml_envelope_counts(view.window()) {
+                    ctx.charge_entities(count, "admit FCStd document objects")?;
+                }
+                let mut losses = Vec::new();
+                let source = crate::persistence::source::Source::new(ctx, view, &xml)?;
+                let root = xml.root_element();
+                if !root.has_tag_name("Document") {
+                    return Err(CodecError::WrongFormat(
+                        "Document.xml root is not Document".into(),
+                    ));
+                }
+                let (extent, framing) = crate::xml_framing::element_fields(ctx, view, root)?;
+                let level = PartLevel::parse("freecad.document").ok_or_else(|| {
+                    CodecError::malformed("document level is absent from Appendix C")
+                })?;
+                let facts = ctx.decode_part(
+                    document,
+                    extent,
+                    PartSpec::new(level, framing),
+                    |root_stage| {
+                        source.record(&crate::native::native_id("document", "0"), root, || {
+                            let (facts, schema) =
+                                super::parse_document_impl(&xml, &mut losses, Some(&source))?;
+                            root_stage.insert_native(ctx, "document", facts.clone())?;
+                            Ok((facts, schema))
+                        })
+                    },
+                )?;
+                Ok(facts.map(|(facts, schema)| Document {
+                    view,
+                    xml,
+                    facts,
+                    schema,
+                    losses,
+                }))
             })
-        })
+            .map(Option::flatten)?;
+        let mut pointers = BTreeMap::new();
+        if document.is_none() {
+            let (id, fields) = keep_entry(ctx, &archive.entries()[index], view, member)?;
+            pointers.insert(id, fields);
+        }
+        Ok(DocumentRead { document, pointers })
     })?;
-    Ok(result.flatten())
+    Ok(result.unwrap_or(DocumentRead {
+        document: None,
+        pointers: BTreeMap::new(),
+    }))
 }
 
 pub(super) fn keep_readable_entries(
@@ -136,20 +173,30 @@ pub(super) fn keep_readable_entries(
         let Some(view) = opened.data.get(&entry.name).copied() else {
             continue;
         };
-        let id = crate::native::native_id("entry", &entry.name);
-        let record = crate::native::EntryRecord::new(
-            id.clone(),
-            entry.name.clone(),
-            super::classify(&entry.name),
-            Vec::new(),
-        )?;
-        ctx.record(&id, view, || stage.insert_native(ctx, "entries", record))?;
-        pointers.insert(
-            id,
-            crate::source_archive::entry_pointers(entry, u64_from_index(view.window().len()))?,
-        );
+        let (id, fields) = keep_entry(ctx, entry, view, stage)?;
+        pointers.insert(id, fields);
     }
     Ok(pointers)
+}
+
+fn keep_entry(
+    ctx: &DecodeContext<'_>,
+    entry: &cadmpeg_container::EntryRecord,
+    view: View<'_>,
+    stage: &mut PartOutput,
+) -> Result<(String, BTreeMap<String, u64>), CodecError> {
+    let id = crate::native::native_id("entry", &entry.name);
+    let record = crate::native::EntryRecord::new(
+        id.clone(),
+        entry.name.clone(),
+        super::classify(&entry.name),
+        Vec::new(),
+    )?;
+    ctx.record(&id, view, || stage.insert_native(ctx, "entries", record))?;
+    Ok((
+        id,
+        crate::source_archive::entry_pointers(entry, u64_from_index(view.window().len()))?,
+    ))
 }
 
 pub(super) fn archive_spec() -> Result<PartSpec, CodecError> {

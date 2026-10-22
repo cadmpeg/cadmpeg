@@ -158,6 +158,20 @@ pub(crate) fn parse_database(
     }
 }
 
+/// Parse the supported grammar from the actual source owning the record.
+pub(crate) fn parse_database_source(
+    ctx: &DecodeContext<'_>,
+    source: View<'_>,
+) -> Result<RseDatabase, CodecError> {
+    let mut cursor = Cursor {
+        source,
+        scope: "RSe database",
+    };
+    let id = cursor.array("database id")?;
+    let schema = RseSchema::from_declared(cursor.u32("schema")?);
+    schema_31_body(ctx, cursor, id, schema)
+}
+
 /// The `RSeDb` body as schema 31 declares it, from a cursor positioned after
 /// the id and schema words.
 fn schema_31_body(

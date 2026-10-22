@@ -32,14 +32,21 @@ fn bounded_xml_utf8_and_schema_failures_preserve_the_same_successful_peer() {
         .iter()
         .find(|entry| entry.name() == "peer.bin")
         .unwrap();
-    for document in [
+    let expected_document = baseline_entries
+        .iter()
+        .find(|entry| entry.name() == "Document.xml")
+        .unwrap();
+    for (case, document) in [
         b"<Document SchemaVersion='4'><Objects></Document>".as_slice(),
         b"<Document SchemaVersion='4'>\xff</Document>".as_slice(),
         b"<Document SchemaVersion='invalid' FileVersion='1'><Objects/><ObjectData/></Document>"
             .as_slice(),
         b"<Document SchemaVersion='4' FileVersion='1'><Objects/><Objects/><ObjectData/></Document>"
             .as_slice(),
-    ] {
+    ]
+    .into_iter()
+    .enumerate()
+    {
         let bytes = source(document);
         let decoded = crate::FcstdCodec
             .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
@@ -53,7 +60,18 @@ fn bounded_xml_utf8_and_schema_failures_preserve_the_same_successful_peer() {
         let entries = namespace
             .arena_as::<crate::native::EntryRecord>("entries")
             .unwrap();
-        assert_eq!(entries, [expected_peer.clone()]);
+        let peers = entries
+            .iter()
+            .filter(|entry| entry.name() != "Document.xml")
+            .cloned()
+            .collect::<Vec<_>>();
+        assert_eq!(peers, [expected_peer.clone()]);
+        let document_entry = entries
+            .iter()
+            .find(|entry| entry.name() == "Document.xml")
+            .unwrap();
+        assert_eq!(document_entry, expected_document);
+        assert_eq!(entries.len(), 2);
         assert!(namespace
             .arena_as::<crate::native::DocumentFacts>("document")
             .unwrap()
@@ -64,17 +82,32 @@ fn bounded_xml_utf8_and_schema_failures_preserve_the_same_successful_peer() {
         };
         let fidelity = decoded.source_fidelity();
         let part = &fidelity.parts()[&unknown.id];
-        assert_eq!(part.level().as_str(), "freecad.document_xml");
+        let root_framed = case >= 2;
+        assert_eq!(
+            part.level().as_str(),
+            if root_framed {
+                "freecad.document"
+            } else {
+                "freecad.document_xml"
+            }
+        );
         assert_eq!(part.state(), &PartState::GivenUp {});
         assert_eq!(part.offset(), 0);
         assert_eq!(part.byte_len(), u64::try_from(document.len()).unwrap());
         let parent = &fidelity.parts()[part.parent().unwrap()];
+        let parent = if root_framed {
+            assert_eq!(parent.level().as_str(), "freecad.document_xml");
+            assert_eq!(parent.state(), &PartState::Decoded {});
+            &fidelity.parts()[parent.parent().unwrap()]
+        } else {
+            parent
+        };
         assert_eq!(parent.level().as_str(), "zip.entry");
         assert_eq!(parent.state(), &PartState::Decoded {});
         let archive = &fidelity.parts()[parent.parent().unwrap()];
         assert_eq!(archive.level().as_str(), "zip.archive");
         assert_eq!(archive.state(), &PartState::Decoded {});
-        assert_eq!(fidelity.parts().len(), 6);
+        assert_eq!(fidelity.parts().len(), 6 + usize::from(root_framed));
         let retained = fidelity.retained_record(unknown.id.as_str()).unwrap();
         assert_eq!(retained.data(), Some(document));
         assert_eq!(retained.stream(), part.stream());
@@ -141,6 +174,17 @@ fn bounded_xml_utf8_and_schema_failures_preserve_the_same_successful_peer() {
         let mut shifted = serde_json::to_value(fidelity).unwrap();
         for map in ["parts", "retained_records", "record_layout"] {
             shifted[map][unknown.id.as_str()]["offset"] = serde_json::json!(part.offset() + 1);
+        }
+        if root_framed {
+            for range in shifted["parts"][unknown.id.as_str()]["framing_bytes"]
+                .as_array_mut()
+                .unwrap()
+            {
+                let start = range["start"].as_u64().unwrap();
+                let end = range["end"].as_u64().unwrap();
+                range["start"] = serde_json::json!(start + 1);
+                range["end"] = serde_json::json!(end + 1);
+            }
         }
         let shifted: cadmpeg_ir::SourceFidelity = serde_json::from_value(shifted).unwrap();
         assert!(crate::source_archive::OriginalArchive::new(&ctx, root, &shifted).is_err());

@@ -79,6 +79,34 @@ pub(crate) fn fixture_with_ufrx(ufrx: &[u8]) -> Vec<u8> {
     file
 }
 
+/// Two independent, actual regular CFB property streams.
+pub(crate) fn fixture_with_property_set_peers(first: &[u8], second: &[u8]) -> Vec<u8> {
+    assert!(first.len() <= 4096 && second.len() <= 4096);
+    let mut file = fixture(true);
+    file.resize(3 * SECTOR_SIZE + 8192, 0);
+    let directory = sector_mut(&mut file, 0);
+    directory[2 * 128..2 * 128 + 64].fill(0);
+    directory_entry(directory, 2, "PropertiesA", 2, NO_STREAM, 2, 4096);
+    put_u32(directory, 128 + 72, 3);
+    directory_entry(directory, 3, "PropertiesZ", 2, NO_STREAM, 10, 4096);
+    directory[3 * 128 + 67] = 0;
+    let fat = sector_mut(&mut file, 1);
+    for sector in 2..18 {
+        put_u32(
+            fat,
+            sector * 4,
+            if sector == 9 || sector == 17 {
+                END_OF_CHAIN
+            } else {
+                u32::try_from(sector + 1).unwrap()
+            },
+        );
+    }
+    file[1536..1536 + first.len()].copy_from_slice(first);
+    file[5632..5632 + second.len()].copy_from_slice(second);
+    file
+}
+
 /// The existing field-authored `RSe` envelope plus a schema-15 model-state stream.
 pub(crate) fn model_state_envelope_fixture() -> Vec<u8> {
     const STREAM_LEN: usize = 4096;

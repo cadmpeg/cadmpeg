@@ -42,7 +42,7 @@ fn a_damaged_known_endpoint_member_has_one_shared_home_and_keeps_its_peer() {
     };
     assert!(unknown.links.is_empty());
     let parts = fidelity.parts();
-    assert_eq!(parts.len(), 8);
+    assert_eq!(parts.len(), 9);
     let (archive_id, archive_part) = parts
         .iter()
         .find(|(_, part)| part.level().as_str() == "zip.archive")
@@ -194,7 +194,7 @@ fn a_locatable_damaged_local_header_is_given_up_without_relabeling_its_payload()
     assert!(fidelity.record_layout()[unknown.id.as_str()]
         .reads()
         .is_empty());
-    assert_eq!(fidelity.parts().len(), 7);
+    assert_eq!(fidelity.parts().len(), 8);
     assert_eq!(
         fidelity
             .parts()

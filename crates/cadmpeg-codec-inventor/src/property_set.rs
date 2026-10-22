@@ -397,6 +397,26 @@ fn header_prefix(cursor: &mut Cursor<'_>) -> Result<(u16, u32, [u8; 16], usize),
     Ok((version, system_identifier, clsid, section_count))
 }
 
+/// Physical header directory for locating sibling sections. Duplicate FMTIDs
+/// are a semantic header error; they do not change these actual offsets.
+fn frame_header_directory(source: View<'_>) -> Result<PropertySetHeader, CodecError> {
+    let mut cursor = Cursor::new(source, "OLE property-set stream");
+    let (version, system_identifier, clsid, section_count) = header_prefix(&mut cursor)?;
+    let mut directories = Vec::new();
+    for _ in 0..section_count {
+        directories.push((
+            cursor.array("section FMTID")?,
+            cursor.offset("section offset")?,
+        ));
+    }
+    Ok(PropertySetHeader {
+        version,
+        system_identifier,
+        clsid,
+        directories,
+    })
+}
+
 pub(crate) fn parse_header(source: View<'_>) -> Result<PropertySetHeader, CodecError> {
     let mut cursor = Cursor::new(source, "OLE property-set stream");
     let (version, system_identifier, clsid, section_count) = header_prefix(&mut cursor)?;

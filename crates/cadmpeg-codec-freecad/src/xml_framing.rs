@@ -211,6 +211,33 @@ pub(crate) fn frame<'a>(
     })
 }
 
+/// Navigation fields of one already parsed element in its original source.
+pub(crate) fn element_fields<'source>(
+    ctx: &DecodeContext<'_>,
+    source: View<'source>,
+    node: roxmltree::Node<'_, '_>,
+) -> Result<(View<'source>, Vec<std::ops::Range<u64>>), CodecError> {
+    ctx.capture_part_extent(source)?;
+    let input = node.document().input_text().as_bytes();
+    if input.len() != source.window().len() || input.as_ptr() != source.window().as_ptr() {
+        return Err(CodecError::malformed(
+            "XML element does not borrow its original source",
+        ));
+    }
+    let extent = relative(source, node.range())?;
+    let fields = markup::fields(extent, node.tag_name().name())?;
+    let count = fields.iter().flatten().count();
+    let bytes = count
+        .checked_mul(size_of::<std::ops::Range<u64>>())
+        .ok_or_else(|| CodecError::malformed("XML element framing storage overflows"))?;
+    ctx.retain_bytes(u64_from_index(bytes), STORAGE)?;
+    let mut ranges = ctx.alloc_filled(count, 0..0, STORAGE)?;
+    for (range, field) in ranges.iter_mut().zip(fields.into_iter().flatten()) {
+        *range = u64_from_index(field.start())..u64_from_index(field.end());
+    }
+    Ok((extent, ranges))
+}
+
 fn xml_space(byte: u8) -> bool {
     matches!(byte, b' ' | b'\t' | b'\r' | b'\n')
 }

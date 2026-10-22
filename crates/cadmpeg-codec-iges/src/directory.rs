@@ -520,25 +520,39 @@ pub(crate) fn parse(
     global_table: GlobalTable,
     ctx: &DecodeContext<'_>,
 ) -> Result<(Vec<DirectoryEntry>, Vec<QuarantinedDirectoryRecord>), CodecError> {
+    parse_with_keys(scan, global_table, ctx, Ok)
+}
+
+pub(crate) fn parse_with_keys(
+    scan: &CardScan<'_>,
+    global_table: GlobalTable,
+    ctx: &DecodeContext<'_>,
+    mut semantic_key: impl FnMut(u32) -> Result<u32, CodecError>,
+) -> Result<(Vec<DirectoryEntry>, Vec<QuarantinedDirectoryRecord>), CodecError> {
     let lines: Vec<_> = scan.section(Section::Directory).collect();
     let mut entries = Vec::new();
     let mut quarantined = Vec::new();
     let mut pairs = lines.chunks_exact(2);
     for pair in pairs.by_ref() {
         ctx.charge_entities(1, "iges_directory_entries")?;
-        match parse_pair(pair[0].0, pair[0].1, pair[1].1, global_table) {
+        let sequence = semantic_key(pair[0].0)?;
+        match parse_pair(sequence, pair[0].1, pair[1].1, global_table) {
             Ok(entry) => {
                 entries.push(entry);
             }
             Err(defect) => {
-                quarantined.push(quarantine(pair[0], &pair[1..], defect));
+                quarantined.push(quarantine((sequence, pair[0].1), &pair[1..], defect));
             }
         }
     }
     if let Some(unpaired) = pairs.remainder().first() {
         ctx.charge_entities(1, "iges_directory_entries")?;
 
-        quarantined.push(quarantine(*unpaired, &[], DirectoryDefect::UnpairedCard));
+        quarantined.push(quarantine(
+            (semantic_key(unpaired.0)?, unpaired.1),
+            &[],
+            DirectoryDefect::UnpairedCard,
+        ));
     }
     Ok((entries, quarantined))
 }

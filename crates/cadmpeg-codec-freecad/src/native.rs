@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Versioned FCStd-native records.
 
+mod document_rewrite;
 pub(crate) mod element_map;
 mod entry_rewrite;
 pub(crate) mod frame;

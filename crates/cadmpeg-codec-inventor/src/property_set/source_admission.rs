@@ -17,7 +17,7 @@ pub(crate) fn stage_header<'a>(
     parsed: &PropertySetStream<'a>,
 ) -> Result<bool, CodecError> {
     let id = format!("inventor:property:set#{}", descriptor.stream.directory_id());
-    let Some(source) = descriptor.source else {
+    let Some(_) = descriptor.source else {
         output.insert_native(
             ctx,
             "property_sets",
@@ -33,8 +33,25 @@ pub(crate) fn stage_header<'a>(
         )?;
         return Ok(true);
     };
+    stage_source_header(ctx, output, descriptor, Some(parsed)).map(|(formed, _)| formed)
+}
+
+/// Admit actual source fields independently of a cached parse success/failure.
+/// The optional expected value is the held-syntax source-validation boundary.
+pub(crate) fn stage_source_header<'a>(
+    ctx: &DecodeContext<'a>,
+    output: &mut PartOutput,
+    descriptor: &PropertySetDescriptor<'a>,
+    expected: Option<&PropertySetStream<'a>>,
+) -> Result<(bool, usize), CodecError> {
+    let source = descriptor
+        .source
+        .ok_or_else(|| CodecError::malformed("held property syntax has no source header"))?;
     ctx.capture_part_extent(source)?;
     let extent = super::header_extent(source)?;
+    let directory = super::frame_header_directory(extent)?;
+    let count = directory.directories.len();
+    let id = format!("inventor:property:set#{}", descriptor.stream.directory_id());
     let level = PartLevel::parse("inventor.property_set_header").ok_or_else(|| {
         CodecError::malformed("OLE property-set header is absent from Appendix C")
     })?;
@@ -46,19 +63,21 @@ pub(crate) fn stage_header<'a>(
             // inside their record scope, rather than assigning earlier reads.
             let mut header = super::parse_header(extent)?;
             header.directories.sort_by_key(|(_, offset)| *offset);
-            if header.version != parsed.version
-                || header.system_identifier != parsed.system_identifier
-                || header.clsid != parsed.clsid
-                || header.directories.len() != parsed.sections.len()
-                || header
-                    .directories
-                    .iter()
-                    .zip(&parsed.sections)
-                    .any(|((fmtid, _), section)| *fmtid != section.fmtid)
-            {
-                return Err(CodecError::malformed(
-                    "OLE staged header differs from its actual source",
-                ));
+            if let Some(parsed) = expected {
+                if header.version != parsed.version
+                    || header.system_identifier != parsed.system_identifier
+                    || header.clsid != parsed.clsid
+                    || header.directories.len() != parsed.sections.len()
+                    || header
+                        .directories
+                        .iter()
+                        .zip(&parsed.sections)
+                        .any(|((fmtid, _), section)| *fmtid != section.fmtid)
+                {
+                    return Err(CodecError::malformed(
+                        "OLE staged header differs from its actual source",
+                    ));
+                }
             }
             stage.insert_native(
                 ctx,
@@ -75,7 +94,7 @@ pub(crate) fn stage_header<'a>(
             )
         })
     })?;
-    Ok(result.is_some())
+    Ok((result.is_some(), count))
 }
 
 /// Locate a section from the actual header directory and size fields. The
@@ -90,7 +109,7 @@ pub(crate) fn section_source<'a>(
         .ok_or_else(|| CodecError::malformed("held property syntax has no source section"))?;
     ctx.capture_part_extent(source)?;
     let header_source = super::header_extent(source)?;
-    let mut header = super::parse_header(header_source)?;
+    let mut header = super::frame_header_directory(header_source)?;
     header.directories.sort_by_key(|(_, offset)| *offset);
     let mut previous_end = header_source.window().len();
     let mut selected = None;

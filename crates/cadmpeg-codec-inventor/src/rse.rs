@@ -333,13 +333,14 @@ pub(crate) enum DatabaseState {
 }
 
 #[derive(Debug)]
-pub(crate) struct DatabaseDescriptor {
+pub(crate) struct DatabaseDescriptor<'a> {
     pub(crate) band: StorageBand,
     pub(crate) stream: CompoundStreamId,
     pub(crate) state: DatabaseState,
+    pub(crate) source: Option<View<'a>>,
 }
 
-impl DatabaseDescriptor {
+impl DatabaseDescriptor<'_> {
     pub(crate) fn declared_schema(&self) -> Option<RseSchema> {
         match &self.state {
             DatabaseState::Parsed(database) => Some(database.schema),
@@ -362,7 +363,7 @@ impl DatabaseDescriptor {
 /// `RSe` paths established from the compound directory.
 #[derive(Debug)]
 pub(crate) struct RseInventory<'a> {
-    pub(crate) databases: Vec<DatabaseDescriptor>,
+    pub(crate) databases: Vec<DatabaseDescriptor<'a>>,
     pub(crate) registry: ParsedState<SegmentRegistry>,
     pub(crate) revisions: ParsedState<RevisionTable>,
     pub(crate) segments: Vec<SegmentDescriptor<'a>>,
@@ -406,11 +407,24 @@ impl<'a> RseInventory<'a> {
         databases.sort_by_key(|(left, _)| *left);
         let mut database_descriptors = Vec::new();
         for (band, stream_id) in databases {
-            let state = match snapshot.stream_by_id(stream_id) {
-                Some(stream) => match snapshot
-                    .open(ctx, stream)
-                    .and_then(|view| parse_database(ctx, view.window()))
-                {
+            let source = match snapshot.stream_by_id(stream_id) {
+                Some(stream) => match snapshot.open(ctx, stream) {
+                    Ok(source) => Some(source),
+                    Err(error) => {
+                        let detail = crate::issue_detail(error)?;
+                        database_descriptors.push(DatabaseDescriptor {
+                            band,
+                            stream: stream_id,
+                            state: DatabaseState::Unreadable(detail),
+                            source: None,
+                        });
+                        continue;
+                    }
+                },
+                None => None,
+            };
+            let state = match source {
+                Some(source) => match parse_database(ctx, source.window()) {
                     Ok(DatabaseHeader::Supported(database)) => DatabaseState::Parsed(database),
                     Ok(DatabaseHeader::Unframed { schema, detail }) => {
                         DatabaseState::Unframed { schema, detail }
@@ -423,6 +437,7 @@ impl<'a> RseInventory<'a> {
                 band,
                 stream: stream_id,
                 state,
+                source,
             });
         }
         // The registry takes the schema-31 grammar whatever the `RSeDb` streams

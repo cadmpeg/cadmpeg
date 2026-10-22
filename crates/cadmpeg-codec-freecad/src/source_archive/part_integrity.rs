@@ -14,16 +14,24 @@ pub(super) fn validate<'source>(
     fidelity: &SourceFidelity,
 ) -> Result<(), CodecError> {
     let document_failed = fidelity.parts().values().any(|part| {
-        part.state() == &PartState::GivenUp {} && part.level().as_str() == "freecad.document_xml"
+        part.state() == &PartState::GivenUp {}
+            && matches!(
+                part.level().as_str(),
+                "freecad.document_xml" | "freecad.document"
+            )
     });
     if document_failed {
         let document = archive.open(ctx, "Document.xml")?;
         for (id, _) in fidelity.parts().iter().filter(|(_, part)| {
             part.state() == &PartState::GivenUp {}
-                && part.level().as_str() == "freecad.document_xml"
+                && matches!(
+                    part.level().as_str(),
+                    "freecad.document_xml" | "freecad.document"
+                )
         }) {
+            let extent = document_extent(ctx, document, fidelity.parts()[id].level().as_str())?;
             // discarded-value: validate the original physical member and its exact expanded bytes.
-            let _ = checked(ctx, fidelity, id.as_str(), document)?;
+            let _ = checked(ctx, fidelity, id.as_str(), extent)?;
         }
     }
     if !fidelity.parts().values().any(|part| {
@@ -100,7 +108,9 @@ pub(super) fn named<'a, 'source>(
     let extent = match part.level().as_str() {
         "zip.local_header" => frame.header(),
         "zip.entry" => frame.payload(),
-        "freecad.document_xml" if name == "Document.xml" => archive.open(ctx, name)?,
+        "freecad.document_xml" | "freecad.document" if name == "Document.xml" => {
+            document_extent(ctx, archive.open(ctx, name)?, part.level().as_str())?
+        }
         _ => {
             return Err(CodecError::malformed(
                 "source part is not an optional ZIP member",
@@ -108,6 +118,18 @@ pub(super) fn named<'a, 'source>(
         }
     };
     checked(ctx, fidelity, id, extent)
+}
+
+fn document_extent<'source>(
+    ctx: &DecodeContext<'_>,
+    document: View<'source>,
+    level: &str,
+) -> Result<View<'source>, CodecError> {
+    if level == "freecad.document_xml" {
+        return Ok(document);
+    }
+    let xml = crate::container::admit_document(ctx, document.window())?;
+    crate::fidelity::relative_xml_extent(document, xml.root_element().range())
 }
 
 fn checked<'a>(

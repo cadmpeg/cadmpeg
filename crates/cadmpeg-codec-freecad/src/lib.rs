@@ -878,8 +878,9 @@ impl CodecBackend for FcstdCodec {
                 ctx,
             )?;
         }
+        let mut part_losses = Vec::new();
+        container::parts::append(ctx, parts, &mut ir, &mut source_fidelity, &mut part_losses)?;
         let namespace = ir.native.namespace_mut("fcstd");
-        namespace.set_arena(ctx, "document", std::slice::from_ref(&scan.document))?;
 
         let decode_document = !ctx.container_only();
         if decode_document {
@@ -1351,7 +1352,7 @@ impl CodecBackend for FcstdCodec {
         losses.extend(scan.losses);
         let dialect_losses = dialect::FcstdDialect::dialect_loss(dialects.primary());
         losses.extend(dialect_losses);
-        container::parts::append(ctx, parts, &mut ir, &mut source_fidelity, &mut losses)?;
+        losses.extend(part_losses);
         losses.extend(loss::payloads::decode_losses(
             ctx,
             &ir,

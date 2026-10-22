@@ -164,7 +164,10 @@ pub(crate) fn attempt<'a>(
     );
     let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::Fcstd);
     let outcome = ctx.decode_part(&mut parts, root, parts::archive_spec()?, |stage| {
-        let document = parts::document(ctx, &archive, stage)?;
+        let parts::DocumentRead {
+            document,
+            mut pointers,
+        } = parts::document(ctx, &archive, stage)?;
         if let Some(document) = &document {
             let matched = crate::dialect::FcstdDialect::classify(&document.facts, &document.schema);
             summary = ContainerSummary::classified(
@@ -179,7 +182,7 @@ pub(crate) fn attempt<'a>(
         }
         let opened = parts::open_optional(ctx, &archive, stage)?;
         let Some(document) = document else {
-            let pointers = parts::keep_readable_entries(ctx, &archive, &opened, stage)?;
+            pointers.extend(parts::keep_readable_entries(ctx, &archive, &opened, stage)?);
             return Ok((None, pointers));
         };
         Ok((Some(scan_impl(archive, document, opened)?), BTreeMap::new()))

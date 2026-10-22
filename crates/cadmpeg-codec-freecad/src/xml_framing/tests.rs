@@ -259,3 +259,42 @@ fn equal_bytes_in_a_different_dom_buffer_do_not_claim_the_original_view() {
     assert!(frame(&ctx, root, &original_tree, true).unwrap().supported());
     assert!(ctx.take_record_captures().unwrap().is_empty());
 }
+
+#[test]
+fn one_original_element_exposes_only_markup_in_a_nonzero_window() {
+    let bytes =
+        b"prefix<!--before--><Document marker='>'><Properties/></Document><!--after-->suffix";
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    let source = root.child(6, bytes.len() - 6).unwrap();
+    let text = std::str::from_utf8(source.window()).unwrap();
+    let xml = ctx.parse_xml(text, "original framing control").unwrap();
+    let (extent, fields) = super::element_fields(&ctx, source, xml.root_element()).unwrap();
+    assert_eq!(
+        extent.window(),
+        b"<Document marker='>'><Properties/></Document>"
+    );
+    let actual = fields
+        .iter()
+        .map(|range| {
+            &bytes[usize::try_from(range.start).unwrap()..usize::try_from(range.end).unwrap()]
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        actual,
+        [
+            b"<Document".as_slice(),
+            b">".as_slice(),
+            b"</Document>".as_slice()
+        ]
+    );
+    let copied = text.to_owned();
+    let other_dom = roxmltree::Document::parse(&copied).unwrap();
+    assert!(super::element_fields(&ctx, source, other_dom.root_element()).is_err());
+    assert!(ctx.take_record_captures().unwrap().is_empty());
+}

@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! High-level Inventor structural decode.
 
+mod database_parts;
 mod document_native_projection;
 mod presentation_native_projection;
 mod property_sections;
+mod property_streams;
 mod rse_native_projection;
 
 use cadmpeg_ir::annotations::StreamHandle;
@@ -112,6 +114,36 @@ fn decode_container<'a>(
     let mut preview_ordinal = 0;
     let mut property_set_issues = Vec::new();
     for descriptor in &container.property_sets {
+        if descriptor.source.is_some() {
+            if let Some(stream) = property_streams::stage(
+                ctx,
+                &mut assembly_inventory.parts,
+                descriptor,
+                &mut preview_ordinal,
+            )? {
+                property_set_count += usize::from(stream.header_formed);
+                for (section_ordinal, section) in stream.sections {
+                    property_count += section.properties.len();
+                    for property in &section.properties {
+                        let native_id = format!(
+                            "inventor:property:value#{}-{section_ordinal}-{}",
+                            descriptor.stream.directory_id(),
+                            property.id
+                        );
+                        let scalar_value = property.value.scalar_text();
+                        metadata.consider(
+                            &section.fmtid,
+                            property.id,
+                            property.name.as_deref(),
+                            scalar_value.as_deref(),
+                            &native_id,
+                        );
+                    }
+                }
+            }
+            continue;
+        }
+
         match &descriptor.state {
             PropertySetState::Malformed(detail) => {
                 admit_native_items(ctx, 1)?;
@@ -132,34 +164,6 @@ fn decode_container<'a>(
                 }
                 property_set_count += 1;
                 for (section_ordinal, section) in property_set.sections.iter().enumerate() {
-                    if descriptor.source.is_some() {
-                        if let Some(section) = property_sections::stage(
-                            ctx,
-                            &mut assembly_inventory.parts,
-                            descriptor,
-                            section_ordinal,
-                            &mut preview_ordinal,
-                        )? {
-                            property_count += section.properties.len();
-                            for property in &section.properties {
-                                let native_id = format!(
-                                    "inventor:property:value#{}-{section_ordinal}-{}",
-                                    descriptor.stream.directory_id(),
-                                    property.id,
-                                );
-                                let scalar_value = property.value.scalar_text();
-                                metadata.consider(
-                                    &section.fmtid,
-                                    property.id,
-                                    property.name.as_deref(),
-                                    scalar_value.as_deref(),
-                                    &native_id,
-                                );
-                            }
-                        }
-                        continue;
-                    }
-
                     let set_name = property_set_name(section);
                     let identity_matches = set_name
                         .as_deref()
@@ -325,11 +329,22 @@ fn decode_container<'a>(
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
+    let mut source_database_count = 0;
+    for descriptor in &container.rse.databases {
+        if descriptor.source.is_some()
+            && database_parts::stage(ctx, &mut assembly_inventory.parts, descriptor)?
+        {
+            source_database_count += 1;
+        }
+    }
     let databases = container
         .rse
         .databases
         .iter()
         .filter_map(|descriptor| {
+            if descriptor.source.is_some() {
+                return None;
+            }
             let DatabaseState::Parsed(database) = &descriptor.state else {
                 return None;
             };
@@ -352,6 +367,9 @@ fn decode_container<'a>(
         .collect::<Result<Vec<_>, CodecError>>()?;
     let mut database_issues = Vec::new();
     for descriptor in &container.rse.databases {
+        if descriptor.source.is_some() {
+            continue;
+        }
         if let Some(detail) = descriptor.issue_detail() {
             admit_native_items(ctx, 1)?;
             database_issues.push(DatabaseIssueRecord {
@@ -1099,7 +1117,10 @@ fn decode_container<'a>(
     let transferred_feature_result_count = ir.model.feature_result_topologies.len();
     let coverage_entries = [
         (crate::coverage::RSE_STORAGE_BANDS, storage_bands.len()),
-        (crate::coverage::RSE_DATABASES, databases.len()),
+        (
+            crate::coverage::RSE_DATABASES,
+            databases.len() + source_database_count,
+        ),
         (
             crate::coverage::RSE_REGISTRY_ENTRIES,
             segment_registry.len(),

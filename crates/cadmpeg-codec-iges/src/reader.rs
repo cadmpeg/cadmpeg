@@ -21,6 +21,20 @@ use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity, SourceMeta};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
+struct ParsingState<'a> {
+    parts: ParserPartOutput,
+    binary_identities: Option<&'a crate::binary::BinaryIdentities>,
+}
+
+impl ParsingState<'_> {
+    fn new() -> Self {
+        Self {
+            parts: ParserPartOutput::new(cadmpeg_ir::CodecFormat::Iges),
+            binary_identities: None,
+        }
+    }
+}
+
 fn source_meta(
     global: &global::ResolvedGlobal,
     representation: Representation,
@@ -269,19 +283,23 @@ struct PhysicalParse<'a> {
 
 impl<'a> PhysicalParse<'a> {
     fn run(bytes: &'a [u8], ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
-        Self::run_with_source(bytes, None, ctx)
+        Self::run_with_source(bytes, None, ctx, ParsingState::new())
     }
 
     fn run_with_source(
         bytes: &'a [u8],
         source: Option<View<'a>>,
         ctx: &DecodeContext<'_>,
+        parsing: ParsingState<'_>,
     ) -> Result<Self, CodecError> {
+        let ParsingState {
+            parts: mut parser_parts,
+            binary_identities,
+        } = parsing;
         let scan = match source {
             Some(source) => card::scan_source(source, ctx)?,
             None => card::scan(bytes)?,
         };
-        let mut parser_parts = ParserPartOutput::new(cadmpeg_ir::CodecFormat::Iges);
         let (global, mut global_losses) = if scan.source_view().is_some() {
             global::parts::parse(&scan, ctx, &mut parser_parts)?
         } else {
@@ -292,6 +310,10 @@ impl<'a> PhysicalParse<'a> {
                 directory::parts::parse(&scan, global.global_table(), ctx, &mut parser_parts)?,
                 Vec::new(),
             )
+        } else if let Some(identities) = binary_identities {
+            directory::parse_with_keys(&scan, global.global_table(), ctx, |grammar| {
+                identities.semantic_sequence(grammar)
+            })?
         } else {
             directory::parse(&scan, global.global_table(), ctx)?
         };
@@ -436,13 +458,55 @@ pub(crate) fn decode(
     representation: Representation,
     ctx: &DecodeContext<'_>,
 ) -> Result<Decoded, CodecError> {
+    decode_with_parsing(
+        parse_bytes,
+        source,
+        representation,
+        ctx,
+        ParsingState::new(),
+    )
+}
+
+pub(crate) fn decode_binary(
+    normalized: &crate::binary::NormalizedBinary,
+    source: View<'_>,
+    ctx: &DecodeContext<'_>,
+    parts: ParserPartOutput,
+) -> Result<Decoded, CodecError> {
+    decode_with_parsing(
+        &normalized.bytes,
+        source,
+        Representation::Binary,
+        ctx,
+        ParsingState {
+            parts,
+            binary_identities: Some(&normalized.identities),
+        },
+    )
+}
+
+fn decode_with_parsing(
+    parse_bytes: &[u8],
+    source: View<'_>,
+    representation: Representation,
+    ctx: &DecodeContext<'_>,
+    parsing: ParsingState<'_>,
+) -> Result<Decoded, CodecError> {
     let output = native::MAX_PRODUCT_OCCURRENCES;
     let depth = usize::try_from(ctx.policy().limits.max_recursion_depth)
         .ok()
         .map_or(native::MAX_PRODUCT_OCCURRENCE_DEPTH, |policy| {
             policy.min(native::MAX_PRODUCT_OCCURRENCE_DEPTH)
         });
-    decode_with_occurrence_limits(parse_bytes, source, representation, output, depth, ctx)
+    decode_with_occurrence_limits(
+        parse_bytes,
+        source,
+        representation,
+        output,
+        depth,
+        ctx,
+        parsing,
+    )
 }
 
 fn decode_with_occurrence_limits(
@@ -452,10 +516,11 @@ fn decode_with_occurrence_limits(
     product_occurrence_output_limit: usize,
     product_occurrence_depth_limit: usize,
     ctx: &DecodeContext<'_>,
+    parsing: ParsingState<'_>,
 ) -> Result<Decoded, CodecError> {
     let mut source_fidelity = source_fidelity(source.window(), ctx)?;
     let view = (representation == Representation::FixedAscii).then_some(source);
-    let mut parse = PhysicalParse::run_with_source(parse_bytes, view, ctx)?;
+    let mut parse = PhysicalParse::run_with_source(parse_bytes, view, ctx, parsing)?;
     let parser_parts = std::mem::replace(
         &mut parse.parser_parts,
         ParserPartOutput::new(cadmpeg_ir::CodecFormat::Iges),
@@ -958,6 +1023,7 @@ pub(crate) fn decode_with_test_occurrence_limits(
                 self.output_limit,
                 self.depth_limit,
                 ctx,
+                ParsingState::new(),
             )
         }
     }

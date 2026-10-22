@@ -990,3 +990,5 @@ mod directory_parts;
 mod global_parts;
 
 mod parameter_parts;
+
+mod binary_parts;

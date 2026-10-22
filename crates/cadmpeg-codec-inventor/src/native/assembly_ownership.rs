@@ -50,3 +50,5 @@ assembly_owner!(super::PropertySetRecord);
 
 assembly_owner!(super::PropertySectionRecord);
 assembly_owner!(super::PropertyRecord);
+
+assembly_owner!(super::DatabaseRecord);
