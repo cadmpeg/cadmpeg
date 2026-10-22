@@ -65,7 +65,7 @@ fn full_document_unit_binding_transfers_model_units_and_reports_an_undeclared_un
         assert_eq!(
             unit_losses,
             expected
-                .map(|code| code.kind())
+                .map(crate::loss::RhinoLossCode::kind)
                 .into_iter()
                 .collect::<Vec<_>>(),
             "{label}"
