@@ -4485,14 +4485,8 @@ pub(super) fn helix_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> 
     let mut cur = Cur::at(span, 2);
     let current_layout = optional_helix_revision(&mut cur)?;
     let angle_range = [cur.take_range_value()?, cur.take_range_value()?];
-    let dimension_scale = if circular { LEN_TO_MM } else { 1.0 };
-    let dimension_range = [
-        cur.take_range_value()? * dimension_scale,
-        cur.take_range_value()? * dimension_scale,
-    ];
-    let length = circular
-        .then(|| cur.take_f64().map(|v| v * LEN_TO_MM))
-        .flatten();
+    let dimension_range = [cur.take_range_value()?, cur.take_range_value()?];
+    let length = circular.then(|| cur.take_f64()).flatten();
     let path_angle_range = [cur.take_range_value()?, cur.take_range_value()?];
     let center = cur.take_position()?;
     let take_frame_vector = |cur: &mut Cur<'_>| {
@@ -4549,8 +4543,8 @@ pub(super) fn helix_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> 
         let direction = take_frame_vector(&mut cur)?;
         HelixSurfaceProfile::Line(
             cadmpeg_ir::geometry::HelixLineProfile::try_new(Vector3::new(
-                direction[0] * LEN_TO_MM,
-                direction[1] * LEN_TO_MM,
+                direction[0],
+                direction[1],
                 direction[2] * LEN_TO_MM,
             ))
             .ok()?,

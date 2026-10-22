@@ -192,6 +192,8 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-ir`             | `src/eval.rs`                                      | `MAX_LINE_SEARCH_STEPS`                   | `12`                                                    | 4    | Line-search steps inside the same Newton loop. Exhaustion ends the iteration.                                                                                                                                                                                                |
 | `cadmpeg-ir`             | `src/eval/admission.rs`                            | `MAX_MODEL_EVALUATION_WORK`               | `1 << 24`                                               | 4    | One model evaluation under `Decode` or `Standard` admission, and each evaluation of a validation pass. Exhaustion is `EvaluationFailure::WorkExhausted`; the session continues. Codec callers own the skip; validation reports a warning naming this constant.               |
 | `cadmpeg-ir`             | `src/eval/admission.rs`                            | `MAX_MODEL_PASS_EVALUATION_WORK`          | `1 << 30`                                               | 4    | All model evaluations of one validation pass (`ModelEvaluationPass`), drawn as slices of `MAX_MODEL_EVALUATION_WORK`. An evaluation that finds it empty skips its check, and validation reports a warning naming this constant.                                              |
+| `cadmpeg-ir`             | `src/eval/helix_nurbs.rs`                          | `MAX_REFINEMENTS`                         | `16`                                                    | 4    | Segment-count doublings in the helix and helix-surface B-spline fit. Exhaustion returns `ToleranceNotMet`; the STEP writer reports `geometry.helix-fit-failed`.                                                                                                              |
+| `cadmpeg-ir`             | `src/eval/helix_nurbs.rs`                          | `MAX_SEGMENT_ANGLE`                       | `FRAC_PI_2`                                             | N    | Largest path angle of one cubic fit segment before its deviation is measured.                                                                                                                                                                                                |
 | `cadmpeg-ir`             | `src/math/sum.rs`                                  | `MAX_BIASED_SIGNIFICAND_EXPONENT`         | `0x7fe - 1`                                             | N    | `f64` exponent-field limit for exact summation.                                                                                                                                                                                                                              |
 | `cadmpeg-ir`             | `src/math/sum.rs`                                  | `MAX_SIGNIFICAND_BITS`                    | `53`                                                    | N    | `f64` significand width.                                                                                                                                                                                                                                                     |
 | `cadmpeg-ir`             | `src/math/sum.rs`                                  | `MAX_SCALED_EXPONENT`                     | `EXACT_PRODUCT_EXPONENT + EXACT_SUM_WORDS_I32 * 64 + 1` | N    | Accumulator exponent range.                                                                                                                                                                                                                                                  |
@@ -441,21 +443,21 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 226.
+Production `MAX_*` constants: 228.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 30    |
 | 2    | Per-input bound            | 69    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 106   |
-| N    | Not a decode bound         | 21    |
-|      | Total                      | 226   |
+| 4    | Local work cap             | 107   |
+| N    | Not a decode bound         | 22    |
+|      | Total                      | 228   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
 
-By crate: `cadmpeg-core` 3, `cadmpeg-ir` 10, `cadmpeg-asm` 4,
+By crate: `cadmpeg-core` 3, `cadmpeg-ir` 12, `cadmpeg-asm` 4,
 `cadmpeg-protein` 3, `cadmpeg` 2, `cadmpeg-codec-step` 8,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 3,
 `cadmpeg-codec-freecad` 11, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 18,

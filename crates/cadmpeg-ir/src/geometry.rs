@@ -2504,31 +2504,17 @@ impl TryFrom<HelixCurveConstructionWire> for HelixCurveConstruction {
 
 impl HelixCurveConstruction {
     /// Reverse the parameter while preserving points and derivatives.
-    /// A zero radius at the new interval start has no admitted helix frame.
     pub fn try_reverse_parameterization(&mut self) -> Result<(), &'static str> {
-        let [start, end] = self.angle_range.finite_components();
-        let turns = end.turns_from(start).get();
-        let radial_end = self.apex_factor.get().mul_add(turns, 1.0);
-        if !turns.is_finite() || !radial_end.is_finite() || radial_end == 0.0 {
-            return Err("helix curve reversal has no finite nonzero starting radius");
-        }
-        let scale = |vector: Vector3| {
-            Vector3::new(
-                vector.x * radial_end,
-                vector.y * radial_end,
-                vector.z * radial_end,
-            )
-        };
         let candidate = Self::try_new(
             self.angle_range.reversed_negated().get(),
             HelixFrame {
-                center: self.center.get().translated(self.pitch.get(), turns),
-                major: scale(self.major.get()),
-                minor: scale(self.minor.negated().get()),
+                center: self.center.get(),
+                major: self.major.get(),
+                minor: self.minor.negated().get(),
                 pitch: self.pitch.negated().get(),
                 axis: self.axis.get(),
             },
-            -self.apex_factor.get() / radial_end,
+            -self.apex_factor.get(),
             self.cache,
         )?;
         *self = candidate;
@@ -2581,7 +2567,7 @@ impl HelixCurveConstruction {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "HelixCircleProfileWire")]
 pub struct HelixCircleProfile {
-    length: FiniteReal,
+    angle: FiniteReal,
     radius: FiniteReal,
 }
 
@@ -2589,26 +2575,26 @@ pub struct HelixCircleProfile {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct HelixCircleProfileWire {
-    /// Native profile length.
-    length: f64,
+    /// Native angle stored before the path, in radians.
+    angle: f64,
     /// Signed circular profile radius.
     radius: f64,
 }
 
 impl HelixCircleProfile {
     /// Admit parameters that satisfy the helix payload contract.
-    pub fn try_new(length: f64, radius: f64) -> Result<Self, &'static str> {
+    pub fn try_new(angle: f64, radius: f64) -> Result<Self, &'static str> {
         if radius == 0.0 {
             return Err("helix circle profile radius must be finite and nonzero");
         }
-        let length = FiniteReal::new(length).ok_or("helix circle profile length must be finite")?;
+        let angle = FiniteReal::new(angle).ok_or("helix circle profile angle must be finite")?;
         let radius = FiniteReal::new(radius).ok_or("helix circle profile radius must be finite")?;
-        Ok(Self { length, radius })
+        Ok(Self { angle, radius })
     }
-    /// Native profile length.
+    /// Native angle stored before the path, in radians.
     #[must_use]
-    pub const fn length(&self) -> FiniteReal {
-        self.length
+    pub const fn angle(&self) -> FiniteReal {
+        self.angle
     }
 
     /// Signed circular profile radius.
@@ -2621,7 +2607,7 @@ impl HelixCircleProfile {
 impl TryFrom<HelixCircleProfileWire> for HelixCircleProfile {
     type Error = &'static str;
     fn try_from(wire: HelixCircleProfileWire) -> Result<Self, Self::Error> {
-        Self::try_new(wire.length, wire.radius)
+        Self::try_new(wire.angle, wire.radius)
     }
 }
 
@@ -2637,7 +2623,8 @@ pub struct HelixLineProfile {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct HelixLineProfileWire {
-    /// Finite non-degenerate profile direction.
+    /// Profile direction coefficients: `x` and `y` scale the path's rotated
+    /// major and minor vectors, and `z` is a length along the path axis.
     direction: Vector3,
 }
 
@@ -2651,7 +2638,8 @@ impl HelixLineProfile {
         }
         Ok(Self { direction })
     }
-    /// Finite non-degenerate profile direction.
+    /// Profile direction coefficients: `x` and `y` scale the path's rotated
+    /// major and minor vectors, and `z` is a length along the path axis.
     #[must_use]
     pub const fn direction(&self) -> FiniteVector3 {
         self.direction
@@ -2673,7 +2661,7 @@ impl TryFrom<HelixLineProfileWire> for HelixLineProfile {
 pub enum HelixSurfaceProfile {
     /// Circular profile swept along the helix.
     Circle(HelixCircleProfile),
-    /// Linear profile swept along a direction.
+    /// Linear profile swept along the helix.
     Line(HelixLineProfile),
 }
 
@@ -2692,9 +2680,9 @@ pub struct HelixSurfaceConstruction {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct HelixSurfaceConstructionWire {
-    /// Native helix angle interval.
+    /// Native profile parameter interval.
     angle_range: [f64; 2],
-    /// Native profile dimension interval.
+    /// Native path angle interval.
     dimension_range: [f64; 2],
     /// Circular path of the helix surface.
     path: HelixPathConstruction,
@@ -2721,13 +2709,13 @@ impl HelixSurfaceConstruction {
             profile,
         })
     }
-    /// Return the angle range.
+    /// Return the native profile parameter interval.
     #[must_use]
     pub const fn angle_range(&self) -> &FiniteVector<2> {
         &self.angle_range
     }
 
-    /// Return the dimension range.
+    /// Return the native path angle interval.
     #[must_use]
     pub const fn dimension_range(&self) -> &FiniteVector<2> {
         &self.dimension_range
