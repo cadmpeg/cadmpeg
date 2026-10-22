@@ -244,6 +244,12 @@ so the loops do not choose a side:
 | No ring loop, or ring loops of seam and synthesized pieces only | `whole_surface`: the face covers the whole carrier, `4πR²` or `4π²R\|r\|`, with the method `closed_form`. |
 | Other ring loops | `declared_orientation`: the region lies on the left of every loop, after each loop is reversed when the declared normal is reversed. |
 
+A loop that meets a sphere pole has a synthesized segment along the pole.
+The segment keeps the region on its left: it runs in `−u` at the north pole
+and in `+u` at the south pole, after the loop reversal for a reversed
+declared normal, by an amount in `[0, 2π)`. When the amount is within the
+angular allowance of 0 or `2π`, the segment takes the nearest lift.
+
 On a torus the net shifts of the loops sum to zero, else the face is
 `boundary.nesting-invalid`. Horn and spindle tori are
 `region.domain-unsupported`.
@@ -283,7 +289,8 @@ with the complement's values. Otherwise the area, box, latitude range and
 sweep are measured under `reading: declared` with the `complement` value as
 a candidate, and the face has the caveat `orientation.unconfirmed`. When
 both readings give one value within error, the value has no reading and no
-candidate. A body with one unconfirmed face reports its area under
+candidate. Two sweeps are one value only when their angles, `full` flags and
+intervals agree. A body with one unconfirmed face reports its area under
 `reading: declared` with the area under that face's complement as a
 candidate; with several, the body area stays under the declared readings and
 the body's caveat count states them.

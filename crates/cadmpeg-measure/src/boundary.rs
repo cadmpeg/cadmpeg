@@ -23,9 +23,10 @@ use crate::canonical::surface::Chart;
 use crate::context::Eval;
 use crate::edges::EdgeGeometry;
 use crate::failure::{Measure, MeasureFailure};
+use crate::orientation::declared_normal;
 use crate::owners::Owners;
 use crate::reason::UnavailableReason;
-use crate::report::{DeclaredRole, ListedOrder, UvSource};
+use crate::report::{DeclaredRole, ListedOrder, NormalReading, UvSource};
 use crate::traversal::{traverse, TraversalError};
 use pcurve::UseFrame;
 use piece::{CoedgeUse, Piece};
@@ -319,6 +320,10 @@ impl<'ir> FaceFrame<'_, 'ir> {
                     piece.shift = lift(periods, from, to);
                     let to = piece.start_uv(eval, self.chart)?;
                     let end = previous.end_point(eval)?;
+                    if let Some(turn) = self.pole_turn(from, [end, start], to[0] - from[0]) {
+                        piece.shift[0] += turn;
+                    }
+                    let to = piece.start_uv(eval, self.chart)?;
                     let gap = end.distance(start);
                     max_gap = max_gap.max(gap);
                     let join = Join {
@@ -361,7 +366,13 @@ impl<'ir> FaceFrame<'_, 'ir> {
         let mut target = start;
         for direction in 0..2 {
             if let Some(period) = periods[direction] {
-                let turns = ((end[direction] - start[direction]) / period).round();
+                let mut turns = ((end[direction] - start[direction]) / period).round();
+                if direction == 0 {
+                    let jump = start[0] + turns * period - end[0];
+                    if let Some(turn) = self.pole_turn(end, [end_point, start_point], jump) {
+                        turns += (turn / period).round();
+                    }
+                }
                 net_shift[direction] = cadmpeg_core::convert::truncate_f64_to_i32(turns)
                     .ok_or_else(|| {
                         MeasureFailure::unavailable(
@@ -404,6 +415,45 @@ impl<'ir> FaceFrame<'_, 'ir> {
             off_surface,
             directed,
         })
+    }
+
+    /// The whole periods to add to the `u` jump `jump` of a junction at a
+    /// sphere pole, so that the segment along the pole keeps the region on
+    /// its left: `−u` at the north pole and `+u` at the south pole for loops
+    /// oriented with the region on their left, reversed for a face whose
+    /// declared normal is reversed, by an amount in `[0, 2π)`. `None` when
+    /// the junction is not at a sphere pole, or when the amount lies within
+    /// the angular allowance of 0 or a full turn, where the nearest lift
+    /// stands.
+    fn pole_turn(&self, from: [f64; 2], points: [Point3; 2], jump: f64) -> Option<f64> {
+        let Chart::Sphere(sphere) = self.chart else {
+            return None;
+        };
+        if !points
+            .iter()
+            .all(|point| self.chart.singular_at(*point, self.alpha))
+        {
+            return None;
+        }
+        let period = std::f64::consts::TAU;
+        let keeping = match declared_normal(self.face, Some(self.chart)) {
+            NormalReading::Reversed => -1.0,
+            _ => 1.0,
+        };
+        let direction = if from[1] > 0.0 { -keeping } else { keeping };
+        let amount = (direction * jump).rem_euclid(period);
+        let allowance = self
+            .owners
+            .ir
+            .tolerances
+            .angular
+            .get()
+            .max(self.alpha / sphere.radius.abs());
+        if amount <= allowance || period - amount <= allowance {
+            return None;
+        }
+        let turn = direction * amount - jump;
+        (turn != 0.0).then_some(turn)
     }
 
     /// A synthesized segment that bridges a parameter jump between two

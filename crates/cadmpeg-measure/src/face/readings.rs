@@ -72,7 +72,13 @@ impl Coordinates for Range {
 
 impl Coordinates for Sweep {
     fn coordinates(&self) -> Vec<f64> {
-        vec![self.value.get(), if self.full { 1.0 } else { 0.0 }]
+        let mut coordinates = vec![self.value.get(), if self.full { 1.0 } else { 0.0 }];
+        coordinates.extend(
+            self.intervals
+                .iter()
+                .flat_map(|[start, end]| [start.get(), end.get()]),
+        );
+        coordinates
     }
 }
 
@@ -89,11 +95,12 @@ fn same<T: Coordinates>(a: &Measured<T>, b: &Measured<T>) -> bool {
         + b.numeric_error().get()
         + a.model_uncertainty().get()
         + b.model_uncertainty().get();
-    a.value()
-        .coordinates()
-        .iter()
-        .zip(b.value().coordinates())
-        .all(|(x, y)| (x - y).abs() <= allowed)
+    let (first, second) = (a.value().coordinates(), b.value().coordinates());
+    first.len() == second.len()
+        && first
+            .iter()
+            .zip(second)
+            .all(|(x, y)| (x - y).abs() <= allowed)
 }
 
 /// A face value under the declared reading and, for a face whose region

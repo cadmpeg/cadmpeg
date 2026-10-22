@@ -407,3 +407,125 @@ fn pole_vertex_loops_bound_the_whole_sphere() {
         radius,
     );
 }
+
+/// The lune of the sphere `R = 10` between the meridians at `u = 0` and
+/// `u = π`, the half `y ≤ 0`: up the meridian at `u = 0`, down the meridian
+/// at `u = π`, with the face on the left. With `pole_edges` the loop meets
+/// each pole through a degenerate edge; otherwise the meridians meet at the
+/// pole vertices.
+fn half_lune(builder: &mut Builder, pole_edges: bool) -> [EdgeId; 2] {
+    let south = builder.vertex([0.0, 0.0, -10.0]);
+    let north = builder.vertex([0.0, 0.0, 10.0]);
+    let first = meridian(builder, 10.0, 0.0, [&south, &north]);
+    let second = meridian(builder, 10.0, PI, [&south, &north]);
+    let sphere = builder.sphere(Frame::z_up([0.0; 3]), 10.0);
+    let ring = if pole_edges {
+        let north_pole = builder.bare_edge(&north, &north);
+        let south_pole = builder.bare_edge(&south, &south);
+        vec![
+            (first.clone(), Sense::Forward),
+            (north_pole, Sense::Forward),
+            (second.clone(), Sense::Reversed),
+            (south_pole, Sense::Forward),
+        ]
+    } else {
+        vec![
+            (first.clone(), Sense::Forward),
+            (second.clone(), Sense::Reversed),
+        ]
+    };
+    builder.face(&sphere, Sense::Forward, &[ring], false);
+    [first, second]
+}
+
+fn assert_half_turn(sweep: &crate::value::Measured<crate::value::Sweep>, start: f64) {
+    let value = sweep.value();
+    assert!(!value.full);
+    assert!((value.value.get() - PI).abs() <= TEST_ABSOLUTE_FLOOR);
+    let [[low, high]] = value.intervals.as_slice() else {
+        panic!("one interval: {:?}", value.intervals);
+    };
+    assert!((low.get() - start).abs() <= TEST_ABSOLUTE_FLOOR);
+    assert!((high.get() - (start + PI)).abs() <= TEST_ABSOLUTE_FLOOR);
+}
+
+#[test]
+fn a_lune_half_a_turn_wide_sweeps_half_a_turn() {
+    for pole_edges in [false, true] {
+        let mut builder = Builder::new();
+        half_lune(&mut builder, pole_edges);
+        let ir = builder.finish(BodyKind::Sheet);
+        let report = measure(&ir, &faces());
+        let face = only_face(&report);
+        let measures = face.measures();
+        assert_measured(measures.area(), 200.0 * PI, 400.0);
+        let sweep = measures
+            .angular_sweep()
+            .as_ref()
+            .and_then(Quantity::measured)
+            .expect("sweep");
+        assert_eq!(sweep.reading(), Some(Reading::Declared), "{pole_edges}");
+        assert_half_turn(sweep, PI);
+        let [candidate] = sweep.candidates() else {
+            panic!("one sweep candidate");
+        };
+        assert_eq!(candidate.reading(), Reading::Complement);
+        let intervals = &candidate.value().intervals;
+        assert!((candidate.value().value.get() - PI).abs() <= TEST_ABSOLUTE_FLOOR);
+        assert!(
+            intervals[0][0].get().abs() <= TEST_ABSOLUTE_FLOOR,
+            "{intervals:?}"
+        );
+        assert_eq!(measures.loops()[0].net_shift(), &Some([0, 0]));
+    }
+}
+
+/// The half ball `y ≤ 0` of radius 10: the lune of [`half_lune`] and the
+/// disc in the plane `y = 0` with the outward normal `+y`. The shell sign
+/// confirms the lune.
+#[test]
+fn a_half_ball_cut_through_the_axis_sweeps_half_a_turn() {
+    let mut builder = Builder::new();
+    let [first, second] = half_lune(&mut builder, false);
+    let plane = builder.plane([0.0; 3], [0.0, 1.0, 0.0], [1.0, 0.0, 0.0]);
+    builder.face(
+        &plane,
+        Sense::Forward,
+        &[vec![(first, Sense::Reversed), (second, Sense::Forward)]],
+        false,
+    );
+    let ir = builder.finish(BodyKind::Solid);
+    let report = measure(&ir, &Selection::default());
+    let [body] = report.bodies().as_slice() else {
+        panic!("one body row");
+    };
+    assert_measured(
+        body.volume().as_ref().expect("volume"),
+        2.0 * PI * 1000.0 / 3.0,
+        1000.0,
+    );
+    let centroid = body
+        .centroid()
+        .as_ref()
+        .and_then(Quantity::measured)
+        .expect("centroid")
+        .value()
+        .value
+        .get();
+    assert!((centroid.y + 3.75).abs() <= TEST_ABSOLUTE_FLOOR * 10.0);
+    let report = measure(&ir, &faces());
+    let lune = report
+        .faces()
+        .iter()
+        .find(|face| face.carrier().kind == crate::select::SurfaceKind::Sphere)
+        .expect("lune");
+    assert_eq!(*lune.orientation().consistent(), Some(true));
+    let sweep = lune
+        .measures()
+        .angular_sweep()
+        .as_ref()
+        .and_then(Quantity::measured)
+        .expect("sweep");
+    assert_eq!(sweep.reading(), None);
+    assert_half_turn(sweep, PI);
+}
