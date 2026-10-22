@@ -10,13 +10,14 @@ use super::{
     FeatureImageBounds, FeatureInputTopology, FeatureLineSegment, FeatureResultMembers,
     FeatureResultTopology, FeatureTreeNodeRole, FeatureUnitPlaneFrame,
     FilledSurfaceBoundaryCondition, FlexForm, FlexMode, FuzzyTolerance, GeometryImportFormat,
-    HelicalSweepLaw, HelicalSweepTravel, HelixConstructionStyle, HelixShape, InnerWireTaper,
-    NoGeneratedSection, ParameterPmi, PmiDimensionSubtype, PolygonSideCount, PrincipalPlane,
-    RevolutionFuseOrder, RibDraft, RibSide, RuledCurveOrientation, RuledSurfaceCorner,
-    ScaleFactors, SheetMetalBendPosition, SheetMetalHeightDatum, SheetMetalHemBendPosition,
-    SheetMetalHemDirection, SheetMetalThicknessSide, ShellJoin, ShellMode, SolidSweepOperation,
-    SurfaceContinuity, SurfaceExtension, SurfaceProjectionMode, SweepPathExtent,
-    SweepTransformation, SweepTransition, ThickenSide, UnresolvedFamily, WrapMode,
+    HelicalSweepLaw, HelicalSweepTravel, HelixConstructionStyle, HelixShape,
+    HistoricalEdgeGeometry, InnerWireTaper, NoGeneratedSection, ParameterPmi, PmiDimensionSubtype,
+    PolygonSideCount, PrincipalPlane, RevolutionFuseOrder, RibDraft, RibSide,
+    RuledCurveOrientation, RuledSurfaceCorner, ScaleFactors, SheetMetalBendPosition,
+    SheetMetalHeightDatum, SheetMetalHemBendPosition, SheetMetalHemDirection,
+    SheetMetalThicknessSide, ShellJoin, ShellMode, SolidSweepOperation, SurfaceContinuity,
+    SurfaceExtension, SurfaceProjectionMode, SweepPathExtent, SweepTransformation, SweepTransition,
+    ThickenSide, UnresolvedFamily, WrapMode,
 };
 
 rewrite_scalar!(BinderCopyOnChange);
@@ -42,7 +43,8 @@ rewrite_scalar!(FeatureCircularArc);
 rewrite_scalar!(FeatureCoordinateFrame);
 rewrite_scalar!(FeatureEllipticArc);
 rewrite_scalar!(FeatureImageBounds);
-rewrite_record!(FeatureInputTopology, []; {id, input_of, bodies, faces, edges, vertices, native_ref});
+rewrite_record!(FeatureInputTopology, []; {id, input_of, bodies, faces, edges, vertices, edge_geometry, native_ref});
+rewrite_record!(HistoricalEdgeGeometry, []; {edge, interior, tangent, start, end, faces});
 rewrite_scalar!(FeatureLineSegment);
 rewrite_record!(FeatureResultMembers, []; {bodies, faces, edges, vertices});
 rewrite_record!(FeatureResultTopology, []; {id, output_of, members, native_ref});

@@ -881,6 +881,7 @@ fn hole_face_case() -> (
         faces: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
         edges: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
         vertices: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
+        edge_geometry: Vec::new(),
         native_ref: None,
     }];
     let state = |state_id, next_ref| {
