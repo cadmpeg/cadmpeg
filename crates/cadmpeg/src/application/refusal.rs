@@ -549,9 +549,10 @@ impl ConversionRefusal {
             } => RefusalEvidence {
                 code: RefusalCode::CheckFailed,
                 message: Cow::Owned(match operation {
-                    CheckOperation::Check => {
-                        format!("check found {} error(s)", validation.error_count())
-                    }
+                    CheckOperation::Check => format!(
+                        "check found {} error(s)",
+                        crate::application::validators::check_error_count(validation)
+                    ),
                     CheckOperation::Export { carried } if *carried == validation.error_count() => format!(
                         "check found {} error(s); refusing to export (use --allow-errors to override)",
                         validation.error_count()

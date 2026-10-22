@@ -33,7 +33,7 @@ use crate::application::transcoder::{
     self, emit_export_plan, export_target, ConversionPolicy, DestinationPolicy, LossPolicy,
     SourceRequest, TargetSelection,
 };
-use crate::application::validators::validate_loaded;
+use crate::application::validators::{check_error_count, validate_loaded};
 use crate::loader;
 use crate::DecodeArgs;
 
@@ -426,11 +426,12 @@ pub(crate) fn check_cmd(
             print_decode_report(&mut io::stderr(), report)?;
         }
         let report = validate_loaded(inputs, &loaded, &args.options().policy)?;
-        let check_refusal = (!report.is_ok()).then(|| ConversionRefusal::CheckFailed {
-            operation: crate::application::refusal::CheckOperation::Check,
-            decode_report: loaded.decode_report().cloned(),
-            validation: report.clone(),
-        });
+        let check_refusal =
+            (check_error_count(&report) > 0).then(|| ConversionRefusal::CheckFailed {
+                operation: crate::application::refusal::CheckOperation::Check,
+                decode_report: loaded.decode_report().cloned(),
+                validation: report.clone(),
+            });
         if let Some(refusal) = check_refusal {
             return Err(refusal.into());
         }

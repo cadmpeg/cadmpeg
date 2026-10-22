@@ -12,12 +12,24 @@ use cadmpeg_ir::validate::{
 };
 use cadmpeg_ir::{
     report::check::{Finding, ValidationReport},
+    report::Severity,
     CadIr,
 };
 use cadmpeg_registry::InputCatalog;
 
 use super::document::LoadedDocument;
 use super::refusal::{ApplicationError, RefusalStage};
+
+/// Error and blocking findings plus error and blocking losses. The `check`
+/// verdict fails when this count is nonzero.
+pub(crate) fn check_error_count(report: &ValidationReport) -> usize {
+    let losses = report
+        .losses
+        .iter()
+        .filter(|loss| loss.severity >= Severity::Error)
+        .count();
+    report.error_count() + losses
+}
 
 /// Validate a loaded document under one session and retain check-stage refusals.
 pub(crate) fn validate_loaded(

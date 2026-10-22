@@ -464,11 +464,12 @@ pub(super) fn print_check_report(
     writer: &mut impl Write,
     report: &ValidationReport,
 ) -> io::Result<()> {
+    let errors = crate::application::validators::check_error_count(report);
     writeln!(
         writer,
         "check: {} ({} error(s), {} warning(s))",
-        if report.is_ok() { "OK" } else { "FAILED" },
-        report.error_count(),
+        if errors == 0 { "OK" } else { "FAILED" },
+        errors,
         report.warning_count()
     )?;
     for (kind, count) in &report.entity_counts {
@@ -485,6 +486,15 @@ pub(super) fn print_check_report(
             finding.message,
             finding.entity.as_deref().unwrap_or("-")
         )?;
+    }
+    for loss in &report.losses {
+        if loss.severity >= cadmpeg_ir::report::Severity::Error {
+            writeln!(
+                writer,
+                "  [{}/{}] {}",
+                loss.severity, loss.code, loss.message
+            )?;
+        }
     }
     Ok(())
 }

@@ -8,7 +8,7 @@ use cadmpeg_ir::examples::unit_cube;
 use predicates::prelude::{predicate, PredicateBooleanExt};
 use tempfile::tempdir;
 
-use crate::support::{fixture, geometryless_creo, minimal_rhino_archive};
+use crate::support::{fixture, geometryless_creo, minimal_rhino_archive, synthetic_rhino_point};
 
 #[test]
 fn artifact_reports_cover_success_and_semantic_refusal() {
@@ -462,6 +462,43 @@ fn validate_agrees_between_its_exit_code_printed_summary_and_report() {
         .count();
     assert!(printed_errors > 0, "{summary}");
     assert_eq!(printed_errors, reported_errors, "{findings:#?}");
+}
+
+#[test]
+fn check_fails_on_an_error_severity_decode_loss() {
+    let dir = tempdir().unwrap();
+    let input = synthetic_rhino_point(dir.path(), "stale-crc.3dm", [1.0, 2.0, 3.0]);
+    let mut bytes = fs::read(&input).unwrap();
+    let units = bytes
+        .windows(4)
+        .position(|window| window == 0x2000_8031_u32.to_le_bytes())
+        .unwrap();
+    let length = u64::from_le_bytes(bytes[units + 4..units + 12].try_into().unwrap());
+    let crc = units + 12 + usize::try_from(length).unwrap() - 4;
+    bytes[crc] ^= 0xff;
+    fs::write(&input, bytes).unwrap();
+    let report = dir.path().join("report.json");
+
+    let output = Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "check",
+            input.to_str().unwrap(),
+            "-o",
+            report.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
+    assert_eq!(value["refusal"]["code"], "check_failed");
+    let losses = value["check_report"]["losses"]
+        .as_array()
+        .unwrap_or_else(|| panic!("{value:#}"));
+    assert!(losses
+        .iter()
+        .any(|loss| loss["severity"] == "error"
+            && loss["code"]["code"] == "container.integrity-failure"));
 }
 
 #[test]

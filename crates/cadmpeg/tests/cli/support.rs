@@ -110,11 +110,10 @@ fn rhino_object_record(version: u64, class_uuid: [u8; 16], payload: &[u8]) -> Ve
         &[uuid, class_data, class_end].concat(),
     );
     let object_end = rhino_short_chunk(version, 0x8200_007f, 0);
-    rhino_crc_chunk(
-        version,
-        0x2000_8070,
-        &[object_type, class, object_end].concat(),
-    )
+    // The record CRC covers only direct body bytes; this body is all child chunks.
+    let mut body = [object_type, class, object_end].concat();
+    body.extend(crc32fast::hash(&[]).to_le_bytes());
+    rhino_long_chunk(version, 0x2000_8070, &body)
 }
 
 pub(crate) fn synthetic_rhino_point(
