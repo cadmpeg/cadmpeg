@@ -157,7 +157,9 @@ fn valid_assembly_operand_path_link(
     };
     link.locator_reference_offset == locator_reference_offset
         && link.locator_record_index.checked_add(1) == Some(path.record_index)
-        && if variable_reference {
+        // A variable-reference or wide locator's path can continue over
+        // further records before its wrapper.
+        && if variable_reference || wide {
             link.locator_record_index
                 .checked_add(2)
                 .zip(link.locator_record_index.checked_add(65))
@@ -2345,7 +2347,10 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                 let first_start = paths[0].link().locator_byte_offset;
                                 let second_start = paths[1].link().locator_byte_offset;
                                 let envelope_ends = paths.each_ref().map(|path| {
-                                    let continuation_count = if variable_reference {
+                                    let continuation_count = if variable_reference
+                                        || operand_frame_variant.is_some_and(
+                                            design::assembly::AssemblyOperandFrameVariant::is_wide_family,
+                                        ) {
                                         path.link()
                                             .wrapper_record_index
                                             .checked_sub(path.link().locator_record_index)?
