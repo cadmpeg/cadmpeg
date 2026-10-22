@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::decoded_object_names;
 use crate::test_support::history::sldprt_with_body_and_resolved_features;
-use crate::test_support::native::sldprt_native_with_source;
+use crate::test_support::native::sldprt_native;
 use crate::test_support::parasolid::triangle_body;
 use crate::SldprtCodec;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -13,7 +13,7 @@ fn semantic_writer_splices_two_renames_in_one_lane_at_the_offsets_the_first_move
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let native = sldprt_native_with_source(decoded.ir(), decoded.source_fidelity());
+    let native = sldprt_native(decoded.ir());
     let lane = &native.feature_input_lanes[0];
     assert_eq!(
         lane.names

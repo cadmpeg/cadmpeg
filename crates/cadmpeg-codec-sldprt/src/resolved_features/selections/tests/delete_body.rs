@@ -9,7 +9,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use crate::test_support::container::make_block;
 use crate::test_support::container::sldprt_with_body;
 use crate::test_support::history::resolved_feature_classes_with_ids;
-use crate::test_support::native::sldprt_native_with_source;
+use crate::test_support::native::sldprt_native;
 use crate::test_support::parasolid::triangle_body;
 use crate::SldprtCodec;
 
@@ -60,7 +60,7 @@ fn decode_and_validate_compact_delete_body_selection() {
         .losses
         .iter()
         .any(|loss| loss.message.contains("body delete/keep feature(s)")));
-    let mut native = sldprt_native_with_source(decoded.ir(), decoded.source_fidelity());
+    let mut native = sldprt_native(decoded.ir());
     let [selection] = native.feature_input_lanes[0].body_selections.as_slice() else {
         panic!("one compact body selection");
     };
@@ -113,7 +113,7 @@ fn decode_and_validate_compact_delete_body_selection() {
     let renamed = SldprtCodec
         .decode(&mut Cursor::new(renamed), &DecodeOptions::default())
         .unwrap();
-    let renamed_native = crate::test_support::native::sldprt_native(renamed.ir());
+    let renamed_native = sldprt_native(renamed.ir());
     assert!(!renamed_native.feature_histories[0].features[0]
         .properties
         .contains_key("Bodies"));
@@ -177,13 +177,12 @@ fn decode_and_validate_compact_delete_body_selection() {
         .body_state_ids
         .push(287);
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    native
+    let error = native
         .store(
             &cadmpeg_test_support::service_decode_context(),
             &mut namespace,
         )
-        .unwrap();
-    let error = crate::native::source::validate(&native).unwrap_err();
+        .unwrap_err();
     assert!(
         error.to_string().contains("body selection")
             && error.to_string().contains("inconsistent ownership")
@@ -193,13 +192,12 @@ fn decode_and_validate_compact_delete_body_selection() {
     native.feature_input_lanes[0].body_selections[0].mode =
         Some(cadmpeg_ir::features::BodyRetentionMode::KeepSelected);
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    native
+    let error = native
         .store(
             &cadmpeg_test_support::service_decode_context(),
             &mut namespace,
         )
-        .unwrap();
-    let error = crate::native::source::validate(&native).unwrap_err();
+        .unwrap_err();
     assert!(
         error.to_string().contains("body selection")
             && error.to_string().contains("inconsistent ownership")
@@ -209,13 +207,12 @@ fn decode_and_validate_compact_delete_body_selection() {
 
     native.feature_input_lanes[0].body_selections[0].local_body_ids[0] = 288;
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    native
+    let error = native
         .store(
             &cadmpeg_test_support::service_decode_context(),
             &mut namespace,
         )
-        .unwrap();
-    let error = crate::native::source::validate(&native).unwrap_err();
+        .unwrap_err();
     assert!(
         error.to_string().contains("body selection")
             && error.to_string().contains("inconsistent ownership")

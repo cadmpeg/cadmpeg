@@ -14,7 +14,7 @@ use crate::test_support::history::sldprt_with_body_and_history;
 use crate::test_support::history::sldprt_with_body_and_resolved_features;
 use crate::test_support::history::sldprt_with_compact_relation_pair;
 use crate::test_support::history::sldprt_with_nested_sketch_profile;
-use crate::test_support::native::sldprt_native_with_source;
+use crate::test_support::native::sldprt_native;
 use crate::test_support::parasolid::triangle_body;
 use crate::test_support::pmi::pmi_semantic_payload;
 use crate::SldprtCodec;
@@ -42,7 +42,7 @@ fn emitter_models() -> &'static [crate::native::SldprtNative] {
             let decoded = SldprtCodec
                 .decode(&mut Cursor::new(source), &DecodeOptions::default())
                 .unwrap();
-            sldprt_native_with_source(decoded.ir(), decoded.source_fidelity())
+            sldprt_native(decoded.ir())
         })
         .collect::<Vec<_>>();
         models[0]
@@ -270,7 +270,7 @@ fn native_history_borrowed_view_matches_cleared_record_json_bytes() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let native = sldprt_native_with_source(decoded.ir(), decoded.source_fidelity());
+    let native = sldprt_native(decoded.ir());
     let history = &native.feature_histories[0];
     let mut cleared = history.clone();
     cleared.configurations.clear();
@@ -291,7 +291,7 @@ fn native_history_record_refuses_retained_limit() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let native = sldprt_native_with_source(decoded.ir(), decoded.source_fidelity());
+    let native = sldprt_native(decoded.ir());
     let row = super::SLDPRT_FAMILIES
         .iter()
         .find(|row| row.arena == "feature_histories")
@@ -329,7 +329,7 @@ fn native_lane_borrowed_view_matches_cleared_record_json_bytes() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let native = sldprt_native_with_source(decoded.ir(), decoded.source_fidelity());
+    let native = sldprt_native(decoded.ir());
     let lane = &native.feature_input_lanes[0];
     let mut cleared = lane.clone();
     cleared.classes.clear();
@@ -362,7 +362,7 @@ fn native_lane_record_refuses_retained_limit() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let native = sldprt_native_with_source(decoded.ir(), decoded.source_fidelity());
+    let native = sldprt_native(decoded.ir());
     let row = super::SLDPRT_FAMILIES
         .iter()
         .find(|row| row.arena == "feature_input_lanes")
@@ -436,7 +436,7 @@ fn native_store_rejects_mismatched_nested_owners_atomically() {
         )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    let mut native = sldprt_native_with_source(decoded.ir(), decoded.source_fidelity());
+    let mut native = sldprt_native(decoded.ir());
     native.feature_histories[0].features[0].parent = "missing-history".into();
     let before = decoded.ir().native.namespace("sldprt").unwrap().clone();
     let error = native
@@ -460,7 +460,7 @@ fn native_store_rejects_missing_sketch_marker_feature_owner() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut native = sldprt_native_with_source(decoded.ir(), decoded.source_fidelity());
+    let mut native = sldprt_native(decoded.ir());
     native.feature_input_lanes[0]
         .sketch_entities
         .last_mut()
@@ -495,10 +495,16 @@ fn native_store_rejects_edited_history_feature_class() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut native = sldprt_native_with_source(decoded.ir(), decoded.source_fidelity());
+    let mut native = sldprt_native(decoded.ir());
     native.feature_histories[0].features[0].input_class = Some("moRefPlane_c".into());
 
-    let error = crate::native::source::validate(&native).unwrap_err();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let error = native
+        .store(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut namespace,
+        )
+        .unwrap_err();
     assert!(error
         .to_string()
         .contains("feature classes do not match the feature-input index"));
@@ -515,7 +521,7 @@ fn native_store_rejects_missing_sketch_marker_local_link() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut native = sldprt_native_with_source(decoded.ir(), decoded.source_fidelity());
+    let mut native = sldprt_native(decoded.ir());
     let entity = &mut native.feature_input_lanes[0].sketch_entities[0];
     entity.links = crate::records::SketchInputLinks::new(
         0,
@@ -546,7 +552,7 @@ fn native_store_preserves_midpoint_with_two_point_markers() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut native = sldprt_native_with_source(decoded.ir(), decoded.source_fidelity());
+    let mut native = sldprt_native(decoded.ir());
     let entities = &mut native.feature_input_lanes[0].sketch_entities;
     let owner = entities[0].feature_ref.clone();
     let point_id = entities[1].id().to_string();
@@ -629,7 +635,7 @@ fn native_store_rejects_relation_scalar_owner_disagreement() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut native = sldprt_native_with_source(decoded.ir(), decoded.source_fidelity());
+    let mut native = sldprt_native(decoded.ir());
     assert!(native.feature_input_lanes[0].relation_bindings[0]
         .feature_ref
         .is_some());
@@ -658,7 +664,7 @@ fn relation_membership_rejects_duplicate_identity_before_native_store() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut native = sldprt_native_with_source(decoded.ir(), decoded.source_fidelity());
+    let mut native = sldprt_native(decoded.ir());
     let duplicate = native.feature_input_lanes[0].relation_instances[0].scalar_refs()[0].clone();
     let before = native.feature_input_lanes[0].relation_instances[0]
         .scalars
@@ -723,7 +729,7 @@ fn native_store_rejects_relation_instance_operand_disagreement() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut native = sldprt_native_with_source(decoded.ir(), decoded.source_fidelity());
+    let mut native = sldprt_native(decoded.ir());
     native.feature_input_lanes[0].relation_instances[0].operands[0].entity_index += 1;
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -755,7 +761,7 @@ fn native_store_rejects_inconsistent_scalar_marker_target() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut native = sldprt_native_with_source(decoded.ir(), decoded.source_fidelity());
+    let mut native = sldprt_native(decoded.ir());
     let wrong_target = native.feature_input_lanes[0].sketch_entities[0]
         .id()
         .to_string();
@@ -788,7 +794,7 @@ fn native_store_accepts_duplicate_local_ids_for_scalar_ordinals() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut native = sldprt_native_with_source(decoded.ir(), decoded.source_fidelity());
+    let mut native = sldprt_native(decoded.ir());
     let lane = &mut native.feature_input_lanes[0];
     assert_eq!(lane.scalars[0].operands[0].entity_index, 0);
     assert!(lane.scalars[0].operands[0].entity_ref.is_some());
@@ -842,41 +848,14 @@ fn native_load_rejects_fabricated_payload_lane_rows_from_json() {
         let ordinal = record["ordinal"].as_u64().unwrap();
         record["ordinal"] = serde_json::json!(ordinal + 100);
         let namespace: cadmpeg_ir::NativeNamespace = serde_json::from_value(wire).unwrap();
-        if arena == "feature_input_scalars" {
-            // #209 Rule W1/P: ordering can invalidate a document relation before
-            // source comparison. Keep that structural check and test the exact
-            // ordinal forgery independently at the fidelity boundary.
-            let error = crate::native::SldprtNative::load(&namespace).unwrap_err();
-            assert!(
-                error.to_string().contains("relation instance")
-                    && error.to_string().contains("inconsistent ownership"),
-                "{error}"
-            );
-            let mut native = sldprt_native_with_source(decoded.ir(), decoded.source_fidelity());
-            native.feature_input_lanes[0].scalars[0].ordinal =
-                u32::try_from(ordinal + 100).unwrap();
-            let error = crate::native::source::validate(&native).unwrap_err();
-            assert!(error.to_string().contains(message), "{arena}: {error}");
-        } else {
-            let error =
-                crate::native::source::load(&namespace, decoded.source_fidelity()).unwrap_err();
-            assert!(error.to_string().contains(message), "{arena}: {error}");
-        }
+        let error = crate::native::SldprtNative::load(&namespace).unwrap_err();
+        assert!(error.to_string().contains(message), "{arena}: {error}");
     }
     let mut wire = serde_json::to_value(original).unwrap();
     assert!(!wire["sketch_input_entities"].as_array().unwrap().is_empty());
     wire["sketch_input_entities"] = serde_json::json!([]);
     let namespace: cadmpeg_ir::NativeNamespace = serde_json::from_value(wire).unwrap();
     let error = crate::native::SldprtNative::load(&namespace).unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .contains("references missing sketch marker"),
-        "{error}"
-    );
-    let mut native = sldprt_native_with_source(decoded.ir(), decoded.source_fidelity());
-    native.feature_input_lanes[0].sketch_entities.clear();
-    let error = crate::native::source::validate(&native).unwrap_err();
     assert!(error.to_string().contains("omits marker"), "{error}");
 }
 
@@ -905,7 +884,7 @@ fn native_load_rejects_edited_object_name_identity_from_json() {
     let forged_object_id = if current_object_id == Some(1) { 2 } else { 1 };
     object_id_edit["feature_input_names"][0]["object_id"] = serde_json::json!(forged_object_id);
     let namespace: cadmpeg_ir::NativeNamespace = serde_json::from_value(object_id_edit).unwrap();
-    let error = crate::native::source::load(&namespace, decoded.source_fidelity()).unwrap_err();
+    let error = crate::native::SldprtNative::load(&namespace).unwrap_err();
     assert!(
         error.to_string().contains("name structure does not match"),
         "edited object name identifier was admitted: {error}"
@@ -926,8 +905,7 @@ fn native_load_admits_the_unedited_namespace_and_refuses_every_object_name_edit(
     let original = serde_json::to_value(decoded.ir().native.namespace("sldprt").unwrap()).unwrap();
 
     let control: cadmpeg_ir::NativeNamespace = serde_json::from_value(original.clone()).unwrap();
-    crate::native::source::load(&control, decoded.source_fidelity())
-        .expect("the unedited namespace loads");
+    crate::native::SldprtNative::load(&control).expect("the unedited namespace loads");
 
     let stated = original["feature_input_names"][0]["value"]
         .as_str()
@@ -938,11 +916,13 @@ fn native_load_admits_the_unedited_namespace_and_refuses_every_object_name_edit(
         .expect("fixture admits a scalar arena")
         .is_empty());
 
-    let mut scalar_edit = sldprt_native_with_source(decoded.ir(), decoded.source_fidelity());
-    let scalar = &mut scalar_edit.feature_input_lanes[0].scalars[0];
-    let offset = scalar.offset.expect("a scalar states its payload offset");
-    scalar.offset = Some(offset + 7);
-    let error = crate::native::source::validate(&scalar_edit).unwrap_err();
+    let mut scalar_edit = original.clone();
+    let offset = scalar_edit["feature_input_scalars"][0]["offset"]
+        .as_u64()
+        .expect("a scalar states its payload offset");
+    scalar_edit["feature_input_scalars"][0]["offset"] = serde_json::json!(offset + 7);
+    let namespace: cadmpeg_ir::NativeNamespace = serde_json::from_value(scalar_edit).unwrap();
+    let error = crate::native::SldprtNative::load(&namespace).unwrap_err();
     assert!(
         error.to_string().contains("scalar index does not match"),
         "edited scalar offset was admitted: {error}"
@@ -953,7 +933,7 @@ fn native_load_admits_the_unedited_namespace_and_refuses_every_object_name_edit(
     object_id_edit["feature_input_names"][0]["object_id"] =
         serde_json::json!(if current == Some(1) { 2 } else { 1 });
     let namespace: cadmpeg_ir::NativeNamespace = serde_json::from_value(object_id_edit).unwrap();
-    let error = crate::native::source::load(&namespace, decoded.source_fidelity()).unwrap_err();
+    let error = crate::native::SldprtNative::load(&namespace).unwrap_err();
     assert!(
         error.to_string().contains("name structure does not match"),
         "edited object identifier was admitted: {error}"
@@ -965,7 +945,7 @@ fn native_load_admits_the_unedited_namespace_and_refuses_every_object_name_edit(
         let mut value_edit = original.clone();
         value_edit["feature_input_names"][0]["value"] = serde_json::json!(forged);
         let namespace: cadmpeg_ir::NativeNamespace = serde_json::from_value(value_edit).unwrap();
-        let error = crate::native::source::load(&namespace, decoded.source_fidelity()).unwrap_err();
+        let error = crate::native::SldprtNative::load(&namespace).unwrap_err();
         assert!(
             error
                 .to_string()
@@ -1012,18 +992,7 @@ fn native_load_rejects_invalid_sketch_marker_positions_from_json() {
         let mut wire = original.clone();
         wire["sketch_input_entities"][0][field] = value;
         let namespace: cadmpeg_ir::NativeNamespace = serde_json::from_value(wire).unwrap();
-        let mut native = crate::native::SldprtNative::load(&namespace).unwrap();
-        crate::native::source::attach(&mut native, |id| {
-            decoded
-                .source_fidelity()
-                .retained_record(id.as_str())?
-                .data()
-        })
-        .unwrap();
-        if field == "offset" {
-            native.feature_input_lanes[0].sketch_entities[0].attach_source_position(Some(u64::MAX));
-        }
-        let error = crate::native::source::validate(&native).unwrap_err();
+        let error = crate::native::SldprtNative::load(&namespace).unwrap_err();
         assert!(error.to_string().contains(message), "{field}: {error}");
     }
     for (field, message) in [
@@ -1039,19 +1008,7 @@ fn native_load_rejects_invalid_sketch_marker_positions_from_json() {
         let mut wire = original.clone();
         wire["sketch_input_entities"][1][field] = wire["sketch_input_entities"][0][field].clone();
         let namespace: cadmpeg_ir::NativeNamespace = serde_json::from_value(wire).unwrap();
-        let mut native = crate::native::SldprtNative::load(&namespace).unwrap();
-        crate::native::source::attach(&mut native, |id| {
-            decoded
-                .source_fidelity()
-                .retained_record(id.as_str())?
-                .data()
-        })
-        .unwrap();
-        if field == "offset" {
-            let position = native.feature_input_lanes[0].sketch_entities[0].offset();
-            native.feature_input_lanes[0].sketch_entities[1].attach_source_position(position);
-        }
-        let error = crate::native::source::validate(&native).unwrap_err();
+        let error = crate::native::SldprtNative::load(&namespace).unwrap_err();
         assert!(error.to_string().contains(message), "{field}: {error}");
     }
 }
@@ -1076,7 +1033,7 @@ fn native_load_rejects_duplicate_history_ordinals_from_json() {
             serde_json::json!(format!("{}-duplicate", records[0]["id"].as_str().unwrap()));
         records.push(duplicate);
         let namespace: cadmpeg_ir::NativeNamespace = serde_json::from_value(wire).unwrap();
-        let error = crate::native::source::load(&namespace, decoded.source_fidelity()).unwrap_err();
+        let error = crate::native::SldprtNative::load(&namespace).unwrap_err();
         assert!(error.to_string().contains(message), "{arena}: {error}");
     }
 }
@@ -1102,7 +1059,7 @@ fn native_load_refuses_a_forged_object_name_length_byte_after_a_store() {
         )
         .unwrap();
     let namespace = decoded.ir().native.namespace("sldprt").unwrap();
-    let mut typed = crate::native::source::load(namespace, decoded.source_fidelity()).unwrap();
+    let mut typed = crate::native::SldprtNative::load(namespace).unwrap();
 
     // Byte five of an object-name record is its UTF-16 length; the name's own
     // `value` and every later record's offset derive from it.
@@ -1120,7 +1077,7 @@ fn native_load_refuses_a_forged_object_name_length_byte_after_a_store() {
     typed
         .store(&cadmpeg_test_support::service_decode_context(), &mut forged)
         .unwrap();
-    let error = crate::native::source::validate(&typed).unwrap_err();
+    let error = crate::native::SldprtNative::load(&forged).unwrap_err();
     assert!(
         error
             .to_string()
@@ -1167,7 +1124,7 @@ fn native_load_refuses_every_object_name_value_edit_and_leaves_the_scalar_arena_
             "the value edit moved the scalar arena"
         );
         let namespace: cadmpeg_ir::NativeNamespace = serde_json::from_value(edit).unwrap();
-        let error = crate::native::source::load(&namespace, decoded.source_fidelity()).unwrap_err();
+        let error = crate::native::SldprtNative::load(&namespace).unwrap_err();
         assert!(
             error.to_string().contains(&format!(
                 "name value does not match its native payload: lane {lane} name {ordinal} states {forged:?}, its payload states {stated:?}"
@@ -1185,8 +1142,12 @@ fn native_load_refuses_an_object_name_offset_the_payload_does_not_state() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let original = sldprt_native_with_source(decoded.ir(), decoded.source_fidelity());
-    let payload_length = original.feature_input_lanes[0].native_payload.len();
+    let original = serde_json::to_value(decoded.ir().native.namespace("sldprt").unwrap()).unwrap();
+    let payload_length = serde_json::from_value::<cadmpeg_ir::native::bytes::NativeBytes>(
+        original["feature_input_lanes"][0]["native_payload"].clone(),
+    )
+    .expect("a lane states its payload")
+    .len();
     assert!(payload_length > 0);
 
     for forged in [
@@ -1194,8 +1155,9 @@ fn native_load_refuses_an_object_name_offset_the_payload_does_not_state() {
         cadmpeg_core::decode::u64_from_index(payload_length) + 1,
     ] {
         let mut edit = original.clone();
-        edit.feature_input_lanes[0].names[0].offset = Some(forged);
-        let error = crate::native::source::validate(&edit).unwrap_err();
+        edit["feature_input_names"][0]["offset"] = serde_json::json!(forged);
+        let namespace: cadmpeg_ir::NativeNamespace = serde_json::from_value(edit).unwrap();
+        let error = crate::native::SldprtNative::load(&namespace).unwrap_err();
         assert!(
             error
                 .to_string()
@@ -1217,7 +1179,7 @@ fn native_store_refuses_nesting_limit() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let native = sldprt_native_with_source(decoded.ir(), decoded.source_fidelity());
+    let native = sldprt_native(decoded.ir());
     let arena = DecodeArena::new();
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();

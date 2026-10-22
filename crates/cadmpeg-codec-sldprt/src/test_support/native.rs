@@ -26,20 +26,6 @@ pub(crate) fn update_sldprt_native<R>(
     result
 }
 
-/// Read byte-backed statements through their retained source-fidelity boundary.
-pub(crate) fn sldprt_native_with_source(
-    ir: &cadmpeg_ir::CadIr,
-    fidelity: &cadmpeg_ir::SourceFidelity,
-) -> crate::native::SldprtNative {
-    crate::native::source::load(
-        ir.native
-            .namespace("sldprt")
-            .expect("SLDPRT native namespace"),
-        fidelity,
-    )
-    .expect("source-fidelity admission")
-}
-
 /// Rule B preserves independent typed declarations while opaque marker framing
 /// and scalar relations without reconstructible operands are omitted explicitly.
 pub(crate) fn assert_marker_framing_omission(
