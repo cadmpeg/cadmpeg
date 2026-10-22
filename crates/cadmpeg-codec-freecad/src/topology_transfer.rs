@@ -1123,12 +1123,29 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                         .and_then(|parameters| Some([*parameters.first()?, *parameters.last()?]))
                 })
             });
-        let param_range = curve
-            .as_ref()
-            .and_then(|curve| ir.model.curves.iter().find(|item| item.id == *curve))
-            .map_or(param_range, |curve| {
-                normalize_occt_curve_range(curve.geometry.solved()?, param_range)
+        let subset_range = curve_representation
+            .and_then(|(_, representation)| match representation {
+                TextEdgeRepresentation::Curve3d { curve, .. } => Some(*curve),
+                _ => None,
+            })
+            .and_then(|source| {
+                let base = CurveId::mint(crate::native::model_id(
+                    "curve",
+                    &self.payload.id,
+                    &format!("{source}"),
+                ))
+                .ok()?;
+                occt_subset_local_range(ir, &base, param_range?)
             });
+        let param_range = match subset_range {
+            Some(range) => Some(range),
+            None => curve
+                .as_ref()
+                .and_then(|curve| ir.model.curves.iter().find(|item| item.id == *curve))
+                .map_or(param_range, |curve| {
+                    normalize_occt_curve_range(curve.geometry.solved()?, param_range)
+                }),
+        };
         ir.model.edges.push(Edge {
             id: id.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::from_finite_parts(curve, param_range)
@@ -2440,6 +2457,90 @@ fn unique_fallback_polygon_representation(
         )));
     }
     Ok(Some(first))
+}
+
+/// An OCCT trimmed curve keeps its basis parameter, and a CADIR subset curve
+/// runs on the local parameter from its first trim. The local interval of an
+/// OCCT edge range on `curve` when `curve` is a subset; on a periodic basis an
+/// endpoint moves by whole periods into the subset.
+fn occt_subset_local_range(
+    ir: &CadIr,
+    curve: &CurveId,
+    range: [FiniteReal; 2],
+) -> Option<[FiniteReal; 2]> {
+    let construction = ir
+        .model
+        .curves
+        .iter()
+        .find(|item| item.id == *curve)?
+        .geometry
+        .procedural_construction()?;
+    let procedural = ir
+        .model
+        .procedural_curves
+        .iter()
+        .find(|procedural| procedural.id == *construction)?;
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(subset) = procedural.definition()
+    else {
+        return None;
+    };
+    let [first, last] = subset.parameter_range().endpoints();
+    let span = last - first;
+    let period = ir
+        .model
+        .curves
+        .iter()
+        .find(|item| item.id == *subset.source())
+        .and_then(|source| source.geometry.solved())
+        .and_then(occt_curve_period);
+    let local = |parameter: f64| {
+        let local = if *subset.sense() {
+            parameter - first
+        } else {
+            last - parameter
+        };
+        let local = match period {
+            Some(period)
+                if local < -EPS_TOPOLOGY_TRANSFER_GEOMETRY
+                    || local > span + EPS_TOPOLOGY_TRANSFER_GEOMETRY =>
+            {
+                local.rem_euclid(period)
+            }
+            _ => local,
+        };
+        if local.abs() <= EPS_TOPOLOGY_TRANSFER_GEOMETRY {
+            0.0
+        } else if (local - span).abs() <= EPS_TOPOLOGY_TRANSFER_GEOMETRY {
+            span
+        } else {
+            local
+        }
+    };
+    let [start, end] = range.map(|parameter| local(parameter.get()));
+    let (start, end) = if *subset.sense() {
+        (start, end)
+    } else {
+        (end, start)
+    };
+    let end = match period {
+        Some(period) if end <= start => end + period,
+        _ => end,
+    };
+    Some([FiniteReal::new(start)?, FiniteReal::new(end)?])
+}
+
+fn occt_curve_period(geometry: &SolvedCurveGeometry) -> Option<f64> {
+    match geometry {
+        SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_) => {
+            Some(std::f64::consts::TAU)
+        }
+        SolvedCurveGeometry::Nurbs(nurbs) if nurbs.periodic() => {
+            let [lower, upper] = cadmpeg_ir::eval::nurbs_curve_parameter_domain(nurbs)?.endpoints();
+            Some(upper - lower).filter(|period| period.is_finite() && *period > 0.0)
+        }
+        SolvedCurveGeometry::Transformed(placed) => occt_curve_period(placed.basis()),
+        _ => None,
+    }
 }
 
 pub(crate) fn normalize_occt_curve_range(

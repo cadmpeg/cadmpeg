@@ -658,4 +658,36 @@ mod product_roundtrip {
             }
         }
     }
+
+    const CORE_OPERATIONS: &[u8] = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../corpus/freecad_fcstd/fixtures/core_operations.FCStd"
+    ));
+
+    #[test]
+    fn fcstd_trimmed_edges_round_trip_through_step_onto_their_vertices() {
+        let source = FcstdCodec
+            .decode(&mut Cursor::new(CORE_OPERATIONS), &DecodeOptions::default())
+            .expect("decode FCStd chamfer and fillet")
+            .into_parts()
+            .0;
+        let mut step = Vec::new();
+        StepCodec::default()
+            .plan(EncodeInput::new(&source, None), TargetRequest::Inherit)
+            .and_then(|plan| plan.write_to(&mut step))
+            .expect("write STEP");
+        let decoded = StepCodec::default()
+            .decode(&mut Cursor::new(step), &DecodeOptions::default())
+            .expect("decode STEP");
+        let validation =
+            cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+                .expect("validate the round-tripped model");
+        let errors = validation
+            .findings
+            .iter()
+            .filter(|finding| finding.severity == cadmpeg_ir::report::Severity::Error)
+            .map(|finding| finding.message.as_str())
+            .collect::<Vec<_>>();
+        assert!(errors.is_empty(), "{errors:#?}");
+    }
 }
