@@ -2909,6 +2909,11 @@ impl<'a> F3dDecodeSession<'a> {
         design: DesignState,
     ) -> Result<AuthoredDecoded, CodecError> {
         let source_layout_pointers = std::mem::take(&mut prereqs.source_layout_pointers);
+        self.report
+            .losses
+            .extend(std::mem::take(&mut prereqs.parameter_state_parts.losses));
+        let parameter_state_fidelity = std::mem::take(&mut prereqs.parameter_state_parts.fidelity);
+        let parameter_state_unknowns = std::mem::take(&mut prereqs.parameter_state_parts.unknowns);
         let scan = self.scan;
         let ctx = self.ctx;
         let geometry = match path {
@@ -2990,6 +2995,11 @@ impl<'a> F3dDecodeSession<'a> {
                 }
                 self.native
                     .store(ctx, self.ir.native.namespace_mut("f3d"))?;
+                crate::design::decode::parameter_state::install_unknowns(
+                    ctx,
+                    &mut self.ir,
+                    parameter_state_unknowns,
+                )?;
                 let annotations =
                     populate_annotations(&self.ir, scan, &self.native, None, &self.unknowns)?;
                 let source_image = preserve_source_image(scan);
@@ -3004,6 +3014,7 @@ impl<'a> F3dDecodeSession<'a> {
                         source_layout_pointers,
                         annotations,
                         native_fidelity: self.native.retained_fidelity()?,
+                        parameter_state_fidelity,
                         native_layout: Some(self.native),
                         untyped: self.untyped,
                         unknowns: self.unknowns,
@@ -3022,6 +3033,11 @@ impl<'a> F3dDecodeSession<'a> {
         )?;
         self.native
             .store(ctx, self.ir.native.namespace_mut("f3d"))?;
+        crate::design::decode::parameter_state::install_unknowns(
+            ctx,
+            &mut self.ir,
+            parameter_state_unknowns,
+        )?;
         let annotations = populate_annotations(
             &self.ir,
             scan,
@@ -3044,6 +3060,7 @@ impl<'a> F3dDecodeSession<'a> {
                 source_layout_pointers,
                 annotations,
                 native_fidelity: self.native.retained_fidelity()?,
+                parameter_state_fidelity,
                 native_layout: Some(self.native),
                 untyped: self.untyped,
                 unknowns: self.unknowns,
@@ -3203,6 +3220,7 @@ fn decode_scanned_document_inner<'a>(
                 source_layout_pointers: Default::default(),
                 annotations,
                 native_fidelity: cadmpeg_ir::SourceFidelity::default(),
+                parameter_state_fidelity: cadmpeg_ir::SourceFidelity::default(),
                 native_layout: None,
                 untyped,
                 unknowns,
@@ -4090,6 +4108,7 @@ struct RetainedArtifacts {
     native_layout: Option<F3dNative>,
     annotations: cadmpeg_ir::Annotations,
     native_fidelity: cadmpeg_ir::SourceFidelity,
+    parameter_state_fidelity: cadmpeg_ir::SourceFidelity,
     untyped: cadmpeg_ir::document::ArenaClasses,
     unknowns: Vec<UnknownRecord>,
     source_image: UnknownRecord,
@@ -4114,6 +4133,7 @@ fn decode_result(
     )?;
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(retained.annotations);
     source_fidelity.append(retained.native_fidelity)?;
+    source_fidelity.append(retained.parameter_state_fidelity)?;
     source_fidelity.attach_native_unknown_records(&mut ir, "f3d", retained.unknowns, ctx)?;
     source_fidelity.retain_unknown_records("f3d", [retained.source_image])?;
     let mut source = crate::report::classify_document(

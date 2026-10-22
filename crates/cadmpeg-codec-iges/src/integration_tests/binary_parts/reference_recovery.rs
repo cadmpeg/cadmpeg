@@ -119,7 +119,7 @@ fn recovered_peer(original: Vec<u8>, bytes: Vec<u8>, ordinal: u32, failures: usi
     let unknowns = native.arena_as::<NativeUnknownRecord>("unknowns").unwrap();
     assert_eq!(unknowns.len(), failures);
     let fidelity = decoded.source_fidelity();
-    for record in unknowns {
+    for record in &unknowns {
         let part = &fidelity.parts()[&record.id];
         assert_eq!(part.state(), &PartState::GivenUp {});
         assert!(matches!(
@@ -137,7 +137,28 @@ fn recovered_peer(original: Vec<u8>, bytes: Vec<u8>, ordinal: u32, failures: usi
         assert_eq!(layout.byte_len(), part.byte_len());
         assert!(layout.reads().is_empty());
     }
-    assert_eq!(fidelity.record_layout().len(), failures);
+    let mut expected_keys: Vec<_> = unknowns.iter().map(|record| record.id.as_str()).collect();
+    expected_keys.push(&target);
+    expected_keys.sort_unstable();
+    assert_eq!(
+        fidelity
+            .record_layout()
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        expected_keys
+    );
+    assert_eq!(fidelity.record_layout().len(), failures + 1);
+    let (peer_stream, peer_offset, peer_len) =
+        super::layout_oracle::peer_parameter(&bytes, ordinal);
+    let peer_layout = &fidelity.record_layout()[&target];
+    assert_eq!(peer_layout.stream(), peer_stream);
+    assert_eq!(peer_layout.offset(), peer_offset);
+    assert_eq!(peer_layout.byte_len(), peer_len);
+    assert_eq!(
+        peer_layout,
+        &baseline.source_fidelity().record_layout()[&target]
+    );
     assert_eq!(
         decoded
             .report()

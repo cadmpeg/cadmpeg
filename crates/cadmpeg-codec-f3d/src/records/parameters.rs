@@ -16,6 +16,7 @@ cadmpeg_core::named_optional_field!(
 );
 cadmpeg_core::named_optional_field!(deserialize_owner_record_index, u32, "owner_record_index");
 cadmpeg_core::named_optional_field!(deserialize_unit, String, "unit");
+cadmpeg_core::named_optional_field!(deserialize_parameter_state, String, "parameter_state");
 cadmpeg_core::named_optional_field!(deserialize_variant, u8, "variant");
 /// Semantic family of one Design parameter record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -185,6 +186,8 @@ pub(crate) struct DesignParameter {
     /// Indexed owner: user parameters have none; feature and dimension
     /// parameters name their owning record.
     source: DesignParameterSource,
+    /// Typed state selected by the parameter tail reference.
+    parameter_state: Option<String>,
     /// Literal or symbolic source expression.
     expression: NonBlankString,
     /// Byte offset of the expression's UTF-16LE code units.
@@ -220,6 +223,7 @@ impl Clone for DesignParameter {
             record_index: self.record_index,
             source_ordinal: self.source_ordinal,
             source: self.source.clone(),
+            parameter_state: self.parameter_state.clone(),
             expression: self.expression.clone(),
             expression_offset: self.expression_offset,
             source_kind_offset: self.source_kind_offset,
@@ -290,6 +294,7 @@ impl TryFrom<DesignParameterDraft> for DesignParameter {
             record_index: draft.record_index,
             source_ordinal: draft.source_ordinal,
             source: draft.source,
+            parameter_state: None,
             expression,
             expression_offset: Some(draft.expression_offset),
             source_kind_offset: Some(draft.source_kind_offset),
@@ -329,6 +334,9 @@ fn check_parameter_discriminator_offset(
 }
 
 impl DesignParameter {
+    pub(crate) fn set_parameter_state(&mut self, state: String) {
+        self.parameter_state = Some(state);
+    }
     pub(crate) fn authored(content: DesignParameterContent) -> Result<Self, String> {
         Ok(Self {
             id: content.id,
@@ -336,6 +344,7 @@ impl DesignParameter {
             record_index: content.record_index,
             source_ordinal: content.source_ordinal,
             source: content.source.without_layout(),
+            parameter_state: None,
             expression: NonBlankString::new(content.expression)
                 .ok_or("expression must not be empty")?,
             unit: content
@@ -496,6 +505,8 @@ impl Serialize for DesignParameter {
             expression: &'a str,
             source_kind: &'a str,
             #[serde(skip_serializing_if = "Option::is_none")]
+            parameter_state: Option<&'a str>,
+            #[serde(skip_serializing_if = "Option::is_none")]
             unit: Option<&'a str>,
             name: &'a str,
             evaluated_value: f64,
@@ -509,6 +520,7 @@ impl Serialize for DesignParameter {
             owner_record_index: self.owner_record_index(),
             expression: self.expression(),
             source_kind: self.source_kind_str(),
+            parameter_state: self.parameter_state.as_deref(),
             unit: self.unit().map(|value| value.value.as_str()),
             name: self.name(),
             evaluated_value: self.evaluated_value().get(),
@@ -558,6 +570,13 @@ struct DesignParameterSerde {
     owner_record_index: Option<u32>,
     expression: String,
     source_kind: String,
+    /// Typed state selected by the parameter tail reference.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_parameter_state"
+    )]
+    parameter_state: Option<String>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -577,7 +596,14 @@ impl TryFrom<DesignParameterSerde> for DesignParameter {
                 .map(DesignParameterDiscriminator::try_from)
                 .transpose()?,
         )?;
-        Self::authored(DesignParameterContent {
+        let parameter_state = wire.parameter_state;
+        if parameter_state
+            .as_ref()
+            .is_some_and(|state| state.trim().is_empty())
+        {
+            return Err("parameter_state must not be blank".into());
+        }
+        let mut value = Self::authored(DesignParameterContent {
             id: wire.id,
             class_tag: wire.class_tag.try_into()?,
             record_index: wire.record_index,
@@ -587,7 +613,9 @@ impl TryFrom<DesignParameterSerde> for DesignParameter {
             unit: wire.unit,
             name: wire.name,
             evaluated_value: wire.evaluated_value,
-        })
+        })?;
+        value.parameter_state = parameter_state;
+        Ok(value)
     }
 }
 #[cfg(test)]
@@ -607,6 +635,7 @@ impl From<DesignParameter> for DesignParameterSerde {
             owner_record_index,
             expression: parameter.expression.to_string(),
             source_kind,
+            parameter_state: parameter.parameter_state,
             unit: parameter.unit.map(|value| value.value.to_string()),
             name: parameter.name.to_string(),
             evaluated_value: parameter.evaluated_value.get(),

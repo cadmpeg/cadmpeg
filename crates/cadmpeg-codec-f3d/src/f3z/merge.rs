@@ -567,6 +567,13 @@ fn typed_fields(
         }
         "design_face_operands" => typed!(crate::records::topology::face::DesignFaceOperand),
         "design_mesh_features" => typed!(crate::records::mesh::DesignMeshFeature),
+        "design_parameter_states" => typed!(crate::records::parameter_state::DesignParameterState),
+        "design_parameter_state_companions" => {
+            typed!(crate::records::parameter_state::DesignParameterStateCompanion)
+        }
+        "design_parameter_document_headers" => {
+            typed!(crate::records::parameter_state::DesignParameterDocumentHeader)
+        }
         "design_parameter_scopes" => typed!(crate::records::feature::scope::DesignParameterScope),
         "persistent_design_links" => typed!(crate::records::sketch_links::PersistentDesignLink),
         "persistent_subentity_tags" => typed!(crate::records::sketch_links::PersistentSubentityTag),
@@ -608,6 +615,7 @@ fn rescope_native_reference_fields(
         "design_extrude_selection_members" => &["operand_identity_ids"],
         "design_edge_identity_operands" => &["resolution_identity_id"],
         "design_parameter_companions" => &["owned_recipe_ids"],
+        "design_parameters" => &["parameter_state"],
         "mesh_surface_sentinels" => &["surface"],
         "tolerant_coedge_parameters" => &["coedge"],
         "tolerant_edge_tails" => &["edge"],
@@ -745,6 +753,7 @@ fn scope_named_values(
 mod tests {
     mod fidelity;
     mod occurrence;
+    mod parameter_state;
     mod parts;
     mod pending_layouts;
 

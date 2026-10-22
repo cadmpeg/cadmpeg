@@ -154,3 +154,5 @@ mod semantic_handoff;
 mod handoff_boundary;
 
 mod plain_line;
+
+mod source_point;

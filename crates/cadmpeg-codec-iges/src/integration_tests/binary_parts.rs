@@ -87,13 +87,24 @@ fn binary_bounded_directory_failure_keeps_real_later_point_and_one_exact_source_
     assert_eq!(peer.parent(), Some(parent));
     assert_eq!(peer.offset(), rejected.offset() + rejected.byte_len());
     assert!(peer.offset() + peer.byte_len() <= section.offset() + section.byte_len());
+    let mut expected_keys = vec![unknowns[0].id.as_str(), "iges:entity:directory#3"];
+    expected_keys.sort_unstable();
     assert_eq!(
         fidelity
             .record_layout()
             .keys()
             .map(String::as_str)
             .collect::<Vec<_>>(),
-        [unknowns[0].id.as_str()]
+        expected_keys
+    );
+    let (peer_stream, peer_offset, peer_len) = layout_oracle::peer_parameter(&bytes, 3);
+    let peer_layout = &fidelity.record_layout()["iges:entity:directory#3"];
+    assert_eq!(peer_layout.stream(), peer_stream);
+    assert_eq!(peer_layout.offset(), peer_offset);
+    assert_eq!(peer_layout.byte_len(), peer_len);
+    assert_eq!(
+        peer_layout,
+        &baseline.source_fidelity().record_layout()["iges:entity:directory#3"]
     );
     let layout = &fidelity.record_layout()[unknowns[0].id.as_str()];
     assert_eq!(layout.stream(), "file");
@@ -219,3 +230,5 @@ fn binary_failed_directory_and_its_bounded_parameter_keep_the_independent_curren
 }
 
 mod reference_recovery;
+
+mod layout_oracle;

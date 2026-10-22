@@ -11,6 +11,7 @@ use std::io::Cursor;
 mod constraints;
 mod families;
 mod quantities;
+mod quantity_constraints;
 
 fn document(properties: &str) -> String {
     format!("<Document SchemaVersion='4' FileVersion='1'><Properties Count='2'>{properties}</Properties><Objects Count='0'/><ObjectData Count='0'/></Document>")

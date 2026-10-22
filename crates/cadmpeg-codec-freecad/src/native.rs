@@ -8,6 +8,7 @@ pub(crate) mod element_map;
 mod entry_rewrite;
 pub(crate) mod frame;
 pub(crate) mod joint;
+pub(crate) mod object_declaration;
 pub(crate) mod object_identity;
 
 use crate::attachment::MapModeIndex;

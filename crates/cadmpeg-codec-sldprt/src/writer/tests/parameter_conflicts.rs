@@ -216,3 +216,4 @@ fn knit_without_gap_omits_only_the_unused_tolerance_and_keeps_its_operation_and_
 }
 
 mod laws;
+mod shortened_law;

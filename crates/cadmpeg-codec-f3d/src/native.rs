@@ -49,6 +49,9 @@ use crate::records::{
         surface_ops::DesignSurfaceTrimOperation, work_geometry::DesignEdgeTreatmentVertexOperand,
     },
     mesh::DesignMeshFeature,
+    parameter_state::{
+        DesignParameterDocumentHeader, DesignParameterState, DesignParameterStateCompanion,
+    },
     parameters::{DesignParameter, DesignParameterCompanion, DesignParameterOwner},
     recipes::{ConstructionRecipe, CreationTimestamp, DesignComponentNamingSpace},
     references::{DesignMaterialAssignment, LostEdgeReference, PersistentReference},
@@ -152,8 +155,11 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "design_material_assignments",
     "design_mesh_features",
     "design_parameter_companions",
+    "design_parameter_document_headers",
     "design_parameter_owners",
     "design_parameter_scopes",
+    "design_parameter_state_companions",
+    "design_parameter_states",
     "design_parameters",
     "design_record_headers",
     "design_sheet_metal_settings",
@@ -720,6 +726,16 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         counts_toward_emptiness: true,
     },
     F3dFamilyRow {
+        arena: "design_parameter_document_headers",
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_parameter_document_headers)
+        },
+        len: |model| model.design_parameter_document_headers.len(),
+        counts_toward_emptiness: true,
+    },
+    F3dFamilyRow {
         arena: "design_parameter_owners",
         exactness: (),
         phase: Phase::ArenaOnly,
@@ -737,6 +753,26 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
             namespace.set_arena(ctx, row.arena, &model.design_parameter_scopes)
         },
         len: |model| model.design_parameter_scopes.len(),
+        counts_toward_emptiness: true,
+    },
+    F3dFamilyRow {
+        arena: "design_parameter_state_companions",
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_parameter_state_companions)
+        },
+        len: |model| model.design_parameter_state_companions.len(),
+        counts_toward_emptiness: true,
+    },
+    F3dFamilyRow {
+        arena: "design_parameter_states",
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_parameter_states)
+        },
+        len: |model| model.design_parameter_states.len(),
         counts_toward_emptiness: true,
     },
     F3dFamilyRow {
@@ -1314,6 +1350,15 @@ pub(crate) struct F3dNative {
     /// Indexed Design parameter and expression records.
     #[serde(default)]
     pub(crate) design_parameters: Vec<DesignParameter>,
+    /// CommonData states selected by typed parameter tails.
+    #[serde(default)]
+    pub(crate) design_parameter_states: Vec<DesignParameterState>,
+    /// Reciprocal CommonData parameter-state companions.
+    #[serde(default)]
+    pub(crate) design_parameter_state_companions: Vec<DesignParameterStateCompanion>,
+    /// Headers of the document roots linked by parameter states.
+    #[serde(default)]
+    pub(crate) design_parameter_document_headers: Vec<DesignParameterDocumentHeader>,
     /// Local-to-model placement frames for Design sketches.
     #[serde(default)]
     pub(crate) design_sketch_placements: Vec<DesignSketchPlacement>,
@@ -1522,6 +1567,9 @@ impl F3dNative {
             design_joint_motions: read_arena!("design_joint_motions"),
             design_surface_trim_operations: read_arena!("design_surface_trim_operations"),
             design_parameters: read_arena!("design_parameters"),
+            design_parameter_states: read_arena!("design_parameter_states"),
+            design_parameter_state_companions: read_arena!("design_parameter_state_companions"),
+            design_parameter_document_headers: read_arena!("design_parameter_document_headers"),
             design_entity_headers: read_arena!("design_entity_headers"),
             design_record_headers: read_arena!("design_record_headers"),
             design_sketch_placements: read_arena!("design_sketch_placements"),

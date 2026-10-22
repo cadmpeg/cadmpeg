@@ -34,6 +34,7 @@ pub(super) fn decode<'source>(
         }
         let mut complete = property.clone();
         complete.body = Some(body.clone());
+        if owner == crate::native::native_id("document", "0") {
         if let Some(attribute) = crate::attributes::document_property(&complete)? {
             value_stage.insert_model(ctx, attribute)?;
         } else if (complete.type_name == "App::PropertyIntegerConstraint"
@@ -44,6 +45,7 @@ pub(super) fn decode<'source>(
                 "property {} ({}) has no neutral attribute encoding; its admitted typed native values remain held",
                 complete.id, complete.type_name,
             )))?;
+        }
         }
         for loss in losses { value_stage.push_loss(ctx, loss)?; }
         Ok(body)

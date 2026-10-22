@@ -12,7 +12,7 @@ use crate::directory::DirectoryFieldSlot;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceDimension, ResourceLimit, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) mod parts;
 
@@ -178,8 +178,34 @@ struct NormalizedParameter {
 }
 
 #[derive(Debug)]
+enum BitInput<'a> {
+    Detached(&'a [u8]),
+    Original(View<'a>),
+}
+
+impl BitInput<'_> {
+    fn bytes(&self) -> &[u8] {
+        match self {
+            Self::Detached(bytes) => bytes,
+            Self::Original(source) => source.window(),
+        }
+    }
+
+    fn byte(&self, offset: usize, semantic: bool) -> Option<u8> {
+        match self {
+            Self::Original(source) if semantic => source
+                .read_at(source.start().checked_add(offset)?, 1)?
+                .first()
+                .copied(),
+            Self::Original(_) | Self::Detached(_) => self.bytes().get(offset).copied(),
+        }
+    }
+}
+
+#[derive(Debug)]
 struct BitReader<'a> {
-    bytes: &'a [u8],
+    input: BitInput<'a>,
+    semantic: bool,
     byte: usize,
     bit: u8,
 }
@@ -187,25 +213,30 @@ struct BitReader<'a> {
 impl<'a> BitReader<'a> {
     fn new(bytes: &'a [u8]) -> Self {
         Self {
-            bytes,
+            input: BitInput::Detached(bytes),
+            semantic: false,
             byte: 0,
             bit: 0,
         }
     }
 
     fn is_empty(&self) -> bool {
-        self.byte == self.bytes.len() && self.bit == 0
+        self.byte == self.input.bytes().len() && self.bit == 0
     }
 
     fn read_bits(&mut self, count: u8) -> Result<u64, CodecError> {
+        self.read_bits_as(count, self.semantic)
+    }
+
+    fn read_bits_as(&mut self, count: u8, semantic: bool) -> Result<u64, CodecError> {
         if count > 64 {
             return Err(malformed("a Binary primitive requests more than 64 bits"));
         }
         let mut value = 0_u64;
         for _ in 0..count {
-            let byte = *self
-                .bytes
-                .get(self.byte)
+            let byte = self
+                .input
+                .byte(self.byte, semantic)
                 .ok_or_else(|| malformed("a Binary primitive is truncated"))?;
             let shift = 7_u8
                 .checked_sub(self.bit)
@@ -227,7 +258,7 @@ impl<'a> BitReader<'a> {
         if self.bit == 0 {
             return Ok(());
         }
-        let padding = self.read_bits(8 - self.bit)?;
+        let padding = self.read_bits_as(8 - self.bit, false)?;
         if padding != 0 {
             return Err(malformed("Binary primitive padding contains a one bit"));
         }
@@ -308,7 +339,10 @@ impl<'a> BitReader<'a> {
     fn read_string(&mut self, lengths: PrimitiveLengths) -> Result<Vec<u8>, CodecError> {
         let mut output = Vec::new();
         loop {
+            let semantic = self.semantic;
+            self.semantic = false;
             let count = self.read_integer(lengths.single_integer)?;
+            self.semantic = semantic;
             if count == 0 {
                 return Err(malformed("a Binary string has a zero character count"));
             }
@@ -316,7 +350,8 @@ impl<'a> BitReader<'a> {
             let count = usize::try_from(count.unsigned_abs())
                 .map_err(|_| malformed("a Binary string count is out of range"))?;
             let remaining = self
-                .bytes
+                .input
+                .bytes()
                 .len()
                 .checked_sub(self.byte)
                 .ok_or_else(|| malformed("a Binary string offset is out of range"))?;
@@ -340,11 +375,23 @@ impl<'a> BitReader<'a> {
     }
 }
 
+enum RepeatValue {
+    Physical(u8),
+    Shared(BinaryValue, std::ops::Range<usize>),
+}
+
+struct Repeat {
+    value: RepeatValue,
+    remaining: usize,
+}
+
 struct ValueStream<'a> {
     bits: BitReader<'a>,
     lengths: PrimitiveLengths,
-    pending: VecDeque<(BinaryValue, std::ops::Range<usize>)>,
+    repeat: Option<Repeat>,
     value_extent: std::ops::Range<usize>,
+    field: usize,
+    semantic_end: usize,
 }
 
 impl<'a> ValueStream<'a> {
@@ -352,12 +399,43 @@ impl<'a> ValueStream<'a> {
         Self {
             bits: BitReader::new(bytes),
             lengths,
-            pending: VecDeque::new(),
+            repeat: None,
             value_extent: 0..0,
+            field: 0,
+            semantic_end: 0,
         }
     }
 
-    fn one(&mut self, format: u8) -> Result<BinaryValue, CodecError> {
+    fn source_line(source: View<'a>, lengths: PrimitiveLengths) -> Self {
+        Self {
+            bits: BitReader {
+                input: BitInput::Original(source),
+                semantic: false,
+                byte: 0,
+                bit: 0,
+            },
+            lengths,
+            repeat: None,
+            value_extent: 0..0,
+            field: 0,
+            semantic_end: 8,
+        }
+    }
+
+    fn source_point(source: View<'a>, lengths: PrimitiveLengths) -> Self {
+        let mut stream = Self::source_line(source, lengths);
+        stream.semantic_end = 5;
+        stream
+    }
+
+    fn semantic(&self, count: usize) -> bool {
+        matches!(self.bits.input, BitInput::Original(_))
+            && self.field < self.semantic_end
+            && self.field.checked_add(count).is_some_and(|end| end > 2)
+    }
+
+    fn one(&mut self, format: u8, semantic: bool) -> Result<BinaryValue, CodecError> {
+        self.bits.semantic = semantic;
         match format {
             0 => Ok(BinaryValue::Default),
             1 => self
@@ -383,8 +461,27 @@ impl<'a> ValueStream<'a> {
     }
 
     fn next(&mut self) -> Result<Option<BinaryValue>, CodecError> {
-        if let Some((value, extent)) = self.pending.pop_front() {
-            self.value_extent = extent;
+        if let Some(mut repeat) = self.repeat.take() {
+            let value = match &repeat.value {
+                RepeatValue::Physical(format) => {
+                    let start = self.bits.byte;
+                    let value = self.one(*format, self.semantic(1))?;
+                    self.value_extent = start..self.bits.byte;
+                    value
+                }
+                RepeatValue::Shared(value, extent) => {
+                    self.value_extent = extent.clone();
+                    value.clone()
+                }
+            };
+            repeat.remaining -= 1;
+            if repeat.remaining > 0 {
+                self.repeat = Some(repeat);
+            }
+            self.field = self
+                .field
+                .checked_add(1)
+                .ok_or_else(|| malformed("Binary value ordinal overflows"))?;
             return Ok(Some(value));
         }
         if self.bits.is_empty() {
@@ -393,32 +490,36 @@ impl<'a> ValueStream<'a> {
         if self.bits.bit != 0 {
             return Err(malformed("a Binary control byte is not byte aligned"));
         }
-        let control = u8::try_from(self.bits.read_bits(8)?)
+        let control = u8::try_from(self.bits.read_bits_as(8, false)?)
             .map_err(|_| malformed("a Binary control byte overflows"))?;
         let physically_present = control >> 7 == 1;
         let repeat = usize::from((control >> 3) & 0x0f) + 1;
         let format = control & 0x07;
-        let first_start = self.bits.byte;
-        let first = self.one(format)?;
-        let first_extent = first_start..self.bits.byte;
-        if physically_present {
-            for _ in 1..repeat {
-                let start = self.bits.byte;
-                let value = self.one(format)?;
-                self.pending.push_back((value, start..self.bits.byte));
-            }
-        } else {
-            for _ in 1..repeat {
-                self.pending
-                    .push_back((first.clone(), first_extent.clone()));
-            }
+        let start = self.bits.byte;
+        let first = self.one(
+            format,
+            self.semantic(if physically_present { 1 } else { repeat }),
+        )?;
+        self.value_extent = start..self.bits.byte;
+        if repeat > 1 {
+            self.repeat = Some(Repeat {
+                value: if physically_present {
+                    RepeatValue::Physical(format)
+                } else {
+                    RepeatValue::Shared(first.clone(), self.value_extent.clone())
+                },
+                remaining: repeat - 1,
+            });
         }
-        self.value_extent = first_extent;
+        self.field = self
+            .field
+            .checked_add(1)
+            .ok_or_else(|| malformed("Binary value ordinal overflows"))?;
         Ok(Some(first))
     }
 
     fn finish(&self) -> Result<(), CodecError> {
-        if !self.pending.is_empty() || !self.bits.is_empty() {
+        if self.repeat.is_some() || !self.bits.is_empty() {
             return Err(malformed(
                 "a Binary section has values outside its declared fields",
             ));
@@ -1083,7 +1184,24 @@ fn parameter_prefix(
     body: View<'_>,
     lengths: PrimitiveLengths,
 ) -> Result<ParameterPrefix<'_>, CodecError> {
-    let mut stream = ValueStream::new(body.window(), lengths);
+    prefix_from_stream(ValueStream::new(body.window(), lengths))
+}
+
+fn source_line_prefix(
+    body: View<'_>,
+    lengths: PrimitiveLengths,
+) -> Result<ParameterPrefix<'_>, CodecError> {
+    prefix_from_stream(ValueStream::source_line(body, lengths))
+}
+
+fn source_point_prefix(
+    body: View<'_>,
+    lengths: PrimitiveLengths,
+) -> Result<ParameterPrefix<'_>, CodecError> {
+    prefix_from_stream(ValueStream::source_point(body, lengths))
+}
+
+fn prefix_from_stream(mut stream: ValueStream<'_>) -> Result<ParameterPrefix<'_>, CodecError> {
     let entity_type = integer_value(
         &one_value(&mut stream, "Parameter")?,
         "Parameter entity type",
@@ -1563,7 +1681,26 @@ fn normalize_with_records<T>(
     let start_text = normalize_start(sections.start.window(), sections.lengths)?;
     let global_values = read_global(sections.global.window(), sections.lengths)?;
     let global_text = normalize_global(&global_values)?;
-    let (global, losses) = crate::global::parse_stream(&global_text)?;
+    let global_cards = crate::global::layout_global_cards(&global_text)?;
+    let global_byte_len = global_cards
+        .len()
+        .checked_mul(CARD_DATA_WIDTH)
+        .ok_or_else(|| malformed("Binary normalized Global payload size overflows"))?;
+    let mut global_payload = ctx.alloc_filled(
+        global_byte_len,
+        b' ',
+        "IGES Binary normalized Global payload",
+    )?;
+    for (card, payload) in global_cards
+        .iter()
+        .zip(global_payload.chunks_exact_mut(CARD_DATA_WIDTH))
+    {
+        payload
+            .get_mut(..card.len())
+            .ok_or_else(|| malformed("Binary normalized Global card exceeds its payload"))?
+            .copy_from_slice(card);
+    }
+    let (global, losses) = crate::global::parse_stream(&global_payload)?;
     let (directory, parameters) = parse(&sections, &global)?;
     let mut output = Vec::new();
     let mut start_sequence = 1_u32;
@@ -1575,7 +1712,6 @@ fn normalize_with_records<T>(
     )
     .map_err(|_| malformed("a Binary Start count does not fit memory"))?;
     let mut global_sequence = 1_u32;
-    let global_cards = crate::global::layout_global_cards(&global_text)?;
     for card in &global_cards {
         render_cards(&mut output, card, b'G', &mut global_sequence)?;
     }
@@ -1610,6 +1746,8 @@ fn normalize_with_records<T>(
 
 #[cfg(test)]
 mod tests {
+    mod normalized_global;
+    mod source_values;
     #[test]
     fn parameter_card_refuses_an_unrenderable_directory_sequence() {
         let mut output = Vec::new();

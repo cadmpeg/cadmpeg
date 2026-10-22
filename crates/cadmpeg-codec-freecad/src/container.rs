@@ -88,6 +88,7 @@ pub(crate) struct Scan<'a> {
     /// One admitted persistence tree shared by all document readers.
     pub(crate) document_xml: roxmltree::Document<'a>,
     pub(crate) document_properties: Option<crate::persistence::document_properties::RootProperties>,
+    pub(crate) object_declarations: Option<crate::persistence::object_parts::ObjectDeclarations>,
     /// Exact physical archive partition.
     pub(crate) ledger: Vec<ArchiveSpan>,
     /// Independently framed members given up by the shared part helper.
@@ -214,6 +215,7 @@ fn scan_impl<'a>(
         facts: document,
         schema: schema_version,
         root_properties: document_properties,
+        object_declarations,
         losses,
     } = document;
     let mut data = BTreeMap::new();
@@ -255,6 +257,7 @@ fn scan_impl<'a>(
         schema_version,
         document_xml,
         document_properties,
+        object_declarations,
         failed_members: opened.failed,
         ledger,
         data,

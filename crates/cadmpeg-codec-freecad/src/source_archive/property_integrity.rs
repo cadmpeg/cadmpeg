@@ -17,7 +17,13 @@ pub(super) fn validate<'source>(
             part.state() == &PartState::GivenUp {}
                 && matches!(
                     part.level().as_str(),
-                    "freecad.properties" | "freecad.property" | "freecad.property_value"
+                    "freecad.objects"
+                        | "freecad.object_declaration"
+                        | "freecad.object_data_section"
+                        | "freecad.object_data"
+                        | "freecad.properties"
+                        | "freecad.property"
+                        | "freecad.property_value"
                 )
         })
     };
@@ -27,23 +33,63 @@ pub(super) fn validate<'source>(
     let document = archive.open(ctx, "Document.xml")?;
     let xml = crate::container::admit_document(ctx, document.window())?;
     let nodes = || {
-        xml.root_element()
+        let root = xml.root_element();
+        let containers = root
             .children()
             .filter(|node| node.has_tag_name("Properties"))
+            .chain(
+                root.children()
+                    .filter(|node| {
+                        node.has_tag_name("ObjectData") || node.has_tag_name("FeatureData")
+                    })
+                    .flat_map(|section| {
+                        section.children().filter(|node| {
+                            node.has_tag_name("Object") || node.has_tag_name("Feature")
+                        })
+                    })
+                    .flat_map(|object| {
+                        object
+                            .children()
+                            .filter(|node| node.has_tag_name("Properties"))
+                    }),
+            );
+        let properties = containers.flat_map(|container| {
+            std::iter::once(("freecad.properties", container)).chain(
+                container
+                    .children()
+                    .filter(|node| crate::persistence::document_properties::selected(*node))
+                    .flat_map(|node| {
+                        std::iter::once(("freecad.property", node)).chain(
+                            node.children()
+                                .filter(roxmltree::Node::is_element)
+                                .map(|value| ("freecad.property_value", value)),
+                        )
+                    }),
+            )
+        });
+        let declarations = root
+            .children()
+            .filter(|node| node.has_tag_name("Objects") || node.has_tag_name("Features"))
             .flat_map(|container| {
-                std::iter::once(("freecad.properties", container)).chain(
+                std::iter::once(("freecad.objects", container)).chain(
                     container
                         .children()
-                        .filter(|node| crate::persistence::document_properties::selected(*node))
-                        .flat_map(|node| {
-                            std::iter::once(("freecad.property", node)).chain(
-                                node.children()
-                                    .filter(roxmltree::Node::is_element)
-                                    .map(|value| ("freecad.property_value", value)),
-                            )
-                        }),
+                        .filter(|node| node.has_tag_name("Object") || node.has_tag_name("Feature"))
+                        .map(|node| ("freecad.object_declaration", node)),
                 )
-            })
+            });
+        let data = root
+            .children()
+            .filter(|node| node.has_tag_name("ObjectData") || node.has_tag_name("FeatureData"))
+            .flat_map(|container| {
+                std::iter::once(("freecad.object_data_section", container)).chain(
+                    container
+                        .children()
+                        .filter(|node| node.has_tag_name("Object") || node.has_tag_name("Feature"))
+                        .map(|node| ("freecad.object_data", node)),
+                )
+            });
+        declarations.chain(data).chain(properties)
     };
     let count = nodes()
         .try_fold(0usize, |sum, _| sum.checked_add(1))

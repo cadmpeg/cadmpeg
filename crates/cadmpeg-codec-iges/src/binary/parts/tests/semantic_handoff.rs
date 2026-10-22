@@ -20,7 +20,7 @@ fn actual_binary_callbacks_return_the_same_records_that_the_renderer_binds_and_r
     let sections = crate::binary::parse_sections(source).expect("actual Binary sections");
     let (_, first_extent, _) = crate::binary::counted_record(sections.parameter, 0, "Parameter")
         .expect("counted Macro source");
-    let (_, second_extent, _) = crate::binary::counted_record(
+    let (_, second_extent, second_body) = crate::binary::counted_record(
         sections.parameter,
         first_extent.end() - sections.parameter.start(),
         "Parameter",
@@ -67,6 +67,21 @@ fn actual_binary_callbacks_return_the_same_records_that_the_renderer_binds_and_r
         actual.trailing_pointer_analysis,
         expected.trailing_pointer_analysis
     );
+    let mut point = crate::binary::parameter_prefix(second_body, sections.lengths)
+        .expect("actual peer Point grammar");
+    assert_eq!(point.entity_type, 116);
+    let mut point_reads = Vec::new();
+    for expected in [1, 2, 3] {
+        assert_eq!(
+            point.stream.next().expect("original peer coordinate"),
+            Some(crate::binary::BinaryValue::Integer(expected))
+        );
+        let range = point.stream.value_extent.clone();
+        point_reads.push(
+            u64::try_from(second_body.start() + range.start).expect("source coordinate")
+                ..u64::try_from(second_body.start() + range.end).expect("source coordinate end"),
+        );
+    }
     let captures = ctx
         .take_record_captures()
         .expect("one completed capture drain");
@@ -84,7 +99,14 @@ fn actual_binary_callbacks_return_the_same_records_that_the_renderer_binds_and_r
             capture.byte_len(),
             u64::try_from(extent.window().len()).expect("source length")
         );
-        assert!(capture.reads().is_empty());
+        if id == "iges:entity:directory#1" {
+            assert!(capture.reads().is_empty());
+        } else {
+            assert_eq!(
+                capture.reads(),
+                &std::collections::BTreeMap::from([("file".to_owned(), point_reads.clone())])
+            );
+        }
         assert!(
             capture.offset() + capture.byte_len()
                 <= u64::try_from(source.end()).expect("source end")

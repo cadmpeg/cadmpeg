@@ -24,6 +24,7 @@ impl DocumentValue {
                 | "App::PropertyAngle"
                 | "App::PropertyDistance"
                 | "App::PropertyQuantity"
+                | "App::PropertyQuantityConstraint"
                 | "App::PropertyVector"
         ) || !(matches!(&property.body, Some(PropertyBody::Persisted { links, side_entries, .. }) if links.is_empty() && side_entries.is_empty())
             || property.body.is_none())

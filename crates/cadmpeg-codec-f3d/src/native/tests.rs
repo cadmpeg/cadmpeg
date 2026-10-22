@@ -150,7 +150,7 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
         .iter()
         .map(|row| row.arena)
         .collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(crate::native::F3D_FAMILIES.len(), 81);
+    assert_eq!(crate::native::F3D_FAMILIES.len(), 84);
     assert!(catalogue_names.contains("act_tables"));
     assert!(catalogue_names.contains("act_types"));
     assert!(catalogue_names.contains("asm_face_boundaries"));

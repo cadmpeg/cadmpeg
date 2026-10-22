@@ -521,7 +521,7 @@ const TYPED_DOCUMENT_EXPRESSION_TRAILER: [u8; 5] = [0, 0, 0, 0, 1];
 ///
 /// The tail is `u8 0` and a typed local reference whose target type GUID is
 /// the parameter-tail type; it ends the frame exactly.
-fn typed_parameter_tail_start(payload: &[u8]) -> Option<usize> {
+pub(super) fn typed_parameter_tail_start(payload: &[u8]) -> Option<usize> {
     let start = payload.len().checked_sub(TYPED_PARAMETER_TAIL_LEN)?;
     if payload.get(start) != Some(&0) {
         return None;

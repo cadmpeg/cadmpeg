@@ -5882,6 +5882,9 @@ fn direct_root<T>(
     expected_tag: &str,
     use_root: impl FnOnce(roxmltree::Node<'_, '_>) -> T,
 ) -> Result<Option<T>, CodecError> {
+    if property.body.is_none() {
+        return Ok(None);
+    }
     let property_xml = ctx.property_xml(property)?;
     let document = match ctx.parse_xml(property_xml.as_ref(), "FreeCAD direct property XML tree") {
         Ok(tree) => tree,
@@ -8306,6 +8309,9 @@ pub(crate) fn is_design_object(kind: &str) -> bool {
             "Part::RuledSurface" | "Part::Section" | "Part::Mirroring" | "Part::ProjectOnSurface"
         )
         || kind == "PartDesign::FeatureBase"
+        // Unknown construction types retain an attributable Native operation;
+        // this does not dispatch them as any recognized built-in family.
+        || is_design_kind(kind)
 }
 
 pub(crate) fn census(

@@ -11,6 +11,7 @@ use crate::native::{
 };
 
 pub(crate) mod document_properties;
+pub(crate) mod object_parts;
 pub(crate) mod source;
 
 const MAX_OBJECTS: usize = 1_000_000;
@@ -130,7 +131,7 @@ pub(crate) fn parse_document(
     xml: &roxmltree::Document<'_>,
     schema: Vocabulary,
 ) -> Result<Graph, CodecError> {
-    parse_document_impl(xml, schema, None, None)
+    parse_document_impl(xml, schema, None, None, None)
 }
 
 pub(crate) fn parse_document_source<'source>(
@@ -141,7 +142,7 @@ pub(crate) fn parse_document_source<'source>(
 ) -> Result<Graph, CodecError> {
     let transaction = ctx.read_transaction()?;
     let source = source::Source::new(ctx, source, xml)?;
-    let graph = parse_document_impl(xml, schema, Some(&source), None)?;
+    let graph = parse_document_impl(xml, schema, Some(&source), None, None)?;
     transaction.commit()?;
     Ok(graph)
 }
@@ -152,13 +153,14 @@ pub(crate) fn parse_document_source_with_properties<'source>(
     xml: &roxmltree::Document<'_>,
     schema: Vocabulary,
     strings: Option<&document_properties::RootProperties>,
+    declarations: Option<&object_parts::ObjectDeclarations>,
 ) -> Result<Graph, CodecError> {
-    if strings.is_none() {
+    if strings.is_none() && declarations.is_none() {
         return parse_document_source(ctx, view, xml, schema);
     }
     let transaction = ctx.read_transaction()?;
     let source = source::Source::new(ctx, view, xml)?;
-    let graph = parse_document_impl(xml, schema, Some(&source), strings)?;
+    let graph = parse_document_impl(xml, schema, Some(&source), strings, declarations)?;
     transaction.commit()?;
     Ok(graph)
 }
@@ -168,6 +170,7 @@ fn parse_document_impl(
     schema: Vocabulary,
     source: Option<&source::Source<'_, '_>>,
     strings: Option<&document_properties::RootProperties>,
+    declarations: Option<&object_parts::ObjectDeclarations>,
 ) -> Result<Graph, CodecError> {
     let root = xml.root_element();
     let mut losses = Vec::new();
@@ -266,6 +269,13 @@ fn parse_document_impl(
     }
     check_count(data_node, "Count", data_by_name.len(), &mut losses);
 
+    let prepared_by_name = declarations.map(|parts| {
+        parts
+            .objects
+            .iter()
+            .map(|object| (object.name().as_str(), object))
+            .collect::<HashMap<_, _>>()
+    });
     let mut objects: Vec<ObjectRecord> = Vec::new();
     let mut object_sources = Vec::new();
     let mut object_names = HashSet::new();
@@ -284,11 +294,24 @@ fn parse_document_impl(
         let data = data_by_name.get(name).copied();
         let dependency = dependency_map.remove(name);
         let parse = || parse_object(node, data, order, dependency, dependencies_enabled, source);
-        let object = match source {
-            Some(source) => source.record(&id, node, parse)?,
-            None => parse()?,
+        let object = if let Some(prepared) = &prepared_by_name {
+            let Some(object) = prepared.get(name) else {
+                continue;
+            };
+            (**object).clone()
+        } else {
+            match source {
+                Some(source) => source.record(&id, node, parse)?,
+                None => parse()?,
+            }
         };
-        if let Some(data) = data {
+        if let Some(parts) = declarations {
+            let range = parts
+                .data_sources
+                .get(object.id())
+                .ok_or_else(|| CodecError::malformed("staged object has no parsed data source"))?;
+            object_sources.push((object.id().clone(), range.clone()));
+        } else if let Some(data) = data {
             object_sources.push((object.id().clone(), data.range()));
         }
         objects.push(object);
@@ -299,7 +322,12 @@ fn parse_document_impl(
             "ObjectDeps names do not match object declarations".into(),
         ));
     }
-    if data_by_name.len() != objects.len() {
+    let expected_objects = if declarations.is_some() {
+        object_names.len()
+    } else {
+        objects.len()
+    };
+    if data_by_name.len() != expected_objects {
         return Err(CodecError::malformed(format_args!(
             "object declarations and {data_tag} identities disagree"
         )));
@@ -442,14 +470,39 @@ fn parse_document_impl(
             }
         }
         if let Some(container) = property_container {
-            parse_properties(
-                container,
-                object.id(),
-                &mut properties,
-                &mut property_sources,
-                &mut losses,
-                source,
-            )?;
+            if let Some(prepared) = declarations {
+                let selected = prepared.properties.get(object.id()).ok_or_else(|| {
+                    CodecError::malformed("staged object has no property container result")
+                })?;
+                check_property_counts(
+                    container,
+                    container
+                        .children()
+                        .filter(|node| node.has_tag_name("Property"))
+                        .count(),
+                    container
+                        .children()
+                        .filter(|node| node.has_tag_name("_Property"))
+                        .count(),
+                    &mut losses,
+                );
+                properties.extend(selected.properties.iter().cloned());
+                property_sources.extend(
+                    selected
+                        .sources
+                        .iter()
+                        .map(|(id, source)| (id.clone(), source.clone())),
+                );
+            } else {
+                parse_properties(
+                    container,
+                    object.id(),
+                    &mut properties,
+                    &mut property_sources,
+                    &mut losses,
+                    source,
+                )?;
+            }
         }
         if let Some(extensions_node) = extension_container {
             for extension in extensions_node
@@ -587,6 +640,18 @@ fn check_count(
     }
 }
 
+fn check_property_counts(
+    container: roxmltree::Node<'_, '_>,
+    persisted: usize,
+    transient: usize,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    check_count(container, "Count", persisted, losses);
+    if container.attribute("TransientCount").is_some() || transient != 0 {
+        check_count(container, "TransientCount", transient, losses);
+    }
+}
+
 fn parse_properties(
     container: roxmltree::Node<'_, '_>,
     owner: &str,
@@ -640,15 +705,12 @@ fn parse_properties_impl(
             )));
         }
     }
-    check_count(container, "Count", property_nodes.len(), losses);
-    if container.attribute("TransientCount").is_some() || !transient_property_nodes.is_empty() {
-        check_count(
-            container,
-            "TransientCount",
-            transient_property_nodes.len(),
-            losses,
-        );
-    }
+    check_property_counts(
+        container,
+        property_nodes.len(),
+        transient_property_nodes.len(),
+        losses,
+    );
     for (order, node) in transient_property_nodes.into_iter().enumerate() {
         let name = required_attr(node, "name")?;
 

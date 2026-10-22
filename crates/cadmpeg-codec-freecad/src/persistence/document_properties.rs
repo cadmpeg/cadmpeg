@@ -29,7 +29,8 @@ pub(crate) fn selected(node: roxmltree::Node<'_, '_>) -> bool {
             | "App::PropertyLength"
             | "App::PropertyAngle"
             | "App::PropertyDistance"
-            | "App::PropertyQuantity",
+            | "App::PropertyQuantity"
+            | "App::PropertyQuantityConstraint",
         ) => "Float",
         Some("App::PropertyVector") => "PropertyVector",
         _ => return false,
@@ -111,6 +112,24 @@ pub(crate) fn decode<'source>(
     if !container.children().any(selected) {
         return Ok(None);
     }
+    Ok(Some(decode_owned(
+        ctx,
+        view,
+        xml,
+        container,
+        &crate::native::native_id("document", "0"),
+        output,
+    )?))
+}
+
+pub(crate) fn decode_owned<'source>(
+    ctx: &DecodeContext<'source>,
+    view: View<'source>,
+    xml: &roxmltree::Document<'_>,
+    container: roxmltree::Node<'_, '_>,
+    owner: &str,
+    output: &mut PartOutput,
+) -> Result<RootProperties, CodecError> {
     let source = super::source::Source::new(ctx, view, xml)?;
     let (extent, fields) = crate::xml_framing::element_fields(ctx, view, container)?;
     let properties_level = PartLevel::parse("freecad.properties")
@@ -171,11 +190,10 @@ pub(crate) fn decode<'source>(
                     extent,
                     PartSpec::new(level, fields),
                     |stage| {
-                        let owner = crate::native::native_id("document", "0");
                         let name = super::required_attr(node, "name")?;
-                        let id = crate::native::native_child_id("property", &owner, name);
+                        let id = crate::native::native_child_id("property", owner, name);
                         source.record(&id, node, || {
-                            value_parts::decode(ctx, view, &source, node, &owner, order, stage)
+                            value_parts::decode(ctx, view, &source, node, owner, order, stage)
                         })
                     },
                 )? {
@@ -189,8 +207,8 @@ pub(crate) fn decode<'source>(
             Ok(result)
         },
     )?;
-    Ok(Some(result.unwrap_or(RootProperties {
+    Ok(result.unwrap_or(RootProperties {
         given_up: true,
         ..RootProperties::default()
-    })))
+    }))
 }

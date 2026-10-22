@@ -4977,3 +4977,49 @@ pub(crate) mod assembly_compact_wide_scope {
     /// Offset of `second_operand_transform` (`f64[16]`, little-endian). Spec §Assembly operands.
     pub(crate) const SECOND_OPERAND_TRANSFORM: usize = 272;
 }
+
+/// Byte offsets for the `design_parameter_state` record.
+///
+/// Spec §3.1. Record length 61 B.
+pub(crate) mod design_parameter_state {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 61;
+    /// Offset of `zero_run_23` (`bytes[23]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_23: usize = 11;
+    /// Offset of `companion_marker` (`u8`). Spec §3.1.
+    pub(crate) const COMPANION_MARKER: usize = 34;
+    /// Offset of `companion_index` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const COMPANION_INDEX: usize = 35;
+    /// Offset of `companion_flags` (`bytes[2]`). Spec §3.1.
+    pub(crate) const COMPANION_FLAGS: usize = 43;
+    /// Offset of `zero_run_5` (`bytes[5]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_5: usize = 45;
+    /// Offset of `root_marker` (`u8`). Spec §3.1.
+    pub(crate) const ROOT_MARKER: usize = 50;
+    /// Offset of `root_index` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const ROOT_INDEX: usize = 51;
+    /// Offset of `root_flags` (`bytes[2]`). Spec §3.1.
+    pub(crate) const ROOT_FLAGS: usize = 59;
+}
+
+/// Byte offsets for the `design_parameter_state_companion` record.
+///
+/// Spec §3.1. Record length 44 B.
+pub(crate) mod design_parameter_state_companion {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 44;
+    /// Offset of `zero_run_8` (`bytes[8]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_8: usize = 11;
+    /// Offset of `control` (`u8`). Spec §3.1.
+    pub(crate) const CONTROL: usize = 19;
+    /// Offset of `control_word` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const CONTROL_WORD: usize = 20;
+    /// Offset of `state_marker` (`u8`). Spec §3.1.
+    pub(crate) const STATE_MARKER: usize = 24;
+    /// Offset of `state_index` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const STATE_INDEX: usize = 25;
+    /// Offset of `state_flags` (`bytes[2]`). Spec §3.1.
+    pub(crate) const STATE_FLAGS: usize = 33;
+    /// Offset of `zero_run_9` (`bytes[9]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_9: usize = 35;
+}

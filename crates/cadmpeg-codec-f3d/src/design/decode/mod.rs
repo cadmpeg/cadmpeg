@@ -12,6 +12,7 @@ pub(crate) mod joint_motion;
 pub(crate) mod mesh;
 pub(crate) mod meta;
 pub(crate) mod operands;
+pub(crate) mod parameter_state;
 pub(crate) mod parameters;
 mod patch;
 pub(crate) mod presentation;

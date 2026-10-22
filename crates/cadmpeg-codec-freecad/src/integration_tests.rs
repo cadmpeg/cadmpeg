@@ -7,6 +7,7 @@ mod content_scope;
 mod design_ordinals;
 mod mandatory_document_parts;
 mod metadata_recovery;
+mod object_declaration_parts;
 mod source_b1;
 mod source_ledgers;
 mod source_parts;

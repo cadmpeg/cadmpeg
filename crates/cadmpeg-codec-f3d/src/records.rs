@@ -20,6 +20,7 @@ pub(crate) mod feature;
 mod frame_chain;
 pub(crate) mod identity;
 pub(crate) mod mesh;
+pub(crate) mod parameter_state;
 pub(crate) mod parameters;
 pub(crate) mod recipes;
 pub(crate) mod references;

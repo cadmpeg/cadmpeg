@@ -93,6 +93,13 @@ fn conflicts(parameter: &DesignParameter, definition: &FeatureDefinition) -> boo
                     }
                     RadiusSpec::Variable { points } => {
                         matches!(name, "Radius" | "D1")
+                            || ["Radius", "Position"].into_iter().any(|prefix| {
+                                indexed_name(name, prefix)
+                                    && name
+                                        .strip_prefix(prefix)
+                                        .and_then(|suffix| suffix.parse::<usize>().ok())
+                                        .is_some_and(|index| index >= points.as_slice().len())
+                            })
                             || points.as_slice().iter().enumerate().any(|(index, point)| {
                                 (name == format!("Radius{index}")
                                     && unbound(&point.radius, parameter))

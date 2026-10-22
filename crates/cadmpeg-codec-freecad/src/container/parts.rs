@@ -77,6 +77,7 @@ pub(super) struct Document<'source> {
     pub(super) facts: crate::native::DocumentFacts,
     pub(super) schema: String,
     pub(super) root_properties: Option<crate::persistence::document_properties::RootProperties>,
+    pub(super) object_declarations: Option<crate::persistence::object_parts::ObjectDeclarations>,
     pub(super) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
@@ -140,18 +141,28 @@ pub(super) fn document<'source>(
                             let root_properties = crate::persistence::document_properties::decode(
                                 ctx, view, &xml, root_stage,
                             )?;
-                            Ok((facts, schema, root_properties))
+                            let object_declarations = crate::persistence::object_parts::decode(
+                                ctx,
+                                view,
+                                &xml,
+                                crate::persistence::Vocabulary::from_declaration(&schema)?,
+                                root_stage,
+                            )?;
+                            Ok((facts, schema, root_properties, object_declarations))
                         })
                     },
                 )?;
-                Ok(facts.map(|(facts, schema, root_properties)| Document {
-                    view,
-                    xml,
-                    facts,
-                    schema,
-                    root_properties,
-                    losses,
-                }))
+                Ok(facts.map(
+                    |(facts, schema, root_properties, object_declarations)| Document {
+                        view,
+                        xml,
+                        facts,
+                        schema,
+                        root_properties,
+                        object_declarations,
+                        losses,
+                    },
+                ))
             })
             .map(Option::flatten)?;
         let mut pointers = BTreeMap::new();

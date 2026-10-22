@@ -29,7 +29,7 @@ fn plain_line_values_are_returned_by_the_actual_binary_callback_and_source_flip(
             .child(6, 6 + bytes.len())
             .expect("actual nonzero window");
         let sections = crate::binary::parse_sections(source).expect("original physical sections");
-        let (_, extent, _) = crate::binary::counted_record(sections.parameter, 0, "Line")
+        let (_, extent, body) = crate::binary::counted_record(sections.parameter, 0, "Line")
             .expect("original counted Line Parameter");
         let (normalized, _) =
             super::super::normalize(source, &ctx).expect("actual source callbacks");
@@ -72,7 +72,19 @@ fn plain_line_values_are_returned_by_the_actual_binary_callback_and_source_flip(
             line.byte_len(),
             u64::try_from(extent.window().len()).expect("source length")
         );
-        assert!(line.reads().is_empty());
+        let integer_bytes = usize::from(sections.lengths.single_integer).div_ceil(8);
+        let value_bytes = integer_bytes + 1;
+        let expected_reads: Vec<_> = (0..6)
+            .map(|index| {
+                let start = body.start() + (2 + index) * value_bytes + 1;
+                u64::try_from(start).expect("actual coordinate offset")
+                    ..u64::try_from(start + integer_bytes).expect("actual coordinate end")
+            })
+            .collect();
+        assert_eq!(
+            line.reads(),
+            &std::collections::BTreeMap::from([("file".to_owned(), expected_reads)])
+        );
         assert!(
             line.offset() + line.byte_len() <= u64::try_from(source.end()).expect("source end")
         );

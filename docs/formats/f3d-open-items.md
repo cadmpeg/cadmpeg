@@ -332,13 +332,17 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Need.** Sketches, constraints, and feature history in documents of this generation stay native until each fixed-offset grammar reads references by their encoded width.
 
-### DR-80. Typed parameter tail reference target
+### DR-90. Parameter-state companion control meanings
 
-**Question.** What record does the typed parameter tail reference name?
+**Question.** What do the state-control byte and word select?
 
-**Known.** Its target type GUID is `B0556F58-EE09-46A7-B18F-E296F48E5B13`, and its target record index varies between documents. The twelve-byte tail of the other forms is the same reference without an inline type GUID.
+**Known.** `f3d.md` §3.1 "**Parameter state.**" defines the version-1 companion's fields and reciprocal link. The control byte and word are both `1` in this form.
 
-**Need.** A writer must emit this reference to build a typed compact parameter.
+**Need.** Independent control changes must identify their meanings and any other legal states.
+
+**Conflict.** None.
+
+**Note.** The Fusion document root's remaining members are separate from its indexed header.
 
 ### DR-81. Other typed compact parameter trailers
 

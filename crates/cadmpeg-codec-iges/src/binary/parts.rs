@@ -236,27 +236,50 @@ fn read_parameters(
                     extent,
                     spec("iges.binary_parameter_record", framing)?,
                     || {
-                        let mut record =
-                            finish_parameter_record(offset, prefix?, directory_by_offset)?;
+                        if dependencies.source_line(offset) || dependencies.source_point(offset) {
+                            let navigation = prefix?;
+                            let pointer = positive_pointer(
+                                navigation.directory_pointer,
+                                "Parameter Directory",
+                            )?;
+                            let owner = directory_by_offset
+                                .get(&pointer)
+                                .and_then(|index| directory.get(*index))
+                                .ok_or_else(|| malformed("Binary Parameter owner is absent"))?;
+                            return ctx.record(
+                                &format!("iges:entity:directory#{}", owner.source_sequence),
+                                extent,
+                                || {
+                                    let record = finish_parameter_record(
+                                        offset,
+                                        if dependencies.source_point(offset) {
+                                            super::source_point_prefix(body, sections.lengths)?
+                                        } else {
+                                            super::source_line_prefix(body, sections.lengths)?
+                                        },
+                                        directory_by_offset,
+                                    )?;
+                                    check_owner(&record, owner, offset, dependencies)?;
+                                    handoff(
+                                        record,
+                                        owner,
+                                        directory,
+                                        directory_by_offset,
+                                        dependencies,
+                                        global,
+                                        ctx,
+                                    )
+                                },
+                            );
+                        }
+                        let record = finish_parameter_record(offset, prefix?, directory_by_offset)?;
                         let pointer =
                             positive_pointer(record.directory_pointer, "Parameter Directory")?;
                         let index = directory_by_offset
                             .get(&pointer)
                             .ok_or_else(|| malformed("Binary Parameter owner is absent"))?;
                         let owner = &directory[*index];
-                        if positive_pointer(owner.parameter_pointer(), "Directory Parameter Data")?
-                            != offset
-                        {
-                            return Err(malformed(
-                                "Binary Parameter and Directory offsets do not pair",
-                            ));
-                        }
-                        if owner.entity_type() != record.entity_type {
-                            return Err(malformed(
-                                "Binary Directory and Parameter entity types disagree",
-                            ));
-                        }
-                        dependencies.parameter(&record, owner)?;
+                        check_owner(&record, owner, offset, dependencies)?;
                         if !admission::allows_handoff(&record, owner, dependencies) {
                             return Ok(record);
                         }
@@ -264,28 +287,15 @@ fn read_parameters(
                             &format!("iges:entity:directory#{}", owner.source_sequence),
                             extent,
                             || {
-                                group::prune_failed_members(
-                                    &mut record,
+                                handoff(
+                                    record,
                                     owner,
                                     directory,
                                     directory_by_offset,
                                     dependencies,
-                                )?;
-                                let lines = super::parameter_lines(
-                                    &mut record,
-                                    directory,
-                                    directory_by_offset,
-                                )?;
-                                let content = crate::parameter::admitted::parse_lines(
-                                    owner.source_sequence,
-                                    record.entity_type,
-                                    &lines,
                                     global,
                                     ctx,
-                                )?;
-                                record.admitted =
-                                    Some(super::AdmittedBinaryParameter { lines, content });
-                                Ok(record)
+                                )
                             },
                         )
                     },
@@ -318,6 +328,53 @@ fn read_parameters(
             Ok((Vec::new(), failed))
         }
     }
+}
+
+fn check_owner(
+    record: &BinaryParameter,
+    owner: &BinaryDirectory,
+    offset: u32,
+    dependencies: &Dependencies,
+) -> Result<(), CodecError> {
+    if positive_pointer(owner.parameter_pointer(), "Directory Parameter Data")? != offset {
+        return Err(malformed(
+            "Binary Parameter and Directory offsets do not pair",
+        ));
+    }
+    if owner.entity_type() != record.entity_type {
+        return Err(malformed(
+            "Binary Directory and Parameter entity types disagree",
+        ));
+    }
+    dependencies.parameter(record, owner)
+}
+
+fn handoff(
+    mut record: BinaryParameter,
+    owner: &BinaryDirectory,
+    directory: &[BinaryDirectory],
+    directory_by_offset: &BTreeMap<u32, usize>,
+    dependencies: &Dependencies,
+    global: &crate::global::ResolvedGlobal,
+    ctx: &DecodeContext<'_>,
+) -> Result<BinaryParameter, CodecError> {
+    group::prune_failed_members(
+        &mut record,
+        owner,
+        directory,
+        directory_by_offset,
+        dependencies,
+    )?;
+    let lines = super::parameter_lines(&mut record, directory, directory_by_offset)?;
+    let content = crate::parameter::admitted::parse_lines(
+        owner.source_sequence,
+        record.entity_type,
+        &lines,
+        global,
+        ctx,
+    )?;
+    record.admitted = Some(super::AdmittedBinaryParameter { lines, content });
+    Ok(record)
 }
 
 fn insert_failed(

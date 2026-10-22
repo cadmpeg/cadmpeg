@@ -894,6 +894,7 @@ impl CodecBackend for FcstdCodec {
                 document_xml,
                 persistence::Vocabulary::from_declaration(&scan.schema_version)?,
                 scan.document_properties.as_ref(),
+                scan.object_declarations.as_ref(),
             )?;
             scan.losses.extend(graph.losses);
             persistence::resolve_side_entries(&mut graph.properties, &scan.data, &mut scan.losses)?;
