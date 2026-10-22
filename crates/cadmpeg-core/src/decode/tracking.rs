@@ -573,11 +573,9 @@ impl SessionHandle<'_> {
                 .map(|(id, extent)| session.new_record(id, extent))
                 .transpose()?;
             if let Some(record) = &record {
-                for frame in &mut session.frames {
-                    if let Some(attempts) = &mut frame.part_attempts {
-                        reserve(&session.budget, attempts, 1)?;
-                        attempts.push(copy_string(&session.budget, &record.id)?);
-                    }
+                if let Some(attempts) = innermost_part_attempts(&mut session.frames) {
+                    reserve_working(&session.budget, attempts, 1)?;
+                    attempts.push(copy_working(&session.budget, &record.id)?);
                 }
             }
             reserve(&session.budget, &mut session.frames, 1)?;
@@ -651,6 +649,16 @@ impl SessionHandle<'_> {
                 .frames
                 .pop()
                 .ok_or_else(|| CodecError::malformed("read scope is missing at commit"))?;
+            if let Some(attempts) = frame.part_attempts.take() {
+                if let Some(parent) = innermost_part_attempts(&mut session.frames) {
+                    if parent.is_empty() {
+                        *parent = attempts;
+                    } else {
+                        reserve_working(&session.budget, parent, attempts.len())?;
+                        parent.extend(attempts);
+                    }
+                }
+            }
             if let Some(mut record) = frame.record.take() {
                 while let Some(index) = frame.deltas.iter().position(|delta| delta.owner == token) {
                     let delta = frame.deltas.remove(index);
@@ -709,15 +717,24 @@ impl SessionHandle<'_> {
             .filter(|slot| slot.generation == self.generation)
             .and_then(|slot| slot.state.as_mut())
             .ok_or_else(|| CodecError::malformed("decode session has ended"))?;
-        let attempts = session
+        let (frame, enclosing) = session
             .frames
-            .last_mut()
-            .filter(|frame| frame.token == token)
-            .and_then(|frame| frame.part_attempts.as_mut())
+            .split_last_mut()
+            .filter(|(frame, _)| frame.token == token)
+            .ok_or_else(|| CodecError::malformed("part read scope is not active"))?;
+        let attempts = frame
+            .part_attempts
+            .as_mut()
             .ok_or_else(|| CodecError::malformed("part read scope is not active"))?;
         let mut attempts = std::mem::take(attempts);
         attempts.sort_unstable();
         attempts.dedup();
+        if let Some(parent) = innermost_part_attempts(enclosing) {
+            reserve_working(&session.budget, parent, attempts.len())?;
+            for id in &attempts {
+                parent.push(copy_working(&session.budget, id)?);
+            }
+        }
         Ok(attempts)
     }
 
@@ -861,6 +878,38 @@ fn reserve<T>(
     values.try_reserve_exact(additional).map_err(|_| {
         budget.retained_allocation_failed(u64_from_index(bytes), "record tracking storage")
     })
+}
+
+/// The attempt list of the innermost open part frame.
+fn innermost_part_attempts(frames: &mut [Frame]) -> Option<&mut Vec<String>> {
+    frames
+        .iter_mut()
+        .rev()
+        .find_map(|frame| frame.part_attempts.as_mut())
+}
+
+/// Part attempt lists are working storage: the part helper charges an id
+/// when a given-up part's loss message keeps it.
+fn reserve_working<T>(
+    budget: &DecodeBudget,
+    values: &mut Vec<T>,
+    additional: usize,
+) -> Result<(), CodecError> {
+    let bytes = additional
+        .checked_mul(size_of::<T>())
+        .ok_or_else(|| budget.retained_allocation_failed(u64::MAX, "part attempt storage"))?;
+    values.try_reserve(additional).map_err(|_| {
+        budget.retained_allocation_failed(u64_from_index(bytes), "part attempt storage")
+    })
+}
+
+fn copy_working(budget: &DecodeBudget, value: &str) -> Result<String, CodecError> {
+    let mut text = String::new();
+    text.try_reserve_exact(value.len()).map_err(|_| {
+        budget.retained_allocation_failed(u64_from_index(value.len()), "part attempt text")
+    })?;
+    text.push_str(value);
+    Ok(text)
 }
 
 fn copy_string(budget: &DecodeBudget, value: &str) -> Result<String, CodecError> {
