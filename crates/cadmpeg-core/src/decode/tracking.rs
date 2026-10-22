@@ -412,6 +412,25 @@ impl SessionHandle<'_> {
         })
     }
 
+    pub(super) fn require_unregistered_root(self) -> Result<(), CodecError> {
+        if let Some(limit) = self.fused() {
+            return Err(limit.into());
+        }
+        let sessions = self.store.sessions.borrow();
+        let session = self
+            .index
+            .and_then(|index| sessions.get(index))
+            .filter(|slot| slot.generation == self.generation)
+            .and_then(|slot| slot.state.as_ref())
+            .ok_or_else(|| CodecError::from(self.allocation_failure()))?;
+        if session.streams.has_root() {
+            return Err(CodecError::malformed(
+                "decode session already has a root source",
+            ));
+        }
+        Ok(())
+    }
+
     pub(super) fn register_root(self, byte_len: u64) -> Result<(), ResourceLimit> {
         if let Some(limit) = self.fused() {
             return Err(limit);

@@ -549,17 +549,13 @@ fn patch_baseline_locations_remain_transient_outside_cadir() {
         &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
     );
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &source,
         &arena,
         &cadmpeg_core::decode::DecodePolicy::desktop(),
     )
     .unwrap();
-    let baseline = crate::decode::decode_patch_baseline(
-        &ctx,
-        cadmpeg_core::decode::View::over_retained(&source),
-    )
-    .unwrap();
+    let baseline = crate::decode::decode_patch_baseline(&ctx, root).unwrap();
     let source_native = baseline.native_layout.as_ref().unwrap();
     assert!(!source_native.act_guids.is_empty());
     assert!(source_native

@@ -113,6 +113,10 @@ pub(super) struct Segment {
 }
 
 impl Streams {
+    pub(super) fn has_root(&self) -> bool {
+        self.root.is_some()
+    }
+
     pub(super) fn root(&mut self, byte_len: u64) {
         self.root = Some(Stream {
             space: SpaceId::ROOT,

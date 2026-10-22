@@ -105,6 +105,25 @@ impl<'a> DecodeContext<'a> {
         Self::from_bytes_limit(bytes, arena, policy, depth).map_err(Into::into)
     }
 
+    /// Completes an acquired input prefix and registers its actual root view.
+    /// The prefix is moved into this arena without charging or copying it twice.
+    pub fn complete_root_input(
+        &self,
+        reader: &mut dyn std::io::Read,
+        mut prefix: Vec<u8>,
+    ) -> Result<View<'a>, CodecError> {
+        self.budget.require_unregistered_root()?;
+        if u64_from_index(prefix.len()) != self.budget.input_bytes() {
+            return Err(CodecError::malformed(
+                "root prefix does not match acquired input length",
+            ));
+        }
+        self.complete_input(reader, &mut prefix)?;
+        let bytes = self.arena.alloc(prefix.into_boxed_slice());
+        self.budget.register_root(u64_from_index(bytes.len()))?;
+        Ok(View::over_space(bytes, SpaceId::ROOT).with_session(self.budget))
+    }
+
     /// Builds a full-depth root context with a resource-only refusal channel.
     pub fn from_root_bytes_limit(
         bytes: &'a [u8],

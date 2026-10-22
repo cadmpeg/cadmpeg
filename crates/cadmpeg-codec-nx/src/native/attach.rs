@@ -1216,6 +1216,21 @@ fn attach_jpeg_preview_assets(
         };
         let native_ref: UnknownId =
             IdScope::container().id(&cadmpeg_ir::identity_component!("jpeg-preview"), ordinal);
+        if ctx.container_only() {
+            // A container-only decode holds no model class (§1.1), so the
+            // preview stays a retained source record.
+            annotations.exactness(native_ref.as_str(), Exactness::ByteExact);
+            ctx.retain_bytes(
+                cadmpeg_core::decode::u64_from_index(bytes.len()),
+                "retain NX JPEG preview outside a container-only model",
+            )?;
+            push_native_unknown(
+                ctx,
+                unknowns,
+                UnknownRecord::retained(native_ref, source_offset, bytes.to_vec(), Vec::new()),
+            )?;
+            continue;
+        }
         if crate::decode::jpeg::jpeg_dimensions(bytes).is_none() {
             annotations.note(
                 native_ref.as_str(),

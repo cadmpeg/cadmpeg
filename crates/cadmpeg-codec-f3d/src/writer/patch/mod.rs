@@ -69,7 +69,7 @@ pub(crate) fn write_semantic(
     // Semantic patching reserializes native records under the same desktop
     // decode policy used for the source-image salvage decode below.
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (encode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+    let (encode_ctx, source_root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         source_image,
         &arena,
         &cadmpeg_core::decode::DecodePolicy::desktop(),
@@ -81,10 +81,7 @@ pub(crate) fn write_semantic(
     } else {
         validate_assembly_projection(target, None)?;
     }
-    let baseline = decode::decode_patch_baseline(
-        &encode_ctx,
-        cadmpeg_core::decode::View::over_retained(source_image),
-    )?;
+    let baseline = decode::decode_patch_baseline(&encode_ctx, source_root)?;
     let baseline_native = baseline.native_layout.as_ref();
     let natives = PatchNatives {
         baseline: baseline_native,
