@@ -590,8 +590,7 @@ fn layer_index_minus_one_names_the_system_default_layer() {
         objects,
         &settings::DocumentMetadata::default(),
         &mut warnings,
-    )
-    .expect("resolve identities");
+    );
     let system = objects[0].identity().expect("required invariant");
     let layer = system.layer.as_ref().expect("the system default layer");
     assert_eq!(layer.name, "Default");
@@ -656,8 +655,7 @@ fn a_duplicated_layer_uuid_keeps_the_index_binding_and_withholds_the_uuid() {
     attributes.layer_index = 1;
     let objects = vec![ObjectRecord::Framed(Box::new(descriptor(attributes, 10)))];
     let mut warnings = Diagnostics::new();
-    let objects = crate::objects::resolve_identities(objects, &metadata, &mut warnings)
-        .expect("resolve identities");
+    let objects = crate::objects::resolve_identities(objects, &metadata, &mut warnings);
     let identity = objects[0].identity().expect("required invariant");
     assert_eq!(identity.layer_index, 1);
     let layer = identity
@@ -715,8 +713,7 @@ pub(crate) fn identity_resolution_defers_material_and_parent_colors() {
         10,
     )))];
     let mut warnings = Diagnostics::new();
-    let material = crate::objects::resolve_identities(material, &metadata, &mut warnings)
-        .expect("resolve identities");
+    let material = crate::objects::resolve_identities(material, &metadata, &mut warnings);
     assert_eq!(
         material[0]
             .identity()
@@ -742,8 +739,7 @@ pub(crate) fn identity_resolution_defers_material_and_parent_colors() {
     attributes.object_mode = 0xf3;
     let parent = vec![ObjectRecord::Framed(Box::new(descriptor(attributes, 20)))];
     let mut warnings = Diagnostics::new();
-    let parent = crate::objects::resolve_identities(parent, &metadata, &mut warnings)
-        .expect("resolve identities");
+    let parent = crate::objects::resolve_identities(parent, &metadata, &mut warnings);
     assert!(!warnings.iter().any(|warning| warning.contains("color")));
     assert_eq!(
         parent[0]
@@ -792,8 +788,7 @@ fn identity_resolution_warns_and_keys_nil_and_duplicate_uuids_by_record() {
         objects,
         &settings::DocumentMetadata::default(),
         &mut warnings,
-    )
-    .expect("resolve identities");
+    );
     assert_ne!(
         objects[0].identity().expect("required invariant").source_id,
         objects[2].identity().expect("required invariant").source_id
@@ -823,8 +818,7 @@ fn degraded_object_record_resolves_to_one_identity() {
         objects,
         &settings::DocumentMetadata::default(),
         &mut Diagnostics::new(),
-    )
-    .expect("resolve identities");
+    );
     assert_eq!(resolved.len(), 1);
 }
 

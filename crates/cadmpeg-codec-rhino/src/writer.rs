@@ -67,7 +67,7 @@ const TCODE_OBJECT_TABLE: u32 = 0x1000_0013;
 const TCODE_HISTORY_RECORD_TABLE: u32 = 0x1000_0026;
 const TCODE_ENDOFTABLE: u32 = 0xffff_ffff;
 const TCODE_PROPERTIES_OPENNURBS_VERSION: u32 = 0xa000_0026;
-/// OpenNURBS 8.35 of 8 September 2026, whose record layouts the writer emits.
+/// `OpenNURBS` 8.35 of 8 September 2026, whose record layouts the writer emits.
 const OPENNURBS_WRITER_VERSION: i64 = 2_425_133_316;
 /// The same version in the year-month-day form that archive 50 stores.
 const OPENNURBS_WRITER_VERSION_ARCHIVE_50: i64 = 202_609_088;
@@ -223,7 +223,7 @@ fn write_seekable(
     Ok(())
 }
 
-/// The archive OpenNURBS version a written archive declares. Archive 50
+/// The archive `OpenNURBS` version a written archive declares. Archive 50
 /// stores the year-month-day form of the version.
 fn declared_opennurbs_version(version: RhinoArchiveVersion) -> i64 {
     match version {

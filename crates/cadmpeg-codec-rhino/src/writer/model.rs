@@ -927,7 +927,7 @@ impl<'a> WritableModel<'a> {
         Ok(result)
     }
 
-    /// Resolves each unclassified loop role. OpenNURBS requires the first loop
+    /// Resolves each unclassified loop role. `OpenNURBS` requires the first loop
     /// of a face to be outer and later loops to be inner, and computes the type
     /// from the trim direction: a counterclockwise loop is outer.
     fn classify_loops(&mut self, ir: &CadIr) -> Result<(), CodecError> {

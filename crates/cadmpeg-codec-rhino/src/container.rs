@@ -1102,7 +1102,7 @@ fn scan_with_record_limit<'a>(
             validate_eof(data, offset, archive).map_err(framing_error)?;
             let mut metadata =
                 crate::settings::parse_metadata(ctx, data, archive, &tables, &mut warnings)?;
-            let all_objects = resolve_identities(all_objects, &metadata, &mut warnings)?;
+            let all_objects = resolve_identities(all_objects, &metadata, &mut warnings);
 
             opaque_records.append(&mut metadata.opaque_records);
             return Ok(Scan {

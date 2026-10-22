@@ -1595,7 +1595,7 @@ fn resolve_identity(
     warnings: &mut Diagnostics,
     index: usize,
     seen_ids: &mut HashSet<Uuid>,
-) -> Result<SourceIdentity, cadmpeg_core::CodecError> {
+) -> SourceIdentity {
     let attributes = descriptor.attributes.parsed();
     let object_id = attributes.map_or(Uuid::nil(), |value| value.object_id);
     let layer_index = attributes.map_or(-1, |value| value.layer_index);
@@ -1678,7 +1678,7 @@ fn resolve_identity(
         id: value.id,
         name: value.name.to_owned(),
     });
-    Ok(SourceIdentity {
+    SourceIdentity {
         source_id,
         object_id,
         class_uuid: descriptor.class_uuid,
@@ -1692,7 +1692,7 @@ fn resolve_identity(
         source: SourceRange {
             range: descriptor.range.clone(),
         },
-    })
+    }
 }
 
 /// Parses one bounded object record and returns identity plus child ranges.
@@ -1923,7 +1923,7 @@ pub(crate) fn resolve_identities(
     objects: Vec<ObjectRecord<()>>,
     metadata: &DocumentMetadata,
     warnings: &mut Diagnostics,
-) -> Result<Vec<ObjectRecord>, cadmpeg_core::CodecError> {
+) -> Vec<ObjectRecord> {
     let mut seen_ids = HashSet::new();
     let mut layers = LayerLookup::new();
     for layer in &metadata.layers {
@@ -1936,7 +1936,7 @@ pub(crate) fn resolve_identities(
             ObjectRecord::Framed(mut object) => {
                 let mut local_warnings = Diagnostics::new();
                 let identity =
-                    resolve_identity(&object, &layers, &mut local_warnings, index, &mut seen_ids)?;
+                    resolve_identity(&object, &layers, &mut local_warnings, index, &mut seen_ids);
                 for warning in &local_warnings {
                     warnings.push_coded(warning.code, format_args!("{}", warning.message));
                 }
@@ -1958,7 +1958,7 @@ pub(crate) fn resolve_identities(
             }
         });
     }
-    Ok(resolved)
+    resolved
 }
 
 /// The layer facts an object identity reads.

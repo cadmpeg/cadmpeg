@@ -31,10 +31,10 @@ use crate::settings::{self, MillimeterScale, StandardUnit, UnitBinding};
 use crate::wire::{read_finite, scaled_coordinate, uuid, Uuid};
 
 const ANONYMOUS: u32 = 0x4000_8000;
-/// First OpenNURBS version whose archive-60-or-later material uses the
+/// First `OpenNURBS` version whose archive-60-or-later material uses the
 /// anonymous form.
 const FIRST_WRITER_WITH_MODERN_MATERIAL: i64 = 2_348_833_910;
-/// Last archive-60 OpenNURBS version whose minor-0 dimension style ends
+/// Last archive-60 `OpenNURBS` version whose minor-0 dimension style ends
 /// before the arrow-block UUIDs.
 const LAST_WRITER_WITHOUT_ARROW_BLOCKS: i64 = 2_348_833_437;
 const MODEL_ATTRIBUTES: u32 = 0x4000_8002;
