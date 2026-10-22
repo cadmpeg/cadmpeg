@@ -14,7 +14,7 @@
     {
       "filename": "application_payloads.FCStd",
       "sha256": "410af2e9ed55011039ee065b20e7614037482d382e75e173d78c9a008522de75",
-      "canonical_cadir_sha256": "a5570443bb19635507959e9c2925133f90696caf56d641ad2d17fdc2d3010fcc",
+      "canonical_cadir_sha256": "bd3e305f1c847bf2068e3eb5de8592b48a8d3d98f30afbea00eafb1a855ed8df",
       "deterministic": true,
       "blocking_losses": 3,
       "neutral_errors": 0,
@@ -80,7 +80,7 @@
     {
       "filename": "binary_exact_shape.FCStd",
       "sha256": "86ecddcee6d677370343c2f5a9682e57ca58db5808775b0e8812bdbe844dbe1e",
-      "canonical_cadir_sha256": "3dd5c000a764637aa03e18e9d012b36f1675179be4d9241b8d0ab19304bb278d",
+      "canonical_cadir_sha256": "b05170c72971d183257c9eef804d8ab2f9f576940ec5c100fd1a0d46319b853b",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -147,7 +147,7 @@
     {
       "filename": "core_design_product.FCStd",
       "sha256": "69c6aa00699cb8d8bb4014b48eb7c419352c49f360cffb45075f31e152f989ba",
-      "canonical_cadir_sha256": "0c6bdf9b8b316b7c7df69586680e80ac960566efb6cc1cc1b552141d62bf9d29",
+      "canonical_cadir_sha256": "bd3d7a9914b047576fa17597e598dac739dbbf30a46a96838cd6f3e3775568ab",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -218,7 +218,7 @@
     {
       "filename": "core_operations.FCStd",
       "sha256": "54cc992ca6278fdd8e38b3d01f37c616e5dfdc38ca7a058fe838599b709ed228",
-      "canonical_cadir_sha256": "7bf627c05b40a0a4e925ad2ec1b8e737bfbbf49773dd47b80ea300023312ad29",
+      "canonical_cadir_sha256": "e32d69d8c107725894174e1df9ef0329d0b5b8d48ea83821ca8284b94056c055",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -288,7 +288,7 @@
     {
       "filename": "design_history.FCStd",
       "sha256": "c71da85ee80979f3f210690125da00406b2d49682be765100fc1cfb1d98ea0d7",
-      "canonical_cadir_sha256": "e0f79a02713caff3b0406f68e689ee6f106066e3cd148befd1bb46e035b54bdb",
+      "canonical_cadir_sha256": "8fd00c6e2f52fc010a62311625340199e267e01fef1d0b784b7fb4626107d146",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -358,7 +358,7 @@
     {
       "filename": "external_component.FCStd",
       "sha256": "e1a563bd89e46c00237b65ac543482aaa361c833deef759164143687d0de557b",
-      "canonical_cadir_sha256": "0b1712e9748b34d93516ac54ced21f76a83bb712b5d03f5e85064deceb381860",
+      "canonical_cadir_sha256": "a2f2e2c669da457413dea7f62a24ba6ad0bcc8f92ea927354b0c278d803dded6",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -425,7 +425,7 @@
     {
       "filename": "geometry_topology.FCStd",
       "sha256": "d7c0a6325cd4f68413f5ba9b0e51cd1396d4dc32a5f08dedc3ed5b00fc12cb59",
-      "canonical_cadir_sha256": "dd0201adec0bc1578ca2a016a26c75b2af3a6e40a20b031d96a5e5e824fff5d3",
+      "canonical_cadir_sha256": "63a24f5f3e787cf6305fd63fd67c4eb84fb3f483149119144d5835cef7141fa6",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -493,7 +493,7 @@
     {
       "filename": "gui_appearance.FCStd",
       "sha256": "393db41b6acd1d3c890dc07085017fa6f07e91f96d59e7a244e2c834075ffcc2",
-      "canonical_cadir_sha256": "107fd476173af051646a71be40323e10c97e4db549ad9025ca63e34323fa7569",
+      "canonical_cadir_sha256": "714a1b85fa6965b567c85a7be1b3dcfcd009c35375aecf0e1376a45a121dd902",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -564,7 +564,7 @@
     {
       "filename": "product_assembly.FCStd",
       "sha256": "b8e0e92c0155b4182565493deace3e30b42fe1e45e8424ae4fd1d9bc5ddd8340",
-      "canonical_cadir_sha256": "cf1319c2347b7c48c6eba976b479262f51b32249d525fddae826437bf974de71",
+      "canonical_cadir_sha256": "80065a694b9fcd2b2c714cb7d2b1f45af7fb7cdaae7e933590127d1b05859563",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -634,7 +634,7 @@
     {
       "filename": "sketch_conics.FCStd",
       "sha256": "517b5fd0c7ea35aea9d43a22dea1ffd0a50200c54c2c61aea856a0ca5d5b9751",
-      "canonical_cadir_sha256": "71d47595dde72c23c4a3cd0e7dacb2e1a5a139707e1aa030eea947a64ed8609b",
+      "canonical_cadir_sha256": "7275d08de328bc7d5dea1ac2a150d4a5a03975ba8cc1d44f83bdc21431873a2e",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -704,7 +704,7 @@
     {
       "filename": "sketch_constraints.FCStd",
       "sha256": "35bbba0d7529415176cfbbbdc1fabc265ac3748f5fc38058887ac254e44d074f",
-      "canonical_cadir_sha256": "230afed82abf44fe8f463146a18ba0d1e1d4bf2b14abe969233aaa0784e12879",
+      "canonical_cadir_sha256": "ae855b2f8c29c68b1510b7b9663acb77bfbf06a38a448a848b1107d7c6bd1ae0",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -774,7 +774,7 @@
     {
       "filename": "techdraw_annotations.FCStd",
       "sha256": "6bc4c0e639b8055640c0bb02e2828a63184c787d42bda85d661707de3db84317",
-      "canonical_cadir_sha256": "f82a1e4f0859a67dc552b221173c6f160dddbc8cedb4207f2299b5a2f210fb50",
+      "canonical_cadir_sha256": "d4935da986b84894f50829d39faf1afa014e1de8aab6d3c2f3c7ecb7481043f8",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
