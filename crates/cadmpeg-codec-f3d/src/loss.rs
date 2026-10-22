@@ -49,6 +49,9 @@ pub(crate) enum F3dLossCode {
     /// Design assembly joints projected as fixed because their freedom codes or
     /// limit lanes do not map to a joint kind.
     AssemblyJointMotionUndecoded,
+    /// Projected Design assembly joints whose operand paths carry occurrence
+    /// identity pairs of unknown effect on the joint, retained natively.
+    AssemblyOperandPathPairsNative,
     /// An F3Z drawing root was omitted while its derived 3D model transferred.
     DrawingDocumentOmitted,
     /// ASM history estimated retained size exceeded the session's remaining retained-byte allowance.
@@ -238,6 +241,7 @@ impl F3dLossCode {
         Self::ComponentInsertOrderUnknown,
         Self::AssemblyJointUnprojected,
         Self::AssemblyJointMotionUndecoded,
+        Self::AssemblyOperandPathPairsNative,
         Self::DrawingDocumentOmitted,
         Self::HistoryBindingBudgetExceeded,
         Self::HistoryBindingWorkExceeded,
@@ -345,6 +349,7 @@ impl F3dLossCode {
             Self::ComponentInsertOrderUnknown => "assembly.component-insert-order-unknown",
             Self::AssemblyJointUnprojected => "assembly.joint-unprojected",
             Self::AssemblyJointMotionUndecoded => "assembly.joint-motion-undecoded",
+            Self::AssemblyOperandPathPairsNative => "assembly.operand-path-pairs-native",
             Self::DrawingDocumentOmitted => "drawing.document-omitted",
             Self::HistoryBindingBudgetExceeded => "history.binding-budget-exceeded",
             Self::HistoryBindingWorkExceeded => "history.binding-work-exceeded",
@@ -472,6 +477,7 @@ impl F3dLossCode {
             | Self::ComponentInsertOrderUnknown
             | Self::AssemblyJointUnprojected
             | Self::AssemblyJointMotionUndecoded
+            | Self::AssemblyOperandPathPairsNative
             | Self::DrawingDocumentOmitted
             | Self::DesignBodyBindingUnresolved
             | Self::ReferenceImageNativeRetained
@@ -600,7 +606,8 @@ impl F3dLossCode {
             | Self::FeatureEdgeSelectionLost
             | Self::FeaturePatternInstanceSearchCapped
             | Self::AssemblyJointUnprojected
-            | Self::AssemblyJointMotionUndecoded => LossTaxonomy::FeatureHistoryRetained,
+            | Self::AssemblyJointMotionUndecoded
+            | Self::AssemblyOperandPathPairsNative => LossTaxonomy::FeatureHistoryRetained,
             Self::MaterialDistanceUnitUntyped => LossTaxonomy::MaterialNotTransferred,
             Self::LocalOccurrenceUnplaced
             | Self::ComponentInsertUnplaced
@@ -703,6 +710,7 @@ mod tests {
                 "assembly.component-insert-order-unknown",
                 "assembly.joint-unprojected",
                 "assembly.joint-motion-undecoded",
+                "assembly.operand-path-pairs-native",
                 "drawing.document-omitted",
                 "history.binding-budget-exceeded",
                 "history.binding-work-exceeded",
