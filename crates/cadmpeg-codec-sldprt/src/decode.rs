@@ -2319,9 +2319,17 @@ fn build_geometry_ir(
     let mut display_summary = crate::tessellation::Summary::default();
     for section in scan.sections() {
         let faces = crate::tessellation::section_display_faces(ctx, section)?;
-        let summary = crate::tessellation::summary_for_faces(&faces);
+        let summary = crate::tessellation::summary_for_faces(section.payload(), &faces);
         display_summary.vertices += summary.vertices;
         display_summary.triangles += summary.triangles;
+        for (total, count) in display_summary
+            .extended_forms
+            .iter_mut()
+            .zip(summary.extended_forms)
+        {
+            *total += count;
+        }
+        display_summary.opaque_extended_tables += summary.opaque_extended_tables;
         display_sections.push((section, faces));
     }
     let mut ir = CadIr::decoded(source_meta(
@@ -3155,6 +3163,32 @@ fn source_meta(
             cadmpeg_core::nonblank_literal!("displaylist_triangles"),
             display.triangles.to_string(),
         );
+    }
+    for (name, count) in [
+        (
+            cadmpeg_core::nonblank_literal!("displaylist_form_00201296"),
+            display.extended_forms[0],
+        ),
+        (
+            cadmpeg_core::nonblank_literal!("displaylist_form_00201a96"),
+            display.extended_forms[1],
+        ),
+        (
+            cadmpeg_core::nonblank_literal!("displaylist_form_00201b96"),
+            display.extended_forms[2],
+        ),
+        (
+            cadmpeg_core::nonblank_literal!("displaylist_form_00201e96"),
+            display.extended_forms[3],
+        ),
+        (
+            cadmpeg_core::nonblank_literal!("displaylist_opaque_extended_tables"),
+            display.opaque_extended_tables,
+        ),
+    ] {
+        if count != 0 {
+            attributes.insert(name, count.to_string());
+        }
     }
     attributes.insert(
         cadmpeg_core::nonblank_literal!("block_count"),

@@ -23,12 +23,15 @@ use std::collections::HashMap;
 
 use crate::layout::display_lists_compact_face_header as compact_face;
 use crate::layout::display_lists_extended_face_header as extended_face;
+use crate::layout::display_lists_extended_metadata as extended_meta;
 use crate::layout::display_lists_scene_source_binding as scene_src;
 
 const CLASS_MARKER: &[u8] = &[0xff, 0xff, 0x01, 0x00];
 const SCENE_SOURCE_MARKER: &[u8] = &scene_src::MARKER_VALUE;
 const EPS_DISPLAY_QUANTIZATION: f64 = 1.0e-9;
 const EPS_AXIS_ALIGNMENT: f64 = 1.0e-9;
+const EPS_EXTENDED_UNIT_VECTOR: f64 = 1.0e-6;
+const EXTENDED_FORM_WORDS: [u32; 4] = [0x0020_1296, 0x0020_1a96, 0x0020_1b96, 0x0020_1e96];
 const EPS_CYLINDER_ANGLE: f64 = 1.0e-12;
 const EPS_POLE_BOX_ROUNDING: f64 = 1.0e-9;
 const DISPLAY_QUANTIZATION_ULPS: f64 = 8.0;
@@ -136,6 +139,8 @@ const FACE_TESSELLATION_CLASS: &[u8] = b"uoTempFaceTessData_c";
 pub(crate) struct Summary {
     pub(crate) vertices: usize,
     pub(crate) triangles: usize,
+    pub(crate) extended_forms: [usize; 4],
+    pub(crate) opaque_extended_tables: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -553,10 +558,9 @@ fn probe_table(
 /// position do not state the display-list grammar. The descriptor is the record
 /// boundary, so once `probe_table` answers, the region is a table and every
 /// lane disagreement inside it is a `CodecError` naming the table's byte
-/// offset — a normal lane that does not cover the vertices, and strip spans
-/// that do not cut the vertex lane, alike. The display-list grammar states a
-/// normal descriptor for every table, so the lane is always present and `None`
-/// is never the reading of an empty one.
+/// offset — a nonempty normal lane that does not cover the vertices, and strip
+/// spans that do not cut the vertex lane, alike. An empty native normal channel
+/// supplies an unshaded mesh while its descriptor and bytes remain retained.
 fn parse_table(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
@@ -580,7 +584,8 @@ fn parse_table(
             cadmpeg_core::CodecError::malformed("display-list strip length exceeds 32 bits")
         })?);
     }
-    match TessellationMesh::from_strip_lanes(vertices, Some(normals), &spans) {
+    let shading = (!normals.is_empty()).then_some(normals);
+    match TessellationMesh::from_strip_lanes(vertices, shading, &spans) {
         Ok(mesh) => Ok(Some((Mesh { mesh, channels }, end))),
         Err(error) => Err(cadmpeg_core::CodecError::malformed(format_args!(
             "sldprt display-list table at byte {at}: {error}"
@@ -831,11 +836,98 @@ fn persistent_surface_references(
     Ok(references)
 }
 
-pub(crate) fn summary_for_faces(faces: &[DisplayFace]) -> Summary {
-    Summary {
-        vertices: faces.iter().map(|face| face.mesh.vertex_count()).sum(),
-        triangles: faces.iter().map(|face| face.mesh.triangle_count()).sum(),
+fn table_counts_match(payload: &[u8], at: usize, face: &DisplayFace) -> bool {
+    View::u32_le_at(payload, at + compact_face::TRIANGLE_COUNT)
+        .map(cadmpeg_core::decode::index_from_u32)
+        == Some(face.mesh.triangle_count())
+        && View::u32_le_at(payload, at + compact_face::STRIP_COUNT)
+            .map(cadmpeg_core::decode::index_from_u32)
+            == Some(face.mesh.strip_count())
+}
+
+fn extended_header_word(payload: &[u8], face: &DisplayFace) -> Option<u32> {
+    let header = face.table.start().checked_sub(extended_face::LEN)?;
+    (descriptor_table_offset(payload, header) == extended_face::LEN
+        && table_counts_match(payload, header, face))
+    .then(|| View::u32_le_at(payload, header + extended_face::FORM_TOKEN))?
+}
+
+fn table_header_start(payload: &[u8], face: &DisplayFace) -> usize {
+    if extended_header_word(payload, face).is_some() {
+        return face.table.start() - extended_face::LEN;
     }
+    face.table
+        .start()
+        .checked_sub(compact_face::LEN)
+        .filter(|header| table_counts_match(payload, *header, face))
+        .unwrap_or(face.table.start())
+}
+
+fn known_extended_form(
+    payload: &[u8],
+    face: &DisplayFace,
+    word: u32,
+    metadata_end: usize,
+) -> Option<usize> {
+    let start = face.metadata.start();
+    let end = start.checked_add(extended_meta::LEN)?;
+    if end > metadata_end {
+        return None;
+    }
+    let bytes = payload.get(start..end)?;
+    if View::u32_le_at(bytes, extended_meta::ONE) != Some(extended_meta::ONE_VALUE) {
+        return None;
+    }
+    let a = View::u32_le_at(bytes, extended_meta::A)?;
+    let b = View::u32_le_at(bytes, extended_meta::B)?;
+    let c = View::u32_le_at(bytes, extended_meta::C)?;
+    let index = match (a, b, c) {
+        (0, 0, 0) => 0,
+        (0, 0, 1) => 1,
+        (1, 0, 1) => 2,
+        (0, 1, 1) => 3,
+        _ => return None,
+    };
+    if EXTENDED_FORM_WORDS[index] != word {
+        return None;
+    }
+    let normals = face.mesh.channels.get(2)?.data();
+    let first = normals.get(..12)?;
+    let constant = normals.chunks_exact(12).all(|normal| normal == first);
+    if (a == 1) != constant {
+        return None;
+    }
+    let tuple = bytes.get(extended_meta::TUPLE..)?;
+    if b == 0 {
+        return tuple.iter().all(|byte| *byte == 0).then_some(index);
+    }
+    let [scalar, x, y, z] =
+        [0, 4, 8, 12].map(|offset| View::f32_le_at(tuple, offset).map(f64::from));
+    let (scalar, x, y, z) = (scalar?, x?, y?, z?);
+    ([scalar, x, y, z].iter().all(|value| value.is_finite())
+        && scalar > 0.0
+        && ((x * x + y * y + z * z).sqrt() - 1.0).abs() <= EPS_EXTENDED_UNIT_VECTOR)
+        .then_some(index)
+}
+
+pub(crate) fn summary_for_faces(payload: &[u8], faces: &[DisplayFace]) -> Summary {
+    let mut summary = Summary::default();
+    for (index, face) in faces.iter().enumerate() {
+        summary.vertices += face.mesh.vertex_count();
+        summary.triangles += face.mesh.triangle_count();
+        let Some(word) = extended_header_word(payload, face) else {
+            continue;
+        };
+        let metadata_end = faces.get(index + 1).map_or(face.metadata.end(), |next| {
+            face.metadata.end().min(table_header_start(payload, next))
+        });
+        if let Some(form) = known_extended_form(payload, face, word, metadata_end) {
+            summary.extended_forms[form] += 1;
+        } else {
+            summary.opaque_extended_tables += 1;
+        }
+    }
+    summary
 }
 
 struct SurfaceCandidate<'a> {

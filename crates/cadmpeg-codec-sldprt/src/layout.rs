@@ -2476,3 +2476,27 @@ pub(crate) mod attribute_short_references {
     /// Offset of `owner` (`u16`, big-endian). Spec §5.
     pub(crate) const OWNER: usize = 12;
 }
+
+/// Byte offsets for the `display_lists_extended_metadata` record.
+///
+/// Spec §8. Record length 128 B.
+///
+/// ```text
+/// Offsets begin at the exact sixth-descriptor payload end M. The complete interval ends before the next table header.
+/// ```
+pub(crate) mod display_lists_extended_metadata {
+    /// Record length in bytes. Spec §8.
+    pub(crate) const LEN: usize = 128;
+    /// Offset of `a` (`u32`, little-endian). Spec §8.
+    pub(crate) const A: usize = 92;
+    /// Offset of `one` (`u32`, little-endian). Spec §8.
+    pub(crate) const ONE: usize = 96;
+    /// Stated value of `one` (`u32`). Spec §8.
+    pub(crate) const ONE_VALUE: u32 = 0x0000_0001;
+    /// Offset of `b` (`u32`, little-endian). Spec §8.
+    pub(crate) const B: usize = 104;
+    /// Offset of `c` (`u32`, little-endian). Spec §8.
+    pub(crate) const C: usize = 108;
+    /// Offset of `tuple` (`bytes[16]`). Spec §8.
+    pub(crate) const TUPLE: usize = 112;
+}

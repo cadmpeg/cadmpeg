@@ -10715,3 +10715,62 @@ offset = 20
 type = "u16"
 source = "spec"
 anchor = "previous_of_type at `+20`"
+
+
+[[record]]
+name = "display_lists_extended_metadata"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/tessellation.rs"
+kind = "byte"
+section = "8"
+anchor = "The extended-form metadata has Boolean u32 LE cells"
+size = 128
+endianness = "little"
+note = "Offsets begin at the exact sixth-descriptor payload end M. The complete interval ends before the next table header."
+
+[[record.gap]]
+offset = 0
+size = 92
+note = "Variable metadata before the three stored Boolean cells."
+
+[[record.field]]
+name = "a"
+offset = 92
+type = "u32"
+source = "spec"
+anchor = "`A` at `M+0x5c`"
+
+[[record.field]]
+name = "one"
+offset = 96
+type = "u32"
+source = "spec"
+anchor = "u32 LE `1` at `M+0x60`"
+value = 1
+
+[[record.field]]
+name = "independent_word"
+offset = 100
+type = "u32"
+source = "spec"
+anchor = "independent u32 word at `M+0x64`"
+
+[[record.field]]
+name = "b"
+offset = 104
+type = "u32"
+source = "spec"
+anchor = "`B` at `M+0x68`"
+
+[[record.field]]
+name = "c"
+offset = 108
+type = "u32"
+source = "spec"
+anchor = "`C` at `M+0x6c`"
+
+[[record.field]]
+name = "tuple"
+offset = 112
+type = "bytes[16]"
+source = "spec"
+anchor = "four-f32 LE tuple at `M+0x70`"

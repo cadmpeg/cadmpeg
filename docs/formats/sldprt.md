@@ -1731,6 +1731,21 @@ The offset surface retains the support parameterization. Nested offset carriers 
 
   A `uoTempFaceTessData_c` class token has two table-header forms. Offsets are from the byte after the class token. Both forms start with the first table's triangle count as u32 LE at `+0` and strip count as u32 LE at `+4`. These values equal `C - 2*N` and `N` for that table. In the compact form, the first descriptor starts at `+8`. The extended form has u32 LE values `1`, `0`, `0`, and one nonzero token at `+8`, `+12`, `+16`, and `+20`, followed by 16 zero bytes at `+24`; its first descriptor starts at `+40`. The fixed cells and nonzero token select the extended form. A header that does not satisfy the complete extended grammar uses the compact offset and must frame a valid descriptor table there.
 
+  Each extended table can carry the same 40-byte header immediately before its first descriptor without another class declaration. Its triangle and strip counts agree with that table. Let `M` be the exact sixth-descriptor payload end. The extended-form metadata has Boolean u32 LE cells `A` at `M+0x5c`, `B` at `M+0x68`, and `C` at `M+0x6c`; u32 LE `1` at `M+0x60`; an independent u32 word at `M+0x64`; and a four-f32 LE tuple at `M+0x70`. All cells through `M+0x80` belong to the same bounded metadata interval, before the following table header.
+
+  The supported extended form words are:
+
+  | A | B | C | header word |
+  |---|---|---|-------------|
+  | 0 | 0 | 0 | `0x00201296` |
+  | 0 | 0 | 1 | `0x00201a96` |
+  | 1 | 0 | 1 | `0x00201b96` |
+  | 0 | 1 | 1 | `0x00201e96` |
+
+  For these four triples, the word equals `0x00201296 | (A << 8) | (B << 10) | (C << 11)`. Other triples have no defined word. The independent word at `M+0x64` does not contribute. `A=1` requires one repeated 12-byte stored normal pattern; `A=0` requires more than one pattern. This classification requires a nonempty normal channel and compares bytes, including signed-zero bits. `B=0` requires sixteen zero tuple bytes. `B=1` requires a positive finite scalar and a finite unit three-vector within f32 rounding; the unit-length validation tolerance is `1e-6`. These cells do not identify a surface family, face sense, or winding.
+
+  The mapping requires the complete six-descriptor table, header shape and counts, bounded metadata cells, supported Boolean triple, normal classification, tuple constraints, and agreement between the stored and calculated word. A missing or contradictory field, unsupported triple, or unknown word supplies no known form. The structurally framed table and its channels remain intact. A writer can regenerate a supported word from its three stored flags; the base word is not a default for other states.
+
   An exact-support table has every position on its owning B-rep face support surface. The f32 coordinate precision limits this incidence test. When exactly one B-rep face has an analytic support incident to all table positions, that face owns the table and its body is the face's topological owner.
 
   A NURBS support uses the same incidence rule with a constructive parameter witness. For every table position, a bounded surface inversion must return a parameter pair whose forward-evaluated surface point is within the greater of the face tolerance and the display quantization tolerance. When exactly one NURBS face admits every table position, that face owns the table. A nearest-support result without a bounded within-tolerance witness does not establish ownership.

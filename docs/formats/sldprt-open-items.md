@@ -164,13 +164,13 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Need.** We must know the stored mapping to attach tables whose support is ambiguous or unsupported, including non-exact NURBS caches, and carry no complete matching persistent identity.
 
-### AL-03. DisplayLists extended table-header token
+### AL-03. DisplayLists renderer flag meanings
 
-**Question.** What does the nonzero extended-form token encode?
+**Question.** Which renderer states do the stored `B` and `C` flags identify?
 
-**Known.** `sldprt.md` §8 defines the common triangle-count and strip-count cells and the exact descriptor-table position of the compact and extended `uoTempFaceTessData_c` forms. The common cells do not select the form. The fixed extension cells and its nonzero token select the extended form.
+**Known.** `sldprt.md` §8 defines the four supported extended header words, their Boolean metadata triples, the exact stored-normal classification, and the optional scalar/unit-vector tuple. The independent metadata word does not contribute to the header word.
 
-**Need.** We must know the token semantics to regenerate the extended form without a retained source record.
+**Need.** We must know the renderer meanings of `B` and `C` and the rule that selects their values when no retained metadata supplies them.
 
 ### AL-04. Mesh polyline candidate selection
 

@@ -2723,6 +2723,28 @@ Parsed by:
 | 18 | 2 | `next_of_type` | `u16` | big | spec | next_of_type at `+18` |
 | 20 | 2 | `previous_of_type` | `u16` | big | spec | previous_of_type at `+20` |
 
+## `display_lists_extended_metadata`
+
+Spec §8 · layout: byte offsets · size: 128 B
+
+Offsets begin at the exact sixth-descriptor payload end M. The complete interval ends before the next table header.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/tessellation.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 92 | 4 | `a` | `u32` | little | spec | `A` at `M+0x5c` |
+| 96 | 4 | `one` | `u32` | little | spec | u32 LE `1` at `M+0x60` · value `1` |
+| 100 | 4 | `independent_word` | `u32` | little | spec | independent u32 word at `M+0x64` |
+| 104 | 4 | `b` | `u32` | little | spec | `B` at `M+0x68` |
+| 108 | 4 | `c` | `u32` | little | spec | `C` at `M+0x6c` |
+| 112 | 16 | `tuple` | `bytes[16]` | little | spec | four-f32 LE tuple at `M+0x70` |
+
+Unstated regions:
+
+- `0..92` (92 B): Variable metadata before the three stored Boolean cells.
+
 ## Not tabulated
 
 | Area | Spec | Reason |
