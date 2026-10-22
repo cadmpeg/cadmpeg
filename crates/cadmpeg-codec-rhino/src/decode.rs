@@ -4195,6 +4195,8 @@ struct BrepCarrierInput<'a> {
 struct BrepCarrierDraft {
     staged: BrepDraft,
     c3: HashMap<usize, cadmpeg_ir::ids::CurveId>,
+    /// C3 slots whose carrier is periodic in one turn of its parameter.
+    periodic_c3: std::collections::HashSet<usize>,
     surfaces: HashMap<usize, StagedBrepSurface>,
     child_cause: Option<String>,
 }
@@ -4300,6 +4302,7 @@ fn stage_brep_carriers(
     let mut procedural_admission =
         cadmpeg_ir::document::procedural::ProceduralAdmission::new(staged.draft.model_mut());
     let mut c3 = HashMap::new();
+    let mut periodic_c3 = std::collections::HashSet::new();
     let mut surfaces = HashMap::new();
     let mut child_cause = None;
     for (kind, slots) in [
@@ -4374,6 +4377,9 @@ fn stage_brep_carriers(
                     &curve,
                     format_args!("C3 slot {index}"),
                 )?;
+                if curve.turn_periodic() {
+                    periodic_c3.insert(index);
+                }
                 let id = match stage_curve_tree_indexed(
                     &mut procedural_admission,
                     &mut staged,
@@ -4519,6 +4525,7 @@ fn stage_brep_carriers(
     Ok(BrepCarrierDraft {
         staged,
         c3,
+        periodic_c3,
         surfaces,
         child_cause,
     })
@@ -4552,6 +4559,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
     let BrepCarrierDraft {
         mut staged,
         c3,
+        periodic_c3,
         surfaces,
         child_cause,
     } = stage_brep_carriers(BrepCarrierInput {
@@ -4638,9 +4646,14 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         }?;
         let curve = c3.get(&resolved.edges[index].curve).cloned();
         let vertices = edge_vertices(edge, &resolved.edges[index]);
+        let range = if periodic_c3.contains(&resolved.edges[index].curve) {
+            crate::curves::wrap_turn_range(edge_param_range(edge))
+        } else {
+            edge_param_range(edge)
+        };
         staged.draft.model_mut().edges.push(Edge {
             id: id.clone(),
-            carrier: cadmpeg_ir::topology::EdgeCarrier::new(curve, Some(edge_param_range(edge)))
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(curve, Some(range))
                 .map_err(crate::curves::GeometryError::unpositioned)?,
             start: vertex_ids[vertices[0]].clone(),
             end: vertex_ids[vertices[1]].clone(),

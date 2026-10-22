@@ -132,6 +132,20 @@ pub(crate) enum DecodedCurve {
 }
 
 impl DecodedCurve {
+    /// Whether the curve is one neutral carrier periodic in one turn of its
+    /// parameter.
+    pub(crate) fn turn_periodic(&self) -> bool {
+        matches!(
+            self,
+            Self::Leaf {
+                geometry: CurveGeometry::Solved(
+                    SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_)
+                ),
+                ..
+            }
+        )
+    }
+
     pub(crate) fn leaf(geometry: CurveGeometry, warnings: Diagnostics) -> Self {
         Self::Leaf { geometry, warnings }
     }
@@ -2030,6 +2044,17 @@ fn arc_nurbs(
     .map_err(|error| GeometryError::malformed(offset, error.to_string()))
 }
 
+/// Shifts a parameter range on a carrier periodic in one turn by whole turns,
+/// so that it starts in `[0, τ)`. Every point on the range is unchanged.
+pub(crate) fn wrap_turn_range([start, end]: [f64; 2]) -> [f64; 2] {
+    let shift = (start / TAU).floor() * TAU;
+    if shift == 0.0 {
+        [start, end]
+    } else {
+        [start - shift, end - shift]
+    }
+}
+
 /// Whether the arc is a full circle whose parameter `t` evaluates the angle
 /// `t` modulo one turn. `ON_ArcCurve` maps its domain linearly onto its angle
 /// interval, so this holds when both intervals span one turn and both start
@@ -2807,6 +2832,16 @@ mod tests {
         assert!(canonical_circle(&circle, [0.0, TAU], [-TAU, 0.0], TAU));
         assert!(canonical_circle(&circle, [TAU, 2.0 * TAU], [0.0, TAU], TAU));
         assert!(!canonical_circle(&circle, [0.0, TAU], [-PI, PI], TAU));
+    }
+
+    #[test]
+    fn turn_ranges_wrap_into_the_first_turn() {
+        assert_eq!(super::wrap_turn_range([1.0, 2.0]), [1.0, 2.0]);
+        let [start, end] = super::wrap_turn_range([1.0 - TAU, 2.0 - TAU]);
+        assert!((start - 1.0).abs() < 1.0e-12 && (end - 2.0).abs() < 1.0e-12);
+        assert_eq!(super::wrap_turn_range([-TAU, 0.0]), [0.0, TAU]);
+        let [start, _] = super::wrap_turn_range([TAU + 0.5, TAU + 1.0]);
+        assert!((start - 0.5).abs() < 1.0e-12);
     }
 
     #[test]
