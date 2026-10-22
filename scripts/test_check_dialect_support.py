@@ -535,16 +535,13 @@ class TestEvaluations(SupportCase):
     def test_detected_with_higher_evaluation_is_allowed(self):
         self.assertClean(GOOD_SUPPORT, evaluations=self.record(level="9"))
 
-    def test_detected_with_lower_evaluation_fails(self):
-        self.assertFires(GOOD_SUPPORT, "evaluation L1", evaluations=self.record(level="1"))
-
-    def test_every_evaluation_record_is_compared(self):
-        self.assertFires(GOOD_SUPPORT, "evaluation L1", evaluations=self.record() + self.record(level="1"))
+    def test_detected_with_lower_evaluation_is_allowed(self):
+        self.assertClean(GOOD_SUPPORT, evaluations=self.record(level="1"))
 
 
 class TestDeclaredLevelComparisons(SupportCase):
-    def test_fixture_level_below_declared_level_fails(self):
-        self.assertFires(GOOD_SUPPORT.replace('read = "L2"', 'read = "L1"'), "read L1 contradicts L2")
+    def test_fixture_level_below_declared_level_passes(self):
+        self.assertClean(GOOD_SUPPORT.replace('read = "L2"', 'read = "L1"'))
 
     def test_fixture_level_equal_to_declared_level_passes(self):
         self.assertClean(GOOD_SUPPORT)

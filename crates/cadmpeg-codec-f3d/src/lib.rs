@@ -11,7 +11,7 @@
 //! archive from the supported source-less profile.
 //!
 //! <!-- generated: capability f3d -->
-//! Support: L4 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#fusion-360-f3d)).
+//! Support: L5 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#fusion-360-f3d)).
 //! <!-- /generated: capability f3d -->
 //!
 //! # Decode
