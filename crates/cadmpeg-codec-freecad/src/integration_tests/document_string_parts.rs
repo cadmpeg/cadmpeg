@@ -376,7 +376,7 @@ fn retained_extra_bytes_change_native_values_and_have_exact_source_reads() {
 }
 
 #[test]
-fn unsupported_dynamic_flag_spellings_keep_legacy_fields_without_read_credit() {
+fn unrecognized_dynamic_flag_spelling_is_absent_without_read_credit() {
     let xml = "<Document SchemaVersion='4' FileVersion='1'><Properties Count='1'><Property name='Flags' type='App::PropertyString' group='Readouts' ro='TrUe' hide='unknown'><String value='kept'/></Property></Properties><Objects Count='0'/><ObjectData Count='0'/></Document>";
     let bytes = zip_fixture::archive(&[RawEntry::stored("Document.xml", xml.as_bytes())]);
     let decoded = crate::FcstdCodec
@@ -399,16 +399,16 @@ fn unsupported_dynamic_flag_spellings_keep_legacy_fields_without_read_credit() {
     let Some(dynamic) = &property.dynamic else {
         panic!("dynamic flags held")
     };
-    assert_eq!(dynamic.read_only, Some(false));
-    assert_eq!(dynamic.hidden, Some(false));
+    assert_eq!(dynamic.read_only, Some(true));
+    assert_eq!(dynamic.hidden, None);
     let layout = &decoded.source_fidelity().record_layout()[property.id.as_str()];
     let reads = &layout.reads()[layout.stream()];
-    let expected = ["Flags", "App::PropertyString", "Readouts", "kept"].map(|value| {
+    let expected = ["Flags", "App::PropertyString", "Readouts", "TrUe", "kept"].map(|value| {
         let at = xml.find(value).unwrap();
         u64::try_from(at).unwrap()..u64::try_from(at + value.len()).unwrap()
     });
     assert_eq!(reads, &expected);
-    for spelling in ["TrUe", "unknown"] {
+    for spelling in ["unknown"] {
         let at = xml.find(spelling).unwrap();
         let range = u64::try_from(at).unwrap()..u64::try_from(at + spelling.len()).unwrap();
         assert!(reads

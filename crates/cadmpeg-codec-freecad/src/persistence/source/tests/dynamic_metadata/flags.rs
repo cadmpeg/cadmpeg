@@ -57,22 +57,25 @@ fn valid_flag_changes_and_entities_feed_kept_fields_with_exact_nonzero_source_re
 }
 
 #[test]
-fn invalid_overflow_and_namespace_flag_values_preserve_legacy_fields_without_read_credit() {
-    for (attrs, flags, read_only, hidden) in [
+fn flag_values_hold_only_boolean_spellings_and_credit_only_their_reads() {
+    for (attrs, flags, read_only, hidden, hide_read) in [
         (
             "attr='9223372036854775808' ro='maybe' hide='tRuE'",
             None,
-            Some(false),
-            Some(false),
+            None,
+            Some(true),
+            Some("tRuE"),
         ),
         (
             "attr='bad' ro='' hide='TrUe'",
             None,
-            Some(false),
-            Some(false),
+            None,
+            Some(true),
+            Some("TrUe"),
         ),
         (
             "xmlns:v='urn:vendor' v:attr='7' v:ro='1' v:hide='0'",
+            None,
             None,
             None,
             None,
@@ -92,24 +95,23 @@ fn invalid_overflow_and_namespace_flag_values_preserve_legacy_fields_without_rea
             Some(crate::native::PropertyBody::Persisted { .. })
         ));
         let Some(metadata) = &graph.properties[0].dynamic else {
-            panic!("kept fallback flags")
+            panic!("kept flags")
         };
         assert_eq!(metadata.attributes, flags);
         assert_eq!(metadata.read_only, read_only);
         assert_eq!(metadata.hidden, hidden);
         let captures = property_captures(&ctx, &graph);
         assert_eq!(captures.len(), 1);
+        let mut expected = vec![
+            attribute_range(&xml, "name", "Flags"),
+            attribute_range(&xml, "type", "App::PropertyFloat"),
+            attribute_range(&xml, "group", "Custom"),
+        ];
+        expected.extend(hide_read.map(|hide| attribute_range(&xml, "hide", hide)));
+        expected.push(attribute_range(&xml, "value", "7.5"));
         assert_eq!(
             captures[0].reads(),
-            &std::collections::BTreeMap::from([(
-                "file".into(),
-                vec![
-                    attribute_range(&xml, "name", "Flags"),
-                    attribute_range(&xml, "type", "App::PropertyFloat"),
-                    attribute_range(&xml, "group", "Custom"),
-                    attribute_range(&xml, "value", "7.5")
-                ]
-            )])
+            &std::collections::BTreeMap::from([("file".into(), expected)])
         );
     }
 }

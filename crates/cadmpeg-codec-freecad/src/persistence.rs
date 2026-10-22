@@ -977,14 +977,14 @@ fn dynamic_bool(
     else {
         return Ok(None);
     };
-    let legacy = bool_attr(Some(attribute.value()));
-    if let Some(source) = source.filter(|_| crate::native::parse_bool(attribute.value()) == legacy)
-    {
-        let text = source.attribute(&attribute)?;
-        Ok(bool_attr(Some(&text)))
-    } else {
-        Ok(legacy)
+    if crate::native::parse_bool(attribute.value()).is_none() {
+        return Ok(None);
     }
+    let Some(source) = source else {
+        return Ok(crate::native::parse_bool(attribute.value()));
+    };
+    let text = source.attribute(&attribute)?;
+    Ok(crate::native::parse_bool(&text))
 }
 
 fn direct_string_list<'a, 'input>(
@@ -1489,10 +1489,6 @@ fn required_attr<'a>(node: roxmltree::Node<'a, '_>, name: &str) -> Result<&'a st
             node.tag_name().name()
         ))
     })
-}
-
-fn bool_attr(value: Option<&str>) -> Option<bool> {
-    value.map(|value| matches!(value, "1" | "true" | "True" | "TRUE"))
 }
 
 pub(crate) fn scalar_value_tag(type_name: &str) -> Option<&'static str> {
