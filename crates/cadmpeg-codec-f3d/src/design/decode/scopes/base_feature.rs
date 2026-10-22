@@ -705,6 +705,54 @@ fn read_base_feature_entry_at(
     Some(entry)
 }
 
+/// The typed-reference zero-body form: the class-409 zero-body prefix with a
+/// 51-byte typed shared-metadata reference at offset 32, then zero bytes up to
+/// the null GUID length field, which lies 142 bytes before the scope kind.
+fn exact_typed_zero_body_base_feature(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    start: usize,
+) -> Option<DesignBaseFeatureConstruction> {
+    use crate::records::feature::base_feature::DesignBaseFeatureResults;
+
+    let reference_at = start + legacy_zero_body::SHARED_METADATA_MARKER;
+    let metadata_record = crate::bytes::typed_local_reference_target(bytes, reference_at)?;
+    let reference_end = reference_at + crate::bytes::TYPED_LOCAL_REFERENCE_LEN;
+    let guid_count_at = usize::try_from(scope.kind_offset())
+        .ok()?
+        .checked_sub(142)?;
+    if bytes
+        .get(start + legacy_zero_body::ZERO_RUN_9..start + legacy_zero_body::ZERO_BODY_MARKER)?
+        != [0; 9]
+        || bytes.get(start + legacy_zero_body::ZERO_BODY_MARKER) != Some(&1)
+        || bytes.get(
+            start + legacy_zero_body::ZERO_RUN_11..start + legacy_zero_body::SHARED_METADATA_MARKER,
+        )? != [0; 11]
+        || !scope
+            .reference_members()
+            .values()
+            .copied()
+            .eq([metadata_record])
+        || guid_count_at < reference_end
+        || !bytes
+            .get(reference_end..guid_count_at)?
+            .iter()
+            .all(|byte| *byte == 0)
+    {
+        return None;
+    }
+    Some(DesignBaseFeatureConstruction::ResultBodies {
+        bodies: DesignBaseFeatureResults::WithoutRepeatedFields(Vec::new()),
+        metadata_record,
+        metadata_record_offset: scope.byte_offset()
+            + u64::try_from(legacy_zero_body::SHARED_METADATA_RECORD).ok()?,
+        metadata_field: bytes
+            .get(start + legacy_zero_body::SHARED_METADATA_FIELD..reference_end)?
+            .to_vec()
+            .into(),
+    })
+}
+
 pub(super) fn exact_base_feature_construction(
     bytes: &[u8],
     scope: &DesignParameterScope,
@@ -726,6 +774,9 @@ pub(super) fn exact_base_feature_construction(
     }
     (|| {
         let start = usize::try_from(scope.byte_offset()).ok()?;
+        if let Some(construction) = exact_typed_zero_body_base_feature(bytes, scope, start) {
+            return Some(Ok(construction));
+        }
         if scope.frame_length() == 267 {
             return Some(Ok(DesignBaseFeatureConstruction::ResultBodies {
                 bodies: DesignBaseFeatureResults::WithoutRepeatedFields(Vec::new()),

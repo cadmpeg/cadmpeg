@@ -187,3 +187,71 @@ fn typed_extrude_prologue_reads_operation_at_22_and_wide_extent_slots() {
         .is_none()
     );
 }
+
+/// A typed-reference zero-body Base Feature: the class-409 zero-body prefix
+/// with a typed shared-metadata reference at offset 32, the null GUID, the
+/// one-entry typed reference table, and the 196-byte typed tail.
+fn typed_zero_body_base_feature_frame() -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"364");
+    bytes.extend_from_slice(&226u32.to_le_bytes());
+    bytes.resize(20, 0);
+    bytes.push(1);
+    bytes.resize(32, 0);
+    typed_reference(&mut bytes, 342);
+    bytes.resize(95, 0);
+    lp_utf16(&mut bytes, "00000000-0000-0000-0000-000000000000");
+    bytes.extend_from_slice(&[0; 3]);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    typed_reference(&mut bytes, 342);
+    bytes.extend_from_slice(&7u32.to_le_bytes());
+    lp_utf16(&mut bytes, "Base Feature");
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 15]);
+    typed_reference(&mut bytes, 341);
+    bytes.extend_from_slice(&5u32.to_le_bytes());
+    bytes.extend_from_slice(&64u32.to_le_bytes());
+    bytes.extend_from_slice(&0.25f64.to_le_bytes());
+    bytes.extend_from_slice(&64u32.to_le_bytes());
+    typed_reference(&mut bytes, 340);
+    bytes.extend_from_slice(&[0; 2]);
+    typed_reference(&mut bytes, 339);
+    bytes.extend_from_slice(&[0; 2]);
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"257");
+    bytes.extend_from_slice(&226u32.to_le_bytes());
+    bytes
+}
+
+#[test]
+fn typed_zero_body_base_feature_reads_its_typed_metadata_reference() {
+    use crate::records::feature::base_feature::DesignBaseFeatureConstruction;
+
+    let bytes = typed_zero_body_base_feature_frame();
+    let scope = parse(&bytes).expect("typed Base Feature scope");
+    assert_eq!(scope.kind_offset(), 237);
+    let construction = super::super::base_feature::exact_base_feature_construction(&bytes, &scope)
+        .unwrap()
+        .expect("typed zero-body Base Feature");
+    let DesignBaseFeatureConstruction::ResultBodies {
+        bodies,
+        metadata_record,
+        ..
+    } = construction
+    else {
+        panic!("zero-body result form");
+    };
+    assert_eq!(metadata_record, 342);
+    assert_eq!(bodies.iter().count(), 0);
+
+    // A nonzero byte before the null GUID is not the zero-body form.
+    let mut padded = bytes.clone();
+    padded[90] = 1;
+    let scope = parse(&padded).expect("typed Base Feature scope");
+    assert!(
+        super::super::base_feature::exact_base_feature_construction(&padded, &scope)
+            .unwrap()
+            .is_none()
+    );
+}
