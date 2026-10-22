@@ -64,17 +64,12 @@ fn compact_line_reference_direction(
 }
 
 fn bind_pattern_inputs_test(
-    _class_sources: &ClassSources,
+    class_sources: &ClassSources,
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    bind_pattern_inputs(
-        &crate::test_support::native::class_sources(lanes),
-        features,
-        histories,
-        lanes,
-    )
+    bind_pattern_inputs(class_sources, features, histories, lanes)
 }
 
 fn linear_pattern_display_directions(
@@ -578,8 +573,12 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             .all(|id| known.contains(id)));
     };
 
+    let class_sources = ClassSources::from_positions([(
+        &lane.classes[0],
+        cadmpeg_core::decode::u64_from_index(line_ref_offset),
+    )]);
     bind_pattern_inputs_test(
-        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+        &class_sources,
         &mut features,
         std::slice::from_ref(&history),
         std::slice::from_ref(&lane),
@@ -608,7 +607,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
         }));
     bind_pattern_inputs_test(
-        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+        &class_sources,
         &mut features,
         std::slice::from_ref(&history),
         std::slice::from_ref(&lane),
@@ -647,7 +646,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         }
     });
     bind_pattern_inputs_test(
-        &crate::test_support::native::class_sources(&[&ambiguous_lane]),
+        &class_sources,
         &mut features,
         std::slice::from_ref(&history),
         &[ambiguous_lane],
@@ -677,7 +676,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             .unwrap(),
         }));
     bind_pattern_inputs_test(
-        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+        &class_sources,
         &mut features,
         std::slice::from_ref(&linear_history),
         std::slice::from_ref(&lane),
@@ -719,7 +718,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
     *pattern = PatternKind::new(transform).unwrap();
     updated_features_evaluation.set_definition(updated_features_definition);
     bind_pattern_inputs_test(
-        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+        &class_sources,
         &mut features,
         std::slice::from_ref(&linear_history),
         std::slice::from_ref(&lane),
@@ -770,7 +769,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             .unwrap(),
         }));
     bind_pattern_inputs_test(
-        &crate::test_support::native::class_sources(std::slice::from_ref(&derived_lane)),
+        &class_sources,
         &mut features,
         std::slice::from_ref(&derived_history),
         std::slice::from_ref(&derived_lane),
@@ -797,7 +796,6 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             parent: "lane".into(),
             ordinal: 1,
             sequence: 1,
-
             name: "moNumberDim_c".into(),
         },
         FeatureInputClass {
@@ -806,9 +804,16 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             parent: "lane".into(),
             ordinal: 2,
             sequence: 2,
-
             name: "ParallelPlaneDistanceDim_c".into(),
         },
+    ]);
+    let derived_sources = ClassSources::from_positions([
+        (
+            &derived_lane.classes[0],
+            cadmpeg_core::decode::u64_from_index(line_ref_offset),
+        ),
+        (&derived_lane.classes[1], 200),
+        (&derived_lane.classes[2], 300),
     ]);
     derived_lane
         .names
@@ -824,7 +829,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
     // decode. The authored z/e expressions remain exact; only typed caches
     // receive the quantities established by the native dimension classes.
     crate::resolved_features::parameters::enrich_history_parameters(
-        &crate::test_support::native::class_sources(&[&derived_lane]),
+        &derived_sources,
         std::slice::from_mut(&mut derived_history),
         [&derived_lane],
         true,
@@ -832,7 +837,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
     assert_eq!(derived_history.features[2].parameters["z"], "3");
     assert_eq!(derived_history.features[2].parameters["e"], "19");
     bind_pattern_inputs_test(
-        &crate::test_support::native::class_sources(std::slice::from_ref(&derived_lane)),
+        &derived_sources,
         &mut features,
         std::slice::from_ref(&derived_history),
         std::slice::from_ref(&derived_lane),

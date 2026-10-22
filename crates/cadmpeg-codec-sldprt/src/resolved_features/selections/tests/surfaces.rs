@@ -226,11 +226,9 @@ fn operation_surface_selection_finds_marker_inside_class_body() {
         sketch_entities: Vec::new(),
     };
 
+    let class_sources = ClassSources::from_positions([(&lane.classes[0], 0)]);
     let selections = operation_surface_selection_candidates(
-        (
-            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-            &identity_ctx,
-        ),
+        (&class_sources, &identity_ctx),
         FeatureClass::TrimSurface,
         &lane,
         0,
@@ -310,11 +308,9 @@ fn operation_surface_selection_scans_inline_component_faces_and_rejects_collisio
     one[class_body..class_body + 2].copy_from_slice(&class_token.to_le_bytes());
     build_face(&mut one, first_body, 6);
     let lane = lane_for(one);
+    let class_sources = ClassSources::from_positions([(&lane.classes[0], 0)]);
     let selections = operation_surface_selection_candidates(
-        (
-            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-            &identity_ctx,
-        ),
+        (&class_sources, &identity_ctx),
         FeatureClass::Dome,
         &lane,
         first_body,
@@ -335,10 +331,7 @@ fn operation_surface_selection_scans_inline_component_faces_and_rejects_collisio
     build_face(&mut collision, second_body, 9);
     let lane = lane_for(collision);
     assert!(operation_surface_selection_candidates(
-        (
-            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-            &identity_ctx
-        ),
+        (&class_sources, &identity_ctx),
         FeatureClass::Dome,
         &lane,
         first_body,
@@ -548,14 +541,9 @@ fn fillet_face_candidates_require_three_ordered_role_three_paths() {
         sketch_entities: Vec::new(),
     };
 
-    let candidates = fillet_face_selection_candidates(
-        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-        &candidates_ctx,
-        &lane,
-        0,
-        700,
-    )
-    .unwrap();
+    let class_sources = ClassSources::from_positions([(&lane.classes[0], 0)]);
+    let candidates =
+        fillet_face_selection_candidates(&class_sources, &candidates_ctx, &lane, 0, 700).unwrap();
     assert_eq!(candidates.len(), 3);
     assert_eq!(
         candidates
@@ -575,15 +563,11 @@ fn fillet_face_candidates_require_three_ordered_role_three_paths() {
 
     let mut incomplete = lane.clone();
     incomplete.native_payload.truncate(403);
-    assert!(fillet_face_selection_candidates(
-        &crate::test_support::native::class_sources(std::slice::from_ref(&incomplete)),
-        &candidates_ctx,
-        &incomplete,
-        0,
-        403
-    )
-    .unwrap()
-    .is_empty());
+    assert!(
+        fillet_face_selection_candidates(&class_sources, &candidates_ctx, &incomplete, 0, 403)
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]
@@ -1107,8 +1091,12 @@ fn face_reference_plane_owns_its_counted_surface_path() {
         sketch_entities: Vec::new(),
     };
 
+    let class_sources = ClassSources::from_positions([(
+        &lane.classes[0],
+        cadmpeg_core::decode::u64_from_index(class_offset),
+    )]);
     let candidates = face_reference_plane_selection_candidates(
-        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+        &class_sources,
         &candidates_ctx,
         &lane,
         0,
@@ -1155,13 +1143,8 @@ fn face_reference_plane_owns_its_counted_surface_path() {
             native_feature("plane", 37, "moRefPlane_c"),
         ],
     }];
-    let selections = compact_surface_selections(
-        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-        &identity_ctx,
-        &histories,
-        &lane,
-    )
-    .unwrap();
+    let selections =
+        compact_surface_selections(&class_sources, &identity_ctx, &histories, &lane).unwrap();
     assert_eq!(selections.len(), 1);
     assert_eq!(selections[0].feature_ref, "plane");
     assert_eq!(
@@ -1230,8 +1213,12 @@ fn face_reference_plane_accepts_a_component_face_path() {
         sketch_entities: Vec::new(),
     };
 
+    let class_sources = ClassSources::from_positions([(
+        &lane.classes[0],
+        cadmpeg_core::decode::u64_from_index(class_offset),
+    )]);
     let candidates = face_reference_plane_selection_candidates(
-        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+        &class_sources,
         &candidates_ctx,
         &lane,
         0,
@@ -1341,11 +1328,15 @@ fn projected_split_line_consumes_self_owned_surface_identity_paths() {
         sketch_entities: Vec::new(),
     };
 
-    let candidates = operation_surface_selection_candidates(
+    let class_sources = ClassSources::from_positions([
+        (&lane.classes[0], 0),
         (
-            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-            &identity_ctx,
+            &lane.classes[1],
+            cadmpeg_core::decode::u64_from_index(payload.len()),
         ),
+    ]);
+    let candidates = operation_surface_selection_candidates(
+        (&class_sources, &identity_ctx),
         FeatureClass::SplitFace,
         &lane,
         0,
@@ -1366,10 +1357,7 @@ fn projected_split_line_consumes_self_owned_surface_identity_paths() {
     );
     assert_eq!(candidates[0].1[1].local_id, Some(3));
     assert!(operation_surface_selection_candidates(
-        (
-            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-            &identity_ctx
-        ),
+        (&class_sources, &identity_ctx),
         FeatureClass::SplitFace,
         &lane,
         0,
@@ -1383,8 +1371,6 @@ fn projected_split_line_consumes_self_owned_surface_identity_paths() {
 
 #[test]
 fn generated_surface_identities_are_producer_outputs() {
-    let class_sources = ClassSources::default();
-
     let class_name = "moWzdHoleSurfIdRep_c";
     let prefix = [0xc3, 0x80, 0xc5, 0x00];
     let mut payload = CLASS_MARKER.to_vec();
@@ -1429,6 +1415,7 @@ fn generated_surface_identities_are_producer_outputs() {
         sketch_entities: Vec::new(),
     };
 
+    let class_sources = ClassSources::from_positions([(&lane.classes[0], 0)]);
     let identities = generated_surface_identities(
         &class_sources,
         &lane.id,

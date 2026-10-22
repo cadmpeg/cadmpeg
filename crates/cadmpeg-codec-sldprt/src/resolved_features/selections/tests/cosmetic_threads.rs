@@ -6,6 +6,7 @@ use crate::records::{
     Feature, FeatureInputClass, FeatureInputLane, FeatureInputName, FeatureInputScalar,
     FeatureInputScalarRole, FeatureSource, ObjectId,
 };
+use crate::resolved_features::class_sources::ClassSources;
 use crate::resolved_features::selections::{
     cosmetic_thread_component_references, cosmetic_thread_cylinder_marker_reference,
     cosmetic_thread_cylinder_reference_at, cosmetic_thread_cylinder_references,
@@ -468,8 +469,12 @@ fn cosmetic_thread_reads_a_direct_component_edge_reference() {
         sketch_entities: Vec::new(),
     };
 
+    let class_sources = ClassSources::from_positions([(
+        &lane.classes[0],
+        cadmpeg_core::decode::u64_from_index(class_offset),
+    )]);
     let references = cosmetic_thread_component_references(
-        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+        &class_sources,
         &references_ctx,
         &lane,
         0,
@@ -577,8 +582,18 @@ fn cosmetic_thread_reads_component_edge_reference_through_edge_ref_child() {
         sketch_entities: Vec::new(),
     };
 
+    let class_sources = ClassSources::from_positions([
+        (
+            &lane.classes[0],
+            cadmpeg_core::decode::u64_from_index(component_edge_offset),
+        ),
+        (
+            &lane.classes[1],
+            cadmpeg_core::decode::u64_from_index(edge_ref_offset),
+        ),
+    ]);
     let references = cosmetic_thread_component_references(
-        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+        &class_sources,
         &references_ctx,
         &lane,
         0,

@@ -824,7 +824,6 @@ mod tests {
             parent: "lane".into(),
             ordinal: 0,
             sequence: 0,
-
             name: "moWzdHoleSurfIdRep_c".into(),
         });
         let record = FeatureInputGeneratedSurfaceIdentity {
@@ -922,7 +921,6 @@ mod tests {
             parent: "lane".into(),
             ordinal: 0,
             sequence: 0,
-
             name: "moDeleteBodyData_c".into(),
         });
         let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -935,8 +933,9 @@ mod tests {
         let mut body_sources =
             super::super::body_sources::BodySources::from_views([(lane.id.clone(), root)])
                 .expect("lane source");
+        let class_sources = ClassSources::from_positions([(&lane.classes[0], 0)]);
         let decoded = super::super::selections::compact_body_selections(
-            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+            &class_sources,
             &ctx,
             root,
             &mut body_sources,
@@ -1044,14 +1043,14 @@ mod tests {
             parent: "lane".into(),
             ordinal: 0,
             sequence: 0,
-
             name: "moCompFace_c".into(),
         });
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let class_sources = ClassSources::from_positions([(&lane.classes[0], 0)]);
         let actual = super::super::selections::compact_surface_selections(
-            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+            &class_sources,
             &ctx,
             &histories,
             &lane,

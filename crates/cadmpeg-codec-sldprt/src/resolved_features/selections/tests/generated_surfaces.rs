@@ -81,12 +81,8 @@ fn generated_surface_identity_path_keeps_absent_source_component() {
     let policy = DecodePolicy::service();
     let (ctx, root) =
         DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy).unwrap();
-    let (identities, fidelity) = captured_identities(
-        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-        &ctx,
-        root,
-        &lane,
-    );
+    let class_sources = ClassSources::from_positions([(&lane.classes[0], 0)]);
+    let (identities, fidelity) = captured_identities(&class_sources, &ctx, root, &lane);
     assert_eq!(identities.len(), 1);
     let identity = &identities[0];
     assert_eq!(
@@ -153,12 +149,8 @@ fn generated_surface_identity_duplicates_use_the_component_index() {
     let policy = DecodePolicy::service();
     let (ctx, root) =
         DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy).unwrap();
-    let (identities, fidelity) = captured_identities(
-        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-        &ctx,
-        root,
-        &lane,
-    );
+    let class_sources = ClassSources::from_positions([(&lane.classes[0], 0)]);
+    let (identities, fidelity) = captured_identities(&class_sources, &ctx, root, &lane);
     assert_eq!(identities.len(), 2048);
     for (index, identity) in identities.iter().enumerate() {
         assert_eq!(
@@ -238,12 +230,11 @@ fn split_surface_queries_reuse_one_scoped_identity_parse() {
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut cache = None;
+    let class_sources =
+        ClassSources::from_positions([(&lane.classes[0], 0), (&lane.classes[1], 4096)]);
     for _ in 0..32 {
         let selections = operation_surface_selection_candidates(
-            (
-                &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-                &ctx,
-            ),
+            (&class_sources, &ctx),
             FeatureClass::SplitFace,
             &lane,
             0,

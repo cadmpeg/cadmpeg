@@ -719,15 +719,12 @@ mod tests {
             unique_draft_direction(&lane.native_payload, neutral.2, first_face),
             Some(Vector3::new(0.0, 0.0, 1.0))
         );
-        let operands = draft_operands(
-            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-            &feature,
-            &lane,
-            object_start,
-            class_offset,
-        )
-        .expect("draft parse")
-        .expect("complete draft operands");
+        let class_sources = crate::resolved_features::class_sources::ClassSources::from_positions(
+            [(&lane.classes[0], u64_from_index(class_offset))],
+        );
+        let operands = draft_operands(&class_sources, &feature, &lane, object_start, class_offset)
+            .expect("draft parse")
+            .expect("complete draft operands");
         assert!(matches!(
             operands.anchor,
             DraftAnchor::NeutralPlane(ref path) if path.last().unwrap().local_id == Some(3)
@@ -740,7 +737,7 @@ mod tests {
         malformed.native_payload[object_start + 15..object_start + 19]
             .copy_from_slice(&103u32.to_le_bytes());
         assert!(draft_operands(
-            &crate::test_support::native::class_sources(std::slice::from_ref(&malformed)),
+            &class_sources,
             &feature,
             &malformed,
             object_start,
@@ -784,7 +781,7 @@ mod tests {
             native_ref: Some("draft".into()),
         }];
         super::super::projections::project_draft_operands(
-            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+            &class_sources,
             &mut projected,
             std::slice::from_ref(&history),
             std::slice::from_ref(&lane),
@@ -823,7 +820,7 @@ mod tests {
                 cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0)).unwrap();
         });
         super::super::projections::project_draft_operands(
-            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+            &class_sources,
             &mut projected,
             &[history],
             std::slice::from_ref(&lane),

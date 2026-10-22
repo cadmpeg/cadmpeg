@@ -1746,7 +1746,8 @@ mod relation_records_tests {
     };
     use std::collections::BTreeMap;
 
-    fn class(offset: u64, name: &str) -> FeatureInputClass {
+    /// A class declared at the source position `offset`, with that position.
+    fn class(offset: u64, name: &str) -> (FeatureInputClass, u64) {
         class_with_sequence(
             offset,
             name,
@@ -1754,16 +1755,16 @@ mod relation_records_tests {
         )
     }
 
-    fn class_with_sequence(offset: u64, name: &str, sequence: u32) -> FeatureInputClass {
-        FeatureInputClass {
+    fn class_with_sequence(offset: u64, name: &str, sequence: u32) -> (FeatureInputClass, u64) {
+        let class = FeatureInputClass {
             feature_ref: None,
             id: format!("class-{offset}"),
             parent: "lane".into(),
             ordinal: 0,
             sequence,
-
             name: name.into(),
-        }
+        };
+        (class, offset)
     }
 
     fn scalar(offset: u64, role: FeatureInputScalarRole) -> FeatureInputScalar {
@@ -1819,7 +1820,7 @@ mod relation_records_tests {
         let base = SketchInputEntity::new("entity", "lane", 0, 0, SketchInputKind::Point);
         let features = ["sketch-0", "sketch-1", "sketch-2", "sketch-3", "absent"];
         for _ in 0..16 {
-            let mut lane = lane(Vec::new(), Vec::new());
+            let (mut lane, _) = lane(Vec::new(), Vec::new());
             lane.scalars = (0..200)
                 .map(|offset| {
                     let mut scalar = scalar(offset, FeatureInputScalarRole::Driving);
@@ -1941,8 +1942,6 @@ mod relation_records_tests {
 
     #[test]
     fn indexed_declaration_search_matches_the_linear_search() {
-        let class_sources = ClassSources::default();
-
         let mut state = 0x2545_f491_u64;
         let mut next = |bound: u64| {
             state = state
@@ -1956,16 +1955,20 @@ mod relation_records_tests {
             (2_500, None, "a".to_string()),
         ];
         let mut classes = Vec::new();
+        let mut positions = Vec::new();
         for index in 0..300 {
             let name = if next(3) == 0 {
                 "sgEntHandle"
             } else {
                 "sgPntPntHorDist"
             };
-            let mut declared = class(next(3_200), name);
+            let (mut declared, position) = class(next(3_200), name);
             declared.id = format!("class-{index}");
             classes.push(declared);
+            positions.push(position);
         }
+        let class_sources =
+            ClassSources::from_positions(classes.iter().zip(positions.iter().copied()));
         let mut scalars = Vec::new();
         for index in 0..600 {
             let mut stated = scalar(next(3_200), FeatureInputScalarRole::Driving);
@@ -2009,13 +2012,13 @@ mod relation_records_tests {
 
     #[test]
     fn declaration_search_is_linear_in_classes_and_scalars() {
-        let class_sources = ClassSources::default();
-
         const RELATIONS: u64 = 1 << 14;
         let intervals = [(0, None, "sketch".to_string())];
-        let classes = (0..RELATIONS)
+        let (classes, positions): (Vec<_>, Vec<_>) = (0..RELATIONS)
             .map(|index| class(index * 100, "sgPntPntHorDist"))
-            .collect::<Vec<_>>();
+            .unzip();
+        let class_sources =
+            ClassSources::from_positions(classes.iter().zip(positions.iter().copied()));
         let scalars = (0..RELATIONS)
             .map(|index| scalar(index * 100 + 50, FeatureInputScalarRole::Driving))
             .collect::<Vec<_>>();
@@ -2053,8 +2056,16 @@ mod relation_records_tests {
         }
     }
 
-    fn lane(classes: Vec<FeatureInputClass>, scalars: Vec<FeatureInputScalar>) -> FeatureInputLane {
-        FeatureInputLane {
+    /// A lane that declares `classes`, with the class positions it states.
+    fn lane(
+        classes: Vec<(FeatureInputClass, u64)>,
+        scalars: Vec<FeatureInputScalar>,
+    ) -> (FeatureInputLane, ClassSources) {
+        let class_sources = ClassSources::from_positions(
+            classes.iter().map(|(class, position)| (class, *position)),
+        );
+        let classes = classes.into_iter().map(|(class, _)| class).collect();
+        let lane = FeatureInputLane {
             id: "lane".into(),
             configuration: None,
             native_payload: Vec::new().into(),
@@ -2069,7 +2080,8 @@ mod relation_records_tests {
             generated_surface_identities: Vec::new(),
             references: Vec::new(),
             sketch_entities: Vec::new(),
-        }
+        };
+        (lane, class_sources)
     }
 
     fn sketch_history() -> Vec<FeatureHistory> {
@@ -2220,10 +2232,10 @@ mod relation_records_tests {
     /// offset the span can name and declares one.
     #[test]
     fn a_class_whose_unknown_feature_span_is_unstatable_declares_no_relation() {
-        let class_sources = ClassSources::default();
-
-        let unstatable = class_with_sequence(u64::MAX - 100, "sgPntPntHorDist", 0);
+        let (unstatable, unstatable_position) =
+            class_with_sequence(u64::MAX - 100, "sgPntPntHorDist", 0);
         let following = scalar_with_sequence(u64::MAX - 50, FeatureInputScalarRole::Driving, 1);
+        let class_sources = ClassSources::from_positions([(&unstatable, unstatable_position)]);
         assert!(relation_declaration_candidates(
             &class_sources,
             std::slice::from_ref(&unstatable),
@@ -2232,8 +2244,9 @@ mod relation_records_tests {
         )
         .is_empty());
 
-        let stated = class(1_000, "sgPntPntHorDist");
+        let (stated, stated_position) = class(1_000, "sgPntPntHorDist");
         let within = scalar(1_050, FeatureInputScalarRole::Driving);
+        let class_sources = ClassSources::from_positions([(&stated, stated_position)]);
         assert_eq!(
             relation_declaration_candidates(
                 &class_sources,
@@ -2253,14 +2266,9 @@ mod relation_records_tests {
         native.operands.clear();
 
         let driving = scalar(40, FeatureInputScalarRole::Driving);
-        let lane = lane(vec![relation_class], vec![native, driving.clone()]);
+        let (lane, class_sources) = lane(vec![relation_class], vec![native, driving.clone()]);
 
-        let instances = relation_instances(
-            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-            &sketch_history(),
-            &lane,
-        )
-        .unwrap();
+        let instances = relation_instances(&class_sources, &sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one relation instance");
         };
@@ -2275,7 +2283,7 @@ mod relation_records_tests {
     fn declaration_reaches_compatible_scalar_after_auxiliary_records() {
         let relation_class = class(10, "sgPntPntHorDist");
         let driving = scalar(200, FeatureInputScalarRole::Driving);
-        let mut lane = lane(vec![relation_class], vec![driving.clone()]);
+        let (mut lane, class_sources) = lane(vec![relation_class], vec![driving.clone()]);
         lane.names.push(FeatureInputName {
             feature_ref: None,
             id: "name-sketch".into(),
@@ -2287,12 +2295,7 @@ mod relation_records_tests {
             value: "Sketch".into(),
         });
 
-        let instances = relation_instances(
-            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-            &sketch_history(),
-            &lane,
-        )
-        .unwrap();
+        let instances = relation_instances(&class_sources, &sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one relation instance");
         };
@@ -2308,7 +2311,7 @@ mod relation_records_tests {
         let first = class(10, "sgPntPntHorDist");
         let second = class(100, "sgPntPntVertDist");
         let driving = scalar(200, FeatureInputScalarRole::Driving);
-        let mut lane = lane(vec![first, second.clone()], vec![driving]);
+        let (mut lane, class_sources) = lane(vec![first, second.clone()], vec![driving]);
         lane.names.push(FeatureInputName {
             feature_ref: None,
             id: "name-sketch".into(),
@@ -2320,16 +2323,11 @@ mod relation_records_tests {
             value: "Sketch".into(),
         });
 
-        let instances = relation_instances(
-            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-            &sketch_history(),
-            &lane,
-        )
-        .unwrap();
+        let instances = relation_instances(&class_sources, &sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one relation instance");
         };
-        assert_eq!(relation.class_ref, second.id);
+        assert_eq!(relation.class_ref, second.0.id);
         assert_eq!(
             relation.family,
             FeatureInputRelationFamily::PointPointVerticalDistance
@@ -2342,18 +2340,13 @@ mod relation_records_tests {
         let horizontal = class(30, "sgPntPntHorDist");
         let display = scalar(20, FeatureInputScalarRole::Display);
         let driving = scalar(40, FeatureInputScalarRole::Driving);
-        let lane = lane(
+        let (lane, class_sources) = lane(
             vec![vertical, horizontal.clone()],
             vec![display.clone(), driving.clone()],
         );
 
         let history = sketch_history();
-        let instances = relation_instances(
-            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-            &history,
-            &lane,
-        )
-        .unwrap();
+        let instances = relation_instances(&class_sources, &history, &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one relation instance");
         };
@@ -2361,7 +2354,7 @@ mod relation_records_tests {
             relation.family,
             FeatureInputRelationFamily::PointPointHorizontalDistance
         );
-        assert_eq!(relation.class_ref, horizontal.id);
+        assert_eq!(relation.class_ref, horizontal.0.id);
         assert_eq!(
             relation.scalar_refs(),
             vec![display.id.clone(), driving.id.clone()]
@@ -2382,14 +2375,9 @@ mod relation_records_tests {
         let horizontal = class(30, "sgPntPntHorDist");
         let first = scalar(20, FeatureInputScalarRole::Display);
         let second = scalar(40, FeatureInputScalarRole::Display);
-        let lane = lane(vec![vertical, horizontal], vec![first, second]);
+        let (lane, class_sources) = lane(vec![vertical, horizontal], vec![first, second]);
 
-        let relations = relation_instances(
-            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-            &sketch_history(),
-            &lane,
-        )
-        .unwrap();
+        let relations = relation_instances(&class_sources, &sketch_history(), &lane).unwrap();
         assert_eq!(relations.len(), 2);
         assert_eq!(
             relations
@@ -2407,18 +2395,14 @@ mod relation_records_tests {
     fn ambiguous_relation_declarations_leave_scalar_unbound() {
         let distance = class(10, "sgPntPntDist");
         let vertical = class(20, "sgPntPntVertDist");
-        let lane = lane(
+        let (lane, class_sources) = lane(
             vec![distance, vertical],
             vec![scalar(30, FeatureInputScalarRole::Driving)],
         );
 
-        assert!(relation_instances(
-            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-            &sketch_history(),
-            &lane
-        )
-        .unwrap()
-        .is_empty());
+        assert!(relation_instances(&class_sources, &sketch_history(), &lane)
+            .unwrap()
+            .is_empty());
     }
 
     /// Two features, so the first interval ends at the second's start. A class
@@ -2427,8 +2411,6 @@ mod relation_records_tests {
     /// is the interval's end, not the span.
     #[test]
     fn a_class_inside_an_interval_takes_the_interval_end_not_the_unknown_span() {
-        let class_sources = ClassSources::default();
-
         let mut history = sketch_history();
         history[0].features[0].id = "first".into();
         history[0].features[0].name = "First".into();
@@ -2440,7 +2422,7 @@ mod relation_records_tests {
 
         let mut relation_scalar = scalar(150, FeatureInputScalarRole::Driving);
         relation_scalar.feature_ref = Some("first".into());
-        let mut lane = lane(
+        let (mut lane, class_sources) = lane(
             vec![class(10, "sgPntPntHorDist")],
             vec![relation_scalar.clone()],
         );
@@ -2493,13 +2475,11 @@ mod relation_records_tests {
     /// nothing and reaches a scalar at the highest offset a `u64` states.
     #[test]
     fn a_class_in_the_open_last_interval_reaches_the_highest_scalar_offset() {
-        let class_sources = ClassSources::default();
-
         let history = sketch_history();
         let mut relation_scalar = scalar(10, FeatureInputScalarRole::Driving);
         relation_scalar.offset = Some(u64::MAX);
         relation_scalar.sequence = 2;
-        let mut lane = lane(
+        let (mut lane, class_sources) = lane(
             vec![class_with_sequence(u64::MAX - 1, "sgPntPntHorDist", 1)],
             vec![relation_scalar],
         );
@@ -2542,7 +2522,8 @@ mod relation_records_tests {
 
         let mut relation_scalar = scalar(120, FeatureInputScalarRole::Driving);
         relation_scalar.feature_ref = Some("second".into());
-        let mut lane = lane(vec![class(10, "sgPntPntDist")], vec![relation_scalar]);
+        let (mut lane, class_sources) =
+            lane(vec![class(10, "sgPntPntDist")], vec![relation_scalar]);
         lane.names = vec![
             FeatureInputName {
                 sequence: 0,
@@ -2566,13 +2547,9 @@ mod relation_records_tests {
             },
         ];
 
-        assert!(relation_instances(
-            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-            &history,
-            &lane
-        )
-        .unwrap()
-        .is_empty());
+        assert!(relation_instances(&class_sources, &history, &lane)
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
@@ -2590,7 +2567,8 @@ mod relation_records_tests {
 
         let mut relation_scalar = scalar(120, FeatureInputScalarRole::Driving);
         relation_scalar.feature_ref = Some("sketch".into());
-        let mut lane = lane(vec![class(110, "sgPntPntDist")], vec![relation_scalar]);
+        let (mut lane, class_sources) =
+            lane(vec![class(110, "sgPntPntDist")], vec![relation_scalar]);
         lane.names = vec![
             FeatureInputName {
                 sequence: 0,
@@ -2614,12 +2592,7 @@ mod relation_records_tests {
             },
         ];
 
-        let relations = relation_instances(
-            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-            &history,
-            &lane,
-        )
-        .unwrap();
+        let relations = relation_instances(&class_sources, &history, &lane).unwrap();
         let [relation] = relations.as_slice() else {
             panic!("metadata must not terminate the sketch interval");
         };
@@ -2628,7 +2601,7 @@ mod relation_records_tests {
 
     #[test]
     fn repeated_driving_scalar_starts_another_anchored_relation() {
-        let lane = lane(
+        let (lane, class_sources) = lane(
             vec![class(10, "sgPntPntDist")],
             vec![
                 scalar(20, FeatureInputScalarRole::Display),
@@ -2637,12 +2610,7 @@ mod relation_records_tests {
             ],
         );
 
-        let relations = relation_instances(
-            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-            &sketch_history(),
-            &lane,
-        )
-        .unwrap();
+        let relations = relation_instances(&class_sources, &sketch_history(), &lane).unwrap();
         assert_eq!(relations.len(), 2);
         assert_eq!(
             relations
@@ -2667,7 +2635,8 @@ mod relation_records_tests {
         );
         let mut bound = dynamic_scalar(30, FeatureInputOperandKind::E1, &[3, 4], 3.0);
         bound.role = FeatureInputScalarRole::Display;
-        let mut lane = lane(vec![class(10, "sgLLDist")], vec![dynamic, bound.clone()]);
+        let (mut lane, class_sources) =
+            lane(vec![class(10, "sgLLDist")], vec![dynamic, bound.clone()]);
         lane.relation_bindings = vec![FeatureInputRelationBinding {
             sequence: 10,
             id: "binding-10".into(),
@@ -2689,12 +2658,7 @@ mod relation_records_tests {
             feature_ref: Some("sketch".into()),
         });
 
-        let instances = relation_instances(
-            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-            &sketch_history(),
-            &lane,
-        )
-        .unwrap();
+        let instances = relation_instances(&class_sources, &sketch_history(), &lane).unwrap();
         assert_eq!(instances.len(), 2);
         assert_eq!(instances[1].offset, Some(30));
         assert_eq!(
@@ -2711,7 +2675,7 @@ mod relation_records_tests {
         let nested_display =
             circle_scalar(40, "name-nested", FeatureInputScalarRole::Display, None);
         let nested_driver = circle_scalar(50, "name-nested", FeatureInputScalarRole::Driving, None);
-        let mut lane = lane(
+        let (mut lane, class_sources) = lane(
             vec![class(10, "sgCircleDim"), class(31, "sgEntHandle")],
             vec![first.clone(), nested_display.clone(), nested_driver.clone()],
         );
@@ -2738,12 +2702,7 @@ mod relation_records_tests {
             },
         ];
 
-        let instances = relation_instances(
-            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-            &sketch_history(),
-            &lane,
-        )
-        .unwrap();
+        let instances = relation_instances(&class_sources, &sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one circle relation");
         };
@@ -2765,7 +2724,7 @@ mod relation_records_tests {
         let d4_driver = circle_scalar(50, "name-d4", FeatureInputScalarRole::Driving, None);
         let d5_display = circle_scalar(60, "name-d5", FeatureInputScalarRole::Display, None);
         let d5_driver = circle_scalar(70, "name-d5", FeatureInputScalarRole::Driving, None);
-        let mut lane = lane(
+        let (mut lane, class_sources) = lane(
             vec![class(10, "sgCircleDim"), class(31, "sgEntHandle")],
             vec![first, d4_display, d4_driver, d5_display, d5_driver],
         );
@@ -2784,12 +2743,7 @@ mod relation_records_tests {
             })
             .collect();
 
-        let instances = relation_instances(
-            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-            &sketch_history(),
-            &lane,
-        )
-        .unwrap();
+        let instances = relation_instances(&class_sources, &sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one circle relation");
         };
@@ -2909,7 +2863,7 @@ mod relation_records_tests {
                     scalar
                 })
                 .collect();
-            let mut lane = lane(classes, scalars);
+            let (mut lane, class_sources) = lane(classes, scalars);
             lane.names = (0..5)
                 .map(|ordinal| FeatureInputName {
                     feature_ref: None,
@@ -2945,11 +2899,7 @@ mod relation_records_tests {
                     scalars: RelationScalars::from_refs(refs, parameter, None).unwrap(),
                     operands: Vec::new(),
                 };
-                let linear = linear_handle_driver(
-                    &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-                    &relation,
-                    &lane,
-                );
+                let linear = linear_handle_driver(&class_sources, &relation, &lane);
                 assert_eq!(
                     drivers.driver(&relation).map(std::ptr::from_ref),
                     linear.map(std::ptr::from_ref)
@@ -3058,7 +3008,7 @@ mod relation_records_tests {
         let mut different_name =
             circle_scalar(50, "name-d2", FeatureInputScalarRole::Display, None);
         different_name.operands[0].entity_index = 3;
-        let mut lane = lane(
+        let (mut lane, class_sources) = lane(
             vec![class(10, "sgCircleDim")],
             vec![first.clone(), second, third, different_name],
         );
@@ -3085,12 +3035,7 @@ mod relation_records_tests {
             },
         ];
 
-        let instances = relation_instances(
-            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-            &sketch_history(),
-            &lane,
-        )
-        .unwrap();
+        let instances = relation_instances(&class_sources, &sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one repeated circle relation");
         };
@@ -3176,7 +3121,7 @@ mod relation_records_tests {
 
     #[test]
     fn dynamic_relation_tags_are_admitted_by_family_scope() {
-        let lane = lane(
+        let (lane, class_sources) = lane(
             vec![class(10, "sgPntPntDist")],
             vec![dynamic_scalar(
                 40,
@@ -3186,12 +3131,7 @@ mod relation_records_tests {
             )],
         );
 
-        let instances = relation_instances(
-            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-            &sketch_history(),
-            &lane,
-        )
-        .unwrap();
+        let instances = relation_instances(&class_sources, &sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one dynamically tagged relation");
         };
@@ -3204,7 +3144,7 @@ mod relation_records_tests {
 
     #[test]
     fn dynamic_point_relation_uses_unique_geometry_match_across_address_tiers() {
-        let mut lane = lane(
+        let (mut lane, class_sources) = lane(
             vec![class(10, "sgPntPntDist")],
             vec![dynamic_scalar(
                 40,
@@ -3215,12 +3155,7 @@ mod relation_records_tests {
         );
         lane.sketch_entities = dynamic_point_markers();
 
-        let instances = relation_instances(
-            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-            &sketch_history(),
-            &lane,
-        )
-        .unwrap();
+        let instances = relation_instances(&class_sources, &sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one dynamically tagged relation");
         };
@@ -3243,15 +3178,10 @@ mod relation_records_tests {
             2.0,
         );
         driving.operands[0].entity_ref = Some("p1".into());
-        let mut lane = lane(vec![class(10, "sgPntPntDist")], vec![driving]);
+        let (mut lane, class_sources) = lane(vec![class(10, "sgPntPntDist")], vec![driving]);
         lane.sketch_entities = dynamic_point_markers();
 
-        let instances = relation_instances(
-            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-            &sketch_history(),
-            &lane,
-        )
-        .unwrap();
+        let instances = relation_instances(&class_sources, &sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one dynamically tagged relation");
         };
@@ -3274,7 +3204,7 @@ mod relation_records_tests {
             1.0,
         );
         driving.operands[0].entity_ref = Some("p0".into());
-        let mut lane = lane(vec![class(10, "sgPntPntDist")], vec![driving]);
+        let (mut lane, class_sources) = lane(vec![class(10, "sgPntPntDist")], vec![driving]);
         lane.sketch_entities = vec![
             sketch_marker(
                 "relation",
@@ -3308,12 +3238,7 @@ mod relation_records_tests {
             ),
         ];
 
-        let instances = relation_instances(
-            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-            &sketch_history(),
-            &lane,
-        )
-        .unwrap();
+        let instances = relation_instances(&class_sources, &sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one dynamically tagged relation");
         };
@@ -3344,18 +3269,13 @@ mod relation_records_tests {
             2.0,
         );
         driving.operands[0].entity_ref = Some("p0".into());
-        let mut lane = lane(
+        let (mut lane, class_sources) = lane(
             vec![class(10, "sgPntPntDist")],
             vec![display, driving.clone()],
         );
         lane.sketch_entities = dynamic_point_markers();
 
-        let instances = relation_instances(
-            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-            &sketch_history(),
-            &lane,
-        )
-        .unwrap();
+        let instances = relation_instances(&class_sources, &sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one grouped relation instance");
         };
@@ -3382,15 +3302,10 @@ mod relation_records_tests {
             2.0,
         );
         display.role = FeatureInputScalarRole::Display;
-        let mut lane = lane(vec![class(10, "sgPntPntDist")], vec![display]);
+        let (mut lane, class_sources) = lane(vec![class(10, "sgPntPntDist")], vec![display]);
         lane.sketch_entities = dynamic_point_markers();
 
-        let instances = relation_instances(
-            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-            &sketch_history(),
-            &lane,
-        )
-        .unwrap();
+        let instances = relation_instances(&class_sources, &sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one dynamically tagged relation");
         };
@@ -3407,7 +3322,7 @@ mod relation_records_tests {
 
     #[test]
     fn dynamic_point_relation_with_ambiguous_geometry_stays_unbound() {
-        let mut lane = lane(
+        let (mut lane, class_sources) = lane(
             vec![class(10, "sgPntPntDist")],
             vec![dynamic_scalar(
                 40,
@@ -3419,12 +3334,7 @@ mod relation_records_tests {
         lane.sketch_entities = dynamic_point_markers();
         lane.sketch_entities[3].coordinates_m = cadmpeg_ir::units::FiniteVector::new([1.0, 0.0]);
 
-        let instances = relation_instances(
-            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-            &sketch_history(),
-            &lane,
-        )
-        .unwrap();
+        let instances = relation_instances(&class_sources, &sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one dynamically tagged relation");
         };
@@ -3443,7 +3353,7 @@ mod relation_records_tests {
             1.0,
         );
         driving.operands[1].entity_ref = Some("p0".into());
-        let mut lane = lane(vec![class(10, "sgPntLineDist")], vec![driving]);
+        let (mut lane, class_sources) = lane(vec![class(10, "sgPntLineDist")], vec![driving]);
         lane.sketch_entities = vec![
             sketch_marker(
                 "relation",
@@ -3484,12 +3394,7 @@ mod relation_records_tests {
             ),
         ];
 
-        let instances = relation_instances(
-            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-            &sketch_history(),
-            &lane,
-        )
-        .unwrap();
+        let instances = relation_instances(&class_sources, &sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one dynamically tagged relation");
         };
@@ -3506,7 +3411,7 @@ mod relation_records_tests {
             1.0,
         );
         driving.operands[0].entity_ref = Some("p0".into());
-        let mut lane = lane(vec![class(10, "sgLLDist")], vec![driving]);
+        let (mut lane, class_sources) = lane(vec![class(10, "sgLLDist")], vec![driving]);
         lane.sketch_entities = vec![
             sketch_marker(
                 "p0",
@@ -3538,12 +3443,7 @@ mod relation_records_tests {
             ),
         ];
 
-        let instances = relation_instances(
-            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-            &sketch_history(),
-            &lane,
-        )
-        .unwrap();
+        let instances = relation_instances(&class_sources, &sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one dynamically tagged relation");
         };
@@ -3561,7 +3461,7 @@ mod relation_records_tests {
             &[0, 1],
             std::f64::consts::FRAC_PI_4,
         );
-        let mut lane = lane(vec![class(10, "sgAnglDim")], vec![driving]);
+        let (mut lane, class_sources) = lane(vec![class(10, "sgAnglDim")], vec![driving]);
         lane.sketch_entities = vec![
             sketch_marker(
                 "first-start",
@@ -3593,12 +3493,7 @@ mod relation_records_tests {
             ),
         ];
 
-        let instances = relation_instances(
-            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-            &sketch_history(),
-            &lane,
-        )
-        .unwrap();
+        let instances = relation_instances(&class_sources, &sketch_history(), &lane).unwrap();
         let [relation] = instances.as_slice() else {
             panic!("one dynamically tagged angle relation");
         };

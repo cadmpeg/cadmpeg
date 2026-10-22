@@ -13,6 +13,7 @@ use crate::records::{
     Feature, FeatureHistory, FeatureInputClass, FeatureInputComponentPathEntry,
     FeatureInputEdgeSelection, FeatureInputLane, FeatureInputName,
 };
+use crate::resolved_features::class_sources::ClassSources;
 use crate::resolved_features::selections::compact_body_selection_vector;
 use crate::resolved_features::selections::compact_component_reference_list;
 use crate::resolved_features::selections::compact_component_reference_list_at;
@@ -888,22 +889,16 @@ fn fillet_edge_roster_ends_at_direct_or_repeated_vertex_dimension() {
         sketch_entities: Vec::new(),
     };
 
+    let class_sources = ClassSources::from_positions([(
+        &lane.classes[0],
+        cadmpeg_core::decode::u64_from_index(class_offset),
+    )]);
     assert_eq!(
-        fillet_edge_roster_end(
-            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-            &lane,
-            0,
-            80
-        ),
+        fillet_edge_roster_end(&class_sources, &lane, 0, 80),
         Some(direct_record)
     );
     assert_eq!(
-        fillet_edge_roster_end(
-            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-            &lane,
-            80,
-            144
-        ),
+        fillet_edge_roster_end(&class_sources, &lane, 80, 144),
         Some(repeated_record)
     );
 }
@@ -1239,14 +1234,13 @@ fn varfillet_roster_accepts_unframed_reference_lists() {
         sketch_entities: Vec::new(),
     };
 
-    let selections = compact_edge_selections(
-        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-        &history_ctx,
-        &[history],
-        &lane,
-    )
-    .unwrap()
-    .records;
+    let class_sources = ClassSources::from_positions([(
+        &lane.classes[0],
+        cadmpeg_core::decode::u64_from_index(class_offset),
+    )]);
+    let selections = compact_edge_selections(&class_sources, &history_ctx, &[history], &lane)
+        .unwrap()
+        .records;
     assert_eq!(selections.len(), 1);
     assert_eq!(selections[0].references.len(), 4);
     assert_eq!(selections[0].references[3][0].instance, Some(0x8083));

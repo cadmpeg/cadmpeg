@@ -39,6 +39,25 @@ pub(crate) fn layout_pointers(
     pointers
 }
 
+impl ClassSources {
+    /// Class positions that a fixture states for its classes, admitted as
+    /// the decoder admits a declaration marker from its lane View. A class id
+    /// that repeats must repeat its position.
+    pub(crate) fn from_positions<'a>(
+        positions: impl IntoIterator<Item = (&'a crate::records::FeatureInputClass, u64)>,
+    ) -> Self {
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut sources = Self::default();
+        for (class, position) in positions {
+            match sources.position(class) {
+                Some(stated) => assert_eq!(stated, position, "class {} repeats", class.id),
+                None => sources.insert(&ctx, &class.id, position).unwrap(),
+            }
+        }
+        sources
+    }
+}
+
 /// Admit class positions from the unchanged fixture source, independently of
 /// held native edits. Source-capture tests use their original View directly.
 pub(crate) fn class_sources<L: std::borrow::Borrow<crate::records::FeatureInputLane>>(

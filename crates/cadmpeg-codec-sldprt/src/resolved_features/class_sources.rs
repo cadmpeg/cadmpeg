@@ -82,7 +82,7 @@ impl ClassSources {
         self.pointers.as_deref()?.get(id)?.get("offset").copied()
     }
 
-    pub(super) fn insert(
+    pub(crate) fn insert(
         &mut self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         id: &str,

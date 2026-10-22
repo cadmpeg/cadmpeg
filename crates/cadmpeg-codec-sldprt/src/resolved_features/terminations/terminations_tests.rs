@@ -17,6 +17,7 @@ use super::{
 use crate::records::FeatureSource;
 use crate::records::ObjectId;
 use crate::records::{Feature, FeatureHistory, FeatureInputLane, FeatureInputName};
+use crate::resolved_features::class_sources::ClassSources;
 use std::collections::BTreeMap;
 
 #[test]
@@ -1722,11 +1723,8 @@ fn sweep_path_enrichment_binds_the_general_curve_path() {
         sketch_entities: Vec::new(),
     }];
     let mut admitted = histories.clone();
-    super::enrich_history_sweep_paths(
-        &crate::test_support::native::class_sources(&lanes),
-        &mut admitted,
-        &lanes,
-    );
+    let class_sources = ClassSources::from_positions([(&lanes[0].classes[0], 40)]);
+    super::enrich_history_sweep_paths(&class_sources, &mut admitted, &lanes);
     assert_eq!(
         admitted[0].features[0]
             .properties
