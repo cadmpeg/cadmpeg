@@ -367,15 +367,7 @@ pub(crate) fn transfer_neutral(
             } else {
                 None
             };
-            let base_scale = record.scale().unwrap_or([1.0; 3]);
-            let array_scale = if is_array { base_scale } else { [1.0; 3] };
-            let [sx, sy, sz] = array_scale;
-            let scale_transform = Transform::affine([
-                [sx, 0.0, 0.0, 0.0],
-                [0.0, sy, 0.0, 0.0],
-                [0.0, 0.0, sz, 0.0],
-            ])
-            .ok_or_else(|| malformed("link scale must be finite"))?;
+            let scale_transform = link_scale_transform(record.scale().unwrap_or([1.0; 3]))?;
             let local_transform = record
                 .local_transform()
                 .map(crate::native::frame::FiniteFrame::transform)
@@ -408,12 +400,9 @@ pub(crate) fn transfer_neutral(
                 None
             }
             .unwrap_or([1.0; 3]);
-            let scale = if is_array { element_scale } else { base_scale };
-            let [x, y, z] = scale.map(|value| {
-                cadmpeg_ir::scalar::FiniteReal::new(value)
-                    .ok_or_else(|| CodecError::Malformed("occurrence scale must be finite".into()))
-            });
-            let scale = [x?, y?, z?];
+            let local_transform = local_transform
+                .compose(link_scale_transform(element_scale)?)
+                .map_err(|error| malformed(error.to_string()))?;
             let copy_on_change = record
                 .copy_on_change_policy()
                 .map(|policy| {
@@ -471,7 +460,7 @@ pub(crate) fn transfer_neutral(
                 transform: local_transform,
                 linked_prototype: (record.link_transform() == Some(true))
                     .then_some(prototype_transform),
-                scale,
+                scale: [FiniteReal::ONE; 3],
                 name: Some(record.object.clone()),
                 visible: None,
                 link: LinkState::new(
@@ -639,6 +628,11 @@ fn linked_prototype_transform(
     placement
         .compose(nested?)
         .map_err(|error| malformed(error.to_string()))
+}
+
+fn link_scale_transform([x, y, z]: [f64; 3]) -> Result<Transform, CodecError> {
+    Transform::affine([[x, 0.0, 0.0, 0.0], [0.0, y, 0.0, 0.0], [0.0, 0.0, z, 0.0]])
+        .ok_or_else(|| malformed("link scale must be finite"))
 }
 
 fn link_element_objects(records: &[ProductNodeRecord]) -> HashSet<&str> {

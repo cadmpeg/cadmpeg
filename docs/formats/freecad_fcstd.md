@@ -619,8 +619,9 @@ Entries beyond the active count do not create occurrences. Inactive carriers rem
 Visibility bits do not determine array cardinality. A missing visibility bit means visible; a scalar
 link does not apply the per-element visibility list. Element objects belong to their containing
 link and do not create independent root occurrences. For an active array, the transform order is
-scalar placement, scalar scale, element placement, and element scale. Nonuniform scalar scale does
-not commute with element rotation or translation.
+scalar placement, scalar scale, element placement, element scale, and the linked prototype placement
+when `LinkTransform` enables it. A scalar link applies scalar placement and scalar scale before the
+linked prototype placement. Nonuniform scale does not commute with rotation or translation.
 
 The native namespace extends occurrences with ordered link-array element placements and
 scale vectors. Each side entry begins with a little-endian element count followed by either all

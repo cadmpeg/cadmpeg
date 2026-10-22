@@ -131,22 +131,22 @@ fn array_restore_uses_expansion_mode_and_element_objects() {
                     0.0
                 };
                 assert_eq!(occurrence.transform.rows()[0][3], 100.0 + 2.0 * x);
-                assert_eq!(
-                    occurrence.transform.rows()[0][0],
-                    if array { 2.0 } else { 1.0 }
-                );
-                let scale = if expanded && index == 1 {
+                let element_scale = if expanded && index == 1 {
                     [4.0, 5.0, 6.0]
                 } else if !expanded && array && index == 0 {
                     [2.0; 3]
-                } else if !array {
-                    [2.0, 3.0, 4.0]
                 } else {
                     [1.0; 3]
                 };
+                for (axis, parent_scale) in [2.0, 3.0, 4.0].into_iter().enumerate() {
+                    assert_eq!(
+                        occurrence.transform.rows()[axis][axis],
+                        parent_scale * element_scale[axis]
+                    );
+                }
                 assert_eq!(
                     occurrence.scale.map(cadmpeg_ir::scalar::FiniteReal::get),
-                    scale
+                    [1.0; 3]
                 );
                 assert_eq!(
                     occurrence
@@ -240,4 +240,59 @@ fn parent_nonuniform_scale_precedes_rotated_array_element() {
         [1.0; 3]
     );
     assert_valid_document(decoded.ir());
+}
+
+#[test]
+fn link_scales_precede_the_linked_prototype_placement() {
+    for (expanded, count) in [(true, 1), (false, 1), (false, 0)] {
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3"><Object type="Part::Feature" name="Prototype"/><Object type="App::LinkElement" name="Element"/><Object type="App::Link" name="Instance"/></Objects>
+<ObjectData Count="3">
+<Object name="Prototype"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="3" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
+<Object name="Element"><Properties Count="3"><Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="11" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property><Property name="ScaleVector" type="App::PropertyVector"><PropertyVector valueX="0.5" valueY="1" valueZ="1.5"/></Property></Properties></Object>
+<Object name="Instance"><Properties Count="9">
+<Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+<Property name="LinkTransform" type="App::PropertyBool"><Bool value="true"/></Property>
+<Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="5" Py="6" Pz="7" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+<Property name="ScaleVector" type="App::PropertyVector"><PropertyVector valueX="2" valueY="3" valueZ="4"/></Property>
+<Property name="ShowElement" type="App::PropertyBool"><Bool value="{expanded}"/></Property>
+<Property name="ElementCount" type="App::PropertyIntegerConstraint"><Integer value="{count}"/></Property>
+<Property name="ElementList" type="App::PropertyLinkList"><LinkList count="1"><Link value="Element"/></LinkList></Property>
+<Property name="PlacementList" type="App::PropertyPlacementList"><PlacementList file="placements"/></Property>
+<Property name="ScaleList" type="App::PropertyVectorList"><VectorList file="scales"/></Property>
+</Properties></Object></ObjectData></Document>"#
+        );
+        let mut placements = 1_u32.to_le_bytes().to_vec();
+        placements.extend(
+            [11.0_f64, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+                .into_iter()
+                .flat_map(f64::to_le_bytes),
+        );
+        let mut scales = 1_u32.to_le_bytes().to_vec();
+        scales.extend([0.5_f64, 1.0, 1.5].into_iter().flat_map(f64::to_le_bytes));
+        let decoded = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive_entries(&[
+                    ("Document.xml", document.as_bytes()),
+                    ("placements", &placements),
+                    ("scales", &scales),
+                ])),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let [occurrence] = decoded.ir().model.occurrences.as_slice() else {
+            panic!("one link use, no duplicate element")
+        };
+        let effective = occurrence.effective_transform().unwrap().rows();
+        assert_eq!(effective[0][3], if count == 0 { 11.0 } else { 30.0 });
+        assert_eq!(effective[0][0], if count == 0 { 2.0 } else { 1.0 });
+        assert_eq!(effective[1][1], 3.0);
+        assert_eq!(effective[2][2], if count == 0 { 4.0 } else { 6.0 });
+        assert_eq!(
+            occurrence.scale.map(cadmpeg_ir::scalar::FiniteReal::get),
+            [1.0; 3]
+        );
+        assert_valid_document(decoded.ir());
+    }
 }

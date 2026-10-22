@@ -76,3 +76,8 @@ remains a named BOM property. Other product runtimes project a valid nonempty `P
 by the CADIR metadata convention; a same-named `Id` has no neutral part-number meaning. All native
 properties remain independently retained. This convention does not prescribe a FreeCAD BOM
 workbench's choice of columns.
+
+Neutral link-occurrence transforms compose the local affine placements and scales before
+`linked_prototype`; their separate neutral scale vector is unity. Native records retain the scalar
+and per-element scale carriers. This keeps nonuniform scale in its source position relative to
+rotations and translations.

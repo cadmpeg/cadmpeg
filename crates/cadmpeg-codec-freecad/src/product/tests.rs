@@ -189,7 +189,7 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
         link_occurrences[1]
             .scale
             .map(cadmpeg_ir::scalar::FiniteReal::get),
-        [2.0, 2.0, 2.0]
+        [1.0, 1.0, 1.0]
     );
     let first_link = link_occurrences[0].link.as_ref().expect("App::Link state");
     assert_eq!(first_link.linked_subelements(), ["Face1"]);
