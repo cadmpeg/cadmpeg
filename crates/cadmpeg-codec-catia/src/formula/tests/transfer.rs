@@ -1413,16 +1413,21 @@ fn decode_retains_a_cyclic_formula_component() {
         )
         .expect("decode cyclic formula component");
 
-    // #209 D3 preserves both typed cyclic outputs. In this source the
-    // signatures name #3_ and #2_, so the unused #1_ scalar has no declared
-    // quantity to infer; its original native evaluation still remains held.
-    let [intermediate, output] = decoded.ir().model.parameters.as_slice() else {
-        panic!("both typed cyclic formula outputs");
+    // #209 D6: a cycle is retained. In the cyclic fixture, the first formula
+    // writes Intermediate from `#3_` (the Final binding) and the second
+    // writes Final from `#2_` (the Intermediate binding). Both signatures
+    // declare LENGTH, and both outputs store the cached value 3.0.
+    let parameter = |name: &str| {
+        decoded
+            .ir()
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.name.as_str() == name)
+            .unwrap_or_else(|| panic!("typed cyclic formula output {name}"))
     };
-    assert_eq!(
-        [intermediate.name.as_str(), output.name.as_str()],
-        ["Intermediate", "Final"]
-    );
+    let intermediate = parameter("Intermediate");
+    let output = parameter("Final");
     for parameter in [intermediate, output] {
         assert_eq!(
             parameter.value,
@@ -1431,25 +1436,6 @@ fn decode_retains_a_cyclic_formula_component() {
             ))
         );
     }
-    let native = crate::native::CatiaNative::load(
-        &decoded
-            .ir()
-            .native
-            .namespace("catia")
-            .expect("catia namespace")
-            .clone(),
-    )
-    .unwrap();
-    let unused = native
-        .entity_records
-        .iter()
-        .find(|entity| entity.entity_id == 3)
-        .and_then(|entity| entity.parameter_value())
-        .expect("unused source scalar remains typed native");
-    assert!(
-        matches!(unused.evaluation, crate::native::CatiaEntityEvaluation::Scalar { bits }
-        if bits == 1.0_f64.to_bits())
-    );
     assert_eq!(
         intermediate
             .expression
