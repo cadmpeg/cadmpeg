@@ -41,7 +41,10 @@ fn parser_scope_keeps_real_parentage_and_one_failed_child_home_with_its_sibling(
         })
         .expect("parent result");
     assert_eq!(result, Some(7));
-    let (_, native, fidelity, losses) = output.into_parts().into_parts();
+    let (_, native, fidelity, losses) = output
+        .into_parts(&ctx)
+        .expect("finalize parser dependencies")
+        .into_parts();
     let parts = &fidelity.parts;
     assert_eq!(parts.len(), 3);
     let (parent_id, parent) = parts
@@ -102,7 +105,10 @@ fn parent_give_up_covers_nested_success_and_failure_without_extra_source_homes()
         })
         .expect("bounded parent failure")
         .is_none());
-    let (_, native, fidelity, losses) = output.into_parts().into_parts();
+    let (_, native, fidelity, losses) = output
+        .into_parts(&ctx)
+        .expect("finalize parser dependencies")
+        .into_parts();
     let (parent_id, _) = fidelity
         .parts
         .iter()
@@ -153,8 +159,81 @@ fn nested_parser_resource_refusal_stays_fatal_and_never_becomes_a_give_up() {
         })
         .expect_err("fused resource refusal");
     assert!(matches!(error, CodecError::ResourceLimit(_)));
-    let (_, native, fidelity, losses) = output.into_parts().into_parts();
+    let (_, native, fidelity, losses) = output
+        .into_parts(&ctx)
+        .expect("finalize parser dependencies")
+        .into_parts();
     assert!(native.namespace("fcstd").is_none());
     assert!(fidelity.parts.is_empty());
     assert!(losses.is_empty());
+}
+
+#[test]
+fn parser_handoff_keeps_actual_failed_record_attempts_in_the_normal_closure() {
+    let bytes = b"#7=UNKNOWN();";
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service()).expect("source");
+    let mut output = ParserPartOutput::new(CodecFormat::Step);
+    let owner = "step:native:record#7";
+    assert!(ctx
+        .decode_parser_part(
+            &mut output,
+            root,
+            PartSpec::new(
+                PartLevel::parse("step.simple_entity_instance").expect("Appendix C"),
+                Vec::new(),
+            ),
+            || ctx.record(owner, root, || {
+                assert_eq!(root.read_at(0, bytes.len()), Some(bytes.as_slice()));
+                Err::<(), _>(CodecError::malformed("unsupported source record"))
+            }),
+        )
+        .expect("bounded failure")
+        .is_none());
+    let (model, native, fidelity, losses) = output
+        .into_parts(&ctx)
+        .expect("normal dependency closure")
+        .into_parts();
+    assert_eq!(model.entity_count(), 0);
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains(owner));
+    let unknowns = native
+        .namespace("step")
+        .expect("source namespace")
+        .arena_as::<NativeUnknownRecord>("unknowns")
+        .expect("typed unknown stub");
+    assert_eq!(unknowns.len(), 1);
+    assert_eq!(
+        fidelity
+            .retained_record(unknowns[0].id.as_str())
+            .unwrap()
+            .data(),
+        Some(bytes.as_slice())
+    );
+    assert!(ctx.take_record_captures().unwrap().is_empty());
+}
+
+#[test]
+fn parser_handoff_cannot_bypass_the_typed_dependency_visitor_budget() {
+    let arena = DecodeArena::new();
+    let (ctx, root) = DecodeContext::from_root_bytes(b"UNKNOWN", &arena, &DecodePolicy::service())
+        .expect("source");
+    let mut output = ParserPartOutput::new(CodecFormat::Step);
+    ctx.decode_parser_part(
+        &mut output,
+        root,
+        PartSpec::new(
+            PartLevel::parse("step.simple_entity_instance").expect("Appendix C"),
+            Vec::new(),
+        ),
+        || Err::<(), _>(CodecError::malformed("unsupported source record")),
+    )
+    .expect("bounded failure");
+    ctx.retain_bytes(ctx.retained_bytes_available(), "consume caller allowance")
+        .expect("exact remaining allowance");
+    assert!(matches!(
+        output.into_parts(&ctx),
+        Err(CodecError::ResourceLimit(_))
+    ));
 }

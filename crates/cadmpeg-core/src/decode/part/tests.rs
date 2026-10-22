@@ -479,3 +479,129 @@ fn every_composite_segment_must_be_inside_the_claimed_parent_record() {
     })
     .expect("parent");
 }
+
+#[test]
+fn failed_part_names_actual_record_attempts_without_retaining_their_reads() {
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(b"ABC", &arena, &DecodePolicy::service()).unwrap();
+    ctx.record("prior", root.child(0, 1).unwrap(), || Ok(()))
+        .unwrap();
+    let failed = ctx
+        .part_transaction(root.child(1, 2).unwrap(), || {
+            ctx.record("failed", root.child(1, 2).unwrap(), || {
+                assert_eq!(root.read_at(1, 1), Some(b"B".as_slice()));
+                Err::<(), _>(CodecError::malformed("invalid field"))
+            })
+        })
+        .unwrap();
+    assert_eq!(failed.capture().attempted_record_ids(), ["failed"]);
+    assert!(failed.result().is_err());
+    let good = ctx
+        .part_transaction(root.child(2, 3).unwrap(), || {
+            ctx.record("sibling", root.child(2, 3).unwrap(), || Ok(()))
+        })
+        .unwrap();
+    assert!(good.capture().attempted_record_ids().is_empty());
+    assert!(good.result().is_ok());
+    let captures = ctx.take_record_captures().unwrap();
+    assert_eq!(
+        captures
+            .iter()
+            .map(|capture| capture.id())
+            .collect::<Vec<_>>(),
+        ["prior", "sibling"]
+    );
+    assert!(captures.iter().all(|capture| capture.reads().is_empty()));
+}
+
+#[test]
+fn failed_key_or_foreign_view_does_not_register_an_attempted_owner() {
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(b"ABC", &arena, &DecodePolicy::service()).unwrap();
+    let (other, foreign) =
+        DecodeContext::from_root_bytes(b"ABC", &arena, &DecodePolicy::service()).unwrap();
+    ctx.record("prior", root, || Ok(())).unwrap();
+    let failed = ctx
+        .part_transaction(root, || {
+            assert!(ctx.record("", root, || Ok(())).is_err());
+            assert!(ctx.record("prior", root, || Ok(())).is_err());
+            assert!(ctx.record("foreign", foreign, || Ok(())).is_err());
+            assert!(ctx
+                .record(
+                    "detached",
+                    crate::decode::View::over_retained(b"ABC"),
+                    || Ok(())
+                )
+                .is_err());
+            Err::<(), _>(CodecError::malformed("no valid source owner"))
+        })
+        .unwrap();
+    assert!(failed.capture().attempted_record_ids().is_empty());
+    assert!(other.take_record_captures().unwrap().is_empty());
+    assert_eq!(ctx.take_record_captures().unwrap().len(), 1);
+}
+
+#[test]
+fn nested_part_failure_owns_attempts_once_and_outer_rollback_includes_descendants() {
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(b"ABC", &arena, &DecodePolicy::service()).unwrap();
+    let failed = ctx
+        .part_transaction(root, || {
+            let inner = ctx.part_transaction(root.child(0, 1).unwrap(), || {
+                ctx.record("inner-failed", root.child(0, 1).unwrap(), || {
+                    Err::<(), _>(CodecError::malformed("inner failure"))
+                })
+            })?;
+            assert_eq!(inner.capture().attempted_record_ids(), ["inner-failed"]);
+            let good = ctx.part_transaction(root.child(1, 2).unwrap(), || {
+                ctx.record("inner-good", root.child(1, 2).unwrap(), || Ok(()))
+            })?;
+            assert!(good.capture().attempted_record_ids().is_empty());
+            ctx.record("outer-failed", root.child(2, 3).unwrap(), || {
+                Err::<(), _>(CodecError::malformed("outer failure"))
+            })
+        })
+        .unwrap();
+    assert_eq!(
+        failed.capture().attempted_record_ids(),
+        ["inner-failed", "inner-good", "outer-failed"]
+    );
+    let sibling = ctx
+        .part_transaction(root, || {
+            ctx.record("later-failed", root, || {
+                Err::<(), _>(CodecError::malformed("later failure"))
+            })
+        })
+        .unwrap();
+    assert_eq!(sibling.capture().attempted_record_ids(), ["later-failed"]);
+    assert!(ctx.take_record_captures().unwrap().is_empty());
+}
+
+#[test]
+fn part_limit_keeps_attempted_owner_after_the_resource_fuse_is_acknowledged() {
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(b"ABC", &arena, &DecodePolicy::service()).unwrap();
+    let failed = ctx
+        .part_transaction(root, || {
+            ctx.record("limited", root, || {
+                Err::<(), _>(ctx.refuse_part_limit(
+                    ResourceDimension::RecursionDepth,
+                    1,
+                    1,
+                    1,
+                    "literal part depth",
+                ))
+            })
+        })
+        .unwrap();
+    assert_eq!(failed.capture().attempted_record_ids(), ["limited"]);
+    assert!(
+        matches!(failed.result(), Err(CodecError::ResourceLimit(limit)) if limit.scope == LimitScope::Part)
+    );
+    ctx.record("next", root, || Ok(())).unwrap();
+    assert_eq!(ctx.take_record_captures().unwrap().len(), 1);
+}

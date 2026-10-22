@@ -65,7 +65,10 @@ fn actual_global_callback_preserves_values_losses_and_independent_framing() {
         serde_json::to_value(losses).unwrap(),
         serde_json::to_value(expected_losses).unwrap()
     );
-    let (_, _, fidelity, losses) = output.into_parts().into_parts();
+    let (_, _, fidelity, losses) = output
+        .into_parts(&ctx)
+        .expect("finalize parser dependencies")
+        .into_parts();
     assert!(losses.is_empty());
     let mut reference = Vec::new();
     cadmpeg_test_support::framing::iges::frame_global(&ctx, root, &mut reference).unwrap();
@@ -164,7 +167,10 @@ fn cross_card_metadata_reads_use_actual_composite_value_bytes_only() {
         .unwrap()
         .reads()
         .is_empty());
-    let (_, _, fidelity, losses) = output.into_parts().into_parts();
+    let (_, _, fidelity, losses) = output
+        .into_parts(&ctx)
+        .expect("finalize parser dependencies")
+        .into_parts();
     assert_eq!(fidelity.parts().len(), 3);
     assert!(losses.is_empty());
 }
@@ -212,7 +218,10 @@ fn mandatory_global_failure_has_one_shared_actual_source_home_and_no_reads() {
     let mut output = ParserPartOutput::new(cadmpeg_ir::CodecFormat::Iges);
     let error = parse(&scan, &ctx, &mut output).unwrap_err();
     assert!(error.to_string().contains(&original_error.to_string()));
-    let (_, native, fidelity, losses) = output.into_parts().into_parts();
+    let (_, native, fidelity, losses) = output
+        .into_parts(&ctx)
+        .expect("finalize parser dependencies")
+        .into_parts();
     let unknowns = native
         .namespace("iges")
         .unwrap()
@@ -258,7 +267,10 @@ fn unreadable_descriptive_suffix_keeps_original_preceding_values_and_losses() {
         serde_json::to_value(losses).unwrap(),
         serde_json::to_value(expected_losses).unwrap()
     );
-    let (_, native, fidelity, losses) = output.into_parts().into_parts();
+    let (_, native, fidelity, losses) = output
+        .into_parts(&ctx)
+        .expect("finalize parser dependencies")
+        .into_parts();
     assert!(native.namespace("iges").is_none());
     assert_eq!(fidelity.parts().len(), 22);
     assert!(fidelity
@@ -283,7 +295,10 @@ fn detached_source_and_fatal_session_budget_never_fabricate_global_parts() {
         parse(&scan, &ctx, &mut output),
         Err(CodecError::ResourceLimit(_))
     ));
-    let (_, native, fidelity, losses) = output.into_parts().into_parts();
+    let (_, native, fidelity, losses) = output
+        .into_parts(&ctx)
+        .expect("finalize parser dependencies")
+        .into_parts();
     assert!(native.namespace("iges").is_none());
     assert!(fidelity.parts().is_empty());
     assert!(losses.is_empty());

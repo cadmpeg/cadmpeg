@@ -22,6 +22,7 @@ from decode_nonregression_schema_bindings import attach_external, generated_aren
 from decode_nonregression_wire import verify_wire_rows
 from decode_nonregression_source_names import verify_source_names
 from decode_nonregression_retained import load_bound_sidecar, sidecar_path, compare_retained
+from decode_nonregression_unknown_reads import unknown_read_witnesses, discharge_unknown_findings
 
 
 class CollectionError(ValueError):
@@ -277,11 +278,15 @@ def collect_fixture(comparator: Any, fixture: str, baseline: Producer, current: 
         raise CollectionError('fixture changed during collection')
     findings = compare_collected(comparator, *dumps, baseline, current, helper)
     retained_checked = 0
+    unknown_witnesses = []
     if len(sidecars) == 2:
         retained_findings, retained_checked = compare_retained(*sidecars)
         findings.extend(comparator.Finding(row.code, row.path, row.message) for row in retained_findings)
+        unknown_witnesses = unknown_read_witnesses(*dumps, *sidecars)
+        findings = discharge_unknown_findings(findings, *dumps, unknown_witnesses)
     return {'fixture': fixture, 'blob': blob,
             'sidecar_sha256': sidecar_hashes, 'retained_source_images_checked': retained_checked,
+            'unknown_read_witnesses': [vars(witness) for witness in unknown_witnesses],
             'commands': [command for owner, start in zip((baseline, current, helper), starts) for command in owner.commands[start:]],
             'schema_sha256': {producer.proof['role']: {arena: hashlib.sha256(json.dumps(query, sort_keys=True).encode()).hexdigest() for arena, query in producer.schemas.items()} for producer in (baseline, current)},
             'findings': [vars(finding) for finding in findings],

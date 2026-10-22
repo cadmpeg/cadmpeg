@@ -41,7 +41,10 @@ fn real_record_callback_keeps_later_typed_parameters_and_one_exact_failed_statem
         .iter()
         .any(|diagnostic| diagnostic.offset == start
             && diagnostic.kind == ParseDiagnosticKind::RecordOmitted));
-    let (model, native, fidelity, losses) = parts.into_parts().into_parts();
+    let (model, native, fidelity, losses) = parts
+        .into_parts(&ctx)
+        .expect("finalize parser dependencies")
+        .into_parts();
     assert_eq!(model.entity_count(), 0);
     let unknowns = native
         .namespace("step")
@@ -118,7 +121,10 @@ fn complex_callback_preserves_real_partials_and_recovers_after_duplicate_partial
         exchange.records()[&3].partials.first().parameters[0],
         Value::Integer(3)
     );
-    let (_, _, fidelity, losses) = parts.into_parts().into_parts();
+    let (_, _, fidelity, losses) = parts
+        .into_parts(&ctx)
+        .expect("finalize parser dependencies")
+        .into_parts();
     let (failed_id, failed) = fidelity
         .parts()
         .iter()
@@ -200,7 +206,10 @@ fn cut_short_entities_use_real_parent_or_eof_without_synthesized_framing() {
                 .any(|diagnostic| diagnostic.kind == ParseDiagnosticKind::EnvelopeIncomplete),
             closing.is_empty()
         );
-        let (_, native, fidelity, losses) = parts.into_parts().into_parts();
+        let (_, native, fidelity, losses) = parts
+            .into_parts(&ctx)
+            .expect("finalize parser dependencies")
+            .into_parts();
         let stubs = native
             .namespace("step")
             .expect("failed source namespace")

@@ -40,6 +40,7 @@ mod scope_and_v1_eof;
 mod settings_userdata;
 mod source_arc_reads;
 mod source_line_reads;
+mod source_nurbs_reads;
 mod source_point_reads;
 mod source_polyline_reads;
 mod standalone_line;

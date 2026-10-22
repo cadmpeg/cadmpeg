@@ -753,8 +753,9 @@ fn parse_persisted_property(
                 .map(|attribute| {
                     let text = match source.filter(|_| {
                         attribute.namespace().is_none()
-                            && (vector_value == Some(value)
-                                && matches!(attribute.name(), "valueX" | "valueY" | "valueZ")
+                            && (constraint_attribute(node, value, &type_name, &attribute)
+                                || vector_value == Some(value)
+                                    && matches!(attribute.name(), "valueX" | "valueY" | "valueZ")
                                 || attribute.name() == "value"
                                     && value.parent() == Some(node)
                                     && (string_value == Some(value)
@@ -879,13 +880,54 @@ fn dynamic_bool(
     }
 }
 
+fn constraint_attribute(
+    property: roxmltree::Node<'_, '_>,
+    value: roxmltree::Node<'_, '_>,
+    type_name: &str,
+    attribute: &roxmltree::Attribute<'_, '_>,
+) -> bool {
+    let tag = match type_name {
+        "App::PropertyIntegerConstraint" | "App::PropertyPercent" => "Integer",
+        "App::PropertyFloatConstraint" => "Float",
+        _ => return false,
+    };
+    if !matches!(attribute.name(), "min" | "max" | "step")
+        || value.parent() != Some(property)
+        || value.tag_name().namespace().is_some()
+        || value.tag_name().name() != tag
+        || value.children().any(|child| child.is_element())
+        || property
+            .children()
+            .filter(roxmltree::Node::is_element)
+            .any(|child| child != value)
+        || value
+            .attributes()
+            .filter(|candidate| candidate.name() == attribute.name())
+            .count()
+            != 1
+    {
+        return false;
+    }
+    if tag == "Integer" {
+        attribute.value().parse::<i64>().is_ok()
+    } else {
+        attribute.value().parse::<f64>().is_ok_and(f64::is_finite)
+    }
+}
+
 // Source reads are admitted only for a complete, single, kept vector carrier.
 // Extra or invalid structure remains native content without vector read credit.
 fn direct_vector_value<'a, 'input>(
     property: roxmltree::Node<'a, 'input>,
     type_name: &str,
 ) -> Option<roxmltree::Node<'a, 'input>> {
-    if type_name != "App::PropertyVector" {
+    if !matches!(
+        type_name,
+        "App::PropertyVector"
+            | "App::PropertyVectorDistance"
+            | "App::PropertyPosition"
+            | "App::PropertyDirection"
+    ) {
         return None;
     }
     let mut elements = property.children().filter(roxmltree::Node::is_element);

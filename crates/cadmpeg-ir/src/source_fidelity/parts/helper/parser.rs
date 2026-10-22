@@ -3,13 +3,16 @@
 
 use super::{FinalizedPartOutput, PartOutput};
 use crate::CodecFormat;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 
 /// Parser-only part output with no semantic record insertion or stage access.
 ///
 /// A callback returns its actual syntax value, while the shared helper alone
 /// can insert failure stubs, source facts and diagnostics. No callback can add
-/// a built record ID to a failed stage, so the dependency-drop seed set is empty
-/// by construction. This is not a bypass for a semantic PartOutput.
+/// a built record to a failed stage. Actual nested `ctx.record` attempts still
+/// contribute dependency-drop seeds, and finalization runs the same dependency
+/// closure as semantic output. This is not a bypass for a semantic PartOutput.
 ///
 /// ```compile_fail
 /// use cadmpeg_ir::source_fidelity::parts::ParserPartOutput;
@@ -25,10 +28,10 @@ impl ParserPartOutput {
         Self(PartOutput::new(codec))
     }
 
-    /// Release dependency-closed output whose callbacks cannot build records.
+    /// Finalize actual attempted-record dependencies before releasing output.
     /// Source-byte B1 finalization remains required before export.
-    pub fn into_parts(self) -> FinalizedPartOutput {
-        FinalizedPartOutput::from_parser(self)
+    pub fn into_parts(self, ctx: &DecodeContext<'_>) -> Result<FinalizedPartOutput, CodecError> {
+        self.0.into_parts(ctx)
     }
 }
 

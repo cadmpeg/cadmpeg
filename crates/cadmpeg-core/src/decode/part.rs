@@ -14,6 +14,7 @@ pub struct PartCapture {
     offset: u64,
     byte_len: u64,
     record_id: Option<String>,
+    attempted_record_ids: Vec<String>,
 }
 
 impl PartCapture {
@@ -28,6 +29,7 @@ impl PartCapture {
             offset,
             byte_len,
             record_id,
+            attempted_record_ids: Vec::new(),
         }
     }
 
@@ -46,6 +48,11 @@ impl PartCapture {
     /// Innermost enclosing source record, proven by its extent or provenance.
     pub fn record_id(&self) -> Option<&str> {
         self.record_id.as_deref()
+    }
+    /// Actual nested record scopes discarded by a failed part, sorted and unique.
+    /// Successful parts and extent-only captures expose no discarded identities.
+    pub fn attempted_record_ids(&self) -> &[String] {
+        &self.attempted_record_ids
     }
     /// Consume the stream, offset, length and containing-record identity.
     pub fn into_parts(self) -> (String, u64, u64, Option<String>) {
@@ -96,8 +103,8 @@ impl DecodeContext<'_> {
         extent: View<'_>,
         decode: impl FnOnce() -> Result<T, CodecError>,
     ) -> Result<PartOutcome<T>, CodecError> {
-        let capture = self.capture_part_extent(extent)?;
-        let transaction = match self.read_transaction() {
+        let mut capture = self.capture_part_extent(extent)?;
+        let mut transaction = match super::tracking::ReadTransaction::begin_part(self.budget) {
             Ok(transaction) => transaction,
             Err(error) => return self.finish_given_up(capture, error),
         };
@@ -128,6 +135,7 @@ impl DecodeContext<'_> {
                 })
             }
             Err(error) => {
+                capture.attempted_record_ids = transaction.take_part_attempts()?;
                 drop(transaction);
                 self.finish_given_up(capture, error)
             }

@@ -96,6 +96,7 @@ struct Frame {
     record: Option<RecordCapture>,
     captures: Vec<RecordCapture>,
     deltas: Vec<ReadDelta>,
+    part_attempts: Option<Vec<String>>,
 }
 
 #[derive(Debug)]
@@ -556,7 +557,11 @@ impl SessionHandle<'_> {
         })
     }
 
-    pub(super) fn begin(self, record: Option<(&str, View<'_>)>) -> Result<usize, CodecError> {
+    pub(super) fn begin(
+        self,
+        record: Option<(&str, View<'_>)>,
+        part: bool,
+    ) -> Result<usize, CodecError> {
         self.session(|session| {
             if session.sealed {
                 return Err(CodecError::malformed(
@@ -567,6 +572,14 @@ impl SessionHandle<'_> {
             let record = record
                 .map(|(id, extent)| session.new_record(id, extent))
                 .transpose()?;
+            if let Some(record) = &record {
+                for frame in &mut session.frames {
+                    if let Some(attempts) = &mut frame.part_attempts {
+                        reserve(&session.budget, attempts, 1)?;
+                        attempts.push(copy_string(&session.budget, &record.id)?);
+                    }
+                }
+            }
             reserve(&session.budget, &mut session.frames, 1)?;
             let token = session.next_token;
             session.next_token = token
@@ -578,6 +591,7 @@ impl SessionHandle<'_> {
                 record,
                 captures: Vec::new(),
                 deltas: Vec::new(),
+                part_attempts: part.then(Vec::new),
             });
             Ok(token)
         })
@@ -683,6 +697,28 @@ impl SessionHandle<'_> {
             }
             Ok(())
         })
+    }
+
+    fn take_part_attempts(self, token: usize) -> Result<Vec<String>, CodecError> {
+        let Some(index) = self.index else {
+            return Err(self.allocation_failure().into());
+        };
+        let mut sessions = self.store.sessions.borrow_mut();
+        let session = sessions
+            .get_mut(index)
+            .filter(|slot| slot.generation == self.generation)
+            .and_then(|slot| slot.state.as_mut())
+            .ok_or_else(|| CodecError::malformed("decode session has ended"))?;
+        let attempts = session
+            .frames
+            .last_mut()
+            .filter(|frame| frame.token == token)
+            .and_then(|frame| frame.part_attempts.as_mut())
+            .ok_or_else(|| CodecError::malformed("part read scope is not active"))?;
+        let mut attempts = std::mem::take(attempts);
+        attempts.sort_unstable();
+        attempts.dedup();
+        Ok(attempts)
     }
 
     pub(super) fn rollback(self, token: usize) {
@@ -893,8 +929,20 @@ impl<'a> ReadTransaction<'a> {
         session: SessionHandle<'a>,
         record: Option<(&str, View<'_>)>,
     ) -> Result<Self, CodecError> {
+        Self::begin_scope(session, record, false)
+    }
+
+    pub(super) fn begin_part(session: SessionHandle<'a>) -> Result<Self, CodecError> {
+        Self::begin_scope(session, None, true)
+    }
+
+    fn begin_scope(
+        session: SessionHandle<'a>,
+        record: Option<(&str, View<'_>)>,
+        part: bool,
+    ) -> Result<Self, CodecError> {
         let depth = session.enter_nested("record read transaction")?;
-        let token = session.begin(record)?;
+        let token = session.begin(record, part)?;
         Ok(Self {
             session,
             token,
@@ -902,6 +950,10 @@ impl<'a> ReadTransaction<'a> {
             _depth: depth,
         })
     }
+    pub(super) fn take_part_attempts(&mut self) -> Result<Vec<String>, CodecError> {
+        self.session.take_part_attempts(self.token)
+    }
+
     /// Merge reads and captures into the containing transaction.
     pub fn commit(mut self) -> Result<(), CodecError> {
         self.session.commit(self.token)?;

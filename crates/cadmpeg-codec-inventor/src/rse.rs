@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_container::compound::{CompoundEntry, CompoundSnapshot, CompoundStreamId};
-use cadmpeg_container::compression::{inflate_zlib_exact, inflate_zstd_exact};
+use cadmpeg_container::compression::{inflate_zlib_member_tracked, inflate_zstd_exact_tracked};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::IdentityKey;
@@ -756,8 +756,20 @@ fn expand_rse_body<'a>(
     method: u8,
 ) -> Result<View<'a>, CodecError> {
     match method {
-        1 => inflate_zlib_exact(ctx, source),
-        2 => inflate_zstd_exact(ctx, source),
+        1 => {
+            let (expanded, consumed) = inflate_zlib_member_tracked(
+                ctx,
+                source,
+                cadmpeg_core::decode::ExpandSpec::Unknown,
+            )?;
+            if consumed != source.window().len() {
+                return Err(CodecError::Malformed(
+                    "zlib member does not exhaust its declared input".into(),
+                ));
+            }
+            Ok(expanded)
+        }
+        2 => inflate_zstd_exact_tracked(ctx, source),
         _ => Err(CodecError::malformed(format_args!(
             "unsupported RSe compression method {method}"
         ))),

@@ -236,8 +236,8 @@ pub trait DecodeParts {
     ) -> Result<Option<T>, CodecError>;
 
     /// Run a real parser callback without access to a semantic record stage.
-    /// Only the helper can add failure stubs; no built record can become a
-    /// dependency-pruning seed in this constrained output.
+    /// Only the helper can add failure stubs. Actual nested `record` attempts
+    /// still seed the shared dependency closure on a failed part.
     fn decode_parser_part<T>(
         &self,
         output: &mut ParserPartOutput,
@@ -352,6 +352,15 @@ impl DecodeParts for DecodeContext<'_> {
                     dropped.push(dropped_id.clone());
                 }
                 let mut dropped_set = dropped.into_iter().collect::<BTreeSet<_>>();
+                for attempted in capture.attempted_record_ids() {
+                    if !dropped_set.contains(attempted) {
+                        self.retain_bytes(
+                            u64_from_index(attempted.len()),
+                            "discarded parser record identity",
+                        )?;
+                        dropped_set.insert(attempted.clone());
+                    }
+                }
                 for failure in &staged.failures {
                     for id in &failure.dropped {
                         if !dropped_set.contains(id) {

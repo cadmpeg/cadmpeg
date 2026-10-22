@@ -17,7 +17,7 @@ pub(crate) fn decode(
         super::decode_exchange(source.window(), exchange, &diagnostics, ctx, packaging)?;
     // The parser stage builds transient RawRecords, not a second native AST or
     // neutral projection. Its only document records are the shared helper stubs.
-    let (model, mut native, fidelity, mut losses) = parts.into_parts().into_parts();
+    let (model, mut native, fidelity, mut losses) = parts.into_parts(ctx)?.into_parts();
     if model.entity_count() != 0 {
         return Err(CodecError::malformed(
             "STEP parser stage unexpectedly built neutral records",

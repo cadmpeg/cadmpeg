@@ -19,7 +19,7 @@ use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{ProductDefinitionId, UnknownId};
 use cadmpeg_ir::products::{ProductDefinition, ProductDefinitionKind};
 use cadmpeg_ir::report::decode::TransferLedger;
-use cadmpeg_ir::{AnnotationBuilder, SourceFidelity, UnknownRecord};
+use cadmpeg_ir::{AnnotationBuilder, UnknownRecord};
 
 use crate::container::InventorContainer;
 use crate::database::{RevisionPayload, VersionTuple};
@@ -384,7 +384,7 @@ fn decode_container<'a>(
     if let ParsedState::Unavailable(detail) = &container.rse.revisions {
         structural_issues.push(structural_issue(ctx, "revision_table", detail)?);
     }
-    let projection = rse_native_projection::project(ctx, container)?;
+    let projection = rse_native_projection::project(ctx, container, &assembly_inventory.parts)?;
     structural_issues.extend(projection.identity_issues);
     let segment_pairs = projection.segment_pairs;
     let segment_meta = projection.segment_meta;
@@ -399,10 +399,20 @@ fn decode_container<'a>(
     admit_native_items(ctx, 1)?;
     let active_carrier = ActiveCarrierRecord::from_state(&container.rse.active_carrier);
     let assembly_occurrences = assembly_inventory
-        .occurrences
-        .iter()
-        .map(|occurrence| AssemblyOccurrenceRecord::from_occurrence(ctx, occurrence))
-        .collect::<Result<Vec<_>, CodecError>>()?;
+        .parts
+        .native()
+        .namespace("inventor")
+        .map(|namespace| {
+            namespace.arena_as_for_decode::<AssemblyOccurrenceRecord>(ctx, "assembly_occurrences")
+        })
+        .transpose()?
+        .unwrap_or_default();
+    let staged_rse_record_count = assembly_inventory
+        .parts
+        .native()
+        .namespace("inventor")
+        .and_then(|namespace| namespace.arenas().get("rse_records"))
+        .map_or(0, Vec::len);
     let assembly_placements = assembly_inventory
         .placements
         .iter()
@@ -429,14 +439,13 @@ fn decode_container<'a>(
         &mut admitted_entities,
         "admit Inventor pre-assembly entities",
     )?;
-    let assembly_projection = crate::assembly::project_occurrences(
-        ctx,
+    let unresolved_assembly_placements = crate::assembly::project_occurrences_into(
         ufrx_occurrences,
         external_references,
         &assembly_occurrences,
         &assembly_placements,
+        |occurrence| assembly_inventory.parts.insert_model(ctx, occurrence),
     )?;
-    ir.model.occurrences = assembly_projection.occurrences;
     let namespace = ir.native.namespace_mut("inventor");
     namespace.set_arena(ctx, "storage_bands", &storage_bands)?;
     namespace.set_arena(ctx, "databases", &databases)?;
@@ -452,7 +461,11 @@ fn decode_container<'a>(
     namespace.set_arena(ctx, "protein_assets", &protein_assets)?;
     namespace.set_arena(ctx, "protein_rejections", &protein_rejections)?;
     ufrx.install(ctx, namespace)?;
-    namespace.set_arena(ctx, "assembly_occurrences", &assembly_occurrences)?;
+    namespace.set_arena(
+        ctx,
+        "assembly_occurrences",
+        &[] as &[AssemblyOccurrenceRecord],
+    )?;
     namespace.set_arena(ctx, "assembly_placements", &assembly_placements)?;
     namespace.set_arena(ctx, "assembly_record_issues", &assembly_inventory.issues)?;
     namespace.set_arena(ctx, "pm_app_default_styles", &pm_app_default_styles)?;
@@ -932,7 +945,7 @@ fn decode_container<'a>(
                         )
                     }));
                 }
-                for (cause, count) in &assembly_projection.unresolved_placements {
+                for (cause, count) in &unresolved_assembly_placements {
                     losses.push(InventorLossCode::AssemblyPlacementNotTransferred.note({
                         untyped.insert(cadmpeg_ir::ArenaClass::Model);
                         format!(
@@ -947,12 +960,45 @@ fn decode_container<'a>(
     }
     // A container document holds only the typed native inventory. Analytic
     // kernel carriers have no native copy, so retain their source below.
-    let omitted_model = ctx.container_only() && ir.model.entity_count() != 0;
+    let omitted_model = ctx.container_only()
+        && (ir.model.entity_count() != 0 || assembly_inventory.parts.model().entity_count() != 0);
     if ctx.container_only() {
         ir.model = cadmpeg_ir::document::Model::default();
     }
+    // Every source-owned native and its projected occurrence enters this same
+    // stage before the one required dependency closure. Parser stubs are never
+    // finalized separately from their semantic dependents.
+    let (part_model, mut part_native, part_fidelity, mut part_losses) =
+        assembly_inventory.parts.into_parts(ctx)?.into_parts();
+    if !ctx.container_only() {
+        ir.model.occurrences = part_model.occurrences;
+    }
+    for (arena, mut records) in std::mem::take(part_native.namespace_mut("inventor").arenas_mut()) {
+        let destination = ir
+            .native
+            .namespace_mut("inventor")
+            .arenas_mut()
+            .entry(arena)
+            .or_default();
+        let additional = records
+            .len()
+            .checked_mul(size_of::<cadmpeg_ir::NativeRecord>())
+            .map(cadmpeg_core::decode::u64_from_index)
+            .ok_or_else(|| CodecError::malformed("Inventor part arena size overflows"))?;
+        ctx.retain_bytes(additional, "Inventor shared part arena composition")?;
+        destination.try_reserve(records.len()).map_err(|_| {
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                ctx.policy().limits.max_retained_bytes,
+                additional,
+                "Inventor shared part arena composition",
+            )
+        })?;
+        destination.append(&mut records);
+    }
+    losses.append(&mut part_losses);
     let preview_asset_count = ir.model.assets.len();
-    let mut source_fidelity = SourceFidelity::default();
+    let mut source_fidelity = part_fidelity;
     source_fidelity.metadata = source_layout;
     if let ActiveCarrierState::Selected(carrier) = &container.rse.active_carrier {
         source_fidelity.metadata.insert(
@@ -1023,7 +1069,10 @@ fn decode_container<'a>(
             segment_meta_issues.len(),
         ),
         (crate::coverage::RSE_SEGMENT_BULK, segment_bulk.len()),
-        (crate::coverage::RSE_RECORDS, rse_records.len()),
+        (
+            crate::coverage::RSE_RECORDS,
+            rse_records.len() + staged_rse_record_count,
+        ),
         (
             crate::coverage::RSE_SEGMENT_BULK_ISSUES,
             segment_bulk_issues.len(),
@@ -1179,7 +1228,7 @@ fn decode_container<'a>(
         (crate::coverage::UFRX_OCCURRENCES, ufrx_occurrences.len()),
         (
             crate::coverage::ASSEMBLY_OCCURRENCES,
-            assembly_occurrences.len(),
+            assembly_inventory.occurrences.len(),
         ),
         (
             crate::coverage::ASSEMBLY_PLACEMENTS,
@@ -1261,6 +1310,7 @@ fn decode_container<'a>(
         )?
         .with_untyped(untyped),
     )?;
+    source_fidelity.install_mapped_record_captures(ctx, Ok)?;
     let body = DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer {
             scope: ir.scope,

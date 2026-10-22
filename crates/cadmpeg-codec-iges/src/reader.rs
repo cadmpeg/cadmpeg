@@ -461,7 +461,7 @@ fn decode_with_occurrence_limits(
         ParserPartOutput::new(cadmpeg_ir::CodecFormat::Iges),
     );
     let (_, parser_native, parser_fidelity, mut parser_losses) =
-        parser_parts.into_parts().into_parts();
+        parser_parts.into_parts(ctx)?.into_parts();
     let parts = std::mem::replace(
         &mut parse.parts,
         PartOutput::new(cadmpeg_ir::CodecFormat::Iges),

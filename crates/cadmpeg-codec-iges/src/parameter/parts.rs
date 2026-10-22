@@ -44,6 +44,7 @@ pub(crate) fn assemble(
         })
         .transpose()?;
     let framing = envelopes(ctx, source, &cards, 72)?;
+    let mut section_given_up = BTreeSet::new();
     let result = ctx.decode_part(
         output,
         extent,
@@ -58,6 +59,24 @@ pub(crate) fn assemble(
                 |owned, lines, ownership| {
                     if !source_parts.initialized {
                         source_parts = ConflictParts::new(ctx, source, ownership, lines)?;
+                        let unclaimed = ownership.iter().all(|owner| owner.cards.is_empty());
+                        if source_parts.ambiguous() || unclaimed {
+                            for owner in ownership
+                                .iter()
+                                .filter(|owner| unclaimed || !owner.cards.is_empty())
+                            {
+                                ctx.retain_bytes(
+                                    u64_from_index(size_of::<u32>()),
+                                    "IGES Parameter part owner attribution",
+                                )?;
+                                section_given_up.insert(owner.entry.sequence);
+                            }
+                            return Err(CodecError::malformed(if unclaimed {
+                                "IGES Directory declarations and owner census locate no Parameter cards; only their section is bounded"
+                            } else {
+                                "IGES unequal Parameter claims overlap; only their section is bounded"
+                            }));
+                        }
                     }
                     let parsed = parse_owned(
                         ctx,
@@ -85,7 +104,7 @@ pub(crate) fn assemble(
         trailing_pointer_analysis: BTreeMap::new(),
         quarantined: Vec::new(),
         recoveries: crate::card::FramingRecoveries::default(),
-        given_up: BTreeSet::new(),
+        given_up: section_given_up,
     }))
 }
 
@@ -279,6 +298,20 @@ impl ConflictParts {
             ends,
             reached: BTreeSet::new(),
         })
+    }
+
+    fn ambiguous(&self) -> bool {
+        let mut previous_end = None;
+        for (start, end) in &self.ends {
+            let Some(end) = end else {
+                return true;
+            };
+            if previous_end.is_some_and(|previous| previous > *start) {
+                return true;
+            }
+            previous_end = Some(*end);
+        }
+        false
     }
 
     fn located(&self, extent: View<'_>) -> bool {

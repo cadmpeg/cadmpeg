@@ -9,7 +9,10 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::OccurrenceId;
 use cadmpeg_ir::products::{Occurrence, OccurrenceParent, PrototypeReference};
+use cadmpeg_ir::source_fidelity::parts::PartOutput;
 use cadmpeg_ir::transform::Transform;
+
+pub(crate) mod parts;
 
 use crate::compact_matrix::CompactMatrix;
 use crate::native::ufrx::{ExternalReferenceRecord, UfrxOccurrenceRecord};
@@ -35,6 +38,7 @@ pub(crate) struct AssemblyInventory<'a> {
     pub(crate) occurrences: Vec<AssemblyOccurrence>,
     pub(crate) placements: Vec<AssemblyPlacement<'a>>,
     pub(crate) issues: Vec<RecordIssue>,
+    pub(crate) parts: PartOutput,
 }
 
 #[derive(Debug)]
@@ -112,12 +116,6 @@ impl UnresolvedCause {
     }
 }
 
-#[derive(Debug)]
-pub(crate) struct AssemblyProjection {
-    pub(crate) occurrences: Vec<Occurrence>,
-    pub(crate) unresolved_placements: BTreeMap<UnresolvedCause, NonZeroUsize>,
-}
-
 /// Projects the current document's occurrence table without loading prototypes.
 ///
 /// `UFRx` supplies document order and the external prototype join. `AmDc` proves
@@ -130,7 +128,29 @@ pub(crate) fn project_occurrences(
     external_references: &[ExternalReferenceRecord],
     assembly_occurrences: &[AssemblyOccurrenceRecord],
     assembly_placements: &[AssemblyPlacementRecord],
-) -> Result<AssemblyProjection, CodecError> {
+) -> Result<(Vec<Occurrence>, BTreeMap<UnresolvedCause, NonZeroUsize>), CodecError> {
+    let mut occurrences = Vec::new();
+    let unresolved_placements = project_occurrences_into(
+        ufrx_occurrences,
+        external_references,
+        assembly_occurrences,
+        assembly_placements,
+        |occurrence| {
+            ctx.charge_entities(1, "project Inventor occurrence")?;
+            occurrences.push(occurrence);
+            Ok(())
+        },
+    )?;
+    Ok((occurrences, unresolved_placements))
+}
+
+pub(crate) fn project_occurrences_into(
+    ufrx_occurrences: &[UfrxOccurrenceRecord],
+    external_references: &[ExternalReferenceRecord],
+    assembly_occurrences: &[AssemblyOccurrenceRecord],
+    assembly_placements: &[AssemblyPlacementRecord],
+    mut append: impl FnMut(Occurrence) -> Result<(), CodecError>,
+) -> Result<BTreeMap<UnresolvedCause, NonZeroUsize>, CodecError> {
     let occurrence_records = unique_index(
         assembly_occurrences
             .iter()
@@ -142,7 +162,6 @@ pub(crate) fn project_occurrences(
             .map(|record| (record.occurrence_id, record)),
     );
     let mut emitted_ids = HashSet::new();
-    let mut occurrences = Vec::new();
     let mut unresolved_placements = BTreeMap::new();
 
     for source in ufrx_occurrences {
@@ -209,8 +228,7 @@ pub(crate) fn project_occurrences(
             }
         };
 
-        ctx.charge_entities(1, "project Inventor occurrence")?;
-        occurrences.push(Occurrence {
+        append(Occurrence {
             id: OccurrenceId::compose(
                 &cadmpeg_ir::identity_namespace!("inventor", "assembly", "instance"),
                 source.occurrence_id,
@@ -227,13 +245,14 @@ pub(crate) fn project_occurrences(
             visible,
             link: None,
             native_ref: Some(source.id.clone()),
-        });
+        })?;
     }
 
-    Ok(AssemblyProjection {
-        occurrences,
-        unresolved_placements,
-    })
+    Ok(unresolved_placements)
+}
+
+pub(crate) fn owns_occurrence(kind: &SegmentKind, type_id: [u8; 16]) -> bool {
+    *kind == SegmentKind::AmDc && type_id == OCCURRENCE_TYPE
 }
 
 pub(crate) fn inventory<'a>(
@@ -243,6 +262,7 @@ pub(crate) fn inventory<'a>(
     let mut occurrences = Vec::new();
     let mut placements = Vec::new();
     let mut issues = Vec::new();
+    let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::Inventor);
     for segment in &document.segments {
         let relevant = matches!(segment.kind, SegmentKind::AmDc | SegmentKind::AmGraphics);
         if !relevant {
@@ -256,11 +276,16 @@ pub(crate) fn inventory<'a>(
         };
         for record in &table.records {
             let result = if segment.kind == SegmentKind::AmDc && record.type_id == OCCURRENCE_TYPE {
-                parse_occurrence(ctx, record.payload).map(|mut occurrence| {
-                    occurrence.segment_token = segment.pair.token.as_str().into();
-                    occurrence.record_ordinal = record.ordinal;
+                if let Some(occurrence) = parts::occurrence(
+                    ctx,
+                    &mut parts,
+                    bulk.expanded,
+                    segment.pair.token.as_str(),
+                    record,
+                )? {
                     occurrences.push(occurrence);
-                })
+                }
+                continue;
             } else if segment.kind == SegmentKind::AmGraphics
                 && matches!(record.type_id, PLACEMENT_TYPE_CA | PLACEMENT_TYPE_B9)
             {
@@ -290,6 +315,7 @@ pub(crate) fn inventory<'a>(
         occurrences,
         placements,
         issues,
+        parts,
     })
 }
 
@@ -522,12 +548,11 @@ impl<'a> Cursor<'a> {
 #[cfg(test)]
 mod tests {
     use crate::container::InventorContainer;
-    use crate::rse::{RecordFrameState, SegmentBulkState, SegmentKind};
-    use crate::test_support::test_fixtures::primary_envelope_fixture;
+    use crate::rse::SegmentKind;
     use crate::test_support::test_fixtures::push_u16;
     use crate::test_support::test_fixtures::push_u32;
     use crate::test_support::test_fixtures::push_utf16;
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension, View};
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::products::PrototypeReference;
 
@@ -540,6 +565,7 @@ mod tests {
     use crate::native::{AssemblyOccurrenceRecord, AssemblyPlacementRecord};
     use cadmpeg_core::decode::DecodeContext;
     use cadmpeg_ir::transform::Transform;
+
     use std::collections::BTreeMap;
     use std::num::NonZeroUsize;
 
@@ -562,7 +588,10 @@ mod tests {
         external_references: &[ExternalReferenceRecord],
         assembly_occurrences: &[AssemblyOccurrenceRecord],
         assembly_placements: &[AssemblyPlacementRecord],
-    ) -> super::AssemblyProjection {
+    ) -> (
+        Vec<cadmpeg_ir::products::Occurrence>,
+        BTreeMap<super::UnresolvedCause, NonZeroUsize>,
+    ) {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("projection context");
@@ -585,7 +614,7 @@ mod tests {
                 &[assembly_occurrence(7)],
                 &[assembly_placement(7)],
             )
-            .occurrences
+            .0
             .len(),
             1
         );
@@ -617,7 +646,7 @@ mod tests {
                 &[assembly_occurrence(7)],
                 &[assembly_placement(7)],
             )
-            .occurrences
+            .0
             .len(),
             1
         );
@@ -632,29 +661,26 @@ mod tests {
         (
             usize,
             usize,
-            Vec<crate::record_issue::RecordIssue>,
+            Vec<cadmpeg_ir::report::loss::LossNote>,
             Option<String>,
         ),
         CodecError,
     > {
-        let bytes = primary_envelope_fixture();
-        let payload = payload.to_vec();
+        let record = [(type_id, payload.to_vec())];
+        let bytes = match kind {
+            SegmentKind::AmDc => {
+                crate::test_support::test_fixtures::assembly_envelope_fixture(&record)
+            }
+            SegmentKind::AmGraphics => {
+                crate::test_support::test_fixtures::assembly_graphics_envelope_fixture(&record)
+            }
+            _ => panic!("assembly fixture grammar"),
+        };
         let arena = DecodeArena::new();
-        let (setup_ctx, source) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-                .expect("envelope view");
-        let mut container = InventorContainer::open(&setup_ctx, source).expect("framed envelope");
-        let segment = &mut container.rse.segments[0];
-        segment.kind = kind;
-        let SegmentBulkState::Framed(bulk) = &mut segment.bulk else {
-            panic!("framed bulk fixture");
-        };
-        let RecordFrameState::Framed(table) = &mut bulk.records else {
-            panic!("framed record fixture");
-        };
-        table.records[0].type_id = type_id;
-        table.records[0].payload = View::over_retained(&payload);
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("input view");
+        let (ctx, source) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("input view");
+        let container =
+            InventorContainer::open(&ctx, source).expect("actual framed assembly source");
         let result = inventory(&ctx, &container.rse)?;
         let token = result
             .occurrences
@@ -666,12 +692,10 @@ mod tests {
                     .first()
                     .map(|record| record.segment_token.clone())
             });
-        Ok((
-            result.occurrences.len(),
-            result.placements.len(),
-            result.issues,
-            token,
-        ))
+        let occurrences = result.occurrences.len();
+        let placements = result.placements.len();
+        let (_, _, _, losses) = result.parts.into_parts(&ctx)?.into_parts();
+        Ok((occurrences, placements, losses, token))
     }
 
     #[test]
@@ -813,8 +837,8 @@ mod tests {
 
         let projection = project_under_service(&[ufrx], &[reference], &[occurrence], &[placement]);
 
-        assert!(projection.unresolved_placements.is_empty());
-        let [projected] = projection.occurrences.as_slice() else {
+        assert!(projection.1.is_empty());
+        let [projected] = projection.0.as_slice() else {
             panic!("one occurrence must be projected");
         };
         assert_eq!(projected.ordinal, 2);
@@ -875,13 +899,10 @@ mod tests {
 
         let projection = project_under_service(&ufrx, &[reference], &occurrences, &[first, second]);
 
-        assert!(projection.unresolved_placements.is_empty());
-        assert_eq!(projection.occurrences.len(), 2);
-        assert_ne!(projection.occurrences[0].id, projection.occurrences[1].id);
-        assert_ne!(
-            projection.occurrences[0].transform,
-            projection.occurrences[1].transform
-        );
+        assert!(projection.1.is_empty());
+        assert_eq!(projection.0.len(), 2);
+        assert_ne!(projection.0[0].id, projection.0[1].id);
+        assert_ne!(projection.0[0].transform, projection.0[1].transform);
     }
 
     #[test]
@@ -896,7 +917,7 @@ mod tests {
             &[assembly_occurrence(7)],
             &[assembly_placement(7)],
         );
-        let [projected] = projection.occurrences.as_slice() else {
+        let [projected] = projection.0.as_slice() else {
             panic!("the referenced copy must be projected");
         };
         let PrototypeReference::External { document, .. } = &projected.prototype else {
@@ -933,9 +954,9 @@ mod tests {
                 &[assembly_occurrence(7)],
                 &[assembly_placement(7)],
             );
-            assert!(projection.occurrences.is_empty());
+            assert!(projection.0.is_empty());
             assert_eq!(
-                projection.unresolved_placements,
+                projection.1,
                 BTreeMap::from([(super::UnresolvedCause::ExternalReference, NonZeroUsize::MIN)])
             );
         }
@@ -956,7 +977,7 @@ mod tests {
             &[assembly_placement(7)],
         );
 
-        let [projected] = projection.occurrences.as_slice() else {
+        let [projected] = projection.0.as_slice() else {
             panic!("one occurrence must be projected");
         };
         let PrototypeReference::External { document, .. } = &projected.prototype else {
@@ -993,8 +1014,8 @@ mod tests {
 
         let projection = project_under_service(&[ufrx], &[reference], &[occurrence], &[]);
 
-        assert!(projection.unresolved_placements.is_empty());
-        let [projected] = projection.occurrences.as_slice() else {
+        assert!(projection.1.is_empty());
+        let [projected] = projection.0.as_slice() else {
             panic!("one suppressed occurrence must be projected");
         };
         assert_eq!(projected.transform, None);
@@ -1028,9 +1049,9 @@ mod tests {
             &[assembly_placement(7)],
         );
 
-        assert!(projection.occurrences.is_empty());
+        assert!(projection.0.is_empty());
         assert_eq!(
-            projection.unresolved_placements,
+            projection.1,
             BTreeMap::from([(super::UnresolvedCause::OccurrenceRecord, NonZeroUsize::MIN)])
         );
     }
@@ -1044,9 +1065,9 @@ mod tests {
             &[],
         );
 
-        assert!(projection.occurrences.is_empty());
+        assert!(projection.0.is_empty());
         assert_eq!(
-            projection.unresolved_placements,
+            projection.1,
             BTreeMap::from([(super::UnresolvedCause::Placement, NonZeroUsize::MIN)])
         );
     }
@@ -1169,7 +1190,7 @@ mod tests {
         .expect("valid placement fixture")
     }
 
-    fn occurrence_fixture(occurrence_id: u32, related: &[u32]) -> Vec<u8> {
+    pub(super) fn occurrence_fixture(occurrence_id: u32, related: &[u32]) -> Vec<u8> {
         let mut bytes = Vec::new();
         push_u32(&mut bytes, 6);
         push_u16(&mut bytes, 31);

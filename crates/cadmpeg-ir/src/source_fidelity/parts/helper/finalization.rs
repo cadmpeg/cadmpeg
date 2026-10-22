@@ -17,12 +17,6 @@ use cadmpeg_core::CodecError;
 pub struct FinalizedPartOutput(PartOutput);
 
 impl FinalizedPartOutput {
-    // ParserPartOutput has no semantic insertion API. The only native records
-    // the shared helper adds are stubs, and its failed callbacks stage no IDs.
-    pub(super) fn from_parser(output: super::ParserPartOutput) -> Self {
-        Self(output.0)
-    }
-
     /// Consume dependency-closed records and their source facts.
     pub fn into_parts(self) -> (Model, Native, SourceFidelity, Vec<LossNote>) {
         (self.0.model, self.0.native, self.0.fidelity, self.0.losses)

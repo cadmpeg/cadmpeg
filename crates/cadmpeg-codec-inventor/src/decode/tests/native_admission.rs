@@ -69,7 +69,12 @@ fn rse_native_projection_projects_the_fixture() {
     assert!(container.rse.segments[0].identity_issues.is_empty());
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("build the decode context");
-    rse_native_projection::project(&ctx, &container).expect("admitted RSe projection");
+    rse_native_projection::project(
+        &ctx,
+        &container,
+        &cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::Inventor),
+    )
+    .expect("admitted RSe projection");
 }
 
 #[test]
@@ -83,7 +88,12 @@ fn rse_native_projection_projects_malformed_unpaired_and_unframed_segments() {
     bulk.records = RecordFrameState::Unavailable("frame issue".into());
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("build the decode context");
-    rse_native_projection::project(&ctx, &container).expect("unframed records project");
+    rse_native_projection::project(
+        &ctx,
+        &container,
+        &cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::Inventor),
+    )
+    .expect("unframed records project");
 
     let token = container.rse.segments[0].pair.token.clone();
     container.rse.segments[0]
@@ -96,7 +106,12 @@ fn rse_native_projection_projects_malformed_unpaired_and_unframed_segments() {
     container.rse.segments[0].bulk = SegmentBulkState::Malformed("bulk issue".into());
     container.rse.unpaired_metadata.push(token.clone());
     container.rse.unpaired_bulk.push(token);
-    rse_native_projection::project(&ctx, &container).expect("malformed segments project");
+    rse_native_projection::project(
+        &ctx,
+        &container,
+        &cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::Inventor),
+    )
+    .expect("malformed segments project");
 }
 
 #[test]
@@ -142,17 +157,25 @@ fn assembly_occurrence_native_record_refuses_entity_limit_before_creation() {
         }],
         placements: Vec::new(),
         issues: Vec::new(),
+        parts: cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+            cadmpeg_ir::CodecFormat::Inventor,
+        ),
     };
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("build the decode context");
-    AssemblyOccurrenceRecord::from_occurrence(&ctx, &inventory.occurrences[0])
+    cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::Inventor)
+        .insert_native(
+            &ctx,
+            "assembly_occurrences",
+            AssemblyOccurrenceRecord::from_parsed_occurrence(&inventory.occurrences[0]),
+        )
         .expect("admitted occurrence");
     let mut policy = DecodePolicy::service();
     policy.limits.max_entities = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     assert!(matches!(
-        AssemblyOccurrenceRecord::from_occurrence(&ctx, &inventory.occurrences[0]),
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::Inventor).insert_native(&ctx, "assembly_occurrences", AssemblyOccurrenceRecord::from_parsed_occurrence(&inventory.occurrences[0])),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::Entities
                 && limit.operation == "admit Inventor native assembly occurrence"
@@ -182,6 +205,9 @@ fn assembly_placement_native_record_refuses_entity_limit_before_creation() {
             suffix: View::over_retained(&suffix),
         }],
         issues: Vec::new(),
+        parts: cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+            cadmpeg_ir::CodecFormat::Inventor,
+        ),
     };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -568,12 +594,17 @@ fn native_rse_projection_refuses_entity_limit_at_record_creation() {
     let (limited_ctx, _) =
         DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("decode context");
     assert!(matches!(
-        rse_native_projection::project(&limited_ctx, &container),
+        rse_native_projection::project(&limited_ctx, &container, &cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::Inventor)),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::Entities
                 && limit.operation == "admit Inventor native structural records"
     ));
-    assert!(rse_native_projection::project(&setup_ctx, &container).is_ok());
+    assert!(rse_native_projection::project(
+        &setup_ctx,
+        &container,
+        &cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::Inventor)
+    )
+    .is_ok());
     assert!(decode_container(&setup_ctx, &container).is_ok());
 }
 

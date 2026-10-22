@@ -126,6 +126,30 @@ pub fn inflate_zstd_exact<'a>(
     ctx: &DecodeContext<'a>,
     source: View<'a>,
 ) -> Result<View<'a>, CodecError> {
+    inflate_zstd_writer(ctx, source)?.finalize()
+}
+
+/// Inflate exactly one Zstandard frame with its actual compressed-source lineage.
+pub fn inflate_zstd_exact_tracked<'a>(
+    ctx: &DecodeContext<'a>,
+    source: View<'a>,
+) -> Result<View<'a>, CodecError> {
+    let writer = inflate_zstd_writer(ctx, source)?;
+    let capture = ctx.capture_part_extent(source)?;
+    let name = format!(
+        "zstd:{}:{}:{}:{}",
+        capture.stream().len(),
+        capture.stream(),
+        capture.offset(),
+        capture.byte_len()
+    );
+    writer.finalize_from(source, &name)
+}
+
+fn inflate_zstd_writer<'ctx, 'a>(
+    ctx: &'ctx DecodeContext<'a>,
+    source: View<'a>,
+) -> Result<ExpandWriter<'ctx, 'a>, CodecError> {
     require_single_zstd_frame(source)?;
     let mut decoder = ctx.open_zstd(source)?;
     let mut writer = ctx.begin_expand(ExpandSpec::Unknown)?;
@@ -137,7 +161,7 @@ pub fn inflate_zstd_exact<'a>(
         }
         writer.write(&chunk[..count])?;
     }
-    writer.finalize()
+    Ok(writer)
 }
 
 // RFC 8878 sections 3.1.1.1 and 3.1.1.2 delimit one frame without decoding it.

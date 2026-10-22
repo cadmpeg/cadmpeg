@@ -515,6 +515,10 @@ pub(crate) fn is_polyline(class: Uuid) -> bool {
     class == POLYLINE
 }
 
+pub(crate) fn is_nurbs_curve(class: Uuid) -> bool {
+    matches!(class, NURBS_CURVE | NURBS_CURVE_TL | NURBS_CURVE_LEGACY)
+}
+
 /// Decode the point fields through their actual source view.
 pub(crate) fn decode_point_view(
     ctx: &DecodeContext<'_>,
@@ -578,6 +582,23 @@ pub(crate) fn decode_polyline_view(
         None,
     )?));
     reader.skip_remaining()?;
+    Ok(DecodedGeometry::Curve {
+        curve: DecodedCurve::leaf(geometry, Diagnostics::new()),
+    })
+}
+
+/// Decode a NURBS curve through its actual source view.
+pub(crate) fn decode_nurbs_view(
+    ctx: &DecodeContext<'_>,
+    source: View<'_>,
+    range: Range<usize>,
+    scale: MillimeterScale,
+) -> Result<DecodedGeometry, GeometryError> {
+    let _depth_guard = ctx.enter_nested("Rhino curve tree")?;
+    let mut reader = BoundedReader::from_view(source, range.start, range.end)?;
+    let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+        crate::surfaces::read_nurbs_curve_in(ctx, &mut reader, scale)?,
+    ));
     Ok(DecodedGeometry::Curve {
         curve: DecodedCurve::leaf(geometry, Diagnostics::new()),
     })
@@ -674,7 +695,7 @@ pub(crate) fn decode_inner(
         NURBS_CURVE | NURBS_CURVE_TL | NURBS_CURVE_LEGACY => DecodedGeometry::Curve {
             curve: DecodedCurve::leaf(
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                    crate::surfaces::read_nurbs_curve(&mut reader, scale)?,
+                    crate::surfaces::read_nurbs_curve_in(ctx, &mut reader, scale)?,
                 )),
                 Diagnostics::new(),
             ),
@@ -2248,6 +2269,7 @@ pub(crate) fn error(offset: usize, message: impl Into<String>) -> GeometryError 
 mod tests {
     mod source_arc_reads;
     mod source_line_reads;
+    mod source_nurbs_reads;
     mod source_point_reads;
     mod source_polyline_reads;
     #[test]

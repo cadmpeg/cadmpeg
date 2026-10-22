@@ -11,8 +11,9 @@ const SECTION_COUNT: usize = 11;
 const TERMINAL_ID_LEN: usize = 16;
 const SECTION_11_PAYLOAD_LEN: usize = 0x48;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct BlockDescriptor {
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct BlockDescriptor<'a> {
+    source: View<'a>,
     ordinal: u32,
     stored: bool,
     payload_len: u32,
@@ -130,7 +131,7 @@ pub(crate) struct MetaSection<'a> {
 #[derive(Debug)]
 pub(crate) struct MetaTables<'a> {
     pub(crate) prefix: [u16; 7],
-    pub(crate) blocks: Vec<BlockDescriptor>,
+    pub(crate) blocks: Vec<BlockDescriptor<'a>>,
     pub(crate) types: Vec<TypeDescriptor>,
     pub(crate) sections: [MetaSection<'a>; SECTION_COUNT],
     pub(crate) terminal_id: [u8; 16],
@@ -138,6 +139,7 @@ pub(crate) struct MetaTables<'a> {
 
 #[derive(Debug)]
 pub(crate) struct RseRecordFrame<'a> {
+    pub(crate) block_descriptor_source: View<'a>,
     pub(crate) ordinal: u32,
     pub(crate) selector: u32,
     pub(crate) type_id: [u8; 16],
@@ -193,8 +195,11 @@ pub(crate) fn parse_meta_tables(body: View<'_>) -> Result<MetaTables<'_>, CodecE
     let mut blocks = Vec::new();
     let mut sizes = section_1_payload;
     for ordinal in 0..block_count {
-        let encoded = crate::reader::u32(&mut sizes, "block-size entry")?;
+        let source = crate::reader::take_child(&mut sizes, 4, "block-size entry")?;
+        let mut declaration = source;
+        let encoded = crate::reader::u32(&mut declaration, "block-size entry")?;
         blocks.push(BlockDescriptor {
+            source,
             ordinal: u32::try_from(ordinal).map_err(|_| {
                 CodecError::Malformed("Inventor numeric value exceeds target range".into())
             })?,
@@ -303,7 +308,7 @@ pub(crate) fn parse_meta_tables(body: View<'_>) -> Result<MetaTables<'_>, CodecE
 
 pub(crate) fn frame_bulk_records<'a>(
     bulk: View<'a>,
-    tables: &MetaTables<'_>,
+    tables: &MetaTables<'a>,
     segment_version_major: u8,
 ) -> Result<RseRecordTable<'a>, CodecError> {
     let mut cursor = Cursor::new(bulk);
@@ -339,6 +344,7 @@ pub(crate) fn frame_bulk_records<'a>(
         }
         let trailer = child(bulk, trailer_start, cursor.position(), "record trailer")?;
         records.push(RseRecordFrame {
+            block_descriptor_source: block.source,
             ordinal: block.ordinal,
             selector,
             type_id: descriptor.id,

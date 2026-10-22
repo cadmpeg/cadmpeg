@@ -658,3 +658,43 @@ fn archive_version_unit_with_user(
     bytes[eof_offset..].copy_from_slice(&eof);
     bytes
 }
+
+pub(crate) struct NurbsCurveSource {
+    pub(crate) bytes: Vec<u8>,
+    pub(crate) reserved_bounds: std::ops::Range<usize>,
+    pub(crate) knot_count_offset: usize,
+}
+
+pub(crate) fn rational_nurbs_curve_source(version: u8, weights: [f64; 2]) -> NurbsCurveSource {
+    let mut bytes = vec![version];
+    for value in [3_i32, 1, 2, 2, 0, 0] {
+        bytes.extend(value.to_le_bytes());
+    }
+    let bounds_start = bytes.len();
+    bytes.extend([0.0_f64; 6].into_iter().flat_map(f64::to_le_bytes));
+    let reserved_bounds = bounds_start..bytes.len();
+    let knot_count_offset = bytes.len();
+    bytes.extend(2_i32.to_le_bytes());
+    bytes.extend([2.0_f64, 5.0].into_iter().flat_map(f64::to_le_bytes));
+    bytes.extend(2_i32.to_le_bytes());
+    for (point, weight) in [[1.0_f64, 2.0, 3.0], [4.0, 5.0, 6.0]]
+        .into_iter()
+        .zip(weights)
+    {
+        bytes.extend(
+            point
+                .into_iter()
+                .map(|value| value * weight)
+                .flat_map(f64::to_le_bytes),
+        );
+        bytes.extend(weight.to_le_bytes());
+    }
+    if version & 0x0f >= 1 {
+        bytes.push(1);
+    }
+    NurbsCurveSource {
+        bytes,
+        reserved_bounds,
+        knot_count_offset,
+    }
+}

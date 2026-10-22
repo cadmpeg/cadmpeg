@@ -2277,9 +2277,9 @@ fn validate_assembly(
         &data.assembly_placements,
     )?;
     projected
-        .occurrences
+        .0
         .sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
-    if ir.model.occurrences != projected.occurrences {
+    if ir.model.occurrences != projected.0 {
         findings.push(finding(
             Check::NativeLinks,
             "Inventor neutral occurrences do not match the typed assembly records".into(),

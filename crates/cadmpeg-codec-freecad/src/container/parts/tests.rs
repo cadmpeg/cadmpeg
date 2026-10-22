@@ -27,7 +27,10 @@ fn a_damaged_known_endpoint_member_has_one_shared_home_and_keeps_its_peer() {
         .unwrap()
         .stored_range()
         .unwrap();
-    let (model, native, fidelity, losses) = output.into_parts().into_parts();
+    let (model, native, fidelity, losses) = output
+        .into_parts(&ctx)
+        .expect("finalize parser dependencies")
+        .into_parts();
     assert_eq!(model.entity_count(), 0);
     let unknowns = native
         .namespace("fcstd")
@@ -39,7 +42,7 @@ fn a_damaged_known_endpoint_member_has_one_shared_home_and_keeps_its_peer() {
     };
     assert!(unknown.links.is_empty());
     let parts = fidelity.parts();
-    assert_eq!(parts.len(), 3);
+    assert_eq!(parts.len(), 5);
     let (archive_id, archive_part) = parts
         .iter()
         .find(|(_, part)| part.level().as_str() == "zip.archive")
@@ -48,6 +51,24 @@ fn a_damaged_known_endpoint_member_has_one_shared_home_and_keeps_its_peer() {
     assert_eq!(archive_part.byte_len(), u64::try_from(bytes.len()).unwrap());
     assert_eq!(archive_part.state(), &PartState::Decoded {});
     assert!(archive_part.parent().is_none());
+    let headers = parts
+        .values()
+        .filter(|part| part.level().as_str() == "zip.local_header")
+        .collect::<Vec<_>>();
+    assert_eq!(headers.len(), 2);
+    for name in ["broken.bin", "peer.bin"] {
+        let entry = scan.archive.entry(name).unwrap();
+        let header = headers
+            .iter()
+            .find(|part| part.offset() == entry.header_start)
+            .unwrap();
+        assert_eq!(header.state(), &PartState::Decoded {});
+        assert_eq!(header.parent(), Some(archive_id));
+        assert_eq!(
+            header.byte_len(),
+            entry.data_start.unwrap() - entry.header_start
+        );
+    }
     let failed = &parts[&unknown.id];
     assert_eq!(failed.level().as_str(), "zip.entry");
     assert_eq!(failed.state(), &PartState::GivenUp {});
@@ -104,4 +125,104 @@ fn a_session_entity_refusal_escapes_the_member_give_up_boundary() {
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.scope == LimitScope::Session && limit.dimension == ResourceDimension::Entities)
     );
+}
+
+#[test]
+fn a_locatable_damaged_local_header_is_given_up_without_relabeling_its_payload() {
+    use cadmpeg_test_support::zip_fixture::{self, RawEntry};
+    let mut bytes = zip_fixture::archive(&[
+        RawEntry::stored("Document.xml", b"<Document SchemaVersion='4' FileVersion='1'><Objects Count='0'/><ObjectData Count='0'/></Document>"),
+        RawEntry::stored("broken.bin", b"opaque source"),
+        RawEntry::stored("peer.bin", b"peer source"),
+    ]);
+    let header_start = {
+        let arena = DecodeArena::new();
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+        cadmpeg_container::ArchiveSnapshot::new(&ctx, root)
+            .unwrap()
+            .entry("broken.bin")
+            .unwrap()
+            .header_start
+    };
+    let start = usize::try_from(header_start).unwrap();
+    bytes[start] ^= 1;
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+    let (scan, output) = crate::container::scan_for_decode(&ctx, root).unwrap();
+    assert!(scan.data.contains_key("Document.xml"));
+    assert_eq!(scan.data["peer.bin"].window(), b"peer source");
+    assert!(!scan.data.contains_key("broken.bin"));
+    assert_eq!(scan.failed_members, BTreeSet::from(["broken.bin".into()]));
+    assert!(scan.unreadable_entries.is_empty());
+    assert!(scan.losses.is_empty());
+    let (_, native, fidelity, losses) = output.into_parts(&ctx).unwrap().into_parts();
+    let unknowns = native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<cadmpeg_ir::NativeUnknownRecord>("unknowns")
+        .unwrap();
+    let [unknown] = unknowns.as_slice() else {
+        panic!("one unknown: {unknowns:?}")
+    };
+    assert!(unknown.links.is_empty());
+    let failed = &fidelity.parts()[&unknown.id];
+    assert_eq!(failed.level().as_str(), "zip.local_header");
+    assert_eq!(failed.state(), &PartState::GivenUp {});
+    assert_eq!(failed.offset(), header_start);
+    assert_eq!(
+        failed.byte_len(),
+        30 + u64::try_from("broken.bin".len()).unwrap()
+    );
+    assert_eq!(
+        failed.framing_bytes(),
+        &[
+            header_start..header_start + 4,
+            header_start + 6..header_start + 8,
+            header_start + 18..header_start + 22,
+            header_start + 26..header_start + 30,
+        ]
+    );
+    let retained = fidelity.retained_record(unknown.id.as_str()).unwrap();
+    assert_eq!(retained.stream(), failed.stream());
+    assert_eq!(retained.offset(), header_start);
+    assert_eq!(
+        retained.data(),
+        Some(&bytes[start..start + 30 + "broken.bin".len()])
+    );
+    assert!(fidelity.record_layout()[unknown.id.as_str()]
+        .reads()
+        .is_empty());
+    assert_eq!(fidelity.parts().len(), 4);
+    assert_eq!(
+        fidelity
+            .parts()
+            .values()
+            .filter(|part| part.level().as_str() == "zip.entry")
+            .count(),
+        1
+    );
+    assert_eq!(
+        fidelity
+            .parts()
+            .values()
+            .filter(|part| part.state() == &PartState::GivenUp {})
+            .count(),
+        1
+    );
+    assert_eq!(
+        fidelity.parts()[failed.parent().unwrap()].level().as_str(),
+        "zip.archive"
+    );
+    let [loss] = losses.as_slice() else {
+        panic!("one loss: {losses:?}")
+    };
+    assert_eq!(loss.code.local_code(), "record.unreadable");
+    assert_eq!(loss.provenance.as_ref().unwrap().offset, header_start);
+    assert_eq!(
+        loss.provenance.as_ref().unwrap().byte_len(),
+        Some(failed.byte_len())
+    );
+    crate::test_support::test_archive::assert_only_document_file_version_capture(&ctx, &scan);
 }

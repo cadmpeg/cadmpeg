@@ -4,7 +4,8 @@
 pub(crate) mod protein;
 pub(crate) mod ufrx;
 
-use cadmpeg_core::decode::DecodeContext;
+mod assembly_ownership;
+
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
 use serde::{
@@ -355,17 +356,13 @@ pub(crate) struct AssemblyOccurrenceRecord {
 }
 
 impl AssemblyOccurrenceRecord {
-    pub(crate) fn from_occurrence(
-        ctx: &DecodeContext<'_>,
-        occurrence: &crate::assembly::AssemblyOccurrence,
-    ) -> Result<Self, CodecError> {
-        ctx.charge_entities(1, "admit Inventor native assembly occurrence")?;
+    pub(crate) fn from_parsed_occurrence(occurrence: &crate::assembly::AssemblyOccurrence) -> Self {
         let id = format!(
             "inventor:assembly:occurrence#{}-{}",
             occurrence.segment_token, occurrence.record_ordinal
         );
         let segment_token = occurrence.segment_token.clone();
-        Ok(Self {
+        Self {
             id,
             segment_token,
             record_ordinal: occurrence.record_ordinal,
@@ -380,7 +377,7 @@ impl AssemblyOccurrenceRecord {
             related_references: occurrence.related_references.clone(),
             child_reference: occurrence.child_reference,
             occurrence_id: occurrence.occurrence_id,
-        })
+        }
     }
 }
 

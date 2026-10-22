@@ -314,6 +314,56 @@ fn primary_envelope_fixture_with_carrier_and_failures(
     break_metadata_body: bool,
     methods: [u8; 2],
 ) -> Vec<u8> {
+    primary_envelope_with_segment(
+        declarations,
+        carrier,
+        design,
+        break_database_body,
+        break_metadata_body,
+        methods,
+        &DESIGN_SEGMENT,
+    )
+}
+
+/// Actual AmDc source metadata and compressed bodies for assembly controls.
+pub(crate) fn assembly_envelope_fixture(records: &[([u8; 16], Vec<u8>)]) -> Vec<u8> {
+    assembly_envelope(records, "AmDcSegment", "AmDcSegmentType")
+}
+
+pub(crate) fn assembly_graphics_envelope_fixture(records: &[([u8; 16], Vec<u8>)]) -> Vec<u8> {
+    assembly_envelope(records, "AmGRxSegment", "AmGRxSegmentType")
+}
+
+fn assembly_envelope(
+    records: &[([u8; 16], Vec<u8>)],
+    display_name: &'static str,
+    type_name: &'static str,
+) -> Vec<u8> {
+    let identity = SegmentIdentity {
+        display_name,
+        segment_id: [0x5b; 16],
+        type_name,
+    };
+    primary_envelope_with_segment(
+        EnvelopeDeclarations::default(),
+        &kernel_carrier_fixture(&[]),
+        records,
+        false,
+        false,
+        [1, 1],
+        &identity,
+    )
+}
+
+fn primary_envelope_with_segment(
+    declarations: EnvelopeDeclarations,
+    carrier: &[u8],
+    design: &[([u8; 16], Vec<u8>)],
+    break_database_body: bool,
+    break_metadata_body: bool,
+    methods: [u8; 2],
+    design_identity: &SegmentIdentity,
+) -> Vec<u8> {
     const ROOT: usize = 0;
     const RSE_STORAGE: usize = 1;
     const V1: usize = 2;
@@ -348,7 +398,7 @@ fn primary_envelope_fixture_with_carrier_and_failures(
     let registry = if design.is_empty() {
         registry_fixture(&[&BREP_SEGMENT])
     } else {
-        registry_fixture(&[&BREP_SEGMENT, &DESIGN_SEGMENT])
+        registry_fixture(&[&BREP_SEGMENT, design_identity])
     };
     let revisions = revision_fixture();
     let mut streams = vec![
@@ -375,7 +425,7 @@ fn primary_envelope_fixture_with_carrier_and_failures(
         streams.push((
             DESIGN_META,
             "Mdc",
-            meta_stream_fixture(&DESIGN_SEGMENT, &records, declarations, methods[0]),
+            meta_stream_fixture(design_identity, &records, declarations, methods[0]),
         ));
     }
 

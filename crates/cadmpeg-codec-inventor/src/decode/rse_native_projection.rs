@@ -31,6 +31,7 @@ pub(super) struct RseNativeProjection {
 pub(super) fn project(
     ctx: &DecodeContext<'_>,
     container: &InventorContainer<'_>,
+    assembly_parts: &cadmpeg_ir::source_fidelity::parts::PartOutput,
 ) -> Result<RseNativeProjection, CodecError> {
     let mut projection = RseNativeProjection {
         identity_issues: Vec::new(),
@@ -130,6 +131,24 @@ pub(super) fn project(
                 let records = match &bulk.records {
                     RecordFrameState::Framed(table) => {
                         for record in &table.records {
+                            if crate::assembly::owns_occurrence(&segment.kind, record.type_id) {
+                                // The source-owned stage either formed this exact wrapper or
+                                // gave up its whole located body. No late reconstruction can
+                                // resurrect a wrapper from a given-up body's frame metadata.
+                                crate::assembly::parts::disposition(
+                                    ctx,
+                                    assembly_parts,
+                                    bulk.expanded,
+                                    token,
+                                    record,
+                                )?
+                                .ok_or_else(|| {
+                                    CodecError::malformed(
+                                        "assembly occurrence body has no reached-part disposition",
+                                    )
+                                })?;
+                                continue;
+                            }
                             admit_native_items(ctx, 1)?;
                             projection
                                 .rse_records
