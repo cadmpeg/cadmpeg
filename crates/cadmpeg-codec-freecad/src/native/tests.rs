@@ -188,23 +188,22 @@ fn string_table_admission_requires_distinct_backward_references() {
             )
             .unwrap();
             ctx.record(&record.id(), root, || Ok(())).unwrap();
-            let (id, mut layout) = cadmpeg_ir::source_fidelity::RecordLayout::from_capture(
-                ctx.take_record_captures().unwrap().pop().unwrap(),
-            );
-            let mut start = 0;
-            for (ordinal, entry) in entries.iter().enumerate() {
-                let end = start + entry["raw"].as_str().unwrap().len();
-                layout
-                    .insert_payload(
-                        format!("entries.{ordinal}.raw"),
-                        cadmpeg_ir::native::bytes::NativeBytes::from(
-                            root.child(start, end).unwrap().window().to_vec(),
-                        ),
-                    )
-                    .unwrap();
-                start = end;
-            }
-            fidelity.insert_record_layout(id, layout).unwrap();
+            fidelity
+                .install_record_captures(&ctx, |_, layout| {
+                    let mut start = 0;
+                    for (ordinal, entry) in entries.iter().enumerate() {
+                        let end = start + entry["raw"].as_str().unwrap().len();
+                        layout.insert_payload(
+                            format!("entries.{ordinal}.raw"),
+                            cadmpeg_ir::native::bytes::NativeBytes::from(
+                                root.child(start, end).unwrap().window().to_vec(),
+                            ),
+                        )?;
+                        start = end;
+                    }
+                    Ok(())
+                })
+                .unwrap();
             let mut restored = serde_json::to_value(&record).unwrap();
             for (ordinal, entry) in restored["entries"]
                 .as_array_mut()

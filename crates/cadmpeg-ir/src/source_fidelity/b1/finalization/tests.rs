@@ -4,7 +4,7 @@
 use super::*;
 use crate::document::ArenaClass;
 use crate::ids::UnknownId;
-use crate::source_fidelity::{RecordLayout, RetainedSourceRecord};
+use crate::source_fidelity::RetainedSourceRecord;
 use crate::CadIr;
 use cadmpeg_core::decode::{ByteRange, DecodeArena, DecodePolicy, View};
 use serde_json::json;
@@ -35,10 +35,9 @@ fn fidelity(ctx: &DecodeContext<'_>, root: View<'_>) -> SourceFidelity {
     })
     .unwrap();
     let mut fidelity = SourceFidelity::default();
-    for capture in ctx.take_record_captures().unwrap() {
-        let (id, layout) = RecordLayout::from_capture(capture);
-        fidelity.insert_record_layout(id, layout).unwrap();
-    }
+    fidelity
+        .install_record_captures(ctx, |_, _| Ok(()))
+        .unwrap();
     fidelity
 }
 
@@ -411,10 +410,9 @@ fn thousand_disjoint_spans_keep_exact_loss_keys_duplicates_and_image_classes() {
         ctx.record(id, root.child(start, end).unwrap(), || Ok(()))
             .unwrap();
     }
-    for capture in ctx.take_record_captures().unwrap() {
-        let (id, layout) = RecordLayout::from_capture(capture);
-        fidelity.insert_record_layout(id, layout).unwrap();
-    }
+    fidelity
+        .install_record_captures(&ctx, |_, _| Ok(()))
+        .unwrap();
     let framing = (0..1000).map(|i| (2 * i)..(2 * i + 1)).collect::<Vec<_>>();
     let partition = super::super::partition_stream(
         &ctx,
@@ -596,10 +594,9 @@ fn a_given_up_part_is_named_only_by_its_record_unreadable_loss() {
         (2, Some(4)),
         "the loss gives the part's stream, offset and length (#217 §5.6)"
     );
-    for capture in ctx.take_record_captures().unwrap() {
-        let (id, layout) = RecordLayout::from_capture(capture);
-        fidelity.insert_record_layout(id, layout).unwrap();
-    }
+    fidelity
+        .install_record_captures(&ctx, |_, _| Ok(()))
+        .unwrap();
     let partitions = [super::super::partition_stream(
         &ctx,
         "file",

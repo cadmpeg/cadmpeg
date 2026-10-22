@@ -25,13 +25,12 @@ fn actual_nested_captures_leave_only_unconsumed_nonframing_bytes() {
         })
     })
     .unwrap();
-    let layouts = ctx
-        .take_record_captures()
-        .unwrap()
-        .into_iter()
-        .map(RecordLayout::from_capture)
-        .collect();
-    let result = partition_stream(&ctx, "file", 8, &layouts, &[2..3], &[7..8], &[]).unwrap();
+    let mut fidelity = crate::SourceFidelity::default();
+    fidelity
+        .install_record_captures(&ctx, |_, _| Ok(()))
+        .unwrap();
+    let layouts = fidelity.record_layout();
+    let result = partition_stream(&ctx, "file", 8, layouts, &[2..3], &[7..8], &[]).unwrap();
     assert_eq!(result.reads(), &[0..2, 4..6]);
     assert_eq!(result.exempt(), &[2..3, 7..8]);
     assert_eq!(result.b1(), &[3..4, 6..7]);
