@@ -57,7 +57,6 @@ pub(super) fn stage<'a>(
                     if admitted.iter().any(Option::is_some) {
                         let capacity = meta.tables.blocks.len();
                         let bytes = cadmpeg_core::decode::u64_from_index(capacity).checked_mul(cadmpeg_core::decode::u64_from_index(size_of::<RseRecordFrame>())).ok_or_else(|| CodecError::malformed("source-framed record storage overflows"))?;
-                        ctx.retain_bytes(bytes, "retain Inventor source-framed records")?;
                         records.try_reserve_exact(capacity).map_err(|_| cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::RetainedBytes, ctx.policy().limits.max_retained_bytes, bytes, "allocate Inventor source-framed records"))?;
                     }
                     let framing = crate::records::frame_bulk_sources(

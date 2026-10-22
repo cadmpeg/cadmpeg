@@ -73,13 +73,6 @@ pub(crate) fn stage<'a>(
                                     "Inventor type table contains more than 256 descriptors",
                                 ));
                             }
-                            ctx.retain_bytes(
-                                cadmpeg_core::decode::u64_from_index(
-                                    frame.count
-                                        * size_of::<Option<crate::records::TypeDescriptor>>(),
-                                ),
-                                "retain Inventor admitted source types",
-                            )?;
                             let mut admitted = ctx.alloc_filled(
                                 frame.count,
                                 None,
