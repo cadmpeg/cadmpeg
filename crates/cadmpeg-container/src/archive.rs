@@ -7,6 +7,7 @@ use std::io::Read;
 use cadmpeg_core::decode::{ByteRange, DecodeContext, ExpandSpec, View};
 use cadmpeg_core::{CodecError, ContainerEntry};
 mod entry;
+mod framing;
 mod index;
 mod local;
 mod probe;
@@ -155,11 +156,13 @@ pub struct ArchiveSnapshot<'a> {
     entries: Vec<EntryRecord>,
     by_name: BTreeMap<String, usize>,
     recovery: Option<Box<local::Recovery>>,
+    footer: Option<DirectoryPreflight>,
 }
 
 /// Dependency index over the admitted central directory.
 struct ZipIndex<'bytes> {
     archive: zip::ZipArchive<index::NamespaceReader<'bytes>>,
+    footer: DirectoryPreflight,
 }
 
 enum Admission<T> {
@@ -190,7 +193,10 @@ impl<'bytes> ZipIndex<'bytes> {
                     )))
                 }
             };
-        Ok(Admission::Indexed(Self { archive }))
+        Ok(Admission::Indexed(Self {
+            archive,
+            footer: admitted,
+        }))
     }
 }
 
@@ -243,6 +249,7 @@ impl<'a> ArchiveSnapshot<'a> {
             central = next;
         }
         entry::frame_unreadable_members(&mut entries, archive_central_start);
+        let footer = index.footer;
         drop(index);
         let by_name = entries
             .iter()
@@ -255,6 +262,7 @@ impl<'a> ArchiveSnapshot<'a> {
             entries,
             by_name,
             recovery: None,
+            footer: Some(footer),
         })
     }
 
@@ -546,9 +554,10 @@ impl<'a> ArchiveSnapshot<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 struct DirectoryPreflight {
     end_record: usize,
+    zip64_record: Option<usize>,
 }
 
 fn preflight_central_directory(
@@ -591,13 +600,16 @@ fn directory_admission(
     };
     for end in candidates {
         match central_directory_inventory(ctx, bytes, end, &mut search) {
-            Ok(()) => {
+            Ok(zip64_record) => {
                 if admitted.is_some() {
                     return Err(CodecError::malformed(
                         "ZIP has ambiguous terminal central-directory declarations",
                     ));
                 }
-                admitted = Some(DirectoryPreflight { end_record: end });
+                admitted = Some(DirectoryPreflight {
+                    end_record: end,
+                    zip64_record,
+                });
             }
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => {
@@ -656,7 +668,7 @@ fn central_directory_inventory(
     bytes: &[u8],
     end: usize,
     search: &mut DirectorySearch,
-) -> Result<(), CodecError> {
+) -> Result<Option<usize>, CodecError> {
     let comment_len = View::u16_le_at(bytes, end + 20)
         .ok_or_else(|| CodecError::Malformed("ZIP end record is truncated".into()))?;
     if end
@@ -697,6 +709,7 @@ fn central_directory_inventory(
             .ok_or_else(|| CodecError::Malformed("ZIP directory offset is truncated".into()))?;
         (u64::from(count), u64::from(size), u64::from(start), end)
     };
+    let zip64_record = locator_start.map(|_| directory_end);
     let directory_end = cadmpeg_core::decode::u64_from_index(directory_end);
     let canonical_start = directory_end
         .checked_sub(directory_size)
@@ -764,7 +777,7 @@ fn central_directory_inventory(
             "ZIP directory count and declared size disagree",
         ));
     }
-    Ok(())
+    Ok(zip64_record)
 }
 
 fn reject_duplicate_central_names(bytes: &[u8], central_start: u64) -> Result<usize, CodecError> {

@@ -308,9 +308,9 @@ impl DecodeParts for DecodeContext<'_> {
             }
         }
         let state = if result.is_ok() {
-            PartState::Decoded
+            PartState::Decoded {}
         } else {
-            PartState::GivenUp
+            PartState::GivenUp {}
         };
         let record = PartRecord::captured(&capture, spec, state);
         match result {

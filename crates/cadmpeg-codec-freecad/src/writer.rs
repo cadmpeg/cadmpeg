@@ -67,7 +67,7 @@ fn write_seekable(
         || fidelity.parts().values().any(|part| {
             matches!(
                 part.state(),
-                cadmpeg_ir::source_fidelity::parts::PartState::GivenUp
+                cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}
             )
         })
     {

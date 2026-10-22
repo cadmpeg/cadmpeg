@@ -2582,16 +2582,21 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
     let mut diagnostics = Vec::new();
     let mut tolerance_losses = Vec::new();
     let mut scale = MillimeterScale::IDENTITY;
+    let mut model_part_seen = false;
     while offset < data.len() {
         let chunk = chunk_at(data, offset, data.len(), ArchiveVersion::V1, false)
             .map_err(|error| malformed(&error))?;
-        if chunk.typecode == TCODE_ENDOFFILE {
+        if matches!(
+            chunk.typecode,
+            TCODE_ENDOFFILE | crate::chunks::TCODE_ENDOFFILE
+        ) {
             break;
         }
         if chunk.typecode == TCODE_ENDOFTABLE {
             offset = chunk.next_offset();
             continue;
         }
+        model_part_seen = true;
         if chunk.typecode == TCODE_UNIT_AND_TOLERANCES && !chunk.short() {
             let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)
                 .map_err(|error| malformed(&error))?;
@@ -3030,7 +3035,8 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
     ] {
         coverage.record(key, count);
     }
-    ir.scope = cadmpeg_ir::ContentScope::full();
+    let scope = crate::container::scope_from_parts(&ir, model_part_seen, false);
+    ir.scope = scope;
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
     let untyped_ids = opaque_records
         .iter()
@@ -3047,7 +3053,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
         ir,
         body: DecodeBody {
             transfer: cadmpeg_ir::report::decode::DecodeTransfer {
-                scope: cadmpeg_ir::ContentScope::full(),
+                scope,
                 geometry_transferred: decoded > 0
                     || decoded_curves > 0
                     || decoded_meshes > 0
@@ -3072,12 +3078,17 @@ fn container_result(
     let mut records = Vec::new();
     let mut retained_bytes = 0;
     let mut untyped_ids = Vec::new();
+    let mut model_part_seen = false;
     while offset < data.len() {
         let chunk = chunk_at(data, offset, data.len(), ArchiveVersion::V1, false)
             .map_err(|error| malformed(&error))?;
-        if chunk.typecode == TCODE_ENDOFFILE {
+        if matches!(
+            chunk.typecode,
+            TCODE_ENDOFFILE | crate::chunks::TCODE_ENDOFFILE
+        ) {
             break;
         }
+        model_part_seen |= chunk.typecode != TCODE_ENDOFTABLE;
         let untyped = !matches!(chunk.typecode, TCODE_ENDOFTABLE | TCODE_UNIT_AND_TOLERANCES);
         let before = records.len();
         push_v1_record(ctx, &mut records, data, &chunk, &mut retained_bytes)?;
@@ -3095,11 +3106,12 @@ fn container_result(
         primary,
         crate::container::SourceMetaDetail::FlatLegacyArchive,
     )?);
-    ir.scope = cadmpeg_ir::ContentScope::container();
+    let scope = crate::container::scope_from_parts(&ir, model_part_seen, false);
+    ir.scope = scope;
     Ok(Decoded {
         ir,
         body: DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer {
-            scope: cadmpeg_ir::ContentScope::container(),
+            scope,
             geometry_transferred: false,
         }),
         source_fidelity,

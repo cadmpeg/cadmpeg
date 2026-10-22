@@ -211,7 +211,7 @@ fn compact_wide_assemble_scope_reads_owners_frames_and_wide_operand_paths() {
     assert_eq!(frames[1].transform.rows()[2][3], 1.7);
     let paths = alignment.operand_path_refs().expect("both operand paths");
     assert_eq!(
-        paths[0].occurrence_guids()[0].value.as_str(),
+        paths[0].occurrence_guids()[0].as_str(),
         "11111111-1111-1111-1111-111111111111"
     );
     assert_eq!(paths[1].link().locator_record_index, 67);

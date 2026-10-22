@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact tag and attribute source regions that dispatch an XML part grammar.
 
-use cadmpeg_core::decode::{DecodeContext, View, XmlElement, u64_from_index};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, View, XmlElement};
 use std::ops::Range;
 
 pub(super) fn ranges(

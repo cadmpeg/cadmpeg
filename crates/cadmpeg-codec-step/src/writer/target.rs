@@ -14,28 +14,20 @@ use crate::loss::StepLossCode;
 use crate::options::StepSchema;
 use crate::StepCodec;
 
-/// Why this writer cannot reproduce a source schema outside
-/// [`StepSchema::TARGETS`].
-///
-/// STEP has no retained-image path, and every schema this writer emits stamps
-/// object-identifier arcs, so an edition-unspecified or unrecognized
-/// declaration cannot be written back.
-const OFF_CATALOG_SOURCE_REASON: &str =
-    "the semantic writer cannot synthesize it, and writing another schema would change what the \
-     file declares; name a target to choose one";
-
 /// Resolve the request against the source and synthesize the selected schema.
 pub(crate) fn plan(
     codec: &StepCodec,
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
-    let Some(index) = resolved.index() else {
-        return Err(resolved.unavailable(OFF_CATALOG_SOURCE_REASON));
+    let synthesis = resolved.for_synthesis()?;
+    let resolved = synthesis.resolution();
+    let schema = StepSchema::from_target_index(synthesis.index());
+    debug_assert!(schema.is_some(), "STEP catalog rows match schema grammars");
+    let schema = match schema {
+        Some(schema) => schema,
+        None => StepSchema::ALL[0],
     };
-    let schema = StepSchema::from_target_index(index).ok_or_else(|| {
-        resolved.unavailable("the resolved target index is outside the STEP schema catalog")
-    })?;
     let mut bytes = Vec::new();
     let outcome = write_step_outcome(input.ir, &mut bytes, schema, &codec.options)?;
     let coverage = coverage(schema, &outcome.losses);

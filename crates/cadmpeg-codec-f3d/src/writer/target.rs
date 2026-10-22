@@ -11,25 +11,7 @@ use cadmpeg_ir::document::CadIr;
 use crate::loss::F3dLossCode;
 use crate::{ids, F3dCodec, PreservedWritePath};
 
-/// Plan the export the resolved request names.
-///
-/// `Explicit(id)` refuses an id outside the synthesis catalog, and is
-/// otherwise the replay law's compare: preserving the retained archive is
-/// eligible exactly when `id` is the source's dialect.
-///
-/// `Inherit` asks for preservation instead: a valid retained baseline
-/// replays or patches whatever dialect the source is, the F3Z
-/// multi-document row and the recovery row included, which the generator
-/// could never synthesize. Where the baseline is not usable, `Inherit`
-/// synthesizes the source's own dialect, and refuses when that dialect is
-/// not a target. There is no fall-through to the catalog default: a
-/// same-format conversion never silently changes what the file is.
-///
-/// The catalog default supplies the target only when there is nothing to
-/// inherit: the document has no source, or a source of another format.
-///
-/// The sealed encoder stamps the target identity and maps
-/// [`Consumption`] onto the report; this body states only what was done.
+/// Preserve an eligible source dialect, or synthesize the selected catalog target.
 pub(crate) fn plan(
     input: EncodeInput<'_>,
     target: &ResolvedWrite<'_>,
@@ -41,11 +23,12 @@ pub(crate) fn plan(
                 write_path,
                 notes,
             } => Ok(preserved_body(input.ir, write_path, bytes, notes)),
-            Preservation::PatchDeclined { reason } => Err(target.unavailable(&reason)),
-            Preservation::SourceImageUnavailable => Err(target.unavailable(
-                "its retained source image is unavailable for preservation and the generator \
-                 cannot synthesize it",
-            )),
+            Preservation::PatchDeclined { reason } => {
+                synthesize_displaced(input, target, SynthesisCause::PatchDeclined { reason })
+            }
+            Preservation::SourceImageUnavailable => {
+                synthesize_displaced(input, target, SynthesisCause::SourceImageUnavailable)
+            }
         };
     }
     if target.preserves_source() {
@@ -76,6 +59,20 @@ pub(crate) fn plan(
         SynthesisCause::Fresh
     };
     synthesized_body(input, cause)
+}
+
+fn synthesize_displaced(
+    input: EncodeInput<'_>,
+    target: &ResolvedWrite<'_>,
+    cause: SynthesisCause,
+) -> Result<ExportBody, CodecError> {
+    let synthesis = target.for_synthesis()?;
+    let mut body = synthesized_body(input, cause)?;
+    if let Some(message) = synthesis.resolution().displacement_message() {
+        body.losses
+            .push(F3dLossCode::SourceDialectDisplaced.note(message));
+    }
+    Ok(body)
 }
 
 enum Preservation {

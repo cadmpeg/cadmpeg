@@ -112,9 +112,9 @@ impl PartSpec {
 #[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PartState {
     /// The part's callback completed successfully.
-    Decoded,
+    Decoded {},
     /// This part owns the sole unknown stub, retained bytes and unreadable loss.
-    GivenUp,
+    GivenUp {},
     /// A given-up ancestor owns this reached descendant's source bytes.
     Covered {
         /// Identity of the actual given-up ancestor.
@@ -281,7 +281,7 @@ pub(super) fn validate_tree(tree: &BTreeMap<UnknownId, PartRecord>) -> Result<()
             if !ancestors.contains(&by)
                 || !matches!(
                     tree.get(by).map(|part| &part.state),
-                    Some(PartState::GivenUp)
+                    Some(PartState::GivenUp {})
                 )
             {
                 return Err("covered part must name a given-up ancestor".into());

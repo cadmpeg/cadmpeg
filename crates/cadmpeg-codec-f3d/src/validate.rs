@@ -22,11 +22,6 @@ use crate::design::decode::scopes::extrude::is_class_296_two_sided_to_faces_scop
 use crate::design::decode::scopes::legacy_class_397::Class397SymmetricFrame;
 use crate::design::decode::scopes::legacy_class_415;
 use crate::layout::assembly_class_307_264_joint_origin_scope as class_307_joint_origin;
-use crate::layout::assembly_class_363_264_frame_363_carrier as class_363_carrier;
-use crate::layout::assembly_class_363_264_frame_388_identity as class_363_identity;
-use crate::layout::assembly_operand_path_locator as path_locator;
-use crate::layout::assembly_operand_path_wrapper as path_wrapper;
-use crate::layout::assembly_variable_reference_operand_path_locator as variable_path_locator;
 use crate::layout::class_296_261_legacy_extrude_prefix_scalar_at_54 as class_296_legacy_prefix;
 use crate::layout::class_296_261_legacy_one_sided_distance_tail as class_296_legacy_distance;
 use crate::layout::class_296_261_legacy_one_sided_to_face_tail as class_296_legacy_to_face;
@@ -84,77 +79,13 @@ fn body_recipe_reference_table_is_admitted(
 fn valid_assembly_operand_path_link(
     scope: &records::feature::scope::DesignParameterScope,
     path: &records::feature::assembly::DesignAssemblyOperandPath,
-    locator_marker_offset: usize,
 ) -> bool {
-    let link = &path.link();
-    let Ok(locator_marker_offset) = u64::try_from(locator_marker_offset) else {
-        return false;
-    };
-    let Some(locator_reference_offset) = scope
-        .byte_offset()
-        .checked_add(locator_marker_offset)
-        .and_then(|offset| offset.checked_add(1))
-    else {
-        return false;
-    };
+    let link = path.link();
     let variable_reference = design::assembly::variable_reference_assembly_generation(
         scope.class_tag.as_str(),
         scope.paired_class_tag.as_str(),
     );
-    let wide = design::assembly::AssemblyScopeGeneration::new(
-        scope.frame_length(),
-        scope.class_tag.as_str(),
-        scope.paired_class_tag.as_str(),
-    )
-    .operand_frame_variant()
-    .is_some_and(design::assembly::AssemblyOperandFrameVariant::is_wide_family);
-    // A wide locator is 97 bytes without its transform and 225 with it; its
-    // backlink and wrapper reference are 28 and 17 bytes before its end.
-    let locator_length = if wide {
-        match path.byte_offset().checked_sub(link.locator_byte_offset) {
-            Some(length @ (97 | 225)) => length,
-            _ => return false,
-        }
-    } else {
-        let length = if variable_reference {
-            variable_path_locator::LEN
-        } else {
-            path_locator::LEN
-        };
-        let Ok(length) = u64::try_from(length) else {
-            return false;
-        };
-        length
-    };
-    let Some(path_byte_offset) = link.locator_byte_offset.checked_add(locator_length) else {
-        return false;
-    };
-    let (scope_backlink, wrapper_reference) = if wide {
-        (locator_length - 28 + 1, locator_length - 17 + 1)
-    } else if variable_reference {
-        (
-            u64_from_index(variable_path_locator::SCOPE_BACKLINK + 1),
-            u64_from_index(variable_path_locator::WRAPPER_REFERENCE + 1),
-        )
-    } else {
-        (
-            u64_from_index(path_locator::SCOPE_BACKLINK + 1),
-            u64_from_index(path_locator::WRAPPER_REFERENCE + 1),
-        )
-    };
-    let Some(locator_scope_reference_offset) = link.locator_byte_offset.checked_add(scope_backlink)
-    else {
-        return false;
-    };
-    let Some(wrapper_reference_offset) = link.locator_byte_offset.checked_add(wrapper_reference)
-    else {
-        return false;
-    };
-    let Some(path_reference_offset) = link.wrapper_byte_offset.checked_add(27) else {
-        return false;
-    };
-    link.locator_reference_offset == locator_reference_offset
-        && link.locator_record_index.checked_add(1) == Some(path.record_index)
+    link.locator_record_index.checked_add(1) == Some(path.record_index)
         && if variable_reference {
             link.locator_record_index
                 .checked_add(2)
@@ -163,39 +94,17 @@ fn valid_assembly_operand_path_link(
         } else {
             link.locator_record_index.checked_add(2) == Some(link.wrapper_record_index)
         }
-        && path.byte_offset() == path_byte_offset
-        && link.locator_scope_reference_offset == locator_scope_reference_offset
-        && link.wrapper_reference_offset == wrapper_reference_offset
-        && link.wrapper_byte_offset > path.byte_offset()
-        && link.path_reference_offset == path_reference_offset
 }
 
 fn valid_class_363_operand_path_link(
-    scope: &records::feature::scope::DesignParameterScope,
     frame: &records::feature::assembly::DesignAssemblyOperandFrame,
     path: &records::feature::assembly::DesignAssemblyOperandPath,
 ) -> bool {
-    let link = &path.link();
+    let link = path.link();
     link.locator_class_tag.as_str() == "363"
         && link.wrapper_class_tag.as_str() == "388"
         && path.class_tag().as_str() == "386"
         && link.locator_record_index == frame.reference_record_index
-        && link.locator_reference_offset == frame.reference_offset
-        && link
-            .locator_byte_offset
-            .checked_add(u64_from_index(class_363_carrier::SCOPE_REFERENCE + 1))
-            == Some(link.locator_scope_reference_offset)
-        && link
-            .wrapper_byte_offset
-            .checked_add(u64_from_index(class_363_identity::OCCURRENCE_GUID + 4))
-            == Some(link.path_reference_offset)
-        && link.wrapper_reference_offset < link.wrapper_byte_offset
-        && link.locator_scope_reference_offset > link.locator_byte_offset
-        && link.locator_reference_offset >= scope.byte_offset()
-        && link.locator_reference_offset < scope.paired_byte_offset()
-        && path.byte_offset() < link.locator_byte_offset
-        && path.occurrence_guids()[0].offset == link.path_reference_offset
-        && path.identity_guids()[0].offset > path.occurrence_guids()[0].offset
 }
 
 fn valid_class_307_joint_origin_qualifier(
@@ -2164,7 +2073,6 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     scope.paired_class_tag.as_str(),
                 );
                 let as_built_421 = as_built_421_generation.is_some();
-                let operand_paths = alignment.operand_path_refs();
                 let wide_family_offsets = operand_frame_variant
                     .and_then(crate::design::decode::scopes::wide_family_frame_offsets);
                 let frame_reference_offsets =
@@ -2227,26 +2135,17 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     alignment.operand_frames().is_none_or(|frames| {
                         frames[0].reference_record_index != frames[1].reference_record_index
                             && frames.iter().enumerate().all(|(ordinal, frame)| {
-                                let offsets_match = if as_built_frames {
-                                    operand_paths.as_ref().is_some_and(|paths| {
-                                        paths[ordinal].link().locator_byte_offset.checked_add(22)
-                                            == Some(frame.reference_offset)
-                                            && paths[ordinal]
-                                                .link()
-                                                .locator_byte_offset
-                                                .checked_add(33)
-                                                == Some(frame.transform_offset)
-                                    })
-                                } else {
-                                    Some(frame.reference_offset)
+                                // As-built frame placement is established by the source
+                                // parser. Native validation checks its held reference below.
+                                let offsets_match = as_built_frames
+                                    || (Some(frame.reference_offset)
                                         == scope
                                             .byte_offset()
                                             .checked_add(frame_reference_offsets[ordinal])
                                         && Some(frame.transform_offset)
                                             == scope
                                                 .byte_offset()
-                                                .checked_add(frame_transform_offsets[ordinal])
-                                };
+                                                .checked_add(frame_transform_offsets[ordinal]));
                                 let reference_exists = if as_built_frames {
                                     frame.reference_record_index != 0
                                 } else {
@@ -2302,39 +2201,13 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                     && paths[0].link().locator_record_index
                                         != paths[1].link().locator_record_index
                                     && paths.iter().zip(&frames).all(|(path, frame)| {
-                                        valid_class_363_operand_path_link(scope, frame, path)
+                                        valid_class_363_operand_path_link(frame, path)
                                     })
                             } else {
-                                let locator_offsets =
-                                    generation.operand_path_locator_offsets();
-                                let first_start = paths[0].link().locator_byte_offset;
-                                let second_start = paths[1].link().locator_byte_offset;
-                                let envelope_ends = paths.each_ref().map(|path| {
-                                    let continuation_count = if variable_reference {
-                                        path.link()
-                                            .wrapper_record_index
-                                            .checked_sub(path.link().locator_record_index)?
-                                            .checked_sub(2)?
-                                    } else {
-                                        0
-                                    };
-                                    u64::try_from(path_wrapper::LEN)
-                                        .ok()?
-                                        .checked_add(u64::from(continuation_count).checked_mul(11)?)
-                                        .and_then(|length| {
-                                            path.link().wrapper_byte_offset.checked_add(length)
-                                        })
-                                });
                                 !axial_frames
-                                    && locator_offsets.is_some_and(|offsets| {
-                                        paths.iter().zip(offsets).all(|(path, offset)| {
-                                            valid_assembly_operand_path_link(scope, path, offset)
-                                        })
-                                    })
+                                    && paths.iter().all(|path| valid_assembly_operand_path_link(scope, path))
                                     && paths[0].link().locator_record_index
                                         != paths[1].link().locator_record_index
-                                    && matches!(envelope_ends, [Some(first_end), Some(second_end)]
-                                if !(first_start < second_end && second_start < first_end))
                                     && paths.iter().all(|path| {
                                         (path.admitted_by_type()
                                             || matches!(path.class_tag().as_str(), "294" | "299" | "307" | "329" | "330" | "386" | "390"))
@@ -2353,7 +2226,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                                                 == native_stream
                                                                 && occurrence
                                                                     .occurrence_guid.as_str()
-                                                                    .eq_ignore_ascii_case(guid.value.as_str())
+                                                                    .eq_ignore_ascii_case(guid.as_str())
                                                         })
                                                         .count()
                                                         == 1
@@ -2370,7 +2243,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                             _ if variable_reference && operands.iter().any(|operand| matches!(operand.qualifier, records::feature::assembly::DesignAssemblyOperandQualifier::JointOrigin { .. })) => {
                                 frames[0].reference_record_index != frames[1].reference_record_index
                                     && operands.iter().all(|operand| match &operand.qualifier {
-                                        records::feature::assembly::DesignAssemblyOperandQualifier::OccurrencePath { path } => valid_class_363_operand_path_link(scope, &operand.frame, path),
+                                        records::feature::assembly::DesignAssemblyOperandQualifier::OccurrencePath { path } => valid_class_363_operand_path_link(&operand.frame, path),
                                         qualifier @ records::feature::assembly::DesignAssemblyOperandQualifier::JointOrigin { .. } => valid_class_307_joint_origin_qualifier(native, records_by_index, native_stream, &operand.frame, qualifier),
                                         records::feature::assembly::DesignAssemblyOperandQualifier::AxialTarget { .. } => false,
                                     })

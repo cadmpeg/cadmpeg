@@ -659,7 +659,7 @@ fn project_qualified_operands(
     let project = |qualifier: &DesignAssemblyOperandQualifier| -> Option<JointOperand> {
         match qualifier {
             DesignAssemblyOperandQualifier::OccurrencePath { path } => {
-                let root_guid = &path.occurrence_guids().first()?.value;
+                let root_guid = path.occurrence_guids().first()?;
                 let lookup_guid = root_guid.as_str().to_ascii_lowercase();
                 let occurrence = occurrences.get(&(stream, lookup_guid)).copied().flatten();
                 if occurrence.is_none()
@@ -673,7 +673,7 @@ fn project_qualified_operands(
 
                 let mut subelements = Vec::new();
                 for guid in subelement_guids {
-                    subelements.push(guid.value.as_str().to_ascii_lowercase());
+                    subelements.push(guid.as_str().to_ascii_lowercase());
                 }
                 Some(match occurrence {
                     Some(_) => JointOperand::occurrence(
@@ -683,7 +683,7 @@ fn project_qualified_operands(
                     ),
                     None => JointOperand::external(
                         ExternalDocument::document_id(
-                            path.identity_guids().first()?.value.as_str().to_owned(),
+                            path.identity_guids().first()?.as_str().to_owned(),
                         ),
                         object,
                         subelements,
@@ -979,16 +979,12 @@ mod tests {
         };
         let path = |record_index: u32, typed: bool| {
             let link = DesignAssemblyOperandPathLink {
-                locator_reference_offset: 0,
                 locator_record_index: record_index - 1,
                 locator_class_tag: "337".to_owned().try_into().unwrap(),
-                locator_byte_offset: 0,
-                locator_scope_reference_offset: 0,
+
                 wrapper_record_index: record_index + 1,
-                wrapper_reference_offset: 0,
+
                 wrapper_class_tag: "341".to_owned().try_into().unwrap(),
-                wrapper_byte_offset: 0,
-                path_reference_offset: 0,
             };
             let typed_guid = typed.then(|| {
                 TYPED_OCCURRENCE_PATH_TYPE_GUID
@@ -1001,8 +997,7 @@ mod tests {
                 record_index,
                 "384".to_owned().try_into().unwrap(),
                 typed_guid,
-                100,
-                vec![{
+                (vec![{
                     let occurrence: crate::records::identity::Located<
                         crate::records::mesh::DesignRelaxedGuidText,
                     > = guid("11111111-1111-1111-1111-11111111111a", 200);
@@ -1010,10 +1005,16 @@ mod tests {
                         value: occurrence.value.into(),
                         offset: occurrence.offset,
                     }
-                }],
-                (0..4)
+                }])
+                .into_iter()
+                .map(|field| field.value)
+                .collect(),
+                ((0..4)
                     .map(|ordinal| guid("22222222-2222-2222-2222-22222222222b", 300 + ordinal))
-                    .collect(),
+                    .collect::<Vec<_>>())
+                .into_iter()
+                .map(|field| field.value)
+                .collect(),
             )
         };
         let scopes = |typed: bool, paired: bool| {
@@ -1030,19 +1031,24 @@ mod tests {
                 let mut path = path(index, typed).unwrap();
                 if paired {
                     path = path
-                        .with_paired_occurrence_keys(vec![
-                            crate::records::identity::Located {
-                                value: "43".to_owned().try_into().unwrap(),
-                                offset: 400,
-                            },
-                            crate::records::identity::Located {
-                                value: "33333333-3333-3333-3333-33333333333c"
-                                    .to_owned()
-                                    .try_into()
-                                    .unwrap(),
-                                offset: 410,
-                            },
-                        ])
+                        .with_paired_occurrence_keys(
+                            vec![
+                                crate::records::identity::Located {
+                                    value: "43".to_owned().try_into().unwrap(),
+                                    offset: 400,
+                                },
+                                crate::records::identity::Located {
+                                    value: "33333333-3333-3333-3333-33333333333c"
+                                        .to_owned()
+                                        .try_into()
+                                        .unwrap(),
+                                    offset: 410,
+                                },
+                            ]
+                            .into_iter()
+                            .map(|field| field.value)
+                            .collect(),
+                        )
                         .unwrap();
                 }
                 DesignAssemblyOperandQualifier::OccurrencePath { path }

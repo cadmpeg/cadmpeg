@@ -144,6 +144,7 @@ impl<E: EncoderBackend> Encoder for E {
         input.ir.check_scope().map_err(CodecError::malformed)?;
         let target = E::TARGET.resolve(input.ir, request, E::FORMAT)?;
         let identity = target.export_target().cloned();
+        let synthesis_identity = target.synthesis_target().map(|target| target.cloned());
         let unrepresented = input.source_unrepresented();
         // Retained bytes and their eligibility travel together. A backend sees
         // no source bytes when the document does not represent their content.
@@ -208,6 +209,11 @@ impl<E: EncoderBackend> Encoder for E {
                 )));
             }
         }
+        let identity = if matches!(write_path, WritePath::Synthesized { .. }) {
+            synthesis_identity?
+        } else {
+            identity
+        };
         let write_path = write_path.into_report(input.fidelity.is_some());
         let mut report = match identity {
             None => ExportReport::cadir(census, write_path, losses, notes),

@@ -43,6 +43,7 @@ mod property_reader;
 mod source_archive;
 mod topology_transfer;
 mod writer;
+mod xml_framing;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
@@ -780,8 +781,11 @@ impl CodecBackend for FcstdCodec {
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
         let (mut scan, parts) = container::scan_for_decode(ctx, root)?;
+        let source_admission = fidelity::b1::prepare(ctx, root, &scan)?;
+        let legacy_source_evidence = !source_admission.is_complete();
         let mut admitted_entities = 0_u64;
         let mut attributes = container::source_attributes(&scan)?;
+        let summary_notes = container::summary_notes(&scan);
         let thumbnail = scan
             .data
             .get("thumbnails/Thumbnail.png")
@@ -841,7 +845,7 @@ impl CodecBackend for FcstdCodec {
                 cadmpeg_ir::ArenaClasses::new(),
             )?;
         }
-        fidelity::layout(ctx, &mut source_fidelity, "physical-ledger", &scan.ledger)?;
+
         let entry_sources = entry_sources::EntrySources::new(ctx, &scan.data)?;
         let mut geometry_transferred = false;
         let mut cycle_affected_design_objects = BTreeSet::new();
@@ -902,6 +906,7 @@ impl CodecBackend for FcstdCodec {
                     &mut source_fidelity,
                     property,
                     &graph.objects,
+                    legacy_source_evidence,
                 )? {
                     let code = match class {
                         cadmpeg_ir::ArenaClass::Model => {
@@ -1279,7 +1284,7 @@ impl CodecBackend for FcstdCodec {
                 string_tables.as_slice(),
                 &element_maps,
             )?;
-            fidelity::layout(ctx, &mut source_fidelity, "logical-ledger", &logical_ledger)?;
+
             let physical_byte_len = scan.ledger.last().map_or(0, |span| span.span.end());
             let coverage = container::byte_coverage(
                 &scan.ledger,
@@ -1288,7 +1293,14 @@ impl CodecBackend for FcstdCodec {
                 &logical_ledger,
                 physical_byte_len,
             )?;
-            fidelity::layout(ctx, &mut source_fidelity, "byte-coverage", &coverage)?;
+            source_fidelity.insert_freecad_ledgers(
+                archive_capture.stream().to_owned(),
+                cadmpeg_ir::source_fidelity::freecad::FreecadSourceLedgers {
+                    physical_ledger: std::mem::take(&mut scan.ledger),
+                    logical_ledger,
+                    byte_coverage: coverage,
+                },
+            )?;
             ir.native
                 .namespace_mut("fcstd")
                 .set_arena(ctx, "element_maps", &element_maps)?;
@@ -1301,7 +1313,14 @@ impl CodecBackend for FcstdCodec {
                 &[],
                 physical_byte_len,
             )?;
-            fidelity::layout(ctx, &mut source_fidelity, "byte-coverage", &coverage)?;
+            source_fidelity.insert_freecad_ledgers(
+                archive_capture.stream().to_owned(),
+                cadmpeg_ir::source_fidelity::freecad::FreecadSourceLedgers {
+                    physical_ledger: std::mem::take(&mut scan.ledger),
+                    logical_ledger: Vec::new(),
+                    byte_coverage: coverage,
+                },
+            )?;
         }
         if !ctx.container_only() {
             let objects = ir
@@ -1327,7 +1346,6 @@ impl CodecBackend for FcstdCodec {
         // is read with the schema-4 strategy on either path, so the charge is
         // not conditioned on the branch.
         losses.extend(transfer_losses);
-        let summary_notes = container::summary_notes(&scan);
         losses.extend(scan.losses);
         let dialect_losses = dialect::FcstdDialect::dialect_loss(dialects.primary());
         losses.extend(dialect_losses);
@@ -1337,8 +1355,11 @@ impl CodecBackend for FcstdCodec {
             &ir,
             &entry_sources,
             &mut source_fidelity,
+            legacy_source_evidence,
         )?);
-        fidelity::mark_unreadable(&ir, &mut source_fidelity)?;
+        if legacy_source_evidence {
+            fidelity::mark_unreadable(&ir, &mut source_fidelity)?;
+        }
         let document_digest = writer::target::document_local_sha256(ctx, &ir)?;
         source_fidelity.metadata.insert(
             cadmpeg_ir::hash::DOCUMENT_FINGERPRINT_METADATA_KEY.into(),
@@ -1350,6 +1371,9 @@ impl CodecBackend for FcstdCodec {
             "admit FCStd entities",
         )?;
         fidelity::install_layouts(ctx, &mut source_fidelity, layout_payloads, layout_pointers)?;
+        if let fidelity::b1::Admission::Complete(inventory) = source_admission {
+            inventory.finalize(ctx, &ir, &mut source_fidelity, &mut losses)?;
+        }
         let scope = ir.scope;
         Ok(Decoded {
             ir,

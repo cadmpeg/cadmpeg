@@ -12,6 +12,9 @@ use cadmpeg_ir::{
     ids::UnknownId, ArenaClasses, RetainedBytes, RetainedSourceRecord, SourceFidelity,
 };
 
+pub(crate) mod b1;
+mod owners;
+
 pub(crate) const SOURCE_IMAGE: &str = "fcstd:source:image#archive";
 
 pub(crate) fn retain(
@@ -64,32 +67,12 @@ pub(crate) fn evidence(
         .map_err(CodecError::malformed)
 }
 
-pub(crate) fn layout<T: serde::Serialize>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    fidelity: &mut SourceFidelity,
-    name: &str,
-    value: &T,
-) -> Result<(), CodecError> {
-    let bytes = serde_json::to_vec(value).map_err(CodecError::malformed)?;
-    ctx.retain_bytes(
-        cadmpeg_core::decode::u64_from_index(bytes.len()),
-        "retain FCStd source layout",
-    )?;
-    retain(
-        fidelity,
-        &crate::native::native_id("source-layout", name),
-        "fcstd:source:layout#archive",
-        0,
-        &bytes,
-        ArenaClasses::new(),
-    )
-}
-
 pub(crate) fn property(
     ctx: &crate::property_reader::PropertyReader<'_, '_>,
     fidelity: &mut SourceFidelity,
     property: &crate::native::PropertyRecord,
     objects: &[crate::native::ObjectRecord],
+    legacy_evidence: bool,
 ) -> Result<Option<cadmpeg_ir::ArenaClass>, CodecError> {
     let opaque = crate::persistence::opaque_python_payload(property);
     let mut classes = ArenaClasses::new();
@@ -108,17 +91,19 @@ pub(crate) fn property(
     if opaque || matches!(property.body, crate::native::PropertyBody::Unreadable(_)) {
         classes.insert(class);
     }
-    let range = ctx.source_range(property)?.ok_or_else(|| {
-        CodecError::malformed("source classification requires an original property range")
-    })?;
-    evidence(
-        fidelity,
-        &property.id,
-        "Document.xml",
-        cadmpeg_core::decode::u64_from_index(range.start),
-        ctx.property_xml(property)?.as_bytes(),
-        classes,
-    )?;
+    if legacy_evidence {
+        let range = ctx.source_range(property)?.ok_or_else(|| {
+            CodecError::malformed("source classification requires an original property range")
+        })?;
+        evidence(
+            fidelity,
+            &property.id,
+            "Document.xml",
+            cadmpeg_core::decode::u64_from_index(range.start),
+            ctx.property_xml(property)?.as_bytes(),
+            classes,
+        )?;
+    }
     Ok(opaque.then_some(class))
 }
 

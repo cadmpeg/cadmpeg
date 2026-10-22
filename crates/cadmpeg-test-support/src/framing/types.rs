@@ -3,7 +3,7 @@
 
 use std::ops::Range;
 
-use cadmpeg_core::decode::{DecodeContext, PartCapture, View, XmlElementScan, u64_from_index};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, PartCapture, View, XmlElementScan};
 use cadmpeg_ir::source_fidelity::parts::{PartLevel, PartSpec};
 
 /// Index-based containment in a parent-first frame inventory.

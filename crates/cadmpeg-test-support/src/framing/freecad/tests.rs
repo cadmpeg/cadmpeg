@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::frame_xml_member;
 use crate::framing::{FrameParent, FramedPart, PartTable};
-use crate::zip_fixture::{RawEntry, archive};
+use crate::zip_fixture::{archive, RawEntry};
 use cadmpeg_core::decode::{
     ByteRange, DecodeArena, DecodeContext, DecodePolicy, View, XmlTermination,
 };
@@ -130,12 +130,10 @@ fn missing_source_parent_proof_cannot_waive_table_or_sibling_rules() {
         )
         .expect("bounded leaf");
         let old = std::mem::replace(&mut frames[leaf], no_proof);
-        assert!(
-            PartTable::load()
-                .expect("table")
-                .validate(ctx, frames)
-                .is_err()
-        );
+        assert!(PartTable::load()
+            .expect("table")
+            .validate(ctx, frames)
+            .is_err());
         frames[leaf] = old;
         let owner = frames[leaf].xml_containment().expect("proof").owner;
         // The same real XML proof cannot claim that the more distant owner is
@@ -152,12 +150,10 @@ fn missing_source_parent_proof_cannot_waive_table_or_sibling_rules() {
         .with_xml_parent(ctx, reached.scan(), leaf_node, owner)
         .expect("actual leaf proof");
         frames[leaf] = wrong_parent;
-        assert!(
-            PartTable::load()
-                .expect("table")
-                .validate(ctx, frames)
-                .is_err()
-        );
+        assert!(PartTable::load()
+            .expect("table")
+            .validate(ctx, frames)
+            .is_err());
         assert_ne!(parent, owner);
     });
 }
@@ -190,20 +186,18 @@ fn damaged_and_unsupported_terminated_property_parts_preserve_later_sibling_boun
                 .count(),
             3
         );
-        assert!(
-            ctx.parse_xml(
+        assert!(ctx
+            .parse_xml(
                 std::str::from_utf8(properties[1].view().window()).expect("literal ASCII"),
                 "damaged property"
             )
-            .is_err()
-        );
-        assert!(
-            ctx.parse_xml(
+            .is_err());
+        assert!(ctx
+            .parse_xml(
                 std::str::from_utf8(properties[2].view().window()).expect("literal ASCII"),
                 "later property"
             )
-            .is_ok()
-        );
+            .is_ok());
     });
 }
 
@@ -217,14 +211,12 @@ fn cut_short_elements_stay_cut_short_and_do_not_claim_decode_success() {
             reached.scan().elements()[0].termination(),
             XmlTermination::EndOfInput
         );
-        assert!(
-            reached
-                .scan()
-                .elements()
-                .iter()
-                .any(|node| node.name().window() == b"Value"
-                    && node.termination() == XmlTermination::AncestorBoundary)
-        );
+        assert!(reached
+            .scan()
+            .elements()
+            .iter()
+            .any(|node| node.name().window() == b"Value"
+                && node.termination() == XmlTermination::AncestorBoundary));
         assert_eq!(
             frames
                 .iter()
@@ -304,11 +296,9 @@ fn declared_owner_must_be_a_real_ancestor_not_a_prior_matching_level() {
         .with_xml_parent(ctx, reached.scan(), leaf_node, first)
         .expect("real physical parent proof");
         frames[leaf] = false_owner;
-        assert!(
-            PartTable::load()
-                .expect("table")
-                .validate(ctx, frames)
-                .is_err()
-        );
+        assert!(PartTable::load()
+            .expect("table")
+            .validate(ctx, frames)
+            .is_err());
     });
 }

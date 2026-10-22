@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::ops::Range;
 
-use cadmpeg_core::decode::{DecodeContext, SourceOrigin, SourceStream, View, index_from_u64};
+use cadmpeg_core::decode::{index_from_u64, DecodeContext, SourceOrigin, SourceStream, View};
 use cadmpeg_ir::source_fidelity::parts::PartFraming;
 
 use super::types::{same_extent, subtract_ranges};

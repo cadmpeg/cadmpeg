@@ -28,7 +28,7 @@ const NAMESPACE: LossNamespace<'static> = match LossNamespace::new("sat") {
 /// string form (via [`SatLossCode::code`]) is the stable contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum SatLossCode {
-    /// The stream framed but decoded no surfaces, points, or faces.
+    /// A framed stream holds entity records but decoded no surfaces, points, or faces.
     GeometryFramedWithoutCarriers,
     /// A face rests on a procedural surface construction without a decoded carrier.
     GeometryProceduralSurfaceUntyped,

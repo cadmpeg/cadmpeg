@@ -52,6 +52,7 @@ const TCODE_HISTORY: u32 = 0x1000_0026;
 const TCODE_USER: u32 = 0x1000_0017;
 
 const TCODE_OBJECT_RECORD: u32 = 0x2000_8070;
+const TCODE_OBJECT_RECORD_HISTORY: u32 = 0x0200_8074;
 const TCODE_USER_TABLE_UUID: u32 = 0x2000_8080;
 const TCODE_USER_TABLE_RECORD_HEADER: u32 = 0x2000_8082;
 const TCODE_BITMAP_RECORD: u32 = 0x2000_8090;
@@ -274,6 +275,91 @@ pub(crate) struct Scan<'a> {
     pub(crate) warnings: Diagnostics,
     /// Typed metadata decoded from property, setting, and layer records.
     pub(crate) metadata: crate::settings::DocumentMetadata,
+}
+
+impl Scan<'_> {
+    pub(crate) fn content_scope(&self, ir: &CadIr) -> cadmpeg_ir::ContentScope {
+        let model_part = self
+            .tables
+            .iter()
+            .any(|table| match table_base(table.typecode) {
+                TCODE_BITMAP
+                | TCODE_TEXTURE_MAPPING
+                | TCODE_MATERIAL
+                | TCODE_LINETYPE
+                | TCODE_LAYER
+                | TCODE_OBSOLETE_LAYERSET
+                | TCODE_GROUP
+                | TCODE_FONT
+                | TCODE_DIMSTYLE
+                | TCODE_LIGHT
+                | TCODE_HATCH_PATTERN
+                | TCODE_INSTANCE_DEFINITION
+                | TCODE_OBJECTS => true,
+                TCODE_PROPERTIES => table.records.iter().any(|record| {
+                    matches!(
+                        record.typecode,
+                        TCODE_REVISION_HISTORY
+                            | TCODE_NOTES
+                            | TCODE_PREVIEW
+                            | TCODE_APPLICATION
+                            | TCODE_COMPRESSED_PREVIEW
+                    )
+                }),
+                TCODE_SETTINGS => table
+                    .records
+                    .iter()
+                    .any(|record| expected_record(TCODE_SETTINGS, record.typecode)),
+                _ => false,
+            });
+        let design_part = self
+            .tables
+            .iter()
+            .any(|table| table_base(table.typecode) == TCODE_HISTORY)
+            || self
+                .objects
+                .iter()
+                .any(|object| self.object_history_part(object));
+        scope_from_parts(ir, model_part, design_part)
+    }
+
+    fn object_history_part(&self, object: &ObjectRecord) -> bool {
+        let range = object.range();
+        let Ok(record) = chunk_at(self.data, range.start, range.end, self.archive, false) else {
+            return false;
+        };
+        let mut offset = record.body().start;
+        while offset < record.body().end {
+            let Ok(child) = chunk_at(self.data, offset, record.body().end, self.archive, false)
+            else {
+                return false;
+            };
+            if child.typecode == TCODE_OBJECT_RECORD_HISTORY {
+                return true;
+            }
+            offset = child.next_offset();
+        }
+        false
+    }
+}
+
+pub(crate) fn scope_from_parts(
+    ir: &CadIr,
+    model_part: bool,
+    design_part: bool,
+) -> cadmpeg_ir::ContentScope {
+    cadmpeg_ir::ContentScope {
+        model: model_part
+            || ir
+                .model
+                .populated_arena(cadmpeg_ir::ArenaClass::Model)
+                .is_some(),
+        design: design_part
+            || ir
+                .model
+                .populated_arena(cadmpeg_ir::ArenaClass::Design)
+                .is_some(),
+    }
 }
 
 /// Borrows the session root bytes after the shared input budget admitted them.
@@ -1610,7 +1696,8 @@ pub(crate) fn container_only_result(
         losses.push(loss);
     }
     let mut ir = CadIr::decoded(source_meta(primary, SourceMetaDetail::ContainerOnly(scan))?);
-    ir.scope = cadmpeg_ir::ContentScope::container();
+    let scope = scan.content_scope(&ir);
+    ir.scope = scope;
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
     let mut untyped = cadmpeg_ir::ArenaClasses::new();
     if !scan.objects.is_empty() || !scan.opaque_records.is_empty() {
@@ -1638,7 +1725,7 @@ pub(crate) fn container_only_result(
         ir,
         body: DecodeBody {
             transfer: cadmpeg_ir::report::decode::DecodeTransfer {
-                scope: cadmpeg_ir::ContentScope::container(),
+                scope,
                 geometry_transferred: false,
             },
             coverage: cadmpeg_ir::report::decode::Coverage::default(),

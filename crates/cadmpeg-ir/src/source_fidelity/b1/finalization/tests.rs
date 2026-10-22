@@ -368,7 +368,8 @@ fn composition_moves_only_the_exact_owner_classified_map_admitted_by_its_proof()
     let proof = fidelity
         .rescope_part_tree(&ctx, crate::CodecFormat::F3d, "f3d:xref/A/")
         .unwrap();
-    let (_, _, _, _, _, coverage) = fidelity.into_parts();
+    let (_, _, _, _, _, coverage, freecad_ledgers) = fidelity.into_parts();
+    assert!(freecad_ledgers.is_empty());
     let mut destination = SourceFidelity::default();
     proof
         .append_b1_coverage(&mut destination, coverage)

@@ -149,3 +149,52 @@ fn record_layout_rescoping_preserves_alias_reads_pointers_and_payloads() {
     assert_eq!(scoped.payloads(), layout.payloads());
     assert!(!output.record_layout().contains_key(ID));
 }
+
+#[test]
+fn whole_source_ledger_streams_follow_retained_streams_exactly_once() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_ir::source_fidelity::freecad::FreecadSourceLedgers;
+
+    let facts = serde_json::json!({
+        "physical_ledger":[{"id":"fcstd:native:span#0","start":0,"end":3,"role":"compressed-payload","entry":"模型.bin"}],
+        "logical_ledger":[{"id":"fcstd:native:logical-span#0","entry":"模型.bin","start":0,"end":3,"classification":"named_opaque","owner":"fcstd:native:property#Pad:Payload"}],
+        "byte_coverage":{"id":"fcstd:native:coverage#0","physical_byte_len":3,"physical_span_count":1,"logical_entry_count":1,"logical_byte_len":3,"logical_span_count":1,"classification_bytes":{"named_opaque":3},"named_opaque_entries":["模型.bin"],"exact":true}
+    });
+    let mut input = source("member");
+    input
+        .insert_freecad_ledgers(
+            "member".into(),
+            serde_json::from_value::<FreecadSourceLedgers>(facts.clone()).unwrap(),
+        )
+        .unwrap();
+    let direct = rescope_fidelity(input.clone(), "part/0", Default::default()).unwrap();
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(b"abc", &arena, &policy).unwrap();
+    let ids = input
+        .rescope_part_tree(&ctx, cadmpeg_ir::CodecFormat::F3d, "f3d:xref/part%2F0/")
+        .unwrap();
+    let staged = rescope_fidelity(input, "part/0", ids).unwrap();
+    assert_eq!(staged.freecad_ledgers(), direct.freecad_ledgers());
+    assert_eq!(staged.freecad_ledgers().len(), 1);
+    let expected = "f3d:xref/part%2F0/member";
+    assert_eq!(
+        serde_json::to_value(&staged.freecad_ledgers()[expected]).unwrap(),
+        facts
+    );
+    assert_eq!(
+        staged.retained_records().values().next().unwrap().stream(),
+        expected
+    );
+    let nested = rescope_fidelity(staged, "nested", Default::default()).unwrap();
+    let expected = "f3d:xref/nested/f3d:xref/part%2F0/member";
+    assert_eq!(nested.freecad_ledgers().len(), 1);
+    assert_eq!(
+        serde_json::to_value(&nested.freecad_ledgers()[expected]).unwrap(),
+        facts
+    );
+    assert_eq!(
+        nested.retained_records().values().next().unwrap().stream(),
+        expected
+    );
+}

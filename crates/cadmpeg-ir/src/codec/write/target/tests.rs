@@ -94,19 +94,24 @@ fn write_request_inherit_with_a_cross_format_source_uses_the_default() {
 }
 
 #[test]
-fn write_request_inherit_refuses_a_same_format_unrecorded_source() {
+fn write_request_inherit_defaults_a_same_format_unrecorded_source() {
     let ir = catalog_write_ir(Some(("test", None)));
-    let error =
-        resolve_write_request(&ir, TargetRequest::Inherit, CATALOG_WRITE_CATALOG).unwrap_err();
-
-    let CodecError::UnsupportedTarget(refusal) = error else {
-        panic!("an unrecorded same-format source must produce a target refusal")
-    };
-    assert_eq!(
-        serde_json::to_value(&refusal).expect("serialize refusal")["refusal"]["kind"],
-        "unrecorded_source"
-    );
-    assert_eq!(refusal.format(), "test");
+    let resolved = resolve_write_request(&ir, TargetRequest::Inherit, CATALOG_WRITE_CATALOG)
+        .expect("§5.0 selects the catalog default for an unrecorded dialect");
+    assert_eq!(resolved.entry().unwrap().id.as_str(), "test:new");
+    assert_eq!(resolved.target_id().as_str(), "test:new");
+    assert!(matches!(
+        resolved.target(),
+        super::ResolvedTarget::Default {
+            source: cadmpeg_core::target::DefaultSource::UnrecordedDialect,
+            ..
+        }
+    ));
+    assert!(resolved.has_same_format_source());
+    assert!(!resolved.preserves_source());
+    assert!(!resolved.source_preservation_eligible());
+    assert_eq!(resolved.displaced_source(), None);
+    assert_eq!(resolved.displacement_message().as_deref(), Some("the unrecorded same-format source dialect was displaced by target dialect test:new; the source dialect identity is not preserved"));
 }
 
 #[test]
@@ -174,3 +179,5 @@ fn catalog_write_explicit_difference_returns_the_displaced_dialect() {
         )
     );
 }
+
+mod fallback;

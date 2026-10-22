@@ -407,7 +407,7 @@ fn gui_state_xml_and_offsets_leave_native_records_without_losing_empty_or_nested
     )
     .unwrap();
     for (state, raw) in graph.documents[0].states.iter().zip(expected) {
-        let span = ledger.iter().find(|span| matches!(&span.classification, crate::native::LogicalClassification::Typed { owner } if owner == &state.id)).unwrap();
+        let span = ledger.iter().find(|span| matches!(&span.classification, cadmpeg_ir::source_fidelity::freecad::LogicalClassification::Typed { owner } if owner == &state.id)).unwrap();
         assert_eq!(
             span.span.start(),
             u64::try_from(xml.find(raw).unwrap()).unwrap()
@@ -590,7 +590,7 @@ fn gui_property_wrappers_move_to_real_layouts_with_nested_values_empty_payload_a
     )
     .unwrap();
     for (property, raw) in graph.properties.iter().zip(expected) {
-        let span = ledger.iter().find(|span| matches!(&span.classification, crate::native::LogicalClassification::NamedOpaque { owner } if owner == &property.id)).unwrap();
+        let span = ledger.iter().find(|span| matches!(&span.classification, cadmpeg_ir::source_fidelity::freecad::LogicalClassification::NamedOpaque { owner } if owner == &property.id)).unwrap();
         assert_eq!(
             span.span.start(),
             u64::try_from(xml.find(raw).unwrap()).unwrap()

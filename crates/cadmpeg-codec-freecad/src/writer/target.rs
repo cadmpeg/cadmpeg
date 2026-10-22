@@ -86,16 +86,25 @@ pub(crate) fn plan(
             reason = Some("the retained typed document layout is unavailable".into());
         }
     }
+    let synthesis = resolved.for_synthesis()?;
+    let resolved = synthesis.resolution();
     let schema = if *resolved.target_id() == crate::dialect::FcstdDialect::Schema2.id() {
         "2"
     } else if *resolved.target_id() == crate::dialect::FcstdDialect::Schema3.id() {
         "3"
-    } else if *resolved.target_id() == crate::dialect::FcstdDialect::Schema4.id() {
-        "4"
     } else {
-        return Err(resolved.unavailable("the target has no FCStd document vocabulary"));
+        debug_assert_eq!(
+            *resolved.target_id(),
+            crate::dialect::FcstdDialect::Schema4.id(),
+            "FreeCAD catalog rows match schema grammars"
+        );
+        "4"
     };
     let mut body = super::synthesis::write(input.ir, schema)?;
+    if let Some(message) = resolved.displacement_message() {
+        body.losses
+            .push(crate::loss::FreecadLossCode::SourceDialectDisplaced.note(message));
+    }
     if let Some(reason) = reason {
         body.synthesis_cause =
             Some(cadmpeg_ir::codec::write::SynthesisCause::PatchDeclined { reason });

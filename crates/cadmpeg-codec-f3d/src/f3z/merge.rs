@@ -344,7 +344,8 @@ fn rescope_fidelity(
     part_ids_owned: PartIdentityMap,
 ) -> Result<SourceFidelity, CodecError> {
     let part_ids = &part_ids_owned;
-    let (mut annotations, records, metadata, layouts, parts, b1_spans) = source.into_parts();
+    let (mut annotations, records, metadata, layouts, parts, b1_spans, freecad_ledgers) =
+        source.into_parts();
     part_ids.validate_rescoped_tree(&parts)?;
     annotations
         .map_ids(|id| match rescope(id, occurrence, part_ids) {
@@ -387,6 +388,11 @@ fn rescope_fidelity(
                 .map_err(CodecError::malformed)?;
 
         rescoped.insert_retained_record(id, record.with_owner(stream))?;
+    }
+    for (stream, ledgers) in freecad_ledgers {
+        let stream = cadmpeg_ir::StreamName::try_from(format!("{}{}", owner.as_str(), stream))
+            .map_err(CodecError::malformed)?;
+        rescoped.insert_freecad_ledgers(stream.into(), ledgers)?;
     }
     rescoped.append_part_tree(parts)?;
     part_ids_owned.append_b1_coverage(&mut rescoped, b1_spans)?;

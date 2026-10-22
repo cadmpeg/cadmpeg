@@ -361,11 +361,13 @@ fn ledger_spans_reject_empty_and_reversed_wire_intervals() {
         let physical = serde_json::json!({"id":"span", "start":start, "end":end, "role":"end-record", "entry":null});
         let logical = serde_json::json!({"id":"span", "entry":"Document.xml", "start":start, "end":end, "classification":"structural", "owner":null});
         assert_eq!(
-            serde_json::from_value::<super::ArchiveSpan>(physical).is_ok(),
+            serde_json::from_value::<cadmpeg_ir::source_fidelity::freecad::ArchiveSpan>(physical)
+                .is_ok(),
             valid
         );
         assert_eq!(
-            serde_json::from_value::<super::LogicalSpan>(logical).is_ok(),
+            serde_json::from_value::<cadmpeg_ir::source_fidelity::freecad::LogicalSpan>(logical)
+                .is_ok(),
             valid
         );
     }
@@ -702,7 +704,10 @@ fn archive_and_logical_spans_write_their_role_and_owner() {
         let wire = serde_json::json!({
             "id": "span", "start": 0, "end": 4, "role": role, "entry": entry
         });
-        let record = serde_json::from_value::<super::ArchiveSpan>(wire.clone()).unwrap();
+        let record = serde_json::from_value::<cadmpeg_ir::source_fidelity::freecad::ArchiveSpan>(
+            wire.clone(),
+        )
+        .unwrap();
         assert_eq!(serde_json::to_value(record).unwrap(), wire);
     }
 
@@ -718,7 +723,10 @@ fn archive_and_logical_spans_write_their_role_and_owner() {
             "id": "span", "entry": "Document.xml", "start": 0, "end": 4,
             "classification": classification, "owner": owner
         });
-        let record = serde_json::from_value::<super::LogicalSpan>(wire.clone()).unwrap();
+        let record = serde_json::from_value::<cadmpeg_ir::source_fidelity::freecad::LogicalSpan>(
+            wire.clone(),
+        )
+        .unwrap();
         assert_eq!(serde_json::to_value(record).unwrap(), wire);
     }
 }

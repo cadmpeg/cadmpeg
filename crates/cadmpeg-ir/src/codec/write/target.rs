@@ -78,7 +78,7 @@ pub enum ResolvedTarget<'a> {
         /// The recorded same-format source dialect this row preserves.
         source: DialectId,
     },
-    /// Inheritance from an absent or foreign source took the catalog default.
+    /// Inheritance selected the catalog default for the stated source relation.
     Default {
         /// Position of `entry` in the encoder's declared catalog.
         index: usize,
@@ -103,6 +103,27 @@ pub enum ResolvedTarget<'a> {
 pub struct ResolvedWrite<'a> {
     target: ResolvedTarget<'a>,
     available: TargetCatalog,
+}
+
+/// A selected catalog grammar for a synthesized write.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SynthesisTarget<'a> {
+    resolved: ResolvedWrite<'a>,
+    index: usize,
+}
+
+impl<'a> SynthesisTarget<'a> {
+    /// The selected grammar's position in the encoder catalog.
+    #[must_use]
+    pub const fn index(&self) -> usize {
+        self.index
+    }
+
+    /// The source relation and actual target of this synthesized write.
+    #[must_use]
+    pub const fn resolution(&self) -> &ResolvedWrite<'a> {
+        &self.resolved
+    }
 }
 
 impl<'a> ResolvedWrite<'a> {
@@ -169,6 +190,10 @@ impl<'a> ResolvedWrite<'a> {
             ResolvedTarget::Explicit { entry, source, .. } => {
                 source.recorded().filter(|source| *source != &entry.id)
             }
+            ResolvedTarget::Default {
+                source: DefaultSource::OffCatalogDialect(source),
+                ..
+            } => Some(source),
             ResolvedTarget::Inherited { .. }
             | ResolvedTarget::Default { .. }
             | ResolvedTarget::Preserved { .. } => None,
@@ -178,6 +203,15 @@ impl<'a> ResolvedWrite<'a> {
     /// Describes the source-dialect displacement selected by this resolution.
     #[must_use]
     pub fn displacement_message(&self) -> Option<String> {
+        if matches!(
+            self.target,
+            ResolvedTarget::Default {
+                source: DefaultSource::UnrecordedDialect,
+                ..
+            }
+        ) {
+            return Some(format!("the unrecorded same-format source dialect was displaced by target dialect {}; the source dialect identity is not preserved", self.target_id()));
+        }
         self.displaced_source().map(|displaced| {
             format!(
                 "source dialect {displaced} was displaced by target dialect {}; the source \
@@ -195,49 +229,60 @@ impl<'a> ResolvedWrite<'a> {
         match &self.target {
             ResolvedTarget::Explicit { source, .. } => source.is_same_format(),
             ResolvedTarget::Inherited { .. } | ResolvedTarget::Preserved { .. } => true,
-            ResolvedTarget::Default { .. } => false,
+            ResolvedTarget::Default { source, .. } => matches!(
+                source,
+                DefaultSource::UnrecordedDialect | DefaultSource::OffCatalogDialect(_)
+            ),
         }
     }
 
     /// Whether preservation was eligible before codec-specific retained-image
     /// checks.
     ///
-    /// An unclassified same-format source is eligible because no contradictory
-    /// dialect is recorded. An explicit target that displaces a recorded
-    /// source dialect is not.
+    /// An explicit target with no contradictory recorded source dialect is
+    /// eligible. A default selected for an unrecorded or off-catalog inherited
+    /// source is a synthesis selection.
     #[must_use]
     pub fn source_preservation_eligible(&self) -> bool {
-        self.has_same_format_source() && self.displaced_source().is_none()
+        !matches!(self.target, ResolvedTarget::Default { .. })
+            && self.has_same_format_source()
+            && self.displaced_source().is_none()
     }
 
-    /// Builds a typed refusal when codec-specific delivery cannot realize the
-    /// already-resolved request.
-    #[must_use]
-    pub fn unavailable(&self, reason: impl Into<String>) -> CodecError {
-        let reason = reason.into();
-        let kind = match &self.target {
-            ResolvedTarget::Explicit {
-                entry, requested, ..
-            } => TargetRefusalKind::ExplicitUnavailable {
-                target: entry.id.clone(),
-                requested: TargetToken::new(*requested),
-                reason,
-            },
-            ResolvedTarget::Inherited { source, .. } | ResolvedTarget::Preserved { source } => {
-                TargetRefusalKind::InheritedUnavailable {
-                    source: source.clone(),
-                    reason,
-                }
+    /// Resolves the actual synthesis grammar after source preservation declines.
+    pub fn for_synthesis(&self) -> Result<SynthesisTarget<'a>, CodecError> {
+        let source = match &self.target {
+            ResolvedTarget::Explicit { index, .. }
+            | ResolvedTarget::Inherited { index, .. }
+            | ResolvedTarget::Default { index, .. } => {
+                return Ok(SynthesisTarget {
+                    resolved: self.clone(),
+                    index: *index,
+                });
             }
-            ResolvedTarget::Default { entry, source, .. } => {
-                TargetRefusalKind::DefaultUnavailable {
-                    target: entry.id.clone(),
-                    source: source.clone(),
-                    reason,
-                }
+            ResolvedTarget::Preserved { source } => {
+                DefaultSource::OffCatalogDialect(source.clone())
             }
         };
-        CodecError::UnsupportedTarget(Box::new(TargetRefusal::new(kind, self.available)))
+        let (index, entry) = self.available.default().ok_or_else(|| {
+            CodecError::UnsupportedTarget(Box::new(TargetRefusal::new(
+                TargetRefusalKind::NoDefault {
+                    source: source.clone(),
+                },
+                self.available,
+            )))
+        })?;
+        Ok(SynthesisTarget {
+            resolved: Self {
+                target: ResolvedTarget::Default {
+                    index,
+                    entry,
+                    source,
+                },
+                available: self.available,
+            },
+            index,
+        })
     }
 }
 
@@ -257,17 +302,42 @@ mod resolution_sealed {
 pub trait TargetResolution: resolution_sealed::Sealed {
     /// The native target identity, or `None` for the neutral document.
     fn export_target(&self) -> Option<&DialectId>;
+
+    /// The target actually authored when source preservation cannot proceed.
+    fn synthesis_target(&self) -> Result<Option<&DialectId>, CodecError>;
 }
 
 impl TargetResolution for () {
     fn export_target(&self) -> Option<&DialectId> {
         None
     }
+
+    fn synthesis_target(&self) -> Result<Option<&DialectId>, CodecError> {
+        Ok(None)
+    }
 }
 
 impl TargetResolution for ResolvedWrite<'_> {
     fn export_target(&self) -> Option<&DialectId> {
         Some(self.target_id())
+    }
+
+    fn synthesis_target(&self) -> Result<Option<&DialectId>, CodecError> {
+        if let ResolvedTarget::Preserved { source } = &self.target {
+            return self
+                .available
+                .default()
+                .map(|(_, entry)| Some(&entry.id))
+                .ok_or_else(|| {
+                    CodecError::UnsupportedTarget(Box::new(TargetRefusal::new(
+                        TargetRefusalKind::NoDefault {
+                            source: DefaultSource::OffCatalogDialect(source.clone()),
+                        },
+                        self.available,
+                    )))
+                });
+        }
+        Ok(Some(self.target_id()))
     }
 }
 
@@ -411,7 +481,19 @@ fn resolve_write_request<'a>(
                     source,
                 }
             }
-            SourceIdentity::Unrecorded => return Err(refuse(TargetRefusalKind::UnrecordedSource)),
+            SourceIdentity::Unrecorded => {
+                let source = DefaultSource::UnrecordedDialect;
+                let (index, entry) = catalog.default().ok_or_else(|| {
+                    refuse(TargetRefusalKind::NoDefault {
+                        source: source.clone(),
+                    })
+                })?;
+                ResolvedTarget::Default {
+                    index,
+                    entry,
+                    source,
+                }
+            }
             SourceIdentity::Recorded(source) => match catalog.find(source.as_str()) {
                 Some((index, entry)) => ResolvedTarget::Inherited {
                     index,

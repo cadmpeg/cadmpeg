@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode and transfer tests for text and binary ASM streams.
 
+mod framing;
+
 use cadmpeg_test_support::wire;
 
 use cadmpeg_asm::dialect::DECLARED_SAVE_FORMAT_MAJOR;
@@ -970,7 +972,10 @@ fn omitted_use_curve_interval_has_a_sat_loss_code() {
         .insert("tcoedge-use-curve-invalid-interval".into(), 1);
     let result = super::build_result(
         &ctx,
-        Some(graph),
+        Some(super::FramedStream {
+            brep: graph,
+            has_entities: true,
+        }),
         BTreeMap::new(),
         &header,
         Some(stream.terminator),

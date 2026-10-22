@@ -2142,10 +2142,11 @@ impl<'a> DecodeContext<'a> {
         let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(self.annotations);
         source_fidelity.metadata.extend(source_layout);
         let (mut ir, unknowns) = self.session.into_parts();
-        ir.scope = cadmpeg_ir::ContentScope::full();
         source_fidelity.attach_native_unknown_records(&mut ir, "rhino", unknowns, ctx)?;
         losses.extend(crate::product::project(ctx, self.scan, &mut ir)?);
         losses.extend(crate::neutral_projection::project(ctx, self.scan, &mut ir)?);
+        let scope = self.scan.content_scope(&ir);
+        ir.scope = scope;
         ir.finalize();
         source_fidelity.retain_unknown_records("rhino", self.opaque_records)?;
         let primary = crate::container::dialect_match(self.scan);
@@ -2176,7 +2177,7 @@ impl<'a> DecodeContext<'a> {
             ir,
             body: DecodeBody {
                 transfer: cadmpeg_ir::report::decode::DecodeTransfer {
-                    scope: cadmpeg_ir::ContentScope::full(),
+                    scope,
                     geometry_transferred: self.geometry_transferred,
                 },
                 coverage: cadmpeg_ir::report::decode::Coverage::default(),

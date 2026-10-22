@@ -507,9 +507,14 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         ),
         b"payload"
     );
-    let ledger = namespace
-        .arena_as::<crate::native::LogicalSpan>("logical_ledger")
-        .expect("logical ledger");
+    let ledger = result
+        .source_fidelity()
+        .freecad_ledgers()
+        .values()
+        .next()
+        .expect("FCStd source ledgers")
+        .logical_ledger
+        .clone();
     for entry in &entries {
         let mut spans = ledger
             .iter()
@@ -539,9 +544,14 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     assert!(ledger.iter().any(|span| {
         span.entry == "Document.xml" && span.classification.as_str() == "structural"
     }));
-    let coverage = namespace
-        .arena_as::<crate::native::ByteCoverageRecord>("byte_coverage")
-        .expect("byte coverage");
+    let coverage = vec![result
+        .source_fidelity()
+        .freecad_ledgers()
+        .values()
+        .next()
+        .expect("FCStd source ledgers")
+        .byte_coverage
+        .clone()];
     assert_eq!(coverage.len(), 1);
     assert!(coverage[0].exact);
     assert_eq!(coverage[0].logical_entry_count, entries.len());
