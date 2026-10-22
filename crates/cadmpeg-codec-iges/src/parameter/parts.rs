@@ -65,10 +65,6 @@ pub(crate) fn assemble(
                                 .iter()
                                 .filter(|owner| unclaimed || !owner.cards.is_empty())
                             {
-                                ctx.retain_bytes(
-                                    u64_from_index(size_of::<u32>()),
-                                    "IGES Parameter part owner attribution",
-                                )?;
                                 section_given_up.insert(owner.entry.sequence);
                             }
                             return Err(CodecError::malformed(if unclaimed {
@@ -88,12 +84,6 @@ pub(crate) fn assemble(
                         &mut source_parts,
                         source_points.as_ref(),
                     )?;
-                    if matches!(&parsed, ParsedOwned::GivenUp) {
-                        ctx.retain_bytes(
-                            u64_from_index(size_of::<u32>()),
-                            "IGES Parameter part owner attribution",
-                        )?;
-                    }
                     Ok(parsed)
                 },
             )
@@ -136,7 +126,7 @@ fn parse_owned(
         if defect != ParameterDefect::OwnershipConflict || !source_parts.located(extent) {
             return super::parse_legacy_owned(owned, lines, global);
         }
-        if !source_parts.claim(ctx, extent)? {
+        if !source_parts.claim(extent) {
             return Ok(ParsedOwned::GivenUp);
         }
     }
@@ -286,10 +276,6 @@ impl ConflictParts {
                     *end = None;
                 }
             } else {
-                ctx.retain_bytes(
-                    u64_from_index(size_of::<(usize, Option<usize>)>()),
-                    "IGES Parameter source address",
-                )?;
                 ends.insert(extent.start(), Some(extent.end()));
             }
         }
@@ -318,16 +304,8 @@ impl ConflictParts {
         self.ends.get(&extent.start()) == Some(&Some(extent.end()))
     }
 
-    fn claim(&mut self, ctx: &DecodeContext<'_>, extent: View<'_>) -> Result<bool, CodecError> {
-        if self.reached.contains(&extent.start()) {
-            return Ok(false);
-        }
-        ctx.retain_bytes(
-            u64_from_index(size_of::<usize>()),
-            "IGES reached Parameter source part",
-        )?;
-        self.reached.insert(extent.start());
-        Ok(true)
+    fn claim(&mut self, extent: View<'_>) -> bool {
+        self.reached.insert(extent.start())
     }
 }
 
@@ -510,13 +488,15 @@ fn spec(name: &str, framing: Vec<Range<u64>>) -> Result<PartSpec, CodecError> {
     Ok(PartSpec::new(level, framing))
 }
 
+/// Push parser working storage. It is not retained bytes
+/// (`docs/decode-resource-caps.md`, "Retained bytes"); the input length bounds
+/// it.
 fn append_parameter_item<T>(
     ctx: &DecodeContext<'_>,
     out: &mut Vec<T>,
     value: T,
 ) -> Result<(), CodecError> {
     let bytes = u64_from_index(size_of::<T>());
-    ctx.retain_bytes(bytes, "IGES Parameter parser storage")?;
     out.try_reserve(1).map_err(|_| {
         ResourceLimit::allocation_failed(
             ResourceDimension::RetainedBytes,

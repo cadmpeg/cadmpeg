@@ -227,13 +227,15 @@ fn spec(name: &str, framing: Vec<Range<u64>>) -> Result<PartSpec, CodecError> {
     Ok(PartSpec::new(level, framing))
 }
 
+/// Push parser working storage. It is not retained bytes
+/// (`docs/decode-resource-caps.md`, "Retained bytes"); the input length bounds
+/// it.
 fn append_global_item<T>(
     ctx: &DecodeContext<'_>,
     out: &mut Vec<T>,
     value: T,
 ) -> Result<(), CodecError> {
     let bytes = u64_from_index(size_of::<T>());
-    ctx.retain_bytes(bytes, "IGES Global parser storage")?;
     out.try_reserve(1).map_err(|_| {
         ResourceLimit::allocation_failed(
             ResourceDimension::RetainedBytes,
