@@ -409,7 +409,7 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Conflict.** Assuming a 180° turn about either in-plane axis, or applying the angle with the aligned sign, states a relation no sample shows.
 
-### DR-90. Current revision of a component definition
+### DR-92. Current revision of a component definition
 
 **Question.** When a component definition is stored as revisions, each binding its own context UUID, which revision is current?
 

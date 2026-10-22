@@ -370,6 +370,53 @@ pub(crate) struct StreamComponents {
     pub(crate) revised_definitions: usize,
 }
 
+impl StreamComponents {
+    /// Bind each definition frame to the naming space of its earliest
+    /// binding. A later revision's binding selects the same naming space and
+    /// is counted in `revised_definitions`.
+    fn bind_definitions<'a>(
+        &mut self,
+        definitions: impl IntoIterator<
+            Item = (u64, &'a crate::records::recipes::DesignComponentNamingSpace),
+        >,
+    ) {
+        let mut root_offsets = std::collections::BTreeMap::<u64, u64>::new();
+        for (frame_entity, space) in definitions {
+            if let Some(earlier) = root_offsets.get(&frame_entity) {
+                self.revised_definitions += 1;
+                if *earlier < space.byte_offset {
+                    continue;
+                }
+            }
+            root_offsets.insert(frame_entity, space.byte_offset);
+            self.roots.insert(
+                frame_entity,
+                ComponentDefinition {
+                    root_entity: space.component_record_index,
+                    context_uuid: space.context_uuid.clone(),
+                    name: space.name.clone(),
+                },
+            );
+        }
+    }
+}
+
+/// The loss note for later component definition revisions across every
+/// Design stream, when any stream has one.
+pub(crate) fn revised_definitions_loss(
+    components: &std::collections::BTreeMap<String, StreamComponents>,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    let revised = components
+        .values()
+        .map(|components| components.revised_definitions)
+        .sum::<usize>();
+    (revised != 0).then(|| {
+        crate::loss::F3dLossCode::ComponentDefinitionRevised.note(format!(
+            "{revised} later revision(s) of component definition records bind their own context UUID; the earliest record defines each component, and every bound UUID selects its naming space."
+        ))
+    })
+}
+
 /// Join every Design stream's component definition records to their naming
 /// spaces and identify the root component. The map key is the native stream
 /// scope of the Design `BulkStream`.
@@ -399,9 +446,7 @@ pub(crate) fn decode_local_components(
             continue;
         };
         let mut components = StreamComponents::default();
-        // The earliest binding in a definition frame defines the component; a
-        // later revision's binding selects the same naming space.
-        let mut root_offsets = std::collections::BTreeMap::<u64, u64>::new();
+        let mut definitions = Vec::new();
         for space in spaces {
             components
                 .root_entities
@@ -415,22 +460,9 @@ pub(crate) fn decode_local_components(
             else {
                 continue;
             };
-            if let Some(earlier) = root_offsets.get(&frame.entity_id) {
-                components.revised_definitions += 1;
-                if *earlier < space.byte_offset {
-                    continue;
-                }
-            }
-            root_offsets.insert(frame.entity_id, space.byte_offset);
-            components.roots.insert(
-                frame.entity_id,
-                ComponentDefinition {
-                    root_entity: space.component_record_index,
-                    context_uuid: space.context_uuid.clone(),
-                    name: space.name.clone(),
-                },
-            );
+            definitions.push((frame.entity_id, space));
         }
+        components.bind_definitions(definitions);
         let mut root_components = frames
             .iter()
             .filter(|frame| {
@@ -737,5 +769,43 @@ mod tests {
         assert!(attributed_component_occurrence(&bytes, 0, "f3d:Design/BulkStream.dat").is_some());
         let bytes = attributed("34", 0, 2);
         assert!(attributed_component_occurrence(&bytes, 0, "f3d:Design/BulkStream.dat").is_none());
+    }
+
+    #[test]
+    fn earliest_definition_binding_defines_the_component() {
+        let space = |byte_offset: u64, context_uuid: &str| {
+            crate::records::recipes::DesignComponentNamingSpace {
+                id: format!(
+                    "f3d:Design/BulkStream.dat:design-component-naming-space#{byte_offset}"
+                ),
+                byte_offset,
+                component_record_index: 17,
+                context_uuid: crate::records::mesh::DesignRelaxedGuidText::try_from(
+                    context_uuid.to_owned(),
+                )
+                .unwrap(),
+                context_uuid_offset: byte_offset + 12,
+                name: Some("Feet".to_owned()),
+                name_offset: Some(byte_offset + 88),
+            }
+        };
+        let later = space(400, OCCURRENCE);
+        let earlier = space(100, COMPONENT);
+        let mut components = super::StreamComponents::default();
+        components.bind_definitions([(16, &later), (16, &earlier)]);
+        assert_eq!(components.roots[&16].context_uuid.as_str(), COMPONENT);
+        assert_eq!(components.revised_definitions, 1);
+
+        let streams = std::collections::BTreeMap::from([("f3d:Design".to_owned(), components)]);
+        let loss = super::revised_definitions_loss(&streams).expect("revision loss");
+        assert_eq!(
+            loss.code,
+            crate::loss::F3dLossCode::ComponentDefinitionRevised.kind()
+        );
+        let unrevised = std::collections::BTreeMap::from([(
+            "f3d:Design".to_owned(),
+            super::StreamComponents::default(),
+        )]);
+        assert!(super::revised_definitions_loss(&unrevised).is_none());
     }
 }

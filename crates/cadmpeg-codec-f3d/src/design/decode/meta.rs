@@ -135,22 +135,34 @@ fn insert_component_naming_space(
         .map(|(_, at)| u64::try_from(*at))
         .transpose()
         .map_err(|_| CodecError::malformed("f3d component name offset exceeds u64"))?;
+    let byte_offset = u64::try_from(marker)
+        .map_err(|_| CodecError::malformed("f3d component naming marker offset exceeds u64"))?;
+    let context_uuid_offset = u64::try_from(context_uuid_offset)
+        .map_err(|_| CodecError::malformed("f3d component naming UUID offset exceeds u64"))?;
     let bindings = by_component.entry(component_record_index).or_default();
-    if let Some((existing, _)) = bindings
+    if let Some((existing, existing_record)) = bindings
         .iter_mut()
         .find(|(existing, _)| existing.context_uuid == context_uuid)
     {
-        if existing.name.is_none() {
+        // A named hit is the binding in the definition record, so its site
+        // replaces the unnamed hit's.
+        if existing.name.is_none() && name.is_some() {
             existing.name = name.map(|(name, _)| name);
             existing.name_offset = name_offset;
+            existing.byte_offset = byte_offset;
+            existing.context_uuid_offset = context_uuid_offset;
+            existing.id =
+                design_record_id(bulk_name, ":design-component-naming-space#", byte_offset);
+            *existing_record = record;
         }
         return Ok(());
     }
     // A component definition stored as revisions, in different records that
     // repeat one record index and each carry the component's name, binds one
     // context UUID in each. Any other second UUID conflicts.
+    let new_name = name.as_ref().map(|(name, _)| name);
     let revision = |binding: &(DesignComponentNamingSpace, Option<(usize, u32)>)| {
-        binding.0.name.is_some()
+        binding.0.name.as_ref() == new_name
             && match (binding.1, record) {
                 (Some((offset, index)), Some((new_offset, new_index))) => {
                     index == new_index && offset != new_offset
@@ -164,11 +176,7 @@ fn insert_component_naming_space(
         )));
     }
 
-    let byte_offset = u64::try_from(marker)
-        .map_err(|_| CodecError::malformed("f3d component naming marker offset exceeds u64"))?;
     let id = design_record_id(bulk_name, ":design-component-naming-space#", byte_offset);
-    let context_uuid_offset = u64::try_from(context_uuid_offset)
-        .map_err(|_| CodecError::malformed("f3d component naming UUID offset exceeds u64"))?;
     bindings.push((
         DesignComponentNamingSpace {
             id,

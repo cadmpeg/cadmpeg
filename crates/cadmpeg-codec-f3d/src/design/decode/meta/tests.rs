@@ -493,26 +493,31 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
         out.extend_from_slice(class_tag);
         out.extend_from_slice(&record_index.to_le_bytes());
     };
-    let named = |out: &mut Vec<u8>| {
-        out.extend_from_slice(&4_u32.to_le_bytes());
-        for code_unit in "Feet".encode_utf16() {
+    let named = |out: &mut Vec<u8>, name: &str| {
+        out.extend_from_slice(
+            &(u32::try_from(name.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
+        for code_unit in name.encode_utf16() {
             out.extend_from_slice(&code_unit.to_le_bytes());
         }
         out.extend_from_slice(&[0, 0]);
     };
-    let revisions = |second_index: u32| {
+    let revisions = |second_index: u32, second_name: &str| {
         let mut bulk = Vec::new();
         header(&mut bulk, b"290", 16);
         binding(&mut bulk, 17, 3, CONTEXT_UUID);
-        named(&mut bulk);
+        named(&mut bulk, "Feet");
         header(&mut bulk, b"334", second_index);
         binding(&mut bulk, 17, 3, revised_uuid);
-        named(&mut bulk);
+        named(&mut bulk, second_name);
         header(&mut bulk, b"300", 99);
         bulk
     };
-    let decoded = with_scan(&archive(&revisions(16)), decode_component_naming_spaces)
-        .expect("one binding per revision");
+    let decoded = with_scan(
+        &archive(&revisions(16, "Feet")),
+        decode_component_naming_spaces,
+    )
+    .expect("one binding per revision");
     let mut bound = decoded
         .iter()
         .map(|space| (space.context_uuid.as_str(), space.name.as_deref()))
@@ -522,8 +527,18 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
         bound,
         [(CONTEXT_UUID, Some("Feet")), (revised_uuid, Some("Feet"))]
     );
-    // A second UUID in a record with another index is no revision.
-    assert!(with_scan(&archive(&revisions(18)), decode_component_naming_spaces).is_err());
+    // A second UUID in a record with another index, or under another name,
+    // is no revision.
+    assert!(with_scan(
+        &archive(&revisions(18, "Feet")),
+        decode_component_naming_spaces
+    )
+    .is_err());
+    assert!(with_scan(
+        &archive(&revisions(16, "Legs")),
+        decode_component_naming_spaces
+    )
+    .is_err());
 
     let mut conflicting = Vec::new();
     binding(&mut conflicting, 17, 3, CONTEXT_UUID);
