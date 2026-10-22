@@ -4175,18 +4175,11 @@ fn procedural_pcurve_source_map(
                 "IGES procedural surface directrix {directrix} is missing"
             ))
         })?;
-    let carrier_interval = match procedural
-        .record_bounds()
-        .map(cadmpeg_ir::geometry::RecordBounds::get)
-    {
-        Some([Some(start), Some(end), _, _]) if start < end => [start, end],
-        Some(_) => {
-            return Err(CodecError::malformed(
-                "IGES procedural surface parameter bounds are invalid",
-            ));
-        }
-        None => fallback_interval,
-    };
+    let geometry = flatten_curve(source_curve.geometry.solved().ok_or_else(|| {
+        CodecError::UnsupportedContent("IGES curve carrier has no solved geometry".into())
+    })?)?;
+    let carrier_interval =
+        construction_carrier_interval(ir, directrix, &geometry, procedural, fallback_interval)?;
     let mut u_map;
     let mut v_map = (1.0, 0.0);
     match procedural.definition() {
@@ -5234,35 +5227,34 @@ fn construction_carrier_interval(
     procedural: &cadmpeg_ir::geometry::ProceduralSurface,
     fallback: [f64; 2],
 ) -> Result<[f64; 2], CodecError> {
-    if let Some(range) = ir
-        .model
-        .curves
-        .iter()
-        .find(|curve| curve.id == *directrix)
-        .and_then(|curve| curve.parameter_range)
-    {
-        return Ok(range.endpoints());
-    }
-    if matches!(
-        geometry,
-        CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
-    ) {
-        return if ir
-            .model
-            .edges
-            .iter()
-            .any(|edge| edge.curve() == Some(directrix))
-        {
-            curve_reference_span(ir, directrix, geometry).map(|span| span.range.get())
-        } else {
-            Ok(fallback)
-        };
-    }
     match procedural
         .record_bounds()
         .map(cadmpeg_ir::geometry::RecordBounds::get)
     {
-        None => Ok(fallback),
+        None => {
+            if let Some(range) = ir
+                .model
+                .curves
+                .iter()
+                .find(|curve| curve.id == *directrix)
+                .and_then(|curve| curve.parameter_range)
+            {
+                return Ok(range.endpoints());
+            }
+            if matches!(
+                geometry,
+                CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
+            ) && ir
+                .model
+                .edges
+                .iter()
+                .any(|edge| edge.curve() == Some(directrix))
+            {
+                curve_reference_span(ir, directrix, geometry).map(|span| span.range.get())
+            } else {
+                Ok(fallback)
+            }
+        }
         Some([Some(start), Some(end), _, _]) if start < end => Ok([start, end]),
         Some(_) => Err(CodecError::Malformed(
             "IGES procedural surface directrix bounds are invalid".into(),
