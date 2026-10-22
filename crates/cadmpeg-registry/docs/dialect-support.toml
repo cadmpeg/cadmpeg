@@ -84,7 +84,7 @@ scored = [
 ]
 
 [format.step]
-level = 9
+level = 8
 scored = [
   "step:ap203-e1",
   "step:ap203-e2",
