@@ -11,7 +11,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::codec::DecodeLossCode;
 use crate::document::ArenaClasses;
+use crate::ids::UnknownId;
 use crate::report::loss::LossNote;
+use crate::source_fidelity::parts::{PartRecord, PartState};
 use crate::{SourceFidelity, SourceProvenance, StreamName};
 
 use super::classification::{ClassificationIndex, ClassifiedSpan};
@@ -136,14 +138,54 @@ impl<'a> LossKey<'a> {
     }
 }
 
+/// Source extents that name every span they contain.
+///
+/// Entries are sorted by group and start. `reach[i]` is the largest end among
+/// the entries of entry `i`'s group up to `i`, so one binary search finds
+/// whether some entry with a start at or before a span's start reaches its end.
+struct Containers<K> {
+    entries: Vec<(K, u64, u64)>,
+    reach: Vec<u64>,
+}
+
+impl<K: Ord + Copy> Containers<K> {
+    fn new(ctx: &DecodeContext<'_>, mut entries: Vec<(K, u64, u64)>) -> Result<Self, CodecError> {
+        entries.sort_unstable();
+        let mut reach = Vec::new();
+        reserve(ctx, &mut reach, entries.len())?;
+        for (index, &(group, _, end)) in entries.iter().enumerate() {
+            let previous = index
+                .checked_sub(1)
+                .filter(|&previous| entries[previous].0 == group)
+                .map_or(0, |previous| reach[previous]);
+            reach.push(previous.max(end));
+        }
+        Ok(Self { entries, reach })
+    }
+
+    fn contains(&self, group: K, start: u64, end: u64) -> bool {
+        let after = self
+            .entries
+            .partition_point(|&(key, first, _)| (key, first) <= (group, start));
+        after
+            .checked_sub(1)
+            .is_some_and(|last| self.entries[last].0 == group && self.reach[last] >= end)
+    }
+}
+
 struct LossIndex<'a> {
     keys: Vec<LossKey<'a>>,
+    // #215 §4.5 rule 3: a part's `record.unreadable` loss alone names every
+    // span inside the given-up part, including spans that its framing splits.
+    unreadable: Containers<(&'a str, &'a str)>,
+    given_up: Containers<&'a str>,
 }
 
 impl<'a> LossIndex<'a> {
     fn new(
         ctx: &DecodeContext<'_>,
         losses: impl Iterator<Item = &'a LossNote> + Clone,
+        parts: &'a BTreeMap<UnknownId, PartRecord>,
     ) -> Result<Self, CodecError> {
         let count = losses
             .clone()
@@ -152,10 +194,38 @@ impl<'a> LossIndex<'a> {
             .ok_or_else(|| CodecError::malformed("source loss index count overflows"))?;
         let mut keys = Vec::new();
         reserve(ctx, &mut keys, count)?;
-        keys.extend(losses.filter_map(LossKey::from_loss));
+        keys.extend(losses.clone().filter_map(LossKey::from_loss));
         keys.sort_unstable();
         keys.dedup();
-        Ok(Self { keys })
+        let unreadable_keys = losses
+            .filter(|loss| DecodeLossCode::RecordUnreadable.is_code_of(loss))
+            .filter_map(LossKey::from_loss);
+        let mut unreadable = Vec::new();
+        reserve(ctx, &mut unreadable, unreadable_keys.clone().count())?;
+        for key in unreadable_keys {
+            let end = key
+                .offset
+                .checked_add(key.byte_len)
+                .ok_or_else(|| CodecError::malformed("unreadable part extent overflows"))?;
+            unreadable.push(((key.format, key.stream), key.offset, end));
+        }
+        let given_up_parts = parts
+            .values()
+            .filter(|part| matches!(part.state(), PartState::GivenUp {}));
+        let mut given_up = Vec::new();
+        reserve(ctx, &mut given_up, given_up_parts.clone().count())?;
+        for part in given_up_parts {
+            let end = part
+                .offset()
+                .checked_add(part.byte_len())
+                .ok_or_else(|| CodecError::malformed("given-up part extent overflows"))?;
+            given_up.push((part.stream(), part.offset(), end));
+        }
+        Ok(Self {
+            keys,
+            unreadable: Containers::new(ctx, unreadable)?,
+            given_up: Containers::new(ctx, given_up)?,
+        })
     }
 
     fn names_span(&self, format: &str, stream: &str, span: &ClassifiedSpan) -> bool {
@@ -170,6 +240,10 @@ impl<'a> LossIndex<'a> {
                     .cmp(&(format, stream, offset, byte_len))
             })
             .is_ok()
+            || offset.checked_add(byte_len).is_some_and(|end| {
+                self.unreadable.contains((format, stream), offset, end)
+                    || self.given_up.contains(stream, offset, end)
+            })
     }
 }
 
@@ -223,8 +297,10 @@ impl SourceFidelity {
     /// Classify every actual source stream, then atomically install coverage and losses.
     ///
     /// The index supplies classes from typed document ownership. Codec adoption
-    /// supplies actual framing partitions; messages and enclosing losses cannot
-    /// substitute for exact stream, offset and length provenance.
+    /// supplies actual framing partitions. A loss names a span through exact
+    /// stream, offset and length provenance; messages cannot substitute for it.
+    /// Only a `record.unreadable` loss or a given-up part names the spans it
+    /// contains (#215 §4.5 rule 3).
     pub fn finalize_b1(
         &mut self,
         ctx: &DecodeContext<'_>,
@@ -242,7 +318,7 @@ impl SourceFidelity {
                 "B1 finalization requires every actual source stream exactly once",
             ));
         }
-        let existing_losses = LossIndex::new(ctx, losses.iter())?;
+        let existing_losses = LossIndex::new(ctx, losses.iter(), &self.parts)?;
         let mut coverage = BTreeMap::new();
         let mut additions = Vec::new();
         let missing = partitions
@@ -336,7 +412,7 @@ impl SourceFidelity {
             }
             image_classes.push(classes);
         }
-        let completed_losses = LossIndex::new(ctx, losses.iter().chain(&additions))?;
+        let completed_losses = LossIndex::new(ctx, losses.iter().chain(&additions), &self.parts)?;
         check_losses(&coverage, format, &completed_losses)?;
         drop(completed_losses);
         drop(existing_losses);
@@ -389,7 +465,7 @@ impl SourceFidelity {
                 ));
             }
         }
-        let losses = LossIndex::new(ctx, losses.iter())?;
+        let losses = LossIndex::new(ctx, losses.iter(), &self.parts)?;
         check_losses(&self.b1_spans, format, &losses)?;
         let derived: ArenaClasses = self
             .b1_spans
