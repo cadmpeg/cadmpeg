@@ -1,5 +1,5 @@
 {
-  "ir_version": "9",
+  "ir_version": "10",
   "decode_depth": "full",
   "units": {
     "length": "millimeter"
@@ -117,7 +117,7 @@
                 0.75
               ],
               "tag": "crease",
-              "sector†coefficients": [
+              "sectoç_coefficients": [
                 0.125,
                 0.875
               ]
