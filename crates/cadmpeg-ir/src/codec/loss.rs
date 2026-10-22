@@ -69,6 +69,11 @@ impl DecodeLossCode {
         .into()
     }
 
+    /// Whether `note` carries this code.
+    pub(crate) fn is_code_of(self, note: &LossNote) -> bool {
+        note.code == self.kind()
+    }
+
     /// Build a [`LossNote`] for this code with the given per-instance message.
     pub fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())

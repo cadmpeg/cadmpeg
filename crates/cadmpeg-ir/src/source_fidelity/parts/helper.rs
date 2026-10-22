@@ -426,12 +426,16 @@ impl DecodeParts for DecodeContext<'_> {
                     "{prefix} dropped={}",
                     serde_json::to_string(&dropped).map_err(CodecError::malformed)?
                 );
-                let provenance = SourceProvenance::in_stream(
+                let mut provenance = SourceProvenance::in_stream(
                     output.codec.as_str(),
                     StreamName::try_from(capture.stream().to_owned())
                         .map_err(CodecError::malformed)?,
                     capture.offset(),
                 );
+                // The loss names the part's span (#217 §5.6); an empty part has none.
+                if capture.byte_len() != 0 {
+                    provenance = provenance.with_byte_len(capture.byte_len())?;
+                }
                 replacement.push_loss(
                     self,
                     DecodeLossCode::RecordUnreadable
