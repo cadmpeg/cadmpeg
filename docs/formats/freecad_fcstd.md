@@ -1102,34 +1102,20 @@ decode as red, green, blue, and reserved low byte; the independent transparency 
 determines opacity. The effective body display fields mirror this object-level assignment.
 `ShapeAppearance` is the current shape material carrier. One material replaces the legacy shape
 color assignment, binds to every body transferred from `Shape`, and supplies diffuse color,
-transparency, four packed material colors, shininess, and UUID. Multiple materials bind in order to
-the persistent Face element-map group only when their count equals the group's indexed face count.
-If persistent face identity is absent or the counts differ, the material list remains native and
-the legacy object color remains the neutral fallback.
-Topology-color and multi-material association requires one unambiguous application property named
-`Shape`, at most one exact-shape payload for that property, and at most one element-map record for
-that payload. The final `ElementMap2` node owns the shape. A requested `Face`, `Edge`, or `Vertex`
-group occurs at most once in that node. Duplicate association candidates are malformed. Missing
-association candidates retain the native side entry or material list without a source-order choice.
-Per-face `DiffuseColor`, per-edge `LineColorArray`, and per-vertex `PointColorArray` lists are
-higher-precedence presentation layers. They are not inferred from the corresponding object color.
-Each list contains a little-endian count followed by packed-color records. A count of one applies
-its color to every member of the corresponding Face, Edge, or Vertex element-map group. FreeCAD
-accepts every other count representable by the side-entry payload and does not compare it with the
-mapped count. Neutral transfer creates indexed bindings only when the count equals the number of
-names in that ordered group. For any other count, the exact side entry remains native, the neutral
-override is withheld, and the decoder emits loss code
-`appearance.topology-color-count-mismatch`; it does not guess transient topology labels. The group
-comes only from the element map owned by the `Shape` property. Each persistent element name
-supplies the neutral topology occurrences that receive an accepted override. The resulting
-bindings explicitly record face-over-object, edge-array-over-line, or vertex-array-over-point
-precedence.
+transparency, four packed material colors, shininess, and UUID. Multiple materials correspond in
+order to the shape's indexed Face subelements. These indices belong to the saved shape topology;
+they do not require persistent element names. An element-map group can name only a subset of the
+indexed subelements, or describe ranges through child maps, so its direct name count is not the
+shape's subelement count.
 
-`ShapeAppearance` uses the same admission rule for its material records. One material is the
-uniform object appearance. Multiple materials create indexed Face bindings only when their count
-equals the mapped Face count. A different count, including zero, leaves the exact material-list
-side entry native, withholds the neutral Face override, and emits the same loss code. If persistent
-Face identity is absent, the material list remains native without choosing transient labels.
+Topology-color and multi-material association uses the application property named `Shape` and its
+exact-shape payload. Other exact-shape properties on the same object have independent subelement
+indices. Per-face `DiffuseColor`, per-edge `LineColorArray`, and per-vertex `PointColorArray` lists
+are higher-precedence presentation layers. Each list contains a little-endian count followed by
+packed-color records. An empty color list supplies no override. A count of one applies uniformly
+to the corresponding subelements. Larger lists use the saved shape's indexed Face, Edge, or Vertex
+order. `ShapeAppearance` uses the same Face order for multiple material records, with one material
+as the uniform object appearance. Persistent names are independent of these positional lists.
 
 Application data without a neutral representation retains its owning object and property,
 declared application type, links, source order, XML bytes, referenced side-entry bytes, byte spans,

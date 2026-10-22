@@ -1109,7 +1109,7 @@ impl CodecBackend for FcstdCodec {
                         objects: &graph.objects,
                         properties: &graph.properties,
                         payloads: &shape_payloads,
-                        element_maps: &element_maps,
+                        topology_occurrences: &topology_occurrences,
                         requires_alpha_conversion: gui::requires_alpha_conversion(
                             scan.document.program_version.as_deref(),
                         ),

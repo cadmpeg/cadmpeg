@@ -121,3 +121,15 @@ A face on a rectangular-trimmed surface binds to the unrestricted basis surface.
 are removed from that face's support chain, and its pcurves use the basis UV chart. This preserves
 evaluation at and outside the declared rectangle without clamping or changing pcurve coordinates.
 The bounded subset constructions and the native trim bounds remain retained independently.
+
+## Topology appearance association
+
+Face materials and face, edge, and vertex colors bind through the saved shape's ordered topology
+indices. The mapping does not require an element map and does not use the number of persistent
+names as the topology count. Each index can target all neutral occurrences of that source
+subelement. Missing indices withhold the override; they do not compact the remaining indices.
+
+An indexed list whose length differs from the transferred topology count remains native and emits
+`appearance.topology-color-count-mismatch`. An empty color list supplies no override. Empty material
+lists remain count mismatches when a shape has faces. Duplicate `Shape` properties or payloads are
+malformed; no source-order choice associates a view provider with one of them.
