@@ -501,10 +501,11 @@ fn exact_assembly_operand_path(
                         return None;
                     }
                     position += 4;
-                    // A zero word, a pair count, and per pair the u32 2 and
-                    // two occurrence identities; a zero tail has no pairs.
+                    // A typed path can end in a zero word, a pair count, and
+                    // per pair the u32 2 and two occurrence identities; a zero
+                    // tail has no pairs, and only a typed path has pairs.
                     if !bytes.get(position..limit)?.iter().all(|byte| *byte == 0) {
-                        if View::u32_le_at(bytes, position)? != 0 {
+                        if type_guid.is_none() || View::u32_le_at(bytes, position)? != 0 {
                             return None;
                         }
                         let pairs = usize::try_from(View::u32_le_at(bytes, position + 4)?).ok()?;

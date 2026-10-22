@@ -282,6 +282,14 @@ fn typed_path_reads_its_occurrence_identity_pairs() {
         .unwrap()
         .expect("typed path without pairs");
     assert!(plain.paired_occurrence_keys().is_empty());
+    // A path its class admits, not its type, has no pairs.
+    let mut untyped = bytes.clone();
+    untyped[4..7].copy_from_slice(b"390");
+    assert!(
+        exact_assembly_operand_path(&untyped, 0, 65, untyped.len(), path_link(), None)
+            .unwrap()
+            .is_none()
+    );
     let marker = bytes.len() - 4 - 72 - 8 - 4;
     bytes[marker] = 3;
     assert!(

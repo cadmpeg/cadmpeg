@@ -1440,7 +1440,6 @@ impl DesignAssemblyOperandPath {
     pub(crate) fn identity_guids(&self) -> &[Located<DesignRelaxedGuidText>] {
         &self.identity_guids
     }
-    #[cfg(test)]
     pub(crate) fn paired_occurrence_keys(&self) -> &[Located<DesignOccurrenceKey>] {
         &self.paired_occurrence_keys
     }

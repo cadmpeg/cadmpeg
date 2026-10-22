@@ -309,6 +309,7 @@ pub(crate) fn project_assembly_joints(
     let mut unprojected = 0_usize;
     let mut undecoded_motions = std::collections::BTreeSet::new();
     let mut undecoded_motion_count = 0_usize;
+    let mut paired_joints = 0_usize;
     for scope in scopes {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
@@ -316,6 +317,17 @@ pub(crate) fn project_assembly_joints(
         let motion = scope_joint_motion(scope, stream, motions);
         match project_assembly_joint(scope, stream, &occurrences, scopes, inserts, motion) {
             Ok(Some((joint, undecoded))) => {
+                let paired = scope
+                    .assembly_alignment()
+                    .and_then(|alignment| alignment.operand_path_refs())
+                    .is_some_and(|paths| {
+                        paths
+                            .iter()
+                            .any(|path| !path.paired_occurrence_keys().is_empty())
+                    });
+                if paired {
+                    paired_joints += 1;
+                }
                 if let Some(reason) = undecoded {
                     undecoded_motion_count += 1;
                     undecoded_motions.insert(reason);
@@ -331,6 +343,11 @@ pub(crate) fn project_assembly_joints(
         let reasons = undecoded_motions.into_iter().collect::<Vec<_>>().join("; ");
         losses.push(F3dLossCode::AssemblyJointMotionUndecoded.note(format!(
             "{undecoded_motion_count} Design assembly joint(s) were projected as fixed: their motion does not map to a joint kind ({reasons})."
+        )));
+    }
+    if paired_joints != 0 {
+        losses.push(F3dLossCode::AssemblyOperandPathPairsNative.note(format!(
+            "{paired_joints} projected Design assembly joint(s) have operand paths with occurrence identity pairs whose effect on the joint is not known; the pairs are retained natively."
         )));
     }
     if unprojected != 0 {
@@ -991,7 +1008,7 @@ mod tests {
                     .collect(),
             )
         };
-        let scopes = |typed: bool| {
+        let scopes = |typed: bool, paired: bool| {
             let frames = [10, 20].map(|index| DesignAssemblyOperandFrame {
                 reference_record_index: index,
                 reference_offset: 0,
@@ -1001,8 +1018,26 @@ mod tests {
                     .unwrap(),
                 transform_offset: 0,
             });
-            let qualifiers = [11, 21].map(|index| DesignAssemblyOperandQualifier::OccurrencePath {
-                path: path(index, typed).unwrap(),
+            let qualifiers = [11, 21].map(|index| {
+                let mut path = path(index, typed).unwrap();
+                if paired {
+                    path = path
+                        .with_paired_occurrence_keys(vec![
+                            crate::records::identity::Located {
+                                value: "43".to_owned().try_into().unwrap(),
+                                offset: 400,
+                            },
+                            crate::records::identity::Located {
+                                value: "33333333-3333-3333-3333-33333333333c"
+                                    .to_owned()
+                                    .try_into()
+                                    .unwrap(),
+                                offset: 410,
+                            },
+                        ])
+                        .unwrap();
+                }
+                DesignAssemblyOperandQualifier::OccurrencePath { path }
             });
             let mut scope = DesignParameterScope::empty(
                 "f3d:Design/BulkStream.dat:design-parameter-scope#3",
@@ -1025,9 +1060,21 @@ mod tests {
             vec![scope]
         };
         let inserts = crate::design::components::ComponentInserts::default();
-        let projection = super::project_assembly_joints(&scopes(true), &[], &inserts, &[]);
+        let projection = super::project_assembly_joints(&scopes(true, false), &[], &inserts, &[]);
         assert_eq!(projection.joints.len(), 1);
         assert!(projection.losses.is_empty());
+
+        // Occurrence identity pairs keep the joint and say it with a loss.
+        let projection = super::project_assembly_joints(&scopes(true, true), &[], &inserts, &[]);
+        assert_eq!(projection.joints.len(), 1);
+        assert_eq!(
+            projection
+                .losses
+                .iter()
+                .map(|loss| loss.code.clone())
+                .collect::<Vec<_>>(),
+            [crate::loss::F3dLossCode::AssemblyOperandPathPairsNative.kind()]
+        );
 
         // The class tag alone admits no external path and no untyped arity.
         assert!(path(11, false).is_err());
