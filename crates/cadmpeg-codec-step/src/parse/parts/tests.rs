@@ -122,7 +122,7 @@ fn complex_callback_preserves_real_partials_and_recovers_after_duplicate_partial
     let (failed_id, failed) = fidelity
         .parts()
         .iter()
-        .find(|(_, part)| part.state() == &PartState::GivenUp)
+        .find(|(_, part)| part.state() == &PartState::GivenUp {})
         .expect("one duplicate-partial failure");
     assert_eq!(failed.level().as_str(), "step.complex_entity_instance");
     assert_eq!(fidelity.parts().len(), 3);
@@ -210,7 +210,7 @@ fn cut_short_entities_use_real_parent_or_eof_without_synthesized_framing() {
         let stub = &stubs[0];
         let node = &fidelity.parts()[&stub.id];
         assert_eq!(node.level().as_str(), level);
-        assert_eq!(node.state(), &PartState::GivenUp);
+        assert_eq!(node.state(), &PartState::GivenUp {});
         assert_eq!(
             node.framing_bytes()
                 .iter()
