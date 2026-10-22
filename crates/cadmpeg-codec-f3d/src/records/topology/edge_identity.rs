@@ -268,14 +268,6 @@ impl DesignEdgeIdentityOperand {
             resolution_identity_id: self.resolution_identity_id,
         })
     }
-    #[cfg(test)]
-    pub(crate) fn asset_id(&self) -> &DesignRelaxedGuidText {
-        &self.asset_id
-    }
-    #[cfg(test)]
-    pub(crate) fn context_id(&self) -> &DesignRelaxedGuidText {
-        &self.context_id
-    }
     pub(crate) fn record_index(&self) -> u32 {
         self.record_index
     }
