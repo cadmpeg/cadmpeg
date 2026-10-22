@@ -788,8 +788,15 @@ pub(crate) fn face_color_definition() -> Vec<u8> {
     be16(&mut b, 15);
     b.extend_from_slice(family);
     b.extend_from_slice(&[0x00, 0x50]);
-    be32(&mut b, 2);
+    be32(&mut b, 1);
     be16(&mut b, FACE_COLOR_DEFINITION_ID);
+    be16(&mut b, 1);
+    be16(&mut b, 15);
+    be32(&mut b, 8001);
+    b.extend([0; 8]);
+    be16(&mut b, 1);
+    b.extend([0; 14]);
+    b.push(2);
     b
 }
 

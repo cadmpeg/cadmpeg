@@ -10575,3 +10575,69 @@ area = "Compound File Binary directory entry (§1)"
 reason = "The spec states the 128-byte entry size and names the fields but states no offset for any of them; the layout is the external CFB specification, not a cadmpeg finding."
 section = "1"
 anchor = "Directory entries are 128 bytes and carry a NUL-terminated UTF-16LE name"
+
+[[record]]
+name = "attribute_definition_short_refs"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/brep/attrib.rs"
+kind = "byte"
+section = "5"
+anchor = "An unchanged base-schema ATTRIB_DEF with short references has a 38-byte body prefix."
+size = 38
+endianness = "big"
+note = "Body-relative after the type tag and optional first-of-type ff. Short pointer indexes occupy two bytes. Field types follow the fixed prefix; their count is field_count."
+
+[[record.field]]
+name = "field_count"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "field_count is the number of trailing field-type bytes."
+
+[[record.field]]
+name = "node_index"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "node_index identifies the definition."
+
+[[record.field]]
+name = "next_definition"
+offset = 6
+type = "u16"
+source = "spec"
+anchor = "next_definition links the definition chain."
+
+[[record.field]]
+name = "identifier"
+offset = 8
+type = "u16"
+source = "spec"
+anchor = "identifier names the KEY containing the family name."
+
+[[record.field]]
+name = "type_id"
+offset = 10
+type = "u32"
+source = "spec"
+anchor = "type_id is the native numeric attribute type."
+
+[[record.field]]
+name = "actions"
+offset = 14
+type = "bytes[8]"
+source = "spec"
+anchor = "actions contains eight event-action bytes."
+
+[[record.field]]
+name = "field_names"
+offset = 22
+type = "u16"
+source = "spec"
+anchor = "field_names is the field-name reference."
+
+[[record.field]]
+name = "legal_owners"
+offset = 24
+type = "bytes[14]"
+source = "spec"
+anchor = "legal_owners contains fourteen Boolean owner-class fields."

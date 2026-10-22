@@ -2682,6 +2682,26 @@ Unstated regions:
 - `29..48` (19 B): Marker state, selector, and reserved bytes precede the state value.
 - `56..64` (8 B): Zero bytes before the coordinate tag.
 
+## `attribute_definition_short_refs`
+
+Spec §5 · layout: byte offsets · size: 38 B
+
+Body-relative after the type tag and optional first-of-type ff. Short pointer indexes occupy two bytes. Field types follow the fixed prefix; their count is field_count.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/brep/attrib.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `field_count` | `u32` | big | spec | field_count is the number of trailing field-type bytes. |
+| 4 | 2 | `node_index` | `u16` | big | spec | node_index identifies the definition. |
+| 6 | 2 | `next_definition` | `u16` | big | spec | next_definition links the definition chain. |
+| 8 | 2 | `identifier` | `u16` | big | spec | identifier names the KEY containing the family name. |
+| 10 | 4 | `type_id` | `u32` | big | spec | type_id is the native numeric attribute type. |
+| 14 | 8 | `actions` | `bytes[8]` | big | spec | actions contains eight event-action bytes. |
+| 22 | 2 | `field_names` | `u16` | big | spec | field_names is the field-name reference. |
+| 24 | 14 | `legal_owners` | `bytes[14]` | big | spec | legal_owners contains fourteen Boolean owner-class fields. |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

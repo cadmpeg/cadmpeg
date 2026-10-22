@@ -1424,13 +1424,27 @@ The header fields have these meanings:
   The first slot names the owner node; the next two walk that owner's
   ATTRIBUTE list; the last two walk the list for one definition.
 
-A stream declares named attribute families inline. A `00 4f` KEY node carries a
-big-endian u32 byte length, a u16 node id, and that many printable ASCII
-bytes. The immediately following `00 50` ATTRIB_DEF node carries the
-definition node id four bytes into the record. The instance's `disc` resolves
-to that definition in the same stream. Low-index system definitions may have
-no KEY name; named definitions are resolved by their stored node ids, never by
-a numeric table.
+A stream declares named attribute families through KEY and ATTRIB_DEF nodes.
+A `00 4f` KEY node carries a big-endian u32 byte length, a u16 transmit index,
+and that many printable ASCII bytes. The ATTRIB_DEF `identifier` pointer
+selects that KEY in the same stream. Adjacency does not bind a name to a
+definition. The instance's `disc` resolves to the definition by transmit
+index. Low-index system definitions can have no KEY name. Conflicting KEY
+names or definition identities do not supply a named family.
+
+An unchanged base-schema ATTRIB_DEF with short references has a 38-byte body prefix.
+The prefix follows the `00 50` tag and its optional first-of-type `ff` byte.
+field_count is the number of trailing field-type bytes.
+node_index identifies the definition.
+next_definition links the definition chain.
+identifier names the KEY containing the family name.
+type_id is the native numeric attribute type.
+actions contains eight event-action bytes.
+field_names is the field-name reference.
+legal_owners contains fourteen Boolean owner-class fields.
+The complete record includes every declared field-type byte. Field codes
+`1`, `2`, `3`, and `5` denote integer, real, character, and vector fields.
+The family name does not determine the field types.
 
 A `00 51` ATTRIBUTE instance whose u16 at body +6 is zero carries its
 definition node id at body +10 and its owner attribute at body +12. Its

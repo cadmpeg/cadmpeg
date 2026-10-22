@@ -16,6 +16,7 @@
 use cadmpeg_core::decode::View;
 use std::collections::HashMap;
 
+use crate::layout::attribute_definition_short_refs as attr_def;
 use crate::layout::attribute_instance_00_51 as attr_inst;
 
 /// Attribute family binding a face to its producing feature.
@@ -82,9 +83,29 @@ fn opens_record(buf: &[u8], at: usize) -> bool {
 /// Stream-local attribute definitions with unique names or withheld conflicts.
 type DefinitionTable = HashMap<u16, Option<String>>;
 
-/// Collect valid `KEY/ATTRIB_DEF` pairings, retaining conflicts as `None`.
+fn consistent_insert<T: PartialEq>(found: &mut HashMap<u16, Option<T>>, node: u16, value: T) {
+    match found.entry(node) {
+        std::collections::hash_map::Entry::Vacant(entry) => {
+            entry.insert(Some(value));
+        }
+        std::collections::hash_map::Entry::Occupied(mut entry) => {
+            if entry
+                .get()
+                .as_ref()
+                .is_some_and(|previous| previous != &value)
+            {
+                *entry.get_mut() = None;
+            }
+        }
+    }
+}
+
+fn short_index(buf: &[u8], at: usize) -> Option<u16> {
+    View::u16_be_at(buf, at).filter(|node| *node > 1 && *node <= i16::MAX.unsigned_abs())
+}
+
 fn definition_candidates(buf: &[u8]) -> HashMap<u16, Option<Vec<u8>>> {
-    let mut found = HashMap::<u16, Option<Vec<u8>>>::new();
+    let mut names = HashMap::new();
     for off in 0..buf.len() {
         let Some(p) = record_body(buf, off, 0x4f) else {
             continue;
@@ -92,12 +113,9 @@ fn definition_candidates(buf: &[u8]) -> HashMap<u16, Option<Vec<u8>>> {
         let Some(len) = View::u32_be_at(buf, p) else {
             continue;
         };
-        let Some(node) = View::u16_be_at(buf, p + 4) else {
+        let Some(node) = short_index(buf, p + 4) else {
             continue;
         };
-        if node <= 1 {
-            continue;
-        }
         let Some(data) = p.checked_add(6) else {
             continue;
         };
@@ -107,42 +125,62 @@ fn definition_candidates(buf: &[u8]) -> HashMap<u16, Option<Vec<u8>>> {
         let Some(len) = cadmpeg_core::decode::bounded_len(u64::from(len), 1, available) else {
             continue;
         };
-        let Some(end) = data.checked_add(len) else {
+        let Some(text) = buf.get(data..data + len) else {
             continue;
         };
-        let Some(text) = buf.get(data..end) else {
+        if text.is_empty() || text.iter().any(|byte| !byte.is_ascii_graphic()) {
+            continue;
+        }
+        consistent_insert(&mut names, node, text.to_vec());
+    }
+    let mut definitions = HashMap::new();
+    for off in 0..buf.len() {
+        let Some(p) = record_body(buf, off, 0x50) else {
             continue;
         };
-        if text.is_empty()
-            || text
-                .iter()
-                .any(|byte| !byte.is_ascii() || !byte.is_ascii_graphic())
+        let Some(node) = short_index(buf, p + attr_def::NODE_INDEX) else {
+            continue;
+        };
+        let Some(identifier) = short_index(buf, p + attr_def::IDENTIFIER) else {
+            continue;
+        };
+        if View::u16_be_at(buf, p + attr_def::NEXT_DEFINITION)
+            .is_none_or(|next| next > i16::MAX.unsigned_abs())
         {
             continue;
         }
-        let Some(p) = record_body(buf, end, 0x50) else {
+        let Some(count) = View::u32_be_at(buf, p + attr_def::FIELD_COUNT) else {
             continue;
         };
-        let Some(definition) = View::u16_be_at(buf, p + 4).filter(|node| *node > 1) else {
+        let Some(fields_start) = p.checked_add(attr_def::LEN) else {
             continue;
         };
-        let family = text.to_vec();
-        match found.entry(definition) {
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(Some(family));
-            }
-            std::collections::hash_map::Entry::Occupied(mut entry) => {
-                if entry
-                    .get()
-                    .as_ref()
-                    .is_some_and(|previous| previous != &family)
-                {
-                    *entry.get_mut() = None;
-                }
-            }
+        let Some(available) = buf.len().checked_sub(fields_start) else {
+            continue;
+        };
+        let Some(count) = cadmpeg_core::decode::bounded_len(u64::from(count), 1, available) else {
+            continue;
+        };
+        let Some(owners) = buf.get(p + attr_def::LEGAL_OWNERS..fields_start) else {
+            continue;
+        };
+        let fields = &buf[fields_start..fields_start + count];
+        if owners.iter().any(|value| *value > 1) || fields.iter().any(|value| *value > 10) {
+            continue;
         }
+        consistent_insert(
+            &mut definitions,
+            node,
+            (identifier, buf[p..fields_start + count].to_vec()),
+        );
     }
-    found
+    definitions
+        .into_iter()
+        .map(|(node, schema)| {
+            let name = schema.and_then(|(identifier, _)| names.get(&identifier)?.clone());
+            (node, name)
+        })
+        .collect()
 }
 
 /// Resolve the stream-local attribute-definition table.
@@ -430,6 +468,13 @@ mod tests {
         out.extend([0x00, 0x50]);
         out.extend(2_u32.to_be_bytes());
         out.extend(definition.to_be_bytes());
+        out.extend(1_u16.to_be_bytes());
+        out.extend(name_node.to_be_bytes());
+        out.extend(9000_u32.to_be_bytes());
+        out.extend([0; 8]);
+        out.extend(1_u16.to_be_bytes());
+        out.extend([0; 14]);
+        out.extend([9, 1]);
     }
 
     /// Serialize one attribute family, one payload list, and one instance.
@@ -501,6 +546,88 @@ mod tests {
         let mut bytes = Vec::new();
         append_definition(&mut bytes, ATOM_ID, 15, 16);
         assert_eq!(definitions(&bytes).get(&16), Some(&ATOM_ID));
+    }
+
+    #[test]
+    fn definition_names_follow_identifier_pointers_across_record_order() {
+        let mut first = Vec::new();
+        append_definition(&mut first, ATOM_ID, 41, 91);
+        let mut second = Vec::new();
+        append_definition(&mut second, "OTHER_FAMILY", 43, 93);
+        let first_end = 8 + ATOM_ID.len();
+        let second_end = 8 + "OTHER_FAMILY".len();
+        let mut bytes = first[..first_end].to_vec();
+        bytes.extend(&second[..second_end]);
+        bytes.extend(&first[first_end..]);
+        bytes.extend(&second[second_end..]);
+        let names = definition_table(&bytes);
+        assert_eq!(names.get(&91).and_then(Option::as_deref), Some(ATOM_ID));
+        assert_eq!(
+            names.get(&93).and_then(Option::as_deref),
+            Some("OTHER_FAMILY")
+        );
+    }
+
+    #[test]
+    fn an_adjacent_name_does_not_replace_a_missing_identifier() {
+        let mut bytes = Vec::new();
+        append_definition(&mut bytes, ATOM_ID, 41, 91);
+        let identifier = 8 + ATOM_ID.len() + 10;
+        bytes[identifier..identifier + 2].copy_from_slice(&1234_u16.to_be_bytes());
+        assert!(definition_table(&bytes)
+            .get(&91)
+            .is_some_and(Option::is_none));
+    }
+
+    #[test]
+    fn conflicting_key_names_withhold_every_dependent_definition() {
+        let mut bytes = Vec::new();
+        append_definition(&mut bytes, ATOM_ID, 41, 91);
+        append_definition(&mut bytes, "OTHER_FAMILY", 41, 93);
+        let names = definition_table(&bytes);
+        assert!(names.get(&91).is_some_and(Option::is_none));
+        assert!(names.get(&93).is_some_and(Option::is_none));
+    }
+
+    #[test]
+    fn conflicting_definition_payloads_are_not_a_named_family() {
+        let mut first = Vec::new();
+        append_definition(&mut first, ATOM_ID, 41, 91);
+        let mut second = first.clone();
+        let type_id = 8 + ATOM_ID.len() + 12;
+        second[type_id..type_id + 4].copy_from_slice(&8001_u32.to_be_bytes());
+        first.extend(second);
+        assert!(definition_table(&first)
+            .get(&91)
+            .is_some_and(Option::is_none));
+    }
+
+    #[test]
+    fn incomplete_or_invalid_definition_schemas_do_not_bind_names() {
+        let mut bytes = Vec::new();
+        append_definition(&mut bytes, ATOM_ID, 41, 91);
+        let mut truncated = bytes.clone();
+        truncated.pop();
+        assert!(!definition_table(&truncated).values().any(Option::is_some));
+        let mut bad_owner = bytes.clone();
+        let legal_owners = 8 + ATOM_ID.len() + 26;
+        bad_owner[legal_owners] = 2;
+        assert!(!definition_table(&bad_owner).values().any(Option::is_some));
+        let mut bad_field = bytes;
+        *bad_field.last_mut().expect("field type") = 11;
+        assert!(!definition_table(&bad_field).values().any(Option::is_some));
+    }
+
+    #[test]
+    fn unchanged_first_type_markers_preserve_definition_identifiers() {
+        let mut bytes = Vec::new();
+        append_definition(&mut bytes, ATOM_ID, 41, 91);
+        bytes.insert(8 + ATOM_ID.len() + 2, 0xff);
+        bytes.insert(2, 0xff);
+        assert_eq!(
+            definition_table(&bytes).get(&91).and_then(Option::as_deref),
+            Some(ATOM_ID)
+        );
     }
 
     #[test]

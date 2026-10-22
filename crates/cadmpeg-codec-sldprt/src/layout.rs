@@ -2432,3 +2432,25 @@ pub(crate) mod wide_spatial_marker_coordinate_prefix {
     /// Offset of `coordinates` (`f64[3]`, little-endian). Spec §2.
     pub(crate) const COORDINATES: usize = 66;
 }
+
+/// Byte offsets for the `attribute_definition_short_refs` record.
+///
+/// Spec §5. Record length 38 B.
+///
+/// ```text
+/// Body-relative after the type tag and optional first-of-type ff. Short pointer indexes occupy two bytes. Field types follow the fixed prefix; their count is field_count.
+/// ```
+pub(crate) mod attribute_definition_short_refs {
+    /// Record length in bytes. Spec §5.
+    pub(crate) const LEN: usize = 38;
+    /// Offset of `field_count` (`u32`, big-endian). Spec §5.
+    pub(crate) const FIELD_COUNT: usize = 0;
+    /// Offset of `node_index` (`u16`, big-endian). Spec §5.
+    pub(crate) const NODE_INDEX: usize = 4;
+    /// Offset of `next_definition` (`u16`, big-endian). Spec §5.
+    pub(crate) const NEXT_DEFINITION: usize = 6;
+    /// Offset of `identifier` (`u16`, big-endian). Spec §5.
+    pub(crate) const IDENTIFIER: usize = 8;
+    /// Offset of `legal_owners` (`bytes[14]`). Spec §5.
+    pub(crate) const LEGAL_OWNERS: usize = 24;
+}

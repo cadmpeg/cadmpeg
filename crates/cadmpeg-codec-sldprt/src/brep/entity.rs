@@ -349,8 +349,15 @@ mod tests {
         bytes.extend_from_slice(&15_u16.to_be_bytes());
         bytes.extend_from_slice(name);
         bytes.extend_from_slice(&[0, 0x50]);
-        bytes.extend_from_slice(&2_u32.to_be_bytes());
+        bytes.extend_from_slice(&1_u32.to_be_bytes());
         bytes.extend_from_slice(&definition.to_be_bytes());
+        bytes.extend_from_slice(&1_u16.to_be_bytes());
+        bytes.extend_from_slice(&15_u16.to_be_bytes());
+        bytes.extend_from_slice(&8001_u32.to_be_bytes());
+        bytes.extend([0; 8]);
+        bytes.extend_from_slice(&1_u16.to_be_bytes());
+        bytes.extend([0; 14]);
+        bytes.push(2);
         bytes
     }
 

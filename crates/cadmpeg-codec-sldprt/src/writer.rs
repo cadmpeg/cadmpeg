@@ -3265,8 +3265,17 @@ fn attribute_definition(
     be16(out, key_node);
     out.extend_from_slice(FAMILY);
     tag(out, 0x50);
-    be32(out, 2);
+    be32(out, 1);
     be16(out, definition_node);
+    be16(out, 1);
+    be16(out, key_node);
+    be32(out, 8001);
+    out.extend([0; 8]);
+    be16(out, 1);
+    let mut legal_owners = [0; 14];
+    legal_owners[4] = 1;
+    out.extend(legal_owners);
+    out.push(2);
     Ok(())
 }
 
