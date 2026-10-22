@@ -518,28 +518,18 @@ fn semantic_writer_rejects_embedded_helix_geometry_edits() {
     {
         let mut ir_edit = decoded.ir_mut();
         update_sldprt_native(&mut ir_edit, |native| {
-            let description = b"boundary_polyline mesh";
-            let schema = b"SCH_3201255_32001_13006";
-            let mut stream = b"PS\0\0".to_vec();
-            stream
-                .extend((u16::try_from(description.len()).expect("length fits u16")).to_be_bytes());
-            stream.extend(description);
-            stream.push(u8::try_from(schema.len()).expect("length fits u8"));
-            stream.extend(schema);
-            stream.extend([0xff, 0xff, 0xff, 0xff, 0x00, 0x22]);
-            stream.extend((65u32 * 3).to_be_bytes());
-            stream.extend([0x00, 0x22]);
-            for index in 0..=64 {
-                let t = f64::from(index) / 64.0;
-                let angle = std::f64::consts::FRAC_PI_2 * t;
-                for value in [
-                    10.0 + 3.5 * angle.cos(),
-                    20.0 - 3.2 * t,
-                    30.0 + 3.5 * angle.sin(),
-                ] {
-                    stream.extend(value.to_be_bytes());
-                }
-            }
+            let points = (0..=64)
+                .map(|index| {
+                    let t = f64::from(index) / 64.0;
+                    let angle = std::f64::consts::FRAC_PI_2 * t;
+                    [
+                        10000.0 + 3500.0 * angle.cos(),
+                        20000.0 - 3200.0 * t,
+                        30000.0 + 3500.0 * angle.sin(),
+                    ]
+                })
+                .collect::<Vec<_>>();
+            let stream = crate::test_support::parasolid::construction_curve::stream(&points);
             native.feature_input_lanes[0].native_payload.extend(stream);
         });
         let native = sldprt_native(&ir_edit);

@@ -172,14 +172,6 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Need.** We must know the renderer meanings of `B` and `C` and the rule that selects their values when no retained metadata supplies them.
 
-### AL-04. Mesh polyline candidate selection
-
-**Question.** Which native field identifies the mesh polyline used as a helix input when a stream contains more than one finite `00 22` point array?
-
-**Known.** `sldprt.md` §2 defines the supported helix input as a counted XYZ polyline. It does not define a native rule that ranks multiple candidate arrays by point count.
-
-**Need.** We must know the polyline identity to bind the helix to the correct input geometry.
-
 ### AL-05. Appearance ownership beyond DisplayLists
 
 **Question.** Which records bind appearances to a part, configuration, display state, or B-rep-only feature output?

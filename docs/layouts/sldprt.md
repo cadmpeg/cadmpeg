@@ -2745,6 +2745,53 @@ Unstated regions:
 
 - `0..92` (92 B): Variable metadata before the three stored Boolean cells.
 
+## `parasolid_b_curve_short`
+
+Spec §2 · layout: byte offsets · size: 21 B
+
+Offsets begin after the type and optional first-of-type schema marker. This layout uses short XMT/pointer fields; extended indices shift subsequent fields.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/parasolid/control_vertices.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `xmt` | `u16` | big | spec | XMT at `+0` |
+| 2 | 4 | `node_id` | `u32` | big | spec | u32 node ID at `+2` |
+| 6 | 2 | `attributes` | `u16` | big | spec | attribute pointer at `+6` |
+| 8 | 2 | `owner` | `u16` | big | spec | owner at `+8` |
+| 10 | 2 | `next` | `u16` | big | spec | next at `+10` |
+| 12 | 2 | `previous` | `u16` | big | spec | previous at `+12` |
+| 14 | 2 | `geometric_owner` | `u16` | big | spec | geometric owner at `+14` |
+| 16 | 1 | `sense` | `u8` | big | spec | sense byte at `+16` |
+| 17 | 2 | `nurbs` | `u16` | big | spec | NURBS pointer at `+17` |
+| 19 | 2 | `data` | `u16` | big | spec | auxiliary data pointer at `+19` |
+
+## `parasolid_nurbs_curve_short`
+
+Spec §2 · layout: byte offsets · size: 25 B
+
+Offsets begin after the type and optional first-of-type schema marker. This layout uses short XMT/pointer fields; extended indices shift subsequent fields.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/parasolid/control_vertices.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `xmt` | `u16` | big | spec | XMT at `+0` |
+| 2 | 2 | `degree` | `u16` | big | spec | u16 degree at `+2` |
+| 4 | 4 | `vertex_count` | `u32` | big | spec | u32 vertex count at `+4` |
+| 8 | 2 | `vertex_dimension` | `u16` | big | spec | u16 vertex dimension at `+8` |
+| 10 | 4 | `knot_count` | `u32` | big | spec | u32 distinct-knot count at `+10` |
+| 14 | 1 | `knot_type` | `u8` | big | spec | knot-type byte at `+14` |
+| 15 | 1 | `periodic` | `u8` | big | spec | at `+15`/`+16`/`+17` |
+| 16 | 1 | `closed` | `u8` | big | spec | at `+15`/`+16`/`+17` |
+| 17 | 1 | `rational` | `u8` | big | spec | at `+15`/`+16`/`+17` |
+| 18 | 1 | `curve_form` | `u8` | big | spec | curve-form byte at `+18` |
+| 19 | 2 | `vertices` | `u16` | big | spec | control-vertex pointer at `+19` |
+| 21 | 2 | `multiplicities` | `u16` | big | spec | multiplicity pointer at `+21` |
+| 23 | 2 | `knots` | `u16` | big | spec | knot pointer at `+23` |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

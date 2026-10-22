@@ -10774,3 +10774,184 @@ offset = 112
 type = "bytes[16]"
 source = "spec"
 anchor = "four-f32 LE tuple at `M+0x70`"
+
+[[record]]
+name = "parasolid_b_curve_short"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/parasolid/control_vertices.rs"
+kind = "byte"
+section = "2"
+anchor = "With short XMT and pointer fields, the B_CURVE payload is 21 bytes"
+size = 21
+endianness = "big"
+note = "Offsets begin after the type and optional first-of-type schema marker. This layout uses short XMT/pointer fields; extended indices shift subsequent fields."
+
+[[record.field]]
+name = "xmt"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "XMT at `+0`"
+
+[[record.field]]
+name = "node_id"
+offset = 2
+type = "u32"
+source = "spec"
+anchor = "u32 node ID at `+2`"
+
+[[record.field]]
+name = "attributes"
+offset = 6
+type = "u16"
+source = "spec"
+anchor = "attribute pointer at `+6`"
+
+[[record.field]]
+name = "owner"
+offset = 8
+type = "u16"
+source = "spec"
+anchor = "owner at `+8`"
+
+[[record.field]]
+name = "next"
+offset = 10
+type = "u16"
+source = "spec"
+anchor = "next at `+10`"
+
+[[record.field]]
+name = "previous"
+offset = 12
+type = "u16"
+source = "spec"
+anchor = "previous at `+12`"
+
+[[record.field]]
+name = "geometric_owner"
+offset = 14
+type = "u16"
+source = "spec"
+anchor = "geometric owner at `+14`"
+
+[[record.field]]
+name = "sense"
+offset = 16
+type = "u8"
+source = "spec"
+anchor = "sense byte at `+16`"
+
+[[record.field]]
+name = "nurbs"
+offset = 17
+type = "u16"
+source = "spec"
+anchor = "NURBS pointer at `+17`"
+
+[[record.field]]
+name = "data"
+offset = 19
+type = "u16"
+source = "spec"
+anchor = "auxiliary data pointer at `+19`"
+
+[[record]]
+name = "parasolid_nurbs_curve_short"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/parasolid/control_vertices.rs"
+kind = "byte"
+section = "2"
+anchor = "The NURBS_CURVE payload is 25 bytes"
+size = 25
+endianness = "big"
+note = "Offsets begin after the type and optional first-of-type schema marker. This layout uses short XMT/pointer fields; extended indices shift subsequent fields."
+
+[[record.field]]
+name = "xmt"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "XMT at `+0`"
+
+[[record.field]]
+name = "degree"
+offset = 2
+type = "u16"
+source = "spec"
+anchor = "u16 degree at `+2`"
+
+[[record.field]]
+name = "vertex_count"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "u32 vertex count at `+4`"
+
+[[record.field]]
+name = "vertex_dimension"
+offset = 8
+type = "u16"
+source = "spec"
+anchor = "u16 vertex dimension at `+8`"
+
+[[record.field]]
+name = "knot_count"
+offset = 10
+type = "u32"
+source = "spec"
+anchor = "u32 distinct-knot count at `+10`"
+
+[[record.field]]
+name = "knot_type"
+offset = 14
+type = "u8"
+source = "spec"
+anchor = "knot-type byte at `+14`"
+
+[[record.field]]
+name = "periodic"
+offset = 15
+type = "u8"
+source = "spec"
+anchor = "at `+15`/`+16`/`+17`"
+
+[[record.field]]
+name = "closed"
+offset = 16
+type = "u8"
+source = "spec"
+anchor = "at `+15`/`+16`/`+17`"
+
+[[record.field]]
+name = "rational"
+offset = 17
+type = "u8"
+source = "spec"
+anchor = "at `+15`/`+16`/`+17`"
+
+[[record.field]]
+name = "curve_form"
+offset = 18
+type = "u8"
+source = "spec"
+anchor = "curve-form byte at `+18`"
+
+[[record.field]]
+name = "vertices"
+offset = 19
+type = "u16"
+source = "spec"
+anchor = "control-vertex pointer at `+19`"
+
+[[record.field]]
+name = "multiplicities"
+offset = 21
+type = "u16"
+source = "spec"
+anchor = "multiplicity pointer at `+21`"
+
+[[record.field]]
+name = "knots"
+offset = 23
+type = "u16"
+source = "spec"
+anchor = "knot pointer at `+23`"

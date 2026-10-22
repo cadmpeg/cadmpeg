@@ -2500,3 +2500,27 @@ pub(crate) mod display_lists_extended_metadata {
     /// Offset of `tuple` (`bytes[16]`). Spec §8.
     pub(crate) const TUPLE: usize = 112;
 }
+
+/// Byte offsets for the `parasolid_b_curve_short` record.
+///
+/// Spec §2. Record length 21 B.
+///
+/// ```text
+/// Offsets begin after the type and optional first-of-type schema marker. This layout uses short XMT/pointer fields; extended indices shift subsequent fields.
+/// ```
+pub(crate) mod parasolid_b_curve_short {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 21;
+}
+
+/// Byte offsets for the `parasolid_nurbs_curve_short` record.
+///
+/// Spec §2. Record length 25 B.
+///
+/// ```text
+/// Offsets begin after the type and optional first-of-type schema marker. This layout uses short XMT/pointer fields; extended indices shift subsequent fields.
+/// ```
+pub(crate) mod parasolid_nurbs_curve_short {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 25;
+}
