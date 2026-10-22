@@ -447,6 +447,30 @@ pub(super) fn write(ir: &CadIr, schema: &str) -> Result<ExportBody, CodecError> 
         &mut native_dispositions,
     )?;
     super::synthesis_graph::close(&mut objects, &mut losses)?;
+    if objects.is_empty()
+        && document_properties.values().all(|property| {
+            roxmltree::Document::parse(property).is_ok_and(|xml| {
+                let root = xml.root_element();
+                let mut values = root.children().filter(roxmltree::Node::is_element);
+                root.has_tag_name("Property")
+                    && root.attribute("type") == Some("App::PropertyString")
+                    && values.next().is_some_and(|value| {
+                        value.has_tag_name("String")
+                            && !value.children().any(|child| child.is_element())
+                            && !value.attributes().any(|attribute| {
+                                matches!(attribute.name(), "file" | "File")
+                                    && !attribute.value().is_empty()
+                            })
+                    })
+                    && values.next().is_none()
+            })
+        })
+    {
+        losses.push(
+            cadmpeg_ir::codec::write::ExportLossCode::OutputEmpty
+                .note("the emitted FCStd document has no objects or geometry"),
+        );
+    }
     let document = xml::document(&objects, &document_properties, schema);
     let document = if dictionaries.is_empty() {
         document

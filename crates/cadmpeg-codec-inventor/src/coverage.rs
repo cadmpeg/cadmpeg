@@ -31,8 +31,6 @@ pub(crate) const PM_GRAPHICS_STYLE_COLLECTIONS: CoverageKey =
 pub(crate) const PM_GRAPHICS_PRIMARY_COLOR_STYLES: CoverageKey =
     CoverageKey::new("pm_graphics_primary_color_styles");
 pub(crate) const FACE_COLOR_APPEARANCES: CoverageKey = CoverageKey::new("face_color_appearances");
-pub(crate) const PRESENTATION_RECORD_ISSUES: CoverageKey =
-    CoverageKey::new("presentation_record_issues");
 pub(crate) const PM_DC_PARAMETERS: CoverageKey = CoverageKey::new("pm_dc_parameters");
 pub(crate) const PM_DC_EXPRESSIONS: CoverageKey = CoverageKey::new("pm_dc_expressions");
 pub(crate) const PM_DC_UNITS: CoverageKey = CoverageKey::new("pm_dc_units");

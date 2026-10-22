@@ -12,6 +12,8 @@ use crate::support::{fixture, geometryless_creo, minimal_rhino_archive};
 
 #[cfg(feature = "catia")]
 mod catia;
+#[cfg(feature = "fcstd")]
+mod empty_fcstd;
 #[cfg(feature = "iges")]
 mod empty_iges;
 #[cfg(feature = "step")]

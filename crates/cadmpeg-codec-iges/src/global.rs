@@ -821,6 +821,12 @@ pub(crate) fn parse(scan: &CardScan) -> Result<(ResolvedGlobal, Vec<LossNote>), 
     Ok(resolve(parse_raw(scan)?))
 }
 
+pub(crate) fn parse_stream(bytes: &[u8]) -> Result<(ResolvedGlobal, Vec<LossNote>), CodecError> {
+    Ok(resolve(parse_raw_with(bytes, |_, frame| {
+        Ok(frame.window_value(bytes))
+    })?))
+}
+
 fn date_value_is_valid(bytes: &[u8], accepts_four_digit_date: bool) -> bool {
     let dot = match bytes.len() {
         13 => 6,

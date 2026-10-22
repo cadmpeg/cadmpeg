@@ -1,0 +1,190 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Document-owned strings are born in their actual XML property scopes.
+
+use crate::native::{PropertyBody, PropertyRecord};
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartLevel, PartOutput, PartSpec};
+use std::collections::BTreeMap;
+
+#[derive(Default)]
+pub(crate) struct RootStrings {
+    pub(crate) properties: Vec<PropertyRecord>,
+    pub(crate) sources: BTreeMap<String, crate::fidelity::ValueSourceRanges>,
+    pub(crate) given_up: bool,
+}
+
+pub(crate) fn selected(node: roxmltree::Node<'_, '_>) -> bool {
+    if !(node.has_tag_name("Property")
+        && node.attribute("type") == Some("App::PropertyString")
+        && !node
+            .descendants()
+            .filter(roxmltree::Node::is_element)
+            .any(|value| {
+                value.attributes().any(|attribute| {
+                    matches!(attribute.name(), "file" | "File") && !attribute.value().is_empty()
+                })
+            }))
+    {
+        return false;
+    }
+    if node.attribute("group").is_some()
+        && ["ro", "hide"].into_iter().any(|key| {
+            node.attributes()
+                .find(|attribute| attribute.namespace().is_none() && attribute.name() == key)
+                .is_some_and(|attribute| {
+                    crate::native::parse_bool(attribute.value())
+                        != super::bool_attr(Some(attribute.value()))
+                })
+        })
+    {
+        return false;
+    }
+    let mut elements = node.children().filter(roxmltree::Node::is_element);
+    let Some(value) = elements.next() else {
+        return false;
+    };
+    if !value.has_tag_name("String")
+        || elements.next().is_some()
+        || value.children().any(|child| child.is_element())
+    {
+        return false;
+    }
+    if let Some(text) = value.first_child().filter(roxmltree::Node::is_text) {
+        let raw = &node.document().input_text().as_bytes()[text.range()];
+        let suffix = &node.document().input_text().as_bytes()[text.range().end..value.range().end];
+        if value.last_child() != Some(text) || raw.contains(&b'<') || !suffix.starts_with(b"</") {
+            return false;
+        }
+    }
+    true
+}
+
+pub(crate) fn decode<'source>(
+    ctx: &DecodeContext<'source>,
+    view: View<'source>,
+    xml: &roxmltree::Document<'_>,
+    output: &mut PartOutput,
+) -> Result<Option<RootStrings>, CodecError> {
+    if ctx.container_only() {
+        return Ok(None);
+    }
+    let mut containers = xml
+        .root_element()
+        .children()
+        .filter(|node| node.has_tag_name("Properties"));
+    let Some(container) = containers.next() else {
+        return Ok(None);
+    };
+    if containers.next().is_some() {
+        return Err(CodecError::malformed(
+            "Document.xml has multiple root Properties containers",
+        ));
+    }
+    if !container.children().any(selected) {
+        return Ok(None);
+    }
+    let source = super::source::Source::new(ctx, view, xml)?;
+    let (extent, fields) = crate::xml_framing::element_fields(ctx, view, container)?;
+    let properties_level = PartLevel::parse("freecad.properties")
+        .ok_or_else(|| CodecError::malformed("properties level is absent from Appendix C"))?;
+    let result = ctx.decode_part(
+        output,
+        extent,
+        PartSpec::new(properties_level, fields),
+        |properties_stage| {
+            let count = container
+                .children()
+                .filter(|node| node.has_tag_name("Property") || node.has_tag_name("_Property"))
+                .count();
+            let bytes = count.checked_mul(size_of::<Option<&str>>()).ok_or_else(|| {
+                CodecError::malformed("document property name inventory overflows")
+            })?;
+            ctx.retain_bytes(
+                cadmpeg_core::decode::u64_from_index(bytes),
+                "FreeCAD document property names",
+            )?;
+            let mut names = ctx.alloc_filled(count, None, "FreeCAD document property names")?;
+            for (name, property) in names.iter_mut().zip(
+                container
+                    .children()
+                    .filter(|node| node.has_tag_name("Property") || node.has_tag_name("_Property")),
+            ) {
+                *name = property.attribute("name");
+                if name.is_none() && !selected(property) {
+                    return Err(CodecError::malformed("property element has no name attribute"));
+                }
+            }
+            names.sort_unstable();
+            if names.windows(2).any(|pair| pair[0].is_some() && pair[0] == pair[1]) {
+                return Err(CodecError::malformed("duplicate document property name"));
+            }
+            let mut result = RootStrings::default();
+            for (order, node) in container
+                .children()
+                .filter(|node| node.has_tag_name("Property"))
+                .enumerate()
+            {
+                if !selected(node) {
+                    continue;
+                }
+                let (extent, fields) = crate::xml_framing::element_fields(ctx, view, node)?;
+                let level = PartLevel::parse("freecad.property").ok_or_else(|| {
+                    CodecError::malformed("property level is absent from Appendix C")
+                })?;
+                if let Some(property) = ctx.decode_part(
+                    properties_stage,
+                    extent,
+                    PartSpec::new(level, fields),
+                    |stage| {
+                        let owner = crate::native::native_id("document", "0");
+                        let name = super::required_attr(node, "name")?;
+                        let id = crate::native::native_child_id("property", &owner, name);
+                        source.record(&id, node, || {
+                            let mut losses = Vec::new();
+                            let property = super::parse_persisted_property(
+                                node,
+                                &owner,
+                                order,
+                                &mut losses,
+                                Some(&source),
+                                true,
+                            )?;
+                            if let PropertyBody::Unreadable(detail) = &property.body {
+                                return Err(CodecError::malformed(detail));
+                            }
+                            if let Some(attribute) = crate::attributes::document_string(&property)?
+                            {
+                                stage.insert_model(ctx, attribute)?;
+                            } else if !matches!(property.name.as_str(), "Shape" | "Placement") && !crate::property_policy::is_projection_metadata(&property) {
+                                stage.push_loss(ctx, crate::loss::FreecadLossCode::AttributePropertyUnprojected.note(format!("property {} ({}) has no neutral attribute encoding; its admitted typed native values remain held", property.id, property.type_name)))?;
+                            }
+                            stage.insert_native(
+                                ctx,
+                                "properties",
+                                crate::native::document_string::DocumentString::new(
+                                    property.clone(),
+                                )?,
+                            )?;
+                            for loss in losses {
+                                stage.push_loss(ctx, loss)?;
+                            }
+                            Ok(property)
+                        })
+                    },
+                )? {
+                    result.sources.insert(
+                        property.id.clone(),
+                        crate::fidelity::property_source(node, &property)?,
+                    );
+                    result.properties.push(property);
+                }
+            }
+            Ok(result)
+        },
+    )?;
+    Ok(Some(result.unwrap_or(RootStrings {
+        given_up: true,
+        ..RootStrings::default()
+    })))
+}

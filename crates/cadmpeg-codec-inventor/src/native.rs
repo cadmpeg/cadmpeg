@@ -5,6 +5,7 @@ pub(crate) mod protein;
 pub(crate) mod ufrx;
 
 mod assembly_ownership;
+mod presentation_ownership;
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
@@ -893,7 +894,7 @@ impl TryFrom<PmGraphicsStyleCollectionRecordWire> for PmGraphicsStyleCollectionR
                 .map_err(|error| error.to_string())?,
             wire.record_ordinal,
             wire.segment_version_major,
-            PmDcPairedReferenceList::new(
+            PmDcPairedReferenceList::from_document(
                 wire.list_metadata,
                 PmDcReference::zip(wire.style_references, wire.style_reference_qualifiers)?,
             )

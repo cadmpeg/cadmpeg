@@ -182,8 +182,8 @@ impl CodecBackend for IgesCodec {
                 reader::decode(root.window(), root, representation, ctx)
             }
             representation::Representation::CompressedAscii => {
-                let normalized = compressed::normalize(root.window())?;
-                reader::decode(&normalized, root, representation, ctx)
+                let normalized = compressed::parts::normalize(root, ctx)?;
+                reader::decode_compressed(normalized, root, ctx)
             }
             representation::Representation::Binary => {
                 let (normalized, parts) = binary::parts::normalize(root, ctx)?;

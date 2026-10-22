@@ -138,6 +138,7 @@ fn abandoned_actual_dynamic_property_producer_rolls_back_group_doc_and_value_rea
                 0,
                 &mut losses,
                 Some(&source),
+                false,
             )?;
             let crate::native::PropertyBody::Persisted {
                 dynamic: Some(metadata),

@@ -76,6 +76,7 @@ pub(super) struct Document<'source> {
     pub(super) xml: roxmltree::Document<'source>,
     pub(super) facts: crate::native::DocumentFacts,
     pub(super) schema: String,
+    pub(super) strings: Option<crate::persistence::document_strings::RootStrings>,
     pub(super) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
@@ -136,15 +137,19 @@ pub(super) fn document<'source>(
                             let (facts, schema) =
                                 super::parse_document_impl(&xml, &mut losses, Some(&source))?;
                             root_stage.insert_native(ctx, "document", facts.clone())?;
-                            Ok((facts, schema))
+                            let strings = crate::persistence::document_strings::decode(
+                                ctx, view, &xml, root_stage,
+                            )?;
+                            Ok((facts, schema, strings))
                         })
                     },
                 )?;
-                Ok(facts.map(|(facts, schema)| Document {
+                Ok(facts.map(|(facts, schema, strings)| Document {
                     view,
                     xml,
                     facts,
                     schema,
+                    strings,
                     losses,
                 }))
             })
@@ -235,7 +240,19 @@ pub(crate) fn append(
     fidelity: &mut cadmpeg_ir::SourceFidelity,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
-    let (_, mut native, source, mut diagnostics) = output.into_parts(ctx)?.into_parts();
+    let (model, mut native, source, mut diagnostics) = output.into_parts(ctx)?.into_parts();
+    if model.entity_count() != 0 {
+        let mut session = cadmpeg_ir::draft::CommitSession::new(&mut *ir, ctx, None)?;
+        session.model_append_transaction(|stage| {
+            let mut draft = cadmpeg_ir::draft::ModelDraft::new();
+            *draft.model_mut() = model;
+            stage.commit_model(draft)?.map_err(|error| match error {
+                cadmpeg_ir::draft::DraftError::Resource(limit) => CodecError::ResourceLimit(limit),
+                error => CodecError::malformed(error),
+            })?;
+            Ok(Some(()))
+        })?;
+    }
     for (name, mut records) in std::mem::take(native.namespace_mut("fcstd").arenas_mut()) {
         let destination = ir
             .native

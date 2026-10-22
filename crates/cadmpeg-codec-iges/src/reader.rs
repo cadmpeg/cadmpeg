@@ -24,6 +24,7 @@ use std::fmt;
 struct ParsingState<'a> {
     parts: ParserPartOutput,
     binary_identities: Option<&'a crate::binary::BinaryIdentities>,
+    compressed: Option<crate::compressed::parts::Admission>,
 }
 
 impl ParsingState<'_> {
@@ -31,6 +32,7 @@ impl ParsingState<'_> {
         Self {
             parts: ParserPartOutput::new(cadmpeg_ir::CodecFormat::Iges),
             binary_identities: None,
+            compressed: None,
         }
     }
 }
@@ -295,33 +297,45 @@ impl<'a> PhysicalParse<'a> {
         let ParsingState {
             parts: mut parser_parts,
             binary_identities,
+            compressed,
         } = parsing;
         let scan = match source {
             Some(source) => card::scan_source(source, ctx)?,
             None => card::scan(bytes)?,
         };
-        let (global, mut global_losses) = if scan.source_view().is_some() {
+        let (prepared_global, prepared_directory) = match compressed {
+            Some(admission) => (
+                Some((admission.global, admission.losses)),
+                Some(admission.directory),
+            ),
+            None => (None, None),
+        };
+        let (global, mut global_losses) = if let Some(global) = prepared_global {
+            global
+        } else if scan.source_view().is_some() {
             global::parts::parse(&scan, ctx, &mut parser_parts)?
         } else {
             global::parse(&scan)?
         };
         // A given-up Directory Entry owns its Parameter Data cards, as a
         // quarantined one does: they are not unclaimed (#215 rules 2-3).
-        let (directory, quarantined_directory, given_up_directory) = if scan.source_view().is_some()
-        {
-            let parsed =
-                directory::parts::parse(&scan, global.global_table(), ctx, &mut parser_parts)?;
-            (parsed.entries, Vec::new(), parsed.given_up)
-        } else if let Some(identities) = binary_identities {
-            let (directory, quarantined) =
-                directory::parse_with_keys(&scan, global.global_table(), ctx, |grammar| {
-                    identities.semantic_sequence(grammar)
-                })?;
-            (directory, quarantined, Vec::new())
-        } else {
-            let (directory, quarantined) = directory::parse(&scan, global.global_table(), ctx)?;
-            (directory, quarantined, Vec::new())
-        };
+        let (directory, quarantined_directory, given_up_directory) =
+            if let Some(directory) = prepared_directory {
+                (directory, Vec::new(), Vec::new())
+            } else if scan.source_view().is_some() {
+                let parsed =
+                    directory::parts::parse(&scan, global.global_table(), ctx, &mut parser_parts)?;
+                (parsed.entries, Vec::new(), parsed.given_up)
+            } else if let Some(identities) = binary_identities {
+                let (directory, quarantined) =
+                    directory::parse_with_keys(&scan, global.global_table(), ctx, |grammar| {
+                        identities.semantic_sequence(grammar)
+                    })?;
+                (directory, quarantined, Vec::new())
+            } else {
+                let (directory, quarantined) = directory::parse(&scan, global.global_table(), ctx)?;
+                (directory, quarantined, Vec::new())
+            };
         global_losses.extend(directory::metadata_losses(&directory));
         let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
         let parameter::ParameterAssembly {
@@ -485,6 +499,25 @@ pub(crate) fn decode_binary(
         ParsingState {
             parts,
             binary_identities: Some(&normalized.identities),
+            compressed: None,
+        },
+    )
+}
+
+pub(crate) fn decode_compressed(
+    normalized: crate::compressed::parts::Normalized,
+    source: View<'_>,
+    ctx: &DecodeContext<'_>,
+) -> Result<Decoded, CodecError> {
+    decode_with_parsing(
+        &normalized.bytes,
+        source,
+        Representation::CompressedAscii,
+        ctx,
+        ParsingState {
+            parts: normalized.parts,
+            binary_identities: None,
+            compressed: Some(normalized.admission),
         },
     )
 }

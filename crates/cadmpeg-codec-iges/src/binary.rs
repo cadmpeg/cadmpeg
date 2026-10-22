@@ -118,6 +118,34 @@ impl BinaryDirectory {
     fn parameter_pointer(&self) -> i64 {
         self.parameter_pointer
     }
+
+    fn admit_directory_fields(&self) -> Result<(), CodecError> {
+        for (slot, name) in [
+            (DirectoryFieldSlot::Structure, "structure"),
+            (DirectoryFieldSlot::Form, "form"),
+        ] {
+            let value = &self.values[slot.slot()];
+            if !matches!(value, BinaryValue::Pointer(_)) {
+                let field = render_field(value, FieldRendering::Plain)?;
+                crate::directory::integer(field, name)
+                    .map_err(|error| malformed(error.to_string()))?;
+            }
+        }
+        let value = &self.values[DirectoryFieldSlot::Status.slot()];
+        if !matches!(value, BinaryValue::Pointer(_)) {
+            let field = render_field(value, FieldRendering::Status)?;
+            crate::directory::status(field).map_err(|error| malformed(error.to_string()))?;
+        }
+        Ok(())
+    }
+
+    fn has_point_parameters(&self) -> bool {
+        self.entity_type == 116
+            && matches!(
+                self.values[DirectoryFieldSlot::Form.slot()],
+                BinaryValue::Default | BinaryValue::Integer(0)
+            )
+    }
 }
 
 #[derive(Debug)]
@@ -1127,9 +1155,19 @@ fn normalize_directory_and_parameters(
             ));
         }
         let directory_sequence = directory[directory_index].source_sequence;
-        for value in &mut parameter.values {
+        for (index, value) in parameter.values.iter_mut().enumerate() {
             if matches!(value, BinaryValue::Pointer(_)) {
                 *value = resolve_value(value, directory, &directory_by_offset)?;
+            } else if directory[directory_index].has_point_parameters() && index == 3 {
+                if let BinaryValue::Integer(pointer) = value {
+                    if *pointer != 0 {
+                        *value = resolve_value(
+                            &BinaryValue::Pointer(*pointer),
+                            directory,
+                            &directory_by_offset,
+                        )?;
+                    }
+                }
             }
         }
         let text = parameter_text(parameter.entity_type, &parameter.values)?;
@@ -1218,10 +1256,12 @@ fn normalize_directory_and_parameters(
                 &values[DirectoryFieldSlot::View.slot()],
                 FieldRendering::Plain,
             )?,
-            render_source_field(
-                &values[DirectoryFieldSlot::Transform.slot()],
-                FieldRendering::Plain,
-            )?,
+            match &values[DirectoryFieldSlot::Transform.slot()] {
+                BinaryValue::Integer(pointer) if *pointer != 0 => {
+                    render_source_field(&BinaryValue::Pointer(*pointer), FieldRendering::Plain)?
+                }
+                value => render_source_field(value, FieldRendering::Plain)?,
+            },
             render_source_field(
                 &values[DirectoryFieldSlot::LabelDisplay.slot()],
                 FieldRendering::Plain,

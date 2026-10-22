@@ -751,3 +751,41 @@ pub(crate) fn nurbs_surface_source(weights: Option<[f64; 4]>) -> NurbsSurfaceSou
         cv_count_offset,
     }
 }
+
+pub(crate) struct PolycurveSource {
+    pub(crate) bytes: Vec<u8>,
+    pub(crate) reserved: std::ops::Range<usize>,
+    pub(crate) parameter_array: std::ops::Range<usize>,
+    pub(crate) parameter_values: std::ops::Range<usize>,
+}
+
+pub(crate) fn polycurve_source(
+    parameters: &[f64],
+    children: &[([u8; 16], Vec<u8>)],
+) -> PolycurveSource {
+    use crate::chunks::BoundedReader;
+    let bytes = polycurve_payload(parameters, children);
+    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("source builder");
+    reader.u8().expect("payload version");
+    reader.i32().expect("child count");
+    let reserved_start = reader.position();
+    reader
+        .skip(2 * std::mem::size_of::<i32>())
+        .expect("reserved integers");
+    reader
+        .skip(6 * std::mem::size_of::<f64>())
+        .expect("reserved bounds");
+    let parameter_array_start = reader.position();
+    reader.i32().expect("parameter count");
+    let parameter_values_start = reader.position();
+    reader
+        .skip(parameters.len() * std::mem::size_of::<f64>())
+        .expect("parameter values");
+    let parameter_end = reader.position();
+    PolycurveSource {
+        bytes,
+        reserved: reserved_start..parameter_array_start,
+        parameter_array: parameter_array_start..parameter_end,
+        parameter_values: parameter_values_start..parameter_end,
+    }
+}

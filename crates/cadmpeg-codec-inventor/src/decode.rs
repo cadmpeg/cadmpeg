@@ -3,7 +3,6 @@
 
 mod database_parts;
 mod document_native_projection;
-mod presentation_native_projection;
 mod property_sections;
 mod property_streams;
 mod rse_native_projection;
@@ -65,7 +64,8 @@ fn decode_container<'a>(
     let matched = recovery.classify();
     let dialects = crate::dialect::layers(&matched, &container.rse.active_carrier)?;
     let mut assembly_inventory = crate::assembly::inventory(ctx, &container.rse)?;
-    let mut presentation_inventory = crate::presentation::inventory(ctx, &container.rse)?;
+    let presentation_inventory =
+        crate::presentation::inventory(ctx, &container.rse, &mut assembly_inventory.parts)?;
     let design_inventory = crate::design::inventory(ctx, &container.rse)?;
     let sketch_inventory = crate::sketch::inventory(ctx, &container.rse)?;
     let feature_inventory = crate::feature::inventory(ctx, &container.rse)?;
@@ -467,13 +467,6 @@ fn decode_container<'a>(
         })
         .transpose()?
         .unwrap_or_default();
-    let presentation_native =
-        presentation_native_projection::project(ctx, &mut presentation_inventory)?;
-    let pm_app_default_styles = presentation_native.default_styles;
-    let pm_app_rendering_styles = presentation_native.rendering_styles;
-    let pm_graphics_faces = presentation_native.graphics_faces;
-    let pm_graphics_style_collections = presentation_native.graphics_style_collections;
-    let pm_graphics_primary_color_styles = presentation_native.graphics_primary_color_styles;
     ctx.admit_entities(
         cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
         &mut admitted_entities,
@@ -511,23 +504,30 @@ fn decode_container<'a>(
         "assembly_placements",
         &[] as &[AssemblyPlacementRecord],
     )?;
-    namespace.set_arena(ctx, "pm_app_default_styles", &pm_app_default_styles)?;
-    namespace.set_arena(ctx, "pm_app_rendering_styles", &pm_app_rendering_styles)?;
-    namespace.set_arena(ctx, "pm_graphics_faces", &pm_graphics_faces)?;
+    namespace.set_arena(
+        ctx,
+        "pm_app_default_styles",
+        &[] as &[crate::native::PmAppDefaultStyleRecord],
+    )?;
+    namespace.set_arena(
+        ctx,
+        "pm_app_rendering_styles",
+        &[] as &[crate::native::PmAppRenderingStyleRecord],
+    )?;
+    namespace.set_arena(
+        ctx,
+        "pm_graphics_faces",
+        &[] as &[crate::native::PmGraphicsFaceRecord],
+    )?;
     namespace.set_arena(
         ctx,
         "pm_graphics_style_collections",
-        &pm_graphics_style_collections,
+        &[] as &[crate::native::PmGraphicsStyleCollectionRecord],
     )?;
     namespace.set_arena(
         ctx,
         "pm_graphics_primary_color_styles",
-        &pm_graphics_primary_color_styles,
-    )?;
-    namespace.set_arena(
-        ctx,
-        "presentation_record_issues",
-        &presentation_inventory.issues,
+        &[] as &[crate::native::PmGraphicsPrimaryColorStyleRecord],
     )?;
     namespace.set_arena(ctx, "pm_dc_parameters", &design_inventory.parameters)?;
     namespace.set_arena(ctx, "pm_dc_expressions", &design_inventory.expressions)?;
@@ -670,19 +670,19 @@ fn decode_container<'a>(
         &ir.model.appearances,
         &body_ids,
         &face_keys,
+        Some(&mut assembly_inventory.parts),
     )?;
-    let face_color_appearance_count = presentation_projection.appearances.len();
-    let projected_colors = presentation_projection
+    let face_color_appearance_count = assembly_inventory.parts.model().appearances.len();
+    let projected_colors = assembly_inventory
+        .parts
+        .model()
         .appearances
         .iter()
         .filter_map(|appearance| Some((appearance.id.clone(), appearance.base_color?)))
         .collect::<HashMap<_, _>>();
-    ir.model
-        .appearances
-        .extend(presentation_projection.appearances);
-    ir.model.appearance_bindings = presentation_projection.bindings;
-    let face_colors = ir
-        .model
+    let face_colors = assembly_inventory
+        .parts
+        .model()
         .appearance_bindings
         .iter()
         .filter_map(|binding| {
@@ -791,12 +791,6 @@ fn decode_container<'a>(
                     )
                 }
             }));
-        }
-        if !presentation_inventory.issues.is_empty() {
-            losses.push(InventorLossCode::PresentationRecordMalformed.note({ untyped.insert(cadmpeg_ir::ArenaClass::Model); format!(
-                "{} typed Inventor presentation record(s) are malformed or outside the implemented branch.",
-                presentation_inventory.issues.len()
-            ) }));
         }
         if !design_inventory.issues.is_empty() {
             losses.push(InventorLossCode::DesignRecordMalformed.note({ untyped.insert(cadmpeg_ir::ArenaClass::Design); format!(
@@ -1009,6 +1003,32 @@ fn decode_container<'a>(
         assembly_inventory.parts.into_parts(ctx)?.into_parts();
     if !ctx.container_only() {
         ir.model.occurrences = part_model.occurrences;
+        ir.model.appearance_bindings = part_model.appearance_bindings;
+        if ir.model.appearances.is_empty() {
+            ir.model.appearances = part_model.appearances;
+        } else if !part_model.appearances.is_empty() {
+            let additional = part_model
+                .appearances
+                .len()
+                .checked_mul(size_of::<cadmpeg_ir::appearance::Appearance>())
+                .map(cadmpeg_core::decode::u64_from_index)
+                .ok_or_else(|| {
+                    CodecError::malformed("Inventor appearance composition size overflows")
+                })?;
+            ctx.retain_bytes(additional, "Inventor staged appearance composition")?;
+            ir.model
+                .appearances
+                .try_reserve(part_model.appearances.len())
+                .map_err(|_| {
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                        ctx.policy().limits.max_retained_bytes,
+                        additional,
+                        "Inventor staged appearance composition",
+                    )
+                })?;
+            ir.model.appearances.extend(part_model.appearances);
+        }
         if ir.model.assets.is_empty() {
             ir.model.assets = part_model.assets;
         } else if !part_model.assets.is_empty() {
@@ -1161,28 +1181,27 @@ fn decode_container<'a>(
         ),
         (
             crate::coverage::PM_APP_DEFAULT_STYLES,
-            pm_app_default_styles.len(),
+            presentation_inventory.default_styles.len(),
         ),
         (
             crate::coverage::PM_APP_RENDERING_STYLES,
-            pm_app_rendering_styles.len(),
+            presentation_inventory.rendering_styles.len(),
         ),
-        (crate::coverage::PM_GRAPHICS_FACES, pm_graphics_faces.len()),
+        (
+            crate::coverage::PM_GRAPHICS_FACES,
+            presentation_inventory.graphics_faces.len(),
+        ),
         (
             crate::coverage::PM_GRAPHICS_STYLE_COLLECTIONS,
-            pm_graphics_style_collections.len(),
+            presentation_inventory.graphics_style_collections.len(),
         ),
         (
             crate::coverage::PM_GRAPHICS_PRIMARY_COLOR_STYLES,
-            pm_graphics_primary_color_styles.len(),
+            presentation_inventory.graphics_primary_color_styles.len(),
         ),
         (
             crate::coverage::FACE_COLOR_APPEARANCES,
             face_color_appearance_count,
-        ),
-        (
-            crate::coverage::PRESENTATION_RECORD_ISSUES,
-            presentation_inventory.issues.len(),
         ),
         (
             crate::coverage::PM_DC_PARAMETERS,

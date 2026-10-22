@@ -12,6 +12,8 @@ use cadmpeg_core::CodecError;
 use std::num::NonZeroUsize;
 use std::rc::Rc;
 
+pub(crate) mod parts;
+
 const CARD_WIDTH: usize = 80;
 const CARD_DATA_WIDTH: usize = 72;
 const PARAMETER_DATA_WIDTH: usize = 64;
@@ -451,6 +453,14 @@ fn append_directory_cards(
     entity: &DataEntity,
     parameter_start: u32,
 ) -> Result<(), CodecError> {
+    let (first_fields, second_fields) = directory_fields(entity, parameter_start)?;
+    append_directory_fields(output, first_fields, second_fields, entity.sequence)
+}
+
+fn directory_fields(
+    entity: &DataEntity,
+    parameter_start: u32,
+) -> Result<([[u8; 8]; 9], [[u8; 8]; 9]), CodecError> {
     let entity_type = entity
         .fields
         .get(CompressedField::Shared(DirectoryFieldSlot::EntityType));
@@ -532,6 +542,15 @@ fn append_directory_cards(
                 .get(CompressedField::Shared(DirectoryFieldSlot::Subscript)),
         )?,
     ];
+    Ok((first_fields, second_fields))
+}
+
+fn append_directory_fields(
+    output: &mut Vec<u8>,
+    first_fields: [[u8; 8]; 9],
+    second_fields: [[u8; 8]; 9],
+    sequence: u32,
+) -> Result<(), CodecError> {
     let mut first = [b' '; CARD_DATA_WIDTH];
     let mut second = [b' '; CARD_DATA_WIDTH];
     for (index, field) in first_fields.into_iter().enumerate() {
@@ -540,9 +559,8 @@ fn append_directory_cards(
     for (index, field) in second_fields.into_iter().enumerate() {
         second[index * 8..(index + 1) * 8].copy_from_slice(&field);
     }
-    append_card(output, &first, b'D', entity.sequence)?;
-    let even_sequence = entity
-        .sequence
+    append_card(output, &first, b'D', sequence)?;
+    let even_sequence = sequence
         .checked_add(1)
         .ok_or_else(|| malformed("Directory sequence overflows"))?;
     append_card(output, &second, b'D', even_sequence)
@@ -619,8 +637,24 @@ fn parse_data_entity(
 ) -> Result<(DataEntity, usize), CodecError> {
     let directory = parse_directory_record(lines, start, record_delimiter)?;
     let fields = apply_field_specs(previous, directory.specs)?;
-    let sequence = directory.sequence;
-    let mut cursor = directory.next;
+    parse_data_entity_with_fields(
+        lines,
+        directory.sequence,
+        directory.next,
+        fields,
+        parameter_delimiter,
+        record_delimiter,
+    )
+}
+
+fn parse_data_entity_with_fields(
+    lines: &[&[u8]],
+    sequence: u32,
+    mut cursor: usize,
+    fields: DirectoryFields,
+    parameter_delimiter: u8,
+    record_delimiter: u8,
+) -> Result<(DataEntity, usize), CodecError> {
     let entity_type = field_i64(
         &fields,
         CompressedField::Shared(DirectoryFieldSlot::EntityType),

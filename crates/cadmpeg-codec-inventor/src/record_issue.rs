@@ -8,7 +8,6 @@ use crate::record_identity::RecordTypeId;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum RecordIssueFamily {
-    Presentation,
     Design { type_id: RecordTypeId },
     Sketch { type_id: RecordTypeId },
     Feature { type_id: RecordTypeId },
@@ -28,7 +27,6 @@ struct RecordIssueId<'a>(&'a RecordIssue);
 impl std::fmt::Display for RecordIssueId<'_> {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let prefix = match self.0.family {
-            RecordIssueFamily::Presentation => "inventor:presentation:record-issue",
             RecordIssueFamily::Design { .. } => "inventor:pmdc:record-issue",
             RecordIssueFamily::Sketch { .. } => "inventor:pmdc:sketch-record-issue",
             RecordIssueFamily::Feature { .. } => "inventor:pmdc:feature-record-issue",
@@ -50,14 +48,10 @@ impl Serialize for RecordIssue {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut map = serializer.serialize_map(None)?;
         map.serialize_entry("id", &RecordIssueId(self))?;
-        match &self.family {
-            RecordIssueFamily::Presentation => {}
-            RecordIssueFamily::Design { type_id }
-            | RecordIssueFamily::Sketch { type_id }
-            | RecordIssueFamily::Feature { type_id } => {
-                map.serialize_entry("type_id", type_id.as_str())?;
-            }
-        }
+        let (RecordIssueFamily::Design { type_id }
+        | RecordIssueFamily::Sketch { type_id }
+        | RecordIssueFamily::Feature { type_id }) = &self.family;
+        map.serialize_entry("type_id", type_id.as_str())?;
         map.serialize_entry("segment_token", self.segment_token.as_str())?;
         map.serialize_entry("record_ordinal", &self.record_ordinal)?;
         map.serialize_entry("detail", &self.detail)?;
@@ -91,7 +85,6 @@ impl From<RecordIssue> for RecordIssueWire {
         Self {
             id: value.id(),
             type_id: match value.family {
-                RecordIssueFamily::Presentation => None,
                 RecordIssueFamily::Design { type_id }
                 | RecordIssueFamily::Sketch { type_id }
                 | RecordIssueFamily::Feature { type_id } => Some(type_id.as_str().to_owned()),
@@ -109,7 +102,6 @@ impl TryFrom<RecordIssueWire> for RecordIssue {
     fn try_from(wire: RecordIssueWire) -> Result<Self, Self::Error> {
         let prefix = wire.id.split_once('#').map(|(prefix, _)| prefix);
         let family = match (prefix, wire.type_id) {
-            (Some("inventor:presentation:record-issue"), None) => RecordIssueFamily::Presentation,
             (Some("inventor:pmdc:record-issue"), Some(type_id)) => RecordIssueFamily::Design {
                 type_id: type_id.try_into().map_err(str::to_owned)?,
             },
@@ -178,13 +170,14 @@ mod tests {
     }
 
     #[test]
+    fn removed_presentation_failure_wire_is_not_a_native_record() {
+        let wire = serde_json::json!({"id":"inventor:presentation:record-issue#segment-7","segment_token":"segment","record_ordinal":7,"detail":"truncated field"});
+        assert!(serde_json::from_value::<RecordIssue>(wire).is_err());
+    }
+
+    #[test]
     fn each_family_preserves_its_legacy_wire_and_rejects_mixed_fields() {
         for (family, prefix, typed) in [
-            (
-                RecordIssueFamily::Presentation,
-                "inventor:presentation:record-issue",
-                false,
-            ),
             (
                 RecordIssueFamily::Design {
                     type_id: "0123456789abcdef0123456789abcdef"

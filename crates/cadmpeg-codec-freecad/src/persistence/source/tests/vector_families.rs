@@ -144,6 +144,7 @@ fn discarding_each_actual_vector_family_producer_rolls_back_its_identity_and_com
                     0,
                     &mut losses,
                     Some(&source),
+                    false,
                 )?;
                 assert_eq!(property.type_name, type_name);
                 assert_eq!(property.values()[0].attributes["valueX"], "1");

@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 
 mod part_integrity;
+mod property_integrity;
 
 use cadmpeg_container::ArchiveSnapshot;
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -120,6 +121,7 @@ impl<'source, 'fidelity> OriginalArchive<'source, 'fidelity> {
         };
         let archive = ArchiveSnapshot::new(ctx, root)?;
         part_integrity::validate(ctx, root, &archive, fidelity)?;
+        property_integrity::validate(ctx, &archive, fidelity)?;
         Ok(Self { archive, fidelity })
     }
 

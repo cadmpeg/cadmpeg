@@ -52,3 +52,5 @@ assembly_owner!(super::PropertySectionRecord);
 assembly_owner!(super::PropertyRecord);
 
 assembly_owner!(super::DatabaseRecord);
+assembly_owner!(super::PmAppRenderingStyleRecord);
+assembly_owner!(super::PmGraphicsPrimaryColorStyleRecord);

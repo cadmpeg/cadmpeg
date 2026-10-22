@@ -41,7 +41,8 @@ fn damaged_occurrence_body_has_one_home_and_its_readable_peer_is_exact() {
     let failed_occurrence = format!("inventor:assembly:occurrence#{token}-0");
     let good_wrapper = format!("inventor:rse:record#{token}-1");
     let good_occurrence = format!("inventor:assembly:occurrence#{token}-1");
-    let failed_body = super::body(&ctx, bulk.expanded, &table.records[0]).unwrap();
+    let failed_body =
+        crate::records::source_admission::body(&ctx, bulk.expanded, &table.records[0]).unwrap();
     let failed_bytes = failed_body.window().to_vec();
     // Registry major18 legally has no extended record trailer.
     assert!(table
@@ -159,12 +160,16 @@ fn detached_or_foreign_payload_cannot_be_admitted_as_a_source_body() {
         panic!("real records")
     };
     table.records[0].payload = cadmpeg_core::decode::View::over_retained(&payload);
-    assert!(super::body(&ctx, bulk.expanded, &table.records[0]).is_err());
+    assert!(
+        crate::records::source_admission::body(&ctx, bulk.expanded, &table.records[0]).is_err()
+    );
     let foreign_arena = DecodeArena::new();
     let (_, foreign) =
         DecodeContext::from_root_bytes(&payload, &foreign_arena, &DecodePolicy::service()).unwrap();
     table.records[0].payload = foreign;
-    assert!(super::body(&ctx, bulk.expanded, &table.records[0]).is_err());
+    assert!(
+        crate::records::source_admission::body(&ctx, bulk.expanded, &table.records[0]).is_err()
+    );
     assert!(ctx.take_record_captures().unwrap().is_empty());
 }
 
@@ -210,7 +215,7 @@ fn placement_parse_and_conversion_failures_share_the_helper_and_keep_the_exact_p
         .records
         .iter()
         .map(|record| {
-            super::body(&ctx, bulk.expanded, record)
+            crate::records::source_admission::body(&ctx, bulk.expanded, record)
                 .unwrap()
                 .window()
                 .to_vec()

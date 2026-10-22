@@ -682,7 +682,8 @@ impl<'a> DecodeContext<'a> {
                 || crate::curves::is_arc(object.class_uuid)
                 || crate::curves::is_polyline(object.class_uuid)
                 || crate::curves::is_nurbs_curve(object.class_uuid)
-                || crate::surfaces::is_nurbs_surface(object.class_uuid))
+                || crate::surfaces::is_nurbs_surface(object.class_uuid)
+                || crate::curves::is_polycurve(object.class_uuid))
                 && source.has_source_tracking()
             {
                 let Some(key) = self.checked_object_key(&object.identity, source_order) else {
@@ -698,6 +699,8 @@ impl<'a> DecodeContext<'a> {
                 .map(|_| ctx.read_transaction())
                 .transpose()?;
             let decoded = if let Some(key) = source_key {
+                let polycurve_key =
+                    crate::curves::is_polycurve(object.class_uuid).then(|| key.clone());
                 let id: cadmpeg_ir::ids::Identity = if crate::curves::is_point(object.class_uuid) {
                     cadmpeg_ir::ids::PointId::compose(
                         &cadmpeg_ir::identity_namespace!("rhino", "object", "point"),
@@ -756,6 +759,16 @@ impl<'a> DecodeContext<'a> {
                             source,
                             object.class_data_range(),
                             scale,
+                        )
+                    } else if let Some(key) = &polycurve_key {
+                        crate::curves::source_polycurve::decode(
+                            ctx,
+                            source,
+                            self.scan.data,
+                            object.class_data_range(),
+                            scale,
+                            self.archive(),
+                            key,
                         )
                     } else if crate::curves::is_nurbs_curve(object.class_uuid) {
                         crate::curves::decode_nurbs_view(

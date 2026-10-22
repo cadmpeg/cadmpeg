@@ -18,6 +18,8 @@ use crate::objects::parse_class_wrapper;
 use crate::settings::{bbox, interval, plane, MillimeterScale, Point3 as NativePoint3};
 use crate::wire::{vector, Uuid};
 
+pub(crate) mod source_polycurve;
+
 const EPS_CURVE_POSITION: f64 = 1.0e-8;
 const EPS_CURVE_DEGENERATE: f64 = 1.0e-10;
 
@@ -513,6 +515,10 @@ pub(crate) fn is_arc(class: Uuid) -> bool {
 
 pub(crate) fn is_polyline(class: Uuid) -> bool {
     class == POLYLINE
+}
+
+pub(crate) fn is_polycurve(class: Uuid) -> bool {
+    matches!(class, POLYCURVE | POLYCURVE_LEGACY)
 }
 
 pub(crate) fn is_nurbs_curve(class: Uuid) -> bool {
@@ -1640,7 +1646,7 @@ fn read_polycurve_2d(
     reader.i32()?;
     reader.skip(48)?;
     let (parameters, end_parameter) =
-        read_polycurve_parameters(reader, segment_count, "C2 polycurve")?;
+        read_polycurve_parameters(ctx, reader, segment_count, "C2 polycurve")?;
     let mut children = Vec::new();
     for parameter in parameters {
         let start = reader.position();
@@ -2011,6 +2017,25 @@ fn read_polycurve(
     archive: ArchiveVersion,
     depth: usize,
 ) -> Result<DecodedCurve, GeometryError> {
+    read_polycurve_with(
+        data,
+        reader,
+        archive,
+        |reader, count| read_polycurve_parameters(ctx, reader, count, "polycurve"),
+        |_, class, range| decode_inner(ctx, data, class, range, scale, archive, depth + 1),
+    )
+}
+
+fn read_polycurve_with(
+    data: &[u8],
+    reader: &mut BoundedReader<'_>,
+    archive: ArchiveVersion,
+    mut parameters: impl FnMut(
+        &mut BoundedReader<'_>,
+        usize,
+    ) -> Result<(Vec<FiniteReal>, FiniteReal), GeometryError>,
+    mut decode_child: impl FnMut(usize, Uuid, Range<usize>) -> Result<DecodedGeometry, GeometryError>,
+) -> Result<DecodedCurve, GeometryError> {
     let version = reader.u8()?;
     if version >> 4 != 1 {
         return Err(GeometryError::unsupported(
@@ -2025,13 +2050,12 @@ fn read_polycurve(
             "polycurve has no segments",
         ));
     }
-    reader.i32()?;
-    reader.i32()?;
+    reader.skip(std::mem::size_of::<i32>())?;
+    reader.skip(std::mem::size_of::<i32>())?;
     reader.skip(48)?;
-    let (parameters, end_parameter) =
-        read_polycurve_parameters(reader, segment_count, "polycurve")?;
+    let (parameters, end_parameter) = parameters(reader, segment_count)?;
     let mut children = Vec::new();
-    for parameter in parameters {
+    for (index, parameter) in parameters.into_iter().enumerate() {
         let start = reader.position();
         let wrapper = crate::chunks::chunk_at(data, start, reader.end(), archive, false)?;
         let mut wrapper_warnings = Diagnostics::new();
@@ -2048,15 +2072,7 @@ fn read_polycurve(
                 "polycurve child is not a curve",
             ));
         }
-        let child = decode_inner(
-            ctx,
-            data,
-            class.class_uuid,
-            class.class_data_range,
-            scale,
-            archive,
-            depth + 1,
-        )?;
+        let child = decode_child(index, class.class_uuid, class.class_data_range)?;
         let DecodedGeometry::Curve { mut curve } = child else {
             return Err(GeometryError::malformed(
                 start,
@@ -2088,6 +2104,7 @@ pub(crate) fn consume_legacy_polycurve(
 }
 
 fn read_polycurve_parameters(
+    ctx: &DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     segment_count: usize,
     label: &str,
@@ -2099,15 +2116,16 @@ fn read_polycurve_parameters(
             format!("{label} parameter count mismatch"),
         ));
     }
-    let mut parameters = Vec::new();
-    for _ in 0..segment_count {
+    let mut parameters = ctx.alloc_filled(
+        segment_count,
+        FiniteReal::ZERO,
+        "Rhino polycurve parameters",
+    )?;
+    let mut previous = None;
+    for parameter in &mut parameters {
         let value = reader.f64()?;
-        parameters.push(checked_polycurve_parameter(
-            parameters.last().copied(),
-            value,
-            reader.position(),
-            label,
-        )?);
+        *parameter = checked_polycurve_parameter(previous, value, reader.position(), label)?;
+        previous = Some(*parameter);
     }
     let value = reader.f64()?;
     let end_parameter =

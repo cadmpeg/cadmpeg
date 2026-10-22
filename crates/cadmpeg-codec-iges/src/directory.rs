@@ -385,7 +385,7 @@ fn fields(line: &PhysicalLine) -> [[u8; 8]; 9] {
     fields
 }
 
-fn integer(field: [u8; 8], name: &'static str) -> Result<i64, DirectoryDefect> {
+pub(crate) fn integer(field: [u8; 8], name: &'static str) -> Result<i64, DirectoryDefect> {
     let text = std::str::from_utf8(&field)
         .map_err(|_| DirectoryDefect::FieldNotAscii(name))?
         .trim();
@@ -411,7 +411,7 @@ fn directory_integer(
     integer(field, name)
 }
 
-fn status(field: [u8; 8]) -> Result<SourceStatus, DirectoryDefect> {
+pub(crate) fn status(field: [u8; 8]) -> Result<SourceStatus, DirectoryDefect> {
     if field.iter().all(|byte| *byte == b' ') {
         return Ok(SourceStatus {
             blank: 0,
@@ -449,8 +449,22 @@ fn parse_pair(
     second: &PhysicalLine,
     global_table: GlobalTable,
 ) -> Result<DirectoryEntry, DirectoryDefect> {
-    let first_fields = fields(first);
-    let second_fields = fields(second);
+    admit_fields(
+        sequence,
+        first.offset,
+        fields(first),
+        fields(second),
+        global_table,
+    )
+}
+
+pub(crate) fn admit_fields(
+    sequence: u32,
+    source_offset: u64,
+    first_fields: [[u8; 8]; 9],
+    second_fields: [[u8; 8]; 9],
+    global_table: GlobalTable,
+) -> Result<DirectoryEntry, DirectoryDefect> {
     let entity_type = directory_integer(first_fields[0], "entity type", 1, global_table)?;
     let repeated_type =
         directory_integer(second_fields[0], "repeated entity type", 11, global_table)?;
@@ -461,7 +475,7 @@ fn parse_pair(
         });
     }
     Ok(DirectoryEntry {
-        source_offset: first.offset,
+        source_offset,
         sequence,
         entity_type,
         parameter_start: directory_integer(

@@ -113,6 +113,7 @@ fn discarding_a_real_vector_property_producer_rolls_back_all_component_reads() {
                 0,
                 &mut losses,
                 Some(&source),
+                false,
             )?;
             assert_eq!(property.values()[0].attributes["valueX"], "1");
             assert!(crate::attributes::values(&property).is_some());

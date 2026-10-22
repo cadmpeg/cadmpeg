@@ -7,14 +7,17 @@ use std::num::NonZeroUsize;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
-use cadmpeg_ir::ids::{AppearanceBindingId, AppearanceId, BodyId, FaceId, IdentityKey};
+use cadmpeg_ir::ids::{AppearanceBindingId, AppearanceId, BodyId, FaceId};
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::Color;
 
 use crate::assembly::count_unresolved;
 use crate::pmdc::{PmDcPairedReferenceList, PmDcReference};
 use crate::record_identity::Located;
-use crate::record_issue::{RecordIssue, RecordIssueFamily};
+use cadmpeg_ir::source_fidelity::parts::PartOutput;
+
+pub(crate) mod native;
+mod parts;
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 
 const DEFAULT_STYLE_TYPE: [u8; 16] = [
@@ -40,7 +43,6 @@ pub(crate) struct PresentationInventory<'a> {
     pub(crate) graphics_faces: Vec<Located<PmGraphicsFace>>,
     pub(crate) graphics_style_collections: Vec<Located<PmGraphicsStyleCollection>>,
     pub(crate) graphics_primary_color_styles: Vec<Located<PmGraphicsPrimaryColorStyle>>,
-    pub(crate) issues: Vec<RecordIssue>,
 }
 
 #[derive(Debug)]
@@ -155,9 +157,11 @@ pub(crate) fn project_bindings(
     appearances: &[Appearance],
     bodies: &[BodyId],
     face_keys: &std::collections::HashMap<FaceId, u64>,
+    mut output: Option<&mut PartOutput>,
 ) -> Result<PresentationProjection, CodecError> {
-    let mut projection = project_default_bindings(ctx, inventory, appearances, bodies)?;
-    project_face_bindings(ctx, inventory, face_keys, &mut projection)?;
+    let mut projection =
+        project_default_bindings(ctx, inventory, appearances, bodies, output.as_deref_mut())?;
+    project_face_bindings(ctx, inventory, face_keys, &mut projection, output)?;
     Ok(projection)
 }
 
@@ -166,6 +170,7 @@ fn project_default_bindings(
     inventory: &PresentationInventory<'_>,
     appearances: &[Appearance],
     bodies: &[BodyId],
+    mut output: Option<&mut PartOutput>,
 ) -> Result<PresentationProjection, CodecError> {
     if inventory.default_styles.len() != 1 {
         return Ok(PresentationProjection {
@@ -259,23 +264,28 @@ fn project_default_bindings(
     let appearance = &matches[0].id;
     let mut bindings = Vec::new();
     for body in bodies {
-        ctx.charge_entities(1, "project Inventor default appearance binding")?;
-        bindings.push(AppearanceBinding {
-            native_ref: None,
-            id: AppearanceBindingId::compose(
-                &cadmpeg_ir::identity_namespace!("inventor", "presentation", "body-default"),
-                short_digest_key(body.as_str().as_bytes()),
-            ),
-            target: AppearanceTarget::Body(body.clone()),
-            appearance: appearance.clone(),
-            source_entity_id: Some(format!(
-                "inventor:presentation:rendering-style#{}-{}",
-                style.identity.segment_token, style.identity.record_ordinal
-            )),
-            object_type: Some("Body".into()),
-            visible: None,
-            channels: BTreeMap::default(),
-        });
+        emit_binding(
+            ctx,
+            &mut output,
+            &mut bindings,
+            || AppearanceBinding {
+                native_ref: None,
+                id: AppearanceBindingId::compose(
+                    &cadmpeg_ir::identity_namespace!("inventor", "presentation", "body-default"),
+                    short_digest_key(body.as_str().as_bytes()),
+                ),
+                target: AppearanceTarget::Body(body.clone()),
+                appearance: appearance.clone(),
+                source_entity_id: Some(format!(
+                    "inventor:presentation:rendering-style#{}-{}",
+                    style.identity.segment_token, style.identity.record_ordinal
+                )),
+                object_type: Some("Body".into()),
+                visible: None,
+                channels: BTreeMap::default(),
+            },
+            "project Inventor default appearance binding",
+        )?;
     }
     Ok(PresentationProjection {
         appearances: Vec::new(),
@@ -290,6 +300,7 @@ fn project_face_bindings(
     inventory: &PresentationInventory<'_>,
     face_keys: &std::collections::HashMap<FaceId, u64>,
     projection: &mut PresentationProjection,
+    mut output: Option<&mut PartOutput>,
 ) -> Result<(), CodecError> {
     if face_keys.is_empty() {
         return Ok(());
@@ -392,62 +403,118 @@ fn project_face_bindings(
         let appearance_id = if let Some(id) = appearance_ids.get(&appearance_key) {
             id.clone()
         } else {
-            ctx.charge_entities(1, "project Inventor face appearance")?;
             let id = AppearanceId::compose(
                 &cadmpeg_ir::identity_namespace!("inventor", "presentation", "face-color"),
                 style.identity.key()?,
             );
-            projection.appearances.push(Appearance {
-                native_ref: None,
-                id: id.clone(),
-                name: None,
-                asset_guid: None,
-                library_id: None,
-                visual_guid: None,
-                physical_token: None,
-                schema: Some("InventorPrimaryColorStyle".into()),
-                category: None,
-                base_color: Some(color),
-                properties: BTreeMap::new(),
-                textures: Vec::new(),
-            });
+            emit_appearance(
+                ctx,
+                &mut output,
+                &mut projection.appearances,
+                || Appearance {
+                    native_ref: None,
+                    id: id.clone(),
+                    name: None,
+                    asset_guid: None,
+                    library_id: None,
+                    visual_guid: None,
+                    physical_token: None,
+                    schema: Some("InventorPrimaryColorStyle".into()),
+                    category: None,
+                    base_color: Some(color),
+                    properties: BTreeMap::new(),
+                    textures: Vec::new(),
+                },
+                "project Inventor face appearance",
+            )?;
             appearance_ids.insert(appearance_key, id.clone());
             id
         };
-        ctx.charge_entities(1, "project Inventor face appearance binding")?;
-        projection.bindings.push(AppearanceBinding {
-            native_ref: None,
-            id: AppearanceBindingId::compose(
-                &cadmpeg_ir::identity_namespace!("inventor", "presentation", "face-override"),
-                short_digest_key(face_id.as_str().as_bytes()),
-            ),
-            target: AppearanceTarget::Face(face_id.clone()),
-            appearance: appearance_id,
-            source_entity_id: Some(format!(
-                "inventor:presentation:graphics-face#{}-{}",
-                graphics_face.identity.segment_token, graphics_face.identity.record_ordinal
-            )),
-            object_type: Some("Face".into()),
-            visible: None,
-            channels: BTreeMap::from([(
-                cadmpeg_core::nonblank_literal!("precedence"),
-                "face_over_body".into(),
-            )]),
-        });
+        emit_binding(
+            ctx,
+            &mut output,
+            &mut projection.bindings,
+            || AppearanceBinding {
+                native_ref: None,
+                id: AppearanceBindingId::compose(
+                    &cadmpeg_ir::identity_namespace!("inventor", "presentation", "face-override"),
+                    short_digest_key(face_id.as_str().as_bytes()),
+                ),
+                target: AppearanceTarget::Face(face_id.clone()),
+                appearance: appearance_id,
+                source_entity_id: Some(format!(
+                    "inventor:presentation:graphics-face#{}-{}",
+                    graphics_face.identity.segment_token, graphics_face.identity.record_ordinal
+                )),
+                object_type: Some("Face".into()),
+                visible: None,
+                channels: BTreeMap::from([(
+                    cadmpeg_core::nonblank_literal!("precedence"),
+                    "face_over_body".into(),
+                )]),
+            },
+            "project Inventor face appearance binding",
+        )?;
     }
     Ok(())
+}
+
+fn emit_binding(
+    ctx: &DecodeContext<'_>,
+    output: &mut Option<&mut PartOutput>,
+    held: &mut Vec<AppearanceBinding>,
+    create: impl FnOnce() -> AppearanceBinding,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if let Some(stage) = output {
+        stage.insert_model(ctx, create())
+    } else {
+        ctx.charge_entities(1, operation)?;
+        held.push(create());
+        Ok(())
+    }
+}
+
+fn emit_appearance(
+    ctx: &DecodeContext<'_>,
+    output: &mut Option<&mut PartOutput>,
+    held: &mut Vec<Appearance>,
+    create: impl FnOnce() -> Appearance,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if let Some(stage) = output {
+        stage.insert_model(ctx, create())
+    } else {
+        ctx.charge_entities(1, operation)?;
+        held.push(create());
+        Ok(())
+    }
+}
+
+pub(crate) fn owns_record(kind: &SegmentKind, type_id: [u8; 16]) -> bool {
+    matches!(kind, SegmentKind::PmApp | SegmentKind::PmGraphics)
+        && (matches!(type_id, DEFAULT_STYLE_TYPE | RENDERING_STYLE_TYPE)
+            || (*kind == SegmentKind::PmGraphics
+                && matches!(
+                    type_id,
+                    GRAPHICS_FACE_TYPE
+                        | GRAPHICS_STYLE_COLLECTION_TYPE
+                        | GRAPHICS_PRIMARY_COLOR_STYLE_TYPE
+                )))
 }
 
 pub(crate) fn inventory<'a>(
     ctx: &DecodeContext<'a>,
     document: &RseInventory<'a>,
+    output: &mut PartOutput,
 ) -> Result<PresentationInventory<'a>, CodecError> {
-    let mut default_styles = Vec::new();
-    let mut rendering_styles = Vec::new();
-    let mut graphics_faces = Vec::new();
-    let mut graphics_style_collections = Vec::new();
-    let mut graphics_primary_color_styles = Vec::new();
-    let mut issues = Vec::new();
+    let mut inventory = PresentationInventory {
+        default_styles: Vec::new(),
+        rendering_styles: Vec::new(),
+        graphics_faces: Vec::new(),
+        graphics_style_collections: Vec::new(),
+        graphics_primary_color_styles: Vec::new(),
+    };
     for segment in &document.segments {
         if !matches!(segment.kind, SegmentKind::PmApp | SegmentKind::PmGraphics) {
             continue;
@@ -462,101 +529,32 @@ pub(crate) fn inventory<'a>(
             continue;
         };
         for record in &table.records {
-            let token = segment.pair.token.key();
-            let ordinal = record.ordinal;
-            let parsed = match record.type_id {
-                DEFAULT_STYLE_TYPE => parse_default_style(record.payload, version).map(|value| {
-                    push_presentation_record(
-                        &mut default_styles,
-                        value,
-                        record.type_id,
-                        token,
-                        ordinal,
-                    );
-                }),
-                RENDERING_STYLE_TYPE => {
-                    parse_rendering_style(ctx, record.payload, version).map(|value| {
-                        push_presentation_record(
-                            &mut rendering_styles,
-                            value,
-                            record.type_id,
-                            token,
-                            ordinal,
-                        );
-                    })
+            if !owns_record(&segment.kind, record.type_id) {
+                continue;
+            }
+            if let Some(parsed) = parts::decode(
+                ctx,
+                output,
+                bulk.expanded,
+                segment.pair.token.key(),
+                record,
+                version,
+            )? {
+                match parsed {
+                    parts::Parsed::Default(value) => inventory.default_styles.push(value),
+                    parts::Parsed::Rendering(value) => inventory.rendering_styles.push(value),
+                    parts::Parsed::Face(value) => inventory.graphics_faces.push(value),
+                    parts::Parsed::Collection(value) => {
+                        inventory.graphics_style_collections.push(value)
+                    }
+                    parts::Parsed::Primary(value) => {
+                        inventory.graphics_primary_color_styles.push(value)
+                    }
                 }
-                GRAPHICS_FACE_TYPE if segment.kind == SegmentKind::PmGraphics => {
-                    parse_graphics_face(record.payload, version).map(|value| {
-                        push_presentation_record(
-                            &mut graphics_faces,
-                            value,
-                            record.type_id,
-                            token,
-                            ordinal,
-                        );
-                    })
-                }
-                GRAPHICS_STYLE_COLLECTION_TYPE if segment.kind == SegmentKind::PmGraphics => {
-                    parse_graphics_style_collection(record.payload, version).map(|value| {
-                        push_presentation_record(
-                            &mut graphics_style_collections,
-                            value,
-                            record.type_id,
-                            token,
-                            ordinal,
-                        );
-                    })
-                }
-                GRAPHICS_PRIMARY_COLOR_STYLE_TYPE if segment.kind == SegmentKind::PmGraphics => {
-                    parse_graphics_primary_color_style(record.payload, version).map(|value| {
-                        push_presentation_record(
-                            &mut graphics_primary_color_styles,
-                            value,
-                            record.type_id,
-                            token,
-                            ordinal,
-                        );
-                    })
-                }
-                _ => continue,
-            };
-            if let Err(error) = parsed {
-                if matches!(error, CodecError::ResourceLimit(_)) {
-                    return Err(error);
-                }
-                ctx.charge_entities(1, "admit Inventor presentation issue")?;
-                issues.push(RecordIssue {
-                    family: RecordIssueFamily::Presentation,
-                    segment_token: segment.pair.token.key().clone(),
-                    record_ordinal: record.ordinal,
-                    detail: crate::issue_detail(error)?,
-                });
             }
         }
     }
-    Ok(PresentationInventory {
-        default_styles,
-        rendering_styles,
-        graphics_faces,
-        graphics_style_collections,
-        graphics_primary_color_styles,
-        issues,
-    })
-}
-
-fn push_presentation_record<T>(
-    records: &mut Vec<Located<T>>,
-    value: T,
-    type_id: [u8; 16],
-    token: &IdentityKey,
-    ordinal: u32,
-) {
-    records.push(Located::new(
-        value,
-        crate::record_identity::RecordTypeId::from_bytes(type_id),
-        token.clone(),
-        ordinal,
-    ));
+    Ok(inventory)
 }
 
 fn parse_graphics_primary_color_style(
@@ -582,8 +580,8 @@ fn parse_graphics_primary_color_style(
         "graphics primary-color legacy color prefix",
     )?;
     let color_header = [
-        cursor.u8("graphics primary-color header 0")?,
-        cursor.u8("graphics primary-color header 1")?,
+        cursor.unread_u8("graphics primary-color header 0")?,
+        cursor.unread_u8("graphics primary-color header 1")?,
     ];
     let mut colors = [[cadmpeg_ir::scalar::FiniteBinary32::ZERO; 4]; 4];
     for color in &mut colors {
@@ -804,7 +802,7 @@ fn parse_rendering_style<'a>(
     let name = cursor.utf16(ctx, "rendering-style name")?;
     let comment = if version < 17 {
         let value = cursor.utf16(ctx, "rendering-style comment")?;
-        let _comment_state = cursor.u16("rendering-style comment state")?;
+        cursor.skip(2, "rendering-style comment state")?;
         value
     } else {
         String::new()
@@ -873,16 +871,17 @@ impl<'a> Cursor<'a> {
         Self { source }
     }
 
-    fn take(&mut self, len: usize, field: &'static str) -> Result<&'a [u8], CodecError> {
-        crate::reader::take(&mut self.source, len, field)
+    fn skip(&mut self, len: usize, field: &'static str) -> Result<(), CodecError> {
+        crate::reader::take_child(&mut self.source, len, field).map(|_| ())
     }
 
-    fn skip(&mut self, len: usize, field: &'static str) -> Result<(), CodecError> {
-        self.take(len, field).map(|_| ())
+    fn unread_u8(&mut self, field: &'static str) -> Result<u8, CodecError> {
+        Ok(crate::reader::take_child(&mut self.source, 1, field)?.window()[0])
     }
 
     fn zeroes(&mut self, len: usize, field: &'static str) -> Result<(), CodecError> {
-        if self.take(len, field)?.iter().any(|byte| *byte != 0) {
+        let bytes = crate::reader::take_child(&mut self.source, len, field)?;
+        if bytes.window().iter().any(|byte| *byte != 0) {
             return Err(CodecError::malformed(format_args!(
                 "Inventor presentation {field} is not zero-filled"
             )));
@@ -1056,12 +1055,12 @@ mod tests {
     use crate::container::InventorContainer;
     use crate::pmdc::{PmDcPairedReferenceList, PmDcReference};
     use crate::record_identity::Located;
-    use crate::rse::{RecordFrameState, SegmentBulkState, SegmentKind};
-    use crate::test_support::test_fixtures::primary_envelope_fixture;
+    use crate::rse::SegmentKind;
     use crate::test_support::truncation::displayed_truncation;
     use cadmpeg_core::decode::{DecodeContext, View};
     use cadmpeg_ir::appearance::Appearance;
     use cadmpeg_ir::ids::{BodyId, FaceId};
+    use cadmpeg_ir::source_fidelity::parts::PartOutput;
     use cadmpeg_ir::topology::Color;
 
     #[test]
@@ -1135,7 +1134,6 @@ mod tests {
             graphics_faces: Vec::new(),
             graphics_style_collections: Vec::new(),
             graphics_primary_color_styles: Vec::new(),
-            issues: Vec::new(),
         };
         let face = FaceId::mint("inventor:test:face#1").expect("face id");
         let face_keys = std::collections::HashMap::from([(face, 42)]);
@@ -1143,7 +1141,7 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("build the decode context");
         assert!(
-            super::project_bindings(&ctx, &inventory, &[], &[], &face_keys)
+            super::project_bindings(&ctx, &inventory, &[], &[], &face_keys, None)
                 .expect("presentation projection")
                 .bindings
                 .is_empty()
@@ -1166,7 +1164,7 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("build the decode context");
         assert_eq!(
-            project_default_bindings(&ctx, &inventory, &[appearance], &[body])
+            project_default_bindings(&ctx, &inventory, &[appearance], &[body], None)
                 .expect("default binding projection")
                 .bindings
                 .len(),
@@ -1192,7 +1190,7 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("limited projection context");
         assert!(matches!(
-            project_default_bindings(&ctx, &inventory, std::slice::from_ref(&appearance), std::slice::from_ref(&body)),
+            project_default_bindings(&ctx, &inventory, std::slice::from_ref(&appearance), std::slice::from_ref(&body), None),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::Entities
                     && limit.operation == "project Inventor default appearance binding"
@@ -1200,7 +1198,7 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("build the decode context");
         assert_eq!(
-            project_default_bindings(&ctx, &inventory, &[appearance], &[body])
+            project_default_bindings(&ctx, &inventory, &[appearance], &[body], None)
                 .expect("default binding projection")
                 .bindings
                 .len(),
@@ -1231,7 +1229,6 @@ mod tests {
             graphics_faces: Vec::new(),
             graphics_style_collections: Vec::new(),
             graphics_primary_color_styles: Vec::new(),
-            issues: Vec::new(),
         };
         let appearance = Appearance {
             native_ref: None,
@@ -1256,33 +1253,25 @@ mod tests {
         type_id: [u8; 16],
         payload: &[u8],
         policy: DecodePolicy,
-    ) -> Result<(usize, Vec<crate::record_issue::RecordIssue>), CodecError> {
-        let bytes = primary_envelope_fixture();
-        let payload = payload.to_vec();
+    ) -> Result<(usize, Vec<cadmpeg_ir::report::loss::LossNote>), CodecError> {
+        let records = [(type_id, payload.to_vec())];
+        let bytes =
+            crate::test_support::test_fixtures::presentation_envelope_fixture(kind, &records);
         let arena = DecodeArena::new();
-        let (setup_ctx, source) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-                .expect("envelope view");
-        let mut container = InventorContainer::open(&setup_ctx, source).expect("framed envelope");
-        let segment = &mut container.rse.segments[0];
-        segment.kind = kind;
-        let SegmentBulkState::Framed(bulk) = &mut segment.bulk else {
-            panic!("framed bulk fixture");
-        };
-        let RecordFrameState::Framed(table) = &mut bulk.records else {
-            panic!("framed record fixture");
-        };
-        table.records[0].type_id = type_id;
-        table.records[0].payload = View::over_retained(&payload);
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("input view");
-        let result = inventory(&ctx, &container.rse)?;
+        let (ctx, source) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("input view");
+        let container =
+            InventorContainer::open(&ctx, source).expect("actual presentation envelope");
+        let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Inventor);
+        let result = inventory(&ctx, &container.rse, &mut output)?;
+        let (_, _, _, losses) = output.into_parts(&ctx)?.into_parts();
         Ok((
             result.default_styles.len()
                 + result.rendering_styles.len()
                 + result.graphics_faces.len()
                 + result.graphics_style_collections.len()
                 + result.graphics_primary_color_styles.len(),
-            result.issues,
+            losses,
         ))
     }
 
@@ -1467,7 +1456,6 @@ mod tests {
             graphics_faces: Vec::new(),
             graphics_style_collections: Vec::new(),
             graphics_primary_color_styles: Vec::new(),
-            issues: Vec::new(),
         };
         let appearance = Appearance {
             native_ref: None,
@@ -1492,6 +1480,7 @@ mod tests {
             &inventory,
             &[appearance],
             &[BodyId::mint("inventor:test:body#1").expect("identity grammar")],
+            None,
         )
         .expect("default binding projection");
 
@@ -1523,7 +1512,7 @@ mod tests {
     }
 
     /// A current graphics-face record with qualified references and `bounds`.
-    fn graphics_face_fixture(bounds: [f64; 6]) -> Vec<u8> {
+    pub(super) fn graphics_face_fixture(bounds: [f64; 6]) -> Vec<u8> {
         let mut bytes = Vec::new();
         bytes.extend(4_u32.to_le_bytes());
         bytes.extend(5_u16.to_le_bytes());
@@ -1657,7 +1646,10 @@ mod tests {
             .contains("graphics primary-color component is not finite"));
     }
 
-    fn face_override_inventory(key: u32, has_style: bool) -> PresentationInventory<'static> {
+    pub(super) fn face_override_inventory(
+        key: u32,
+        has_style: bool,
+    ) -> PresentationInventory<'static> {
         let face = Located::new(
             PmGraphicsFace {
                 segment_version_major: 26,
@@ -1718,7 +1710,6 @@ mod tests {
             graphics_faces: vec![face],
             graphics_style_collections: vec![collection],
             graphics_primary_color_styles: vec![style],
-            issues: Vec::new(),
         }
     }
 
@@ -1731,7 +1722,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("projection context");
-        let projection = project_bindings(&ctx, &inventory, &[], &[], &face_keys)
+        let projection = project_bindings(&ctx, &inventory, &[], &[], &face_keys, None)
             .expect("face binding projection");
 
         assert!(projection.unresolved_face_overrides.is_empty());
@@ -1768,7 +1759,7 @@ mod tests {
             let (ctx, _) =
                 DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
             assert!(matches!(
-                project_bindings(&ctx, &inventory, &[], &[], &face_keys),
+                project_bindings(&ctx, &inventory, &[], &[], &face_keys, None),
                 Err(CodecError::ResourceLimit(limit))
                     if limit.dimension == ResourceDimension::Entities
                         && limit.operation == operation
@@ -1777,7 +1768,7 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("build the decode context");
         assert_eq!(
-            project_bindings(&ctx, &inventory, &[], &[], &face_keys)
+            project_bindings(&ctx, &inventory, &[], &[], &face_keys, None)
                 .expect("face binding projection")
                 .bindings
                 .len(),
@@ -1805,7 +1796,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("projection context");
-        let projection = project_bindings(&ctx, &inventory, &[], &[], &face_keys)
+        let projection = project_bindings(&ctx, &inventory, &[], &[], &face_keys, None)
             .expect("indexed face projection");
         assert!(projection.bindings.is_empty());
         assert!(projection.appearances.is_empty());
@@ -1832,7 +1823,7 @@ mod tests {
             let arena = DecodeArena::new();
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
                 .expect("projection context");
-            let projection = project_bindings(&ctx, &inventory, &[], &[], &face_keys)
+            let projection = project_bindings(&ctx, &inventory, &[], &[], &face_keys, None)
                 .expect("ambiguous face projection");
             assert!(projection.bindings.is_empty());
             assert!(projection.appearances.is_empty());
@@ -1879,7 +1870,7 @@ mod tests {
         bytes
     }
 
-    fn primary_color_fixture(diffuse: [f32; 4]) -> Vec<u8> {
+    pub(super) fn primary_color_fixture(diffuse: [f32; 4]) -> Vec<u8> {
         let mut bytes = Vec::new();
         bytes.extend(31_u32.to_le_bytes());
         for value in 32_u16..=38 {
@@ -1947,7 +1938,7 @@ mod tests {
                 "graphics-face legacy object padding",
                 displayed_truncation(
                     Cursor::new(View::over_retained(empty))
-                        .take(4, "graphics-face legacy object padding"),
+                        .skip(4, "graphics-face legacy object padding"),
                 ),
             ),
             (

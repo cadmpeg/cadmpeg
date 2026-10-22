@@ -44,8 +44,6 @@ pub(crate) enum InventorLossCode {
     RseMetadataStreamMalformed,
     /// `RSe` bulk streams have invalid envelope or zlib framing.
     RseBulkStreamMalformed,
-    /// Typed presentation records are malformed or outside the implemented branch.
-    PresentationRecordMalformed,
     /// Typed design records are malformed or outside the implemented branch.
     DesignRecordMalformed,
     /// Typed sketch records could not be parsed exactly.
@@ -123,7 +121,6 @@ impl InventorLossCode {
         Self::RseSegmentPairUntyped,
         Self::RseMetadataStreamMalformed,
         Self::RseBulkStreamMalformed,
-        Self::PresentationRecordMalformed,
         Self::DesignRecordMalformed,
         Self::SketchRecordMalformed,
         Self::FeatureRecordMalformed,
@@ -171,7 +168,6 @@ impl InventorLossCode {
             Self::RseSegmentPairUntyped => "rse.segment-pair-untyped",
             Self::RseMetadataStreamMalformed => "rse.metadata-stream-malformed",
             Self::RseBulkStreamMalformed => "rse.bulk-stream-malformed",
-            Self::PresentationRecordMalformed => "presentation.record-malformed",
             Self::DesignRecordMalformed => "design.record-malformed",
             Self::SketchRecordMalformed => "sketch.record-malformed",
             Self::FeatureRecordMalformed => "feature.record-malformed",
@@ -226,7 +222,6 @@ impl InventorLossCode {
             | Self::PropertyRecordUntyped => LossTaxonomy::RecordNotTyped,
             Self::RseMetadataStreamMalformed
             | Self::RseBulkStreamMalformed
-            | Self::PresentationRecordMalformed
             | Self::DesignRecordMalformed
             | Self::SketchRecordMalformed
             | Self::FeatureRecordMalformed
@@ -330,10 +325,6 @@ const UNREPRESENTED: &[(InventorLossCode, cadmpeg_ir::ArenaClass)] = &[
     ),
     (
         InventorLossCode::KernelCarrierUnparseable,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        InventorLossCode::PresentationRecordMalformed,
         cadmpeg_ir::ArenaClass::Model,
     ),
     (
@@ -486,7 +477,6 @@ mod tests {
                 "rse.segment-pair-untyped",
                 "rse.metadata-stream-malformed",
                 "rse.bulk-stream-malformed",
-                "presentation.record-malformed",
                 "design.record-malformed",
                 "sketch.record-malformed",
                 "feature.record-malformed",

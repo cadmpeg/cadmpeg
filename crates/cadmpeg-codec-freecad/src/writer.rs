@@ -171,6 +171,13 @@ fn write_seekable(
         "retained layout reused after current typed and neutral projections agreed".into(),
     ];
     Ok(WriteOutcome {
+        geometry_empty: written_graph.objects.is_empty()
+            && written_graph.properties.iter().all(|property| {
+                property.type_name == "App::PropertyString"
+                    && property.links().is_empty()
+                    && property.side_entries().is_empty()
+                    && matches!(property.values(), [value] if value.tag == "String" && value.parent.is_none())
+            }),
         census: cadmpeg_ir::report::export::EntityCensus {
             basis: cadmpeg_ir::report::export::CensusBasis::IrArenas,
             counts: ir.census(),
@@ -180,6 +187,7 @@ fn write_seekable(
 }
 
 struct WriteOutcome {
+    geometry_empty: bool,
     census: cadmpeg_ir::report::export::EntityCensus,
     notes: Vec<String>,
 }

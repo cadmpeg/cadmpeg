@@ -992,3 +992,5 @@ mod global_parts;
 mod parameter_parts;
 
 mod binary_parts;
+
+mod compressed_parts;

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact Inventor `RSe` metadata tables and bulk-record framing.
 
+pub(crate) mod source_admission;
+
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 

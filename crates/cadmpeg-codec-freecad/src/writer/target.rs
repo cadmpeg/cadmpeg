@@ -212,7 +212,12 @@ fn finish(resolution: &Resolution<'_>) -> Result<ExportBody, CodecError> {
             cadmpeg_ir::codec::write::NativeDisposition::Written,
         ),
         synthesis_cause: None,
-        losses: Vec::new(),
+        losses: if outcome.geometry_empty {
+            vec![cadmpeg_ir::codec::write::ExportLossCode::OutputEmpty
+                .note("the emitted FCStd document has no objects or geometry")]
+        } else {
+            Vec::new()
+        },
         notes: outcome.notes,
     })
 }

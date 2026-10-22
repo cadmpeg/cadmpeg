@@ -331,14 +331,63 @@ pub(crate) fn semantic_text(property: &PropertyRecord) -> Option<String> {
     Some(serde_json::Value::Array(values).to_string())
 }
 
+pub(crate) fn document_string(
+    property: &PropertyRecord,
+) -> Result<Option<SourceAttribute>, CodecError> {
+    if matches!(property.name.as_str(), "Shape" | "Placement")
+        || crate::property_policy::is_projection_metadata(property)
+    {
+        return Ok(None);
+    }
+    let Some(values) = values(property) else {
+        return Ok(None);
+    };
+    Ok(Some(SourceAttribute {
+        native_ref: Some(property.id.clone()),
+        id: AttributeId::mint(crate::native::model_id(
+            "attribute",
+            &property.id,
+            "property",
+        ))
+        .map_err(CodecError::malformed)?,
+        target: AttributeTarget::Document,
+        name: property.name.clone(),
+        values,
+    }))
+}
+
 pub(crate) fn transfer(
     ir: &mut CadIr,
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
 ) -> Result<Vec<LossNote>, CodecError> {
+    transfer_impl(ir, objects, properties, None)
+}
+
+pub(crate) fn transfer_with_document_strings(
+    ir: &mut CadIr,
+    objects: &[ObjectRecord],
+    properties: &[PropertyRecord],
+    strings: Option<&crate::persistence::document_strings::RootStrings>,
+) -> Result<Vec<LossNote>, CodecError> {
+    if strings.is_none() {
+        return transfer(ir, objects, properties);
+    }
+    transfer_impl(ir, objects, properties, strings)
+}
+
+fn transfer_impl(
+    ir: &mut CadIr,
+    objects: &[ObjectRecord],
+    properties: &[PropertyRecord],
+    strings: Option<&crate::persistence::document_strings::RootStrings>,
+) -> Result<Vec<LossNote>, CodecError> {
     let mut attributes = Vec::new();
     let mut losses = Vec::new();
     for property in properties {
+        if strings.is_some_and(|strings| strings.sources.contains_key(&property.id)) {
+            continue;
+        }
         if !projection_held(ir)
             || consumed(ir, property, objects)
             || matches!(

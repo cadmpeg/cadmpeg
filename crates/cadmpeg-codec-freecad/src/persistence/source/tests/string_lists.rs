@@ -115,6 +115,7 @@ fn discarding_a_real_string_list_producer_rolls_back_each_child_value_and_proper
                 0,
                 &mut losses,
                 Some(&source),
+                false,
             )?;
             assert_eq!(property.values()[1].attributes["value"], "first");
             assert_eq!(property.values()[2].attributes["value"], "second");

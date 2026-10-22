@@ -362,6 +362,21 @@ pub(crate) fn assembly_graphics_envelope_fixture(records: &[([u8; 16], Vec<u8>)]
     assembly_envelope(records, "AmGRxSegment", "AmGRxSegmentType")
 }
 
+pub(crate) fn presentation_envelope_fixture(
+    kind: crate::rse::SegmentKind,
+    records: &[([u8; 16], Vec<u8>)],
+) -> Vec<u8> {
+    match kind {
+        crate::rse::SegmentKind::PmApp => {
+            assembly_envelope(records, "PmAppSegment", "PmAppSegmentType")
+        }
+        crate::rse::SegmentKind::PmGraphics => {
+            assembly_envelope(records, "PmGRxSegment", "PmGRxSegmentType")
+        }
+        _ => panic!("presentation fixture grammar"),
+    }
+}
+
 fn assembly_envelope(
     records: &[([u8; 16], Vec<u8>)],
     display_name: &'static str,

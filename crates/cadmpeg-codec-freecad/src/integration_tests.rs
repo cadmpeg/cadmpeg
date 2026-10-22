@@ -647,3 +647,5 @@ mod source_vector_reads;
 mod source_property_group_reads;
 
 mod document_root_parts;
+
+mod document_string_parts;

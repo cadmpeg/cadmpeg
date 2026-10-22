@@ -44,6 +44,7 @@ mod source_line_reads;
 mod source_nurbs_reads;
 mod source_nurbs_surface_reads;
 mod source_point_reads;
+mod source_polycurve_reads;
 mod source_polyline_reads;
 mod standalone_line;
 mod standalone_line_closure;

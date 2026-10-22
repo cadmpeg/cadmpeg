@@ -123,6 +123,65 @@ impl<'ctx, 'source> Source<'ctx, 'source> {
         Ok(attribute.value().to_owned())
     }
 
+    pub(crate) fn retained_attributes(
+        &self,
+        node: roxmltree::Node<'_, '_>,
+    ) -> Result<std::collections::BTreeMap<String, String>, CodecError> {
+        let input = node.document().input_text().as_bytes();
+        if input.len() != self.view.window().len() || input.as_ptr() != self.view.window().as_ptr()
+        {
+            return Err(CodecError::malformed(
+                "retained attribute node does not borrow its source",
+            ));
+        }
+        let mut values = std::collections::BTreeMap::new();
+        for attribute in node.attributes().rev() {
+            if values.contains_key(attribute.name()) {
+                continue;
+            }
+            let range = attribute.range();
+            let raw = self
+                .view
+                .window()
+                .get(range.clone())
+                .ok_or_else(|| CodecError::malformed("attribute name escapes its source"))?;
+            let end = raw
+                .iter()
+                .position(|byte| matches!(byte, b'=' | b' ' | b'\t' | b'\r' | b'\n'))
+                .ok_or_else(|| CodecError::malformed("attribute name has no delimiter"))?;
+            let start = raw[..end]
+                .iter()
+                .rposition(|byte| *byte == b':')
+                .map_or(0, |at| at + 1);
+            if raw.get(start..end) != Some(attribute.name().as_bytes()) {
+                return Err(CodecError::malformed(
+                    "retained attribute name differs from source",
+                ));
+            }
+            let start = self
+                .view
+                .start()
+                .checked_add(range.start)
+                .and_then(|at| at.checked_add(start))
+                .ok_or_else(|| CodecError::malformed("attribute name source start overflows"))?;
+            let end = self
+                .view
+                .start()
+                .checked_add(range.start)
+                .and_then(|at| at.checked_add(end))
+                .ok_or_else(|| CodecError::malformed("attribute name source end overflows"))?;
+            let key = self
+                .view
+                .read_slice(start..end)
+                .ok_or_else(|| CodecError::malformed("attribute name read escapes source"))?;
+            let key = std::str::from_utf8(key)
+                .map_err(|_| CodecError::malformed("attribute name is not UTF-8"))?
+                .to_owned();
+            values.insert(key, self.attribute(&attribute)?);
+        }
+        Ok(values)
+    }
+
     pub(crate) fn plain_text(
         &self,
         element: roxmltree::Node<'_, '_>,

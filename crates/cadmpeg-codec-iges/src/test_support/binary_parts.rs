@@ -71,6 +71,10 @@ fn directory_record(entity_type: i32, parameter_pointer: u32) -> Vec<u8> {
 }
 
 fn point_parameters(directory_pointer: u32) -> Vec<u8> {
+    point_parameters_with_symbol(directory_pointer, 0)
+}
+
+fn point_parameters_with_symbol(directory_pointer: u32, symbol: u32) -> Vec<u8> {
     counted(
         &[
             integer(116),
@@ -78,7 +82,7 @@ fn point_parameters(directory_pointer: u32) -> Vec<u8> {
             integer(1),
             integer(2),
             integer(3),
-            pointer(0),
+            pointer(symbol),
         ]
         .concat(),
     )
@@ -170,4 +174,97 @@ pub(crate) fn malformed_directory() -> Vec<u8> {
     let mut bytes = directory_record(0, 0);
     bytes[4] = 7;
     bytes
+}
+
+pub(crate) fn broken_parameter_reference(broken: bool) -> Vec<u8> {
+    let prefix = directory_record(116, 1);
+    let next = u32::try_from(prefix.len() + 1).expect("test Directory offset");
+    let mut parameters = point_parameters_with_symbol(1, if broken { next + 1 } else { 0 });
+    let target = u32::try_from(parameters.len() + 1).expect("test Parameter offset");
+    parameters.extend_from_slice(&point_parameters(next));
+    assemble(&prefix, target, &parameters)
+}
+
+fn transformed_directory(entity_type: i32, parameter: u32, transform: u32) -> Vec<u8> {
+    let mut fields = vec![integer(entity_type), pointer(parameter)];
+    fields.extend(std::iter::repeat_n(vec![0], 14));
+    fields[6] = pointer(transform);
+    counted(&fields.concat())
+}
+
+pub(crate) fn broken_transform_chain(broken: bool) -> Vec<u8> {
+    transform_chain(broken, false)
+}
+
+pub(crate) fn broken_transform_parameter() -> Vec<u8> {
+    transform_chain(false, true)
+}
+
+fn transform_chain(broken: bool, malformed_parameter: bool) -> Vec<u8> {
+    let mut last_value = integer(0);
+    if malformed_parameter {
+        last_value[0] = 7;
+    }
+    let transform = counted(
+        &[
+            integer(124),
+            pointer(1),
+            integer(1),
+            integer(0),
+            integer(0),
+            integer(0),
+            integer(0),
+            integer(1),
+            integer(0),
+            integer(0),
+            integer(0),
+            integer(0),
+            integer(1),
+            last_value,
+        ]
+        .concat(),
+    );
+    let first = transformed_directory(124, 1, if broken { 2 } else { 0 });
+    let second_offset = u32::try_from(first.len() + 1).expect("test Directory offset");
+    let second_parameter = u32::try_from(transform.len() + 1).expect("test Parameter offset");
+    let second = transformed_directory(116, second_parameter, 1);
+    let peer_offset = u32::try_from(first.len() + second.len() + 1).expect("test Directory offset");
+    let mut prefix = first;
+    prefix.extend_from_slice(&second);
+    let mut parameters = transform;
+    parameters.extend_from_slice(&point_parameters(second_offset));
+    let peer_parameter = u32::try_from(parameters.len() + 1).expect("test Parameter offset");
+    parameters.extend_from_slice(&point_parameters(peer_offset));
+    assemble(&prefix, peer_parameter, &parameters)
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum DirectoryAdmissionFault {
+    Structure,
+    Form,
+    Status,
+    EntityType,
+}
+
+pub(crate) fn directory_admission_fault(fault: DirectoryAdmissionFault, broken: bool) -> Vec<u8> {
+    let mut fields = vec![integer(116), pointer(1)];
+    fields.extend(std::iter::repeat_n(vec![0], 14));
+    match fault {
+        DirectoryAdmissionFault::Structure => fields[2] = text(if broken { b"x" } else { b"0" }),
+        DirectoryAdmissionFault::Form => fields[11] = text(if broken { b"x" } else { b"0" }),
+        DirectoryAdmissionFault::Status => {
+            fields[8] = integer(if broken { -1 } else { 0x00ff_ffff });
+        }
+        DirectoryAdmissionFault::EntityType => {
+            if broken {
+                fields[0][0] = 3;
+            }
+        }
+    }
+    let prefix = counted(&fields.concat());
+    let peer = u32::try_from(prefix.len() + 1).expect("test Directory offset");
+    let mut parameters = point_parameters(1);
+    let target = u32::try_from(parameters.len() + 1).expect("test Parameter offset");
+    parameters.extend_from_slice(&point_parameters(peer));
+    assemble(&prefix, target, &parameters)
 }

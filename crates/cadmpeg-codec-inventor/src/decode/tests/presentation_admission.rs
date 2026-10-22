@@ -3,13 +3,14 @@
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, View};
 use cadmpeg_core::CodecError;
 
-use crate::decode::presentation_native_projection;
 use crate::pmdc::{PmDcPairedReferenceList, PmDcReference};
+use crate::presentation::native;
 use crate::presentation::{
     PmAppDefaultStyle, PmAppRenderingStyle, PmGraphicsFace, PmGraphicsPrimaryColorStyle,
     PmGraphicsStyleCollection, PresentationInventory, RenderingStyleExtension,
 };
 use crate::record_identity::Located;
+use cadmpeg_ir::source_fidelity::parts::PartOutput;
 
 #[test]
 fn presentation_default_native_record_refuses_entity_limit_before_creation() {
@@ -31,27 +32,26 @@ fn presentation_default_native_record_refuses_entity_limit_before_creation() {
         token.clone(),
         1,
     );
-    let mut inventory = PresentationInventory {
+    let inventory = PresentationInventory {
         default_styles: vec![style],
         rendering_styles: Vec::new(),
         graphics_faces: Vec::new(),
         graphics_style_collections: Vec::new(),
         graphics_primary_color_styles: Vec::new(),
-        issues: Vec::new(),
     };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_entities = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     assert!(matches!(
-        presentation_native_projection::project(&ctx, &mut inventory),
+        project(&ctx, &inventory),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::Entities
                 && limit.operation == "admit Inventor native default style"
     ));
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("build the decode context");
-    presentation_native_projection::project(&ctx, &mut inventory).expect("admitted default style");
+    project(&ctx, &inventory).expect("admitted default style");
 }
 
 #[test]
@@ -59,7 +59,7 @@ fn presentation_other_native_records_refuse_entity_limits_before_creation() {
     let suffix = [1_u8];
     let token = cadmpeg_ir::ids::IdentityKey::encode_segment("segment");
     let reference = PmDcReference::new(1, false).expect("test reference index fits 31 bits");
-    let mut inventory = PresentationInventory {
+    let inventory = PresentationInventory {
         default_styles: Vec::new(),
         rendering_styles: vec![Located::new(
             PmAppRenderingStyle {
@@ -137,20 +137,18 @@ fn presentation_other_native_records_refuse_entity_limits_before_creation() {
             token.clone(),
             1,
         )],
-        issues: Vec::new(),
     };
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("build the decode context");
-    presentation_native_projection::project(&ctx, &mut inventory)
-        .expect("admitted presentation records");
+    project(&ctx, &inventory).expect("admitted presentation records");
     let mut entity_cap = 0;
     let mut entity_operations = Vec::new();
     for _ in 0..4 {
         let mut policy = DecodePolicy::service();
         policy.limits.max_entities = entity_cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-        let Err(error) = presentation_native_projection::project(&ctx, &mut inventory) else {
+        let Err(error) = project(&ctx, &inventory) else {
             panic!("native presentation record needs entity admission");
         };
         let CodecError::ResourceLimit(limit) = error else {
@@ -177,7 +175,7 @@ fn presentation_other_native_records_refuse_entity_limits_before_creation() {
 fn rendering_conversion_issue_refuses_entity_limit_before_creation() {
     let bytes = [];
     let token = cadmpeg_ir::ids::IdentityKey::encode_segment("segment");
-    let mut inventory = PresentationInventory {
+    let inventory = PresentationInventory {
         default_styles: Vec::new(),
         rendering_styles: vec![Located::new(
             PmAppRenderingStyle {
@@ -203,24 +201,91 @@ fn rendering_conversion_issue_refuses_entity_limit_before_creation() {
         graphics_faces: Vec::new(),
         graphics_style_collections: Vec::new(),
         graphics_primary_color_styles: Vec::new(),
-        issues: Vec::new(),
     };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_entities = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     assert!(matches!(
-        presentation_native_projection::project(&ctx, &mut inventory),
+        project(&ctx, &inventory),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::Entities
                 && limit.operation == "admit Inventor rendering conversion issue"
     ));
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("build the decode context");
-    presentation_native_projection::project(&ctx, &mut inventory)
-        .expect("admitted rendering issue");
-    assert_eq!(inventory.issues.len(), 1);
-    assert!(inventory.issues[0]
-        .detail
+    project(&ctx, &inventory).expect("admitted rendering issue");
+}
+
+#[test]
+fn held_invalid_rendering_extension_refuses_without_a_failure_carrier_or_source() {
+    let bytes = [];
+    let token = cadmpeg_ir::ids::IdentityKey::encode_segment("segment");
+    let inventory = PresentationInventory {
+        default_styles: Vec::new(),
+        rendering_styles: vec![Located::new(
+            PmAppRenderingStyle {
+                segment_version_major: 17,
+                header_value: 0,
+                header_id: 0,
+                state: 0,
+                flags: 0,
+                values: [0; 2],
+                default_state: 0,
+                value: 0,
+                name_reference: 0,
+                name: String::new(),
+                comment: String::new(),
+                long_name: String::new(),
+                extension: None,
+                suffix: View::over_retained(&bytes),
+            },
+            crate::record_identity::RecordTypeId::from_bytes([0; 16]),
+            token.clone(),
+            1,
+        )],
+        graphics_faces: Vec::new(),
+        graphics_style_collections: Vec::new(),
+        graphics_primary_color_styles: Vec::new(),
+    };
+    let error = native::rendering_style(&inventory.rendering_styles[0])
+        .expect_err("invalid held rendering syntax");
+    assert!(error
+        .to_string()
         .contains("rendering style extension disagrees with segment_version_major"));
+}
+
+fn project(
+    ctx: &DecodeContext<'_>,
+    inventory: &PresentationInventory<'_>,
+) -> Result<PartOutput, CodecError> {
+    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Inventor);
+    for value in &inventory.default_styles {
+        output.insert_native(ctx, "pm_app_default_styles", native::default_style(value))?;
+    }
+    for value in &inventory.rendering_styles {
+        output.insert_native(
+            ctx,
+            "pm_app_rendering_styles",
+            native::rendering_style(value)?,
+        )?;
+    }
+    for value in &inventory.graphics_faces {
+        output.insert_native(ctx, "pm_graphics_faces", native::graphics_face(value))?;
+    }
+    for value in &inventory.graphics_style_collections {
+        output.insert_native(
+            ctx,
+            "pm_graphics_style_collections",
+            native::graphics_style_collection(value)?,
+        )?;
+    }
+    for value in &inventory.graphics_primary_color_styles {
+        output.insert_native(
+            ctx,
+            "pm_graphics_primary_color_styles",
+            native::primary_color(value),
+        )?;
+    }
+    Ok(output)
 }

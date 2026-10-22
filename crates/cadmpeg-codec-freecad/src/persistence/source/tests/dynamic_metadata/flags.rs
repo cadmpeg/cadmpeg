@@ -167,6 +167,7 @@ fn discarded_actual_flag_producer_rolls_back_numeric_boolean_and_other_field_rea
                 0,
                 &mut losses,
                 Some(&source),
+                false,
             )?;
             let crate::native::PropertyBody::Persisted {
                 dynamic: Some(metadata),

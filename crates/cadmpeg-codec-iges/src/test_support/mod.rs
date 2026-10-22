@@ -3,6 +3,7 @@
 #![allow(clippy::unwrap_used)]
 
 pub(crate) mod binary_parts;
+pub(crate) mod compressed_parts;
 pub(crate) mod parameter_parts;
 pub(crate) mod test_cards;
 pub(crate) mod test_curves_and_surfaces;

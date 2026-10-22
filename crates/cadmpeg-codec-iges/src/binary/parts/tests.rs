@@ -101,3 +101,50 @@ fn normalized_grammar_positions_keep_the_original_counted_record_identity() {
         }
     }
 }
+
+#[test]
+fn both_declared_binary_integer_formats_preserve_the_same_directory_entity_type() {
+    use crate::test_support::binary_parts::{directory_admission_fault, DirectoryAdmissionFault};
+
+    let original = directory_admission_fault(DirectoryAdmissionFault::EntityType, false);
+    let entity_type_control = {
+        let arena = DecodeArena::new();
+        let (_ctx, root) =
+            DecodeContext::from_root_bytes(&original, &arena, &DecodePolicy::service())
+                .expect("valid Binary point pair");
+        let sections = super::super::parse_sections(root).expect("actual Binary sections");
+        assert_eq!(sections.lengths.single_integer, 32);
+        assert_eq!(sections.lengths.double_integer, 32);
+        let (_, _, body) = super::super::counted_record(sections.directory, 0, "Directory")
+            .expect("actual first Directory body");
+        body.start()
+    };
+    let mut double_integer = original.clone();
+    assert_eq!(double_integer[entity_type_control], 1);
+    double_integer[entity_type_control] = 2;
+    assert_eq!(
+        original
+            .iter()
+            .zip(&double_integer)
+            .filter(|(left, right)| left != right)
+            .count(),
+        1
+    );
+    let baseline = crate::test_support::decode(original);
+    let decoded = crate::test_support::decode(double_integer);
+    assert_eq!(decoded.ir().model.points.len(), 2);
+    assert_eq!(decoded.ir().model.vertices.len(), 2);
+    assert_eq!(decoded.ir().model, baseline.ir().model);
+    let native = decoded.ir().native.namespace("iges").expect("IGES native");
+    let expected = baseline.ir().native.namespace("iges").expect("IGES native");
+    assert_eq!(native.arenas()["entities"], expected.arenas()["entities"]);
+    assert!(native
+        .arena_as::<cadmpeg_ir::NativeUnknownRecord>("unknowns")
+        .expect("typed failure-stub arena")
+        .is_empty());
+    assert!(!decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "record.unreadable"));
+}

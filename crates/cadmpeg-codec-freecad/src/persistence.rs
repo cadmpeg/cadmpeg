@@ -10,6 +10,7 @@ use crate::native::{
     PropertyRecord, ValueRecord,
 };
 
+pub(crate) mod document_strings;
 pub(crate) mod source;
 
 const MAX_OBJECTS: usize = 1_000_000;
@@ -130,7 +131,7 @@ pub(crate) fn parse_document(
     xml: &roxmltree::Document<'_>,
     schema: Vocabulary,
 ) -> Result<Graph, CodecError> {
-    parse_document_impl(xml, schema, None)
+    parse_document_impl(xml, schema, None, None)
 }
 
 pub(crate) fn parse_document_source<'source>(
@@ -141,7 +142,24 @@ pub(crate) fn parse_document_source<'source>(
 ) -> Result<Graph, CodecError> {
     let transaction = ctx.read_transaction()?;
     let source = source::Source::new(ctx, source, xml)?;
-    let graph = parse_document_impl(xml, schema, Some(&source))?;
+    let graph = parse_document_impl(xml, schema, Some(&source), None)?;
+    transaction.commit()?;
+    Ok(graph)
+}
+
+pub(crate) fn parse_document_source_with_strings<'source>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'source>,
+    view: cadmpeg_core::decode::View<'source>,
+    xml: &roxmltree::Document<'_>,
+    schema: Vocabulary,
+    strings: Option<&document_strings::RootStrings>,
+) -> Result<Graph, CodecError> {
+    if strings.is_none() {
+        return parse_document_source(ctx, view, xml, schema);
+    }
+    let transaction = ctx.read_transaction()?;
+    let source = source::Source::new(ctx, view, xml)?;
+    let graph = parse_document_impl(xml, schema, Some(&source), strings)?;
     transaction.commit()?;
     Ok(graph)
 }
@@ -150,6 +168,7 @@ fn parse_document_impl(
     xml: &roxmltree::Document<'_>,
     schema: Vocabulary,
     source: Option<&source::Source<'_, '_>>,
+    strings: Option<&document_strings::RootStrings>,
 ) -> Result<Graph, CodecError> {
     let root = xml.root_element();
     let mut losses = Vec::new();
@@ -309,14 +328,36 @@ fn parse_document_impl(
     match document_property_nodes.as_slice() {
         [] => {}
         [document_properties] => {
-            parse_properties(
-                *document_properties,
-                &crate::native::native_id("document", "0"),
-                &mut properties,
-                &mut property_sources,
-                &mut losses,
-                source,
-            )?;
+            if let Some(strings) = strings {
+                properties.extend(strings.properties.iter().cloned());
+                property_sources.extend(
+                    strings
+                        .sources
+                        .iter()
+                        .map(|(id, source)| (id.clone(), source.clone())),
+                );
+                if !strings.given_up {
+                    parse_properties_impl(
+                        *document_properties,
+                        &crate::native::native_id("document", "0"),
+                        &mut properties,
+                        &mut property_sources,
+                        &mut losses,
+                        source,
+                        true,
+                    )?;
+                }
+                properties.sort_by_key(|property| (!property.is_transient(), property.order));
+            } else {
+                parse_properties(
+                    *document_properties,
+                    &crate::native::native_id("document", "0"),
+                    &mut properties,
+                    &mut property_sources,
+                    &mut losses,
+                    source,
+                )?;
+            }
         }
         _ => {
             return Err(CodecError::Malformed(
@@ -561,6 +602,26 @@ fn parse_properties(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     source: Option<&source::Source<'_, '_>>,
 ) -> Result<(), CodecError> {
+    parse_properties_impl(
+        container,
+        owner,
+        output,
+        property_sources,
+        losses,
+        source,
+        false,
+    )
+}
+
+fn parse_properties_impl(
+    container: roxmltree::Node<'_, '_>,
+    owner: &str,
+    output: &mut Vec<PropertyRecord>,
+    property_sources: &mut std::collections::BTreeMap<String, crate::fidelity::ValueSourceRanges>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    source: Option<&source::Source<'_, '_>>,
+    skip_strings: bool,
+) -> Result<(), CodecError> {
     let property_nodes = container
         .children()
         .filter(|node| node.has_tag_name("Property"))
@@ -571,6 +632,9 @@ fn parse_properties(
         .collect::<Vec<_>>();
     let mut names = HashSet::new();
     for node in transient_property_nodes.iter().chain(property_nodes.iter()) {
+        if skip_strings && document_strings::selected(*node) {
+            continue;
+        }
         let name = node.attribute("name").ok_or_else(|| {
             CodecError::malformed(format_args!(
                 "{} element has no name attribute",
@@ -632,9 +696,12 @@ fn parse_properties(
         output.push(property);
     }
     for (order, node) in property_nodes.into_iter().enumerate() {
+        if skip_strings && document_strings::selected(node) {
+            continue;
+        }
         let name = required_attr(node, "name")?;
         let id = crate::native::native_child_id("property", owner, name);
-        let mut parse = || parse_persisted_property(node, owner, order, losses, source);
+        let mut parse = || parse_persisted_property(node, owner, order, losses, source, false);
         let property = match source {
             Some(source) => source.record(&id, node, parse)?,
             None => parse()?,
@@ -654,6 +721,7 @@ fn parse_persisted_property(
     order: usize,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     source: Option<&source::Source<'_, '_>>,
+    read_retained_attributes: bool,
 ) -> Result<PropertyRecord, CodecError> {
     let (name, type_name, status) = match source {
         Some(source) => (
@@ -751,29 +819,36 @@ fn parse_persisted_property(
                 .and_then(|parent| value_indices.get(&parent.id()).copied()),
             tag: value.tag_name().name().to_owned(),
             order: value_order,
-            attributes: value
-                .attributes()
-                .map(|attribute| {
-                    let text = match source.filter(|_| {
-                        attribute.namespace().is_none()
-                            && (constraint_attribute(node, value, &type_name, &attribute)
-                                || vector_value == Some(value)
-                                    && matches!(attribute.name(), "valueX" | "valueY" | "valueZ")
-                                || attribute.name() == "value"
-                                    && (string_list
-                                        .is_some_and(|list| value.parent() == Some(list))
-                                        || value.parent() == Some(node)
-                                            && (string_value == Some(value)
-                                                || type_name != "App::PropertyEnumeration"
-                                                    && scalar_value_tag(&type_name)
-                                                        == Some(value.tag_name().name()))))
-                    }) {
-                        Some(source) => source.attribute(&attribute)?,
-                        None => attribute.value().to_owned(),
-                    };
-                    Ok((attribute.name().to_owned(), text))
-                })
-                .collect::<Result<_, CodecError>>()?,
+            attributes: if let Some(source) = source.filter(|_| read_retained_attributes) {
+                source.retained_attributes(value)?
+            } else {
+                value
+                    .attributes()
+                    .map(|attribute| {
+                        let text = match source.filter(|_| {
+                            attribute.namespace().is_none()
+                                && (constraint_attribute(node, value, &type_name, &attribute)
+                                    || vector_value == Some(value)
+                                        && matches!(
+                                            attribute.name(),
+                                            "valueX" | "valueY" | "valueZ"
+                                        )
+                                    || attribute.name() == "value"
+                                        && (string_list
+                                            .is_some_and(|list| value.parent() == Some(list))
+                                            || value.parent() == Some(node)
+                                                && (string_value == Some(value)
+                                                    || type_name != "App::PropertyEnumeration"
+                                                        && scalar_value_tag(&type_name)
+                                                            == Some(value.tag_name().name()))))
+                        }) {
+                            Some(source) => source.attribute(&attribute)?,
+                            None => attribute.value().to_owned(),
+                        };
+                        Ok((attribute.name().to_owned(), text))
+                    })
+                    .collect::<Result<_, CodecError>>()?
+            },
             decoded_json: decode_python_json(value).map(Into::into),
             text: match source.filter(|_| string_value == Some(value)) {
                 Some(source) => source.plain_text(value)?,
@@ -874,8 +949,6 @@ fn dynamic_bool(
         return Ok(None);
     };
     let legacy = bool_attr(Some(attribute.value()));
-    // Keep legacy fallback behavior without presenting an unrecognized spelling
-    // (or a differently interpreted mixed-case true) as a semantic source read.
     if let Some(source) = source.filter(|_| crate::native::parse_bool(attribute.value()) == legacy)
     {
         let text = source.attribute(&attribute)?;

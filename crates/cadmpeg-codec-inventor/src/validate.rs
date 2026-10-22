@@ -81,7 +81,6 @@ pub(crate) const ARENAS: &[&str] = &[
     "pm_graphics_faces",
     "pm_graphics_style_collections",
     "pm_graphics_primary_color_styles",
-    "presentation_record_issues",
     "property_sections",
     "property_set_issues",
     "property_sets",
@@ -1495,13 +1494,6 @@ fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Findi
             ));
         }
     }
-    for issue in &data.presentation_record_issues {
-        findings.push(finding(
-            Check::NativeLinks,
-            format!("Inventor presentation record: {}", issue.detail),
-            Some(issue.id()),
-        ));
-    }
 }
 
 fn validate_active_carrier(data: &NativeData, findings: &mut Vec<Finding>) {
@@ -1560,7 +1552,6 @@ struct NativeData {
     pm_graphics_style_collections: Vec<PmGraphicsStyleCollectionRecord>,
     pm_graphics_primary_color_styles: Vec<PmGraphicsPrimaryColorStyleRecord>,
     face_native_keys: Vec<FaceNativeKey>,
-    presentation_record_issues: Vec<RecordIssue>,
     pm_dc_parameters: Vec<PmDcParameter>,
     pm_dc_expressions: Vec<PmDcExpression>,
     pm_dc_units: Vec<PmDcUnit>,
@@ -1626,8 +1617,6 @@ impl NativeData {
             pm_graphics_primary_color_styles: namespace
                 .arena_as_for_decode(ctx, "pm_graphics_primary_color_styles")?,
             face_native_keys: namespace.arena_as_for_decode(ctx, "face_native_keys")?,
-            presentation_record_issues: namespace
-                .arena_as_for_decode(ctx, "presentation_record_issues")?,
             pm_dc_parameters: namespace.arena_as_for_decode(ctx, "pm_dc_parameters")?,
             pm_dc_expressions: namespace.arena_as_for_decode(ctx, "pm_dc_expressions")?,
             pm_dc_units: namespace.arena_as_for_decode(ctx, "pm_dc_units")?,

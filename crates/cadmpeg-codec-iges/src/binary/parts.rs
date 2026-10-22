@@ -13,6 +13,10 @@ use super::{
     BinaryParameter, BinarySections, NormalizedBinary, PrimitiveLengths, SECTION_HEADER_WIDTH,
 };
 
+mod dependencies;
+
+use dependencies::Dependencies;
+
 pub(crate) fn normalize(
     source: View<'_>,
     ctx: &DecodeContext<'_>,
@@ -22,7 +26,8 @@ pub(crate) fn normalize(
     let bytes = normalize_with_records(
         source,
         |sections| {
-            let mut directory = read_directory(source, sections, ctx, &mut output)?;
+            let dependencies = Dependencies::inspect(sections, ctx)?;
+            let mut directory = read_directory(source, sections, ctx, &mut output, &dependencies)?;
             let mut directory_by_offset = BTreeMap::new();
             for (index, record) in directory.iter().enumerate() {
                 ctx.retain_bytes(
@@ -38,6 +43,7 @@ pub(crate) fn normalize(
                 &directory_by_offset,
                 ctx,
                 &mut output,
+                &dependencies,
             )?;
             directory.retain(|record| {
                 !u32::try_from(record.parameter_pointer())
@@ -70,6 +76,7 @@ fn read_directory(
     sections: &BinarySections<'_>,
     ctx: &DecodeContext<'_>,
     output: &mut ParserPartOutput,
+    dependencies: &Dependencies,
 ) -> Result<Vec<BinaryDirectory>, CodecError> {
     let payload = sections.directory;
     let start = payload
@@ -101,7 +108,7 @@ fn read_directory(
         output,
         extent,
         spec("iges.binary_section", framing)?,
-        |children| read_records(payload, sections.lengths, ctx, children),
+        |children| read_records(payload, sections.lengths, ctx, children, dependencies),
     )?;
     Ok(result.unwrap_or_default())
 }
@@ -111,6 +118,7 @@ fn read_records(
     lengths: PrimitiveLengths,
     ctx: &DecodeContext<'_>,
     output: &mut ParserPartOutput,
+    dependencies: &Dependencies,
 ) -> Result<Vec<BinaryDirectory>, CodecError> {
     let mut records = Vec::new();
     let mut cursor = 0;
@@ -131,7 +139,12 @@ fn read_records(
             output,
             extent,
             spec("iges.binary_directory_record", framing)?,
-            || parse_directory_record(offset, sequence, body, lengths),
+            || {
+                let record = parse_directory_record(offset, sequence, body, lengths)?;
+                record.admit_directory_fields()?;
+                dependencies.directory(&record)?;
+                Ok(record)
+            },
         )? {
             append(ctx, &mut records, record)?;
         }
@@ -150,6 +163,7 @@ fn read_parameters(
     directory_by_offset: &BTreeMap<u32, usize>,
     ctx: &DecodeContext<'_>,
     output: &mut ParserPartOutput,
+    dependencies: &Dependencies,
 ) -> Result<(Vec<BinaryParameter>, BTreeSet<u32>), CodecError> {
     let payload = sections.parameter;
     let start = payload
@@ -235,6 +249,7 @@ fn read_parameters(
                                 "Binary Directory and Parameter entity types disagree",
                             ));
                         }
+                        dependencies.parameter(&record, owner)?;
                         Ok(record)
                     },
                 )?;

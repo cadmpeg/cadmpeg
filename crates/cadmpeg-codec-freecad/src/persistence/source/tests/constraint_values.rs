@@ -249,6 +249,7 @@ fn discarded_actual_constraint_producers_rollback_value_bound_and_identity_reads
                 0,
                 &mut losses,
                 Some(&source),
+                false,
             )?;
             assert_eq!(property.values()[0].attributes["min"], "1");
             assert_eq!(property.values()[0].attributes["max"], "4");
