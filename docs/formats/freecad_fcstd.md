@@ -809,9 +809,13 @@ bits affect profile selection; higher bits are ignored. A present carrier with a
 type, without exactly one direct `Integer`, or with a non-integer or negative value does not select
 a neutral hole. If no profile-selection bit is set, the operation remains native.
 These operation dimensions participate in the same literal/evaluated/expression parameter graph.
-When a dress-up subelement selector has not resolved through persistent topology identity, its
-native `Base` property remains the edge selection; the decoder does not infer an edge from a
-transient label.
+A face or edge selection of a shell, draft, fillet, or chamfer names indexed subelements (`Face6`,
+`Edge5`, or a mapped name ending in one) of each linked object. The index counts that object's
+stored `Shape` in its own face or edge order, so a selection whose every subelement names exactly
+one transferred face or edge of the linked object's stored shape resolves to those faces or edges,
+with its native property kept beside them. Any other selection, including one that names an
+external document, a whole object, or an index the stored shape does not have, remains the native
+property.
 
 Decode loss reporting is attributable at the native record boundary. Each design operation or
 sketch geometry family that remains only in the native lane produces its own blocking note carrying

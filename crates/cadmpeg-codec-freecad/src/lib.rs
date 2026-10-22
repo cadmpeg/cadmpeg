@@ -1045,6 +1045,11 @@ impl CodecBackend for FcstdCodec {
                 )?;
                 cycle_affected_design_objects = cycle_affected;
                 transfer_losses.extend(design_losses);
+                design::resolve_subelement_selections(
+                    &mut ir,
+                    &graph.properties,
+                    &topology_occurrences,
+                );
             }
             ctx.admit_entities(
                 cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),

@@ -2,7 +2,7 @@
 //! Transfer of `FCStd` construction history into neutral design entities.
 
 use std::cmp::Reverse;
-use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, VecDeque};
 
 use cadmpeg_core::decode::{DecodeContext, View, WorkBudget};
 use cadmpeg_core::text::NonBlankString;
@@ -4878,6 +4878,128 @@ fn extrusion_shape(
             allow_multi_profile_faces,
         },
     )))
+}
+
+/// Resolve native face and edge selections whose every operand names indexed
+/// subelements (`Face6`, `Edge3`) of a linked object's stored `Shape`. A
+/// selection with any operand that does not name exactly one transferred
+/// face or edge stays native.
+pub(crate) fn resolve_subelement_selections(
+    ir: &mut cadmpeg_ir::CadIr,
+    properties: &[PropertyRecord],
+    occurrences: &[crate::topology_transfer::TopologyOccurrence],
+) {
+    let resolve = |native: &str, indexed_name: &str| -> Option<Vec<String>> {
+        let selection = properties.iter().find(|property| property.id == native)?;
+        let mut ids = Vec::new();
+        for link in selection.links() {
+            let link = link.as_ref()?;
+            let object = link.object()?;
+            if link.document().is_some() || link.subelements().is_empty() {
+                return None;
+            }
+            let shape = properties
+                .iter()
+                .find(|property| property.owner == object && property.name == "Shape")?;
+            for subelement in link.subelements() {
+                // A mapped name ends with its indexed name after the last `.`.
+                let indexed = subelement.rsplit('.').next()?;
+                let index = indexed.strip_prefix(indexed_name)?.parse::<usize>().ok()?;
+                // An edge or vertex is listed once per use; its identity is shared.
+                let matches = occurrences
+                    .iter()
+                    .filter(|occurrence| {
+                        occurrence.property == shape.id
+                            && occurrence.indexed_name == indexed_name
+                            && occurrence.source_index == index
+                    })
+                    .map(|occurrence| occurrence.topology_id.as_str())
+                    .collect::<BTreeSet<_>>();
+                let [id] = matches.into_iter().collect::<Vec<_>>()[..] else {
+                    return None;
+                };
+                ids.push(id.to_owned());
+            }
+        }
+        (!ids.is_empty()).then_some(ids)
+    };
+    let face_ids = ir
+        .model
+        .faces
+        .iter()
+        .map(|face| face.id.as_str().to_owned())
+        .collect::<HashSet<_>>();
+    let edge_ids = ir
+        .model
+        .edges
+        .iter()
+        .map(|edge| edge.id.as_str().to_owned())
+        .collect::<HashSet<_>>();
+    let faces = |selection: &mut cadmpeg_ir::features::FaceSelection| {
+        let cadmpeg_ir::features::FaceSelection::Native(native) = selection else {
+            return;
+        };
+        let Some(faces) = resolve(native, "Face")
+            .filter(|ids| ids.iter().all(|id| face_ids.contains(id)))
+            .and_then(|ids| {
+                ids.into_iter()
+                    .map(|id| cadmpeg_ir::ids::FaceId::mint(id).ok())
+                    .collect::<Option<Vec<_>>>()
+            })
+        else {
+            return;
+        };
+        *selection = cadmpeg_ir::features::FaceSelection::Resolved {
+            faces,
+            native: native.clone(),
+        };
+    };
+    let edges = |selection: &mut EdgeSelection| {
+        let EdgeSelection::Native(native) = selection else {
+            return;
+        };
+        let Some(edges) = resolve(native, "Edge")
+            .filter(|ids| ids.iter().all(|id| edge_ids.contains(id)))
+            .and_then(|ids| {
+                ids.into_iter()
+                    .map(|id| cadmpeg_ir::ids::EdgeId::mint(id).ok())
+                    .collect::<Option<Vec<_>>>()
+            })
+        else {
+            return;
+        };
+        *selection = EdgeSelection::Resolved {
+            edges,
+            native: native.clone(),
+        };
+    };
+    for feature in &mut ir.model.features {
+        feature.evaluation.edit(|definition, _| {
+            let operation = match definition {
+                FeatureDefinition::PostProcess { operation, .. }
+                | FeatureDefinition::Operation(operation) => operation,
+            };
+            match operation {
+                FeatureOperation::Shell { removed_faces, .. } => faces(removed_faces),
+                FeatureOperation::Draft {
+                    faces: selection, ..
+                } => faces(selection),
+                FeatureOperation::Fillet { groups, .. } => {
+                    *groups = groups.clone().map(|mut group| {
+                        edges(&mut group.edges);
+                        group
+                    });
+                }
+                FeatureOperation::Chamfer { groups, .. } => {
+                    *groups = groups.clone().map(|mut group| {
+                        edges(&mut group.edges);
+                        group
+                    });
+                }
+                _ => {}
+            }
+        });
+    }
 }
 
 fn dress_up_edge_selection(
