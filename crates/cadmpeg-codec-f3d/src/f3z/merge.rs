@@ -245,11 +245,8 @@ impl MergeSession<'_, '_> {
                 &occurrence,
                 &part_ids,
             )?;
-            let prefix = occurrence_stream_prefix(&occurrence)?;
             for pending in &mut component_layouts {
-                pending.rescope(self.ctx, prefix.as_str(), |id| {
-                    rescope(id, &occurrence, &part_ids)
-                })?;
+                pending.rescope(self.ctx, &occurrence)?;
             }
             parent_fidelity.append(rescope_fidelity(component_fidelity, &occurrence, part_ids)?)?;
             crate::decode::source_layout::append(self.ctx, parent_layouts, component_layouts)?;
@@ -402,7 +399,9 @@ fn rescope_fidelity(
     Ok(rescoped)
 }
 
-fn occurrence_stream_prefix(occurrence: &str) -> Result<cadmpeg_ir::StreamName, CodecError> {
+pub(crate) fn occurrence_stream_prefix(
+    occurrence: &str,
+) -> Result<cadmpeg_ir::StreamName, CodecError> {
     cadmpeg_ir::StreamName::try_from(format!(
         "f3d:xref/{}/",
         EscapedOccurrenceComponent(occurrence)
@@ -443,6 +442,11 @@ fn rescope(text: &str, occurrence: &str, part_ids: &PartIdentityMap) -> Option<S
     if let Some(id) = part_ids.get(text) {
         return Some(id.to_owned());
     }
+    rescope_record_id(text, occurrence)
+}
+
+/// The occurrence-scoped identity of an `f3d:` record id that is not a part.
+pub(crate) fn rescope_record_id(text: &str, occurrence: &str) -> Option<String> {
     text.strip_prefix("f3d:")
         .map(|rest| format!("f3d:xref/{occurrence}/{rest}"))
 }

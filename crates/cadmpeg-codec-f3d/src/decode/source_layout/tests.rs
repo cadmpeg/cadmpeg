@@ -53,30 +53,52 @@ fn genuine_owner_capture_and_out_of_extent_reads_install_without_changing_source
 }
 
 #[test]
-fn unmatched_pointer_drafts_or_captures_refuse_without_partially_updating_fidelity() {
-    for draft_owner in [OWNER, "f3d:native:scope#missing"] {
-        let arena = DecodeArena::new();
-        let (ctx, root) =
-            DecodeContext::from_root_bytes(b"AB", &arena, &DecodePolicy::default()).expect("root");
-        let (_, batch) = ctx
-            .record_batch(|| ctx.record(OWNER, root, || Ok(())))
-            .expect("record");
-        let pending = PendingLayouts::new(
-            batch,
-            if draft_owner == OWNER {
-                BTreeMap::new()
-            } else {
-                BTreeMap::from([(draft_owner.to_owned(), BTreeMap::new())])
-            },
-        );
-        let mut fidelity = SourceFidelity::default();
-        fidelity
-            .metadata
-            .insert("existing".into(), "unchanged".into());
-        let before = fidelity.clone();
-        assert!(install(&ctx, &mut fidelity, vec![pending]).is_err());
-        assert_eq!(fidelity, before);
-    }
+fn a_capture_without_a_pointer_draft_installs_its_layout_without_pointers() {
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(b"AB", &arena, &DecodePolicy::default()).expect("root");
+    let (_, batch) = ctx
+        .record_batch(|| {
+            ctx.record(OWNER, root, || {
+                assert_eq!(root.read_at(0, 1), Some(b"A".as_slice()));
+                Ok(())
+            })
+        })
+        .expect("record");
+    let mut fidelity = SourceFidelity::default();
+    install(
+        &ctx,
+        &mut fidelity,
+        vec![PendingLayouts::new(batch, BTreeMap::new())],
+    )
+    .expect("a capture without a draft is not a refusal");
+    let layout = &fidelity.record_layout()[OWNER];
+    assert_eq!(
+        layout.reads(),
+        &BTreeMap::from([("file".to_owned(), vec![0..1])])
+    );
+    assert!(layout.pointers().is_empty());
+}
+
+#[test]
+fn a_pointer_draft_without_a_capture_refuses_without_partially_updating_fidelity() {
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(b"AB", &arena, &DecodePolicy::default()).expect("root");
+    let (_, batch) = ctx
+        .record_batch(|| ctx.record(OWNER, root, || Ok(())))
+        .expect("record");
+    let pending = PendingLayouts::new(
+        batch,
+        BTreeMap::from([("f3d:native:scope#missing".to_owned(), BTreeMap::new())]),
+    );
+    let mut fidelity = SourceFidelity::default();
+    fidelity
+        .metadata
+        .insert("existing".into(), "unchanged".into());
+    let before = fidelity.clone();
+    assert!(install(&ctx, &mut fidelity, vec![pending]).is_err());
+    assert_eq!(fidelity, before);
 }
 
 #[test]

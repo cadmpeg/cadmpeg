@@ -139,7 +139,7 @@ impl RecordLayout {
     ///
     /// Core admits actual stream bounds and merges read intervals before this
     /// handoff. This conversion neither scans nor claims any additional bytes.
-    pub fn from_capture(capture: RecordCapture) -> (String, Self) {
+    pub(crate) fn from_capture(capture: RecordCapture) -> (String, Self) {
         let (id, stream, offset, byte_len, reads) = capture.into_parts();
         (
             id,
@@ -188,45 +188,37 @@ impl RecordLayout {
     ///
     /// A fixed prefix is injective. Byte coordinates, pointers, and payloads
     /// stay unchanged. Stream-name allocation and length overflow are checked.
-    pub fn with_stream_prefix(self, prefix: &str) -> Result<Self, CodecError> {
-        self.prefix_streams(
-            |stream| prefixed_stream(prefix, stream, u64::MAX, |_| Ok(())),
-            || Ok(()),
-        )
+    pub(crate) fn with_stream_prefix(self, prefix: &str) -> Result<Self, CodecError> {
+        self.prefix_streams(|stream| prefixed_stream(prefix, stream, u64::MAX, |_| Ok(())))
     }
 
+    /// [`Self::with_stream_prefix`] under the caller's retained-byte budget.
+    ///
+    /// Core charged the captured stream names and read-map entries. Each
+    /// prefixed name replaces its unprefixed name, so only the added prefix
+    /// bytes are charged.
     pub(super) fn with_stream_prefix_in(
         self,
         ctx: &DecodeContext<'_>,
         prefix: &str,
     ) -> Result<Self, CodecError> {
-        self.prefix_streams(
-            |stream| {
-                prefixed_stream(
-                    prefix,
-                    stream,
-                    ctx.policy().limits.max_retained_bytes,
-                    |bytes| ctx.retain_bytes(bytes, "prefix record layout stream"),
-                )
-            },
-            || {
-                ctx.retain_bytes(
-                    u64_from_index(size_of::<(String, Vec<Range<u64>>)>()),
-                    "prefix record layout read index",
-                )
-            },
-        )
+        self.prefix_streams(|stream| {
+            prefixed_stream(
+                prefix,
+                stream,
+                ctx.policy().limits.max_retained_bytes,
+                |_| ctx.retain_bytes(u64_from_index(prefix.len()), "prefix record layout stream"),
+            )
+        })
     }
 
     fn prefix_streams(
         mut self,
         mut name: impl FnMut(&str) -> Result<String, CodecError>,
-        mut index: impl FnMut() -> Result<(), CodecError>,
     ) -> Result<Self, CodecError> {
         self.stream = name(&self.stream)?;
         let mut mapped = BTreeMap::new();
         for (stream, ranges) in self.reads {
-            index()?;
             insert_field(&mut mapped, name(&stream)?, ranges)?;
         }
         self.reads = mapped;

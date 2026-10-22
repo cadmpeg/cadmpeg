@@ -476,21 +476,31 @@ impl DecodeParts for DecodeContext<'_> {
 impl SourceFidelity {
     /// Install every completed record capture of `ctx` as a record layout.
     ///
-    /// Core builds each capture's reads; this is the only path from a capture
-    /// to `record_layout`. `fields` receives each record id and its new layout
-    /// before insertion, to add the record's `pointers` and `payloads`; it has
-    /// no access to the reads. A duplicate record id is an error.
+    /// Core builds each capture's reads; this and
+    /// [`Self::install_mapped_record_captures`] are the only paths from a
+    /// capture to `record_layout`. `fields` receives each record id and its
+    /// new layout before insertion, to add the record's `pointers` and
+    /// `payloads`; it has no access to the reads. A capture made inside a
+    /// record batch, a duplicate record id, or a `fields` failure is an
+    /// error, and no layout is then inserted. Equal capture ids can exist in
+    /// different batches, so only the batch-aware mapper installs them.
     pub fn install_record_captures(
         &mut self,
         ctx: &DecodeContext<'_>,
         mut fields: impl FnMut(&str, &mut RecordLayout) -> Result<(), CodecError>,
     ) -> Result<(), CodecError> {
+        let mut staged = SourceFidelity::default();
         for capture in ctx.take_record_captures()? {
+            if capture.batch_id().is_some() {
+                return Err(CodecError::malformed(
+                    "a batched record capture needs install_mapped_record_captures",
+                ));
+            }
             let (id, mut layout) = RecordLayout::from_capture(capture);
             fields(&id, &mut layout)?;
-            self.insert_record_layout(id, layout)?;
+            staged.insert_record_layout(id, layout)?;
         }
-        Ok(())
+        self.append(staged)
     }
 }
 

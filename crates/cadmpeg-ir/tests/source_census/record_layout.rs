@@ -3,8 +3,9 @@
 //!
 //! The owners are `source_fidelity/part.rs`, the #215 part-helper tree
 //! `source_fidelity/parts/**` and `cadmpeg-core/src/decode/**`. Elsewhere,
-//! a layout comes from `SourceFidelity::install_record_captures` and a
-//! composed layout from `SourceFidelity::prefix_record_layouts`.
+//! a layout comes from `SourceFidelity::install_record_captures` or
+//! `SourceFidelity::install_mapped_record_captures`, and a composed layout
+//! from `SourceFidelity::prefix_record_layouts`.
 
 use std::collections::BTreeSet;
 use std::path::Path;
