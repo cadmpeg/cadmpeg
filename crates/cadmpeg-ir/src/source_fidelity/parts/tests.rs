@@ -424,3 +424,77 @@ fn part_state_arms_keep_their_tag_spelling_and_refuse_unknown_keys() {
         );
     }
 }
+
+fn tree_node(parent: Option<usize>, state: PartState) -> super::PartRecord {
+    super::PartRecord {
+        level: PartLevel::parse("step.simple_entity_instance").expect("table level"),
+        stream: "file".into(),
+        offset: 0,
+        byte_len: 1,
+        parent: parent.map(tree_id),
+        state,
+        framing_bytes: Vec::new(),
+    }
+}
+
+fn tree_id(index: usize) -> crate::ids::UnknownId {
+    crate::ids::UnknownId::try_from(format!("step:source:part#{index:05}")).expect("part id")
+}
+
+#[test]
+fn part_tree_check_is_linear_on_a_deep_chain_and_names_only_given_up_ancestors() {
+    // A chain p0 <- p1 <- ... <- p19999, with p0 given up and every other node
+    // covered by it. Each node's ancestry is the whole prefix of the chain.
+    let depth = 20_000;
+    let mut tree = std::collections::BTreeMap::new();
+    tree.insert(tree_id(0), tree_node(None, PartState::GivenUp {}));
+    for index in 1..depth {
+        tree.insert(
+            tree_id(index),
+            tree_node(Some(index - 1), PartState::Covered { by: tree_id(0) }),
+        );
+    }
+    super::validate_tree(&tree).expect("covered chain under one given-up root");
+
+    // A covering id must be a proper ancestor: a sibling or a descendant fails.
+    let mut sibling = std::collections::BTreeMap::new();
+    sibling.insert(tree_id(0), tree_node(None, PartState::Decoded {}));
+    sibling.insert(tree_id(1), tree_node(Some(0), PartState::GivenUp {}));
+    sibling.insert(
+        tree_id(2),
+        tree_node(Some(0), PartState::Covered { by: tree_id(1) }),
+    );
+    assert!(super::validate_tree(&sibling).is_err());
+    let mut descendant = std::collections::BTreeMap::new();
+    descendant.insert(
+        tree_id(0),
+        tree_node(None, PartState::Covered { by: tree_id(1) }),
+    );
+    descendant.insert(tree_id(1), tree_node(Some(0), PartState::GivenUp {}));
+    assert!(super::validate_tree(&descendant).is_err());
+    let mut own = std::collections::BTreeMap::new();
+    own.insert(
+        tree_id(0),
+        tree_node(None, PartState::Covered { by: tree_id(0) }),
+    );
+    assert!(super::validate_tree(&own).is_err());
+
+    // A covering ancestor that is not given up fails.
+    let mut decoded = std::collections::BTreeMap::new();
+    decoded.insert(tree_id(0), tree_node(None, PartState::Decoded {}));
+    decoded.insert(
+        tree_id(1),
+        tree_node(Some(0), PartState::Covered { by: tree_id(0) }),
+    );
+    assert!(super::validate_tree(&decoded).is_err());
+
+    // A long cycle with no root fails.
+    let mut cycle = std::collections::BTreeMap::new();
+    for index in 0..depth {
+        cycle.insert(
+            tree_id(index),
+            tree_node(Some((index + 1) % depth), PartState::Decoded {}),
+        );
+    }
+    assert!(super::validate_tree(&cycle).is_err());
+}

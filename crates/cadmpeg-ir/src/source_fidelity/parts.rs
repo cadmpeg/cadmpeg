@@ -262,28 +262,78 @@ fn validate_framing(start: u64, end: u64, ranges: &[Range<u64>]) -> Result<(), S
     Ok(())
 }
 
+/// Check that parents form a forest and that each `Covered.by` names a
+/// given-up proper ancestor.
+///
+/// One parent walk per node stops at the first node already resolved, so
+/// cycle detection visits each node once. An Euler tour then gives every node
+/// an interval; `by` is a proper ancestor exactly when its interval strictly
+/// encloses the node's interval.
 pub(super) fn validate_tree(tree: &BTreeMap<UnknownId, PartRecord>) -> Result<(), String> {
-    for (id, node) in tree {
-        let mut ancestors = Vec::new();
-        let mut parent = node.parent.as_ref();
-        while let Some(current) = parent {
-            if current == id || ancestors.contains(&current) {
-                return Err("part tree has an ancestry cycle".into());
+    const UNSEEN: u8 = 0;
+    const ON_PATH: u8 = 1;
+    const DONE: u8 = 2;
+    let ids = tree.keys().collect::<Vec<_>>();
+    let index = |id: &UnknownId| ids.binary_search(&id).ok();
+    let mut parents = Vec::with_capacity(ids.len());
+    for node in tree.values() {
+        parents.push(match &node.parent {
+            Some(parent) => Some(index(parent).ok_or("part tree parent is absent")?),
+            None => None,
+        });
+    }
+    let mut state = vec![UNSEEN; ids.len()];
+    let mut path = Vec::new();
+    for start in 0..ids.len() {
+        let mut current = Some(start);
+        while let Some(node) = current {
+            match state[node] {
+                DONE => break,
+                ON_PATH => return Err("part tree has an ancestry cycle".into()),
+                _ => {
+                    state[node] = ON_PATH;
+                    path.push(node);
+                    current = parents[node];
+                }
             }
-            ancestors.push(current);
-            parent = tree
-                .get(current)
-                .ok_or("part tree parent is absent")?
-                .parent
-                .as_ref();
         }
-        if let PartState::Covered { by } = &node.state {
-            if !ancestors.contains(&by)
-                || !matches!(
-                    tree.get(by).map(|part| &part.state),
-                    Some(PartState::GivenUp {})
-                )
-            {
+        for node in path.drain(..) {
+            state[node] = DONE;
+        }
+    }
+    let mut children = vec![Vec::new(); ids.len()];
+    let mut roots = Vec::new();
+    for (node, parent) in parents.iter().enumerate() {
+        match parent {
+            Some(parent) => children[*parent].push(node),
+            None => roots.push(node),
+        }
+    }
+    let mut enter = vec![0_usize; ids.len()];
+    let mut leave = vec![0_usize; ids.len()];
+    let mut clock = 0_usize;
+    let mut stack = Vec::new();
+    for root in roots {
+        stack.push((root, false));
+        while let Some((node, finished)) = stack.pop() {
+            clock += 1;
+            if finished {
+                leave[node] = clock;
+            } else {
+                enter[node] = clock;
+                stack.push((node, true));
+                stack.extend(children[node].iter().map(|&child| (child, false)));
+            }
+        }
+    }
+    for (node, part) in tree.values().enumerate() {
+        if let PartState::Covered { by } = &part.state {
+            let covering = index(by).filter(|&ancestor| {
+                enter[ancestor] < enter[node]
+                    && leave[node] < leave[ancestor]
+                    && matches!(tree[by].state, PartState::GivenUp {})
+            });
+            if covering.is_none() {
                 return Err("covered part must name a given-up ancestor".into());
             }
         }
