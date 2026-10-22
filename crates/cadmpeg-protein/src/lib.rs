@@ -526,6 +526,24 @@ fn decode_record(
     ordinal: u64,
     logical_offset: usize,
 ) -> Result<Option<DecodedRecord>, CodecError> {
+    decode_record_with_selection(
+        ctx,
+        record,
+        catalog,
+        ordinal,
+        logical_offset,
+        instance_property_serializes,
+    )
+}
+
+fn decode_record_with_selection(
+    ctx: &DecodeContext<'_>,
+    record: &[u8],
+    catalog: &mut SchemaCatalog,
+    ordinal: u64,
+    logical_offset: usize,
+    serializes: impl Fn(&str) -> bool,
+) -> Result<Option<DecodedRecord>, CodecError> {
     if !record.starts_with(RECORD_MARKER) {
         return Ok(None);
     }
@@ -549,7 +567,7 @@ fn decode_record(
     let properties = catalog.properties_for(ctx, &schema)?;
     let mut values = BTreeMap::new();
     for (id, property) in properties {
-        if !instance_property_serializes(id) {
+        if !serializes(id) {
             continue;
         }
         let property_at = at;
@@ -644,18 +662,8 @@ fn decode_record(
     }))
 }
 
-/// Narrow the inherited member set to the members a record actually serializes
-/// (MA-08).
-///
-/// Two slots the closure lists do not appear in the value block.
-/// `AssetLibID` is consumed as the fourth record header string. The second slot
-/// belongs to `TextureMap2dSchema`: of `texture_MapChannel`,
-/// `texture_MapChannel_ID_Advanced`, `texture_MapChannel_UVWSource_Advanced` and
-/// `swatch`, exactly one is absent, and the two serialized integers hold `1` and
-/// `0`. Dropping `texture_MapChannel_ID_Advanced` or `texture_MapChannel` leaves
-/// every remaining member at its schema default; dropping either of the other two
-/// forces a member away from its default, so both are excluded. Which of the
-/// surviving pair the writer omits is not decidable from the bytes.
+/// Apply the compatibility member order without assigning the unresolved
+/// texture omission to a physical field. Consume `AssetLibID` in the header.
 fn instance_property_serializes(id: &str) -> bool {
     !matches!(id, "AssetLibID" | "texture_MapChannel_ID_Advanced")
 }
@@ -1291,7 +1299,7 @@ mod tests {
     }
 
     #[test]
-    fn inherited_property_selection_drops_the_header_slot_and_texture_swatch() {
+    fn compatibility_selection_keeps_the_header_out_of_the_value_block() {
         assert!(!instance_property_serializes("AssetLibID"));
         assert!(!instance_property_serializes(
             "texture_MapChannel_ID_Advanced"
@@ -1583,7 +1591,7 @@ mod tests {
     }
 
     #[test]
-    fn texture_records_omit_the_advanced_map_channel_id() {
+    fn compatibility_texture_decode_selects_advanced_id_omission() {
         let protein = schema_archive(&[(
             "Schemas/BitmapSchema.xml",
             r#"<Schema>
@@ -1625,6 +1633,74 @@ mod tests {
             properties["swatch"].value().unwrap().clone(),
             PropertyValue::String(String::new())
         );
+    }
+
+    #[test]
+    fn four_texture_omission_branches_agree_on_the_later_properties() {
+        let protein = schema_archive(&[(
+            "Schemas/BitmapSchema.xml",
+            r#"<Schema><UID val="BitmapSchema"/>
+                <String id="AssetLibID" val=""/>
+                <String id="swatch" public="false" val=""/>
+                <Boolean id="texture_LinkTextureTransforms" val="false"/>
+                <Integer id="texture_MapChannel" val="1"/>
+                <Integer id="texture_MapChannel_ID_Advanced" val="1"/>
+                <Integer id="texture_MapChannel_UVWSource_Advanced" val="0"/>
+                <Boolean id="texture_OffsetLock" val="false"/>
+                <Float id="texture_UOffset" val="0"/>
+            </Schema>"#,
+        )]);
+        let mut record = RECORD_MARKER.to_vec();
+        for value in ["BitmapSchema", "texture-guid", "Bitmap", "", ""] {
+            push_lp(&mut record, value);
+        }
+        record.push(0);
+        record.extend_from_slice(&1_u32.to_le_bytes());
+        record.extend_from_slice(&0_u32.to_le_bytes());
+        record.push(1);
+        record.extend_from_slice(&0.375_f64.to_le_bytes());
+        with_service_context(&protein, |ctx| {
+            let mut catalog = super::SchemaCatalog::load_for_edit(&protein).unwrap();
+            for omitted in [
+                "swatch",
+                "texture_MapChannel",
+                "texture_MapChannel_ID_Advanced",
+                "texture_MapChannel_UVWSource_Advanced",
+            ] {
+                let decoded =
+                    super::decode_record_with_selection(ctx, &record, &mut catalog, 0, 0, |id| {
+                        id != "AssetLibID" && id != omitted
+                    })
+                    .expect("exact branch")
+                    .expect("typed record");
+                let properties = decoded.properties;
+                assert!(!properties.contains_key(omitted));
+                assert_eq!(
+                    properties["texture_OffsetLock"].value_offset,
+                    record.len() - 9
+                );
+                assert_eq!(
+                    properties["texture_OffsetLock"].value(),
+                    Some(&PropertyValue::Boolean(true))
+                );
+                assert_eq!(
+                    properties["texture_UOffset"].value(),
+                    Some(&PropertyValue::Float(FiniteReal::new(0.375).unwrap()))
+                );
+                if omitted == "swatch" {
+                    assert_eq!(
+                        properties["texture_MapChannel"].value(),
+                        Some(&PropertyValue::Integer(0))
+                    );
+                }
+                if omitted == "texture_MapChannel_UVWSource_Advanced" {
+                    assert_eq!(
+                        properties["texture_MapChannel_ID_Advanced"].value(),
+                        Some(&PropertyValue::Integer(0))
+                    );
+                }
+            }
+        });
     }
 
     #[test]
