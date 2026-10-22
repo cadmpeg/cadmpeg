@@ -277,12 +277,26 @@ fn encode_output_is_deterministic() {
 }
 
 /// A geometry-depth decode agrees with the full decode outside the design
-/// arenas. This codec has no geometry-depth cut, so every input delivers full.
+/// arenas. The decoder holds design only when it locates a design part
+/// (§1.1), so a geometry decode is a cut exactly for the fixtures whose full
+/// decode holds no design part.
 #[test]
 fn geometry_depth_agrees_with_full_depth() {
+    let fixtures = harness().fixture_inputs();
+    let without_design = fixtures
+        .iter()
+        .filter(|(_, bytes)| {
+            cadmpeg_test_support::golden::decode(
+                &RhinoCodec,
+                &mut Cursor::new(bytes),
+                &DecodeOptions::default(),
+            )
+            .is_ok_and(|full| !full.ir().scope.design)
+        })
+        .count();
     let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full_with(
         &RhinoCodec,
-        &harness().fixture_inputs(),
+        &fixtures,
         |result| {
             let fidelity = result.source_fidelity();
             let restored: cadmpeg_ir::SourceFidelity =
@@ -295,7 +309,7 @@ fn geometry_depth_agrees_with_full_depth() {
             assert_eq!(restored.unrepresented(), fidelity.unrepresented());
         },
     );
-    assert_eq!(summary.cut, 0, "{summary:?}");
+    assert_eq!(summary.cut, without_design, "{summary:?}");
 }
 
 /// Check 8 (#246): no native row of a decoded golden holds the id of a
