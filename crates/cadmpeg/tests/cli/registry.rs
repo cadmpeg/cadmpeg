@@ -122,7 +122,6 @@ fn every_write_target_dialects_lists_is_a_to_value() {
                 output.to_str().unwrap(),
                 "--to",
                 id,
-                "--allow-errors",
             ])
             .assert()
             .success();

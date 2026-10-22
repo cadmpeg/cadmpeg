@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use cadmpeg_ir::ids::Identity;
+use cadmpeg_ir::NativeRecord;
 
 fn fields() -> Map<String, Value> {
     serde_json::from_value(serde_json::json!({
@@ -66,7 +68,10 @@ fn admitted_source_camera_and_view_name_have_one_neutral_home() {
         // #213 keeps the exact typed source camera fields.
         assert_eq!(viewport[name], fields()["viewport"][name]);
     }
-    assert_eq!(viewport["neutral_camera"], document.id.as_str());
+    assert_eq!(view.native_ref.as_deref(), Some(record.id()));
+    assert_eq!(document.native_ref.as_deref(), Some(record.id()));
+    assert_eq!(record.field("neutral_view"), None);
+    assert!(viewport.get("neutral_camera").is_none());
 }
 
 #[test]

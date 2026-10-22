@@ -334,10 +334,10 @@ pub(crate) struct ConversionPolicy {
     pub(crate) losses: LossPolicy,
     /// Minimum loss severity that refuses conversion.
     pub(crate) loss_floor: LossFloor,
-    /// Permit export when validation reports errors.
-    pub(crate) allow_errors: bool,
-    /// Permit a geometry export when decode transferred no geometry.
-    pub(crate) allow_empty: bool,
+    /// Refuse export when validation reports carried errors.
+    pub(crate) reject_errors: bool,
+    /// Refuse an empty geometry export.
+    pub(crate) reject_empty: bool,
     /// Output destination rules.
     pub(crate) destination: DestinationPolicy,
 }
@@ -369,8 +369,8 @@ pub(crate) struct PreparedConversion {
     destination: ResolvedDestination,
     loss_policy: LossPolicy,
     loss_floor: LossFloor,
-    allow_errors: bool,
-    allow_empty: bool,
+    reject_errors: bool,
+    reject_empty: bool,
 }
 
 /// Loads and validates a conversion without planning or writing it.
@@ -419,8 +419,8 @@ pub(crate) fn prepare(
         destination,
         loss_policy: policy.losses,
         loss_floor: policy.loss_floor,
-        allow_errors: policy.allow_errors,
-        allow_empty: policy.allow_empty,
+        reject_errors: policy.reject_errors,
+        reject_empty: policy.reject_empty,
     })
 }
 
@@ -433,14 +433,14 @@ impl PreparedConversion {
         // already names the requested id and the whole catalog, and it
         // reflects this build's feature set. Restating it here would be a
         // second vocabulary to keep in step with the first.
-        let plan = match self.encoder.plan(
+        let mut plan = match self.encoder.plan(
             EncodeInput::new(&self.document.ir, self.document.fidelity()),
             self.selection.request(),
         ) {
             Ok(plan) => plan,
             Err(error) => {
                 let carried = self.validation.error_count();
-                if carried > 0 && !self.allow_errors {
+                if carried > 0 && self.reject_errors {
                     return Err(self.check_refusal(carried));
                 }
                 return Err(plan_refusal(
@@ -453,11 +453,14 @@ impl PreparedConversion {
         let carried = plan
             .carried_errors(&self.document.ir, &self.validation)
             .len();
-        if carried > 0 && !self.allow_errors {
+        if carried > 0 && self.reject_errors {
             return Err(self.check_refusal(carried));
         }
-        if self.refuses_empty_geometry(plan.report()) {
-            return Err(self.empty_geometry_refusal(plan.report().clone()));
+        if self.empty_geometry(plan.report()) {
+            plan.note_empty_output();
+            if self.reject_empty {
+                return Err(self.empty_geometry_refusal(plan.report().clone()));
+            }
         }
         if self.loss_policy.rejects_export() && self.loss_floor.rejects(&plan.report().losses) {
             return Err(ConversionRefusal::ExportLossRejected {
@@ -493,17 +496,37 @@ impl PreparedConversion {
         .into()
     }
 
-    fn refuses_empty_geometry(&self, export: &ExportReport) -> bool {
+    fn empty_geometry(&self, export: &ExportReport) -> bool {
         let empty_output = export.losses.iter().any(|loss| {
             loss.code.taxonomy() == cadmpeg_ir::report::loss::LossTaxonomy::NoExportableSolids
         });
-        let empty_decode = self
+        let model = &self.document.ir.model;
+        let no_geometry = model.bodies.is_empty()
+            && model.points.is_empty()
+            && model.curves.is_empty()
+            && model.surfaces.is_empty()
+            && model.procedural_curves.is_empty()
+            && model.procedural_surfaces.is_empty()
+            && model.subds.is_empty()
+            && model.tessellations.is_empty();
+        let own_native_content = self
             .document
-            .current_decode_report()
-            .is_some_and(|report| !report.geometry_transferred());
+            .ir
+            .native
+            .namespace(self.encoder.id().as_str())
+            .is_some_and(|namespace| {
+                namespace.arenas().iter().any(|(arena, records)| {
+                    records.iter().any(|record| {
+                        export.native_dispositions.record_disposition(
+                            self.encoder.id().as_str(),
+                            arena,
+                            record.id(),
+                        ) != cadmpeg_ir::codec::write::NativeDisposition::Dropped
+                    })
+                })
+            });
         self.selection.format.transfers_geometry()
-            && (empty_output || empty_decode)
-            && !self.allow_empty
+            && (empty_output || (no_geometry && !own_native_content))
     }
 
     /// Returns the selected output format.

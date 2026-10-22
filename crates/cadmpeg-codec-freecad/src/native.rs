@@ -465,9 +465,6 @@ pub(crate) struct GuiStateRecord {
     pub(crate) values: Vec<ValueRecord>,
     /// Referenced display assets.
     pub(crate) side_entries: Vec<String>,
-    /// Retained XML and its byte span.
-    #[serde(flatten)]
-    pub(crate) xml: RetainedXml,
 }
 
 #[derive(Deserialize)]
@@ -1439,9 +1436,6 @@ pub(crate) struct GuiPropertyRecord {
     pub(crate) values: Vec<ValueRecord>,
     /// Referenced archive entries.
     pub(crate) side_entries: Vec<String>,
-    /// Retained XML and its byte span.
-    #[serde(flatten)]
-    pub(crate) xml: RetainedXml,
 }
 
 /// ZIP physical-ledger role stored on one archive span.
@@ -1807,8 +1801,6 @@ pub(crate) struct ObjectRecord {
     pub(crate) dependency_allow_partial: Option<std::num::NonZeroU64>,
     /// Source-order index.
     pub(crate) order: usize,
-    /// Exact object-data XML and its source span, when present.
-    pub(crate) data: Option<RetainedXml>,
 }
 
 impl ObjectRecord {
@@ -1832,7 +1824,6 @@ struct ObjectRecordWire {
     dependencies: Vec<String>,
     dependency_allow_partial: Option<i128>,
     order: usize,
-    data_evidence: Option<RetainedXml>,
 }
 
 #[derive(Serialize)]
@@ -1846,7 +1837,6 @@ struct ObjectRecordOut<'a> {
     dependencies: &'a [String],
     dependency_allow_partial: Option<i128>,
     order: usize,
-    data_evidence: Option<&'a RetainedXml>,
 }
 
 impl Serialize for ObjectRecord {
@@ -1863,7 +1853,6 @@ impl Serialize for ObjectRecord {
                 .dependency_allow_partial
                 .map(|value| i128::from(value.get())),
             order: self.order,
-            data_evidence: self.data.as_ref(),
         }
         .serialize(serializer)
     }
@@ -1873,7 +1862,6 @@ impl TryFrom<ObjectRecordWire> for ObjectRecord {
     type Error = String;
 
     fn try_from(wire: ObjectRecordWire) -> Result<Self, Self::Error> {
-        let data = wire.data_evidence;
         Ok(Self {
             identity: object_identity::ObjectIdentity::try_new(wire.id, wire.name)?,
             type_name: wire.type_name,
@@ -1891,7 +1879,6 @@ impl TryFrom<ObjectRecordWire> for ObjectRecord {
                 })
                 .transpose()?,
             order: wire.order,
-            data,
         })
     }
 }

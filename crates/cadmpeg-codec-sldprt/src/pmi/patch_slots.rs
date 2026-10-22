@@ -12,7 +12,7 @@ struct FieldSpan {
 
 fn dimension_field(payload: &[u8], offset: u64, field: &str) -> Result<FieldSpan, CodecError> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(
+    let (ctx, root) = DecodeContext::from_root_bytes(
         payload,
         &arena,
         &cadmpeg_core::decode::DecodePolicy::service(),
@@ -32,7 +32,7 @@ fn dimension_field(payload: &[u8], offset: u64, field: &str) -> Result<FieldSpan
         shape: Shape::Record,
         work: &work,
     };
-    let outer = parse_value(&ctx, payload, &mut cursor, 0, parse)?.ok_or_else(invalid)?;
+    let outer = parse_value(&ctx, root, &mut cursor, 0, parse)?.ok_or_else(invalid)?;
     let ValueKind::Map(outer) = outer.kind else {
         return Err(invalid());
     };

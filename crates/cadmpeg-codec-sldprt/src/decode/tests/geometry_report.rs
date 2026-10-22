@@ -166,7 +166,6 @@ fn only_sketch_owned_relation_records_without_constraints_are_counted() {
             parent: "lane".into(),
             ordinal,
             sequence: ordinal,
-            offset: Some(u64::from(ordinal)),
             class_ref: class_ref.into(),
             family: FeatureInputRelationFamily::PointPointDistance,
             scalar_ref: scalar_ref.into(),

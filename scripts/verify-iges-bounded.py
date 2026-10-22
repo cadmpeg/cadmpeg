@@ -203,7 +203,6 @@ def verify_file(
                 "iges:5.3-fixed-ascii",
                 "--limits",
                 limits,
-                "--allow-empty",
                 "--output",
                 str(generated),
                 "--force",

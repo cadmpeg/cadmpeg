@@ -73,3 +73,5 @@ fn current_material_values_override_native_copies_without_source_bytes() {
     );
     assert_eq!(record.field("reflectivity"), Some(serde_json::json!(0.75)));
 }
+
+mod linkage;

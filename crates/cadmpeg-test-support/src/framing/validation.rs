@@ -225,6 +225,9 @@ fn validate_siblings<'a>(
         .or_default();
     let start = frame.capture().offset();
     let end = start + frame.capture().byte_len();
+    if start == end {
+        return Ok(());
+    }
     if intervals
         .range(..=start)
         .next_back()

@@ -13,6 +13,7 @@ pub(crate) struct LoadedDocument {
     pub(crate) origin: LoadOrigin,
     /// Physical byte length measured while loading the input artifact.
     pub(crate) input_bytes: u64,
+    current_parse_report: Option<DecodeReport>,
 }
 
 /// Source information attached to a loaded document.
@@ -45,6 +46,18 @@ impl LoadedDocument {
             ir,
             origin: LoadOrigin::Neutral,
             input_bytes,
+            current_parse_report: None,
+        }
+    }
+
+    /// Creates a neutral load that discarded a stale sidecar.
+    pub(crate) fn stale_sidecar(ir: CadIr, input_bytes: u64, message: String) -> Self {
+        let report = DecodeReport::stale_sidecar(&ir, message);
+        Self {
+            ir,
+            origin: LoadOrigin::Neutral,
+            input_bytes,
+            current_parse_report: Some(report),
         }
     }
 
@@ -59,6 +72,7 @@ impl LoadedDocument {
                 selection,
             },
             input_bytes,
+            current_parse_report: None,
         }
     }
 
@@ -76,25 +90,26 @@ impl LoadedDocument {
                 fidelity: Box::new(fidelity),
             },
             input_bytes,
+            current_parse_report: None,
         }
     }
 
-    /// Returns the native decode report, when this document has decoded origin.
+    /// Returns the available current report or restored decode history.
     pub(crate) const fn decode_report(&self) -> Option<&DecodeReport> {
         match &self.origin {
-            LoadOrigin::Neutral => None,
+            LoadOrigin::Neutral => self.current_parse_report.as_ref(),
             LoadOrigin::Decoded { report, .. } | LoadOrigin::Restored { report, .. } => {
                 Some(report)
             }
         }
     }
 
-    /// Returns losses from this input decode. CADIR parsing is lossless;
-    /// restored sidecars describe history only.
+    /// Returns current input losses. Restored sidecars describe history only.
     pub(crate) const fn current_decode_report(&self) -> Option<&DecodeReport> {
         match &self.origin {
             LoadOrigin::Decoded { report, .. } => Some(report),
-            LoadOrigin::Neutral | LoadOrigin::Restored { .. } => None,
+            LoadOrigin::Neutral => self.current_parse_report.as_ref(),
+            LoadOrigin::Restored { .. } => None,
         }
     }
 

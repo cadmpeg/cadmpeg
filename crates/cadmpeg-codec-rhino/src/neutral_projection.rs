@@ -15,33 +15,6 @@ mod document;
 mod materials;
 mod views;
 
-fn link_native_record(
-    ctx: &DecodeContext<'_>,
-    ir: &mut CadIr,
-    arena: &str,
-    ordinal: usize,
-    neutral: &str,
-) -> Result<(), CodecError> {
-    let Some(records) = ir.native.namespace_mut("rhino").arenas_mut().get_mut(arena) else {
-        return Ok(());
-    };
-    let Some(record) = records.get_mut(ordinal) else {
-        return Ok(());
-    };
-    let mut fields = record.copy_fields(ctx)?;
-    fields.insert(
-        "id".to_owned(),
-        serde_json::Value::String(record.id().to_owned()),
-    );
-    fields.insert(
-        "neutral_ref".to_owned(),
-        serde_json::Value::String(neutral.to_owned()),
-    );
-    let id = cadmpeg_ir::ids::Identity::new(record.id()).map_err(CodecError::malformed)?;
-    *record = cadmpeg_ir::native::NativeRecord::new(id, fields)?;
-    Ok(())
-}
-
 fn layer_id(ordinal: usize) -> LayerId {
     LayerId::from(cadmpeg_ir::ids::Identity::compose(
         &cadmpeg_ir::identity_namespace!("rhino", "model", "layer"),

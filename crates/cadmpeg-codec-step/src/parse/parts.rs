@@ -8,15 +8,17 @@ use super::{
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::source_fidelity::parts::{DecodeParts, ParserPartOutput, PartLevel, PartSpec};
 
+mod framing;
+
 pub(super) enum RecordAttempt {
     Parsed(u64, RawRecord),
     GivenUp { end: usize },
 }
 
 /// Parse source-addressed bare STEP, retaining shared homes separately from the
-/// transient RawRecord graph. Only independently terminated simple entities
-/// adopt the callback here; complex and cut-short statements retain their
-/// existing parser path until their respective framing callbacks are adopted.
+/// transient RawRecord graph. Simple and complex entities use independently
+/// observed statement or parent boundaries. A missing terminator never creates
+/// a continuation boundary inside an unfinished literal or comment.
 pub(crate) fn parse(
     input: View<'_>,
     ctx: &DecodeContext<'_>,
@@ -41,7 +43,7 @@ pub(crate) fn parse(
 
 impl<'input, 'ctx, 'arena> Parser<'input, 'ctx, 'arena> {
     pub(super) fn record_attempt(&mut self) -> Result<RecordAttempt, ParseError> {
-        let Some((extent, spec, end)) = self.simple_part() else {
+        let Some((extent, spec, end)) = self.entity_part()? else {
             return self
                 .record()
                 .map(|(id, record)| RecordAttempt::Parsed(id, record));
@@ -73,47 +75,66 @@ impl<'input, 'ctx, 'arena> Parser<'input, 'ctx, 'arena> {
         }
     }
 
-    fn simple_part(&self) -> Option<(View<'input>, PartSpec, usize)> {
+    fn entity_part(&self) -> Result<Option<(View<'input>, PartSpec, usize)>, ParseError> {
         if self.parts.is_none() {
-            return None;
+            return Ok(None);
         }
-        let source = self.source?;
-        let token = self.current.as_ref()?;
+        let Some(token) = self.current.as_ref() else {
+            return Ok(None);
+        };
+        let draft = self.lexer.is_draft();
         match &token.kind {
             TokenKind::Instance(_) => {}
-            TokenKind::ValueInstance(_) if self.lexer.is_draft() => {}
-            _ => return None,
+            TokenKind::ValueInstance(_) if draft => {}
+            _ => return Ok(None),
         }
-        let start = token.span.start;
         let input = self.lexer.input();
-        let draft = self.lexer.is_draft();
-        let end = super::recovery::statement_end(input, start, draft).ok()?;
-        if input.get(end.checked_sub(1)?) != Some(&b';') {
-            return None;
-        }
-        let equals = trivia(input, token.span.end, end, draft)?;
-        if input.get(equals) != Some(&b'=') {
-            return None;
-        }
-        let body = trivia(input, equals.checked_add(1)?, end, draft)?;
-        if input.get(body) == Some(&b'(') {
-            return None;
-        }
-        let absolute = |offset: usize| source.start().checked_add(offset);
-        let extent = source.child(absolute(start)?, absolute(end)?)?;
-        let range = |from, to| {
-            Some(
-                cadmpeg_core::decode::u64_from_index(absolute(from)?)
-                    ..cadmpeg_core::decode::u64_from_index(absolute(to)?),
-            )
+        let start = token.span.start;
+        let Some(boundary) = framing::boundary(input, start, draft)? else {
+            return Ok(None);
         };
-        let framing = vec![
-            range(start, token.span.end)?,
-            range(equals, equals.checked_add(1)?)?,
-            range(end.checked_sub(1)?, end)?,
-        ];
-        let level = PartLevel::parse("step.simple_entity_instance")?;
-        Some((extent, PartSpec::new(level, framing), end))
+        Ok((|| {
+            let source = self.source?;
+            let end = boundary.end();
+            let equals = trivia(input, token.span.end, end, draft)?;
+            if input.get(equals) != Some(&b'=') {
+                return None;
+            }
+            let body = trivia(input, equals.checked_add(1)?, end, draft)?;
+            // ENDSEC at the first body token is ambiguous with a damaged entity
+            // dispatch. Only a boundary after actual entity content is adopted.
+            if body >= end {
+                return None;
+            }
+            let complex = input.get(body) == Some(&b'(');
+            let absolute = |offset: usize| source.start().checked_add(offset);
+            let extent = source.child(absolute(start)?, absolute(end)?)?;
+            let range = |from, to| {
+                Some(
+                    cadmpeg_core::decode::u64_from_index(absolute(from)?)
+                        ..cadmpeg_core::decode::u64_from_index(absolute(to)?),
+                )
+            };
+            let mut framing = vec![
+                range(start, token.span.end)?,
+                range(equals, equals.checked_add(1)?)?,
+            ];
+            if complex {
+                framing.push(range(body, body.checked_add(1)?)?);
+                if let Some(close) = framing::outer_close(input, body, end, draft) {
+                    framing.push(range(close, close.checked_add(1)?)?);
+                }
+            }
+            if boundary.terminated() {
+                framing.push(range(end.checked_sub(1)?, end)?);
+            }
+            let level = PartLevel::parse(if complex {
+                "step.complex_entity_instance"
+            } else {
+                "step.simple_entity_instance"
+            })?;
+            Some((extent, PartSpec::new(level, framing), end))
+        })())
     }
 }
 

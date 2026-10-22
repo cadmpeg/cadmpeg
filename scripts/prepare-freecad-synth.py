@@ -23,7 +23,7 @@ def prepare(cadmpeg: Path, fixtures: Path, output: Path) -> int:
             report = output / f"{source.stem}.report.json"
             subprocess.run([
                 str(cadmpeg), "convert", str(document), "-o", str(output / source.name),
-                "--to", "fcstd:schema-4", "--allow-empty", "--report", str(report),
+                "--to", "fcstd:schema-4", "--report", str(report),
             ], check=True)
             value = json.loads(report.read_text())
             export = value.get("export") if isinstance(value, dict) else None

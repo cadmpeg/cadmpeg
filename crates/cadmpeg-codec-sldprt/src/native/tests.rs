@@ -67,7 +67,6 @@ fn emitter_models() -> &'static [crate::native::SldprtNative] {
                 parent: parent.clone(),
                 ordinal: 0,
                 sequence: 0,
-                offset: Some(0),
                 object_name_ref: object_name_ref.clone(),
                 feature_ref: feature_ref.clone(),
                 local_body_ids: vec![1],
@@ -595,13 +594,27 @@ fn native_store_preserves_midpoint_with_two_point_markers() {
             entity.local_id(),
         );
     }
-    let expected = crate::native::lanes::expected_lanes(
-        &cadmpeg_test_support::service_decode_context(),
-        &native,
+    let source = native
+        .feature_input_lanes
+        .iter()
+        .flat_map(|lane| lane.native_payload.iter().copied())
+        .collect::<Vec<_>>();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &source,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
     )
-    .unwrap()
-    .remove(0)
-    .1;
+    .unwrap();
+    let mut body_sources = crate::resolved_features::body_sources::BodySources::from_concatenated(
+        &native.feature_input_lanes,
+        root,
+    )
+    .unwrap();
+    let expected = crate::native::lanes::expected_lanes(&ctx, &native, &mut body_sources)
+        .unwrap()
+        .remove(0)
+        .1;
     let lane = &mut native.feature_input_lanes[0];
     lane.scalars = expected.scalars;
     lane.relation_bindings = expected.relation_bindings;

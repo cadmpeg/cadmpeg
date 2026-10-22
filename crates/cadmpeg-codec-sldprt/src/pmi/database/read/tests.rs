@@ -28,7 +28,12 @@ fn inline_cell_view_preserves_key_value_and_nonzero_parent_coordinates() {
     let mut expected = KEY.as_bytes().to_vec();
     expected.extend_from_slice(&value);
     assert_eq!(image.encoded.window(), expected);
-    assert_eq!(image.source_offset(0), 2 * 4096 + 38 + 36);
+    assert_eq!(
+        image
+            .original_pointer(&ctx, u64::try_from(KEY.len()).expect("GUID length"))
+            .expect("source pointer"),
+        2 * 4096 + 38 + 36
+    );
     let physical_value_start =
         u64::try_from(start + 2 * 4096 + 38 + KEY.len()).expect("valid source fixture");
     ctx.record(
@@ -133,13 +138,15 @@ fn independent_cells_keep_distinct_actual_owners_without_semantic_reads() {
 #[test]
 fn semantic_pmi_parser_uses_actual_cell_bytes_without_changing_native_values() {
     let encoded = crate::test_support::pmi::pmi_semantic_payload_for_with_guid("D1@Sketch1", KEY);
-    let source = crate::pmi::database::encode(&[(KEY.into(), encoded[KEY.len()..].to_vec())])
+    let source = crate::pmi::database::encode(&[(KEY.into(), encoded[64 + KEY.len()..].to_vec())])
         .expect("semantic source database");
     let arena = DecodeArena::new();
     let (ctx, root) = DecodeContext::from_root_bytes(&source, &arena, &DecodePolicy::service())
         .expect("semantic database source");
     let mut losses = Vec::new();
-    let records = crate::pmi::parse_payload(&ctx, root, &mut losses).expect("PMI source cells");
+    let records = crate::pmi::parse_payload(&ctx, root, &mut losses)
+        .expect("PMI source cells")
+        .records;
     assert!(losses.is_empty(), "{losses:?}");
     let [record] = records.as_slice() else {
         panic!("one PMI dimension")

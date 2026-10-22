@@ -372,7 +372,6 @@ fn compact_body_projection_fixture() -> (cadmpeg_ir::features::Feature, FeatureI
             id: "body".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: Some(0),
             object_name_ref: "name".into(),
             feature_ref: "fillet".into(),
             local_body_ids: vec![3, 4],

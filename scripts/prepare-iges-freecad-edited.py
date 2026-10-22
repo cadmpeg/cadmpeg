@@ -141,7 +141,6 @@ def main() -> None:
                 f"iges:{args.iges_target}-fixed-ascii",
                 "--limits",
                 args.limits,
-                "--allow-empty",
                 "--output",
                 str(output),
                 "--report",

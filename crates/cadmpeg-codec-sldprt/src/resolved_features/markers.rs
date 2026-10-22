@@ -1172,7 +1172,6 @@ pub(crate) fn relation_bindings(
             parent,
             ordinal,
             sequence: ordinal,
-            offset: class.offset,
             class_ref,
             family,
             scalar_ref,

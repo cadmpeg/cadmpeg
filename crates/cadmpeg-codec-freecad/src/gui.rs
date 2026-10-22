@@ -35,6 +35,8 @@ pub(crate) struct Graph {
     pub(crate) providers: Vec<GuiViewProviderRecord>,
     pub(crate) provider_sources: Vec<(String, std::ops::Range<usize>)>,
     pub(crate) value_sources: Vec<crate::fidelity::ValueSourceRanges>,
+    pub(crate) state_sources: BTreeMap<String, crate::fidelity::ValueSourceRanges>,
+    pub(crate) property_sources: BTreeMap<String, crate::fidelity::ValueSourceRanges>,
     pub(crate) properties: Vec<GuiPropertyRecord>,
     pub(crate) losses: Vec<LossNote>,
     /// The GUI stream was not admitted into typed records.
@@ -238,7 +240,6 @@ fn transfer_xml(
     let neutral_schema_version = admission.neutral_schema_version();
     let transferred = transfer_schema_one(
         ir,
-        text,
         &xml,
         schema_declaration.as_deref(),
         neutral_schema_version,
@@ -267,7 +268,6 @@ fn transfer_xml(
 
 fn transfer_schema_one(
     ir: &CadIr,
-    text: &str,
     xml: &roxmltree::Document<'_>,
     schema_declaration: Option<&str>,
     neutral_schema_version: Option<u32>,
@@ -285,13 +285,19 @@ fn transfer_schema_one(
         .filter(|node| node.has_tag_name("Camera"))
         .count();
     let mut states = Vec::new();
+    let mut state_sources = BTreeMap::new();
     for (order, node) in root
         .children()
         .filter(roxmltree::Node::is_element)
         .filter(|node| !node.has_tag_name("ViewProviderData"))
         .enumerate()
     {
-        states.push(gui_state(text, order, node)?);
+        let state = gui_state(order, node)?;
+        state_sources.insert(
+            state.id.clone(),
+            crate::fidelity::state_source(node, &state)?,
+        );
+        states.push(state);
     }
     let document = GuiDocumentRecord {
         id: "fcstd:gui:document#0".into(),
@@ -308,6 +314,7 @@ fn transfer_schema_one(
     }
     let mut native_providers = Vec::new();
     let mut provider_sources = Vec::new();
+    let mut property_sources = BTreeMap::new();
     let mut native_properties = Vec::new();
     let mut losses = Vec::new();
     // Absence declares no camera state; it does not omit a source record.
@@ -375,22 +382,22 @@ fn transfer_schema_one(
         let provider_key = provider_identity_key(name);
         let Some(object_id) = objects_by_name.get(name).copied() else {
             append_native_provider(
-                text,
                 provider,
                 provider_order,
                 None,
                 &mut native_providers,
                 &mut native_properties,
+                &mut property_sources,
             )?;
             continue;
         };
         append_native_provider(
-            text,
             provider,
             provider_order,
             Some(object_id),
             &mut native_providers,
             &mut native_properties,
+            &mut property_sources,
         )?;
         let properties_node = unique_child(provider, "Properties")?.ok_or_else(|| {
             CodecError::malformed(format_args!("ViewProvider {name} has no Properties"))
@@ -627,25 +634,24 @@ fn transfer_schema_one(
             });
         }
     }
-    let value_sources = crate::fidelity::value_sources(
-        xml,
-        document
-            .states
-            .iter()
-            .map(|state| (state.id.as_str(), &state.xml, state.values.as_slice()))
-            .chain(native_properties.iter().map(|property| {
-                (
-                    property.id.as_str(),
-                    &property.xml,
-                    property.values.as_slice(),
-                )
-            })),
-    )?;
+    let mut value_sources = property_sources
+        .values()
+        .filter(|source| source.has_values())
+        .cloned()
+        .collect::<Vec<_>>();
+    value_sources.extend(
+        state_sources
+            .values()
+            .filter(|source| source.has_values())
+            .cloned(),
+    );
     let mut graph = Graph {
         documents: vec![document],
         providers: native_providers,
         provider_sources,
         value_sources,
+        state_sources,
+        property_sources,
         properties: native_properties,
         losses,
         untyped: false,
@@ -1218,11 +1224,7 @@ fn transfer_primitive_appearance(
     Ok(())
 }
 
-fn gui_state(
-    text: &str,
-    order: usize,
-    node: roxmltree::Node<'_, '_>,
-) -> Result<GuiStateRecord, CodecError> {
+fn gui_state(order: usize, node: roxmltree::Node<'_, '_>) -> Result<GuiStateRecord, CodecError> {
     let mut values = Vec::new();
     let mut value_indices = HashMap::new();
     for (value_order, value) in node
@@ -1261,10 +1263,6 @@ fn gui_state(
         .attributes()
         .map(|attribute| Ok((attribute.name().to_owned(), attribute.value().to_owned())))
         .collect::<Result<_, CodecError>>()?;
-    let xml = crate::native::RetainedXml::from_source(
-        &text[node.range()],
-        cadmpeg_core::decode::u64_from_index(node.range().start),
-    )?;
     let key = format!("{kind}:{order}");
     Ok(GuiStateRecord {
         id: crate::native::native_id("gui-state", &key),
@@ -1272,7 +1270,6 @@ fn gui_state(
         attributes,
         values,
         side_entries,
-        xml,
     })
 }
 
@@ -1295,12 +1292,12 @@ fn unique_child<'a, 'input>(
 }
 
 fn append_native_provider(
-    text: &str,
     provider: roxmltree::Node<'_, '_>,
     order: usize,
     object: Option<&str>,
     providers: &mut Vec<GuiViewProviderRecord>,
     properties: &mut Vec<GuiPropertyRecord>,
+    property_sources: &mut BTreeMap<String, crate::fidelity::ValueSourceRanges>,
 ) -> Result<(), CodecError> {
     let name = provider
         .attribute("name")
@@ -1403,7 +1400,7 @@ fn append_native_provider(
         {
             side_entries.push(value.to_owned());
         }
-        properties.push(GuiPropertyRecord {
+        let record = GuiPropertyRecord {
             id: crate::native::native_child_id("gui-property", &id, property_name),
             owner: id.clone(),
             name: property_name.to_owned(),
@@ -1414,11 +1411,12 @@ fn append_native_provider(
             order: property_order,
             values,
             side_entries,
-            xml: crate::native::RetainedXml::from_source(
-                &text[property.range()],
-                cadmpeg_core::decode::u64_from_index(property.range().start),
-            )?,
-        });
+        };
+        property_sources.insert(
+            record.id.clone(),
+            crate::fidelity::gui_property_source(property, &record)?,
+        );
+        properties.push(record);
     }
     Ok(())
 }
@@ -3876,7 +3874,11 @@ fn transfer_shape_appearances(
                     ), SourceProvenance::in_stream(
                         "fcstd",
                         cadmpeg_ir::stream_name!("GuiDocument.xml"),
-                        property.xml.start(),
+                        cadmpeg_core::decode::u64_from_index(
+                            graph.property_sources.get(&property.id).ok_or_else(|| {
+                                CodecError::malformed("GUI property has no original source range")
+                            })?.record_range().start,
+                        ),
                     )
                     .with_tag(property.id.clone()));
                 continue;

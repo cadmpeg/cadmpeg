@@ -12,8 +12,7 @@ reported as dropped export content rather than refusing the document.
 An unsupported entity is omitted with a loss; structurally degraded geometry
 uses Error severity. Independent carriers remain exportable when an owning
 wire or solid cannot be emitted. A model with no exportable solids still
-produces valid empty IGES and a `NoExportableSolids` loss; the CLI's
-`--allow-empty` policy decides whether to accept that result.
+produces valid empty IGES and a `NoExportableSolids` loss.
 
 An intact matching source image can be replayed only when
 `SourceFidelity.unrepresented` is empty. A changed document, missing source,

@@ -156,10 +156,22 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
         }],
     };
 
+    let source = lane.native_payload.to_vec();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &source,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    let mut body_sources =
+        crate::resolved_features::body_sources::BodySources::from_views([(lane.id.clone(), root)])
+            .unwrap();
     bind_scalar_operands(
-        &cadmpeg_test_support::service_decode_context(),
+        &ctx,
         std::slice::from_ref(&history),
         std::slice::from_mut(&mut lane),
+        &mut body_sources,
     )
     .unwrap();
 

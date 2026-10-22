@@ -1025,7 +1025,11 @@ fn retains_vendor_qualified_primitive_like_types_as_native_objects() {
         .expect("objects");
     assert!(objects
         .iter()
-        .any(|object| object.type_name == "Part::VendorBox" && object.data.is_some()));
+        .any(|object| object.type_name == "Part::VendorBox"
+            && result
+                .source_fidelity()
+                .record_layout()
+                .contains_key(object.id())));
     assert!(result.ir().model.features.is_empty());
 }
 

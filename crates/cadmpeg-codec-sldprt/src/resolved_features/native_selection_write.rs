@@ -877,7 +877,6 @@ mod tests {
             parent: "lane".into(),
             ordinal: 0,
             sequence: 0,
-            offset: Some(700),
             object_name_ref: "name".into(),
             feature_ref: "feature".into(),
             local_body_ids: vec![287, 115],
@@ -911,8 +910,24 @@ mod tests {
             offset: Some(0),
             name: "moDeleteBodyData_c".into(),
         });
-        let decoded = super::super::selections::compact_body_selections(&histories, &lane)
-            .expect("re-read body selection");
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &lane.native_payload,
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .expect("authored source");
+        let mut body_sources =
+            super::super::body_sources::BodySources::from_views([(lane.id.clone(), root)])
+                .expect("lane source");
+        let decoded = super::super::selections::compact_body_selections(
+            &ctx,
+            root,
+            &mut body_sources,
+            &histories,
+            &lane,
+        )
+        .expect("re-read body selection");
         assert_eq!(decoded.len(), 1);
         assert_eq!(decoded[0].local_body_ids, vec![287, 115]);
         assert_eq!(decoded[0].body_state_ids, vec![287]);

@@ -63,6 +63,8 @@ impl DeclaredEnd {
 
 pub(crate) mod assembly;
 
+pub(crate) mod body_sources;
+
 pub(crate) mod axes;
 
 pub(crate) mod bindings;
@@ -108,6 +110,8 @@ pub(crate) mod relation_geometry;
 mod relation_loci;
 
 mod relation_records;
+
+mod relation_layout;
 
 pub(crate) mod feature_sources;
 

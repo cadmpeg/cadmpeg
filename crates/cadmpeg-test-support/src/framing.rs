@@ -6,7 +6,9 @@ mod types;
 mod validation;
 
 pub mod freecad;
+pub mod iges;
 pub mod step;
+pub mod zip;
 
 pub use table::{PartParent, PartRule, PartTable};
 pub use types::{FrameParent, FramedPart};

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
-use crate::native::{RetainedXml, ValueRecord};
+use crate::native::ValueRecord;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding};
 use cadmpeg_ir::presentation::{
     CameraState, PresentationDocument, PresentationState, PresentationStateKind,
@@ -36,12 +36,11 @@ fn typed_gui_values_supply_content_instead_of_retained_xml() {
             text: None,
         }],
         side_entries: Vec::new(),
-        xml: RetainedXml::from_source(
-            "<Property name=\"Visibility\"><Bool value=\"1\"/></Property>",
-            0,
-        )
-        .expect("span"),
     };
+    let _xml_fidelity = crate::test_support::source_fidelity::xml_layout_fixture(
+        &record.id,
+        "<Property name=\"Visibility\"><Bool value=\"1\"/></Property>",
+    );
     let _fidelity = crate::test_support::source_fidelity::value_layout_fixture(
         &record.id,
         &["<Bool value=\"contradicting-retained-blob\"/>"],
@@ -198,8 +197,9 @@ fn view_fields_win_over_duplicate_native_property_values_and_deletions() {
                 text: None,
             }],
             side_entries: Vec::new(),
-            xml: RetainedXml::from_source("<Property/>", 0).expect("span"),
         };
+        let _xml_fidelity =
+            crate::test_support::source_fidelity::xml_layout_fixture(&record.id, "<Property/>");
         let _fidelity = crate::test_support::source_fidelity::value_layout_fixture(
             &record.id,
             &["<Bool value=\"contradicting-retained-blob\"/>"],

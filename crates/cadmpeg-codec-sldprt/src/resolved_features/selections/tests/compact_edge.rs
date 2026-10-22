@@ -13,9 +13,7 @@ use crate::records::{
     Feature, FeatureHistory, FeatureInputClass, FeatureInputComponentPathEntry,
     FeatureInputEdgeSelection, FeatureInputLane, FeatureInputName,
 };
-use crate::resolved_features::selections::compact_body_retention_mode;
 use crate::resolved_features::selections::compact_body_selection_vector;
-use crate::resolved_features::selections::compact_body_state_ids;
 use crate::resolved_features::selections::compact_component_reference_list;
 use crate::resolved_features::selections::compact_component_reference_list_at;
 use crate::resolved_features::selections::compact_edge_component_path_at;
@@ -33,6 +31,35 @@ use crate::resolved_features::selections::operation_surface_selection_candidates
 use crate::resolved_features::selections::unique_marker_candidate;
 use crate::resolved_features::selections::COMPACT_EDGE_VECTOR_MARKER;
 use std::collections::BTreeMap;
+
+// API port: each original byte fixture is an actual source root for the
+// production View-based state/mode reader. Inputs and assertions stay exact.
+fn compact_body_state_ids(payload: &[u8], start: usize, end: usize, token: u16) -> Vec<u32> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (_ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        payload,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    crate::resolved_features::selections::compact_body_state_ids(root, start, end, token)
+}
+
+fn compact_body_retention_mode(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    token: u16,
+) -> Option<cadmpeg_ir::features::BodyRetentionMode> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (_ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        payload,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    crate::resolved_features::selections::compact_body_retention_mode(root, start, end, token)
+}
 
 #[test]
 fn component_vector_selector_accepts_lane_subtypes() {
@@ -1281,11 +1308,19 @@ fn scalar_binding_refuses_sparse_path_nesting_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_recursion_depth = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error =
-        crate::resolved_features::bindings::bind_scalar_operands(&ctx, &[history], &mut [lane])
-            .unwrap_err();
+    let source = lane.native_payload.to_vec();
+    let (ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
+    let mut body_sources =
+        crate::resolved_features::body_sources::BodySources::from_views([(lane.id.clone(), root)])
+            .unwrap();
+    let error = crate::resolved_features::bindings::bind_scalar_operands(
+        &ctx,
+        &[history],
+        &mut [lane],
+        &mut body_sources,
+    )
+    .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::RecursionDepth

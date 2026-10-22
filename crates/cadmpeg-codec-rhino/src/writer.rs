@@ -685,8 +685,27 @@ fn native_dispositions(
                     }
                     "linetypes" => NativeDisposition::Written,
                     "text_styles" if tables::fonts::complete(record) => NativeDisposition::Written,
-                    "materials" if tables::materials::native_complete(ir, record) => {
-                        NativeDisposition::Regenerated
+                    "materials"
+                        if tables::materials::native_complete(record)
+                            && ir
+                                .model
+                                .appearances
+                                .iter()
+                                .filter(|appearance| {
+                                    appearance.native_ref.as_deref() == Some(record.id())
+                                })
+                                .all(|appearance| appearance.textures.is_empty()) =>
+                    {
+                        if ir
+                            .model
+                            .appearances
+                            .iter()
+                            .any(|appearance| appearance.native_ref.as_deref() == Some(record.id()))
+                        {
+                            NativeDisposition::Regenerated
+                        } else {
+                            NativeDisposition::Written
+                        }
                     }
                     _ => NativeDisposition::Dropped,
                 };
@@ -710,6 +729,8 @@ fn native_dispositions(
                     record.id(),
                     NativeDisposition::Regenerated,
                 );
+            } else if views.written.contains(record.id()) {
+                dispositions.set_record("rhino", arena, record.id(), NativeDisposition::Written);
             }
         }
     }
@@ -729,6 +750,8 @@ fn native_dispositions(
                     record.id(),
                     NativeDisposition::Regenerated,
                 );
+            } else if properties.written.contains(record.id()) {
+                dispositions.set_record("rhino", arena, record.id(), NativeDisposition::Written);
             }
         }
     }

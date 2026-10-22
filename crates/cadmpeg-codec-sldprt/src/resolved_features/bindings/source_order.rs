@@ -3,11 +3,12 @@
 
 use crate::records::{FeatureHistory, FeatureInputLane};
 use cadmpeg_core::CodecError;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 pub(super) fn finalize(
     histories: &[FeatureHistory],
     lane: &mut FeatureInputLane,
+    source_pointers: &BTreeMap<String, BTreeMap<String, u64>>,
 ) -> Result<(), CodecError> {
     let features = crate::records::HistoryFeatures::new(histories);
     let names = super::FeatureObjectNames::new(&lane.names);
@@ -54,14 +55,30 @@ pub(super) fn finalize(
         classes,
         names,
         scalars,
-        relation_bindings,
         relation_instances,
-        body_selections,
         edge_selections,
         surface_selections,
         generated_surface_identities,
         references
     );
+    for record in &lane.relation_bindings {
+        let position = source_pointers
+            .get(&record.id)
+            .and_then(|fields| fields.get("offset"))
+            .ok_or_else(|| {
+                CodecError::malformed("relation binding lacks its source-layout pointer")
+            })?;
+        positions.insert(*position);
+    }
+    for record in &lane.body_selections {
+        let position = source_pointers
+            .get(&record.id)
+            .and_then(|fields| fields.get("offset"))
+            .ok_or_else(|| {
+                CodecError::malformed("body selection lacks its source-layout pointer")
+            })?;
+        positions.insert(*position);
+    }
     for marker in &lane.sketch_entities {
         if let Some(position) = marker.offset() {
             positions.insert(position);
@@ -89,14 +106,30 @@ pub(super) fn finalize(
         classes,
         names,
         scalars,
-        relation_bindings,
         relation_instances,
-        body_selections,
         edge_selections,
         surface_selections,
         generated_surface_identities,
         references
     );
+    for record in &mut lane.relation_bindings {
+        if let Some(rank) = source_pointers
+            .get(&record.id)
+            .and_then(|fields| fields.get("offset"))
+            .and_then(|position| ranks.get(position))
+        {
+            record.sequence = *rank;
+        }
+    }
+    for record in &mut lane.body_selections {
+        if let Some(rank) = source_pointers
+            .get(&record.id)
+            .and_then(|fields| fields.get("offset"))
+            .and_then(|position| ranks.get(position))
+        {
+            record.sequence = *rank;
+        }
+    }
     for marker in &mut lane.sketch_entities {
         if let Some(rank) = marker.offset().and_then(|position| ranks.get(&position)) {
             marker.set_sequence(*rank);
@@ -137,7 +170,7 @@ mod tests {
             references: Vec::new(),
             sketch_entities: Vec::new(),
         };
-        finalize(&[], &mut lane).unwrap();
+        finalize(&[], &mut lane, &std::collections::BTreeMap::new()).unwrap();
         assert_eq!(
             lane.classes
                 .iter()

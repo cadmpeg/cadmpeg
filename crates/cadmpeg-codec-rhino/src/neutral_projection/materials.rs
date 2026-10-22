@@ -111,7 +111,6 @@ pub(super) fn project(
             properties,
             textures: Vec::new(),
         });
-        super::link_native_record(ctx, ir, "materials", ordinal, id.as_str())?;
     }
     for (source_order, object) in scan.objects.iter().enumerate() {
         let Some(object) = object.framed() else {

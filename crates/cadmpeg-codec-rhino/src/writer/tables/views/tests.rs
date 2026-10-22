@@ -17,6 +17,7 @@ fn current_neutral_pose_and_name_regenerate_saved_view_without_source_bytes() {
     let camera_id: PresentationId = "test:model:presentation#camera".try_into().unwrap();
     let view_id: PresentationId = "test:model:presentation#view".try_into().unwrap();
     let mut camera = PresentationDocument::new(camera_id.clone());
+    camera.native_ref = Some("rhino:document:view#saved".into());
     camera
         .set_states(vec![PresentationState {
             kind: PresentationStateKind::Camera(CameraState {
@@ -44,9 +45,9 @@ fn current_neutral_pose_and_name_regenerate_saved_view_without_source_bytes() {
             cadmpeg_core::text::NonBlankString::new("name").unwrap(),
             "Edited view".into(),
         )]),
-        native_ref: None,
+        native_ref: Some("rhino:document:view#saved".into()),
     });
-    let fields=serde_json::from_value(serde_json::json!({"list_kind":"named","list_index":0,"neutral_view":view_id,"viewport":{"neutral_camera":camera_id,"camera_valid":true,"frustum_valid":true,"port_valid":true,"projection":2,"frustum_mm":[-2,2,-1,1,0.1,100],"port":[0,1920,1080,0,0,1]}})).unwrap();
+    let fields=serde_json::from_value(serde_json::json!({"list_kind":"named","list_index":0,"viewport":{"camera_valid":true,"frustum_valid":true,"port_valid":true,"projection":2,"frustum_mm":[-2,2,-1,1,0.1,100],"port":[0,1920,1080,0,0,1]}})).unwrap();
     ir.native.namespace_mut("rhino").arenas_mut().insert(
         "views".into(),
         vec![cadmpeg_ir::NativeRecord::new(
@@ -90,3 +91,5 @@ fn current_neutral_pose_and_name_regenerate_saved_view_without_source_bytes() {
         }
     }
 }
+
+mod linkage;

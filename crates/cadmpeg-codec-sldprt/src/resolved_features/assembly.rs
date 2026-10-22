@@ -73,6 +73,10 @@ pub(crate) fn supplemental_config_lanes(
     Ok(lanes)
 }
 
+pub(super) fn source_id(source: crate::container::Section<'_>, family: &str) -> String {
+    format!("sldprt:feature-input:{family}#{}", source.ordinal())
+}
+
 fn feature_input_lane(
     ctx: &DecodeContext<'_>,
     source: crate::container::Section<'_>,
@@ -80,7 +84,7 @@ fn feature_input_lane(
     family: &str,
     annotations: &mut Annotations,
 ) -> Result<FeatureInputLane, cadmpeg_core::CodecError> {
-    let parent = format!("sldprt:feature-input:{family}#{}", source.ordinal());
+    let parent = source_id(source, family);
     let payload = source.payload();
     let classes = class_declarations(payload, &parent)?;
     let names = object_names(ctx, payload, &parent)?;

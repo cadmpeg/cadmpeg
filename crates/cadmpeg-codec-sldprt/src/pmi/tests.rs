@@ -23,18 +23,39 @@ use super::{
     DimensionSubtype,
 };
 
-fn parse_payload(
+fn parse_source(
     payload: &[u8],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Vec<PmiDimension> {
+) -> (Vec<PmiDimension>, cadmpeg_ir::SourceFidelity) {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         payload,
         &arena,
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
-    .expect("PMI test input fits service policy");
-    super::parse_payload(&ctx, root, losses).expect("PMI test input fits service policy")
+    .expect("PMI source");
+    let parsed =
+        super::parse_payload(&ctx, root, losses).expect("PMI test input fits service policy");
+    let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+    super::layout::install(&ctx, parsed.pointers, &mut fidelity).expect("PMI source layouts");
+    (parsed.records, fidelity)
+}
+
+fn parse_payload(
+    payload: &[u8],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Vec<PmiDimension> {
+    parse_source(payload, losses).0
+}
+
+fn pointer(payload: &[u8], record: &PmiDimension, field: &str) -> Option<u64> {
+    parse_source(payload, &mut Vec::new())
+        .1
+        .record_layout()
+        .get(&record.id)?
+        .pointers()
+        .get(field)
+        .copied()
 }
 
 fn write_with_regenerated_pmi(
@@ -145,22 +166,16 @@ fn dimension(subtype: &str, value: f64) -> PmiDimension {
     PmiDimension {
         id: "dimension".into(),
         parent: "block".into(),
-        offset: Some(0),
         guid: "guid".into(),
         cad_text: "D1@Pattern1".into(),
         item_count: std::num::NonZeroU32::MIN,
         subtype: subtype.into(),
         value: cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite test dimension"),
-        value_offset: Some(0),
         precision: 0,
-        precision_offset: Some(0),
         display_text: None,
         basic: false,
-        basic_offset: Some(0),
         inspection: false,
-        inspection_offset: Some(0),
         reference_only: false,
-        reference_only_offset: Some(0),
     }
 }
 
@@ -469,12 +484,15 @@ fn identical_dimension_fields_can_have_different_patch_positions() {
     assert!(losses.is_empty(), "{losses:?}");
     assert_eq!(original.len(), 1);
     let record = &original[0];
-    let basic =
-        patch_slots::field_offset(&payload, record.offset.expect("source offset"), "isBasic")
-            .unwrap();
+    let basic = patch_slots::field_offset(
+        &payload,
+        pointer(&payload, &record, "offset").expect("source offset"),
+        "isBasic",
+    )
+    .unwrap();
     let inspection = patch_slots::field_offset(
         &payload,
-        record.offset.expect("source offset"),
+        pointer(&payload, &record, "offset").expect("source offset"),
         "isInspection",
     )
     .unwrap();
@@ -499,14 +517,18 @@ fn identical_dimension_fields_can_have_different_patch_positions() {
     assert_eq!(left, right);
     assert_ne!(
         basic,
-        patch_slots::field_offset(&reordered, record.offset.expect("source offset"), "isBasic")
-            .unwrap()
+        patch_slots::field_offset(
+            &reordered,
+            pointer(&reordered, &record, "offset").expect("source offset"),
+            "isBasic"
+        )
+        .unwrap()
     );
     assert_ne!(
         inspection,
         patch_slots::field_offset(
             &reordered,
-            record.offset.expect("source offset"),
+            pointer(&reordered, &record, "offset").expect("source offset"),
             "isInspection"
         )
         .unwrap()
@@ -550,8 +572,10 @@ fn key_like_string_inside_value_does_not_steal_field_spans() {
     };
     assert_eq!(record.display_text(), Some("cadText"));
     assert_eq!(record.cad_text, "D1@Sketch1");
-    let text_off =
-        usize::try_from(record.display_text_offset().expect("display text offset")).unwrap();
+    let text_off = usize::try_from(
+        pointer(&payload, &record, "display_text_offset").expect("display text offset"),
+    )
+    .unwrap();
     assert_eq!(&payload[text_off..text_off + 7], b"cadText");
 }
 
@@ -649,14 +673,27 @@ fn patch_payload_offsets_round_trip_through_reparse() {
         panic!("one record");
     };
     let mut patched = payload.clone();
-    let start = usize::try_from(record.value_offset.expect("source offset")).unwrap();
+    let start = usize::try_from(pointer(&payload, &record, "value_offset").expect("source offset"))
+        .unwrap();
     let edited = 0.05_f64;
     patched[start..start + 8].copy_from_slice(&edited.to_be_bytes());
-    patched[usize::try_from(record.precision_offset.expect("source offset")).unwrap()] = 4;
-    patched[usize::try_from(record.basic_offset.expect("source offset")).unwrap()] = 0xc2;
-    patched[usize::try_from(record.inspection_offset.expect("source offset")).unwrap()] = 0xc3;
-    patched[usize::try_from(record.reference_only_offset.expect("source offset")).unwrap()] = 0xc2;
-    let text_off = usize::try_from(record.display_text_offset().expect("display text")).unwrap();
+    patched[usize::try_from(
+        pointer(&payload, &record, "precision_offset").expect("source offset"),
+    )
+    .unwrap()] = 4;
+    patched[usize::try_from(pointer(&payload, &record, "basic_offset").expect("source offset"))
+        .unwrap()] = 0xc2;
+    patched[usize::try_from(
+        pointer(&payload, &record, "inspection_offset").expect("source offset"),
+    )
+    .unwrap()] = 0xc3;
+    patched[usize::try_from(
+        pointer(&payload, &record, "reference_only_offset").expect("source offset"),
+    )
+    .unwrap()] = 0xc2;
+    let text_off =
+        usize::try_from(pointer(&payload, &record, "display_text_offset").expect("display text"))
+            .unwrap();
     patched[text_off..text_off + 9].copy_from_slice(b"50.000 mm");
     let mut again_losses = Vec::new();
     let again = parse_payload(&patched, &mut again_losses);
@@ -670,8 +707,14 @@ fn patch_payload_offsets_round_trip_through_reparse() {
     assert!(edited_record.inspection);
     assert!(!edited_record.reference_only);
     assert_eq!(edited_record.display_text(), Some("50.000 mm"));
-    assert_eq!(edited_record.value_offset, record.value_offset);
-    assert_eq!(edited_record.precision_offset, record.precision_offset);
+    assert_eq!(
+        pointer(&patched, &edited_record, "value_offset"),
+        pointer(&payload, &record, "value_offset")
+    );
+    assert_eq!(
+        pointer(&patched, &edited_record, "precision_offset"),
+        pointer(&payload, &record, "precision_offset")
+    );
 }
 
 #[test]
@@ -707,7 +750,11 @@ fn decode_extracts_pmi_semantic_dimension() {
     assert!(dimension.reference_only);
     assert_eq!(
         decoded.source_fidelity().annotations.provenance[&dimension.id].offset,
-        dimension.offset.expect("source offset")
+        decoded.source_fidelity().record_layout()[&dimension.id]
+            .pointers()
+            .get("offset")
+            .copied()
+            .expect("source offset")
     );
     let parameter = decoded
         .ir()
@@ -1168,7 +1215,9 @@ fn decode_uses_pmi_dimension_to_project_sparse_extrusion() {
 fn u16_precision_survives_plain_patch_round_trip() {
     let mut payload = pmi_semantic_payload();
     let record = parse_payload(&payload, &mut Vec::new()).remove(0);
-    let offset = usize::try_from(record.precision_offset.expect("source offset")).unwrap();
+    let offset =
+        usize::try_from(pointer(&payload, &record, "precision_offset").expect("source offset"))
+            .unwrap();
     payload.splice(offset..=offset, [0xcd, 0x00, 0x03]);
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -1190,7 +1239,13 @@ fn u16_precision_survives_plain_patch_round_trip() {
         .iter()
         .any(|p| p.pmi.is_some()));
     let original = payload.clone();
-    patch_payload(decoded.ir(), &record.parent, &mut payload).unwrap();
+    patch_payload(
+        decoded.ir(),
+        &record.parent,
+        &mut payload,
+        decoded.source_fidelity(),
+    )
+    .unwrap();
     assert_eq!(&payload[offset..offset + 3], &[0xcd, 0x00, 0x03]);
     assert_eq!(payload, original);
 }
@@ -1261,7 +1316,13 @@ fn patching_a_count_beyond_float_precision_is_refused_not_rounded() {
     }
 
     let mut patched = payload;
-    let error = patch_payload(decoded.ir(), &parent, &mut patched).unwrap_err();
+    let error = patch_payload(
+        decoded.ir(),
+        &parent,
+        &mut patched,
+        decoded.source_fidelity(),
+    )
+    .unwrap_err();
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::UnsupportedContent(_)
@@ -1283,20 +1344,32 @@ fn pmi_alias_comparison_counts_long_distinct_semantic_strings() {
 
 #[test]
 fn pmi_nested_messagepack_depth_cap_rejects_the_value() {
-    let ctx = cadmpeg_test_support::service_decode_context();
     let mut within = vec![0x91; 16];
     within.push(0xc0);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &within,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let work = cadmpeg_core::decode::WorkBudget::new(usize::MAX);
     let parse = super::Parse {
         shape: super::Shape::Record,
         work: &work,
     };
-    assert!(super::parse_value(&ctx, &within, &mut 0, 0, parse)
+    assert!(super::parse_value(&ctx, root, &mut 0, 0, parse)
         .unwrap()
         .is_some());
     let mut beyond = vec![0x91; 18];
     beyond.push(0xc0);
-    assert!(super::parse_value(&ctx, &beyond, &mut 0, 0, parse)
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &beyond,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    assert!(super::parse_value(&ctx, root, &mut 0, 0, parse)
         .unwrap()
         .is_none());
     assert!(ctx.finish_session().is_ok());
@@ -1331,7 +1404,12 @@ fn pmi_patch_admits_records_at_the_maximum_field_depth() {
         ));
     }
     assert!(!matches!(
-        patch_payload(&ir, "block", &mut []),
+        patch_payload(
+            &ir,
+            "block",
+            &mut [],
+            &cadmpeg_ir::SourceFidelity::default()
+        ),
         Err(cadmpeg_core::CodecError::ResourceLimit(_))
     ));
 }
@@ -1366,14 +1444,21 @@ fn pmi_skipped_values_are_validated_but_not_kept() {
     assert!(losses.is_empty(), "{losses:?}");
     assert_eq!(records, original);
 
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &payload,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let work = cadmpeg_core::decode::WorkBudget::new(usize::MAX);
     let parse = super::Parse {
         shape: super::Shape::Record,
         work: &work,
     };
-    let mut cursor = usize::try_from(records[0].offset.expect("source offset")).unwrap();
-    let outer = super::parse_value(&ctx, &payload, &mut cursor, 0, parse)
+    let mut cursor =
+        usize::try_from(pointer(&payload, &records[0], "offset").expect("source offset")).unwrap();
+    let outer = super::parse_value(&ctx, root, &mut cursor, 0, parse)
         .unwrap()
         .unwrap();
     let super::ValueKind::Map(fields) = outer.kind else {
