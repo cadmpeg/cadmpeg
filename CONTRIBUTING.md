@@ -103,10 +103,33 @@ To compare a crate's public API between Git refs, install Rust nightly and `carg
 
 ---
 
+## Preflight before a pull request
+
+Run the preflight from the branch's worktree before you open or update a pull request:
+
+```sh
+python3 scripts/preflight.py          # static checks against the upstream branch
+python3 scripts/preflight.py --full   # also the Cargo checks for the crates the change reaches
+python3 scripts/preflight.py --list   # what each check looks for
+```
+
+The preflight finds the remote that points at `cadmpeg/cadmpeg`, or `origin`. It fetches that remote's default branch and checks the working tree against the merge base.
+
+Each check prints `PASS`, `FAIL`, `WARN`, or `SKIP`, with the fix. Any `FAIL` exits 1. A `FAIL` is something review or CI rejects. Examples are a CADIR wire change without an `IR_VERSION` bump, an open-item ID that upstream already uses, and a branch that conflicts with upstream. A `WARN` needs your judgement.
+
+Without `--full`, nothing compiles. `--run-layout` regenerates changed layout tables. `--rev REV` checks a commit instead of the working tree.
+
+The `open-prs` check lists the upstream open pull requests through the GitHub CLI, so it needs network access and an authenticated `gh` (`gh auth login`). Without them it is skipped. `--offline` skips it and the fetch.
+
+The checks cover recurring review points, not all of them. A check is a `scripts/preflight_<name>.py` module with a `scripts/test_preflight_<name>.py` test.
+
+---
+
 ## Pull request checklist
 
 - [ ] Commits are signed off (`git commit -s`).
 - [ ] For decoder/spec PRs: the provenance declaration is in the description.
+- [ ] `python3 scripts/preflight.py` reports no `FAIL`.
 - [ ] `cargo fmt --all --check` passes.
 - [ ] `cargo clippy --workspace --all-targets` passes.
 - [ ] `cargo build --workspace` passes.
