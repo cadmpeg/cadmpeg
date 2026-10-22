@@ -1264,7 +1264,7 @@ pub(crate) mod assembly_variable_reference_operand_path_locator {
 /// Spec §Assembly operands. Record length 26 B.
 ///
 /// ```text
-/// Offsets are relative to the count. The run starts at scope offset 47 in the 399-byte As-built form, offset 362 in the 627-, 637-, 692-, and 748-byte forms and the variable-span class-283/264 and class-347/260 forms, offset 358 in the 633-, 732-, and 744-byte forms, offset 537 in the 945-byte form, offset 530 in the 806- and 861-byte forms, and offset 526 in the 850-byte form.
+/// Offsets are relative to the count. The run starts at scope offset 47 in the 399-byte As-built form, offset 362 in the 627-, 637-, 692-, and 748-byte forms and the variable-span class-283/264 and class-347/260 forms, offset 358 in the 633-, 732-, and 744-byte forms, offset 537 in the 945-byte form, offset 530 in the 806- and 861-byte forms, and offset 552 in the 850-byte form.
 /// ```
 pub(crate) mod assembly_operand_path_locator_reference_run {
     /// Offset of `first_locator_reference` (`bytes[11]`). Spec §Assembly operands.
@@ -4936,6 +4936,22 @@ pub(crate) mod assembly_wide_operand_path_locator {
     pub(crate) const IDENTITY_FLAG: usize = 67;
     /// Offset of `transform` (`f64[16]`, little-endian). Spec §Assembly operands.
     pub(crate) const TRANSFORM: usize = 68;
+}
+
+/// Byte offsets for the `assembly_compact_wide_limit_owner_run` record.
+///
+/// Spec §Assembly operands.
+///
+/// ```text
+/// This size-less byte record starts at scope offset 526 in the 806-, 850- and 861-byte compact wide Assemble scopes. Offsets are relative to the count. The count is 0 in the 806- and 861-byte scopes, which store no references; the 850-byte scope stores count 2 and both references.
+/// ```
+pub(crate) mod assembly_compact_wide_limit_owner_run {
+    /// Offset of `limit_owner_count` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const LIMIT_OWNER_COUNT: usize = 0;
+    /// Offset of `first_limit_owner_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const FIRST_LIMIT_OWNER_REFERENCE: usize = 4;
+    /// Offset of `second_limit_owner_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const SECOND_LIMIT_OWNER_REFERENCE: usize = 15;
 }
 
 /// Byte offsets for the `assembly_compact_wide_scope` record.

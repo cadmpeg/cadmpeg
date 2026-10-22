@@ -108,7 +108,7 @@ impl AssemblyScopeGeneration {
             748 => ((class_tag == "430" && paired_class_tag == "262").then_some(Standard), Some((8, 4, 8)), Some([366, 377])),
             772 => (Some(Axial), Some((10, 8, 10)), None),
             806 | 861 => (Some(CompactWide), Some((4, 0, 4)), Some([534, 545])),
-            850 => (Some(CompactWide), Some((4, 0, 4)), Some([530, 541])),
+            850 => (Some(CompactWide), Some((6, 0, 4)), Some([556, 567])),
             945 => (Some(Wide), Some((4, 0, 4)), Some([541, 552])),
             length if length == u64_from_index(crate::layout::assembly_class_388_266_scope_968::LEN) => (
                 (class_tag == "388" && paired_class_tag == "266").then_some(LegacyClass388), Some((28, 4, 8)), Some([
@@ -1377,7 +1377,7 @@ mod tests {
             (748, 8, (4, 8)),
             (705, 6, (4, 6)),
             (806, 4, (0, 4)),
-            (850, 4, (0, 4)),
+            (850, 6, (0, 4)),
             (861, 4, (0, 4)),
             (945, 4, (0, 4)),
             (671, 6, (4, 6)),
@@ -1389,7 +1389,7 @@ mod tests {
                 Some(expected)
             );
         }
-        for (frame_length, locators) in [(806, [534, 545]), (850, [530, 541]), (861, [534, 545])] {
+        for (frame_length, locators) in [(806, [534, 545]), (850, [556, 567]), (861, [534, 545])] {
             assert_eq!(
                 super::AssemblyScopeGeneration::new(frame_length, "", "")
                     .operand_path_locator_offsets(),

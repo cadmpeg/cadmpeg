@@ -1510,9 +1510,13 @@ at offsets 32 and 254, seven zero bytes follow each reference, rigid
 row-major transforms start at offsets 50 and 272, and an LP-UTF16 GUID follows
 each transform. The four parameter owners are the angle, X, Y, and Z alignment
 lanes in owner-local order and are the first four entries of the reference
-table. The two operand-path locators are wide operand-path locators; their
-marked references are at offsets 534 and 545 in the 806- and 861-byte scopes
-and at offsets 530 and 541 in the 850-byte scope, after the count 2.
+table. A u32 limit-owner count at offset 526 is `0` in the 806- and 861-byte
+scopes. The 850-byte scope stores count `2` and the marked references to its
+two limit owners, owner-local ordinals 4 and 5, at offsets 530 and 541; its
+six owners are the first six entries of the reference table. The two
+operand-path locators are wide operand-path locators; their marked references
+are at offsets 534 and 545 in the 806- and 861-byte scopes and at offsets 556
+and 567 in the 850-byte scope, after the count 2.
 
 A wide operand-path locator is the locator of the 945-, 806-, 850- and 861-byte `Assemble` scopes.
 Its record type GUID is `2E3AC990-483D-4A55-8662-C064B976A957`. Its eleven-byte
