@@ -13,6 +13,9 @@ def command(arguments: list[str], packages: list[str], *, full: bool = False) ->
         raise ValueError('Cargo gate requires a subcommand and selected packages')
     scope = ['--workspace'] if full else [argument for package in packages
                                          for argument in ('-p', package)]
+    if arguments[0] == 'nextest':
+        return ['cargo', 'nextest', *arguments[1:2], '--cargo-quiet', '--status-level', 'fail',
+                *scope, *arguments[2:]]
     return ['cargo', arguments[0], '-q', *scope, *arguments[1:]]
 
 

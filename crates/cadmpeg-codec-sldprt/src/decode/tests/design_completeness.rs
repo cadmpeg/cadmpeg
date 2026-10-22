@@ -264,7 +264,6 @@ fn design_completeness_audits_typed_construction_families() {
             position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
         }),
         FeatureDefinition::Operation(FeatureOperation::Primitive {
-            placement: None,
             solid: cadmpeg_ir::features::PrimitiveSolid::new(
                 cadmpeg_ir::features::PrimitiveSolidKind::Box {
                     length: cadmpeg_ir::Dimension::Literal(Length::new(1.0).unwrap()),
@@ -273,6 +272,7 @@ fn design_completeness_audits_typed_construction_families() {
                 },
             )
             .unwrap(),
+            placement: None,
             op: BooleanOp::NewBody,
         }),
         FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange {

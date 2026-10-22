@@ -2877,6 +2877,7 @@ impl<'a> F3dDecodeSession<'a> {
             &prereqs.design_parameter_scopes,
             &prereqs.design_component_occurrences,
             &component_inserts,
+            &prereqs.design_joint_motions,
         );
         if joints.untyped {
             self.untyped.insert(cadmpeg_ir::document::ArenaClass::Model);

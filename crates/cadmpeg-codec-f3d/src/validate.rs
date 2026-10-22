@@ -101,36 +101,52 @@ fn valid_assembly_operand_path_link(
         scope.class_tag.as_str(),
         scope.paired_class_tag.as_str(),
     );
-    let locator_length = if variable_reference {
-        variable_path_locator::LEN
+    let wide = design::assembly::AssemblyScopeGeneration::new(
+        scope.frame_length(),
+        scope.class_tag.as_str(),
+        scope.paired_class_tag.as_str(),
+    )
+    .operand_frame_variant()
+    .is_some_and(design::assembly::AssemblyOperandFrameVariant::is_wide_family);
+    // A wide locator is 97 bytes without its transform and 225 with it; its
+    // backlink and wrapper reference are 28 and 17 bytes before its end.
+    let locator_length = if wide {
+        match path.byte_offset().checked_sub(link.locator_byte_offset) {
+            Some(length @ (97 | 225)) => length,
+            _ => return false,
+        }
     } else {
-        path_locator::LEN
-    };
-    let Ok(locator_length) = u64::try_from(locator_length) else {
-        return false;
+        let length = if variable_reference {
+            variable_path_locator::LEN
+        } else {
+            path_locator::LEN
+        };
+        let Ok(length) = u64::try_from(length) else {
+            return false;
+        };
+        length
     };
     let Some(path_byte_offset) = link.locator_byte_offset.checked_add(locator_length) else {
         return false;
     };
-    let scope_backlink = if variable_reference {
-        variable_path_locator::SCOPE_BACKLINK + 1
+    let (scope_backlink, wrapper_reference) = if wide {
+        (locator_length - 28 + 1, locator_length - 17 + 1)
+    } else if variable_reference {
+        (
+            u64_from_index(variable_path_locator::SCOPE_BACKLINK + 1),
+            u64_from_index(variable_path_locator::WRAPPER_REFERENCE + 1),
+        )
     } else {
-        path_locator::SCOPE_BACKLINK + 1
+        (
+            u64_from_index(path_locator::SCOPE_BACKLINK + 1),
+            u64_from_index(path_locator::WRAPPER_REFERENCE + 1),
+        )
     };
-    let Some(locator_scope_reference_offset) = link
-        .locator_byte_offset
-        .checked_add(u64_from_index(scope_backlink))
+    let Some(locator_scope_reference_offset) = link.locator_byte_offset.checked_add(scope_backlink)
     else {
         return false;
     };
-    let wrapper_reference = if variable_reference {
-        variable_path_locator::WRAPPER_REFERENCE + 1
-    } else {
-        path_locator::WRAPPER_REFERENCE + 1
-    };
-    let Some(wrapper_reference_offset) = link
-        .locator_byte_offset
-        .checked_add(u64_from_index(wrapper_reference))
+    let Some(wrapper_reference_offset) = link.locator_byte_offset.checked_add(wrapper_reference)
     else {
         return false;
     };
@@ -2157,6 +2173,14 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     operand_frame_variant,
                     Some(design::assembly::AssemblyOperandFrameVariant::Axial)
                 );
+                let wide_frames = matches!(
+                    operand_frame_variant,
+                    Some(design::assembly::AssemblyOperandFrameVariant::Wide)
+                );
+                let compact_wide_frames = matches!(
+                    operand_frame_variant,
+                    Some(design::assembly::AssemblyOperandFrameVariant::CompactWide)
+                );
                 let as_built_frames = scope.kind()
                     == crate::records::feature::scope::DesignFeatureKind::AsBuilt
                     && scope.frame_length() == 399;
@@ -2167,20 +2191,28 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 );
                 let as_built_421 = as_built_421_generation.is_some();
                 let operand_paths = alignment.operand_path_refs();
-                let frame_reference_offsets = if axial_frames {
-                    [29, 168]
-                } else if compact_frames {
-                    [25, 165]
-                } else {
-                    [29, 169]
-                };
-                let frame_transform_offsets = if axial_frames {
-                    [39, 178]
-                } else if compact_frames {
-                    [36, 176]
-                } else {
-                    [40, 180]
-                };
+                let wide_family_offsets = operand_frame_variant
+                    .and_then(crate::design::decode::scopes::wide_family_frame_offsets);
+                let frame_reference_offsets =
+                    if let Some([first, _, second, _]) = wide_family_offsets {
+                        [u64_from_index(first + 1), u64_from_index(second + 1)]
+                    } else if axial_frames {
+                        [29, 168]
+                    } else if compact_frames {
+                        [25, 165]
+                    } else {
+                        [29, 169]
+                    };
+                let frame_transform_offsets =
+                    if let Some([_, first, _, second]) = wide_family_offsets {
+                        [u64_from_index(first), u64_from_index(second)]
+                    } else if axial_frames {
+                        [39, 178]
+                    } else if compact_frames {
+                        [36, 176]
+                    } else {
+                        [40, 180]
+                    };
                 let assembly_owner_count = native
                     .design_parameter_owners
                     .iter()
@@ -2330,9 +2362,11 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                     && matches!(envelope_ends, [Some(first_end), Some(second_end)]
                                 if !(first_start < second_end && second_start < first_end))
                                     && paths.iter().all(|path| {
-                                        matches!(path.class_tag().as_str(), "294" | "299" | "307" | "329" | "330" | "386" | "390")
+                                        (path.admitted_by_type()
+                                            || matches!(path.class_tag().as_str(), "294" | "299" | "307" | "329" | "330" | "386" | "390"))
                                             && !matches!(path.link().locator_class_tag.as_str(), "363" | "378")
-                                            && (matches!(
+                                            && (path.admitted_by_type()
+                                                || matches!(
                                                 path.class_tag().as_str(),
                                                 "294" | "299" | "307" | "330" | "386"
                                             ) || path.occurrence_guids().first().is_some_and(
@@ -2519,6 +2553,13 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                 .take(2)
                                 .eq(limit_reference_indices.iter())
                     })
+                } else if wide_frames || compact_wide_frames {
+                    // The wide scope lists its four owners first.
+                    scope
+                        .reference_members()
+                        .values()
+                        .take(alignment.owners.len())
+                        .eq(alignment.owners.iter().map(|owner| &owner.value))
                 } else if design::assembly::variable_reference_assembly_generation(
                     scope.class_tag.as_str(),
                     scope.paired_class_tag.as_str(),
@@ -7489,8 +7530,29 @@ fn validate_sketch_placements(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
     let mut placement_scopes = HashSet::new();
     let mut visibility_offsets = HashSet::new();
     let mut visibility_ordinals = HashSet::new();
+    // Sketch Geometry member ordinals count within a component: the one whose
+    // entity cluster, starting at its root entity, holds the sketch entity.
+    let mut component_roots = HashMap::<&str, Vec<u64>>::new();
+    for space in &native.design_component_naming_spaces {
+        component_roots
+            .entry(design_stream(&space.id))
+            .or_default()
+            .push(space.component_record_index);
+    }
+    for roots in component_roots.values_mut() {
+        roots.sort_unstable();
+    }
+    let component_of = |stream: &str, entity: u64| {
+        component_roots.get(stream).and_then(|roots| {
+            roots
+                .partition_point(|root| *root <= entity)
+                .checked_sub(1)
+                .and_then(|index| roots.get(index).copied())
+        })
+    };
     for placement in &native.design_sketch_placements {
         let native_stream = design_stream(&placement.id);
+        let component = component_of(native_stream, placement.entity_id.suffix());
         let unique_record = placement_records.insert((native_stream, placement.record_index));
         let unique_scope = match placement.scope_record_index {
             Some(index) => placement_scopes.insert((native_stream, index)),
@@ -7511,7 +7573,11 @@ fn validate_sketch_placements(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
                     })
                 });
             if header_valid
-                && visibility_ordinals.insert((native_stream, visibility.stream_ordinal.get()))
+                && visibility_ordinals.insert((
+                    native_stream,
+                    component,
+                    visibility.stream_ordinal.get(),
+                ))
             {
                 visibility
                     .visible_offset()
@@ -7546,13 +7612,15 @@ fn validate_sketch_placements(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
             );
         }
     }
-    let mut visibility_ordinal_ranges = BTreeMap::<&str, (usize, u32)>::new();
-    for (stream, ordinal) in visibility_ordinals {
-        let (count, maximum) = visibility_ordinal_ranges.entry(stream).or_default();
+    let mut visibility_ordinal_ranges = BTreeMap::<(&str, Option<u64>), (usize, u32)>::new();
+    for (stream, component, ordinal) in visibility_ordinals {
+        let (count, maximum) = visibility_ordinal_ranges
+            .entry((stream, component))
+            .or_default();
         *count += 1;
         *maximum = (*maximum).max(ordinal);
     }
-    for (stream, (count, maximum)) in visibility_ordinal_ranges {
+    for ((stream, _), (count, maximum)) in visibility_ordinal_ranges {
         if usize::try_from(maximum).ok() != Some(count) {
             push_constant_finding(
                 findings,

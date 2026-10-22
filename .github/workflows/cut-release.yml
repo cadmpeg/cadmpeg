@@ -3,12 +3,18 @@
 # Dispatch this workflow (Actions tab -> Cut release -> Run workflow) with the
 # target version, e.g. 0.1.5. It performs the entire release in a single run:
 #
-#   1. Validates the version (must be a strict upgrade; tag must not exist).
-#   2. Bumps the workspace manifest and refreshes Cargo.lock.
-#   3. Runs the full CI gate (fmt, clippy, build, test) as a safety net.
-#   4. Commits the bump directly to main.
-#   5. Pushes the matching git tag, which triggers the Release workflow
-#      (release.yml) that builds artifacts and creates the GitHub Release.
+#   1. Requires a successful CI run on the main commit it releases.
+#   2. Validates the version (must be a strict upgrade; tag must not exist).
+#   3. Bumps the workspace manifest and refreshes Cargo.lock.
+#   4. Runs the repository policy gate on the bumped manifests.
+#   5. Commits the bump directly to main.
+#   6. Waits for the CI run on the bump commit. The bump changes Cargo.toml, so
+#      that run is the full gate on Linux, macOS, and Windows.
+#   7. Tags the bump commit, which triggers the Release workflow (release.yml)
+#      that builds artifacts and creates the GitHub Release.
+#
+# If the CI run on the bump commit fails, nothing is tagged. Fix main, then
+# dispatch this workflow again with the next version.
 #
 # WHY A GITHUB APP TOKEN, NOT GITHUB_TOKEN:
 # The tag push MUST be authenticated with a GitHub App installation token. A tag
@@ -38,14 +44,16 @@ on:
         required: true
         type: string
 
-# The default GITHUB_TOKEN needs no write access: every push below uses the
-# GitHub App token instead. Keep the built-in token read-only.
+# The default GITHUB_TOKEN needs no contents write access: every push below
+# uses the GitHub App token instead. `actions: write` re-runs a superseded CI run.
 permissions:
   contents: read
+  actions: write
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     steps:
       - name: Mint GitHub App token
         id: app-token
@@ -62,13 +70,16 @@ jobs:
           # authenticated as the App and therefore trigger release.yml.
           token: ${{ steps.app-token.outputs.token }}
 
+      - name: Require a successful CI run on the released commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          passed="$(gh api "repos/${{ github.repository }}/actions/runs?head_sha=$(git rev-parse HEAD)&status=success" \
+            --jq '[.workflow_runs[] | select(.path == ".github/workflows/ci.yml")] | length')"
+          test "$passed" -gt 0 || { echo "::error::CI has not passed on main HEAD." >&2; exit 1; }
+
       - name: Install stable toolchain
         uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-
-      - name: Match cargo's job count to the runner
-        uses: ./.github/actions/cargo-job-count
 
       - name: Set workspace version
         id: bump
@@ -134,15 +145,8 @@ jobs:
           python3 -m unittest discover -q -s scripts -p test_render_format_support.py
           python3 scripts/render-format-support.py --check
 
-      - name: Cargo gate
-        run: |
-          set -euo pipefail
-          cargo fmt --all --check
-          cargo clippy --workspace --all-targets
-          cargo build --workspace --locked
-          cargo test --workspace --locked
-
-      - name: Commit, tag, and push
+      - name: Commit and push
+        id: commit
         shell: bash
         env:
           APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
@@ -164,6 +168,37 @@ jobs:
           # independent of the CI check's release-file exemption.
           git commit -s -m "Bump workspace version to ${version}"
           git push origin HEAD:main
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-          git tag "v${version}"
+      - name: Wait for CI on the bump commit
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          set -euo pipefail
+          while :; do
+            run="$(gh api "repos/${{ github.repository }}/actions/runs?head_sha=${SHA}&event=push" \
+              --jq '[.workflow_runs[] | select(.path == ".github/workflows/ci.yml")][0] // {} | "\(.id) \(.status) \(.conclusion)"')"
+            read -r id status conclusion <<<"${run}"
+            case "${status}/${conclusion}" in
+              completed/success) break ;;
+              # A newer push to main replaced the queued run.
+              completed/cancelled) gh api -X POST "repos/${{ github.repository }}/actions/runs/${id}/rerun" ;;
+              completed/*)
+                echo "::error::CI failed on ${SHA}; nothing was tagged. Fix main, then release the next version." >&2
+                exit 1
+                ;;
+            esac
+            sleep 60
+          done
+
+      - name: Tag the bump commit
+        shell: bash
+        env:
+          SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          set -euo pipefail
+          version="${{ steps.bump.outputs.version }}"
+          git tag "v${version}" "${SHA}"
           git push origin "v${version}"

@@ -4,6 +4,8 @@
 use crate::records::identity::Located;
 use serde::{Deserialize, Serialize};
 
+cadmpeg_core::named_optional_field!(deserialize_limits, DesignJointLimitLanes, "limits");
+
 /// The freedoms and limits of one assembly joint, read from its motion record
 /// and its joint record. A joint without freedom entries has no motion record
 /// here: it is rigid.
@@ -49,5 +51,3 @@ pub(crate) struct DesignJointLimitLanes {
     /// Byte offset of the maximum; the minimum follows it.
     pub(crate) values_offset: u64,
 }
-
-cadmpeg_core::named_optional_field!(deserialize_limits, DesignJointLimitLanes, "limits");

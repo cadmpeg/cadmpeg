@@ -191,7 +191,7 @@ fn exact_class_363_operand_path(
             "386".to_owned().try_into().ok()?,
             u64::try_from(terminal_at).ok()?,
             vec![crate::records::identity::Located {
-                value: occurrence_guid,
+                value: occurrence_guid.into(),
                 offset: occurrence_guid_offset,
             }],
             vec![crate::records::identity::Located {

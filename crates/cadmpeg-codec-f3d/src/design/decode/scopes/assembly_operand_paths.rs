@@ -12,16 +12,26 @@ use crate::layout::assembly_operand_path_locator as path_locator;
 use crate::layout::assembly_operand_path_locator_reference_run as path_locator_run;
 use crate::layout::assembly_operand_path_wrapper as path_wrapper;
 use crate::layout::assembly_variable_reference_operand_path_locator as variable_path_locator;
+use crate::layout::assembly_wide_operand_path_locator as wide_locator;
 use crate::records::feature::assembly::DesignAssemblyOperandPath;
 use crate::records::feature::assembly::DesignAssemblyOperandPathLink;
+use crate::records::feature::assembly::TYPED_OCCURRENCE_PATH_TYPE_GUID;
+
+/// Type GUID of the operand-path locator of the 945-byte `Assemble` scope.
+pub(super) const WIDE_PATH_LOCATOR_TYPE_GUID: &str = "2E3AC990-483D-4A55-8662-C064B976A957";
 use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
+use std::collections::HashMap;
+
+/// Record types of one Design stream by entity id: type GUID and version.
+pub(super) type StreamTypes<'a> = HashMap<u64, (&'a str, u32)>;
 
 pub(super) fn exact_assembly_operand_paths(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
+    stream_types: &StreamTypes<'_>,
 ) -> Result<Option<[DesignAssemblyOperandPath; 2]>, CodecError> {
     (|| {
         let scope_at = usize::try_from(scope.byte_offset()).ok()?;
@@ -55,6 +65,7 @@ pub(super) fn exact_assembly_operand_paths(
                 let parsed = match exact_assembly_operand_path_envelope(
                     bytes,
                     scope,
+                    stream_types,
                     locator_record_index,
                     locator_reference_offset,
                     locator_at,
@@ -100,6 +111,7 @@ pub(super) fn exact_assembly_operand_paths(
 fn exact_assembly_operand_path_envelope(
     bytes: &[u8],
     scope: &DesignParameterScope,
+    stream_types: &StreamTypes<'_>,
     locator_record_index: u32,
     locator_reference_offset: u64,
     locator_at: usize,
@@ -110,56 +122,113 @@ fn exact_assembly_operand_path_envelope(
             scope.class_tag.as_str(),
             scope.paired_class_tag.as_str(),
         );
-        let (locator_length, scope_backlink, wrapper_reference, constant_two, zero_tail) =
-            if variable_reference {
-                if locator_class_tag != "390"
-                    || bytes
-                        .get(
-                            locator_at.checked_add(variable_path_locator::TRANSFORM + 16 * 8)?
-                                ..locator_at.checked_add(variable_path_locator::SCOPE_BACKLINK)?,
-                        )?
-                        .iter()
-                        .any(|byte| *byte != 0)
-                    || rigid_transform_at(
-                        bytes,
-                        locator_at.checked_add(variable_path_locator::TRANSFORM)?,
-                    )
-                    .is_none()
-                {
-                    return None;
-                }
-                (
-                    variable_path_locator::LEN,
-                    variable_path_locator::SCOPE_BACKLINK,
-                    variable_path_locator::WRAPPER_REFERENCE,
-                    variable_path_locator::CONSTANT_TWO,
-                    variable_path_locator::ZERO_TAIL,
-                )
-            } else {
-                if bytes.get(
-                    locator_at.checked_add(path_locator::ZERO_RUN_10)?
-                        ..locator_at.checked_add(path_locator::NONZERO_RECORD_REFERENCE)?,
-                )? != [0; 10]
-                    || exact_same_segment_record_reference(
-                        bytes,
-                        locator_at.checked_add(path_locator::NONZERO_RECORD_REFERENCE)?,
+        // The wide scope's locator: its own record type and prologue.
+        let wide = crate::design::assembly::AssemblyScopeGeneration::new(
+            scope.frame_length(),
+            scope.class_tag.as_str(),
+            scope.paired_class_tag.as_str(),
+        )
+        .operand_frame_variant()
+        .is_some_and(crate::design::assembly::AssemblyOperandFrameVariant::is_wide_family)
+            && stream_types
+                .get(&u64::from(locator_record_index))
+                .is_some_and(|(guid, _)| guid.eq_ignore_ascii_case(WIDE_PATH_LOCATOR_TYPE_GUID));
+        let (locator_length, scope_backlink, wrapper_reference, constant_two, zero_tail) = if wide {
+            if bytes
+                .get(
+                    locator_at.checked_add(wide_locator::ZERO_RUN_28)?
+                        ..locator_at.checked_add(wide_locator::CONSTANT_THREE)?,
+                )?
+                .iter()
+                .any(|byte| *byte != 0)
+                || View::u32_le_at(bytes, locator_at.checked_add(wide_locator::CONSTANT_THREE)?)?
+                    != 3
+                || bytes
+                    .get(
+                        locator_at.checked_add(wide_locator::ZERO_RUN_13)?
+                            ..locator_at.checked_add(wide_locator::NONZERO_RECORD_REFERENCE)?,
                     )?
-                    .0 == 0
-                    || bytes.get(locator_at.checked_add(path_locator::ZERO_32)?) != Some(&0)
-                    || rigid_transform_at(bytes, locator_at.checked_add(path_locator::TRANSFORM)?)
-                        .is_none()
-                    || bytes.get(locator_at.checked_add(path_locator::ZERO_161)?) != Some(&0)
-                {
-                    return None;
+                    .iter()
+                    .any(|byte| *byte != 0)
+                || exact_same_segment_record_reference(
+                    bytes,
+                    locator_at.checked_add(wide_locator::NONZERO_RECORD_REFERENCE)?,
+                )?
+                .0 == 0
+            {
+                return None;
+            }
+            // The transform is present only when the identity flag is 0.
+            let after_transform = match bytes
+                .get(locator_at.checked_add(wide_locator::IDENTITY_FLAG)?)?
+            {
+                1 => wide_locator::TRANSFORM,
+                0 => {
+                    rigid_transform_at(bytes, locator_at.checked_add(wide_locator::TRANSFORM)?)?;
+                    wide_locator::TRANSFORM + 16 * 8
                 }
-                (
-                    path_locator::LEN,
-                    path_locator::SCOPE_BACKLINK,
-                    path_locator::WRAPPER_REFERENCE,
-                    path_locator::CONSTANT_TWO,
-                    path_locator::ZERO_TAIL_2,
-                )
+                _ => return None,
             };
+            if bytes.get(locator_at.checked_add(after_transform)?) != Some(&0) {
+                return None;
+            }
+            let backlink = after_transform + 1;
+            (
+                backlink + 28,
+                backlink,
+                backlink + 11,
+                backlink + 22,
+                backlink + 26,
+            )
+        } else if variable_reference {
+            if locator_class_tag != "390"
+                || bytes
+                    .get(
+                        locator_at.checked_add(variable_path_locator::TRANSFORM + 16 * 8)?
+                            ..locator_at.checked_add(variable_path_locator::SCOPE_BACKLINK)?,
+                    )?
+                    .iter()
+                    .any(|byte| *byte != 0)
+                || rigid_transform_at(
+                    bytes,
+                    locator_at.checked_add(variable_path_locator::TRANSFORM)?,
+                )
+                .is_none()
+            {
+                return None;
+            }
+            (
+                variable_path_locator::LEN,
+                variable_path_locator::SCOPE_BACKLINK,
+                variable_path_locator::WRAPPER_REFERENCE,
+                variable_path_locator::CONSTANT_TWO,
+                variable_path_locator::ZERO_TAIL,
+            )
+        } else {
+            if bytes.get(
+                locator_at.checked_add(path_locator::ZERO_RUN_10)?
+                    ..locator_at.checked_add(path_locator::NONZERO_RECORD_REFERENCE)?,
+            )? != [0; 10]
+                || exact_same_segment_record_reference(
+                    bytes,
+                    locator_at.checked_add(path_locator::NONZERO_RECORD_REFERENCE)?,
+                )?
+                .0 == 0
+                || bytes.get(locator_at.checked_add(path_locator::ZERO_32)?) != Some(&0)
+                || rigid_transform_at(bytes, locator_at.checked_add(path_locator::TRANSFORM)?)
+                    .is_none()
+                || bytes.get(locator_at.checked_add(path_locator::ZERO_161)?) != Some(&0)
+            {
+                return None;
+            }
+            (
+                path_locator::LEN,
+                path_locator::SCOPE_BACKLINK,
+                path_locator::WRAPPER_REFERENCE,
+                path_locator::CONSTANT_TWO,
+                path_locator::ZERO_TAIL_2,
+            )
+        };
         let (scope_record_index, locator_scope_reference_offset) =
             exact_same_segment_record_reference(bytes, locator_at.checked_add(scope_backlink)?)?;
         let (wrapper_record_index, wrapper_reference_offset) =
@@ -261,7 +330,11 @@ fn exact_assembly_operand_path_envelope(
             path_reference_offset,
         };
         let mut paths = path_spans.into_iter().map(|(record_index, start, limit)| {
-            exact_assembly_operand_path(bytes, start, record_index, limit, link.clone())
+            let type_guid = stream_types
+                .get(&u64::from(record_index))
+                .map(|(guid, _)| *guid)
+                .filter(|guid| guid.eq_ignore_ascii_case(TYPED_OCCURRENCE_PATH_TYPE_GUID));
+            exact_assembly_operand_path(bytes, start, record_index, limit, link.clone(), type_guid)
         });
         let mut path = match paths.next()? {
             Ok(Some(path)) => path,
@@ -287,12 +360,15 @@ fn exact_assembly_operand_path_envelope(
     .transpose()
 }
 
+/// Read one path record. `type_guid` is the record's type GUID when it is the
+/// identity-qualified counted path type, which admits it whatever its class.
 fn exact_assembly_operand_path(
     bytes: &[u8],
     start: usize,
     record_index: u32,
     limit: usize,
     link: DesignAssemblyOperandPathLink,
+    type_guid: Option<&str>,
 ) -> Result<Option<DesignAssemblyOperandPath>, CodecError> {
     (|| {
         let (class_tag, after_tag) =
@@ -320,7 +396,7 @@ fn exact_assembly_operand_path(
                         Err(error) => return Some(Err(error)),
                     };
                 occurrence_guids.push(crate::records::identity::Located {
-                    value: occurrence,
+                    value: occurrence.into(),
                     offset: u64::try_from(position + 4).ok()?,
                 });
                 position = after_occurrence;
@@ -360,7 +436,7 @@ fn exact_assembly_operand_path(
                     return None;
                 }
             }
-            "329" | "330" | "386" | "390" => {
+            tag if type_guid.is_some() || matches!(tag, "329" | "330" | "386" | "390") => {
                 if bytes.get(after_tag + 8..after_tag + 14)? != [0; 6] {
                     return None;
                 }
@@ -371,12 +447,14 @@ fn exact_assembly_operand_path(
 
                 let mut position = after_tag + 18;
                 for _ in 0..count {
-                    let (guid, after_guid) =
-                        match fixed_relaxed_guid_text(bytes.get(..limit)?, position) {
-                            Ok(Some(value)) => value,
-                            Ok(None) => return None,
-                            Err(error) => return Some(Err(error)),
-                        };
+                    let (guid, after_guid) = match crate::design::decode::text::occurrence_key_text(
+                        bytes.get(..limit)?,
+                        position,
+                    ) {
+                        Ok(Some(value)) => value,
+                        Ok(None) => return None,
+                        Err(error) => return Some(Err(error)),
+                    };
                     occurrence_guids.push(crate::records::identity::Located {
                         value: guid,
                         offset: u64::try_from(position + 4).ok()?,
@@ -430,10 +508,15 @@ fn exact_assembly_operand_path(
             }
             _ => return None,
         }
-        DesignAssemblyOperandPath::try_new(
+        let type_guid = match type_guid {
+            Some(guid) => Some(guid.to_owned().try_into().ok()?),
+            None => None,
+        };
+        DesignAssemblyOperandPath::try_new_typed(
             link,
             record_index,
             crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
+            type_guid,
             u64::try_from(start).ok()?,
             occurrence_guids,
             identity_guids,

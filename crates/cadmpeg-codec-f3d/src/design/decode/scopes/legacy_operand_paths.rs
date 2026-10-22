@@ -470,7 +470,7 @@ fn exact_legacy_class_383_operand_path(
             "386".to_owned().try_into().ok()?,
             u64::try_from(leading_identity_at).ok()?,
             vec![crate::records::identity::Located {
-                value: leading_occurrence_guid,
+                value: leading_occurrence_guid.into(),
                 offset: occurrence_guid_offset,
             }],
             vec![crate::records::identity::Located {
@@ -769,9 +769,15 @@ fn exact_legacy_class_388_operand_path_envelope(
 
         let mut occurrence_guids = Vec::new();
         for path in path_records.into_iter().flatten() {
-            occurrence_guids.push(path.occurrence_guid);
+            occurrence_guids.push(crate::records::identity::Located {
+                value: path.occurrence_guid.value.into(),
+                offset: path.occurrence_guid.offset,
+            });
         }
-        occurrence_guids.push(final_path.occurrence_guid);
+        occurrence_guids.push(crate::records::identity::Located {
+            value: final_path.occurrence_guid.value.into(),
+            offset: final_path.occurrence_guid.offset,
+        });
         DesignAssemblyOperandPath::try_new(
             DesignAssemblyOperandPathLink {
                 locator_reference_offset,

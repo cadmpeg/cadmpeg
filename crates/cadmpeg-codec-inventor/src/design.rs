@@ -2,7 +2,8 @@
 //! Typed `PmDc` parameters, expression nodes, and unit records.
 
 use cadmpeg_core::decode::unique_index;
-use std::collections::{HashMap, HashSet};
+use std::cmp::Reverse;
+use std::collections::{BinaryHeap, HashMap, HashSet};
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -17,7 +18,11 @@ use crate::loss::InventorLossCode;
 use crate::pmdc::{inventor_id, Cursor, PmDcContentHeader, PmDcPairedReferenceList, PmDcReference};
 use crate::record_identity::{push_record, Located, RecordPayload};
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
-use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
+use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind, SegmentMetaState};
+
+pub(crate) mod scope;
+
+use scope::{BrepSegmentName, BrepSegmentRole, ParameterScope, ParameterScopes};
 
 const EXPRESSION_VALUE_TYPE: [u8; 16] = expression_id(0xf8a7_7a04);
 const EXPRESSION_REFERENCE_TYPE: [u8; 16] = expression_id(0xf8a7_7a05);
@@ -63,12 +68,18 @@ const GRAD_TYPE: [u8; 16] = [
 const DIMENSIONLESS_TYPE: [u8; 16] = [
     0x23, 0x00, 0x9d, 0x5f, 0xd2, 0x11, 0x8e, 0x09, 0xc0, 0x00, 0x5a, 0x9a, 0x23, 0x78, 0xd0, 0x4f,
 ];
+const UNITLESS_TYPE: [u8; 16] = [
+    0x22, 0x00, 0x9d, 0x5f, 0xd2, 0x11, 0x8e, 0x09, 0xc0, 0x00, 0x5a, 0x9a, 0x23, 0x78, 0xd0, 0x4f,
+];
 
 #[derive(Debug)]
 pub(crate) struct DesignInventory {
     pub(crate) parameters: Vec<PmDcParameter>,
     pub(crate) expressions: Vec<PmDcExpression>,
     pub(crate) units: Vec<PmDcUnit>,
+    pub(crate) parameter_tables: Vec<scope::PmDcParameterTable>,
+    pub(crate) model_roots: Vec<scope::PmDcModelRoot>,
+    pub(crate) brep_segments: Vec<BrepSegmentName>,
     pub(crate) issues: Vec<RecordIssue>,
 }
 
@@ -320,8 +331,25 @@ pub(crate) fn inventory(
         parameters: Vec::new(),
         expressions: Vec::new(),
         units: Vec::new(),
+        parameter_tables: Vec::new(),
+        model_roots: Vec::new(),
+        brep_segments: Vec::new(),
         issues: Vec::new(),
     };
+    for segment in &document.segments {
+        let role = match segment.kind {
+            SegmentKind::PmBRep => BrepSegmentRole::Document,
+            SegmentKind::MbBRep => BrepSegmentRole::FlatPattern,
+            _ => continue,
+        };
+        let SegmentMetaState::Parsed(meta) = &segment.meta else {
+            continue;
+        };
+        inventory.brep_segments.push(BrepSegmentName {
+            display_name: meta.display_name.clone(),
+            role,
+        });
+    }
     for segment in &document.segments {
         if segment.kind != SegmentKind::PmDc {
             continue;
@@ -373,6 +401,30 @@ pub(crate) fn inventory(
                         segment.pair.token.key(),
                         record.ordinal,
                         "admit Inventor PmDc expression record",
+                    )
+                })
+            } else if record.type_id == scope::PARAMETER_TABLE_TYPE {
+                scope::parse_parameter_table(ctx, record.payload, version).and_then(|value| {
+                    push_record(
+                        ctx,
+                        &mut inventory.parameter_tables,
+                        value,
+                        record.type_id,
+                        segment.pair.token.key(),
+                        record.ordinal,
+                        "admit Inventor PmDc parameter table record",
+                    )
+                })
+            } else if record.type_id == scope::MODEL_ROOT_TYPE {
+                scope::parse_model_root(ctx, record.payload, version).and_then(|value| {
+                    push_record(
+                        ctx,
+                        &mut inventory.model_roots,
+                        value,
+                        record.type_id,
+                        segment.pair.token.key(),
+                        record.ordinal,
+                        "admit Inventor PmDc model root record",
                     )
                 })
             } else if record.type_id == EXPRESSION_VALUE_TYPE {
@@ -454,6 +506,8 @@ pub(crate) struct ParameterProjection {
     pub(crate) unresolved: usize,
     /// Records whose expression renders past [`MAX_EXPRESSION_TEXT_BYTES`].
     pub(crate) bounded: usize,
+    /// Records whose parameter table has no established owner.
+    pub(crate) unresolved_scopes: usize,
 }
 
 /// The loss for parameter records whose expression renders past
@@ -466,9 +520,19 @@ pub(crate) fn bounded_expression_loss(bounded: usize) -> Option<LossNote> {
     })
 }
 
+/// Resolves the owner of every parameter table in the inventory.
+pub(crate) fn parameter_scopes(inventory: &DesignInventory) -> Result<ParameterScopes, CodecError> {
+    scope::resolve_scopes(
+        &inventory.model_roots,
+        &inventory.parameter_tables,
+        &inventory.brep_segments,
+    )
+}
+
 pub(crate) fn project_parameters(
     ctx: &DecodeContext<'_>,
     inventory: &DesignInventory,
+    scopes: &ParameterScopes,
     admitted_entities: &mut u64,
 ) -> Result<ParameterProjection, CodecError> {
     let expressions = unique_index(inventory.expressions.iter().map(|record| {
@@ -502,6 +566,7 @@ pub(crate) fn project_parameters(
     let mut projected = Vec::new();
     let mut unresolved = 0usize;
     let mut bounded = 0usize;
+    let mut unresolved_scopes = 0usize;
     for parameter in &inventory.parameters {
         let token = parameter.identity.segment_token.as_str();
         if parameters
@@ -512,6 +577,19 @@ pub(crate) fn project_parameters(
             unresolved += 1;
             continue;
         }
+        let owner = match scopes.of(
+            token,
+            parameter.header.context,
+            parameter.identity.record_ordinal,
+            &parameter.name,
+        ) {
+            Some(ParameterScope::Document) => None,
+            Some(ParameterScope::FlatPattern(feature)) => Some(feature.clone()),
+            None => {
+                unresolved_scopes += 1;
+                continue;
+            }
+        };
         let Some(unit) = resolve_unit(token, parameter.unit.index(), &units) else {
             unresolved += 1;
             continue;
@@ -549,7 +627,7 @@ pub(crate) fn project_parameters(
         let (expression, _) = renderer.emit(token, parameter.formula.index(), expression_length)?;
         projected.push(DesignParameter {
             id,
-            owner: None,
+            owner,
             ordinal: parameter.header.source_index,
             name: parameter.name.clone(),
             expression,
@@ -567,6 +645,7 @@ pub(crate) fn project_parameters(
         parameters: projected,
         unresolved: unresolved + graph_rejections,
         bounded,
+        unresolved_scopes,
     })
 }
 
@@ -577,7 +656,7 @@ fn close_parameter_graph(
     // Cycles are source facts and remain in the neutral expression graph. Only
     // references to absent parameters prevent a closed neutral projection.
     ctx.charge_entities(0, "check Inventor parameter references")?;
-    let count = parameters.len();
+    let original_count = parameters.len();
     loop {
         let ids = parameters
             .iter()
@@ -594,8 +673,83 @@ fn close_parameter_graph(
             break;
         }
     }
-    let rejected = count - parameters.len();
-    Ok((parameters, rejected))
+    let count = parameters.len();
+    let indices = parameters
+        .iter()
+        .enumerate()
+        .map(|(index, parameter)| (&parameter.id, index))
+        .collect::<HashMap<_, _>>();
+    let mut remaining = ctx.alloc_filled(count, 0usize, "admit Inventor parameter indegrees")?;
+    let mut dependents = ctx.alloc_filled(
+        count,
+        Vec::<usize>::new(),
+        "admit Inventor parameter adjacency",
+    )?;
+    // Ready parameters leave in source order, so the evaluation order keeps
+    // the source order wherever no dependency forbids it.
+    let mut ready = BinaryHeap::new();
+    for (index, parameter) in parameters.iter().enumerate() {
+        for dependency in parameter.expression.dependencies() {
+            if let Some(&source) = indices.get(dependency) {
+                remaining[index] += 1;
+                dependents[source].push(index);
+            } else {
+                remaining[index] += 1;
+            }
+        }
+        if remaining[index] == 0 {
+            ready.push(Reverse((parameter.ordinal, index)));
+        }
+    }
+    let mut position = ctx.alloc_filled(count, None::<u32>, "admit Inventor parameter closure")?;
+    let mut scope_lengths = HashMap::<Option<&str>, u32>::new();
+    while let Some(Reverse((_, source))) = ready.pop() {
+        position[source] = Some(next_scope_position(
+            &parameters[source],
+            &mut scope_lengths,
+        )?);
+        for &dependent in &dependents[source] {
+            remaining[dependent] -= 1;
+            if remaining[dependent] == 0 {
+                ready.push(Reverse((parameters[dependent].ordinal, dependent)));
+            }
+        }
+    }
+    // A closed cycle is retained as authored, following the dependency-ordered
+    // parameters in each scope. The parameter vector keeps its source order.
+    for (parameter, slot) in parameters.iter().zip(&mut position) {
+        if slot.is_none() {
+            *slot = Some(next_scope_position(parameter, &mut scope_lengths)?);
+        }
+    }
+    let accepted = position.iter().filter(|value| value.is_some()).count();
+    Ok((
+        parameters
+            .into_iter()
+            .zip(position)
+            .filter_map(|(mut parameter, position)| {
+                parameter.ordinal = position?;
+                Some(parameter)
+            })
+            .collect(),
+        original_count - accepted,
+    ))
+}
+
+fn next_scope_position<'a>(
+    parameter: &'a DesignParameter,
+    scope_lengths: &mut HashMap<Option<&'a str>, u32>,
+) -> Result<u32, CodecError> {
+    let scope = parameter
+        .owner
+        .as_ref()
+        .map(cadmpeg_ir::features::FeatureId::as_str);
+    let length = scope_lengths.entry(scope).or_default();
+    let position = *length;
+    *length = length
+        .checked_add(1)
+        .ok_or_else(|| CodecError::malformed("Inventor parameter scope length overflows"))?;
+    Ok(position)
 }
 
 fn parameter_id(parameter: &PmDcParameter) -> Result<ParameterId, CodecError> {
@@ -1153,6 +1307,7 @@ fn base_unit(type_id: [u8; 16]) -> Option<(PmDcUnitDimension, &'static str, f64)
             std::f64::consts::PI / 200.0,
         )),
         DIMENSIONLESS_TYPE => Some((PmDcUnitDimension::Dimensionless, "", 1.0)),
+        UNITLESS_TYPE => Some((PmDcUnitDimension::Dimensionless, "ul", 1.0)),
         _ => None,
     }
 }
@@ -1232,11 +1387,12 @@ impl RecordPayload for PmDcUnitPayload {
     const KIND: &'static str = "unit";
 }
 
-/// The `(type id, payload)` records of one dimensionless parameter `ratio = 1`
-/// at record ordinals 0 through 3: base unit, unit definition, literal
-/// formula, parameter.
+/// The `(type id, payload)` records of one dimensionless document parameter
+/// `ratio = 1` at record ordinals 0 through 5: base unit, unit definition,
+/// literal formula, parameter, the document model root naming the fixture
+/// `PmBRepSegment`, and the parameter table that model root owns.
 #[cfg(test)]
-pub(crate) fn ratio_parameter_records() -> [([u8; 16], Vec<u8>); 4] {
+pub(crate) fn ratio_parameter_records() -> [([u8; 16], Vec<u8>); 6] {
     use crate::test_support::test_fixtures::{push_u16, push_u32, push_utf16};
 
     let header = |bytes: &mut Vec<u8>| {
@@ -1274,9 +1430,12 @@ pub(crate) fn ratio_parameter_records() -> [([u8; 16], Vec<u8>); 4] {
     push_u16(&mut literal, 0);
     push_u32(&mut literal, 0);
 
+    // One-based qualified references to the parameter, model root and table.
+    let (parameter_reference, root_reference, table_reference) =
+        (0x8000_0004, 0x8000_0005, 0x8000_0006);
     let mut parameter = Vec::new();
     header(&mut parameter);
-    for value in [0, 0, 0, 0] {
+    for value in [0, 0, table_reference, 0] {
         push_u32(&mut parameter, value);
     }
     push_utf16(&mut parameter, "ratio");
@@ -1288,11 +1447,50 @@ pub(crate) fn ratio_parameter_records() -> [([u8; 16], Vec<u8>); 4] {
     push_u16(&mut parameter, 0);
     parameter.extend_from_slice(&(-1_i16).to_le_bytes());
 
+    let mut root = Vec::new();
+    header(&mut root);
+    push_u32(&mut root, 0);
+    push_u32(&mut root, 0);
+    root.extend_from_slice(&[0x11; 16]);
+    push_utf16(&mut root, "Part");
+    for value in [2, 0x3000] {
+        push_u16(&mut root, value);
+    }
+    push_u32(&mut root, 0);
+    for index in 0..15 {
+        push_u32(&mut root, if index == 3 { table_reference } else { 0 });
+    }
+    push_utf16(&mut root, "PmBRepSegment");
+    root.extend_from_slice(&1.0_f64.to_le_bytes());
+    push_u32(&mut root, 0);
+
+    let mut table = Vec::new();
+    header(&mut table);
+    push_u32(&mut table, 0);
+    push_u32(&mut table, 0);
+    push_u32(&mut table, root_reference);
+    for value in [2, 0x3000] {
+        push_u16(&mut table, value);
+    }
+    for value in [1, 0, 0, parameter_reference] {
+        push_u32(&mut table, value);
+    }
+    for value in [6, 0x3000] {
+        push_u16(&mut table, value);
+    }
+    for value in [1, 0, 0] {
+        push_u32(&mut table, value);
+    }
+    push_utf16(&mut table, "ratio");
+    push_u32(&mut table, parameter_reference);
+
     [
         (DIMENSIONLESS_TYPE, base),
         (UNIT_TYPE, unit),
         (EXPRESSION_VALUE_TYPE, literal),
         (PARAMETER_FULL_TYPE, parameter),
+        (scope::MODEL_ROOT_TYPE, root),
+        (scope::PARAMETER_TABLE_TYPE, table),
     ]
 }
 
@@ -1484,6 +1682,15 @@ mod tests {
         assert_eq!(dimension, PmDcUnitDimension::Angle);
         assert_eq!(symbol, "grad");
         assert_eq!(scale, std::f64::consts::PI / 200.0);
+    }
+
+    #[test]
+    fn unitless_units_are_dimensionless_with_the_ul_symbol() {
+        let (dimension, symbol, scale) =
+            base_unit(super::UNITLESS_TYPE).expect("unitless unit is supported");
+        assert_eq!(dimension, PmDcUnitDimension::Dimensionless);
+        assert_eq!(symbol, "ul");
+        assert_eq!(scale, 1.0);
     }
 
     #[test]
@@ -1756,7 +1963,7 @@ mod tests {
                     header_id: 0,
                     next: reference(0, false),
                     flags: 0,
-                    context: reference(0, false),
+                    context: reference(DOCUMENT_TABLE_INDEX, true),
                     source_index: 0,
                 },
                 name: "width".into(),
@@ -1794,7 +2001,7 @@ mod tests {
                     header_id: 0,
                     next: reference(0, false),
                     flags: 0,
-                    context: reference(0, false),
+                    context: reference(DOCUMENT_TABLE_INDEX, true),
                     source_index: 1,
                 },
                 name: "height".into(),
@@ -1814,15 +2021,26 @@ mod tests {
             parameters: vec![first, second],
             expressions: vec![literal, reference_expression],
             units: vec![base, unit],
+            parameter_tables: Vec::new(),
+            model_roots: Vec::new(),
+            brep_segments: Vec::new(),
             issues: Vec::new(),
         };
+        let scopes = document_scopes(&[("width", 3), ("height", 5)]);
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("empty fixture view");
         let mut admitted_entities = 0;
-        let projection = project_parameters(&ctx, &inventory, &mut admitted_entities)
+        let projection = project_parameters(&ctx, &inventory, &scopes, &mut admitted_entities)
             .expect("parameter projection");
-        assert_eq!((projection.unresolved, projection.bounded), (0, 0));
+        assert_eq!(
+            (
+                projection.unresolved,
+                projection.bounded,
+                projection.unresolved_scopes
+            ),
+            (0, 0, 0)
+        );
         let parameters = projection.parameters;
         assert_eq!(
             parameters[0].expression.literal_text().as_deref(),
@@ -1919,7 +2137,7 @@ mod tests {
                     header_id: 0,
                     next: reference(0, false),
                     flags: 0,
-                    context: reference(0, false),
+                    context: reference(DOCUMENT_TABLE_INDEX, true),
                     source_index: 0,
                 },
                 name: "ratio".into(),
@@ -1939,8 +2157,27 @@ mod tests {
             parameters: vec![parameter],
             expressions: vec![literal],
             units: vec![base, unit],
+            parameter_tables: Vec::new(),
+            model_roots: Vec::new(),
+            brep_segments: Vec::new(),
             issues: Vec::new(),
         }
+    }
+
+    /// The one-based reference of the fixture document parameter table.
+    const DOCUMENT_TABLE_INDEX: u32 = 9;
+
+    /// Document scopes whose table names the fixture parameters by their
+    /// record ordinals.
+    fn document_scopes(parameters: &[(&str, u32)]) -> super::ParameterScopes {
+        let named = parameters
+            .iter()
+            .map(|(name, ordinal)| super::scope::PmDcNamedReference {
+                name: (*name).into(),
+                reference: reference(ordinal + 1, true),
+            })
+            .collect::<Vec<_>>();
+        super::ParameterScopes::document_table("segment", DOCUMENT_TABLE_INDEX - 1, &named)
     }
 
     fn project_single_parameter(policy: DecodePolicy) -> Result<Vec<DesignParameter>, CodecError> {
@@ -1949,8 +2186,13 @@ mod tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty fixture view");
         let mut admitted_entities = 0;
-        project_parameters(&ctx, &inventory, &mut admitted_entities)
-            .map(|projection| projection.parameters)
+        project_parameters(
+            &ctx,
+            &inventory,
+            &document_scopes(&[("ratio", 3)]),
+            &mut admitted_entities,
+        )
+        .map(|projection| projection.parameters)
     }
 
     #[test]
@@ -1988,6 +2230,57 @@ mod tests {
         assert_eq!(
             parameter.native_ref.as_deref(),
             Some("inventor:pmdc:parameter#segment-3")
+        );
+    }
+
+    #[test]
+    fn rejects_parameter_cycles_and_their_dependents() {
+        let make = |name: &str, dependencies: Vec<ParameterId>| DesignParameter {
+            id: ParameterId::mint(format!("synthetic:test:id#{name}")).expect("identity grammar"),
+            owner: None,
+            ordinal: 0,
+            name: name.into(),
+            expression: Expression {
+                tokens: dependencies
+                    .into_iter()
+                    .map(cadmpeg_ir::features::ExpressionToken::Parameter)
+                    .collect(),
+            },
+            display: None,
+            value: Some(ParameterValue::Real(
+                cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite scalar fixture"),
+            )),
+            driving: true,
+            properties: std::collections::BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        };
+        let parameters = vec![
+            make(
+                "a",
+                vec![ParameterId::mint("synthetic:test:id#b").expect("identity grammar")],
+            ),
+            make(
+                "b",
+                vec![ParameterId::mint("synthetic:test:id#a").expect("identity grammar")],
+            ),
+            make(
+                "c",
+                vec![ParameterId::mint("synthetic:test:id#a").expect("identity grammar")],
+            ),
+            make("d", Vec::new()),
+        ];
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("empty fixture view");
+        let (closed, rejected) = close_parameter_graph(&ctx, parameters).expect("closure");
+        assert_eq!(rejected, 3);
+        assert_eq!(
+            closed
+                .into_iter()
+                .map(|parameter| cadmpeg_ir::ids::Identity::from(parameter.id).into_string())
+                .collect::<Vec<_>>(),
+            ["synthetic:test:id#d"]
         );
     }
 
@@ -2082,6 +2375,55 @@ mod tests {
                 .map(|parameter| parameter.name.as_str())
                 .collect::<Vec<_>>(),
             ["c", "b", "a"]
+        );
+    }
+
+    #[test]
+    fn closed_parameters_take_dependency_ordered_positions_in_their_scope() {
+        let id = |name: &str| {
+            ParameterId::mint(format!("synthetic:test:id#{name}")).expect("identity grammar")
+        };
+        let owner = cadmpeg_ir::features::FeatureId::mint("synthetic:test:feature#flat")
+            .expect("identity grammar");
+        let make =
+            |name: &str, ordinal: u32, dependency: Option<&str>, owned: bool| DesignParameter {
+                id: id(name),
+                owner: owned.then(|| owner.clone()),
+                ordinal,
+                name: name.into(),
+                expression: dependency.map_or_else(
+                    || name.into(),
+                    |dependency| Expression {
+                        tokens: vec![cadmpeg_ir::features::ExpressionToken::Parameter(id(
+                            dependency,
+                        ))],
+                    },
+                ),
+                display: None,
+                value: None,
+                driving: true,
+                properties: std::collections::BTreeMap::new(),
+                pmi: None,
+                native_ref: None,
+            };
+        let parameters = vec![
+            make("c", 0, Some("b"), false),
+            make("b", 1, Some("a"), false),
+            make("a", 2, None, false),
+            make("d", 3, None, false),
+            make("flat", 9, Some("a"), true),
+        ];
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("empty fixture view");
+        let (closed, rejected) = close_parameter_graph(&ctx, parameters).expect("closure");
+        assert_eq!(rejected, 0);
+        assert_eq!(
+            closed
+                .iter()
+                .map(|parameter| (parameter.name.as_str(), parameter.ordinal))
+                .collect::<Vec<_>>(),
+            [("c", 2), ("b", 1), ("a", 0), ("d", 3), ("flat", 0)]
         );
     }
 
@@ -2349,7 +2691,7 @@ mod tests {
                             header_id: 0,
                             next: reference(0, false),
                             flags: 0,
-                            context: reference(0, false),
+                            context: reference(DOCUMENT_TABLE_INDEX, true),
                             source_index: index,
                         },
                         name: format!("p{index}"),
@@ -2371,6 +2713,9 @@ mod tests {
             parameters,
             expressions,
             units: vec![base, unit],
+            parameter_tables: Vec::new(),
+            model_roots: Vec::new(),
+            brep_segments: Vec::new(),
             issues: Vec::new(),
         }
     }
@@ -2393,7 +2738,12 @@ mod tests {
     ) -> Result<super::ParameterProjection, CodecError> {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
-        project_parameters(&ctx, inventory, &mut 0)
+        let named = inventory
+            .parameters
+            .iter()
+            .map(|parameter| (parameter.name.as_str(), parameter.identity.record_ordinal))
+            .collect::<Vec<_>>();
+        project_parameters(&ctx, inventory, &document_scopes(&named), &mut 0)
     }
 
     #[test]

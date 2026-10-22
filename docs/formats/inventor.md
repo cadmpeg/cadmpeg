@@ -231,11 +231,46 @@ A numeric expression record starts with `header_value:u32`, `header_id:u16`, and
 
 A unit definition record with type identifier `fd79a7f8d2118f09c0005a9a2378d04f` starts with `header_value:u32` and `header_id:u16`. It then stores numerator and denominator reference arrays, a Boolean visibility byte, and a derived-unit reference. Each reference array starts with u16 values `3, 0x3000` and a u32 count. A nonempty array then stores two u16 metadata values and the counted record references. An empty array ends after the count.
 
-One base-unit record selected by a unit definition's sole numerator supplies its dimension and display scale. Base-unit records contain `header_value:u32`, `header_id:u16`, `magnitude:f64`, and `factor:f64`. The supported scalar base units are millimetres (`bc204162d2119b0b60006ab760fec3b0`), metres (`f579a7f8d2118f09c0005a9a2378d04f`), inches (`f679a7f8d2118f09c0005a9a2378d04f`), feet (`f779a7f8d2118f09c0005a9a2378d04f`), radians (`f2cd305cd2113f0d60006ab760fec3b0`), degrees (`f0cd305cd2113f0d60006ab760fec3b0`), degree-equivalent grad units (`f6cd305cd2113f0d60006ab760fec3b0`), and dimensionless values (`23009d5fd2118e09c0005a9a2378d04f`). A transferable scalar unit has one numerator, no denominator, and no derived-unit reference.
+One base-unit record selected by a unit definition's sole numerator supplies its dimension and display scale. Base-unit records contain `header_value:u32`, `header_id:u16`, `magnitude:f64`, and `factor:f64`. The supported scalar base units are millimetres (`bc204162d2119b0b60006ab760fec3b0`), metres (`f579a7f8d2118f09c0005a9a2378d04f`), inches (`f679a7f8d2118f09c0005a9a2378d04f`), feet (`f779a7f8d2118f09c0005a9a2378d04f`), radians (`f2cd305cd2113f0d60006ab760fec3b0`), degrees (`f0cd305cd2113f0d60006ab760fec3b0`), degree-equivalent grad units (`f6cd305cd2113f0d60006ab760fec3b0`), dimensionless values (`23009d5fd2118e09c0005a9a2378d04f`), and unitless values (`22009d5fd2118e09c0005a9a2378d04f`). Unitless values are dimensionless and display the symbol `ul`. A transferable scalar unit has one numerator, no denominator, and no derived-unit reference.
 
 Length expression values and parameter model values use internal centimetres. Neutral evaluated lengths multiply the parameter model value by 10 to obtain millimetres. A displayed literal divides its internal value by the base-unit scale: 0.1 for millimetres, 100 for metres, 2.54 for inches, and 30.48 for feet. Angular model values use radians. A displayed degree literal divides its radian value by `pi/180`. Dimensionless values are unchanged.
 
 A neutral parameter transfers only when its unit definition, base unit, and complete expression graph resolve uniquely in the same segment. Parameter-reference expression nodes supply ordered dependency identities. Cyclic, null, cross-segment, ambiguous, non-finite, compound-unit, power-identity, and unresolved expression graphs remain native.
+
+A parameter's `context_reference` selects the parameter table that owns it. A parameter table is a PmDc record with type identifier `634d8790d011f8d10008cabc0663dc09`. Its payload contains:
+
+```text
+header_value u32
+header_id u16
+next_reference u32
+flags u32
+context_reference u32
+members type-2 reference list
+names type-6 name map
+suffix bytes[]
+```
+
+A type-6 name map starts with u16 values `6, 0x3000` and a u32 count. A nonempty map then stores two u32 metadata values. Each entry is a counted UTF-16LE parameter name followed by one PmDc reference. The member list and the name map both contain every parameter of the table. The suffix is retained.
+
+The table's `context_reference` selects the model root that owns the table. A null table context selects no model. A model root is a PmDc record with type identifier `164d8790d011f8d10008cabc0663dc09`. Its payload contains:
+
+```text
+header_value u32
+header_id u16
+next_reference u32
+flags u32
+identifier bytes[16]
+name counted UTF-16LE
+members type-2 reference list
+values u32[15]
+brep_segment counted UTF-16LE
+scale f64
+terminal_value u32
+```
+
+The payload ends after `terminal_value`. Value 3 is the PmDc reference to the root's parameter table. Value 9 is null or the same reference. `brep_segment` is the display name of the segment that stores the model's body. The document model root names the `PmBrepSegmentType` segment. The flat-pattern model root names the `MbBrepSegmentType` segment; the flat-pattern model and its `MbBrepSegmentType` and `MbGRxSegmentType` segments are present only when the part has a flat pattern.
+
+Parameter ownership requires exactly one document model root in the segment, exactly one segment with the display name the root names, and a name-map entry that references the parameter record under the parameter's own name. Parameters in a table whose context is the document model root are document parameters. Parameters in the parameter table of a flat-pattern model root belong to that flat-pattern model, which is one native feature after every document feature. The flat-pattern table repeats the names of the document sheet-metal parameters. Parameters in a table with a null context, or in a table whose model root does not resolve, have no established owner and remain native.
 
 ## 12. Planar sketches
 
@@ -312,7 +347,21 @@ next_reference u32
 
 The header is followed by `index:u32`, a type-2 participant-reference list, a counted UTF-16LE label, and a 16-byte class identifier. The owner reference identifies the labeled record. Each participant is a one-based record reference in the same PmDc segment. Other records with the same type identifier use different payload forms and do not satisfy the label grammar.
 
-Type `154d8790d011f8d10008cabc0663dc09` is an entity-style link and also starts with the linked-element header. It then stores `value:u32`, `associative_id:u32`, and `entity_type:u32`. A profile-selection record selects an entity-style link through its entity-link reference.
+Type `154d8790d011f8d10008cabc0663dc09` is an entity-style link and also starts with the linked-element header. It then stores `value:u32`, `associative_id:u32`, and `entity_type:u32`. A profile-selection record selects an entity-style link or a kernel-entity link through its entity-link reference.
+
+Type `21750fccd1112780e38619962259017a` is a kernel-entity link. Its payload contains:
+
+```text
+header_value u32
+header_id u16
+selection_source u32
+state u8
+body_reference u32
+entity_id u32
+entity_type u32
+```
+
+The body reference selects a PmDc kernel-body record of type `5c5945f6d5113313100060a6bba647b5`. The entity identifier selects one entity of that body. `selection_source` equals the content-header source index of the selection record that references the link.
 
 Type `1641d6aad211db2c00083eab1b14dc09` stores one constant-radius fillet edge set. The content header is followed by edge-collection, radius, selection-mode, and continuity references. Type `514d8790d011f8d10008cabc0663dc09` stores an edge collection as a type-2 reference list after the content header. The members identify type `82695c37d111516b0008a1ba32a3dc09` edge-item records. An edge item stores a type-2 `u32` index-reference list after the content header, an `i32` when the list is not empty, and a final `u32`.
 
@@ -320,7 +369,15 @@ Type `4a374949d211001d00083bab1b14dc09` stores a fillet edge-selection enumerati
 
 Feature-label class identifiers `3111a90cd0118b83000819b00524dc09`, `dc15f7f1d1114205000830b00524dc09`, `3f7100f9d2118b6f6000f0a89dccefb0`, and `1a7d751fd2119c54a00020803603c8c9` identify extrusion, fillet, chamfer, and hole records respectively.
 
-An extrusion uses property slots 0 through 7 for part operation, boundary patch, direction, reverse direction, forward length, taper angle, extent, and symmetric extent. Slot 23 repeats the boundary-patch reference. Slot 26 identifies the result object collection. Part-operation enumeration values 1, 2, 3, and 4 mean new body, cut, join, and intersection. Extent values 1, 4, and 5 mean fixed dimension, through next, and through all. A fixed dimension uses the slot-4 length. A boundary patch contains profile-selection references. The feature label's sole participant identifies the owning planar sketch.
+An extrusion uses property slots 0 through 7 for part operation, boundary patch, direction, reverse direction, forward length, taper angle, extent, and symmetric extent. Slot 23 repeats the boundary-patch reference. Slot 26 identifies the result object collection. Part-operation enumeration values 1, 2, 3, and 4 mean new body, cut, join, and intersection. Extent values 1, 2, 4, 5, 6, and 7 mean fixed dimension, symmetric fixed dimension, through next, through all, from-to, and to. A fixed dimension uses the slot-4 length. Extent 2 occurs only with a true symmetric-extent Boolean, and its length is the total travel split evenly around the profile plane. A true symmetric-extent Boolean with extent 5 extends through all material on both sides of the profile plane. Other extents with a true symmetric-extent Boolean are outside the supported branch. A boundary patch contains profile-selection references. The feature label's sole participant identifies the owning planar sketch.
+
+The extent-7 target is the work plane in slot 11, or the model face recorded by a termination flag in slot 13 and a surface in slot 18. The extent-6 extrusion starts at the target in slot 8, or the face in slots 10 and 17, and ends at the extent-7 target. A two-sided extrusion has an extent enumeration in slot 29. Slots 27, 28, and 29 hold the length, taper angle, and extent of the side opposite the extrusion direction.
+
+Type `fd24893dd211fa99000840ab0663dc09` is a termination flag. It adds one `value:u8` after the content header. A face target requires value 1.
+
+Type `f0801215d4119e8eef90a8ac7f9ac3ff` is a surface record. After the content header it stores three record references, `state:u8`, `form:u32`, and `value:u32`. Form 25 is a plane: nine f64 values follow and end the record. They are the origin, the u axis, and the v axis in internal centimetres. The plane normal is the cross product of the u and v axes.
+
+Type `42df52ced011d0d20008ccbc0663dc09` is a work plane. After the content header it stores `entity_flags:u32` and two u32 values. Segment major versions above 21 add one u32 value. An optional u32 `0x203` and one u32 value follow. The record ends with nine f64 values: the origin, the u axis, and the v axis in internal centimetres.
 
 A constant-radius edge fillet uses slot 0 for the fillet edge-set collection, slot 11 for the fillet form, and slot 15 for the result object collection. Fillet form value 0 is an edge fillet. Each edge set identifies its edge collection and length parameter. Selection type 4 with value 0 lists the exact edge items. The edge set also carries its continuity Boolean.
 
@@ -333,6 +390,22 @@ A result object collection contains one or more surface-body references. This or
 Types `44326720d211c51d60002aab01f31bb0` and `b5a9d9fad211053360002cab01f31bb0` store rectangular-pattern and mirror feature records. Both start with the generic 30-byte feature prefix through `outline_value`, followed by a type-2 property-reference list, `value:u32`, a type-2 participant-reference list, six property references, and `control:u8`.
 
 For segment major versions 15 through 20, the rectangular-pattern suffix contains 20 more property references. For segment major versions 21 and 22, it contains 26 more property references. The mirror suffix contains five more property references, six u32 extension values in segment major versions 21 and 22, and two final property references. The record ends after the applicable suffix.
+
+### 13.1 Feature history
+
+A model root (§11) also owns the browser feature tree of its model. The root label of a model root is the feature label whose owner reference selects the model root. The tree of the document model root is the part modeling history. The tree of a flat-pattern model root is the flat-pattern history. A segment has a history only when it has exactly one document model root.
+
+The participant list of a root label is the ordered top level of the browser tree. Each participant is one tree member:
+
+- A feature, pattern-feature, or planar-sketch record is a history node.
+- The end-of-features record is the end-of-part marker. Top-level members after the marker are below the end of part.
+- Another record that owns a feature label is a group. The participants of its label are its nested members, in order.
+
+The participants of a feature label that are planar-sketch records are the sketches that the feature consumes. History order is the post-order of the tree: the consumed sketches of a feature precede it, and the nested members of a group take the position of the group. A record has one position; a repeated reference does not move it. The model history precedes the flat-pattern history.
+
+The participants of a pattern-feature record are its seed features.
+
+Content-header flag bit 2 (`0x4`) marks a suppressed feature, pattern-feature, or sketch record. Flag bit 19 (`0x80000`) marks a feature, pattern-feature, or sketch record below the end-of-part marker.
 
 ## 14. Document kind
 

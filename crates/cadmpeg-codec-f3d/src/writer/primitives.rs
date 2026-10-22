@@ -70,6 +70,7 @@ pub(crate) fn validate_assembly_projection(
         &native.design_parameter_scopes,
         &native.design_component_occurrences,
         &inserts,
+        &native.design_joint_motions,
     );
     if target.model.assembly_joints != projected.joints {
         return Err(CodecError::UnsupportedContent(

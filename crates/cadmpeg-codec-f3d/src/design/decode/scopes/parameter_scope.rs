@@ -4,7 +4,7 @@
 use crate::bytes::lp_utf16_bounded;
 use cadmpeg_core::decode::u64_from_index;
 
-use super::assembly_alignment::exact_assembly_alignment;
+use super::assembly_alignment::exact_assembly_alignment_with_types;
 use super::axial_assembly::bind_axial_assembly_operand_targets;
 use super::axial_assembly::bind_joint_origin_frames_from_assemblies;
 use super::base_feature::exact_base_feature_construction;
@@ -417,8 +417,13 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
-                let construction =
-                    exact_assembly_alignment(bytes, &records, &scope, parameter_owners)?;
+                let construction = exact_assembly_alignment_with_types(
+                    bytes,
+                    &records,
+                    &scope,
+                    parameter_owners,
+                    &stream_types,
+                )?;
                 if let scope::DesignScopePayloadMut::Assemble(slot)
                 | scope::DesignScopePayloadMut::AsBuilt(slot) = scope.payload_mut()
                 {

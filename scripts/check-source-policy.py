@@ -11,10 +11,13 @@ from __future__ import annotations
 import argparse
 import ast
 from bisect import bisect_right
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import asdict, dataclass
 from contextvars import ContextVar
-from functools import wraps
+from functools import lru_cache, wraps
 import json
+import multiprocessing
+import os
 import re
 from pathlib import Path
 
@@ -1664,6 +1667,7 @@ EVALUATION_DROPS = {
 }
 
 
+@lru_cache(maxsize=2)
 def evaluation_tokens(code: str):
     tokens = list(RUST_TOKEN.finditer(code))
     pairs: dict[int, int] = {}
@@ -1858,6 +1862,16 @@ def scan_evaluation_refusals(sources: dict[Path, str]) -> list[Finding]:
                 functions[evaluation_module(path) + evaluation_inline_module(tokens, parents, index) + (name,)] = levels
     names = {key[-1] for key, levels in functions.items() if levels}
     method_names = {name for (_, name), levels in methods.items() if any(levels)}
+    method_owners: dict[str, set[str]] = {}
+    method_levels: dict[str, set[int]] = {}
+    for (owner, method), levels in methods.items():
+        method_levels.setdefault(method, set()).update(levels)
+        if any(levels):
+            method_owners.setdefault(method, set()).add(owner)
+    owner_constructors: dict[str, list[str]] = {}
+    for constructor, result_types in returns.items():
+        if len(result_types) == 1:
+            owner_constructors.setdefault(next(iter(result_types)), []).append(constructor)
     findings = []
     call_names = re.compile(r"\b(?:" + "|".join(sorted(names | method_names)) + r")\b") if names or method_names else None
     for path, code in production.items():
@@ -1877,6 +1891,20 @@ def scan_evaluation_refusals(sources: dict[Path, str]) -> list[Finding]:
         refused: dict[int, int] = {}
         bindings: dict[str, list[tuple[int, int, int]]] = {}
         candidate_names = names | method_names | imports.keys()
+        receiver_types: dict[tuple[str, str], bool] = {}
+
+        def receiver_has_type(receiver, owner):
+            key = receiver, owner
+            if key not in receiver_types:
+                receiver_types[key] = bool(
+                    re.search(r"\b" + re.escape(receiver) + r"\s*:\s*(?:&\s*(?:'\w+\s*)?(?:mut\s*)?)?(?:\w+::)*"
+                              + re.escape(owner) + r"\b", code)
+                    or re.search(r"\blet\s+(?:mut\s+)?" + re.escape(receiver)
+                                 + r"\s*=\s*(?:[\w]+::)*" + re.escape(owner) + r"::", code)
+                    or any(re.search(r"\blet\s+(?:mut\s+)?" + re.escape(receiver)
+                                     + r"\s*=\s*(?:[\w]+::)*" + re.escape(constructor) + r"\s*\(", code)
+                           for constructor in owner_constructors.get(owner, ())))
+            return receiver_types[key]
 
         def qualify(parts):
             parts = list(parts)
@@ -1904,31 +1932,19 @@ def scan_evaluation_refusals(sources: dict[Path, str]) -> list[Finding]:
                     return 0
                 # Ambiguous standard method names need a stated receiver type.
                 receiver = words[index - 2] if index > 1 else ""
-                candidates = {owner for owner, method in methods if method == name
-                              and any(methods[(owner, method)])}
-                for owner in candidates:
-                    enclosing = [item for item in signatures if item[0] < index]
-                    if receiver == "self" and enclosing and enclosing[-1][3] == owner:
-                        return max(methods[(owner, name)])
+                for owner in method_owners.get(name, ()):
+                    if receiver == "self":
+                        enclosing = [item for item in signatures if item[0] < index]
+                        if enclosing and enclosing[-1][3] == owner:
+                            return max(methods[(owner, name)])
                     if receiver == ")" and index - 2 in pairs:
                         constructor = pairs[index - 2]
                         if words[constructor - 3:constructor - 1] == [owner, "::"]:
                             return max(methods[(owner, name)])
-                    if re.search(r"\b" + re.escape(receiver) + r"\s*:\s*(?:&\s*(?:'\w+\s*)?(?:mut\s*)?)?(?:\w+::)*"
-                                 + re.escape(owner) + r"\b", code):
+                    if receiver_has_type(receiver, owner):
                         return max(methods[(owner, name)])
-                    if re.search(r"\blet\s+(?:mut\s+)?" + re.escape(receiver)
-                                 + r"\s*=\s*(?:[\w]+::)*" + re.escape(owner) + r"::", code):
-                        return max(methods[(owner, name)])
-                    for constructor, result_types in returns.items():
-                        if result_types == {owner} and re.search(
-                            r"\blet\s+(?:mut\s+)?" + re.escape(receiver)
-                            + r"\s*=\s*(?:[\w]+::)*" + re.escape(constructor) + r"\s*\(", code
-                        ):
-                            return max(methods[(owner, name)])
                 if name not in {"map", "first", "second", "point", "normal", "evaluate", "tangent", "partials"}:
-                    return max(level for (owner, method), levels in methods.items()
-                               if method == name for level in levels)
+                    return max(method_levels[name])
                 return 0
             if name not in names and name not in method_names and name not in imports:
                 return 0
@@ -2152,12 +2168,23 @@ def scan_native_byte_fields(sources: dict[Path, str]) -> list[Finding]:
                     chars[at] = " "
         return "".join(chars)
 
+    def impl_targets(code: str, trait: str) -> set[str]:
+        """Names `N` for which `impl ... <trait> for path::N` occurs, as one regex per name would match."""
+        targets = set()
+        for match in re.finditer(r"\b" + trait + r"\s+for\s+((?:[A-Za-z_]\w*::)*[A-Za-z_]\w*)", code):
+            head = max(code.rfind(delimiter, 0, match.start()) for delimiter in "{};")
+            if re.search(r"\bimpl\b", code[head + 1:match.start()]):
+                targets.update(match[1].split("::"))
+        return targets
+
     for path, source in sources.items():
         if not is_production_rs(path) or not relative_path(path).startswith("crates/cadmpeg-codec-"):
             continue
         code, _ = production_source(source)
         lines = source.splitlines()
         masked = code.splitlines()
+        serialize_impls = impl_targets(code, "Serialize")
+        deserialize_impls = impl_targets(code, r"Deserialize(?:\s*<[^>]*>)?")
         for kind, name, index, attrs in type_declarations(lines, masked):
             derives = " ".join(attr for attr in attrs if re.search(r"\bderive\s*\(", attr))
             conversions = " ".join(attr for attr in attrs if SERDE_ATTRIBUTE.search(attr))
@@ -2168,11 +2195,9 @@ def scan_native_byte_fields(sources: dict[Path, str]) -> list[Finding]:
                     f"Codec serde conversion for `{name}` must use cadmpeg_ir::native::bytes::NativeBytes for a hexadecimal byte string.",
                 ))
             serialize = (bool(re.search(r"\bSerialize\b", derives))
-                         and not re.search(r"\binto\s*=", conversions)) or bool(re.search(
-                r"\bimpl\b[^{};]*\bSerialize\s+for\s+(?:[A-Za-z_]\w*::)*" + re.escape(name) + r"\b", code))
+                         and not re.search(r"\binto\s*=", conversions)) or name in serialize_impls
             deserialize = (bool(re.search(r"\bDeserialize\b", derives))
-                           and not re.search(r"\b(?:from|try_from)\s*=", conversions)) or bool(re.search(
-                r"\bimpl\b[^{};]*\bDeserialize(?:\s*<[^>]*>)?\s+for\s+(?:[A-Za-z_]\w*::)*" + re.escape(name) + r"\b", code))
+                           and not re.search(r"\b(?:from|try_from)\s*=", conversions)) or name in deserialize_impls
             if not (serialize or deserialize):
                 continue
             offset = sum(len(line) + 1 for line in masked[:index])
@@ -2211,17 +2236,41 @@ def check_source() -> list[Finding]:
         path.resolve(): path.read_text(encoding="utf-8", errors="replace")
         for path in sorted(ROOT.glob("crates/**/*.rs"))
     }
-    findings = scan_placement(sources)
-    for path, source in sources.items():
-        if is_production_rs(path):
-            findings.extend(scan_patterns(path, source))
-    findings.extend(scan_evaluation_refusals(sources))
-    findings.extend(scan_wire_mirror_docs(sources))
-    findings.extend(scan_native_byte_fields(sources))
-    findings.extend(scan_module_visibility(sources))
-    findings.extend(scan_authoring_paths())
-    findings.extend(scan_script_tests())
+    production = [path for path in sources if is_production_rs(path)]
+    workers = os.cpu_count() or 1
+    tasks = [("patterns", tuple(production[index::workers * 2])) for index in range(workers * 2)]
+    tasks += [(name, ()) for name in SOURCE_SCANS]
+    global _TASK_SOURCES
+    _TASK_SOURCES = sources
+    try:
+        if workers > 1 and "fork" in multiprocessing.get_all_start_methods():
+            with ProcessPoolExecutor(workers, mp_context=multiprocessing.get_context("fork")) as pool:
+                results = list(pool.map(run_scan_task, tasks))
+        else:
+            results = [run_scan_task(task) for task in tasks]
+    finally:
+        _TASK_SOURCES = {}
+    findings = [finding for result in results for finding in result]
     return sorted(findings, key=lambda item: (item.path, item.line, item.rule))
+
+
+SOURCE_SCANS = {
+    "placement": lambda sources: scan_placement(sources),
+    "evaluation_refusals": lambda sources: scan_evaluation_refusals(sources),
+    "wire_mirror_docs": lambda sources: scan_wire_mirror_docs(sources),
+    "native_byte_fields": lambda sources: scan_native_byte_fields(sources),
+    "module_visibility": lambda sources: scan_module_visibility(sources),
+    "authoring_paths": lambda sources: scan_authoring_paths(),
+    "script_tests": lambda sources: scan_script_tests(),
+}
+_TASK_SOURCES: dict[Path, str] = {}
+
+
+def run_scan_task(task: tuple[str, tuple[Path, ...]]) -> list[Finding]:
+    name, paths = task
+    if name == "patterns":
+        return [finding for path in paths for finding in scan_patterns(path, _TASK_SOURCES[path])]
+    return SOURCE_SCANS[name](_TASK_SOURCES)
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -102,6 +102,7 @@ pub(crate) fn write_step_outcome(
         )));
     }
     let mut b = Builder::new(ir, schema)?;
+    b.model_name = &opts.product_name;
     b.build();
     let outcome = b.finish_outcome();
     let lines = b.emitter.into_lines()?;
@@ -231,6 +232,7 @@ struct PcurveUse<'a> {
 pub(crate) struct Builder<'a> {
     ir: &'a CadIr,
     schema: StepSchema,
+    model_name: &'a str,
     emitter: Emitter,
     losses: Vec<LossNote>,
 
@@ -324,6 +326,35 @@ pub(crate) struct Builder<'a> {
     construction_supports: BTreeSet<String>,
 }
 
+/// STEP names for entities that carry an id and an optional source name.
+///
+/// A source name is kept as written. An unnamed entity takes the key of its
+/// identity (`part-0` from `...#part-0`) when no other entry uses that text as a
+/// name or key, and an empty name otherwise. Every fallback name therefore
+/// identifies exactly one entity, or is absent.
+fn distinct_names<'n>(entries: &[(&'n str, Option<&'n str>)]) -> Vec<&'n str> {
+    fn key(id: &str) -> &str {
+        id.split_once('#').map_or(id, |(_, key)| key)
+    }
+    let mut uses = HashMap::<&str, usize>::new();
+    for &(id, name) in entries {
+        *uses.entry(name.unwrap_or_else(|| key(id))).or_default() += 1;
+    }
+    entries
+        .iter()
+        .map(|&(id, name)| {
+            name.unwrap_or_else(|| {
+                let key = key(id);
+                if uses.get(key) == Some(&1) {
+                    key
+                } else {
+                    ""
+                }
+            })
+        })
+        .collect()
+}
+
 impl<'a> Builder<'a> {
     pub(crate) fn new(ir: &'a CadIr, schema: StepSchema) -> Result<Self, cadmpeg_core::CodecError> {
         let construction_supports = ownership::construction_supports(ir)?;
@@ -367,6 +398,7 @@ impl<'a> Builder<'a> {
         Ok(Builder {
             ir,
             schema,
+            model_name: "cadmpeg_model",
             emitter: Emitter::new(),
             losses: Vec::new(),
             points: ir.model.points.iter().map(|p| (p.id.as_str(), p)).collect(),
@@ -1273,13 +1305,7 @@ impl<'a> Builder<'a> {
     }
 
     fn emit_product_structure(&mut self) -> Ref {
-        let name = self
-            .ir
-            .model
-            .bodies
-            .first()
-            .and_then(|b| b.name.clone())
-            .unwrap_or_else(|| "cadmpeg_model".to_string());
+        let name = self.model_name;
 
         let (application, protocol, year) = self.schema.application_protocol();
         let app_ctx = self
@@ -1299,7 +1325,7 @@ impl<'a> Builder<'a> {
         );
         let product = self.emitter.emit(
             "PRODUCT",
-            &format!("{},{},'',({prod_ctx})", string(&name), string(&name)),
+            &format!("{},{},'',({prod_ctx})", string(name), string(name)),
         );
         let formation = self
             .emitter
@@ -1365,6 +1391,35 @@ impl<'a> Builder<'a> {
                 PrototypeReference::External { .. } | PrototypeReference::Unresolved {} => None,
             })
             .collect::<HashMap<OccurrenceId, ProductDefinitionId>>();
+        let mut root_products = occurrences
+            .iter()
+            .filter(|occurrence| matches!(occurrence.parent, OccurrenceParent::Root {}))
+            .filter_map(|occurrence| occurrence_products.get(&occurrence.id))
+            .collect::<BTreeSet<_>>();
+        let root_product = match root_products.len() {
+            1 => root_products.pop_first(),
+            _ => None,
+        };
+        let product_names = distinct_names(
+            &products
+                .iter()
+                .map(|product| {
+                    let name = product
+                        .label
+                        .as_deref()
+                        .or(product.source_name.as_deref())
+                        .or(product.part_number.as_deref())
+                        .or_else(|| (root_product == Some(&product.id)).then_some(self.model_name));
+                    (product.id.as_str(), name)
+                })
+                .collect::<Vec<_>>(),
+        );
+        let occurrence_names = distinct_names(
+            &occurrences
+                .iter()
+                .map(|occurrence| (occurrence.id.as_str(), occurrence.name.as_deref()))
+                .collect::<Vec<_>>(),
+        );
         let mut product_origins = HashMap::<ProductDefinitionId, Ref>::new();
         for product in products {
             product_origins.insert(
@@ -1420,17 +1475,12 @@ impl<'a> Builder<'a> {
         }
         let mut definitions = HashMap::<ProductDefinitionId, Ref>::new();
         let mut representations = HashMap::<ProductDefinitionId, Ref>::new();
-        for product in products {
+        for (product, &name) in products.iter().zip(&product_names) {
             let product_id = product
                 .part_number
                 .as_deref()
                 .or(product.source_name.as_deref())
                 .unwrap_or(product.id.as_str());
-            let name = product
-                .label
-                .as_deref()
-                .or(product.source_name.as_deref())
-                .unwrap_or(product_id);
             let description = product.description.as_deref().unwrap_or("");
             let product_ref = self.emitter.emit(
                 "PRODUCT",
@@ -1488,7 +1538,7 @@ impl<'a> Builder<'a> {
             representations.insert(product.id.clone(), representation);
         }
 
-        for occurrence in occurrences {
+        for (occurrence, &occurrence_name) in occurrences.iter().zip(&occurrence_names) {
             let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent else {
                 let transform = match occurrence.effective_transform() {
                     Ok(transform) => transform,
@@ -1564,7 +1614,6 @@ impl<'a> Builder<'a> {
                 );
                 continue;
             }
-            let occurrence_name = occurrence.name.as_deref().unwrap_or(occurrence.id.as_str());
             let usage = self.emitter.emit(
                 "NEXT_ASSEMBLY_USAGE_OCCURRENCE",
                 &format!(
