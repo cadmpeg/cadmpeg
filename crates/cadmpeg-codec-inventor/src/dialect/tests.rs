@@ -577,3 +577,26 @@ fn a_foreign_declaration_is_read_with_the_verified_grammar_not_declined() {
         );
     }
 }
+
+#[test]
+fn a_given_up_type_table_keeps_its_framed_metadata_stream_verified() {
+    let classify = |count: usize| {
+        let design = vec![([0x11; 16], Vec::new()); count];
+        let bytes =
+            crate::test_support::test_fixtures::primary_envelope_fixture_with_design(&[], &design);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &bytes,
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
+        let container = crate::container::InventorContainer::open(&ctx, root).unwrap();
+        let recovery = DialectRecovery::of(&container);
+        assert!(recovery.unframed_meta_streams.is_empty());
+        recovery.classify()
+    };
+    // 256 descriptors is the Appendix C maximum; 300 gives up the type table
+    // only. Both metadata streams frame, so both classify the same way.
+    assert_eq!(classify(300), classify(256));
+}

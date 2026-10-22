@@ -70,9 +70,6 @@ impl<'a> InventorContainer<'a> {
                     insert_attribute(entry, "meta_stream_version", meta.declared.version);
                     insert_attribute(entry, "segment_kind", segment.kind.label());
                     insert_attribute(entry, "display_name", &meta.display_name);
-                    if let SegmentMetaState::Malformed { detail, .. } = &segment.meta {
-                        insert_attribute(entry, "framing_error", detail);
-                    }
                 }
                 SegmentMetaState::Malformed {
                     declared, detail, ..
