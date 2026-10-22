@@ -410,6 +410,7 @@ fn central_directory_signature_after_entries_keeps_archive_readable() {
             .len(),
         1
     );
+    drop(ctx);
     let end = end + 9;
     let size = View::u32_le_at(&bytes, end + 12).expect("directory size");
     cadmpeg_test_support::bytes::put_u32(&mut bytes, end + 12, size + 9);
