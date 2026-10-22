@@ -11,8 +11,8 @@ use serde::{de::DeserializeOwned, Serialize};
 mod dependencies;
 mod finalization;
 mod parser;
-pub use dependencies::{DeferredRecordPruning, PartDependencyPruning};
-pub use finalization::{FinalizedPartOutput, PartFinalization};
+pub use dependencies::PartDependencyPruning;
+pub use finalization::FinalizedPartOutput;
 pub use parser::ParserPartOutput;
 
 use super::{PartLevel, PartRecord, PartSpec, PartState};

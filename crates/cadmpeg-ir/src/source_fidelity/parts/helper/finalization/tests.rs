@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{FinalizedPartOutput, PartFinalization, PartOutput};
+use super::PartOutput;
 use crate::ids::Identity;
 use crate::source_fidelity::parts::{DecodeParts, PartLevel, PartSpec};
 use crate::{CodecFormat, NativeUnknownRecord};
@@ -20,13 +20,6 @@ struct Pair {
     references: [Identity; 2],
 }
 rewrite_record!(Pair, []; {id, references});
-
-fn ready(outcome: PartFinalization) -> FinalizedPartOutput {
-    match outcome {
-        PartFinalization::Ready(output) => output,
-        PartFinalization::Deferred { .. } => panic!("representable typed dependency result"),
-    }
-}
 
 fn id(number: u8) -> Identity {
     format!("step:native:record#{number}")
@@ -100,7 +93,7 @@ fn owned_handoff_runs_required_closure_and_list_pruning_without_an_advisory_call
         )
         .expect("independent sibling");
     fail(&ctx, &mut output, root, true);
-    let finalized = ready(output.into_parts(&ctx).expect("real resource checks"));
+    let finalized = output.into_parts(&ctx).expect("real resource checks");
     let (_, native, _, losses) = finalized.into_parts();
     let records = native
         .namespace("step")
@@ -122,7 +115,10 @@ fn owned_handoff_runs_required_closure_and_list_pruning_without_an_advisory_call
 }
 
 #[test]
-fn deferred_owned_handoff_keeps_the_whole_stage_and_exposes_no_ready_components() {
+fn fixed_list_owner_of_a_dropped_record_is_not_formed_and_drops_at_handoff() {
+    // #215 §4.5 rule 1: "A record that cannot be formed without such a field
+    // is not formed, and rule 2 drops the records that need it." Pair #1 holds
+    // #2 in a fixed two-entry list, so it cannot be formed once #2 drops.
     let arena = DecodeArena::new();
     let (ctx, root) =
         DecodeContext::from_root_bytes(b"#2=ITEM(2,UNKNOWN);", &arena, &DecodePolicy::service())
@@ -139,22 +135,25 @@ fn deferred_owned_handoff_keeps_the_whole_stage_and_exposes_no_ready_components(
         )
         .expect("checked fixed list");
     fail(&ctx, &mut output, root, true);
-    let native = output.native().clone();
-    let fidelity = output.fidelity().clone();
-    let losses = output.losses().to_vec();
-    let deferred = output.into_parts(&ctx).expect("typed deferral");
-    let PartFinalization::Deferred { output, records } = deferred else {
-        panic!("typed deferred outcome");
-    };
-    assert_eq!(records.len(), 1);
-    assert_eq!(records[0].record, id(1).as_str());
-    assert!(matches!(
-        records[0].effect,
-        crate::schema::rewrite::typed::prune::ReferencePruneEffect::UnrepresentablePrunedList { .. }
-    ));
-    assert_eq!(output.native(), &native);
-    assert_eq!(output.fidelity(), &fidelity);
-    assert_eq!(output.losses(), losses);
+    let finalized = output.into_parts(&ctx).expect("dropped, not deferred");
+    let (_, native, fidelity, losses) = finalized.into_parts();
+    let namespace = native.namespace("step").expect("namespace");
+    assert!(namespace
+        .arena_as::<Pair>("pairs")
+        .expect("actual pair owner")
+        .is_empty());
+    assert_eq!(
+        namespace
+            .arena_as::<NativeUnknownRecord>("unknowns")
+            .expect("part stub")
+            .len(),
+        1
+    );
+    assert_eq!(fidelity.retained_records().len(), 1);
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0]
+        .message
+        .ends_with("dropped=[\"step:native:record#1\",\"step:native:record#2\"]"));
 }
 
 #[test]
@@ -165,7 +164,7 @@ fn helper_only_unknown_stub_has_its_actual_typed_owner_at_handoff() {
             .expect("source");
     let mut output = PartOutput::new(CodecFormat::Step);
     fail(&ctx, &mut output, root, false);
-    let finalized = ready(output.into_parts(&ctx).expect("owner visitation"));
+    let finalized = output.into_parts(&ctx).expect("owner visitation");
     let (_, native, fidelity, losses) = finalized.into_parts();
     let records = native
         .namespace("step")

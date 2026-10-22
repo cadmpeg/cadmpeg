@@ -34,11 +34,7 @@ fn source<'a>(
         .map(drop)
     })
     .expect("owner and failed bounded child");
-    let cadmpeg_ir::source_fidelity::parts::PartFinalization::Ready(output) =
-        output.into_parts(ctx).expect("dependency finalization")
-    else {
-        panic!("shared stub references have representable lists");
-    };
+    let output = output.into_parts(ctx).expect("dependency finalization");
     let (_, mut native, mut fidelity, losses) = output.into_parts();
     assert_eq!(losses.len(), 1);
     let namespace = native.namespace_mut("f3d");
