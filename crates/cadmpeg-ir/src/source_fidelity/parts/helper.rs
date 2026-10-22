@@ -276,9 +276,13 @@ impl DecodeParts for DecodeContext<'_> {
         spec: PartSpec,
         decode: impl FnOnce(&mut PartOutput) -> Result<T, CodecError>,
     ) -> Result<Option<T>, CodecError> {
-        spec.validate(extent)?;
+        // Framing bytes come from the format's header fields, which damaged
+        // input can corrupt. A framing error is a failure of this part only.
+        let framing = spec.validate(extent);
+        let framing_valid = framing.is_ok();
         let mut staged = PartOutput::new(output.codec);
         let outcome = self.part_transaction(extent, || {
+            framing?;
             let value = decode(&mut staged)?;
             output.preflight(&staged)?;
             Ok(value)
@@ -291,7 +295,7 @@ impl DecodeParts for DecodeContext<'_> {
             capture.stream(),
             capture.offset(),
         )?;
-        if output.fidelity.parts.contains_key(&id) {
+        if output.fidelity.parts.contains_key(&id) || staged.fidelity.parts.contains_key(&id) {
             return Err(CodecError::malformed("duplicate part invocation identity"));
         }
         self.retain_bytes(
@@ -311,6 +315,13 @@ impl DecodeParts for DecodeContext<'_> {
             PartState::Decoded {}
         } else {
             PartState::GivenUp {}
+        };
+        // Invalid framing intervals are not recorded; the whole extent is then
+        // content of the given-up part.
+        let spec = if framing_valid {
+            spec
+        } else {
+            PartSpec::new(spec.level, Vec::new())
         };
         let record = PartRecord::captured(&capture, spec, state);
         match result {

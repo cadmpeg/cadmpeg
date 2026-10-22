@@ -498,3 +498,80 @@ fn part_tree_check_is_linear_on_a_deep_chain_and_names_only_given_up_ancestors()
     }
     assert!(super::validate_tree(&cycle).is_err());
 }
+
+#[test]
+fn damaged_framing_gives_up_its_part_and_the_next_part_still_decodes() {
+    // #215 §4.5: a decoder gives up on the part it cannot read, decodes the
+    // rest, and reports the give-up. A framing interval outside the extent is
+    // damaged framing, not a whole-file refusal.
+    let source = b"#1=UNKNOWN(1);#2=KNOWN(2);";
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(source, &arena, &DecodePolicy::default()).expect("root");
+    let first = root.child(0, 14).expect("first instance");
+    let second = root.child(14, source.len()).expect("second instance");
+    let mut output = PartOutput::new(CodecFormat::Step);
+    let damaged = PartSpec::new(
+        PartLevel::parse("step.simple_entity_instance").expect("table level"),
+        vec![0..3, 13..20],
+    );
+    let mut ran = false;
+    let result = ctx
+        .decode_part(&mut output, first, damaged, |_| {
+            ran = true;
+            Ok(())
+        })
+        .expect("framing damage is a part give-up");
+    assert_eq!(result, None);
+    assert!(!ran, "content is not decoded under invalid framing");
+    assert_eq!(
+        ctx.decode_part(&mut output, second, entity_spec(second), |_| Ok(2))
+            .expect("next part"),
+        Some(2)
+    );
+    let given_up = output
+        .fidelity()
+        .parts()
+        .values()
+        .find(|part| part.offset() == 0)
+        .expect("first part record");
+    assert_eq!(given_up.state(), &PartState::GivenUp {});
+    assert!(given_up.framing_bytes().is_empty());
+    assert_eq!(given_up.content_ranges(), [0..14]);
+    assert_eq!(output.losses().len(), 1);
+    assert_eq!(output.losses()[0].code.local_code(), "record.unreadable");
+    let wire = serde_json::to_value(output.fidelity()).expect("wire");
+    assert_eq!(
+        serde_json::from_value::<SourceFidelity>(wire).expect("admitted part tree"),
+        *output.fidelity()
+    );
+}
+
+#[test]
+fn a_child_part_with_its_parents_identity_is_refused_not_replaced() {
+    // The part id is minted from (codec, level, stream, offset). A child of the
+    // same level at its parent's offset would replace the parent's tree node.
+    let source = b"#1=UNKNOWN(1);";
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(source, &arena, &DecodePolicy::default()).expect("root");
+    let mut output = PartOutput::new(CodecFormat::Step);
+    for child_fails in [false, true] {
+        let error = ctx
+            .decode_part(&mut output, root, entity_spec(root), |staged| {
+                ctx.decode_part(staged, root, entity_spec(root), |_| {
+                    if child_fails {
+                        Err(CodecError::malformed("damaged child"))
+                    } else {
+                        Ok(())
+                    }
+                })?;
+                Ok(())
+            })
+            .expect_err("duplicate part identity");
+        assert!(error
+            .to_string()
+            .contains("duplicate part invocation identity"));
+    }
+    assert!(output.fidelity().parts().is_empty());
+}
