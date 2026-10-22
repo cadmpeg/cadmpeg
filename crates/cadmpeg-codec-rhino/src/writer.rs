@@ -136,7 +136,7 @@ use tables::materials::MaterialPlan;
 
 struct WriteOutcome {
     losses: Vec<LossNote>,
-    objects: usize,
+    geometry_objects: usize,
     subds: usize,
 }
 
@@ -307,14 +307,12 @@ fn write_buffered(
         })
         .count();
     Ok(WriteOutcome {
-        objects: plan.brep_count
+        geometry_objects: plan.brep_count
             + free_points
             + plan.curves.len()
             + plan.surfaces.len()
             + plan.meshes.len()
-            + subds
-            + annotations.len()
-            + references.len(),
+            + subds,
         losses: plan.losses,
         subds,
     })

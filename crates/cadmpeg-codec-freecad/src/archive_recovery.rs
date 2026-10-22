@@ -7,25 +7,46 @@ use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceDimension, Res
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::source_fidelity::b1::{classification::ClassificationIndex, partition_stream};
-use cadmpeg_ir::source_fidelity::parts::ParserPartOutput;
+use cadmpeg_ir::source_fidelity::parts::PartOutput;
 use cadmpeg_ir::{CadIr, ContainerSummary, SourceMeta};
 
 pub(crate) fn decoded(
     ctx: &DecodeContext<'_>,
+    root: cadmpeg_core::decode::View<'_>,
     summary: ContainerSummary,
-    output: ParserPartOutput,
+    output: PartOutput,
+    pointers: BTreeMap<String, BTreeMap<String, u64>>,
 ) -> Result<Decoded, CodecError> {
-    let dialects = summary.dialects().cloned().ok_or_else(|| {
-        CodecError::malformed("given-up FCStd archive has no admitted source identity")
-    })?;
+    let source = match summary.dialects().cloned() {
+        Some(dialects) => SourceMeta::classified(dialects, BTreeMap::new()),
+        None => SourceMeta::unclassified(cadmpeg_ir::CodecFormat::Fcstd, BTreeMap::new()),
+    };
     let (model, native, mut fidelity, mut losses) = output.into_parts(ctx)?.into_parts();
-    let mut ir = CadIr::decoded(SourceMeta::classified(dialects, BTreeMap::new()));
+    let mut ir = CadIr::decoded(source);
     ir.model = model;
     ir.native = native;
     ir.set_scope(cadmpeg_ir::ContentScope::container())
         .map_err(CodecError::malformed)?;
     losses.extend(summary.losses);
-    crate::fidelity::install_layouts(ctx, &mut fidelity, BTreeMap::new(), BTreeMap::new())?;
+    if !fidelity.parts().values().any(|part| {
+        part.parent().is_none()
+            && part.state() == &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}
+    }) {
+        let capture = ctx.capture_part_extent(root)?;
+        ctx.retain_bytes(
+            u64_from_index(root.window().len()),
+            "retain FCStd source image",
+        )?;
+        crate::fidelity::retain(
+            &mut fidelity,
+            crate::fidelity::SOURCE_IMAGE,
+            capture.stream(),
+            capture.offset(),
+            root.window(),
+            cadmpeg_ir::ArenaClasses::new(),
+        )?;
+    }
+    crate::fidelity::install_layouts(ctx, &mut fidelity, BTreeMap::new(), pointers)?;
     // discarded-value: validate the sole retained archive owner before releasing the document.
     let _ = crate::source_archive::image(&fidelity)?;
     let mut partitions = Vec::new();
@@ -75,7 +96,8 @@ pub(crate) fn decoded(
             given_up,
         )?);
     }
-    let owners = ClassificationIndex::new(ctx, &ir)?;
+    let owners =
+        ClassificationIndex::new_with_owner_resolver(ctx, &ir, &crate::fidelity::owners::Owners)?;
     fidelity.finalize_b1(ctx, &owners, "fcstd", &partitions, &mut losses)?;
     let digest = crate::writer::target::document_local_sha256(ctx, &ir)?;
     fidelity.metadata.insert(

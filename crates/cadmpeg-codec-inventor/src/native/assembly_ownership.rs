@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Typed identities for the source-owned assembly stage.
+//! Typed identities for source-owned structural stages.
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -45,3 +45,8 @@ assembly_owner!(super::AssemblyOccurrenceRecord);
 assembly_owner!(super::RseRecordRecord);
 
 assembly_owner!(super::AssemblyPlacementRecord);
+
+assembly_owner!(super::PropertySetRecord);
+
+assembly_owner!(super::PropertySectionRecord);
+assembly_owner!(super::PropertyRecord);

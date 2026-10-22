@@ -42,7 +42,7 @@ fn a_damaged_known_endpoint_member_has_one_shared_home_and_keeps_its_peer() {
     };
     assert!(unknown.links.is_empty());
     let parts = fidelity.parts();
-    assert_eq!(parts.len(), 5);
+    assert_eq!(parts.len(), 8);
     let (archive_id, archive_part) = parts
         .iter()
         .find(|(_, part)| part.level().as_str() == "zip.archive")
@@ -55,8 +55,8 @@ fn a_damaged_known_endpoint_member_has_one_shared_home_and_keeps_its_peer() {
         .values()
         .filter(|part| part.level().as_str() == "zip.local_header")
         .collect::<Vec<_>>();
-    assert_eq!(headers.len(), 2);
-    for name in ["broken.bin", "peer.bin"] {
+    assert_eq!(headers.len(), 3);
+    for name in ["Document.xml", "broken.bin", "peer.bin"] {
         let entry = scan.archive.entry(name).unwrap();
         let header = headers
             .iter()
@@ -194,14 +194,14 @@ fn a_locatable_damaged_local_header_is_given_up_without_relabeling_its_payload()
     assert!(fidelity.record_layout()[unknown.id.as_str()]
         .reads()
         .is_empty());
-    assert_eq!(fidelity.parts().len(), 4);
+    assert_eq!(fidelity.parts().len(), 7);
     assert_eq!(
         fidelity
             .parts()
             .values()
             .filter(|part| part.level().as_str() == "zip.entry")
             .count(),
-        1
+        2
     );
     assert_eq!(
         fidelity

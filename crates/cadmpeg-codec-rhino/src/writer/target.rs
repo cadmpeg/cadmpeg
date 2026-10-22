@@ -205,7 +205,7 @@ pub(crate) fn plan(
             )));
         }
     }
-    if outcome.objects == 0 {
+    if outcome.geometry_objects == 0 {
         losses.push(
             RhinoLossCode::NoExportableSolids.note("the document holds no exportable geometry"),
         );

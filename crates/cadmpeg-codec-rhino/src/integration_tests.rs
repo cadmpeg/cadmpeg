@@ -31,6 +31,7 @@ mod definition_diagnostics;
 mod dense_ordinals;
 mod dimension_userdata;
 mod fixtures;
+mod geometry_output;
 mod hatch_userdata;
 mod layer_userdata;
 mod mesh_modifiers_userdata;

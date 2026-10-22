@@ -12,7 +12,7 @@ use cadmpeg_ir::{
 };
 
 pub(crate) mod b1;
-mod owners;
+pub(crate) mod owners;
 
 pub(crate) const SOURCE_IMAGE: &str = "fcstd:source:image#archive";
 

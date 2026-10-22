@@ -7,7 +7,7 @@ use cadmpeg_ir::ids::Identity;
 use cadmpeg_ir::source_fidelity::b1::provenance::{NativeOwnerResolver, NativeOwnership};
 use cadmpeg_ir::CadIr;
 
-pub(super) struct Owners;
+pub(crate) struct Owners;
 
 impl NativeOwnerResolver for Owners {
     fn visit_owners(

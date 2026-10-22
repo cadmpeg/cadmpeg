@@ -7,6 +7,8 @@ use cadmpeg_container::compound::{CompoundEntry, CompoundSnapshot, CompoundStrea
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
+pub(crate) mod source_admission;
+
 const BYTE_ORDER_LE: u16 = 0xfffe;
 const MAX_STREAM_SIZE: usize = 2_097_152;
 const MAX_PROPERTIES: usize = 65_536;
@@ -26,6 +28,8 @@ pub(crate) struct PropertySetDescriptor<'a> {
     pub(crate) stream: CompoundStreamId,
     pub(crate) path: String,
     pub(crate) state: PropertySetState<'a>,
+    /// Actual opened CFB stream; held syntax descriptors have no source proof.
+    pub(crate) source: Option<View<'a>>,
 }
 
 #[derive(Debug)]
@@ -159,6 +163,7 @@ pub(crate) fn inventory<'a>(
             stream: stream.id(),
             path: stream.path().into(),
             state,
+            source: Some(view),
         });
     }
     Ok(property_sets)
@@ -170,6 +175,105 @@ pub(crate) struct PropertySetHeader {
     system_identifier: u32,
     clsid: [u8; 16],
     directories: Vec<([u8; 16], usize)>,
+}
+
+/// Actual section table and its code-page/dictionary dependencies. Value bodies
+/// other than those metadata dependencies are not parsed by this function.
+pub(crate) struct PropertySectionDirectory {
+    pub(crate) ranges: Vec<(u32, usize, usize)>,
+    pub(crate) names: BTreeMap<u32, String>,
+    pub(crate) code_page: Option<u16>,
+    pub(crate) offsets_ordered: bool,
+}
+
+pub(crate) fn parse_section_directory(
+    ctx: &DecodeContext<'_>,
+    source: View<'_>,
+) -> Result<PropertySectionDirectory, CodecError> {
+    let bytes = source.window();
+    let mut cursor = Cursor::new(source, "OLE property-set section");
+    let size = cursor.offset("size")?;
+    if size != bytes.len() {
+        return Err(CodecError::Malformed(
+            "OLE property-set section size does not match its range".into(),
+        ));
+    }
+    let property_count = cursor.count("property count", MAX_PROPERTIES)?;
+    let directory_end = 8_usize
+        .checked_add(property_count.checked_mul(8).ok_or_else(|| {
+            CodecError::Malformed("OLE property directory length overflows".into())
+        })?)
+        .ok_or_else(|| CodecError::Malformed("OLE property directory range overflows".into()))?;
+    // The directory is read entry by entry below, so the window states its own
+    // bound: a directory the section cannot hold stops at the entry that runs
+    // out of bytes.
+    let mut ids = BTreeSet::new();
+    let mut directory = Vec::new();
+    for _ in 0..property_count {
+        let id = cursor.u32("property id")?;
+        if !ids.insert(id) {
+            return Err(CodecError::malformed(format_args!(
+                "OLE property set duplicates property id {id}"
+            )));
+        }
+        let offset = cursor.offset("property offset")?;
+        if offset < directory_end || offset % 4 != 0 {
+            return Err(CodecError::malformed(format_args!(
+                "OLE property {id} has an invalid offset"
+            )));
+        }
+        directory.push((offset, id));
+    }
+    let offsets_ordered = directory.windows(2).all(|pair| pair[0].0 < pair[1].0);
+    directory.sort_unstable_by(Ord::cmp);
+    for pair in directory.windows(2) {
+        if pair[0].0 == pair[1].0 {
+            return Err(CodecError::Malformed(
+                "OLE properties have duplicate offsets".into(),
+            ));
+        }
+    }
+    if let Some((offset, _)) = directory.first() {
+        require_zero_range(bytes, directory_end, *offset, "property-directory gap")?;
+    }
+    let ranges = directory
+        .iter()
+        .enumerate()
+        .map(|(index, (start, id))| {
+            let end = directory
+                .get(index + 1)
+                .map_or(bytes.len(), |(offset, _)| *offset);
+            if end > bytes.len() || *start >= end {
+                return Err(CodecError::malformed(format_args!(
+                    "OLE property {id} range is invalid"
+                )));
+            }
+            Ok((*id, *start, end))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let code_page = ranges
+        .iter()
+        .find(|(id, _, _)| *id == 1)
+        .map(|(_, start, end)| parse_code_page(child(source, *start, *end, "code-page property")?))
+        .transpose()?;
+    let names = ranges
+        .iter()
+        .find(|(id, _, _)| *id == 0)
+        .map(|(_, start, end)| {
+            parse_dictionary(
+                ctx,
+                child(source, *start, *end, "property dictionary")?,
+                code_page,
+            )
+        })
+        .transpose()?
+        .unwrap_or_default();
+    Ok(PropertySectionDirectory {
+        ranges,
+        names,
+        code_page,
+        offsets_ordered,
+    })
 }
 
 pub(crate) fn parse_property_set_stream<'a>(
@@ -339,84 +443,12 @@ pub(crate) fn parse_section_with<'a>(
         Option<u16>,
     ) -> Result<Option<Property<'a>>, CodecError>,
 ) -> Result<PropertySection<'a>, CodecError> {
-    let bytes = source.window();
-    let mut cursor = Cursor::new(source, "OLE property-set section");
-    let size = cursor.offset("size")?;
-    if size != bytes.len() {
-        return Err(CodecError::Malformed(
-            "OLE property-set section size does not match its range".into(),
-        ));
-    }
-    let property_count = cursor.count("property count", MAX_PROPERTIES)?;
-    let directory_end = 8_usize
-        .checked_add(property_count.checked_mul(8).ok_or_else(|| {
-            CodecError::Malformed("OLE property directory length overflows".into())
-        })?)
-        .ok_or_else(|| CodecError::Malformed("OLE property directory range overflows".into()))?;
-    // The directory is read entry by entry below, so the window states its own
-    // bound: a directory the section cannot hold stops at the entry that runs
-    // out of bytes.
-    let mut ids = BTreeSet::new();
-    let mut directory = Vec::new();
-    for _ in 0..property_count {
-        let id = cursor.u32("property id")?;
-        if !ids.insert(id) {
-            return Err(CodecError::malformed(format_args!(
-                "OLE property set duplicates property id {id}"
-            )));
-        }
-        let offset = cursor.offset("property offset")?;
-        if offset < directory_end || offset % 4 != 0 {
-            return Err(CodecError::malformed(format_args!(
-                "OLE property {id} has an invalid offset"
-            )));
-        }
-        directory.push((offset, id));
-    }
-    let offsets_ordered = directory.windows(2).all(|pair| pair[0].0 < pair[1].0);
-    directory.sort_unstable_by(Ord::cmp);
-    for pair in directory.windows(2) {
-        if pair[0].0 == pair[1].0 {
-            return Err(CodecError::Malformed(
-                "OLE properties have duplicate offsets".into(),
-            ));
-        }
-    }
-    if let Some((offset, _)) = directory.first() {
-        require_zero_range(bytes, directory_end, *offset, "property-directory gap")?;
-    }
-    let ranges = directory
-        .iter()
-        .enumerate()
-        .map(|(index, (start, id))| {
-            let end = directory
-                .get(index + 1)
-                .map_or(bytes.len(), |(offset, _)| *offset);
-            if end > bytes.len() || *start >= end {
-                return Err(CodecError::malformed(format_args!(
-                    "OLE property {id} range is invalid"
-                )));
-            }
-            Ok((*id, *start, end))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let code_page = ranges
-        .iter()
-        .find(|(id, _, _)| *id == 1)
-        .map(|(_, start, end)| parse_code_page(child(source, *start, *end, "code-page property")?))
-        .transpose()?;
-    let names = ranges
-        .iter()
-        .find(|(id, _, _)| *id == 0)
-        .map(|(_, start, end)| {
-            parse_dictionary(
-                ctx,
-                child(source, *start, *end, "property dictionary")?,
-                code_page,
-            )
-        })
-        .transpose()?
-        .unwrap_or_default();
+    let PropertySectionDirectory {
+        ranges,
+        names,
+        code_page,
+        offsets_ordered,
+    } = parse_section_directory(ctx, source)?;
     let mut properties = Vec::new();
     for (id, start, end) in ranges {
         let raw = source

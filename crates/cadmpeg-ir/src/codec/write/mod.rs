@@ -29,6 +29,7 @@ mod carried;
 mod coverage;
 mod error;
 mod loss;
+mod source;
 pub mod target;
 
 pub use crate::validate::ValidatedFinding;
@@ -192,6 +193,7 @@ impl<E: EncoderBackend> Encoder for E {
         losses.extend(coverage.omission_losses(&input.ir.model, E::FORMAT.as_str()));
         native_dispositions.complete(input.ir);
         losses.extend(native_dispositions.omission_losses(input.ir, E::FORMAT.as_str()));
+        losses.extend(source::omission_losses(input, E::FORMAT.as_str()));
         if !E::WRITES_RECOMPUTE {
             let stale: Vec<_> = input
                 .ir

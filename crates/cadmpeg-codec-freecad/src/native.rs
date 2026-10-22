@@ -2,6 +2,7 @@
 //! Versioned FCStd-native records.
 
 pub(crate) mod element_map;
+mod entry_rewrite;
 pub(crate) mod frame;
 pub(crate) mod joint;
 pub(crate) mod object_identity;

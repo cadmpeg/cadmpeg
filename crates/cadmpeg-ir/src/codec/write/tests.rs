@@ -693,3 +693,5 @@ fn malformed_scope_is_rejected_at_the_writer_boundary() {
 mod framework;
 
 mod budgets;
+
+mod source;

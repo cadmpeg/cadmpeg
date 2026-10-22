@@ -98,11 +98,12 @@ pub(crate) struct Scan<'a> {
 pub(crate) enum ScanOutcome<'a> {
     Readable {
         scan: Scan<'a>,
-        parts: cadmpeg_ir::source_fidelity::parts::ParserPartOutput,
+        parts: cadmpeg_ir::source_fidelity::parts::PartOutput,
     },
     GivenUp {
         summary: ContainerSummary,
-        parts: cadmpeg_ir::source_fidelity::parts::ParserPartOutput,
+        parts: cadmpeg_ir::source_fidelity::parts::PartOutput,
+        pointers: BTreeMap<String, BTreeMap<String, u64>>,
     },
 }
 
@@ -116,7 +117,9 @@ pub(crate) fn inspect(
             summary.losses.extend(parts.into_parts(ctx)?.into_parts().3);
             Ok(summary)
         }
-        ScanOutcome::GivenUp { mut summary, parts } => {
+        ScanOutcome::GivenUp {
+            mut summary, parts, ..
+        } => {
             summary.losses.extend(parts.into_parts(ctx)?.into_parts().3);
             Ok(summary)
         }
@@ -134,13 +137,7 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
 pub(crate) fn scan_for_decode<'a>(
     ctx: &DecodeContext<'a>,
     root: View<'a>,
-) -> Result<
-    (
-        Scan<'a>,
-        cadmpeg_ir::source_fidelity::parts::ParserPartOutput,
-    ),
-    CodecError,
-> {
+) -> Result<(Scan<'a>, cadmpeg_ir::source_fidelity::parts::PartOutput), CodecError> {
     match attempt(ctx, root)? {
         ScanOutcome::Readable { scan, parts } => Ok((scan, parts)),
         ScanOutcome::GivenUp { .. } => Err(CodecError::malformed("FCStd archive was given up")),
@@ -151,77 +148,69 @@ pub(crate) fn attempt<'a>(
     ctx: &DecodeContext<'a>,
     root: View<'a>,
 ) -> Result<ScanOutcome<'a>, CodecError> {
-    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, ParserPartOutput};
+    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput};
     let archive = ArchiveSnapshot::new(ctx, root)?;
     if archive.entry("Document.xml").is_none() {
         return Err(CodecError::WrongFormat(
             "ZIP has no root Document.xml".into(),
         ));
     }
-    let document_view = archive.open(ctx, "Document.xml")?;
-    let document_xml = admit_document(ctx, document_view.window())?;
-    let header = document_xml.root_element();
-    if header.tag_name().name() != "Document" {
-        return Err(CodecError::WrongFormat(format!(
-            "Document.xml root is {}, expected Document",
-            header.tag_name().name()
-        )));
-    }
-    let schema = canonical_attribute(header, "SchemaVersion", "schemaVersion")?
-        .ok_or_else(|| CodecError::WrongFormat("Document.xml has no SchemaVersion".into()))?;
-    let vocabulary = crate::persistence::Vocabulary::from_declaration(&schema)?;
-    let (declarations, data, _) = vocabulary.tags();
-    // discarded-value: source admission checks section uniqueness before constructing records.
-    let _ = unique_section(header, declarations)?;
-    // discarded-value: source admission checks section uniqueness before constructing records.
-    let _ = unique_section(header, data)?;
-    let matched = crate::dialect::FcstdDialect::classify_declared(
-        &schema,
-        header
-            .attribute("FileVersion")
-            .or_else(|| header.attribute("fileVersion"))
-            .unwrap_or("0"),
-        header
-            .attribute("ProgramVersion")
-            .or_else(|| header.attribute("programVersion")),
-    );
-    let summary = ContainerSummary::classified(
-        cadmpeg_core::dialect::DialectLayers::of(matched.clone()),
+    let mut summary = ContainerSummary::unclassified(
+        cadmpeg_ir::CodecFormat::Fcstd,
         cadmpeg_ir::ContainerKind::Zip,
         archive.container_entries(classify),
-        crate::dialect::FcstdDialect::dialect_loss(&matched)
-            .into_iter()
-            .collect(),
+        Vec::new(),
         Vec::new(),
     );
-    let mut parts = ParserPartOutput::new(cadmpeg_ir::CodecFormat::Fcstd);
-    let scan = ctx.decode_parser_scope(&mut parts, root, parts::archive_spec()?, |stage| {
-        scan_impl(ctx, archive, document_view, document_xml, stage)
+    let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::Fcstd);
+    let outcome = ctx.decode_part(&mut parts, root, parts::archive_spec()?, |stage| {
+        let document = parts::document(ctx, &archive, stage)?;
+        if let Some(document) = &document {
+            let matched = crate::dialect::FcstdDialect::classify(&document.facts, &document.schema);
+            summary = ContainerSummary::classified(
+                cadmpeg_core::dialect::DialectLayers::of(matched.clone()),
+                cadmpeg_ir::ContainerKind::Zip,
+                std::mem::take(&mut summary.entries),
+                crate::dialect::FcstdDialect::dialect_loss(&matched)
+                    .into_iter()
+                    .collect(),
+                Vec::new(),
+            );
+        }
+        let opened = parts::open_optional(ctx, &archive, stage)?;
+        let Some(document) = document else {
+            let pointers = parts::keep_readable_entries(ctx, &archive, &opened, stage)?;
+            return Ok((None, pointers));
+        };
+        Ok((Some(scan_impl(archive, document, opened)?), BTreeMap::new()))
     })?;
-    Ok(match scan {
-        Some(scan) => ScanOutcome::Readable { scan, parts },
-        None => ScanOutcome::GivenUp { summary, parts },
-    })
+    match outcome {
+        Some((Some(scan), _)) => Ok(ScanOutcome::Readable { scan, parts }),
+        Some((None, pointers)) => Ok(ScanOutcome::GivenUp {
+            summary,
+            parts,
+            pointers,
+        }),
+        None => Ok(ScanOutcome::GivenUp {
+            summary,
+            parts,
+            pointers: BTreeMap::new(),
+        }),
+    }
 }
 
 fn scan_impl<'a>(
-    ctx: &DecodeContext<'a>,
     archive: ArchiveSnapshot<'a>,
-    document_view: View<'a>,
-    document_xml: roxmltree::Document<'a>,
-    shared: &mut cadmpeg_ir::source_fidelity::parts::ParserPartOutput,
+    document: parts::Document<'a>,
+    mut opened: parts::OptionalMembers<'a>,
 ) -> Result<Scan<'a>, CodecError> {
-    if let Some((_, object_count)) = xml_envelope_counts(document_view.window()) {
-        ctx.charge_entities(object_count, "admit FCStd document objects")?;
-    }
-    let mut losses = Vec::new();
-    let source = crate::persistence::source::Source::new(ctx, document_view, &document_xml)?;
-    let (document, schema_version) = source.record(
-        &crate::native::native_id("document", "0"),
-        document_xml.root_element(),
-        || parse_document_impl(&document_xml, &mut losses, Some(&source)),
-    )?;
-    let mut opened = parts::open_optional(ctx, &archive, shared)?;
+    let parts::Document {
+        view: document_view,
+        xml: document_xml,
+        facts: document,
+        schema: schema_version,
+        losses,
+    } = document;
     let mut data = BTreeMap::new();
     for file in archive.entries() {
         let name = file.name.clone();

@@ -1883,6 +1883,18 @@ pub struct SourceMeta {
 }
 
 impl SourceMeta {
+    /// Records a known codec format when no dialect declaration was decoded.
+    #[must_use]
+    pub fn unclassified(
+        format: crate::CodecFormat,
+        attributes: BTreeMap<NonBlankString, String>,
+    ) -> Self {
+        Self {
+            identity: FormatIdentity::unclassified(format.as_str()),
+            attributes,
+        }
+    }
+
     /// Constructs metadata with dialect layers whose primary format is authoritative.
     #[must_use]
     pub fn classified(

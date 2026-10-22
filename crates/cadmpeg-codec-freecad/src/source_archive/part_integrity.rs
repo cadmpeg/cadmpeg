@@ -13,6 +13,19 @@ pub(super) fn validate<'source>(
     archive: &ArchiveSnapshot<'source>,
     fidelity: &SourceFidelity,
 ) -> Result<(), CodecError> {
+    let document_failed = fidelity.parts().values().any(|part| {
+        part.state() == &PartState::GivenUp {} && part.level().as_str() == "freecad.document_xml"
+    });
+    if document_failed {
+        let document = archive.open(ctx, "Document.xml")?;
+        for (id, _) in fidelity.parts().iter().filter(|(_, part)| {
+            part.state() == &PartState::GivenUp {}
+                && part.level().as_str() == "freecad.document_xml"
+        }) {
+            // discarded-value: validate the original physical member and its exact expanded bytes.
+            let _ = checked(ctx, fidelity, id.as_str(), document)?;
+        }
+    }
     if !fidelity.parts().values().any(|part| {
         matches!(part.state(), PartState::GivenUp {})
             && matches!(part.level().as_str(), "zip.entry" | "zip.local_header")
@@ -87,6 +100,7 @@ pub(super) fn named<'a, 'source>(
     let extent = match part.level().as_str() {
         "zip.local_header" => frame.header(),
         "zip.entry" => frame.payload(),
+        "freecad.document_xml" if name == "Document.xml" => archive.open(ctx, name)?,
         _ => {
             return Err(CodecError::malformed(
                 "source part is not an optional ZIP member",

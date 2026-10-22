@@ -31,6 +31,9 @@ use crate::subd::SubdSurface;
 use crate::tessellation::Tessellation;
 use crate::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
 
+mod append_transaction;
+pub use append_transaction::{AnnotatedModelAppendTransaction, ModelAppendTransaction};
+
 mod private {
     pub trait Sealed {}
 }

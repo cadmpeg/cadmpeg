@@ -21,6 +21,7 @@ fn parsed_property_records_are_projected() {
     container.property_sets.push(PropertySetDescriptor {
         stream: container.rse.segments[0].pair.metadata,
         path: "test-property-set".into(),
+        source: None,
         state: PropertySetState::Parsed(PropertySetStream {
             version: 1,
             system_identifier: 0,

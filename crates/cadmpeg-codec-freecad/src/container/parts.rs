@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_container::ArchiveSnapshot;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceDimension, ResourceLimit, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::source_fidelity::parts::{DecodeParts, ParserPartOutput, PartLevel, PartSpec};
+use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartLevel, PartOutput, PartSpec};
 
 #[derive(Default)]
 pub(super) struct OptionalMembers<'source> {
@@ -17,7 +17,7 @@ pub(super) struct OptionalMembers<'source> {
 pub(super) fn open_optional<'source>(
     ctx: &DecodeContext<'source>,
     archive: &ArchiveSnapshot<'source>,
-    output: &mut ParserPartOutput,
+    output: &mut PartOutput,
 ) -> Result<OptionalMembers<'source>, CodecError> {
     let frames = archive.member_frames(ctx)?;
     for entry in archive.entries() {
@@ -50,14 +50,14 @@ pub(super) fn open_optional<'source>(
             "FreeCAD optional member source index",
         )?;
         let payload =
-            ctx.decode_parser_part(stage, frame.header(), header_spec(ctx, frame)?, || {
+            ctx.decode_part(stage, frame.header(), header_spec(ctx, frame)?, |_stage| {
                 archive.read_member_header(ctx, frame)
             })?;
         let Some(payload) = payload else {
             members.failed.insert(name.to_owned());
             continue;
         };
-        match ctx.decode_parser_part(stage, payload.view(), spec("zip.entry")?, || {
+        match ctx.decode_part(stage, payload.view(), spec("zip.entry")?, |_stage| {
             archive.open_member(ctx, payload)
         })? {
             Some(view) => {
@@ -69,6 +69,87 @@ pub(super) fn open_optional<'source>(
         }
     }
     Ok(members)
+}
+
+pub(super) struct Document<'source> {
+    pub(super) view: View<'source>,
+    pub(super) xml: roxmltree::Document<'source>,
+    pub(super) facts: crate::native::DocumentFacts,
+    pub(super) schema: String,
+    pub(super) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+}
+
+pub(super) fn document<'source>(
+    ctx: &DecodeContext<'source>,
+    archive: &ArchiveSnapshot<'source>,
+    stage: &mut PartOutput,
+) -> Result<Option<Document<'source>>, CodecError> {
+    let index = archive
+        .entries()
+        .iter()
+        .position(|entry| entry.name == "Document.xml")
+        .ok_or_else(|| CodecError::WrongFormat("ZIP has no root Document.xml".into()))?;
+    let frames = archive.member_frames(ctx)?;
+    let frame = frames[index].ok_or_else(|| {
+        CodecError::malformed("Document.xml has no provable local-header and payload boundary")
+    })?;
+    let payload = ctx.decode_part(stage, frame.header(), header_spec(ctx, frame)?, |_stage| {
+        archive.read_member_header(ctx, frame)
+    })?;
+    let Some(payload) = payload else {
+        return Ok(None);
+    };
+    let result = ctx.decode_part(stage, payload.view(), spec("zip.entry")?, |member| {
+        let view = archive.open_member(ctx, payload)?;
+        ctx.decode_part(member, view, spec("freecad.document_xml")?, |_document| {
+            let xml = super::admit_document(ctx, view.window())?;
+            if let Some((_, count)) = super::xml_envelope_counts(view.window()) {
+                ctx.charge_entities(count, "admit FCStd document objects")?;
+            }
+            let mut losses = Vec::new();
+            let source = crate::persistence::source::Source::new(ctx, view, &xml)?;
+            let (facts, schema) = source.record(
+                &crate::native::native_id("document", "0"),
+                xml.root_element(),
+                || super::parse_document_impl(&xml, &mut losses, Some(&source)),
+            )?;
+            Ok(Document {
+                view,
+                xml,
+                facts,
+                schema,
+                losses,
+            })
+        })
+    })?;
+    Ok(result.flatten())
+}
+
+pub(super) fn keep_readable_entries(
+    ctx: &DecodeContext<'_>,
+    archive: &ArchiveSnapshot<'_>,
+    opened: &OptionalMembers<'_>,
+    stage: &mut PartOutput,
+) -> Result<BTreeMap<String, BTreeMap<String, u64>>, CodecError> {
+    let mut pointers = BTreeMap::new();
+    for entry in archive.entries() {
+        let Some(view) = opened.data.get(&entry.name).copied() else {
+            continue;
+        };
+        let id = crate::native::native_id("entry", &entry.name);
+        let record = crate::native::EntryRecord::new(
+            id.clone(),
+            entry.name.clone(),
+            super::classify(&entry.name),
+            Vec::new(),
+        )?;
+        ctx.record(&id, view, || stage.insert_native(ctx, "entries", record))?;
+        pointers.insert(
+            id,
+            crate::source_archive::entry_pointers(entry, u64_from_index(view.window().len()))?,
+        );
+    }
+    Ok(pointers)
 }
 
 pub(super) fn archive_spec() -> Result<PartSpec, CodecError> {
@@ -102,7 +183,7 @@ fn spec(name: &str) -> Result<PartSpec, CodecError> {
 
 pub(crate) fn append(
     ctx: &DecodeContext<'_>,
-    output: ParserPartOutput,
+    output: PartOutput,
     ir: &mut cadmpeg_ir::CadIr,
     fidelity: &mut cadmpeg_ir::SourceFidelity,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,

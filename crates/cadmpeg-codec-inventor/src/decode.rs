@@ -3,6 +3,7 @@
 
 mod document_native_projection;
 mod presentation_native_projection;
+mod property_sections;
 mod rse_native_projection;
 
 use cadmpeg_ir::annotations::StreamHandle;
@@ -104,9 +105,11 @@ fn decode_container<'a>(
     );
     let mut document_kind = container.rse.document_kind();
     let mut metadata = MetadataProjection::default();
-    let mut property_sets = Vec::new();
+    let mut property_set_count = 0;
     let mut property_sections = Vec::new();
     let mut properties = Vec::new();
+    let mut property_count = 0;
+    let mut preview_ordinal = 0;
     let mut property_set_issues = Vec::new();
     for descriptor in &container.property_sets {
         match &descriptor.state {
@@ -119,20 +122,44 @@ fn decode_container<'a>(
                 ));
             }
             PropertySetState::Parsed(property_set) => {
-                admit_native_items(ctx, 1)?;
-                let id = format!("inventor:property:set#{}", descriptor.stream.directory_id());
-                property_sets.push(PropertySetRecord {
-                    id,
-                    path: descriptor.path.clone(),
-                    directory_id: descriptor.stream.directory_id(),
-                    version: property_set.version,
-                    system_identifier: property_set.system_identifier,
-                    clsid: hex(&property_set.clsid),
-                    section_count: cadmpeg_core::decode::u64_from_index(
-                        property_set.sections.len(),
-                    ),
-                });
+                if !crate::property_set::source_admission::stage_header(
+                    ctx,
+                    &mut assembly_inventory.parts,
+                    descriptor,
+                    property_set,
+                )? {
+                    continue;
+                }
+                property_set_count += 1;
                 for (section_ordinal, section) in property_set.sections.iter().enumerate() {
+                    if descriptor.source.is_some() {
+                        if let Some(section) = property_sections::stage(
+                            ctx,
+                            &mut assembly_inventory.parts,
+                            descriptor,
+                            section_ordinal,
+                            &mut preview_ordinal,
+                        )? {
+                            property_count += section.properties.len();
+                            for property in &section.properties {
+                                let native_id = format!(
+                                    "inventor:property:value#{}-{section_ordinal}-{}",
+                                    descriptor.stream.directory_id(),
+                                    property.id,
+                                );
+                                let scalar_value = property.value.scalar_text();
+                                metadata.consider(
+                                    &section.fmtid,
+                                    property.id,
+                                    property.name.as_deref(),
+                                    scalar_value.as_deref(),
+                                    &native_id,
+                                );
+                            }
+                        }
+                        continue;
+                    }
+
                     let set_name = property_set_name(section);
                     let identity_matches = set_name
                         .as_deref()
@@ -197,17 +224,19 @@ fn decode_container<'a>(
                         );
                         if is_preview(&section.fmtid, property.id, property_name.as_deref()) {
                             if let Some((bytes, media_type)) = preview_bytes(&property.value) {
-                                let ordinal = ir.model.assets.len();
-                                ir.model.assets.push(project_preview_asset(
+                                let asset = project_preview_asset(
                                     ctx,
                                     &mut admitted_entities,
-                                    ordinal,
+                                    preview_ordinal,
                                     &native_id,
                                     bytes,
                                     media_type,
-                                )?);
+                                )?;
+                                preview_ordinal += 1;
+                                ir.model.assets.push(asset);
                             }
                         }
+                        property_count += 1;
                         properties.push(PropertyRecord {
                             id: native_id,
                             set_path: descriptor.path.clone(),
@@ -446,7 +475,7 @@ fn decode_container<'a>(
     namespace.set_arena(ctx, "segment_registry", &segment_registry)?;
     namespace.set_arena(ctx, "revisions", &revisions)?;
     namespace.set_arena(ctx, "structural_issues", &structural_issues)?;
-    namespace.set_arena(ctx, "property_sets", &property_sets)?;
+    namespace.set_arena(ctx, "property_sets", &[] as &[PropertySetRecord])?;
     namespace.set_arena(ctx, "property_sections", &property_sections)?;
     namespace.set_arena(ctx, "properties", &properties)?;
     namespace.set_arena(ctx, "property_set_issues", &property_set_issues)?;
@@ -962,6 +991,31 @@ fn decode_container<'a>(
         assembly_inventory.parts.into_parts(ctx)?.into_parts();
     if !ctx.container_only() {
         ir.model.occurrences = part_model.occurrences;
+        if ir.model.assets.is_empty() {
+            ir.model.assets = part_model.assets;
+        } else if !part_model.assets.is_empty() {
+            let additional = part_model
+                .assets
+                .len()
+                .checked_mul(size_of::<Asset>())
+                .map(cadmpeg_core::decode::u64_from_index)
+                .ok_or_else(|| {
+                    CodecError::malformed("Inventor asset composition size overflows")
+                })?;
+            ctx.retain_bytes(additional, "Inventor staged asset composition")?;
+            ir.model
+                .assets
+                .try_reserve(part_model.assets.len())
+                .map_err(|_| {
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                        ctx.policy().limits.max_retained_bytes,
+                        additional,
+                        "Inventor staged asset composition",
+                    )
+                })?;
+            ir.model.assets.extend(part_model.assets);
+        }
     }
     for (arena, mut records) in std::mem::take(part_native.namespace_mut("inventor").arenas_mut()) {
         let destination = ir
@@ -1067,8 +1121,8 @@ fn decode_container<'a>(
             crate::coverage::RSE_SEGMENT_BULK_ISSUES,
             segment_bulk_issues.len(),
         ),
-        (crate::coverage::PROPERTY_SETS, property_sets.len()),
-        (crate::coverage::PROPERTIES, properties.len()),
+        (crate::coverage::PROPERTY_SETS, property_set_count),
+        (crate::coverage::PROPERTIES, property_count),
         (crate::coverage::PREVIEW_ASSETS, preview_asset_count),
         (crate::coverage::PROTEIN_ENTRIES, protein.entries().len()),
         (crate::coverage::PROTEIN_ASSETS, protein_assets.len()),
@@ -1473,6 +1527,16 @@ fn project_preview_asset(
         admitted_entities,
         "admit Inventor preview asset entity",
     )?;
+    form_preview_asset(ctx, ordinal, native_id, bytes, media_type)
+}
+
+fn form_preview_asset(
+    ctx: &DecodeContext<'_>,
+    ordinal: usize,
+    native_id: &str,
+    bytes: &[u8],
+    media_type: &str,
+) -> Result<Asset, CodecError> {
     ctx.retain_bytes(
         cadmpeg_core::decode::u64_from_index(bytes.len()),
         "retain Inventor preview asset",

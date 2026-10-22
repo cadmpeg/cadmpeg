@@ -138,6 +138,30 @@ fn step_ir_with_unrepresentable_native_content() -> CadIr {
     ir
 }
 
+#[cfg(feature = "step")]
+fn assert_step_native_omission(report: &cadmpeg_ir::report::export::ExportReport) {
+    let losses = report
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code.namespace() == "export" && loss.code.local_code() == "native.records-omitted"
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].severity, cadmpeg_ir::report::Severity::Info);
+    let counts = report
+        .native_dispositions
+        .dropped_counts(&step_ir_with_unrepresentable_native_content());
+    assert_eq!(counts.len(), 1);
+    assert_eq!(counts["f3d"].len(), 1);
+    assert_eq!(counts["f3d"]["asm_histories"], 1);
+    assert!(losses[0].message.contains("`f3d.asm_histories`"));
+    assert_eq!(
+        losses[0].message.rsplit_once(": ").unwrap().1,
+        "f3d:test:asm-history#0"
+    );
+}
+
 /// STEP planning returns concrete loss rows, and the shared application
 /// gate names them when export-loss rejection is active.
 #[cfg(feature = "step")]
@@ -160,20 +184,14 @@ fn step_export_losses_are_rejected_by_the_shared_plan_gate() {
         "{refusal:?}"
     );
     let message = refusal.evidence().message;
-    assert!(message.contains("source-native record(s)"), "{message}");
+    assert!(message.contains("f3d.asm_histories"), "{message}");
+    assert!(message.contains("f3d:test:asm-history#0"), "{message}");
     let report = refusal
         .evidence()
         .reports
         .export
         .expect("the refusal retains the completed export plan report");
-    assert!(
-        report
-            .losses
-            .iter()
-            .any(|loss| loss.message.contains("source-native record(s)")),
-        "{:?}",
-        report.losses
-    );
+    assert_step_native_omission(&report);
 }
 
 /// Without export-loss rejection the same STEP plan succeeds and retains
@@ -188,16 +206,7 @@ fn step_export_losses_remain_on_the_plan_without_rejection() {
         LossPolicy::Allow,
     );
     let planned = conversion.plan().expect("loss reporting is not refusal");
-    assert!(
-        planned
-            .plan
-            .report()
-            .losses
-            .iter()
-            .any(|loss| loss.message.contains("source-native record(s)")),
-        "{:?}",
-        planned.plan.report().losses
-    );
+    assert_step_native_omission(planned.plan.report());
 }
 
 /// A Rhino write omits product structure it cannot represent. The wrapper

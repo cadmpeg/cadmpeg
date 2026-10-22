@@ -766,8 +766,12 @@ impl CodecBackend for FcstdCodec {
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
         let (mut scan, parts) = match container::attempt(ctx, root)? {
             container::ScanOutcome::Readable { scan, parts } => (scan, parts),
-            container::ScanOutcome::GivenUp { summary, parts } => {
-                return archive_recovery::decoded(ctx, summary, parts);
+            container::ScanOutcome::GivenUp {
+                summary,
+                parts,
+                pointers,
+            } => {
+                return archive_recovery::decoded(ctx, root, summary, parts, pointers);
             }
         };
         let gui_source = if ctx.container_only() {
