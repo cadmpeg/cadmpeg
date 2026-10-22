@@ -10,7 +10,7 @@
       "bodies": [
         {
           "id": "sat:brep:entity#1",
-          "kind": "sheet",
+          "kind": "solid",
           "regions": [
             "sat:brep:entity#2"
           ]
