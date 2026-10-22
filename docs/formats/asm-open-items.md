@@ -235,6 +235,30 @@ the record grammar does not identify one construction.
 
 **Conflict.** `cad-ir.md` reads `cache_fit_tolerance` as the deviation between the construction and its solved carrier at the same parameters. These solved surfaces agree with the construction in position, not in parameters. The model needs a decision: retain such a cache without evaluation precedence, map pcurves into the cache parameters, or keep the support pcurve out of the contract.
 
+### GC-41. Origin of the `helix_int_cur` apex term
+
+**Question.** Does the apex term of a `helix_int_cur` count revolutions from angle zero or from the interval start `t0`?
+
+**Known.** `asm.md` §6.3 `helix_int_cur` counts the pitch term from angle zero: the edge endpoints of helices with a nonzero `t0` lie on their vertices only with `q=t/(2π)`. The formula of that paragraph and the evaluator apply the same `q` to the apex term. No decoded helix has both a nonzero `t0` and a nonzero apex factor, and at `t0=0` the two origins agree.
+
+**Need.** A conical helix with a nonzero `t0` and a nonzero apex factor, together with its edge vertices, separates the two origins. A wrong origin offsets the radius of every evaluated point by the same length.
+
+### GC-42. Profile angle of a `helix_spl_circ`
+
+**Question.** Which point of the profile circle does a profile parameter `u` select, and what does the angle stored before the path control?
+
+**Known.** `asm.md` §6.3 `helix_spl_circ` gives the swept circle. The stored angle is `0`, `π`, or `-π`. The map `u ↦ C(t)+r·(-cos(u+a)·ρ̂(t)+sin(u+a)·n)`, with `a` the stored angle and `ρ̂(t)` the unit vector of `ρ(t)`, puts the pcurves of helix and spline edges on their edges. It puts some pcurves of circular cap edges a quarter or half turn away from their edges.
+
+**Need.** A writer that emits pcurves on this surface needs the map. A rule that also holds for the cap-edge pcurves settles it.
+
+### GC-43. Tangential and apex terms of a `helix_spl_line` profile
+
+**Question.** Does the `y` coefficient of a `helix_spl_line` direction scale `τ(t)`, and does the profile vector include the apex factor's radial scale?
+
+**Known.** `asm.md` §6.3 `helix_spl_circ` gives the linear surface `S(u,t)` with `y` on `τ(t)` and no apex scale. Every decoded direction has `y=0`, and every decoded path has a zero apex factor, so neither term is observed.
+
+**Need.** A thread surface with a tangential profile component or on a conical path, together with its edges, fixes both terms.
+
 ## 2. Topology
 
 ### TG-01. Missing partner coedge substitution

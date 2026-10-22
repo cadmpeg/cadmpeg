@@ -3,6 +3,7 @@
 
 mod collapsed_edges;
 mod cones;
+mod helix;
 mod orientation;
 mod products;
 mod reports;

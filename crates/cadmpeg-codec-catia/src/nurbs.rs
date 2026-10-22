@@ -546,25 +546,20 @@ pub(crate) fn reverse_helix_definition(
         if range != angle_range.get() {
             return None;
         }
-        let revolutions = (range[1] - range[0]) / std::f64::consts::TAU;
-        let radial_scale_at_end = 1.0 + apex_factor.get() * revolutions;
-        if !revolutions.is_finite()
-            || !radial_scale_at_end.is_finite()
-            || radial_scale_at_end == 0.0
-        {
-            return None;
-        }
         let angle_sum = range[0] + range[1];
-        if !angle_sum.is_finite() {
+        let sum_revolutions = angle_sum / std::f64::consts::TAU;
+        let radial_scale_at_sum = 1.0 + apex_factor.get() * sum_revolutions;
+        if !angle_sum.is_finite() || !radial_scale_at_sum.is_finite() || radial_scale_at_sum == 0.0
+        {
             return None;
         }
         let major_at_end = major.scale(angle_sum.cos()) + minor.scale(angle_sum.sin());
         let minor_at_end = major.scale(angle_sum.sin()) - minor.scale(angle_sum.cos());
-        let major = major_at_end.scale(radial_scale_at_end);
-        let minor = minor_at_end.scale(radial_scale_at_end);
-        let center = center.translated(pitch.get(), revolutions);
+        let major = major_at_end.scale(radial_scale_at_sum);
+        let minor = minor_at_end.scale(radial_scale_at_sum);
+        let center = center.translated(pitch.get(), sum_revolutions);
         let pitch = pitch.scale(-1.0);
-        let apex_factor = -apex_factor.get() / radial_scale_at_end;
+        let apex_factor = -apex_factor.get() / radial_scale_at_sum;
         let axis = axis.scale(-1.0);
         if ![center.x, center.y, center.z, apex_factor]
             .into_iter()
@@ -783,7 +778,7 @@ fn circular_helix_point(construction: &ProceduralCurveDefinition, angle: f64) ->
     if !angle.is_finite() || angle_range[0] >= angle_range[1] {
         return None;
     }
-    let revolution_fraction = (angle - angle_range[0]) / std::f64::consts::TAU;
+    let revolution_fraction = angle / std::f64::consts::TAU;
     if !revolution_fraction.is_finite() {
         return None;
     }
@@ -895,8 +890,9 @@ mod tests {
     use cadmpeg_ir::scalar::PositiveReal;
 
     use super::{
-        canonical_model_curve_range, circular_helix_cache, quintic_jet_bspline,
-        reverse_curve_geometry, reverse_helix_definition, reverse_pcurve_geometry, LaneRefusals,
+        canonical_model_curve_range, circular_helix_cache, circular_helix_point,
+        quintic_jet_bspline, reverse_curve_geometry, reverse_helix_definition,
+        reverse_pcurve_geometry, LaneRefusals,
     };
     use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
 
@@ -1122,14 +1118,13 @@ mod tests {
             let ProceduralCurveDefinition::Helix(helix_payload) = definition else {
                 panic!("helix definition")
             };
-            let angle_range = helix_payload.angle_range();
             let center = helix_payload.center().as_raw();
             let major = helix_payload.major();
             let minor = helix_payload.minor();
             let pitch = helix_payload.pitch();
             let apex_factor = helix_payload.apex_factor();
 
-            let fraction = (angle - angle_range[0]) / std::f64::consts::TAU;
+            let fraction = angle / std::f64::consts::TAU;
             let scale = 1.0 + apex_factor.get() * fraction;
             center
                 .translated(major.get(), scale * angle.cos())
@@ -1658,5 +1653,27 @@ mod tests {
         let notes = refusal.take_notes();
         assert_eq!(notes.len(), 1);
         assert!(notes[0].message.contains("a5 record jet does not close"));
+    }
+
+    #[test]
+    fn a_circular_helix_counts_its_pitch_from_angle_zero() {
+        let helix = ProceduralCurveDefinition::Helix(
+            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+                [std::f64::consts::PI, std::f64::consts::TAU],
+                cadmpeg_ir::geometry::HelixFrame {
+                    center: Point3::new(0.0, 0.0, 0.0),
+                    major: Vector3::new(1.0, 0.0, 0.0),
+                    minor: Vector3::new(0.0, 1.0, 0.0),
+                    pitch: Vector3::new(0.0, 0.0, 1.0),
+                    axis: Vector3::new(0.0, 0.0, 1.0),
+                },
+                0.0,
+                None,
+            )
+            .expect("admitted helix"),
+        );
+        let point = circular_helix_point(&helix, std::f64::consts::PI).expect("finite helix point");
+        assert!((point.x + 1.0).abs() < DOMAIN_ROUNDING);
+        assert!((point.z - 0.5).abs() < DOMAIN_ROUNDING);
     }
 }

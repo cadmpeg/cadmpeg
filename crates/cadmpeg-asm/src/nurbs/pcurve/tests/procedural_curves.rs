@@ -217,7 +217,7 @@ fn decodes_current_cacheless_helix_surface_at_both_widths() {
         assert_eq!(
             *profile,
             cadmpeg_ir::geometry::HelixSurfaceProfile::Line(
-                cadmpeg_ir::geometry::HelixLineProfile::try_new(Vector3::new(50.0, 60.0, 70.0))
+                cadmpeg_ir::geometry::HelixLineProfile::try_new(Vector3::new(5.0, 6.0, 70.0))
                     .unwrap()
             )
         );
