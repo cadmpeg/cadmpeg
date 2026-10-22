@@ -1199,11 +1199,24 @@ pub(super) fn classify_body_kinds(out: &mut AsmBrep, collapsed: &HashSet<EdgeId>
             face_bodies.insert(face, body);
         }
     }
+    // A single-sided face without loops covers a whole closed surface (a
+    // full sphere or torus), so it bounds a volume by itself. A body bounded
+    // only by such faces is a solid; any other face needs its edges closed.
+    let double_sided = out
+        .face_sidedness
+        .iter()
+        .filter(|sidedness| sidedness.containment.is_some())
+        .map(|sidedness| &sidedness.face)
+        .collect::<HashSet<_>>();
+    let mut body_has_bounded_faces = HashSet::new();
     let mut loop_bodies = HashMap::new();
     for face in &out.faces {
         let Some(body) = face_bodies.get(&face.id).copied() else {
             continue;
         };
+        if !face.loops.is_empty() || double_sided.contains(&face.id) {
+            body_has_bounded_faces.insert(body);
+        }
         for loop_id in &face.loops {
             loop_bodies.insert(loop_id, body);
         }
@@ -1235,10 +1248,14 @@ pub(super) fn classify_body_kinds(out: &mut AsmBrep, collapsed: &HashSet<EdgeId>
             body.kind = BodyKind::General;
             continue;
         }
-        body.kind = faced_body_kind(
-            body_uses.get(&body.id).into_iter().flatten().copied(),
-            |edge| collapsed.contains(edge),
-        );
+        body.kind = if body_has_bounded_faces.contains(&body.id) {
+            faced_body_kind(
+                body_uses.get(&body.id).into_iter().flatten().copied(),
+                |edge| collapsed.contains(edge),
+            )
+        } else {
+            BodyKind::Solid
+        };
     }
 }
 
