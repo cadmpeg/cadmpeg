@@ -1033,6 +1033,12 @@ impl CodecBackend for FcstdCodec {
                 &graph.properties,
                 &mut transfer_losses,
             )?;
+            design::hide_intermediate_bodies(
+                &mut ir,
+                &graph.objects,
+                &graph.properties,
+                &shape_payloads,
+            );
             if ctx.depth() == DecodeDepth::Full {
                 let (cycle_affected, design_losses) = design::transfer(
                     ctx,

@@ -7954,6 +7954,49 @@ fn is_fillet(kind: &str) -> bool {
 fn is_chamfer(kind: &str) -> bool {
     matches!(kind, "Part::Chamfer" | "PartDesign::Chamfer")
 }
+/// Mark the bodies a document keeps only as intermediate shapes as not
+/// displayed: a feature's tool shape (any shape property other than `Shape`)
+/// and the shape of every member of a `PartDesign::Body`. A body shows its
+/// `Tip` result through its own `Shape`. Stored GUI visibility, applied later, wins.
+pub(crate) fn hide_intermediate_bodies(
+    ir: &mut cadmpeg_ir::CadIr,
+    objects: &[ObjectRecord],
+    properties: &[PropertyRecord],
+    payloads: &[ShapePayloadRecord],
+) {
+    let mut members = std::collections::HashSet::new();
+    for object in objects.iter().filter(|object| is_body(&object.type_name)) {
+        let owned = properties
+            .iter()
+            .filter(|property| property.owner == *object.id())
+            .collect::<Vec<_>>();
+        if let Some(group) = body_membership_property(&owned) {
+            members.extend(
+                group
+                    .links()
+                    .iter()
+                    .filter_map(|link| link.as_ref()?.object())
+                    .map(str::to_owned),
+            );
+        }
+    }
+    let hidden = payloads.iter().filter_map(|payload| {
+        let property = properties
+            .iter()
+            .find(|property| property.id == payload.property)?;
+        (property.name != "Shape" || members.contains(&property.owner))
+            .then_some(payload.id.as_str())
+    });
+    let hidden = crate::gui::select_shape_bodies(ir, hidden)
+        .into_iter()
+        .collect::<std::collections::HashSet<_>>();
+    for body in &mut ir.model.bodies {
+        if hidden.contains(&body.id) {
+            body.visible = Some(false);
+        }
+    }
+}
+
 fn is_body(kind: &str) -> bool {
     kind == "PartDesign::Body"
 }
