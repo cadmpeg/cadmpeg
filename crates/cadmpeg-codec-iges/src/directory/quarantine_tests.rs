@@ -103,14 +103,13 @@ fn a_non_integer_directory_field_quarantines_the_two_card_pair() {
     let fields = quarantined[0].fields().unwrap();
     assert_eq!(fields["section"], "directory-entry");
     assert_eq!(fields["sequence"], 3);
-    let (retained_directory, _) = crate::test_support::retained_fixed_ascii(&result);
-    assert_eq!(
-        retained_directory[0].source_offset,
-        u64::try_from(first_card).unwrap()
-    );
-    assert_eq!(retained_directory[0].cards(), 2);
+    assert_eq!(fields["source_offset"], first_card);
+    assert_eq!(fields["cards"], 2);
     assert_eq!(fields["defect"], "field-not-an-integer");
-    assert_eq!(retained_directory[0].bytes, expected_bytes);
+    assert_eq!(
+        crate::test_support::native_bytes(&fields["bytes"]),
+        expected_bytes
+    );
     assert_eq!(result.report().losses.len(), 1);
     assert_eq!(
         code_count(result.report(), IgesLossCode::DirectoryRecordQuarantined),
@@ -210,10 +209,12 @@ fn an_unpaired_trailing_directory_card_is_quarantined_on_its_own() {
     assert_eq!(quarantined.len(), 1);
     assert_eq!(quarantined[0].id(), "iges:quarantine:directory#5");
     let fields = quarantined[0].fields().unwrap();
-    let (retained_directory, _) = crate::test_support::retained_fixed_ascii(&result);
-    assert_eq!(retained_directory[0].cards(), 1);
+    assert_eq!(fields["cards"], 1);
     assert_eq!(fields["defect"], "unpaired-card");
-    assert_eq!(retained_directory[0].bytes.len(), 80);
+    assert_eq!(
+        crate::test_support::native_bytes(&fields["bytes"]).len(),
+        80
+    );
     assert_eq!(
         code_count(result.report(), IgesLossCode::DirectoryRecordQuarantined),
         1

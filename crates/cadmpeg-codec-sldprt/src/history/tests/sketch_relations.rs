@@ -307,11 +307,7 @@ fn decode_uses_relation_units_for_bare_integer_dimensions() {
         .iter()
         .find(|parameter| parameter.name == "D2")
         .expect("driving vertical-distance parameter");
-    assert_eq!(parameter.expression, "25 mm".into());
-    assert_eq!(
-        sldprt_native(decoded.ir()).feature_histories[0].features[0].parameters["D2"],
-        "25"
-    );
+    assert_eq!(parameter.expression, "25".into());
     assert_eq!(
         parameter.value,
         Some(ParameterValue::Length(Length::new(25.0).unwrap()))
@@ -344,11 +340,7 @@ fn decode_uses_relation_units_for_boolean_shaped_dimensions() {
         .iter()
         .find(|parameter| parameter.name == "D2")
         .expect("driving distance parameter");
-    assert_eq!(parameter.expression, "1 mm".into());
-    assert_eq!(
-        sldprt_native(decoded.ir()).feature_histories[0].features[0].parameters["D2"],
-        "1"
-    );
+    assert_eq!(parameter.expression, "1".into());
     assert_eq!(
         parameter.value,
         Some(ParameterValue::Length(Length::new(1.0).unwrap()))
@@ -377,11 +369,7 @@ fn decode_uses_relation_units_for_bare_integer_angles() {
         .iter()
         .find(|parameter| parameter.name == "D2")
         .expect("driving angle parameter");
-    assert_eq!(parameter.expression, "0.025 rad".into());
-    assert_eq!(
-        sldprt_native(decoded.ir()).feature_histories[0].features[0].parameters["D2"],
-        "25"
-    );
+    assert_eq!(parameter.expression, "25".into());
     assert_eq!(
         parameter.value,
         Some(ParameterValue::Angle(Angle::new(0.025).unwrap()))

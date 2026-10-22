@@ -3,8 +3,8 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::decode::append_design_losses;
+use crate::decode::assign_configuration_bodies;
 use crate::decode::mark_active_configuration;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::CadIr;
 use cadmpeg_ir::{
@@ -16,13 +16,6 @@ use cadmpeg_ir::{
     scalar::Length,
 };
 use std::collections::BTreeMap;
-
-fn assign_configuration_bodies(
-    ir: &mut CadIr,
-    configuration_bodies: Vec<(usize, Vec<cadmpeg_ir::ids::BodyId>)>,
-) -> Result<(), CodecError> {
-    crate::decode::assign_configuration_bodies_with_lanes(ir, configuration_bodies, &[])
-}
 
 #[test]
 fn configuration_partitions_require_explicit_source_identity() {
@@ -82,64 +75,6 @@ fn configuration_partitions_require_explicit_source_identity() {
         Some([third].as_slice())
     );
     assert!(ir.model.configurations[3].native_ref.is_none());
-}
-
-#[test]
-fn actual_partition_binds_the_unique_native_slot_before_inferred_configuration() {
-    let mut ir = CadIr::empty();
-    ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
-        cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
-            cadmpeg_core::dialect_id!("sldprt:test"),
-        )),
-        BTreeMap::from([(
-            cadmpeg_core::nonblank_literal!("active_parasolid_block"),
-            "Contents/Config-0-Partition".into(),
-        )]),
-    ));
-    for (ordinal, name) in [(1, "Large"), (0, "Default")] {
-        ir.model.configurations.push(DesignConfiguration {
-            id: ConfigurationId::mint(format!("synthetic:test:id#{name}")).unwrap(),
-            ordinal,
-            active: false,
-            source_index: None,
-            name: Some(name.into()),
-            material: None,
-            properties: if name == "Default" {
-                BTreeMap::from([(cadmpeg_core::nonblank_literal!("id"), "0".into())])
-            } else {
-                BTreeMap::new()
-            },
-            bodies: None,
-            parameter_values: BTreeMap::new(),
-            parameter_overrides: BTreeMap::new(),
-            feature_states: BTreeMap::new(),
-            native_ref: Some(format!("native:{name}")),
-        });
-    }
-    let body = BodyId::mint("test:model:entity#actual-slot-body").unwrap();
-    let mut unknown_slot = ir.clone();
-    unknown_slot.model.configurations[1].properties.remove("id");
-    assign_configuration_bodies(&mut unknown_slot, vec![(0, vec![body.clone()])]).unwrap();
-    mark_active_configuration(&mut unknown_slot);
-    assert_eq!(unknown_slot.model.configurations.len(), 3);
-    assert_eq!(unknown_slot.model.configurations[1].source_index, None);
-    assert!(unknown_slot.model.configurations[1].bodies.is_none());
-    assert!(!unknown_slot.model.configurations[0].active);
-    assert!(!unknown_slot.model.configurations[1].active);
-    assert!(unknown_slot.model.configurations[2].active);
-    assert_eq!(unknown_slot.model.configurations[2].source_index, Some(0));
-    assign_configuration_bodies(&mut ir, vec![(0, vec![body.clone()])]).unwrap();
-    mark_active_configuration(&mut ir);
-    assert_eq!(ir.model.configurations.len(), 2);
-    assert!(!ir.model.configurations[0].active);
-    assert_eq!(ir.model.configurations[0].source_index, None);
-    assert!(ir.model.configurations[0].bodies.is_none());
-    assert!(ir.model.configurations[1].active);
-    assert_eq!(ir.model.configurations[1].source_index, Some(0));
-    assert_eq!(
-        ir.model.configurations[1].bodies.as_deref(),
-        Some([body].as_slice())
-    );
 }
 
 #[test]

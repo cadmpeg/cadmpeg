@@ -1088,8 +1088,9 @@
         },
         "nx:source:evidence#10504946d5e2742f59f0d9e1081e70c306b76153002d1367f0b2367dbcfd42e8": {
           "bytes": {
-            "data": "AA==",
-            "retention": "inline"
+            "byte_len": 1,
+            "retention": "digest",
+            "sha256": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d"
           },
           "offset": 0,
           "stream": "native.nx.feature_construction_named_targets.nx:feature-history:extrude-construction-profile#0000000000-0000000000-named-target-0000000000.raw_object_index",
@@ -1097,8 +1098,9 @@
         },
         "nx:source:evidence#1122e078e057bc0cb435b466de3445b6fe8d6bf8ee88797f21bd0c68d54d1c7c": {
           "bytes": {
-            "data": "/w==",
-            "retention": "inline"
+            "byte_len": 1,
+            "retention": "digest",
+            "sha256": "a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"
           },
           "offset": 0,
           "stream": "native.nx.feature_operation_labels.nx:feature-history:operation-label#0000000000-0000000000.raw_object_indices[3]",
@@ -1106,8 +1108,9 @@
         },
         "nx:source:evidence#186e8873ca7559e89625e6d2fd2d8dfaed287f176db6ad2b4015e8cd5b894b9c": {
           "bytes": {
-            "data": "8Ac=",
-            "retention": "inline"
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "d4be2e2426d783fba0bd08fa2beb696c61bff5bd8ac27a5e6f30b8c181bfb5dc"
           },
           "offset": 0,
           "stream": "native.nx.feature_pattern_references.nx:feature-history:pattern-reference#0000000000-0000000001-0000000005.raw_object_index",
@@ -1115,8 +1118,9 @@
         },
         "nx:source:evidence#2b01879b3869475c74ed2f24f33fe79088ca0feecdae3e92212224f4c3e1adb8": {
           "bytes": {
-            "data": "gSEBI0VniavN7wY=",
-            "retention": "inline"
+            "byte_len": 11,
+            "retention": "digest",
+            "sha256": "3577471a7217e8fde1557f2db265bab6b34e7b8e563b69fbed40af86e574abb7"
           },
           "offset": 0,
           "stream": "native.nx.class_definitions.nx:om-entry-0:class#51.registry_suffix",
@@ -1124,8 +1128,9 @@
         },
         "nx:source:evidence#33b19424214bffab107004b3bc0187284cc20d01af93d8aa72245609f9a8d815": {
           "bytes": {
-            "data": "/w==",
-            "retention": "inline"
+            "byte_len": 1,
+            "retention": "digest",
+            "sha256": "a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"
           },
           "offset": 0,
           "stream": "native.nx.feature_operation_labels.nx:feature-history:operation-label#0000000000-0000000001.raw_object_indices[2]",
@@ -1133,8 +1138,9 @@
         },
         "nx:source:evidence#3701cc966d014f379bde663bcf9e553048bd1f6914a62e6e0a67d1b3115fa4d7": {
           "bytes": {
-            "data": "AQ==",
-            "retention": "inline"
+            "byte_len": 1,
+            "retention": "digest",
+            "sha256": "4bf5122f344554c53bde2ebb8cd2b7e3d1600ad631c385a5d7cce23c7785459a"
           },
           "offset": 0,
           "stream": "native.nx.feature_construction_named_targets.nx:feature-history:pattern-construction-payload#0000000000-0000000001-named-target-0000000000.raw_object_index",
@@ -1142,8 +1148,9 @@
         },
         "nx:source:evidence#3b0964c10b2e17814b4149cee5b681761888143498b91c4f6f5a39a72cd3f11d": {
           "bytes": {
-            "data": "/w==",
-            "retention": "inline"
+            "byte_len": 1,
+            "retention": "digest",
+            "sha256": "a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"
           },
           "offset": 0,
           "stream": "native.nx.feature_operation_labels.nx:feature-history:operation-label#0000000000-0000000001.raw_object_indices[1]",
@@ -1151,8 +1158,9 @@
         },
         "nx:source:evidence#406fcb07dfe6b564fe327d6e7e5706fd100841f6518976d15e9d2c23e8541da1": {
           "bytes": {
-            "data": "/w==",
-            "retention": "inline"
+            "byte_len": 1,
+            "retention": "digest",
+            "sha256": "a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"
           },
           "offset": 0,
           "stream": "native.nx.feature_operation_labels.nx:feature-history:operation-label#0000000000-0000000000.raw_object_indices[2]",
@@ -1160,8 +1168,9 @@
         },
         "nx:source:evidence#4c93e098bac789a7ffa8169e6b8c95db89a2db7249df21fc3720ee99872a68e9": {
           "bytes": {
-            "data": "/w==",
-            "retention": "inline"
+            "byte_len": 1,
+            "retention": "digest",
+            "sha256": "a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"
           },
           "offset": 0,
           "stream": "native.nx.feature_operation_labels.nx:feature-history:operation-label#0000000000-0000000001.raw_object_indices[0]",
@@ -1169,8 +1178,9 @@
         },
         "nx:source:evidence#67eee15df165f902cd294b87876babf499f6ea21f5f7035fb56f593dab8e4664": {
           "bytes": {
-            "data": "8AQ=",
-            "retention": "inline"
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "7ebe9de91f1483d8446f8d8bce8a638d7f258cbef9eda04c1be151f9c5f47d96"
           },
           "offset": 0,
           "stream": "native.nx.feature_pattern_references.nx:feature-history:pattern-reference#0000000000-0000000001-0000000002.raw_object_index",
@@ -1178,8 +1188,9 @@
         },
         "nx:source:evidence#8dbc4128376cf01bbc41910b91929aa6b8029ff3ccc39848a4b0cb08f132e331": {
           "bytes": {
-            "data": "/w==",
-            "retention": "inline"
+            "byte_len": 1,
+            "retention": "digest",
+            "sha256": "a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"
           },
           "offset": 0,
           "stream": "native.nx.feature_operation_labels.nx:feature-history:operation-label#0000000000-0000000000.raw_object_indices[1]",
@@ -1187,8 +1198,9 @@
         },
         "nx:source:evidence#8e98292415302b6fc0c6903643306f0b9680bd7b9493d040e52f41ff3582e6cb": {
           "bytes": {
-            "data": "8AE=",
-            "retention": "inline"
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "f4e15c621abef7aabba8bdc21c1f6321d4e60650dfbc5052ef94d983be09564e"
           },
           "offset": 0,
           "stream": "native.nx.feature_extrude_profile_references.nx:feature-history:extrude-profile-reference#0000000000-0000000000-0000000000.raw_object_index",
@@ -1196,8 +1208,9 @@
         },
         "nx:source:evidence#9b6c77b9b619d3f687da327745542323799cbb8fd91cf257801f2757f2d09a1f": {
           "bytes": {
-            "data": "/w==",
-            "retention": "inline"
+            "byte_len": 1,
+            "retention": "digest",
+            "sha256": "a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"
           },
           "offset": 0,
           "stream": "native.nx.feature_operation_labels.nx:feature-history:operation-label#0000000000-0000000001.raw_object_indices[3]",
@@ -1205,8 +1218,9 @@
         },
         "nx:source:evidence#9b87cd084be27db5fdd839b8bc9b27668a6ec0a8a2967aae7972b8f5dbe90faf": {
           "bytes": {
-            "data": "/w==",
-            "retention": "inline"
+            "byte_len": 1,
+            "retention": "digest",
+            "sha256": "a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"
           },
           "offset": 0,
           "stream": "native.nx.feature_operation_labels.nx:feature-history:operation-label#0000000000-0000000000.raw_object_indices[0]",
@@ -1214,8 +1228,9 @@
         },
         "nx:source:evidence#a405bd39ee0769d716e1efd28b3f61c7e74c47ddae39a0d8f626dfb276b1ce15": {
           "bytes": {
-            "data": "8AI=",
-            "retention": "inline"
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "338d940739a4cdd1452c496df95624f7c9e23bedce0d6be7c0ad13ab2dd1d675"
           },
           "offset": 0,
           "stream": "native.nx.feature_pattern_references.nx:feature-history:pattern-reference#0000000000-0000000001-0000000000.raw_object_index",
@@ -1223,8 +1238,9 @@
         },
         "nx:source:evidence#b10617f752231a5efc4abb3e67c55a0172591ef51ecb6b0fad96d87db58959d8": {
           "bytes": {
-            "data": "AQI=",
-            "retention": "inline"
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "a12871fee210fb8619291eaea194581cbd2531e4b23759d225f6806923f63222"
           },
           "offset": 0,
           "stream": "native.nx.field_definitions.nx:om-entry-0:field#117.registry_suffix",
@@ -1232,8 +1248,9 @@
         },
         "nx:source:evidence#baf061b098722607f756cdb9c03fd088049f2d87d213bfa250f7be1571f3e59f": {
           "bytes": {
-            "data": "8Ao=",
-            "retention": "inline"
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "99bf9ac8bb97d53af2bb2336202a905953552cf3b610c64f1f36922431112d8e"
           },
           "offset": 0,
           "stream": "native.nx.feature_pattern_references.nx:feature-history:pattern-reference#0000000000-0000000001-0000000008.raw_object_index",
@@ -1241,8 +1258,9 @@
         },
         "nx:source:evidence#c5f047d9ae1c7668342f9a1b071520b5bf9304987dc6ae4681df9a8de6edf17d": {
           "bytes": {
-            "data": "8AU=",
-            "retention": "inline"
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "6b8c70761c214a7fad60deba0d18917b48db81fff8e2640de620f49e32c9c6b7"
           },
           "offset": 0,
           "stream": "native.nx.feature_pattern_references.nx:feature-history:pattern-reference#0000000000-0000000001-0000000003.raw_object_index",
@@ -1250,8 +1268,9 @@
         },
         "nx:source:evidence#cfc33da3b4c8ba9ff659e955d1a8e0788ebbf94c5e164215c6faf08b9e2a9680": {
           "bytes": {
-            "data": "8Ak=",
-            "retention": "inline"
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "bb19723d909ba8615934de0206e4e7c0794fdf8ff98992ec193a45c9ec114be4"
           },
           "offset": 0,
           "stream": "native.nx.feature_pattern_references.nx:feature-history:pattern-reference#0000000000-0000000001-0000000007.raw_object_index",
@@ -1259,8 +1278,9 @@
         },
         "nx:source:evidence#e5cb524784dc452cc1776c502d3d0112652ca5e17b97b61ff46b2bf14ff278cf": {
           "bytes": {
-            "data": "8AM=",
-            "retention": "inline"
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "1719d68d829406021f513a401c5aa40165a83c9038fb7e23bfd2763f78226348"
           },
           "offset": 0,
           "stream": "native.nx.feature_pattern_references.nx:feature-history:pattern-reference#0000000000-0000000001-0000000001.raw_object_index",
@@ -1268,8 +1288,9 @@
         },
         "nx:source:evidence#ee31a4ec3c5d4b83378bcefa7693421266a1d0f82c1d32da97579b34809a3d1a": {
           "bytes": {
-            "data": "8AY=",
-            "retention": "inline"
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "f475649ea176bf9cf68f6a331e3e726f4f1961bea372681a81cc51dc27311f45"
           },
           "offset": 0,
           "stream": "native.nx.feature_pattern_references.nx:feature-history:pattern-reference#0000000000-0000000001-0000000004.raw_object_index",
@@ -1277,8 +1298,9 @@
         },
         "nx:source:evidence#f02fec80888fa1ddfb844b9c1a2887396827054102e48f47a1dbadb312b45700": {
           "bytes": {
-            "data": "8Ag=",
-            "retention": "inline"
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "f6128032fc31d4d36ae55d2255667e6cb72037991226b29e82974ef729706cf3"
           },
           "offset": 0,
           "stream": "native.nx.feature_pattern_references.nx:feature-history:pattern-reference#0000000000-0000000001-0000000006.raw_object_index",

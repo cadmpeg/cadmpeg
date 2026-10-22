@@ -111,11 +111,6 @@ fn through_schema(
     let Some(old) = crate::attributes::values(original) else {
         return Ok(None);
     };
-    if attribute.values.as_slice() == [AttributeValue::Reference(original.id.clone())] {
-        // The reference names the current admitted typed property, including
-        // complete ordered links/maps/JSON. Emit that tree, never source XML.
-        return xml::native_named(&property, names);
-    }
     if old.len() != attribute.values.len() {
         return Ok(None);
     }

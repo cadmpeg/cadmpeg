@@ -241,6 +241,7 @@
                 "activation": "active",
                 "dependencies": [],
                 "expression": "2",
+                "offset": 143,
                 "target": {
                   "declared_unit": "inch",
                   "kind": "parameter",
@@ -254,6 +255,7 @@
                   "span"
                 ],
                 "expression": "span+25.4[mm]",
+                "offset": 156,
                 "target": {
                   "declared_unit": null,
                   "kind": "parameter",
@@ -265,6 +267,7 @@
                 "activation": "active",
                 "dependencies": [],
                 "expression": "2",
+                "offset": 175,
                 "target": {
                   "declared_unit": "N/mm^2",
                   "kind": "parameter",
@@ -285,6 +288,7 @@
                   "span"
                 ],
                 "expression": "atan2(span,25.4[mm])",
+                "offset": 192,
                 "target": {
                   "declared_unit": null,
                   "kind": "parameter",
@@ -296,6 +300,7 @@
                 "activation": "active",
                 "dependencies": [],
                 "expression": "0",
+                "offset": 219,
                 "target": {
                   "declared_unit": "C",
                   "kind": "parameter",
@@ -316,18 +321,23 @@
             "id": "creo:depdb:curve_expression#active-7-102",
             "lines": [
               {
+                "offset": 143,
                 "text": "span[inch]=2"
               },
               {
+                "offset": 156,
                 "text": "copy=span+25.4[mm]"
               },
               {
+                "offset": 175,
                 "text": "stress[N/mm^2]=2"
               },
               {
+                "offset": 192,
                 "text": "angle=atan2(span,25.4[mm])"
               },
               {
+                "offset": 219,
                 "text": "freezing[C]=0"
               }
             ],
@@ -350,6 +360,7 @@
         "file_size": "233",
         "section.0.length": "157",
         "section.0.name": "DEPDB_DATA",
+        "section.0.offset": "76",
         "section.0.raw_name": "DEPDB_DATA",
         "section.0.role": "metadata",
         "section_count": "1",
@@ -898,19 +909,6 @@
           "tag": "curve_expression_assignment"
         }
       }
-    },
-    "metadata": {
-      "native.creo.curve_expressions.creo:depdb:curve_expression#active-7-102.assignments[0].offset": "143",
-      "native.creo.curve_expressions.creo:depdb:curve_expression#active-7-102.assignments[1].offset": "156",
-      "native.creo.curve_expressions.creo:depdb:curve_expression#active-7-102.assignments[2].offset": "175",
-      "native.creo.curve_expressions.creo:depdb:curve_expression#active-7-102.assignments[3].offset": "192",
-      "native.creo.curve_expressions.creo:depdb:curve_expression#active-7-102.assignments[4].offset": "219",
-      "native.creo.curve_expressions.creo:depdb:curve_expression#active-7-102.lines[0].offset": "143",
-      "native.creo.curve_expressions.creo:depdb:curve_expression#active-7-102.lines[1].offset": "156",
-      "native.creo.curve_expressions.creo:depdb:curve_expression#active-7-102.lines[2].offset": "175",
-      "native.creo.curve_expressions.creo:depdb:curve_expression#active-7-102.lines[3].offset": "192",
-      "native.creo.curve_expressions.creo:depdb:curve_expression#active-7-102.lines[4].offset": "219",
-      "source.section.0.offset": "76"
     },
     "retained_records": {
       "creo:source:image#whole": {

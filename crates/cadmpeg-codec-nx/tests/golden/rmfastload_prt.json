@@ -855,8 +855,9 @@
       "retained_records": {
         "nx:source:evidence#07721554d089bc05621965f10b0ac9e8325c223d27181a672361f77f77fb4826": {
           "bytes": {
-            "data": "FQAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "44b34ba1e158565cd98b8b42da82ab3da3855b9828ef66847eed4a66a20c22b4"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000020.raw",
@@ -864,8 +865,9 @@
         },
         "nx:source:evidence#15f438ee13a31b5572b45932fc7b14310cc2202cc97f78521f2ca795a4caf388": {
           "bytes": {
-            "data": "DAAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "42f4aeb81c1ef81f771f3de8abca9dcf66901c575530e7672e4b1146474ae650"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000011.raw",
@@ -873,8 +875,9 @@
         },
         "nx:source:evidence#179063dc41e9527e8f3114706227ba38d727263bcf67c52ede9db024e2e1af0d": {
           "bytes": {
-            "data": "EwAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "eba09f2f48f209cfa2dfbf19fc678d755d05559671eceda0164f3e080cb49765"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000018.raw",
@@ -882,8 +885,9 @@
         },
         "nx:source:evidence#23764c742fcdc2af4b9a4dbf7cdb90623af95a30998cbfeb294d28592908c01e": {
           "bytes": {
-            "data": "EQAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "84fc05949dc1e486652a4ed316afb6434e9437eb30b714594a1d0b4205776602"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000016.raw",
@@ -891,8 +895,9 @@
         },
         "nx:source:evidence#2518e2fecf0eefbec9910e69283e08927386927131b08088eac6f752a3b21abe": {
           "bytes": {
-            "data": "MgAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "85dd751867e3155c7f2e23e8446546906f5bf617d4d985ed474822613764d69e"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000049.raw",
@@ -900,8 +905,9 @@
         },
         "nx:source:evidence#2653cfec68a5f7cac91c794db33cc4e81fbed20e42baef7b153dbcea7cff6b52": {
           "bytes": {
-            "data": "CAAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "dc765660b06ee03dd16fd7ca5b957e8c805161ac2c4af28c5a100ab2ab432ca1"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000007.raw",
@@ -909,8 +915,9 @@
         },
         "nx:source:evidence#2b017f49056c15dc7c21cff90586dfb3ac048308d8965dcfcacce45ead4029fd": {
           "bytes": {
-            "data": "LAAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "32434dc5b0f72c9b863c24daa5d4e79b9c43bd73b38c469fb65fd13d996b7b32"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000043.raw",
@@ -918,8 +925,9 @@
         },
         "nx:source:evidence#2ea744e228bd7913ecc1a759ad6e8433a807f4aa92cbef5c95c2d691bbff8ee6": {
           "bytes": {
-            "data": "BgAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "7aa8ca4a02506da9133d8f889678b76f716ce45d02e22fdb7b70a15e56a0eff8"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000005.raw",
@@ -927,8 +935,9 @@
         },
         "nx:source:evidence#32bc564a577e1d333854eca44b86480829f8019a0e67235be140b9822d91e361": {
           "bytes": {
-            "data": "IgAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "1b9334feece6ca2121e24cd36a7251aa37a2eed10a0a3533009030b9d65358b4"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000033.raw",
@@ -936,8 +945,9 @@
         },
         "nx:source:evidence#3a3801d6e6cf5410adcac4afbdab0ea697b2bb447ee11f39e31ebd9c23370a03": {
           "bytes": {
-            "data": "FgAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "f59d756696b2089fca5969fdfde2674e333765e1dad0a51c8ebbc63f351c4ca5"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000021.raw",
@@ -945,8 +955,9 @@
         },
         "nx:source:evidence#4b45fa46b83480b6815bf3852c79e4cf1db797d4a6bb27ed3e22fc10f10326b1": {
           "bytes": {
-            "data": "LgAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "c245aff91259378234ae88c46d0e6a690a75034a5fc42bd61f2e3d03c9158b33"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000045.raw",
@@ -954,8 +965,9 @@
         },
         "nx:source:evidence#567d644e1be2a0750f7184b1e0d6c2096b97cd25254e77aa599da6d9a2c258bd": {
           "bytes": {
-            "data": "AQAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "67abdd721024f0ff4e0b3f4c2fc13bc5bad42d0b7851d456d88d203d15aaa450"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000000.raw",
@@ -963,8 +975,9 @@
         },
         "nx:source:evidence#58d70d8309914d08c1d29e7aac4a1a4b50c68368207665dcae4d27969f49d171": {
           "bytes": {
-            "data": "HQAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "ad497f997ead95db601f7d7ed72a7a624ba52ce6f4145a6dc7ec10d1f03876a9"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000028.raw",
@@ -972,8 +985,9 @@
         },
         "nx:source:evidence#5b5e078e54a7e4c1578a858b400109e0fec41ca3324f815cc0ace88fc4ccac03": {
           "bytes": {
-            "data": "DgAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "01b4f6bd5d6a06a7b74a8565ceb4f845afe0ae96a0ac05cf5e86066bf7b538ec"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000013.raw",
@@ -981,8 +995,9 @@
         },
         "nx:source:evidence#61c9511b9b939646a189b577850914e236b0c2f7918f54a0aaf6b697aa865be4": {
           "bytes": {
-            "data": "BQAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "2594b6a92ebfb1c3312deb7d01c015fb95e9fbe9bd7bc6b527af07813ec7b910"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000004.raw",
@@ -990,8 +1005,9 @@
         },
         "nx:source:evidence#6563ba341881cf50b0bf9e762ce0743c3f6326deedcb850422c023af61440963": {
           "bytes": {
-            "data": "BwAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "e8613f5a5bc9f9feeda32a8e7c80b69dd4878e47b6a91723fb15eb84236b6a2b"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000006.raw",
@@ -999,8 +1015,9 @@
         },
         "nx:source:evidence#6e8a5c8cc912327b3d26ad2df19eb7cd0ed8a584e63f2ad36f1c13b8e42e2987": {
           "bytes": {
-            "data": "HwAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "efbe2f505a2756a0891b40d01d0a7135774bbd38cdc526def968d28a7e309452"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000030.raw",
@@ -1008,8 +1025,9 @@
         },
         "nx:source:evidence#7600f6ae269bf983502159f01a3f7b3ad9616ec02628834ee5cfe6ab1e4652a6": {
           "bytes": {
-            "data": "CQAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "9f076b7eb7fdc0311cd3208cdbbebbf8014dd3a05e35191c96947b358a362b40"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000008.raw",
@@ -1017,8 +1035,9 @@
         },
         "nx:source:evidence#76d0196ce9b96520185e9576635afe692feb6a3ce11d516108510f6c6f19fae1": {
           "bytes": {
-            "data": "CwAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "cb30e91817239109ffd0a5870046e128f04619da80c7624d921162fdfe514f76"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000010.raw",
@@ -1026,8 +1045,9 @@
         },
         "nx:source:evidence#77e4ff3817ee45096b6ce1403051491d5487337bf1749c34c857f0f082b3903e": {
           "bytes": {
-            "data": "IAAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "8d71b3faab8201459ad37ef499beb336ba88bdcfa0f51ee6f0a46ec3192d750a"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000031.raw",
@@ -1035,8 +1055,9 @@
         },
         "nx:source:evidence#796db44734091841b62ec55094c72c78785216e3c074a191d11201ac5bddeb3b": {
           "bytes": {
-            "data": "MQAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "60864aae264519399c7a7379382e411d40a3bd0f1641e669fb73183d223f6bd0"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000048.raw",
@@ -1044,8 +1065,9 @@
         },
         "nx:source:evidence#7979bcb865955c3403f56c176b1f807add8483d3d9c4418e9890c943840a6845": {
           "bytes": {
-            "data": "KAAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "1a00f51f3029fa4b7e61b9bf7aa9de5a64798857872981f7e056e4f437171955"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000039.raw",
@@ -1053,8 +1075,9 @@
         },
         "nx:source:evidence#85931a75cc8597f78e2a2414e36f98c62130c475c10788408b932a93c4de9d48": {
           "bytes": {
-            "data": "FwAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "a376d173ece243d587f352f04307fb971f10cdbc9b9d850e8ecbd414a586fa3c"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000022.raw",
@@ -1062,8 +1085,9 @@
         },
         "nx:source:evidence#8595602331020dd74726874817012a53f208e8043551bd7dbdca5b926a7e0a43": {
           "bytes": {
-            "data": "AgAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "26b25d457597a7b0463f9620f666dd10aa2c4373a505967c7c8d70922a2d6ece"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000001.raw",
@@ -1071,8 +1095,9 @@
         },
         "nx:source:evidence#86d34a19f59dc0120f9b69b7fb1b52cf7a251571e1a223f04157be9f9db6d700": {
           "bytes": {
-            "data": "IQAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "9a090610d0aa9445db0890179a9dea330334e3b9086987e93af97dbc978fe311"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000032.raw",
@@ -1080,8 +1105,9 @@
         },
         "nx:source:evidence#8e3bc7983eed9ec06e3f926875ec792c3f27094cf36bc4dc4d8d2d860ff27857": {
           "bytes": {
-            "data": "HgAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "4f5e1d312b4d1bb8ccaf069c18cddeca414ae78160fb3c793ffc730eef4e4f17"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000029.raw",
@@ -1089,8 +1115,9 @@
         },
         "nx:source:evidence#93be08179654e73bc55c182c9fc8bda6a8f4ea58edbc36881dfdb0633af53036": {
           "bytes": {
-            "data": "LwAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "bce941d196c26696f1f5d701d21a8a9e414e81d6e15a48f3663313e3cd7cc4b9"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000046.raw",
@@ -1098,8 +1125,9 @@
         },
         "nx:source:evidence#99a451f870810f2b0f8d61d402c7174879093b816ff5c00a743143965d36ce16": {
           "bytes": {
-            "data": "HAAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "b01099398ce27bbcb7ed256854acc338ba75af739e9d73d741dcb13dc4cbfb56"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000027.raw",
@@ -1107,8 +1135,9 @@
         },
         "nx:source:evidence#9e7b2ff584ccf62275c33a351e29cacc797672c641ef4a84804d6f622ca5c544": {
           "bytes": {
-            "data": "DQAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "43c66c260828c9839f26474151db105481ff92f5e01377f75389d4ce3d2dd574"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000012.raw",
@@ -1116,8 +1145,9 @@
         },
         "nx:source:evidence#a178bcd7961d2226f755ad33eea2892f530d09afc060996dd3f97b1667f97ca2": {
           "bytes": {
-            "data": "GgAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "3ef3bd3d6658c0dfdfdd7aa65e3d92bf1da9a04678a4ed2a5d84ed824ec91775"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000025.raw",
@@ -1125,8 +1155,9 @@
         },
         "nx:source:evidence#a2174c4be8309c6a39fa9bf102f62eadd6509909373a494786a5670aa1615069": {
           "bytes": {
-            "data": "GwAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "bb549140670e7cab3f174160e750d9ed261491b7feb8fb75ec32f0d788f0abce"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000026.raw",
@@ -1134,8 +1165,9 @@
         },
         "nx:source:evidence#a69b4271bc89ce19d84f4f42220e551508cf087e576babd294bdf9c5debfd13b": {
           "bytes": {
-            "data": "JQAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "dcd1430b981b4550707e196a4954598d6bd8a4f078fd0ab883eb9e857242811d"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000036.raw",
@@ -1143,8 +1175,9 @@
         },
         "nx:source:evidence#aa522a78dd960e9e8042e03ebed55abb2811d6760cdc90e17fde2d45c21a6204": {
           "bytes": {
-            "data": "EAAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "097328e8c957de2428283954f6a1ee8ff7ad7def12e100a600178407f5decf24"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000015.raw",
@@ -1152,8 +1185,9 @@
         },
         "nx:source:evidence#aa808a24d72c5902f0f2e985826eaf8c896e661764ebcbfad6bd0d6ae156e093": {
           "bytes": {
-            "data": "JwAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "977d1a863cf97921a76b1f8414af65c7463cdab40d64c174cead35ad54c4ddb3"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000038.raw",
@@ -1161,8 +1195,9 @@
         },
         "nx:source:evidence#aa98590e71ecebb7dc665feb3335ffc48ee59a3ecf0215e860f2d013dbee73b0": {
           "bytes": {
-            "data": "KQAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "4f2d892d6af406902c1aae6e58a78b2e6865fd4b782fc96b12de65d3bf3dc03e"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000040.raw",
@@ -1170,8 +1205,9 @@
         },
         "nx:source:evidence#ac756f1013da1741888d34a4378644ef77659003cf721945b3fa015178b4075f": {
           "bytes": {
-            "data": "JgAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "01ae8bca3feddc447c36822c041be588ef20ca9ff84c4ae180a0776f744427e2"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000037.raw",
@@ -1179,8 +1215,9 @@
         },
         "nx:source:evidence#ad82340a84d5a9720f276cf90ff7cf9beee4137e43b9e171fe8600efef110d10": {
           "bytes": {
-            "data": "FAAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "447e12701a0d03cf90a4ad7f02f1a045b35d284e26fe520440edb116d76bf700"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000019.raw",
@@ -1188,8 +1225,9 @@
         },
         "nx:source:evidence#b2162027f0c01351c41a7d031476225fe7be85e1992f2c0f2eb9f7be65eb845f": {
           "bytes": {
-            "data": "JAAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "de6d696c194fb883fd153e435f68d0283ebcf1a28c46cba524df6a8c0807084a"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000035.raw",
@@ -1197,8 +1235,9 @@
         },
         "nx:source:evidence#bbc0d29dd85ecf38ec480d8a740fac7b395e0b723b2c562dbf1e6a89a7a3c244": {
           "bytes": {
-            "data": "KgAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "e8a4b2ee7ede79a3afb332b5b6cc3d952a65fd8cffb897f5d18016577c33d7cc"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000041.raw",
@@ -1206,8 +1245,9 @@
         },
         "nx:source:evidence#c95050e386a4844c43dd91f731d21c16e200bc34fb2683f21c5273eff1b68d6f": {
           "bytes": {
-            "data": "GAAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "17fa9c7f5e9039a2d46e73e17d8e094a796ee4c313199bad42db4ee1dc30d865"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000023.raw",
@@ -1215,8 +1255,9 @@
         },
         "nx:source:evidence#cd31269501af74d2baa4d95b0a2f32c40d50e28043637373402d437b0544d08d": {
           "bytes": {
-            "data": "EgAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "7d8e29fa389a36cca29bc0f07a7892dddd6f9070b9e33d12dce8ce3569f81810"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000017.raw",
@@ -1224,8 +1265,9 @@
         },
         "nx:source:evidence#d58d91f74e803a2cafe890bf6f5936c57c484325e68319da7cd57a395ec54d5f": {
           "bytes": {
-            "data": "DwAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "972b8373b897c65c4f631c6bdf2443d0d817a88f224b54d8e593fdcf32488d60"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000014.raw",
@@ -1233,8 +1275,9 @@
         },
         "nx:source:evidence#d9e59d3877450f2b0bfde6dd99c8408aa5717265f1701db4c47fc74e7e3ec41a": {
           "bytes": {
-            "data": "IwAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "d2d27d69fc0a2c6cc0aabec462ce665aa8a92766844f081b672588acdf8a2c71"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000034.raw",
@@ -1242,8 +1285,9 @@
         },
         "nx:source:evidence#dc77ce28dfcf730f54cd50583b25f156954a73131a2e5bb47d0916fdab3ee207": {
           "bytes": {
-            "data": "GQAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "0623ccb9b1619bd388284a438034d8cb6431964ba727d8b1c450303105735488"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000024.raw",
@@ -1251,8 +1295,9 @@
         },
         "nx:source:evidence#dcb80c3e7a24f9222ec94f49c0842226b425076b1b854fad702f26690f54c2b9": {
           "bytes": {
-            "data": "LQAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "28276425d45829d4e6f5e18aefbf1f62862f07260a904532fb6e2106dec973e6"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000044.raw",
@@ -1260,8 +1305,9 @@
         },
         "nx:source:evidence#e1fc8c3c6f3fcc8ba9e3f416211087a0c8b9bb18b6a66ea8cf7146e72a4cf3e8": {
           "bytes": {
-            "data": "MAAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "4f8320d91e97d546dc799848e8d218e18050af7a7964e0414de9e5479006d7e3"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000047.raw",
@@ -1269,8 +1315,9 @@
         },
         "nx:source:evidence#e278a77f7043c652023fdff6401087570f9dd0174c8fef41a14ee963281fa0a9": {
           "bytes": {
-            "data": "CgAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "075de2b906dbd7066da008cab735bee896370154603579a50122f9b88545bd45"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000009.raw",
@@ -1278,8 +1325,9 @@
         },
         "nx:source:evidence#e8c423041133d23b35952dd5cc84c32820b6423ff78994adf9f067e901794f05": {
           "bytes": {
-            "data": "KwAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "7c9bf6a88aed1539a3276462bb9e977bede22cf2c89f96bf61f590da5504ccc7"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000042.raw",
@@ -1287,8 +1335,9 @@
         },
         "nx:source:evidence#eb856f30262ca4dd68afb4c1e9ca8563b3dd4fe5b0b8ba867dbb3191bb29c843": {
           "bytes": {
-            "data": "BAAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "fb5e512425fc9449316ec95969ebe71e2d576dbab833d61e2a5b9330fd70ee02"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000003.raw",
@@ -1296,8 +1345,9 @@
         },
         "nx:source:evidence#f5e8873e13a65e64059b05f7d1026a9a33b7e9a4fea93cce2a851debeb104fce": {
           "bytes": {
-            "data": "AwAAAA==",
-            "retention": "inline"
+            "byte_len": 4,
+            "retention": "digest",
+            "sha256": "9d9f290527a6be626a8f5985b26e19b237b44872b03631811df4416fc1713178"
           },
           "offset": 0,
           "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000002.raw",

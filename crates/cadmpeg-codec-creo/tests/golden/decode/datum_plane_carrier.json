@@ -60,6 +60,7 @@
         "file_size": "131",
         "section.0.length": "55",
         "section.0.name": "ActDatums",
+        "section.0.offset": "76",
         "section.0.raw_name": "ActDatums",
         "section.0.role": "psb-geometry",
         "section_count": "1",
@@ -559,9 +560,6 @@
           "tag": "psb_geometry_section"
         }
       }
-    },
-    "metadata": {
-      "source.section.0.offset": "76"
     },
     "retained_records": {
       "creo:ActDatums:section#76": {

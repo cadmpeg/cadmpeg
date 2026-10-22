@@ -4,6 +4,5 @@
 pub(crate) mod patching;
 pub(crate) mod targets;
 
-mod current_projection;
 mod one_fact;
 mod synthesis;

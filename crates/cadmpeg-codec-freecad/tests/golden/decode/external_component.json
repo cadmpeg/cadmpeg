@@ -946,7 +946,7 @@
       "__arena_sha256": {
         "fcstd": {
           "annotations": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "applications": "59302333e95a7492fdabd071a660589ee7a664a3e14a32c574eaf512da497a58",
+          "applications": "98d1e7aea7fad26ea35e5663ad6a9bb99f3e7261ad5e7f36e3ab60c2b333f8c3",
           "carrier_census": "e95a1b83acd883c9ab1ecc44f91c31c6bd42096296cc5e150b840f0fb4e1c054",
           "design_census": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "document": "7cfb1eb06c9f334c540c5a686f2da950a097b17e083b388910a4efd0b2f4d8e8",
@@ -1195,7 +1195,7 @@
   "source_fidelity": {
     "annotations": {},
     "metadata": {
-      "document_local_sha256": "14920acb4cef0368c1370eb672166d19652977eb16a5faa7eefbc1a907714162",
+      "document_local_sha256": "8402620379ae8833db3a2d85781e029dea053f1234daa24b4342bf9bd1d603d5",
       "fcstd.archive_entry_count": "2",
       "fcstd.object_count": "2",
       "fcstd.physical_archive_bytes": "2218",

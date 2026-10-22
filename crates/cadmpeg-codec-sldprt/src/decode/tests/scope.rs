@@ -38,8 +38,7 @@ fn metadata_fallback_holds_design_without_claiming_model() {
     assert!(ir.model.populated_arena(ArenaClass::Model).is_none());
     assert!(!ir.model.features.is_empty());
     assert!(!ir.model.parameters.is_empty());
-    // No model part was located; absent content is outside scope, not a failed source part.
-    assert!(!fidelity.unrepresented().contains(&ArenaClass::Model));
+    assert!(fidelity.unrepresented().contains(&ArenaClass::Model));
     assert!(report
         .losses
         .iter()

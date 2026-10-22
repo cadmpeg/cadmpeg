@@ -37,21 +37,6 @@ pub(crate) fn plan(
             super::synthesis::SynthesisCause::SourceUnrepresented { classes },
         );
     }
-    if let (Some(namespace), Some(fidelity)) = (input.ir.native.namespace("sldprt"), input.fidelity)
-    {
-        if let Err(error) = crate::native::source::load(namespace, fidelity) {
-            if matches!(error, CodecError::ResourceLimit(_)) {
-                return Err(error);
-            }
-            return super::synthesis::plan(
-                input,
-                resolved,
-                super::synthesis::SynthesisCause::PatchDeclined {
-                    reason: error.to_string(),
-                },
-            );
-        }
-    }
     let attempt = write(input, true);
     let (written, bytes) = match attempt {
         Ok(written) => written,

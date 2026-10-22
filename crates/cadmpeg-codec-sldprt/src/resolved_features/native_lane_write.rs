@@ -25,7 +25,7 @@ pub(crate) fn regenerate(
     losses: &mut Vec<LossNote>,
     dispositions: &mut NativeDispositions,
 ) -> Result<(), CodecError> {
-    coverage::neutral_copies(document, ir, source, native, losses, dispositions);
+    coverage::neutral_copies(document, ir, source, native, dispositions);
     let neutral_owners = ir
         .model
         .features
@@ -124,7 +124,11 @@ pub(crate) fn regenerate(
             .flat_map(|history| &history.features)
             .map(|feature| feature.id.as_str())
             .collect::<BTreeSet<_>>();
-        let marker_ids = reconstructible_marker_ids(lane, &feature_ids);
+        let marker_ids = lane
+            .sketch_entities
+            .iter()
+            .map(|marker| marker.id())
+            .collect::<BTreeSet<_>>();
         let mut events = Vec::new();
         let mut omitted = Vec::new();
         for class in &lane.classes {
@@ -146,35 +150,24 @@ pub(crate) fn regenerate(
                     .as_deref()
                     .is_some_and(|id| !feature_ids.contains(id))
                 {
-                    omit_scalar(
-                        &mut events,
-                        &mut omitted,
-                        scalar,
-                        name,
-                        "owning native feature no longer resolves",
-                    )?;
+                    omitted.push(Omission {
+                        arena: "feature_input_scalars",
+                        id: scalar.id.clone(),
+                        reason: "owning native feature no longer resolves".into(),
+                    });
                     continue;
                 }
-                let value = match scalar_value(ir, lane, scalar, name, &neutral_owners) {
-                    Ok(value) => value.unwrap_or(scalar.value.get()),
-                    Err(reason) => {
-                        omit_scalar(&mut events, &mut omitted, scalar, name, reason)?;
-                        continue;
-                    }
-                };
                 if scalar.operands.iter().any(|operand| {
                     operand
                         .entity_ref
                         .as_deref()
-                        .is_none_or(|id| !marker_ids.contains(id))
+                        .is_some_and(|id| !marker_ids.contains(id))
                 }) {
-                    omit_scalar(
-                        &mut events,
-                        &mut omitted,
-                        scalar,
-                        name,
-                        "typed scalar operand no longer resolves",
-                    )?;
+                    omitted.push(Omission {
+                        arena: "feature_input_scalars",
+                        id: scalar.id.clone(),
+                        reason: "typed scalar operand no longer resolves".into(),
+                    });
                     continue;
                 }
                 let operands = scalar
@@ -183,6 +176,17 @@ pub(crate) fn regenerate(
                     .map(|operand| (operand.kind, operand.entity_index))
                     .collect::<Vec<_>>();
                 let mut bytes = Vec::new();
+                let value = match scalar_value(ir, scalar, name, &neutral_owners) {
+                    Ok(value) => value.unwrap_or(scalar.value.get()),
+                    Err(reason) => {
+                        omitted.push(Omission {
+                            arena: "feature_input_scalars",
+                            id: scalar.id.clone(),
+                            reason: reason.into(),
+                        });
+                        continue;
+                    }
+                };
                 append_scalar_fields(&mut bytes, &name.value, value, scalar.object_id, &operands)?;
                 // The typed class is a separate event. No guessed quantity
                 // or family is introduced when a scalar has no declaration.
@@ -221,7 +225,14 @@ pub(crate) fn regenerate(
                     continue;
                 };
                 let mut bytes = Vec::new();
-                let id = u32::from(id);
+                let Some(id) = id.value() else {
+                    omitted.push(Omission {
+                        arena: "feature_input_names",
+                        id: name.id.clone(),
+                        reason: "object name has an opaque native identity".into(),
+                    });
+                    continue;
+                };
                 let current_name = if ir.scope.design {
                     source
                         .feature_histories
@@ -363,250 +374,16 @@ pub(crate) fn regenerate(
             &lane.id,
             NativeDisposition::Regenerated,
         );
-        merge_configuration_lane(native, generated)?;
+        native.feature_input_lanes.push(generated);
     }
     sketches::merge(document, ir, source, native, losses, dispositions)?;
     Ok(())
-}
-
-/// A patch cannot retain an opaque marker body or dangling scalar index as
-/// content. The same typed reconstruction proof governs both output paths.
-pub(crate) fn require_reconstructible_content(
-    lane: &FeatureInputLane,
-    histories: &[crate::records::FeatureHistory],
-) -> Result<(), CodecError> {
-    let feature_ids = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .map(|feature| feature.id.as_str())
-        .collect::<BTreeSet<_>>();
-    let markers = reconstructible_marker_ids(lane, &feature_ids);
-    if let Some(marker) = lane
-        .sketch_entities
-        .iter()
-        .find(|marker| !markers.contains(marker.id()))
-    {
-        return Err(CodecError::UnsupportedContent(format!(
-            "native marker {} has no reconstructible typed payload",
-            marker.id()
-        )));
-    }
-    if let Some(scalar) = lane.scalars.iter().find(|scalar| {
-        scalar.operands.iter().any(|operand| {
-            operand
-                .entity_ref
-                .as_deref()
-                .is_none_or(|id| !markers.contains(id))
-        })
-    }) {
-        return Err(CodecError::UnsupportedContent(format!(
-            "native scalar {} has an unresolved typed marker operand",
-            scalar.id
-        )));
-    }
-    Ok(())
-}
-
-fn reconstructible_marker_ids<'a>(
-    lane: &'a FeatureInputLane,
-    feature_ids: &BTreeSet<&str>,
-) -> BTreeSet<&'a str> {
-    let mut marker_ids = lane
-        .sketch_entities
-        .iter()
-        .filter(|marker| {
-            marker_bytes(marker).is_some()
-                && marker
-                    .feature_ref
-                    .as_deref()
-                    .is_none_or(|id| feature_ids.contains(id))
-        })
-        .map(crate::records::SketchInputEntity::id)
-        .collect::<BTreeSet<_>>();
-    let mut dependents = BTreeMap::<&str, Vec<&str>>::new();
-    let mut unavailable = Vec::new();
-    for marker in &lane.sketch_entities {
-        if !marker_ids.contains(marker.id()) {
-            unavailable.push(marker.id());
-        }
-        for link in marker.links() {
-            dependents
-                .entry(link.entity_ref.as_str())
-                .or_default()
-                .push(marker.id());
-            if !marker_ids.contains(link.entity_ref.as_str()) {
-                unavailable.push(marker.id());
-            }
-        }
-    }
-    while let Some(id) = unavailable.pop() {
-        if marker_ids.remove(id) {
-            unavailable.extend(dependents.get(id).into_iter().flatten().copied());
-        }
-    }
-    marker_ids
-}
-
-/// A configuration slot has one state lane. Combine only bytes authored in
-/// this synthesis pass, so native-only statements cannot create a second,
-/// ambiguous lane beside the current canonical configuration caches.
-fn merge_configuration_lane(
-    native: &mut SldprtNative,
-    generated: FeatureInputLane,
-) -> Result<(), CodecError> {
-    let candidates = native
-        .feature_input_lanes
-        .iter()
-        .enumerate()
-        .filter(|(_, lane)| {
-            generated.configuration.is_some() && lane.configuration == generated.configuration
-        })
-        .map(|(index, _)| index)
-        .collect::<Vec<_>>();
-    if let [index] = candidates.as_slice() {
-        let previous = &native.feature_input_lanes[*index];
-        if previous.id.starts_with("sldprt:generated:") && !previous.native_payload.is_empty() {
-            let payload = combine_authored_owners(previous, &generated, &native.feature_histories)?;
-            let combined = super::write_prepare::generated_native_lane(
-                &native.feature_histories,
-                &previous.id,
-                previous.configuration.clone(),
-                payload,
-            )?;
-            native.feature_input_lanes[*index] = combined;
-            return Ok(());
-        }
-    }
-    native.feature_input_lanes.push(generated);
-    Ok(())
-}
-
-struct AuthoredOwner<'a> {
-    id: &'a str,
-    start: usize,
-    name_start: usize,
-    name_end: usize,
-    end: usize,
-}
-
-/// These positions belong only to fresh target bytes. Each current native
-/// feature contributes at most one unique object name in either authored lane.
-fn authored_owners<'a>(
-    lane: &'a FeatureInputLane,
-    histories: &'a [crate::records::FeatureHistory],
-) -> Result<Vec<AuthoredOwner<'a>>, CodecError> {
-    let names = super::scalars::FeatureObjectNames::new(&lane.names);
-    let mut first_classes = BTreeMap::<&str, usize>::new();
-    for class in &lane.classes {
-        if let (Some(owner), Some(offset)) = (
-            class.feature_ref.as_deref(),
-            class.offset.and_then(|offset| usize::try_from(offset).ok()),
-        ) {
-            first_classes
-                .entry(owner)
-                .and_modify(|first| *first = (*first).min(offset))
-                .or_insert(offset);
-        }
-    }
-    let mut owners = Vec::new();
-    for feature in histories.iter().flat_map(|history| &history.features) {
-        let Some(name) = names.of(feature) else {
-            continue;
-        };
-        let name_start = name
-            .offset
-            .and_then(|offset| usize::try_from(offset).ok())
-            .ok_or_else(|| {
-                CodecError::malformed("authored native object has no target position")
-            })?;
-        let start = first_classes
-            .get(feature.id.as_str())
-            .copied()
-            .filter(|offset| *offset < name_start)
-            .unwrap_or(name_start);
-        let name_end = name
-            .value
-            .encode_utf16()
-            .count()
-            .checked_mul(2)
-            .and_then(|length| length.checked_add(super::NAME_MARKER.len() + 1 + 12))
-            .and_then(|length| name_start.checked_add(length))
-            .ok_or_else(|| CodecError::malformed("authored native object name extent overflows"))?;
-        owners.push(AuthoredOwner {
-            id: &feature.id,
-            start,
-            name_start,
-            name_end,
-            end: lane.native_payload.len(),
-        });
-    }
-    owners.sort_by_key(|owner| owner.start);
-    for index in 0..owners.len() {
-        if let Some(next) = owners.get(index + 1) {
-            owners[index].end = next.start;
-        }
-        if owners[index].name_end > owners[index].end {
-            return Err(CodecError::malformed(
-                "authored native object framing overlaps another owner",
-            ));
-        }
-    }
-    Ok(owners)
-}
-
-fn combine_authored_owners(
-    previous: &FeatureInputLane,
-    generated: &FeatureInputLane,
-    histories: &[crate::records::FeatureHistory],
-) -> Result<Vec<u8>, CodecError> {
-    let current = authored_owners(previous, histories)?;
-    let extra = authored_owners(generated, histories)?;
-    let extra_by_owner = extra
-        .iter()
-        .map(|owner| (owner.id, owner))
-        .collect::<BTreeMap<_, _>>();
-    let current_ids = current
-        .iter()
-        .map(|owner| owner.id)
-        .collect::<BTreeSet<_>>();
-    let capacity = previous
-        .native_payload
-        .len()
-        .checked_add(generated.native_payload.len())
-        .ok_or_else(|| CodecError::malformed("authored configuration lane size overflows"))?;
-    let mut payload = Vec::new();
-    payload
-        .try_reserve_exact(capacity)
-        .map_err(|_| CodecError::malformed("authored configuration lane allocation failed"))?;
-    let prefix_end = current
-        .first()
-        .map_or(previous.native_payload.len(), |owner| owner.start);
-    payload.extend_from_slice(&previous.native_payload[..prefix_end]);
-    let extra_prefix_end = extra
-        .first()
-        .map_or(generated.native_payload.len(), |owner| owner.start);
-    payload.extend_from_slice(&generated.native_payload[..extra_prefix_end]);
-    for owner in &current {
-        payload.extend_from_slice(&previous.native_payload[owner.start..owner.end]);
-        if let Some(addition) = extra_by_owner.get(owner.id) {
-            // The target already carries this exact native object identity
-            // and name. Retain its other statements inside the same owner.
-            payload
-                .extend_from_slice(&generated.native_payload[addition.start..addition.name_start]);
-            payload.extend_from_slice(&generated.native_payload[addition.name_end..addition.end]);
-        }
-    }
-    for owner in extra.iter().filter(|owner| !current_ids.contains(owner.id)) {
-        payload.extend_from_slice(&generated.native_payload[owner.start..owner.end]);
-    }
-    Ok(payload)
 }
 
 /// Native operations explicitly retain canonical expression bindings. Their
 /// scalar target copies resolve those identities instead of keeping old values.
 fn scalar_value(
     ir: &CadIr,
-    lane: &crate::records::FeatureInputLane,
     scalar: &crate::records::FeatureInputScalar,
     name: &crate::records::FeatureInputName,
     owners: &BTreeMap<&str, &cadmpeg_ir::features::Feature>,
@@ -615,23 +392,6 @@ fn scalar_value(
     let Some(owner) = scalar.feature_ref.as_deref().and_then(|id| owners.get(id)) else {
         return Ok(None);
     };
-    if let Some(value) = ir
-        .model
-        .parameters
-        .iter()
-        .find(|parameter| {
-            parameter.native_ref.as_deref() == Some(scalar.id.as_str())
-                || (parameter.owner.as_ref() == Some(&owner.id)
-                    && parameter.name == name.value.as_str())
-        })
-        .and_then(|parameter| parameter.value.as_ref())
-    {
-        if !super::parameters::scalar_quantity_matches(lane, scalar, value) {
-            return Err(
-                "canonical parameter quantity does not match the retained native scalar quantity",
-            );
-        }
-    }
     let FeatureDefinition::Operation(FeatureOperation::Native { parameters, .. }) =
         owner.evaluation.definition()
     else {
@@ -684,9 +444,9 @@ fn retain_owners(
     allowed: &BTreeSet<&str>,
     selection_owners: &BTreeSet<&str>,
 ) {
-    let permitted = |owner: Option<&str>| owner.is_none_or(|owner| allowed.contains(owner));
+    let permitted = |owner: Option<&str>| owner.is_some_and(|owner| allowed.contains(owner));
     let selection_permitted = |owner: Option<&str>| {
-        owner.is_none_or(|owner| allowed.contains(owner) || selection_owners.contains(owner))
+        owner.is_some_and(|owner| allowed.contains(owner) || selection_owners.contains(owner))
     };
     let scalar_names = lane
         .scalars
@@ -737,43 +497,6 @@ fn append_class(bytes: &mut Vec<u8>, name: &str) -> Result<(), CodecError> {
     bytes.extend_from_slice(super::CLASS_MARKER);
     bytes.extend_from_slice(&length.to_le_bytes());
     bytes.extend_from_slice(name.as_bytes());
-    Ok(())
-}
-
-fn omit_scalar(
-    events: &mut Vec<Event>,
-    omitted: &mut Vec<Omission>,
-    scalar: &crate::records::FeatureInputScalar,
-    name: &crate::records::FeatureInputName,
-    reason: &str,
-) -> Result<(), CodecError> {
-    if let Some(id) = name.object_id {
-        let mut bytes = Vec::new();
-        append_generated_object_name(&mut bytes, &name.value, u32::from(id))?;
-        events.push(Event {
-            sequence: name.sequence,
-            bytes,
-            records: vec![("feature_input_names".into(), name.id.clone())],
-        });
-    } else {
-        omitted.push(Omission {
-            arena: "feature_input_names",
-            id: name.id.clone(),
-            reason: reason.into(),
-        });
-    }
-    for (arena, id) in std::iter::once(("feature_input_scalars", scalar.id.as_str())).chain(
-        scalar
-            .operands
-            .iter()
-            .map(|operand| ("feature_input_references", operand.reference_ref.as_str())),
-    ) {
-        omitted.push(Omission {
-            arena,
-            id: id.into(),
-            reason: reason.into(),
-        });
-    }
     Ok(())
 }
 

@@ -689,7 +689,7 @@ impl<'a> DecodeContext<'a> {
                             source_order,
                             format_args!("procedural surface candidate rejected by IR validation"),
                         );
-                        self.mark_failed(source_order);
+                        self.commit_unknown_surface(source_order)?;
                     } else {
                         self.mark_failed(source_order);
                     }
@@ -713,11 +713,9 @@ impl<'a> DecodeContext<'a> {
                             }
                         ),
                     );
-                    if procedural_surface && future {
-                        self.mark_failed(source_order);
+                    if procedural_surface {
+                        self.commit_unknown_surface(source_order)?;
                     } else if !future {
-                        // A malformed payload has no surface content to project.
-                        // Keep the source record through the failed-object path.
                         self.mark_failed(source_order);
                     }
                 }
@@ -1905,7 +1903,7 @@ impl<'a> DecodeContext<'a> {
     ) -> Result<(), cadmpeg_core::CodecError> {
         let Some(scale) = self.neutral_scale() else {
             self.scan_unbound_unit_warning(source_order, "extrusion");
-            self.mark_failed(source_order);
+            self.commit_unknown_surface(source_order)?;
             return Ok(());
         };
         let decoded = crate::extrusion::decode(
@@ -1932,7 +1930,7 @@ impl<'a> DecodeContext<'a> {
                         source_order,
                         format_args!("extrusion candidate rejected atomically"),
                     );
-                    self.mark_failed(source_order);
+                    self.commit_unknown_surface(source_order)?;
                 }
             }
             Err(crate::curves::GeometryError::Codec(error)) => return Err(error),
@@ -1941,7 +1939,7 @@ impl<'a> DecodeContext<'a> {
                     source_order,
                     format_args!("extrusion degraded and retained: {error}"),
                 );
-                self.mark_failed(source_order);
+                self.commit_unknown_surface(source_order)?;
             }
         }
         Ok(())
@@ -2877,6 +2875,56 @@ impl<'a> DecodeContext<'a> {
         self.append_links(source_order, &links)?;
         self.geometry_transferred = true;
         Ok(true)
+    }
+
+    fn commit_unknown_surface(
+        &mut self,
+        source_order: usize,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        let Some(object) = self.scan.objects.get(source_order) else {
+            return Ok(());
+        };
+        let Some(identity) = object.identity() else {
+            return Ok(());
+        };
+        let Some(unknown) = self
+            .session
+            .unknowns()
+            .get(source_order)
+            .map(|record| record.id().clone())
+        else {
+            return Ok(());
+        };
+        let Some(key) = self.checked_object_key(identity, source_order) else {
+            return Ok(());
+        };
+        let id = cadmpeg_ir::ids::SurfaceId::compose(
+            &cadmpeg_ir::identity_namespace!("rhino", "object", "surface"),
+            key,
+        );
+        let association = Self::source_association(identity)?;
+        let validation = self.validate_candidate_fallible(|candidate, candidate_annotations| {
+            candidate.model.surfaces.push(Surface {
+                id: id.clone(),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+                    record: Some(unknown.clone()),
+                }),
+                source_object: Some(association.identity),
+            });
+            set_exactness(candidate_annotations, &id, Exactness::Unknown);
+            Ok::<_, CandidateError>(id.to_string())
+        });
+        match validation {
+            Ok(link) => {
+                self.append_link(source_order, &link)?;
+            }
+            Err(CandidateError::Codec(error)) => return Err(error),
+            Err(findings) => self.scan_warning(
+                source_order,
+                format_args!("unknown surface validation rejected candidate: {findings}"),
+            ),
+        }
+        Ok(())
     }
 
     fn annotate_point_topology(

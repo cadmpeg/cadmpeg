@@ -282,7 +282,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
     if !applications_match {
         findings.push(finding(
             Check::PayloadIntegrity,
-            "FCStd application records do not match their typed objects and entries",
+            "FCStd application records do not match their typed objects and evidence",
             None,
         ));
     }

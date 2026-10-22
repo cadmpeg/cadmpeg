@@ -11,6 +11,29 @@ use crate::resolved_features::scalars::FeatureObjectNames;
 use crate::resolved_features::selections::enrich_feature_object_sources;
 use std::collections::BTreeMap;
 
+impl<'a> FeatureSources<'a> {
+    pub(crate) fn for_lane(features: &'a [Feature], lane: &FeatureInputLane) -> Self {
+        Self::for_lane_iter(features.iter(), lane)
+    }
+
+    pub(crate) fn for_lane_iter(
+        features: impl IntoIterator<Item = &'a Feature>,
+        lane: &FeatureInputLane,
+    ) -> Self {
+        let mut view = Self::from_refs(features);
+        if !lane.edge_selections.is_empty() || !lane.surface_selections.is_empty() {
+            let names = FeatureObjectNames::new(&lane.names);
+            view.added = view
+                .features
+                .iter()
+                .enumerate()
+                .filter_map(|(index, feature)| Some((index, lane_added_source(feature, &names)?)))
+                .collect();
+        }
+        view
+    }
+}
+
 fn feature(name: &str, source_id: Option<FeatureSource>, ordinal: u32) -> Feature {
     Feature {
         id: name.into(),

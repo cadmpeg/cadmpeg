@@ -71,6 +71,7 @@
         "file_size": "97",
         "section.0.length": "21",
         "section.0.name": "THMB_IMG_MAIN",
+        "section.0.offset": "76",
         "section.0.raw_name": "THMB_IMG_MAIN",
         "section.0.role": "thumbnail",
         "section_count": "1",
@@ -565,9 +566,6 @@
           "tag": "jpeg_thumbnail"
         }
       }
-    },
-    "metadata": {
-      "source.section.0.offset": "76"
     },
     "retained_records": {
       "creo:THMB_IMG_MAIN:section#91": {

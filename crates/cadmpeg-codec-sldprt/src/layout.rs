@@ -8,53 +8,6 @@
 //
 // - `chart_00_28` (overlap): The spec's ordered field list places the unnamed seventh f64 at body +34..+42, which overlaps the sentinel the same paragraph puts at body +36. The two are consistent only if the stated `+36`, `+44`, and `+52` are measured from the byte after `attr` (body +6) rather than from the body start; `crates/cadmpeg-codec-sldprt/src/brep/intersection.rs` reads them that way, placing the sentinels at body +42 and +50 and the point block at body +58. §4 uses body-relative offsets elsewhere (`00 1d` xyz at body +14), so the two conventions collide inside one document. The spec does not say which applies here.
 
-/// Byte offsets for the `feature_input_class_declaration_prefix` record.
-///
-/// Spec §2. Record length 6 B.
-///
-/// ```text
-/// The counted ASCII class name follows this fixed prefix.
-/// ```
-pub(crate) mod feature_input_class_declaration_prefix {
-    /// Record length in bytes. Spec §2.
-    pub(crate) const LEN: usize = 6;
-    /// Offset of `name_length` (`u16`, little-endian). Spec §2.
-    pub(crate) const NAME_LENGTH: usize = 4;
-}
-
-/// Byte offsets for the `current_coordinate_marker_identity` record.
-///
-/// Spec §2. Record length 142 B.
-///
-/// ```text
-/// The complete zero-tail coordinate form carries its own local identity before the lane end or a complete class declaration.
-/// ```
-pub(crate) mod current_coordinate_marker_identity {
-    /// Record length in bytes. Spec §2.
-    pub(crate) const LEN: usize = 142;
-    /// Offset of `geometry_locus` (`bytes[4]`). Spec §2.
-    pub(crate) const GEOMETRY_LOCUS: usize = 23;
-    /// Stated value of `geometry_locus` (`bytes[4]`). Spec §2.
-    pub(crate) const GEOMETRY_LOCUS_VALUE: [u8; 4] = [0x05, 0x00, 0x01, 0x00];
-    /// Offset of `coordinate_tag` (`bytes[2]`). Spec §2.
-    pub(crate) const COORDINATE_TAG: usize = 64;
-    /// Stated value of `coordinate_tag` (`bytes[2]`). Spec §2.
-    pub(crate) const COORDINATE_TAG_VALUE: [u8; 2] = [0x1e, 0x00];
-    /// Offset of `coordinate_first` (`f64`, little-endian). Spec §2.
-    pub(crate) const COORDINATE_FIRST: usize = 66;
-    /// Offset of `zero_tail` (`bytes[56]`). Spec §2.
-    pub(crate) const ZERO_TAIL: usize = 82;
-    /// Stated value of `zero_tail` (`bytes[56]`). Spec §2.
-    pub(crate) const ZERO_TAIL_VALUE: [u8; 56] = [
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    ];
-    /// Offset of `local_id` (`u32`, little-endian). Spec §2.
-    pub(crate) const LOCAL_ID: usize = 138;
-}
-
 /// Byte offsets for the `feature_input_shifted_scalar_trailer` record.
 ///
 /// Spec §2. Record length 35 B.

@@ -205,45 +205,14 @@ fn solidworks_one_fact_updates_keywords_generated_lanes_and_inherited_configurat
     let decoded = decode(&SldprtCodec, &bytes);
     let mut ir = decoded.ir().clone();
     let bound = extrusion_length(&ir);
-    // The named Default has no slot proof; the observed physical partition
-    // supplies the one active state. Neither is inferred from an ordinal.
-    assert_eq!(ir.model.configurations.len(), 2);
-    let declared = ir
-        .model
-        .configurations
-        .iter()
-        .find(|configuration| configuration.name.as_deref() == Some("Default"))
-        .expect("the native history declares Default");
-    assert_eq!(declared.source_index, None);
-    assert!(!declared.active);
-    let active = ir
-        .model
-        .configurations
-        .iter()
-        .filter(|configuration| configuration.active)
-        .collect::<Vec<_>>();
-    assert_eq!(active.len(), 1);
-    assert_eq!(active[0].source_index, Some(0));
-    assert!(active[0].feature_states.is_empty());
-    assert!(active[0].parameter_values.is_empty());
-    assert!(active[0].parameter_overrides.is_empty());
-    assert!(active[0]
-        .bodies
-        .as_ref()
-        .is_some_and(|bodies| !bodies.is_empty()));
+    // The actual public source has one configuration and no scalar lanes. An
+    // editor adds a sparse inherited configuration; synthesis must generate
+    // the understood Extrude lanes from the canonical neutral definition.
+    assert_eq!(ir.model.configurations.len(), 1);
     assert!(native_records(&ir, "sldprt", "feature_input_scalars").is_empty());
-    // Add a sparse inherited state to the actual active base; its understood
-    // native scalars must follow the canonical dimension edit.
-    let mut inherited = active[0].clone();
+    let mut inherited = ir.model.configurations[0].clone();
     inherited.id = ConfigurationId::mint("cadir:design:configuration#inherited").unwrap();
-    inherited.ordinal = ir
-        .model
-        .configurations
-        .iter()
-        .map(|configuration| configuration.ordinal)
-        .max()
-        .unwrap()
-        + 1;
+    inherited.ordinal = ir.model.configurations[0].ordinal + 1;
     inherited.active = false;
     inherited.name = Some("AuthoredInherited".into());
     inherited.source_index = None;
@@ -290,7 +259,7 @@ fn solidworks_one_fact_updates_keywords_generated_lanes_and_inherited_configurat
             .expect("Keywords dimension"),
         expected_mm,
     );
-    assert_eq!(after.model.configurations.len(), 3);
+    assert_eq!(after.model.configurations.len(), 2);
     for configuration in &after.model.configurations {
         assert!(!configuration.parameter_overrides.contains_key(&parameter));
         assert!(
@@ -330,7 +299,7 @@ fn solidworks_one_fact_updates_keywords_generated_lanes_and_inherited_configurat
         .collect::<Vec<_>>();
     assert!(
         !scalars.is_empty(),
-        "all configurations inherit an actual generated native dimension scalar"
+        "the two configurations inherit an actual generated native dimension scalar"
     );
     for scalar in scalars {
         let actual = scalar["value"].as_f64().expect("native SI scalar");

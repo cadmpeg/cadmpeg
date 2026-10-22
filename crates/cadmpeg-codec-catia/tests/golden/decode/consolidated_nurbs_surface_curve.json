@@ -1418,8 +1418,9 @@
       },
       "catia:source:evidence#29045c794136187f0e0d70853c273b68b169712b5b4a78336d2d74157176a0a5": {
         "bytes": {
-          "data": "Bw==",
-          "retention": "inline"
+          "byte_len": 1,
+          "retention": "digest",
+          "sha256": "ca358758f6d27e6cf45272937977a748fd88391db679ceda7dc7bf1f005ee879"
         },
         "offset": 0,
         "stream": "native.catia.consolidated_pcurves.catia:consolidated:pcurve#0.tail",
@@ -1427,8 +1428,9 @@
       },
       "catia:source:evidence#57b60690f61f1146c65737b762a95b380fcec363bfdd09e04220ececa1cc7e5a": {
         "bytes": {
-          "data": "AAAAAAAAAAAAAAAAAAAAAAAAAADwP43ttaD3xrA+AAAAAAAAAAAAAAAAAADwPwAAAAAAAPA/AAAAAAAAAAAAAAAAAADwP43ttaD3xrA+",
-          "retention": "inline"
+          "byte_len": 78,
+          "retention": "digest",
+          "sha256": "5fba3b3a338c1a3e2ad80e3aedf16b3cc95fc4d26921a46a6d11c649a5429ca9"
         },
         "offset": 0,
         "stream": "native.catia.consolidated_edge_nodes.catia:consolidated:edge-node#0.definition.payload",
@@ -1436,8 +1438,9 @@
       },
       "catia:source:evidence#cb41a5faa6a7147abfdbc68b919db67c973067525b22dd02b58c55e452e2fe1d": {
         "bytes": {
-          "data": "Bw==",
-          "retention": "inline"
+          "byte_len": 1,
+          "retention": "digest",
+          "sha256": "ca358758f6d27e6cf45272937977a748fd88391db679ceda7dc7bf1f005ee879"
         },
         "offset": 0,
         "stream": "native.catia.consolidated_pcurves.catia:consolidated:pcurve#1.tail",

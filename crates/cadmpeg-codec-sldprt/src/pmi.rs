@@ -249,31 +249,11 @@ pub(crate) fn patch_payload(
         return Ok(());
     };
     let native = crate::native::SldprtNative::load(namespace)?;
-    // Physical patch slots come from this exact source payload. They are not
-    // serialized document content under #209 §2.4 / #212 Rule B.
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(
-        payload,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )?;
-    let source_records = parse_payload(&ctx, payload, &mut Vec::new())?;
-    drop(ctx);
     for record in native
         .pmi_dimensions
         .iter()
         .filter(|record| record.parent == block_id)
     {
-        let source = source_records
-            .iter()
-            .find(|source| source.guid == record.guid)
-            .ok_or_else(|| CodecError::malformed("PMI patch source lacks the native occurrence"))?;
-        let mut positioned = record.clone();
-        positioned.offset = source.offset;
-        if let Some((_, offset)) = &mut positioned.display_text {
-            *offset = source.display_text_offset();
-        }
-        let record = &positioned;
         let id = annotation_id(record)?;
         let annotation = ir.model.pmi.iter().find(|annotation| annotation.id == id);
         let (value, precision, basic, inspection, reference_only, text) = if ir.scope.model {

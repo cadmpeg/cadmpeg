@@ -824,17 +824,11 @@ fn definition_scan_recovers_after_malformed_record_and_preserves_membership_unio
     }
     set_test_units(&mut scan, 1.0);
     let result = crate::decode::decode_for_test(&scan);
-    // #209 §2.2 and §4.5 preserve readable prototype-local geometry even
-    // when its definition metadata cannot be admitted.
-    assert_eq!(result.ir().model.bodies.len(), 4);
-    assert_eq!(result.ir().model.points.len(), 4);
-    for source_order in 0..4 {
-        assert!(result.ir().model.bodies.iter().any(|body| body
-            .id
-            .to_string()
-            .contains(&format!("definition-member-{source_order}"))));
-    }
-    assert!(result.ir().model.occurrences.is_empty());
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert!(result.ir().model.bodies[0]
+        .id
+        .to_string()
+        .contains("definition-member-3"));
     let definition_loss = result
         .report()
         .losses

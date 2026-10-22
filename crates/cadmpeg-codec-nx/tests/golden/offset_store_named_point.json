@@ -308,8 +308,9 @@
         },
         "nx:source:evidence#02a02bf58e79833b81ece4771721090511b53f18e06864d09f06139022fca4a9": {
           "bytes": {
-            "data": "MEyTMzMzMwc=",
-            "retention": "inline"
+            "byte_len": 8,
+            "retention": "digest",
+            "sha256": "4e42614074cb179e88df0829a5b4d10334c77f7199123d2f064f61a9839ded1e"
           },
           "offset": 0,
           "stream": "native.nx.offset_store_named_points.nx:offset-store:named-point#0-1.raw_values[1]",
@@ -317,8 +318,9 @@
         },
         "nx:source:evidence#2d1e1f3b0d544bf762c08d16d0db3e86522805b871f360eee396e13d9b916401": {
           "bytes": {
-            "data": "MEyTMzMzMwc=",
-            "retention": "inline"
+            "byte_len": 8,
+            "retention": "digest",
+            "sha256": "4e42614074cb179e88df0829a5b4d10334c77f7199123d2f064f61a9839ded1e"
           },
           "offset": 0,
           "stream": "native.nx.offset_store_named_points.nx:offset-store:named-point#0-1.raw_values[0]",

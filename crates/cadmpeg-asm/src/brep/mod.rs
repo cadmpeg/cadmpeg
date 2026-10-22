@@ -65,7 +65,7 @@ use self::records::{
 };
 use self::topology::{
     classify_edge_curve_senses, collect_wire_topology, decode_analytic_carriers,
-    keep_faces_and_carriers, keep_saved_free_surfaces, walk_reachable_topology, TopologyContext,
+    keep_faces_and_carriers, walk_reachable_topology, TopologyContext,
 };
 /// The decoded ASM B-rep graph plus loss accounting. Every field is a fact
 /// of the ASM stream, independent of the format that references the stream.
@@ -634,14 +634,6 @@ fn decode_with_table(
         topology_context,
         &mut out,
         records,
-        &mut carriers,
-        &mut reach,
-    )?;
-    keep_saved_free_surfaces(
-        topology_context,
-        &mut out,
-        records,
-        saved_entity_limit,
         &mut carriers,
         &mut reach,
     )?;
