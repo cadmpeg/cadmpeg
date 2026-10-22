@@ -55,7 +55,8 @@ fn actual_parameter_callbacks_preserve_original_values_and_independent_source_ex
     let (_, _, fidelity, losses) = output.into_parts().into_parts();
     assert!(losses.is_empty());
     let mut reference = Vec::new();
-    cadmpeg_test_support::framing::iges::frame_parameters(&ctx, root, &mut reference).unwrap();
+    cadmpeg_test_support::contract::iges::frame_parameter_owners(&ctx, root, &mut reference)
+        .unwrap();
     let mut expected: Vec<_> = reference
         .iter()
         .filter(|part| {

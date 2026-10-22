@@ -18,7 +18,7 @@ fn a_recognized_string_attribute_reads_its_original_entities_and_keeps_the_decod
     );
     let wire = serde_json::to_value(&graph.properties[0]).unwrap();
     assert_eq!(wire["values"][0]["attributes"]["value"], "Ω & β");
-    let captures = ctx.take_record_captures().unwrap();
+    let captures = property_captures(&ctx, &graph);
     let start = xml.find("Ω &amp; β").unwrap();
     assert_eq!(captures.len(), 1);
     let mut expected = identity_ranges(&xml, "Label", "App::PropertyString");
@@ -44,7 +44,7 @@ fn direct_string_text_reads_exact_original_text_and_its_changes_feed_the_kept_fi
         );
         let wire = serde_json::to_value(&graph.properties[0]).unwrap();
         assert_eq!(wire["values"][0]["text"], decoded);
-        let captures = ctx.take_record_captures().unwrap();
+        let captures = property_captures(&ctx, &graph);
         let start = xml.find(raw).unwrap();
         assert_eq!(captures.len(), 1);
         let mut expected = identity_ranges(&xml, "Label", "App::PropertyString");
@@ -70,7 +70,7 @@ fn unsupported_string_carriers_and_opaque_types_do_not_receive_string_read_credi
         let dom = roxmltree::Document::parse(&xml).unwrap();
         let graph = parse_document_source(&ctx, view, &dom, Vocabulary::Objects).unwrap();
         assert!(!graph.properties[0].values().is_empty());
-        let captures = ctx.take_record_captures().unwrap();
+        let captures = property_captures(&ctx, &graph);
         assert_eq!(captures.len(), 1);
         assert_eq!(captures[0].reads()["file"], identity_ranges(&xml, "P", &graph.properties[0].type_name), "{property}");
     }
@@ -88,7 +88,7 @@ fn an_empty_string_value_remains_present_without_inventing_an_empty_read_interva
     let dom = roxmltree::Document::parse(&xml).unwrap();
     let graph = parse_document_source(&ctx, view, &dom, Vocabulary::Objects).unwrap();
     assert_eq!(graph.properties[0].values()[0].attributes["value"], "");
-    let captures = ctx.take_record_captures().unwrap();
+    let captures = property_captures(&ctx, &graph);
     assert_eq!(captures.len(), 1);
     assert_eq!(
         captures[0].reads()["file"],

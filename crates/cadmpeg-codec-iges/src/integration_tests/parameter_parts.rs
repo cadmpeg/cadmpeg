@@ -182,3 +182,89 @@ fn conflicted_parameter_parts_keep_an_unrelated_current_point_and_exact_source_h
         .iter()
         .all(|loss| loss.code != crate::loss::IgesLossCode::ParameterDataQuarantined.kind()));
 }
+
+#[test]
+fn original_duplicate_claims_match_one_independent_physical_frame_and_one_helper_home() {
+    let mut bytes = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "FIRST".into(),
+            status: "00000000",
+            parameters: "116,1,2,3,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "SECOND".into(),
+            status: "00000000",
+            parameters: "116,4,5,6,0;".into(),
+        },
+    ]);
+    let start_field = bytes
+        .chunks_exact(81)
+        .position(|line| line[72] == b'D')
+        .map(|first| (first + 2) * 81 + 8)
+        .expect("Directory card");
+    bytes[start_field..start_field + 8].copy_from_slice(b"       1");
+
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    let mut frames = Vec::new();
+    let claims =
+        cadmpeg_test_support::contract::iges::frame_parameter_owners(&ctx, root, &mut frames)
+            .unwrap();
+    assert_eq!(claims.len(), 2);
+    assert_eq!(claims[0].record(), claims[1].record());
+    assert_eq!(claims[1].directory().start(), claims[0].directory().end());
+    assert_eq!(&claims[0].directory().window()[8..16], b"       1");
+    assert_eq!(&claims[1].directory().window()[8..16], b"       1");
+    assert_eq!(
+        frames
+            .iter()
+            .filter(|frame| frame.level().as_str() == "iges.parameter_record")
+            .count(),
+        1
+    );
+    let frame = &frames[claims[0].record()];
+    let decoded = crate::test_support::decode(bytes.clone());
+    let native = decoded.ir().native.namespace("iges").unwrap();
+    assert_eq!(native.arenas()["entities"].len(), 2);
+    assert!(decoded.ir().model.points.is_empty());
+    assert!(native.arenas()["quarantined_parameter_records"].is_empty());
+    let unknowns = native.arena_as::<NativeUnknownRecord>("unknowns").unwrap();
+    assert_eq!(unknowns.len(), 1);
+    let fidelity = decoded.source_fidelity();
+    let part = &fidelity.parts()[&unknowns[0].id];
+    assert_eq!(part.level(), frame.level());
+    assert_eq!(part.stream(), frame.capture().stream());
+    assert_eq!(part.offset(), frame.capture().offset());
+    assert_eq!(part.byte_len(), frame.capture().byte_len());
+    assert_eq!(part.framing_bytes(), frame.framing());
+    assert_eq!(
+        part.state(),
+        &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}
+    );
+    assert_eq!(
+        fidelity
+            .retained_record(unknowns[0].id.as_str())
+            .unwrap()
+            .data(),
+        Some(frame.view().window())
+    );
+    let unreadable: Vec<_> = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "record.unreadable")
+        .collect();
+    assert_eq!(unreadable.len(), 1);
+    assert_eq!(unreadable[0].severity, cadmpeg_ir::report::Severity::Error);
+    assert!(unreadable[0].message.contains("ownership-conflict"));
+    assert!(ctx.take_record_captures().unwrap().is_empty());
+}

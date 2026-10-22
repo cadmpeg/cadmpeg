@@ -368,3 +368,69 @@ fn borrowed_reference_walk_preserves_a_callback_resource_refusal() {
         .unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(original) if original == limit));
 }
+
+#[cfg(feature = "schema")]
+#[test]
+fn model_procedural_schema_requires_actual_carrier_wire_links() {
+    use crate::geometry::{
+        ProceduralCurve, ProceduralCurveDefinition, ProceduralCurveRow, ProceduralSurface,
+        ProceduralSurfaceDefinition, ProceduralSurfaceRow,
+    };
+    use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
+
+    let surface = ProceduralSurface::new(
+        ProceduralSurfaceId::mint("test:model:surface-construction#schema").unwrap(),
+        ProceduralSurfaceDefinition::Unknown {
+            record: None,
+            cache: None,
+        },
+        None,
+    );
+    let curve = ProceduralCurve::new(
+        ProceduralCurveId::mint("test:model:curve-construction#schema").unwrap(),
+        ProceduralCurveDefinition::Exact { cache: None },
+    );
+    let surface_wire = serde_json::to_value(ProceduralSurfaceRow::new(
+        SurfaceId::mint("test:model:surface#schema").unwrap(),
+        &surface,
+    ))
+    .unwrap();
+    let curve_wire = serde_json::to_value(ProceduralCurveRow::new(
+        CurveId::mint("test:model:curve#schema").unwrap(),
+        &curve,
+    ))
+    .unwrap();
+    assert!(serde_json::from_value::<ProceduralSurfaceRow>(surface_wire.clone()).is_ok());
+    assert!(serde_json::from_value::<ProceduralCurveRow>(curve_wire.clone()).is_ok());
+
+    let schema = serde_json::to_value(crate::cadir_json_schema()).unwrap();
+    for (arena, carrier, wire) in [
+        ("procedural_surfaces", "surface", surface_wire),
+        ("procedural_curves", "curve", curve_wire),
+    ] {
+        let path = format!("/$defs/Model/properties/{arena}/items/$ref");
+        let reference = schema.pointer(&path).unwrap().as_str().unwrap();
+        let row = schema
+            .pointer(reference.strip_prefix('#').unwrap())
+            .unwrap();
+        assert_eq!(row["additionalProperties"], false);
+        assert!(row["required"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!(carrier)));
+        for field in wire.as_object().unwrap().keys() {
+            assert!(row["properties"].get(field).is_some(), "{arena}.{field}");
+        }
+        let mut missing_link = wire.clone();
+        missing_link.as_object_mut().unwrap().remove(carrier);
+        let mut unknown_field = wire;
+        unknown_field["unknown"] = serde_json::json!(true);
+        if arena == "procedural_surfaces" {
+            assert!(serde_json::from_value::<ProceduralSurfaceRow>(missing_link).is_err());
+            assert!(serde_json::from_value::<ProceduralSurfaceRow>(unknown_field).is_err());
+        } else {
+            assert!(serde_json::from_value::<ProceduralCurveRow>(missing_link).is_err());
+            assert!(serde_json::from_value::<ProceduralCurveRow>(unknown_field).is_err());
+        }
+    }
+}

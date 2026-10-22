@@ -488,7 +488,8 @@ fn semantic_writer_rewrites_feature_input_name_values() {
         crate::writer::ClassLayouts::Source(decoded.source_fidelity()),
         &crate::resolved_features::class_sources::ClassSources::default(),
     )
-    .unwrap();
+    .unwrap()
+    .0;
 
     let written = decoded_object_names(&payload, &lane.id);
     assert_eq!(written[1].value, "Depth");

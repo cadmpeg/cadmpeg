@@ -196,6 +196,13 @@ impl<'a> View<'a> {
         self.tracking
     }
 
+    /// Whether this view carries a live source-session handle.
+    ///
+    /// A record scope still verifies that the handle belongs to its context.
+    pub const fn has_source_tracking(self) -> bool {
+        self.tracking.is_some()
+    }
+
     /// Bounded window over retained bytes that left the live space chain.
     ///
     /// Prefer views returned by [`DecodeContext`](super::DecodeContext). This

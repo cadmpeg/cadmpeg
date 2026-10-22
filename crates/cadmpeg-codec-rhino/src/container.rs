@@ -367,7 +367,7 @@ fn acquire(root: View<'_>) -> &[u8] {
     root.window()
 }
 
-fn framing_error(error: FramingError) -> CodecError {
+pub(crate) fn framing_error(error: FramingError) -> CodecError {
     match error {
         FramingError::Resource(limit) => CodecError::ResourceLimit(limit),
         FramingError::Truncated { offset, .. } => CodecError::truncated(

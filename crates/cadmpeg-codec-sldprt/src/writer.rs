@@ -66,6 +66,7 @@ pub(crate) struct SemanticOutput {
     pub(crate) dialect: cadmpeg_core::dialect::DialectId,
     /// Which model arenas the written document carries.
     pub(crate) coverage: ArenaDispositions,
+    pub(crate) consumed_source_layout: bool,
 }
 
 /// Writes a semantic document and returns the dialect and arena coverage it
@@ -197,6 +198,7 @@ pub(super) fn write_semantic_at(
     };
     let coverage = semantic_coverage(!retained_records.is_empty(), retained_partition.is_some());
     let retain_native_brep = retained_partition.is_some() || patched_partition.is_some();
+    let mut consumed_source_layout = source_scan.is_some() || retain_native_brep;
     if !retain_native_brep && requires_native_partition(ir) {
         return Err(CodecError::UnsupportedContent(
             "SLDPRT cannot regenerate opaque curve or surface records without a retained native partition".into(),
@@ -269,6 +271,7 @@ pub(super) fn write_semantic_at(
         true
     };
     if replay_swobjects {
+        consumed_source_layout = true;
         sections.extend(retained_swobjects);
     } else {
         if !materials.is_empty() {
@@ -311,16 +314,15 @@ pub(super) fn write_semantic_at(
         let histories = native
             .as_ref()
             .map_or(&[][..], |native| native.feature_histories.as_slice());
-        sections.push((
-            section,
-            resolved_feature_payload(
-                lane,
-                histories,
-                &feature_input_renames,
-                class_layouts,
-                &written_class_sources,
-            )?,
-        ));
+        let (payload, lane_consumed_source_layout) = resolved_feature_payload(
+            lane,
+            histories,
+            &feature_input_renames,
+            class_layouts,
+            &written_class_sources,
+        )?;
+        sections.push((section, payload));
+        consumed_source_layout |= lane_consumed_source_layout;
     }
     sections.extend(previews::sections(ir)?);
     if let Some(payload) = crate::pmi::write::payload(ir, native.as_ref())? {
@@ -333,6 +335,7 @@ pub(super) fn write_semantic_at(
         &generated_partition_sections,
         retain_native_brep,
     )?;
+    consumed_source_layout |= !opaque.is_empty();
     let document_envelope = crate::container::first_solidworks_envelope(
         opaque.iter().map(|(_, payload)| payload.as_slice()),
     );
@@ -371,6 +374,7 @@ pub(super) fn write_semantic_at(
     Ok(SemanticOutput {
         dialect: written_dialect,
         coverage,
+        consumed_source_layout,
     })
 }
 
@@ -1683,12 +1687,22 @@ fn resolved_feature_payload(
     renames: &[crate::history::write::features::FeatureInputRename],
     class_layouts: ClassLayouts<'_>,
     written_classes: &crate::resolved_features::class_sources::ClassSources,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<(Vec<u8>, bool), CodecError> {
     const MARKER: &[u8] = &[0xff, 0xff, 0x1f, 0x00, 0x03];
+    let mut consumed_source_layout = false;
+    let mut missing_class_layout = false;
+    for class in &lane.classes {
+        if written_classes.position(class).is_some() {
+            continue;
+        }
+        if class_layouts.has_class(class) {
+            consumed_source_layout |= matches!(class_layouts, ClassLayouts::Source(_));
+        } else {
+            missing_class_layout = true;
+        }
+    }
     if lane.names.iter().any(|name| name.offset.is_none())
-        || lane.classes.iter().any(|class| {
-            !class_layouts.has_class(class) && written_classes.position(class).is_none()
-        })
+        || missing_class_layout
         || lane
             .sketch_entities
             .iter()
@@ -1918,7 +1932,7 @@ fn resolved_feature_payload(
         }
         payload.splice(start..end, replacement);
     }
-    Ok(payload.into_inner())
+    Ok((payload.into_inner(), consumed_source_layout))
 }
 
 /// The record position a `sldprt:metadata:*` identifier carries: the ordinal of

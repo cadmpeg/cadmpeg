@@ -139,8 +139,11 @@ pub(crate) fn parse_document_source<'source>(
     xml: &roxmltree::Document<'_>,
     schema: Vocabulary,
 ) -> Result<Graph, CodecError> {
+    let transaction = ctx.read_transaction()?;
     let source = source::Source::new(ctx, source, xml)?;
-    parse_document_impl(xml, schema, Some(&source))
+    let graph = parse_document_impl(xml, schema, Some(&source))?;
+    transaction.commit()?;
+    Ok(graph)
 }
 
 fn parse_document_impl(
@@ -259,43 +262,18 @@ fn parse_document_impl(
                 "duplicate object declaration name {name}"
             )));
         }
-        let name = name.to_owned();
-        let type_name = retained_attr(node, "type")?;
-        let identity = crate::native::object_identity::ObjectIdentity::from_name(name);
-        let data_node = data_by_name.get(identity.name());
-        let attributes = node
-            .attributes()
-            .filter(|attribute| !matches!(attribute.name(), "name" | "type" | "id" | "ViewType"))
-            .map(|attribute| (attribute.name().to_owned(), attribute.value().to_owned()))
-            .collect();
-        let dependency = dependency_map.remove(identity.name());
-        if dependencies_enabled
-            && dependency
-                .as_ref()
-                .is_none_or(|dependency| dependency.order != order)
-        {
-            return Err(CodecError::malformed(format_args!(
-                "ObjectDeps order does not match object {}",
-                identity.name()
-            )));
-        }
-        let (dependencies, dependency_allow_partial) = match dependency {
-            Some(dependency) => (dependency.dependencies, dependency.allow_partial),
-            None => (Vec::new(), None),
+        let id = crate::native::native_id("object", name);
+        let data = data_by_name.get(name).copied();
+        let dependency = dependency_map.remove(name);
+        let parse = || parse_object(node, data, order, dependency, dependencies_enabled, source);
+        let object = match source {
+            Some(source) => source.record(&id, node, parse)?,
+            None => parse()?,
         };
-        if let Some(data) = data_node {
-            object_sources.push((identity.id().clone(), data.range()));
+        if let Some(data) = data {
+            object_sources.push((object.id().clone(), data.range()));
         }
-        objects.push(ObjectRecord {
-            identity,
-            type_name,
-            persistent_id: node.attribute("id").and_then(|value| value.parse().ok()),
-            view_type: node.attribute("ViewType").map(str::to_owned),
-            attributes,
-            dependencies,
-            dependency_allow_partial,
-            order,
-        });
+        objects.push(object);
     }
 
     if !dependency_map.is_empty() {
@@ -502,6 +480,61 @@ fn parse_document_impl(
     })
 }
 
+fn parse_object(
+    node: roxmltree::Node<'_, '_>,
+    data: Option<roxmltree::Node<'_, '_>>,
+    order: usize,
+    dependency: Option<DependencyInfo>,
+    dependencies_enabled: bool,
+    source: Option<&source::Source<'_, '_>>,
+) -> Result<ObjectRecord, CodecError> {
+    let (name, type_name) = match source {
+        Some(source) => (
+            source.required_attribute(node, "name")?,
+            source.required_attribute(node, "type")?,
+        ),
+        None => (retained_attr(node, "name")?, retained_attr(node, "type")?),
+    };
+    if let (Some(source), Some(data)) = (source, data) {
+        let data_name = source.required_attribute(data, "name")?;
+        if data_name != name {
+            return Err(CodecError::malformed(format_args!(
+                "ObjectData identity {data_name} differs from declaration {name}"
+            )));
+        }
+    }
+    let identity = crate::native::object_identity::ObjectIdentity::from_name(name);
+    let attributes = node
+        .attributes()
+        .filter(|attribute| !matches!(attribute.name(), "name" | "type" | "id" | "ViewType"))
+        .map(|attribute| (attribute.name().to_owned(), attribute.value().to_owned()))
+        .collect();
+    if dependencies_enabled
+        && dependency
+            .as_ref()
+            .is_none_or(|dependency| dependency.order != order)
+    {
+        return Err(CodecError::malformed(format_args!(
+            "ObjectDeps order does not match object {}",
+            identity.name()
+        )));
+    }
+    let (dependencies, dependency_allow_partial) = match dependency {
+        Some(dependency) => (dependency.dependencies, dependency.allow_partial),
+        None => (Vec::new(), None),
+    };
+    Ok(ObjectRecord {
+        identity,
+        type_name,
+        persistent_id: node.attribute("id").and_then(|value| value.parse().ok()),
+        view_type: node.attribute("ViewType").map(str::to_owned),
+        attributes,
+        dependencies,
+        dependency_allow_partial,
+        order,
+    })
+}
+
 /// XML element boundaries and identities own the population, not its redundant count.
 fn check_count(
     node: roxmltree::Node<'_, '_>,
@@ -697,6 +730,10 @@ fn parse_persisted_property(
     } else {
         None
     };
+    let vector_value = payload_error
+        .is_none()
+        .then(|| direct_vector_value(node, &type_name))
+        .flatten();
     let mut values = Vec::new();
     let mut value_indices = HashMap::new();
     for (value_order, value) in node
@@ -715,13 +752,15 @@ fn parse_persisted_property(
                 .attributes()
                 .map(|attribute| {
                     let text = match source.filter(|_| {
-                        attribute.name() == "value"
-                            && attribute.namespace().is_none()
-                            && value.parent() == Some(node)
-                            && (string_value == Some(value)
-                                || type_name != "App::PropertyEnumeration"
-                                    && scalar_value_tag(&type_name)
-                                        == Some(value.tag_name().name()))
+                        attribute.namespace().is_none()
+                            && (vector_value == Some(value)
+                                && matches!(attribute.name(), "valueX" | "valueY" | "valueZ")
+                                || attribute.name() == "value"
+                                    && value.parent() == Some(node)
+                                    && (string_value == Some(value)
+                                        || type_name != "App::PropertyEnumeration"
+                                            && scalar_value_tag(&type_name)
+                                                == Some(value.tag_name().name())))
                     }) {
                         Some(source) => source.attribute(&attribute)?,
                         None => attribute.value().to_owned(),
@@ -772,6 +811,40 @@ fn parse_persisted_property(
         },
         order,
     })
+}
+
+// Source reads are admitted only for a complete, single, kept vector carrier.
+// Extra or invalid structure remains native content without vector read credit.
+fn direct_vector_value<'a, 'input>(
+    property: roxmltree::Node<'a, 'input>,
+    type_name: &str,
+) -> Option<roxmltree::Node<'a, 'input>> {
+    if type_name != "App::PropertyVector" {
+        return None;
+    }
+    let mut elements = property.children().filter(roxmltree::Node::is_element);
+    let value = elements.next()?;
+    if elements.next().is_some()
+        || value.tag_name().namespace().is_some()
+        || value.tag_name().name() != "PropertyVector"
+        || value.children().any(|child| child.is_element())
+    {
+        return None;
+    }
+    ["valueX", "valueY", "valueZ"]
+        .iter()
+        .all(|key| {
+            let mut attributes = value
+                .attributes()
+                .filter(|attribute| attribute.name() == *key);
+            match (attributes.next(), attributes.next()) {
+                (Some(attribute), None) if attribute.namespace().is_none() => {
+                    attribute.value().parse::<f64>().is_ok_and(f64::is_finite)
+                }
+                _ => false,
+            }
+        })
+        .then_some(value)
 }
 
 pub(crate) fn validate_link_property(

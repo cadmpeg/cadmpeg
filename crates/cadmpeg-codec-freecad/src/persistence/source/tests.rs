@@ -21,6 +21,23 @@ fn identity_ranges(input: &str, name: &str, type_name: &str) -> Vec<std::ops::Ra
     ]
 }
 
+fn property_captures(
+    ctx: &DecodeContext<'_>,
+    graph: &crate::persistence::Graph,
+) -> Vec<cadmpeg_core::decode::RecordCapture> {
+    let captures = ctx.take_record_captures().unwrap();
+    assert_eq!(captures.len(), graph.objects.len() + graph.properties.len());
+    captures
+        .into_iter()
+        .filter(|capture| {
+            graph
+                .properties
+                .iter()
+                .any(|property| capture.id() == property.id)
+        })
+        .collect()
+}
+
 #[test]
 fn kept_scalar_values_read_only_the_original_value_bytes_in_a_nonzero_source_window() {
     for float in ["1.25", "2.25"] {
@@ -34,7 +51,7 @@ fn kept_scalar_values_read_only_the_original_value_bytes_in_a_nonzero_source_win
         let dom =
             roxmltree::Document::parse(std::str::from_utf8(source.window()).unwrap()).unwrap();
         let graph = parse_document_source(&ctx, source, &dom, Vocabulary::Objects).unwrap();
-        let captures = ctx.take_record_captures().unwrap();
+        let captures = property_captures(&ctx, &graph);
         assert_eq!(captures.len(), 3);
         for (name, literal) in [("Distance", float), ("Count", "-7"), ("Visible", "True")] {
             let property = graph
@@ -76,7 +93,7 @@ fn decoded_scalar_entities_credit_the_exact_original_entity_spelling_and_no_mark
     let dom = roxmltree::Document::parse(&xml).unwrap();
     let graph = parse_document_source(&ctx, source, &dom, Vocabulary::Objects).unwrap();
     assert_eq!(graph.properties[0].values()[0].attributes["value"], "1.5");
-    let captures = ctx.take_record_captures().unwrap();
+    let captures = property_captures(&ctx, &graph);
     let start = xml.find("1&#x2e;5").unwrap();
     assert_eq!(captures.len(), 1);
     let mut expected = identity_ranges(&xml, "Distance", "App::PropertyFloat");
@@ -101,7 +118,7 @@ fn unreadable_and_opaque_property_values_receive_no_scalar_read_credit() {
         "AAAB-pickle"
     );
     assert_eq!(graph.properties[2].values()[0].attributes["value"], "7");
-    let captures = ctx.take_record_captures().unwrap();
+    let captures = property_captures(&ctx, &graph);
     assert_eq!(captures.len(), 3);
     for (name, type_name) in [
         ("Invalid", "App::PropertyBool"),
@@ -169,7 +186,7 @@ fn nested_scalar_lookalikes_do_not_get_the_direct_scalar_producers_read_credit()
     let graph = parse_document_source(&ctx, view, &dom, Vocabulary::Objects).unwrap();
     assert_eq!(graph.properties[0].values()[0].attributes["value"], "12.5");
     assert_eq!(graph.properties[0].values()[1].attributes["value"], "999");
-    let captures = ctx.take_record_captures().unwrap();
+    let captures = property_captures(&ctx, &graph);
     let start = xml.find("12.5").unwrap();
     assert_eq!(captures.len(), 1);
     let mut expected = identity_ranges(&xml, "Distance", "App::PropertyFloat");
@@ -177,5 +194,8 @@ fn nested_scalar_lookalikes_do_not_get_the_direct_scalar_producers_read_credit()
     assert_eq!(captures[0].reads()["file"], expected);
 }
 
+mod object_declarations;
 mod property_identity;
 mod string_values;
+
+mod vector_values;

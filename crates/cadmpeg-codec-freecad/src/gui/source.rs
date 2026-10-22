@@ -62,16 +62,20 @@ impl<'a> Source<'a> {
     /// Consume the same DOM after the application objects and topology exist.
     pub(crate) fn transfer(
         self,
+        ctx: &DecodeContext<'a>,
         ir: &mut CadIr,
         sources: &GuiSources<'_, '_>,
     ) -> Result<Graph, CodecError> {
         match self.parsed {
-            Parsed::Admitted { xml, .. } => match super::transfer_document(ir, &xml, sources) {
-                Err(error @ (CodecError::Malformed(_) | CodecError::Truncated { .. })) => {
-                    Ok(super::source_only_graph(None, &error))
+            Parsed::Admitted { xml, .. } => {
+                let source = crate::persistence::source::Source::new(ctx, self.source, &xml)?;
+                match super::transfer_document(ir, &xml, sources, Some(&source)) {
+                    Err(error @ (CodecError::Malformed(_) | CodecError::Truncated { .. })) => {
+                        Ok(super::source_only_graph(None, &error))
+                    }
+                    result => result,
                 }
-                result => result,
-            },
+            }
             Parsed::Unreadable(graph) => Ok(graph),
         }
     }

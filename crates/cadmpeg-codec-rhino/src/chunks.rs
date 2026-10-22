@@ -253,15 +253,24 @@ pub(crate) struct BoundedReader<'a> {
 impl<'a> BoundedReader<'a> {
     /// Creates a reader over `start..end`.
     pub(crate) fn new(bytes: &'a [u8], start: usize, end: usize) -> Result<Self, FramingError> {
-        let view =
-            View::over_retained(bytes)
-                .child(start, end)
-                .ok_or(FramingError::OutOfBounds {
-                    offset: start,
-                    end,
-                    bound: bytes.len(),
-                })?;
-        Ok(Self { bytes, view })
+        Self::from_view(View::over_retained(bytes), start, end)
+    }
+
+    /// Creates a bounded reader without detaching the source-session handle.
+    pub(crate) fn from_view(
+        source: View<'a>,
+        start: usize,
+        end: usize,
+    ) -> Result<Self, FramingError> {
+        let view = source.child(start, end).ok_or(FramingError::OutOfBounds {
+            offset: start,
+            end,
+            bound: source.end(),
+        })?;
+        Ok(Self {
+            bytes: source.window(),
+            view,
+        })
     }
 
     /// Returns the absolute cursor offset.
@@ -281,7 +290,17 @@ impl<'a> BoundedReader<'a> {
 
     /// Returns a reader over the unread bounded bytes.
     pub(crate) fn unread(&self) -> Result<Self, FramingError> {
-        Self::new(self.bytes, self.view.position(), self.view.end())
+        Ok(Self {
+            bytes: self.bytes,
+            view: self
+                .view
+                .child(self.view.position(), self.view.end())
+                .ok_or(FramingError::OutOfBounds {
+                    offset: self.view.position(),
+                    end: self.view.end(),
+                    bound: self.view.end(),
+                })?,
+        })
     }
 
     /// Returns the unread byte count.
@@ -291,7 +310,10 @@ impl<'a> BoundedReader<'a> {
 
     /// Skips exactly `count` bytes.
     pub(crate) fn skip(&mut self, count: usize) -> Result<(), FramingError> {
-        self.take(count).map(|_| ())
+        let offset = self.view.position();
+        self.view
+            .skip(count)
+            .ok_or_else(|| self.short_read(offset, count))
     }
 
     /// Skips the unread suffix of this bounded payload.

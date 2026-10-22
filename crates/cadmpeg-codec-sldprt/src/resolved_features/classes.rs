@@ -369,6 +369,33 @@ pub(crate) fn history_classes<'a, L: Borrow<FeatureInputLane>>(
             *bound = classless_dimension_schema_class(feature);
         }
     }
+    let mut classes_by_owner = HashMap::<&str, Vec<&str>>::new();
+    for lane in lanes {
+        for class in &lane.classes {
+            if class.parent == lane.id && class.role() == FeatureInputClassRole::Feature {
+                if let Some(owner) = class.feature_ref.as_deref() {
+                    classes_by_owner.entry(owner).or_default().push(&class.name);
+                }
+            }
+        }
+    }
+    let mut owner_counts = HashMap::<&str, usize>::new();
+    for feature in &features {
+        *owner_counts.entry(&feature.id).or_default() += 1;
+    }
+    for (feature, bound) in features.iter().zip(&mut bound) {
+        if let Some(classes) = classes_by_owner.get(feature.id.as_str()) {
+            *bound = match classes.as_slice() {
+                [first, rest @ ..]
+                    if owner_counts.get(feature.id.as_str()) == Some(&1)
+                        && rest.iter().all(|class| class == first) =>
+                {
+                    Some(*first)
+                }
+                _ => None,
+            };
+        }
+    }
     bound
 }
 
@@ -1705,5 +1732,80 @@ mod idless_history_binding_tests {
             .features
             .iter()
             .all(|feature| { feature.input_class.as_deref() == Some("moCosmeticThread_c") }));
+    }
+
+    #[test]
+    fn explicit_native_class_owner_survives_without_source_positions() {
+        let class = FeatureInputClass {
+            id: "owned-class".into(),
+            parent: "lane".into(),
+            feature_ref: Some("feature-0".into()),
+            ordinal: 7,
+            sequence: 93,
+            name: "moExtrusion_c".into(),
+        };
+        let lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: Vec::new().into(),
+            classes: vec![class],
+            names: Vec::new(),
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: Vec::new(),
+        };
+        let wire = serde_json::to_value(&lane).unwrap();
+        let mut lane: FeatureInputLane = serde_json::from_value(wire).unwrap();
+        let mut histories = [FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![feature(0, "localized operation")],
+        }];
+        let sources = ClassSources::default();
+        let bind = |histories: &mut [FeatureHistory], lane: &FeatureInputLane| {
+            bind_history_classes(&sources, histories, std::slice::from_ref(lane));
+        };
+        bind(&mut histories, &lane);
+        assert_eq!(
+            histories[0].features[0].input_class.as_deref(),
+            Some("moExtrusion_c")
+        );
+        assert!(lane.native_payload.is_empty());
+        assert_eq!(sources.position(&lane.classes[0]), None);
+
+        lane.classes[0].feature_ref = Some("missing-owner".into());
+        bind(&mut histories, &lane);
+        assert_eq!(histories[0].features[0].input_class, None);
+
+        lane.classes[0].feature_ref = Some("feature-0".into());
+        let duplicate = histories[0].features[0].clone();
+        histories[0].features.push(duplicate);
+        bind(&mut histories, &lane);
+        assert!(histories[0]
+            .features
+            .iter()
+            .all(|feature| feature.input_class.is_none()));
+        histories[0].features.pop();
+
+        let mut conflicting = lane.classes[0].clone();
+        conflicting.id = "conflicting-class".into();
+        conflicting.name = "Fillet_c".into();
+        lane.classes.push(conflicting);
+        bind(&mut histories, &lane);
+        assert_eq!(histories[0].features[0].input_class, None);
+
+        lane.classes.pop();
+        lane.classes[0].name = "moCompEdge_c".into();
+        bind(&mut histories, &lane);
+        assert_eq!(histories[0].features[0].input_class, None);
     }
 }

@@ -636,5 +636,8 @@ fn a_structurally_alien_document_under_a_foreign_version_still_fails() {
 }
 
 mod source_document_reads;
+mod source_object_reads;
 mod source_property_reads;
 mod source_scalar_reads;
+
+mod source_vector_reads;

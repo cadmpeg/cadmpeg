@@ -38,6 +38,8 @@ mod mesh_userdata;
 mod object_attributes_userdata;
 mod scope_and_v1_eof;
 mod settings_userdata;
+mod source_line_reads;
+mod source_point_reads;
 mod standalone_line;
 mod standalone_line_closure;
 mod undeclared_archive_word;

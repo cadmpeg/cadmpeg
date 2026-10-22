@@ -225,7 +225,7 @@ fn transfer_xml(
     sources: &GuiSources<'_, '_>,
 ) -> Result<Graph, CodecError> {
     let xml = parse_xml(ctx, bytes)?;
-    transfer_document(ir, &xml, sources)
+    transfer_document(ir, &xml, sources, None)
 }
 
 fn parse_xml<'input>(
@@ -246,6 +246,7 @@ fn transfer_document(
     ir: &mut CadIr,
     xml: &roxmltree::Document<'_>,
     sources: &GuiSources<'_, '_>,
+    source: Option<&crate::persistence::source::Source<'_, '_>>,
 ) -> Result<Graph, CodecError> {
     let schema_declaration = crate::container::canonical_attribute(
         xml.root_element(),
@@ -253,14 +254,37 @@ fn transfer_document(
         "schemaVersion",
     )?;
     let admission = schema::classify(schema_declaration.as_deref());
-    let neutral_schema_version = admission.neutral_schema_version();
-    let transferred = transfer_schema_one(
-        ir,
-        xml,
-        schema_declaration.as_deref(),
-        neutral_schema_version,
-        sources,
-    );
+    let parse = || {
+        let selected = match source {
+            Some(source) => {
+                let root = xml.root_element();
+                let key = if root.attribute("SchemaVersion").is_some() {
+                    "SchemaVersion"
+                } else {
+                    "schemaVersion"
+                };
+                root.attributes()
+                    .find(|attribute| attribute.namespace().is_none() && attribute.name() == key)
+                    .map(|attribute| source.attribute(&attribute))
+                    .transpose()?
+            }
+            None => schema_declaration.clone(),
+        };
+        let neutral_schema_version = schema::classify(selected.as_deref()).neutral_schema_version();
+        transfer_schema_one(
+            ir,
+            xml,
+            selected.as_deref(),
+            neutral_schema_version,
+            sources,
+        )
+    };
+    // The source value constructs the kept GUI document and presentation schema.
+    // A rejected provider transfer rolls this scope back before source-only recovery.
+    let transferred = match source {
+        Some(source) => source.record("fcstd:gui:document#0", xml.root_element(), parse),
+        None => parse(),
+    };
     let mut graph = match transferred {
         Ok((graph, plan)) => {
             plan.apply(ir);

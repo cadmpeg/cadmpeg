@@ -348,6 +348,7 @@ pub(crate) fn state_layout_payloads(
     xml_value_layout_payloads(ctx, source, ranges, payloads, pointers)
 }
 
+#[cfg(test)]
 pub(crate) fn object_layout_payloads(
     ctx: &DecodeContext<'_>,
     source: View<'_>,
@@ -363,6 +364,23 @@ pub(crate) fn object_layout_payloads(
         values: Vec::new(),
     };
     xml_value_layout_payloads(ctx, source, &ranges, payloads, pointers)
+}
+
+pub(crate) fn captured_object_layout_payloads(
+    ctx: &DecodeContext<'_>,
+    source: View<'_>,
+    id: &str,
+    range: Range<usize>,
+    payloads: &mut BTreeMap<String, BTreeMap<String, NativeBytes>>,
+    pointers: &mut BTreeMap<String, BTreeMap<String, u64>>,
+) -> Result<(), CodecError> {
+    let ranges = ValueSourceRanges {
+        id: id.to_owned(),
+        record: range,
+        values: Vec::new(),
+    };
+    let fields = copy_xml_value_layout(ctx, source, &ranges)?;
+    install_xml_value_fields(&ranges, fields, payloads, pointers)
 }
 
 #[cfg(test)]

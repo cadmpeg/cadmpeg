@@ -95,8 +95,8 @@ macro_rules! classified_arena_registry {
             curves: Curve, model, "Curve arena.", [], [cfg_attr(feature = "schema", schemars(with = "Vec<Curve>"))];
             subds: SubdSurface, model, "Subdivision surface arena.", [];
             pcurves: Pcurve, model, "Pcurve arena.", [];
-            procedural_surfaces: ProceduralSurface, model, "Procedural surface arena.", [], [cfg_attr(feature = "schema", schemars(with = "Vec<ProceduralSurface>"))];
-            procedural_curves: ProceduralCurve, model, "Procedural curve arena.", [], [cfg_attr(feature = "schema", schemars(with = "Vec<ProceduralCurve>"))];
+            procedural_surfaces: ProceduralSurface, model, "Procedural surface arena.", [], [cfg_attr(feature = "schema", schemars(with = "Vec<ProceduralSurfaceRow>"))];
+            procedural_curves: ProceduralCurve, model, "Procedural curve arena.", [], [cfg_attr(feature = "schema", schemars(with = "Vec<ProceduralCurveRow>"))];
             assets: crate::assets::Asset, model, "Embedded and externally referenced document resources.", [serde(default, skip_serializing_if = "Vec::is_empty")];
             features: Feature, design, "Feature arena.", [], [cfg_attr(feature = "schema", schemars(with = "Vec<FeatureRowWire>"))];
             feature_input_topologies: FeatureInputTopology, design, "Feature input-topology arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];

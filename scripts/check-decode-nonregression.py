@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""Compare decoded JSON facts for #219; corpus adapters are not installed yet.
+"""Compare decoded JSON facts for #219 using guarded local producer collection.
 
 The importable comparator never infers a field move from its spelling. Its
 schema paths, record types and move rows must come from the owning adapters.
-The executable refuses until the base-build, resolver and Appendix B adapters
-exist; running these unit helpers is not a passing corpus gate.
+The executable collects when real producer proofs are installed; missing
+resolver, Appendix B and coverage obligations remain explicit failures.
 """
 
 from __future__ import annotations
@@ -13,12 +13,15 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass, field
 import math
+import json
+import os
 from pathlib import Path, PurePosixPath
+import tempfile
 import subprocess
 import sys
 from typing import Any, Mapping
 
-from decode_nonregression_inputs import discover, pair_fixtures
+from decode_nonregression_inputs import base_binary, discover, pair_fixtures
 from decode_nonregression_schema import SchemaPaths
 
 
@@ -194,7 +197,7 @@ def index_records(rows: Any, path: JsonPath, findings: list[Finding]) -> dict[st
     return result
 
 
-def compare_neutral(before: Mapping, after: Mapping, schema: SchemaPaths) -> list[Finding]:
+def compare_neutral(before: Mapping, after: Mapping, schema: SchemaPaths, head_schema: SchemaPaths | None = None) -> list[Finding]:
     findings: list[Finding] = []
     for arena, rows in before.items():
         old = index_records(rows, ('model', arena), findings)
@@ -207,7 +210,7 @@ def compare_neutral(before: Mapping, after: Mapping, schema: SchemaPaths) -> lis
                 findings.append(Finding('neutral-record', ('model', arena, identity), 'base record has no head identity/pairing witness'))
                 continue
             old_leaves, old_tags = record_facts(record, (arena, '#'), schema)
-            new_leaves, new_tags = record_facts(head, (arena, '#'), schema)
+            new_leaves, new_tags = record_facts(head, (arena, '#'), schema if head_schema is None else head_schema)
             for (path, tag), count in old_tags.items():
                 if new_tags[(path, tag)] < count:
                     findings.append(Finding('neutral-tag', (identity,) + path, f'typed variant {tag!r} lost'))
@@ -324,6 +327,34 @@ def main() -> int:
     if fixture_failures:
         print('\n'.join(fixture_failures), file=sys.stderr)
         return 1
+    if all(os.environ.get(name) for name in (
+        'CADMPEG_BASE_PRODUCER', 'CADMPEG_HEAD_PRODUCER', 'CADMPEG_BASE_SCHEMA_HELPER',
+    )):
+        from decode_nonregression_collect import BaselineHelper, Producer, collect_fixture
+        try:
+            verified_base = base_binary(repo, os.environ.get('CADMPEG_BASE_BIN'))
+            baseline = Producer.load(repo, Path(os.environ['CADMPEG_BASE_PRODUCER']), 'baseline')
+            if verified_base.resolve() != Path(baseline.proof['binary']).resolve():
+                raise ValueError('baseline producer is not the verified base-build executable')
+            current = Producer.load(repo, Path(os.environ['CADMPEG_HEAD_PRODUCER']), 'head')
+            if current.proof['commit'] != subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD'], text=True).strip():
+                raise ValueError('head producer does not match the committed gate input')
+            if baseline.proof['commit'] != base:
+                raise ValueError('baseline producer is not the actual merge base')
+            helper = BaselineHelper.load(baseline, Path(os.environ['CADMPEG_BASE_SCHEMA_HELPER']))
+            pairs, failures = pair_fixtures(discover(repo, base), discover(repo, current.proof['commit']))
+            if failures:
+                raise ValueError('; '.join(failures))
+            with tempfile.TemporaryDirectory(prefix='cadmpeg-nonregression-') as directory:
+                for index, pair in enumerate(pairs):
+                    report = collect_fixture(sys.modules[__name__], pair[1].path, baseline, current, helper,
+                                             Path(directory) / str(index))
+                    print(json.dumps(report, sort_keys=True))
+            # A full run cannot pass while the report has uncovered obligations.
+            return 1
+        except (OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
+            print(f'collection-proof: {error}', file=sys.stderr)
+            return 1
     print(
         'decode non-regression gate is NOT operational: authoritative base/head CLI dumps, '
         'CADMPEG_BASE_BIN verification, schema/typed-record and Appendix B adapters, resolver equality, '

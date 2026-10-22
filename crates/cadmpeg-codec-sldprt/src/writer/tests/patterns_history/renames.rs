@@ -49,7 +49,8 @@ fn semantic_writer_splices_two_renames_in_one_lane_at_the_offsets_the_first_move
         crate::writer::ClassLayouts::Source(decoded.source_fidelity()),
         &crate::resolved_features::class_sources::ClassSources::default(),
     )
-    .unwrap();
+    .unwrap()
+    .0;
 
     let written = decoded_object_names(&payload, &lane.id);
     assert_eq!(

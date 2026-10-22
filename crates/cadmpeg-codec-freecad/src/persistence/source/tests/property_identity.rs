@@ -33,7 +33,7 @@ fn entity_spelled_property_identity_and_status_flow_into_kept_fields_in_a_nonzer
         assert_eq!(wire["name"], name);
         assert_eq!(wire["type_name"], "Vendor::Future");
         assert_eq!(wire["status"], status);
-        let captures = ctx.take_record_captures().unwrap();
+        let captures = property_captures(&ctx, &graph);
         assert_eq!(captures.len(), 1);
         assert_eq!(captures[0].id(), property.id);
         assert_eq!(
@@ -61,7 +61,7 @@ fn invalid_status_and_unreadable_payload_bytes_do_not_gain_identity_read_credit(
             graph.properties[0].body,
             crate::native::PropertyBody::Unreadable(_)
         ));
-        let captures = ctx.take_record_captures().unwrap();
+        let captures = property_captures(&ctx, &graph);
         assert_eq!(captures.len(), 1);
         assert_eq!(
             captures[0].reads()["file"],
@@ -84,7 +84,7 @@ fn a_transient_declaration_reads_its_kept_identity_and_status_without_a_payload(
     assert_eq!(property.status, Some(152));
     assert!(property.is_transient());
     assert!(property.values().is_empty());
-    let captures = ctx.take_record_captures().unwrap();
+    let captures = property_captures(&ctx, &graph);
     assert_eq!(captures.len(), 1);
     let mut expected = identity_ranges(xml, "Preview", "App::PropertyString");
     expected.push(attribute_range(xml, "status", "152"));

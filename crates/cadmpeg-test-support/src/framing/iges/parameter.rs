@@ -6,6 +6,7 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use super::{append, cards, global, push, Card, FrameParent, FramedPart, Kind};
 
 struct Entry {
+    range: Range<usize>,
     owner: usize,
     entity_type: usize,
     start: Option<usize>,
@@ -54,31 +55,7 @@ pub fn frame_parameters<'a>(
     let (parameter, record, _, _) = global::declarations(global.window())?;
     let entries = entries(ctx, source, run(&cards, b'D')?)?;
     let plans = ownership(ctx, source, parameters, &entries)?;
-    let first = parameters
-        .first()
-        .ok_or("IGES Parameter section has no cards")?;
-    let last = parameters
-        .last()
-        .ok_or("IGES Parameter section has no final card")?;
-    let start = source.start() + first.start;
-    let end = source.start() + last.end;
-    let parent = match out.iter().position(|part| {
-        part.level().as_str() == "iges.parameter_section"
-            && part.capture().stream() == source_capture.stream()
-            && part.view().start() == start
-            && part.view().end() == end
-    }) {
-        Some(parent) => {
-            ctx.capture_part_extent(out[parent].view())
-                .map_err(|error| error.to_string())?;
-            parent
-        }
-        None => {
-            let parent = out.len();
-            super::section(ctx, source, parameters, b'P', out)?;
-            parent
-        }
-    };
+    let parent = parameter_section(ctx, source, parameters, &source_capture, out)?;
     for plan in plans {
         record_frames(
             ctx,
@@ -156,6 +133,7 @@ fn entries(
             ctx,
             &mut entries,
             Entry {
+                range: first.start..pair.last().ok_or("IGES Directory pair is empty")?.end,
                 owner: index
                     .checked_mul(2)
                     .and_then(|owner| owner.checked_add(1))
@@ -183,6 +161,38 @@ fn back_pointer(source: View<'_>, card: Card) -> Option<usize> {
 }
 
 fn ownership(
+    ctx: &DecodeContext<'_>,
+    source: View<'_>,
+    cards: &[Card],
+    entries: &[Entry],
+) -> Result<Vec<Plan>, String> {
+    let plans = locations(ctx, source, cards, entries)?;
+    for pair in plans.windows(2) {
+        if pair[0].range.end > pair[1].range.start {
+            return Err("IGES Directory Parameter ranges overlap".into());
+        }
+    }
+    for plan in &plans {
+        let owner = entries[plan.entry].owner;
+        for pointer in cards[plan.range.clone()]
+            .iter()
+            .filter_map(|card| back_pointer(source, *card))
+        {
+            if pointer != owner
+                && entries
+                    .binary_search_by_key(&pointer, |entry| entry.owner)
+                    .is_ok()
+            {
+                return Err(
+                    "IGES declared Parameter range conflicts with another Directory owner".into(),
+                );
+            }
+        }
+    }
+    Ok(plans)
+}
+
+fn locations(
     ctx: &DecodeContext<'_>,
     source: View<'_>,
     cards: &[Card],
@@ -246,27 +256,43 @@ fn ownership(
             },
         )?;
     }
-    plans.sort_unstable_by_key(|plan| (plan.range.start, plan.range.end));
-    for pair in plans.windows(2) {
-        if pair[0].range.end > pair[1].range.start {
-            return Err("IGES Directory Parameter ranges overlap".into());
-        }
-    }
-    for plan in &plans {
-        let owner = entries[plan.entry].owner;
-        for pointer in pointers[plan.range.clone()].iter().flatten() {
-            if *pointer != owner
-                && entries
-                    .binary_search_by_key(pointer, |entry| entry.owner)
-                    .is_ok()
-            {
-                return Err(
-                    "IGES declared Parameter range conflicts with another Directory owner".into(),
-                );
-            }
-        }
-    }
+    plans.sort_unstable_by_key(|plan| (plan.range.start, plan.range.end, plan.entry));
     Ok(plans)
+}
+
+fn parameter_section<'a>(
+    ctx: &DecodeContext<'_>,
+    source: View<'a>,
+    parameters: &[Card],
+    source_capture: &cadmpeg_core::decode::PartCapture,
+    out: &mut Vec<FramedPart<'a>>,
+) -> Result<usize, String> {
+    let first = parameters
+        .first()
+        .ok_or("IGES Parameter section has no cards")?;
+    let last = parameters
+        .last()
+        .ok_or("IGES Parameter section has no final card")?;
+    let start = source.start() + first.start;
+    let end = source.start() + last.end;
+    let parent = match out.iter().position(|part| {
+        part.level().as_str() == "iges.parameter_section"
+            && part.capture().stream() == source_capture.stream()
+            && part.view().start() == start
+            && part.view().end() == end
+    }) {
+        Some(parent) => {
+            ctx.capture_part_extent(out[parent].view())
+                .map_err(|error| error.to_string())?;
+            parent
+        }
+        None => {
+            let parent = out.len();
+            super::section(ctx, source, parameters, b'P', out)?;
+            parent
+        }
+    };
+    Ok(parent)
 }
 
 fn record_frames<'a>(
@@ -351,6 +377,10 @@ fn record_frames<'a>(
     }
     Ok(())
 }
+
+mod claims;
+
+pub use claims::{frame_parameter_claims, ParameterClaim};
 
 #[cfg(test)]
 mod tests;

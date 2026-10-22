@@ -15,7 +15,7 @@ mod parameter;
 mod rebuild;
 
 pub use global::frame_global;
-pub use parameter::frame_parameters;
+pub use parameter::{frame_parameter_claims, frame_parameters, ParameterClaim};
 pub use rebuild::{rebuild, rebuild_fields, Edit, FieldEdit};
 
 /// Append actual physical ASCII cards, sections and Directory fields.

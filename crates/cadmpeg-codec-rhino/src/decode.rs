@@ -679,18 +679,79 @@ impl<'a> DecodeContext<'a> {
                 }
                 continue;
             }
-            let decoded = crate::curves::decode(
-                self.expand.ctx(),
-                self.scan.data,
-                object.class_uuid,
-                object.class_data_range.clone(),
-                scale,
-                self.archive(),
-            );
+            let source = self.expand.root();
+            let source_key = if (crate::curves::is_point(object.class_uuid)
+                || crate::curves::is_line(object.class_uuid))
+                && source.has_source_tracking()
+            {
+                let Some(key) = self.checked_object_key(&object.identity, source_order) else {
+                    continue;
+                };
+                Some(key)
+            } else {
+                None
+            };
+            let ctx = self.expand.ctx();
+            let read_scope = source_key
+                .as_ref()
+                .map(|_| ctx.read_transaction())
+                .transpose()?;
+            let decoded = if let Some(key) = source_key {
+                let id: cadmpeg_ir::ids::Identity = if crate::curves::is_point(object.class_uuid) {
+                    cadmpeg_ir::ids::PointId::compose(
+                        &cadmpeg_ir::identity_namespace!("rhino", "object", "point"),
+                        key,
+                    )
+                    .into()
+                } else {
+                    cadmpeg_ir::ids::CurveId::compose(
+                        &cadmpeg_ir::identity_namespace!("rhino", "object", "curve"),
+                        key,
+                    )
+                    .into()
+                };
+                let extent = source
+                    .child(object.class_data_range.start, object.class_data_range.end)
+                    .ok_or_else(|| crate::chunks::FramingError::OutOfBounds {
+                        offset: object.class_data_range.start,
+                        end: object.class_data_range.end,
+                        bound: source.end(),
+                    })
+                    .map_err(crate::container::framing_error)?;
+                ctx.record(id.as_str(), extent, || {
+                    Ok(if crate::curves::is_point(object.class_uuid) {
+                        crate::curves::decode_point_view(
+                            ctx,
+                            source,
+                            object.class_data_range.clone(),
+                            scale,
+                        )
+                    } else {
+                        crate::curves::decode_line_view(
+                            ctx,
+                            source,
+                            object.class_data_range.clone(),
+                            scale,
+                        )
+                    })
+                })?
+            } else {
+                crate::curves::decode(
+                    ctx,
+                    self.scan.data,
+                    object.class_uuid,
+                    object.class_data_range.clone(),
+                    scale,
+                    self.archive(),
+                )
+            };
             let procedural_surface = crate::surfaces::is_procedural_class(object.class_uuid);
             match decoded {
                 Ok(value) => {
                     if self.commit_geometry(source_order, value)? {
+                        if let Some(scope) = read_scope {
+                            scope.commit()?;
+                        }
                         self.mark_decoded(source_order);
                     } else if procedural_surface {
                         self.scan_warning(
@@ -2168,6 +2229,9 @@ impl<'a> DecodeContext<'a> {
         ir.scope = scope;
         ir.finalize();
         source_fidelity.retain_unknown_records("rhino", self.opaque_records)?;
+        if self.expand.root().has_source_tracking() {
+            source_fidelity.install_record_captures(ctx, |_, _| Ok(()))?;
+        }
         let primary = crate::container::dialect_match(self.scan);
         // Charged from the admission the source records, so the document-level
         // residual admission and its loss cannot be reported apart.

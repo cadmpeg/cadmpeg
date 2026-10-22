@@ -249,13 +249,16 @@ impl SldprtCodec {
         fidelity: SemanticFidelity,
         writer: &mut dyn Write,
     ) -> Result<Written, CodecError> {
-        let writer::SemanticOutput { dialect, coverage } =
-            writer::write_semantic_with_records(ir, annotations, records, source_fidelity, writer)?;
+        let writer::SemanticOutput {
+            dialect,
+            coverage,
+            consumed_source_layout,
+        } = writer::write_semantic_with_records(ir, annotations, records, source_fidelity, writer)?;
         Ok(Written::Semantic {
-            path: if records.is_empty() {
-                SemanticPath::Synthesized
-            } else {
+            path: if consumed_source_layout {
                 SemanticPath::Patched
+            } else {
+                SemanticPath::Synthesized
             },
             dialect,
             fidelity,

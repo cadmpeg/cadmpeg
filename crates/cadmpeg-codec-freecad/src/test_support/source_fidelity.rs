@@ -6,21 +6,45 @@ use std::collections::BTreeMap;
 pub(crate) fn bytes<'a>(fidelity: &'a cadmpeg_ir::SourceFidelity, id: &str) -> &'a [u8] {
     if let Some(layout) = fidelity.record_layout().get(id) {
         if let Some(bytes) = layout.payloads().get("raw_xml") {
+            // A kept object is captured at its declaration. Its unchanged
+            // ObjectData XML payload has a separate, original pointer range.
+            let (payload_start, payload_end) = match (
+                layout.pointers().get("byte_start"),
+                layout.pointers().get("byte_end"),
+            ) {
+                (Some(&start), Some(&end)) => (start, end),
+                (None, None) => (
+                    layout.offset(),
+                    layout
+                        .offset()
+                        .checked_add(layout.byte_len())
+                        .expect("XML capture end"),
+                ),
+                _ => panic!("XML payload must retain both original range pointers"),
+            };
             assert_eq!(
                 cadmpeg_core::decode::u64_from_index(bytes.len()),
-                layout.byte_len()
+                payload_end
+                    .checked_sub(payload_start)
+                    .expect("XML payload range")
             );
-            let start = usize::try_from(layout.offset()).expect("XML source offset");
-            let end = start.checked_add(bytes.len()).expect("XML source end");
+            let start = usize::try_from(payload_start).expect("XML source offset");
+            let end = usize::try_from(payload_end).expect("XML source end");
+            let capture_start = usize::try_from(layout.offset()).expect("XML capture offset");
+            let capture_end = capture_start
+                .checked_add(usize::try_from(layout.byte_len()).expect("XML capture length"))
+                .expect("XML capture end");
             if let Some(image) = fidelity.retained_records().values().find(|record| {
                 record.stream() == layout.stream()
                     && record.offset() == 0
                     && record.data().is_some()
             }) {
-                assert_eq!(
-                    bytes.as_ref(),
-                    &image.data().expect("XML source bytes")[start..end]
+                let source = image.data().expect("XML source bytes");
+                assert!(
+                    source.get(capture_start..capture_end).is_some(),
+                    "XML record capture must fit its source"
                 );
+                assert_eq!(bytes.as_ref(), &source[start..end]);
             } else {
                 // Logical ZIP stream names include their physical parent extent.
                 // Reopen the original archive and match the actual captured stream,
@@ -48,8 +72,22 @@ pub(crate) fn bytes<'a>(fidelity: &'a cadmpeg_ir::SourceFidelity, id: &str) -> &
                     if capture.stream() != layout.stream() {
                         continue;
                     }
-                    let relative = layout
+                    let relative_capture = layout
                         .offset()
+                        .checked_sub(capture.offset())
+                        .expect("XML capture within entry");
+                    let from_capture =
+                        usize::try_from(relative_capture).expect("XML capture entry offset");
+                    let to_capture = from_capture
+                        .checked_add(
+                            usize::try_from(layout.byte_len()).expect("XML capture entry length"),
+                        )
+                        .expect("XML capture entry end");
+                    assert!(
+                        view.window().get(from_capture..to_capture).is_some(),
+                        "XML record capture must fit its original member"
+                    );
+                    let relative = payload_start
                         .checked_sub(capture.offset())
                         .expect("XML offset within entry");
                     let from = usize::try_from(relative).expect("XML entry offset");

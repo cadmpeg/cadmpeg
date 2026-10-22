@@ -4967,10 +4967,12 @@ archive >= 80:
 archive >= 70: component additions
 ```
 
-Edge tags are 0 unset, 1 smooth, 2 crease, and 4 smooth-X. Pointer type bits
-are 0x2 vertex, 0x4 edge, and 0x6 face; bit 0 is direction. A null pointer has
-archive ID zero. Edge and face directions reverse traversal; vertex direction
-is reserved.
+Edge tags are 0 unset, 1 smooth, 2 crease, and 4 smooth-X. A pointer in a
+vertex, edge, face, or saved-limit-point field serializes only direction bit 0;
+the field determines the component type. Generic component pointers in
+size-tagged additions also use bits 1 and 2 for type: 0x2 vertex, 0x4 edge,
+and 0x6 face. A null pointer has archive ID zero and flags zero. Edge and face
+directions reverse traversal; vertex direction is reserved.
 
 Face record:
 

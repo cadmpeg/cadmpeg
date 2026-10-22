@@ -5,7 +5,7 @@ use crate::loss::Diagnostics;
 use std::f64::consts::{FRAC_PI_2, TAU};
 use std::ops::Range;
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry};
@@ -497,6 +497,45 @@ pub(crate) fn decode(
     archive: ArchiveVersion,
 ) -> Result<DecodedGeometry, GeometryError> {
     decode_inner(ctx, data, class_uuid, range, scale, archive, 0)
+}
+
+pub(crate) fn is_point(class: Uuid) -> bool {
+    class == POINT
+}
+
+pub(crate) fn is_line(class: Uuid) -> bool {
+    class == LINE
+}
+
+/// Decode the point fields through their actual source view.
+pub(crate) fn decode_point_view(
+    ctx: &DecodeContext<'_>,
+    source: View<'_>,
+    range: Range<usize>,
+    scale: MillimeterScale,
+) -> Result<DecodedGeometry, GeometryError> {
+    let _depth_guard = ctx.enter_nested("Rhino curve tree")?;
+    let mut reader = BoundedReader::from_view(source, range.start, range.end)?;
+    let position = read_point(&mut reader, scale)?;
+    reader.skip_remaining()?;
+    Ok(DecodedGeometry::Point {
+        position,
+        scaled: scale != MillimeterScale::IDENTITY,
+    })
+}
+
+/// Decode the line fields through their actual source view.
+pub(crate) fn decode_line_view(
+    ctx: &DecodeContext<'_>,
+    source: View<'_>,
+    range: Range<usize>,
+    scale: MillimeterScale,
+) -> Result<DecodedGeometry, GeometryError> {
+    let _depth_guard = ctx.enter_nested("Rhino curve tree")?;
+    let mut reader = BoundedReader::from_view(source, range.start, range.end)?;
+    let curve = DecodedCurve::line(read_line(&mut reader, scale, None)?);
+    reader.skip_remaining()?;
+    Ok(DecodedGeometry::Curve { curve })
 }
 
 /// Decodes a Brep C2 curve in surface parameter space.
@@ -2158,6 +2197,8 @@ pub(crate) fn error(offset: usize, message: impl Into<String>) -> GeometryError 
 
 #[cfg(test)]
 mod tests {
+    mod source_line_reads;
+    mod source_point_reads;
     #[test]
     fn numerical_audit_nurbs_elevation_preserves_active_spans_and_discontinuities() {
         use cadmpeg_ir::geometry::SolvedCurveGeometry;

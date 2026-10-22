@@ -321,3 +321,148 @@ fn fragmented_runs_return_an_error_without_removing_existing_physical_siblings()
     assert!(selected(&parts, "iges.parameter_record").is_empty());
     PartTable::load().unwrap().validate(&ctx, &parts).unwrap();
 }
+
+#[test]
+fn physical_contract_inventory_keeps_equal_claims_once_and_conflicted_owners_separate() {
+    for (second_start, first_owner) in [(1, 1), (2, 3)] {
+        let mut bytes = card(b'G', 1, b",,;");
+        bytes.extend(directory(1, 116, 1, 1));
+        bytes.extend(directory(3, 116, second_start, 1));
+        bytes.extend(parameter(1, first_owner, b"116,1,2,3;"));
+        bytes.extend(parameter(2, 3, b"116,4,5,6;"));
+        let arena = DecodeArena::new();
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+        let mut parts = Vec::new();
+        let claims = ctx
+            .record("independent-framing", root, || {
+                crate::contract::iges::frame_parameter_owners(&ctx, root, &mut parts)
+                    .map_err(cadmpeg_core::CodecError::malformed)
+            })
+            .unwrap();
+        let table = PartTable::load().unwrap();
+        table.validate(&ctx, &parts).unwrap();
+        assert_eq!(claims.len(), 2);
+        assert_eq!(claims[0].directory().window(), &bytes[81..243]);
+        assert_eq!(claims[1].directory().window(), &bytes[243..405]);
+        assert_eq!(claims[0].directory().start(), 81);
+        assert_eq!(claims[1].directory().start(), 243);
+        let first = &parts[claims[0].record()];
+        assert_eq!(first.capture().stream(), "file");
+        assert_eq!((first.view().start(), first.view().end()), (405, 486));
+        assert_eq!(first.view().window(), &bytes[405..486]);
+        assert_eq!(first.framing(), [414..415, 469..486]);
+        assert_eq!(first.dispatch(), [405..408]);
+        assert_eq!(selected(&parts, "iges.parameter_section").len(), 1);
+        if second_start == 1 {
+            assert_eq!(claims[0].record(), claims[1].record());
+            assert_eq!(selected(&parts, "iges.parameter_record").len(), 1);
+        } else {
+            assert_ne!(claims[0].record(), claims[1].record());
+            assert_eq!(selected(&parts, "iges.parameter_record").len(), 2);
+            let second = &parts[claims[1].record()];
+            assert_eq!((second.view().start(), second.view().end()), (486, 567));
+            assert_eq!(second.view().window(), &bytes[486..567]);
+            assert_eq!(second.framing(), [495..496, 550..567]);
+        }
+        assert!(selected(&parts, "iges.parameter_field").is_empty());
+        let captures = ctx.take_record_captures().unwrap();
+        assert_eq!(captures.len(), 1);
+        assert!(captures[0].reads().is_empty());
+    }
+}
+
+#[test]
+fn unequal_overlapping_claims_keep_only_the_real_section_ancestor() {
+    for (first_count, second_start, second_count) in [(1, 1, 2), (2, 2, 1)] {
+        let mut bytes = card(b'G', 1, b",,;");
+        bytes.extend(directory(1, 116, 1, first_count));
+        bytes.extend(directory(3, 116, second_start, second_count));
+        bytes.extend(parameter(1, 1, b"116,1,2,3;"));
+        bytes.extend(parameter(2, 3, b"116,4,5,6;"));
+        let arena = DecodeArena::new();
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+        let mut parts = Vec::new();
+        let error =
+            crate::contract::iges::frame_parameter_owners(&ctx, root, &mut parts).unwrap_err();
+        assert!(error.contains("unequal Parameter claims overlap"));
+        assert!(selected(&parts, "iges.parameter_record").is_empty());
+        let sections = selected(&parts, "iges.parameter_section");
+        assert_eq!(sections.len(), 1);
+        assert_eq!(
+            (sections[0].view().start(), sections[0].view().end()),
+            (405, 567)
+        );
+        assert_eq!(sections[0].view().window(), &bytes[405..567]);
+        assert_eq!(selected(&parts, "iges.directory_entry").len(), 2);
+        PartTable::load().unwrap().validate(&ctx, &parts).unwrap();
+        assert!(ctx.take_record_captures().unwrap().is_empty());
+    }
+}
+
+#[test]
+fn malformed_field_grammar_and_type_disagreement_keep_physical_records_and_their_peer() {
+    for first in [b"116,999Hshort;".as_slice(), b"116,1,2,3;"] {
+        let mut bytes = b"pre".to_vec();
+        bytes.extend(card(b'G', 1, b",,;"));
+        bytes.extend(directory(1, 110, 1, 1));
+        bytes.extend(directory(3, 116, 2, 1));
+        bytes.extend(parameter(1, 1, first));
+        bytes.extend(parameter(2, 3, b"116,4,5,6;"));
+        bytes.extend_from_slice(b"post");
+        let arena = DecodeArena::new();
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+        let source = root.child(3, bytes.len() - 4).unwrap();
+        let mut parts = Vec::new();
+        let claims =
+            crate::contract::iges::frame_parameter_owners(&ctx, source, &mut parts).unwrap();
+        assert_eq!(claims.len(), 2);
+        assert_eq!(claims[0].directory().start(), 84);
+        assert_eq!(claims[1].directory().start(), 246);
+        let first_part = &parts[claims[0].record()];
+        assert_eq!(
+            (first_part.view().start(), first_part.view().end()),
+            (408, 489)
+        );
+        assert_eq!(first_part.view().window(), &bytes[408..489]);
+        assert_eq!(first_part.dispatch(), [408..411]);
+        if first == b"116,999Hshort;" {
+            assert_eq!(first_part.framing(), [472..489]);
+        } else {
+            assert_eq!(first_part.framing(), [417..418, 472..489]);
+        }
+        let peer = &parts[claims[1].record()];
+        assert_eq!((peer.view().start(), peer.view().end()), (489, 570));
+        assert_eq!(peer.view().window(), &bytes[489..570]);
+        assert_eq!(peer.framing(), [498..499, 553..570]);
+        assert!(selected(&parts, "iges.parameter_field").is_empty());
+        PartTable::load().unwrap().validate(&ctx, &parts).unwrap();
+        assert!(ctx.take_record_captures().unwrap().is_empty());
+    }
+}
+
+#[test]
+fn physical_claim_inventory_rejects_detached_sources_and_keeps_session_budget_refusals() {
+    let mut bytes = card(b'G', 1, b",,;");
+    bytes.extend(directory(1, 116, 1, 1));
+    bytes.extend(parameter(1, 1, b"116,1,2,3;"));
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+    assert!(crate::contract::iges::frame_parameter_owners(
+        &ctx,
+        View::over_retained(&bytes),
+        &mut Vec::new()
+    )
+    .is_err());
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 1;
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    assert!(crate::contract::iges::frame_parameter_owners(&ctx, root, &mut Vec::new()).is_err());
+    assert_eq!(
+        ctx.resource_refusal().unwrap().dimension,
+        ResourceDimension::RetainedBytes
+    );
+}

@@ -947,7 +947,7 @@ impl CodecBackend for FcstdCodec {
                 }
             }
             for (id, range) in &graph.object_sources {
-                fidelity::object_layout_payloads(
+                fidelity::captured_object_layout_payloads(
                     ctx,
                     *scan
                         .data
@@ -1179,6 +1179,7 @@ impl CodecBackend for FcstdCodec {
             element_map::bind_topology(&mut element_maps, &topology_occurrences);
             let mut gui_graph = if let Some(gui_source) = gui_source {
                 gui_source.transfer(
+                    ctx,
                     &mut ir,
                     &gui::GuiSources {
                         entries: &scan.data,
