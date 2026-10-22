@@ -331,6 +331,8 @@ Types `bf70e821d011d0d20008ccbc0663dc09`, `b07b170fd11196e680006fb1e13554c7`, `c
 - collinear stores two line references and `state:u16`; the lines lie on one infinite line;
 - symmetric stores two entity references and an axis line reference; the axis line's carrier reflects the first entity onto the second.
 
+Type `384853529f445255e1e1dab410eb06c4` is a regular-polygon record. It starts with the planar-entity prefix and then stores a center-point reference and `value:u32`. Type `1f89dbfbd84778b6b0967285c7ec8bb9` is a polygon relation. After the constraint header it stores two entity references, the center-point reference, the polygon-record reference twice, and two u32 values. The two entities are consecutive polygon edges or consecutive polygon vertices.
+
 ## 13. Feature records
 
 For segment major versions 15 through 22, PmDc type `914d8790d011f8d10008cabc0663dc09` stores one feature record. Its fixed prefix contains the 22-byte content header, `state:i32`, `outline_value:u32`, and a type-2 property-reference list prefix. The ordered property references follow the list metadata. A final u32 value follows the reference list and ends the record.
