@@ -45,6 +45,19 @@ fn an_open_chain_keeps_the_serialized_order() {
 }
 
 #[test]
+fn a_long_reversed_serialized_order_chains_from_its_first_use() {
+    const USES: usize = 16_000;
+    let ends: Vec<(usize, usize)> = std::iter::once((0, 1))
+        .chain((1..USES).map(|position| (USES - position, (USES - position + 1) % USES)))
+        .collect();
+    let traversal: Vec<usize> = std::iter::once(0).chain((1..USES).rev()).collect();
+    assert!(
+        traversal_order(&ends) == traversal,
+        "the reversed wire resolves to its traversal"
+    );
+}
+
+#[test]
 fn an_empty_wire_has_no_traversal() {
     let ends: [(&str, &str); 0] = [];
     assert!(traversal_order(&ends).is_empty());
