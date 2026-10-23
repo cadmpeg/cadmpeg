@@ -645,83 +645,7 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
         }
     }
     for constraint in &data.pm_dc_sketch_constraints {
-        let header = &constraint.header;
-        let mut references = vec![
-            header.content.next.index(),
-            header.content.context.index(),
-            header.group.index(),
-            header.parameter.index(),
-        ];
-        for (key, _) in header.scalar_map.entries() {
-            references.push(key.index());
-        }
-        for (key, value) in header.reference_map.entries() {
-            references.extend([key.index(), value.index()]);
-        }
-        match constraint.kind {
-            PmDcSketchConstraintKind::Coincident { first, second }
-            | PmDcSketchConstraintKind::Parallel { first, second, .. }
-            | PmDcSketchConstraintKind::Perpendicular { first, second, .. }
-            | PmDcSketchConstraintKind::Tangent { first, second, .. } => {
-                references.extend([first.index(), second.index()]);
-            }
-            PmDcSketchConstraintKind::Horizontal { entity, .. }
-            | PmDcSketchConstraintKind::Vertical { entity, .. } => {
-                references.push(entity.index());
-            }
-            PmDcSketchConstraintKind::HorizontalDistance {
-                first,
-                second,
-                parameter,
-                ..
-            }
-            | PmDcSketchConstraintKind::VerticalDistance {
-                first,
-                second,
-                parameter,
-                ..
-            } => references.extend([first.index(), second.index(), parameter.index()]),
-            PmDcSketchConstraintKind::Radius { entity, .. } => {
-                references.push(entity.index());
-            }
-            PmDcSketchConstraintKind::Diameter {
-                reference, entity, ..
-            } => references.extend([reference.index(), entity.index()]),
-            PmDcSketchConstraintKind::CircleCenter { entity, center } => {
-                references.extend([entity.index(), center.index()]);
-            }
-            PmDcSketchConstraintKind::EqualRadius { first, second }
-            | PmDcSketchConstraintKind::EqualLength { first, second }
-            | PmDcSketchConstraintKind::Distance { first, second, .. }
-            | PmDcSketchConstraintKind::Angle { first, second, .. }
-            | PmDcSketchConstraintKind::HorizontalAlignment { first, second }
-            | PmDcSketchConstraintKind::VerticalAlignment { first, second }
-            | PmDcSketchConstraintKind::Collinear { first, second, .. } => {
-                references.extend([first.index(), second.index()]);
-            }
-            PmDcSketchConstraintKind::Midpoint { entity, point, .. } => {
-                references.extend([entity.index(), point.index()]);
-            }
-            PmDcSketchConstraintKind::Fix { entity } => references.push(entity.index()),
-            PmDcSketchConstraintKind::Symmetric {
-                first,
-                second,
-                axis,
-            } => references.extend([first.index(), second.index(), axis.index()]),
-            PmDcSketchConstraintKind::PolygonRelation {
-                first,
-                second,
-                center,
-                polygon,
-                ..
-            } => references.extend([
-                first.index(),
-                second.index(),
-                center.index(),
-                polygon[0].index(),
-                polygon[1].index(),
-            ]),
-        }
+        let references = sketch_constraint_references(constraint);
         if !record_is_exact(
             constraint.identity.segment_token.as_str(),
             constraint.identity.record_ordinal,
@@ -2372,4 +2296,91 @@ fn finding(check: Check, message: String, entity: Option<String>) -> Finding {
         message,
         entity,
     }
+}
+
+/// Record references a sketch constraint stores, in its header, maps, and kind.
+pub(crate) fn sketch_constraint_references(constraint: &PmDcSketchConstraint) -> Vec<u32> {
+    let header = &constraint.header;
+    let mut references = vec![
+        header.content.next.index(),
+        header.content.context.index(),
+        header.group.index(),
+        header.parameter.index(),
+    ];
+    for (key, _) in header.scalar_map.entries() {
+        references.push(key.index());
+    }
+    // A tangent solver hint stores an unqualified code, not a reference, as its value.
+    let hint_codes = matches!(constraint.kind, PmDcSketchConstraintKind::Tangent { .. });
+    for (key, value) in header.reference_map.entries() {
+        references.push(key.index());
+        if !hint_codes {
+            references.push(value.index());
+        }
+    }
+    match constraint.kind {
+        PmDcSketchConstraintKind::Coincident { first, second }
+        | PmDcSketchConstraintKind::Parallel { first, second, .. }
+        | PmDcSketchConstraintKind::Perpendicular { first, second, .. }
+        | PmDcSketchConstraintKind::Tangent { first, second, .. } => {
+            references.extend([first.index(), second.index()]);
+        }
+        PmDcSketchConstraintKind::Horizontal { entity, .. }
+        | PmDcSketchConstraintKind::Vertical { entity, .. } => {
+            references.push(entity.index());
+        }
+        PmDcSketchConstraintKind::HorizontalDistance {
+            first,
+            second,
+            parameter,
+            ..
+        }
+        | PmDcSketchConstraintKind::VerticalDistance {
+            first,
+            second,
+            parameter,
+            ..
+        } => references.extend([first.index(), second.index(), parameter.index()]),
+        PmDcSketchConstraintKind::Radius { entity, .. } => {
+            references.push(entity.index());
+        }
+        PmDcSketchConstraintKind::Diameter {
+            reference, entity, ..
+        } => references.extend([reference.index(), entity.index()]),
+        PmDcSketchConstraintKind::CircleCenter { entity, center } => {
+            references.extend([entity.index(), center.index()]);
+        }
+        PmDcSketchConstraintKind::EqualRadius { first, second }
+        | PmDcSketchConstraintKind::EqualLength { first, second }
+        | PmDcSketchConstraintKind::Distance { first, second, .. }
+        | PmDcSketchConstraintKind::Angle { first, second, .. }
+        | PmDcSketchConstraintKind::HorizontalAlignment { first, second }
+        | PmDcSketchConstraintKind::VerticalAlignment { first, second }
+        | PmDcSketchConstraintKind::Collinear { first, second, .. } => {
+            references.extend([first.index(), second.index()]);
+        }
+        PmDcSketchConstraintKind::Midpoint { entity, point, .. } => {
+            references.extend([entity.index(), point.index()]);
+        }
+        PmDcSketchConstraintKind::Fix { entity } => references.push(entity.index()),
+        PmDcSketchConstraintKind::Symmetric {
+            first,
+            second,
+            axis,
+        } => references.extend([first.index(), second.index(), axis.index()]),
+        PmDcSketchConstraintKind::PolygonRelation {
+            first,
+            second,
+            center,
+            polygon,
+            ..
+        } => references.extend([
+            first.index(),
+            second.index(),
+            center.index(),
+            polygon[0].index(),
+            polygon[1].index(),
+        ]),
+    }
+    references
 }

@@ -1609,6 +1609,29 @@ fn project_constraint(
             extension,
         } => {
             let members = [resolve(first)?, resolve(second)?];
+            // Hint codes 1 and 2 state an end of a line operand only.
+            let end_codes_on_lines =
+                constraint
+                    .header
+                    .reference_map
+                    .entries()
+                    .iter()
+                    .all(|(key, value)| {
+                        value.index() == 0
+                            || [first, second]
+                                .iter()
+                                .zip(members)
+                                .any(|(operand, member)| {
+                                    operand == key
+                                        && matches!(
+                                            *member.geometry.definition(),
+                                            SketchGeometryDefinition::Line { .. }
+                                        )
+                                })
+                    });
+            if !end_codes_on_lines {
+                return None;
+            }
             (
                 SketchConstraintDefinitionInput::Tangent {
                     first: members[0].id().clone(),
@@ -1727,9 +1750,35 @@ fn project_constraint(
                 members,
             )
         }
-        PmDcSketchConstraintKind::EqualRadius { first, second }
-        | PmDcSketchConstraintKind::EqualLength { first, second } => {
+        PmDcSketchConstraintKind::EqualRadius { first, second } => {
             let members = [resolve(first)?, resolve(second)?];
+            if !members.iter().all(|member| {
+                matches!(
+                    *member.geometry.definition(),
+                    SketchGeometryDefinition::Circle { .. } | SketchGeometryDefinition::Arc { .. }
+                )
+            }) {
+                return None;
+            }
+            (
+                SketchConstraintDefinitionInput::Equal {
+                    first: members[0].id().clone(),
+                    second: members[1].id().clone(),
+                },
+                None,
+                members,
+            )
+        }
+        PmDcSketchConstraintKind::EqualLength { first, second } => {
+            let members = [resolve(first)?, resolve(second)?];
+            if !members.iter().all(|member| {
+                matches!(
+                    *member.geometry.definition(),
+                    SketchGeometryDefinition::Line { .. }
+                )
+            }) {
+                return None;
+            }
             (
                 SketchConstraintDefinitionInput::Equal {
                     first: members[0].id().clone(),
@@ -3708,6 +3757,120 @@ mod tests {
         assert!(solver_hint(&as_tangent(&hinted_relation(2))));
         assert!(solver_hint(&as_tangent(&hinted_relation(1))));
         assert!(!solver_hint(&as_tangent(&hinted_relation(3))));
+    }
+
+    fn test_entity(
+        ordinal: u32,
+        definition: cadmpeg_ir::sketches::SketchGeometryDefinition,
+    ) -> cadmpeg_ir::sketches::SketchEntity {
+        cadmpeg_ir::sketches::SketchEntity::new(
+            cadmpeg_ir::sketches::SketchEntityId::mint(format!("inventor:test:entity#{ordinal}"))
+                .expect("entity id"),
+            cadmpeg_ir::sketches::SketchId::mint("inventor:test:sketch#1").expect("sketch id"),
+            cadmpeg_ir::sketches::SketchGeometry::try_from(definition).expect("entity geometry"),
+        )
+    }
+
+    fn test_line() -> cadmpeg_ir::sketches::SketchGeometryDefinition {
+        cadmpeg_ir::sketches::SketchGeometryDefinition::Line {
+            start: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+            end: cadmpeg_ir::math::Point2::new(1.0, 0.0),
+        }
+    }
+
+    fn test_arc() -> cadmpeg_ir::sketches::SketchGeometryDefinition {
+        cadmpeg_ir::sketches::SketchGeometryDefinition::Arc {
+            center: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+            radius: cadmpeg_ir::scalar::Length::new(1.0).expect("radius"),
+            start_angle: cadmpeg_ir::scalar::Angle::new(0.0).expect("start angle"),
+            end_angle: cadmpeg_ir::scalar::Angle::new(1.0).expect("end angle"),
+        }
+    }
+
+    fn test_circle() -> cadmpeg_ir::sketches::SketchGeometryDefinition {
+        cadmpeg_ir::sketches::SketchGeometryDefinition::Circle {
+            center: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+            radius: cadmpeg_ir::scalar::Length::new(1.0).expect("radius"),
+        }
+    }
+
+    /// Project `constraint` against entities at ordinals 7 and 3 (references
+    /// 8 and 4) with the given geometries.
+    fn projects_with(
+        constraint: &PmDcSketchConstraint,
+        first: cadmpeg_ir::sketches::SketchGeometryDefinition,
+        second: cadmpeg_ir::sketches::SketchGeometryDefinition,
+    ) -> bool {
+        let first = test_entity(7, first);
+        let second = test_entity(3, second);
+        let entities =
+            std::collections::HashMap::from([(("segment", 7), &first), (("segment", 3), &second)]);
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("projection context");
+        match super::project_constraint(
+            &ctx,
+            constraint,
+            &entities,
+            &std::collections::HashMap::new(),
+        ) {
+            Some(Ok(_)) => true,
+            None => false,
+            Some(Err(error)) => panic!("projection error: {error}"),
+        }
+    }
+
+    #[test]
+    fn a_tangent_end_code_requires_a_line_key() {
+        let point = || cadmpeg_ir::sketches::SketchGeometryDefinition::Point {
+            position: cadmpeg_ir::math::Point2::new(1.0, 0.0),
+        };
+        for code in [1, 2] {
+            let tangent = as_tangent(&hinted_relation(code));
+            assert!(projects_with(&tangent, test_line(), point()));
+            assert!(!projects_with(&tangent, test_arc(), point()));
+        }
+        let between = as_tangent(&hinted_relation(0));
+        assert!(projects_with(&between, test_arc(), point()));
+    }
+
+    #[test]
+    fn a_tangent_hint_code_is_not_validated_as_a_reference() {
+        let coincident = hinted_relation(2);
+        let tangent = as_tangent(&coincident);
+        let references = crate::validate::sketch_constraint_references;
+        // Both kinds store the same operands; only the coincident map value
+        // counts as a reference.
+        assert_eq!(
+            references(&coincident).len(),
+            references(&tangent).len() + 1
+        );
+        assert_eq!(references(&coincident).last(), references(&tangent).last());
+    }
+
+    #[test]
+    fn equal_relations_require_their_operand_kinds() {
+        let equal = |tag| {
+            let mut bytes = constraint_header(11, 0);
+            bytes.extend_from_slice(&8u32.to_le_bytes());
+            bytes.extend_from_slice(&4u32.to_le_bytes());
+            let payload = parse(&bytes, |_, source| {
+                parse_constraint(tag, source, 22).expect("equal relation")
+            });
+            Located::new(
+                payload,
+                crate::record_identity::RecordTypeId::from_bytes(COINCIDENT_TYPE),
+                cadmpeg_ir::identity_key!("segment"),
+                11,
+            )
+        };
+        let length = equal(SketchConstraintTag::EqualLength);
+        assert!(projects_with(&length, test_line(), test_line()));
+        assert!(!projects_with(&length, test_line(), test_circle()));
+        assert!(!projects_with(&length, test_arc(), test_arc()));
+        let radius = equal(SketchConstraintTag::EqualRadius);
+        assert!(projects_with(&radius, test_circle(), test_arc()));
+        assert!(!projects_with(&radius, test_circle(), test_line()));
     }
 
     #[test]
