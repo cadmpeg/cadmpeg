@@ -34,3 +34,5 @@ pub(crate) fn deflate_stored_block(plain: &[u8]) -> Vec<u8> {
     block.extend_from_slice(plain);
     block
 }
+
+pub(crate) mod exact;

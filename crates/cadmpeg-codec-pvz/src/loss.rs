@@ -27,6 +27,27 @@ pub(crate) enum PvzLossCode {
     /// The ZIP central directory was unreadable and members were recovered
     /// from local headers.
     ContainerDirectoryRecovered,
+    /// Exact-stream records with a frame and no settled meaning were kept
+    /// by tag and offset only.
+    ExactRecordUninterpreted,
+    /// A face carrier has no neutral surface form.
+    ExactSurfaceUntyped,
+    /// An analytic face carrier was written as its embedded B-spline.
+    ExactSurfaceAsBspline,
+    /// An edge curve has no neutral curve form; the edge has no carrier.
+    ExactCurveUntyped,
+    /// A coedge pcurve has no neutral pcurve form or domain.
+    ExactPcurveUntransferred,
+    /// Secondary pcurves of analytic faces lie in the embedded B-spline
+    /// domain and were not written onto the analytic carrier.
+    ExactSecondaryPcurveOmitted,
+    /// Coedge pcurve images miss their edge-curve ends by more than the
+    /// endpoint tolerance; the face tolerance admits the measured residual.
+    ExactEndpointMismatch,
+    /// A loop does not close, or a loop junction joins no vertex.
+    ExactLoopOpen,
+    /// A face side came from a gauge, not from an outward test.
+    ExactFaceSideGauge,
 }
 
 impl PvzLossCode {
@@ -36,6 +57,15 @@ impl PvzLossCode {
         Self::PackageContentUndecoded,
         Self::SourceDialectUnverified,
         Self::ContainerDirectoryRecovered,
+        Self::ExactRecordUninterpreted,
+        Self::ExactSurfaceUntyped,
+        Self::ExactSurfaceAsBspline,
+        Self::ExactCurveUntyped,
+        Self::ExactPcurveUntransferred,
+        Self::ExactSecondaryPcurveOmitted,
+        Self::ExactEndpointMismatch,
+        Self::ExactLoopOpen,
+        Self::ExactFaceSideGauge,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -45,6 +75,15 @@ impl PvzLossCode {
             Self::PackageContentUndecoded => "package.content-undecoded",
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::ContainerDirectoryRecovered => "container.directory-recovered",
+            Self::ExactRecordUninterpreted => "exact.record-uninterpreted",
+            Self::ExactSurfaceUntyped => "exact.surface-untyped",
+            Self::ExactSurfaceAsBspline => "exact.surface-as-bspline",
+            Self::ExactCurveUntyped => "exact.curve-untyped",
+            Self::ExactPcurveUntransferred => "exact.pcurve-untransferred",
+            Self::ExactSecondaryPcurveOmitted => "exact.secondary-pcurve-omitted",
+            Self::ExactEndpointMismatch => "exact.endpoint-mismatch",
+            Self::ExactLoopOpen => "exact.loop-open",
+            Self::ExactFaceSideGauge => "exact.face-side-gauge",
         }
     }
 
@@ -53,7 +92,17 @@ impl PvzLossCode {
     const fn severity(self) -> Severity {
         match self {
             Self::PackageContentUndecoded => Severity::Blocking,
-            Self::SourceDialectUnverified | Self::ContainerDirectoryRecovered => Severity::Warning,
+            Self::ExactSurfaceUntyped => Severity::Error,
+            Self::SourceDialectUnverified
+            | Self::ContainerDirectoryRecovered
+            | Self::ExactRecordUninterpreted
+            | Self::ExactSurfaceAsBspline
+            | Self::ExactCurveUntyped
+            | Self::ExactPcurveUntransferred
+            | Self::ExactSecondaryPcurveOmitted
+            | Self::ExactEndpointMismatch
+            | Self::ExactLoopOpen
+            | Self::ExactFaceSideGauge => Severity::Warning,
         }
     }
 
@@ -62,7 +111,50 @@ impl PvzLossCode {
             Self::PackageContentUndecoded => LossTaxonomy::GeometryNotTransferred,
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
             Self::ContainerDirectoryRecovered => LossTaxonomy::NoncanonicalSourceSyntax,
+            Self::ExactRecordUninterpreted => LossTaxonomy::RecordNotTyped,
+            Self::ExactSurfaceUntyped | Self::ExactCurveUntyped => {
+                LossTaxonomy::GeometryNotTransferred
+            }
+            Self::ExactSurfaceAsBspline | Self::ExactEndpointMismatch => {
+                LossTaxonomy::DecodeDiagnostic
+            }
+            Self::ExactPcurveUntransferred | Self::ExactSecondaryPcurveOmitted => {
+                LossTaxonomy::PcurveOmitted
+            }
+            Self::ExactLoopOpen => LossTaxonomy::SourceTopologyInvalid,
+            Self::ExactFaceSideGauge => LossTaxonomy::TopologyGaugeSubstituted,
         }
+    }
+
+    /// The message of a note that counts `count` instances of this code.
+    pub(crate) fn tally_message(self, count: usize) -> String {
+        let what = match self {
+            Self::PackageContentUndecoded => "packages left undecoded",
+            Self::SourceDialectUnverified => "unverified dialect declarations",
+            Self::ContainerDirectoryRecovered => "recovered ZIP directories",
+            Self::ExactRecordUninterpreted => {
+                "exact-stream records kept by tag and offset only (tag 0x0a and undefined tags)"
+            }
+            Self::ExactSurfaceUntyped => "faces whose carrier has no neutral surface form",
+            Self::ExactSurfaceAsBspline => {
+                "analytic faces written as their embedded B-spline carrier"
+            }
+            Self::ExactCurveUntyped => {
+                "edges without a neutral curve (composite or undefined curve types)"
+            }
+            Self::ExactPcurveUntransferred => "coedge pcurves not transferred",
+            Self::ExactSecondaryPcurveOmitted => {
+                "secondary pcurves in the embedded B-spline domain not written onto analytic faces"
+            }
+            Self::ExactEndpointMismatch => {
+                "faces whose pcurve images miss the edge ends by more than 2e-5 m"
+            }
+            Self::ExactLoopOpen => "open loops or loop junctions that join no vertex",
+            Self::ExactFaceSideGauge => {
+                "faces whose side is a propagation gauge, or side conflicts between faces"
+            }
+        };
+        format!("{count} {what}")
     }
 
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
@@ -96,6 +188,15 @@ mod tests {
                 "package.content-undecoded",
                 "source.dialect-unverified",
                 "container.directory-recovered",
+                "exact.record-uninterpreted",
+                "exact.surface-untyped",
+                "exact.surface-as-bspline",
+                "exact.curve-untyped",
+                "exact.pcurve-untransferred",
+                "exact.secondary-pcurve-omitted",
+                "exact.endpoint-mismatch",
+                "exact.loop-open",
+                "exact.face-side-gauge",
             ]
         );
     }

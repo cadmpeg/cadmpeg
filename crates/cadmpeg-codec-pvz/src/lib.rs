@@ -34,6 +34,7 @@
 //! # }
 //! ```
 
+mod brep;
 mod decode;
 mod detect;
 mod dialect;
