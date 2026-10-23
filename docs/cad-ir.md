@@ -2,7 +2,7 @@
 
 # cadmpeg IR (`.cadir.json`) specification
 
-`CadIr` is the versioned JSON product representation shared by codecs, validation, diffing, and encoders. This specification defines the current required IR version `"11"`. The `cadmpeg-ir` Rust types define field-level JSON types, and `cadir_json_schema()` derives the matching JSON Schema.
+`CadIr` is the versioned JSON product representation shared by codecs, validation, diffing, and encoders. This specification defines the current required IR version `"8"`. The `cadmpeg-ir` Rust types define field-level JSON types, and `cadir_json_schema()` derives the matching JSON Schema.
 
 ## Document layering
 
@@ -212,7 +212,7 @@ An assembly joint grounds one connector, or connects two connectors through a pa
 
 `plane_coincidence` makes the two connector planes coincident. The z axis of each connector frame is the outward normal of its plane, and the frame origin lies on the plane. `sense` is `opposed` (`z₁ = −z₀`) or `aligned` (`z₁ = z₀`). The optional `offset` is the signed separation `(origin₁ − origin₀) · z₀`. `axis_coincidence` makes the two connector axes coincident. The z axis of each connector frame is the axis direction, in either sense, and the frame origin lies on the axis. `insert` makes the two circle axes coincident. The z axis of each connector frame is the normal of its circle, and the frame origin is the circle centre; both origins lie on the line that the z axis of the first connector frame spans. `sense` is `opposed` or `aligned` as for a plane coincidence, and the optional `offset` is the signed separation `(origin₀ − origin₁) · z₀`. `tangent` makes a cylindrical face of the first connector touch the plane of the second connector. The z axis of the first connector frame is the cylinder axis and its origin lies on that axis; the z axis of the second connector frame is the outward plane normal and its origin lies on the plane. `contact` is `outside` (the cylinder lies on the side that the plane normal points to) or `inside` (the opposite side). The cylinder radius is the radius of the referenced face. `point_on_axis` puts the origin of the first connector frame at the optional `distance` from the axis that the z axis of the second connector frame spans.
 
-The optional `driving_parameter` names the design parameter whose value drives the offset, distance, or angle of the joint. It resolves in the `parameters` arena.
+The optional `driving_parameter` names the design parameter whose value drives the offset, distance, or angle of the joint. It resolves in the `parameters` arena. The optional `frame_sense` of a paired joint's `operands` states how the z axes of the two connector frames mate when the joint is solved: `aligned` is `z₁ = z₀` and `opposed` is `z₁ = −z₀`. A grounded joint has one connector and no `frame_sense`. When the kind states its own `sense`, as a plane coincidence or an insert does, `frame_sense` equals it or is absent.
 
 ## Native namespaces
 
@@ -286,7 +286,7 @@ Structural failures are errors. Same-sense two-member radial rings, unknown anno
 
 ## Version policy and JSON Schema
 
-Readers accept exactly `ir_version: "11"`. The `model.subds` arena is required, including when empty. Source annotations and retained records are excluded from the neutral product model. Recursive affine-transformed curve and surface carriers preserve exact source parameterization under occurrence placement. Removing or renaming a product field, or changing its type, units, parameterization, or invariant, requires a new IR version. New product fields carry identity, units, ordering, reference, and validation contracts.
+Readers accept exactly `ir_version: "8"`. The `model.subds` arena is required, including when empty. Source annotations and retained records are excluded from the neutral product model. Recursive affine-transformed curve and surface carriers preserve exact source parameterization under occurrence placement. Maintainers select the IR version for each release. After a release, removing or renaming a product field, or changing its type, units, parameterization, or invariant, requires a new IR version. New product fields carry identity, units, ordering, reference, and validation contracts.
 
 `Sweep.section` is a required sum type and `Sweep.sections` is a same-typed list. A sweep section is unresolved, references a `ProfileRef`, or owns generated section geometry. A generated circular region stores its outer radius and optional inward wall thickness.
 
@@ -300,7 +300,7 @@ The generated document begins with this complete hierarchy and representative ra
 
 ```json
 {
-  "ir_version": "11",
+  "ir_version": "8",
   "decode_depth": "full",
   "units": { "length": "millimeter" },
   "tolerances": { "linear": 1e-6, "angular": 1e-10 },

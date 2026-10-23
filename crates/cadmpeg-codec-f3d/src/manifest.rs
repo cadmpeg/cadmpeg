@@ -238,7 +238,7 @@ impl<'a> Cursor<'a> {
         Ok(count)
     }
 
-    fn finish(self, field: &str) -> Result<(), CodecError> {
+    fn finish(&self, field: &str) -> Result<(), CodecError> {
         if !self.view.is_empty() {
             return Err(parse_malformed(
                 field,
@@ -380,6 +380,7 @@ fn parse_top_level_body<'a>(
 /// The asset-folder base run of the one exact tail framing.
 fn parse_asset_tail(bytes: &[u8], start: usize) -> Result<Vec<Utf16View<'_>>, CodecError> {
     let mut selected = None;
+    let mut deepest_error: Option<(usize, CodecError)> = None;
     for at in bytes
         .len()
         .checked_sub(3)
@@ -389,10 +390,20 @@ fn parse_asset_tail(bytes: &[u8], start: usize) -> Result<Vec<Utf16View<'_>>, Co
         if bytes.get(at..at + 4) != Some(36_u32.to_le_bytes().as_slice()) {
             continue;
         }
-        let candidate = match parse_asset_tail_at(bytes, at) {
+        let mut cursor = Cursor::from_offset(bytes, at)?;
+        let candidate = match parse_asset_tail_at(&mut cursor) {
             Ok(candidate) => candidate,
             Err(error) if matches!(error, CodecError::ResourceLimit(_)) => return Err(error),
-            Err(_) => continue,
+            Err(error) => {
+                let offset = cursor.position();
+                if deepest_error
+                    .as_ref()
+                    .is_none_or(|(deepest, _)| offset > *deepest)
+                {
+                    deepest_error = Some((offset, error));
+                }
+                continue;
+            }
         };
         if selected.replace(candidate).is_some() {
             return Err(parse_malformed(
@@ -401,11 +412,17 @@ fn parse_asset_tail(bytes: &[u8], start: usize) -> Result<Vec<Utf16View<'_>>, Co
             ));
         }
     }
-    selected.ok_or_else(|| {
-        parse_malformed(
+    selected.ok_or_else(|| match deepest_error {
+        Some((offset, error)) => parse_malformed(
+            "top-level manifest asset-folder tail",
+            format_args!(
+                "no exact tail framing is valid; furthest candidate stopped at stream offset {offset}: {error}"
+            ),
+        ),
+        None => parse_malformed(
             "top-level manifest asset-folder tail",
             "no exact tail framing is valid",
-        )
+        ),
     })
 }
 
@@ -450,8 +467,7 @@ fn take_asset_folder_bases<'a>(
     Ok(())
 }
 
-fn parse_asset_tail_at(bytes: &[u8], at: usize) -> Result<Vec<Utf16View<'_>>, CodecError> {
-    let mut cursor = Cursor::from_offset(bytes, at)?;
+fn parse_asset_tail_at<'a>(cursor: &mut Cursor<'a>) -> Result<Vec<Utf16View<'a>>, CodecError> {
     let _active_asset_guid = cursor.guid("top-level manifest active-asset GUID")?;
     let asset_folder_count = bounded_nonzero_count(
         cursor.u32("top-level manifest asset-folder count")?,
@@ -459,13 +475,13 @@ fn parse_asset_tail_at(bytes: &[u8], at: usize) -> Result<Vec<Utf16View<'_>>, Co
         "top-level manifest asset-folder count",
     )?;
     let mut asset_folder_bases = Vec::new();
-    take_asset_folder_bases(&mut cursor, asset_folder_count, &mut asset_folder_bases)?;
+    take_asset_folder_bases(cursor, asset_folder_count, &mut asset_folder_bases)?;
     let secondary_folder_count = bounded_count(
         cursor.u32("top-level manifest secondary asset-folder count")?,
         MAX_ASSET_FOLDERS,
         "top-level manifest secondary asset-folder count",
     )?;
-    take_asset_folder_bases(&mut cursor, secondary_folder_count, &mut asset_folder_bases)?;
+    take_asset_folder_bases(cursor, secondary_folder_count, &mut asset_folder_bases)?;
     if cursor.exhausted() {
         return Ok(asset_folder_bases);
     }
@@ -497,7 +513,7 @@ fn parse_asset_tail_at(bytes: &[u8], at: usize) -> Result<Vec<Utf16View<'_>>, Co
             ))
         }
     }
-    cursor.finish("top-level manifest")?;
+    cursor.finish("top-level manifest terminal")?;
 
     Ok(asset_folder_bases)
 }

@@ -1244,10 +1244,21 @@ pub enum JointOperands {
             deserialize_with = "deserialize_offset_frames"
         )]
         offset_frames: Option<[Transform; 2]>,
+        /// How the z axes of the two connector frames mate when the joint is
+        /// solved, when the source states it: `aligned` is `z₁ = z₀` and
+        /// `opposed` is `z₁ = −z₀`. A kind that states its own sense requires
+        /// this one to agree or be absent.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_frame_sense"
+        )]
+        frame_sense: Option<PlaneSense>,
     },
 }
 
-/// Relative direction of the two normals of a plane coincidence or an insert.
+/// Relative direction of the two normals of a plane coincidence or an insert,
+/// or of the z axes of a joint's two connector frames.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
@@ -1621,6 +1632,7 @@ impl AssemblyJoint {
                 kind,
                 connectors: Box::new(connectors),
                 offset_frames,
+                frame_sense: None,
             },
         )
     }
@@ -1632,6 +1644,41 @@ impl AssemblyJoint {
             suppressed: false,
             driving_parameter: None,
             native_ref: None,
+        }
+    }
+
+    /// How the two connector frames of a paired joint mate, when the source
+    /// states it. A grounded joint has one connector and states none.
+    pub fn frame_sense(&self) -> Option<PlaneSense> {
+        match &self.operands {
+            JointOperands::Grounded { .. } => None,
+            JointOperands::Pair { frame_sense, .. } => *frame_sense,
+        }
+    }
+
+    /// Sets a paired joint's frame sense. A grounded joint has no second
+    /// connector to mate with, so it keeps no sense and this returns `false`.
+    pub fn set_frame_sense(&mut self, sense: Option<PlaneSense>) -> bool {
+        match &mut self.operands {
+            JointOperands::Grounded { .. } => false,
+            JointOperands::Pair { frame_sense, .. } => {
+                *frame_sense = sense;
+                true
+            }
+        }
+    }
+
+    /// The sense a paired joint's kind states for itself: a plane coincidence
+    /// or an insert.
+    pub fn kind_sense(&self) -> Option<PlaneSense> {
+        match &self.operands {
+            JointOperands::Pair {
+                kind:
+                    PairedJointKind::PlaneCoincidence { sense, .. }
+                    | PairedJointKind::Insert { sense, .. },
+                ..
+            } => Some(*sense),
+            _ => None,
         }
     }
 
@@ -1687,6 +1734,7 @@ cadmpeg_core::named_optional_field!(deserialize_linear_limits, JointLimits, "lin
 cadmpeg_core::named_optional_field!(deserialize_distance, FiniteReal, "distance");
 cadmpeg_core::named_optional_field!(deserialize_distance2, FiniteReal, "distance2");
 cadmpeg_core::named_optional_field!(deserialize_offset, FiniteReal, "offset");
+cadmpeg_core::named_optional_field!(deserialize_frame_sense, PlaneSense, "frame_sense");
 cadmpeg_core::named_optional_field!(
     deserialize_driving_parameter,
     crate::features::ParameterId,

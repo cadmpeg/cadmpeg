@@ -102,29 +102,29 @@ class IrVersionCheck(harness.FixtureCase):
         results = self.results()
         self.assertEqual(harness.statuses(results), ["PASS"], results)
 
-    def test_wire_change_without_bump_fails(self) -> None:
+    def test_wire_change_keeps_release_version(self) -> None:
         # A new optional field on a CADIR type, as in #327.
         self.repo.commit({FEATURES: WIDER})
         results = self.results()
-        self.assertEqual(harness.statuses(results), ["FAIL"])
-        self.assertIn("IR_VERSION is still 8", results[0].summary)
+        self.assertEqual(harness.statuses(results), ["WARN"])
+        self.assertIn("release IR_VERSION 8", results[0].summary)
         self.assertIn(f"{FEATURES}: struct FeatureInputTopology changed", results[0].details)
-        self.assertTrue(any('"9"' in detail for detail in results[0].details))
+        self.assertFalse(any('set IR_VERSION' in detail for detail in results[0].details))
 
-    def test_serde_attribute_change_fails(self) -> None:
+    def test_serde_attribute_change_warns(self) -> None:
         self.repo.commit({FEATURES: STRUCT.replace("pub faces", "#[serde(default)]\n    pub faces")})
-        self.assertEqual(harness.statuses(self.results()), ["FAIL"])
+        self.assertEqual(harness.statuses(self.results()), ["WARN"])
         self.repo.commit({FEATURES: STRUCT.replace(
             "deny_unknown_fields", "deny_unknown_fields, rename_all = \"camelCase\"")})
-        self.assertEqual(harness.statuses(self.results()), ["FAIL"])
+        self.assertEqual(harness.statuses(self.results()), ["WARN"])
 
-    def test_core_type_the_document_names_fails(self) -> None:
+    def test_core_type_the_document_names_warns(self) -> None:
         self.repo.commit({DIALECT: LAYERS.replace("}\n", "    pub codec: String,\n}\n")})
         results = self.results()
-        self.assertEqual(harness.statuses(results), ["FAIL"])
+        self.assertEqual(harness.statuses(results), ["WARN"])
         self.assertIn(f"{DIALECT}: struct DialectLayers changed", results[0].details)
 
-    def test_type_reached_through_a_macro_fails(self) -> None:
+    def test_type_reached_through_a_macro_warns(self) -> None:
         registry = """macro_rules! declare_model {
     ($($field:ident: $ty:ty;)*) => {
         #[derive(Serialize)]
@@ -141,7 +141,7 @@ declare_model! { sketches: Sketch; }
         self.repo.checkout("topic")
         self.repo.commit({"crates/cadmpeg-ir/src/sketches.rs":
                           sketch.replace("}\n", "    pub plane: u32,\n}\n")})
-        self.assertEqual(harness.statuses(self.results()), ["FAIL"])
+        self.assertEqual(harness.statuses(self.results()), ["WARN"])
 
     def test_non_serde_derive_and_visibility_pass(self) -> None:
         self.assertPasses({FEATURES: STRUCT.replace("Debug,", "Debug, Clone, PartialEq,")
@@ -208,20 +208,26 @@ mod tests {
         self.repo.commit({FEATURES: WIDER, DOCUMENT: document(9), GOLDEN: golden(9)})
         self.assertEqual(harness.statuses(self.results()), ["PASS"])
 
+    def test_release_reset_with_updated_fixtures_passes(self) -> None:
+        self.repo.commit({DOCUMENT: document(11), GOLDEN: golden(11)})
+        self.repo.checkout("upstream")
+        self.repo.git("merge", "-q", "topic")
+        self.repo.checkout("topic")
+        self.assertPasses({DOCUMENT: document(8), GOLDEN: golden(8)})
+
     def test_bump_with_stale_fixture_fails(self) -> None:
         self.repo.commit({FEATURES: WIDER, DOCUMENT: document(9)})
         results = self.results()
         self.assertEqual(harness.statuses(results), ["FAIL"])
         self.assertIn(GOLDEN, results[0].details)
 
-    def test_bump_overtaken_by_upstream_fails(self) -> None:
+    def test_upstream_release_version_needs_no_extra_increment(self) -> None:
         self.repo.commit({FEATURES: WIDER, DOCUMENT: document(9), GOLDEN: golden(9)})
         self.repo.checkout("upstream")
         self.repo.commit({DOCUMENT: document(9), GOLDEN: golden(9)})
         self.repo.checkout("topic")
         results = self.results()
-        self.assertIn("FAIL", harness.statuses(results))
-        self.assertIn("makes it 10", results[0].summary)
+        self.assertEqual(harness.statuses(results), ["PASS"])
 
     def test_codec_serialized_type_warns(self) -> None:
         self.repo.commit({"crates/cadmpeg-codec-f3d/src/native.rs": STRUCT})

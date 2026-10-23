@@ -118,6 +118,18 @@ pub(super) fn check_products(
         }
     }
     for joint in &ir.model.assembly_joints {
+        // A kind that states its own sense leaves no room for another.
+        if let (Some(kind_sense), Some(frame_sense)) = (joint.kind_sense(), joint.frame_sense()) {
+            if kind_sense != frame_sense {
+                record_finding(
+                    findings,
+                    Check::ReferentialIntegrity,
+                    crate::report::Severity::Error,
+                    Some(joint.id.as_str()),
+                    format_args!("assembly joint frame sense contradicts its kind's sense"),
+                );
+            }
+        }
         if let Some(parameter) = &joint.driving_parameter {
             if !parameters.contains(parameter.as_str()) {
                 record_finding(
@@ -161,6 +173,53 @@ mod tests {
 
     fn root_operand(object: &str) -> JointOperand {
         JointOperand::root(object, Vec::new())
+    }
+
+    /// A kind that states its own sense requires the frame sense to agree.
+    #[test]
+    fn a_frame_sense_must_agree_with_its_kinds_sense() {
+        use crate::products::PlaneSense;
+        let findings = |frame_sense| {
+            let mut ir = CadIr::empty();
+            let mut joint = AssemblyJoint::paired(
+                JointId::mint("test:model:joint#plane").expect("identity grammar"),
+                PairedJointKind::PlaneCoincidence {
+                    sense: PlaneSense::Opposed,
+                    offset: None,
+                },
+                [
+                    JointConnector {
+                        operand: root_operand("root:first"),
+                        frame: Transform::identity(),
+                        detached: false,
+                    },
+                    JointConnector {
+                        operand: root_operand("root:second"),
+                        frame: Transform::identity(),
+                        detached: false,
+                    },
+                ],
+                None,
+            );
+            assert!(joint.set_frame_sense(frame_sense));
+            ir.model.assembly_joints.push(joint);
+            let mut findings = Vec::new();
+            check_products(
+                &cadmpeg_test_support::service_decode_context(),
+                &ir,
+                &mut findings,
+            )
+            .unwrap();
+            findings
+        };
+        assert!(findings(None).is_empty());
+        assert!(findings(Some(PlaneSense::Opposed)).is_empty());
+        let contradicted = findings(Some(PlaneSense::Aligned));
+        assert_eq!(contradicted.len(), 1);
+        assert_eq!(
+            contradicted[0].message,
+            "assembly joint frame sense contradicts its kind's sense"
+        );
     }
 
     #[test]

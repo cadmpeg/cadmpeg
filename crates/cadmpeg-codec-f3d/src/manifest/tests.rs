@@ -246,6 +246,68 @@ fn top_level_manifest_rejects_trailing_bytes() {
 }
 
 #[test]
+fn top_level_manifest_reports_unframed_suffix_after_lineage_urn() {
+    let original = encode_top_level(DESIGN_GUID, &["Design Base"]).unwrap();
+    let mut terminal = vec![1];
+    push_utf16(&mut terminal, "NA_EXPORT").unwrap();
+
+    for version in [TOP_LEVEL_MANIFEST_VERSION, "3-3-0-0"] {
+        let mut bytes = with_version(&original, version);
+        assert!(bytes.ends_with(&terminal));
+        bytes.truncate(bytes.len() - terminal.len());
+        bytes.push(0);
+        push_utf16(&mut bytes, OTHER_GUID).unwrap();
+        push_utf16(&mut bytes, "urn:synthetic:lineage").unwrap();
+        assert_eq!(
+            parse_top_level(&bytes).unwrap().asset_folder_bases,
+            ["Design Base"]
+        );
+
+        let suffix_offset = bytes.len();
+        bytes.extend_from_slice(&[0xa5; 6]);
+        let error = parse_top_level(&bytes).unwrap_err();
+        assert!(
+            matches!(&error, CodecError::Malformed(message)
+            if message.contains(version)
+                && message.contains("grammar does not fit")
+                && message.contains("top-level manifest terminal: 6 trailing byte(s)")
+                && message.contains(&format!(
+                    "no exact tail framing is valid; furthest candidate stopped at stream offset {suffix_offset}:"
+                ))),
+            "expected the terminal-consumption error and offset, found {error:?}"
+        );
+    }
+}
+
+#[test]
+fn top_level_manifest_reports_invalid_lineage_urn() {
+    let original = encode_top_level(DESIGN_GUID, &["Design Base"]).unwrap();
+    let mut terminal = vec![1];
+    push_utf16(&mut terminal, "NA_EXPORT").unwrap();
+
+    for lineage in ["synthetic:lineage", OTHER_GUID] {
+        let mut bytes = original.clone();
+        assert!(bytes.ends_with(&terminal));
+        bytes.truncate(bytes.len() - terminal.len());
+        bytes.push(0);
+        push_utf16(&mut bytes, "Synthetic Document").unwrap();
+        push_utf16(&mut bytes, lineage).unwrap();
+
+        let error = parse_top_level(&bytes).unwrap_err();
+        assert!(
+            matches!(&error, CodecError::Malformed(message)
+            if message.contains("top-level manifest lineage URN")
+                && message.contains("value is not a nonempty ASCII URN")
+                && message.contains(&format!(
+                    "no exact tail framing is valid; furthest candidate stopped at stream offset {}:",
+                    bytes.len()
+                ))),
+            "expected the lineage validation error and offset, found {error:?}"
+        );
+    }
+}
+
+#[test]
 fn generated_asset_manifest_has_a_joinable_header() {
     let bytes = generated_design_asset().unwrap();
     let header = parse_asset_header(&bytes).unwrap();

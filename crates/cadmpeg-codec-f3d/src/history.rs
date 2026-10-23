@@ -3147,19 +3147,28 @@ fn project_input_topology(
 }
 
 /// Keep the edge geometry of the historical edges that some feature
-/// definition selects; consumers locate only selected edges in the bodies
-/// they rebuild.
+/// definition selects, and of the edges that bound a face some feature
+/// definition selects; consumers locate those edges, and through them the
+/// selected faces, in the bodies they rebuild.
 pub(crate) fn retain_selected_edge_geometry(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     features: &[cadmpeg_ir::features::Feature],
     input_topologies: &mut [cadmpeg_ir::features::FeatureInputTopology],
 ) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::schema::rewrite::typed::RewriteIdentities;
-    let sampled = input_topologies
+    let mut sampled = HashSet::new();
+    for geometry in input_topologies
         .iter()
         .flat_map(|topology| &topology.edge_geometry)
-        .map(|geometry| geometry.edge.as_str())
-        .collect::<HashSet<_>>();
+    {
+        sampled.insert(geometry.edge.as_str());
+        sampled.extend(
+            geometry
+                .faces
+                .iter()
+                .map(cadmpeg_ir::ids::HistoricalFaceId::as_str),
+        );
+    }
     if sampled.is_empty() {
         return Ok(());
     }
@@ -3177,9 +3186,13 @@ pub(crate) fn retain_selected_edge_geometry(
     }
     drop(sampled);
     for topology in input_topologies {
-        topology
-            .edge_geometry
-            .retain(|geometry| selected.contains(geometry.edge.as_str()));
+        topology.edge_geometry.retain(|geometry| {
+            selected.contains(geometry.edge.as_str())
+                || geometry
+                    .faces
+                    .iter()
+                    .any(|face| selected.contains(face.as_str()))
+        });
     }
     Ok(())
 }
