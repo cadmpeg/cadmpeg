@@ -294,9 +294,9 @@ enum Command {
     },
     /// Measure a CAD file: carrier parameters, areas, lengths and boxes.
     ///
-    /// Accepts a native CAD file or CADIR JSON. Without a face or edge
-    /// selector, prints one row per body. Every quantity is measured with its
-    /// method and error terms, or unavailable with a reason.
+    /// Accepts a native CAD file or CADIR JSON. Without a face, edge or
+    /// surface selector, prints one row per body. Every quantity is measured
+    /// with its method and error terms, or unavailable with a reason.
     #[command(
         mut_arg("output", |arg| arg.long("report").visible_alias("output").help("Write a JSON report to this file")),
         display_order = 5,

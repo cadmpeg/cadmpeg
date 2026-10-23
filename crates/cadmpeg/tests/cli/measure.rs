@@ -29,6 +29,11 @@ bbox_min_y_mm\tbbox_min_z_mm\tbbox_max_x_mm\tbbox_max_y_mm\tbbox_max_z_mm\tbbox_
 orientation\tstatus\tunavailable\tcaveats";
 
 #[cfg(feature = "step")]
+/// The surfaces table header of the measurement contract.
+const SURFACE_HEADER: &str = "surface\tkind\tradius_mm\tdiameter_mm\thalf_angle_rad\t\
+major_radius_mm\tminor_radius_mm\tplacement\tbodies\tfaces\tstatus\tunavailable";
+
+#[cfg(feature = "step")]
 fn fixture(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/measure")
@@ -460,7 +465,84 @@ fn tsv_requires_one_level() {
         .assert()
         .code(2)
         .stderr(predicate::str::contains(
-            "--tsv prints one table; select faces or edges, not both",
+            "--tsv prints one table; select one of faces, edges or surfaces",
+        ));
+}
+
+/// The cylinder solid's surfaces: `#16` the cylinder of radius 10 about +z
+/// through the origin, used by the side face `#46`; `#18` the plane at
+/// z = 30, used by the top face `#63`.
+#[cfg(feature = "step")]
+#[test]
+fn surface_rows_hold_carrier_parameters_only() {
+    let solid = fixture("measure_cylinder_solid.p21");
+    let solid = solid.to_str().unwrap();
+    let report = measure_json(&[
+        solid,
+        "--surface",
+        "surface#16",
+        "--surface",
+        "step:data:surface#16",
+    ]);
+    let measure = &report["measure"];
+    assert!(measure["bodies"].as_array().unwrap().is_empty());
+    assert!(measure["faces"].as_array().unwrap().is_empty());
+    let surfaces = measure["surfaces"].as_array().unwrap();
+    assert_eq!(surfaces.len(), 1);
+    let row = &surfaces[0];
+    assert_eq!(row["surface"], "step:data:surface#16");
+    assert_eq!(row["kind"], "cylinder");
+    assert_measured(&row["parameters"]["radius"], 10.0, 10.0);
+    assert_measured(&row["parameters"]["diameter"], 20.0, 10.0);
+    assert_point(&row["parameters"]["axis_direction"], [0.0, 0.0, 1.0], 1.0);
+    assert_eq!(row["faces"], serde_json::json!(["step:data:face#46"]));
+    assert_eq!(row["bodies"].as_array().unwrap().len(), 1);
+    assert!(row.get("area").is_none() && row.get("bbox").is_none());
+    assert_eq!(row["status"], "measured");
+    assert_eq!(measure["document"]["surfaces"], 1);
+
+    let text = measure_text(&[
+        solid,
+        "--surface",
+        "surface#18",
+        "--surface",
+        "surface#16",
+        "--tsv",
+    ]);
+    let lines: Vec<Vec<&str>> = text
+        .lines()
+        .map(|line| line.split('\t').collect())
+        .collect();
+    assert_eq!(lines[0].join("\t"), SURFACE_HEADER);
+    assert_eq!(lines.len(), 3);
+    assert_eq!(
+        &lines[1][..4],
+        ["step:data:surface#16", "cylinder", "10", "20"]
+    );
+    assert_eq!(lines[1][7], "identity");
+    assert_eq!(lines[1][9], "step:data:face#46");
+    assert_eq!(&lines[2][..3], ["step:data:surface#18", "plane", ""]);
+    assert_eq!(lines[2][9], "step:data:face#63");
+    for row in &lines[1..] {
+        assert_eq!(row.len(), lines[0].len());
+        assert_eq!(row[10], "measured");
+    }
+
+    cadmpeg()
+        .arg("measure")
+        .arg(solid)
+        .args(["--surface", "surface#99"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("model.surfaces"));
+    cadmpeg()
+        .arg("measure")
+        .arg(solid)
+        .args(["--face", "face#46", "--surface", "surface#16", "--tsv"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "--tsv prints one table; select one of faces, edges or surfaces",
         ));
 }
 

@@ -10,7 +10,7 @@ use std::io::{self, Write};
 
 use cadmpeg_measure::report::{
     BodyMeasures, BodyOrientation, CarrierParameters, EdgeMeasures, EdgeParameters, FaceMeasures,
-    LoopMeasures, MeasureReport, NormalReading, RegionRule,
+    LoopMeasures, MeasureReport, NormalReading, RegionRule, SurfaceMeasures,
 };
 use cadmpeg_measure::value::{BoxValue, Measured, Point, Quantity, Range, Scalar, Sweep};
 use serde::Serialize;
@@ -194,9 +194,25 @@ const EDGE_HEADER: [&str; 17] = [
     "unavailable",
 ];
 
-fn face_row(face: &FaceMeasures) -> Vec<String> {
-    let carrier = face.carrier();
-    let (radius, diameter, half_angle, major, minor) = match carrier.parameters() {
+const SURFACE_HEADER: [&str; 12] = [
+    "surface",
+    "kind",
+    "radius_mm",
+    "diameter_mm",
+    "half_angle_rad",
+    "major_radius_mm",
+    "minor_radius_mm",
+    "placement",
+    "bodies",
+    "faces",
+    "status",
+    "unavailable",
+];
+
+/// The `radius_mm`, `diameter_mm`, `half_angle_rad`, `major_radius_mm` and
+/// `minor_radius_mm` cells of a carrier.
+fn carrier_cells(parameters: &CarrierParameters) -> [String; 5] {
+    let (radius, diameter, half_angle, major, minor) = match parameters {
         CarrierParameters::Cylinder {
             radius, diameter, ..
         }
@@ -217,6 +233,11 @@ fn face_row(face: &FaceMeasures) -> Vec<String> {
         ),
         _ => (None, None, None, None, None),
     };
+    [radius, diameter, half_angle, major, minor].map(scalar_cell)
+}
+
+fn face_row(face: &FaceMeasures) -> Vec<String> {
+    let carrier = face.carrier();
     let measures = face.measures();
     let [axial_min, axial_max] = range_cells(measures.axial_range().as_ref());
     let [sweep, full] = sweep_cells(measures.angular_sweep().as_ref());
@@ -225,11 +246,9 @@ fn face_row(face: &FaceMeasures) -> Vec<String> {
         cell(face.body().as_deref().unwrap_or("")),
         cell(carrier.surface()),
         name(carrier.kind()),
-        scalar_cell(radius),
-        scalar_cell(diameter),
-        scalar_cell(half_angle),
-        scalar_cell(major),
-        scalar_cell(minor),
+    ];
+    row.extend(carrier_cells(carrier.parameters()));
+    row.extend([
         axial_min,
         axial_max,
         scalar_cell(measures.axial_extent().as_ref()),
@@ -238,7 +257,7 @@ fn face_row(face: &FaceMeasures) -> Vec<String> {
         scalar_cell(Some(measures.area())),
         scalar_cell(Some(measures.boundary_length())),
         scalar_cell(Some(measures.seam_length())),
-    ];
+    ]);
     row.extend(box_cells(measures.bbox()));
     row.push(face_orientation_cell(face).to_owned());
     row.push(name(face.status()));
@@ -309,12 +328,28 @@ fn edge_row(edge: &EdgeMeasures) -> Vec<String> {
     row
 }
 
+fn surface_row(surface: &SurfaceMeasures) -> Vec<String> {
+    let carrier = surface.carrier();
+    let mut row = vec![cell(carrier.surface()), name(carrier.kind())];
+    row.extend(carrier_cells(carrier.parameters()));
+    row.push(name(&carrier.placement().class()));
+    row.push(cell(&surface.bodies().join(",")));
+    row.push(cell(&surface.faces().join(",")));
+    row.push(name(surface.status()));
+    row.push(surface.unavailable_codes().join(","));
+    row
+}
+
 /// The TSV table of one row level.
 pub(super) fn tsv(report: &MeasureReport, level: Level) -> String {
     let (header, rows): (&[&str], Vec<Vec<String>>) = match level {
         Level::Bodies => (&BODY_HEADER, report.bodies().iter().map(body_row).collect()),
         Level::Faces => (&FACE_HEADER, report.faces().iter().map(face_row).collect()),
         Level::Edges => (&EDGE_HEADER, report.edges().iter().map(edge_row).collect()),
+        Level::Surfaces => (
+            &SURFACE_HEADER,
+            report.surfaces().iter().map(surface_row).collect(),
+        ),
     };
     let mut text = header.join("\t");
     text.push('\n');
@@ -807,6 +842,32 @@ fn edge_text(out: &mut impl Write, edge: &EdgeMeasures) -> io::Result<()> {
     line(out, "faces", &edge.faces().join(", "))
 }
 
+fn surface_text(out: &mut impl Write, surface: &SurfaceMeasures) -> io::Result<()> {
+    let carrier = surface.carrier();
+    writeln!(
+        out,
+        "surface {} {}",
+        carrier.surface(),
+        name(carrier.kind())
+    )?;
+    line(out, "placement", &name(&carrier.placement().class()))?;
+    parameters_text(out, carrier.parameters())?;
+    if let Some(unresolved) = surface.unresolved() {
+        line(
+            out,
+            "parameters",
+            &format!(
+                "unavailable  {} ({}): {}",
+                unresolved.reason().code(),
+                name(&unresolved.category()),
+                unresolved.message()
+            ),
+        )?;
+    }
+    line(out, "bodies", &surface.bodies().join(", "))?;
+    line(out, "faces", &surface.faces().join(", "))
+}
+
 fn body_orientation_text(orientation: &BodyOrientation) -> String {
     let mut parts = vec![body_orientation_cell(orientation).to_owned()];
     for (label, faces) in [
@@ -921,6 +982,9 @@ pub(super) fn text(out: &mut impl Write, report: &MeasureReport) -> io::Result<(
     for edge in report.edges() {
         edge_text(out, edge)?;
     }
+    for surface in report.surfaces() {
+        surface_text(out, surface)?;
+    }
     for body in report.bodies() {
         body_text(out, body)?;
     }
@@ -948,10 +1012,11 @@ pub(super) fn text(out: &mut impl Write, report: &MeasureReport) -> io::Result<(
         out,
         "counts",
         &format!(
-            "bodies {}, faces {}, edges {}{area}{volume}",
+            "bodies {}, faces {}, edges {}, surfaces {}{area}{volume}",
             document.bodies(),
             document.faces(),
-            document.edges()
+            document.edges(),
+            document.surfaces()
         ),
     )?;
     if document.unavailable().is_empty() {

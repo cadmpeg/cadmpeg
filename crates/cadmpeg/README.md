@@ -247,10 +247,12 @@ cadmpeg measure part.step --faces --kind cylinder --tsv
 cadmpeg measure part.step --face face#46 --json
 ```
 
-Without a face or edge selector, it prints one row per body and a document
-block. `--face ID` and `--edge ID` print rows for those entities; `--faces`
-and `--edges` print a row for every face or edge in scope. `--body ID`
-limits the scope. `--kind KIND[,KIND...]` and `--radius RANGE` (`MIN..MAX`,
+Without a face, edge or surface selector, it prints one row per body and a
+document block. `--face ID` and `--edge ID` print rows for those entities;
+`--faces` and `--edges` print a row for every face or edge in scope.
+`--surface ID` prints the carrier row of a surface: its parameters and the
+faces and bodies that use it, with no bounded measure. `--body ID` limits
+the scope. `--kind KIND[,KIND...]` and `--radius RANGE` (`MIN..MAX`,
 `MIN..`, `..MAX`, or `R`) filter face rows. An ID is an exact ID or a unique
 ID suffix, as for `query item`.
 
@@ -262,8 +264,8 @@ uncertainty, or is unavailable with a pinned reason code and a category.
 reason codes and the caveats.
 
 `--tsv` prints one table with units in the column names: the body table,
-the face table, or the edge table. It refuses a face and an edge selection
-together. `--json` prints the versioned envelope; `--report FILE` (also `-o`
+the face table, the edge table, or the surface table. It refuses a selection
+of more than one of faces, edges and surfaces. `--json` prints the versioned envelope; `--report FILE` (also `-o`
 and `--output`) writes it to a file. `--limits service` selects the smaller
 work allowance of a measurement pass. A CADIR document decoded at container
 depth holds no geometry; `measure` refuses it with `insufficient_depth`.

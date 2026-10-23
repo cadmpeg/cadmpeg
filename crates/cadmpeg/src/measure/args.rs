@@ -101,6 +101,11 @@ pub(crate) struct SelectionArgs {
     /// Print a row for this edge: an exact ID or a unique ID suffix. Repeatable.
     #[arg(long = "edge", value_name = "ID")]
     edges: Vec<String>,
+    /// Print the carrier row of this surface: an exact ID or a unique ID
+    /// suffix. Repeatable. A surface row holds the carrier's parameters and
+    /// no bounded measure.
+    #[arg(long = "surface", value_name = "ID")]
+    surfaces: Vec<String>,
     /// Print a row for every face in scope.
     #[arg(long = "faces")]
     all_faces: bool,
@@ -123,6 +128,7 @@ pub(super) enum Level {
     Bodies,
     Faces,
     Edges,
+    Surfaces,
 }
 
 impl SelectionArgs {
@@ -136,11 +142,26 @@ impl SelectionArgs {
         !self.edges.is_empty() || self.all_edges
     }
 
+    /// Whether a surface selector is given.
+    pub(super) fn surface_level(&self) -> bool {
+        !self.surfaces.is_empty()
+    }
+
+    /// The number of row levels other than bodies the selectors select.
+    pub(super) fn levels(&self) -> usize {
+        [self.face_level(), self.edge_level(), self.surface_level()]
+            .into_iter()
+            .filter(|selected| *selected)
+            .count()
+    }
+
     pub(super) fn level(&self) -> Level {
         if self.face_level() {
             Level::Faces
         } else if self.edge_level() {
             Level::Edges
+        } else if self.surface_level() {
+            Level::Surfaces
         } else {
             Level::Bodies
         }
@@ -171,6 +192,13 @@ impl SelectionArgs {
             cadmpeg_ir::ids::EdgeId::as_str,
             &mut errors,
         );
+        let surfaces = resolve_all(
+            &self.surfaces,
+            "model.surfaces",
+            &ir.model.surfaces.iter().map(|surface| &surface.id),
+            cadmpeg_ir::ids::SurfaceId::as_str,
+            &mut errors,
+        );
         if !errors.is_empty() {
             return Err(anyhow!("{}", errors.join("\n")).into());
         }
@@ -178,6 +206,7 @@ impl SelectionArgs {
             bodies,
             faces,
             edges,
+            surfaces,
             all_faces: self.all_faces,
             all_edges: self.all_edges,
             face_filter: FaceFilter {

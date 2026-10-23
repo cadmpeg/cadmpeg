@@ -97,11 +97,10 @@ pub(crate) fn measure(
         if let Some(report) = command.report {
             report.check(command.path)?;
         }
-        if command.output == Output::Tsv
-            && command.selection.face_level()
-            && command.selection.edge_level()
-        {
-            return Err(anyhow!("--tsv prints one table; select faces or edges, not both").into());
+        if command.output == Output::Tsv && command.selection.levels() > 1 {
+            return Err(
+                anyhow!("--tsv prints one table; select one of faces, edges or surfaces").into(),
+            );
         }
         let loaded = loader::load_artifact(inputs, command.path, command.options, command.forced)?;
         print_load_notice(&loaded);
