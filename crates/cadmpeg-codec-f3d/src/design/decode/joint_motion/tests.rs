@@ -17,6 +17,7 @@ fn reference(out: &mut Vec<u8>, target: u32) {
 
 fn freedom(out: &mut Vec<u8>, code: u32) {
     out.extend_from_slice(&FREEDOM_ENTRY_PREFIX);
+    out.extend_from_slice(&3u32.to_le_bytes());
     out.extend_from_slice(&code.to_le_bytes());
 }
 
@@ -100,6 +101,56 @@ fn current_generation_motion_names_its_joint_and_limits() {
     // The record after the joint is a decoded scope of another family.
     let scopes = HashMap::from([(11, false), (13, true)]);
     assert!(codes(&bytes, &scopes).is_empty());
+}
+
+/// A word-`1` entry stores an f64 after its code; the motion keeps the word
+/// and the value. Another word is no freedom entry.
+#[test]
+fn a_word_one_freedom_entry_keeps_its_word_and_value() {
+    let mut bytes = Vec::new();
+    joint(&mut bytes, 10, None);
+    scope(&mut bytes, 11, 10);
+    header(&mut bytes, *b"309", 20);
+    bytes.extend_from_slice(&[0; 13]);
+    reference(&mut bytes, 10);
+    bytes.extend_from_slice(&[0; 9]);
+    for word in [1_u32, 2] {
+        bytes.extend_from_slice(&FREEDOM_ENTRY_PREFIX);
+        bytes.extend_from_slice(&word.to_le_bytes());
+        bytes.extend_from_slice(&2u32.to_le_bytes());
+        bytes.extend_from_slice(&std::f64::consts::TAU.to_le_bytes());
+    }
+    bytes.extend_from_slice(&[0; 8]);
+    let scopes = HashMap::from([(11, true)]);
+    let [read] = decode_stream(&bytes, "Design/BulkStream.dat", &scopes)
+        .try_into()
+        .unwrap();
+    assert_eq!(
+        read.freedoms
+            .iter()
+            .map(|freedom| freedom.value)
+            .collect::<Vec<_>>(),
+        [2]
+    );
+    assert_eq!(
+        read.entry_words,
+        [
+            crate::records::feature::joint_motion::DesignJointFreedomWord {
+                word: 1,
+                value: Some(std::f64::consts::TAU),
+            }
+        ]
+    );
+
+    // Word-`3` entries keep no words.
+    let mut usual = Vec::new();
+    joint(&mut usual, 10, None);
+    scope(&mut usual, 11, 10);
+    motion(&mut usual, *b"368", 20, 10, &[2]);
+    let [read] = decode_stream(&usual, "Design/BulkStream.dat", &scopes)
+        .try_into()
+        .unwrap();
+    assert!(read.entry_words.is_empty());
 }
 
 /// Older generation: the motion record follows its joint record and

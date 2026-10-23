@@ -177,7 +177,7 @@ fn valid_assembly_operand_path_link(
     )
     .operand_frame_variant()
     .is_some_and(design::assembly::AssemblyOperandFrameVariant::is_wide_family)
-        || design::assembly::rigid_as_built_scope(
+        || design::assembly::wide_as_built_scope(
             scope.frame_length(),
             scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
         );
@@ -2232,6 +2232,16 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             Some(alignment) => {
                 let values = if alignment.owners.len() == 2 {
                     vec![alignment.angle(), alignment.offset()[2]]
+                } else if design::assembly::placement_ordered_as_built_scope(
+                    scope.frame_length(),
+                    scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
+                ) {
+                    vec![
+                        alignment.offset()[0],
+                        alignment.offset()[1],
+                        alignment.offset()[2],
+                        alignment.angle(),
+                    ]
                 } else {
                     vec![
                         alignment.angle(),
@@ -2266,13 +2276,17 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     operand_frame_variant,
                     Some(design::assembly::AssemblyOperandFrameVariant::CompactWide)
                 );
+                let wide_as_built = design::assembly::wide_as_built_scope(
+                    scope.frame_length(),
+                    scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
+                );
                 let rigid_as_built = design::assembly::rigid_as_built_scope(
                     scope.frame_length(),
                     scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
                 );
                 let as_built_frames = scope.kind()
                     == crate::records::feature::scope::DesignFeatureKind::AsBuilt
-                    && (scope.frame_length() == 399 || rigid_as_built);
+                    && (scope.frame_length() == 399 || wide_as_built);
                 let as_built_421_generation = design::assembly::legacy_as_built_421_generation(
                     scope.frame_length(),
                     scope.class_tag.as_str(),
@@ -2347,8 +2361,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                 use crate::layout::assembly_wide_operand_path_locator as wide;
                                 let identity = frame.transform.rows()
                                     == cadmpeg_ir::transform::Transform::identity().rows();
-                                let (reference_at, transform_at): (u64, &[u64]) = if rigid_as_built
-                                {
+                                let (reference_at, transform_at): (u64, &[u64]) = if wide_as_built {
                                     (
                                         u64_from_index(wide::NONZERO_RECORD_REFERENCE + 1),
                                         if identity {

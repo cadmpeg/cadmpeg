@@ -94,7 +94,7 @@ impl AssemblyScopeGeneration {
             Axial, Compact, CompactWide, LegacyClass388, Standard, Wide,
         };
         let (operand_frame, lanes, locator_offsets) = match frame_length {
-            399 => (None, Some((4, 0, 4)), Some([51, 62])),
+            378 | 399 => (None, Some((4, 0, 4)), Some([51, 62])),
             604 => (None, Some((8, 4, 8)), None),
             627 | 637 | 692 => (Some(Standard), Some((4, 0, 4)), Some([366, 377])),
             633 => (Some(Compact), Some((4, 0, 4)), Some([362, 373])),
@@ -232,6 +232,19 @@ pub(crate) fn joint_placed_occurrence_loss(
 /// per-file dynamic values, so its kind and frame length identify it.
 pub(crate) fn rigid_as_built_scope(frame_length: u64, as_built: bool) -> bool {
     as_built && rigid_group_member_count(frame_length).is_some()
+}
+
+/// The 378-byte `As-built` form, whose four owners are `OffsetX`, `OffsetY`,
+/// `OffsetZ`, and `AngleZ` in local order.
+pub(crate) fn placement_ordered_as_built_scope(frame_length: u64, as_built: bool) -> bool {
+    as_built && frame_length == 378
+}
+
+/// An `As-built` scope whose operand-path locators are wide locators: a rigid
+/// group, or the 378-byte form with four alignment owners.
+pub(crate) fn wide_as_built_scope(frame_length: u64, as_built: bool) -> bool {
+    rigid_as_built_scope(frame_length, as_built)
+        || placement_ordered_as_built_scope(frame_length, as_built)
 }
 
 /// The member count a rigid `As-built` frame length implies.
@@ -1530,6 +1543,7 @@ mod tests {
                     offset: 950,
                 })
                 .collect(),
+            entry_words: Vec::new(),
             limits: Some(DesignJointLimitLanes {
                 flags_offset: 811,
                 first_flag: flags[0],
