@@ -329,6 +329,9 @@ fn parse_stream_grammar<'a>(
     };
     cursor.u32("header state 0")?;
     cursor.u16("header state 1")?;
+    if schema == 15 {
+        cursor.u32("header state 1 extension")?;
+    }
     let invariant = cursor.u16("header invariant")?;
     if invariant != 1 {
         return Err(CodecError::malformed(format_args!(
@@ -344,7 +347,7 @@ fn parse_stream_grammar<'a>(
     let lod_count = cursor.count32("LOD count", 65_536)?;
     let (model_states, levels_of_detail) = if schema == 15 {
         (
-            parse_model_states(ctx, source, &mut cursor, lod_count)?,
+            parse_model_states(ctx, source, &mut cursor, lod_count, section_versions[2])?,
             Vec::new(),
         )
     } else {
@@ -637,7 +640,7 @@ fn parse_occurrence_export(
     save_year: u16,
 ) -> Result<(), CodecError> {
     cursor.take(10, "occurrence export state")?;
-    if save_year >= 2015 {
+    if (2015..2025).contains(&save_year) {
         cursor.u8("occurrence export padding")?;
     }
     let count = cursor.peek_u32("occurrence export count")?;
@@ -671,6 +674,10 @@ fn parse_occurrence_export(
         }
     } else {
         cursor.u32("occurrence export empty state")?;
+    }
+    if save_year >= 2025 {
+        cursor.u8("occurrence export padding")?;
+        cursor.u32("occurrence export trailer")?;
     }
     Ok(())
 }
@@ -732,7 +739,7 @@ fn parse_occurrence_value(
             ));
         }
         0x02 | 0x11 | 0x12 | 0x13 | 0x15 | 0x16 | 0x17 | 0x18 | 0x1c | 0x1f | 0x20 | 0x22
-        | 0x23 | 0x24 | 0x25 | 0x2a | 0x2b | 0x2c | 0x2d => {
+        | 0x23 | 0x24 | 0x25 | 0x2a | 0x2b | 0x2c | 0x2d | 0x2e => {
             cursor.take(16, "occurrence property id")?;
         }
         _ => {
@@ -791,7 +798,19 @@ fn parse_model_states<'a>(
     source: View<'a>,
     cursor: &mut Cursor<'_>,
     count: usize,
+    header_section_version: u16,
 ) -> Result<Vec<UfrxModelState<'a>>, CodecError> {
+    let suffix_len = match header_section_version {
+        _ if count == 0 => 0,
+        0..=16 => 77,
+        17 => {
+            return Err(CodecError::NotImplemented(
+                "UFRxDoc model-state suffix for header section version 17 is not implemented"
+                    .into(),
+            ))
+        }
+        _ => 81,
+    };
     let mut states = Vec::new();
     for _ in 0..count {
         let prefix = cursor.u8("model-state prefix")?;
@@ -814,7 +833,7 @@ fn parse_model_states<'a>(
             });
         }
         let suffix_start = cursor.position();
-        cursor.take(77, "model-state suffix")?;
+        cursor.take(suffix_len, "model-state suffix")?;
         let suffix = source
             .child(
                 source.start() + suffix_start,
@@ -1537,6 +1556,9 @@ mod tests {
         }
         push_u32(&mut bytes, 3);
         push_u16(&mut bytes, 0);
+        if schema == 15 {
+            push_u32(&mut bytes, 0);
+        }
         let invariant_offset = bytes.len();
         push_u16(&mut bytes, 1);
         push_u32(&mut bytes, 1);
@@ -1627,11 +1649,91 @@ mod tests {
         }
         push_u32(bytes, 0);
         bytes.extend_from_slice(&[0; 10]);
-        if save_year >= 2015 {
+        if (2015..2025).contains(&save_year) {
             bytes.push(0);
         }
         push_u32(bytes, 0x00ff_ffff);
         push_u32(bytes, 0);
+        if save_year >= 2025 {
+            bytes.push(0);
+            push_u32(bytes, 0);
+        }
+    }
+
+    #[test]
+    fn a_2025_export_section_moves_its_padding_to_the_end() {
+        let mut bytes = Vec::new();
+        push_u32(&mut bytes, 1);
+        push_u32(&mut bytes, 0);
+        push_occurrence(&mut bytes, 28, 2025, 9, 17, "current");
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("synthetic occurrence fits policy");
+        let mut cursor = Cursor::new(root);
+        let occurrences =
+            parse_occurrences(&ctx, root, &mut cursor, 28, 2025).expect("2025 occurrence parses");
+        assert_eq!(occurrences.len(), 1);
+        assert_eq!(cursor.position(), bytes.len());
+
+        // The 2024 layout reads the padding byte where the 2025 sentinel starts.
+        let mut cursor = Cursor::new(root);
+        assert!(parse_occurrences(&ctx, root, &mut cursor, 28, 2024)
+            .map_or(true, |_| cursor.position() != bytes.len()));
+    }
+
+    #[test]
+    fn occurrence_property_tag_0x2e_holds_a_16_byte_identifier() {
+        let mut bytes = vec![0x2e; 16];
+        bytes.push(0xff);
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("synthetic property fits policy");
+        let mut cursor = Cursor::new(root);
+        parse_occurrence_value(&ctx, &mut cursor, 0x2e).expect("tag 0x2e parses");
+        assert_eq!(cursor.position(), 16);
+    }
+
+    /// One model state named "Master" with no parameters, a `suffix_len`-byte
+    /// suffix, and four trailing bytes.
+    fn model_state_record(suffix_len: usize) -> Vec<u8> {
+        let mut bytes = vec![0];
+        push_utf16(&mut bytes, "Master");
+        push_u16(&mut bytes, 2);
+        push_u16(&mut bytes, 0);
+        push_u32(&mut bytes, 0);
+        push_u32(&mut bytes, 0);
+        bytes.extend(std::iter::repeat_n(0x5a, suffix_len));
+        bytes.extend_from_slice(b"tail");
+        bytes
+    }
+
+    #[test]
+    fn model_state_suffix_length_follows_section_version_entry_2() {
+        for (version, suffix_len) in [(16, 77), (18, 81), (19, 81)] {
+            let bytes = model_state_record(suffix_len);
+            let arena = DecodeArena::new();
+            let (ctx, root) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+                    .expect("synthetic model state fits policy");
+            let mut cursor = Cursor::new(root);
+            let states = super::parse_model_states(&ctx, root, &mut cursor, 1, version)
+                .expect("model state parses");
+            assert_eq!(states[0].suffix.window().len(), suffix_len);
+            assert_eq!(cursor.position(), bytes.len() - 4);
+        }
+        let bytes = model_state_record(81);
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("synthetic model state fits policy");
+        assert!(matches!(
+            super::parse_model_states(&ctx, root, &mut Cursor::new(root), 1, 17),
+            Err(CodecError::NotImplemented(_))
+        ));
+        let mut cursor = Cursor::new(root);
+        assert!(super::parse_model_states(&ctx, root, &mut cursor, 0, 17)
+            .expect("no model states at entry 2 value 17")
+            .is_empty());
+        assert_eq!(cursor.position(), 0);
     }
 
     #[test]

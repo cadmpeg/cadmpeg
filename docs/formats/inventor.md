@@ -71,7 +71,7 @@ The ZIP package, `InstanceProperties.bin` page framing, schemas, and typed prope
 
 ## 8. External references
 
-`UFRxDoc` schemas 11 through 15 start with a u16 schema and a u16 section-version count. The section-version table governs optional header fields. The schema-15 representation/model-state branch adds a u16 representation prefix. An assembly then stores two counted UTF-16LE representation strings. A part omits these two strings. Both document kinds continue with a two-u16 secondary LOD state, a counted UTF-16LE active model-state name, and a two-u16 model-state pair; they omit the older header-version-flags field. The model-state table precedes the external-reference table. Each model-state record contains a u8 prefix, counted UTF-16LE name, two-u16 state pair, u32 prefix count, u32 parameter count, the counted parameter records, and a 77-byte suffix. Each parameter record contains a counted UTF-16LE name, u8 tag, u16 kind, u16 state, counted UTF-16LE value, and u16 trailer.
+`UFRxDoc` schemas 11 through 15 start with a u16 schema and a u16 section-version count. The section-version table governs optional header fields. The schema-15 representation/model-state branch adds a u16 representation prefix. An assembly then stores two counted UTF-16LE representation strings. A part omits these two strings. Both document kinds continue with a two-u16 secondary LOD state, a counted UTF-16LE active model-state name, and a two-u16 model-state pair; they omit the older header-version-flags field. Schema 15 then stores a u32 and a u16 header state, one more u32, and the u16 invariant 1. The model-state table precedes the external-reference table. Each model-state record contains a u8 prefix, counted UTF-16LE name, two-u16 state pair, u32 prefix count, u32 parameter count, the counted parameter records, and a suffix. When section-version entry 2 is 16 or earlier, the suffix has 77 bytes; when it is 18 or later, it has 81 bytes. Each parameter record contains a counted UTF-16LE name, u8 tag, u16 kind, u16 state, counted UTF-16LE value, and u16 trailer.
 
 Schemas before 15 store level-of-detail records at the same position, after the u32 LOD count. Each record contains a u8 prefix, counted UTF-16LE name, two-u16 state pair, u32 member count, the members, and a zero-byte record terminator. A member contains a counted UTF-16LE occurrence key, a u8 kind, and a zero-byte member trailer. Kind 1 has no payload. Kind 2 inserts a two-u16 state pair and a counted UTF-16LE level-of-detail name of the referenced subassembly before the trailer. Other kinds are not implemented. The member keys are the decimal form of the occurrence key described below.
 
@@ -91,7 +91,7 @@ title_count u32
 
 `reference_id` equals the `reference_id` of the external reference that the occurrence instantiates. `occurrence_id` is the identifier of the occurrence's `AmDc` and `AmGraphics` records. `occurrence_key` is a dense per-document key that level-of-detail members name. `header_value` is the occurrence's instance number among the occurrences of the same component. For occurrence section versions before 28, `title_count` is the code-unit count of the UTF-16LE title that follows, and 0 stores no title. The header then contains five state bytes, one additional byte at version 20 or later, and another byte at version 21 or later. At version 28 or later, every nonzero `title_count` is followed by a separately counted UTF-16LE title. The header then contains at most eight zero u16 values, u16 marker `0x2080`, and the u32 sequence 0, 1, 0.
 
-Two property sections follow the header. Each starts with a u32 section value and u32 property count. A property contains a Boolean presence byte, u8 type tag, u32 value, the repeated type tag, the tag-selected value, and a u32 trailer. In the first property section, tag `0x03` holds the 16-byte document identifier of the component the occurrence instantiates, and tag `0x05` holds the component file name without its directory and extension. Settings follow as counted UTF-16LE name, 16-byte identifier, and counted UTF-8 value records. The export section contains ten state bytes, version-selected padding, and either an empty count, a `0x00ffffff` or `0xffffffff` sentinel followed by zero u32, or a bounded typed export table. Each export entry contains a counted UTF-16LE name, the typed item list, eight state bytes, a u32 linked-name count, that many counted UTF-16LE names of other export entries, and, for saves from 2015 onward, one padding byte. Export item tag `0x1a` carries a 16-byte identifier. Each occurrence record is bounded by exhaustion of these nested counts.
+Two property sections follow the header. Each starts with a u32 section value and u32 property count. A property contains a Boolean presence byte, u8 type tag, u32 value, the repeated type tag, the tag-selected value, and a u32 trailer. In the first property section, tag `0x03` holds the 16-byte document identifier of the component the occurrence instantiates, and tag `0x05` holds the component file name without its directory and extension. In either property section, tag `0x2e` holds a 16-byte identifier. Settings follow as counted UTF-16LE name, 16-byte identifier, and counted UTF-8 value records. The export section contains ten state bytes, version-selected padding, and either an empty count, a `0x00ffffff` or `0xffffffff` sentinel followed by zero u32, or a bounded typed export table. Saves from 2025 onward store no padding after the ten state bytes; they end the export section with a padding byte and a u32. Each export entry contains a counted UTF-16LE name, the typed item list, eight state bytes, a u32 linked-name count, that many counted UTF-16LE names of other export entries, and, for saves from 2015 onward, one padding byte. Export item tag `0x1a` carries a 16-byte identifier. Each occurrence record is bounded by exhaustion of these nested counts.
 
 ## 9. Assembly records
 
@@ -102,6 +102,7 @@ header_value u32
 header_id u16
 next_reference u32
 flags u32
+flags_extension u32 = 0  from segment major version 28
 owner_reference u32
 node_index u32
 state i32[2]
@@ -119,7 +120,7 @@ label counted UTF-16LE = "DCx"
 trailer u16 = 1
 ```
 
-The record ends after the trailer. Occurrence identifiers are document-local values and are not required to be dense.
+The record ends after the trailer. Before segment major version 28 the fields from header_value through related_count occupy 50 bytes. From segment major version 28 the flags_extension field makes them occupy 54 bytes. Occurrence identifiers are document-local values and are not required to be dense.
 
 An `AmGraphics` record with type identifier `a26371cad011b2d30008bfbb21eddc09` or `07d0d0b9d4112d5f6000f8830e73fcb0` stores an assembly placement. Its common payload prefix contains u32 zero, u16 header identifier, u32 owner reference, u32 attribute reference, u8 state, and a compact 4-by-4 transform. The transform can start with optional u32 `0x00000203`, followed by a u16 set mask and a u16 zero mask. The 16 matrix elements use row-major bit positions. A clear zero-mask bit stores an f64 when the set-mask bit is clear and represents `1` when the set-mask bit is set. A set zero-mask bit represents `0` when the set-mask bit is clear and `-1` when the set-mask bit is set. Stored f64 values are finite.
 
@@ -206,7 +207,7 @@ The four colors are RGBA vectors. The second vector is the diffuse color. A styl
 
 ## 11. Part parameters
 
-For segment major versions 15 through 22, a `PmDc` record with type identifier `264d8790d011f8d10008cabc0663dc09` stores one numeric design parameter. Its payload contains:
+A `PmDc` record with type identifier `264d8790d011f8d10008cabc0663dc09` stores one numeric design parameter. In segment major versions 15 through 22 its payload contains:
 
 ```text
 header_value u32
@@ -225,7 +226,7 @@ tolerance u16
 terminal_value i16
 ```
 
-The payload ends after `terminal_value`. PmDc references store a one-based record index in bits 0 through 30. Bit 31 is retained as a qualifier and does not change the index arithmetic. Every non-null parameter, expression, or unit reference resolves within the same PmDc segment.
+The payload ends after `terminal_value`. The first six fields are the content header of section 12; later segment major versions extend it as that section states. PmDc references store a one-based record index in bits 0 through 30. Bit 31 is retained as a qualifier and does not change the index arithmetic. Every non-null parameter, expression, or unit reference resolves within the same PmDc segment.
 
 A numeric expression record starts with `header_value:u32`, `header_id:u16`, and `unit_reference:u32`. Type `047aa7f8d2118f09c0005a9a2378d04f` continues with `value:f64`, `value_type:u16`, and a current-version `value_state:u32`. Type `057aa7f8d2118f09c0005a9a2378d04f` continues with one parameter reference. Types `0c7aa7f8d2118f09c0005a9a2378d04f` and `0d7aa7f8d2118f09c0005a9a2378d04f` continue with one child expression reference and encode unary minus and an explicit parenthesized group. A group's value is its child's value, and its text is the child's text in parentheses. Type `037aa7f8d2118f09c0005a9a2378d04f` encodes a function call. After the unit reference it stores a type-2 reference list of argument expressions and `function:u32`. Functions 1, 2, and 3 are the cosine, sine, and tangent of their one angle argument, written `cos(…)`, `sin(…)`, and `tan(…)`. Types `067aa7f8`, `077aa7f8`, `087aa7f8`, `097aa7f8`, `0a7aa7f8`, and `0b7aa7f8` with the same remaining 12 identifier bytes continue with two ordered child expression references and encode addition, subtraction, multiplication, division, modulo, and power respectively.
 
@@ -244,6 +245,7 @@ header_value u32
 header_id u16
 next_reference u32
 flags u32
+flags_extension u32      from segment major version 28
 context_reference u32
 members type-2 reference list
 names type-6 name map
@@ -259,6 +261,7 @@ header_value u32
 header_id u16
 next_reference u32
 flags u32
+flags_extension u32      from segment major version 28
 identifier bytes[16]
 name counted UTF-16LE
 members type-2 reference list
@@ -274,7 +277,7 @@ Parameter ownership requires exactly one document model root in the segment, exa
 
 ## 12. Planar sketches
 
-For segment major versions 15 through 22, PmDc content records start with this 22-byte header:
+PmDc records follow the grammar of this section and sections 11, 13, and 14 in segment major versions 15 through 23, 25, and 28 through 31. In segment major versions 15 through 22, PmDc content records start with this 22-byte header:
 
 ```text
 header_value u32
@@ -285,6 +288,20 @@ context_reference u32
 source_index u32
 ```
 
+Later segment major versions extend the header. From version 23, i32 stamps follow `source_index`: one in version 23 and two from version 25. From segment major version 28, PmDc content records start with this 26-byte header, and the stamps follow it:
+
+```text
+header_value u32
+header_id u16
+next_reference u32
+flags u32
+flags_extension u32 = 0
+context_reference u32
+source_index u32
+```
+
+Records whose body starts with a state value store no stamps: planar sketches, sketch constraints, features, pattern features, and end-of-features records. A stamp is −1 or a nonnegative value. Model roots and parameter tables, which have no context and source fields, store `flags_extension` after `flags` from version 28.
+
 Type `114d8790d011f8d10008cabc0663dc09` is a planar sketch. The content header is followed by `state:i32`, `count_value:u32`, a type-8 entity-reference array, transform and direction references, and two u32 values. A trailing type-2 reference list is optional. The entity-reference array contains geometric entities, constraints, and helper records.
 
 A type-8 reference array starts with u16 values `8, 0x3000` and a u32 count. A nonempty array then stores two u16 metadata values and the counted PmDc references. A type-2 reference list starts with u16 values `2, 0x3000` and a u32 count. A nonempty list then stores two u32 metadata values and the counted references.
@@ -293,10 +310,12 @@ Planar sketch entities add `entity_flags:u32` and `sketch_reference:u32` after t
 
 The planar entity types are:
 
-- `35df52ced011d0d20008ccbc0663dc09`: point. It stores a two-f64 position, endpoint-of and center-of type-2 lists, and an optional u32 state plus type-2 association list.
+- `35df52ced011d0d20008ccbc0663dc09`: point. It stores a two-f64 position, endpoint-of and center-of type-2 lists, and an optional u32 state plus type-2 association list. From segment major version 25, a point with a state stores a type-2 link list after the association list.
 - `3adf52ced011d0d20008ccbc0663dc09`: line. It stores a type-2 endpoint list, versioned auxiliary type-2 lists, and two-f64 origin and direction vectors.
 - `3bdf52ced011d0d20008ccbc0663dc09`: circle. It stores a type-2 point list, versioned auxiliary type-2 lists, a center-point reference, a positive f64 radius, and a u8 state.
 - `60d40745d111bee680006fb1e13554c7`: ellipse. It stores a type-2 point list, versioned auxiliary type-2 lists, a center-point reference, a two-f64 major-axis direction, positive f64 major and minor radii, and a u8 state.
+
+The auxiliary lists of a line, circle, or ellipse are one type-2 list, or a u32 gate pair followed by its lists. Gate `1, 0` precedes one or two type-2 lists. Gate `0, 0` stores no list.
 
 Sketch coordinates and radii use internal centimetres. Neutral planar coordinates and lengths multiply these values by 10 to obtain millimetres. The first two members of a line's endpoint list are its start and end point references and define its bounded direction. In a line, circle, or ellipse point list, each member after the second is a point record that lies on the curve.
 
@@ -335,9 +354,9 @@ Type `384853529f445255e1e1dab410eb06c4` is a regular-polygon record. It starts w
 
 ## 13. Feature records
 
-For segment major versions 15 through 22, PmDc type `914d8790d011f8d10008cabc0663dc09` stores one feature record. Its fixed prefix contains the 22-byte content header, `state:i32`, `outline_value:u32`, and a type-2 property-reference list prefix. The ordered property references follow the list metadata. A final u32 value follows the reference list and ends the record.
+PmDc type `914d8790d011f8d10008cabc0663dc09` stores one feature record. Its fixed prefix contains the 22-byte content header, `state:i32`, `outline_value:u32`, and a type-2 property-reference list prefix. The ordered property references follow the list metadata. A final u32 value follows the reference list and ends the record.
 
-PmDc type `24fd418fd211ac6e00082aab32a3dc09` stores an end-of-features record. Its 26-byte payload contains the 22-byte content header followed by `state:i32`.
+PmDc type `24fd418fd211ac6e00082aab32a3dc09` stores an end-of-features record. Its 26-byte payload contains the 22-byte content header followed by `state:i32`. Section 12 states the header extensions of later segment major versions.
 
 Feature property records use the same 22-byte content header. The following enumeration records add `type_value:i16` and `value:u16` and then end:
 
@@ -355,12 +374,24 @@ Type `284d8790d011f8d10008cabc0663dc09` adds a counted UTF-16LE name, `name_valu
 
 Type `dfd51dbbd1116e72000817bd0663dc09` adds a counted UTF-16LE name and three u32 values: the name value, nominal value, and model value. Type `474d8790d011f8d10008cabc0663dc09` adds one body reference. Type `3b2477a4d1118f96000826bd0663dc09` adds an entity-link reference and one u8 value. Type `2c9256724d4d6d709427fd964d84df16` adds transform, point, and value references.
 
-A feature label record with type `2ba4482bd2115864600074b79b49ebb0` starts with this 26-byte linked-element header:
+Before segment major version 28, a feature label record with type `2ba4482bd2115864600074b79b49ebb0` starts with this 26-byte linked-element header:
 
 ```text
 header_value u32
 header_id u16
 values u32[2]
+owner_reference u32
+parent_reference u32
+next_reference u32
+```
+
+From segment major version 28, the record starts with this 30-byte linked-element header:
+
+```text
+header_value u32
+header_id u16
+values u32[2]
+flags_extension u32 = 0
 owner_reference u32
 parent_reference u32
 next_reference u32
@@ -388,7 +419,7 @@ A PmDc kernel-body record uses the record envelope and footer of the active part
 
 A profile wire body is one closed loop. Each of its edges carries one ASM attribute of class chain `NMx_Generated_Brep_tag-NMx_Brep_Name_tag-NMx_Brep_tag-NamingMatching-attrib`. The attribute stores five fields that are not decoded here, followed by the integers `naming_type`, 0, `associative_id`, 0, and 2. The value 2 marks an edge name. `naming_type` equals the entity type of the kernel-entity link. `associative_id` equals the associative identifier of the curve-type entity-style link of the sketch curve that the edge comes from, in the sketch that the extrusion consumes. The end points of each edge lie on that curve in the sketch plane, and the edge runs along the part of the curve between them. On a full circle, the point at the middle of the edge's parameter interval selects which of the two arcs between the end points the edge runs along. An edge whose end points lie at the end points of its curve runs along the whole curve. A full circle can run through more than one edge. Each of these edges carries the name of the circle, and the circle is then the only curve of the wire. Consecutive edges of a wire share an end point, and the last edge ends where the first one starts.
 
-Type `1641d6aad211db2c00083eab1b14dc09` stores one constant-radius fillet edge set. The content header is followed by edge-collection, radius, selection-mode, and continuity references. Type `514d8790d011f8d10008cabc0663dc09` stores an edge collection as a type-2 reference list after the content header. The members identify type `82695c37d111516b0008a1ba32a3dc09` edge-item records. An edge item stores a type-2 `u32` index-reference list after the content header, an `i32` when the list is not empty, and a final `u32`.
+Type `1641d6aad211db2c00083eab1b14dc09` stores one constant-radius fillet edge set. The content header is followed by edge-collection, radius, selection-mode, and continuity references. From segment major version 23 a fifth reference follows; it is null or a `284d8790d011f8d10008cabc0663dc09` Boolean record. Type `514d8790d011f8d10008cabc0663dc09` stores an edge collection as a type-2 reference list after the content header. The members identify type `82695c37d111516b0008a1ba32a3dc09` edge-item records. An edge item stores a type-2 `u32` index-reference list after the content header, an `i32` when the list is not empty, and a final `u32`.
 
 Type `4a374949d211001d00083bab1b14dc09` stores a fillet edge-selection enumeration. It adds `type_value:u32` and `value:u32` after the content header. Type value 4 and value 0 select explicitly listed edges.
 
@@ -414,7 +445,7 @@ A result object collection contains one or more surface-body references. This or
 
 Types `44326720d211c51d60002aab01f31bb0` and `b5a9d9fad211053360002cab01f31bb0` store rectangular-pattern and mirror feature records. Both start with the generic 30-byte feature prefix through `outline_value`, followed by a type-2 property-reference list, `value:u32`, a type-2 participant-reference list, six property references, and `control:u8`.
 
-For segment major versions 15 through 20, the rectangular-pattern suffix contains 20 more property references. For segment major versions 21 and 22, it contains 26 more property references. The mirror suffix contains five more property references, six u32 extension values in segment major versions 21 and 22, and two final property references. The record ends after the applicable suffix.
+For segment major versions 15 through 20, the rectangular-pattern suffix contains 20 more property references. From segment major version 21, it contains 26 more property references. From segment major version 29, eight u32 extension values follow the first 12 of these references, and from version 30 six more u32 extension values end the suffix. The mirror suffix contains five more property references, six u32 extension values from segment major version 21, and two final property references. From segment major version 29, eight u32 extension values separate the two final property references. The record ends after the applicable suffix.
 
 ### 13.1 Feature history
 

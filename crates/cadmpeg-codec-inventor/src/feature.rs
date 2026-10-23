@@ -26,8 +26,8 @@ use cadmpeg_ir::{
 use serde::{Deserialize, Serialize};
 
 use crate::pmdc::{
-    content_header, inventor_id, reference_list, type_id_string, u32_list, Cursor,
-    PmDcContentHeader, PmDcReferenceList, PmDcU32List,
+    content_header, inventor_id, reference_list, state_content_header, type_id_string, u32_list,
+    Cursor, PmDcContentHeader, PmDcReferenceList, PmDcU32List,
 };
 use crate::record_identity::{push_record, Located, RecordPayload};
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
@@ -45,7 +45,7 @@ const FEATURE_TYPE: [u8; 16] = [
 const END_OF_FEATURES_TYPE: [u8; 16] = [
     0x24, 0xfd, 0x41, 0x8f, 0xd2, 0x11, 0xac, 0x6e, 0x00, 0x08, 0x2a, 0xab, 0x32, 0xa3, 0xdc, 0x09,
 ];
-const BOOLEAN_TYPE: [u8; 16] = inventor_id(0x9087_4d28);
+pub(crate) const BOOLEAN_TYPE: [u8; 16] = inventor_id(0x9087_4d28);
 const SURFACE_BODY_TYPE: [u8; 16] = inventor_id(0x9087_4d47);
 const ENTITY_STYLE_LINK_TYPE: [u8; 16] = inventor_id(0x9087_4d15);
 const PART_OPERATION_TYPE: [u8; 16] = [
@@ -198,6 +198,14 @@ pub(crate) enum PmDcFeaturePropertyKind {
         radius: crate::pmdc::PmDcReference,
         selection: crate::pmdc::PmDcReference,
         continuity: crate::pmdc::PmDcReference,
+        /// The fifth reference that segment major version 23 and later store:
+        /// null or a Boolean record.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_edge_set_option"
+        )]
+        option: Option<crate::pmdc::PmDcReference>,
     },
     EdgeItem {
         index_references: PmDcU32List,
@@ -266,10 +274,24 @@ pub(crate) struct PmDcLinkedHeader {
     header_value: u32,
     header_id: u16,
     values: [u32; 2],
+    /// The u32 that segment major versions from 28 store after `values`.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_linked_flags_extension"
+    )]
+    flags_extension: Option<u32>,
     pub(crate) owner: crate::pmdc::PmDcReference,
     pub(crate) parent: crate::pmdc::PmDcReference,
     pub(crate) next: crate::pmdc::PmDcReference,
 }
+
+cadmpeg_core::named_optional_field!(deserialize_linked_flags_extension, u32, "flags_extension");
+cadmpeg_core::named_optional_field!(
+    deserialize_edge_set_option,
+    crate::pmdc::PmDcReference,
+    "option"
+);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "String")]
@@ -503,7 +525,7 @@ pub(crate) fn inventory(
         let Some(version) = segment.registry.map(|join| join.version_major) else {
             continue;
         };
-        if !(15..=22).contains(&version) {
+        if !crate::pmdc::record_version_supported(version) {
             continue;
         }
         let SegmentBulkState::Framed(bulk) = &segment.bulk else {
@@ -651,13 +673,35 @@ pub(crate) fn inventory(
     Ok(inventory)
 }
 
+fn pattern_slots(
+    cursor: &mut Cursor<'_>,
+    count: usize,
+    slots: &mut Vec<crate::pmdc::PmDcReference>,
+) -> Result<(), CodecError> {
+    for _ in 0..count {
+        slots.push(cursor.reference("pattern-feature property slot")?);
+    }
+    Ok(())
+}
+
+fn pattern_values(
+    cursor: &mut Cursor<'_>,
+    count: usize,
+    values: &mut Vec<u32>,
+) -> Result<(), CodecError> {
+    for _ in 0..count {
+        values.push(cursor.u32("pattern-feature extension value")?);
+    }
+    Ok(())
+}
+
 fn parse_pattern_feature(
     source: View<'_>,
     version: u8,
     family: PmDcPatternFamily,
 ) -> Result<PmDcPatternFeaturePayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = state_content_header(&mut cursor, version)?;
     let state = cursor.u32("pattern-feature state")?.cast_signed();
     let outline_value = cursor.u32("pattern-feature outline value")?;
     let properties = reference_list(&mut cursor, 2, "pattern-feature properties")?;
@@ -669,24 +713,32 @@ fn parse_pattern_feature(
     }
     let control = cursor.u8("pattern-feature control")?;
     let mut extension_values = Vec::new();
+    // Read the version-specific suffix in stored order, keeping its reference
+    // words with the slots and its u32 values as extension values.
     match family {
-        PmDcPatternFamily::Rectangular => {
-            let remaining = if version > 20 { 26 } else { 20 };
-            for _ in 0..remaining {
-                property_slots.push(cursor.reference("pattern-feature property slot")?);
+        PmDcPatternFamily::Rectangular if version >= 29 => {
+            pattern_slots(&mut cursor, 12, &mut property_slots)?;
+            pattern_values(&mut cursor, 8, &mut extension_values)?;
+            pattern_slots(&mut cursor, 14, &mut property_slots)?;
+            if version >= 30 {
+                pattern_values(&mut cursor, 6, &mut extension_values)?;
             }
         }
+        PmDcPatternFamily::Rectangular => {
+            let remaining = if version > 20 { 26 } else { 20 };
+            pattern_slots(&mut cursor, remaining, &mut property_slots)?;
+        }
         PmDcPatternFamily::Mirror => {
-            for _ in 0..5 {
-                property_slots.push(cursor.reference("pattern-feature property slot")?);
-            }
+            pattern_slots(&mut cursor, 5, &mut property_slots)?;
             if version > 20 {
-                for _ in 0..6 {
-                    extension_values.push(cursor.u32("pattern-feature extension value")?);
-                }
+                pattern_values(&mut cursor, 6, &mut extension_values)?;
             }
-            for _ in 0..2 {
-                property_slots.push(cursor.reference("pattern-feature property slot")?);
+            if version >= 29 {
+                pattern_slots(&mut cursor, 1, &mut property_slots)?;
+                pattern_values(&mut cursor, 8, &mut extension_values)?;
+                pattern_slots(&mut cursor, 1, &mut property_slots)?;
+            } else {
+                pattern_slots(&mut cursor, 2, &mut property_slots)?;
             }
         }
     }
@@ -708,7 +760,7 @@ fn parse_pattern_feature(
 
 fn parse_feature(source: View<'_>, version: u8) -> Result<PmDcFeaturePayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = state_content_header(&mut cursor, version)?;
     let state = cursor.u32("feature state")?.cast_signed();
     let outline_value = cursor.u32("feature outline value")?;
     let properties = reference_list(&mut cursor, 2, "feature property list")?;
@@ -729,7 +781,7 @@ fn parse_terminator(
     version: u8,
 ) -> Result<PmDcFeatureTerminatorPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = state_content_header(&mut cursor, version)?;
     let state = cursor.u32("feature terminator state")?.cast_signed();
     cursor.finish("feature terminator")?;
     Ok(PmDcFeatureTerminatorPayload {
@@ -786,7 +838,7 @@ fn parse_enumeration(
     family: PmDcFeatureEnumFamily,
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, version)?;
     let type_value = cursor.i16("feature enumeration type value")?;
     let value = cursor.u16("feature enumeration value")?;
     cursor.finish("feature enumeration")?;
@@ -825,7 +877,7 @@ fn parse_chamfer(
     version: u8,
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, version)?;
     let type_value = cursor.i16("chamfer enumeration type value")?;
     let value = cursor.u16("chamfer enumeration value")?;
     let terminal = cursor.u32("chamfer enumeration terminal")?;
@@ -852,7 +904,7 @@ fn parse_fillet_edge_selection(
     version: u8,
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, version)?;
     let type_value = cursor.u32("fillet edge-selection type value")?;
     let value = cursor.u32("fillet edge-selection value")?;
     cursor.finish("fillet edge-selection enumeration")?;
@@ -869,7 +921,7 @@ fn parse_boolean(
     version: u8,
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, version)?;
     let name = cursor.utf16(ctx, "feature Boolean name")?;
     let name_value = cursor.u32("feature Boolean name value")?;
     let raw = cursor.u8("feature Boolean raw value")?;
@@ -896,7 +948,7 @@ fn parse_references(
     family: PmDcFeatureReferenceFamily,
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, version)?;
     let items = reference_list(&mut cursor, 2, "feature-property references")?;
     cursor.finish("feature-property references")?;
     Ok(property(
@@ -930,7 +982,7 @@ fn parse_rdx_variable(
     version: u8,
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, version)?;
     let name = cursor.utf16(ctx, "feature RDx variable name")?;
     let name_value = cursor.u32("feature RDx variable name value")?;
     let nominal_value = cursor.u32("feature RDx variable nominal value")?;
@@ -954,7 +1006,7 @@ fn parse_surface_body(
     version: u8,
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, version)?;
     let body = cursor.reference("feature surface body reference")?;
     cursor.finish("feature surface body")?;
     Ok(property(
@@ -970,7 +1022,7 @@ fn parse_profile_selection(
     version: u8,
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, version)?;
     let entity_link = cursor.reference("profile selection entity link")?;
     let value = cursor.u8("profile selection value")?;
     cursor.finish("profile selection")?;
@@ -1015,7 +1067,7 @@ fn f64_triple(
 
 fn parse_work_plane(source: View<'_>, version: u8) -> Result<PmDcWorkPlanePayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, version)?;
     let entity_flags = cursor.u32("work plane entity flags")?;
     let mut values = vec![
         cursor.u32("work plane value")?,
@@ -1051,7 +1103,7 @@ fn parse_termination_flag(
     version: u8,
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, version)?;
     let value = cursor.u8("termination flag value")?;
     cursor.finish("termination flag")?;
     Ok(property(
@@ -1068,7 +1120,7 @@ fn parse_surface(
     version: u8,
 ) -> Result<Option<PmDcFeaturePropertyPayload>, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, version)?;
     let references = [
         cursor.reference("surface reference")?,
         cursor.reference("surface reference")?,
@@ -1104,7 +1156,7 @@ fn parse_entity_style_link(
     version: u8,
 ) -> Result<PmDcEntityStyleLinkPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = linked_header(&mut cursor)?;
+    let header = linked_header(&mut cursor, version)?;
     let value = cursor.u32("entity-style link value")?;
     let associative_id = cursor.u32("entity-style link associative id")?;
     let entity_type = cursor.u32("entity-style link entity type")?;
@@ -1124,7 +1176,7 @@ fn parse_placement(
     version: u8,
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, version)?;
     let transform = cursor.reference("feature placement transform reference")?;
     let point = cursor.reference("feature placement point reference")?;
     let value = cursor.reference("feature placement value reference")?;
@@ -1146,11 +1198,16 @@ fn parse_fillet_edge_set(
     version: u8,
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, version)?;
     let edges = cursor.reference("fillet edge-set edges reference")?;
     let radius = cursor.reference("fillet edge-set radius reference")?;
     let selection = cursor.reference("fillet edge-set selection reference")?;
     let continuity = cursor.reference("fillet edge-set continuity reference")?;
+    let option = if version >= 23 {
+        Some(cursor.reference("fillet edge-set option reference")?)
+    } else {
+        None
+    };
     cursor.finish("fillet edge set")?;
     Ok(property(
         version,
@@ -1160,6 +1217,7 @@ fn parse_fillet_edge_set(
             radius,
             selection,
             continuity,
+            option,
         },
     ))
 }
@@ -1170,7 +1228,7 @@ fn parse_edge_item(
     version: u8,
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, version)?;
     let index_references = u32_list(&mut cursor, 2, "edge-item index references")?;
     let index_reference_value = if index_references.values().is_empty() {
         -1
@@ -1190,7 +1248,7 @@ fn parse_edge_item(
     ))
 }
 
-fn linked_header(cursor: &mut Cursor<'_>) -> Result<PmDcLinkedHeader, CodecError> {
+fn linked_header(cursor: &mut Cursor<'_>, version: u8) -> Result<PmDcLinkedHeader, CodecError> {
     Ok(PmDcLinkedHeader {
         header_value: cursor.u32("linked header value")?,
         header_id: cursor.u16("linked header id")?,
@@ -1198,6 +1256,7 @@ fn linked_header(cursor: &mut Cursor<'_>) -> Result<PmDcLinkedHeader, CodecError
             cursor.u32("linked header value 0")?,
             cursor.u32("linked header value 1")?,
         ],
+        flags_extension: crate::pmdc::flags_extension(cursor, version)?,
         owner: cursor.reference("linked header owner reference")?,
         parent: cursor.reference("linked header parent reference")?,
         next: cursor.reference("linked header next reference")?,
@@ -1210,7 +1269,7 @@ fn parse_label(
     version: u8,
 ) -> Result<PmDcFeatureLabelPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = linked_header(&mut cursor)?;
+    let header = linked_header(&mut cursor, version)?;
     let index = cursor.u32("feature label index")?;
     let participants = reference_list(&mut cursor, 2, "feature-label participants")?;
     let (name, name_units) = cursor.utf16_units(ctx, "feature label")?;
@@ -2286,6 +2345,7 @@ fn project_fillet(
             radius,
             selection,
             continuity,
+            ..
         } = &set.kind
         else {
             return None;
@@ -2852,7 +2912,9 @@ mod tests {
     use crate::pmdc::{PmDcContentHeader, PmDcReferenceList, PmDcU32List};
     use crate::record_identity::Located;
     use crate::rse::{RecordFrameState, SegmentBulkState, SegmentKind};
-    use crate::test_support::test_fixtures::{content, parse, primary_envelope_fixture};
+    use crate::test_support::test_fixtures::{
+        content, content_at, parse, primary_envelope_fixture,
+    };
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, View};
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::features::{
@@ -3135,9 +3197,35 @@ mod tests {
             header_id: 0,
             next: reference(0),
             flags: 0,
+            flags_extension: None,
             context: reference(0),
             source_index: 0,
+            stamps: Vec::new(),
         }
+    }
+
+    #[test]
+    fn a_fillet_edge_set_option_is_null_or_a_boolean_record() {
+        let edge_set = |option| PmDcFeaturePropertyKind::FilletEdgeSet {
+            edges: reference(5),
+            radius: reference(21),
+            selection: reference(6),
+            continuity: reference(7),
+            option,
+        };
+        let boolean = crate::pmdc::type_id_string(BOOLEAN_TYPE);
+        let types = |ordinal: u32| match ordinal {
+            8 => Some(boolean.as_str()),
+            9 => Some("00000000000000000000000000000009"),
+            _ => None,
+        };
+        let admitted = crate::validate::fillet_option_is_admitted;
+        assert!(admitted(&edge_set(None), types));
+        assert!(admitted(&edge_set(Some(reference(0))), types));
+        assert!(admitted(&edge_set(Some(reference(9))), types));
+        assert!(!admitted(&edge_set(Some(reference(10))), types));
+        // An unresolved reference is the reference check's single finding.
+        assert!(admitted(&edge_set(Some(reference(11))), types));
     }
 
     fn test_property(ordinal: u32, kind: PmDcFeaturePropertyKind) -> PmDcFeatureProperty {
@@ -3228,6 +3316,7 @@ mod tests {
                     header_value: 0,
                     header_id: 0,
                     values: [0; 2],
+                    flags_extension: None,
                     owner: reference(owner_ordinal + 1),
                     parent: reference(0),
                     next: reference(0),
@@ -3254,8 +3343,10 @@ mod tests {
                     header_id: 0,
                     next: reference(0),
                     flags: 0,
+                    flags_extension: None,
                     context: reference(0),
                     source_index: ordinal,
+                    stamps: Vec::new(),
                 },
                 name: format!("p{ordinal}"),
                 name_value: 0,
@@ -3434,7 +3525,11 @@ mod tests {
     }
 
     fn pattern_feature_bytes(version: u8, family: PmDcPatternFamily) -> Vec<u8> {
-        let mut bytes = content(21);
+        let mut bytes = if version >= 23 {
+            content_at(21, version, &[])
+        } else {
+            content(21)
+        };
         bytes.extend_from_slice(&69u32.to_le_bytes());
         bytes.extend_from_slice(&3u32.to_le_bytes());
         bytes.extend_from_slice(&references(&[]));
@@ -3444,24 +3539,39 @@ mod tests {
             bytes.extend_from_slice(&(0x8000_0020u32 + index).to_le_bytes());
         }
         bytes.push(1);
+        let slots = |bytes: &mut Vec<u8>, base: u32, count: u32| {
+            for index in 0..count {
+                bytes.extend_from_slice(&(base + index).to_le_bytes());
+            }
+        };
+        let values = |bytes: &mut Vec<u8>, count: u32| {
+            for index in 0..count {
+                bytes.extend_from_slice(&(0x100u32 + index).to_le_bytes());
+            }
+        };
         match family {
-            PmDcPatternFamily::Rectangular => {
-                let remaining = if version > 20 { 26 } else { 20 };
-                for index in 0..remaining {
-                    bytes.extend_from_slice(&(0x8000_0040u32 + index).to_le_bytes());
+            PmDcPatternFamily::Rectangular if version >= 29 => {
+                slots(&mut bytes, 0x8000_0040, 12);
+                values(&mut bytes, 8);
+                slots(&mut bytes, 0x8000_004c, 14);
+                if version >= 30 {
+                    values(&mut bytes, 6);
                 }
             }
+            PmDcPatternFamily::Rectangular => {
+                slots(&mut bytes, 0x8000_0040, if version > 20 { 26 } else { 20 });
+            }
             PmDcPatternFamily::Mirror => {
-                for index in 0..5 {
-                    bytes.extend_from_slice(&(0x8000_0040u32 + index).to_le_bytes());
-                }
+                slots(&mut bytes, 0x8000_0040, 5);
                 if version > 20 {
-                    for index in 0..6 {
-                        bytes.extend_from_slice(&(0x100u32 + index).to_le_bytes());
-                    }
+                    values(&mut bytes, 6);
                 }
-                for index in 0..2 {
-                    bytes.extend_from_slice(&(0x8000_0050u32 + index).to_le_bytes());
+                if version >= 29 {
+                    slots(&mut bytes, 0x8000_0050, 1);
+                    values(&mut bytes, 8);
+                    slots(&mut bytes, 0x8000_0051, 1);
+                } else {
+                    slots(&mut bytes, 0x8000_0050, 2);
                 }
             }
         }
@@ -3561,6 +3671,9 @@ mod tests {
             (21, PmDcPatternFamily::Rectangular, 32, 0),
             (16, PmDcPatternFamily::Mirror, 13, 0),
             (21, PmDcPatternFamily::Mirror, 13, 6),
+            (29, PmDcPatternFamily::Rectangular, 32, 8),
+            (30, PmDcPatternFamily::Rectangular, 32, 14),
+            (29, PmDcPatternFamily::Mirror, 13, 14),
         ] {
             let bytes = pattern_feature_bytes(version, family);
             let parsed = parse(&bytes, |_, source| {
@@ -3618,6 +3731,7 @@ mod tests {
                     radius: reference(21),
                     selection: reference(6),
                     continuity: reference(7),
+                    option: None,
                 },
             ),
             test_property(
@@ -3861,6 +3975,7 @@ mod tests {
                     header_value: 0,
                     header_id: 0,
                     values: [0; 2],
+                    flags_extension: None,
                     owner: reference(0),
                     parent: reference(0),
                     next: reference(0),
@@ -4379,6 +4494,73 @@ mod tests {
     }
 
     #[test]
+    fn parses_newer_segment_version_record_forms() {
+        // A feature body starts with its state, so its header has no stamps.
+        let mut feature = content_at(7, 29, &[]);
+        feature.extend_from_slice(&2908i32.to_le_bytes());
+        feature.extend_from_slice(&0u32.to_le_bytes());
+        feature.extend_from_slice(&references(&[0x8000_0004]));
+        feature.extend_from_slice(&9u32.to_le_bytes());
+        let parsed = parse(&feature, |_, source| {
+            parse_feature(source, 29).expect("feature")
+        });
+        assert_eq!(parsed.header.flags_extension, Some(0));
+        assert!(parsed.header.stamps.is_empty());
+        assert_eq!(parsed.state, 2908);
+        assert_eq!(parsed.properties.references().len(), 1);
+
+        // Other content records store one stamp in version 23, two from 25,
+        // and a fillet edge set adds a fifth reference from version 23.
+        let edge_set = |version: u8, stamps: &[i32], option: u32| {
+            let mut bytes = content_at(18, version, stamps);
+            for reference in [
+                0x8000_0010u32,
+                0x8000_0011,
+                0x8000_0012,
+                0x8000_0013,
+                option,
+            ] {
+                bytes.extend_from_slice(&reference.to_le_bytes());
+            }
+            bytes
+        };
+        let parsed = parse(&edge_set(23, &[-1], 0x8000_0014), |ctx, source| {
+            parse_fillet_edge_set(ctx, source, 23).expect("fillet edge set")
+        });
+        assert_eq!(parsed.header.stamps, [-1]);
+        assert!(matches!(
+            parsed.kind,
+            PmDcFeaturePropertyKind::FilletEdgeSet { option: Some(option), .. } if option.index() == 20
+        ));
+        let parsed = parse(&edge_set(25, &[-1, 2502], 0), |ctx, source| {
+            parse_fillet_edge_set(ctx, source, 25).expect("fillet edge set")
+        });
+        assert_eq!(parsed.header.stamps, [-1, 2502]);
+        assert!(matches!(
+            parsed.kind,
+            PmDcFeaturePropertyKind::FilletEdgeSet { option: Some(option), .. } if option.index() == 0
+        ));
+        // Without its stamp, a version 23 record is short.
+        parse(&edge_set(23, &[], 0x8000_0014), |ctx, source| {
+            assert!(parse_fillet_edge_set(ctx, source, 23).is_err());
+        });
+
+        // Version 29 adds a zero u32 to the linked header after its values.
+        let mut entity_link = Vec::new();
+        entity_link.extend_from_slice(&0u32.to_le_bytes());
+        entity_link.extend_from_slice(&16u16.to_le_bytes());
+        for value in [0u32, 0, 0, 0x8000_0008, 0, 0x8000_0009, 1, 2, 3] {
+            entity_link.extend_from_slice(&value.to_le_bytes());
+        }
+        let parsed = parse(&entity_link, |_, source| {
+            parse_entity_style_link(source, 29).expect("entity-style link")
+        });
+        assert_eq!(parsed.header.owner.index(), 8);
+        assert_eq!(parsed.header.next.index(), 9);
+        assert_eq!(parsed.associative_id, 2);
+    }
+
+    #[test]
     fn class_id_admits_only_the_canonical_lowercase_spelling() {
         let lower = "ab".repeat(16);
         assert_eq!(
@@ -4426,6 +4608,7 @@ mod tests {
                 header_value: 0,
                 header_id: 18,
                 values: [0, 0],
+                flags_extension: None,
                 owner: reference,
                 parent: reference,
                 next: reference,

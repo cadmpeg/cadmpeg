@@ -102,7 +102,7 @@ The schema-15 representation/model-state branch and its occurrence table are fra
 
 Pre-schema-15 level-of-detail records are framed, but their member semantics are not transferred: kind 1 members and the kind 2 subassembly level-of-detail selection are retained natively. Which members a level of detail suppresses, and how the active level of detail is chosen, is unproven.
 
-Some assembly saves, for example weldment templates, store occurrence-table records that do not follow the occurrence grammar; they stay malformed UFRx records.
+Some assembly saves, for example weldment templates, store occurrence-table records that do not follow the occurrence grammar; they stay malformed UFRx records. Schema-15 model-state records are framed for section-version entry 2 values 16 or earlier and 18 or later; the suffix length at entry 2 value 17 is not established, and those records are refused. The schema-15 header grammar of an assembly with more than the default representation, model state, or level of detail is unknown.
 
 The meaning of the eight export-entry state bytes, of the export padding byte, and of first-section tag `0x1e` (a second name that usually equals the component name) is unknown.
 
@@ -217,6 +217,14 @@ Visibility is a property of a design-view representation. `DesignViewSegment` st
 **Known.** A selection whose wire body edges each run along a whole curve or a part of a curve of the consumed sketch is one closed ring of that sketch. Some wire bodies name associative identifiers that the consumed sketch gives to points, or to no entity, and their edges do not lie on the current sketch curves. Some naming attributes store three integers after the five leading fields.
 
 **Need.** Each form requires its exact sketch curves or region rule before the extrusion profile can transfer.
+
+### DE-07. Other PmDc segment versions
+
+**Question.** Which content-header, stamp, list, and record forms do PmDc segments of major versions 24, 26, and 27 use, what do content-header stamps encode, and what does a sketch point with tail state 2 store after its state?
+
+**Known.** Segment major versions 23, 25, and 28 through 31 use the header and record forms of the specification. A stamp is −1 or a nonnegative value; nonnegative stamps include values whose hundreds equal the segment major version. Points with tail state 2 occur from segment major version 25 and store more data after the state than an association list and a link list.
+
+**Need.** Each other version requires its header and record forms before its PmDc records decode. A stamp requires an exact referent before it can affect transfer. A state-2 point requires its complete tail grammar before its sketch can close.
 
 ## 5. Adjacent envelopes
 

@@ -90,7 +90,7 @@ pub(crate) fn decode_profile_bodies(
         let Some(version) = segment.registry.map(|join| join.version_major) else {
             continue;
         };
-        if !(15..=22).contains(&version) {
+        if !crate::pmdc::record_version_supported(version) {
             continue;
         }
         let SegmentBulkState::Framed(bulk) = &segment.bulk else {

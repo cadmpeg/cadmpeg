@@ -912,6 +912,25 @@ pub(crate) fn content(index: u32) -> Vec<u8> {
     bytes
 }
 
+/// Build a `PmDc` content header for `index` in segment major `version`,
+/// ending with `stamps`.
+pub(crate) fn content_at(index: u32, version: u8, stamps: &[i32]) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    bytes.extend_from_slice(&index.to_le_bytes()[..2]);
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    bytes.extend_from_slice(&0x0002_0200u32.to_le_bytes());
+    if version >= 28 {
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+    }
+    bytes.extend_from_slice(&0x8000_0003u32.to_le_bytes());
+    bytes.extend_from_slice(&index.to_le_bytes());
+    for stamp in stamps {
+        bytes.extend_from_slice(&stamp.to_le_bytes());
+    }
+    bytes
+}
+
 /// Run `parser` over `bytes` in a default-policy decode context.
 pub(crate) fn parse<T>(bytes: &[u8], parser: impl FnOnce(&DecodeContext<'_>, View<'_>) -> T) -> T {
     let arena = DecodeArena::new();
