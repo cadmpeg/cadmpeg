@@ -1580,6 +1580,8 @@ fn decode_brackets_explicit_loop_pcurve_agreement_at_the_global_resolution() {
 
 mod bounded_sheets;
 
+mod boundary_direction;
+
 #[test]
 fn boundary_clustering_chain_uses_no_call_stack_depth() {
     let m = 256_u32;

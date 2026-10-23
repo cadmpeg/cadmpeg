@@ -122,6 +122,24 @@ fn compose_sense(left: Sense, right: Sense) -> Sense {
     }
 }
 
+/// The coedge a pole-vertex use follows in the face-use traversal. A Type 508
+/// loop runs about the support normal, so a reversed face use traverses it
+/// backward and the use follows the next edge use of the source order.
+fn vertex_use_anchor(
+    coedge_by_use: &BTreeMap<usize, CoedgeId>,
+    use_index: usize,
+    use_count: usize,
+    face_sense: Sense,
+) -> Option<&CoedgeId> {
+    (1..=use_count).find_map(|distance| {
+        let neighbour = match face_sense {
+            Sense::Forward => (use_index + use_count - distance) % use_count,
+            Sense::Reversed => (use_index + distance) % use_count,
+        };
+        coedge_by_use.get(&neighbour)
+    })
+}
+
 fn first_coedge_positions(coedges: &[Coedge]) -> BTreeMap<CoedgeId, usize> {
     let mut positions = BTreeMap::new();
     for (position, coedge) in coedges.iter().enumerate() {
@@ -1192,14 +1210,12 @@ pub(super) fn project(
                             else {
                                 continue;
                             };
-                            let after = if coedge_ids.is_empty() {
-                                None
-                            } else {
-                                (1..=uses.len()).find_map(|distance| {
-                                    let prior = (use_index + uses.len() - distance) % uses.len();
-                                    coedge_by_use.get(&prior)
-                                })
-                            }
+                            let after = vertex_use_anchor(
+                                &coedge_by_use,
+                                use_index,
+                                uses.len(),
+                                face_sense,
+                            )
                             .cloned();
                             let expected = vertex_lists[vertex_list][*vertex_index];
                             let Some(resolved) = (match resolve_pcurve_uses(
@@ -1486,7 +1502,7 @@ pub(super) fn project(
                             owner_loop: loop_id.clone(),
                             edge: edge_id,
                             radial_next: coedge_id.clone(),
-                            sense: *sense,
+                            sense: compose_sense(*sense, face_sense),
                             pcurves: projected,
                             use_curve: None,
                         });
@@ -1508,6 +1524,10 @@ pub(super) fn project(
                         }
                         LoopBoundary::Vertex { vertex, pcurves }
                     } else {
+                        if face_sense == Sense::Reversed {
+                            coedge_ids.reverse();
+                            loop_vertex_uses.reverse();
+                        }
                         let Some(vertex_uses) = loop_vertex_uses
                             .into_iter()
                             .map(|(vertex, after, pcurves)| {

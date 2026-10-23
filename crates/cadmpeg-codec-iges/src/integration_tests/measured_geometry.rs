@@ -15,6 +15,8 @@ use cadmpeg_measure::{MeasureInput, MeasureOptions, Measurer, Selection};
 
 use crate::test_support::plan_at;
 use crate::test_support::test_closed_cylinder::{solid_cylinder, CYLINDER_HEIGHT, CYLINDER_RADIUS};
+use crate::test_support::test_drawing_and_trimming::trimmed_plane_with_inner_loop_file;
+use crate::test_support::test_owned::explicit_void_solid_file;
 use crate::{IgesCodec, IgesVersion};
 
 /// Allowance of a measured value against its expression beyond the value's
@@ -81,4 +83,79 @@ fn closed_circle_edges_without_range_keep_measured_cylinder_geometry() {
     assert_close(volume, PI * r * r * h, volume_error);
     let (area, area_error) = scalar(body.area().as_ref());
     assert_close(area, 2.0 * PI * r * h + 2.0 * PI * r * r, area_error);
+}
+
+fn decoded(bytes: Vec<u8>) -> CadIr {
+    IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode the fixture")
+        .ir()
+        .clone()
+}
+
+/// `ir` written as IGES 5.3 and decoded again.
+fn round_tripped(ir: &CadIr) -> CadIr {
+    let plan = plan_at(IgesVersion::V5_3, ir, None).expect("plan the model");
+    let mut output = Vec::new();
+    plan.write_to(&mut output).expect("write the model");
+    decoded(output)
+}
+
+/// The face senses and the loop windings of every body of `report` give one
+/// orientation reading.
+fn assert_one_orientation_reading(report: &MeasureReport) {
+    for body in report.bodies() {
+        let orientation = body.orientation();
+        assert_eq!(orientation.consistent(), &Some(true));
+        assert!(orientation.inconsistent().is_empty());
+        assert!(orientation.mixed().is_empty());
+    }
+}
+
+/// The right tetrahedron with legs 4 less the void right tetrahedron with
+/// legs 0.5: `32/3 − 1/48 = 511/48`.
+#[test]
+fn void_solid_measures_one_orientation_reading() {
+    let (bytes, ..) = explicit_void_solid_file();
+    let report = measured(&decoded(bytes));
+    assert_one_orientation_reading(&report);
+    let [body] = report.bodies().as_slice() else {
+        panic!("one body row");
+    };
+    let volume = body
+        .volume()
+        .as_ref()
+        .and_then(Quantity::measured)
+        .expect("measured volume");
+    assert_close(
+        volume.value().value.get(),
+        511.0 / 48.0,
+        volume.numeric_error().get(),
+    );
+}
+
+#[test]
+fn void_solid_write_round_trip_keeps_measured_geometry() {
+    let (bytes, ..) = explicit_void_solid_file();
+    let ir = decoded(bytes);
+    let written = round_tripped(&ir);
+    let before = measured(&ir);
+    let after = measured(&written);
+    assert_one_orientation_reading(&after);
+    let comparison = compare(&ir, &before, &written, &after, &CompareOptions::default())
+        .expect("one body pair fits the pair allowance");
+    assert_eq!(comparison.verdict(), Verdict::Agree);
+}
+
+#[test]
+fn trimmed_inner_loop_write_round_trip_keeps_measured_geometry() {
+    let ir = decoded(trimmed_plane_with_inner_loop_file());
+    let written = round_tripped(&ir);
+    let before = measured(&ir);
+    let after = measured(&written);
+    assert_one_orientation_reading(&before);
+    assert_one_orientation_reading(&after);
+    let comparison = compare(&ir, &before, &written, &after, &CompareOptions::default())
+        .expect("one body pair fits the pair allowance");
+    assert_eq!(comparison.verdict(), Verdict::Agree);
 }

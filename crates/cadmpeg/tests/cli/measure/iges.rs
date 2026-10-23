@@ -39,11 +39,12 @@ fn iges_trimmed_plane_with_pcurve_hole() {
             assert_eq!(coedge["uv_source"], "pcurve");
         }
     }
-    let orientation = &face["orientation"];
-    let consistent = orientation["consistent"].as_bool().unwrap();
-    if !consistent {
-        assert_eq!(orientation["loop_normal"], "mixed");
-    }
+    let windings: Vec<&str> = loops
+        .iter()
+        .map(|entry| entry["winding"].as_str().unwrap())
+        .collect();
+    assert_eq!(windings, ["counterclockwise", "clockwise"]);
+    assert_eq!(face["orientation"]["consistent"], true);
 }
 
 #[test]
@@ -120,26 +121,8 @@ fn iges_void_solid_volume() {
         .collect();
     assert_eq!(roles, ["outer", "void"]);
     assert!(shells.iter().all(|shell| shell["closed"] == true));
-    let volume = &body["volume"];
-    if volume["status"] == "measured" {
-        assert_measured(volume, 511.0 / 48.0, 1.0);
-    } else {
-        assert_eq!(volume["reason"], "volume.orientation-conflict");
-        let expected = 511.0 / 48.0;
-        assert!(
-            volume["candidates"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|candidate| {
-                    let value = candidate["value"].as_f64().unwrap();
-                    let bound = candidate["numeric_error"].as_f64().unwrap()
-                        + super::TEST_ABSOLUTE_FLOOR * expected;
-                    (value - expected).abs() <= bound
-                }),
-            "{volume:#}"
-        );
-    }
+    assert_measured(&body["volume"], 511.0 / 48.0, 1.0);
+    assert_eq!(body["orientation"]["consistent"], true);
 }
 
 #[test]
@@ -151,6 +134,8 @@ fn iges_implicit_outer_on_bspline() {
     assert_eq!(measures["region"], "domain_exterior");
     assert_measured(&measures["area"], 0.75, 1.0);
     assert_measured(&measures["boundary_length"], 2.0, 1.0);
+    assert_eq!(measures["loops"][0]["winding"], "clockwise");
+    assert_eq!(face["orientation"]["consistent"], true);
     assert_shell_open(&path);
 }
 
