@@ -1143,6 +1143,11 @@ fn periodic_two_rim_face_keeps_unclassified_bounds_through_export() {
             round_trip.ir().model.faces[0].loops,
             cadmpeg_ir::topology::FaceLoops::Unspecified { .. }
         ));
+        cadmpeg_test_support::measured::assert_measures_agree(
+            "periodic two-rim face",
+            decoded.ir(),
+            round_trip.ir(),
+        );
     }
 }
 
