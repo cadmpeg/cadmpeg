@@ -77,8 +77,6 @@ pub(crate) fn capture_record(
                 "parameter layout has a different actual source owner",
             ));
         }
-        ctx.capture_part_extent(view)?;
-        ctx.retain_bytes(u64_from_index(parameter.id.len()), "parameter layout owner")?;
         let mut fields = BTreeMap::new();
         for (name, offset) in parameter
             .source_offsets()

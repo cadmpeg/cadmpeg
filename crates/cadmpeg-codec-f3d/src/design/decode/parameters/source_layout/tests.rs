@@ -238,3 +238,40 @@ fn parameter_layout_resource_refusal_has_no_native_or_pointer_substitute() {
         Err(CodecError::ResourceLimit(_))
     ));
 }
+
+#[test]
+fn a_parameter_capture_charges_its_record_and_its_kept_pointers_only() {
+    let bytes = parameter_record(None, "12 mm", "User Parameter", Some("mm"), "Width", 1.2);
+    let spent = |run: &dyn Fn(&DecodeContext<'_>, View<'_>)| {
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("context");
+        let root = ctx.name_stream(root, STREAM).expect("stream");
+        ctx.record("warm", root.child(0, 1).expect("warm extent"), || Ok(()))
+            .expect("session activation");
+        let before = ctx.retained_bytes_available();
+        run(&ctx, root);
+        before - ctx.retained_bytes_available()
+    };
+    let captured = spent(&|ctx, root| {
+        capture(ctx, root, 0, &mut BTreeMap::new()).expect("parameter capture");
+    });
+    let bare = spent(&|ctx, root| {
+        let id = parsed(&bytes, 0).id;
+        ctx.record(&id, root, || {
+            super::super::parse_design_parameter(ParameterFrame::new(root))
+                .map(|parameter| assert!(parameter.is_some()))
+        })
+        .expect("bare record scope");
+    });
+    // The pointer map key is dropped when the pointers join the capture; each
+    // kept pointer is one field name and one `(String, u64)` entry.
+    let pointers: usize = expected(0)
+        .keys()
+        .map(|name| name.len() + size_of::<(String, u64)>())
+        .sum();
+    assert_eq!(
+        captured - bare,
+        u64::try_from(pointers).expect("pointer bytes")
+    );
+}
