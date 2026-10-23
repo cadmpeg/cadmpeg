@@ -432,7 +432,7 @@ fn partial_design_default_exports_and_loss_policy_judges_the_current_decode() {
 }
 
 #[test]
-fn partial_design_native_guard_and_synthesis_do_not_resurrect_unreadable_objects() {
+fn partial_design_native_guard_and_synthesis_keep_objects_without_unreadable_values() {
     for kind in [MixedKind::Unreadable, MixedKind::Vendor] {
         let result = decode(&FcstdCodec, &mixed(kind));
         let expected: cadmpeg_ir::document::ArenaClasses = match kind {
