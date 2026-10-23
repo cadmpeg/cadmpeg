@@ -4127,6 +4127,34 @@ fn transfer_topology_colors(
             ), provenance);
         return Ok(());
     }
+    let default_appearance = match kind {
+        TopologyColorKind::Face => None,
+        TopologyColorKind::Edge => Some(edge_appearance_id(provider_key)?),
+        TopologyColorKind::Vertex => Some(vertex_appearance_id(provider_key)?),
+    };
+    let inherited_properties = default_appearance
+        .as_ref()
+        .and_then(|id| {
+            plan.appearances
+                .iter()
+                .find(|appearance| appearance.id == *id)
+        })
+        .map(|appearance| appearance.properties.clone())
+        .unwrap_or_default();
+    if let Some(default_appearance) = default_appearance {
+        let overridden = group.iter().flatten().copied().collect::<HashSet<_>>();
+        plan.bindings.retain(|binding| {
+            if binding.appearance != default_appearance {
+                return true;
+            }
+            let topology_id = match &binding.target {
+                AppearanceTarget::Edge(id) => id.as_str(),
+                AppearanceTarget::Vertex(id) => id.as_str(),
+                _ => return true,
+            };
+            !overridden.contains(topology_id)
+        });
+    }
     for (index, packed) in colors.into_iter().enumerate() {
         let appearance_id = topology_appearance_id(kind, provider_key, index)?;
         let uniform_names = (count == 1)
@@ -4191,7 +4219,7 @@ fn transfer_topology_colors(
                         })?,
                     )),
                     textures: Vec::new(),
-                    properties: BTreeMap::new(),
+                    properties: inherited_properties.clone(),
                 });
                 emitted_appearance = true;
             }

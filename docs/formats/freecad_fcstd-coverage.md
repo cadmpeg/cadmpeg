@@ -135,3 +135,7 @@ An indexed list whose length differs from the transferred topology count remains
 `appearance.topology-color-count-mismatch`. An empty color list supplies no override. Empty material
 lists remain count mismatches when a shape has faces. Duplicate `Shape` properties or payloads are
 malformed; no source-order choice associates a view provider with one of them.
+
+An admitted edge or vertex color array replaces the corresponding default color bindings on its
+indexed targets. The effective array appearances retain the default line width or point size.
+An empty or mismatched array leaves those default bindings in place.
