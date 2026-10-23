@@ -14,7 +14,7 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use cadmpeg_ir::hash::sha256_hex;
+use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
 use cadmpeg_ir::{report::Severity, CadIr};
 use serde::Serialize;
 use serde_json::Value;
@@ -707,6 +707,7 @@ fn semantic_fingerprint(mut ir: CadIr) -> Result<String, Box<dyn std::error::Err
     if let Some(source) = &mut ir.source {
         source.attributes.remove("physical_archive_bytes");
         source.attributes.remove("physical_ledger_spans");
+        source.attributes.remove(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE);
     }
     if let Some(namespace) = ir.native.0.get_mut("fcstd") {
         namespace.arenas_mut().remove("physical_ledger");
@@ -934,7 +935,7 @@ fn gates(
         "extrude:extent.kind=symmetric",
         "fillet:radius.kind=constant",
         "hole:operation.bottom.kind=angled",
-        "hole:operation.shape.kind.kind=countersink",
+        "hole:operation.shape.construction.kind.kind=countersink",
         "loft:max_degree=4",
         "loft:ruled=true",
         "mirror_shape:plane_normal.x=1.0",
@@ -1205,7 +1206,49 @@ fn gate(level: &str, assertions: Vec<Assertion>) -> Gate {
 
 #[cfg(test)]
 mod tests {
-    use super::{assertion, gate, serialize_gates};
+    use super::{assertion, gate, semantic_fingerprint, serialize_gates};
+    use cadmpeg_codec_freecad::{FcstdCodec, FcstdPropertyOwner};
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+
+    #[test]
+    fn semantic_fingerprint_ignores_repacking_but_retains_property_edits() {
+        let bytes =
+            include_bytes!("../../../../corpus/freecad_fcstd/fixtures/binary_exact_shape.FCStd");
+        let decoded = FcstdCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode fixture");
+        let original = semantic_fingerprint(decoded.ir().clone()).expect("fingerprint fixture");
+        let mut written = Vec::new();
+        FcstdCodec
+            .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
+            .and_then(|plan| plan.write_to(&mut written))
+            .expect("write fixture");
+        let restored = FcstdCodec
+            .decode(&mut Cursor::new(written), &DecodeOptions::default())
+            .expect("decode written fixture");
+        assert_eq!(
+            original,
+            semantic_fingerprint(restored.ir().clone()).expect("fingerprint written fixture")
+        );
+
+        let mut edited = restored.ir().clone();
+        FcstdCodec
+            .set_property_value_attribute(
+                &mut edited,
+                FcstdPropertyOwner::Document,
+                "Label",
+                0,
+                "value",
+                "Changed document label",
+            )
+            .expect("edit document label");
+        assert_ne!(
+            original,
+            semantic_fingerprint(edited).expect("fingerprint edited fixture")
+        );
+    }
 
     #[test]
     fn gate_wire_passed_is_cumulative_without_changing_assertions() {

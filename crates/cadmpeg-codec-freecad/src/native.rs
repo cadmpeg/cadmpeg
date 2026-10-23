@@ -494,7 +494,7 @@ mod tests {
     }
 
     #[test]
-    fn link_array_wire_rejects_negative_and_mismatched_counts() {
+    fn link_array_wire_rejects_negative_count_and_retains_independent_lists() {
         let base = serde_json::json!({
             "id": "link", "object": "object", "kind": "occurrence",
             "members": [], "element_transforms": [], "element_scales": [],
@@ -522,7 +522,7 @@ mod tests {
                 "element_visibility" => serde_json::json!([true]),
                 _ => serde_json::json!(["object"]),
             };
-            assert!(serde_json::from_value::<super::ProductNodeRecord>(wire.clone()).is_err());
+            assert!(serde_json::from_value::<super::ProductNodeRecord>(wire.clone()).is_ok());
             wire["element_count"] = serde_json::json!(1);
             assert!(serde_json::from_value::<super::ProductNodeRecord>(wire).is_ok());
         }
@@ -530,11 +530,11 @@ mod tests {
         let mut object_only = base;
         object_only["element_objects"] = serde_json::json!(["object"]);
         let record = serde_json::from_value::<super::ProductNodeRecord>(object_only)
-            .expect("an object carrier establishes absent-count cardinality");
-        assert!(matches!(
+            .expect("an absent-count object carrier is retained before restoration");
+        assert_eq!(
             record.element_cardinality(),
-            Some(super::LinkArrayCardinality::Elements(elements)) if elements.get() == 1
-        ));
+            Some(super::LinkArrayCardinality::Scalar)
+        );
     }
 
     #[test]
@@ -1692,7 +1692,7 @@ pub(crate) struct LinkOccurrence {
     pub(crate) scale: Option<FiniteVector<3>>,
 }
 
-/// Independently optional array carriers with a common element count.
+/// The persisted count and independently sized link-array carriers.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct LinkArray {
     count: Option<u64>,
@@ -1702,12 +1702,7 @@ pub(crate) struct LinkArray {
     objects: Vec<String>,
 }
 
-/// The element cardinality a link states.
-///
-/// A present zero `ElementCount` requires every array-valued field to be empty
-/// and the link retains its single scalar occurrence. An absent `ElementCount`
-/// permits one scalar link occurrence or infers a nonzero count from the
-/// populated array-valued fields, including per-element visibility.
+/// The element cardinality stated by the link count carrier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LinkArrayCardinality {
     /// The link is not an array and carries one occurrence.
@@ -1717,46 +1712,25 @@ pub(crate) enum LinkArrayCardinality {
 }
 
 impl LinkArray {
-    pub(crate) fn try_new(
+    pub(crate) fn new(
         count: Option<u64>,
         transforms: Vec<FiniteFrame>,
         scales: Vec<FiniteVector<3>>,
         visibility: Vec<bool>,
         objects: Vec<String>,
-    ) -> Result<Self, String> {
-        let lengths = [
-            cadmpeg_core::decode::u64_from_index(transforms.len()),
-            cadmpeg_core::decode::u64_from_index(scales.len()),
-            cadmpeg_core::decode::u64_from_index(visibility.len()),
-            cadmpeg_core::decode::u64_from_index(objects.len()),
-        ];
-        // With no stated count the longest populated carrier establishes the
-        // cardinality; every populated carrier must agree with it. A stated
-        // zero therefore requires every carrier to be empty.
-        let effective = count.unwrap_or(lengths[0].max(lengths[1]).max(lengths[2]).max(lengths[3]));
-        if lengths
-            .into_iter()
-            .any(|length| length != 0 && length != effective)
-        {
-            return Err("element_count has inconsistent link-array counts".to_owned());
-        }
-        Ok(Self {
+    ) -> Self {
+        Self {
             count,
             transforms,
             scales,
             visibility,
             objects,
-        })
+        }
     }
 
-    /// Element cardinality: the stated count, else the one the carriers establish.
+    /// Element cardinality before document restoration.
     fn cardinality(&self) -> LinkArrayCardinality {
-        let elements = self.count.unwrap_or_else(|| {
-            (cadmpeg_core::decode::u64_from_index(self.transforms.len()))
-                .max(cadmpeg_core::decode::u64_from_index(self.scales.len()))
-                .max(cadmpeg_core::decode::u64_from_index(self.visibility.len()))
-                .max(cadmpeg_core::decode::u64_from_index(self.objects.len()))
-        });
+        let elements = self.count.unwrap_or(0);
         match NonZeroU64::new(elements) {
             None => LinkArrayCardinality::Scalar,
             Some(elements) => LinkArrayCardinality::Elements(elements),
@@ -2160,7 +2134,7 @@ impl TryFrom<ProductNodeRecordWire> for ProductNodeRecord {
                     .transpose()
                     .map_err(|error| format!("local_transform: {error}"))?,
                 placement_property: wire.placement_property,
-                array: LinkArray::try_new(
+                array: LinkArray::new(
                     wire.element_count,
                     wire.element_transforms
                         .into_iter()
@@ -2177,7 +2151,7 @@ impl TryFrom<ProductNodeRecordWire> for ProductNodeRecord {
                         .map_err(|error| format!("element_scales: {error}"))?,
                     wire.element_visibility,
                     wire.element_objects,
-                )?,
+                ),
                 link_transform: wire.link_transform,
                 linked_subelements: wire.linked_subelements,
                 claim_child: wire.claim_child,

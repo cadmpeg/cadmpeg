@@ -63,16 +63,28 @@ pub(super) fn project(
         .skip(EXTERNAL_GEO_AXIS_COUNT)
         .enumerate()
     {
-        let (cache_reference, missing) = external_geometry_metadata(node, external_index + 3)?;
-        let reference_index = cache_reference
-            .as_deref()
-            .and_then(|cache_reference| link_indices.get(cache_reference).copied());
-        if let (Some(cache_reference), None) = (cache_reference.as_deref(), reference_index) {
-            if !missing {
-                losses.push(crate::loss::FreecadLossCode::SketchExternalReferenceUnresolved.note(
-                    format!("sketch {} cached external geometry {} reference {cache_reference} has no matching live link; cached geometry retained without a dependency",
-                    object.name(), external_index + 3)));
-            }
+        let (cache_reference, persisted_index, missing) =
+            external_geometry_metadata(node, external_index + 3)?;
+        let reference_index = match persisted_index {
+            Some(index) => references
+                .and_then(|property| property.links().get(index))
+                .and_then(Option::as_ref)
+                .and_then(|reference| reference.object())
+                .map(|_| index),
+            None => cache_reference
+                .as_deref()
+                .and_then(|reference| link_indices.get(reference)),
+        };
+        if reference_index.is_none()
+            && (persisted_index.is_some() || (!missing && cache_reference.is_some()))
+        {
+            let selector = match persisted_index {
+                Some(index) => format!("RefIndex {index}"),
+                None => cache_reference.clone().unwrap_or_default(),
+            };
+            losses.push(crate::loss::FreecadLossCode::SketchExternalReferenceUnresolved.note(
+                format!("sketch {} cached external geometry {} reference {selector} has no unambiguous matching live link; cached geometry retained without a dependency",
+                object.name(), external_index + 3)));
         }
         if let Some(reference_index) = reference_index {
             matched_references.insert(reference_index);

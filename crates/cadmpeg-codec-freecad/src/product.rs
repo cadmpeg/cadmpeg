@@ -5,7 +5,7 @@ use crate::native::frame::FiniteFrame;
 use crate::native::joint::JointRecord;
 use crate::placement::{placement_components, placement_matrix};
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::num::NonZeroUsize;
+use std::num::{NonZeroU64, NonZeroUsize};
 
 use crate::brep::ShapePayloadRecord;
 use crate::layout::link_array_side_entry_header as link_array;
@@ -26,7 +26,7 @@ use cadmpeg_ir::topology::Body;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::FiniteVector;
 
-/// Elements one link array may state or infer. A larger count is malformed.
+/// Elements one restored link array may contain. A larger count is malformed.
 const MAX_LINK_ARRAY_ELEMENTS: usize = 1_000_000;
 
 pub(crate) fn transfer(
@@ -82,10 +82,11 @@ pub(crate) fn transfer(
         let placement = selected_placement(&owned)?;
         let local_transform = placement.map(placement_matrix).transpose()?.flatten();
         let link_transform = bool_property(&owned, "LinkTransform")?;
-        let element_count = integer_property(&owned, "ElementCount")?
-            .map(u64::try_from)
-            .transpose()
-            .map_err(|_| malformed("negative ElementCount"))?;
+        let element_count =
+            integer_property(&owned, "ElementCount", "App::PropertyIntegerConstraint")?
+                .map(u64::try_from)
+                .transpose()
+                .map_err(|_| malformed("negative ElementCount"))?;
         let claim_child = bool_property(&owned, "LinkClaimChild")?;
         let copy_on_change = copy_on_change_property(&owned)?;
         let copy_on_change_source = linked_target(
@@ -97,7 +98,7 @@ pub(crate) fn transfer(
         let copy_on_change_group =
             linked_target(&owned, "LinkCopyOnChangeGroup", "App::PropertyLink", "Link")?;
         let copy_on_change_touched = bool_property(&owned, "LinkCopyOnChangeTouched")?;
-        let scale = scale_property(&owned)?;
+        let scale = scale_property(&owned, kind == ProductKind::Occurrence)?;
         let element_visibility = bool_list(&owned, "VisibilityList")?;
         let element_objects = sole_named_property("product", &owned, "ElementList")?
             .map(|property| link_list(property, "App::PropertyLinkList", "ElementList"))
@@ -114,14 +115,13 @@ pub(crate) fn transfer(
                 external_document: prototype_link.and_then(|link| link.document()).cloned(),
                 local_transform,
                 placement_property,
-                array: crate::native::LinkArray::try_new(
+                array: crate::native::LinkArray::new(
                     element_count,
                     parse_placement_list(&owned, entries)?,
                     parse_vector_list(&owned, entries)?,
                     element_visibility,
                     element_objects,
-                )
-                .map_err(malformed)?,
+                ),
                 link_transform,
                 linked_subelements: prototype_link
                     .map(|link| nonempty_subelements(link.subelements()))
@@ -335,12 +335,19 @@ pub(crate) fn transfer_neutral(
         }
     }
 
+    let element_objects = link_element_objects(records, objects, &properties_by_owner)?;
     let mut occurrences = Vec::new();
-    for record in records
-        .iter()
-        .filter(|record| matches!(record.node, ProductNode::Occurrence(_)))
-    {
-        let count = occurrence_count(record)?.get();
+    for record in records.iter().filter(|record| {
+        matches!(record.node, ProductNode::Occurrence(_))
+            && !element_objects.contains(record.object.as_str())
+    }) {
+        let owned = properties_by_owner
+            .get(record.object.as_str())
+            .map_or(&[][..], Vec::as_slice);
+        let cardinality = restored_cardinality(record, owned)?;
+        let count = occurrence_count(record, cardinality)?.get();
+        let is_array = matches!(cardinality, LinkArrayCardinality::Elements(_));
+        let expanded = bool_property(owned, "ShowElement")? != Some(false);
         let parent = parent_by_object
             .get(record.object.as_str())
             .map(|object| container_occurrence_id(object))
@@ -348,16 +355,26 @@ pub(crate) fn transfer_neutral(
         let mut record_prototype_transform = None;
         for index in 0..count {
             let element = count > 1;
-            let element_transform = record.element_transforms().get(index).copied();
+            let element_object = (is_array && expanded)
+                .then(|| record.element_objects().get(index))
+                .flatten();
+            let element_transform = if expanded {
+                element_object.and_then(|object| placements_by_object.get(object.as_str()).copied())
+            } else if is_array {
+                record
+                    .element_transforms()
+                    .get(index)
+                    .map(|frame| frame.transform())
+            } else {
+                None
+            };
+            let scale_transform = link_scale_transform(record.scale().unwrap_or([1.0; 3]))?;
             let local_transform = record
                 .local_transform()
                 .map(crate::native::frame::FiniteFrame::transform)
                 .unwrap_or_default()
-                .compose(
-                    element_transform
-                        .map(crate::native::frame::FiniteFrame::transform)
-                        .unwrap_or_default(),
-                )
+                .compose(scale_transform)
+                .and_then(|transform| transform.compose(element_transform.unwrap_or_default()))
                 .map_err(|error| malformed(error.to_string()))?;
             let prototype_transform = match record_prototype_transform {
                 Some(transform) => transform,
@@ -369,19 +386,28 @@ pub(crate) fn transfer_neutral(
                     &mut Vec::new(),
                 )?),
             };
-            let element_scale = record
-                .element_scales()
-                .get(index)
-                .copied()
-                .map_or([1.0; 3], cadmpeg_ir::units::FiniteVector::get);
-            let base_scale = record.scale().unwrap_or([1.0; 3]);
-            let scale: [f64; 3] =
-                std::array::from_fn(|axis| base_scale[axis] * element_scale[axis]);
-            let [x, y, z] = scale.map(|value| {
-                cadmpeg_ir::scalar::FiniteReal::new(value)
-                    .ok_or_else(|| CodecError::Malformed("occurrence scale must be finite".into()))
-            });
-            let scale = [x?, y?, z?];
+            let element_scale = if expanded {
+                let element_properties = element_object
+                    .and_then(|object| properties_by_owner.get(object.as_str()))
+                    .map_or(&[][..], Vec::as_slice);
+                let restore_uniform = element_object
+                    .and_then(|object| record_by_object.get(object.as_str()))
+                    .is_some_and(|record| matches!(record.node, ProductNode::Occurrence(_)));
+                scale_property(element_properties, restore_uniform)?
+                    .map(cadmpeg_ir::units::FiniteVector::get)
+            } else if is_array {
+                record
+                    .element_scales()
+                    .get(index)
+                    .copied()
+                    .map(cadmpeg_ir::units::FiniteVector::get)
+            } else {
+                None
+            }
+            .unwrap_or([1.0; 3]);
+            let local_transform = local_transform
+                .compose(link_scale_transform(element_scale)?)
+                .map_err(|error| malformed(error.to_string()))?;
             let copy_on_change = record
                 .copy_on_change_policy()
                 .map(|policy| {
@@ -439,14 +465,12 @@ pub(crate) fn transfer_neutral(
                 transform: local_transform,
                 linked_prototype: (record.link_transform() == Some(true))
                     .then_some(prototype_transform),
-                scale,
+                scale: [FiniteReal::ONE; 3],
                 name: Some(record.object.clone()),
                 visible: None,
                 link: LinkState::new(
                     record.linked_subelements().to_vec(),
-                    record
-                        .element_objects()
-                        .get(index)
+                    element_object
                         .map(|object| definition_id(object))
                         .transpose()?,
                     record.claim_child(),
@@ -496,16 +520,14 @@ pub(crate) fn transfer_neutral(
                 bom_properties.insert(name, value);
             }
         }
-        let id_part_number = if source_object.is_some_and(|object| {
-            matches!(
-                object.type_name.as_str(),
-                "Assembly::AssemblyObject" | "Assembly::AssemblyLink" | "App::Part"
-            )
-        }) {
-            metadata_string(ctx, owned, "Id")?.filter(|value| !value.is_empty())
-        } else {
-            None
-        };
+        let part_runtime = source_object
+            .is_some_and(|object| product_kind(&object.type_name) == Some(ProductKind::Part));
+        if part_runtime {
+            if let Some(value) = metadata_string(ctx, owned, "PartNumber")? {
+                bom_properties.insert(cadmpeg_core::nonblank_literal!("PartNumber"), value);
+            }
+        }
+        let part_number_carrier = if part_runtime { "Id" } else { "PartNumber" };
         let mut definition_bodies = Vec::new();
         for body in bodies.iter().filter(|body| {
             body_owners
@@ -520,9 +542,8 @@ pub(crate) fn transfer_neutral(
             source_name: source_object.map(|object| object.name().to_owned()),
             label: metadata_string(ctx, owned, "Label")?,
             description: metadata_string(ctx, owned, "Description")?,
-            part_number: metadata_string(ctx, owned, "PartNumber")?
-                .filter(|value| !value.is_empty())
-                .or(id_part_number),
+            part_number: metadata_string(ctx, owned, part_number_carrier)?
+                .filter(|value| !value.is_empty()),
             bom_properties,
             bodies: definition_bodies,
             native_ref: Some((*object).to_owned()),
@@ -614,15 +635,67 @@ fn linked_prototype_transform(
         .map_err(|error| malformed(error.to_string()))
 }
 
-/// Occurrences one product node contributes.
-///
-/// A link that states no array, or states a zero `ElementCount`, is scalar and
-/// contributes its single occurrence; the count is the cardinality the node's
-/// own type carries, never a floored zero.
-fn occurrence_count(record: &ProductNodeRecord) -> Result<NonZeroUsize, CodecError> {
-    let elements = match record.element_cardinality() {
-        None | Some(LinkArrayCardinality::Scalar) => return Ok(NonZeroUsize::MIN),
-        Some(LinkArrayCardinality::Elements(elements)) => elements,
+fn link_scale_transform([x, y, z]: [f64; 3]) -> Result<Transform, CodecError> {
+    Transform::affine([[x, 0.0, 0.0, 0.0], [0.0, y, 0.0, 0.0], [0.0, 0.0, z, 0.0]])
+        .ok_or_else(|| malformed("link scale must be finite"))
+}
+
+fn link_element_objects<'a>(
+    records: &'a [ProductNodeRecord],
+    objects: &[ObjectRecord],
+    properties: &HashMap<&str, Vec<&PropertyRecord>>,
+) -> Result<HashSet<&'a str>, CodecError> {
+    let objects_by_id = objects
+        .iter()
+        .map(|object| (object.id().as_str(), object))
+        .collect::<HashMap<_, _>>();
+    let mut owned_elements = HashSet::new();
+    for record in records
+        .iter()
+        .filter(|record| matches!(record.node, ProductNode::Occurrence(_)))
+    {
+        let parent_id = objects_by_id
+            .get(record.object.as_str())
+            .and_then(|object| object.persistent_id);
+        for name in record.element_objects() {
+            let Some(object) = objects_by_id.get(name.as_str()) else {
+                continue;
+            };
+            if object.type_name != "App::LinkElement" {
+                continue;
+            }
+            let owned = properties.get(name.as_str()).map_or(&[][..], Vec::as_slice);
+            let owner = integer_property(owned, "_LinkOwner", "App::PropertyInteger")?;
+            if owner.is_none_or(|owner| owner == 0 || Some(owner) == parent_id) {
+                owned_elements.insert(name.as_str());
+            }
+        }
+    }
+    Ok(owned_elements)
+}
+
+fn restored_cardinality(
+    record: &ProductNodeRecord,
+    properties: &[&PropertyRecord],
+) -> Result<LinkArrayCardinality, CodecError> {
+    if bool_property(properties, "ShowElement")? == Some(false) {
+        return Ok(record
+            .element_cardinality()
+            .unwrap_or(LinkArrayCardinality::Scalar));
+    }
+    Ok(NonZeroU64::new(cadmpeg_core::decode::u64_from_index(
+        record.element_objects().len(),
+    ))
+    .map_or(LinkArrayCardinality::Scalar, LinkArrayCardinality::Elements))
+}
+
+fn occurrence_count(
+    record: &ProductNodeRecord,
+    cardinality: LinkArrayCardinality,
+) -> Result<NonZeroUsize, CodecError> {
+    let elements = match cardinality {
+        LinkArrayCardinality::Scalar => return Ok(NonZeroUsize::MIN),
+        LinkArrayCardinality::Elements(elements) => elements,
     };
     let count = NonZeroUsize::try_from(elements).map_err(|_| {
         CodecError::malformed(format_args!(
@@ -643,13 +716,30 @@ fn occurrence_count(record: &ProductNodeRecord) -> Result<NonZeroUsize, CodecErr
 ///
 /// The decoder admits this count against the entity ceiling before it builds
 /// any occurrence.
-pub(crate) fn link_occurrence_count(records: &[ProductNodeRecord]) -> Result<u64, CodecError> {
+pub(crate) fn link_occurrence_count(
+    records: &[ProductNodeRecord],
+    objects: &[ObjectRecord],
+    properties: &[PropertyRecord],
+) -> Result<u64, CodecError> {
+    let mut properties_by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
+    for property in properties {
+        properties_by_owner
+            .entry(property.owner.as_str())
+            .or_default()
+            .push(property);
+    }
+    let element_objects = link_element_objects(records, objects, &properties_by_owner)?;
     let mut total = 0_u64;
-    for record in records
-        .iter()
-        .filter(|record| matches!(record.node, ProductNode::Occurrence(_)))
-    {
-        let count = cadmpeg_core::decode::u64_from_index(occurrence_count(record)?.get());
+    for record in records.iter().filter(|record| {
+        matches!(record.node, ProductNode::Occurrence(_))
+            && !element_objects.contains(record.object.as_str())
+    }) {
+        let owned = properties_by_owner
+            .get(record.object.as_str())
+            .map_or(&[][..], Vec::as_slice);
+        let cardinality = restored_cardinality(record, owned)?;
+        let count =
+            cadmpeg_core::decode::u64_from_index(occurrence_count(record, cardinality)?.get());
         total = total
             .checked_add(count)
             .ok_or_else(|| CodecError::malformed("FCStd link occurrence count overflows u64"))?;
@@ -1024,11 +1114,15 @@ fn bool_property(properties: &[&PropertyRecord], name: &str) -> Result<Option<bo
     Ok(Some(value))
 }
 
-fn integer_property(properties: &[&PropertyRecord], name: &str) -> Result<Option<i64>, CodecError> {
+fn integer_property(
+    properties: &[&PropertyRecord],
+    name: &str,
+    type_name: &str,
+) -> Result<Option<i64>, CodecError> {
     let Some(property) = sole_named_property("product", properties, name)? else {
         return Ok(None);
     };
-    let value = single_value(property, "App::PropertyIntegerConstraint", name, "Integer")?;
+    let value = single_value(property, type_name, name, "Integer")?;
     let Some(value) = value.attributes.get("value") else {
         return Err(CodecError::malformed(format_args!(
             "product property {} has no Integer value",
@@ -1110,12 +1204,23 @@ fn neutral_link_target(
     }))
 }
 
-fn scale_property(properties: &[&PropertyRecord]) -> Result<Option<FiniteVector<3>>, CodecError> {
-    if let Some(property) = sole_named_property("product", properties, "ScaleVector")? {
-        return vector_property(property).map(Some);
+fn scale_property(
+    properties: &[&PropertyRecord],
+    restore_uniform: bool,
+) -> Result<Option<FiniteVector<3>>, CodecError> {
+    let vector = sole_named_property("product", properties, "ScaleVector")?
+        .map(vector_property)
+        .transpose()?;
+    let restore_uniform = restore_uniform
+        && vector.is_some_and(|vector| {
+            let [x, y, z] = vector.get();
+            x == y && y == z
+        });
+    if vector.is_some() && !restore_uniform {
+        return Ok(vector);
     }
     let Some(property) = sole_named_property("product", properties, "Scale")? else {
-        return Ok(None);
+        return Ok(restore_uniform.then_some([FiniteReal::ONE; 3].into()));
     };
     let value = single_value(property, "App::PropertyFloat", "Scale", "Float")?;
     let Some(value) = value.attributes.get("value") else {
@@ -1200,6 +1305,7 @@ pub(crate) fn product_cycle_nodes<'a>(
                 .iter()
                 .map(String::as_str)
                 .chain(node.prototype())
+                .chain(node.element_objects().iter().map(String::as_str))
                 .filter(|target| nodes.contains_key(target))
         })
     };

@@ -347,16 +347,17 @@ mod budget {
     }
 }
 
-/// Cross-codec local-cap contracts: a local work cap skips one item, reports a
-/// loss naming its constant, and never refuses the session.
+/// Sketch profile projection preserves explicit connectivity across decode policies.
 #[cfg(feature = "fcstd")]
-mod local_cap {
+mod sketch_profiles {
     use std::fmt::Write as _;
     use std::io::{Cursor, Write as _};
 
     use cadmpeg_codec_freecad::FcstdCodec;
     use cadmpeg_core::decode::{DecodeDepth, DecodePolicy};
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
+
+    const DENSE_SEGMENTS: usize = 4096;
 
     fn fcstd(document: &str) -> Vec<u8> {
         let mut bytes = Cursor::new(Vec::new());
@@ -372,11 +373,9 @@ mod local_cap {
         bytes.into_inner()
     }
 
-    /// Two sketches: 4096 coincident segments whose endpoint matching needs
-    /// 2 * 4096² candidates, above the per-sketch
-    /// `MAX_PROFILE_ENDPOINT_CANDIDATES`, then a closed triangle.
-    fn dense_then_triangle() -> Vec<u8> {
-        let dense_count = 4096;
+    /// Unconstrained overlapping segments followed by an explicitly closed triangle.
+    fn unconstrained_segments_then_constrained_triangle() -> Vec<u8> {
+        let dense_count = DENSE_SEGMENTS;
         let dense = r#"<Geometry type="Part::GeomLineSegment"><LineSegment StartX="1" StartY="1" EndX="2" EndY="1"/></Geometry>"#
             .repeat(dense_count);
         let mut document = String::from(
@@ -389,12 +388,17 @@ mod local_cap {
             r#"<Object name="Dense"><Properties Count="1">
 <Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="{dense_count}">{dense}</GeometryList></Property>
 </Properties></Object>
-<Object name="Triangle"><Properties Count="1">
+<Object name="Triangle"><Properties Count="2">
 <Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="3">
 <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="1" EndY="0"/></Geometry>
 <Geometry type="Part::GeomLineSegment"><LineSegment StartX="1" StartY="0" EndX="0" EndY="1"/></Geometry>
 <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="1" EndX="0" EndY="0"/></Geometry>
 </GeometryList></Property>
+<Property name="Constraints" type="Sketcher::PropertyConstraintList"><ConstraintList count="3">
+<Constrain Type="1" First="0" FirstPos="2" Second="1" SecondPos="1"/>
+<Constrain Type="1" First="1" FirstPos="2" Second="2" SecondPos="1"/>
+<Constrain Type="1" First="2" FirstPos="2" Second="0" SecondPos="1"/>
+</ConstraintList></Property>
 </Properties></Object></ObjectData></Document>"#
         )
         .expect("format document");
@@ -402,8 +406,8 @@ mod local_cap {
     }
 
     #[test]
-    fn an_exhausted_local_cap_skips_one_item_under_every_profile() {
-        let bytes = dense_then_triangle();
+    fn only_explicit_constraints_join_sketch_entities_under_every_profile() {
+        let bytes = unconstrained_segments_then_constrained_triangle();
         for (profile, policy) in [
             ("desktop", DecodePolicy::desktop()),
             ("service", DecodePolicy::service()),
@@ -416,7 +420,7 @@ mod local_cap {
                         policy,
                     },
                 )
-                .unwrap_or_else(|error| panic!("{profile}: a local cap refused: {error}"));
+                .unwrap_or_else(|error| panic!("{profile}: sketch projection refused: {error}"));
             let sketch = |name: &str| {
                 result
                     .ir()
@@ -426,22 +430,19 @@ mod local_cap {
                     .find(|sketch| sketch.name.as_deref() == Some(name))
                     .unwrap_or_else(|| panic!("{profile}: sketch {name} was dropped"))
             };
-            assert!(sketch("Dense").profiles.is_empty(), "{profile}");
-            assert_eq!(sketch("Triangle").profiles.as_slice().len(), 1, "{profile}");
+            let dense = &sketch("Dense").profiles;
+            assert_eq!(dense.len(), DENSE_SEGMENTS, "{profile}");
+            assert!(dense.iter().all(|chain| chain.len() == 1), "{profile}");
+            let triangle = &sketch("Triangle").profiles;
+            assert_eq!(triangle.len(), 1, "{profile}");
+            assert_eq!(triangle[0].len(), 3, "{profile}");
             let bounded = result
                 .report()
                 .losses
                 .iter()
                 .filter(|loss| loss.code.local_code() == "sketch.profile-matching-bounded")
                 .collect::<Vec<_>>();
-            assert_eq!(bounded.len(), 1, "{profile}: {bounded:#?}");
-            assert!(
-                bounded[0]
-                    .message
-                    .contains("MAX_PROFILE_ENDPOINT_CANDIDATES"),
-                "{profile}: {}",
-                bounded[0].message
-            );
+            assert!(bounded.is_empty(), "{profile}: {bounded:#?}");
         }
     }
 }

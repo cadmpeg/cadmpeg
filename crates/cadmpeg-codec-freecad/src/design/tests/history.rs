@@ -1135,3 +1135,241 @@ fn spreadsheet_cells_state_quantities_and_literal_text_names_nothing() {
     );
     assert_valid_document(result.ir());
 }
+
+#[test]
+fn custom_link_dependencies_do_not_depend_on_declaration_order() {
+    for declarations in [
+        r#"<Object type="PartDesign::Feature" name="Consumer"/><Object type="PartDesign::Feature" name="Operand"/>"#,
+        r#"<Object type="PartDesign::Feature" name="Operand"/><Object type="PartDesign::Feature" name="Consumer"/>"#,
+    ] {
+        for (runtime, is_dependency) in [
+            ("App::PropertyLink", true),
+            ("App::PropertyLinkChild", true),
+            ("App::PropertyLinkGlobal", true),
+            ("App::PropertyLinkHidden", false),
+        ] {
+            let document = format!(
+                r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="2">{declarations}</Objects><ObjectData Count="2"><Object name="Consumer"><Properties Count="1"><Property name="UserDefinedInput" type="{runtime}"><Link value="Operand"/></Property></Properties></Object><Object name="Operand"><Properties Count="0"/></Object></ObjectData></Document>"#
+            );
+            let result = FcstdCodec
+                .decode(
+                    &mut Cursor::new(archive(&document)),
+                    &DecodeOptions::default(),
+                )
+                .unwrap();
+            let features = &result.ir().model.features;
+            let consumer = features
+                .iter()
+                .find(|feature| feature.name.as_deref() == Some("Consumer"))
+                .unwrap();
+            let operand = features
+                .iter()
+                .find(|feature| feature.name.as_deref() == Some("Operand"))
+                .unwrap();
+            assert_eq!(
+                consumer.dependencies.contains(&operand.id),
+                is_dependency,
+                "{runtime}"
+            );
+            if is_dependency {
+                assert!(operand.ordinal < consumer.ordinal);
+            }
+            assert_valid_document(result.ir());
+        }
+    }
+}
+
+#[test]
+fn custom_forward_link_cycle_is_retained_only_in_native_graph() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="2"><Object type="PartDesign::Feature" name="A"/><Object type="PartDesign::Feature" name="B"/></Objects><ObjectData Count="2"><Object name="A"><Properties Count="1"><Property name="CustomInput" type="App::PropertyLink"><Link value="B"/></Property></Properties></Object><Object name="B"><Properties Count="1"><Property name="CustomInput" type="App::PropertyLink"><Link value="A"/></Property></Properties></Object></ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(result
+        .ir()
+        .model
+        .features
+        .iter()
+        .all(|feature| feature.dependencies.is_empty()));
+    assert!(result.report().losses.iter().any(|loss| loss.code
+        == crate::loss::FreecadLossCode::FeatureCyclicHistory
+            .note("")
+            .code));
+}
+
+#[test]
+fn expression_owner_is_a_feature_dependency_without_objectdeps() {
+    for declarations in [
+        r#"<Object type="PartDesign::Feature" name="Consumer"/><Object type="PartDesign::Feature" name="Operand"/>"#,
+        r#"<Object type="PartDesign::Feature" name="Operand"/><Object type="PartDesign::Feature" name="Consumer"/>"#,
+    ] {
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="2">{declarations}</Objects><ObjectData Count="2"><Object name="Consumer"><Properties Count="2"><Property name="Length" type="App::PropertyLength"><Float value="5"/></Property><Property name="ExpressionEngine" type="App::PropertyExpressionEngine"><ExpressionEngine count="1"><Expression path="Length" expression="Operand.Length"/></ExpressionEngine></Property></Properties></Object><Object name="Operand"><Properties Count="1"><Property name="Length" type="App::PropertyLength"><Float value="5"/></Property></Properties></Object></ObjectData></Document>"#
+        );
+        let result = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(&document)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let features = &result.ir().model.features;
+        let consumer = features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some("Consumer"))
+            .unwrap();
+        let operand = features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some("Operand"))
+            .unwrap();
+        assert_eq!(
+            consumer.dependencies.as_slice(),
+            std::slice::from_ref(&operand.id)
+        );
+        assert!(operand.ordinal < consumer.ordinal);
+        assert_valid_document(result.ir());
+    }
+}
+
+#[test]
+fn restored_runtime_and_extension_scopes_exclude_hidden_references() {
+    for (runtime, name, property_type, value, extension, expected) in [
+        (
+            "PartDesign::SubShapeBinder",
+            "Context",
+            "App::PropertyXLink",
+            r#"<XLink name="Operand"/>"#,
+            "",
+            false,
+        ),
+        (
+            "PartDesign::Feature",
+            "Context",
+            "App::PropertyXLink",
+            r#"<XLink name="Operand"/>"#,
+            "",
+            true,
+        ),
+        (
+            "PartDesign::Feature",
+            "BaseAttachment",
+            "App::PropertyLinkSubList",
+            r#"<LinkSubList count="1"><Link obj="Operand" sub="Face1"/></LinkSubList>"#,
+            r#"<Extensions Count="1"><Extension type="Part::AttachExtensionPython" name="Attachment"/></Extensions>"#,
+            false,
+        ),
+        (
+            "PartDesign::Feature",
+            "BaseAttachment",
+            "App::PropertyLinkSubList",
+            r#"<LinkSubList count="1"><Link obj="Operand" sub="Face1"/></LinkSubList>"#,
+            "",
+            true,
+        ),
+    ] {
+        let extension_flag = if extension.is_empty() {
+            ""
+        } else {
+            r#" Extensions="True""#
+        };
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="2"><Object type="{runtime}" name="Consumer"/><Object type="PartDesign::Feature" name="Operand"/></Objects><ObjectData Count="2"><Object name="Consumer"{extension_flag}>{extension}<Properties Count="1"><Property name="{name}" type="{property_type}">{value}</Property></Properties></Object><Object name="Operand"><Properties Count="0"/></Object></ObjectData></Document>"#
+        );
+        let result = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(&document)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let features = &result.ir().model.features;
+        let consumer = features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some("Consumer"))
+            .unwrap();
+        let operand = features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some("Operand"))
+            .unwrap();
+        assert_eq!(
+            consumer.dependencies.contains(&operand.id),
+            expected,
+            "{runtime} {name} {extension}"
+        );
+        assert_valid_document(result.ir());
+    }
+}
+
+#[test]
+fn expression_dependencies_use_unique_labels_and_skip_strings_and_metadata() {
+    for (expression, property_type, label, expected) in [
+        (
+            "Operand.Length",
+            "App::PropertyExpressionEngine",
+            "Stock",
+            true,
+        ),
+        (
+            "&lt;&lt;Stock&gt;&gt;.Length",
+            "App::PropertyExpressionEngine",
+            "Stock",
+            true,
+        ),
+        (
+            "&lt;&lt;Operand.Length&gt;&gt;",
+            "App::PropertyExpressionEngine",
+            "Stock",
+            false,
+        ),
+        (
+            "&quot;Operand.Length&quot;",
+            "App::PropertyExpressionEngine",
+            "Stock",
+            false,
+        ),
+        (
+            "'Operand.Length'",
+            "App::PropertyExpressionEngine",
+            "Stock",
+            false,
+        ),
+        (
+            "Foreign#Operand.Length",
+            "App::PropertyExpressionEngine",
+            "Stock",
+            false,
+        ),
+        ("Operand.Length", "Vendor::Metadata", "Stock", false),
+        (
+            "&lt;&lt;Stock&gt;&gt;.Length",
+            "App::PropertyExpressionEngine",
+            "Consumer",
+            false,
+        ),
+    ] {
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="2"><Object type="PartDesign::Feature" name="Consumer"/><Object type="PartDesign::Feature" name="Operand"/></Objects><ObjectData Count="2"><Object name="Consumer"><Properties Count="2"><Property name="Label" type="App::PropertyString"><String value="Consumer"/></Property><Property name="ExpressionEngine" type="{property_type}"><ExpressionEngine count="1"><Expression path="Length" expression="{expression}"/></ExpressionEngine></Property></Properties></Object><Object name="Operand"><Properties Count="1"><Property name="Label" type="App::PropertyString"><String value="{label}"/></Property></Properties></Object></ObjectData></Document>"#
+        );
+        let result = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(&document)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let features = &result.ir().model.features;
+        let consumer = features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some("Consumer"))
+            .unwrap();
+        let operand = features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some("Operand"))
+            .unwrap();
+        assert_eq!(
+            consumer.dependencies.contains(&operand.id),
+            expected,
+            "{expression} {property_type}"
+        );
+    }
+}

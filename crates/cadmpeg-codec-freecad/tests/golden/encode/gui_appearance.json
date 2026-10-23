@@ -40,8 +40,8 @@
     "census": {
       "basis": "ir_arenas",
       "counts": {
-        "appearance_bindings": 25,
-        "appearances": 2,
+        "appearance_bindings": 33,
+        "appearances": 12,
         "assembly_joints": 0,
         "assets": 0,
         "attributes": 0,

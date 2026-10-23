@@ -1043,7 +1043,10 @@ impl CodecBackend for FcstdCodec {
                 let (cycle_affected, design_losses) = design::transfer(
                     ctx,
                     &mut ir,
-                    &graph.objects,
+                    design::DesignObjects {
+                        objects: &graph.objects,
+                        extensions: &graph.extensions,
+                    },
                     &graph.properties,
                     &shape_payloads,
                     &entry_records,
@@ -1062,7 +1065,8 @@ impl CodecBackend for FcstdCodec {
                 &mut admitted_entities,
                 "admit FCStd entities",
             )?;
-            let link_occurrences = product::link_occurrence_count(&product_nodes)?;
+            let link_occurrences =
+                product::link_occurrence_count(&product_nodes, &graph.objects, &graph.properties)?;
             ctx.admit_entities(
                 cadmpeg_core::decode::u64_from_index(ir.model.entity_count())
                     .checked_add(link_occurrences)
@@ -1105,7 +1109,7 @@ impl CodecBackend for FcstdCodec {
                         objects: &graph.objects,
                         properties: &graph.properties,
                         payloads: &shape_payloads,
-                        element_maps: &element_maps,
+                        topology_occurrences: &topology_occurrences,
                         requires_alpha_conversion: gui::requires_alpha_conversion(
                             scan.document.program_version.as_deref(),
                         ),
