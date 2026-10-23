@@ -3,7 +3,8 @@ use super::*;
 use cadmpeg_ir::features::{edge_treatments::RadiusSpec, RibDraft};
 
 #[test]
-fn rib_without_draft_keeps_its_current_thickness_and_omits_only_conflicting_parameters() {
+fn rib_without_draft_keeps_its_current_thickness_and_moves_only_conflicting_parameters_to_the_global_owner(
+) {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(0x42, "Contents/Keywords", br#"<Keywords><Sketch Name="RibProfile" Type="Sketch" id="41"/><Rib Name="Web" Type="Rib" id="42" Profile="41" Direction="0,1,0" BothSides="false" Operation="Join"><Dimension Name="Thickness">2mm</Dimension><Dimension Name="Draft">5deg</Dimension></Rib><Feature Name="Peer" Type="EquationDriven" id="43"><Dimension Name="Independent">7</Dimension></Feature></Keywords>"#));
     let decoded = SldprtCodec
@@ -11,15 +12,21 @@ fn rib_without_draft_keeps_its_current_thickness_and_omits_only_conflicting_para
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let owner = decoded.ir().model.features[1].id.clone();
-    let omitted = decoded
+    let moved = decoded
         .ir()
         .model
         .parameters
         .iter()
         .filter(|parameter| parameter.owner.as_ref() == Some(&owner))
-        .map(|parameter| parameter.id.to_string())
+        .map(|parameter| {
+            (
+                parameter.id.to_string(),
+                parameter.name.clone(),
+                parameter.expression.clone(),
+            )
+        })
         .collect::<Vec<_>>();
-    assert_eq!(omitted.len(), 2);
+    assert_eq!(moved.len(), 2);
     decoded.ir_mut().model.features[1]
         .evaluation
         .edit(|definition, _| {
@@ -42,14 +49,15 @@ fn rib_without_draft_keeps_its_current_thickness_and_omits_only_conflicting_para
                 TargetRequest::Inherit,
             )
             .unwrap();
-        for parameter in &omitted {
-            assert_omission(plan.report(), parameter);
-        }
+        assert_regenerated(plan.report());
         let mut bytes = Vec::new();
-        plan.write_to(&mut bytes).unwrap();
+        let report = plan.write_to(&mut bytes).unwrap();
         let written = SldprtCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
+        for (parameter, name, expression) in &moved {
+            assert_moved_to_global(&report, written.ir(), parameter, name, expression);
+        }
         let native = sldprt_native(written.ir());
         let rib = native
             .feature_histories
@@ -75,7 +83,8 @@ fn rib_without_draft_keeps_its_current_thickness_and_omits_only_conflicting_para
 }
 
 #[test]
-fn constant_fillet_keeps_its_current_radius_and_omits_only_the_unused_variable_law_parameters() {
+fn constant_fillet_keeps_its_current_radius_and_moves_the_unused_variable_law_parameters_to_the_global_owner(
+) {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(0x42, "Contents/Keywords", br#"<Keywords><Fillet Name="Blend" Type="Fillet" id="61" Edges="edge:1"><Dimension Name="Position0">0</Dimension><Dimension Name="Radius0">2mm</Dimension><Dimension Name="Position1">0.5</Dimension><Dimension Name="Radius1">4mm</Dimension><Dimension Name="Position2">1</Dimension><Dimension Name="Radius2">3mm</Dimension></Fillet><Feature Name="Peer" Type="EquationDriven" id="62"><Dimension Name="Independent">7</Dimension></Feature></Keywords>"#));
     let decoded = SldprtCodec
@@ -83,15 +92,21 @@ fn constant_fillet_keeps_its_current_radius_and_omits_only_the_unused_variable_l
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let owner = decoded.ir().model.features[0].id.clone();
-    let omitted = decoded
+    let moved = decoded
         .ir()
         .model
         .parameters
         .iter()
         .filter(|parameter| parameter.owner.as_ref() == Some(&owner))
-        .map(|parameter| parameter.id.to_string())
+        .map(|parameter| {
+            (
+                parameter.id.to_string(),
+                parameter.name.clone(),
+                parameter.expression.clone(),
+            )
+        })
         .collect::<Vec<_>>();
-    assert_eq!(omitted.len(), 6);
+    assert_eq!(moved.len(), 6);
     decoded.ir_mut().model.features[0]
         .evaluation
         .edit(|definition, _| {
@@ -114,14 +129,15 @@ fn constant_fillet_keeps_its_current_radius_and_omits_only_the_unused_variable_l
                 TargetRequest::Inherit,
             )
             .unwrap();
-        for parameter in &omitted {
-            assert_omission(plan.report(), parameter);
-        }
+        assert_regenerated(plan.report());
         let mut bytes = Vec::new();
-        plan.write_to(&mut bytes).unwrap();
+        let report = plan.write_to(&mut bytes).unwrap();
         let written = SldprtCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
+        for (parameter, name, expression) in &moved {
+            assert_moved_to_global(&report, written.ir(), parameter, name, expression);
+        }
         let native = sldprt_native(written.ir());
         let fillet = native
             .feature_histories
@@ -154,7 +170,8 @@ fn constant_fillet_keeps_its_current_radius_and_omits_only_the_unused_variable_l
 }
 
 #[test]
-fn variable_fillet_keeps_the_edited_sample_and_names_only_its_two_conflicting_parameters() {
+fn variable_fillet_keeps_the_edited_sample_and_moves_only_its_two_conflicting_parameters_to_the_global_owner(
+) {
     use cadmpeg_ir::features::edge_treatments::{VariableRadii, VariableRadius};
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(0x42, "Contents/Keywords", br#"<Keywords><Fillet Name="Blend" Type="Fillet" id="61" Edges="edge:1"><Dimension Name="Position0">0</Dimension><Dimension Name="Radius0">2mm</Dimension><Dimension Name="Position1">0.5</Dimension><Dimension Name="Radius1">4mm</Dimension><Dimension Name="Position2">1</Dimension><Dimension Name="Radius2">3mm</Dimension></Fillet><Feature Name="Peer" Type="EquationDriven" id="62"><Dimension Name="Independent">7</Dimension></Feature></Keywords>"#));
@@ -163,7 +180,7 @@ fn variable_fillet_keeps_the_edited_sample_and_names_only_its_two_conflicting_pa
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let owner = decoded.ir().model.features[0].id.clone();
-    let omitted = decoded
+    let moved = decoded
         .ir()
         .model
         .parameters
@@ -172,9 +189,15 @@ fn variable_fillet_keeps_the_edited_sample_and_names_only_its_two_conflicting_pa
             parameter.owner.as_ref() == Some(&owner)
                 && matches!(parameter.name.as_str(), "Position1" | "Radius1")
         })
-        .map(|parameter| parameter.id.to_string())
+        .map(|parameter| {
+            (
+                parameter.id.to_string(),
+                parameter.name.clone(),
+                parameter.expression.clone(),
+            )
+        })
         .collect::<Vec<_>>();
-    assert_eq!(omitted.len(), 2);
+    assert_eq!(moved.len(), 2);
     decoded.ir_mut().model.features[0]
         .evaluation
         .edit(|definition, _| {
@@ -204,25 +227,26 @@ fn variable_fillet_keeps_the_edited_sample_and_names_only_its_two_conflicting_pa
                 TargetRequest::Inherit,
             )
             .unwrap();
-        for parameter in &omitted {
-            assert_omission(plan.report(), parameter);
-        }
+        assert_regenerated(plan.report());
         assert_eq!(
             plan.report()
                 .losses
                 .iter()
                 .filter(
-                    |loss| loss.code == SldprtLossCode::WriterEntityOmitted.kind()
+                    |loss| loss.code == SldprtLossCode::WriterParameterMovedToGlobal.kind()
                         && loss.message.starts_with("parameter ")
                 )
                 .count(),
             2
         );
         let mut bytes = Vec::new();
-        plan.write_to(&mut bytes).unwrap();
+        let report = plan.write_to(&mut bytes).unwrap();
         let written = SldprtCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
+        for (parameter, name, expression) in &moved {
+            assert_moved_to_global(&report, written.ir(), parameter, name, expression);
+        }
         let native = sldprt_native(written.ir());
         let fillet = native
             .feature_histories

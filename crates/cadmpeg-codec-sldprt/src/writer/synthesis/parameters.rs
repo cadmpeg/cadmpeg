@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The smallest unused parameter records excluded by active operation roles.
+//! Unused parameters that conflict with their operation move to the global owner.
 
 use std::collections::{BTreeSet, HashMap};
 
@@ -7,7 +7,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
     edge_treatments::RadiusSpec, DesignParameter, Dimension, ExpressionToken, FeatureDefinition,
-    FeatureOperation, FeatureSourceContent, ParameterValue, RibDraft, ScaleFactors,
+    FeatureId, FeatureOperation, FeatureSourceContent, ParameterValue, RibDraft, ScaleFactors,
 };
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::schema::EntitySchema;
@@ -119,7 +119,7 @@ fn conflicts(parameter: &DesignParameter, definition: &FeatureDefinition) -> boo
     }
 }
 
-pub(super) fn omit_unreferenced(
+pub(super) fn move_unreferenced(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     native: &mut SldprtNative,
@@ -149,7 +149,7 @@ pub(super) fn omit_unreferenced(
             parameter
                 .owner
                 .as_ref()
-                .map(|owner| (parameter.id.as_str(), owner.as_str()))
+                .map(|owner| (parameter.id.as_str().to_owned(), owner.as_str().to_owned()))
         })
         .collect::<HashMap<_, _>>();
     let mut owned_positions = BTreeSet::new();
@@ -158,7 +158,7 @@ pub(super) fn omit_unreferenced(
             let FeatureSourceContent::Parameter(id) = content else {
                 continue;
             };
-            if parameter_owners.get(id.as_str()).copied() == Some(feature.id.as_str()) {
+            if parameter_owners.get(id.as_str()).map(String::as_str) == Some(feature.id.as_str()) {
                 owned_positions.insert((feature.id.as_str(), id.as_str()));
             }
         }
@@ -189,46 +189,144 @@ pub(super) fn omit_unreferenced(
         }
     }
     omitted.retain(|id| !referenced.contains(id));
-    let owners = ir
+    if omitted.is_empty() {
+        return Ok(());
+    }
+    let moved = move_to_global_owner(ir, &omitted, losses)?;
+    let records = ir
         .model
         .features
         .iter()
-        .map(|feature| (&feature.id, feature.native_ref.as_deref()))
+        .filter_map(|feature| {
+            feature
+                .native_ref
+                .as_deref()
+                .map(|record| (feature.id.as_str(), record))
+        })
         .collect::<HashMap<_, _>>();
     for parameter in &ir.model.parameters {
         if !omitted.contains(parameter.id.as_str()) {
             continue;
         }
-        losses.push(SldprtLossCode::WriterEntityOmitted.note(format!(
-            "parameter {} ({}) omitted because its native control conflicts with the current operation on feature {}",
-            parameter.id, parameter.name, parameter.owner.as_ref().map_or("", |owner| owner.as_str())
-        )));
-        if let Some(record_id) = parameter
-            .owner
-            .as_ref()
-            .and_then(|owner| owners.get(owner))
-            .copied()
-            .flatten()
-        {
-            for record in native
-                .feature_histories
-                .iter_mut()
-                .flat_map(|history| &mut history.features)
-                .filter(|record| record.id == record_id)
-            {
-                record.parameters.remove(parameter.name.as_str());
-                record.dimension_properties.remove(parameter.name.as_str());
-                record.content.retain(|content| !matches!(content, FeatureContent::Dimension(name) if name == &parameter.name));
+        let former = parameter_owners
+            .get(parameter.id.as_str())
+            .map_or("", String::as_str);
+        let name = match moved.get(parameter.id.as_str()) {
+            Some(name) => name.as_str(),
+            None => {
+                losses.push(SldprtLossCode::WriterEntityOmitted.note(format!(
+                    "parameter {} ({}) omitted because its native control conflicts with the current operation on feature {former} and no unique global parameter name can be formed",
+                    parameter.id, parameter.name
+                )));
+                parameter.name.as_str()
             }
+        };
+        let Some(record_id) = records.get(former).copied() else {
+            continue;
+        };
+        for record in native
+            .feature_histories
+            .iter_mut()
+            .flat_map(|history| &mut history.features)
+            .filter(|record| record.id == record_id)
+        {
+            record.parameters.remove(name);
+            record.dimension_properties.remove(name);
+            record.content.retain(
+                |content| !matches!(content, FeatureContent::Dimension(held) if held == name),
+            );
         }
     }
     for feature in &mut ir.model.features {
         remove_positions(feature, &omitted)?;
     }
-    ir.model
-        .parameters
-        .retain(|parameter| !omitted.contains(parameter.id.as_str()));
+    ir.model.parameters.retain(|parameter| {
+        !omitted.contains(parameter.id.as_str()) || moved.contains_key(parameter.id.as_str())
+    });
     Ok(())
+}
+
+/// Move each conflicting unused parameter to the generated global owner,
+/// with a name that no other global parameter holds. Returns the former
+/// name of each moved parameter, keyed by parameter id.
+fn move_to_global_owner(
+    ir: &mut CadIr,
+    candidates: &BTreeSet<String>,
+    losses: &mut Vec<LossNote>,
+) -> Result<HashMap<String, String>, CodecError> {
+    let existing = super::design::find_generated_global_owner(ir);
+    let global_owners = crate::history::parameters::global_parameter_owners(&ir.model.features);
+    let is_global = |owner: Option<&FeatureId>| {
+        owner.is_none_or(|owner| existing.as_ref() == Some(owner) || global_owners.contains(owner))
+    };
+    let mut names = ir
+        .model
+        .parameters
+        .iter()
+        .filter(|parameter| {
+            !candidates.contains(parameter.id.as_str()) && is_global(parameter.owner.as_ref())
+        })
+        .map(|parameter| parameter.name.clone())
+        .collect::<BTreeSet<_>>();
+    let mut next_ordinal = ir
+        .model
+        .parameters
+        .iter()
+        .filter(|parameter| {
+            !candidates.contains(parameter.id.as_str())
+                && (parameter.owner.is_none() || parameter.owner == existing)
+        })
+        .try_fold(0_u32, |next, parameter| {
+            parameter
+                .ordinal
+                .checked_add(1)
+                .map(|after| next.max(after))
+        });
+    let mut planned = Vec::new();
+    for (index, parameter) in ir.model.parameters.iter().enumerate() {
+        if !candidates.contains(parameter.id.as_str()) {
+            continue;
+        }
+        let Some(former) = &parameter.owner else {
+            continue;
+        };
+        let name = if names.contains(&parameter.name) {
+            ir.model
+                .features
+                .iter()
+                .find(|feature| &feature.id == former)
+                .and_then(|feature| feature.name.as_deref())
+                .map(|owner| format!("{}@{owner}", parameter.name))
+                .filter(|name| !names.contains(name))
+        } else {
+            Some(parameter.name.clone())
+        };
+        let (Some(name), Some(ordinal)) = (name, next_ordinal) else {
+            continue;
+        };
+        next_ordinal = ordinal.checked_add(1);
+        names.insert(name.clone());
+        planned.push((index, former.clone(), name, ordinal));
+    }
+    let mut moved = HashMap::new();
+    if planned.is_empty() {
+        return Ok(moved);
+    }
+    let global = super::design::generated_global_owner(ir)?;
+    for (index, former, name, ordinal) in planned {
+        let parameter = &mut ir.model.parameters[index];
+        losses.push(SldprtLossCode::WriterParameterMovedToGlobal.note(format!(
+            "parameter {} ({}) moved from feature {former} to the generated Global parameters owner {global} as {name}: its native control conflicts with the current operation and nothing references it",
+            parameter.id, parameter.name
+        )));
+        moved.insert(
+            parameter.id.as_str().to_owned(),
+            std::mem::replace(&mut parameter.name, name),
+        );
+        parameter.owner = Some(global.clone());
+        parameter.ordinal = ordinal;
+    }
+    Ok(moved)
 }
 
 fn remove_positions(

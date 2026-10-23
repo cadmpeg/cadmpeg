@@ -137,6 +137,43 @@ pub(super) fn prepare(
     Ok(native)
 }
 
+const GLOBAL_PARAMETERS: &str = "Global parameters";
+
+/// The generated "Global parameters" owner (#237 §7.10), appended on first use.
+pub(super) fn generated_global_owner(ir: &mut CadIr) -> Result<FeatureId, CodecError> {
+    if let Some(id) = find_generated_global_owner(ir) {
+        return Ok(id);
+    }
+    append_feature(
+        ir,
+        GLOBAL_PARAMETERS,
+        FeatureOperation::TreeNode {
+            role: FeatureTreeNodeRole::Equations,
+            children: TreeChildren::default(),
+        },
+    )
+}
+
+/// The generated "Global parameters" owner, when the document has one.
+pub(super) fn find_generated_global_owner(ir: &CadIr) -> Option<FeatureId> {
+    ir.model
+        .features
+        .iter()
+        .find(|feature| {
+            feature.native_ref.is_none()
+                && feature.name.as_deref() == Some(GLOBAL_PARAMETERS)
+                && feature.id.as_str().starts_with(GENERATED_FEATURE_PREFIX)
+                && matches!(
+                    feature.evaluation.definition(),
+                    FeatureDefinition::Operation(FeatureOperation::TreeNode {
+                        role: FeatureTreeNodeRole::Equations,
+                        ..
+                    })
+                )
+        })
+        .map(|feature| feature.id.clone())
+}
+
 fn ensure_owners(ir: &mut CadIr) -> Result<(), CodecError> {
     if ir
         .model
@@ -144,14 +181,7 @@ fn ensure_owners(ir: &mut CadIr) -> Result<(), CodecError> {
         .iter()
         .any(|parameter| parameter.owner.is_none())
     {
-        let id = append_feature(
-            ir,
-            "Global parameters",
-            FeatureOperation::TreeNode {
-                role: FeatureTreeNodeRole::Equations,
-                children: TreeChildren::default(),
-            },
-        )?;
+        let id = generated_global_owner(ir)?;
         for parameter in &mut ir.model.parameters {
             if parameter.owner.is_none() {
                 parameter.owner = Some(id.clone());
@@ -171,6 +201,8 @@ fn ensure_owners(ir: &mut CadIr) -> Result<(), CodecError> {
     Ok(())
 }
 
+const GENERATED_FEATURE_PREFIX: &str = "generated:sldprt:feature#";
+
 fn append_feature(
     ir: &mut CadIr,
     name: &str,
@@ -188,7 +220,7 @@ fn append_feature(
     }
     let mut identity_ordinal = ordinal;
     let id = loop {
-        let candidate = FeatureId::mint(format!("generated:sldprt:feature#{identity_ordinal}"))
+        let candidate = FeatureId::mint(format!("{GENERATED_FEATURE_PREFIX}{identity_ordinal}"))
             .map_err(|error| {
                 CodecError::malformed(format_args!("generated feature identity: {error}"))
             })?;

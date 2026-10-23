@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::omit_unreferenced;
+use super::move_unreferenced;
 use crate::test_support::container::{make_block, sldprt_with_body};
 use crate::test_support::native::sldprt_native;
 use crate::test_support::parasolid::triangle_body;
@@ -105,7 +105,7 @@ fn a_parameter_used_by_another_feature_pmi_or_itself_is_not_silently_removed() {
         let native_before = native.clone();
         let namespace_before = ir.native.clone();
         let mut losses = Vec::new();
-        omit_unreferenced(
+        move_unreferenced(
             &cadmpeg_test_support::service_decode_context(),
             &mut ir,
             &mut native,
@@ -151,7 +151,7 @@ fn the_owning_feature_keeps_a_parameter_used_by_its_actual_definition_after_sour
     let mut native = sldprt_native(&ir);
     let original_native = native.clone();
     let mut losses = Vec::new();
-    omit_unreferenced(
+    move_unreferenced(
         &cadmpeg_test_support::service_decode_context(),
         &mut ir,
         &mut native,

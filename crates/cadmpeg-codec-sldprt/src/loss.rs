@@ -169,6 +169,10 @@ pub(crate) enum SldprtLossCode {
     WriterEntityOmitted,
     /// Export degrades records identified by the loss message.
     WriterFieldsOmitted,
+    /// Export writes a parameter that its owner's operation no longer uses
+    /// under the generated global parameter owner. The message names the
+    /// parameter, its former owner and the new owner.
+    WriterParameterMovedToGlobal,
     /// Export degrades records identified by the loss message.
     WriterNativeRecordsOmitted,
     /// Export degrades records identified by the loss message.
@@ -252,6 +256,7 @@ impl SldprtLossCode {
         Self::WriterArenaOmitted,
         Self::WriterEntityOmitted,
         Self::WriterFieldsOmitted,
+        Self::WriterParameterMovedToGlobal,
         Self::WriterNativeRecordsOmitted,
         Self::WriterNoExportableSolids,
         Self::WriterDesignReduced,
@@ -329,6 +334,7 @@ impl SldprtLossCode {
             Self::WriterArenaOmitted => "writer.arena-omitted",
             Self::WriterEntityOmitted => "writer.entity-omitted",
             Self::WriterFieldsOmitted => "writer.fields-omitted",
+            Self::WriterParameterMovedToGlobal => "writer.parameter-moved-to-global",
             Self::WriterNativeRecordsOmitted => "writer.native-records-omitted",
             Self::WriterNoExportableSolids => "export.no-exportable-solids",
             Self::WriterDesignReduced => "writer.design-reduced",
@@ -345,6 +351,7 @@ impl SldprtLossCode {
             Self::WriterArenaOmitted => Severity::Warning,
             Self::WriterEntityOmitted => Severity::Error,
             Self::WriterFieldsOmitted => Severity::Warning,
+            Self::WriterParameterMovedToGlobal => Severity::Info,
             Self::WriterNativeRecordsOmitted => Severity::Warning,
             Self::WriterNoExportableSolids => Severity::Error,
             Self::WriterDesignReduced => Severity::Error,
@@ -421,6 +428,7 @@ impl SldprtLossCode {
             Self::WriterArenaOmitted => LossTaxonomy::RecordNotTyped,
             Self::WriterEntityOmitted => LossTaxonomy::GeometryNotTransferred,
             Self::WriterFieldsOmitted => LossTaxonomy::AttributesNotTransferred,
+            Self::WriterParameterMovedToGlobal => LossTaxonomy::FeatureHistoryRetained,
             Self::WriterNativeRecordsOmitted => LossTaxonomy::RecordNotTyped,
             Self::WriterNoExportableSolids => LossTaxonomy::NoExportableSolids,
             Self::WriterDesignReduced => LossTaxonomy::FeatureHistoryRetained,
@@ -783,6 +791,10 @@ const REPRESENTATION: &[(SldprtLossCode, Representation)] = &[
     (SldprtLossCode::WriterEntityOmitted, Representation::Writer),
     (SldprtLossCode::WriterFieldsOmitted, Representation::Writer),
     (
+        SldprtLossCode::WriterParameterMovedToGlobal,
+        Representation::Writer,
+    ),
+    (
         SldprtLossCode::WriterNativeRecordsOmitted,
         Representation::Writer,
     ),
@@ -1100,6 +1112,7 @@ mod tests {
                 "writer.arena-omitted",
                 "writer.entity-omitted",
                 "writer.fields-omitted",
+                "writer.parameter-moved-to-global",
                 "writer.native-records-omitted",
                 "export.no-exportable-solids",
                 "writer.design-reduced",

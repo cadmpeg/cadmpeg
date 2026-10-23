@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Conflicting inactive parameter records lose their own encoding, not the operation.
+//! Conflicting unused parameters move to the global owner, and the operation keeps its form.
+use super::assert_moved_to_global;
 use crate::loss::SldprtLossCode;
 use crate::test_support::container::{make_block, sldprt_with_body};
 use crate::test_support::native::sldprt_native;
@@ -12,10 +13,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation, ScaleFactors};
 use std::io::Cursor;
 
-fn assert_omission(report: &cadmpeg_ir::report::export::ExportReport, parameter: &str) {
-    assert!(report.losses.iter().any(|loss| loss.code
-        == SldprtLossCode::WriterEntityOmitted.kind()
-        && loss.message.contains(parameter)));
+fn assert_regenerated(report: &cadmpeg_ir::report::export::ExportReport) {
     assert_eq!(
         report
             .coverage
@@ -29,14 +27,15 @@ fn assert_omission(report: &cadmpeg_ir::report::export::ExportReport, parameter:
 }
 
 #[test]
-fn per_axis_scale_omits_only_its_unused_uniform_parameter_and_keeps_the_independent_peer() {
+fn per_axis_scale_moves_its_unused_uniform_parameter_to_the_global_owner_and_keeps_the_independent_peer(
+) {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(0x42, "Contents/Keywords", br#"<Keywords><Scale Name="Scale" Type="Scale" id="16" Bodies="body:1" CenterType="Origin"><Dimension Name="Factor">2</Dimension></Scale><Feature Name="Peer" Type="EquationDriven" id="17"><Dimension Name="Independent">7</Dimension></Feature></Keywords>"#));
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    let omitted = decoded
+    let moved = decoded
         .ir()
         .model
         .parameters
@@ -45,6 +44,15 @@ fn per_axis_scale_omits_only_its_unused_uniform_parameter_and_keeps_the_independ
         .unwrap()
         .id
         .to_string();
+    let expression = decoded
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Factor")
+        .unwrap()
+        .expression
+        .clone();
     decoded.ir_mut().model.features[0]
         .evaluation
         .edit(|definition, _| {
@@ -72,12 +80,13 @@ fn per_axis_scale_omits_only_its_unused_uniform_parameter_and_keeps_the_independ
                 TargetRequest::Inherit,
             )
             .unwrap();
-        assert_omission(plan.report(), &omitted);
+        assert_regenerated(plan.report());
         let mut bytes = Vec::new();
-        plan.write_to(&mut bytes).unwrap();
+        let report = plan.write_to(&mut bytes).unwrap();
         let written = SldprtCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
+        assert_moved_to_global(&report, written.ir(), &moved, "Factor", &expression);
         let native = sldprt_native(written.ir());
         let scale = native
             .feature_histories
@@ -97,12 +106,10 @@ fn per_axis_scale_omits_only_its_unused_uniform_parameter_and_keeps_the_independ
             .iter()
             .any(|parameter| parameter.name == "Independent"
                 && parameter.expression == cadmpeg_ir::features::Expression::text("7")));
-        assert!(!written
-            .ir()
-            .model
-            .parameters
-            .iter()
-            .any(|parameter| parameter.name == "Factor"));
+        let scale = feature_id(written.ir(), "Scale");
+        assert!(!written.ir().model.parameters.iter().any(
+            |parameter| parameter.name == "Factor" && parameter.owner.as_ref() == Some(&scale)
+        ));
         assert_eq!(
             written.ir().model.bodies.len(),
             decoded.ir().model.bodies.len()
@@ -117,7 +124,8 @@ fn per_axis_scale_omits_only_its_unused_uniform_parameter_and_keeps_the_independ
 }
 
 #[test]
-fn knit_without_gap_omits_only_the_unused_tolerance_and_keeps_its_operation_and_peer() {
+fn knit_without_gap_moves_the_unused_tolerance_to_the_global_owner_and_keeps_its_operation_and_peer(
+) {
     let mut source = sldprt_with_body(&triangle_body());
     let base = SldprtCodec
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
@@ -131,7 +139,7 @@ fn knit_without_gap_omits_only_the_unused_tolerance_and_keeps_its_operation_and_
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    let omitted = decoded
+    let moved = decoded
         .ir()
         .model
         .parameters
@@ -140,6 +148,15 @@ fn knit_without_gap_omits_only_the_unused_tolerance_and_keeps_its_operation_and_
         .unwrap()
         .id
         .to_string();
+    let expression = decoded
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "GapTolerance")
+        .unwrap()
+        .expression
+        .clone();
     decoded.ir_mut().model.features[0]
         .evaluation
         .edit(|definition, _| {
@@ -165,12 +182,13 @@ fn knit_without_gap_omits_only_the_unused_tolerance_and_keeps_its_operation_and_
                 TargetRequest::Inherit,
             )
             .unwrap();
-        assert_omission(plan.report(), &omitted);
+        assert_regenerated(plan.report());
         let mut bytes = Vec::new();
-        plan.write_to(&mut bytes).unwrap();
+        let report = plan.write_to(&mut bytes).unwrap();
         let written = SldprtCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
+        assert_moved_to_global(&report, written.ir(), &moved, "GapTolerance", &expression);
         let native = sldprt_native(written.ir());
         let knit = native
             .feature_histories
@@ -196,12 +214,14 @@ fn knit_without_gap_omits_only_the_unused_tolerance_and_keeps_its_operation_and_
             .iter()
             .any(|parameter| parameter.name == "Independent"
                 && parameter.expression == cadmpeg_ir::features::Expression::text("7")));
+        let knit = feature_id(written.ir(), "Knit");
         assert!(!written
             .ir()
             .model
             .parameters
             .iter()
-            .any(|parameter| parameter.name == "GapTolerance"));
+            .any(|parameter| parameter.name == "GapTolerance"
+                && parameter.owner.as_ref() == Some(&knit)));
         assert_eq!(
             written.ir().model.bodies.len(),
             decoded.ir().model.bodies.len()
@@ -213,6 +233,130 @@ fn knit_without_gap_omits_only_the_unused_tolerance_and_keeps_its_operation_and_
     }
     assert_eq!(decoded.ir().model.parameters, parameters);
     assert_eq!(decoded.ir().native, input_native);
+}
+
+fn knit_without_gap_beside_global_names(
+    globals: &str,
+) -> cadmpeg_test_support::EditableDecodeResult {
+    let mut source = sldprt_with_body(&triangle_body());
+    let base = SldprtCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .unwrap();
+    let face = base.ir().model.faces[0].id.to_string();
+    let xml = format!(
+        r#"<Keywords><KnitSurface Name="Knit" Type="Knit" id="34" Faces="{face}" MergeEntities="false" CreateSolid="false"><Dimension Name="GapTolerance">0.01mm</Dimension></KnitSurface><Feature Name="Peer" Type="EquationDriven" id="35">{globals}</Feature></Keywords>"#
+    );
+    source.extend(make_block(0x42, "Contents/Keywords", xml.as_bytes()));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    decoded.ir_mut().model.features[0]
+        .evaluation
+        .edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::KnitSurface {
+                gap_tolerance, ..
+            }) = definition
+            else {
+                panic!("knit");
+            };
+            *gap_tolerance = None;
+        });
+    decoded
+}
+
+fn knit_gap_tolerance(ir: &cadmpeg_ir::CadIr) -> (String, cadmpeg_ir::features::Expression) {
+    let knit = feature_id(ir, "Knit");
+    let parameter = ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.owner.as_ref() == Some(&knit))
+        .unwrap();
+    (parameter.id.to_string(), parameter.expression.clone())
+}
+
+#[test]
+fn a_moved_parameter_whose_name_a_global_holds_takes_its_owner_suffix() {
+    let decoded =
+        knit_without_gap_beside_global_names(r#"<Dimension Name="GapTolerance">7</Dimension>"#);
+    let (moved, expression) = knit_gap_tolerance(decoded.ir());
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    let report = plan.write_to(&mut bytes).unwrap();
+    let written = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_moved_to_global(
+        &report,
+        written.ir(),
+        &moved,
+        "GapTolerance@Knit",
+        &expression,
+    );
+    let knit = sldprt_native(written.ir())
+        .feature_histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .find(|feature| feature.name == "Knit")
+        .unwrap()
+        .clone();
+    assert!(!knit.parameters.contains_key("GapTolerance"));
+    assert!(written
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .any(|parameter| parameter.name == "GapTolerance"
+            && parameter.expression == cadmpeg_ir::features::Expression::text("7")));
+}
+
+#[test]
+fn a_moved_parameter_with_no_unique_global_name_is_omitted() {
+    let decoded = knit_without_gap_beside_global_names(
+        r#"<Dimension Name="GapTolerance">7</Dimension><Dimension Name="GapTolerance@Knit">8</Dimension>"#,
+    );
+    let (omitted, _) = knit_gap_tolerance(decoded.ir());
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    let report = plan.write_to(&mut bytes).unwrap();
+    assert!(report.losses.iter().any(|loss| loss.code
+        == SldprtLossCode::WriterEntityOmitted.kind()
+        && loss.message.contains(&format!("parameter {omitted} "))));
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.code == SldprtLossCode::WriterParameterMovedToGlobal.kind()));
+    let written = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let knit = feature_id(written.ir(), "Knit");
+    assert!(!written
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .any(|parameter| parameter.owner.as_ref() == Some(&knit)));
+    assert!(!written
+        .ir()
+        .model
+        .features
+        .iter()
+        .any(|feature| feature.name.as_deref() == Some("Global parameters")));
+}
+
+fn feature_id(ir: &cadmpeg_ir::CadIr, name: &str) -> cadmpeg_ir::features::FeatureId {
+    ir.model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some(name))
+        .unwrap()
+        .id
+        .clone()
 }
 
 mod laws;

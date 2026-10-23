@@ -919,6 +919,7 @@ fn semantic_writer_round_trips_offset_surface() {
 
 #[test]
 fn semantic_writer_round_trips_knit_surface() {
+    use cadmpeg_ir::codec::write::Encoder;
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
 
     let base_bytes = sldprt_with_body(&triangle_body());
@@ -949,6 +950,27 @@ fn semantic_writer_round_trips_knit_surface() {
         }) if (faces == std::slice::from_ref(&face_id) && native == &face) && decoded.ir().dimension_value(actual_gap_tolerance).unwrap().get() == 0.01
     ));
 
+    let moved = {
+        let owner = &decoded.ir().model.features[0].id;
+        decoded
+            .ir()
+            .model
+            .parameters
+            .iter()
+            .filter(|parameter| {
+                parameter.owner.as_ref() == Some(owner)
+                    && ["GapTolerance"].contains(&parameter.name.as_str())
+            })
+            .map(|parameter| {
+                (
+                    parameter.id.to_string(),
+                    parameter.name.clone(),
+                    parameter.expression.clone(),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(moved.len(), 1);
     {
         let mut ir_edit = decoded.ir_mut();
         ir_edit.model.features[0].evaluation.edit(|definition, _| {
@@ -969,15 +991,29 @@ fn semantic_writer_round_trips_knit_surface() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_edited_history(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut encoded,
-    )
-    .unwrap();
+    let report = SldprtCodec
+        .plan(
+            cadmpeg_ir::codec::write::EncodeInput::new(
+                decoded.ir(),
+                Some(decoded.source_fidelity()),
+            ),
+            cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+        )
+        .unwrap()
+        .write_to(&mut encoded)
+        .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
+    for (parameter, name, expression) in &moved {
+        crate::writer::tests::assert_moved_to_global(
+            &report,
+            regenerated.ir(),
+            parameter,
+            name,
+            expression,
+        );
+    }
     let native = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(native.properties["Faces"], face_id.as_str());
     assert_eq!(native.properties["MergeEntities"], "true");

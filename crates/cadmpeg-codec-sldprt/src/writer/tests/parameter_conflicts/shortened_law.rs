@@ -3,7 +3,8 @@ use super::*;
 use cadmpeg_ir::features::edge_treatments::RadiusSpec;
 
 #[test]
-fn shortening_a_variable_fillet_omits_unused_removed_samples_without_resurrecting_them() {
+fn shortening_a_variable_fillet_moves_unused_removed_samples_to_the_global_owner_without_resurrecting_them(
+) {
     use cadmpeg_ir::features::edge_treatments::{VariableRadii, VariableRadius};
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(0x42, "Contents/Keywords", br#"<Keywords><Fillet Name="Blend" Type="Fillet" id="61" Edges="edge:1"><Dimension Name="Position0">0</Dimension><Dimension Name="Radius0">2mm</Dimension><Dimension Name="Position1">0.5</Dimension><Dimension Name="Radius1">4mm</Dimension><Dimension Name="Position2">1</Dimension><Dimension Name="Radius2">3mm</Dimension></Fillet><Feature Name="Peer" Type="EquationDriven" id="62"><Dimension Name="Independent">7</Dimension></Feature></Keywords>"#));
@@ -12,7 +13,7 @@ fn shortening_a_variable_fillet_omits_unused_removed_samples_without_resurrectin
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let owner = decoded.ir().model.features[0].id.clone();
-    let omitted = decoded
+    let moved = decoded
         .ir()
         .model
         .parameters
@@ -24,9 +25,15 @@ fn shortening_a_variable_fillet_omits_unused_removed_samples_without_resurrectin
                     "Position1" | "Radius1" | "Position2" | "Radius2"
                 )
         })
-        .map(|parameter| parameter.id.to_string())
+        .map(|parameter| {
+            (
+                parameter.id.to_string(),
+                parameter.name.clone(),
+                parameter.expression.clone(),
+            )
+        })
         .collect::<Vec<_>>();
-    assert_eq!(omitted.len(), 4);
+    assert_eq!(moved.len(), 4);
     decoded.ir_mut().model.features[0]
         .evaluation
         .edit(|definition, _| {
@@ -58,25 +65,26 @@ fn shortening_a_variable_fillet_omits_unused_removed_samples_without_resurrectin
                 TargetRequest::Inherit,
             )
             .unwrap();
-        for parameter in &omitted {
-            assert_omission(plan.report(), parameter);
-        }
+        assert_regenerated(plan.report());
         assert_eq!(
             plan.report()
                 .losses
                 .iter()
                 .filter(
-                    |loss| loss.code == SldprtLossCode::WriterEntityOmitted.kind()
+                    |loss| loss.code == SldprtLossCode::WriterParameterMovedToGlobal.kind()
                         && loss.message.starts_with("parameter ")
                 )
                 .count(),
             4
         );
         let mut bytes = Vec::new();
-        plan.write_to(&mut bytes).unwrap();
+        let report = plan.write_to(&mut bytes).unwrap();
         let written = SldprtCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
+        for (parameter, name, expression) in &moved {
+            assert_moved_to_global(&report, written.ir(), parameter, name, expression);
+        }
         let native = sldprt_native(written.ir());
         let fillet = native
             .feature_histories

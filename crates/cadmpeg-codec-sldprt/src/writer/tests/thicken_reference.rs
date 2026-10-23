@@ -243,6 +243,7 @@ fn semantic_writer_round_trips_positional_thicken_dimension() {
 
 #[test]
 fn semantic_writer_round_trips_typed_scale() {
+    use cadmpeg_ir::codec::write::Encoder;
     use cadmpeg_ir::features::{
         BodySelection, FeatureDefinition, FeatureOperation, ScaleCenter, ScaleFactors,
     };
@@ -293,6 +294,27 @@ fn semantic_writer_round_trips_typed_scale() {
         }) if reference == "csys:4"
     ));
 
+    let moved = {
+        let owner = &decoded.ir().model.features[0].id;
+        decoded
+            .ir()
+            .model
+            .parameters
+            .iter()
+            .filter(|parameter| {
+                parameter.owner.as_ref() == Some(owner)
+                    && ["Factor"].contains(&parameter.name.as_str())
+            })
+            .map(|parameter| {
+                (
+                    parameter.id.to_string(),
+                    parameter.name.clone(),
+                    parameter.expression.clone(),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(moved.len(), 1);
     {
         let mut ir_edit = decoded.ir_mut();
         ir_edit.model.features[0].evaluation.edit(|definition, _| {
@@ -319,15 +341,29 @@ fn semantic_writer_round_trips_typed_scale() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_edited_history(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut encoded,
-    )
-    .unwrap();
+    let report = SldprtCodec
+        .plan(
+            cadmpeg_ir::codec::write::EncodeInput::new(
+                decoded.ir(),
+                Some(decoded.source_fidelity()),
+            ),
+            cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+        )
+        .unwrap()
+        .write_to(&mut encoded)
+        .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
+    for (parameter, name, expression) in &moved {
+        crate::writer::tests::assert_moved_to_global(
+            &report,
+            regenerated.ir(),
+            parameter,
+            name,
+            expression,
+        );
+    }
     let feature = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(feature.properties["Bodies"], "body:2,body:3");
     assert_eq!(feature.properties["Center"], "4mm,5mm,6mm");
