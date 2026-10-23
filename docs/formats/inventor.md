@@ -304,6 +304,8 @@ Records whose body starts with a state value store no stamps: planar sketches, s
 
 Type `114d8790d011f8d10008cabc0663dc09` is a planar sketch. The content header is followed by `state:i32`, `count_value:u32`, a type-8 entity-reference array, transform and direction references, and two u32 values. A trailing type-2 reference list is optional. The entity-reference array contains geometric entities, constraints, and helper records.
 
+PmDc references store a one-based record index in bits 0 through 30 and a qualifier in bit 31. The qualifier does not change the selected record. A zero index is null.
+
 A type-8 reference array starts with u16 values `8, 0x3000` and a u32 count. A nonempty array then stores two u16 metadata values and the counted PmDc references. A type-2 reference list starts with u16 values `2, 0x3000` and a u32 count. A nonempty list then stores two u32 metadata values and the counted references.
 
 Planar sketch entities add `entity_flags:u32` and `sketch_reference:u32` after the content header. The sketch reference identifies the owning planar sketch.
@@ -376,6 +378,8 @@ Type `f1b2bc24d01121dd0008d0bc0663dc09` stores a face collection. After the cont
 
 Type `ccb59f50d1114f6b0008a1ba32a3dc09` stores a face item. After the content header it stores a nonempty type-2 `u32` index-reference list and `terminal_value:i32 = -1`, then ends. The index values are native topology selectors, not one-based PmDc record references.
 
+Type `7a25f2efd11105af000847b00524dc09` stores a selection list. After the content header it stores one type-2 reference list and ends. Each non-null member selects a record in the same PmDc segment.
+
 Type `dfd51dbbd1116e72000817bd0663dc09` adds a counted UTF-16LE name and three u32 values: the name value, nominal value, and model value. Type `474d8790d011f8d10008cabc0663dc09` adds one body reference. Type `3b2477a4d1118f96000826bd0663dc09` adds an entity-link reference and one u8 value. Type `2c9256724d4d6d709427fd964d84df16` adds transform, point, and value references.
 
 Before segment major version 28, a feature label record with type `2ba4482bd2115864600074b79b49ebb0` starts with this 26-byte linked-element header:
@@ -446,6 +450,8 @@ An equal-distance edge chamfer uses slot 0 for its edge collection, slot 2 for i
 A hole uses slots 0 through 6 for hole form, diameter, depth, entry diameter, entry depth, entry angle, and drill-point angle. Slots 8, 9, 16, 17, 21, and 24 identify its transform, extent, a direction, a Boolean, a placement, and the result object collection. Hole-form values 0, 1, 2, and 3 mean drilled, countersink, counterbore, and spotface. The placement transform translation uses internal centimetres. The direction record supplies the drilling direction. The placement record repeats the transform reference and retains its point and value references.
 
 Feature-label class `0619aa28d411c77a6000c4a4cae1fbb0` identifies a Thread annotation on selected cylindrical faces. Its generic feature record has nine property slots. Slot 0 is the face collection; it contains at least one face item. Slots 1, 2, and 6 are Boolean properties. Slots 3 and 4 are numeric parameter references. Slot 5 is an edge collection, and slot 8 is the feature-dimension collection. Slot 7 is a native property reference. A Thread annotation has no result object collection.
+
+Feature-label class identifier `12963cb8d1118a2860008bb801f31bb0` identifies a Shell operation. Slot 1 identifies the removed-face collection. An empty collection removes no face. Collection members are non-null and distinct by record index. Slot 2 identifies a selection list. Slot 3 identifies the wall-thickness length parameter, with units as defined in section 11. Slot 4 stores a reference. Slot 9 identifies the result object collection, whose members identify the output bodies.
 
 A result object collection contains one or more surface-body references. This ordered surface-body list is the feature's native result-body identity.
 

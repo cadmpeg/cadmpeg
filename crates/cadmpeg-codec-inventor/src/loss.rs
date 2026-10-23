@@ -65,6 +65,8 @@ pub(crate) enum InventorLossCode {
     FeatureOperationGraphOpen,
     /// Thread annotations retain sizing and termination operands only natively.
     FeatureThreadDefinitionPartial,
+    /// Shell operations retain construction controls only natively.
+    FeatureShellDefinitionPartial,
     /// Inventor operations retain unresolved suppression and dependency state.
     FeatureStateUnresolved,
     /// Parameter records have a unit or expression graph that is not closed.
@@ -141,6 +143,7 @@ impl InventorLossCode {
         Self::FeatureLabelNameReplaced,
         Self::FeatureOperationGraphOpen,
         Self::FeatureThreadDefinitionPartial,
+        Self::FeatureShellDefinitionPartial,
         Self::FeatureStateUnresolved,
         Self::ParameterGraphOpen,
         Self::ParameterExpressionBounded,
@@ -192,6 +195,7 @@ impl InventorLossCode {
             Self::FeatureLabelNameReplaced => "feature.label-name-replaced",
             Self::FeatureOperationGraphOpen => "feature.operation-graph-open",
             Self::FeatureThreadDefinitionPartial => "feature.thread-definition-partial",
+            Self::FeatureShellDefinitionPartial => "feature.shell-definition-partial",
             Self::FeatureStateUnresolved => "feature.state-unresolved",
             Self::ParameterGraphOpen => "parameter.graph-open",
             Self::ParameterExpressionBounded => "parameter.expression-bounded",
@@ -257,6 +261,7 @@ impl InventorLossCode {
             Self::KernelHeaderToleranceUnresolved => LossTaxonomy::GeometryNotTransferred,
             Self::FeatureOperationGraphOpen
             | Self::FeatureThreadDefinitionPartial
+            | Self::FeatureShellDefinitionPartial
             | Self::FeatureProfileBodyUndecoded
             | Self::SketchConstructionUnresolved
             | Self::FeatureStateUnresolved
@@ -337,6 +342,7 @@ mod tests {
                 "feature.label-name-replaced",
                 "feature.operation-graph-open",
                 "feature.thread-definition-partial",
+                "feature.shell-definition-partial",
                 "feature.state-unresolved",
                 "parameter.graph-open",
                 "parameter.expression-bounded",

@@ -54,6 +54,9 @@ const PART_OPERATION_TYPE: [u8; 16] = [
 const BOUNDARY_PATCH_TYPE: [u8; 16] = [
     0x91, 0x73, 0x94, 0x22, 0xd1, 0x11, 0x07, 0xcf, 0x00, 0x08, 0x35, 0xbd, 0x06, 0x63, 0xdc, 0x09,
 ];
+const SELECTION_LIST_TYPE: [u8; 16] = [
+    0x7a, 0x25, 0xf2, 0xef, 0xd1, 0x11, 0x05, 0xaf, 0x00, 0x08, 0x47, 0xb0, 0x05, 0x24, 0xdc, 0x09,
+];
 const EXTENT_TYPE: [u8; 16] = [
     0x29, 0x7d, 0x63, 0x92, 0xd1, 0x11, 0x3c, 0xb9, 0x00, 0x08, 0x31, 0xbd, 0x06, 0x63, 0xdc, 0x09,
 ];
@@ -272,6 +275,7 @@ pub(crate) struct PmDcPatternFeaturePayload {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum PmDcFeatureReferenceFamily {
     BoundaryPatch,
+    SelectionList,
     FeatureDimensions,
     ObjectCollection,
     FilletEdgeSets,
@@ -815,6 +819,7 @@ fn feature_property_parser(type_id: [u8; 16]) -> Option<PropertyParser> {
         AUXILIARY_ENUM_TYPE => Some(parse_auxiliary_enum),
         BOOLEAN_TYPE => Some(parse_boolean),
         BOUNDARY_PATCH_TYPE => Some(parse_boundary_patch),
+        SELECTION_LIST_TYPE => Some(parse_selection_list),
         FEATURE_DIMENSIONS_TYPE => Some(parse_feature_dimensions),
         OBJECT_COLLECTION_TYPE => Some(parse_object_collection),
         FILLET_EDGE_SETS_TYPE => Some(parse_fillet_edge_sets),
@@ -983,6 +988,7 @@ macro_rules! reference_parser {
 }
 
 reference_parser!(parse_boundary_patch, BoundaryPatch);
+reference_parser!(parse_selection_list, SelectionList);
 reference_parser!(parse_feature_dimensions, FeatureDimensions);
 reference_parser!(parse_object_collection, ObjectCollection);
 reference_parser!(parse_fillet_edge_sets, FilletEdgeSets);
@@ -1337,6 +1343,9 @@ const HOLE_CLASS_ID: ClassId = ClassId(NativeBytes::new([
 pub(crate) const THREAD_CLASS_ID: ClassId = ClassId(NativeBytes::new([
     0x06, 0x19, 0xaa, 0x28, 0xd4, 0x11, 0xc7, 0x7a, 0x60, 0x00, 0xc4, 0xa4, 0xca, 0xe1, 0xfb, 0xb0,
 ]));
+const SHELL_CLASS_ID: ClassId = ClassId(NativeBytes::new([
+    0x12, 0x96, 0x3c, 0xb8, 0xd1, 0x11, 0x8a, 0x28, 0x60, 0x00, 0x8b, 0xb8, 0x01, 0xf3, 0x1b, 0xb0,
+]));
 
 /// Native family names of feature-label classes outside the neutral families.
 const NATIVE_CLASSES: &[([u8; 16], &str)] = &[
@@ -1353,13 +1362,6 @@ const NATIVE_CLASSES: &[([u8; 16], &str)] = &[
             0xfb, 0xb0,
         ],
         "Thread",
-    ),
-    (
-        [
-            0x12, 0x96, 0x3c, 0xb8, 0xd1, 0x11, 0x8a, 0x28, 0x60, 0x00, 0x8b, 0xb8, 0x01, 0xf3,
-            0x1b, 0xb0,
-        ],
-        "Shell",
     ),
     (
         [
@@ -1544,6 +1546,7 @@ pub(crate) enum FeatureFamily {
     Fillet,
     Chamfer,
     Hole,
+    Shell,
 }
 
 impl FeatureFamily {
@@ -1553,6 +1556,7 @@ impl FeatureFamily {
             Self::Fillet => FILLET_CLASS_ID,
             Self::Chamfer => CHAMFER_CLASS_ID,
             Self::Hole => HOLE_CLASS_ID,
+            Self::Shell => SHELL_CLASS_ID,
         }
     }
 
@@ -1562,13 +1566,20 @@ impl FeatureFamily {
             Self::Fillet => 15,
             Self::Chamfer => 11,
             Self::Hole => 24,
+            Self::Shell => 9,
         }
     }
 
     fn from_class_id(class_id: ClassId) -> Option<Self> {
-        [Self::Extrusion, Self::Fillet, Self::Chamfer, Self::Hole]
-            .into_iter()
-            .find(|family| family.class_id() == class_id)
+        [
+            Self::Extrusion,
+            Self::Fillet,
+            Self::Chamfer,
+            Self::Hole,
+            Self::Shell,
+        ]
+        .into_iter()
+        .find(|family| family.class_id() == class_id)
     }
 
     pub(crate) fn from_definition(definition: &FeatureDefinition) -> Option<Self> {
@@ -1577,6 +1588,7 @@ impl FeatureFamily {
             FeatureDefinition::Operation(FeatureOperation::Fillet { .. }) => Some(Self::Fillet),
             FeatureDefinition::Operation(FeatureOperation::Chamfer { .. }) => Some(Self::Chamfer),
             FeatureDefinition::Operation(FeatureOperation::Hole { .. }) => Some(Self::Hole),
+            FeatureDefinition::Operation(FeatureOperation::Shell { .. }) => Some(Self::Shell),
             _ => None,
         }
     }
@@ -1788,6 +1800,7 @@ pub(crate) fn project(
                 FeatureFamily::Fillet => project_fillet(ctx, feature, label, &index),
                 FeatureFamily::Chamfer => project_chamfer(ctx, feature, label, &index),
                 FeatureFamily::Hole => project_hole(ctx, feature, label, &index),
+                FeatureFamily::Shell => project_shell(ctx, feature, label, &index),
             }
             .map(|result| result.map(|(feature, result)| (feature, Some(result))))
             .transpose()?,
@@ -2103,6 +2116,7 @@ fn native_kind(class_id: Option<ClassId>) -> cadmpeg_ir::features::NativeFeature
             FeatureFamily::Fillet => NativeFeatureKind::Fillet,
             FeatureFamily::Chamfer => NativeFeatureKind::Chamfer,
             FeatureFamily::Hole => NativeFeatureKind::Other("Hole".into()),
+            FeatureFamily::Shell => NativeFeatureKind::Other("Shell".into()),
         };
     }
     NATIVE_CLASSES
@@ -2648,6 +2662,80 @@ fn project_chamfer(
                         spec: ChamferSpec::Distance { distance },
                     }),
                     flip_direction,
+                }),
+            ),
+            native_ref: Some(source.id()),
+        },
+        result,
+    )))
+}
+
+/// Project the ten-slot Shell branch with an empty selection list in slot 2 and null slot 4.
+/// Require distinct non-null removed faces, a positive length, and a resolved body result.
+fn project_shell(
+    ctx: &DecodeContext<'_>,
+    source: &PmDcFeature,
+    label: &PmDcFeatureLabel,
+    index: &ProjectionIndex<'_>,
+) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
+    let slots = source.properties.references();
+    if slots.len() != 10 || slots.get(4)?.index() != 0 {
+        return None;
+    }
+    let faces = slot_property(source, 1, index)?;
+    let PmDcFeaturePropertyKind::References {
+        family: PmDcFeatureReferenceFamily::FaceCollection,
+        items,
+    } = &faces.kind
+    else {
+        return None;
+    };
+    let mut distinct = HashSet::new();
+    if !items
+        .references()
+        .iter()
+        .all(|reference| reference.index() != 0 && distinct.insert(reference.index()))
+        || !references(source, 2, PmDcFeatureReferenceFamily::SelectionList, index)?
+            .references()
+            .is_empty()
+    {
+        return None;
+    }
+    let thickness =
+        cadmpeg_ir::scalar::PositiveLength::try_from(length_parameter(source, 3, index)?).ok()?;
+    let removed_faces = if items.references().is_empty() {
+        cadmpeg_ir::features::FaceSelection::Faces(Vec::new())
+    } else {
+        cadmpeg_ir::features::FaceSelection::Native(faces.id())
+    };
+    let (feature_id, result) = match feature_result(ctx, source, 9, index)? {
+        Ok(value) => value,
+        Err(error) => return Some(Err(error)),
+    };
+    if let Err(error) = ctx.charge_entities(1, "project Inventor feature") {
+        return Some(Err(error));
+    }
+    Some(Ok((
+        Feature {
+            id: feature_id,
+            ordinal: u64::from(label.index),
+            name: label.name().map(str::to_owned),
+            suppressed: None,
+            dependencies: DistinctMembers::default(),
+            source_properties: BTreeMap::new(),
+            source_tag: Some("shell".into()),
+            source_text: None,
+            source_content: FeatureContent::default(),
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Operation(FeatureOperation::Shell {
+                    bodies: None,
+                    removed_faces,
+                    thickness: Some(thickness),
+                    outward: None,
+                    mode: None,
+                    join: None,
+                    resolve_intersections: None,
+                    allow_self_intersections: None,
                 }),
             ),
             native_ref: Some(source.id()),
@@ -4809,5 +4897,6 @@ mod tests {
     }
 
     mod extents;
+    mod shell;
     mod thread;
 }

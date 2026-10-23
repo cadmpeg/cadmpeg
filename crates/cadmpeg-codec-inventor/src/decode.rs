@@ -776,6 +776,24 @@ fn decode_container<'a>(
                 "Transferred {partial_threads} Inventor thread annotation(s) with native face selections; sizing, handedness, and termination operands remain native."
             )));
         }
+        let partial_shells = ir
+            .model
+            .features
+            .iter()
+            .filter(|feature| {
+                matches!(
+                    feature.evaluation.definition(),
+                    cadmpeg_ir::features::FeatureDefinition::Operation(
+                        cadmpeg_ir::features::FeatureOperation::Shell { .. }
+                    )
+                )
+            })
+            .count();
+        if partial_shells != 0 {
+            losses.push(InventorLossCode::FeatureShellDefinitionPartial.note(format!(
+                "Transferred {partial_shells} Inventor shell operation(s) with wall thickness and removed-face selections; construction controls remain native."
+            )));
+        }
         if unresolved.profile_bodies != 0 {
             losses.push(InventorLossCode::FeatureProfileBodyUndecoded.note(format!(
                 "{} PmDc profile body record(s) did not decode; extrusions whose profiles select them keep their native profile selection.",
