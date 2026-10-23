@@ -100,6 +100,24 @@ Each file has one cache-cell stride `S`; every `L` is an integer multiple (`L = 
 
 A valid cache cell satisfies `two_L == 2L`, `half_L == L//2`, `0 < name_len < 500`, and has a printable nibble-swapped name.
 
+The outer-header end or the exact end of a preceding validated block anchors
+a cache-cell run. Each following cell starts at the preceding cell's end.
+For an independently anchored `cell_start`, the complete ranges are:
+
+```
+marker_offset = cell_start + N
+name_end      = marker_offset + 26 + name_len
+cell_end      = cell_start + S
+prefix        = bytes[cell_start .. marker_offset]
+trailing      = bytes[name_end .. cell_end]
+```
+
+The marker displacement equals `L/S`; the complete header and name fit within
+the cell. Cell ranges do not overlap each other or validated block ranges.
+The prefix and trailing ranges are opaque retained bytes. A retained cell
+preserves both ranges byte for byte. Bytes between the last complete cell and
+the following block are outside that cell.
+
 ### 1.3 Tail section directory
 
 The file tail carries an **OPC package section directory**: a per-section index, not checksum blobs. Fixed-shape frames, each naming one OPC part:

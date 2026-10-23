@@ -88,19 +88,19 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### CM-01. Cache-cell prefix
 
-**Question.** What index-state information does the cache-cell prefix encode?
+**Question.** Which producer rule generates a new cache cell's opaque prefix values when no source bytes are available?
 
-**Known.** `sldprt.md` §1.2 "The bytes before the first valid block and the long inter-block gaps hold a **fixed-cell" through `sldprt.md` §1.2 "A valid cache cell satisfies `two_L == 2L`, `half_L == L//2`, `0 < name_len < 500`, and has a" define the cache-cell grid, cell size, and section-index interpretation.
+**Known.** The prefix occupies the `N=L/S` bytes between an independently anchored cell start and its marker. Equal section names, displacements, complete fixed headers, and unique target blocks do not determine equal prefix values. Retained cells preserve these bytes without assigning a producer meaning.
 
-**Need.** We must know the prefix semantics to validate and write a cache cell.
+**Need.** A producer-side relation must establish a regeneration rule before a source-less writer can synthesize this field.
 
 ### CM-02. Cache-cell fill
 
-**Question.** What index-state information does the cache-cell fill encode?
+**Question.** Which producer rule generates a new cache cell's opaque trailing values when no source bytes are available?
 
-**Known.** `sldprt.md` §1.2 "The bytes before the first valid block and the long inter-block gaps hold a **fixed-cell" through `sldprt.md` §1.2 "A valid cache cell satisfies `two_L == 2L`, `half_L == L//2`, `0 < name_len < 500`, and has a" define how nonzero cache-cell section indices address blocks.
+**Known.** The trailing field extends from the encoded name's end to `cell_start+S`. Equal section names, displacements, complete fixed headers, and unique target blocks do not determine equal trailing values. Zero and `ff` are opaque byte values, not structural rejection conditions. Retained cells preserve the complete range.
 
-**Need.** We must know the fill semantics to validate and write the grid.
+**Need.** A producer-side relation must establish a regeneration rule before a source-less writer can synthesize this field.
 
 ### CM-03. Cache-cell `type_id` high half
 
