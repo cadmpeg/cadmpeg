@@ -68,6 +68,7 @@ macro_rules! required {
     };
 }
 
+#[derive(Clone, Copy)]
 pub(crate) struct DesignObjects<'a> {
     pub(crate) objects: &'a [ObjectRecord],
     pub(crate) extensions: &'a [crate::native::ExtensionRecord],
@@ -1663,9 +1664,7 @@ fn external_link_indices(
                     .get("shadowed")
                     .or_else(|| value.attributes.get("shadow"))
             });
-            let selector = shadow
-                .map(String::as_str)
-                .unwrap_or(&reference.subelements()[0]);
+            let selector = shadow.map_or(reference.subelements()[0].as_str(), String::as_str);
             let mapped = match selector.rsplit_once('.') {
                 Some((path, _))
                     if path
