@@ -68,7 +68,9 @@ fn cancellation_into_existing_identity_still_charges_input_term_scan() {
             locations.admit(ctx, tables, datum, inverse),
             Err(LocationIdentityError::Bounded)
         ));
-        assert!(!locations.products.contains_key(&(datum.identity, inverse.identity)));
+        assert!(!locations
+            .products
+            .contains_key(&(datum.identity, inverse.identity)));
         locations.work = WorkBudget::new(4);
         let canceled = locations.admit(ctx, tables, datum, inverse).unwrap();
         assert_eq!(canceled.identity, 0);
