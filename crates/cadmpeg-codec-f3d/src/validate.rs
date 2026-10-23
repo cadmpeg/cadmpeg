@@ -94,16 +94,17 @@ fn rigid_alignment_scalars_hold(
         || (alignment.angle() == 0.0 && alignment.offset() == [0.0; 3])
 }
 
-/// A rigid group keeps one member after its first two for each locator its
-/// frame stores, each taking the locator reference that follows the previous
-/// one, with the frame its wide locator carries. No other scope has further
+/// A rigid group whose operands were read keeps one member after its first
+/// two for each locator its frame stores, each taking the locator reference
+/// that follows the previous one, with the frame its wide locator carries. A
+/// group whose operands were not read, and every other scope, has no further
 /// members.
 fn rigid_group_members_link(
     scope: &records::feature::scope::DesignParameterScope,
     alignment: &records::feature::assembly::DesignAssemblyAlignment,
     rigid_as_built: bool,
 ) -> bool {
-    if rigid_as_built {
+    if rigid_as_built && alignment.form.is_some() {
         design::assembly::rigid_group_member_count(scope.frame_length())
             == alignment.additional_members.len().checked_add(2)
             && alignment.additional_members.iter().enumerate().all(

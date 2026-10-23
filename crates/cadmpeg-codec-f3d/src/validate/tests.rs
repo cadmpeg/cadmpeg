@@ -1944,11 +1944,14 @@ fn rigid_alignment_without_owners_requires_zero_scalars() {
     assert!(super::rigid_alignment_scalars_hold(&turned, false));
 }
 
-/// A rigid group's frame fixes its member count, so a frame of more than two
-/// members needs the members after the first two.
+/// A rigid group's frame fixes its member count, so a group whose operands
+/// were read needs the members after its first two. A group whose operands
+/// were not read has no members to keep.
 #[test]
 fn rigid_group_frame_requires_its_further_members() {
-    use crate::records::feature::assembly::DesignAssemblyAlignment;
+    use crate::records::feature::assembly::{
+        DesignAssemblyAlignment, DesignAssemblyAlignmentForm, DesignAssemblyOperandFrame,
+    };
     use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
     let scope = |frame_length: u64| {
         let mut scope = DesignParameterScope::empty(
@@ -1963,20 +1966,25 @@ fn rigid_group_frame_requires_its_further_members() {
             .unwrap();
         scope
     };
-    let alignment = DesignAssemblyAlignment::try_new(0.0, [0.0; 3], Vec::new(), None).unwrap();
-    assert!(super::rigid_group_members_link(
-        &scope(269),
-        &alignment,
-        true
-    ));
-    assert!(!super::rigid_group_members_link(
-        &scope(280),
-        &alignment,
-        true
-    ));
-    assert!(super::rigid_group_members_link(
-        &scope(280),
-        &alignment,
-        false
-    ));
+    let frames = [10, 20].map(|index| DesignAssemblyOperandFrame {
+        reference_record_index: index,
+        reference_offset: 0,
+        transform: cadmpeg_ir::transform::Transform::identity()
+            .rows()
+            .try_into()
+            .unwrap(),
+        transform_offset: 0,
+    });
+    let read = DesignAssemblyAlignment::try_new(
+        0.0,
+        [0.0; 3],
+        Vec::new(),
+        Some(DesignAssemblyAlignmentForm::Frames { frames }),
+    )
+    .unwrap();
+    let unread = DesignAssemblyAlignment::try_new(0.0, [0.0; 3], Vec::new(), None).unwrap();
+    assert!(super::rigid_group_members_link(&scope(269), &read, true));
+    assert!(!super::rigid_group_members_link(&scope(280), &read, true));
+    assert!(super::rigid_group_members_link(&scope(280), &unread, true));
+    assert!(super::rigid_group_members_link(&scope(280), &read, false));
 }
