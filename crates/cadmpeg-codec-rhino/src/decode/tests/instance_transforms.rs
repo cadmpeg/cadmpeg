@@ -61,3 +61,95 @@ fn plane_surface_keeps_its_parameterization_under_a_reflection() {
         );
     }
 }
+
+fn curve_id(name: &str) -> cadmpeg_ir::ids::CurveId {
+    cadmpeg_ir::ids::CurveId::try_from(format!("rhino:test:curve#{name}")).expect("curve id")
+}
+
+/// A sum surface `b + c0(u) + c1(v)` under `x -> Lx + t` keeps its curves'
+/// images `L c + t`, so its base point becomes `L b - t`.
+#[test]
+fn sum_surface_construction_places_its_base_point_under_an_affine_map() {
+    use cadmpeg_ir::geometry::surface_payloads::SumSurfaceConstruction;
+    use cadmpeg_ir::geometry::{CacheContract, ProceduralSurfaceDefinition};
+    let mut definition = ProceduralSurfaceDefinition::Sum(
+        SumSurfaceConstruction::try_new(
+            curve_id("first"),
+            curve_id("second"),
+            Vector3::new(1.0, 2.0, 3.0),
+            CacheContract::from_form(None),
+        )
+        .expect("sum construction"),
+    );
+    let transform = Transform::affine([
+        [0.0, -1.0, 0.0, 10.0],
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 0.0, 2.0, 0.0],
+    ])
+    .expect("affine map");
+    assert!(
+        super::super::place_surface_construction(&mut definition, transform)
+            .unwrap_or_else(|_| panic!("sum placement"))
+    );
+    let ProceduralSurfaceDefinition::Sum(sum) = definition else {
+        panic!("sum construction");
+    };
+    assert_eq!(sum.basepoint().get(), Vector3::new(-12.0, 1.0, 6.0));
+}
+
+/// `ON_RevSurface::Transform` reverses the axis under a reflection, and a
+/// non-similar map has no revolution image.
+#[test]
+fn revolution_construction_follows_a_similarity_and_reverses_under_reflection() {
+    use cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction;
+    use cadmpeg_ir::geometry::{CacheContract, ProceduralSurfaceDefinition};
+    let revolution = || {
+        ProceduralSurfaceDefinition::Revolution(
+            RevolutionSurfaceConstruction::try_new(
+                curve_id("profile"),
+                (
+                    cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                        .expect("origin"),
+                    cadmpeg_ir::units::UnitVector3::new(Vector3::new(0.0, 0.0, 1.0)).expect("axis"),
+                ),
+                [0.0, std::f64::consts::PI],
+                None,
+                Some([0.0, 1.0]),
+                false,
+                CacheContract::from_form(None),
+            )
+            .expect("revolution construction"),
+        )
+    };
+    let reflection = Transform::affine([
+        [1.0, 0.0, 0.0, 5.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+    ])
+    .expect("reflection");
+    let mut definition = revolution();
+    assert!(
+        super::super::place_surface_construction(&mut definition, reflection)
+            .unwrap_or_else(|_| panic!("revolution placement"))
+    );
+    let ProceduralSurfaceDefinition::Revolution(placed) = &definition else {
+        panic!("revolution construction");
+    };
+    assert_eq!(placed.axis_origin().get(), Point3::new(5.0, 0.0, 0.0));
+    assert_eq!(
+        *placed.axis_direction().as_raw(),
+        Vector3::new(0.0, -1.0, 0.0)
+    );
+
+    let stretch = Transform::affine([
+        [2.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ])
+    .expect("stretch");
+    let mut definition = revolution();
+    assert!(
+        !super::super::place_surface_construction(&mut definition, stretch)
+            .unwrap_or_else(|_| panic!("revolution placement"))
+    );
+}
