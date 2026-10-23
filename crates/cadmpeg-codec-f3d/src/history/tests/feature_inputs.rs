@@ -336,3 +336,64 @@ fn input_edge_geometry_keeps_only_selected_edges() {
     .unwrap();
     assert_eq!(topologies[0].edge_geometry, vec![geometry(&selected)]);
 }
+
+#[test]
+fn input_edge_geometry_keeps_the_edges_that_bound_a_selected_face() {
+    use cadmpeg_ir::features::{FinitePoint3, HistoricalEdgeGeometry};
+    use cadmpeg_ir::math::Point3;
+
+    let (mut feature, _, _) = input_fixture();
+    let prefix = crate::ids::feature_input_prefix(&feature.id, 4);
+    let removed = crate::ids::history_input_face_id(&prefix, 10);
+    feature.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        FeatureDefinition::Operation(FeatureOperation::Shell {
+            bodies: None,
+            removed_faces: cadmpeg_ir::features::FaceSelection::historical(
+                crate::ids::history_input_state_id(&prefix),
+                vec![removed.clone()],
+                "f3d:test:shell-faces".to_owned(),
+            )
+            .unwrap(),
+            thickness: None,
+            outward: None,
+            mode: None,
+            join: None,
+            resolve_intersections: None,
+            allow_self_intersections: None,
+        }),
+    );
+    let geometry = |edge: i64, faces: [i64; 2]| HistoricalEdgeGeometry {
+        edge: crate::ids::history_input_edge_id(&prefix, edge),
+        interior: FinitePoint3::new(Point3::new(0.0, 0.0, 5.0)).unwrap(),
+        tangent: None,
+        start: None,
+        end: None,
+        faces: cadmpeg_ir::features::DistinctMembers::try_from(
+            faces
+                .map(|face| crate::ids::history_input_face_id(&prefix, face))
+                .to_vec(),
+        )
+        .unwrap(),
+    };
+    let mut topologies = vec![cadmpeg_ir::features::FeatureInputTopology {
+        id: crate::ids::history_input_state_id(&prefix),
+        input_of: feature.id.clone(),
+        bodies: Default::default(),
+        faces: Default::default(),
+        edges: Default::default(),
+        vertices: Default::default(),
+        edge_geometry: vec![geometry(40, [10, 11]), geometry(41, [11, 12])],
+        native_ref: None,
+    }];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    super::super::retain_selected_edge_geometry(
+        &ctx,
+        std::slice::from_ref(&feature),
+        &mut topologies,
+    )
+    .unwrap();
+    assert_eq!(topologies[0].edge_geometry, vec![geometry(40, [10, 11])]);
+}
