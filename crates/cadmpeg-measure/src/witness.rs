@@ -283,7 +283,7 @@ impl<'ir> WitnessInput<'_, 'ir> {
                 .area
                 .measured()
                 .map_or(0.0, |area| area.value().value.get());
-            error += flux.declared.error[0] + area * result.tau_b;
+            error += flux.declared.volume_error() + area * result.tau_b;
             if result.verdict == Verdict::Unconfirmed {
                 if unconfirmed.is_some() {
                     return None;
@@ -297,7 +297,7 @@ impl<'ir> WitnessInput<'_, 'ir> {
         }
         let (face, sigma, flux) = unconfirmed?;
         let complement = flux.complement?;
-        error += complement.error[0];
+        error += complement.volume_error();
         let required = if outer { 1.0 } else { -1.0 };
         let declared = required * (fixed + sigma * flux.declared.volume()) > error;
         let opposite = required * (fixed - sigma * complement.volume()) > error;

@@ -64,7 +64,7 @@ pub use budget::{
     MEASURE_PASS_WORK_FLOOR,
 };
 pub use select::{FaceFilter, RadiusRange, Selection, SurfaceKind};
-pub use session::{MeasureError, MeasureInput, MeasureOptions, Measurer};
+pub use session::{findings, MeasureError, MeasureInput, MeasureOptions, Measurer};
 
 #[cfg(test)]
 mod integration_tests;

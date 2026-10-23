@@ -7,6 +7,7 @@ mod compare;
 mod cones;
 mod cube;
 mod cylinders;
+mod findings;
 mod nurbs;
 mod pcurves;
 mod serialization;

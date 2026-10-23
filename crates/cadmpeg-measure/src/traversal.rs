@@ -36,12 +36,26 @@ const MAX_RING_CHAIN_STEPS: usize = 1 << 16;
 
 /// The traversal of a ring whose coedges run from `ends[i].0` to `ends[i].1`.
 pub(crate) fn traverse<K: PartialEq>(ends: &[(K, K)]) -> Result<Traversal, TraversalError> {
-    traverse_within(ends, MAX_RING_CHAIN_STEPS)
+    let mut steps = 0;
+    traverse_within(ends, MAX_RING_CHAIN_STEPS, &mut steps)
+}
+
+/// The traversal of a ring with a search of at most `steps` steps, and the
+/// work it took: one unit per listed coedge for the continuity test plus
+/// one per search step.
+pub(crate) fn traverse_counted<K: PartialEq>(
+    ends: &[(K, K)],
+    steps: usize,
+) -> (Result<Traversal, TraversalError>, usize) {
+    let mut taken = 0;
+    let result = traverse_within(ends, steps.min(MAX_RING_CHAIN_STEPS), &mut taken);
+    (result, ends.len() + taken)
 }
 
 fn traverse_within<K: PartialEq>(
     ends: &[(K, K)],
     max_steps: usize,
+    steps: &mut usize,
 ) -> Result<Traversal, TraversalError> {
     let count = ends.len();
     if count == 0 {
@@ -59,10 +73,9 @@ fn traverse_within<K: PartialEq>(
     let mut path = vec![0_usize];
     let mut cursors = vec![0_usize];
     let mut found: Vec<Vec<usize>> = Vec::new();
-    let mut steps = 0_usize;
     loop {
-        steps += 1;
-        if steps > max_steps {
+        *steps += 1;
+        if *steps > max_steps {
             return Err(TraversalError::Exhausted);
         }
         let Some(&tip) = path.last() else {
@@ -123,7 +136,7 @@ fn traverse_within<K: PartialEq>(
 
 #[cfg(test)]
 mod tests {
-    use super::{traverse, traverse_within, TraversalError};
+    use super::{traverse, traverse_counted, traverse_within, TraversalError};
     use crate::report::ListedOrder;
 
     #[test]
@@ -201,6 +214,24 @@ mod tests {
     #[test]
     fn the_search_stops_at_its_step_cap() {
         let ends = [("x", "y"), ("x", "y"), ("y", "x"), ("y", "x")];
-        assert_eq!(traverse_within(&ends, 2), Err(TraversalError::Exhausted));
+        let mut steps = 0;
+        assert_eq!(
+            traverse_within(&ends, 2, &mut steps),
+            Err(TraversalError::Exhausted)
+        );
+        assert_eq!(steps, 3);
+    }
+
+    #[test]
+    fn a_counted_traversal_charges_the_listing_and_the_search() {
+        let continuous = [("a", "b"), ("b", "c"), ("c", "a")];
+        assert_eq!(traverse_counted(&continuous, 0).1, 3);
+        let reversed = [("a", "b"), ("d", "a"), ("c", "d"), ("b", "c")];
+        let (result, work) = traverse_counted(&reversed, usize::MAX);
+        assert_eq!(result.unwrap().listed, ListedOrder::Reversed);
+        assert!(work > reversed.len());
+        let (result, work) = traverse_counted(&reversed, 1);
+        assert_eq!(result, Err(TraversalError::Exhausted));
+        assert_eq!(work, reversed.len() + 2);
     }
 }

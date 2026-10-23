@@ -9,7 +9,7 @@ use cadmpeg_ir::topology::BodyKind;
 use super::measure_edge;
 use crate::budget::{PassAllowance, WorkProfile};
 use crate::canonical::placement::Placement;
-use crate::context::Eval;
+use crate::context::{Eval, Work};
 use crate::owners::Owners;
 use crate::reason::UnavailableReason;
 use crate::test_support::{service_context, Builder};
@@ -34,7 +34,8 @@ fn edges(ir: &cadmpeg_ir::CadIr) -> Vec<Measured> {
                 index: &index,
                 work: &slice,
             };
-            let geometry = measure_edge(&eval, &owners, edge, &Ok(Placement::identity())).unwrap();
+            let geometry =
+                measure_edge(&eval, &owners, edge, &Ok(Placement::identity()), Work::Row).unwrap();
             (
                 geometry.interval.clone(),
                 geometry

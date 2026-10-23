@@ -182,7 +182,7 @@ impl<'ir> FaceFrame<'_, 'ir> {
         }
         let ends: Vec<(&str, &str)> = listed_coedges
             .iter()
-            .map(|coedge| self.oriented_ends(coedge))
+            .map(|coedge| self.owners.oriented_ends(coedge))
             .collect();
         let traversal = match traverse(&ends) {
             Ok(traversal) => traversal,
@@ -223,7 +223,7 @@ impl<'ir> FaceFrame<'_, 'ir> {
             let after = coedges
                 .iter()
                 .find(|coedge| coedge.id == vertex_use.after)
-                .map(|coedge| self.oriented_ends(coedge).1);
+                .map(|coedge| self.owners.oriented_ends(coedge).1);
             if after != Some(vertex_use.vertex.as_str()) {
                 return Ok(LoopResolution {
                     face_loop,
@@ -250,17 +250,6 @@ impl<'ir> FaceFrame<'_, 'ir> {
             listed: Some(traversal.listed),
             outcome,
         })
-    }
-
-    /// The vertices a coedge starts and ends at, in traversal direction.
-    fn oriented_ends(&self, coedge: &'ir Coedge) -> (&'ir str, &'ir str) {
-        let Some(edge) = self.owners.edge(coedge.edge.as_str()) else {
-            return (coedge.id.as_str(), coedge.edge.as_str());
-        };
-        match coedge.sense {
-            Sense::Forward => (edge.start.as_str(), edge.end.as_str()),
-            Sense::Reversed => (edge.end.as_str(), edge.start.as_str()),
-        }
     }
 
     /// Whether another coedge of the same edge belongs to this face.
@@ -299,7 +288,7 @@ impl<'ir> FaceFrame<'_, 'ir> {
                     new_pieces
                 }
             };
-            let (start_vertex, end_vertex) = self.oriented_ends(coedge);
+            let (start_vertex, end_vertex) = self.owners.oriented_ends(coedge);
             if let (Some(first), Some(position)) = (
                 new_pieces.first(),
                 self.owners.vertex_position(start_vertex),
@@ -532,7 +521,7 @@ impl<'ir> FaceFrame<'_, 'ir> {
                 "the coedge's edge does not resolve",
             ));
         };
-        let (start_vertex, end_vertex) = self.oriented_ends(coedge);
+        let (start_vertex, end_vertex) = self.owners.oriented_ends(coedge);
         let start = self
             .owners
             .vertex_position(start_vertex)

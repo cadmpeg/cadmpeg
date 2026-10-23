@@ -147,12 +147,22 @@ impl ItemBudget<'_> {
         &self.work
     }
 
+    /// Work units a charge can still use.
+    pub(crate) fn remaining(&self) -> usize {
+        self.work.remaining()
+    }
+
+    /// Whether the slice refused a charge.
+    pub(crate) fn exhausted(&self) -> bool {
+        self.work.exhausted()
+    }
+
     /// Charge `units` of work, or report the item's slice exhausted.
     pub(crate) fn charge(&self, units: usize) -> Measure<()> {
         if self.work.charge_by(units) {
             Ok(())
         } else {
-            Err(self.exhausted())
+            Err(self.exhaustion())
         }
     }
 
@@ -178,7 +188,7 @@ impl ItemBudget<'_> {
         }
     }
 
-    fn exhausted(&self) -> MeasureFailure {
+    fn exhaustion(&self) -> MeasureFailure {
         self.note_exhaustion();
         MeasureFailure::unavailable(
             UnavailableReason::EvaluationWorkExhausted,

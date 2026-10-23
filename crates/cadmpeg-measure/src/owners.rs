@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use cadmpeg_ir::geometry::pcurve::Pcurve;
 use cadmpeg_ir::geometry::{Curve, ProceduralSurface, Surface};
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
+use cadmpeg_ir::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex};
 use cadmpeg_ir::CadIr;
 
 /// Lookups of one document's topology and carriers.
@@ -203,6 +203,17 @@ impl<'ir> Owners<'ir> {
     pub(crate) fn coedge_face(&self, coedge: &Coedge) -> Option<&'ir str> {
         let owner = self.loop_(coedge.owner_loop.as_str())?;
         Some(self.face(owner.face.as_str())?.id.as_str())
+    }
+
+    /// The vertices a coedge starts and ends at, in traversal direction.
+    pub(crate) fn oriented_ends(&self, coedge: &'ir Coedge) -> (&'ir str, &'ir str) {
+        let Some(edge) = self.edge(coedge.edge.as_str()) else {
+            return (coedge.id.as_str(), coedge.edge.as_str());
+        };
+        match coedge.sense {
+            Sense::Forward => (edge.start.as_str(), edge.end.as_str()),
+            Sense::Reversed => (edge.end.as_str(), edge.start.as_str()),
+        }
     }
 
     /// The coedges of an edge.

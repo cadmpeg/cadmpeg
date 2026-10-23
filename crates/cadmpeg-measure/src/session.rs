@@ -2,6 +2,8 @@
 //! One measurement pass over a document: selection, per-item work slices,
 //! rows and document totals.
 
+mod findings;
+
 use std::collections::{BTreeSet, HashMap};
 
 use cadmpeg_core::decode::{DecodeContext, ResourceDimension, ResourceFailure, ResourceLimit};
@@ -16,7 +18,7 @@ use crate::budget::{PassAllowance, WorkProfile};
 use crate::canonical::placement::Placement;
 use crate::canonical::surface::Chart;
 use crate::canonical::Carrier;
-use crate::context::Eval;
+use crate::context::{Eval, Work};
 use crate::edges::{measure_edge, EdgeGeometry};
 use crate::face::{FaceInput, FaceResult, Verdict};
 use crate::failure::{settle, Outcome};
@@ -75,6 +77,32 @@ impl From<ResourceLimit> for MeasureError {
     fn from(limit: ResourceLimit) -> Self {
         Self::Codec(CodecError::ResourceLimit(limit))
     }
+}
+
+/// The `check` findings that measurement exposes in `ir`, as warnings:
+/// face rings whose coedges are not listed in traversal order
+/// ([`Check::RingOrder`](cadmpeg_ir::report::check::Check::RingOrder)),
+/// faces whose sense disagrees with their loop winding, and bodies whose
+/// shells are closed and whose volume readings conflict
+/// ([`Check::Orientation`](cadmpeg_ir::report::check::Check::Orientation)).
+///
+/// The pass computes boundaries, regions, orientation readings, witnesses
+/// and, for bodies whose shells are closed, areas and fluxes, under one
+/// pass allowance of `options.work`. An item whose work slice runs out
+/// gives no finding. A session refusal of `ctx` is the error.
+pub fn findings(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    options: MeasureOptions,
+) -> Result<Vec<cadmpeg_ir::report::check::Finding>, CodecError> {
+    let input = MeasureInput {
+        ir,
+        fidelity: None,
+        geometry_transferred: true,
+    };
+    Measurer::new(input, options)
+        .orientation_findings(ctx)
+        .map_err(CodecError::ResourceLimit)
 }
 
 /// Measures the bodies, faces and edges of one document.
@@ -211,7 +239,7 @@ impl<'ir> Measurer<'ir> {
                 index: &self.index,
                 work: &slice,
             };
-            let geometry = measure_edge(&eval, &self.owners, edge, &placement_of(body))?;
+            let geometry = measure_edge(&eval, &self.owners, edge, &placement_of(body), Work::Row)?;
             edges.insert(edge_id, geometry);
         }
 
@@ -237,6 +265,7 @@ impl<'ir> Measurer<'ir> {
                 work: &slice,
             };
             let input = FaceInput {
+                work: Work::Row,
                 owners: &self.owners,
                 edges: &edges,
                 fidelity: self.input.fidelity,

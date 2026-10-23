@@ -18,9 +18,9 @@ use crate::boundary::pcurve::{Span, UseFrame};
 use crate::canonical::curve::{CurveChart, CurveShape};
 use crate::canonical::placement::Placement;
 use crate::canonical::Carrier;
-use crate::context::Eval;
+use crate::context::{Eval, Work};
 use crate::face::box_value;
-use crate::failure::{settle, Measure, MeasureFailure, Outcome};
+use crate::failure::{settle, Measure, MeasureFailure, Missing, Outcome};
 use crate::geom::{combine, Aabb};
 use crate::length::{curve_length, Length};
 use crate::owners::Owners;
@@ -61,6 +61,7 @@ pub(crate) fn measure_edge<'ir>(
     owners: &Owners<'ir>,
     edge: &'ir Edge,
     body: &Outcome<Placement>,
+    work: Work,
 ) -> Result<EdgeGeometry<'ir>, ResourceLimit> {
     let id = edge.id.as_str();
     let placement = body.clone().unwrap_or(Placement::identity());
@@ -152,7 +153,16 @@ pub(crate) fn measure_edge<'ir>(
     let (length, bbox) = match (&curve, &interval) {
         (Ok(chart), Ok(range)) => (
             settle(curve_length(eval, chart, *range, scale).map_err(|failure| failure.at(id)))?,
-            settle(curve_box(eval, chart, *range).map_err(|failure| failure.at(id)))?,
+            match work {
+                Work::Row => {
+                    settle(curve_box(eval, chart, *range).map_err(|failure| failure.at(id)))?
+                }
+                Work::Orientation => Err(Missing {
+                    reason: UnavailableReason::EvaluationWorkExhausted,
+                    entity: Some(id.to_owned()),
+                    message: "an orientation pass does not compute this quantity".to_owned(),
+                }),
+            },
         ),
         (Err(missing), _) | (_, Err(missing)) => (
             Err(missing.clone()),

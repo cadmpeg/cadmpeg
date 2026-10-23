@@ -29,6 +29,15 @@ pub(crate) const FLUX: usize = 10;
 /// Integrated values and their error estimates.
 const TRACKED: usize = 2 * FLUX;
 
+/// The volume component.
+const VOLUME: usize = 0;
+
+/// The first of the three first-moment components.
+const MOMENTS: usize = 1;
+
+/// The first of the three closure components.
+const CLOSURE: usize = 4;
+
 /// The first area moment component; the components before it change sign
 /// with the oriented normal.
 const AREA_MOMENTS: usize = 7;
@@ -67,20 +76,50 @@ impl Flux {
     }
 
     pub(crate) const fn volume(&self) -> f64 {
-        self.value[0]
+        self.value[VOLUME]
     }
 
     pub(crate) fn moment(&self) -> [f64; 3] {
-        [self.value[1], self.value[2], self.value[3]]
+        std::array::from_fn(|axis| self.value[MOMENTS + axis])
     }
 
     pub(crate) fn closure(&self) -> [f64; 3] {
-        [self.value[4], self.value[5], self.value[6]]
+        std::array::from_fn(|axis| self.value[CLOSURE + axis])
     }
 
     pub(crate) fn area_moment(&self) -> [f64; 3] {
-        [self.value[7], self.value[8], self.value[9]]
+        std::array::from_fn(|axis| self.value[AREA_MOMENTS + axis])
     }
+
+    /// The error estimate of the volume.
+    pub(crate) const fn volume_error(&self) -> f64 {
+        self.error[VOLUME]
+    }
+
+    /// The largest error estimate of the three first moments.
+    pub(crate) fn moment_error(&self) -> f64 {
+        largest(self.triple_error(MOMENTS))
+    }
+
+    /// The summed error estimate of the three closure components.
+    pub(crate) fn closure_error(&self) -> f64 {
+        self.triple_error(CLOSURE).iter().sum()
+    }
+
+    /// The largest error estimate of the three area moments.
+    pub(crate) fn area_moment_error(&self) -> f64 {
+        largest(self.triple_error(AREA_MOMENTS))
+    }
+
+    /// The error estimates of the three components from `first`.
+    fn triple_error(&self, first: usize) -> [f64; 3] {
+        std::array::from_fn(|axis| self.error[first + axis])
+    }
+}
+
+/// The largest of three non-negative estimates.
+fn largest(values: [f64; 3]) -> f64 {
+    values.into_iter().fold(0.0, f64::max)
 }
 
 /// The flux density at one surface point.
@@ -108,12 +147,30 @@ fn scales(scale: f64) -> [f64; TRACKED] {
     std::array::from_fn(|k| scale.powi(powers[k % FLUX]))
 }
 
+/// Every component.
+pub(crate) const ALL_COMPONENTS: [bool; FLUX] = [true; FLUX];
+
+/// The volume and closure components: what orientation findings read.
+pub(crate) const ORIENTATION_COMPONENTS: [bool; FLUX] = {
+    let mut active = [false; FLUX];
+    active[VOLUME] = true;
+    let mut k = CLOSURE;
+    while k < CLOSURE + 3 {
+        active[k] = true;
+        k += 1;
+    }
+    active
+};
+
 /// What one flux integral reads.
 pub(crate) struct FluxFrame<'a, 'ir> {
     pub(crate) chart: &'a Chart<'ir>,
     pub(crate) origin: Point3,
     /// The length the quadrature targets are relative to.
     pub(crate) scale: f64,
+    /// The components whose accuracy the quadrature targets; the others
+    /// ride along on the same panels.
+    pub(crate) active: [bool; FLUX],
 }
 
 fn not_converged() -> MeasureFailure {
@@ -125,6 +182,11 @@ fn not_converged() -> MeasureFailure {
 }
 
 impl FluxFrame<'_, '_> {
+    /// The active mask over values and inner-integral errors.
+    fn tracked(&self) -> [bool; TRACKED] {
+        std::array::from_fn(|k| self.active[k % FLUX])
+    }
+
     fn v_breaks(&self) -> Vec<f64> {
         match self.chart {
             Chart::Nurbs(nurbs) => nurbs.v_breaks(),
@@ -150,7 +212,7 @@ impl FluxFrame<'_, '_> {
             from,
             to,
             &self.v_breaks(),
-            Target::inner(std::array::from_fn(|k| scale[k])),
+            Target::inner(std::array::from_fn(|k| scale[k])).with_active(self.active),
         )?;
         if !integral.converged {
             return Err(not_converged());
@@ -189,7 +251,7 @@ impl FluxFrame<'_, '_> {
                 piece.t0,
                 piece.t1,
                 &LoopCut::breaks(cut.as_ref(), position, piece.breaks()),
-                Target::outer(scales(self.scale)),
+                Target::outer(scales(self.scale)).with_active(self.tracked()),
             )?;
             if !integral.converged {
                 return Err(not_converged());
@@ -254,7 +316,7 @@ impl FluxFrame<'_, '_> {
             u0,
             u1,
             u_breaks,
-            Target::outer(scales(self.scale)),
+            Target::outer(scales(self.scale)).with_active(self.tracked()),
         )?;
         if !integral.converged {
             return Err(not_converged());

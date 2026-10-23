@@ -93,10 +93,7 @@ impl<'a> BodyInput<'a, '_> {
             .collect();
         let volume = (!face_ids.is_empty()).then(|| {
             let placement = body.transform.map(Placement::of);
-            let handedness = match &placement {
-                Some(Ok(placement)) if placement.reflection => -1.0,
-                _ => 1.0,
-            };
+            let handedness = handedness(placement.as_ref());
             let placement_term = |dimension: u8, value: f64| match &placement {
                 Some(Ok(placement)) => placement.model_term(dimension, value),
                 _ => 0.0,
@@ -181,6 +178,46 @@ impl<'a> BodyInput<'a, '_> {
         row.visit(&mut tally);
         row.status = tally.status();
         row
+    }
+
+    /// Why the volume readings of a body whose shells are closed conflict:
+    /// an orientation conflict or a closure flux above its tolerance.
+    /// `None` for a body with no shell, an open shell, or no conflict.
+    pub(crate) fn volume_conflict(&self, body: &Body) -> Option<VolumeConflict> {
+        let shells = self.shells(body);
+        if shells.is_empty() {
+            return None;
+        }
+        let id = body.id.as_str();
+        let placement = body.transform.map(Placement::of);
+        let no_term = |_: u8, _: f64| 0.0;
+        let input = VolumeInput {
+            id,
+            members: self.members(body),
+            shells: shells
+                .iter()
+                .map(|shell| (shell.closed, shell.role == ShellRole::Outer))
+                .collect(),
+            origin: self
+                .origins
+                .get(id)
+                .copied()
+                .unwrap_or(Point3::new(0.0, 0.0, 0.0)),
+            handedness: handedness(placement.as_ref()),
+            area: 0.0,
+            diagonal: 0.0,
+            placement: &no_term,
+        };
+        let failure = input.conflict()?;
+        let mut related = failure.related;
+        if let Some(shell) = failure.shell.and_then(|position| shells.get(position)) {
+            related.push(shell.shell.clone());
+        }
+        Some(VolumeConflict {
+            reason: failure.reason,
+            message: failure.message,
+            related,
+        })
     }
 
     /// The union of the face boxes, else of the edge boxes.
@@ -309,6 +346,22 @@ impl<'a> BodyInput<'a, '_> {
             }
         }
         rows
+    }
+}
+
+/// Why a body's volume readings conflict.
+pub(crate) struct VolumeConflict {
+    pub(crate) reason: crate::reason::UnavailableReason,
+    pub(crate) message: String,
+    /// The faces or the shell the conflict names.
+    pub(crate) related: Vec<String>,
+}
+
+/// `−1` under a reflecting body placement, else `1`.
+fn handedness<E>(placement: Option<&Result<Placement, E>>) -> f64 {
+    match placement {
+        Some(Ok(placement)) if placement.reflection => -1.0,
+        _ => 1.0,
     }
 }
 

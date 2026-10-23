@@ -80,6 +80,31 @@ fn same_point(a: &Measured<Point>, b: &Measured<Point>) -> bool {
         .all(|difference| difference.abs() <= allowed)
 }
 
+/// Why a body's volume is unavailable.
+#[derive(Debug, Clone)]
+pub(super) struct Failure {
+    pub(super) reason: UnavailableReason,
+    pub(super) message: String,
+    /// The cited member's category, for an aggregate reason.
+    pub(super) category: Option<Category>,
+    /// The faces the failure names.
+    pub(super) related: Vec<String>,
+    /// The region-order position of the shell the failure names.
+    pub(super) shell: Option<usize>,
+}
+
+impl Failure {
+    fn new(reason: UnavailableReason, message: String) -> Self {
+        Self {
+            reason,
+            message,
+            category: None,
+            related: Vec::new(),
+            shell: None,
+        }
+    }
+}
+
 /// One face of a body with its result.
 #[derive(Clone, Copy)]
 pub(super) struct Member<'a> {
@@ -189,7 +214,10 @@ impl VolumeInput<'_> {
             .iter()
             .map(|member| member.result.tau_b)
             .fold(0.0, f64::max);
-        Errors::new(flux.error[0], self.area * tau + (self.placement)(3, value))
+        Errors::new(
+            flux.volume_error(),
+            self.area * tau + (self.placement)(3, value),
+        )
     }
 
     fn volume_quantity(&self, sum: &Sum) -> Quantity<Scalar> {
@@ -212,9 +240,7 @@ impl VolumeInput<'_> {
             self.origin.y + moment[1] / volume,
             self.origin.z + moment[2] / volume,
         );
-        let moment_error = sum.flux.error[1]
-            .max(sum.flux.error[2])
-            .max(sum.flux.error[3]);
+        let moment_error = sum.flux.moment_error();
         let lever = moment.iter().fold(0.0_f64, |most, m| most.max(m.abs()));
         measured(
             Point::new(point),
@@ -232,7 +258,7 @@ impl VolumeInput<'_> {
     fn closure(&self, sum: &Sum) -> (f64, f64, Errors) {
         let [x, y, z] = sum.flux.closure();
         let magnitude = (x * x + y * y + z * z).sqrt();
-        let numeric = sum.flux.error[4] + sum.flux.error[5] + sum.flux.error[6];
+        let numeric = sum.flux.closure_error();
         let model: f64 = self
             .members
             .iter()
@@ -257,32 +283,29 @@ impl VolumeInput<'_> {
         }
     }
 
-    /// The first failing precondition of a measured volume, with its
-    /// category for an aggregate.
-    fn failure(
-        &self,
-        sum: &Result<Sum, Missing>,
-    ) -> Option<(UnavailableReason, String, Option<Category>)> {
+    /// The first failing precondition of a measured volume.
+    fn failure(&self, sum: &Result<Sum, Missing>) -> Option<Failure> {
         if self.shells.iter().any(|(closed, _)| !closed) {
-            return Some((
+            return Some(Failure::new(
                 UnavailableReason::VolumeShellOpen,
                 "a shell of the body is open".to_owned(),
-                None,
             ));
         }
         let sum = match sum {
             Ok(sum) => sum,
             Err(missing) => {
                 let category = missing.reason.category().unwrap_or(Category::Input);
-                return Some((
-                    UnavailableReason::AggregateMemberUnavailable,
-                    format!(
-                        "member {} has no flux: {}",
-                        missing.entity.as_deref().unwrap_or("?"),
-                        missing.reason.code()
-                    ),
-                    Some(category),
-                ));
+                return Some(Failure {
+                    category: Some(category),
+                    ..Failure::new(
+                        UnavailableReason::AggregateMemberUnavailable,
+                        format!(
+                            "member {} has no flux: {}",
+                            missing.entity.as_deref().unwrap_or("?"),
+                            missing.reason.code()
+                        ),
+                    )
+                });
             }
         };
         let mut conflict = Vec::new();
@@ -303,33 +326,33 @@ impl VolumeInput<'_> {
             }
         }
         if !conflict.is_empty() {
-            return Some((
-                UnavailableReason::VolumeOrientationConflict,
-                format!(
-                    "{} face(s) disagree with their readings: {}",
-                    conflict.len(),
-                    conflict.join(", ")
-                ),
-                None,
-            ));
+            return Some(Failure {
+                related: conflict.iter().map(|face| (*face).to_owned()).collect(),
+                ..Failure::new(
+                    UnavailableReason::VolumeOrientationConflict,
+                    format!(
+                        "{} face(s) disagree with their readings: {}",
+                        conflict.len(),
+                        conflict.join(", ")
+                    ),
+                )
+            });
         }
         if !unverified.is_empty() {
-            return Some((
+            return Some(Failure::new(
                 UnavailableReason::VolumeOrientationUnverified,
                 format!(
                     "{} face(s) rest on an unconfirmed orientation: {}",
                     unverified.len(),
                     unverified.join(", ")
                 ),
-                None,
             ));
         }
         let (magnitude, tolerance, _) = self.closure(sum);
         if magnitude > tolerance {
-            return Some((
+            return Some(Failure::new(
                 UnavailableReason::VolumeClosureFlux,
                 format!("the closure flux {magnitude} mm² exceeds its tolerance {tolerance} mm²"),
-                None,
             ));
         }
         for (position, ((_, outer), volume)) in self.shells.iter().zip(&sum.shells).enumerate() {
@@ -339,14 +362,31 @@ impl VolumeInput<'_> {
                 *volume >= 0.0
             };
             if wrong {
-                return Some((
-                    UnavailableReason::VolumeOrientationConflict,
-                    format!("shell {position} has a volume of the wrong sign for its role"),
-                    None,
-                ));
+                return Some(Failure {
+                    shell: Some(position),
+                    ..Failure::new(
+                        UnavailableReason::VolumeOrientationConflict,
+                        format!("shell {position} has a volume of the wrong sign for its role"),
+                    )
+                });
             }
         }
         None
+    }
+
+    /// The failure of a body whose shells are closed and whose volume
+    /// readings conflict: an orientation conflict or a closure flux above
+    /// its tolerance. `None` when the volume is measured or fails for
+    /// another reason.
+    pub(super) fn conflict(&self) -> Option<Failure> {
+        self.failure(&self.sum(BodyReading::FaceSense))
+            .filter(|failure| {
+                matches!(
+                    failure.reason,
+                    UnavailableReason::VolumeOrientationConflict
+                        | UnavailableReason::VolumeClosureFlux
+                )
+            })
     }
 
     /// The candidates of an unavailable volume and centroid.
@@ -411,9 +451,13 @@ impl VolumeInput<'_> {
                     orientation,
                 }
             }
-            Some((reason, message, category)) => {
-                self.unavailable_volume(reason, message, category, orientation, area_centroid)
-            }
+            Some(failure) => self.unavailable_volume(
+                failure.reason,
+                failure.message,
+                failure.category,
+                orientation,
+                area_centroid,
+            ),
         }
     }
 
@@ -505,7 +549,7 @@ impl VolumeInput<'_> {
             self.origin.y + moment[1] / area,
             self.origin.z + moment[2] / area,
         );
-        let moment_error = flux.error[7].max(flux.error[8]).max(flux.error[9]);
+        let moment_error = flux.area_moment_error();
         let lever = moment.iter().fold(0.0_f64, |most, m| most.max(m.abs()));
         let boundary: f64 = self
             .members

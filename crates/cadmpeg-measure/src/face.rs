@@ -14,11 +14,11 @@ use crate::boundary::{FaceFrame, LoopKind, ResolvedFace, ResolvedLoop};
 use crate::canonical::placement::Placement;
 use crate::canonical::surface::Chart;
 use crate::canonical::{Carrier, Sources};
-use crate::context::Eval;
+use crate::context::{Eval, Work};
 use crate::edges::EdgeGeometry;
 use crate::extent::{angular_sweep, axial_range, parameter_ranges, sphere_extent};
 use crate::failure::{settle, Measure, Missing, Outcome};
-use crate::flux::{Flux, FluxFrame};
+use crate::flux::{Flux, FluxFrame, ALL_COMPONENTS, ORIENTATION_COMPONENTS};
 use crate::geom::Aabb;
 use crate::orientation::{declared_normal, face_orientation, opposite};
 use crate::owners::Owners;
@@ -160,6 +160,7 @@ pub(crate) struct FaceFlux {
 
 /// What one face measurement reads.
 pub(crate) struct FaceInput<'a, 'ir> {
+    pub(crate) work: Work,
     pub(crate) owners: &'a Owners<'ir>,
     pub(crate) edges: &'a HashMap<&'ir str, EdgeGeometry<'ir>>,
     pub(crate) fidelity: Option<&'a SourceFidelity>,
@@ -178,6 +179,31 @@ struct Boundary<'ir> {
 
 fn unavailable<T>(reason: UnavailableReason, entity: &str, message: &str) -> Quantity<T> {
     Quantity::missing(reason, Some(entity), message.to_owned())
+}
+
+/// A quantity an orientation pass grants no work.
+fn not_computed<T>(entity: &str) -> Quantity<T> {
+    unavailable(
+        UnavailableReason::EvaluationWorkExhausted,
+        entity,
+        "an orientation pass does not compute this quantity",
+    )
+}
+
+/// The carrier row of a face whose carrier is not reported.
+fn unreported_carrier(face: &Face) -> CarrierMeasures {
+    CarrierMeasures {
+        surface: face.surface.as_str().to_owned(),
+        kind: SurfaceKind::Unknown,
+        chain: Vec::new(),
+        analytic: false,
+        placement: crate::report::PlacementReport {
+            class: crate::report::PlacementClass::Identity,
+            scale: None,
+            reflection: None,
+        },
+        parameters: CarrierParameters::None {},
+    }
 }
 
 impl<'ir> FaceInput<'_, 'ir> {
@@ -221,8 +247,9 @@ impl<'ir> FaceInput<'_, 'ir> {
                 message: "the face's surface does not resolve".to_owned(),
             }),
         };
+        let row_work = self.work == Work::Row;
         let carrier_row = match &carrier {
-            Ok(carrier) => carrier.measures(Sources {
+            Ok(carrier) if row_work => carrier.measures(Sources {
                 fidelity: self.fidelity,
                 surface: carrier.id(),
                 depth: carrier.depth,
@@ -232,18 +259,7 @@ impl<'ir> FaceInput<'_, 'ir> {
                         .is_some_and(|body| body.transform.is_some())
                 }),
             }),
-            Err(_) => CarrierMeasures {
-                surface: face.surface.as_str().to_owned(),
-                kind: SurfaceKind::Unknown,
-                chain: Vec::new(),
-                analytic: false,
-                placement: crate::report::PlacementReport {
-                    class: crate::report::PlacementClass::Identity,
-                    scale: None,
-                    reflection: None,
-                },
-                parameters: CarrierParameters::None {},
-            },
+            _ => unreported_carrier(face),
         };
 
         let chart: Outcome<Chart<'ir>> = match &carrier {
@@ -342,6 +358,14 @@ impl<'ir> FaceInput<'_, 'ir> {
         };
 
         let (area, verdict) = match (&chart, &boundary, &region) {
+            (Ok(_), Ok(_), Ok(region)) if !row_work && self.flux_origin.is_none() => (
+                Readings::single(not_computed(id)),
+                if region.rule == RegionRule::DeclaredOrientation {
+                    Verdict::Unconfirmed
+                } else {
+                    Verdict::Settled
+                },
+            ),
             (Ok(chart), Ok(boundary), Ok(region)) => {
                 let resolved: Vec<Option<&ResolvedLoop<'_>>> = boundary
                     .resolved
@@ -371,6 +395,7 @@ impl<'ir> FaceInput<'_, 'ir> {
         };
 
         let (bbox, aabbs) = match (&chart, &region) {
+            _ if !row_work => (Readings::single(not_computed(id)), [None, None]),
             (Ok(chart @ (Chart::Sphere(_) | Chart::Torus(_))), Ok(region)) => self.closed_box(
                 face,
                 &coedges,
@@ -445,19 +470,23 @@ impl<'ir> FaceInput<'_, 'ir> {
             Some(missing) => missing.quantity(),
         };
 
-        let extents = extent_quantities(
-            eval,
-            &ExtentInput {
-                id,
-                chart: &chart,
-                boundary: &boundary,
-                region: &region,
-                tau_b,
-                alpha,
-                angular: owners.ir.tolerances.angular.get(),
-                placement: self.placement.as_ref().ok(),
-            },
-        )?;
+        let extents = if row_work {
+            extent_quantities(
+                eval,
+                &ExtentInput {
+                    id,
+                    chart: &chart,
+                    boundary: &boundary,
+                    region: &region,
+                    tau_b,
+                    alpha,
+                    angular: owners.ir.tolerances.angular.get(),
+                    placement: self.placement.as_ref().ok(),
+                },
+            )?
+        } else {
+            Extents::default()
+        };
         let readings = FaceReadings {
             area,
             bbox,
@@ -508,6 +537,10 @@ impl<'ir> FaceInput<'_, 'ir> {
                     chart,
                     origin,
                     scale,
+                    active: match self.work {
+                        Work::Row => ALL_COMPONENTS,
+                        Work::Orientation => ORIENTATION_COMPONENTS,
+                    },
                 };
                 Some(settle(
                     face_flux(eval, &frame, region, &resolved).map_err(|failure| failure.at(id)),

@@ -69,6 +69,10 @@ pub(crate) struct Target<const N: usize> {
     pub(crate) scale: [f64; N],
     /// The estimate goal relative to `max(|value|, scale)`.
     pub(crate) relative: f64,
+    /// The components whose estimates drive the subdivision and the
+    /// acceptance. The others are integrated on the same panels, with no
+    /// goal of their own.
+    pub(crate) active: [bool; N],
 }
 
 impl<const N: usize> Target<N> {
@@ -77,6 +81,7 @@ impl<const N: usize> Target<N> {
         Self {
             scale,
             relative: QUADRATURE_RELATIVE_TARGET,
+            active: [true; N],
         }
     }
 
@@ -85,7 +90,14 @@ impl<const N: usize> Target<N> {
         Self {
             scale,
             relative: INNER_QUADRATURE_RELATIVE_TARGET,
+            active: [true; N],
         }
+    }
+
+    /// The target with only the `active` components driving it.
+    pub(crate) const fn with_active(mut self, active: [bool; N]) -> Self {
+        self.active = active;
+        self
     }
 }
 
@@ -189,12 +201,13 @@ pub(crate) fn integrate<const N: usize>(
             std::array::from_fn(|k| panels.iter().map(|panel| panel.error[k]).sum());
         let goal: [f64; N] =
             std::array::from_fn(|k| target.relative * value[k].abs().max(target.scale[k]));
-        let met = (0..N).all(|k| error[k] <= goal[k]);
+        let met = (0..N).all(|k| !target.active[k] || error[k] <= goal[k]);
         if met || panels.len() >= MAX_QUADRATURE_INTERVALS {
             return Ok(finish(&panels, target, sign));
         }
         let ratio = |panel: &Panel<N>| {
             (0..N)
+                .filter(|k| target.active[*k])
                 .map(|k| {
                     if goal[k] > 0.0 {
                         panel.error[k] / goal[k]
@@ -235,7 +248,8 @@ fn finish<const N: usize>(panels: &[Panel<N>], target: Target<N>, sign: f64) -> 
     let value: [f64; N] =
         std::array::from_fn(|k| sign * compensated(panels.iter().map(|panel| panel.value[k])));
     let error: [f64; N] = std::array::from_fn(|k| panels.iter().map(|panel| panel.error[k]).sum());
-    let converged = (0..N).all(|k| error[k] <= QUADRATURE_ACCEPTANCE_RELATIVE * target.scale[k]);
+    let converged = (0..N)
+        .all(|k| !target.active[k] || error[k] <= QUADRATURE_ACCEPTANCE_RELATIVE * target.scale[k]);
     Integral {
         value,
         error,
@@ -351,6 +365,25 @@ mod tests {
         )
         .unwrap();
         assert_eq!(first, second);
+    }
+
+    #[test]
+    fn an_inactive_component_neither_subdivides_nor_refuses() {
+        // The square wave of `the_interval_cap_reports_not_converged` rides
+        // along an exact quadratic: masked, it adds no panel.
+        let mut f = |x: f64| -> Measure<[f64; 2]> {
+            Ok([x * x, if (x * 1.0e6).fract() < 0.5 { 0.0 } else { 1.0 }])
+        };
+        let mut nodes = 0_usize;
+        let mut count = |units: usize| -> Measure<()> {
+            nodes += units;
+            Ok(())
+        };
+        let target = Target::outer([1.0; 2]).with_active([true, false]);
+        let integral = integrate(&mut count, &mut f, 0.0, 1.0, &[], target).unwrap();
+        assert!(integral.converged);
+        assert_eq!(nodes, super::NODES);
+        assert!((integral.value[0] - 1.0 / 3.0).abs() < 1.0e-14);
     }
 
     #[test]
