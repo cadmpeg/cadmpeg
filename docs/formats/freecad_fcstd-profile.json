@@ -1,20 +1,20 @@
 {
   "profile_version": 4,
   "format": "fcstd",
-  "manifest_sha256": "21f8e930e59e10f2c9a1669329c6fc44f24e12ac1602cf833b2a4bc355301040",
+  "manifest_sha256": "0cde951941d86e3630d97d0300e6c89442cbc1061ed09c04a2af4821e92ade3f",
   "manifest_verified": true,
   "envelope": {
     "container": "ZIP-packaged FCStd",
     "schema_version": 4,
     "file_version": 1,
-    "cadir_version": "6",
+    "cadir_version": "9",
     "write_support": true
   },
   "fixtures": [
     {
       "filename": "application_payloads.FCStd",
       "sha256": "410af2e9ed55011039ee065b20e7614037482d382e75e173d78c9a008522de75",
-      "canonical_cadir_sha256": "38c96c2e9f75031522e1d64c5a569354252c26b31c515510f8b93d8a53cae0a7",
+      "canonical_cadir_sha256": "f86a6f2adbe0a823c3acc42c6a8100a7c34b124cd5b728464418b47abec3fcd8",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -22,8 +22,8 @@
       "exact_byte_coverage": true,
       "write_deterministic": true,
       "semantic_round_trip": true,
-      "side_entries_preserved": true,
       "typed_edit_round_trip": true,
+      "side_entries_preserved": true,
       "entity_counts": {
         "appearance_bindings": 0,
         "appearances": 0,
@@ -83,7 +83,7 @@
     {
       "filename": "binary_exact_shape.FCStd",
       "sha256": "86ecddcee6d677370343c2f5a9682e57ca58db5808775b0e8812bdbe844dbe1e",
-      "canonical_cadir_sha256": "b8905e59b45c47f841fbc21b5dc1e4bbc510102cbbddd914eed5f9b841bbdc15",
+      "canonical_cadir_sha256": "de21ab55fbbb6cdf91dca2c5eaca739803c942e07a1a0fdb41123fd40e649777",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -91,8 +91,8 @@
       "exact_byte_coverage": true,
       "write_deterministic": true,
       "semantic_round_trip": true,
-      "side_entries_preserved": true,
       "typed_edit_round_trip": true,
+      "side_entries_preserved": true,
       "entity_counts": {
         "appearance_bindings": 0,
         "appearances": 0,
@@ -154,7 +154,7 @@
     {
       "filename": "core_design_product.FCStd",
       "sha256": "69c6aa00699cb8d8bb4014b48eb7c419352c49f360cffb45075f31e152f989ba",
-      "canonical_cadir_sha256": "c7cd7e369b4adecc92549ef2b2e5e4b89d333df7eba64c229474e6c36e565311",
+      "canonical_cadir_sha256": "34ee61c23fbbeeafcef1f8fff45f84a24a4fa3fe64912aa8c93130d7d982acd9",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -162,8 +162,8 @@
       "exact_byte_coverage": true,
       "write_deterministic": true,
       "semantic_round_trip": true,
-      "side_entries_preserved": true,
       "typed_edit_round_trip": true,
+      "side_entries_preserved": true,
       "entity_counts": {
         "appearance_bindings": 0,
         "appearances": 0,
@@ -228,7 +228,7 @@
     {
       "filename": "core_operations.FCStd",
       "sha256": "54cc992ca6278fdd8e38b3d01f37c616e5dfdc38ca7a058fe838599b709ed228",
-      "canonical_cadir_sha256": "35178ec214023932278bf546acae502616570d7803dc985be2def481ad7c93e2",
+      "canonical_cadir_sha256": "4bea28289e973180e93819f96b5159201bf7215e4cd26d3201bb5a629ad00386",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -236,8 +236,8 @@
       "exact_byte_coverage": true,
       "write_deterministic": true,
       "semantic_round_trip": true,
-      "side_entries_preserved": true,
       "typed_edit_round_trip": true,
+      "side_entries_preserved": true,
       "entity_counts": {
         "appearance_bindings": 0,
         "appearances": 0,
@@ -272,7 +272,7 @@
         "native.fcstd.string_tables": 1,
         "occurrences": 0,
         "parameters": 18,
-        "pcurves": 409,
+        "pcurves": 411,
         "pmi": 0,
         "points": 191,
         "presentation_documents": 0,
@@ -301,7 +301,7 @@
     {
       "filename": "design_history.FCStd",
       "sha256": "c71da85ee80979f3f210690125da00406b2d49682be765100fc1cfb1d98ea0d7",
-      "canonical_cadir_sha256": "40a5f9979f5de0386c142f8c4fffa14649e06833b983d3e7d3bb4a74130a749c",
+      "canonical_cadir_sha256": "6febde689f55dd487e8697c11445cc20f3c38ecf0bd705f782b1fbbe52c34801",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -309,8 +309,8 @@
       "exact_byte_coverage": true,
       "write_deterministic": true,
       "semantic_round_trip": true,
-      "side_entries_preserved": true,
       "typed_edit_round_trip": true,
+      "side_entries_preserved": true,
       "entity_counts": {
         "appearance_bindings": 0,
         "appearances": 0,
@@ -374,7 +374,7 @@
     {
       "filename": "external_component.FCStd",
       "sha256": "e1a563bd89e46c00237b65ac543482aaa361c833deef759164143687d0de557b",
-      "canonical_cadir_sha256": "ad1e97b7b79505c368ce40d36afd0af70ae707cb9a6b2582419a69016c5bb58b",
+      "canonical_cadir_sha256": "dd55a6b1d051313434c15565dc926638e6cecdfce2820c7c8013e7f2d77ba0ce",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -382,8 +382,8 @@
       "exact_byte_coverage": true,
       "write_deterministic": true,
       "semantic_round_trip": true,
-      "side_entries_preserved": true,
       "typed_edit_round_trip": true,
+      "side_entries_preserved": true,
       "entity_counts": {
         "appearance_bindings": 0,
         "appearances": 0,
@@ -445,7 +445,7 @@
     {
       "filename": "geometry_topology.FCStd",
       "sha256": "d7c0a6325cd4f68413f5ba9b0e51cd1396d4dc32a5f08dedc3ed5b00fc12cb59",
-      "canonical_cadir_sha256": "d0dbcc47814b59156eef35f9c3e1fd20f618cde72b6a1500ad38a7c18897d3b5",
+      "canonical_cadir_sha256": "30f6424471466d1135641f1638bf12f6c1ddbfa7aa175f1bbc6eb7126c0a96b3",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -453,8 +453,8 @@
       "exact_byte_coverage": true,
       "write_deterministic": true,
       "semantic_round_trip": true,
-      "side_entries_preserved": true,
       "typed_edit_round_trip": true,
+      "side_entries_preserved": true,
       "entity_counts": {
         "appearance_bindings": 0,
         "appearances": 0,
@@ -517,7 +517,7 @@
     {
       "filename": "gui_appearance.FCStd",
       "sha256": "393db41b6acd1d3c890dc07085017fa6f07e91f96d59e7a244e2c834075ffcc2",
-      "canonical_cadir_sha256": "5e546631e0ce27e66d93f50b839f9c077a5960e917c232b05d17738db7234034",
+      "canonical_cadir_sha256": "68d06f1c88349ad64192ff70600a64a5250ea49a6bf0211f61a53e86499c3478",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -525,11 +525,11 @@
       "exact_byte_coverage": true,
       "write_deterministic": true,
       "semantic_round_trip": true,
-      "side_entries_preserved": true,
       "typed_edit_round_trip": true,
+      "side_entries_preserved": true,
       "entity_counts": {
-        "appearance_bindings": 25,
-        "appearances": 2,
+        "appearance_bindings": 33,
+        "appearances": 12,
         "assembly_joints": 0,
         "assets": 0,
         "attributes": 0,
@@ -592,7 +592,7 @@
     {
       "filename": "product_assembly.FCStd",
       "sha256": "b8e0e92c0155b4182565493deace3e30b42fe1e45e8424ae4fd1d9bc5ddd8340",
-      "canonical_cadir_sha256": "f8881d32479d09fa7fb2109e2d18cd131b765f03b478197cd560225e056efc86",
+      "canonical_cadir_sha256": "e6d9c515b806b50432740c14d747065aa974ad7c891d9c5ada35e8303f34ae10",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -600,8 +600,8 @@
       "exact_byte_coverage": true,
       "write_deterministic": true,
       "semantic_round_trip": true,
-      "side_entries_preserved": true,
       "typed_edit_round_trip": true,
+      "side_entries_preserved": true,
       "entity_counts": {
         "appearance_bindings": 0,
         "appearances": 0,
@@ -635,7 +635,7 @@
         "native.fcstd.properties": 328,
         "native.fcstd.shape_payloads": 2,
         "native.fcstd.string_tables": 1,
-        "occurrences": 24,
+        "occurrences": 15,
         "parameters": 0,
         "pcurves": 30,
         "pmi": 0,
@@ -644,7 +644,7 @@
         "presentation_layers": 0,
         "procedural_curves": 0,
         "procedural_surfaces": 0,
-        "product_definitions": 14,
+        "product_definitions": 12,
         "regions": 2,
         "semantic_annotations": 0,
         "shells": 2,
@@ -666,7 +666,7 @@
     {
       "filename": "sketch_conics.FCStd",
       "sha256": "517b5fd0c7ea35aea9d43a22dea1ffd0a50200c54c2c61aea856a0ca5d5b9751",
-      "canonical_cadir_sha256": "e3236b3eb2e8e88e4f1024c26be582fff5944b4b8a685adcc7b33a931a797695",
+      "canonical_cadir_sha256": "f7368e26c46886dbe3eac05d0123a2db4ceacf50d215ad4f42702e22a757f3b8",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -674,8 +674,8 @@
       "exact_byte_coverage": true,
       "write_deterministic": true,
       "semantic_round_trip": true,
-      "side_entries_preserved": true,
       "typed_edit_round_trip": true,
+      "side_entries_preserved": true,
       "entity_counts": {
         "appearance_bindings": 0,
         "appearances": 0,
@@ -739,7 +739,7 @@
     {
       "filename": "sketch_constraints.FCStd",
       "sha256": "35bbba0d7529415176cfbbbdc1fabc265ac3748f5fc38058887ac254e44d074f",
-      "canonical_cadir_sha256": "6d2b77b190d45f8e020bd239d87607d5a7f5db9f78c45c662479156e0f6aae34",
+      "canonical_cadir_sha256": "1867b02dc5ede0c2ff6b2ea997dd8875e93c775ee5a363ef95fe98cf3c1dd1a5",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -747,8 +747,8 @@
       "exact_byte_coverage": true,
       "write_deterministic": true,
       "semantic_round_trip": true,
-      "side_entries_preserved": true,
       "typed_edit_round_trip": true,
+      "side_entries_preserved": true,
       "entity_counts": {
         "appearance_bindings": 0,
         "appearances": 0,
@@ -812,7 +812,7 @@
     {
       "filename": "techdraw_annotations.FCStd",
       "sha256": "6bc4c0e639b8055640c0bb02e2828a63184c787d42bda85d661707de3db84317",
-      "canonical_cadir_sha256": "b4eb60f11567b9ebbdb62ad69cc3de9b91245a6f3a3294ee592e6f492b72e2f3",
+      "canonical_cadir_sha256": "1c3c5565b145070c1f3b7d6c3e55e6d50ae3dc2a65ae93d4e8d0646a70f69276",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -820,8 +820,8 @@
       "exact_byte_coverage": true,
       "write_deterministic": true,
       "semantic_round_trip": true,
-      "side_entries_preserved": true,
       "typed_edit_round_trip": true,
+      "side_entries_preserved": true,
       "entity_counts": {
         "appearance_bindings": 0,
         "appearances": 0,
@@ -993,7 +993,7 @@
       "draft:operation.anchor.pull.direction.x=0.0",
       "draft:operation.anchor.pull.direction.y=0.0",
       "draft:operation.anchor.pull.direction.z=1.0",
-      "draft:operation.faces.kind=native",
+      "draft:operation.faces.kind=resolved",
       "draft:operation.outward=true",
       "extrude:direction.kind=explicit",
       "extrude:direction.source.kind=custom",
@@ -1019,16 +1019,16 @@
       "extrude:solid=true",
       "extrude:start.kind=profile_plane",
       "fillet:edges.kind=native",
-      "fillet:operation.edges.kind=native",
+      "fillet:operation.edges.kind=resolved",
       "fillet:operation.radius.kind=constant",
       "fillet:radius.kind=constant",
       "hole:operation.bottom.kind=angled",
-      "hole:operation.direction.x=0.0",
-      "hole:operation.direction.y=0.0",
-      "hole:operation.direction.z=1.0",
+      "hole:operation.direction.x=-0.0",
+      "hole:operation.direction.y=-0.0",
+      "hole:operation.direction.z=-1.0",
       "hole:operation.extent.kind=blind",
       "hole:operation.profile.kind=sketch",
-      "hole:operation.shape.kind.kind=countersink",
+      "hole:operation.shape.construction.kind.kind=countersink",
       "loft:closed=false",
       "loft:guidance.kind=guides",
       "loft:kind=native",
@@ -1070,12 +1070,12 @@
       "shell:join=arc",
       "shell:mode=skin",
       "shell:outward=true",
-      "shell:removed_faces.kind=native",
+      "shell:removed_faces.kind=resolved",
       "shell:resolve_intersections=true",
       "sweep:orientation.kind=frenet",
       "sweep:path.kind=native",
-      "sweep:shape.mode.mode=solid",
-      "sweep:shape.mode.op=new_body",
+      "sweep:shape.mode=solid",
+      "sweep:shape.op=new_body",
       "sweep:shape.section.kind=profile",
       "sweep:shape.section.value.kind=native",
       "sweep:transformation=constant",
@@ -1390,7 +1390,7 @@
         {
           "id": "appearance_coverage",
           "passed": true,
-          "observed": "25",
+          "observed": "33",
           "required": "object and subshape appearance bindings"
         }
       ]
@@ -1414,8 +1414,8 @@
         {
           "id": "non_default_operation_branches",
           "passed": true,
-          "observed": "{\"chamfer:edges.kind=native\", \"chamfer:flip_direction=false\", \"chamfer:spec.kind=two_distances\", \"combine:operation.op=cut\", \"combine:operation.operands.target.kind=native\", \"combine:operation.operands.tools.kind=native\", \"datum_axis:direction.x=0.0\", \"datum_axis:direction.y=0.0\", \"datum_axis:direction.z=1.0\", \"datum_axis:origin.x=2.0\", \"datum_axis:origin.y=3.0\", \"datum_axis:origin.z=0.0\", \"datum_coordinate_system:frame.origin.x=7.0\", \"datum_coordinate_system:frame.origin.y=8.0\", \"datum_coordinate_system:frame.origin.z=9.0\", \"datum_coordinate_system:frame.x_axis.x=1.0\", \"datum_coordinate_system:frame.x_axis.y=0.0\", \"datum_coordinate_system:frame.x_axis.z=0.0\", \"datum_coordinate_system:frame.y_axis.x=0.0\", \"datum_coordinate_system:frame.y_axis.y=1.0\", \"datum_coordinate_system:frame.y_axis.z=0.0\", \"datum_coordinate_system:frame.z_axis.x=0.0\", \"datum_coordinate_system:frame.z_axis.y=0.0\", \"datum_coordinate_system:frame.z_axis.z=1.0\", \"datum_plane:frame.normal.x=0.0\", \"datum_plane:frame.normal.y=0.0\", \"datum_plane:frame.normal.z=1.0\", \"datum_plane:frame.origin.x=0.0\", \"datum_plane:frame.origin.y=0.0\", \"datum_plane:frame.origin.z=4.0\", \"datum_plane:frame.u_axis.x=1.0\", \"datum_plane:frame.u_axis.y=0.0\", \"datum_plane:frame.u_axis.z=0.0\", \"datum_point:position.x=4.0\", \"datum_point:position.y=5.0\", \"datum_point:position.z=6.0\", \"draft:operation.anchor.kind=neutral_plane\", \"draft:operation.anchor.plane.kind=native\", \"draft:operation.anchor.pull.direction.x=0.0\", \"draft:operation.anchor.pull.direction.y=0.0\", \"draft:operation.anchor.pull.direction.z=1.0\", \"draft:operation.faces.kind=native\", \"draft:operation.outward=true\", \"extrude:direction.kind=explicit\", \"extrude:direction.source.kind=custom\", \"extrude:direction.vector.x=0.0\", \"extrude:direction.vector.y=0.0\", \"extrude:direction.vector.z=1.0\", \"extrude:extent.kind=symmetric\", \"extrude:extent.side.termination.kind=blind\", \"extrude:op=new_body\", \"extrude:operation.direction.kind=explicit\", \"extrude:operation.direction.source.kind=profile_normal\", \"extrude:operation.direction.vector.x=0.0\", \"extrude:operation.direction.vector.y=0.0\", \"extrude:operation.direction.vector.z=1.0\", \"extrude:operation.extent.kind=one_sided\", \"extrude:operation.extent.side.termination.kind=blind\", \"extrude:operation.op=cut\", \"extrude:operation.op=join\", \"extrude:operation.profile.kind=sketch\", \"extrude:operation.solid=true\", \"extrude:operation.start.kind=profile_plane\", \"extrude:profile.kind=native\", \"extrude:solid=true\", \"extrude:start.kind=profile_plane\", \"fillet:edges.kind=native\", \"fillet:operation.edges.kind=native\", \"fillet:operation.radius.kind=constant\", \"fillet:radius.kind=constant\", \"hole:operation.bottom.kind=angled\", \"hole:operation.direction.x=0.0\", \"hole:operation.direction.y=0.0\", \"hole:operation.direction.z=1.0\", \"hole:operation.extent.kind=blind\", \"hole:operation.profile.kind=sketch\", \"hole:operation.shape.kind.kind=countersink\", \"loft:closed=false\", \"loft:guidance.kind=guides\", \"loft:kind=native\", \"loft:max_degree=4\", \"loft:op=new_body\", \"loft:ruled=true\", \"loft:solid=true\", \"mirror_shape:plane_normal.x=1.0\", \"mirror_shape:plane_normal.y=0.0\", \"mirror_shape:plane_normal.z=0.0\", \"mirror_shape:plane_origin.x=0.0\", \"mirror_shape:plane_origin.y=0.0\", \"mirror_shape:plane_origin.z=0.0\", \"mirror_shape:source.kind=native\", \"pattern:operation.kind=feature\", \"pattern:operation.pattern.count=4\", \"pattern:operation.pattern.direction.x=-0.0\", \"pattern:operation.pattern.direction.y=-0.0\", \"pattern:operation.pattern.direction.z=-1.0\", \"pattern:operation.pattern.kind=linear\", \"post_process:fuzzy_tolerance.kind=kernel_default\", \"primitive:op=new_body\", \"primitive:operation.op=join\", \"primitive:operation.solid.kind=box\", \"primitive:solid.kind=box\", \"primitive:solid.kind=cylinder\", \"revolve:construction.axis.direction.x=0.0\", \"revolve:construction.axis.direction.y=1.0\", \"revolve:construction.axis.direction.z=0.0\", \"revolve:construction.axis.origin.x=0.0\", \"revolve:construction.axis.origin.y=0.0\", \"revolve:construction.axis.origin.z=0.0\", \"revolve:construction.extent.kind=symmetric\", \"revolve:construction.extent.termination.kind=angle\", \"revolve:construction.profile.kind=sketch\", \"revolve:construction.solid=false\", \"revolve:op=new_body\", \"shell:allow_self_intersections=false\", \"shell:join=arc\", \"shell:mode=skin\", \"shell:outward=true\", \"shell:removed_faces.kind=native\", \"shell:resolve_intersections=true\", \"sweep:orientation.kind=frenet\", \"sweep:path.kind=native\", \"sweep:shape.mode.mode=solid\", \"sweep:shape.mode.op=new_body\", \"sweep:shape.section.kind=profile\", \"sweep:shape.section.value.kind=native\", \"sweep:transformation=constant\", \"sweep:transition=transformed\"}",
-          "required": "{\"chamfer:spec.kind=two_distances\", \"combine:operation.op=cut\", \"datum_axis:origin.x=2.0\", \"datum_coordinate_system:frame.origin.z=9.0\", \"datum_plane:frame.origin.z=4.0\", \"datum_point:position.z=6.0\", \"draft:operation.outward=true\", \"extrude:extent.kind=symmetric\", \"fillet:radius.kind=constant\", \"hole:operation.bottom.kind=angled\", \"hole:operation.shape.kind.kind=countersink\", \"loft:max_degree=4\", \"loft:ruled=true\", \"mirror_shape:plane_normal.x=1.0\", \"pattern:operation.pattern.count=4\", \"pattern:operation.pattern.direction.z=-1.0\", \"primitive:solid.kind=box\", \"primitive:solid.kind=cylinder\", \"revolve:construction.extent.kind=symmetric\", \"revolve:construction.extent.termination.kind=angle\", \"revolve:construction.solid=false\", \"shell:resolve_intersections=true\", \"sweep:orientation.kind=frenet\"}"
+          "observed": "{\"chamfer:edges.kind=native\", \"chamfer:flip_direction=false\", \"chamfer:spec.kind=two_distances\", \"combine:operation.op=cut\", \"combine:operation.operands.target.kind=native\", \"combine:operation.operands.tools.kind=native\", \"datum_axis:direction.x=0.0\", \"datum_axis:direction.y=0.0\", \"datum_axis:direction.z=1.0\", \"datum_axis:origin.x=2.0\", \"datum_axis:origin.y=3.0\", \"datum_axis:origin.z=0.0\", \"datum_coordinate_system:frame.origin.x=7.0\", \"datum_coordinate_system:frame.origin.y=8.0\", \"datum_coordinate_system:frame.origin.z=9.0\", \"datum_coordinate_system:frame.x_axis.x=1.0\", \"datum_coordinate_system:frame.x_axis.y=0.0\", \"datum_coordinate_system:frame.x_axis.z=0.0\", \"datum_coordinate_system:frame.y_axis.x=0.0\", \"datum_coordinate_system:frame.y_axis.y=1.0\", \"datum_coordinate_system:frame.y_axis.z=0.0\", \"datum_coordinate_system:frame.z_axis.x=0.0\", \"datum_coordinate_system:frame.z_axis.y=0.0\", \"datum_coordinate_system:frame.z_axis.z=1.0\", \"datum_plane:frame.normal.x=0.0\", \"datum_plane:frame.normal.y=0.0\", \"datum_plane:frame.normal.z=1.0\", \"datum_plane:frame.origin.x=0.0\", \"datum_plane:frame.origin.y=0.0\", \"datum_plane:frame.origin.z=4.0\", \"datum_plane:frame.u_axis.x=1.0\", \"datum_plane:frame.u_axis.y=0.0\", \"datum_plane:frame.u_axis.z=0.0\", \"datum_point:position.x=4.0\", \"datum_point:position.y=5.0\", \"datum_point:position.z=6.0\", \"draft:operation.anchor.kind=neutral_plane\", \"draft:operation.anchor.plane.kind=native\", \"draft:operation.anchor.pull.direction.x=0.0\", \"draft:operation.anchor.pull.direction.y=0.0\", \"draft:operation.anchor.pull.direction.z=1.0\", \"draft:operation.faces.kind=resolved\", \"draft:operation.outward=true\", \"extrude:direction.kind=explicit\", \"extrude:direction.source.kind=custom\", \"extrude:direction.vector.x=0.0\", \"extrude:direction.vector.y=0.0\", \"extrude:direction.vector.z=1.0\", \"extrude:extent.kind=symmetric\", \"extrude:extent.side.termination.kind=blind\", \"extrude:op=new_body\", \"extrude:operation.direction.kind=explicit\", \"extrude:operation.direction.source.kind=profile_normal\", \"extrude:operation.direction.vector.x=0.0\", \"extrude:operation.direction.vector.y=0.0\", \"extrude:operation.direction.vector.z=1.0\", \"extrude:operation.extent.kind=one_sided\", \"extrude:operation.extent.side.termination.kind=blind\", \"extrude:operation.op=cut\", \"extrude:operation.op=join\", \"extrude:operation.profile.kind=sketch\", \"extrude:operation.solid=true\", \"extrude:operation.start.kind=profile_plane\", \"extrude:profile.kind=native\", \"extrude:solid=true\", \"extrude:start.kind=profile_plane\", \"fillet:edges.kind=native\", \"fillet:operation.edges.kind=resolved\", \"fillet:operation.radius.kind=constant\", \"fillet:radius.kind=constant\", \"hole:operation.bottom.kind=angled\", \"hole:operation.direction.x=-0.0\", \"hole:operation.direction.y=-0.0\", \"hole:operation.direction.z=-1.0\", \"hole:operation.extent.kind=blind\", \"hole:operation.profile.kind=sketch\", \"hole:operation.shape.construction.kind.kind=countersink\", \"loft:closed=false\", \"loft:guidance.kind=guides\", \"loft:kind=native\", \"loft:max_degree=4\", \"loft:op=new_body\", \"loft:ruled=true\", \"loft:solid=true\", \"mirror_shape:plane_normal.x=1.0\", \"mirror_shape:plane_normal.y=0.0\", \"mirror_shape:plane_normal.z=0.0\", \"mirror_shape:plane_origin.x=0.0\", \"mirror_shape:plane_origin.y=0.0\", \"mirror_shape:plane_origin.z=0.0\", \"mirror_shape:source.kind=native\", \"pattern:operation.kind=feature\", \"pattern:operation.pattern.count=4\", \"pattern:operation.pattern.direction.x=-0.0\", \"pattern:operation.pattern.direction.y=-0.0\", \"pattern:operation.pattern.direction.z=-1.0\", \"pattern:operation.pattern.kind=linear\", \"post_process:fuzzy_tolerance.kind=kernel_default\", \"primitive:op=new_body\", \"primitive:operation.op=join\", \"primitive:operation.solid.kind=box\", \"primitive:solid.kind=box\", \"primitive:solid.kind=cylinder\", \"revolve:construction.axis.direction.x=0.0\", \"revolve:construction.axis.direction.y=1.0\", \"revolve:construction.axis.direction.z=0.0\", \"revolve:construction.axis.origin.x=0.0\", \"revolve:construction.axis.origin.y=0.0\", \"revolve:construction.axis.origin.z=0.0\", \"revolve:construction.extent.kind=symmetric\", \"revolve:construction.extent.termination.kind=angle\", \"revolve:construction.profile.kind=sketch\", \"revolve:construction.solid=false\", \"revolve:op=new_body\", \"shell:allow_self_intersections=false\", \"shell:join=arc\", \"shell:mode=skin\", \"shell:outward=true\", \"shell:removed_faces.kind=resolved\", \"shell:resolve_intersections=true\", \"sweep:orientation.kind=frenet\", \"sweep:path.kind=native\", \"sweep:shape.mode=solid\", \"sweep:shape.op=new_body\", \"sweep:shape.section.kind=profile\", \"sweep:shape.section.value.kind=native\", \"sweep:transformation=constant\", \"sweep:transition=transformed\"}",
+          "required": "{\"chamfer:spec.kind=two_distances\", \"combine:operation.op=cut\", \"datum_axis:origin.x=2.0\", \"datum_coordinate_system:frame.origin.z=9.0\", \"datum_plane:frame.origin.z=4.0\", \"datum_point:position.z=6.0\", \"draft:operation.outward=true\", \"extrude:extent.kind=symmetric\", \"fillet:radius.kind=constant\", \"hole:operation.bottom.kind=angled\", \"hole:operation.shape.construction.kind.kind=countersink\", \"loft:max_degree=4\", \"loft:ruled=true\", \"mirror_shape:plane_normal.x=1.0\", \"pattern:operation.pattern.count=4\", \"pattern:operation.pattern.direction.z=-1.0\", \"primitive:solid.kind=box\", \"primitive:solid.kind=cylinder\", \"revolve:construction.extent.kind=symmetric\", \"revolve:construction.extent.termination.kind=angle\", \"revolve:construction.solid=false\", \"shell:resolve_intersections=true\", \"sweep:orientation.kind=frenet\"}"
         }
       ]
     },
@@ -1426,7 +1426,7 @@
         {
           "id": "product_structure_matrix",
           "passed": true,
-          "observed": "product_definitions=20, occurrences=31, constructs={\"external_occurrence\", \"group\", \"joint_limits\", \"link_array\", \"link_group\", \"nested_occurrence\", \"occurrence\", \"part\", \"persistent_joint_operands\"}",
+          "observed": "product_definitions=18, occurrences=22, constructs={\"external_occurrence\", \"group\", \"joint_limits\", \"link_array\", \"link_group\", \"nested_occurrence\", \"occurrence\", \"part\", \"persistent_joint_operands\"}",
           "required": "{\"external_occurrence\", \"group\", \"joint_limits\", \"link_array\", \"link_group\", \"nested_occurrence\", \"occurrence\", \"part\", \"persistent_joint_operands\"}"
         },
         {
@@ -1444,7 +1444,7 @@
         {
           "id": "presentation_variants",
           "passed": true,
-          "observed": "documents={\"gui\", \"headless\"}, appearances=25, constructs={\"drawing_asset\", \"gui_state:Camera\", \"gui_state:Expand\", \"thumbnail\", \"tree_state\", \"view_property:AngularDeflection\", \"view_property:BoundingBox\", \"view_property:Deviation\", \"view_property:DisplayMode\", \"view_property:DrawStyle\", \"view_property:Lighting\", \"view_property:LineColor\", \"view_property:LineColorArray\", \"view_property:LineMaterial\", \"view_property:LineWidth\", \"view_property:OnTopWhenSelected\", \"view_property:PointColor\", \"view_property:PointColorArray\", \"view_property:PointMaterial\", \"view_property:PointSize\", \"view_property:Proxy\", \"view_property:Selectable\", \"view_property:SelectionStyle\", \"view_property:ShapeAppearance\", \"view_property:ShowInTree\", \"view_property:ShowPlacement\", \"view_property:TransformOrigin\", \"view_property:Transparency\", \"view_property:Visibility\"}",
+          "observed": "documents={\"gui\", \"headless\"}, appearances=33, constructs={\"drawing_asset\", \"gui_state:Camera\", \"gui_state:Expand\", \"thumbnail\", \"tree_state\", \"view_property:AngularDeflection\", \"view_property:BoundingBox\", \"view_property:Deviation\", \"view_property:DisplayMode\", \"view_property:DrawStyle\", \"view_property:Lighting\", \"view_property:LineColor\", \"view_property:LineColorArray\", \"view_property:LineMaterial\", \"view_property:LineWidth\", \"view_property:OnTopWhenSelected\", \"view_property:PointColor\", \"view_property:PointColorArray\", \"view_property:PointMaterial\", \"view_property:PointSize\", \"view_property:Proxy\", \"view_property:Selectable\", \"view_property:SelectionStyle\", \"view_property:ShapeAppearance\", \"view_property:ShowInTree\", \"view_property:ShowPlacement\", \"view_property:TransformOrigin\", \"view_property:Transparency\", \"view_property:Visibility\"}",
           "required": "documents={\"gui\", \"headless\"}, constructs={\"drawing_asset\", \"gui_state:Camera\", \"thumbnail\", \"tree_state\", \"view_property:DisplayMode\", \"view_property:SelectionStyle\", \"view_property:Visibility\"}, appearances"
         },
         {
