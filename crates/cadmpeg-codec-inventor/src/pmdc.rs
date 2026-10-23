@@ -132,8 +132,42 @@ pub(crate) struct PmDcContentHeader {
     pub(crate) header_id: u16,
     pub(crate) next: PmDcReference,
     pub(crate) flags: u32,
+    /// The u32 that segment major versions from 28 store after `flags`.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_flags_extension"
+    )]
+    pub(crate) flags_extension: Option<u32>,
     pub(crate) context: PmDcReference,
     pub(crate) source_index: u32,
+    /// The i32 values after `source_index`: one in segment major version 23
+    /// and two from version 25, in records whose body does not start with a
+    /// state value.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) stamps: Vec<i32>,
+}
+cadmpeg_core::named_optional_field!(deserialize_flags_extension, u32, "flags_extension");
+
+/// Whether the `PmDc` record grammar covers a segment major version.
+pub(crate) const fn record_version_supported(version: u8) -> bool {
+    matches!(version, 15..=23 | 25 | 28..=31)
+}
+
+/// The zero u32 that segment major versions from 28 store after a record's `flags`.
+pub(crate) fn flags_extension(
+    cursor: &mut Cursor<'_>,
+    version: u8,
+) -> Result<Option<u32>, CodecError> {
+    if version < 28 {
+        return Ok(None);
+    }
+    match cursor.u32("flags extension")? {
+        0 => Ok(Some(0)),
+        value => Err(CodecError::malformed(format_args!(
+            "Inventor PmDc flags extension is {value}, not 0"
+        ))),
+    }
 }
 
 /// A reference list with metadata, carrying the marker its format prefixes it with.
@@ -475,11 +509,8 @@ impl<'a> Cursor<'a> {
         })
     }
 
-    pub(crate) fn utf16(
-        &mut self,
-        ctx: &DecodeContext<'_>,
-        field: &str,
-    ) -> Result<String, CodecError> {
+    /// The admitted code-unit count of a counted string.
+    fn utf16_len(&mut self, field: &str) -> Result<usize, CodecError> {
         let units = usize::try_from(self.u32("string length")?).map_err(|_| {
             CodecError::Malformed("Inventor numeric value exceeds target range".into())
         })?;
@@ -488,7 +519,33 @@ impl<'a> Cursor<'a> {
                 "Inventor PmDc {field} UTF-16 length {units} exceeds 1048576"
             )));
         }
+        Ok(units)
+    }
+
+    pub(crate) fn utf16(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        field: &str,
+    ) -> Result<String, CodecError> {
+        let units = self.utf16_len(field)?;
         crate::reader::utf16_text(
+            ctx,
+            &mut self.source,
+            units,
+            "PmDc text",
+            "retain Inventor PmDc string",
+        )
+    }
+
+    /// A counted string that keeps its exact code units when they hold an
+    /// unpaired surrogate.
+    pub(crate) fn utf16_units(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        field: &str,
+    ) -> Result<(String, Option<Vec<u16>>), CodecError> {
+        let units = self.utf16_len(field)?;
+        crate::reader::utf16_text_units(
             ctx,
             &mut self.source,
             units,
@@ -513,14 +570,60 @@ impl<'a> Cursor<'a> {
     }
 }
 
-pub(crate) fn content_header(cursor: &mut Cursor<'_>) -> Result<PmDcContentHeader, CodecError> {
+/// The content header of a record whose body does not start with a state
+/// value. From segment major version 23 these headers end with stamps.
+pub(crate) fn content_header(
+    cursor: &mut Cursor<'_>,
+    version: u8,
+) -> Result<PmDcContentHeader, CodecError> {
+    let stamps = match version {
+        0..=22 => 0,
+        23..=24 => 1,
+        _ => 2,
+    };
+    header_with_stamps(cursor, version, stamps)
+}
+
+/// The content header of a record whose body starts with a state value. These
+/// headers store no stamps.
+pub(crate) fn state_content_header(
+    cursor: &mut Cursor<'_>,
+    version: u8,
+) -> Result<PmDcContentHeader, CodecError> {
+    header_with_stamps(cursor, version, 0)
+}
+
+fn header_with_stamps(
+    cursor: &mut Cursor<'_>,
+    version: u8,
+    stamp_count: usize,
+) -> Result<PmDcContentHeader, CodecError> {
+    let header_value = cursor.u32("content header value")?;
+    let header_id = cursor.u16("content header id")?;
+    let next = cursor.reference("content header next reference")?;
+    let flags = cursor.u32("content header flags")?;
+    let flags_extension = flags_extension(cursor, version)?;
+    let context = cursor.reference("content header context reference")?;
+    let source_index = cursor.u32("content header source index")?;
+    let mut stamps = Vec::with_capacity(stamp_count);
+    for _ in 0..stamp_count {
+        let stamp = cursor.i32("content header stamp")?;
+        if stamp < -1 {
+            return Err(CodecError::malformed(format_args!(
+                "Inventor PmDc content header stamp is {stamp}"
+            )));
+        }
+        stamps.push(stamp);
+    }
     Ok(PmDcContentHeader {
-        header_value: cursor.u32("content header value")?,
-        header_id: cursor.u16("content header id")?,
-        next: cursor.reference("content header next reference")?,
-        flags: cursor.u32("content header flags")?,
-        context: cursor.reference("content header context reference")?,
-        source_index: cursor.u32("content header source index")?,
+        header_value,
+        header_id,
+        next,
+        flags,
+        flags_extension,
+        context,
+        source_index,
+        stamps,
     })
 }
 
@@ -875,7 +978,7 @@ mod tests {
         bytes.extend_from_slice(&9_u16.to_le_bytes());
         let mut cursor = Cursor::new(View::over_retained(&bytes));
         assert_eq!(
-            displayed_truncation(content_header(&mut cursor)),
+            displayed_truncation(content_header(&mut cursor, 22)),
             "truncated input during content header next reference at space 0 offset 6"
         );
     }

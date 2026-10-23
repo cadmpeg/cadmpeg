@@ -9,6 +9,8 @@ use crate::bytes::take_reference;
 use crate::bytes::Reference;
 use crate::records::identity::Located;
 
+cadmpeg_core::named_optional_field!(deserialize_extra_zero, Located<u32>, "extra_zero");
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "BodyTailReferenceWire", into = "BodyTailReferenceWire")]
 pub(crate) struct BodyTailReference {
@@ -107,7 +109,11 @@ pub(crate) struct DesignBodyReferenceTailWire {
     pub(crate) first_references: Vec<BodyTailReference>,
     pub(crate) second_count_offset: u64,
     pub(crate) second_references: Vec<BodyTailReference>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_extra_zero"
+    )]
     pub(crate) extra_zero: Option<Located<u32>>,
     pub(crate) trailing_form: Located<u32>,
 }

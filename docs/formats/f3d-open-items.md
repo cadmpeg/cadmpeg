@@ -94,7 +94,7 @@ The class-290 primary paired with class-261 uses the same six-byte fields on its
 
 **Question.** How does the producer allocate or derive the selection-payload stamp, and what unit and evaluation event does the scalar represent?
 
-**Known.** `f3d.md` §3.1 "The selector tail is u32 `9`" defines a u64 stamp, a u32 evaluation epoch, and a finite nonnegative f64 scalar. The scalar is not an integer identity, and the epoch is not a fixed selector constant. Selectors with the same asset, context, external body, segment, property, and version can have different stamps. Different occurrences can share a stamp. A zero stamp can occur with a valid nonzero occurrence and external-body reference, so it does not establish an absent selection or a general default. The complete native selector remains the preservation unit.
+**Known.** `f3d.md` §3.1 "A tool body-selection record with primary index `N`" defines a u64 stamp, a u32 evaluation epoch, and a finite nonnegative f64 scalar. The scalar is not an integer identity, and the epoch is not a fixed selector constant. Selectors with the same asset, context, external body, segment, property, and version can have different stamps. Different occurrences can share a stamp. A zero stamp can occur with a valid nonzero occurrence and external-body reference, so it does not establish an absent selection or a general default. The complete native selector remains the preservation unit.
 
 **Need.** Controlled producer saves must separate selection creation, occurrence choice, selected entity, reevaluation, source version, and relink operations. A producer trace or documented evaluator contract must establish the scalar unit and event. A stamp derivation must reproduce the known cases and predict held-out saves, or identify the allocation event and persistence boundary if the value is allocated state.
 
@@ -198,11 +198,19 @@ the native feature when a fixed lane carries a symmetric distance.
 
 ### DR-79. Typed-reference Design record grammars
 
-**Question.** What are the sketch, sketch-relation, construction-recipe, parameter-scope, and feature-scope grammars in the container generation that writes typed references?
+**Question.** What are the dimension-locus, construction-recipe, feature-prologue, and other fixed scope-tail grammars in the container generation that writes typed references?
 
-**Known.** `f3d.md` §3.1 "The typed compact parameter form is the compact parameter form" gives the parameter form, and `f3d.md` §3.1 "In the container generation that writes typed references" gives the parameter-owner frames. In that generation every local reference carries its LP-ASCII 36 target type GUID, so each reference is 51 bytes instead of eleven. Sketch and feature records also store typed references. The decoder reads the typed parameter and owner forms only.
+**Known.** `f3d.md` §3.1 "The typed compact parameter form is the compact parameter form" gives the parameter form, and `f3d.md` §3.1 "In the container generation that writes typed references" gives the parameter-owner frames. In that generation every local reference carries its LP-ASCII 36 target type GUID, so each reference is 51 bytes instead of eleven. Sketch and feature records also store typed references. `f3d.md` §3.1 "A typed-reference parameter scope" gives the 196-byte scope tail and the typed reference table, and `f3d.md` §3.1 "A typed-reference sketch member-run record" gives the sketch container member run and the explicit head record. `f3d.md` §3.1 "A typed-reference companion prefix" gives the companion prefix, `f3d.md` §3.1 "A typed-reference Extrude scope" gives the typed and shifted typed Extrude prologues, `f3d.md` §3.1 "A typed-reference Extrude selection group" gives the selection group, and `f3d.md` §3.1 "The class-409 zero-body form has" gives the zero-body Base Feature. Typed dimension locus frames, construction recipes, and the other feature-specific fixed scope tails of this generation have no specified grammar.
 
-**Need.** Sketches, constraints, and feature history in documents of this generation stay native until each fixed-offset grammar reads references by their encoded width.
+**Need.** Sketch constraints and complete feature definitions in documents of this generation stay native until each fixed-offset grammar reads references by their encoded width.
+
+### DR-89. Typed profile-identity entry fields and other profile forms
+
+**Question.** What do the twelve bytes after the secondary identity in a typed profile-identity entry mean, what separates the two loop lists, and which form do the typed Extrude profile groups without a typed profile selection use?
+
+**Known.** `f3d.md` §3.1 "A typed-reference profile selection is a construction-operand group member" gives the record grammar and the exact join. The twelve bytes are three u32 values; observed values are small, and the first is `0` or `1`. Some typed Extrude profile groups name members that are not typed profile selections.
+
+**Need.** The loop roles and entry fields can distinguish outer and inner boundaries and curve orientation, and the other member form keeps those Extrude profiles native.
 
 ### DR-80. Typed parameter tail reference target
 
@@ -219,6 +227,94 @@ the native feature when a fixed lane carries a symmetric distance.
 **Known.** `f3d.md` §3.1 "The typed compact parameter form is the compact parameter form" gives the owned and document forms. Some typed frames store the null owner reference with a feature-input or dimension `source_kind` (for example `HoleDepth` or `TaperAngle`) and the expression trailer `00 00 00 01 00`. Some owned frames store the expression trailer `00 01 00 00 00`. The decoder reports these frames as `parameter.record-unparsed` and does not decode them.
 
 **Need.** An ownerless feature input has no owner binding in the current parameter model, and the meaning of the set trailer bytes is unknown.
+
+### DR-85. Flagged empty mesh-collection word
+
+**Question.** What do the flag byte at offset 20 and the u32 at offset 25 of a flagged empty mesh collection store, and can a flagged collection have bodies?
+
+**Known.** `f3d.md` §3.1 "The mesh-collection class" gives the flagged layout. Every flagged collection is empty, and its u32 is `1`.
+
+**Need.** The value can count mesh bodies removed from the feature. A design in which mesh bodies are inserted and removed one at a time, saved after each step, fixes the value and shows whether a flagged collection keeps bodies.
+
+### DR-86. Linked component-binding entity
+
+**Question.** What is the entity that a linked component context binding names between the component reference and the context UUID?
+
+**Known.** `f3d.md` §3.1 "A Design component naming-space type" gives the linked form. The entity is registered to type GUID `8ACBA2E5-5A4C-4438-8351-276DE96E6982`, add-in name `Fusion`, base-type GUID `046D6232-EDAB-414D-9CB0-A2E3F115AE1C`, and type version `4`. In a Design stream that uses the linked form, every component except the root component binds in this form, and several components can name the same entity.
+
+**Need.** A writer must emit the entity to produce the linked form. The shared entity can group components by their parent component or source document.
+
+### DR-87. Parameter-owner flag byte
+
+**Question.** What does the flag byte after the `variant` byte of a parameter owner store?
+
+**Known.** `f3d.md` §3.1 "Every dimension or feature-input parameter stores `owner_record_index`" gives the byte. It is zero in almost every owner. It is one only in scalar owners whose `variant` is one, and one design stores variant one with flag zero.
+
+**Need.** The flag can mark a driven or suppressed parameter. A design that toggles one dimension between driving and driven, saved in each state, fixes the meaning.
+
+### DR-88. Secondary asset-folder run
+
+**Question.** What separates the assets of the secondary asset-folder run of the top-level manifest from the assets of the first run?
+
+**Known.** `f3d.md` §1.3 "The asset-folder tail is the unique suffix" gives both runs. The secondary run is empty in most documents. In documents that also store a toolpath, animation, or simulation asset, it lists the `Simulation Model` folder, and the first run lists the Design, toolpath, and animation folders.
+
+**Need.** A writer must place each asset in the correct run. A document with two simulation studies, or with a simulation asset and no toolpath, shows which asset kinds the secondary run holds.
+
+### DR-90. Component of a sketch Geometry member in a multi-component Design
+
+**Question.** Which component numbers a sketch Geometry member ordinal when a Design stream names several components?
+
+**Known.** `f3d.md` §3.1 "The current sketch entity container" counts the ordinals within the component whose entity cluster holds the sketch entity. The validator selects that component as the naming space with the greatest component record index at or below the sketch entity suffix. In single-component Designs the ordinals increase with the sketch entity suffix. In some Designs with 10 to 362 component naming spaces, two sketches that this rule places in one component carry the same ordinal.
+
+**Need.** The entity cluster boundaries of each component, or the owner link from a sketch entity to its component, give the component of each sketch.
+
+### DR-91. Opposed joint frame mate
+
+**Question.** For a joint whose frame-sense byte is `1` (opposed), how do the two operand frames' in-plane axes relate, and how does the alignment angle apply?
+
+**Known.** In every observed opposed joint the two frames' z axes are antiparallel (`z₁ = −z₀`). For an aligned joint, the first operand's model frame is the second's turned by the alignment angle about its z axis. No observed opposed joint has a nonzero alignment angle or offset, so the in-plane axis that flips and the sign of the angle are not fixed by any sample.
+
+**Need.** An opposed joint with a nonzero angle and asymmetric operands, whose stored placement shows the result, would fix which in-plane axis reverses (x or y) and whether the angle turns about `z₀` or `z₁`.
+
+**Conflict.** Assuming a 180° turn about either in-plane axis, or applying the angle with the aligned sign, states a relation no sample shows.
+
+### DR-92. Current revision of a component definition
+
+**Question.** When a component definition is stored as revisions, each binding its own context UUID, which revision is current?
+
+**Known.** Two real assemblies store a component definition as two record pairs that repeat one record index. Both pairs carry the component's name and each binds its own context UUID, and neither UUID occurs elsewhere in the design. The later pair is longer and carries typed references.
+
+**Need.** A design whose persistent identities use one of the two UUIDs, or whose component properties differ between the revisions, must show which revision Fusion treats as current.
+
+**Conflict.** Treating either revision as the only binding discards a naming space a persistent identity could select.
+
+### DR-93. Sheet-metal rule word and entry run
+
+**Question.** What does the u32 word at rule-record offset 21 state, and how long is the rule's entry run?
+
+**Known.** In two CC0 sheet-metal parts the word is 3. It is followed by four LP-UTF16 expression and f64 value entries (`Thickness`, `1`, `Thickness * 0.5`, `Thickness * 2.0`), then a zero u32 and the `Thickness` entry again. So the word is not the entry count.
+
+**Need.** Rules with a different number of entries, or a controlled edit of one rule value, would fix the word's meaning and the bounds of the entry run.
+
+**Conflict.** Treating the word as an entry count reads one entry fewer than the record holds.
+
+### DR-95. Rectangular-pattern direction selection kind `16` and the reference at offset 138
+
+**Question.** What does selection kind `16` select in a rectangular-pattern direction record, what do its origin and displacement mean, and what record does the marked reference at offset 138 name?
+
+**Known.** `f3d.md` §3.1 "A rectangular-pattern direction record is a 220-byte frame" gives the frame, the U-then-V order, and the direction as the normalized displacement. Kind `8` selects a linear edge, with the edge start point and the edge vector. A kind-`16` record stores a unit displacement and an origin on the selected entity; the specification does not name the entity kind. The reference at offset 138 names a record outside the scope reference table.
+
+**Need.** A writer must emit the selection kind, the origin, and the reference at offset 138 for a direction that does not come from a linear edge, and a reader must know whether a kind-`16` origin is a point of a planar face, an axis, or another entity.
+
+### DR-96. Rectangular-pattern distance type and the 221-byte direction form
+
+**Question.** Where does a rectangular-pattern scope store whether its extent owners hold the seed-to-final-instance extent or the adjacent spacing, what does the u32 at direction-record offset 89 select, and how does a direction with no stored displacement define its vector?
+
+**Known.** `f3d.md` §3.1 "A rectangular-pattern direction record is a 220-byte frame" gives the 220-byte form, which stores u32 `8` at offset 89. A 221-byte direction frame stores u32 `7` at offset 89 and one zero byte at offset 93; its later fields keep the 220-byte order one byte later. A frame in this form is not a 220-byte direction record, so a scope that stores one has no direction records. A class-261 frame in the scope reference table holds the selection-operand reference, the auxiliary reference, the role, and the closing references of a direction record, with no selection kind, origin, or displacement.
+
+**Need.** A reader must convert both extent owners to adjacent spacing and must define each active direction's vector, including the vector of a class-261 direction.
+
+**Conflict.** A Features-type rectangular pattern with 3 by 2 instances at 10 mm spacing stores an extent of 1.0 cm in both directions. Extent divided by count minus one gives 5 mm and 10 mm, not 10 mm and 10 mm. That scope stores its direction in the 221-byte form. In scopes that store 220-byte direction records, the extent divided by count minus one reproduces the measured pitch in both directions.
 
 ## 2. External references
 
@@ -237,6 +333,14 @@ the native feature when a fixed lane carries a symmetric distance.
 **Known.** `f3d.md` §3.1 "An attributed local component occurrence" gives the frame. The two bytes are `00 00` in most frames and `01 00` in one. The reference names a different record in each frame, in increasing order.
 
 **Need.** The two bytes can be a grounding or visibility state of the occurrence.
+
+### DR-84. Occurrence identity pairs of a typed path
+
+**Question.** What do the occurrence identity pairs after a typed occurrence path's identity GUIDs name?
+
+**Known.** `f3d.md` "Assembly operands" gives the pair list. In one assembly, the paths of four of its six joints carry the same single pair: a decimal occurrence key and an occurrence GUID that name two different local occurrences. The paths of the other two joints, and a path continuation, carry no pairs. The pair is not the joint's own operand pair.
+
+**Need.** A writer must know when to emit a pair and which occurrences it names.
 
 ### XR-01. `neutronData` with a different GUID
 

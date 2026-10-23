@@ -1277,8 +1277,9 @@ and the canonical parameter is `v = u`. If `R1 < R2`, `major_direction` is
 `p[2] = axis × p[1]`, `minor_radius` is `R1`, and the canonical parameter is
 `v = u - π/2`. Numeric `TRIMMED_CURVE` selectors apply this phase after
 angular-unit conversion. Cartesian selectors invert the canonical carrier and
-therefore apply no phase. Curve replicas, nested trims, and spatial offsets
-inherit the phase; the source STEP record is unchanged.
+therefore apply no phase. Curve replicas and spatial offsets inherit the
+phase; the source STEP record is unchanged. A trimmed ellipse runs on its local
+parameter, so a trim nested on it applies no phase.
 
 ISO 10303-42 defines `TRIMMED_CURVE` as a selected portion of an unchanged
 basis curve. Trim selects are parameter values, Cartesian points, or both.
@@ -1290,7 +1291,8 @@ and `s = t1 - t` for a FALSE sense. On a cyclic basis, the forward directed
 branch increases the second select by one period when it is below the first;
 the reversed directed branch increases the first select by one period when it
 is below the second. The domain is `0..abs(t2-t1)` after that branch
-adjustment. The stored sense maps local parameters in the increasing or
+adjustment. A `TRIMMED_CURVE` whose basis is a `TRIMMED_CURVE` states its
+parameter selects on the local parameter `s` of that basis. The stored sense maps local parameters in the increasing or
 decreasing parent direction. A
 `CURVE_REPLICA` retains the complete parent relation, including a trim, and
 inherits the parent's parameter range and parameterization; its transformation

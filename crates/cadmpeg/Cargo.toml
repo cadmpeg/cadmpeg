@@ -38,7 +38,7 @@ default = [
 # codec registry and constructs the codecs for detection, inspection, and
 # encoding. Direct codec dependencies are needed only by CLI tests.
 fcstd = ["cadmpeg-registry/fcstd", "dep:cadmpeg-codec-freecad"]
-f3d = ["cadmpeg-registry/f3d"]
+f3d = ["cadmpeg-registry/f3d", "dep:cadmpeg-codec-f3d"]
 inventor = ["cadmpeg-registry/inventor"]
 sldprt = ["cadmpeg-registry/sldprt", "dep:cadmpeg-codec-sldprt"]
 catia = ["cadmpeg-registry/catia", "dep:cadmpeg-codec-catia"]
@@ -53,8 +53,10 @@ sat = ["cadmpeg-registry/sat"]
 cadmpeg-core.workspace = true
 cadmpeg-container.workspace = true
 cadmpeg-ir = { workspace = true, features = ["schema"] }
+cadmpeg-measure.workspace = true
 cadmpeg-registry.workspace = true
 cadmpeg-codec-freecad = { workspace = true, optional = true }
+cadmpeg-codec-f3d = { workspace = true, optional = true }
 cadmpeg-codec-sldprt = { workspace = true, optional = true }
 cadmpeg-codec-catia = { workspace = true, optional = true }
 cadmpeg-codec-creo = { workspace = true, optional = true }

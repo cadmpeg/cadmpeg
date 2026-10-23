@@ -881,7 +881,7 @@ struct SubdEdgeWire {
     #[serde(default, deserialize_with = "deserialize_knot_interval")]
     knot_interval: Option<f64>,
     /// User-knot extension state.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_user_knot")]
     user_knot: Option<SubdUserKnot>,
     /// Sector coefficients at the two endpoints.
     sector_coefficients: [f64; 2],
@@ -1106,6 +1106,7 @@ cadmpeg_core::named_optional_field!(
     "secondary_grips"
 );
 cadmpeg_core::named_optional_field!(deserialize_knot_interval, f64, "knot_interval");
+cadmpeg_core::named_optional_field!(deserialize_user_knot, SubdUserKnot, "user_knot");
 
 mod identity_rewrite;
 

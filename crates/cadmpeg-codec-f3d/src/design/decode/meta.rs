@@ -22,6 +22,11 @@ use crate::records::{
 const COMPONENT_MODULE: &str = "Component";
 const COMPONENT_NAMING_SPACE_BASE_TYPE_GUID: &str = "21F379C8-CAFD-4985-B461-767673A4C502";
 const COMPONENT_UUID_RESERVED_LENGTHS: [usize; 2] = [2, 3];
+/// Type of the entity a linked component binding names between the
+/// component reference and its context UUID.
+const COMPONENT_BINDING_LINK_TYPE_GUID: &str = "8ACBA2E5-5A4C-4438-8351-276DE96E6982";
+/// Zero bytes after each reference of a linked component binding.
+const COMPONENT_BINDING_LINK_RESERVED_LEN: usize = 2;
 
 /// Stable Design type identity of the record that owns the ordered feature
 /// scope list.
@@ -94,39 +99,115 @@ pub(crate) fn decode_types(scan: &ContainerScan) -> Result<Vec<SegmentType>, Cod
     Ok(out)
 }
 
-fn insert_component_naming_space(
-    by_component: &mut HashMap<u64, DesignComponentNamingSpace>,
-    bulk_name: &str,
+/// The header offset and record index of the indexed record holding `at`.
+fn enclosing_record(headers: &[(usize, u32)], at: usize) -> Option<(usize, u32)> {
+    headers
+        .get(
+            headers
+                .partition_point(|(offset, _)| *offset <= at)
+                .checked_sub(1)?,
+        )
+        .copied()
+}
+
+/// One component's context bindings, each with the indexed record holding it.
+type ComponentBindings = HashMap<u64, Vec<(DesignComponentNamingSpace, Option<(usize, u32)>)>>;
+
+/// Where a binding starts: its marker offset and the indexed record holding it.
+#[derive(Clone, Copy)]
+struct BindingSite {
     marker: usize,
+    record: Option<(usize, u32)>,
+}
+
+fn insert_component_naming_space(
+    by_component: &mut ComponentBindings,
+    bulk_name: &str,
+    site: BindingSite,
     component_record_index: u64,
     context_uuid: crate::records::mesh::DesignRelaxedGuidText,
     context_uuid_offset: usize,
+    name: Option<(String, usize)>,
 ) -> Result<(), CodecError> {
-    if let Some(existing) = by_component.get(&component_record_index) {
-        if existing.context_uuid != context_uuid {
-            return Err(crate::design::text::malformed_design(format_args!(
-                "Design component {component_record_index} has conflicting context UUID bindings"
-            )));
+    let BindingSite { marker, record } = site;
+    let name_offset = name
+        .as_ref()
+        .map(|(_, at)| u64::try_from(*at))
+        .transpose()
+        .map_err(|_| CodecError::malformed("f3d component name offset exceeds u64"))?;
+    let byte_offset = u64::try_from(marker)
+        .map_err(|_| CodecError::malformed("f3d component naming marker offset exceeds u64"))?;
+    let context_uuid_offset = u64::try_from(context_uuid_offset)
+        .map_err(|_| CodecError::malformed("f3d component naming UUID offset exceeds u64"))?;
+    let bindings = by_component.entry(component_record_index).or_default();
+    if let Some((existing, existing_record)) = bindings
+        .iter_mut()
+        .find(|(existing, _)| existing.context_uuid == context_uuid)
+    {
+        // A named hit is the binding in the definition record, so its site
+        // replaces the unnamed hit's.
+        if existing.name.is_none() && name.is_some() {
+            existing.name = name.map(|(name, _)| name);
+            existing.name_offset = name_offset;
+            existing.byte_offset = byte_offset;
+            existing.context_uuid_offset = context_uuid_offset;
+            existing.id =
+                design_record_id(bulk_name, ":design-component-naming-space#", byte_offset);
+            *existing_record = record;
         }
         return Ok(());
     }
+    // A component definition stored as revisions, in different records that
+    // repeat one record index and each carry the component's name, binds one
+    // context UUID in each. Any other second UUID conflicts.
+    let new_name = name.as_ref().map(|(name, _)| name);
+    let revision = |binding: &(DesignComponentNamingSpace, Option<(usize, u32)>)| {
+        binding.0.name.as_ref() == new_name
+            && match (binding.1, record) {
+                (Some((offset, index)), Some((new_offset, new_index))) => {
+                    index == new_index && offset != new_offset
+                }
+                _ => false,
+            }
+    };
+    if !bindings.is_empty() && (name.is_none() || !bindings.iter().all(revision)) {
+        return Err(crate::design::text::malformed_design(format_args!(
+            "Design component {component_record_index} has conflicting context UUID bindings"
+        )));
+    }
 
-    let byte_offset = u64::try_from(marker)
-        .map_err(|_| CodecError::malformed("f3d component naming marker offset exceeds u64"))?;
     let id = design_record_id(bulk_name, ":design-component-naming-space#", byte_offset);
-    let context_uuid_offset = u64::try_from(context_uuid_offset)
-        .map_err(|_| CodecError::malformed("f3d component naming UUID offset exceeds u64"))?;
-    by_component.insert(
-        component_record_index,
+    bindings.push((
         DesignComponentNamingSpace {
             id,
             byte_offset,
             component_record_index,
             context_uuid,
             context_uuid_offset,
+            name: name.map(|(name, _)| name),
+            name_offset,
         },
-    );
+        record,
+    ));
     Ok(())
+}
+
+/// The component name after a binding's context UUID: an LP-UTF16 name and
+/// two zero bytes that end the indexed record. Other binding sites store no
+/// name.
+fn component_name_after_context_uuid(bytes: &[u8], uuid_offset: usize) -> Option<(String, usize)> {
+    let name_at = uuid_offset.checked_add(4 + 2 * 36)?;
+    let (name, end) = lp_utf16_bounded(bytes, name_at, 1..=256)?;
+    if name.chars().any(char::is_control) || bytes.get(end..end.checked_add(2)?)? != [0, 0] {
+        return None;
+    }
+    let after = end.checked_add(2)?;
+    let record_ends = after == bytes.len()
+        || (View::u32_le_at(bytes, after) == Some(3)
+            && bytes
+                .get(after.checked_add(4)?..after.checked_add(7)?)
+                .is_some_and(|tag| tag.iter().all(u8::is_ascii_digit)));
+    record_ends.then_some((name, name_at))
 }
 
 /// The counted context UUID after a typed component reference and its offset.
@@ -143,6 +224,36 @@ fn typed_component_context_uuid(bytes: &[u8], after_reference: usize) -> Option<
                 .is_some_and(|reserved| reserved.iter().all(|byte| *byte == 0))
         })
         .find_map(|at| Some((lp_utf16_bounded(bytes, at, 36..=36)?.0, at)))
+}
+
+/// The component, context UUID, and UUID offset of a linked binding at
+/// `marker`: a component reference and a reference to a link entity, each
+/// followed by its reserved zero bytes, then the context UUID.
+fn linked_component_binding(
+    bytes: &[u8],
+    marker: usize,
+    component_entities: &HashSet<u64>,
+    link_entities: &HashSet<u64>,
+) -> Option<(u64, crate::records::mesh::DesignRelaxedGuidText, usize)> {
+    let reference_len = 1 + 8 + COMPONENT_BINDING_LINK_RESERVED_LEN;
+    let reference = |at: usize, targets: &HashSet<u64>| {
+        let entity = View::u64_le_at(bytes, at.checked_add(1)?)?;
+        let reserved = bytes.get(at.checked_add(9)?..at.checked_add(reference_len)?)?;
+        (bytes.get(at) == Some(&1)
+            && targets.contains(&entity)
+            && reserved.iter().all(|byte| *byte == 0))
+        .then_some(entity)
+    };
+    if marker > 0 && bytes.get(marker - 1) == Some(&1) {
+        return None;
+    }
+    let component_record_index = reference(marker, component_entities)?;
+    let link = marker.checked_add(reference_len)?;
+    reference(link, link_entities)?;
+    let uuid_offset = link.checked_add(reference_len)?;
+    let (context_uuid, _) = lp_utf16_bounded(bytes, uuid_offset, 36..=36)?;
+    let context_uuid = crate::records::mesh::DesignRelaxedGuidText::try_from(context_uuid).ok()?;
+    Some((component_record_index, context_uuid, uuid_offset))
 }
 
 /// Decode each component entity's UUID-bound local naming space.
@@ -176,7 +287,10 @@ pub(crate) fn decode_component_naming_spaces(
         }
         let bulk_name = paired_bulk_entry_name(scan, meta_entry.prefix)?;
         let bytes = scan.entry_bytes(bulk_name)?;
-        let mut by_component = HashMap::<u64, DesignComponentNamingSpace>::new();
+        let headers = super::sketch::indexed_record_offsets(bytes)
+            .map(|header| (header.offset, header.record_index))
+            .collect::<Vec<_>>();
+        let mut by_component = ComponentBindings::new();
         for reserved_len in COMPONENT_UUID_RESERVED_LENGTHS {
             let prefix_len = 1 + 8 + reserved_len;
             for uuid_offset in bytes
@@ -209,10 +323,47 @@ pub(crate) fn decode_component_naming_spaces(
                 insert_component_naming_space(
                     &mut by_component,
                     bulk_name,
-                    marker,
+                    BindingSite {
+                        marker,
+                        record: enclosing_record(&headers, marker),
+                    },
                     component_record_index,
                     context_uuid,
                     uuid_offset,
+                    component_name_after_context_uuid(bytes, uuid_offset),
+                )?;
+            }
+        }
+        let link_entities = meta
+            .types
+            .iter()
+            .filter(|design_type| {
+                design_type.module == DESIGN_MODULE_FUSION
+                    && design_type
+                        .type_guid
+                        .as_str()
+                        .eq_ignore_ascii_case(COMPONENT_BINDING_LINK_TYPE_GUID)
+            })
+            .flat_map(|design_type| design_type.entities.values().copied())
+            .collect::<HashSet<_>>();
+        if !link_entities.is_empty() {
+            for marker in 0..bytes.len() {
+                let Some((component_record_index, context_uuid, uuid_offset)) =
+                    linked_component_binding(bytes, marker, &component_entities, &link_entities)
+                else {
+                    continue;
+                };
+                insert_component_naming_space(
+                    &mut by_component,
+                    bulk_name,
+                    BindingSite {
+                        marker,
+                        record: enclosing_record(&headers, marker),
+                    },
+                    component_record_index,
+                    context_uuid,
+                    uuid_offset,
+                    component_name_after_context_uuid(bytes, uuid_offset),
                 )?;
             }
         }
@@ -257,10 +408,14 @@ pub(crate) fn decode_component_naming_spaces(
             insert_component_naming_space(
                 &mut by_component,
                 bulk_name,
-                marker,
+                BindingSite {
+                    marker,
+                    record: enclosing_record(&headers, marker),
+                },
                 component_record_index,
                 context_uuid,
                 uuid_offset,
+                component_name_after_context_uuid(bytes, uuid_offset),
             )?;
         }
         if let Some(missing) = component_entities
@@ -273,7 +428,7 @@ pub(crate) fn decode_component_naming_spaces(
             )));
         }
 
-        out.extend(by_component.into_values());
+        out.extend(by_component.into_values().flatten().map(|(space, _)| space));
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)

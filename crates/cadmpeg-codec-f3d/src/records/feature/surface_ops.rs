@@ -432,7 +432,7 @@ pub(crate) enum DesignSurfacePatchNormalState {
     Unsupported,
 }
 
-/// Boundary settings and whole-surface normal state of one SurfacePatch.
+/// Boundary settings and whole-surface normal state of one `SurfacePatch`.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct DesignSurfacePatchScope {
     pub(crate) boundaries: Vec<DesignSurfacePatchBoundary>,

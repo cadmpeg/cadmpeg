@@ -135,6 +135,15 @@ mod tests {
 
     #[test]
     fn compact_owner_body_requires_adjacent_typed_frames_and_matching_reference() {
+        fn body(kind: &SegmentTypeData) -> DesignPrimaryFrame<'_> {
+            DesignPrimaryFrame {
+                entity_id: 41,
+                class_tag: "531".to_owned().try_into().unwrap(),
+                start: 33,
+                end: 62,
+                design_type: kind,
+            }
+        }
         let owner_type = kind(
             "CB4F4CC2-9D6F-48BA-9B1F-20C1992C9C9C",
             "5C069ACB-169F-4555-9792-815B4671DDA0",
@@ -156,15 +165,6 @@ mod tests {
         bytes[21] = 1;
         bytes[22..30].copy_from_slice(&41u64.to_le_bytes());
         bytes[54..62].copy_from_slice(&1234u64.to_le_bytes());
-        fn body(kind: &SegmentTypeData) -> DesignPrimaryFrame<'_> {
-            DesignPrimaryFrame {
-                entity_id: 41,
-                class_tag: "531".to_owned().try_into().unwrap(),
-                start: 33,
-                end: 62,
-                design_type: kind,
-            }
-        }
         assert_eq!(suffix(&bytes, &owner, &body(&body_type)), Some(1234));
         bytes[22..30].copy_from_slice(&42u64.to_le_bytes());
         assert_eq!(suffix(&bytes, &owner, &body(&body_type)), None);

@@ -49,12 +49,21 @@ pub(crate) enum F3dLossCode {
     /// Unresolved `Component Insert` occurrences dropped because no authored timeline order tells
     /// top-level inserts from internal operands.
     ComponentInsertOrderUnknown,
+    /// Component definitions stored as revised records that each bind a context
+    /// UUID; the earliest record defines the component.
+    ComponentDefinitionRevised,
     /// Design assembly joint scopes whose operands, frames, limits, or alignment values do not
     /// project.
     AssemblyJointUnprojected,
     /// Design assembly joints projected as fixed because their freedom codes or
     /// limit lanes do not map to a joint kind.
     AssemblyJointMotionUndecoded,
+    /// Projected Design assembly joints whose operand paths carry occurrence
+    /// identity pairs of unknown effect on the joint, retained natively.
+    AssemblyOperandPathPairsNative,
+    /// Projected Design assembly joints whose scope states how their operand
+    /// frames mate; the neutral joint does not carry that sense yet.
+    AssemblyJointFrameSenseUnprojected,
     /// An F3Z drawing root was omitted while its derived 3D model transferred.
     DrawingDocumentOmitted,
     /// ASM history estimated retained size exceeded the session's remaining retained-byte allowance.
@@ -77,10 +86,16 @@ pub(crate) enum F3dLossCode {
     EdgeReferenceLostUnrepaired,
     /// Feature scopes have no complete neutral feature definition.
     FeatureDefinitionIncomplete,
+    /// Sheet-metal base flanges projected with their stored thickness copy because
+    /// their rule states no thickness.
+    SheetThicknessUnruled,
     /// Decoded feature scopes have no neutral construction-history feature.
     FeatureScopeUnprojected,
     /// A decoded native feature envelope has no interpreted specialized payload.
     FeatureScopePayloadUninterpreted,
+    /// A non-equivalent duplicate scope envelope was superseded by the
+    /// primary-indexed envelope.
+    FeatureScopeEnvelopeSuperseded,
     /// Decoded Design parameters have no neutral parameter.
     ParameterUnprojected,
     /// Typed compact parameter frames match no parameter grammar.
@@ -165,6 +180,9 @@ pub(crate) enum F3dLossCode {
     XrefPlacementMetadataMissing,
     /// Structured placement records were superseded by scope-bound carriers.
     XrefPlacementSuperseded,
+    /// Inserted-design occurrences that store the identity and are placed by
+    /// their joints; the joint-solved pose is not computed.
+    JointPlacedOccurrenceUnsolved,
     /// Mesh body geometry stores vertex coordinates at f32 precision.
     MeshVertexPrecisionReduced,
     /// A bodyless design's sketches or reference images are its complete carrier.
@@ -253,8 +271,11 @@ impl F3dLossCode {
         Self::LocalOccurrenceUnplaced,
         Self::ComponentInsertUnplaced,
         Self::ComponentInsertOrderUnknown,
+        Self::ComponentDefinitionRevised,
         Self::AssemblyJointUnprojected,
         Self::AssemblyJointMotionUndecoded,
+        Self::AssemblyOperandPathPairsNative,
+        Self::AssemblyJointFrameSenseUnprojected,
         Self::DrawingDocumentOmitted,
         Self::HistoryBindingBudgetExceeded,
         Self::HistoryBindingWorkExceeded,
@@ -266,8 +287,10 @@ impl F3dLossCode {
         Self::DecalNativeRetained,
         Self::EdgeReferenceLostUnrepaired,
         Self::FeatureDefinitionIncomplete,
+        Self::SheetThicknessUnruled,
         Self::FeatureScopeUnprojected,
         Self::FeatureScopePayloadUninterpreted,
+        Self::FeatureScopeEnvelopeSuperseded,
         Self::ParameterUnprojected,
         Self::ParameterRecordUnparsed,
         Self::ParameterOwnerUnrecognized,
@@ -310,6 +333,7 @@ impl F3dLossCode {
         Self::XrefPlacementUndecoded,
         Self::XrefPlacementMetadataMissing,
         Self::XrefPlacementSuperseded,
+        Self::JointPlacedOccurrenceUnsolved,
         Self::MeshVertexPrecisionReduced,
         Self::BodylessDesignCarrier,
         Self::AssemblyComponentsExternal,
@@ -367,8 +391,11 @@ impl F3dLossCode {
             Self::LocalOccurrenceUnplaced => "assembly.local-occurrence-unplaced",
             Self::ComponentInsertUnplaced => "assembly.component-insert-unplaced",
             Self::ComponentInsertOrderUnknown => "assembly.component-insert-order-unknown",
+            Self::ComponentDefinitionRevised => "assembly.component-definition-revised",
             Self::AssemblyJointUnprojected => "assembly.joint-unprojected",
             Self::AssemblyJointMotionUndecoded => "assembly.joint-motion-undecoded",
+            Self::AssemblyOperandPathPairsNative => "assembly.operand-path-pairs-native",
+            Self::AssemblyJointFrameSenseUnprojected => "assembly.joint-frame-sense-unprojected",
             Self::DrawingDocumentOmitted => "drawing.document-omitted",
             Self::HistoryBindingBudgetExceeded => "history.binding-budget-exceeded",
             Self::HistoryBindingWorkExceeded => "history.binding-work-exceeded",
@@ -380,7 +407,9 @@ impl F3dLossCode {
             Self::DecalNativeRetained => "appearance.decal-native",
             Self::EdgeReferenceLostUnrepaired => "feature.edge-reference-lost",
             Self::FeatureDefinitionIncomplete => "feature.definition-incomplete",
+            Self::SheetThicknessUnruled => "feature.sheet-thickness-unruled",
             Self::FeatureScopePayloadUninterpreted => "feature.scope-payload-uninterpreted",
+            Self::FeatureScopeEnvelopeSuperseded => "feature.scope-envelope-superseded",
             Self::FeatureScopeUnprojected => "feature.scope-unprojected",
             Self::ParameterUnprojected => "parameter.unprojected",
             Self::ParameterRecordUnparsed => "parameter.record-unparsed",
@@ -426,6 +455,7 @@ impl F3dLossCode {
             Self::XrefPlacementUndecoded => "xref.placement-undecoded",
             Self::XrefPlacementMetadataMissing => "xref.placement-metadata-missing",
             Self::XrefPlacementSuperseded => "xref.placement-superseded",
+            Self::JointPlacedOccurrenceUnsolved => "assembly.joint-placed-occurrence-unsolved",
             Self::MeshVertexPrecisionReduced => "mesh.vertex-precision-reduced",
             Self::BodylessDesignCarrier => "design.bodyless-carrier",
             Self::AssemblyComponentsExternal => "assembly.components-external",
@@ -501,16 +531,21 @@ impl F3dLossCode {
             | Self::LocalOccurrenceUnplaced
             | Self::ComponentInsertUnplaced
             | Self::ComponentInsertOrderUnknown
+            | Self::ComponentDefinitionRevised
             | Self::AssemblyJointUnprojected
             | Self::AssemblyJointMotionUndecoded
+            | Self::AssemblyOperandPathPairsNative
+            | Self::AssemblyJointFrameSenseUnprojected
             | Self::DrawingDocumentOmitted
             | Self::DesignBodyBindingUnresolved
             | Self::ReferenceImageNativeRetained
             | Self::DecalNativeRetained
             | Self::EdgeReferenceLostUnrepaired
             | Self::FeatureDefinitionIncomplete
+            | Self::SheetThicknessUnruled
             | Self::FeatureScopeUnprojected
             | Self::FeatureScopePayloadUninterpreted
+            | Self::FeatureScopeEnvelopeSuperseded
             | Self::ParameterUnprojected
             | Self::ParameterRecordUnparsed
             | Self::ParameterOwnerUnrecognized
@@ -552,6 +587,7 @@ impl F3dLossCode {
             | Self::XrefPlacementUndecoded
             | Self::XrefPlacementMetadataMissing
             | Self::XrefPlacementSuperseded
+            | Self::JointPlacedOccurrenceUnsolved
             | Self::MeshVertexPrecisionReduced
             | Self::FaceSurfaceReferenceDangling
             | Self::SurfaceShapeNotDecoded
@@ -601,14 +637,17 @@ impl F3dLossCode {
             | Self::XrefMemberUndecoded
             | Self::XrefPlacementUndecoded
             | Self::XrefPlacementMetadataMissing
-            | Self::XrefPlacementSuperseded => LossTaxonomy::AssemblyComponentsExternal,
+            | Self::XrefPlacementSuperseded
+            | Self::JointPlacedOccurrenceUnsolved => LossTaxonomy::AssemblyComponentsExternal,
             Self::HistoryBindingBudgetExceeded
             | Self::HistoryBindingWorkExceeded
             | Self::RecipeSideSearchBudgetExceeded
             | Self::ParameterOrderBudgetExceeded
             | Self::FeatureDefinitionIncomplete
+            | Self::SheetThicknessUnruled
             | Self::FeatureScopeUnprojected
             | Self::FeatureScopePayloadUninterpreted
+            | Self::FeatureScopeEnvelopeSuperseded
             | Self::ParameterUnprojected
             | Self::ParameterOwnerUnrecognized
             | Self::ParameterUnitUntyped
@@ -641,11 +680,14 @@ impl F3dLossCode {
             | Self::FeatureEdgeSelectionLost
             | Self::FeaturePatternInstanceSearchCapped
             | Self::AssemblyJointUnprojected
-            | Self::AssemblyJointMotionUndecoded => LossTaxonomy::FeatureHistoryRetained,
+            | Self::AssemblyJointMotionUndecoded
+            | Self::AssemblyOperandPathPairsNative
+            | Self::AssemblyJointFrameSenseUnprojected => LossTaxonomy::FeatureHistoryRetained,
             Self::MaterialDistanceUnitUntyped => LossTaxonomy::MaterialNotTransferred,
             Self::LocalOccurrenceUnplaced
             | Self::ComponentInsertUnplaced
-            | Self::ComponentInsertOrderUnknown => LossTaxonomy::AssemblyPlacementsNotTransferred,
+            | Self::ComponentInsertOrderUnknown
+            | Self::ComponentDefinitionRevised => LossTaxonomy::AssemblyPlacementsNotTransferred,
             Self::DesignBodyBindingUnresolved
             | Self::FaceSurfaceReferenceDangling
             | Self::PcurveUndecoded => LossTaxonomy::ReferenceGraphNotClosed,
@@ -746,8 +788,11 @@ mod tests {
                 "assembly.local-occurrence-unplaced",
                 "assembly.component-insert-unplaced",
                 "assembly.component-insert-order-unknown",
+                "assembly.component-definition-revised",
                 "assembly.joint-unprojected",
                 "assembly.joint-motion-undecoded",
+                "assembly.operand-path-pairs-native",
+                "assembly.joint-frame-sense-unprojected",
                 "drawing.document-omitted",
                 "history.binding-budget-exceeded",
                 "history.binding-work-exceeded",
@@ -759,8 +804,10 @@ mod tests {
                 "appearance.decal-native",
                 "feature.edge-reference-lost",
                 "feature.definition-incomplete",
+                "feature.sheet-thickness-unruled",
                 "feature.scope-unprojected",
                 "feature.scope-payload-uninterpreted",
+                "feature.scope-envelope-superseded",
                 "parameter.unprojected",
                 "parameter.record-unparsed",
                 "parameter.owner-unrecognized",
@@ -803,6 +850,7 @@ mod tests {
                 "xref.placement-undecoded",
                 "xref.placement-metadata-missing",
                 "xref.placement-superseded",
+                "assembly.joint-placed-occurrence-unsolved",
                 "mesh.vertex-precision-reduced",
                 "design.bodyless-carrier",
                 "assembly.components-external",

@@ -167,6 +167,14 @@ pub(super) fn exact_assembly_alignment_with_types(
                     angle.evaluated_value().get(),
                     [0.0, 0.0, axial_offset.evaluated_value().get()],
                 ),
+                // A rigid as-built joint has no alignment owners.
+                [] if crate::design::assembly::rigid_as_built_scope(
+                    scope.frame_length(),
+                    scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
+                ) =>
+                {
+                    (0.0, [0.0; 3])
+                }
                 _ => return None,
             };
             // Both supported alignment lanes use one fixed four-owner allocation.
@@ -264,15 +272,50 @@ pub(super) fn exact_assembly_alignment_with_types(
             }
             (angle, offset, owners)
         };
+        let mut additional_members = Vec::new();
         let form = if scope.kind() == scope::DesignFeatureKind::AsBuilt {
             let paths = match exact_assembly_operand_paths(bytes, records, scope, stream_types) {
                 Ok(paths) => paths,
                 Err(error) => return Some(Err(error)),
             };
+            // A rigid group's members after its first two tie to its first.
+            if let Some(leading) = paths.as_ref().filter(|_| {
+                crate::design::assembly::rigid_as_built_scope(
+                    scope.frame_length(),
+                    scope.kind() == scope::DesignFeatureKind::AsBuilt,
+                )
+            }) {
+                let member_paths = match super::assembly_operand_paths::exact_rigid_group_member_paths(
+                    bytes,
+                    records,
+                    scope,
+                    stream_types,
+                    leading,
+                ) {
+                    Ok(member_paths) => member_paths?,
+                    Err(error) => return Some(Err(error)),
+                };
+                for path in member_paths {
+                    let frame = super::assembly_operand_frames::exact_as_built_operand_frame(
+                        bytes, &path, true,
+                    )?;
+                    additional_members.push(assembly::DesignQualifiedAssemblyOperand {
+                        frame,
+                        qualifier: DesignAssemblyOperandQualifier::OccurrencePath { path },
+                    });
+                }
+            }
             paths
                 .map(|paths| {
                     DesignAssemblyAlignmentForm::try_from(AsBuiltAlignmentDraft {
-                        frames: exact_as_built_operand_frames(bytes, &paths),
+                        frames: exact_as_built_operand_frames(
+                            bytes,
+                            &paths,
+                            crate::design::assembly::rigid_as_built_scope(
+                                scope.frame_length(),
+                                scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
+                            ),
+                        ),
                         paths,
                     })
                 })
@@ -328,7 +371,30 @@ pub(super) fn exact_assembly_alignment_with_types(
         } else {
             None
         };
+        // The wide forms store how the operand frames mate: 1 opposed, 0
+        // aligned.
+        let sense_at = match generation.operand_frame_variant() {
+            Some(crate::design::assembly::AssemblyOperandFrameVariant::Wide) => {
+                Some(crate::layout::assembly_wide_scope::FRAME_SENSE)
+            }
+            Some(crate::design::assembly::AssemblyOperandFrameVariant::CompactWide) => {
+                Some(crate::layout::assembly_compact_wide_scope::OPERAND_FLAG)
+            }
+            _ => None,
+        };
+        let frame_sense = sense_at
+            .and_then(|at| usize::try_from(scope.byte_offset()).ok()?.checked_add(at))
+            .and_then(|at| match bytes.get(at) {
+                Some(1) => Some(assembly::DesignJointFrameSense::Opposed),
+                Some(0) => Some(assembly::DesignJointFrameSense::Aligned),
+                _ => None,
+            });
         DesignAssemblyAlignment::try_new(angle, offset, owners, form)
+            .and_then(|alignment| {
+                alignment
+                    .with_frame_sense(frame_sense)
+                    .with_additional_members(additional_members)
+            })
             .ok()
             .map(Ok)
     })()

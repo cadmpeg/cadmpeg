@@ -88,10 +88,13 @@ pub(super) fn resolved_surface_patch_edge_group(
     operands: &[DesignEdgeOperand],
     identity_operands: &[DesignEdgeIdentityOperand],
     face_boundaries: &[crate::records::topology::historical_context::AsmFaceBoundary],
-    previous_state_id: Option<i64>,
-    feature_id: &cadmpeg_ir::features::FeatureId,
+    transition: EdgeGroupTransition<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<cadmpeg_ir::features::EdgeSelection, CodecError> {
+    let EdgeGroupTransition {
+        previous_state_id,
+        feature_id,
+    } = transition;
     let fallback = || {
         resolved_edge_group(
             group,
@@ -499,9 +502,9 @@ enum EdgeGroupProof {
 }
 
 #[derive(Clone, Copy)]
-struct EdgeGroupTransition<'a> {
-    previous_state_id: Option<i64>,
-    feature_id: &'a cadmpeg_ir::features::FeatureId,
+pub(super) struct EdgeGroupTransition<'a> {
+    pub(super) previous_state_id: Option<i64>,
+    pub(super) feature_id: &'a cadmpeg_ir::features::FeatureId,
 }
 
 fn resolved_edge_group_with_transition_chain(

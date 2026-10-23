@@ -403,7 +403,7 @@ fn canvas_placement_preserves_ordered_corners_in_model_space() {
         let native = DesignCanvasBounds::try_from(segments).unwrap();
         assert_eq!(native.segments(), segments);
         let (frame, bounds) = native.image_placement(plane).unwrap();
-        let [minimum, maximum] = bounds.corners().map(|p| p.get());
+        let [minimum, maximum] = bounds.corners().map(cadmpeg_ir::units::FinitePoint2::get);
         assert_eq!(minimum, Point2::new(0.0, 0.0));
         for (uv, expected) in [
             ((0.0, 0.0), a),

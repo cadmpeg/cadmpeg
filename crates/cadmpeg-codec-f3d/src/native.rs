@@ -157,6 +157,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "design_parameter_scopes",
     "design_parameters",
     "design_placement_constructions",
+    "design_profile_curve_selections",
     "design_record_headers",
     "design_sheet_metal_settings",
     "design_sketch_placements",
@@ -725,6 +726,16 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
             namespace.set_arena(ctx, row.arena, &model.design_intent_failures)
         },
         len: |model| model.design_intent_failures.len(),
+        counts_toward_emptiness: true,
+    },
+    F3dFamilyRow {
+        arena: "design_profile_curve_selections",
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_profile_curve_selections)
+        },
+        len: |model| model.design_profile_curve_selections.len(),
         counts_toward_emptiness: true,
     },
     F3dFamilyRow {
@@ -1326,6 +1337,10 @@ pub(crate) struct F3dNative {
     /// none of the records design-intent decoding produces.
     #[serde(default)]
     pub(crate) design_intent_failures: Vec<DesignIntentFailure>,
+    /// Typed-reference profile selections that list Sketch curve loops.
+    #[serde(default)]
+    pub(crate) design_profile_curve_selections:
+        Vec<crate::records::topology::entity_selection::DesignProfileCurveSelection>,
     /// Fixed prefixes of indexed records paired with parameter owners.
     #[serde(default)]
     pub(crate) design_parameter_companions: Vec<DesignParameterCompanion>,
@@ -1552,6 +1567,7 @@ impl F3dNative {
             design_extrude_selection_members: read_arena!("design_extrude_selection_members"),
             design_fillet_radius_groups: read_arena!("design_fillet_radius_groups"),
             design_intent_failures: read_arena!("design_intent_failures"),
+            design_profile_curve_selections: read_arena!("design_profile_curve_selections"),
             design_parameter_companions: read_arena!("design_parameter_companions"),
             design_parameter_owners: read_arena!("design_parameter_owners"),
             design_parameter_scopes: read_arena!("design_parameter_scopes"),

@@ -340,12 +340,17 @@ fn rejects_declared_geometry_with_the_wrong_carrier_tag() {
 fn sketch_keeps_no_profiles_when_endpoint_matching_spends_the_work_limit() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch" id="1"/></Objects>
-<ObjectData Count="1"><Object name="Sketch"><Properties Count="1">
+<ObjectData Count="1"><Object name="Sketch"><Properties Count="2">
 <Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="3">
 <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="1" EndY="0"/></Geometry>
 <Geometry type="Part::GeomLineSegment"><LineSegment StartX="1" StartY="0" EndX="0" EndY="1"/></Geometry>
 <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="1" EndX="0" EndY="0"/></Geometry>
 </GeometryList></Property>
+<Property name="Constraints" type="Sketcher::PropertyConstraintList"><ConstraintList count="3">
+<Constrain Type="1" First="0" FirstPos="2" Second="1" SecondPos="1"/>
+<Constrain Type="1" First="1" FirstPos="2" Second="2" SecondPos="1"/>
+<Constrain Type="1" First="2" FirstPos="2" Second="0" SecondPos="1"/>
+</ConstraintList></Property>
 </Properties></Object></ObjectData></Document>"#;
     let ctx = cadmpeg_test_support::service_decode_context();
     let xml = crate::container::admit_document(&ctx, document.as_bytes()).expect("document XML");
@@ -388,12 +393,9 @@ fn sketch_keeps_no_profiles_when_endpoint_matching_spends_the_work_limit() {
 }
 
 #[test]
-fn a_sketch_that_spends_the_endpoint_work_limit_leaves_later_sketches_chained() {
+fn dense_unconstrained_geometry_does_not_exhaust_profile_matching() {
     use std::fmt::Write;
 
-    // Each endpoint of 4096 coincident segments examines every coincident
-    // endpoint, 2 * 4096² candidates in all, which exceeds the per-sketch
-    // MAX_PROFILE_ENDPOINT_CANDIDATES.
     let dense_count = 4096;
     let mut dense = String::new();
     for _ in 0..dense_count {
@@ -436,18 +438,15 @@ fn a_sketch_that_spends_the_endpoint_work_limit_leaves_later_sketches_chained() 
             .expect("decoded sketch")
     };
 
-    assert!(sketch("Dense").profiles.is_empty());
-    assert_eq!(sketch("Triangle").profiles.as_slice().len(), 1);
+    assert_eq!(sketch("Dense").profiles.len(), dense_count);
+    assert_eq!(sketch("Triangle").profiles.as_slice().len(), 3);
     let bounded = result
         .report()
         .losses
         .iter()
         .filter(|loss| loss.code.local_code() == "sketch.profile-matching-bounded")
         .collect::<Vec<_>>();
-    assert_eq!(bounded.len(), 1, "{bounded:#?}");
-    assert!(bounded[0]
-        .message
-        .starts_with("sketch Dense profiles are not chained"));
+    assert!(bounded.is_empty(), "{bounded:#?}");
 }
 
 #[test]
@@ -1253,4 +1252,135 @@ fn unreadable_external_cache_does_not_abort_live_sketch_geometry() {
             .code));
     assert_valid_document(decoded.ir());
     assert!(crate::test_support::validate_native(decoded.ir()).is_empty());
+}
+
+#[test]
+fn external_cache_keys_use_mapped_shadow_without_changing_selector_identity() {
+    for (shadow, selector) in [("shadow", "Edge2"), ("shadowed", ";mapped.Edge2")] {
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="2"><Object type="Sketcher::SketchObject" name="Sketch"/><Object type="Part::Feature" name="Source"/></Objects><ObjectData Count="2"><Object name="Sketch"><Properties Count="3">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property>
+<Property name="ExternalGeometry" type="App::PropertyLinkSubList"><LinkSubList count="1"><Link obj="Source" sub="Edge2" {shadow}=";mapped.Edge2"/></LinkSubList></Property>
+<Property name="ExternalGeo" type="Part::PropertyGeometryList"><GeometryList count="3">
+<Geometry type="Part::GeomLineSegment" id="-1" ref=""><LineSegment StartX="0" StartY="0" EndX="1" EndY="0"/></Geometry>
+<Geometry type="Part::GeomLineSegment" id="-2" ref=""><LineSegment StartX="0" StartY="0" EndX="0" EndY="1"/></Geometry>
+<Geometry type="Part::GeomPoint" id="1" ref="Source.;mapped"><GeomPoint X="2" Y="3" Z="0"/></Geometry>
+</GeometryList></Property></Properties></Object><Object name="Source"><Properties Count="0"/></Object></ObjectData></Document>"#
+        );
+        let result = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(&document)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        assert_eq!(result.ir().model.sketch_entities.len(), 1);
+        assert_eq!(
+            result.ir().model.sketch_entities[0].endpoint_refs,
+            [selector]
+        );
+        assert!(!result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code.local_code() == "sketch.external-reference-unresolved"));
+    }
+}
+
+#[test]
+fn current_external_keys_survive_ambiguous_legacy_aliases_and_export_indices() {
+    for (reference, index_carriers, expected_selector, unresolved) in [
+        ("Source.;A", "", Some(";A.Edge1"), false),
+        ("Source.;B", "", Some(";B.Edge1"), false),
+        ("Source.Edge1", "", None, true),
+        ("Former.Edge9", r#"refIndex="1""#, Some(";B.Edge1"), false),
+        ("Source.;A", r#"refIndex="9""#, None, true),
+        ("Source.;A", r#"refIndex="-1""#, Some(";A.Edge1"), false),
+    ] {
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="2"><Object type="Sketcher::SketchObject" name="Sketch"/><Object type="Part::Feature" name="Source"/></Objects><ObjectData Count="2"><Object name="Sketch"><Properties Count="3">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property>
+<Property name="ExternalGeometry" type="App::PropertyLinkSubList"><LinkSubList count="2"><Link obj="Source" sub="Edge1" shadowed=";A.Edge1"/><Link obj="Source" sub="Edge1" shadowed=";B.Edge1"/></LinkSubList></Property>
+<Property name="ExternalGeo" type="Part::PropertyGeometryList"><GeometryList count="3">
+<Geometry type="Part::GeomLineSegment" id="-1" ref=""><LineSegment StartX="0" StartY="0" EndX="1" EndY="0"/></Geometry>
+<Geometry type="Part::GeomLineSegment" id="-2" ref=""><LineSegment StartX="0" StartY="0" EndX="0" EndY="1"/></Geometry>
+<Geometry type="Part::GeomPoint" id="1" ref="{reference}" {index_carriers}><GeomPoint X="2" Y="3" Z="0"/></Geometry>
+</GeometryList></Property></Properties></Object><Object name="Source"><Properties Count="0"/></Object></ObjectData></Document>"#
+        );
+        let result = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(&document)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let point = result
+            .ir()
+            .model
+            .sketch_entities
+            .iter()
+            .find(|entity| {
+                matches!(
+                    entity.geometry.definition(),
+                    cadmpeg_ir::sketches::SketchGeometryDefinition::Point { .. }
+                )
+            })
+            .expect("cached point retained");
+        assert_eq!(
+            point.endpoint_refs,
+            expected_selector.into_iter().collect::<Vec<_>>(),
+            "{reference} {index_carriers}"
+        );
+        assert_eq!(
+            result
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code.local_code() == "sketch.external-reference-unresolved"),
+            unresolved
+        );
+        assert!(!result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code.local_code() == "sketch.external-cache-unresolved"));
+    }
+}
+
+#[test]
+fn external_geometry_extension_refindex_is_authoritative_and_mirrors_must_agree() {
+    for (geometry_index, extension_index, valid) in [("1", "1", true), ("0", "1", false)] {
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="2"><Object type="Sketcher::SketchObject" name="Sketch"/><Object type="Part::Feature" name="Source"/></Objects><ObjectData Count="2"><Object name="Sketch"><Properties Count="3">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property>
+<Property name="ExternalGeometry" type="App::PropertyLinkSubList"><LinkSubList count="2"><Link obj="Source" sub="Edge1"/><Link obj="Source" sub="Edge2"/></LinkSubList></Property>
+<Property name="ExternalGeo" type="Part::PropertyGeometryList"><GeometryList count="3">
+<Geometry type="Part::GeomLineSegment" id="-1" ref=""><LineSegment StartX="0" StartY="0" EndX="1" EndY="0"/></Geometry>
+<Geometry type="Part::GeomLineSegment" id="-2" ref=""><LineSegment StartX="0" StartY="0" EndX="0" EndY="1"/></Geometry>
+<Geometry type="Part::GeomPoint" id="1" ref="Previous.Edge1" refIndex="{geometry_index}"><GeoExtensions count="1"><GeoExtension type="Sketcher::ExternalGeometryExtension" Ref="Previous.Edge1" RefIndex="{extension_index}" Flags="0"/></GeoExtensions><GeomPoint X="2" Y="3" Z="0"/></Geometry>
+</GeometryList></Property></Properties></Object><Object name="Source"><Properties Count="0"/></Object></ObjectData></Document>"#
+        );
+        let result = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(&document)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let point = result.ir().model.sketch_entities.iter().find(|entity| {
+            matches!(
+                entity.geometry.definition(),
+                cadmpeg_ir::sketches::SketchGeometryDefinition::Point { .. }
+            )
+        });
+        assert_eq!(point.is_some(), valid);
+        if let Some(point) = point {
+            assert_eq!(point.endpoint_refs, ["Edge2"]);
+        }
+        assert_eq!(
+            result
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code.local_code() == "sketch.external-cache-unresolved"),
+            !valid
+        );
+    }
 }

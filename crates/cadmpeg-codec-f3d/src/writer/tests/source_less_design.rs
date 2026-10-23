@@ -707,6 +707,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
                 )
                 .unwrap(),
             ),
+            planar_z_noise: None,
         },
         SketchCurveIdentity {
             id: "f3d:generated:sketch-curve#1".into(),
@@ -730,6 +731,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
                 )
                 .unwrap(),
             ),
+            planar_z_noise: None,
         },
         SketchCurveIdentity {
             id: "f3d:generated:sketch-curve#2".into(),
@@ -763,6 +765,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
                 )
                 .unwrap(),
             )),
+            planar_z_noise: None,
         },
     ];
     native.sketch_relations =

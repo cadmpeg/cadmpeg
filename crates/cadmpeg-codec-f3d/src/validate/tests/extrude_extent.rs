@@ -82,6 +82,8 @@ fn two_sided_distance_extrude_accepts_fixed_distance_lanes() {
         taper_angle: None,
         against_distance,
         side_two_taper_angle: None,
+        profile_offset: None,
+        side_one_offset: None,
     };
     assert!(!conflicts(&fixed_extrude(
         DesignExtrudeExtent::TwoSidedDistance,
@@ -91,4 +93,91 @@ fn two_sided_distance_extrude_accepts_fixed_distance_lanes() {
         DesignExtrudeExtent::TwoSidedDistance,
         lanes(None),
     )));
+}
+
+/// An offset-start distance Extrude whose start-offset lane is also the
+/// `ProfileOffset` parameter owner has one start-offset carrier.
+#[test]
+fn offset_start_lane_that_is_also_the_parameter_owner_counts_once() {
+    use crate::records::{
+        identity::RecordedValue,
+        parameters::{
+            DesignParameter, DesignParameterDraft, DesignParameterOwner, DesignParameterOwnerWire,
+            DesignParameterSource,
+        },
+    };
+    let lane = |record_index| DesignFixedExtrudeScalar {
+        value: crate::test_support::real(0.5),
+        record_index,
+        value_offset: u64::from(record_index) * 100,
+    };
+    let native = |owned: bool| {
+        let mut native = fixed_extrude(
+            DesignExtrudeExtent::OneSidedDistance,
+            DesignFixedExtrudeParameters {
+                along_distance: Some(DesignFixedExtrudeDistance::FixedScalar(distance(4.3, 11))),
+                taper_angle: Some(lane(14)),
+                against_distance: None,
+                side_two_taper_angle: None,
+                profile_offset: Some(lane(17)),
+                side_one_offset: None,
+            },
+        );
+        if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(Some(extrude)) =
+            native.design_parameter_scopes[0].payload_mut()
+        {
+            if let Some(DesignExtrudePrologue::ReferenceAware { start, .. }) =
+                &mut extrude.extrude_prologue
+            {
+                *start = DesignExtrudeStart::OffsetProfilePlane;
+            }
+        }
+        if owned {
+            let base = 20_000;
+            native.design_parameters.push(
+                DesignParameter::try_from(DesignParameterDraft {
+                    id: "f3d:Design/BulkStream.dat:design-parameter#19".into(),
+                    byte_offset: base,
+                    class_tag: "305".to_owned().try_into().unwrap(),
+                    record_index: 19,
+                    source_ordinal: 0,
+                    source: DesignParameterSource::new("ProfileOffset".to_owned(), Some(17), None)
+                        .unwrap(),
+                    expression: "5 mm".into(),
+                    expression_offset: base + 12,
+                    source_kind_offset: base + 32,
+                    unit: Some(RecordedValue {
+                        value: "mm".into(),
+                        offset: base + 52,
+                    }),
+                    name: "d1".into(),
+                    name_offset: base + 62,
+                    evaluated_value: 0.5,
+                    evaluated_value_offset: base + 72,
+                })
+                .unwrap(),
+            );
+            native.design_parameter_owners.push(
+                DesignParameterOwner::try_from(DesignParameterOwnerWire {
+                    id: "f3d:Design/BulkStream.dat:design-parameter-owner#17".into(),
+                    byte_offset: 1_700,
+                    frame_length: 99,
+                    class_tag: "268".to_owned().try_into().unwrap(),
+                    record_index: 17,
+                    scope_record_index: 10,
+                    local_ordinal: 0,
+                    evaluated_value: 0.5,
+                    evaluated_value_offset: 1_740,
+                    parameter_record_index: 19,
+                    owned_ordinal: 0,
+                    variant: None,
+                    companion_record_index: 18,
+                })
+                .unwrap(),
+            );
+        }
+        native
+    };
+    assert!(!conflicts(&native(false)));
+    assert!(!conflicts(&native(true)));
 }

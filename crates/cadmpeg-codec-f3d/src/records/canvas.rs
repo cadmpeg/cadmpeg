@@ -119,23 +119,30 @@ impl TryFrom<[[Point2; 2]; 2]> for DesignCanvasBounds {
         if segments.iter().flatten().any(|point| !point.is_finite()) {
             return Err("boundary_segments must contain finite coordinates".into());
         }
-        let [[a, b], [c, d]] = segments;
-        let e = Point2::new(b.u - a.u, b.v - a.v);
-        let f = Point2::new(c.u - a.u, c.v - a.v);
-        let width = e.u.hypot(e.v);
-        let height = f.u.hypot(f.v);
+        let [[origin_corner, width_corner], [height_corner, opposite_corner]] = segments;
+        let width_delta = Point2::new(
+            width_corner.u - origin_corner.u,
+            width_corner.v - origin_corner.v,
+        );
+        let height_delta = Point2::new(
+            height_corner.u - origin_corner.u,
+            height_corner.v - origin_corner.v,
+        );
+        let width = width_delta.u.hypot(width_delta.v);
+        let height = height_delta.u.hypot(height_delta.v);
         if !width.is_finite() || !height.is_finite() || width <= 0.0 || height <= 0.0 {
             return Err("boundary_segments must have finite nonzero image axes".into());
         }
-        let dot = (e.u / width) * (f.u / height) + (e.v / width) * (f.v / height);
+        let dot = (width_delta.u / width) * (height_delta.u / height)
+            + (width_delta.v / width) * (height_delta.v / height);
         let close = |actual: f64, expected: f64| {
             expected.is_finite()
                 && (actual - expected).abs()
                     <= EPS_CANVAS_BOUNDARY_CLOSURE * actual.abs().max(expected.abs()).max(1.0)
         };
         if dot.abs() > EPS_CANVAS_BOUNDARY_ORTHOGONAL
-            || !close(d.u, b.u + f.u)
-            || !close(d.v, b.v + f.v)
+            || !close(opposite_corner.u, width_corner.u + height_delta.u)
+            || !close(opposite_corner.v, width_corner.v + height_delta.v)
         {
             return Err("boundary_segments must form an ordered rectangle".into());
         }
@@ -151,22 +158,28 @@ impl DesignCanvasBounds {
         self,
         plane: FeatureUnitPlaneFrame,
     ) -> Result<(FeatureUnitPlaneFrame, FeatureImageBounds), String> {
-        let [[a, b], [c, _]] = self.segments;
-        let e = Point2::new(b.u - a.u, b.v - a.v);
-        let f = Point2::new(c.u - a.u, c.v - a.v);
-        let width = e.u.hypot(e.v);
-        let height = f.u.hypot(f.v);
-        let u = *plane.u_axis().as_raw();
-        let v = *plane.v_axis().as_raw();
+        let [[origin_corner, width_corner], [height_corner, _]] = self.segments;
+        let width_delta = Point2::new(
+            width_corner.u - origin_corner.u,
+            width_corner.v - origin_corner.v,
+        );
+        let height_delta = Point2::new(
+            height_corner.u - origin_corner.u,
+            height_corner.v - origin_corner.v,
+        );
+        let width = width_delta.u.hypot(width_delta.v);
+        let height = height_delta.u.hypot(height_delta.v);
+        let plane_u = *plane.u_axis().as_raw();
+        let plane_v = *plane.v_axis().as_raw();
         let origin = plane
             .origin()
             .get()
-            .translated(u, a.u * DESIGN_CANVAS_LENGTH_TO_MM)
-            .translated(v, a.v * DESIGN_CANVAS_LENGTH_TO_MM);
+            .translated(plane_u, origin_corner.u * DESIGN_CANVAS_LENGTH_TO_MM)
+            .translated(plane_v, origin_corner.v * DESIGN_CANVAS_LENGTH_TO_MM);
         let frame = FeatureUnitPlaneFrame::new(
             origin,
-            u.scale(e.u / width) + v.scale(e.v / width),
-            u.scale(f.u / height) + v.scale(f.v / height),
+            plane_u.scale(width_delta.u / width) + plane_v.scale(width_delta.v / width),
+            plane_u.scale(height_delta.u / height) + plane_v.scale(height_delta.v / height),
         )
         .ok_or("Canvas image frame must be finite and orthonormal")?;
         let bounds = FeatureImageBounds::new([

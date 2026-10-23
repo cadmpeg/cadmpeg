@@ -219,6 +219,25 @@ fn delete_face_falls_back_to_group_id() {
             faces: FaceSelection::Native(ref native), ..
         }) if native == &selected.id
     ));
+
+    // The compact frame admits the 78-byte fixed scope tail, one byte
+    // longer; a frame two bytes longer is not compact.
+    for (frame_length, admitted) in [(259, true), (260, false)] {
+        let mut longer = scope.clone();
+        longer
+            .try_edit(|draft| {
+                draft.frame_length = frame_length;
+                draft.paired_byte_offset = draft.byte_offset + frame_length;
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        assert_eq!(
+            project_delete_face(&longer, std::slice::from_ref(&selected), &[])
+                .unwrap()
+                .is_some(),
+            admitted
+        );
+    }
 }
 
 fn compact_split_face_fixture() -> (DesignParameterScope, [DesignConstructionOperandGroup; 2]) {

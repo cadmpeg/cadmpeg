@@ -16,6 +16,7 @@ fn input(feature: &FeatureId, slot: i64) -> FeatureInputTopology {
         .unwrap(),
         edges: Default::default(),
         vertices: Default::default(),
+        edge_geometry: Vec::new(),
         native_ref: Some("f3d:Design/BREP.body:asm-history-state#4".into()),
     }
 }

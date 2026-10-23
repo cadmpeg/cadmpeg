@@ -166,11 +166,11 @@ fn helix_curve_scaling_is_atomic_and_reversal_preserves_admission() {
 }
 
 #[test]
-fn helix_reversal_refuses_a_zero_radius_at_the_new_start_atomically() {
+fn helix_reversal_negates_the_interval_minor_pitch_and_apex_factor() {
     let mut value = HelixCurveConstruction::try_new(
-        [0.0, std::f64::consts::TAU],
+        [0.5, std::f64::consts::TAU],
         HelixFrame {
-            center: Point3::new(0.0, 0.0, 0.0),
+            center: Point3::new(1.0, 2.0, 3.0),
             major: Vector3::new(1.0, 0.0, 0.0),
             minor: Vector3::new(0.0, 1.0, 0.0),
             pitch: Vector3::new(0.0, 0.0, 1.0),
@@ -180,9 +180,13 @@ fn helix_reversal_refuses_a_zero_radius_at_the_new_start_atomically() {
         None,
     )
     .unwrap();
-    let original = value;
-    assert!(value.try_reverse_parameterization().is_err());
-    assert_eq!(value, original);
+    value.try_reverse_parameterization().unwrap();
+    assert_eq!(value.angle_range().get(), [-std::f64::consts::TAU, -0.5]);
+    assert_eq!(*value.center().as_raw(), Point3::new(1.0, 2.0, 3.0));
+    assert_eq!(value.major().get(), Vector3::new(1.0, 0.0, 0.0));
+    assert_eq!(value.minor().get(), Vector3::new(0.0, -1.0, 0.0));
+    assert_eq!(value.pitch().get(), Vector3::new(0.0, 0.0, -1.0));
+    assert_eq!(value.apex_factor().get(), 1.0);
 }
 
 #[test]
@@ -271,7 +275,7 @@ fn helix_surface_preserves_finite_directed_ranges_and_signed_profiles() {
     let wire = serde_json::to_value(surface).unwrap();
     assert_eq!(
         wire["profile"],
-        json!({"kind": "circle", "length": -1.0, "radius": -2.0})
+        json!({"kind": "circle", "angle": -1.0, "radius": -2.0})
     );
     assert_eq!(
         serde_json::from_value::<HelixSurfaceConstruction>(wire.clone()).unwrap(),

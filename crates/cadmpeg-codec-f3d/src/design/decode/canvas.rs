@@ -31,7 +31,7 @@ pub(crate) fn decode_canvas_images(
         scan,
         scopes,
         &crate::records::feature::scope::DesignFeatureKind::Canvas,
-        parse_canvas_image,
+        |bytes, stream, scope| Ok(parse_canvas_image(bytes, stream, scope)),
         |image| image.id.as_str(),
     )
 }
@@ -101,16 +101,16 @@ fn parse_canvas_image(
     bytes: &[u8],
     stream: &str,
     scope: &DesignParameterScope,
-) -> Result<Option<DesignCanvasImage>, CodecError> {
+) -> Option<DesignCanvasImage> {
     let mut matches = DesignCanvasGeometryLayout::ALL
         .into_iter()
         .filter_map(|layout| parse_canvas_layout(bytes, stream, scope, layout));
     let image = matches.next();
-    Ok(if matches.next().is_none() {
+    if matches.next().is_none() {
         image
     } else {
         None
-    })
+    }
 }
 
 pub(in crate::design::decode) fn typed_canvas_reference(
@@ -470,9 +470,7 @@ mod tests {
                 }
             }
             let scope = serde_json::from_value(scope_wire).unwrap();
-            let image = parse_canvas_image(&bytes, "Design/BulkStream.dat", &scope)
-                .unwrap()
-                .unwrap();
+            let image = parse_canvas_image(&bytes, "Design/BulkStream.dat", &scope).unwrap();
             assert_eq!(image.asset_name(), "a.png");
             assert!(image.geometry().prologue.visible());
             let wire = serde_json::to_value(&image).unwrap();
@@ -492,26 +490,18 @@ mod tests {
                 let mut invalid = bytes.clone();
                 invalid[offset] = 2;
                 assert!(
-                    parse_canvas_image(&invalid, "Design/BulkStream.dat", &scope)
-                        .unwrap()
-                        .is_none(),
+                    parse_canvas_image(&invalid, "Design/BulkStream.dat", &scope).is_none(),
                     "label offset {label}, mutation {offset}"
                 );
             }
             if width == 51 {
                 let mut invalid = bytes.clone();
                 invalid[plane + 13] = b'0';
-                assert!(
-                    parse_canvas_image(&invalid, "Design/BulkStream.dat", &scope)
-                        .unwrap()
-                        .is_none()
-                );
+                assert!(parse_canvas_image(&invalid, "Design/BulkStream.dat", &scope).is_none());
             }
             if payload == 81 {
                 bytes[73] = 2;
-                assert!(parse_canvas_image(&bytes, "Design/BulkStream.dat", &scope)
-                    .unwrap()
-                    .is_none());
+                assert!(parse_canvas_image(&bytes, "Design/BulkStream.dat", &scope).is_none());
             }
         }
     }
@@ -519,9 +509,7 @@ mod tests {
     #[test]
     fn canvas_image_decodes_asset_name() {
         let (bytes, scope) = fixture();
-        let image = parse_canvas_image(&bytes, "Design/BulkStream.dat", &scope)
-            .unwrap()
-            .unwrap();
+        let image = parse_canvas_image(&bytes, "Design/BulkStream.dat", &scope).unwrap();
         assert_eq!(image.asset_name(), "a.png");
     }
 
@@ -536,9 +524,7 @@ mod tests {
 
         const ENTRY: &str = "FusionAssetName[Active]/Design1/Images.BlobParts/a.png";
         let (bytes, scope) = fixture();
-        let image = parse_canvas_image(&bytes, "Design/BulkStream.dat", &scope)
-            .unwrap()
-            .unwrap();
+        let image = parse_canvas_image(&bytes, "Design/BulkStream.dat", &scope).unwrap();
         let feature = || Feature {
             id: crate::ids::neutral_feature_id(&scope),
             ordinal: 0,

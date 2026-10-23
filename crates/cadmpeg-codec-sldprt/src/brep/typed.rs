@@ -549,7 +549,7 @@ pub(super) fn topology_owner_attrs_for_streams<'a>(
         }
         for (attr, mask) in classes {
             match selected.get_mut(&attr) {
-                Some((partition, previous)) if *partition == !deltas => *previous |= mask,
+                Some((partition, previous)) if *partition != deltas => *previous |= mask,
                 Some((true, _)) => {}
                 Some(value) => *value = (true, mask),
                 None => {
@@ -839,8 +839,7 @@ pub(super) fn scan_with_payload_exclusions(bytes: &[u8], prefixed: bool) -> Fact
     let mut face_offsets = HashSet::new();
     let mut schema_ranges = Vec::new();
     let mut offset = 0;
-    let schema_scan_end = bytes.len().checked_sub(2).unwrap_or(0);
-    while offset < schema_scan_end {
+    while offset.checked_add(2).is_some_and(|end| end < bytes.len()) {
         while payload_ranges
             .get(payload_index)
             .is_some_and(|range| range.end <= offset)
@@ -978,10 +977,10 @@ pub(super) fn scan_with_payload_exclusions(bytes: &[u8], prefixed: bool) -> Fact
         let start_index = scopes
             .excluded_starts
             .partition_point(|range| range.end <= start);
-        !scopes
+        scopes
             .payloads
             .get(index)
-            .is_some_and(|range| range.start < end)
+            .is_none_or(|range| range.start >= end)
             && !scopes
                 .excluded_starts
                 .get(start_index)
@@ -1357,7 +1356,7 @@ mod tests {
     fn complete_schema_inside_counted_payload_does_not_authorize_an_owner() {
         let mut payload = copied_schema(BODY_TAG, 23);
         payload.extend(body_node(3, 1006, 1));
-        while payload.len() % 4 != 0 {
+        while !payload.len().is_multiple_of(4) {
             payload.push(0);
         }
         let mut bytes = vec![0, 82];
@@ -1890,7 +1889,7 @@ mod tests {
     fn typed_owner_scope_uses_counted_integer_payload_in_both_stream_roles() {
         let owner = crate::test_support::parasolid::fixture_vertex_owner_class(900);
         let mut payload = owner;
-        while payload.len() % 4 != 0 {
+        while !payload.len().is_multiple_of(4) {
             payload.push(0);
         }
         let mut bytes = vec![0, 0x52];

@@ -707,8 +707,10 @@ fn grouped_surface_patch_recipe_projects_historical_edges() {
             &[first, second],
             &[],
             &[],
-            Some(7),
-            &feature_id,
+            super::EdgeGroupTransition {
+                previous_state_id: Some(7),
+                feature_id: &feature_id,
+            },
             decode_ctx,
         )
     })
@@ -744,8 +746,10 @@ fn contradictory_surface_patch_references_suppress_generic_resolution() {
             std::slice::from_ref(&operand),
             &[],
             &[],
-            Some(7),
-            &feature_id,
+            super::EdgeGroupTransition {
+                previous_state_id: Some(7),
+                feature_id: &feature_id
+            },
             decode_ctx
         ))
         .unwrap(),
@@ -1017,8 +1021,10 @@ fn edge_flange_uses_one_updated_edge_without_recipe_context() {
             std::slice::from_ref(&group),
             &[operand],
             &[],
-            Some(7),
-            &feature_id,
+            super::EdgeGroupTransition {
+                previous_state_id: Some(7),
+                feature_id: &feature_id,
+            },
             decode_ctx,
         )
     })
@@ -1047,8 +1053,10 @@ fn edge_flange_does_not_choose_an_ambiguous_updated_boundary() {
             std::slice::from_ref(&group),
             &[operand],
             &[],
-            Some(7),
-            &feature_id,
+            super::EdgeGroupTransition {
+                previous_state_id: Some(7),
+                feature_id: &feature_id
+            },
             decode_ctx
         ))
         .unwrap(),

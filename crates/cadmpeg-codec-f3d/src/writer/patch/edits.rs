@@ -29,7 +29,9 @@ use super::{
     records::native_stream,
 };
 use crate::native::F3dNative;
-use crate::writer::generate::native_geometry::{native_support_pcurve, pcurve_support_geometry};
+use crate::writer::generate::native_geometry::{
+    native_support_pcurve, pcurve_support_geometry, pcurve_support_surface,
+};
 use crate::writer::primitives::normalized_face_sense_to_native;
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 
@@ -733,6 +735,8 @@ pub(super) struct NurbsCurveEdit {
 
 pub(super) enum PcurveEdit {
     Inline {
+        /// The surface of the faces that use the pcurve.
+        support: String,
         native_geometry: PcurveNurbs,
         periodic: Option<bool>,
         wrapper_reversed: Option<bool>,
@@ -741,10 +745,33 @@ pub(super) enum PcurveEdit {
         fit_tolerance: Option<f64>,
     },
     Ref {
+        /// The surface of the faces that use the pcurve.
+        support: String,
         native_geometry: PcurveNurbs,
         periodic: Option<bool>,
         parameter_range: Option<[f64; 2]>,
     },
+}
+
+impl PcurveEdit {
+    /// The surface of the faces that use the pcurve.
+    pub(super) fn support(&self) -> &str {
+        match self {
+            Self::Inline { support, .. } | Self::Ref { support, .. } => support,
+        }
+    }
+
+    /// The edited pcurve in the writer's native support chart.
+    pub(super) fn native_geometry(&self) -> &PcurveNurbs {
+        match self {
+            Self::Inline {
+                native_geometry, ..
+            }
+            | Self::Ref {
+                native_geometry, ..
+            } => native_geometry,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -3139,11 +3166,15 @@ pub(super) fn validate_pcurve_edits(
         let parameter_range = (before.parameter_range() != after.parameter_range())
             .then_some(after.parameter_range())
             .flatten();
+        let support = pcurve_support_surface(target_model, &after.id)?
+            .as_str()
+            .to_owned();
         let edit = match &before.metadata {
             cadmpeg_ir::geometry::pcurve::PcurveMetadata::General { form: metadata }
                 if metadata.wrapper_reversed.is_none() && metadata.fit_tolerance().is_none() =>
             {
                 PcurveEdit::Ref {
+                    support,
                     native_geometry: after_native,
                     periodic,
                     parameter_range: parameter_range.map(cadmpeg_ir::units::FiniteVector::get),
@@ -3151,6 +3182,7 @@ pub(super) fn validate_pcurve_edits(
             }
             cadmpeg_ir::geometry::pcurve::PcurveMetadata::AsmInline { .. }
             | cadmpeg_ir::geometry::pcurve::PcurveMetadata::General { .. } => PcurveEdit::Inline {
+                support,
                 native_geometry: after_native,
                 periodic,
                 wrapper_reversed: (before.wrapper_reversed() != after.wrapper_reversed())

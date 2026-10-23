@@ -1129,7 +1129,7 @@ fn retained_swobjects_sections(
             annotations
                 .provenance
                 .get(attribute.id.as_str())
-                .map(|p| p.stream())
+                .map(cadmpeg_ir::Provenance::stream)
         })
         .collect::<HashSet<_>>();
     let mut sections = records
@@ -2118,11 +2118,13 @@ fn retained_source_baseline<'a>(
     Ok(baseline.as_ref())
 }
 
+type RetainedDisplaySections = Vec<(String, Vec<u8>)>;
+
 fn retained_display_sections(
     ir: &CadIr,
     baseline: Option<&cadmpeg_ir::codec::Decoded>,
     scan: Option<&crate::container::ContainerScan<'_>>,
-) -> Result<Option<Vec<(String, Vec<u8>)>>, CodecError> {
+) -> Result<Option<RetainedDisplaySections>, CodecError> {
     let (Some(baseline), Some(scan)) = (baseline, scan) else {
         return Ok(None);
     };

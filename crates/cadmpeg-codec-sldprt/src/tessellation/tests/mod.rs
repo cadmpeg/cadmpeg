@@ -759,7 +759,11 @@ fn persistent_surface_identity_preserves_empty_zero_length_and_tail_order() {
     let mut bindings = Vec::new();
     let mut faces = Vec::new();
     for (index, tail) in tails.into_iter().enumerate() {
-        let face = add_square_face(&mut model, &format!("tail-{index}"), index as f64 * 3.0);
+        let face = add_square_face(
+            &mut model,
+            &format!("tail-{index}"),
+            f64::from(u32::try_from(index).unwrap()) * 3.0,
+        );
         let mesh = format!("synthetic:test:tessellation#tail-{index}");
         model.tessellations.push(persistent_mesh(&mesh));
         let identity = persistent_identity(7, 11, tail);

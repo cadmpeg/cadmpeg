@@ -271,7 +271,7 @@ impl_entity_schema!(
     crate::features::FeatureInputTopology,
     FeatureInputTopology,
     id;
-    id, input_of, bodies, faces, edges, vertices, native_ref
+    id, input_of, bodies, faces, edges, vertices, edge_geometry, native_ref
 );
 impl EntitySchema for crate::features::FeatureResultTopology {
     const KIND: EntityKind = EntityKind::FeatureResultTopology;

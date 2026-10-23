@@ -732,10 +732,10 @@ pub(super) fn point_class_attrs(body: &[u8], prefixed: bool) -> HashSet<u16> {
             if let Some(point) = parse_point(body, at, prefixed) {
                 let end = point.xyz_offset + std::mem::size_of::<[f64; 3]>();
                 let index = scopes.payloads.partition_point(|range| range.end <= at);
-                if !scopes
+                if scopes
                     .payloads
                     .get(index)
-                    .is_some_and(|range| range.start < end)
+                    .is_none_or(|range| range.start >= end)
                 {
                     out.insert(point.attr);
                 }
@@ -1544,22 +1544,33 @@ fn scan_records(
             let mut edges = CandidateMap::new();
             let mut coedges = CandidateMap::new();
             if let Some(base) = base {
-                loops.extend(base.loops.iter().filter_map(|(attr, record)| {
-                    base.loop_frames
-                        .get(attr)
-                        .is_some_and(|frame| frame.partition)
-                        .then(|| record.clone())
-                }));
+                loops.extend(
+                    base.loops
+                        .iter()
+                        .filter(|&(attr, _record)| {
+                            base.loop_frames
+                                .get(attr)
+                                .is_some_and(|frame| frame.partition)
+                        })
+                        .map(|(_attr, record)| record.clone()),
+                );
                 let owners: HashSet<_> = loops.iter().map(|record| record.refs[2]).collect();
-                bridges.extend(base.bridges.iter().filter_map(|(attr, record)| {
-                    owners.contains(attr).then(|| (*attr, record.clone()))
-                }));
-                coedges.extend(base.coedges.iter().filter_map(|(attr, record)| {
-                    base.coedge_frames
-                        .get(attr)
-                        .is_some_and(|frame| frame.partition)
-                        .then(|| (*attr, vec![record.clone()]))
-                }));
+                bridges.extend(
+                    base.bridges
+                        .iter()
+                        .filter(|&(attr, _record)| owners.contains(attr))
+                        .map(|(attr, record)| (*attr, record.clone())),
+                );
+                coedges.extend(
+                    base.coedges
+                        .iter()
+                        .filter(|&(attr, _record)| {
+                            base.coedge_frames
+                                .get(attr)
+                                .is_some_and(|frame| frame.partition)
+                        })
+                        .map(|(attr, record)| (*attr, vec![record.clone()])),
+                );
                 let starts: HashSet<_> = coedges
                     .values()
                     .flatten()
@@ -1573,11 +1584,12 @@ fn scan_records(
                 vertices.extend(base.vertex_classes.iter().filter_map(|(attr, partition)| {
                     (*partition && starts.contains(attr)).then_some(*attr)
                 }));
-                edges.extend(base.edge_uses.iter().filter_map(|(attr, record)| {
-                    carriers
-                        .contains(attr)
-                        .then(|| (*attr, vec![record.clone()]))
-                }));
+                edges.extend(
+                    base.edge_uses
+                        .iter()
+                        .filter(|&(attr, _record)| carriers.contains(attr))
+                        .map(|(attr, record)| (*attr, vec![record.clone()])),
+                );
             }
             (loops, bridges, vertices, edges, coedges)
         } else {
@@ -2736,7 +2748,7 @@ mod tests {
         let real = vertex_frame(211, [0, 0, 0, 0, 60], 900, false);
         let mut fake = real.clone();
         fake[7] ^= 1;
-        while fake.len() % 4 != 0 {
+        while !fake.len().is_multiple_of(4) {
             fake.push(0);
         }
         let mut integers = vec![0, 0x52];
@@ -2899,7 +2911,7 @@ mod tests {
         bytes[8..8 + fake.len()].copy_from_slice(&fake);
         assert_eq!(
             super::topology_payload_ranges(&bytes, false),
-            [0..bytes.len()]
+            std::iter::once(0..bytes.len()).collect::<Vec<_>>()
         );
         assert!(scan(&bytes).vertex_frames.is_empty());
     }
@@ -3077,7 +3089,7 @@ mod tests {
         bytes.extend(710u16.to_be_bytes());
         assert_eq!(
             super::topology_payload_ranges(&bytes, false),
-            [start..bytes.len()]
+            std::iter::once(start..bytes.len()).collect::<Vec<_>>()
         );
     }
 
@@ -3102,7 +3114,7 @@ mod tests {
         bytes.extend(payload);
         assert_eq!(
             super::topology_payload_ranges(&bytes, false),
-            [0..bytes.len()]
+            std::iter::once(0..bytes.len()).collect::<Vec<_>>()
         );
         let tables = scan(&bytes);
         assert!(!tables.bridges.contains_key(&82));
@@ -3168,7 +3180,7 @@ mod tests {
         for enclosure in [integers, attribute] {
             assert_eq!(
                 super::topology_payload_ranges(&enclosure, false),
-                [0..enclosure.len()]
+                std::iter::once(0..enclosure.len()).collect::<Vec<_>>()
             );
             let inside = [enclosure, point.clone(), vertex.clone()].concat();
             let tables = scan(&inside);
@@ -3272,7 +3284,7 @@ mod tests {
                 enclosure.extend(&frame);
                 assert_eq!(
                     super::topology_payload_ranges(&enclosure, false),
-                    [0..enclosure.len()]
+                    std::iter::once(0..enclosure.len()).collect::<Vec<_>>()
                 );
             }
         }
@@ -3401,7 +3413,7 @@ mod tests {
         enclosed.extend(bytes);
         assert_eq!(
             super::topology_payload_ranges(&enclosed, false),
-            [0..enclosed.len()]
+            std::iter::once(0..enclosed.len()).collect::<Vec<_>>()
         );
         let tables = scan(&enclosed);
         assert!(tables.vertex_uses.is_empty());

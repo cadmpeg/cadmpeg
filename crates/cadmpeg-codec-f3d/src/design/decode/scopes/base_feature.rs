@@ -673,6 +673,7 @@ use crate::layout::base_feature_legacy_444_zero_body as legacy_444_zero_body;
 use crate::layout::base_feature_legacy_zero_body as legacy_zero_body;
 use crate::layout::base_feature_result_body_entry as result_body_entry;
 use crate::layout::base_feature_result_body_prefix as result_body;
+use crate::layout::base_feature_typed_reference_zero_body as typed_zero_body;
 use crate::records::feature::scope;
 
 fn read_base_feature_entry_at(
@@ -693,6 +694,57 @@ fn read_base_feature_entry_at(
     };
     *cursor = at.checked_add(result_body_entry::LEN)?;
     Some(entry)
+}
+
+/// Distance from the null GUID length field of the typed zero-body form to
+/// the scope kind.
+const TYPED_ZERO_BODY_GUID_COUNT_BEFORE_KIND: usize = 142;
+
+/// The typed-reference zero-body form: the class-409 zero-body prefix with a
+/// 51-byte typed shared-metadata reference, then zero bytes up to the null
+/// GUID length field.
+fn exact_typed_zero_body_base_feature(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    start: usize,
+) -> Option<DesignBaseFeatureConstruction> {
+    use crate::records::feature::base_feature::DesignBaseFeatureResults;
+
+    let reference_at = start + typed_zero_body::SHARED_METADATA_MARKER;
+    let metadata_record = crate::bytes::typed_local_reference_target(bytes, reference_at)?;
+    let reference_end = start + typed_zero_body::LEN;
+    let guid_count_at = usize::try_from(scope.kind_offset())
+        .ok()?
+        .checked_sub(TYPED_ZERO_BODY_GUID_COUNT_BEFORE_KIND)?;
+    if bytes.get(start + typed_zero_body::ZERO_RUN_9..start + typed_zero_body::ZERO_BODY_MARKER)?
+        != [0; 9]
+        || bytes.get(start + typed_zero_body::ZERO_BODY_MARKER) != Some(&1)
+        || bytes.get(
+            start + typed_zero_body::ZERO_RUN_11..start + typed_zero_body::SHARED_METADATA_MARKER,
+        )? != [0; 11]
+        || !scope
+            .reference_members()
+            .values()
+            .copied()
+            .eq([metadata_record])
+        || guid_count_at < reference_end
+        || !bytes
+            .get(reference_end..guid_count_at)?
+            .iter()
+            .all(|byte| *byte == 0)
+    {
+        return None;
+    }
+    Some(DesignBaseFeatureConstruction::ResultBodies {
+        bodies: DesignBaseFeatureResults::WithoutRepeatedFields(Vec::new()),
+        metadata_record,
+        metadata_record_offset: scope.byte_offset()
+            + u64::try_from(typed_zero_body::SHARED_METADATA_RECORD).ok()?,
+        metadata_field: bytes
+            .get(start + typed_zero_body::SHARED_METADATA_FIELD..reference_end)?
+            .to_vec()
+            .into(),
+    })
 }
 
 pub(super) fn exact_base_feature_construction(
@@ -716,6 +768,9 @@ pub(super) fn exact_base_feature_construction(
     }
     (|| {
         let start = usize::try_from(scope.byte_offset()).ok()?;
+        if let Some(construction) = exact_typed_zero_body_base_feature(bytes, scope, start) {
+            return Some(Ok(construction));
+        }
         if scope.frame_length() == 267 {
             return Some(Ok(DesignBaseFeatureConstruction::ResultBodies {
                 bodies: DesignBaseFeatureResults::WithoutRepeatedFields(Vec::new()),
@@ -896,14 +951,23 @@ pub(super) fn exact_base_feature_construction(
             (scope.class_tag.as_str(), scope.paired_class_tag.as_str()),
             ("420", "258") | ("452", "266")
         );
+        let body_run_length = u64::try_from(body_count.checked_mul(52)?).ok()?;
         let base_length = if legacy_290_261 {
-            261
+            Some(261)
         } else if expanded || compact || legacy_444_263 {
-            262
+            Some(262)
         } else {
-            271
+            None
         };
-        if scope.frame_length() != base_length + u64::try_from(body_count.checked_mul(52)?).ok()? {
+        // The ordinary form is measured to its scope kind, which the fixed
+        // scope tail of either length follows.
+        let sized = match base_length {
+            Some(base_length) => scope.frame_length() == base_length + body_run_length,
+            None => {
+                scope.kind_offset().checked_sub(scope.byte_offset()) == Some(169 + body_run_length)
+            }
+        };
+        if !sized {
             return None;
         }
         let mut cursor = start + result_body::LEN;

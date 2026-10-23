@@ -301,11 +301,11 @@ fn configuration_manager_and_feature_metadata_keep_their_separate_owners() {
     body[107] = 3;
     body[117..125].copy_from_slice(&132_537_600_000_000_000u64.to_le_bytes());
     payload.extend(body);
-    let record_id = cadmpeg_ir::ids::UnknownId::mint("sldprt:file:block#999999").unwrap();
+    let record_id = cadmpeg_ir::ids::UnknownId::mint("sldprt:file:block#999_999").unwrap();
     let attribute_id =
-        cadmpeg_ir::ids::AttributeId::mint("sldprt:metadata:configuration_manager#999999:0")
+        cadmpeg_ir::ids::AttributeId::mint("sldprt:metadata:configuration_manager#999_999:0")
             .unwrap();
-    for (id, offset) in [(record_id.as_str(), 999999), (attribute_id.as_str(), 0)] {
+    for (id, offset) in [(record_id.as_str(), 999_999), (attribute_id.as_str(), 0)] {
         crate::annotations::note(
             &mut annotations,
             id,
@@ -364,14 +364,14 @@ fn duplicate_physical_metadata_owners_are_ambiguous_even_with_identical_bytes() 
         })
         .unwrap();
     let duplicate = crate::SourceRecord {
-        id: cadmpeg_ir::ids::UnknownId::mint("sldprt:file:block#999999").unwrap(),
+        id: cadmpeg_ir::ids::UnknownId::mint("sldprt:file:block#999_999").unwrap(),
         data: record.data,
     };
     crate::annotations::note(
         &mut annotations,
         duplicate.id.as_str(),
         &cadmpeg_ir::stream_name!("Contents/Config-0-ResolvedFeatures"),
-        999999,
+        999_999,
         "unknown",
         cadmpeg_ir::Exactness::ByteExact,
     )
@@ -430,8 +430,9 @@ fn source_unit_code_uses_its_separate_units_route() {
     let mut ir = decoded.ir().clone();
     let mut annotations = decoded.source_fidelity().annotations.clone();
     let records = crate::source_records(decoded.ir(), decoded.source_fidelity()).unwrap();
-    let id = cadmpeg_ir::ids::AttributeId::mint("sldprt:metadata:source_linear_unit_code#999999:0")
-        .unwrap();
+    let id =
+        cadmpeg_ir::ids::AttributeId::mint("sldprt:metadata:source_linear_unit_code#999_999:0")
+            .unwrap();
     crate::annotations::note(
         &mut annotations,
         id.as_str(),
@@ -531,7 +532,7 @@ fn marker_replay_requires_reparsed_membership_identity_and_values() {
             2 => changed.sketch_entities[0].set_test_parent("forged-lane"),
             _ => {
                 changed.sketch_entities[0].state_value =
-                    Some(cadmpeg_ir::scalar::FiniteReal::new(97.0).unwrap())
+                    Some(cadmpeg_ir::scalar::FiniteReal::new(97.0).unwrap());
             }
         }
         assert!(

@@ -15,8 +15,8 @@ fn is_blank(value: &str) -> bool {
 }
 
 pub(crate) fn model_state_issue(suffix_len: u64, name: &str) -> Option<&'static str> {
-    if suffix_len != 77 {
-        Some("suffix_len must be 77")
+    if !matches!(suffix_len, 77 | 81) {
+        Some("suffix_len must be 77 or 81")
     } else if is_blank(name) {
         Some("name must not be empty")
     } else {
@@ -220,6 +220,7 @@ pub(crate) struct UfrxModelStateRecord {
     state: [u16; 2],
     prefix_count: u32,
     parameters: Vec<UfrxModelStateParameterRecord>,
+    suffix_len: u64,
     suffix_sha256: Sha256Digest,
 }
 
@@ -233,7 +234,7 @@ impl Serialize for UfrxModelStateRecord {
         fields.serialize_field("state", &self.state)?;
         fields.serialize_field("prefix_count", &self.prefix_count)?;
         fields.serialize_field("parameters", &self.parameters)?;
-        fields.serialize_field("suffix_len", &77_u64)?;
+        fields.serialize_field("suffix_len", &self.suffix_len)?;
         fields.serialize_field("suffix_sha256", &self.suffix_sha256)?;
         fields.end()
     }
@@ -266,6 +267,7 @@ impl TryFrom<UfrxModelStateRecordWire> for UfrxModelStateRecord {
             state: wire.state,
             prefix_count: wire.prefix_count,
             parameters: wire.parameters,
+            suffix_len: wire.suffix_len,
             suffix_sha256: Sha256Digest::try_from(wire.suffix_sha256)
                 .map_err(|error| format!("suffix_sha256: {error}"))?,
         })
@@ -1153,7 +1155,10 @@ mod tests {
 
     #[test]
     fn ufrx_conversion_issues_preserve_wire_refusal_order() {
-        assert_eq!(model_state_issue(76, " "), Some("suffix_len must be 77"));
+        assert_eq!(
+            model_state_issue(76, " "),
+            Some("suffix_len must be 77 or 81")
+        );
         assert_eq!(model_state_issue(77, " "), Some("name must not be empty"));
         assert_eq!(
             embedded_reference_issue(0),

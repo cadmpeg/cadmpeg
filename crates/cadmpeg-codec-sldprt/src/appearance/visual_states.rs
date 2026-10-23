@@ -17,6 +17,7 @@ use crate::layout::{
 };
 use crate::records::{FeatureHistory, FeatureInputLane};
 
+#[derive(Clone, Copy)]
 pub(crate) struct Inputs<'a> {
     pub(crate) model: &'a Model,
     pub(crate) histories: &'a [FeatureHistory],

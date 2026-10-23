@@ -422,7 +422,7 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
             1 => invalid.records[1].bulk_offset += 1,
             2 => {
                 invalid.types[1].entities =
-                    crate::records::identity::ReferenceRun::unlocated(vec![999])
+                    crate::records::identity::ReferenceRun::unlocated(vec![999]);
             }
             _ => unreachable!(),
         }

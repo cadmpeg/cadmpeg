@@ -87,6 +87,52 @@ fn ref_error(
     );
 }
 
+/// Edge geometry names edges and faces of its own input state, once per edge.
+fn validate_input_edge_geometry(
+    findings: &mut Vec<Finding>,
+    state: &crate::features::FeatureInputTopology,
+) {
+    if state.edge_geometry.is_empty() {
+        return;
+    }
+    let edges = state
+        .edges
+        .iter()
+        .map(crate::ids::HistoricalEdgeId::as_str)
+        .collect::<std::collections::HashSet<_>>();
+    let faces = state
+        .faces
+        .iter()
+        .map(crate::ids::HistoricalFaceId::as_str)
+        .collect::<std::collections::HashSet<_>>();
+    let mut sampled = std::collections::HashSet::new();
+    for geometry in &state.edge_geometry {
+        let edge = geometry.edge.as_str();
+        if !edges.contains(edge) {
+            ref_error(findings, state.id.as_str(), "input-state edge", edge);
+        }
+        if !sampled.insert(edge) {
+            super::record_finding(
+                findings,
+                Check::Counts,
+                Severity::Error,
+                Some(state.id.as_str()),
+                format_args!("input-state edge `{edge}` has more than one geometry entry"),
+            );
+        }
+        for face in &geometry.faces {
+            if !faces.contains(face.as_str()) {
+                ref_error(
+                    findings,
+                    state.id.as_str(),
+                    "input-state face",
+                    face.as_str(),
+                );
+            }
+        }
+    }
+}
+
 fn check_law_curves<R, V, P>(
     ctx: &DecodeContext<'_>,
     expression: &crate::geometry::LawExpression<R, V, P>,
@@ -2810,6 +2856,7 @@ fn check_feature_references(
                 format_args!("feature has multiple input topology states"),
             );
         }
+        validate_input_edge_geometry(findings, state);
     }
     let mut result_owners = BorrowedIdentities::new();
     for state in &ir.model.feature_result_topologies {

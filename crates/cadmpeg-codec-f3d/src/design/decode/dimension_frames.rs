@@ -1936,9 +1936,9 @@ pub(super) fn companion_owned_interval<'a>(
             foreign_scope_members.insert(member);
         }
     }
-    let start = usize::try_from(companion.byte_offset())
-        .ok()
-        .and_then(|offset| offset.checked_add(58))?;
+    let start = companion
+        .payload_byte_offset()
+        .and_then(|offset| usize::try_from(offset).ok())?;
     let end = owners
         .iter()
         .filter(|owner| {

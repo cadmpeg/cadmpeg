@@ -163,6 +163,14 @@ fn topology(keys: &[i64], changed: bool) -> AsmHistoricalTopology {
                 position: origin,
             })
             .collect(),
+        edge_samples: keys
+            .iter()
+            .map(|&key| AsmHistoricalEdgeSample {
+                edge: key,
+                interior: origin,
+                tangent: if changed { None } else { Some(axis) },
+            })
+            .collect(),
         ..AsmHistoricalTopology::default()
     };
     for attribute in [10, 20] {
@@ -281,6 +289,7 @@ fn expected_topology(state_id: i64, scope: AsmTopologyScope) -> Option<AsmHistor
         expected.edge_vertices.clear();
         expected.vertex_points.clear();
         expected.point_positions.clear();
+        expected.edge_samples.clear();
         if !expected.has_retained_rows() {
             return None;
         }

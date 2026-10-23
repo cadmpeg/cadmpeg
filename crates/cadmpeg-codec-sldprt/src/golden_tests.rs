@@ -784,6 +784,15 @@ struct DeclaredSectionIdentityRewrite<'a, 'ctx> {
     declared_replacements: &'a mut BTreeMap<String, String>,
 }
 
+fn hex_reference(value: &str) -> String {
+    use std::fmt::Write;
+    let mut encoded = String::new();
+    for byte in value.as_bytes() {
+        write!(encoded, "{byte:02x}").unwrap();
+    }
+    encoded
+}
+
 impl cadmpeg_ir::document::EntityRewrite for DeclaredSectionIdentityRewrite<'_, '_> {
     type Error = CodecError;
 
@@ -798,11 +807,7 @@ impl cadmpeg_ir::document::EntityRewrite for DeclaredSectionIdentityRewrite<'_, 
                 // Full-fidelity reference fields can carry codec-qualified native
                 // wire references which are not neutral Identity values. Admit a
                 // temporary injective identity only at this typed owner callback.
-                let key = source
-                    .as_bytes()
-                    .iter()
-                    .map(|byte| format!("{byte:02x}"))
-                    .collect::<String>();
+                let key = hex_reference(source);
                 let token = format!("sldprt:golden-opaque:reference#{key}");
                 self.opaque_references
                     .insert(token.clone(), source.to_owned());
@@ -949,11 +954,7 @@ fn section_normalization_preserves_qualified_native_reference_grammar() {
     assert_ne!(normalized, normalized_document(&changed, &sections));
     let token = format!(
         "sldprt:golden-opaque:reference#{}",
-        reference
-            .as_bytes()
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<String>()
+        hex_reference(reference)
     );
     source.model.features[0].name = Some(token.clone());
     let normalized = normalized_document(&source, &sections);

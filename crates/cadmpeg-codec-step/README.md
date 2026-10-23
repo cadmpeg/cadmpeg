@@ -7,7 +7,7 @@ the requested [`StepSchema`] from the encoder catalog. [`StepCodec`] implements 
 
 <!-- generated: capability step -->
 
-Support: L9 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#step-part-21)).
+Support: L8 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#step-part-21)).
 
 <!-- /generated: capability step -->
 
@@ -55,6 +55,28 @@ them. Supported surface carriers are planes, cylinders, cones, spheres, tori,
 and rational or non-rational NURBS surfaces. Supported curve carriers are lines,
 circles, ellipses, parabolas, hyperbolas, and rational or non-rational NURBS
 curves. The writer preserves shared carriers by reusing STEP instances.
+
+A procedural surface or curve with no STEP construction and no writable solved
+carrier is written as a sampled cubic `B_SPLINE_SURFACE_WITH_KNOTS` or
+`B_SPLINE_CURVE_WITH_KNOTS` carrier when cadmpeg can evaluate it over a finite
+parameter domain. This covers ruled and sum surfaces, surfaces whose domain
+comes from their trim pcurves, and curves other than helices. Helix curves and
+helix surfaces without a solved carrier take the fitted-helix path instead and
+are never sampled. The knots keep the source parameters, so the trim pcurves of
+the face keep their chart. Each carrier is a chain of cubic Bézier patches that
+interpolate the procedural points. The writer doubles the patch count of an
+axis until residual probes on the knot lines and inside each patch are at most
+one quarter of the model linear tolerance. A sampled edge curve and its sampled
+surface are then within one half of that tolerance at the probes; the probes
+do not give a global bound between them. Before sampling, each trim pcurve of
+any kind must evaluate at both ends, inside the domain and onto its edge
+vertex. Refinement stops at 1,024 patches per axis. One export permits
+1,048,576 approximation poles, 8,388,608 point samples, and 67,108,864
+evaluation work units. The writer reports the sampled carriers once, as
+`geometry.procedural-sampled-to-bspline`. A carrier with no evaluator, no
+finite domain, inconsistent trims, a failed fit, or an exhausted budget keeps
+the omission report, and a surface whose fit failed is not sampled again; none
+of these fails the export.
 
 ## Units and metadata
 

@@ -73,14 +73,13 @@ pub(crate) fn decode_frame(
     } else {
         None
     };
-    let (raw, base) = match (marked, unmarked) {
-        (Some(value), None) | (None, Some(value)) => value,
-        _ => return Ok(None),
+    let ((Some((raw, base)), None) | (None, Some((raw, base)))) = (marked, unmarked) else {
+        return Ok(None);
     };
     let Some(member_offset) = byte_offset.checked_add(u64_from_index(long::LEN)) else {
         return Ok(None);
     };
-    let fields = fields::retain(ctx, raw)?;
+    let fields = fields::retain(ctx, &raw)?;
     let mut base_bytes = ctx.alloc_filled(base.remaining(), 0u8, "placement base-level bytes")?;
     base_bytes.copy_from_slice(base.unread());
     DesignPlacementConstruction::try_from(PlacementConstructionWire {

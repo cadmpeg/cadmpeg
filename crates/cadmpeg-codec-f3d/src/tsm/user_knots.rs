@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Regenerate a user-knot extension while retaining its control-cage records.
 
+use std::fmt::Write;
+
 use cadmpeg_core::{decode::DecodeContext, CodecError};
 use cadmpeg_ir::subd::{SubdCage, SubdUserKnot};
 
@@ -68,7 +70,7 @@ pub(crate) fn rewrite(
                 Some(SubdUserKnot::Override(value)) => value.get(),
                 Some(SubdUserKnot::Inherit) | None => -1.0,
             };
-            run.push_str(&format!("106ek {value}{newline}"));
+            write!(run, "106ek {value}{newline}").map_err(|error| super::malformed(name, error))?;
         }
         if live.next().is_some() {
             return Err(super::malformed(

@@ -581,6 +581,9 @@ fn user_knots_distinguish_absence_inheritance_and_explicit_zero() {
         .unwrap()
         .get("user_knot")
         .is_none());
+    let mut null_wire = serde_json::to_value(&edge).unwrap();
+    null_wire["user_knot"] = serde_json::Value::Null;
+    assert!(serde_json::from_value::<SubdEdge>(null_wire).is_err());
     edge.user_knot = Some(SubdUserKnot::Inherit);
     assert_eq!(edge.effective_knot_interval(), Some(0.25));
     assert_eq!(

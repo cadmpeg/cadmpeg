@@ -41,6 +41,10 @@ use crate::layout::sheet_metal_region_carrier_scalar_lane as region_scalar;
 use crate::layout::sheet_metal_region_identity_reference as region_reference;
 use crate::layout::sketch_profile_region_member as region_member;
 use crate::layout::sketch_profile_region_selection_prefix as region_selection;
+use crate::layout::typed_reference_extrude_selection_group_prefix as typed_group;
+use crate::layout::typed_reference_profile_chain_record as typed_chain;
+use crate::layout::typed_reference_profile_identity_record as typed_identity;
+use crate::layout::typed_reference_profile_selection_prefix as typed_selection;
 use crate::layout::work_point_sketch_point_identity as sketch_point_identity;
 use crate::records::{
     decal::DesignRecordHeader,
@@ -2758,12 +2762,10 @@ pub(crate) fn bind_construction_operand_trailing_records(
             if let Some(transform) = parse_construction_operand_transform(bytes, header) {
                 if transform.record_index().checked_add(1)
                     != Some(transform.following_record_index())
-                {
-                    if !construction_tracking_registry(scan, &entry.name, &mut registries)?
+                    && !construction_tracking_registry(scan, &entry.name, &mut registries)?
                         .is_some_and(|registry| registry.supports_transform(&transform))
-                    {
-                        continue;
-                    }
+                {
+                    continue;
                 }
                 trailing_transforms.push(transform);
             } else if let Some(transform) = parse_construction_operand_dual_transform(bytes, header)
@@ -3394,51 +3396,69 @@ fn parse_extrude_selection_group(
         >,
     > {
         let start = usize::try_from(header.byte_offset).ok()?;
-        if bytes.get(start + 11..start + 21)? != [0; 10]
-            || bytes.get(start + 21) != Some(&1)
-            || View::u32_le_at(bytes, start + 22)? != scope.record_index
-            || bytes.get(start + 26..start + 32)? != [0; 6]
-        {
+        let scope_reference_at = start + typed_group::SCOPE_REFERENCE;
+        if bytes.get(start + typed_group::ZERO_RUN_10..scope_reference_at)? != [0; 10] {
             return None;
         }
-        let member_count = usize::try_from(View::u32_le_at(bytes, start + 32)?).ok()?;
-        let mut position = start.checked_add(36)?;
-        // Each member consumes 11 bytes; a count the remaining bytes cannot
-        // supply is corrupt and must not reach the allocator.
-        if member_count == 0 || member_count > bytes.len().checked_sub(position)? / 11 {
+        // Every reference of one group uses one spelling; the scope
+        // reference selects it.
+        let typed = crate::bytes::typed_local_reference_target(bytes, scope_reference_at).is_some();
+        let width = if typed {
+            crate::bytes::TYPED_LOCAL_REFERENCE_LEN
+        } else {
+            11
+        };
+        let reference = |at: usize| crate::bytes::local_reference_target(bytes, at, typed);
+        if reference(scope_reference_at)? != scope.record_index {
+            return None;
+        }
+        let member_count_at = scope_reference_at + width;
+        let member_count = usize::try_from(View::u32_le_at(bytes, member_count_at)?).ok()?;
+        let mut position = member_count_at.checked_add(4)?;
+        // A count the remaining bytes cannot supply is corrupt and must not
+        // reach the allocator.
+        if member_count == 0 || member_count > bytes.len().checked_sub(position)? / width {
             return None;
         }
         let mut members = Vec::new();
         let mut member_offsets = Vec::new();
         for _ in 0..member_count {
-            if bytes.get(position) != Some(&1)
-                || bytes.get(position + 5..position + 11)? != [0; 6]
-            {
-                return None;
-            }
-            members.push(View::u32_le_at(bytes, position + 1)?);
+            members.push(reference(position)?);
             member_offsets.push(u64::try_from(position + 1).ok()?);
-            position = position.checked_add(11)?;
+            position = position.checked_add(width)?;
         }
         let opaque_index = View::u32_le_at(bytes, position)?;
         let opaque_scalar = View::f64_le_at(bytes, position + 4)?;
         if View::u32_le_at(bytes, position + 12)? != opaque_index
-            || bytes.get(position + 16) != Some(&1)
-            || View::u32_le_at(bytes, position + 17)? != header.record_index.checked_add(2)?
-            || bytes.get(position + 21..position + 27)? != [0; 6]
-            || bytes.get(position + 27) != Some(&1)
-            || !matches!(bytes.get(position + 28), Some(0 | 1))
-            || bytes.get(position + 29) != Some(&0)
-            || bytes.get(position + 30) != Some(&1)
-            || View::u32_le_at(bytes, position + 31)? != header.record_index.checked_add(1)?
-            || bytes.get(position + 35..position + 42)? != [0; 7]
-            || bytes.get(position + 42) != Some(&1)
-            || View::u32_le_at(bytes, position + 43)? != scope.record_index
-            || bytes.get(position + 47..position + 53)? != [0; 6]
+            || reference(position + 16)? != header.record_index.checked_add(2)?
         {
             return None;
         }
-        let paired_at = position.checked_add(53)?;
+        // The plain form stores `01 + u8 variant + 00` after the first nested
+        // reference; the typed form stores two zero bytes and no variant.
+        let after_first = position + 16 + width;
+        let (variant, second_at) = if typed {
+            if bytes.get(after_first..after_first + 2)? != [0; 2] {
+                return None;
+            }
+            (None, after_first + 2)
+        } else {
+            if bytes.get(after_first) != Some(&1)
+                || !matches!(bytes.get(after_first + 1), Some(0 | 1))
+                || bytes.get(after_first + 2) != Some(&0)
+            {
+                return None;
+            }
+            (Some(bytes[after_first + 1] != 0), after_first + 3)
+        };
+        let scope_at = second_at + width + 1;
+        if reference(second_at)? != header.record_index.checked_add(1)?
+            || bytes.get(second_at + width) != Some(&0)
+            || reference(scope_at)? != scope.record_index
+        {
+            return None;
+        }
+        let paired_at = scope_at.checked_add(width)?;
         let (paired_class_tag, after_paired_tag) =
             lp_ascii_filtered_view(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
         if View::u32_le_at(bytes, after_paired_tag)? != header.record_index {
@@ -3454,14 +3474,15 @@ fn parse_extrude_selection_group(
                 record_index: header.record_index,
                 byte_offset: header.byte_offset,
                 class_tag: header.class_tag.clone().into(),
-                member_count_offset: u64::try_from(start + 32).ok()?,
+                member_count_offset: u64::try_from(member_count_at).ok()?,
                 members,
                 member_offsets,
                 opaque_index,
                 opaque_index_offset: u64::try_from(position).ok()?,
                 opaque_scalar,
                 opaque_scalar_offset: u64::try_from(position + 4).ok()?,
-                variant: bytes[position + 28] != 0,
+                variant,
+                typed_references: typed,
                 paired_class_tag: paired_class_tag.into(),
                 paired_byte_offset: u64::try_from(paired_at).ok()?,
             },
@@ -6102,3 +6123,205 @@ pub(crate) fn construction_operand_group_is_retained(
 
 #[cfg(test)]
 mod tests;
+
+/// Chain-record bytes after its fourteen zero bytes and before the typed
+/// Sketch scope reference.
+const TYPED_PROFILE_CHAIN_MARKER: [u8; 6] = [1, 1, 1, 0, 0, 0];
+
+/// Decode the typed-reference profile selections named by construction
+/// operand groups: a selection prefix, a chain record naming the owning
+/// Sketch scope, and an identity record listing curve loops.
+pub(crate) fn decode_profile_curve_selections(
+    scan: &ContainerScan,
+    groups: &[DesignConstructionOperandGroup],
+    headers: &[DesignRecordHeader],
+) -> Result<Vec<crate::records::topology::entity_selection::DesignProfileCurveSelection>, CodecError>
+{
+    let headers = indexed_operand_headers(headers);
+    let mut records_by_stream = HashMap::new();
+    let mut out = Vec::new();
+    for group in groups {
+        let Some(stream) = native_stream(&group.id) else {
+            continue;
+        };
+        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&entry.name)?;
+        for (ordinal, record_index) in group
+            .members()
+            .iter()
+            .map(|member| member.value)
+            .enumerate()
+        {
+            let Ok(ordinal) = u32::try_from(ordinal) else {
+                continue;
+            };
+            let Some(header) = headers.get(&(stream, record_index)) else {
+                continue;
+            };
+            let Ok(start) = usize::try_from(header.byte_offset) else {
+                continue;
+            };
+            // Only a typed selection prefix selects this form.
+            if crate::bytes::typed_local_reference_target(
+                bytes,
+                start + typed_selection::IDENTITY_REFERENCE,
+            )
+            .is_none()
+            {
+                continue;
+            }
+            let records = records_by_stream
+                .entry(stream)
+                .or_insert_with(|| IndexedRecordOffsets::build(bytes));
+            let Some(mut selection) =
+                parse_typed_profile_curve_selection(bytes, records, group, ordinal, header)
+            else {
+                continue;
+            };
+            selection.id = design_record_id(
+                &entry.name,
+                ":design-profile-curve-selection#",
+                header.byte_offset,
+            );
+            out.push(selection);
+        }
+    }
+    out.sort_by(|a, b| a.id.cmp(&b.id));
+    Ok(out)
+}
+
+/// Parse one typed profile selection and its chain records.
+fn parse_typed_profile_curve_selection(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    group: &DesignConstructionOperandGroup,
+    group_member_ordinal: u32,
+    header: &DesignRecordHeader,
+) -> Option<crate::records::topology::entity_selection::DesignProfileCurveSelection> {
+    use crate::bytes::typed_local_reference_target as target;
+    use crate::records::topology::entity_selection::{
+        DesignProfileCurveEntry, DesignProfileCurveSelection,
+    };
+    let Ok(start) = usize::try_from(header.byte_offset) else {
+        return None;
+    };
+    let record_index = header.record_index;
+    let (Some(scope_index), Some(identity_index)) =
+        (record_index.checked_add(1), record_index.checked_add(3))
+    else {
+        return None;
+    };
+    // Selection prefix: ten zero bytes, a typed reference to the identity
+    // record, u32 1, the LP-UTF16 asset GUID, and the LP-UTF16 decimal
+    // owner text.
+    if bytes.get(start + typed_selection::ZERO_RUN_10..start + typed_selection::IDENTITY_REFERENCE)
+        != Some(&[0; 10][..])
+        || target(bytes, start + typed_selection::IDENTITY_REFERENCE) != Some(identity_index)
+        || View::u32_le_at(bytes, start + typed_selection::CONSTANT_ONE) != Some(1)
+    {
+        return None;
+    }
+    let (_, after_asset) = lp_utf16_bounded(bytes, start + typed_selection::LEN, 36..=36)?;
+    let (owner_text, _) = lp_utf16_bounded(bytes, after_asset, 1..=20)?;
+    if !owner_text.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    // Chain record at index plus one names the owning Sketch scope.
+    let &scope_at = records.offsets(scope_index).first()?;
+    if bytes.get(scope_at + typed_chain::ZERO_RUN_14..scope_at + typed_chain::CHAIN_MARKER)
+        != Some(&[0; 14][..])
+        || bytes.get(
+            scope_at + typed_chain::CHAIN_MARKER..scope_at + typed_chain::SKETCH_SCOPE_REFERENCE,
+        ) != Some(&TYPED_PROFILE_CHAIN_MARKER[..])
+    {
+        return None;
+    }
+    let sketch_scope_record_index = target(bytes, scope_at + typed_chain::SKETCH_SCOPE_REFERENCE)?;
+    // Identity record at index plus three: ten zero bytes, a typed reference
+    // to the selection record, then two counted loop lists.
+    let &identity_at = records.offsets(identity_index).first()?;
+    if bytes.get(
+        identity_at + typed_identity::ZERO_RUN_10
+            ..identity_at + typed_identity::SELECTION_REFERENCE,
+    ) != Some(&[0; 10][..])
+        || target(bytes, identity_at + typed_identity::SELECTION_REFERENCE) != Some(record_index)
+    {
+        return None;
+    }
+    let identity_end =
+        next_indexed_record_offset(bytes, identity_at + typed_identity::ZERO_RUN_10)?;
+    let mut cursor = identity_at + typed_identity::FIRST_LOOP_COUNT;
+    let mut loop_lists: [Vec<Vec<DesignProfileCurveEntry>>; 2] = [Vec::new(), Vec::new()];
+    for (list, loops) in loop_lists.iter_mut().enumerate() {
+        let loop_count = View::u32_le_at(bytes, cursor).and_then(|n| usize::try_from(n).ok())?;
+        // The first list holds at least one loop; every loop and entry
+        // consumes bytes, so a count the frame cannot supply is corrupt.
+        let remaining = identity_end.checked_sub(cursor)?;
+        if (list == 0 && loop_count == 0) || loop_count > remaining / 49 {
+            return None;
+        }
+        cursor += 4;
+        for _ in 0..loop_count {
+            let entry_count = (View::u32_le_at(bytes, cursor) == Some(1))
+                .then(|| View::u32_le_at(bytes, cursor + 4))
+                .flatten()
+                .and_then(|n| usize::try_from(n).ok())?;
+            let remaining = identity_end.checked_sub(cursor)?;
+            if entry_count == 0 || entry_count > remaining / 40 {
+                return None;
+            }
+            cursor += 8;
+            let mut entries = Vec::new();
+            for _ in 0..entry_count {
+                let (Some(2), Some(primary_id), Some(secondary_id)) = (
+                    View::u32_le_at(bytes, cursor),
+                    View::u64_le_at(bytes, cursor + 4),
+                    View::u64_le_at(bytes, cursor + 12),
+                ) else {
+                    return None;
+                };
+                if bytes.get(cursor + 32..cursor + 40) != Some(&[0; 8][..]) {
+                    return None;
+                }
+                entries.push(DesignProfileCurveEntry {
+                    primary_id,
+                    primary_id_offset: cadmpeg_core::decode::u64_from_index(cursor + 4),
+                    secondary_id,
+                    entry_fields: [
+                        View::u32_le_at(bytes, cursor + 20)?,
+                        View::u32_le_at(bytes, cursor + 24)?,
+                        View::u32_le_at(bytes, cursor + 28)?,
+                    ],
+                });
+                cursor += 40;
+            }
+            if bytes.get(cursor) != Some(&1) {
+                return None;
+            }
+            cursor += 1;
+            loops.push(entries);
+        }
+    }
+    if cursor != identity_end {
+        return None;
+    }
+    Some(DesignProfileCurveSelection {
+        id: String::new(),
+        scope_record_index: group.scope_record_index,
+        group_record_index: group.record_index,
+        group_member_ordinal,
+        record_index,
+        byte_offset: header.byte_offset,
+        owner_text_offset: cadmpeg_core::decode::u64_from_index(after_asset + 4),
+        owner_text,
+        sketch_scope_record_index,
+        sketch_scope_offset: cadmpeg_core::decode::u64_from_index(
+            scope_at + typed_chain::SKETCH_SCOPE_REFERENCE + 1,
+        ),
+        identity_record_offset: cadmpeg_core::decode::u64_from_index(identity_at),
+        loop_lists,
+    })
+}

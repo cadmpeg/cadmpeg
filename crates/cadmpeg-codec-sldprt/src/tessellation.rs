@@ -881,10 +881,10 @@ fn known_extended_form(
     if View::u32_le_at(bytes, extended_meta::ONE) != Some(extended_meta::ONE_VALUE) {
         return None;
     }
-    let a = View::u32_le_at(bytes, extended_meta::A)?;
-    let b = View::u32_le_at(bytes, extended_meta::B)?;
-    let c = View::u32_le_at(bytes, extended_meta::C)?;
-    let index = match (a, b, c) {
+    let flag_a = View::u32_le_at(bytes, extended_meta::A)?;
+    let flag_b = View::u32_le_at(bytes, extended_meta::B)?;
+    let flag_c = View::u32_le_at(bytes, extended_meta::C)?;
+    let index = match (flag_a, flag_b, flag_c) {
         (0, 0, 0) => 0,
         (0, 0, 1) => 1,
         (1, 0, 1) => 2,
@@ -897,11 +897,11 @@ fn known_extended_form(
     let normals = face.mesh.channels.get(2)?.data();
     let first = normals.get(..12)?;
     let constant = normals.chunks_exact(12).all(|normal| normal == first);
-    if (a == 1) != constant {
+    if (flag_a == 1) != constant {
         return None;
     }
     let tuple = bytes.get(extended_meta::TUPLE..)?;
-    if b == 0 {
+    if flag_b == 0 {
         return tuple.iter().all(|byte| *byte == 0).then_some(index);
     }
     let [scalar, x, y, z] =

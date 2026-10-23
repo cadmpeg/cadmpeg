@@ -220,6 +220,30 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
         construction
     );
 
+    // The ordinary form is sized by its kind offset, so a shorter scope
+    // tail admits the same construction; a moved kind does not.
+    let mut short_tail_scope = scope.clone();
+    short_tail_scope
+        .try_edit(|draft| {
+            draft.frame_length = 374;
+            draft.paired_byte_offset = 374;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    assert!(exact_base_feature_construction(&bytes, &short_tail_scope)
+        .unwrap()
+        .is_some());
+    let mut moved_kind_scope = scope.clone();
+    moved_kind_scope
+        .try_edit(|draft| {
+            draft.reference_count_offset += 1;
+            draft.layout_fixture_references();
+        })
+        .unwrap();
+    assert!(exact_base_feature_construction(&bytes, &moved_kind_scope)
+        .unwrap()
+        .is_none());
+
     let mut expanded_bytes = Vec::new();
     expanded_bytes.extend_from_slice(&bytes[..84]);
     expanded_bytes.push(1);

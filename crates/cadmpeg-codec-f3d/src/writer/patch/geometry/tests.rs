@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{patch_framed_geometry, GeometryEdits};
+use super::{patch_framed_geometry, retained_plane_pcurve, GeometryEdits};
 use cadmpeg_asm::sab::{Record, Token};
 use cadmpeg_ir::transform::Transform;
 use std::collections::BTreeMap;
@@ -67,4 +67,44 @@ fn body_transform_reference_refuses_32_bit_wrap() {
     )
     .expect("an unaddressable reference names no transform record");
     assert!(bytes.is_empty());
+}
+
+#[test]
+fn an_edited_pcurve_moves_into_the_chart_of_its_retained_plane() {
+    use cadmpeg_asm::nurbs::support_chart::NativeChart;
+    use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
+    use cadmpeg_ir::math::Point2;
+    // Poles in the writer's unit chart: plane coordinates in internal
+    // centimetres.
+    let unit = PcurveNurbs::from_lanes(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point2::new(1.0, 2.0), Point2::new(-3.0, 0.5)],
+        None,
+        false,
+    )
+    .expect("unit-chart pcurve");
+    let chart = NativeChart::Plane {
+        reverse_v: true,
+        scale: 0.5,
+    };
+    let retained = retained_plane_pcurve(&unit, chart).expect("retained chart");
+    let points = retained
+        .control_points()
+        .into_iter()
+        .map(cadmpeg_ir::units::FinitePoint2::get)
+        .collect::<Vec<_>>();
+    // Coordinates in units of the half-length reference vector, v negated.
+    assert_eq!(points, [Point2::new(2.0, -4.0), Point2::new(-6.0, -1.0)]);
+    // Both charts map the retained poles to the same plane points.
+    for (unit_point, retained_point) in unit.control_points().into_iter().zip(&points) {
+        let unit_chart = NativeChart::Plane {
+            reverse_v: false,
+            scale: 1.0,
+        };
+        assert_eq!(
+            unit_chart.frame_point(unit_point.get()),
+            chart.frame_point(*retained_point)
+        );
+    }
 }

@@ -42,7 +42,7 @@ fn fixture_native_envelope_context(
         )?;
         ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
             cadmpeg_core::dialect::DialectLayers::of(crate::dialect::SldprtDialect::classify(None)),
-            Default::default(),
+            std::collections::BTreeMap::default(),
         ));
     }
     let mut fidelity = input.fidelity.cloned().unwrap_or_default();
@@ -97,7 +97,7 @@ fn fixture_native_envelope_context(
     {
         ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
             cadmpeg_core::dialect::DialectLayers::of(crate::dialect::SldprtDialect::classify(None)),
-            Default::default(),
+            std::collections::BTreeMap::default(),
         ));
     }
     Ok((ir, fidelity))

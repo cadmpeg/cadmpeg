@@ -617,6 +617,18 @@ fn parameter_owner_requires_its_complete_structural_suffix() {
 }
 
 #[test]
+fn parameter_owner_flag_byte_after_the_variant_is_zero_or_one() {
+    let mut frame = parameter_owner_frame();
+    frame[80] = 1;
+    let owner = parse_parameter_owner(&frame).expect("owner frame with a set flag byte");
+    assert_eq!(owner.variant, Some(1));
+    assert_eq!(owner.companion_record_index, 46);
+
+    frame[80] = 2;
+    assert!(parse_parameter_owner(&frame).is_none());
+}
+
+#[test]
 fn compact_parameter_owner_omits_the_variant_slot() {
     let parsed =
         parse_parameter_owner(&compact_parameter_owner_frame()).expect("compact parameter owner");
@@ -724,6 +736,29 @@ fn legacy_parameter_owner_68_requires_its_admitted_class_and_shape() {
         0
     )
     .is_none());
+
+    // Class tags are dynamic: a frame of the parameter-owner type is admitted
+    // under any class tag, and keeps the shape requirements.
+    let evaluated = crate::records::identity::Located {
+        value: 1.0,
+        offset: 700,
+    };
+    let typed = super::parse_admitted_legacy_parameter_owner_68(
+        &legacy_parameter_owner_68_frame("318"),
+        evaluated,
+        0,
+        true,
+    )
+    .and_then(|parsed| parsed.into_record("Design/BulkStream.dat", 0))
+    .expect("owner-typed legacy frame");
+    assert_eq!(typed.class_tag().as_str(), "318");
+    assert!(
+        super::parse_admitted_legacy_parameter_owner_68(&malformed, evaluated, 0, true).is_none()
+    );
+    let wire = serde_json::to_value(&typed).unwrap();
+    assert!(
+        serde_json::from_value::<crate::records::parameters::DesignParameterOwner>(wire).is_ok()
+    );
 }
 
 #[test]
@@ -1081,6 +1116,18 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
     .expect("missing owner frame is retained as an unresolved binding");
     assert!(unresolved.is_empty());
 
+    let mut lone = paired_header().to_vec();
+    lone.extend_from_slice(&[0; 19]);
+    let lone_owners = with_scan(&archive(stream, &lone), |scan| {
+        crate::design::decode::parameters::decode_parameter_owners(
+            scan,
+            std::slice::from_ref(&parameter),
+            std::slice::from_ref(&header),
+        )
+    })
+    .expect("the lone paired record of an omitted owner frame is not an owner");
+    assert!(lone_owners.is_empty());
+
     let mut extended = parameter_owner_frame();
     extended.push(0);
     extended.extend_from_slice(&paired_header());
@@ -1152,7 +1199,8 @@ fn parameter_companion_orders_recipes_by_payload_byte_offset() {
         22,
         21,
         std::num::NonZeroU64::new(1).unwrap(),
-        50,
+        // The timestamp sits 42 bytes into the plain companion prefix.
+        52,
     );
     let recipe = |record_index, byte_offset| ConstructionRecipe {
         id: format!("{stream}:construction-recipe#{record_index}"),
@@ -1574,4 +1622,98 @@ fn discriminated_parameter_with_the_00_01_11_tail_has_discriminator_6() {
     // The 00 01 11 tail belongs to discriminator 6 only.
     frame[22..30].copy_from_slice(&0u64.to_le_bytes());
     assert!(parse_design_parameter_record(&frame).is_none());
+}
+
+#[test]
+fn typed_companion_prefix_moves_the_timestamp_after_the_wide_owner_reference() {
+    let mut frame = Vec::new();
+    frame.extend_from_slice(&3u32.to_le_bytes());
+    frame.extend_from_slice(b"408");
+    frame.extend_from_slice(&538u32.to_le_bytes());
+    frame.extend_from_slice(&[0; 20]);
+    typed_reference(&mut frame, 536, TYPED_OWNER_TYPE);
+    frame.extend_from_slice(&1_500_000_000_000_000u64.to_le_bytes());
+    frame.extend_from_slice(&[0; 8]);
+    assert_eq!(frame.len(), 98);
+    frame.extend_from_slice(&[7; 12]);
+    let parsed = parse_parameter_companion(&frame).expect("typed companion");
+    assert_eq!(parsed.record_index, 538);
+    assert_eq!(parsed.owner_record_index, 536);
+    assert_eq!(parsed.timestamp_micros.get(), 1_500_000_000_000_000);
+    let record = parsed
+        .into_record("Design/BulkStream.dat", 1000)
+        .expect("typed companion record");
+    assert_eq!(record.timestamp_micros_offset(), 1082);
+    assert_eq!(record.payload_byte_offset(), Some(1098));
+
+    // A nonzero byte in the zero run after the timestamp is not a prefix.
+    frame[95] = 1;
+    assert!(parse_parameter_companion(&frame).is_none());
+}
+
+/// A wide discriminated document parameter whose expression is followed by
+/// nine zero bytes and `u8 1`.
+#[test]
+fn document_parameter_admits_the_ten_byte_expression_trailer() {
+    let frame = |trailer: &[u8]| {
+        let mut frame = Vec::new();
+        frame.extend_from_slice(&3u32.to_le_bytes());
+        frame.extend_from_slice(b"317");
+        frame.extend_from_slice(&202u32.to_le_bytes());
+        frame.extend_from_slice(&[0; 15]);
+        frame.extend_from_slice(&6u64.to_le_bytes());
+        frame.push(0);
+        frame.extend_from_slice(&1u32.to_le_bytes());
+        frame.push(0);
+        lp_utf16(&mut frame, "20 mm");
+        frame.extend_from_slice(trailer);
+        lp_utf16(&mut frame, "User Parameter");
+        frame.extend_from_slice(&0u32.to_le_bytes());
+        lp_utf16(&mut frame, "mm");
+        lp_utf16(&mut frame, "W1");
+        frame.extend_from_slice(&2.0f64.to_le_bytes());
+        frame.extend_from_slice(&[0, 1, 0x10, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        frame
+    };
+    let parameter = parse_design_parameter_record(&frame(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 1]))
+        .expect("document parameter with the ten-byte trailer");
+    assert_eq!(parameter.kind(), DesignParameterKind::User);
+    assert_eq!(parameter.owner_record_index(), None);
+    assert_eq!(parameter.name(), "W1");
+    assert_eq!(parameter.expression(), "20 mm");
+    assert_eq!(parameter.evaluated_value().get(), 2.0);
+    assert!(parse_design_parameter_record(&frame(&[0, 0, 0, 0, 0, 0, 0, 0, 1])).is_some());
+    assert!(parse_design_parameter_record(&frame(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1])).is_none());
+    // The `01 00 01` document trailer belongs to the earlier family only.
+    assert!(parse_design_parameter_record(&frame(&[0, 0, 0, 0, 0, 0, 1, 0, 1])).is_none());
+}
+
+/// The earlier discriminated family stores a document parameter with
+/// discriminator 4, the expression trailer six zero bytes and `01 00 01`, and
+/// the `00 01 13` tail.
+#[test]
+fn earlier_family_document_parameter_admits_its_trailer() {
+    let mut frame = Vec::new();
+    frame.extend_from_slice(&3u32.to_le_bytes());
+    frame.extend_from_slice(b"282");
+    frame.extend_from_slice(&182u32.to_le_bytes());
+    frame.extend_from_slice(&[0; 11]);
+    frame.extend_from_slice(&4u64.to_le_bytes());
+    frame.push(0);
+    frame.extend_from_slice(&5u32.to_le_bytes());
+    frame.push(0);
+    lp_utf16(&mut frame, "45 deg");
+    frame.extend_from_slice(&[0, 0, 0, 0, 0, 0, 1, 0, 1]);
+    lp_utf16(&mut frame, "User Parameter");
+    frame.extend_from_slice(&0u32.to_le_bytes());
+    lp_utf16(&mut frame, "deg");
+    lp_utf16(&mut frame, "ClipAngle");
+    frame.extend_from_slice(&std::f64::consts::FRAC_PI_4.to_le_bytes());
+    frame.extend_from_slice(&[0, 1, 0x13, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    let parameter =
+        parse_design_parameter_record(&frame).expect("earlier-family document parameter");
+    assert_eq!(parameter.kind(), DesignParameterKind::User);
+    assert_eq!(parameter.owner_record_index(), None);
+    assert_eq!(parameter.name(), "ClipAngle");
+    assert_eq!(parameter.expression(), "45 deg");
 }

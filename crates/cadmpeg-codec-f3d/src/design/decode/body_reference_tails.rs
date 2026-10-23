@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Frame whole-body reference tails by stable MetaStream registration.
+//! Frame whole-body reference tails by stable `MetaStream` registration.
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;

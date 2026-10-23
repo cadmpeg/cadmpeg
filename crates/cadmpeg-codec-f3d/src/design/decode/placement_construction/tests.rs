@@ -78,7 +78,7 @@ fn placement_registration_requires_semantic_identity_matching_headers_and_a_pair
                 let decoded = super::decode(ctx, scan).unwrap();
                 assert_eq!(decoded.records.len(), wanted);
                 assert_eq!(decoded.unparsed, unparsed);
-            })
+            });
         });
     }
     for (offset, corruption) in [
@@ -97,7 +97,7 @@ fn placement_registration_requires_semantic_identity_matching_headers_and_a_pair
                 let decoded = super::decode(ctx, scan).unwrap();
                 assert!(decoded.records.is_empty());
                 assert_eq!(decoded.unparsed, 1);
-            })
+            });
         });
     }
 }

@@ -405,10 +405,8 @@ fn referenced_node(
         if bytes.get(at..at + 2) != Some(tag.as_slice()) || bytes.get(at + 2) != Some(&255) {
             continue;
         }
-        if node_at(bytes, at, kind, true, max_type).is_some() {
-            if first.replace(at).is_some() {
-                return None;
-            }
+        if node_at(bytes, at, kind, true, max_type).is_some() && first.replace(at).is_some() {
+            return None;
         }
     }
     let first = first?;
@@ -417,10 +415,8 @@ fn referenced_node(
     while at < bytes.len().checked_sub(1)? {
         if bytes.get(at..at + 2) == Some(tag.as_slice()) {
             if let Some((candidate, node)) = node_at(bytes, at, kind, at == first, max_type) {
-                if candidate == identity {
-                    if selected.replace(node).is_some() {
-                        return None;
-                    }
+                if candidate == identity && selected.replace(node).is_some() {
+                    return None;
                 }
                 at = node.end;
                 continue;

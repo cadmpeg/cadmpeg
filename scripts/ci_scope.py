@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import re
 import subprocess
 import tomllib
 
@@ -25,6 +26,9 @@ PYTHON_ONLY = {
     'render-format-support.py',
 }
 PYTHON_ONLY |= {'test_' + name.replace('-', '_') for name in PYTHON_ONLY}
+# The pre-PR checker, its per-check modules and their tests read no Rust build
+# input: scripts/preflight.py, scripts/preflight_*.py and scripts/test_preflight*.py.
+PREFLIGHT_TOOL = re.compile(r'scripts/(?:preflight(?:_\w+)?|test_preflight\w*)\.py')
 
 # Files that no Rust target reads.
 STATIC_ONLY = {
@@ -46,7 +50,10 @@ SINGLE_CODEC_GATES = {'sldprt_cli': 'cadmpeg-codec-sldprt', 'step_cli': 'cadmpeg
 # Read by the `cadmpeg` package's `layout_tables` test.
 LAYOUT_TABLE_INPUTS = ('docs/formats/', 'docs/layouts/')
 
-EMBEDDED_BY = {'docs/dialect-id-conformance.toml': 'cadmpeg-core'}
+EMBEDDED_BY = {
+    'docs/dialect-id-conformance.toml': 'cadmpeg-core',
+    'docs/measurement.md': 'cadmpeg-measure',
+}
 
 
 def is_cache_key_input(path: str) -> bool:
@@ -155,7 +162,8 @@ def select(root: Path, paths: list[str], *, full: bool = False,
             affected.add('cadmpeg-codec-inventor')
         elif path == 'scripts/verify-iges-bounded.py':
             affected.add('cadmpeg-codec-iges')
-        elif path.startswith('scripts/') and Path(path).name in PYTHON_ONLY:
+        elif ((path.startswith('scripts/') and Path(path).name in PYTHON_ONLY)
+              or PREFLIGHT_TOOL.fullmatch(path)):
             # These programs have their own tests and the complete static gate.
             continue
         elif path in STATIC_ONLY:

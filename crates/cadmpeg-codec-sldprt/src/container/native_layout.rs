@@ -139,10 +139,7 @@ fn tail_tiles(bytes: &[u8], end: usize, root: usize, count: u16) -> bool {
     for stride in strides {
         let mut at = first;
         let mut named_count = 0;
-        loop {
-            let Some(next) = at.checked_add(stride).filter(|next| *next <= bytes.len()) else {
-                break;
-            };
+        while let Some(next) = at.checked_add(stride).filter(|next| *next <= bytes.len()) {
             let matching = cells
                 .iter()
                 .filter(|&&(marker, length, record_end)| {
@@ -446,12 +443,12 @@ pub(super) fn validate(
     let mut candidates = BTreeSet::new();
     for displacement in 5..=14 {
         let logical = index_from_u32(first.logical_len);
-        if logical % displacement == 0 {
+        if logical.is_multiple_of(displacement) {
             let stride = logical / displacement;
             if stride > 0
                 && cells.iter().all(|cell| {
                     let logical = index_from_u32(cell.logical_len);
-                    logical % stride == 0 && (5..=14).contains(&(logical / stride))
+                    logical.is_multiple_of(stride) && (5..=14).contains(&(logical / stride))
                 })
             {
                 candidates.insert(stride);

@@ -84,11 +84,11 @@ fn matrix(view: &mut View<'_>) -> Option<Located<SketchPlacementMatrix>> {
     })
 }
 
-pub(super) fn scan<'a>(
-    mut view: View<'a>,
+pub(super) fn scan(
+    mut view: View<'_>,
     version: u32,
     marked: bool,
-) -> Option<(BorrowedFields<'a>, View<'a>)> {
+) -> Option<(BorrowedFields<'_>, View<'_>)> {
     let linear_offset_on_periodic_face = if version >= 14 {
         Some(byte(&mut view)?)
     } else {
@@ -264,7 +264,7 @@ fn retain_list(
 
 pub(super) fn retain(
     ctx: &DecodeContext<'_>,
-    value: BorrowedFields<'_>,
+    value: &BorrowedFields<'_>,
 ) -> Result<PlacementFields, CodecError> {
     let global_parameters = if let Some(raw) = value.global_parameters {
         let mut values = [

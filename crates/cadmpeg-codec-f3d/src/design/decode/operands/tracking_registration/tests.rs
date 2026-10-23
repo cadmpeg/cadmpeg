@@ -101,7 +101,7 @@ fn registration_rejects_wrong_family_version_membership_and_physical_offsets() {
                     meta.types[index].type_guid = "11111111-2222-3333-4444-555555555555"
                         .to_owned()
                         .try_into()
-                        .unwrap()
+                        .unwrap();
                 }
                 4 => meta.types[index].entities = ReferenceRun::unlocated(vec![999]),
                 5 => meta.records[index].entity_id = 999,
@@ -172,7 +172,7 @@ fn nonconsecutive_transform_requires_typed_membership_and_the_next_active_primar
                 invalid.types[0].type_guid = "11111111-2222-3333-4444-555555555555"
                     .to_owned()
                     .try_into()
-                    .unwrap()
+                    .unwrap();
             }
             4 => invalid.types[0].entities = ReferenceRun::unlocated(vec![999]),
             5 => invalid.records[0].bulk_offset += 1,

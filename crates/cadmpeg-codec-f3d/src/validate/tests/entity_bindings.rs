@@ -172,13 +172,17 @@ fn placement_contiguous_visibility_has_no_finding() {
     })
 }
 
-/// Two components each number their sketch Geometry members from 1: the
-/// sketches of entities 5 and 25 lie in the components rooted at 3 and 20.
-fn two_component_placements(with_components: bool) -> crate::native::F3dNative {
+/// The sketches of entities 5 and 25, with the given Geometry member
+/// ordinals; with components they lie in the components rooted at 3 and 20.
+fn two_sketch_placements(
+    with_components: bool,
+    stream_ordinals: [u32; 2],
+) -> crate::native::F3dNative {
     let mut native = crate::native::F3dNative::default();
-    for (ordinal, (suffix, header_offset, ordinal_offset)) in
+    for (ordinal, ((suffix, header_offset, ordinal_offset), stream_ordinal)) in
         [(5_u64, 10_u64, 100_u64), (25, 110, 200)]
             .into_iter()
+            .zip(stream_ordinals)
             .enumerate()
     {
         let mut header = validation_entity_header(Vec::new());
@@ -193,7 +197,7 @@ fn two_component_placements(with_components: bool) -> crate::native::F3dNative {
             crate::records::identity::DesignEntityId::from_parts("sketch", suffix);
         placement.visibility = Some(
             crate::records::sketch_placement::DesignSketchVisibility::new(
-                std::num::NonZeroU32::new(1).unwrap(),
+                std::num::NonZeroU32::new(stream_ordinal).unwrap(),
                 ordinal_offset,
                 true,
             )
@@ -213,6 +217,8 @@ fn two_component_placements(with_components: bool) -> crate::native::F3dNative {
                         .try_into()
                         .unwrap(),
                     context_uuid_offset: offset + 12,
+                    name: None,
+                    name_offset: None,
                 },
             );
         }
@@ -224,7 +230,7 @@ fn two_component_placements(with_components: bool) -> crate::native::F3dNative {
 fn sketch_geometry_ordinals_count_within_each_component() {
     crate::test_support::with_decode_context(|service_ctx| {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
-        let native = two_component_placements(true);
+        let native = two_sketch_placements(true, [1, 1]);
         let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
         let mut findings = Vec::new();
         super::super::validate_sketch_placements(&ctx, &mut findings);
@@ -232,10 +238,32 @@ fn sketch_geometry_ordinals_count_within_each_component() {
 
         // Without components both sketches share one count, and the second
         // ordinal 1 repeats.
-        let native = two_component_placements(false);
+        let native = two_sketch_placements(false, [1, 1]);
         let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
         let mut findings = Vec::new();
         super::super::validate_sketch_placements(&ctx, &mut findings);
         assert_eq!(findings.len(), 1);
+    })
+}
+
+#[test]
+fn sketch_geometry_ordinals_may_skip_values_but_increase_with_entity_order() {
+    crate::test_support::with_decode_context(|service_ctx| {
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let findings_for = |stream_ordinals| {
+            let native = two_sketch_placements(false, stream_ordinals);
+            let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
+            let mut findings = Vec::new();
+            super::super::validate_sketch_placements(&ctx, &mut findings);
+            findings
+        };
+        let skipped = findings_for([2, 5]);
+        assert!(skipped.is_empty(), "{skipped:?}");
+        let decreasing = findings_for([5, 2]);
+        assert_eq!(decreasing.len(), 1, "{decreasing:?}");
+        assert_eq!(
+            decreasing[0].message,
+            "Fusion Design sketch Geometry member ordinals do not increase with sketch entity order"
+        );
     })
 }

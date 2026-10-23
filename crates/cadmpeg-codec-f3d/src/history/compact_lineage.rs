@@ -13,6 +13,7 @@ use crate::records::{
 };
 use std::collections::{HashMap, HashSet};
 
+#[derive(Clone, Copy)]
 pub(crate) struct Inputs<'a> {
     pub(crate) scopes: &'a [DesignParameterScope],
     pub(crate) groups: &'a [DesignConstructionOperandGroup],

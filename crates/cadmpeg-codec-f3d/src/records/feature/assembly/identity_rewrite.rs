@@ -6,10 +6,12 @@ use super::{
     DesignAssemblyAxialSelectorIdentity, DesignAssemblyLegacyOperand, DesignAssemblyLegacyOperands,
     DesignAssemblyLegacySelection, DesignAssemblyLimitKind, DesignAssemblyLimits,
     DesignAssemblyOperandFrame, DesignAssemblyOperandPath, DesignAssemblyOperandPathLink,
-    DesignAssemblyOperandQualifier, DesignAssemblySolvedFrame, DesignQualifiedAssemblyOperand,
+    DesignAssemblyOperandQualifier, DesignAssemblySolvedFrame, DesignJointFrameSense,
+    DesignQualifiedAssemblyOperand,
 };
 
-rewrite_native_record!(DesignAssemblyAlignment, []; {angle, offset, owners, form}; native assembly_fields);
+rewrite_native_record!(DesignAssemblyAlignment, []; {angle, offset, owners, form, frame_sense, additional_members}; native assembly_fields);
+rewrite_native_scalar!(DesignJointFrameSense);
 rewrite_native_enum!(DesignAssemblyAlignmentForm, []; {
     DatumEnvelope {joint_origin_scope_record_index},
     LimitsOnly {limits},
@@ -29,7 +31,7 @@ rewrite_native_record!(DesignAssemblyLegacySelection, []; {record_index, byte_of
 rewrite_native_scalar!(DesignAssemblyLimitKind);
 rewrite_native_record!(DesignAssemblyLimits, []; {kind, minimum, maximum, owner_record_indices, value_offsets});
 rewrite_native_record!(DesignAssemblyOperandFrame, []; {reference_record_index, reference_offset, transform, transform_offset});
-rewrite_native_record!(DesignAssemblyOperandPath, []; {link, record_index, class_tag, byte_offset, occurrence_guids, identity_guids});
+rewrite_native_record!(DesignAssemblyOperandPath, []; {link, record_index, class_tag, byte_offset, occurrence_guids, identity_guids, paired_occurrence_keys});
 rewrite_native_record!(DesignAssemblyOperandPathLink, []; {locator_reference_offset, locator_record_index, locator_class_tag, locator_byte_offset, locator_scope_reference_offset, wrapper_record_index, wrapper_reference_offset, wrapper_class_tag, wrapper_byte_offset, path_reference_offset});
 rewrite_native_enum!(DesignAssemblyOperandQualifier, []; {
     OccurrencePath {path},

@@ -246,9 +246,8 @@ fn authored_with_retained_native_envelope_cube_reaches_encode_decode_fixpoint() 
 #[test]
 fn source_less_cube_without_native_envelope_is_refused() {
     let ir = source_less_cube();
-    let error = match SldprtCodec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit) {
-        Ok(_) => panic!("source-less input cannot supply native producer framing"),
-        Err(error) => error,
+    let Err(error) = SldprtCodec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit) else {
+        panic!("source-less input cannot supply native producer framing");
     };
     assert!(
         matches!(error, cadmpeg_core::CodecError::NotImplemented(ref detail)

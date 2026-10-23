@@ -347,16 +347,17 @@ mod budget {
     }
 }
 
-/// Cross-codec local-cap contracts: a local work cap skips one item, reports a
-/// loss naming its constant, and never refuses the session.
+/// Sketch profile projection preserves explicit connectivity across decode policies.
 #[cfg(feature = "fcstd")]
-mod local_cap {
+mod sketch_profiles {
     use std::fmt::Write as _;
     use std::io::{Cursor, Write as _};
 
     use cadmpeg_codec_freecad::FcstdCodec;
     use cadmpeg_core::decode::{DecodeDepth, DecodePolicy};
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
+
+    const DENSE_SEGMENTS: usize = 4096;
 
     fn fcstd(document: &str) -> Vec<u8> {
         let mut bytes = Cursor::new(Vec::new());
@@ -372,11 +373,9 @@ mod local_cap {
         bytes.into_inner()
     }
 
-    /// Two sketches: 4096 coincident segments whose endpoint matching needs
-    /// 2 * 4096² candidates, above the per-sketch
-    /// `MAX_PROFILE_ENDPOINT_CANDIDATES`, then a closed triangle.
-    fn dense_then_triangle() -> Vec<u8> {
-        let dense_count = 4096;
+    /// Unconstrained overlapping segments followed by an explicitly closed triangle.
+    fn unconstrained_segments_then_constrained_triangle() -> Vec<u8> {
+        let dense_count = DENSE_SEGMENTS;
         let dense = r#"<Geometry type="Part::GeomLineSegment"><LineSegment StartX="1" StartY="1" EndX="2" EndY="1"/></Geometry>"#
             .repeat(dense_count);
         let mut document = String::from(
@@ -389,12 +388,17 @@ mod local_cap {
             r#"<Object name="Dense"><Properties Count="1">
 <Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="{dense_count}">{dense}</GeometryList></Property>
 </Properties></Object>
-<Object name="Triangle"><Properties Count="1">
+<Object name="Triangle"><Properties Count="2">
 <Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="3">
 <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="1" EndY="0"/></Geometry>
 <Geometry type="Part::GeomLineSegment"><LineSegment StartX="1" StartY="0" EndX="0" EndY="1"/></Geometry>
 <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="1" EndX="0" EndY="0"/></Geometry>
 </GeometryList></Property>
+<Property name="Constraints" type="Sketcher::PropertyConstraintList"><ConstraintList count="3">
+<Constrain Type="1" First="0" FirstPos="2" Second="1" SecondPos="1"/>
+<Constrain Type="1" First="1" FirstPos="2" Second="2" SecondPos="1"/>
+<Constrain Type="1" First="2" FirstPos="2" Second="0" SecondPos="1"/>
+</ConstraintList></Property>
 </Properties></Object></ObjectData></Document>"#
         )
         .expect("format document");
@@ -402,8 +406,8 @@ mod local_cap {
     }
 
     #[test]
-    fn an_exhausted_local_cap_skips_one_item_under_every_profile() {
-        let bytes = dense_then_triangle();
+    fn only_explicit_constraints_join_sketch_entities_under_every_profile() {
+        let bytes = unconstrained_segments_then_constrained_triangle();
         for (profile, policy) in [
             ("desktop", DecodePolicy::desktop()),
             ("service", DecodePolicy::service()),
@@ -416,7 +420,7 @@ mod local_cap {
                         policy,
                     },
                 )
-                .unwrap_or_else(|error| panic!("{profile}: a local cap refused: {error}"));
+                .unwrap_or_else(|error| panic!("{profile}: sketch projection refused: {error}"));
             let sketch = |name: &str| {
                 result
                     .ir()
@@ -426,22 +430,19 @@ mod local_cap {
                     .find(|sketch| sketch.name.as_deref() == Some(name))
                     .unwrap_or_else(|| panic!("{profile}: sketch {name} was dropped"))
             };
-            assert!(sketch("Dense").profiles.is_empty(), "{profile}");
-            assert_eq!(sketch("Triangle").profiles.as_slice().len(), 1, "{profile}");
+            let dense = &sketch("Dense").profiles;
+            assert_eq!(dense.len(), DENSE_SEGMENTS, "{profile}");
+            assert!(dense.iter().all(|chain| chain.len() == 1), "{profile}");
+            let triangle = &sketch("Triangle").profiles;
+            assert_eq!(triangle.len(), 1, "{profile}");
+            assert_eq!(triangle[0].len(), 3, "{profile}");
             let bounded = result
                 .report()
                 .losses
                 .iter()
                 .filter(|loss| loss.code.local_code() == "sketch.profile-matching-bounded")
                 .collect::<Vec<_>>();
-            assert_eq!(bounded.len(), 1, "{profile}: {bounded:#?}");
-            assert!(
-                bounded[0]
-                    .message
-                    .contains("MAX_PROFILE_ENDPOINT_CANDIDATES"),
-                "{profile}: {}",
-                bounded[0].message
-            );
+            assert!(bounded.is_empty(), "{profile}: {bounded:#?}");
         }
     }
 }
@@ -655,6 +656,439 @@ mod product_roundtrip {
                     );
                 }
             }
+        }
+    }
+
+    const CORE_OPERATIONS: &[u8] = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../corpus/freecad_fcstd/fixtures/core_operations.FCStd"
+    ));
+
+    #[test]
+    fn fcstd_trimmed_edges_round_trip_through_step_onto_their_vertices() {
+        let source = FcstdCodec
+            .decode(&mut Cursor::new(CORE_OPERATIONS), &DecodeOptions::default())
+            .expect("decode FCStd chamfer and fillet")
+            .into_parts()
+            .0;
+        let mut step = Vec::new();
+        StepCodec::default()
+            .plan(EncodeInput::new(&source, None), TargetRequest::Inherit)
+            .and_then(|plan| plan.write_to(&mut step))
+            .expect("write STEP");
+        let decoded = StepCodec::default()
+            .decode(&mut Cursor::new(step), &DecodeOptions::default())
+            .expect("decode STEP");
+        let validation =
+            cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+                .expect("validate the round-tripped model");
+        let errors = validation
+            .findings
+            .iter()
+            .filter(|finding| finding.severity == cadmpeg_ir::report::Severity::Error)
+            .map(|finding| finding.message.as_str())
+            .collect::<Vec<_>>();
+        assert!(errors.is_empty(), "{errors:#?}");
+    }
+}
+
+/// Subset curves whose local cache is no conic or spline: an ellipse subset
+/// whose angle 0 is off the ellipse axes, and a parabola subset with no local
+/// cache. Each is the curve of one unit-cube edge, through both of its
+/// vertices, in either sense.
+#[cfg(all(feature = "step", feature = "iges", feature = "f3d"))]
+mod subset_carriers {
+    #![allow(clippy::unwrap_used)]
+
+    use std::io::Cursor;
+
+    use cadmpeg_codec_iges::IgesCodec;
+    use cadmpeg_codec_step::StepCodec;
+    use cadmpeg_ir::codec::write::target::TargetRequest;
+    use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::eval::admission::EvaluationAdmission;
+    use cadmpeg_ir::eval::decode::curve_point;
+    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::geometry::analytic::{EllipseCurve, ParabolaCurve};
+    use cadmpeg_ir::geometry::curve_payloads::SubsetCurveConstruction;
+    use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsPoles3};
+    use cadmpeg_ir::geometry::{
+        CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry,
+    };
+    use cadmpeg_ir::ids::ProceduralCurveId;
+    use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::topology::ParameterInterval;
+    use cadmpeg_ir::CadIr;
+
+    #[derive(Clone, Copy, Debug)]
+    enum Basis {
+        Ellipse,
+        Parabola,
+        Nurbs,
+    }
+
+    const RANGE: [f64; 2] = [0.7, 2.0];
+
+    /// Absolute tolerance for an edge range to lie in its subset interval.
+    const EPS_SUBSET_RANGE: f64 = 1.0e-9;
+
+    fn canonical(
+        basis: Basis,
+        size: f64,
+        origin: Point3,
+        x: Vector3,
+        normal: Vector3,
+    ) -> SolvedCurveGeometry {
+        match basis {
+            Basis::Ellipse => SolvedCurveGeometry::Ellipse(
+                EllipseCurve::try_new(origin, normal, x, 3.0 * size, size).unwrap(),
+            ),
+            Basis::Parabola => SolvedCurveGeometry::Parabola(
+                ParabolaCurve::try_new(origin, normal, x, size).unwrap(),
+            ),
+            Basis::Nurbs => {
+                let y = cross(normal, x);
+                let poles = [[0.0, 0.0], [1.0, 1.0], [2.0, 0.0], [3.0, 1.0]]
+                    .into_iter()
+                    .map(|[u, v]| {
+                        let offset = sum(scaled(x, u * size), scaled(y, v * size));
+                        FinitePoint3::new(Point3::new(
+                            origin.x + offset.x,
+                            origin.y + offset.y,
+                            origin.z + offset.z,
+                        ))
+                        .unwrap()
+                    })
+                    .collect();
+                SolvedCurveGeometry::Nurbs(
+                    NurbsCurve::new(
+                        2,
+                        vec![0.0, 0.0, 0.0, 1.5, 3.0, 3.0, 3.0],
+                        NurbsPoles3::Polynomial { points: poles },
+                        false,
+                    )
+                    .unwrap(),
+                )
+            }
+        }
+    }
+
+    fn at(geometry: &SolvedCurveGeometry, parameter: f64) -> Point3 {
+        curve_point(
+            EvaluationAdmission::Standard,
+            &CurveGeometry::Solved(geometry.clone()),
+            parameter,
+        )
+        .unwrap()
+        .get()
+    }
+
+    fn sub(a: Point3, b: Point3) -> Vector3 {
+        Vector3::new(a.x - b.x, a.y - b.y, a.z - b.z)
+    }
+
+    fn cross(a: Vector3, b: Vector3) -> Vector3 {
+        Vector3::new(
+            a.y * b.z - a.z * b.y,
+            a.z * b.x - a.x * b.z,
+            a.x * b.y - a.y * b.x,
+        )
+    }
+
+    fn norm(v: Vector3) -> f64 {
+        (v.x * v.x + v.y * v.y + v.z * v.z).sqrt()
+    }
+
+    fn scaled(v: Vector3, s: f64) -> Vector3 {
+        Vector3::new(v.x * s, v.y * s, v.z * s)
+    }
+
+    fn sum(a: Vector3, b: Vector3) -> Vector3 {
+        Vector3::new(a.x + b.x, a.y + b.y, a.z + b.z)
+    }
+
+    /// The basis curve placed so that `RANGE[0]` lies at `first` and
+    /// `RANGE[1]` at `second`, in a plane through both with normal `normal`.
+    fn through(
+        basis: Basis,
+        first: Point3,
+        second: Point3,
+        normal: Vector3,
+    ) -> SolvedCurveGeometry {
+        let origin = Point3::new(0.0, 0.0, 0.0);
+        let (reference, axis) = (Vector3::new(1.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0));
+        let unit = canonical(basis, 1.0, origin, reference, axis);
+        let size = norm(sub(first, second)) / norm(sub(at(&unit, RANGE[1]), at(&unit, RANGE[0])));
+        let local = canonical(basis, size, origin, reference, axis);
+        let (start, end) = (at(&local, RANGE[0]), at(&local, RANGE[1]));
+        let chord = sub(end, start);
+        let (chord_x, chord_y) = (chord.x / norm(chord), chord.y / norm(chord));
+        let along = scaled(sub(second, first), 1.0 / norm(sub(second, first)));
+        let across = cross(normal, along);
+        let placed_x = sum(scaled(along, chord_x), scaled(across, -chord_y));
+        let placed_y = sum(scaled(along, chord_y), scaled(across, chord_x));
+        let offset = sum(scaled(placed_x, start.x), scaled(placed_y, start.y));
+        let placed = Point3::new(first.x - offset.x, first.y - offset.y, first.z - offset.z);
+        canonical(basis, size, placed, placed_x, normal)
+    }
+
+    /// The unit cube with its first edge on a subset of `basis`.
+    fn cube(basis: Basis, sense: bool) -> CadIr {
+        chain(basis, &[(RANGE, sense)])
+    }
+
+    /// The links of a two-level chain whose outer local range maps onto
+    /// `RANGE` of the basis through an inner subset over `[0.5, 3.0]`.
+    fn nested_links(inner: bool, outer: bool) -> [([f64; 2], bool); 2] {
+        let outer_range = if inner { [0.2, 1.5] } else { [1.0, 2.3] };
+        [([0.5, 3.0], inner), (outer_range, outer)]
+    }
+
+    /// The unit cube with its first edge on a chain of subsets over `basis`,
+    /// innermost first, that maps the edge onto `RANGE` of the basis.
+    fn chain(basis: Basis, links: &[([f64; 2], bool)]) -> CadIr {
+        let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let edge = ir.model.edges[0].clone();
+        let position = |vertex: &cadmpeg_ir::ids::VertexId| {
+            let vertex = ir.model.vertices.iter().find(|v| v.id == *vertex).unwrap();
+            let point = ir
+                .model
+                .points
+                .iter()
+                .find(|p| p.id == vertex.point)
+                .unwrap();
+            point.position().get()
+        };
+        let (start, end) = (position(&edge.start), position(&edge.end));
+        let d = sub(end, start);
+        let normal = if d.x.abs() < 0.5 {
+            Vector3::new(1.0, 0.0, 0.0)
+        } else {
+            Vector3::new(0.0, 1.0, 0.0)
+        };
+        let forward = links.iter().filter(|(_, sense)| !sense).count() % 2 == 0;
+        let (first, second) = if forward { (start, end) } else { (end, start) };
+        let root = cadmpeg_ir::ids::CurveId::mint("test:model:curve#subset-source").unwrap();
+        let mut source = (root.clone(), Some(through(basis, first, second, normal)));
+        ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+            id: root,
+            geometry: CurveGeometry::Solved(source.1.clone().unwrap()),
+            parameter_range: cadmpeg_ir::topology::IncreasingParameterInterval::new(RANGE),
+            source_object: None,
+        });
+        let edge_curve = edge.curve().unwrap().clone();
+        let mut span = 0.0;
+        for (index, (range, sense)) in links.iter().enumerate() {
+            let curve_id = if index + 1 == links.len() {
+                edge_curve.clone()
+            } else {
+                let curve_id =
+                    cadmpeg_ir::ids::CurveId::mint(format!("test:model:curve#subset-{index}"))
+                        .unwrap();
+                ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+                    id: curve_id.clone(),
+                    geometry: CurveGeometry::Solved(line_placeholder()),
+                    parameter_range: None,
+                    source_object: None,
+                });
+                curve_id
+            };
+            let subset =
+                SubsetCurveConstruction::try_new(source.0.clone(), *range, *sense, None).unwrap();
+            let cache = source
+                .1
+                .as_ref()
+                .and_then(|geometry| subset.local_cache(geometry));
+            if links.len() == 1 {
+                assert_eq!(
+                    matches!(cache, Some(SolvedCurveGeometry::Transformed(_))),
+                    matches!(basis, Basis::Ellipse),
+                    "{basis:?}"
+                );
+            }
+            let construction =
+                ProceduralCurveId::mint(format!("test:model:construction#subset-{index}")).unwrap();
+            ir.model
+                .curves
+                .iter_mut()
+                .find(|curve| curve.id == curve_id)
+                .unwrap()
+                .geometry = match &cache {
+                Some(cache) => CurveGeometry::Solved(cache.clone()),
+                None => CurveGeometry::Procedural {
+                    construction: construction.clone(),
+                    cache: None,
+                },
+            };
+            let mut definition = ProceduralCurveDefinition::Subset(subset);
+            if cache.is_some() {
+                definition
+                    .set_legacy_cache(cadmpeg_ir::geometry::LegacyCache::new(
+                        cadmpeg_ir::geometry::FitTolerance::ZERO,
+                    ))
+                    .unwrap();
+            }
+            ir.model
+                .add_procedural_curve(&curve_id, ProceduralCurve::new(construction, definition))
+                .unwrap();
+            span = range[1] - range[0];
+            source = (curve_id, cache);
+        }
+        ir.model.edges[0].set_param_range(Some(ParameterInterval::new([0.0, span]).unwrap()));
+        ir.model
+            .curves
+            .sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
+        ir
+    }
+
+    /// A carrier that `chain` replaces before the curve is used.
+    fn line_placeholder() -> SolvedCurveGeometry {
+        SolvedCurveGeometry::Line(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        )
+    }
+
+    fn assert_valid(ir: &CadIr, label: &str) {
+        let validation = cadmpeg_ir::validate_neutral(ir, Vec::new()).unwrap();
+        let errors = validation
+            .findings
+            .iter()
+            .filter(|finding| finding.severity == cadmpeg_ir::report::Severity::Error)
+            .map(|finding| finding.message.as_str())
+            .collect::<Vec<_>>();
+        assert!(errors.is_empty(), "{label}: {errors:#?}");
+    }
+
+    #[test]
+    fn step_writes_each_subset_edge_as_a_trimmed_curve() {
+        for basis in [Basis::Ellipse, Basis::Parabola] {
+            for sense in [true, false] {
+                let ir = cube(basis, sense);
+                let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new()).unwrap();
+                assert!(
+                    validation
+                        .findings
+                        .iter()
+                        .all(|finding| finding.severity != cadmpeg_ir::report::Severity::Error),
+                    "{basis:?} {sense}: {:#?}",
+                    validation.findings
+                );
+                let mut step = Vec::new();
+                let report = StepCodec::default()
+                    .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+                    .and_then(|plan| plan.write_to(&mut step))
+                    .unwrap();
+                let losses = report
+                    .losses
+                    .iter()
+                    .map(|loss| loss.code.to_string())
+                    .collect::<Vec<_>>();
+                assert!(
+                    !losses
+                        .iter()
+                        .any(|code| code == "topology.edge-curve-unsupported"),
+                    "{basis:?} {sense}: {losses:?}"
+                );
+                let text = String::from_utf8(step).unwrap();
+                assert_eq!(
+                    text.matches("TRIMMED_CURVE(").count(),
+                    1,
+                    "{basis:?} {sense}"
+                );
+                assert_eq!(text.matches("EDGE_CURVE(").count(), 12, "{basis:?} {sense}");
+            }
+        }
+    }
+
+    #[test]
+    fn iges_writes_each_subset_edge_on_its_source_carrier() {
+        for basis in [Basis::Ellipse, Basis::Parabola] {
+            for sense in [true, false] {
+                let ir = cube(basis, sense);
+                let mut iges = Vec::new();
+                IgesCodec
+                    .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+                    .and_then(|plan| plan.write_to(&mut iges))
+                    .unwrap_or_else(|error| panic!("{basis:?} {sense}: {error}"));
+                assert!(!iges.is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn iges_writes_a_nested_subset_edge_on_its_root_carrier() {
+        for inner in [true, false] {
+            for outer in [true, false] {
+                let label = format!("inner {inner} outer {outer}");
+                let ir = chain(Basis::Ellipse, &nested_links(inner, outer));
+                assert_valid(&ir, &label);
+                let mut iges = Vec::new();
+                IgesCodec
+                    .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+                    .and_then(|plan| plan.write_to(&mut iges))
+                    .unwrap_or_else(|error| panic!("{label}: {error}"));
+                let decoded = IgesCodec
+                    .decode(&mut Cursor::new(iges), &DecodeOptions::default())
+                    .unwrap_or_else(|error| panic!("{label}: {error}"));
+                assert_valid(decoded.ir(), &label);
+            }
+        }
+    }
+
+    #[test]
+    fn f3d_writes_nurbs_subset_edges_on_the_parameter_of_their_source() {
+        let mut models = vec![
+            ("sense true".to_owned(), cube(Basis::Nurbs, true)),
+            ("sense false".to_owned(), cube(Basis::Nurbs, false)),
+        ];
+        for inner in [true, false] {
+            for outer in [true, false] {
+                models.push((
+                    format!("inner {inner} outer {outer}"),
+                    chain(Basis::Nurbs, &nested_links(inner, outer)),
+                ));
+            }
+        }
+        for (label, ir) in models {
+            assert_valid(&ir, &label);
+            let mut f3d = Vec::new();
+            cadmpeg_codec_f3d::F3dCodec
+                .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+                .and_then(|plan| plan.write_to(&mut f3d))
+                .unwrap_or_else(|error| panic!("{label}: {error}"));
+            let decoded = cadmpeg_codec_f3d::F3dCodec
+                .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
+                .unwrap_or_else(|error| panic!("{label}: {error}"));
+            assert_valid(decoded.ir(), &label);
+            let decoded = decoded.ir();
+            let mut subset_edges = 0;
+            for procedural in &decoded.model.procedural_curves {
+                let ProceduralCurveDefinition::Subset(subset) = procedural.definition() else {
+                    continue;
+                };
+                let [first, last] = subset.parameter_range().endpoints();
+                let span = last - first;
+                let owner = decoded.model.procedural_curve_owner(&procedural.id);
+                for edge in decoded
+                    .model
+                    .edges
+                    .iter()
+                    .filter(|edge| edge.curve() == owner)
+                {
+                    let [start, end] = edge.param_range().unwrap().get();
+                    assert!(
+                        start >= -EPS_SUBSET_RANGE && end <= span + EPS_SUBSET_RANGE,
+                        "{label}: edge range outside the local subset domain"
+                    );
+                    subset_edges += 1;
+                }
+            }
+            assert_eq!(subset_edges, 1, "{label}");
         }
     }
 }
