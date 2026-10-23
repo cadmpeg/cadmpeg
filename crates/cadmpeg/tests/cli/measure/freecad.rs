@@ -101,7 +101,9 @@ fn freecad_revolved_faces() {
 /// less the cylinder of radius 4 through it; `Cylinder` has radius 4 and
 /// height 16; `Revolved` is the annulus between radii 4 and 7, height 8,
 /// revolved 270°; `Mirror` is the mirror image of a cylinder of radius 3
-/// and height 10.
+/// and height 10; `Loft` is the ruled loft between two circles of radius 4
+/// at z = 0 and z = 14; `Swept` is the circle of radius 2 swept 20 along a
+/// line.
 #[test]
 fn freecad_volumes() {
     for (file, needle, expected) in [
@@ -109,6 +111,8 @@ fn freecad_volumes() {
         ("core_design_product.FCStd", "#Cylinder:", 256.0 * PI),
         ("geometry_topology.FCStd", "#Revolved:", 198.0 * PI),
         ("core_operations.FCStd", "#Mirror:", 90.0 * PI),
+        ("core_operations.FCStd", "#Loft:", 224.0 * PI),
+        ("geometry_topology.FCStd", "#Swept:", 80.0 * PI),
     ] {
         let path = corpus(file);
         let report = measure_json(&[path.to_str().unwrap()]);

@@ -436,7 +436,12 @@ fn face_outside_body_scope() {
     cadmpeg()
         .arg("measure")
         .arg(&input)
-        .args(["--body", "Box.Shape.brp:34", "--face", "Cut.Shape.brp:41"])
+        .args([
+            "--body",
+            "Box.Shape.brp:34%40location1",
+            "--face",
+            "Cut.Shape.brp:41%40location1",
+        ])
         .assert()
         .code(2)
         .stderr(predicate::str::contains("is not in the --body scope"));

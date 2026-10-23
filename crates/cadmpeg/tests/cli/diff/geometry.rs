@@ -160,29 +160,28 @@ fn geometry_diff_detects_a_moved_signature_body() {
 }
 
 /// Each `FreeCAD` corpus file against itself. Identical documents give
-/// identical rows, so nothing disagrees and no body is unmatched. Bodies
+/// identical rows, so nothing disagrees and no body is unmatched. A body
 /// whose faces lie on procedural carriers without an admitted cache
-/// (`Loft`, `Sweep`, `Swept`) have no comparable quantity, datum bodies
-/// with no vertex (`DatumPlane`, `DatumCoordinateSystem`) compare by a
-/// signature that does not depend on position, and occurrences that place
-/// bodies (`core_design_product`) keep the verdict inconclusive.
+/// (`Sweep`) has no comparable quantity, datum bodies with no vertex
+/// (`DatumPlane`, `DatumCoordinateSystem`) compare by a signature that does
+/// not depend on position, and occurrences that place bodies
+/// (`core_design_product`) keep the verdict inconclusive. A document with
+/// none of these (`geometry_topology`) agrees with itself.
 #[cfg(feature = "fcstd")]
 #[test]
 fn geometry_diff_self_comparison() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/freecad_fcstd/fixtures");
-    for (file, unmeasured, causes) in [
+    for (file, verdict, unmeasured, causes) in [
         (
             "core_operations.FCStd",
-            &["#Loft:", "#Sweep:"][..],
+            "inconclusive",
+            &["#Sweep:"][..],
             &["compare.unmeasured-body", "compare.signature-unplaced"][..],
         ),
-        (
-            "geometry_topology.FCStd",
-            &["#Swept:"][..],
-            &["compare.unavailable", "compare.unmeasured-body"][..],
-        ),
+        ("geometry_topology.FCStd", "agree", &[][..], &[][..]),
         (
             "core_design_product.FCStd",
+            "inconclusive",
             &[][..],
             &["compare.occurrence-placement"][..],
         ),
@@ -190,8 +189,8 @@ fn geometry_diff_self_comparison() {
         let path = corpus.join(file);
         let (code, report) = geometry_json(path.to_str().unwrap(), path.to_str().unwrap());
         let comparison = &report["geometry"]["comparison"];
-        assert_eq!(comparison["verdict"], "inconclusive", "{file}");
-        assert_eq!(code, Some(1), "{file}");
+        assert_eq!(comparison["verdict"], verdict, "{file}");
+        assert_eq!(code, Some(i32::from(verdict != "agree")), "{file}");
         assert_eq!(
             comparison["inconclusive_causes"],
             serde_json::json!(causes),
