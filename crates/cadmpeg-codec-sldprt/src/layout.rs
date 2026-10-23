@@ -227,6 +227,64 @@ pub(crate) mod world_point_tripled {
     pub(crate) const XYZ: usize = 18;
 }
 
+/// Byte offsets for the `loop_bare` record.
+///
+/// Spec §4. Record length 14 B.
+///
+/// ```text
+/// Complete short-reference body; the type tag and optional first-of-type ff precede this body.
+/// ```
+pub(crate) mod loop_bare {
+    /// Record length in bytes. Spec §4.
+    pub(crate) const LEN: usize = 14;
+    /// Offset of `refs` (`u16[4]`, big-endian). Spec §4.
+    pub(crate) const REFS: usize = 6;
+}
+
+/// Byte offsets for the `loop_tripled` record.
+///
+/// Spec §4. Record length 18 B.
+///
+/// ```text
+/// Complete short-reference body; the type tag and optional first-of-type ff precede this body.
+/// ```
+pub(crate) mod loop_tripled {
+    /// Record length in bytes. Spec §4.
+    pub(crate) const LEN: usize = 18;
+    /// Offset of `refs` (`bytes[12]`). Spec §4.
+    pub(crate) const REFS: usize = 6;
+}
+
+/// Byte offsets for the `fin_bare` record.
+///
+/// Spec §4. Record length 21 B.
+///
+/// ```text
+/// Complete short-reference body; the type tag and optional first-of-type ff precede this body.
+/// ```
+pub(crate) mod fin_bare {
+    /// Record length in bytes. Spec §4.
+    pub(crate) const LEN: usize = 21;
+    /// Offset of `refs` (`u16[9]`, big-endian). Spec §4.
+    pub(crate) const REFS: usize = 2;
+    /// Offset of `sense` (`u8`). Spec §4.
+    pub(crate) const SENSE: usize = 20;
+}
+
+/// Byte offsets for the `fin_tripled` record.
+///
+/// Spec §4. Record length 30 B.
+///
+/// ```text
+/// Complete short-reference body; the type tag and optional first-of-type ff precede this body.
+/// ```
+pub(crate) mod fin_tripled {
+    /// Offset of `refs` (`bytes[27]`). Spec §4.
+    pub(crate) const REFS: usize = 2;
+    /// Offset of `sense` (`u8`). Spec §4.
+    pub(crate) const SENSE: usize = 29;
+}
+
 /// Byte offsets for the `entity_common_header` record.
 ///
 /// Spec §5. Record length 12 B.

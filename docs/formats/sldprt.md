@@ -1284,7 +1284,7 @@ sentinels where a field permits them.
 - **Bridge `00 0e`:** `attr` is u16 BE at body +0, `sequence` is u32 BE at body +2, and the ATTRIBUTE-chain head (`attributes_groups`) is u16 BE at body +6. `sequence` is the active-partition face identity used by SWIFT `CadIdentifier` suffixes; it is distinct from `attr`, and sequence values are unique within one partition stream. `refs[2]` = owning loop-head, `refs[4]` = primary surface carrier (compact analytic or `00 7c`), `marker` = face orientation versus the surface natural normal (`0x2b` forward / `0x2d` reversed). `refs[0]` and `refs[1]` are the next and previous FACE pointers; `refs[3]` is the SHELL pointer. The five references are either adjacent big-endian u16 cells followed by the marker at body +26 or `[hi][lo][01]` cells followed by the marker at body +31.
 - **Loop head `00 0f`:** `refs[1]` = first coedge, `refs[2]` = owning bridge, `refs[3]` = next sibling loop head.
 - **Edge-use `00 10`:** `sequence` is u32 BE at body +2. Bare `refs[0]` = canonical forward coedge (`0x2b`) when the reference is not a sentinel, `refs[3]` = support curve (compact analytic or `00 86`). The complete tripled form has the same seven post-magic pointer fields, including its canonical-fin and owner pointers.
-- **Coedge `00 11`:** `refs[1]` owning loop, `refs[2]`/`refs[3]` reciprocal ring links (prev/next), `refs[4]` start vertex-use, `refs[5]` twin coedge, `refs[6]` edge-use, `marker` sense vs canonical (`0x2b` forward, `0x2d` reversed).
+- **Coedge `00 11`:** `refs[1]` owning loop, `refs[2]`/`refs[3]` reciprocal FIN links (forward/backward), `refs[4]` forward vertex-use, `refs[5]` next fin around the edge, `refs[6]` edge-use, `marker` sense vs canonical (`0x2b` forward, `0x2d` reversed).
 - **Vertex-use `00 12` / point `00 1d`:** `00 12.sequence` is u32 BE at body +2 and `00 12.refs[4]` = point attr; a bare `00 1d` record has four references at body +6, reference 0 is its ATTRIBUTE-group head (`0` or `1` when null), and it stores xyz as three f64 BE at body +14, in metres. Attrs `0` and `1` are sentinels, not world points. A `[00 1d][attr]` adjacency-table entry supplies no POINT node ID, four-pointer block, or coordinate vector and is not a point record.
 
 The complete short-index bodies below exclude the type tag and optional
@@ -1307,6 +1307,18 @@ for its transmit index; companion deltas retain historical versions.
 `face_bare` has a 37-byte body: `face_bare.attr at +0` (u16), `face_bare.node_id at +2` (u32), `face_bare.attributes_head at +6` (u16), `face_bare.tolerance at +8` (bytes[8]), `face_bare.refs at +16` (u16[5]), `face_bare.sense at +26` (u8), `face_bare.surface_front_refs at +27` (u16[5]).
 
 `face_tripled` has a 48-byte body: `face_tripled.attr at +0` (u16), `face_tripled.node_id at +2` (u32), `face_tripled.attributes_head at +6` (bytes[3]), `face_tripled.tolerance at +9` (bytes[8]), `face_tripled.refs at +17` (bytes[15]), `face_tripled.sense at +32` (u8), `face_tripled.surface_front_refs at +33` (bytes[15]).
+
+A complete LOOP stores its node ID before its four pointers. A FIN has no
+node ID. Its nine pointers are attributes_groups, loop, forward, backward,
+vertex, other, edge, curve, and next_at_vx, followed by its sense.
+
+`loop_bare` has a 14-byte body: `loop_bare.attr at +0` (u16), `loop_bare.node_id at +2` (u32), `loop_bare.refs at +6` (u16[4]).
+
+`loop_tripled` has an 18-byte body: `loop_tripled.attr at +0` (u16), `loop_tripled.node_id at +2` (u32), `loop_tripled.refs at +6` (bytes[12]).
+
+`fin_bare` has a 21-byte body: `fin_bare.attr at +0` (u16), `fin_bare.refs at +2` (u16[9]), `fin_bare.sense at +20` (u8).
+
+`fin_tripled` has a 30-byte body: `fin_tripled.attr at +0` (u16), `fin_tripled.refs at +2` (bytes[27]), `fin_tripled.sense at +29` (u8).
 
 `edge_bare` has a 30-byte body: `edge_bare.attr at +0` (u16), `edge_bare.node_id at +2` (u32), `edge_bare.attributes_head at +6` (u16), `edge_bare.tolerance at +8` (bytes[8]), `edge_bare.refs at +16` (u16[7]).
 

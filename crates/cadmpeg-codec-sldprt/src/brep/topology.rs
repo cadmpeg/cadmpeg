@@ -28,6 +28,10 @@ use cadmpeg_core::decode::View;
 use cadmpeg_ir::topology::Sense;
 
 use crate::layout::edge_tripled as edge_delta;
+use crate::layout::fin_bare as fin_body;
+use crate::layout::fin_tripled as fin_delta;
+use crate::layout::loop_bare as loop_body;
+use crate::layout::loop_tripled as loop_delta;
 use crate::layout::world_point as world_pt;
 use crate::layout::world_point_tripled as world_pt_delta;
 
@@ -220,11 +224,14 @@ fn parse_bridge(buf: &[u8], off: usize) -> Option<Bridge> {
 /// `refs[1]` = first coedge, `refs[2]` = owning bridge, `refs[3]` = next sibling.
 fn parse_loop(buf: &[u8], off: usize) -> Option<Loop> {
     let p = body_start(buf, off, 0x0f)?;
-    if p + 14 > buf.len() {
+    if p + loop_body::LEN > buf.len() {
         return None;
     }
     let attr = attr_at(buf, p)?;
-    let refs = refs_tripled::<4>(buf, p + 6).or_else(|| refs_be::<4>(buf, p + 6))?;
+    let refs = buf
+        .get(p..p + loop_delta::LEN)
+        .and_then(|_| refs_tripled::<4>(buf, p + loop_delta::REFS))
+        .or_else(|| refs_be::<4>(buf, p + loop_body::REFS))?;
     Some(Loop {
         attr,
         refs,
@@ -328,14 +335,17 @@ fn parse_coedge_candidates(buf: &[u8], off: usize) -> Vec<Coedge> {
     let Some(p) = body_start(buf, off, 0x11) else {
         return Vec::new();
     };
-    if p + 21 > buf.len() {
+    if p + fin_body::LEN > buf.len() {
         return Vec::new();
     }
     let Some(attr) = attr_at(buf, p) else {
         return Vec::new();
     };
     let mut out = Vec::new();
-    if let (Some(refs), Some(marker)) = (refs_be::<9>(buf, p + 2), buf.get(p + 20).copied()) {
+    if let (Some(refs), Some(marker)) = (
+        refs_be::<9>(buf, p + fin_body::REFS),
+        buf.get(p + fin_body::SENSE).copied(),
+    ) {
         if let Some(sense) = parse_sense(marker) {
             out.push(Coedge {
                 attr,
@@ -345,7 +355,10 @@ fn parse_coedge_candidates(buf: &[u8], off: usize) -> Vec<Coedge> {
             });
         }
     }
-    if let (Some(refs), Some(marker)) = (refs_tripled::<9>(buf, p + 2), buf.get(p + 29).copied()) {
+    if let (Some(refs), Some(marker)) = (
+        refs_tripled::<9>(buf, p + fin_delta::REFS),
+        buf.get(p + fin_delta::SENSE).copied(),
+    ) {
         if let Some(sense) = parse_sense(marker) {
             out.push(Coedge {
                 attr,

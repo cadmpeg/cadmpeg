@@ -844,6 +844,130 @@ anchor = "world_point_tripled.xyz at +18"
 # --- §5 Entity records -----------------------------------------------------
 
 [[record]]
+name = "loop_bare"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/brep/topology.rs"
+kind = "byte"
+section = "4"
+anchor = "`loop_bare` has a 14-byte body"
+size = 14
+endianness = "big"
+note = "Complete short-reference body; the type tag and optional first-of-type ff precede this body."
+
+[[record.field]]
+name = "attr"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "`loop_bare.attr at +0`"
+
+[[record.field]]
+name = "node_id"
+offset = 2
+type = "u32"
+source = "spec"
+anchor = "`loop_bare.node_id at +2`"
+
+[[record.field]]
+name = "refs"
+offset = 6
+type = "u16[4]"
+source = "spec"
+anchor = "`loop_bare.refs at +6`"
+
+[[record]]
+name = "loop_tripled"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/brep/topology.rs"
+kind = "byte"
+section = "4"
+anchor = "`loop_tripled` has an 18-byte body"
+size = 18
+endianness = "big"
+note = "Complete short-reference body; the type tag and optional first-of-type ff precede this body."
+
+[[record.field]]
+name = "attr"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "`loop_tripled.attr at +0`"
+
+[[record.field]]
+name = "node_id"
+offset = 2
+type = "u32"
+source = "spec"
+anchor = "`loop_tripled.node_id at +2`"
+
+[[record.field]]
+name = "refs"
+offset = 6
+type = "bytes[12]"
+source = "spec"
+anchor = "`loop_tripled.refs at +6`"
+
+[[record]]
+name = "fin_bare"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/brep/topology.rs"
+kind = "byte"
+section = "4"
+anchor = "`fin_bare` has a 21-byte body"
+size = 21
+endianness = "big"
+note = "Complete short-reference body; the type tag and optional first-of-type ff precede this body."
+
+[[record.field]]
+name = "attr"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "`fin_bare.attr at +0`"
+
+[[record.field]]
+name = "refs"
+offset = 2
+type = "u16[9]"
+source = "spec"
+anchor = "`fin_bare.refs at +2`"
+
+[[record.field]]
+name = "sense"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "`fin_bare.sense at +20`"
+
+[[record]]
+name = "fin_tripled"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/brep/topology.rs"
+kind = "byte"
+section = "4"
+anchor = "`fin_tripled` has a 30-byte body"
+size = 30
+endianness = "big"
+note = "Complete short-reference body; the type tag and optional first-of-type ff precede this body."
+
+[[record.field]]
+name = "attr"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "`fin_tripled.attr at +0`"
+
+[[record.field]]
+name = "refs"
+offset = 2
+type = "bytes[27]"
+source = "spec"
+anchor = "`fin_tripled.refs at +2`"
+
+[[record.field]]
+name = "sense"
+offset = 29
+type = "u8"
+source = "spec"
+anchor = "`fin_tripled.sense at +29`"
+
+[[record]]
 name = "entity_common_header"
 kind = "byte"
 section = "5"

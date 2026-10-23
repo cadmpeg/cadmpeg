@@ -302,6 +302,66 @@ Parsed by:
 | 6 | 12 | `refs` | `bytes[12]` | big | spec | world_point_tripled.refs at +6 |
 | 18 | 24 | `xyz` | `f64[3]` | big | spec | world_point_tripled.xyz at +18 |
 
+## `loop_bare`
+
+Spec §4 · layout: byte offsets · size: 14 B
+
+Complete short-reference body; the type tag and optional first-of-type ff precede this body.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/brep/topology.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `attr` | `u16` | big | spec | `loop_bare.attr at +0` |
+| 2 | 4 | `node_id` | `u32` | big | spec | `loop_bare.node_id at +2` |
+| 6 | 8 | `refs` | `u16[4]` | big | spec | `loop_bare.refs at +6` |
+
+## `loop_tripled`
+
+Spec §4 · layout: byte offsets · size: 18 B
+
+Complete short-reference body; the type tag and optional first-of-type ff precede this body.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/brep/topology.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `attr` | `u16` | big | spec | `loop_tripled.attr at +0` |
+| 2 | 4 | `node_id` | `u32` | big | spec | `loop_tripled.node_id at +2` |
+| 6 | 12 | `refs` | `bytes[12]` | big | spec | `loop_tripled.refs at +6` |
+
+## `fin_bare`
+
+Spec §4 · layout: byte offsets · size: 21 B
+
+Complete short-reference body; the type tag and optional first-of-type ff precede this body.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/brep/topology.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `attr` | `u16` | big | spec | `fin_bare.attr at +0` |
+| 2 | 18 | `refs` | `u16[9]` | big | spec | `fin_bare.refs at +2` |
+| 20 | 1 | `sense` | `u8` | big | spec | `fin_bare.sense at +20` |
+
+## `fin_tripled`
+
+Spec §4 · layout: byte offsets · size: 30 B
+
+Complete short-reference body; the type tag and optional first-of-type ff precede this body.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/brep/topology.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `attr` | `u16` | big | spec | `fin_tripled.attr at +0` |
+| 2 | 27 | `refs` | `bytes[27]` | big | spec | `fin_tripled.refs at +2` |
+| 29 | 1 | `sense` | `u8` | big | spec | `fin_tripled.sense at +29` |
+
 ## `entity_common_header`
 
 Spec §5 · layout: byte offsets · size: 12 B
