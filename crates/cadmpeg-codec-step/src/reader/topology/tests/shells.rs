@@ -963,7 +963,7 @@ fn reversed_closed_shell_reverses_face_sense_and_loop_traversal() {
         let ir = decoded.ir();
         assert_eq!(ir.model.bodies.len(), 1);
         assert_eq!(ir.model.faces.len(), 6);
-        for face in &ir.model.faces {
+        for (index, face) in ir.model.faces.iter().enumerate() {
             let normal = oriented_plane_normal(ir, face);
             let axis = normal
                 .iter()
@@ -981,8 +981,7 @@ fn reversed_closed_shell_reverses_face_sense_and_loop_traversal() {
             let starts = loop_starts(ir, loop_id);
             assert!(
                 starts.iter().all(|start| start[axis] == outward),
-                "the oriented normal of {} points out of the box",
-                face.id
+                "the oriented normal of face {index} ({wrappers} reversed shells) points out of the box"
             );
             let extent = |axis: usize| max[axis] - min[axis];
             let area = extent((axis + 1) % 3) * extent((axis + 2) % 3);
@@ -990,9 +989,8 @@ fn reversed_closed_shell_reverses_face_sense_and_loop_traversal() {
             for component in 0..3 {
                 assert!(
                     (vector_area[component] - area * normal[component]).abs() <= EPS_VECTOR_AREA,
-                    "face {} ({wrappers} reversed shells): loop vector area {vector_area:?}, \
-                     oriented normal {normal:?}, area {area}",
-                    face.id
+                    "face {index} ({wrappers} reversed shells): loop vector area component \
+                     {component} differs from area times the oriented normal"
                 );
             }
         }
