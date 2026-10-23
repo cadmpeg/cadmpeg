@@ -1943,3 +1943,40 @@ fn rigid_alignment_without_owners_requires_zero_scalars() {
     assert!(!super::rigid_alignment_scalars_hold(&moved, true));
     assert!(super::rigid_alignment_scalars_hold(&turned, false));
 }
+
+/// A rigid group's frame fixes its member count, so a frame of more than two
+/// members needs the members after the first two.
+#[test]
+fn rigid_group_frame_requires_its_further_members() {
+    use crate::records::feature::assembly::DesignAssemblyAlignment;
+    use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+    let scope = |frame_length: u64| {
+        let mut scope = DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:design-parameter-scope#3",
+            DesignFeatureKind::AsBuilt,
+            3,
+        );
+        scope
+            .try_edit(|draft| {
+                crate::design::test_support::lengthen_scope_frame(draft, frame_length);
+            })
+            .unwrap();
+        scope
+    };
+    let alignment = DesignAssemblyAlignment::try_new(0.0, [0.0; 3], Vec::new(), None).unwrap();
+    assert!(super::rigid_group_members_link(
+        &scope(269),
+        &alignment,
+        true
+    ));
+    assert!(!super::rigid_group_members_link(
+        &scope(280),
+        &alignment,
+        true
+    ));
+    assert!(super::rigid_group_members_link(
+        &scope(280),
+        &alignment,
+        false
+    ));
+}

@@ -176,6 +176,14 @@ fn rigid_group_reads_every_member_after_its_first_two() {
     .expect("a three-member rigid group");
     assert_eq!(scope.frame_length(), 280);
     assert_eq!(scope.reference_members().len(), 0);
+    // The empty table's count sits 11 bytes past a two-member group's.
+    let mut moved = scope.clone();
+    assert!(moved
+        .try_edit(|draft| draft.reference_count_offset = 153)
+        .is_err());
+    assert!(moved
+        .try_edit(|draft| draft.reference_count_offset = 164)
+        .is_ok());
     scope.id = "f3d:Design/BulkStream.dat:design-parameter-scope#0".into();
 
     let locator = "2E3AC990-483D-4A55-8662-C064B976A957";

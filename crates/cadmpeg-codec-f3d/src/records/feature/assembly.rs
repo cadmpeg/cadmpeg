@@ -1693,7 +1693,7 @@ pub(crate) enum DesignAssemblyOperandQualifier {
 
 impl DesignAssemblyOperandQualifier {
     /// Return the occurrence path when this qualifier carries one.
-    fn occurrence_path(&self) -> Option<&DesignAssemblyOperandPath> {
+    pub(crate) fn occurrence_path(&self) -> Option<&DesignAssemblyOperandPath> {
         match self {
             Self::OccurrencePath { path } => Some(path),
             Self::AxialTarget { .. } | Self::JointOrigin { .. } => None,

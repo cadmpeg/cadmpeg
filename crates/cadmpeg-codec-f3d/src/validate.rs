@@ -94,6 +94,61 @@ fn rigid_alignment_scalars_hold(
         || (alignment.angle() == 0.0 && alignment.offset() == [0.0; 3])
 }
 
+/// A rigid group keeps one member after its first two for each locator its
+/// frame stores, each taking the locator reference that follows the previous
+/// one, with the frame its wide locator carries. No other scope has further
+/// members.
+fn rigid_group_members_link(
+    scope: &records::feature::scope::DesignParameterScope,
+    alignment: &records::feature::assembly::DesignAssemblyAlignment,
+    rigid_as_built: bool,
+) -> bool {
+    if rigid_as_built {
+        design::assembly::rigid_group_member_count(scope.frame_length())
+            == alignment.additional_members.len().checked_add(2)
+            && alignment.additional_members.iter().enumerate().all(
+                |(ordinal, member)| {
+                    use crate::layout::assembly_wide_operand_path_locator as wide;
+                    let records::feature::assembly::DesignAssemblyOperandQualifier::OccurrencePath { path } =
+                        &member.qualifier
+                    else {
+                        return false;
+                    };
+                    let Some(locator_offset) = ordinal
+                        .checked_add(2)
+                        .and_then(|member| member.checked_mul(11))
+                        .and_then(|offset| {
+                            offset.checked_add(
+                                crate::layout::assembly_rigid_as_built_scope::FIRST_LOCATOR_REFERENCE,
+                            )
+                        })
+                    else {
+                        return false;
+                    };
+                    let locator = path.link().locator_byte_offset;
+                    let identity = member.frame.transform.rows()
+                        == cadmpeg_ir::transform::Transform::identity().rows();
+                    let transform_at: &[usize] = if identity {
+                        &[wide::IDENTITY_FLAG, wide::TRANSFORM]
+                    } else {
+                        &[wide::TRANSFORM]
+                    };
+                    valid_assembly_operand_path_link(scope, path, locator_offset)
+                        && locator.checked_add(u64_from_index(
+                            wide::NONZERO_RECORD_REFERENCE + 1,
+                        )) == Some(member.frame.reference_offset)
+                        && transform_at.iter().any(|at| {
+                            locator.checked_add(u64_from_index(*at))
+                                == Some(member.frame.transform_offset)
+                        })
+                        && member.frame.reference_record_index != 0
+                },
+            )
+    } else {
+        alignment.additional_members.is_empty()
+    }
+}
+
 fn valid_assembly_operand_path_link(
     scope: &records::feature::scope::DesignParameterScope,
     path: &records::feature::assembly::DesignAssemblyOperandPath,
@@ -2631,51 +2686,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         .take(alignment.owners.len())
                         .eq(alignment.owners.iter().map(|owner| &owner.value).rev())
                 };
-                // A rigid group's members after its first two take the locator
-                // references that follow the second, each with the frame its
-                // wide locator carries.
-                let additional_members_link = alignment.additional_members.is_empty()
-                    || (rigid_as_built
-                        && design::assembly::rigid_group_member_count(scope.frame_length())
-                            == alignment.additional_members.len().checked_add(2)
-                        && alignment.additional_members.iter().enumerate().all(
-                            |(ordinal, member)| {
-                                use crate::layout::assembly_wide_operand_path_locator as wide;
-                                let records::feature::assembly::DesignAssemblyOperandQualifier::OccurrencePath { path } =
-                                    &member.qualifier
-                                else {
-                                    return false;
-                                };
-                                let Some(locator_offset) = ordinal
-                                    .checked_add(2)
-                                    .and_then(|member| member.checked_mul(11))
-                                    .and_then(|offset| {
-                                        offset.checked_add(
-                                            crate::layout::assembly_rigid_as_built_scope::FIRST_LOCATOR_REFERENCE,
-                                        )
-                                    })
-                                else {
-                                    return false;
-                                };
-                                let locator = path.link().locator_byte_offset;
-                                let identity = member.frame.transform.rows()
-                                    == cadmpeg_ir::transform::Transform::identity().rows();
-                                let transform_at: &[usize] = if identity {
-                                    &[wide::IDENTITY_FLAG, wide::TRANSFORM]
-                                } else {
-                                    &[wide::TRANSFORM]
-                                };
-                                valid_assembly_operand_path_link(scope, path, locator_offset)
-                                    && locator.checked_add(u64_from_index(
-                                        wide::NONZERO_RECORD_REFERENCE + 1,
-                                    )) == Some(member.frame.reference_offset)
-                                    && transform_at.iter().any(|at| {
-                                        locator.checked_add(u64_from_index(*at))
-                                            == Some(member.frame.transform_offset)
-                                    })
-                                    && member.frame.reference_record_index != 0
-                            },
-                        ));
+                let additional_members_link =
+                    rigid_group_members_link(scope, alignment, rigid_as_built);
                 operand_frames_link
                     && solved_frame_link
                     && operand_qualifiers_link

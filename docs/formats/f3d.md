@@ -1680,16 +1680,17 @@ offsets 41 and 52, a marked reference to its joint record at offset 63, an
 LP-UTF16 GUID at offset 74, three zero bytes, and an empty reference table:
 u32 count 0 immediately before the history state. Each operand frame is its
 wide locator's nonzero reference and transform, or the identity when the
-locator's identity flag is 1. Its joint record's motion selects the kind.
-The form is a rigid group of two members. A rigid group of N members stores N
-at offset 37 and the marked references to its N locators at offsets 41 + 11k
+locator's identity flag is 1. Its joint record's motion record stores no
+freedom entry, so the joint is rigid. The form is a rigid group of two
+members. A rigid group of N members stores N at offset 37 and the marked references to its N locators at offsets 41 + 11k
 for k from 0 to N − 1; the joint reference, GUID, zero bytes, and empty
 reference table follow at offsets 11(N − 2) later, so its frame is
 269 + 11(N − 2) bytes. Each member's operand frame is read from its locator as
 for the first two. The group projects as N − 1 fixed joints: the first ties
 the first two members, and each further joint ties one later member to the
 first member at their as-built frames. Every joint of one group names the
-group's scope as its native record.
+group's scope as its native record. A group whose joint's motion record states
+a freedom does not project.
 Matrix translations are in centimetres. Alignment
 angles are in radians and alignment offsets are in centimetres. The alignment
 owner references are one ordered, contiguous scope-reference run unless an
