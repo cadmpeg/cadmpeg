@@ -346,6 +346,7 @@ cadmpeg query graph bracket.cadir.json model.features ID --follow native_ref --r
 cadmpeg query join bracket.cadir.json model.features native.rhino.unknowns \
   --left-key native_ref --right-key id
 cadmpeg query summary report.json      # artifact kind and section counts
+cadmpeg query summary part.measure.json  # measure rows per level, unavailable per category
 cadmpeg query fidelity part.cadir.fidelity.json  # retained source records
 cadmpeg query fidelity part.cadir.fidelity.json --stream S -o s.bin  # extract
 ```
