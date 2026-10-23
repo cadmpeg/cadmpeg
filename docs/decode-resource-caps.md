@@ -266,6 +266,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-freecad` | `src/brep/location_identity.rs` | `MAX_LOCATION_TERMS` | `65_536` | 4 | Canonical elementary datum terms in one location. Excess returns a local bound outcome; the caller withholds affected topology and reports a loss. Allocator failures remain decode errors. |
 | `cadmpeg-codec-freecad` | `src/brep/location_identity.rs` | `MAX_LOCATION_WORK` | `16_777_216` | 4 | Floor of term visits for one location table; allowance is the larger of this floor and 1,024 times its row count. Composition and power expansion charge the shared budget. Excess returns a local bound outcome; the caller withholds affected topology and reports a loss. |
 | `cadmpeg-codec-freecad` | `src/topology_transfer/locations.rs` | `MAX_TOPOLOGY_LOCATION_WORK` | `16_777_216` | 4 | Floor of topology location visits, composition calls and term scans, cached products and interned terms per payload; allowance scales by 1,024 times the combined location and shape row count. Excess skips that payload topology before mutation with `topology.location-identity-bounded`. |
+| `cadmpeg-codec-freecad` | `src/topology_transfer/ring_order.rs` | `MAX_WIRE_TRAVERSAL_STEPS` | `1 << 16` | 4 | Search steps of the vertex-chain traversal of one face wire. Excess keeps the serialized edge-use order of that wire. |
 | `cadmpeg-codec-freecad`  | `src/brep.rs`                                      | `MAX_GEOMETRY_NESTING_DEPTH`              | `64`                                                    | 2    | Inline basis nesting of text and binary B-rep curves and surfaces, in the parsers and the `Nested*::try_new` carriers. Excess is `Malformed`.                                                                                                                                |
 | `cadmpeg-codec-freecad`  | `src/element_map.rs`                               | `MAX_TABLE_ENTRIES`                       | `10_000_000`                                            | 2    | String-table header count and naming record count. Excess is `Malformed`; no remaining-bytes check at these sites.                                                                                                                                                           |
 | `cadmpeg-codec-freecad`  | `src/element_map.rs`                               | `MAX_MAP_NODES`                           | `1_000_000`                                             | 2    | Element-map node count and index. Excess is `Malformed`; the count is also checked with `bounded_len` against the map text.                                                                                                                                                  |
@@ -471,16 +472,16 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 256.
+Production `MAX_*` constants: 257.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 31    |
 | 2    | Per-input bound            | 69    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 128   |
+| 4    | Local work cap             | 129   |
 | N    | Not a decode bound         | 28    |
-|      | Total                      | 256   |
+|      | Total                      | 257   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -488,7 +489,7 @@ The six `ResourceLimits` fields are the session ceilings and are not
 By crate: `cadmpeg-core` 3, `cadmpeg-ir` 12, `cadmpeg-measure` 20, `cadmpeg-asm` 4,
 `cadmpeg-protein` 3, `cadmpeg` 2, `cadmpeg-codec-step` 12,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 3,
-`cadmpeg-codec-freecad` 14, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 18,
+`cadmpeg-codec-freecad` 15, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 18,
 `cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 14,
 and `cadmpeg-codec-catia` 57.
 
