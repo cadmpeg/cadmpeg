@@ -423,11 +423,13 @@ a fallback.
 
 ### SP-11. `relat_ptr` operand-vector roles
 
-**Question.** What entity or locus does each of the three four-slot `relat_ptr` operand vectors identify?
+**Question.** Which remaining type-specific tuple shapes and selectors have transferable reference or scalar roles?
 
-**Known.** The decoder preserves the three vectors independently and does not combine their namespaces.
+**Known.** The three tuples use relation-type-specific namespaces. Point keys, order-table internal identifiers, radius keys, selectors, nulls, and scalar coefficients are distinct roles. Complete source tuples remain native data. Only independently joined slots supply object references; joined `skamp_ptr` items supply entity and sense operands separately.
 
-**Need.** We must know the roles to bind the correct relation operands.
+**Need.** Obtain complete tuple productions with independently bounded point, order, radius, and incidence joins for each unresolved shape. Preserve scalar coefficients and selector values without treating them as object indices.
+
+**Note.** A tuple position or integer value alone does not establish a namespace. Identical tuple shapes under different relation types do not inherit each other's semantics.
 
 ### SP-12. Dimension-driven variable join
 

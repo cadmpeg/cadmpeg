@@ -638,6 +638,18 @@ fn section_solver_linear_dimensions_require_complete_unique_semantics() {
         .expect("relations")
         .rows
         .push(duplicate);
+    // Keep the table complete so duplicate identity, rather than a stale
+    // allocation count, is the sole reason source-row ownership is ambiguous.
+    duplicate_relation_id
+        .relations
+        .as_mut()
+        .expect("relations")
+        .declared_count = 4;
+    assert!(
+        crate::decode::feature_history::dimensions::feature_relation_table_complete(
+            duplicate_relation_id.relations.as_ref().expect("relations")
+        )
+    );
     let duplicate_constraints = with_service_context(|ctx| {
         section_dimension_constraints(
             ctx,
@@ -646,35 +658,33 @@ fn section_solver_linear_dimensions_require_complete_unique_semantics() {
         )
     })
     .expect("test section solve");
-    assert!(duplicate_constraints
+    assert!(
+        duplicate_constraints.is_empty(),
+        "ambiguous source rows without uniquely owned operands or entities cannot form admitted Native constraints"
+    );
+    let retained_rows = &duplicate_relation_id
+        .relations
+        .as_ref()
+        .expect("relations")
+        .rows;
+    assert_eq!(retained_rows.len(), 2);
+    assert_eq!(
+        retained_rows
+            .iter()
+            .map(|row| row.relation_id)
+            .collect::<Vec<_>>(),
+        vec![8, 8]
+    );
+    assert_eq!(
+        retained_rows
+            .iter()
+            .map(|row| row.offset)
+            .collect::<Vec<_>>(),
+        vec![80, 500]
+    );
+    assert!(retained_rows
         .iter()
-        .all(|(constraint, _, _)| matches!(
-            constraint.definition.kind(),
-            SketchConstraintDefinitionInput::Native { .. }
-        )));
-    assert_eq!(
-        duplicate_constraints[0].0.id.as_str(),
-        "creo:featdefs:sketch_constraint#917:relation:offset:80"
-    );
-    assert_eq!(
-        duplicate_constraints[1].0.id.as_str(),
-        "creo:featdefs:sketch_constraint#917:relation:offset:500"
-    );
-    for (constraint, _, _) in &duplicate_constraints {
-        let SketchConstraintDefinitionInput::Native {
-            native_properties,
-            operands,
-            ..
-        } = constraint.definition.kind()
-        else {
-            panic!("duplicate relation must remain native");
-        };
-        assert_eq!(
-            native_properties.get("relation_id").map(String::as_str),
-            Some("8")
-        );
-        assert!(operands.iter().all(|operand| operand.field.is_some()));
-    }
+        .all(|row| row.operand_vectors.is_some()));
     let mut duplicate_measured_segment = distance_definition.clone();
     let duplicate = duplicate_measured_segment
         .segments
@@ -779,11 +789,21 @@ fn section_solver_linear_dimensions_require_complete_unique_semantics() {
         duplicate_constraint[0].0.definition.kind(),
         SketchConstraintDefinitionInput::Native {
             native_kind,
+            native_properties,
             parameter: None,
+            entities,
             operands,
             ..
         } if native_kind == "creo:relation:0"
-            && operands.first().is_some_and(|operand| operand.object_index == Some(8))
-            && operands.iter().any(|operand| operand.field.as_ref().map(|field| field.name.as_str()) == Some("c[3]"))
+            && entities.is_empty()
+            && native_properties == &std::collections::BTreeMap::from([
+                ("dimension_id".to_string(), "0".to_string()),
+                ("sign".to_string(), "1".to_string()),
+            ])
+            && matches!(operands.as_slice(), [operand]
+                if operand.native_kind == "relat_ptr"
+                    && operand.object_index == Some(8)
+                    && operand.field.is_none()
+                    && operand.native_ref.as_deref() == Some("creo:featdefs:sketch#917"))
     ));
 }

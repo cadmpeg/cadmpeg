@@ -2926,6 +2926,14 @@ zero slots and `e6` expands to three zero slots. `e4` is the integer value one,
 and `f6` is a null operand. Expansion is bounded independently at four slots
 for each of `a`, `b`, and `c`.
 
+The tuples have relation-type-specific roles. A slot can hold a point key,
+order-table internal identifier, radius key, selector, null, or scalar
+coefficient. The complete relation type and a unique namespace join establish
+a reference role. An integer projection does not make every non-null slot an
+object index. The complete source tuples remain native data independently of
+joined entity operands. A complete `triples_ptr` and `skamp_ptr` join supplies
+its ordered entity and sense operands separately.
+
 For a type-zero linear-distance relation with operand-vector forms
 `a = [point0, point1, null, 1]`, `b = [0, 0, 0, 0]` or
 `b = [1, 1, 0, 1]`, and

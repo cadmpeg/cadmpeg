@@ -494,16 +494,11 @@ fn section_solver_relation_incidence_and_angular_dimensions_require_complete_joi
                 operand.object_index
             ))
             .collect::<Vec<_>>(),
-        vec![
-            (None, Some(8)),
-            (Some("a[0]"), Some(12)),
-            (Some("a[2]"), Some(0)),
-            (Some("a[3]"), Some(1)),
-            (Some("c[0]"), Some(15)),
-            (Some("c[1]"), Some(16)),
-            (Some("c[2]"), Some(15)),
-            (Some("c[3]"), Some(1)),
-        ]
+        vec![(None, Some(8))]
+    );
+    assert_eq!(
+        vector_relation[0].0.definition, relations[0].0.definition,
+        "generic vector tuples do not change the source-owned relation definition"
     );
     let mut special_endpoint_dimension = definition.clone();
     let special_segments = special_endpoint_dimension
