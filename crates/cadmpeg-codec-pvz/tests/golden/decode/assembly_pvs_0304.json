@@ -480,7 +480,7 @@
           "scope": "namespaced",
           "strict_floor": "warning"
         },
-        "message": "geometry member \"plate.ol\": exact-geometry stream 0x01000004 (12 expanded bytes) was not decoded into B-rep topology",
+        "message": "geometry member \"plate.ol\": exact-geometry stream 0x01000004 did not decode into B-rep (malformed container: exact stream does not end with its stream terminator); the member keeps its tessellation",
         "severity": "warning"
       },
       {

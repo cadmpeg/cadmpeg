@@ -1,0 +1,85 @@
+{
+  "container_kind": "zip",
+  "entries": [
+    {
+      "attributes": {
+        "central_header_offset": "7978",
+        "crc32": "056a2580",
+        "data_offset": "39",
+        "header_offset": "0",
+        "signature": "PV-PVS0304"
+      },
+      "compression": "stored",
+      "name": "model.pvs",
+      "role": "document",
+      "size": {
+        "form": "exact",
+        "size": 334
+      }
+    },
+    {
+      "attributes": {
+        "central_header_offset": "8033",
+        "crc32": "e61aba7a",
+        "data_offset": "412",
+        "header_offset": "373",
+        "signature": "DIV-OL09BL"
+      },
+      "compression": "stored",
+      "name": "cube64.ol",
+      "role": "model-data",
+      "size": {
+        "form": "exact",
+        "size": 4000
+      }
+    },
+    {
+      "attributes": {
+        "central_header_offset": "8088",
+        "crc32": "8eb61302",
+        "data_offset": "4451",
+        "header_offset": "4412",
+        "signature": "DIV-OL09BL"
+      },
+      "compression": "stored",
+      "name": "cube32.ol",
+      "role": "model-data",
+      "size": {
+        "form": "exact",
+        "size": 3040
+      }
+    },
+    {
+      "attributes": {
+        "central_header_offset": "8143",
+        "crc32": "183ff9c0",
+        "data_offset": "7529",
+        "header_offset": "7491",
+        "signature": "DIV-OL08BL"
+      },
+      "compression": "stored",
+      "name": "plate.ol",
+      "role": "model-data",
+      "size": {
+        "form": "exact",
+        "size": 449
+      }
+    }
+  ],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "pvs_signature": "PV-PVS0304"
+        },
+        "dialect": "pvz:pvs-0304"
+      }
+    }
+  },
+  "notes": [
+    "structure member model.pvs; 3 geometry members"
+  ]
+}

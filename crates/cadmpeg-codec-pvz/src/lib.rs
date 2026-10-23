@@ -8,9 +8,9 @@
 //! member, inspects every member with its signature, and classifies the
 //! package dialect from the structure member's signature. Decode reads the
 //! structure member into product definitions and an occurrence tree, and
-//! each geometry member a definition names into a body with tessellations
-//! and appearances. The exact B-rep of a geometry member is located and
-//! reported, not decoded. The crate is read-only.
+//! each geometry member a definition names into a body: the neutral B-rep of
+//! its exact-geometry stream, with its tessellations and appearances. The
+//! crate is read-only.
 //!
 //! <!-- generated: capability pvz -->
 //! Support: L1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#creo-view-pvz)).

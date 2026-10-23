@@ -16,6 +16,12 @@ fn member_key(member: &str) -> IdentityKey {
     IdentityKey::encode_segment(member)
 }
 
+/// Identity scope of the B-rep records of `member`. The body the B-rep
+/// writer names under this scope is [`body`] of `member`.
+pub(crate) fn member_scope(member: &str) -> IdentityKey {
+    member_key(member)
+}
+
 /// The definition at `index`.
 pub(crate) fn definition(index: usize) -> ProductDefinitionId {
     ProductDefinitionId::compose(

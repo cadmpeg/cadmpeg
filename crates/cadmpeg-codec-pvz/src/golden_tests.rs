@@ -11,7 +11,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_test_support::golden::{snapshot_text, Branch, Harness};
 use cadmpeg_test_support::EditableDecodeResult;
 
-use crate::test_support::{assembly, assembly_structure, bracket_member, package};
+use crate::test_support::{assembly, assembly_structure, bracket_member, exact_assembly, package};
 use crate::PvzCodec;
 
 const REGENERATE: &str = "UPDATE_GOLDEN=1 cargo test-fast golden";
@@ -58,6 +58,7 @@ fn inputs() -> Vec<(String, Vec<u8>)> {
         })
         .collect();
     inputs.push(("xml_structure".to_owned(), xml_package()));
+    inputs.push(("exact_cubes".to_owned(), exact_assembly()));
     inputs.push((
         "structure_without_geometry".to_owned(),
         package(&[("model.pvs", &assembly_structure("PV-PVS0304"))]),

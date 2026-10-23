@@ -14,9 +14,10 @@ The codec is read-only. It detects a package by its `.pvs` member, lists every
 member with its role and leading signature, and classifies the package dialect
 from the `.pvs` signature. Decode reads the `.pvs` member, in its binary or XML
 form, into product definitions and the expanded occurrence tree, and reads each
-`.ol` member a definition names into one body with its tessellations and
-appearances. Lengths are converted from metres to millimetres. The exact B-rep
-stream of an `.ol` member is located and reported with the loss
+`.ol` member a definition names into one body. The body holds the neutral
+B-rep of the member's exact-geometry stream, and the member's tessellations and
+appearances. Lengths are converted from metres to millimetres. A member whose
+exact stream does not decode keeps its tessellation and reports the loss
 `pvz/geometry.exact-undecoded`. Every other record the model does not carry is
 named by a `pvz/*` loss.
 

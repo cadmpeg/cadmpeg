@@ -328,23 +328,40 @@ pub(crate) fn display_geometry(
     ctx: &DecodeContext<'_>,
     member: &str,
     geometry: &MemberGeometry,
+    exact: Option<BodyId>,
     ir: &mut CadIr,
     losses: &mut Vec<LossNote>,
 ) -> Result<Option<BodyId>, CodecError> {
-    if geometry.meshes.is_empty() && !geometry.has_exact {
-        return Ok(None);
-    }
+    let body = match exact {
+        Some(body) => {
+            let written = ir
+                .model
+                .bodies
+                .iter_mut()
+                .rev()
+                .find(|written| written.id == body)
+                .ok_or_else(|| {
+                    CodecError::malformed(format_args!("B-rep body {body} was not written"))
+                })?;
+            written.name = Some(member.to_owned());
+            body
+        }
+        None if geometry.meshes.is_empty() && !geometry.has_exact => return Ok(None),
+        None => {
+            let body = crate::ids::body(member);
+            ir.model.bodies.push(Body {
+                id: body.clone(),
+                kind: BodyKind::General,
+                regions: Vec::new(),
+                transform: None,
+                name: Some(member.to_owned()),
+                color: None,
+                visible: None,
+            });
+            body
+        }
+    };
     let mut admitted = u64_from_index(ir.model.entity_count());
-    let body = crate::ids::body(member);
-    ir.model.bodies.push(Body {
-        id: body.clone(),
-        kind: BodyKind::General,
-        regions: Vec::new(),
-        transform: None,
-        name: Some(member.to_owned()),
-        color: None,
-        visible: None,
-    });
     let mut used = BTreeSet::new();
     let mut rejected = Vec::new();
     let mut untriangulated = 0_usize;

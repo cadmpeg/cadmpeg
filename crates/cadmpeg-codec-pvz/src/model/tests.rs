@@ -235,7 +235,7 @@ fn a_mesh_with_a_non_finite_vertex_is_rejected() {
     };
     let mut ir = CadIr::empty();
     let mut losses = Vec::new();
-    let body = display_geometry(&ctx, "part.ol", &geometry, &mut ir, &mut losses)
+    let body = display_geometry(&ctx, "part.ol", &geometry, None, &mut ir, &mut losses)
         .unwrap()
         .unwrap();
     assert_eq!(body.as_str(), "pvz:model:body#part.ol");
@@ -259,7 +259,7 @@ fn a_mesh_with_a_non_finite_vertex_is_rejected() {
         ..geometry
     };
     assert!(
-        display_geometry(&ctx, "e.ol", &empty, &mut ir, &mut Vec::new())
+        display_geometry(&ctx, "e.ol", &empty, None, &mut ir, &mut Vec::new())
             .unwrap()
             .is_none()
     );
@@ -345,7 +345,7 @@ fn an_appearance_colour_outside_the_unit_range_is_rejected() {
         crate::ol::decode(&ctx, cadmpeg_core::decode::View::over_retained(&bytes)).unwrap();
     let mut ir = CadIr::empty();
     let mut losses = Vec::new();
-    display_geometry(&ctx, "hot.ol", &geometry, &mut ir, &mut losses).unwrap();
+    display_geometry(&ctx, "hot.ol", &geometry, None, &mut ir, &mut losses).unwrap();
     assert!(ir.model.appearances[0].base_color.is_none());
     assert_eq!(ir.model.appearance_bindings.len(), 1);
     assert_eq!(

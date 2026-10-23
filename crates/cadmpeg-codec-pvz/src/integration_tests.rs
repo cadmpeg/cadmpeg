@@ -12,8 +12,8 @@ use cadmpeg_ir::ContainerSummary;
 
 use crate::loss::PvzLossCode;
 use crate::test_support::{
-    assembly, assembly_structure, bracket_member, package, plate_member, OL_08, OL_09, PVS_0301,
-    PVS_0304,
+    assembly, assembly_structure, bracket_member, exact_assembly, package, plate_member, OL_08,
+    OL_09, PVS_0301, PVS_0304,
 };
 use crate::PvzCodec;
 
@@ -350,4 +350,64 @@ fn a_package_with_two_structure_members_is_malformed() {
         decode_at(&bytes, DecodeDepth::default()),
         Err(CodecError::Malformed(_))
     ));
+}
+
+#[test]
+fn exact_streams_become_solids_that_keep_their_tessellation() {
+    use cadmpeg_ir::topology::BodyKind;
+
+    let result = decode(&exact_assembly());
+    let model = &result.ir().model;
+    let body = |member: &str| {
+        model
+            .bodies
+            .iter()
+            .find(|body| body.id.as_str() == format!("pvz:model:body#{member}"))
+            .unwrap()
+    };
+    for member in ["cube64.ol", "cube32.ol"] {
+        let cube = body(member);
+        assert_eq!(cube.kind, BodyKind::Solid);
+        assert_eq!(cube.name.as_deref(), Some(member));
+        assert_eq!(cube.regions.len(), 1);
+        let faces = model
+            .faces
+            .iter()
+            .filter(|face| face.id.as_str().contains(&format!("#{member}:")))
+            .count();
+        assert_eq!(faces, 6);
+        let meshes: Vec<_> = model
+            .tessellations
+            .iter()
+            .filter(|mesh| mesh.body.as_ref() == Some(&cube.id))
+            .collect();
+        assert_eq!(meshes.len(), 1);
+        assert_eq!(meshes[0].triangle_count(), 12);
+    }
+    assert_eq!(body("plate.ol").kind, BodyKind::General);
+    assert!(body("plate.ol").regions.is_empty());
+    assert_eq!(model.bodies.len(), 3);
+    for definition in &model.product_definitions[1..] {
+        assert_eq!(definition.bodies.len(), 1);
+    }
+    let codes = loss_codes(&result);
+    assert_eq!(
+        codes
+            .iter()
+            .filter(|code| **code == PvzLossCode::GeometryExactUndecoded.kind())
+            .count(),
+        1
+    );
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == PvzLossCode::GeometryExactUndecoded.kind()
+            && loss.message.contains("\"plate.ol\"")
+    }));
+    assert!(result.report().geometry_transferred());
+    let report = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).unwrap();
+    let serious: Vec<_> = report
+        .findings
+        .iter()
+        .filter(|finding| finding.severity >= cadmpeg_ir::report::Severity::Warning)
+        .collect();
+    assert!(serious.is_empty(), "{serious:?}");
 }

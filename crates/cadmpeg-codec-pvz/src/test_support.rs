@@ -177,4 +177,76 @@ pub(crate) fn assembly(signature: &str) -> Vec<u8> {
     ])
 }
 
+/// A geometry member holding the closed cube of [`exact::cube_stream`]:
+/// its exact stream, with `f64` scalars when `double` is set, and a red
+/// surface tessellation with one patch per exact face.
+pub(crate) fn cube_member(double: bool) -> Vec<u8> {
+    let mut attributes = ol::stream_index(ol::ATTRIBUTES);
+    attributes.extend(ol::appearance_values([
+        1.0, 0.0, 0.0, 0.8, 0.0, 0.0, 0.5, 0.5, 0.5, 32.0, 0.0, 0.0, 0.0, 1.0,
+    ]));
+    attributes.extend(ol::appearance_reference("red", 7));
+    let size = 0.01_f32;
+    let corners: Vec<[f32; 3]> = (0..8_usize)
+        .map(|index| [0, 1, 2].map(|bit| if index >> bit & 1 == 1 { size } else { 0.0 }))
+        .collect();
+    let mut surface = ol::stream_index(ol::SURFACE);
+    for (face, ring) in exact::CUBE_FACES.iter().enumerate() {
+        surface.extend(ol::patch_header(0, u32::try_from(face).unwrap()));
+        surface.extend(ol::vertex_block(&ring.map(|corner| corners[corner]), None));
+        surface.extend(ol::primitive(0x1b, &[0, 1, 2, 0, 2, 3]));
+    }
+    let stream = exact::cube_stream(double, [false; 6], [false; 6]);
+    let id = stream.id();
+    ol::member(
+        "DIV-OL09BL",
+        false,
+        &[
+            (ol::ATTRIBUTES, attributes),
+            (ol::SURFACE, surface),
+            (id, stream.finish()),
+        ],
+    )
+}
+
+/// A package whose `TOP.ASM` places `CUBE64.PRT` and `CUBE32.PRT`, the
+/// [`cube_member`] with `f64` and with `f32` exact scalars, and `PLATE.PRT`,
+/// the [`plate_member`] whose exact stream does not decode.
+pub(crate) fn exact_assembly() -> Vec<u8> {
+    let pool = Node::leaf(
+        0x01,
+        pvs::string_pool_payload(&["cube64.ol", "cube32.ol", "plate.ol"]),
+    )
+    .encode();
+    let part = |name: &str, member: u64| {
+        let mut payload = pool_atom(member);
+        payload.extend([0_u8; 24]);
+        definition(name, vec![Node::typed(0x23, 0x01, payload)])
+    };
+    let structure = Node::list(
+        0x02,
+        vec![
+            definition(
+                "TOP.ASM",
+                vec![
+                    occurrence(1, Place::Identity, "41"),
+                    occurrence(2, Place::Translation([0.02, 0.0, 0.0]), "42"),
+                    occurrence(3, Place::Translation([0.0, 0.02, 0.0]), "43"),
+                ],
+            ),
+            part("CUBE64.PRT", 0),
+            part("CUBE32.PRT", 1),
+            part("PLATE.PRT", 2),
+        ],
+    )
+    .encode();
+    let structure = pvs::member("PV-PVS0304", &[(1, "", pool), (2, "", structure)]);
+    package(&[
+        ("model.pvs", &structure),
+        ("cube64.ol", &cube_member(true)),
+        ("cube32.ol", &cube_member(false)),
+        ("plate.ol", &plate_member()),
+    ])
+}
+
 pub(crate) mod exact;

@@ -3,17 +3,20 @@
 //!
 //! Decode opens the package, classifies it from its structure member, and
 //! decodes the structure member into product definitions and the occurrence
-//! tree. Each geometry member a definition names is then decoded once: its
-//! display geometry becomes one body with its tessellations and appearances,
-//! and every definition that names the member owns that body.
+//! tree. Each geometry member a definition names is then decoded once into
+//! one body that every definition naming the member owns. The body holds the
+//! neutral B-rep of the member's exact-geometry stream (§8) when that stream
+//! decodes, and the member's tessellations and appearances.
 
 use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::annotations::{AnnotationBuilder, Annotations, StreamHandle};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
-use cadmpeg_ir::document::{CadIr, SourceMeta};
+use cadmpeg_ir::document::{CadIr, EntityRewrite, Model, SourceMeta};
+use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::report::decode::DecodeTransfer;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::SourceFidelity;
@@ -53,11 +56,18 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
         attributes,
     ));
     let mut geometry_transferred = false;
+    let mut annotations = Annotations::default();
     if !ctx.container_only() {
         match crate::pvs::read(ctx, structure_member) {
             Ok(structure) => {
-                geometry_transferred =
-                    decode_model(ctx, &package, &structure, &mut ir, &mut losses)?;
+                geometry_transferred = decode_model(
+                    ctx,
+                    &package,
+                    &structure,
+                    &mut ir,
+                    &mut annotations,
+                    &mut losses,
+                )?;
             }
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => losses.push(PvzLossCode::StructureMemberMalformed.note(format!(
@@ -74,7 +84,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
             losses,
             ..DecodeBody::new(DecodeTransfer::at(ctx.depth(), geometry_transferred))
         },
-        source_fidelity: SourceFidelity::default(),
+        source_fidelity: SourceFidelity::with_annotations(annotations),
     })
 }
 
@@ -85,6 +95,7 @@ fn decode_model(
     package: &Package<'_>,
     structure: &Structure,
     ir: &mut CadIr,
+    annotations: &mut Annotations,
     losses: &mut Vec<LossNote>,
 ) -> Result<bool, CodecError> {
     losses.extend(structure.residue.losses());
@@ -123,11 +134,16 @@ fn decode_model(
             }
         };
         residue.absorb(name, &geometry.residue);
+        let exact = if geometry.has_exact {
+            exact_geometry(ctx, name, member, ir, annotations, losses)?
+        } else {
+            None
+        };
         let meshes = ir.model.tessellations.len();
-        let body = crate::model::display_geometry(ctx, name, &geometry, ir, losses)?;
+        transferred |= exact.is_some();
+        let body = crate::model::display_geometry(ctx, name, &geometry, exact, ir, losses)?;
         transferred |= ir.model.tessellations.len() > meshes;
         if let Some(body) = body {
-            attach_exact_geometry(ctx, name, member, losses)?;
             for index in owners.get(name).into_iter().flatten() {
                 if let Some(definition) = ir.model.product_definitions.get_mut(*index) {
                     definition.bodies.push(body.clone());
@@ -156,36 +172,87 @@ fn decode_model(
             quoted(&unreferenced)
         )));
     }
+    ir.finalize();
     Ok(transferred)
 }
 
-/// Attaches the exact B-rep geometry (§8) of geometry member `name` to the
-/// member's body.
-fn attach_exact_geometry(
+/// Writes the neutral B-rep of the exact-geometry stream (§8) of geometry
+/// member `name` into `ir` and returns its body, or `None` when the stream
+/// has no face. A stream that does not decode adds nothing to `ir` and
+/// reports a loss; the member keeps its tessellation.
+fn exact_geometry(
     ctx: &DecodeContext<'_>,
     name: &str,
     member: View<'_>,
+    ir: &mut CadIr,
+    annotations: &mut Annotations,
     losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
+) -> Result<Option<BodyId>, CodecError> {
     let exact = match crate::ol::exact_stream(ctx, member) {
-        Ok(exact) => exact,
+        Ok(Some(exact)) => exact,
+        Ok(None) => return Ok(None),
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(error) => {
-            losses.push(PvzLossCode::GeometryStreamUndecoded.note(format!(
-                "geometry member {name:?}: the exact-geometry stream was not expanded: {error}"
+            losses.push(PvzLossCode::GeometryExactUndecoded.note(format!(
+                "geometry member {name:?}: the exact-geometry stream was not expanded ({error}); \
+                 the member keeps its tessellation"
             )));
-            return Ok(());
+            return Ok(None);
         }
     };
-    if let Some(exact) = exact {
-        losses.push(PvzLossCode::GeometryExactUndecoded.note(format!(
-            "geometry member {name:?}: exact-geometry stream {:#010x} ({} expanded bytes) was \
-             not decoded into B-rep topology",
-            exact.stream_id,
-            exact.payload.window().len()
-        )));
+    let mut model = Model::default();
+    let mut builder = AnnotationBuilder::new();
+    let mut notes = Vec::new();
+    let stream = StreamHandle::new(
+        cadmpeg_ir::stream_name!("pvz:")
+            .with_suffix(format_args!("{name}#{:#010x}", exact.stream_id)),
+    );
+    let emitted =
+        crate::brep::parse(ctx, exact.stream_id, exact.payload).and_then(|stream_model| {
+            crate::brep::emit(
+                ctx,
+                &stream_model,
+                &crate::ids::member_scope(name),
+                &mut crate::brep::emit::Sink {
+                    model: &mut model,
+                    annotations: &mut builder,
+                    losses: &mut notes,
+                    stream: &stream,
+                },
+            )
+        });
+    match emitted {
+        Ok(body) => {
+            ir.model.extend_rewritten(model, &mut Unchanged)?;
+            annotations.append(builder.build())?;
+            losses.append(&mut notes);
+            Ok(body)
+        }
+        Err(error @ CodecError::ResourceLimit(_)) => Err(error),
+        Err(error) => {
+            losses.push(PvzLossCode::GeometryExactUndecoded.note(format!(
+                "geometry member {name:?}: exact-geometry stream {:#010x} did not decode into \
+                 B-rep ({error}); the member keeps its tessellation",
+                exact.stream_id
+            )));
+            Ok(None)
+        }
     }
-    Ok(())
+}
+
+/// Moves the records of one stream's model into the package model as they
+/// are: their identities are already scoped by geometry member.
+struct Unchanged;
+
+impl EntityRewrite for Unchanged {
+    type Error = CodecError;
+
+    fn rewrite<T: cadmpeg_ir::schema::rewrite::typed::RewriteIdentities>(
+        &mut self,
+        entity: T,
+    ) -> Result<T, CodecError> {
+        Ok(entity)
+    }
 }
 
 /// The names, quoted and comma-separated.
