@@ -2,14 +2,14 @@
 //! What one measurement pass measures: body scope, row levels and face
 //! filters.
 
-use cadmpeg_ir::ids::{BodyId, EdgeId, FaceId};
+use cadmpeg_ir::ids::{BodyId, EdgeId, FaceId, SurfaceId};
 use cadmpeg_ir::scalar::NonNegativeLength;
 use serde::Serialize;
 
 /// The rows a measurement pass emits.
 ///
-/// Without a face or edge level, the pass emits one row per body in scope.
-/// With one, it emits those rows and no body rows.
+/// Without a face, edge or surface level, the pass emits one row per body in
+/// scope. With one, it emits those rows and no body rows.
 #[derive(Debug, Clone, Default)]
 pub struct Selection {
     /// Body scope; every body when empty.
@@ -18,6 +18,8 @@ pub struct Selection {
     pub faces: Vec<FaceId>,
     /// Edges to measure.
     pub edges: Vec<EdgeId>,
+    /// Surfaces whose carrier rows to report.
+    pub surfaces: Vec<SurfaceId>,
     /// Measure every face in scope.
     pub all_faces: bool,
     /// Measure every edge in scope.
@@ -37,6 +39,12 @@ impl Selection {
     #[must_use]
     pub fn edge_level(&self) -> bool {
         !self.edges.is_empty() || self.all_edges
+    }
+
+    /// Whether the surface level is selected.
+    #[must_use]
+    pub fn surface_level(&self) -> bool {
+        !self.surfaces.is_empty()
     }
 }
 

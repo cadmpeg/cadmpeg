@@ -27,9 +27,11 @@ use crate::owners::Owners;
 use crate::reason::CaveatCode;
 use crate::report::{
     BodyMeasures, Caveat, DocumentMeasures, DocumentOrientation, EdgeMeasures, FaceMeasures,
-    Histogram, ListedOrder, MeasureReport, NormalReading, ReportTolerances, WorkReport,
+    Histogram, ListedOrder, MeasureReport, NormalReading, ReportTolerances, SurfaceMeasures,
+    WorkReport,
 };
 use crate::select::Selection;
+use crate::surface::SurfaceInput;
 use crate::value::{Quantity, Scalar, Unit};
 use crate::witness::WitnessInput;
 
@@ -137,7 +139,7 @@ impl<'ir> Measurer<'ir> {
         let scope = self.scope(selection)?;
         let face_level = selection.face_level();
         let edge_level = selection.edge_level();
-        let body_level = !face_level && !edge_level;
+        let body_level = !face_level && !edge_level && !selection.surface_level();
 
         let in_scope = |body: Option<&str>| match &scope {
             None => true,
@@ -227,6 +229,24 @@ impl<'ir> Measurer<'ir> {
                 .unwrap_or(Ok(Placement::identity()))
         };
 
+        let surface_ids: BTreeSet<&str> = selection
+            .surfaces
+            .iter()
+            .map(cadmpeg_ir::ids::SurfaceId::as_str)
+            .collect();
+        let surfaces = SurfaceInput {
+            owners: &self.owners,
+            fidelity: self.input.fidelity,
+            faces: &model.faces,
+            placement: &placement_of,
+        };
+        let mut surface_out: Vec<SurfaceMeasures> = Vec::new();
+        for id in surface_ids {
+            if let Some(surface) = self.owners.surface(id) {
+                surface_out.push(surfaces.row(surface)?);
+            }
+        }
+
         let mut edges: HashMap<&'ir str, EdgeGeometry<'ir>> = HashMap::new();
         for edge_id in &needed_edges {
             let Some(edge) = self.owners.edge(edge_id) else {
@@ -315,6 +335,7 @@ impl<'ir> Measurer<'ir> {
             bodies: &body_out,
             faces: &face_out,
             edges: &edge_out,
+            surfaces: &surface_out,
             body_level,
         };
         let document = Self::document(
@@ -365,6 +386,7 @@ impl<'ir> Measurer<'ir> {
             bodies: body_out,
             faces: face_out,
             edges: edge_out,
+            surfaces: surface_out,
             document,
         })
     }
@@ -489,6 +511,28 @@ impl<'ir> Measurer<'ir> {
                 }
             }
         }
+        for surface in &selection.surfaces {
+            if self.owners.surface(surface.as_str()).is_none() {
+                return Err(MeasureError::UnknownEntity {
+                    arena: "model.surfaces",
+                    id: surface.as_str().to_owned(),
+                });
+            }
+            if let Some(scope) = &scope {
+                let used = self.input.ir.model.faces.iter().any(|face| {
+                    face.surface == *surface
+                        && self
+                            .owners
+                            .face_body(face)
+                            .is_some_and(|body| scope.contains(body))
+                });
+                if !used {
+                    return Err(MeasureError::OutsideScope {
+                        entity: surface.as_str().to_owned(),
+                    });
+                }
+            }
+        }
         for edge in &selection.edges {
             if self.owners.edge(edge.as_str()).is_none() {
                 return Err(MeasureError::UnknownEntity {
@@ -521,6 +565,7 @@ impl<'ir> Measurer<'ir> {
             bodies,
             faces,
             edges,
+            surfaces,
             body_level,
         } = *rows;
         let mut histogram = Histogram::default();
@@ -532,6 +577,9 @@ impl<'ir> Measurer<'ir> {
         }
         for edge in edges {
             edge.visit(&mut histogram);
+        }
+        for surface in surfaces {
+            surface.visit(&mut histogram);
         }
         let (area, bbox) = if body_level {
             (Some(total_area(bodies)), Some(union_box(bodies)))
@@ -580,6 +628,7 @@ impl<'ir> Measurer<'ir> {
             bodies: bodies.len(),
             faces: counts[0],
             edges: counts[1],
+            surfaces: surfaces.len(),
             area,
             closed_volume,
             bbox,
@@ -600,6 +649,7 @@ struct Rows<'a> {
     bodies: &'a [BodyMeasures],
     faces: &'a [FaceMeasures],
     edges: &'a [EdgeMeasures],
+    surfaces: &'a [SurfaceMeasures],
     body_level: bool,
 }
 

@@ -11,7 +11,7 @@ use serde::Serialize;
 
 use crate::reason::{Category, CaveatCode};
 use crate::select::SurfaceKind;
-use crate::value::{BoxValue, Point, Quantity, Range, Scalar, Sweep};
+use crate::value::{BoxValue, Point, Quantity, Range, Scalar, Sweep, Unavailable};
 
 /// Read accessors for private report fields.
 macro_rules! accessors {
@@ -36,6 +36,7 @@ pub struct MeasureReport {
     pub(crate) bodies: Vec<BodyMeasures>,
     pub(crate) faces: Vec<FaceMeasures>,
     pub(crate) edges: Vec<EdgeMeasures>,
+    pub(crate) surfaces: Vec<SurfaceMeasures>,
     pub(crate) document: DocumentMeasures,
 }
 
@@ -50,6 +51,8 @@ accessors!(MeasureReport {
     faces: Vec<FaceMeasures>;
     /// Edge rows, in ID order.
     edges: Vec<EdgeMeasures>;
+    /// Surface rows, in ID order.
+    surfaces: Vec<SurfaceMeasures>;
     /// Document totals.
     document: DocumentMeasures;
 });
@@ -250,6 +253,33 @@ accessors!(CarrierMeasures {
     placement: PlacementReport;
     /// Kind-specific parameters.
     parameters: CarrierParameters;
+});
+
+/// One surface row: the carrier of a surface, and the faces and bodies
+/// that use it.
+#[derive(Debug, Clone, Serialize)]
+pub struct SurfaceMeasures {
+    #[serde(flatten)]
+    pub(crate) carrier: CarrierMeasures,
+    pub(crate) bodies: Vec<String>,
+    pub(crate) faces: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) unresolved: Option<Unavailable<()>>,
+    pub(crate) status: RowStatus,
+}
+
+accessors!(SurfaceMeasures {
+    /// The carrier and its parameters.
+    carrier: CarrierMeasures;
+    /// The bodies of the faces that use the surface, sorted.
+    bodies: Vec<String>;
+    /// The faces that use the surface, sorted.
+    faces: Vec<String>;
+    /// Why the carrier has no placed parameters: its placement or its
+    /// carrier chain does not resolve.
+    unresolved: Option<Unavailable<()>>;
+    /// Row status.
+    status: RowStatus;
 });
 
 /// The composed placement of a carrier.
@@ -1037,6 +1067,7 @@ pub struct DocumentMeasures {
     pub(crate) bodies: usize,
     pub(crate) faces: usize,
     pub(crate) edges: usize,
+    pub(crate) surfaces: usize,
     pub(crate) area: Option<Quantity<Scalar>>,
     pub(crate) closed_volume: Option<Quantity<Scalar>>,
     pub(crate) bbox: Option<Quantity<BoxValue>>,
@@ -1052,6 +1083,8 @@ accessors!(DocumentMeasures {
     faces: usize;
     /// Edges in scope.
     edges: usize;
+    /// Surface rows.
+    surfaces: usize;
     /// Total area of the body rows; absent without body rows.
     area: Option<Quantity<Scalar>>;
     /// Total volume of the body rows with faces; absent without them.
@@ -1095,6 +1128,23 @@ impl EdgeMeasures {
         let mut codes = Codes::default();
         self.visit(&mut codes);
         codes.0.into_iter().collect()
+    }
+}
+
+impl SurfaceMeasures {
+    /// The distinct reason codes of the row's unavailable values, sorted.
+    #[must_use]
+    pub fn unavailable_codes(&self) -> Vec<&'static str> {
+        let mut codes = Codes::default();
+        self.visit(&mut codes);
+        codes.0.into_iter().collect()
+    }
+
+    pub(crate) fn visit(&self, visitor: &mut impl QuantityVisitor) {
+        self.carrier.parameters.visit(visitor);
+        if let Some(unresolved) = &self.unresolved {
+            visitor.visit(&Quantity::Unavailable(unresolved.clone()));
+        }
     }
 }
 

@@ -144,11 +144,13 @@ pub enum UnavailableReason {
     BboxNonpositiveWeights,
     /// A cacheless procedural curve with no pcurve route.
     LengthDerivativeUnavailable,
+    /// The surface is used by faces of bodies with different placements.
+    PlacementCarrierShared,
 }
 
 impl UnavailableReason {
     /// Every reason, in declaration order.
-    pub const ALL: [Self; 39] = [
+    pub const ALL: [Self; 40] = [
         Self::CarrierUnknown,
         Self::CarrierUnresolved,
         Self::CarrierProceduralUnevaluated,
@@ -188,6 +190,7 @@ impl UnavailableReason {
         Self::BboxInteriorUnbounded,
         Self::BboxNonpositiveWeights,
         Self::LengthDerivativeUnavailable,
+        Self::PlacementCarrierShared,
     ];
 
     /// The pinned `family.detail` string.
@@ -233,6 +236,7 @@ impl UnavailableReason {
             Self::BboxInteriorUnbounded => "bbox.interior-unbounded",
             Self::BboxNonpositiveWeights => "bbox.nonpositive-weights",
             Self::LengthDerivativeUnavailable => "length.derivative-unavailable",
+            Self::PlacementCarrierShared => "placement.carrier-shared",
         }
     }
 
@@ -276,7 +280,9 @@ impl UnavailableReason {
             | Self::BboxNonpositiveWeights
             | Self::LengthDerivativeUnavailable => Category::Unsupported,
             Self::EvaluationWorkExhausted | Self::QuadratureNotConverged => Category::Budget,
-            Self::PlacementNonSimilarity | Self::PlacementNonFinite => Category::Placement,
+            Self::PlacementNonSimilarity
+            | Self::PlacementNonFinite
+            | Self::PlacementCarrierShared => Category::Placement,
             Self::AggregateMemberUnavailable => return None,
         })
     }
@@ -398,7 +404,7 @@ impl Serialize for CompareCause {
 mod tests {
     use super::{Category, CaveatCode, CompareCause, UnavailableReason};
 
-    const REASONS: [(&str, Option<&str>); 39] = [
+    const REASONS: [(&str, Option<&str>); 40] = [
         ("carrier.unknown", Some("input")),
         ("carrier.unresolved", Some("input")),
         ("carrier.procedural-unevaluated", Some("unsupported")),
@@ -438,6 +444,7 @@ mod tests {
         ("bbox.interior-unbounded", Some("unsupported")),
         ("bbox.nonpositive-weights", Some("unsupported")),
         ("length.derivative-unavailable", Some("unsupported")),
+        ("placement.carrier-shared", Some("placement")),
     ];
 
     #[test]

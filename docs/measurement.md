@@ -128,6 +128,7 @@ cites.
 | `bbox.interior-unbounded` | unsupported | No interior bound for the carrier. |
 | `bbox.nonpositive-weights` | unsupported | The NURBS control hull needs positive weights. |
 | `length.derivative-unavailable` | unsupported | A procedural curve without a solved cache has no derivative evaluator. |
+| `placement.carrier-shared` | placement | A surface row's surface is used by faces of bodies with different placements. |
 
 ## Caveats
 
@@ -419,6 +420,19 @@ A body's `orientation` lists its faces by class: `inconsistent_faces`
 `conflict_faces` is not empty, `null` when a face's orientation is not
 established, and `true` otherwise. The document's `orientation` lists the
 same classes over the body rows.
+
+## Surface rows
+
+`measure --surface ID` reports the carrier of a surface: the face row's
+`carrier` members (`surface`, `kind`, `chain`, `analytic`, `placement`,
+`parameters`), then `bodies` and `faces`, the bodies and faces that use the
+surface, and `status`. A surface row has no area, length, box or extent. It
+is in model space under the placement of the bodies of its faces; a surface
+that no face uses is measured as stored. When those bodies have different
+placements, the row has no parameters and its `unresolved` member is the
+unavailable value `placement.carrier-shared`; `kind` and `chain` are then
+read from the surface alone. A placement or carrier chain that does not
+resolve gives `unresolved` with its own reason in the same way.
 
 ## Shells
 

@@ -52,6 +52,7 @@ mod region;
 pub mod report;
 mod select;
 mod session;
+mod surface;
 mod tolerance;
 mod traversal;
 pub mod value;

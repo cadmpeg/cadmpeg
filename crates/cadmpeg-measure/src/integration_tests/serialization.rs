@@ -62,6 +62,7 @@ fn a_face_report_serializes_members_in_contract_order() {
             "bodies",
             "faces",
             "edges",
+            "surfaces",
             "document"
         ]
     );
@@ -90,6 +91,27 @@ fn a_face_report_serializes_members_in_contract_order() {
             "method",
             "numeric_error",
             "model_uncertainty"
+        ]
+    );
+    let surfaces = measure(
+        &ir,
+        &Selection {
+            surfaces: vec![ir.model.surfaces[0].id.clone()],
+            ..Selection::default()
+        },
+    );
+    assert_eq!(
+        keys(&serde_json::to_string(&surfaces.surfaces()[0]).unwrap()),
+        [
+            "surface",
+            "kind",
+            "chain",
+            "analytic",
+            "placement",
+            "parameters",
+            "bodies",
+            "faces",
+            "status"
         ]
     );
     let value: serde_json::Value = serde_json::from_str(&text).unwrap();

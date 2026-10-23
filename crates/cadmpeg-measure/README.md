@@ -1,8 +1,8 @@
 # cadmpeg-measure
 
 Geometric measurement of decoded cadmpeg models: carrier parameters, trimmed
-areas, boundary lengths, boxes and orientation readings of bodies, faces and
-edges, in model space.
+areas, boundary lengths, boxes and orientation readings of bodies, faces,
+edges and surfaces, in model space.
 
 Every value is measured within its reported error under its stated method,
 or unavailable with a pinned reason and a closed category. The output
