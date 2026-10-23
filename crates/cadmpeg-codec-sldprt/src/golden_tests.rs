@@ -23,6 +23,8 @@ use cadmpeg_test_support::roundtrip::{
     MutationOutcome, SemanticOutcome,
 };
 
+use cadmpeg_test_support::measured::{assert_measures_agree, measures_decide};
+
 use super::SldprtCodec;
 
 /// Extension of the committed fixture inputs.
@@ -171,6 +173,7 @@ fn fixtures_survive_the_semantic_write_path() {
             continue;
         }
         let expected = neutral_document(&bytes);
+        let source = bytes.clone();
         semantic_roundtrip(&SldprtCodec, &name, &bytes, |outcome| match outcome {
             SemanticOutcome::Written { report, bytes, .. } => {
                 written_count += 1;
@@ -181,6 +184,7 @@ fn fixtures_survive_the_semantic_write_path() {
                 if let Err(mismatch) = snapshots_agree(&expected, &neutral_document(bytes)) {
                     panic!("fixture `{name}`: the semantically written container decodes to a different document: {mismatch}");
                 }
+                assert_written_measures_agree(&name, &source, bytes);
             }
             SemanticOutcome::Refused { error } => {
                 assert!(
@@ -196,6 +200,21 @@ fn fixtures_survive_the_semantic_write_path() {
         "no fixture reached the semantic writer, so this test exercised nothing; \
          add a fixture the writer can write, or this lane is dead"
     );
+}
+
+/// Decodes `source` and `written` and, when the source measures a
+/// comparable body, asserts that both measure the same.
+fn assert_written_measures_agree(name: &str, source: &[u8], written: &[u8]) {
+    let decode = |bytes: &[u8]| {
+        SldprtCodec
+            .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
+            .unwrap_or_else(|_| panic!("fixture `{name}`: a container does not decode"))
+    };
+    let before = decode(source);
+    if !measures_decide(name, before.ir()) {
+        return;
+    }
+    assert_measures_agree(name, before.ir(), decode(written).ir());
 }
 
 /// How far the mutation lane moves an extrusion depth, in millimetres.
