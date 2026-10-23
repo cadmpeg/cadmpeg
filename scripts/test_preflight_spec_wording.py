@@ -48,6 +48,23 @@ class SpecWordingCheck(harness.FixtureCase):
         self.repo.commit({"docs/formats/f3d.md": "# F3D\n\nOffset 25 stores the frame sense.\n"})
         self.assertEqual(harness.statuses(harness.run_check(check, self.repo.context())), ["PASS"])
 
+    def test_progress_wording_in_all_added_format_lines_warns(self) -> None:
+        path = "docs/formats/f3d-open-items.md"
+        lines = ["not yet", "do not yet", "for now", "currently", "TODO"]
+        self.repo.commit({path: "# Open\n" + "\n".join(lines) + "\n"})
+        results = harness.run_check(check, self.repo.context())
+        self.assertEqual(harness.statuses(results), ["WARN"])
+        self.assertEqual(len(results[0].details), len(lines))
+
+    def test_unchanged_progress_wording_does_not_warn(self) -> None:
+        path = "docs/formats/f3d.md"
+        self.repo.commit({path: "# F3D\nCurrently unknown.\n"})
+        self.repo.checkout("upstream")
+        self.repo.git("merge", "-q", "topic")
+        self.repo.checkout("topic")
+        self.repo.commit({path: "# F3D\nCurrently unknown.\nOffset 1 stores `count`.\n"})
+        self.assertEqual(harness.statuses(harness.run_check(check, self.repo.context())), ["PASS"])
+
     def test_open_items_are_not_specs(self) -> None:
         self.repo.commit({"docs/formats/f3d-open-items.md": "# Open\n\nThe decoder reads 0.\n"})
         self.assertEqual(harness.statuses(harness.run_check(check, self.repo.context())), ["PASS"])
