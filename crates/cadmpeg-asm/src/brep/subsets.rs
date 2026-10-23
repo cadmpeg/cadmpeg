@@ -2,7 +2,9 @@
 //! Subset curves on the CADIR local parameter.
 //!
 //! ACIS states a `subset_int_cur` cache and the edge ranges on it on the
-//! parameter of the curve it trims, negated on a reversed carrier. A CADIR
+//! parameter of the curve it trims. A reversed record and an edge use that
+//! reverses the curve each negate it once; the subset sense is false when the
+//! net cache runs against that parameter. A CADIR
 //! subset runs on its local parameter, which is 0 at its first trim and runs in
 //! its sense.
 
