@@ -4,9 +4,8 @@ use std::collections::BTreeMap;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 use super::{Address, Dependencies};
-use crate::binary::{
-    counted_record, parse_parameter_record, parse_sections, read_directory, BinaryValue,
-};
+use crate::binary::tests::{parse_parameter_record, read_directory};
+use crate::binary::{counted_record, parse_sections, BinaryValue};
 use crate::test_support::binary_parts::{broken_parameter_reference, broken_transform_chain};
 
 #[test]

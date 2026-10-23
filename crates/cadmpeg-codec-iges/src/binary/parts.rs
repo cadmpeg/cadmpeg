@@ -137,14 +137,15 @@ fn read_records(
         ordinal = ordinal
             .checked_add(1)
             .ok_or_else(|| malformed("Binary Directory ordinal overflows"))?;
-        if let Some(record) = ctx.decode_parser_part(
+        if let Some(record) = ctx.decode_parser_scope(
             output,
             extent,
             spec("iges.binary_directory_record", framing)?,
-            || {
-                let record = parse_directory_record(offset, sequence, body, lengths)?;
+            |values| {
+                let mut record = parse_directory_record(offset, sequence, body, lengths)?;
                 record.admit_directory_fields()?;
                 dependencies.directory(&record)?;
+                admit_optional_fields(ctx, body, &mut record, values)?;
                 Ok(record)
             },
         )? {
@@ -156,6 +157,44 @@ fn read_records(
             .ok_or_else(|| malformed("Binary Directory cursor underflows"))?;
     }
     Ok(records)
+}
+
+/// Each optional Directory field is one `iges.binary_directory_value` part.
+/// A field that is not an integer is given up alone; its record stays.
+fn admit_optional_fields(
+    ctx: &DecodeContext<'_>,
+    body: View<'_>,
+    record: &mut BinaryDirectory,
+    output: &mut ParserPartOutput,
+) -> Result<(), CodecError> {
+    let mut previous = None;
+    for (slot, name) in super::OPTIONAL_DIRECTORY_FIELDS {
+        let range = record.value_extents[slot.slot()].clone();
+        // A Default value has no bytes; a shared repeated value has one part,
+        // at its first field.
+        if range.is_empty() || previous.as_ref() == Some(&range) {
+            continue;
+        }
+        previous = Some(range.clone());
+        let value = body
+            .start()
+            .checked_add(range.start)
+            .zip(body.start().checked_add(range.end))
+            .and_then(|(start, end)| body.child(start, end))
+            .ok_or_else(|| malformed("Binary Directory value exceeds its record"))?;
+        if ctx
+            .decode_parser_part(
+                output,
+                value,
+                spec("iges.binary_directory_value", Vec::new())?,
+                || record.admit_optional_field(slot, name),
+            )?
+            .is_none()
+        {
+            record.give_up_optional_field(slot);
+        }
+    }
+    Ok(())
 }
 
 fn read_parameters(

@@ -17,21 +17,12 @@ fn an_unresolved_line_coordinate_reference_gives_up_only_its_parameter_record() 
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
                 .expect("source-owned session");
         let actual = super::super::normalize(source, &ctx);
-        let original_arena = DecodeArena::new();
-        let (original_ctx, original_source) =
-            DecodeContext::from_root_bytes(&bytes, &original_arena, &DecodePolicy::service())
-                .expect("independent unchanged legacy grammar oracle");
-        let original = crate::binary::normalize(original_source, &original_ctx);
         if broken {
             // #215 §4.5 and #222: an unresolved reference is not a whole-file
             // refusal. It gives up the nearest part the decoder runs that
             // holds the value: the Line's Parameter Data record.
             let (actual, _) = actual.expect("an unresolved reference gives up one part");
             assert!(actual.admission.parameters.is_some());
-            assert!(original
-                .expect_err("the pre-handoff normalizer has no part to give up")
-                .to_string()
-                .contains("Binary Directory reference has no surviving source target"));
             let decoded = crate::IgesCodec
                 .decode(
                     &mut std::io::Cursor::new(bytes.clone()),
@@ -101,7 +92,6 @@ fn an_unresolved_line_coordinate_reference_gives_up_only_its_parameter_record() 
         } else {
             let (actual, _) = actual.expect("valid source reference keeps the legacy route");
             assert!(actual.admission.parameters.is_none());
-            assert_eq!(actual.bytes, original.expect("legacy normalization"));
             let decoded = crate::test_support::decode(bytes.clone());
             assert_eq!(decoded.ir().model.curves.len(), 1);
             assert_eq!(decoded.ir().model.points.len(), 3);

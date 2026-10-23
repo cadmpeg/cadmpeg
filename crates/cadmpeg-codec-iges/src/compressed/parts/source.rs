@@ -56,7 +56,23 @@ pub(super) fn lines<'a>(
 }
 
 #[derive(Clone, Copy)]
-pub(super) struct Fields<'a>([Option<View<'a>>; 16]);
+pub(super) struct Fields<'a>(
+    [Option<View<'a>>; 16],
+    /// The specifiers of the current record: the whole specifier and the
+    /// absolute start of its value.
+    [Option<(View<'a>, usize)>; 16],
+);
+
+/// The optional Directory fields by field number.
+const OPTIONAL_FIELDS: [(usize, &str); 7] = [
+    (4, "line font"),
+    (5, "level"),
+    (6, "view"),
+    (8, "label display"),
+    (12, "line weight"),
+    (13, "color"),
+    (19, "entity subscript"),
+];
 
 impl<'a> Fields<'a> {
     pub(super) fn apply(
@@ -68,7 +84,8 @@ impl<'a> Fields<'a> {
         ctx: &DecodeContext<'_>,
         framing: &mut Vec<std::ops::Range<u64>>,
     ) -> Result<Self, CodecError> {
-        let mut fields = previous.unwrap_or(Self([None; 16]));
+        let mut fields = previous.unwrap_or(Self([None; 16], [None; 16]));
+        fields.1 = [None; 16];
         for (index, line) in lines.iter().enumerate().take(parsed.next).skip(start) {
             let bytes = line.payload.window();
             let begin = if index == start {
@@ -114,6 +131,12 @@ impl<'a> Fields<'a> {
                         .child(base + value_begin, base + value_end)
                         .ok_or_else(|| malformed("specifier exceeds its original line"))?,
                 );
+                fields.1[slot] = Some((
+                    line.payload
+                        .child(base + at, base + value_end)
+                        .ok_or_else(|| malformed("specifier exceeds its original line"))?,
+                    base + value_begin,
+                ));
                 at = value_end;
             }
         }
@@ -141,6 +164,20 @@ impl<'a> Fields<'a> {
         Ok(DirectoryFields(values.try_into().map_err(|_| {
             malformed("Directory field count differs from16")
         })?))
+    }
+
+    /// The optional-field specifiers that the current record states: the
+    /// field name, the whole specifier and the absolute start of its value.
+    pub(super) fn optional_specifiers(
+        &self,
+    ) -> impl Iterator<Item = (&'static str, View<'a>, usize)> + '_ {
+        OPTIONAL_FIELDS.into_iter().filter_map(|(number, name)| {
+            let slot = FIELDS
+                .iter()
+                .position(|(_, candidate)| *candidate == number)?;
+            let (specifier, value_begin) = self.1.get(slot).copied().flatten()?;
+            Some((name, specifier, value_begin))
+        })
     }
 
     pub(super) fn count(&self) -> Result<usize, CodecError> {

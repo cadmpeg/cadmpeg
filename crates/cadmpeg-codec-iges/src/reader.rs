@@ -286,10 +286,6 @@ struct PhysicalParse<'a> {
 }
 
 impl<'a> PhysicalParse<'a> {
-    fn run(bytes: &'a [u8], ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
-        Self::run_with_source(bytes, None, ctx, ParsingState::new())
-    }
-
     fn run_with_source(
         bytes: &'a [u8],
         source: Option<View<'a>>,
@@ -330,35 +326,24 @@ impl<'a> PhysicalParse<'a> {
         };
         // A given-up Directory Entry owns its Parameter Data cards, as a
         // quarantined one does: they are not unclaimed (#215 rules 2-3).
-        let (directory, quarantined_directory, given_up_directory, unreadable_metadata) =
+        let (directory, quarantined_directory, given_up_directory) =
             if let Some(directory) = prepared_directory {
-                (directory, Vec::new(), Vec::new(), BTreeSet::new())
+                (directory, Vec::new(), Vec::new())
             } else if scan.source_view().is_some() {
                 let parsed =
                     directory::parts::parse(&scan, global.global_table(), ctx, &mut parser_parts)?;
-                (
-                    parsed.entries,
-                    Vec::new(),
-                    parsed.given_up,
-                    parsed.unreadable_metadata,
-                )
+                (parsed.entries, Vec::new(), parsed.given_up)
             } else if let Some(identities) = binary_identities {
                 let (directory, quarantined) =
                     directory::parse_with_keys(&scan, global.global_table(), ctx, |grammar| {
                         identities.semantic_sequence(grammar)
                     })?;
-                (directory, quarantined, Vec::new(), BTreeSet::new())
+                (directory, quarantined, Vec::new())
             } else {
                 let (directory, quarantined) = directory::parse(&scan, global.global_table(), ctx)?;
-                (directory, quarantined, Vec::new(), BTreeSet::new())
+                (directory, quarantined, Vec::new())
             };
-        global_losses.extend(if unreadable_metadata.is_empty() {
-            directory::metadata_losses(&directory)
-        } else {
-            directory::metadata_losses_except(&directory, |sequence, name| {
-                unreadable_metadata.contains(&(sequence, name))
-            })
-        });
+        global_losses.extend(directory::metadata_losses(&directory));
         let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
         let parameter::ParameterAssembly {
             records: parameters,
@@ -470,13 +455,82 @@ impl<'a> PhysicalParse<'a> {
 
 pub(crate) fn inspect(
     ctx: &DecodeContext<'_>,
-    window: &[u8],
+    source: View<'_>,
     representation: Representation,
-    source_size: usize,
 ) -> Result<ContainerSummary, CodecError> {
-    let mut parse = PhysicalParse::run(window, ctx)?;
+    inspect_with_parsing(
+        ctx,
+        source.window(),
+        source,
+        representation,
+        ParsingState::new(),
+    )
+}
+
+pub(crate) fn inspect_binary(
+    ctx: &DecodeContext<'_>,
+    normalized: crate::binary::NormalizedBinary,
+    source: View<'_>,
+    parts: ParserPartOutput,
+) -> Result<ContainerSummary, CodecError> {
+    inspect_with_parsing(
+        ctx,
+        &normalized.bytes,
+        source,
+        Representation::Binary,
+        ParsingState {
+            parts,
+            binary_identities: Some(&normalized.identities),
+            binary_admission: Some(normalized.admission),
+            compressed: None,
+        },
+    )
+}
+
+pub(crate) fn inspect_compressed(
+    ctx: &DecodeContext<'_>,
+    normalized: crate::compressed::parts::Normalized,
+    source: View<'_>,
+) -> Result<ContainerSummary, CodecError> {
+    inspect_with_parsing(
+        ctx,
+        &normalized.bytes,
+        source,
+        Representation::CompressedAscii,
+        ParsingState {
+            parts: normalized.parts,
+            binary_identities: None,
+            binary_admission: None,
+            compressed: Some(normalized.admission),
+        },
+    )
+}
+
+/// Inspect through the parse that decode runs, so both report the same
+/// record losses for one file.
+fn inspect_with_parsing(
+    ctx: &DecodeContext<'_>,
+    parse_bytes: &[u8],
+    source: View<'_>,
+    representation: Representation,
+    parsing: ParsingState<'_>,
+) -> Result<ContainerSummary, CodecError> {
+    let view = (representation == Representation::FixedAscii).then_some(source);
+    let mut parse = PhysicalParse::run_with_source(parse_bytes, view, ctx, parsing)?;
+    let parser_parts = std::mem::replace(
+        &mut parse.parser_parts,
+        ParserPartOutput::new(cadmpeg_ir::CodecFormat::Iges),
+    );
+    let (_, _, _, mut parser_losses) = parser_parts.into_parts(ctx)?.into_parts();
+    let parts = std::mem::replace(
+        &mut parse.parts,
+        PartOutput::new(cadmpeg_ir::CodecFormat::Iges),
+    );
+    let (_, _, _, mut part_losses) = parts.into_parts(ctx)?.into_parts();
     let primary = crate::dialect::classify(representation, &parse.global);
     let mut losses = parse.admission_losses();
+    losses.append(&mut parser_losses);
+    losses.append(&mut part_losses);
     let record_losses = parse.record_losses()?;
 
     losses.extend(record_losses);
@@ -492,7 +546,7 @@ pub(crate) fn inspect(
         .notes
         .extend(graph::summary_notes(&parse.references));
     summary.losses = losses;
-    annotate_representation(&mut summary, representation, source_size);
+    annotate_representation(&mut summary, representation, source.window().len());
     Ok(summary)
 }
 

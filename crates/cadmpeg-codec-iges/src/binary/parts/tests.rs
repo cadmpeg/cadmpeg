@@ -48,7 +48,8 @@ fn repeated_binary_values_keep_the_exact_physical_directory_pointer_extent() {
 
 #[test]
 fn binary_reference_values_resolve_actual_source_offsets_before_semantic_creation() {
-    use super::super::{parse_sections, read_directory, resolve_value, BinaryValue};
+    use super::super::tests::read_directory;
+    use super::super::{parse_sections, resolve_value, BinaryValue};
 
     let bytes = crate::test_support::binary_parts::point_pair(false);
     let arena = DecodeArena::new();

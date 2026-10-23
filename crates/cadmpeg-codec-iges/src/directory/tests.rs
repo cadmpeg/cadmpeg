@@ -361,11 +361,6 @@ fn unreadable_directory_metadata_preserves_independent_point_geometry() {
         assert_eq!(unreadable.len(), 1);
         assert_eq!(unreadable[0].severity, cadmpeg_ir::report::Severity::Error);
         assert!(unreadable[0].message.contains("iges.directory_field"));
-        assert!(!decoded
-            .report()
-            .losses
-            .iter()
-            .any(|loss| loss.code == IgesLossCode::DirectoryMetadataUnreadable.kind()));
         assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
             .unwrap()
             .is_ok());

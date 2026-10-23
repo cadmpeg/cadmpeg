@@ -72,13 +72,32 @@ struct BinaryDirectory {
     parameter_pointer: i64,
     /// Retains the wire fields in shared slot order for rendering beside the checked entity discriminator.
     values: [BinaryValue; 15],
+    /// Body-relative byte range of each wire value, in shared slot order.
+    value_extents: [std::ops::Range<usize>; 15],
 }
+
+/// The optional Directory fields (4, 5, 6, 8, 12, 13 and 19): shared slot and
+/// field name.
+const OPTIONAL_DIRECTORY_FIELDS: [(DirectoryFieldSlot, &str); 7] = [
+    (DirectoryFieldSlot::LineFont, "line font"),
+    (DirectoryFieldSlot::Level, "level"),
+    (DirectoryFieldSlot::View, "view"),
+    (DirectoryFieldSlot::LabelDisplay, "label display"),
+    (DirectoryFieldSlot::LineWeight, "line weight"),
+    (DirectoryFieldSlot::Color, "color"),
+    (DirectoryFieldSlot::Subscript, "entity subscript"),
+];
+
+/// Rendered text of an optional value whose part is given up. It is not a
+/// decimal integer, so the Directory admission states no value for the field.
+const UNREADABLE_OPTIONAL_FIELD: &[u8] = b"*";
 
 impl BinaryDirectory {
     fn new(
         offset: u32,
         source_sequence: u32,
         values: [BinaryValue; 16],
+        extents: [std::ops::Range<usize>; 16],
     ) -> Result<Self, CodecError> {
         #[rustfmt::skip]
         let [
@@ -86,6 +105,12 @@ impl BinaryDirectory {
             label_display, status, line_weight, color, form, reserved_first, reserved_second,
             label, subscript,
         ] = values;
+        #[rustfmt::skip]
+        let [
+            entity_type_at, _, structure_at, line_font_at, level_at, view_at, transform_at,
+            label_display_at, status_at, line_weight_at, color_at, form_at, reserved_first_at,
+            reserved_second_at, label_at, subscript_at,
+        ] = extents;
         Ok(Self {
             offset,
             source_sequence,
@@ -108,7 +133,40 @@ impl BinaryDirectory {
                 label,
                 subscript,
             ],
+            value_extents: [
+                entity_type_at,
+                structure_at,
+                line_font_at,
+                level_at,
+                view_at,
+                transform_at,
+                label_display_at,
+                status_at,
+                line_weight_at,
+                color_at,
+                form_at,
+                reserved_first_at,
+                reserved_second_at,
+                label_at,
+                subscript_at,
+            ],
         })
+    }
+
+    /// Admit one optional field: its rendered text is a decimal integer.
+    fn admit_optional_field(
+        &self,
+        slot: DirectoryFieldSlot,
+        name: &'static str,
+    ) -> Result<(), CodecError> {
+        let field = render_field(&self.values[slot.slot()], FieldRendering::Plain)?;
+        crate::directory::integer(field, name).map_err(|error| malformed(error.to_string()))?;
+        Ok(())
+    }
+
+    /// State no value for an optional field whose part is given up.
+    fn give_up_optional_field(&mut self, slot: DirectoryFieldSlot) {
+        self.values[slot.slot()] = BinaryValue::String(UNREADABLE_OPTIONAL_FIELD.to_vec());
     }
 
     fn entity_type(&self) -> i64 {
@@ -842,23 +900,6 @@ fn counted_record<'a>(
     Ok((offset, extent, body))
 }
 
-fn read_directory(
-    payload: View<'_>,
-    lengths: PrimitiveLengths,
-) -> Result<Vec<BinaryDirectory>, CodecError> {
-    let mut records = Vec::new();
-    let mut cursor = 0_usize;
-    while cursor < payload.window().len() {
-        let (offset, extent, body) = counted_record(payload, cursor, "Directory")?;
-        let sequence = source_sequence(records.len())?;
-        let record = parse_directory_record(offset, sequence, body, lengths)?;
-
-        records.push(record);
-        cursor = extent.end() - payload.start();
-    }
-    Ok(records)
-}
-
 fn parse_directory_record(
     offset: u32,
     source_sequence: u32,
@@ -867,11 +908,13 @@ fn parse_directory_record(
 ) -> Result<BinaryDirectory, CodecError> {
     let mut stream = ValueStream::new(body.window(), lengths);
     let mut values = std::array::from_fn(|_| BinaryValue::Default);
-    for value in &mut values {
+    let mut extents = std::array::from_fn(|_| 0..0);
+    for (value, extent) in values.iter_mut().zip(extents.iter_mut()) {
         *value = one_value(&mut stream, "Directory")?;
+        *extent = stream.value_extent.clone();
     }
     stream.finish()?;
-    BinaryDirectory::new(offset, source_sequence, values)
+    BinaryDirectory::new(offset, source_sequence, values, extents)
 }
 
 struct StackText {
@@ -1154,26 +1197,6 @@ fn normalize_global(values: &[BinaryValue]) -> Result<Vec<u8>, CodecError> {
     Ok(output)
 }
 
-fn read_parameters(
-    payload: View<'_>,
-    lengths: PrimitiveLengths,
-    directory_by_offset: &BTreeMap<u32, usize>,
-) -> Result<Vec<BinaryParameter>, CodecError> {
-    let mut records = Vec::new();
-    let mut cursor = 0_usize;
-    while cursor < payload.window().len() {
-        let (offset, extent, body) = counted_record(payload, cursor, "Parameter")?;
-        records.push(parse_parameter_record(
-            offset,
-            body,
-            lengths,
-            directory_by_offset,
-        )?);
-        cursor = extent.end() - payload.start();
-    }
-    Ok(records)
-}
-
 struct ParameterPrefix<'a> {
     stream: ValueStream<'a>,
     entity_type: i64,
@@ -1218,19 +1241,6 @@ fn prefix_from_stream(mut stream: ValueStream<'_>) -> Result<ParameterPrefix<'_>
         directory_pointer,
         pointer_extent,
     })
-}
-
-fn parse_parameter_record(
-    offset: u32,
-    body: View<'_>,
-    lengths: PrimitiveLengths,
-    directory_by_offset: &BTreeMap<u32, usize>,
-) -> Result<BinaryParameter, CodecError> {
-    finish_parameter_record(
-        offset,
-        parameter_prefix(body, lengths)?,
-        directory_by_offset,
-    )
 }
 
 fn finish_parameter_record(
@@ -1689,25 +1699,6 @@ fn resolve_value(
 
 /// Normalize one Binary IGES source into the Fixed ASCII image consumed by the
 /// typed reader.
-pub(crate) fn normalize(source: View<'_>, ctx: &DecodeContext<'_>) -> Result<Vec<u8>, CodecError> {
-    ctx.require_source(source)?;
-    normalize_with_records(
-        source,
-        ctx,
-        |sections, _global| {
-            let directory = read_directory(sections.directory, sections.lengths)?;
-            let mut directory_by_offset = BTreeMap::new();
-            for (index, record) in directory.iter().enumerate() {
-                directory_by_offset.insert(record.offset, index);
-            }
-            let parameters =
-                read_parameters(sections.parameter, sections.lengths, &directory_by_offset)?;
-            Ok((directory, parameters))
-        },
-        |bytes, _, _| Ok(bytes),
-    )
-}
-
 fn normalize_with_records<T>(
     source: View<'_>,
     ctx: &DecodeContext<'_>,
@@ -1899,13 +1890,45 @@ mod tests {
         }
     }
 
-    use super::{normalize, BinaryValue, PrimitiveLengths, ValueStream};
+    use super::{BinaryValue, PrimitiveLengths, ValueStream};
     use cadmpeg_core::decode::InspectOptions;
 
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use std::io::Cursor;
 
     const EPS_POINT: f64 = 1.0e-12;
+
+    /// Every counted Directory record of `payload`, read without parts.
+    pub(super) fn read_directory(
+        payload: cadmpeg_core::decode::View<'_>,
+        lengths: PrimitiveLengths,
+    ) -> Result<Vec<super::BinaryDirectory>, cadmpeg_core::CodecError> {
+        let mut records = Vec::new();
+        let mut cursor = 0_usize;
+        while cursor < payload.window().len() {
+            let (offset, extent, body) = super::counted_record(payload, cursor, "Directory")?;
+            let sequence = super::source_sequence(records.len())?;
+            records.push(super::parse_directory_record(
+                offset, sequence, body, lengths,
+            )?);
+            cursor = extent.end() - payload.start();
+        }
+        Ok(records)
+    }
+
+    /// One counted Parameter record, read without parts.
+    pub(super) fn parse_parameter_record(
+        offset: u32,
+        body: cadmpeg_core::decode::View<'_>,
+        lengths: PrimitiveLengths,
+        directory_by_offset: &std::collections::BTreeMap<u32, usize>,
+    ) -> Result<super::BinaryParameter, cadmpeg_core::CodecError> {
+        super::finish_parameter_record(
+            offset,
+            super::parameter_prefix(body, lengths)?,
+            directory_by_offset,
+        )
+    }
 
     fn normalize_for_test(source: &[u8]) -> Result<Vec<u8>, cadmpeg_core::CodecError> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -1915,6 +1938,14 @@ mod tests {
             &cadmpeg_core::decode::DecodePolicy::service(),
         )?;
         normalize(root, &ctx)
+    }
+
+    /// Normalize through the decode path; the normalized text only.
+    fn normalize(
+        source: cadmpeg_core::decode::View<'_>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Vec<u8>, cadmpeg_core::CodecError> {
+        super::parts::normalize(source, ctx).map(|(normalized, _)| normalized.bytes)
     }
 
     #[derive(Debug, Default)]
@@ -2418,8 +2449,18 @@ mod tests {
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
         let source = root.child(3, bytes.len() - 4).unwrap();
         let sections = super::parse_sections(source).unwrap();
+        // The decode-path normalizer opens its own record scopes, so it runs
+        // in a separate session over the same bytes.
+        let normalized_arena = DecodeArena::new();
+        let (normalized_ctx, normalized_root) =
+            DecodeContext::from_root_bytes(&bytes, &normalized_arena, &DecodePolicy::service())
+                .unwrap();
         assert_eq!(
-            super::normalize(source, &ctx).unwrap(),
+            normalize(
+                normalized_root.child(3, bytes.len() - 4).unwrap(),
+                &normalized_ctx
+            )
+            .unwrap(),
             normalize_for_test(&original).unwrap()
         );
         let foreign_arena = DecodeArena::new();

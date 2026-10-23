@@ -269,6 +269,20 @@ pub(crate) fn directory_admission_fault(fault: DirectoryAdmissionFault, broken: 
     assemble(&prefix, target, &parameters)
 }
 
+/// Two points whose first Directory record states its color (wire value 10)
+/// as text: `0`, or the non-integer `x` when `broken`.
+pub(crate) fn directory_optional_field(broken: bool) -> Vec<u8> {
+    let mut fields = vec![integer(116), pointer(1)];
+    fields.extend(std::iter::repeat_n(vec![0], 14));
+    fields[10] = text(if broken { b"x" } else { b"0" });
+    let prefix = counted(&fields.concat());
+    let peer = u32::try_from(prefix.len() + 1).expect("test Directory offset");
+    let mut parameters = point_parameters(1);
+    let target = u32::try_from(parameters.len() + 1).expect("test Parameter offset");
+    parameters.extend_from_slice(&point_parameters(peer));
+    assemble(&prefix, target, &parameters)
+}
+
 pub(crate) fn macro_then_point(broken: bool) -> Vec<u8> {
     let prefix = directory_record(306, 1);
     let peer = u32::try_from(prefix.len() + 1).expect("actual peer Directory offset");

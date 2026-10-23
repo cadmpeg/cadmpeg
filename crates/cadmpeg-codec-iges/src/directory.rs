@@ -250,44 +250,21 @@ impl DirectoryEntry {
     }
 }
 
+/// A Directory Entry status number that used blank padding the dialect does
+/// not define. An unreadable optional field is a given-up part of its
+/// representation and has its `record.unreadable` loss there.
 pub(crate) fn metadata_losses(entries: &[DirectoryEntry]) -> Vec<LossNote> {
-    metadata_losses_except(entries, |_, _| false)
-}
-
-pub(crate) fn metadata_losses_except(
-    entries: &[DirectoryEntry],
-    handled: impl Fn(u32, &'static str) -> bool,
-) -> Vec<LossNote> {
     let mut losses = Vec::new();
-    for entry in entries {
-        if entry.status_padding_recovered {
-            let message = format!("Directory D{} status number used unambiguous leading blank padding; retained its dependency and use codes", entry.sequence);
-            losses.push(
-                IgesLossCode::DirectoryMetadataNoncanonical
-                    .note(message)
-                    .with_provenance(entry.loss_provenance()),
-            );
-        }
-        for (name, value) in [
-            ("line font", entry.line_font),
-            ("level", entry.level),
-            ("view", entry.view),
-            ("label display", entry.label_display),
-            ("line weight", entry.line_weight),
-            ("color", entry.color),
-            ("subscript", entry.subscript),
-        ] {
-            if value.is_none() && !handled(entry.sequence, name) {
-                let note = IgesLossCode::DirectoryMetadataUnreadable
-                    .note(format!(
-                        "Directory D{} {name} is unreadable; interpretation fields and exact \
-                         source cards remain available",
-                        entry.sequence
-                    ))
-                    .with_provenance(entry.loss_provenance());
-                losses.push(note);
-            }
-        }
+    for entry in entries
+        .iter()
+        .filter(|entry| entry.status_padding_recovered)
+    {
+        let message = format!("Directory D{} status number used unambiguous leading blank padding; retained its dependency and use codes", entry.sequence);
+        losses.push(
+            IgesLossCode::DirectoryMetadataNoncanonical
+                .note(message)
+                .with_provenance(entry.loss_provenance()),
+        );
     }
     losses
 }

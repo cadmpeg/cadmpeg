@@ -158,17 +158,18 @@ impl CodecBackend for IgesCodec {
         let mut reader = Cursor::new(root.window());
         let representation = representation::classify(&mut reader)?
             .ok_or_else(|| CodecError::WrongFormat("unrecognized IGES representation".into()))?;
+        // Inspection runs the parse that decode runs.
         match representation {
             representation::Representation::FixedAscii => {
-                reader::inspect(ctx, root.window(), representation, root.window().len())
+                reader::inspect(ctx, root, representation)
             }
             representation::Representation::CompressedAscii => {
-                let normalized = compressed::normalize(root.window())?;
-                reader::inspect(ctx, &normalized, representation, root.window().len())
+                let normalized = compressed::parts::normalize(root, ctx)?;
+                reader::inspect_compressed(ctx, normalized, root)
             }
             representation::Representation::Binary => {
-                let normalized = binary::normalize(root, ctx)?;
-                reader::inspect(ctx, &normalized, representation, root.window().len())
+                let (normalized, parts) = binary::parts::normalize(root, ctx)?;
+                reader::inspect_binary(ctx, normalized, root, parts)
             }
         }
     }

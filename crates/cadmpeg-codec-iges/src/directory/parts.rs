@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Source-bounded Directory parsing through the shared parser part runner.
 
-use std::collections::BTreeSet;
 use std::ops::Range;
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceDimension, ResourceLimit, View};
@@ -25,7 +24,6 @@ pub(crate) fn parse(
     ctx.capture_part_extent(source)?;
     let mut entries = Vec::new();
     let mut given_up = Vec::new();
-    let mut unreadable_metadata = BTreeSet::new();
     let mut at = 0;
     while at < scan.lines.len() {
         if !matches!(
@@ -60,7 +58,6 @@ pub(crate) fn parse(
         let parsed = ctx.decode_parser_scope(output, extent, spec, |children| {
             let mut entries = Vec::new();
             let mut given_up = Vec::new();
-            let mut unreadable_metadata = BTreeSet::new();
             for pair in lines.chunks(2) {
                 ctx.charge_entities(1, "iges_directory_entries")?;
                 let extent = source_extent(source, pair)?;
@@ -100,8 +97,7 @@ pub(crate) fn parse(
                     // this Directory parser's attempted native identity.
                     let primary_capture = ctx.read_transaction()?;
                     let parsed = ctx.record(&id, extent, || {
-                        let mut failed_fields = BTreeSet::new();
-                        let entry = admit_fields_with(
+                        admit_fields_with(
                             *sequence,
                             first.offset,
                             fields(first),
@@ -124,40 +120,28 @@ pub(crate) fn parse(
                                 let field_source = source.child(start, end).ok_or_else(|| {
                                     CodecError::malformed("Directory field exceeds actual source")
                                 })?;
-                                let value = metadata::admit(
+                                metadata::admit(
                                     ctx,
                                     field_source,
                                     name,
                                     number,
                                     global,
                                     fields_output,
-                                )?;
-                                if value.is_none() {
-                                    failed_fields.insert((
-                                        *sequence,
-                                        if number == 19 { "subscript" } else { name },
-                                    ));
-                                }
-                                Ok::<_, CodecError>(value)
+                                )
                             },
-                        )?;
-                        Ok((entry, failed_fields))
+                        )
                     });
                     drop(primary_capture);
                     parsed
                 })? {
-                    Some((entry, failed_fields)) => {
-                        append_parser_item(ctx, &mut entries, entry)?;
-                        unreadable_metadata.extend(failed_fields);
-                    }
+                    Some(entry) => append_parser_item(ctx, &mut entries, entry)?,
                     None => append_given_up(ctx, &mut given_up, pair)?,
                 }
             }
-            Ok((entries, given_up, unreadable_metadata))
+            Ok((entries, given_up))
         })?;
         match parsed {
-            Some((parsed, parsed_given_up, parsed_metadata)) => {
-                unreadable_metadata.extend(parsed_metadata);
+            Some((parsed, parsed_given_up)) => {
                 for entry in parsed {
                     append_parser_item(ctx, &mut entries, entry)?;
                 }
@@ -173,19 +157,13 @@ pub(crate) fn parse(
             }
         }
     }
-    Ok(DirectoryParts {
-        entries,
-        given_up,
-        unreadable_metadata,
-    })
+    Ok(DirectoryParts { entries, given_up })
 }
 
 /// The Directory Entries of a Directory parse and the given-up ones.
 #[derive(Debug)]
 pub(crate) struct DirectoryParts {
     pub(crate) entries: Vec<DirectoryEntry>,
-    /// Optional fields whose failures already have a shared part home.
-    pub(crate) unreadable_metadata: BTreeSet<(u32, &'static str)>,
     /// First-card sequence numbers of the given-up Directory Entries. A
     /// Parameter Data card whose back-pointer names one depends on that part.
     pub(crate) given_up: Vec<u32>,

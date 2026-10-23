@@ -156,11 +156,12 @@ pub(crate) fn normalize(
                     }
                     framing.sort_unstable_by_key(|range| (range.start, range.end));
                     previous = Some(fields);
-                    if let Some(record) = ctx.decode_parser_part(
+                    if let Some(record) = ctx.decode_parser_scope(
                         children,
                         extent,
                         spec("iges.compressed_data_record", framing)?,
-                        || {
+                        |specifiers| {
+                            admit_optional_specifiers(ctx, &fields, specifiers)?;
                             ctx.record(
                                 &format!("iges:entity:directory#{}", parsed.sequence),
                                 extent,
@@ -364,6 +365,36 @@ fn record_framing(
     }
     out.sort_unstable_by_key(|range| (range.start, range.end));
     Ok(out)
+}
+
+/// Each optional Directory field that a record states is one
+/// `iges.compressed_directory_specifier` part. A value that is not an integer
+/// is given up alone; the Directory admission then states no value for it.
+fn admit_optional_specifiers(
+    ctx: &DecodeContext<'_>,
+    fields: &source::Fields<'_>,
+    output: &mut ParserPartOutput,
+) -> Result<(), CodecError> {
+    for (name, specifier, value_begin) in fields.optional_specifiers() {
+        let value = specifier
+            .child(value_begin, specifier.end())
+            .ok_or_else(|| malformed("specifier value exceeds its specifier"))?;
+        let framing = vec![u64_from_index(specifier.start())..u64_from_index(value_begin)];
+        ctx.decode_parser_part(
+            output,
+            specifier,
+            spec("iges.compressed_directory_specifier", framing)?,
+            || {
+                let text = value
+                    .read_slice(value.start()..value.end())
+                    .ok_or_else(|| malformed("specifier value is unreadable"))?;
+                let field = crate::directory::render_field(text)?;
+                crate::directory::integer(field, name).map_err(CodecError::from)?;
+                Ok(())
+            },
+        )?;
+    }
+    Ok(())
 }
 
 fn spec(name: &str, framing: Vec<Range<u64>>) -> Result<PartSpec, CodecError> {
