@@ -5241,3 +5241,63 @@ pub(crate) mod assembly_compact_wide_scope {
     /// Offset of `second_operand_transform` (`f64[16]`, little-endian). Spec §Assembly operands.
     pub(crate) const SECOND_OPERAND_TRANSFORM: usize = 272;
 }
+
+/// Byte offsets for the `rectangular_pattern_direction_record` record.
+///
+/// Spec §Assembly operands. Record length 220 B.
+///
+/// ```text
+/// Offsets are relative to the direction record's primary indexed header. The paired header starts at offset 220.
+/// ```
+pub(crate) mod rectangular_pattern_direction_record {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 220;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `zero_run_10` (`bytes[10]`). Spec §Assembly operands.
+    pub(crate) const ZERO_RUN_10: usize = 11;
+    /// Offset of `selection_kind` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const SELECTION_KIND: usize = 21;
+    /// Offset of `origin` (`f64[3]`, little-endian). Spec §Assembly operands.
+    pub(crate) const ORIGIN: usize = 25;
+    /// Offset of `displacement` (`f64[3]`, little-endian). Spec §Assembly operands.
+    pub(crate) const DISPLACEMENT: usize = 49;
+    /// Offset of `zero_run_16` (`bytes[16]`). Spec §Assembly operands.
+    pub(crate) const ZERO_RUN_16: usize = 73;
+    /// Offset of `fixed_eight` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const FIXED_EIGHT: usize = 89;
+    /// Offset of `negative_ones` (`f64[3]`, little-endian). Spec §Assembly operands.
+    pub(crate) const NEGATIVE_ONES: usize = 93;
+    /// Offset of `selection_count` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const SELECTION_COUNT: usize = 117;
+    /// Offset of `selection_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const SELECTION_REFERENCE: usize = 121;
+    /// Offset of `zero_run_2` (`bytes[2]`). Spec §Assembly operands.
+    pub(crate) const ZERO_RUN_2: usize = 132;
+    /// Offset of `auxiliary_count` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const AUXILIARY_COUNT: usize = 134;
+    /// Offset of `auxiliary_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const AUXILIARY_REFERENCE: usize = 138;
+    /// Offset of `role` (`u64`, little-endian). Spec §Assembly operands.
+    pub(crate) const ROLE: usize = 149;
+    /// Offset of `zero_run_after_role` (`bytes[10]`). Spec §Assembly operands.
+    pub(crate) const ZERO_RUN_AFTER_ROLE: usize = 157;
+    /// Offset of `opaque_index` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const OPAQUE_INDEX: usize = 167;
+    /// Offset of `opaque_scalar` (`f64`, little-endian). Spec §Assembly operands.
+    pub(crate) const OPAQUE_SCALAR: usize = 171;
+    /// Offset of `opaque_index_repeat` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const OPAQUE_INDEX_REPEAT: usize = 179;
+    /// Offset of `index_plus_two_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const INDEX_PLUS_TWO_REFERENCE: usize = 183;
+    /// Offset of `separator_flag` (`u8`). Spec §Assembly operands.
+    pub(crate) const SEPARATOR_FLAG: usize = 194;
+    /// Offset of `separator_zero_run` (`bytes[2]`). Spec §Assembly operands.
+    pub(crate) const SEPARATOR_ZERO_RUN: usize = 195;
+    /// Offset of `index_plus_one_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const INDEX_PLUS_ONE_REFERENCE: usize = 197;
+    /// Offset of `scope_separator` (`u8`). Spec §Assembly operands.
+    pub(crate) const SCOPE_SEPARATOR: usize = 208;
+    /// Offset of `scope_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const SCOPE_REFERENCE: usize = 209;
+}

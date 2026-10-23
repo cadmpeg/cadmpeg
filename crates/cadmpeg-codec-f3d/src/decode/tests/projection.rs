@@ -222,6 +222,7 @@ fn capped_rectangular_pattern_instance_search_reports_a_loss() {
                     instance_search_cap: Some(
                         crate::records::feature::patterns::RectangularPatternSearchCap::RunWork,
                     ),
+                    directions: Vec::new(),
                 },
             )
             .unwrap(),

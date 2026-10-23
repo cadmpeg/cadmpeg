@@ -1282,6 +1282,7 @@ fn numerical_ranges_rectangular_pattern_accepts_finite_large_extent() {
                 value_offsets: [501, 502, 503, 504],
                 instances: None,
                 instance_search_cap: None,
+                directions: Vec::new(),
             },
         )
         .unwrap();
@@ -1424,6 +1425,7 @@ fn rectangular_instance_fixture() -> (
                 value_offsets: [501, 502, 503, 504],
                 instances: None,
                 instance_search_cap: None,
+                directions: Vec::new(),
             },
         )
         .unwrap();
@@ -1566,4 +1568,87 @@ fn rectangular_pattern_aggregate_search_span_caps_the_search() {
         super::InstanceSearch::Capped(RectangularPatternSearchCap::ScannedBytes),
         "instances past the aggregate span ceiling stay unresolved"
     );
+}
+
+fn rectangular_pattern_direction_frame(selection_kind: u32, displacement: [f64; 3]) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    indexed_header(&mut bytes, *b"439", 20);
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&selection_kind.to_le_bytes());
+    for value in [-2.0, 1.0, 0.5].into_iter().chain(displacement) {
+        bytes.extend_from_slice(&f64::to_le_bytes(value));
+    }
+    bytes.extend_from_slice(&[0; 16]);
+    bytes.extend_from_slice(&8u32.to_le_bytes());
+    for _ in 0..3 {
+        bytes.extend_from_slice(&f64::to_le_bytes(-1.0));
+    }
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    push_marked_reference(&mut bytes, 23);
+    bytes.extend_from_slice(&[0; 2]);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    push_marked_reference(&mut bytes, 40);
+    bytes.extend_from_slice(&0x0000_0004_0000_0000u64.to_le_bytes());
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&245u32.to_le_bytes());
+    bytes.extend_from_slice(&f64::to_le_bytes(1.5e-5));
+    bytes.extend_from_slice(&245u32.to_le_bytes());
+    push_marked_reference(&mut bytes, 22);
+    bytes.push(1);
+    bytes.extend_from_slice(&[0; 2]);
+    push_marked_reference(&mut bytes, 21);
+    bytes.push(0);
+    push_marked_reference(&mut bytes, 10);
+    assert_eq!(bytes.len(), 220);
+    indexed_header(&mut bytes, *b"263", 20);
+    bytes
+}
+
+#[test]
+fn rectangular_pattern_direction_record_stores_origin_and_displacement() {
+    let bytes = rectangular_pattern_direction_frame(8, [0.0, -2.5, 0.0]);
+    let direction = super::exact_rectangular_pattern_direction(&bytes, 0, 220, 20, 23, 10)
+        .expect("direction record");
+    assert_eq!(direction.record_index, 20);
+    assert_eq!(direction.selection_record_index, 23);
+    assert_eq!(direction.selection_kind, 8);
+    assert_eq!(
+        direction.origin,
+        crate::test_support::reals([-2.0, 1.0, 0.5])
+    );
+    assert_eq!(direction.origin_offset, 25);
+    assert_eq!(
+        direction.displacement,
+        crate::test_support::reals([0.0, -2.5, 0.0])
+    );
+    assert_eq!(direction.displacement_offset, 49);
+    assert_eq!(
+        direction.direction(),
+        cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::new(0.0, -1.0, 0.0))
+    );
+
+    let unit = rectangular_pattern_direction_frame(16, [1.0, 0.0, 0.0]);
+    assert_eq!(
+        super::exact_rectangular_pattern_direction(&unit, 0, 220, 20, 23, 10)
+            .map(|direction| direction.selection_kind),
+        Some(16)
+    );
+}
+
+#[test]
+fn rectangular_pattern_direction_record_refuses_a_foreign_frame() {
+    let parse =
+        |bytes: &[u8]| super::exact_rectangular_pattern_direction(bytes, 0, 220, 20, 23, 10);
+    assert!(parse(&rectangular_pattern_direction_frame(9, [1.0, 0.0, 0.0])).is_none());
+    assert!(parse(&rectangular_pattern_direction_frame(8, [0.0, 0.0, 0.0])).is_none());
+    let bytes = rectangular_pattern_direction_frame(8, [1.0, 0.0, 0.0]);
+    assert!(super::exact_rectangular_pattern_direction(&bytes, 0, 220, 20, 24, 10).is_none());
+    assert!(super::exact_rectangular_pattern_direction(&bytes, 0, 220, 20, 23, 11).is_none());
+    assert!(super::exact_rectangular_pattern_direction(&bytes, 0, 195, 20, 23, 10).is_none());
+    let mut flag = bytes.clone();
+    flag[194] = 0;
+    assert!(parse(&flag).is_none());
+    let mut negative_one = bytes;
+    negative_one[100] = 0;
+    assert!(parse(&negative_one).is_none());
 }
