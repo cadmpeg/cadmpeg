@@ -1,0 +1,870 @@
+# SPDX-License-Identifier: Apache-2.0
+# Machine-readable record layouts for the Creo View `.pvz` package.
+schema = 1
+format = "creo_view_pvz"
+spec = "docs/formats/creo_view_pvz.md"
+endianness = "little"
+note = """
+The PVS member is a fixed header, a stream directory, and GZIP streams whose
+expanded bytes use a variable-width element grammar (§3.4). Only the header and
+the fixed head of a directory entry have fixed offsets. The OL member is a
+fixed header, a directory of 8-byte entries, an optional 19-byte preamble
+block, and GZIP streams of TLV records. The exact-geometry records use a scalar
+width selected by the stream identity (§8.1); records whose layout depends on
+that width are tabled once per width.
+"""
+
+# --- §3 PVS structure member -----------------------------------------------
+
+[[record]]
+name = "pvs_header"
+kind = "byte"
+section = "3.1"
+anchor = "The binary header is 18 bytes."
+size = 18
+
+[[record.field]]
+name = "signature"
+offset = 0
+type = "bytes[10]"
+source = "spec"
+anchor = "| 0 | 10 | `signature` |"
+
+[[record.field]]
+name = "first_stream_offset"
+offset = 10
+type = "u32"
+source = "spec"
+anchor = "| 10 | 4 | `first_stream_offset` |"
+
+[[record.field]]
+name = "stream_count"
+offset = 14
+type = "u32"
+source = "spec"
+anchor = "| 14 | 4 | `stream_count` |"
+
+[[record]]
+name = "pvs_stream_entry_head"
+kind = "byte"
+section = "3.2"
+anchor = "The stream directory starts at offset 18 and holds `stream_count` entries without padding."
+size = 3
+note = "Fixed head only. `name_length` name bytes follow at +3, then the `u32` stored length."
+
+[[record.field]]
+name = "stream_type"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "| 0 | 1 | `stream_type` |"
+
+[[record.field]]
+name = "codec"
+offset = 1
+type = "u8"
+source = "spec"
+anchor = "| 1 | 1 | `codec` | Stream encoding. Value 1 is GZIP. |"
+value = 1
+
+[[record.field]]
+name = "name_length"
+offset = 2
+type = "u8"
+source = "spec"
+anchor = "| 2 | 1 | `name_length` |"
+
+[[token]]
+tag = "0x02"
+name = "DESC_U8_LENGTH"
+note = "Element descriptor: one-byte length, no type, no children."
+section = "3.4"
+anchor = "| `0x02` | `u8` | none | no |"
+
+[[token]]
+tag = "0x04"
+name = "DESC_U16_LENGTH"
+note = "Element descriptor: two-byte length, no type, no children."
+section = "3.4"
+anchor = "| `0x04` | `u16` | none | no |"
+
+[[token]]
+tag = "0x12"
+name = "DESC_U8_LENGTH_U8_TYPE"
+note = "Element descriptor: one-byte length, one-byte type, no children."
+section = "3.4"
+anchor = "| `0x12` | `u8` | `u8` | no |"
+
+[[token]]
+tag = "0x22"
+name = "DESC_U8_LENGTH_U16_TYPE"
+note = "Element descriptor: one-byte length, two-byte type, no children."
+section = "3.4"
+anchor = "| `0x22` | `u8` | `u16` | no |"
+
+[[token]]
+tag = "0x80"
+name = "DESC_CHILDREN"
+note = "Element descriptor: no length, no type, child list."
+section = "3.4"
+anchor = "| `0x80` | none (length 0) | none | yes |"
+
+[[token]]
+tag = "0x82"
+name = "DESC_U8_LENGTH_CHILDREN"
+note = "Element descriptor: one-byte length, no type, child list."
+section = "3.4"
+anchor = "| `0x82` | `u8` | none | yes |"
+
+[[token]]
+tag = "0x92"
+name = "DESC_U8_LENGTH_U8_TYPE_CHILDREN"
+note = "Element descriptor: one-byte length, one-byte type, child list."
+section = "3.4"
+anchor = "| `0x92` | `u8` | `u8` | yes |"
+
+# --- §4 OL container -------------------------------------------------------
+
+[[record]]
+name = "ol_header"
+kind = "byte"
+section = "4.1"
+anchor = "| 0 | 10 | `signature` | ASCII `DIV-OL08BL` or `DIV-OL09BL`. |"
+size = 22
+
+[[record.field]]
+name = "signature"
+offset = 0
+type = "bytes[10]"
+source = "spec"
+anchor = "| 0 | 10 | `signature` |"
+
+[[record.field]]
+name = "version"
+offset = 10
+type = "u32"
+source = "spec"
+anchor = "| 10 | 4 | `version` | `u32`. Value 1. |"
+value = 1
+
+[[record.field]]
+name = "directory_length"
+offset = 14
+type = "u32"
+source = "spec"
+anchor = "| 14 | 4 | `directory_length` |"
+
+[[record.field]]
+name = "entry_count"
+offset = 18
+type = "u32"
+source = "spec"
+anchor = "| 18 | 4 | `entry_count` |"
+
+[[record]]
+name = "ol_directory_entry"
+kind = "byte"
+section = "4.2"
+anchor = "The directory starts at offset 22 and holds `entry_count` entries of 8 bytes."
+size = 8
+
+[[record.field]]
+name = "stream_id"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "| 0 | 4 | `stream_id` |"
+
+[[record.field]]
+name = "offset"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "| 4 | 4 | `offset` |"
+
+[[record]]
+name = "ol_preamble_block"
+kind = "byte"
+section = "4.3"
+anchor = "A 19-byte gap holds the preamble block:"
+size = 19
+
+[[record.field]]
+name = "tag"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "| 0 | 4 | `tag` | `u32` `0x010000d4`. |"
+value = 0x010000d4
+
+[[record.field]]
+name = "word"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "| 4 | 4 | `word` | `u32` 2 or 3. |"
+
+[[record.field]]
+name = "byte_0"
+offset = 8
+type = "u8"
+source = "spec"
+anchor = "| 8 | 1 | `byte_0` | `0x03`. |"
+value = 3
+
+[[record.field]]
+name = "generation"
+offset = 9
+type = "u8"
+source = "spec"
+anchor = "| 9 | 1 | `generation` |"
+
+[[record.field]]
+name = "byte_2"
+offset = 10
+type = "u8"
+source = "spec"
+anchor = "| 10 | 1 | `byte_2` |"
+
+[[record.field]]
+name = "reserved"
+offset = 11
+type = "bytes[8]"
+source = "spec"
+anchor = "| 11 | 8 | `reserved` | Zero bytes. |"
+value = [0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record]]
+name = "tlv_header"
+kind = "byte"
+section = "4.4"
+anchor = "Each expanded stream payload is a sequence of TLV records that fills it exactly:"
+size = 8
+note = "`length` payload bytes follow at +8."
+
+[[record.field]]
+name = "tag"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "| 0 | 4 | `tag` (`u32`) |"
+
+[[record.field]]
+name = "length"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "| 4 | 4 | `length` (`u32`) |"
+
+[[token]]
+tag = "0x01000000"
+name = "STREAM_ATTRIBUTES"
+note = "OL stream identity: attributes and appearances."
+section = "4.5"
+anchor = "| `0x01000000` | Attributes and appearances | §5 |"
+
+[[token]]
+tag = "0x01000001"
+name = "STREAM_SURFACE_TESSELLATION"
+note = "OL stream identity: surface tessellation."
+section = "4.5"
+anchor = "| `0x01000001` | Surface tessellation | §6 |"
+
+[[token]]
+tag = "0x01000002"
+name = "STREAM_EDGE_TESSELLATION"
+note = "OL stream identity: edge tessellation. The same value is the tag of the stream index record at the start of every stream."
+section = "4.5"
+anchor = "| `0x01000002` | Edge tessellation | §7 |"
+
+[[token]]
+tag = "0x01000003"
+name = "STREAM_EXACT_F32"
+note = "OL stream identity: exact geometry, version 3, f32 scalars."
+section = "4.5"
+anchor = "| `0x01000003` | Exact geometry, `f32` scalars | §8 |"
+
+[[token]]
+tag = "0x01000004"
+name = "STREAM_EXACT_F64"
+note = "OL stream identity: exact geometry, version 4, f64 scalars."
+section = "4.5"
+anchor = "| `0x01000004` | Exact geometry, `f64` scalars | §8 |"
+
+[[token]]
+tag = "0x00ffffff"
+name = "STREAM_END_SENTINEL"
+note = "OL directory end sentinel; its offset equals the file length."
+section = "4.5"
+anchor = "| `0x00ffffff` | End sentinel | §4.2 |"
+
+# --- §5 Attribute stream ---------------------------------------------------
+
+[[record]]
+name = "appearance_values"
+kind = "byte"
+section = "5.1"
+anchor = "Tag 5 with a 56-byte payload holds 14 `f32` values:"
+size = 56
+
+[[record.field]]
+name = "base_rgb"
+offset = 0
+type = "f32[3]"
+source = "spec"
+anchor = "| 0–2 | Base colour RGB. |"
+
+[[record.field]]
+name = "diffuse_rgb"
+offset = 12
+type = "f32[3]"
+source = "spec"
+anchor = "| 3–5 | Diffuse RGB. |"
+
+[[record.field]]
+name = "specular_rgb"
+offset = 24
+type = "f32[3]"
+source = "spec"
+anchor = "| 6–8 | Specular RGB. |"
+
+[[record.field]]
+name = "shininess"
+offset = 36
+type = "f32"
+source = "spec"
+anchor = "| 9 | Shininess exponent. |"
+
+[[record.field]]
+name = "emissive_rgb"
+offset = 40
+type = "f32[3]"
+source = "spec"
+anchor = "| 10–12 | Emissive RGB. |"
+
+[[record.field]]
+name = "opacity"
+offset = 52
+type = "f32"
+source = "spec"
+anchor = "| 13 | Opacity, 1 for opaque. |"
+
+[[record]]
+name = "appearance_reference"
+kind = "slot"
+section = "5.2"
+anchor = "Tag 7 holds an appearance reference:"
+note = "u32 name_length, name bytes, u32 base_index at 4 + name_length, then a 17-byte tail."
+
+[[record.field]]
+name = "name_length"
+type = "u32"
+source = "spec"
+anchor = "| 0 | 4 | `name_length` (`u32`) |"
+
+[[record.field]]
+name = "name"
+type = "cstring"
+source = "spec"
+anchor = "`name`: NUL-terminated bytes, padded with NUL to `name_length`."
+
+[[record.field]]
+name = "base_index"
+type = "u32"
+source = "spec"
+anchor = "| 4 + `name_length` | 4 | `base_index` (`u32`) |"
+
+[[record.field]]
+name = "tail"
+type = "bytes[17]"
+source = "spec"
+anchor = "| 8 + `name_length` | 17 | `tail` |"
+
+[[token]]
+tag = "0x05"
+name = "ATTR_APPEARANCE_VALUES"
+payload_bytes = 56
+note = "Attribute stream: 14 f32 appearance values."
+section = "5.1"
+anchor = "Tag 5 with a 56-byte payload holds 14 `f32` values:"
+
+[[token]]
+tag = "0x07"
+name = "ATTR_APPEARANCE_REFERENCE"
+note = "Attribute stream: appearance table entry."
+section = "5.2"
+anchor = "Tag 7 holds an appearance reference:"
+
+# --- §6 Surface tessellation -----------------------------------------------
+
+[[record]]
+name = "patch_header_head"
+kind = "byte"
+section = "6.2"
+anchor = "Tag `0x0100000d`:"
+size = 13
+note = "`ref_count` u32 values follow at +13; the payload length is 13 + 4 × ref_count."
+
+[[record.field]]
+name = "appearance"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "| 0 | 4 | `appearance` |"
+
+[[record.field]]
+name = "face_ref"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "| 4 | 4 | `face_ref` |"
+
+[[record.field]]
+name = "flag"
+offset = 8
+type = "u8"
+source = "spec"
+anchor = "| 8 | 1 | `flag` | 0 or 1. |"
+
+[[record.field]]
+name = "ref_count"
+offset = 9
+type = "u32"
+source = "spec"
+anchor = "| 9 | 4 | `ref_count` |"
+
+[[record]]
+name = "vertex_block_head"
+kind = "byte"
+section = "6.3"
+anchor = "Tag `0x01000016` holds a vertex array in the definition coordinate system:"
+size = 5
+note = "vertex_count vertices follow at +5 with the stride the layout byte selects (12, 24, or 32)."
+
+[[record.field]]
+name = "layout"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "| 0 | 1 | `layout` |"
+
+[[record.field]]
+name = "vertex_count"
+offset = 1
+type = "u32"
+source = "spec"
+anchor = "| 1 | 4 | `vertex_count` (`u32`) |"
+
+[[token]]
+tag = "0x0100000d"
+name = "TESS_PATCH_HEADER"
+note = "Surface tessellation: patch header."
+section = "6.2"
+anchor = "Tag `0x0100000d`:"
+
+[[token]]
+tag = "0x01000016"
+name = "TESS_VERTEX_BLOCK"
+note = "Tessellation: vertex block."
+section = "6.3"
+anchor = "Tag `0x01000016` holds a vertex array in the definition coordinate system:"
+
+[[token]]
+tag = "0x19"
+name = "TESS_TRIANGLE_FAN"
+note = "Triangle fan of u32 indexes."
+section = "6.4"
+anchor = "| `0x19` | Fan |"
+
+[[token]]
+tag = "0x1a"
+name = "TESS_TRIANGLE_STRIP"
+note = "Triangle strip of u32 indexes."
+section = "6.4"
+anchor = "| `0x1a` | Strip |"
+
+[[token]]
+tag = "0x1b"
+name = "TESS_TRIANGLE_LIST"
+note = "Triangle list of u32 indexes."
+section = "6.4"
+anchor = "| `0x1b` | List |"
+
+# --- §7 Edge tessellation --------------------------------------------------
+
+[[record]]
+name = "edge_tessellation_header"
+kind = "byte"
+section = "7.2"
+anchor = "Each edge group begins with an edge header (tag `0x01000012`, 12 bytes):"
+size = 12
+
+[[record.field]]
+name = "edge_index"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "| 0 | 4 | `edge_index` |"
+
+[[record.field]]
+name = "word"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "| 4 | 4 | `word` | `u32`. |"
+
+[[record.field]]
+name = "value"
+offset = 8
+type = "f32"
+source = "spec"
+anchor = "| 8 | 4 | `value` | `f32`. |"
+
+[[token]]
+tag = "0x0100000f"
+name = "EDGE_TESS_INDEX_TABLE"
+note = "Edge tessellation: u32 count and u32 values."
+section = "7.1"
+anchor = "tag `0x0100000f` holds a `u32` count `n` followed by `n` `u32` values."
+
+[[token]]
+tag = "0x1c"
+name = "TESS_LINE_STRIP"
+note = "Line strip of u32 indexes."
+section = "7.2"
+anchor = "| `0x1c` | Line strip |"
+
+[[token]]
+tag = "0x1d"
+name = "TESS_LINE_SEGMENTS"
+note = "Line segments as u32 index pairs."
+section = "7.2"
+anchor = "| `0x1d` | Line segments |"
+
+# --- §8 Exact geometry -----------------------------------------------------
+
+[[token]]
+tag = "0x13"
+name = "EXACT_SURFACE"
+note = "Exact stream: supporting surface; starts a face."
+section = "8.2"
+anchor = "| `0x13` | Supporting surface; starts a face |"
+
+[[token]]
+tag = "0x01000010"
+name = "EXACT_LOOP"
+payload_bytes = 4
+note = "Exact stream: loop record with an i32 marker."
+section = "8.2"
+anchor = "| `0x01000010` | Loop |"
+
+[[token]]
+tag = "0x11"
+name = "EXACT_COEDGE"
+payload_bytes = 13
+note = "Exact stream: coedge record."
+section = "8.2"
+anchor = "| `0x11` | Coedge |"
+
+[[token]]
+tag = "0x01000012"
+name = "EXACT_SINGULAR_USE"
+note = "Exact stream: singular edge use; 4 + 2w bytes."
+section = "8.2"
+anchor = "| `0x01000012` | Singular edge use |"
+
+[[token]]
+tag = "0x14"
+name = "EXACT_EDGE_CURVE"
+note = "Exact stream: 3D edge curve."
+section = "8.2"
+anchor = "| `0x14` | Edge curve |"
+
+[[token]]
+tag = "0x15"
+name = "EXACT_PCURVE"
+note = "Exact stream: 2D pcurve."
+section = "8.2"
+anchor = "| `0x15` | Pcurve |"
+
+[[record]]
+name = "surface_record_head"
+kind = "byte"
+section = "8.3"
+anchor = "Every surface record begins with three bytes:"
+size = 3
+
+[[record.field]]
+name = "surface_type"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "| 0 | 1 | `surface_type` |"
+
+[[record.field]]
+name = "flags"
+offset = 1
+type = "u8"
+source = "spec"
+anchor = "| 1 | 1 | `flags` |"
+
+[[record.field]]
+name = "marker"
+offset = 2
+type = "u8"
+source = "spec"
+anchor = "| 2 | 1 | `marker` |"
+
+[[record]]
+name = "bspline_surface_head"
+kind = "byte"
+section = "8.9"
+anchor = "The fixed head continues with the body:"
+size = 12
+note = "u_knot_count scalar knots follow at +12."
+
+[[record.field]]
+name = "surface_type"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "| 0 | 1 | `surface_type` = 4 |"
+value = 4
+
+[[record.field]]
+name = "flags"
+offset = 1
+type = "u8"
+source = "spec"
+anchor = "| 1 | 1 | `flags` |"
+
+[[record.field]]
+name = "marker"
+offset = 2
+type = "u8"
+source = "spec"
+anchor = "| 2 | 1 | `marker` |"
+
+[[record.field]]
+name = "rational"
+offset = 3
+type = "u8"
+source = "spec"
+anchor = "| 3 | 1 | `rational`: 0 or 1 |"
+
+[[record.field]]
+name = "u_order"
+offset = 4
+type = "u32"
+source = "derived"
+anchor = "u_order:u32 u_knot_count:u32 u_knots:scalar[u_knot_count]"
+note = "The body begins after the four head bytes."
+
+[[record.field]]
+name = "u_knot_count"
+offset = 8
+type = "u32"
+source = "derived"
+anchor = "u_order:u32 u_knot_count:u32 u_knots:scalar[u_knot_count]"
+note = "Follows the four-byte u_order."
+
+[[record]]
+name = "loop_record"
+kind = "byte"
+section = "8.11"
+anchor = "Tag `0x01000010` has a 4-byte payload `marker` (`i32`)."
+size = 4
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "i32"
+source = "spec"
+anchor = "has a 4-byte payload `marker` (`i32`)"
+
+[[record]]
+name = "coedge_record"
+kind = "byte"
+section = "8.12"
+anchor = "Tag `0x11` has a 13-byte payload:"
+size = 13
+
+[[record.field]]
+name = "edge"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "| 0 | 4 | `edge` |"
+
+[[record.field]]
+name = "orientation"
+offset = 4
+type = "u8"
+source = "spec"
+anchor = "| 4 | 1 | `orientation` | 0 or 1. |"
+
+[[record.field]]
+name = "pcurve"
+offset = 5
+type = "u32"
+source = "spec"
+anchor = "| 5 | 4 | `pcurve` |"
+
+[[record.field]]
+name = "pcurve_secondary"
+offset = 9
+type = "u32"
+source = "spec"
+anchor = "| 9 | 4 | `pcurve_secondary` |"
+
+[[record]]
+name = "singular_use_f32"
+kind = "byte"
+section = "8.13"
+anchor = "Tag `0x01000012` belongs to the current face:"
+size = 12
+note = "Exact version 3 (w = 4)."
+
+[[record.field]]
+name = "edge"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "| 0 | 4 | `edge` (`u32`) |"
+
+[[record.field]]
+name = "t_start"
+offset = 4
+type = "f32"
+source = "derived"
+anchor = "| 4 | `w` | `t_start` (`scalar`) |"
+note = "Scalar width w = 4 for exact version 3 (§8.1)."
+
+[[record.field]]
+name = "t_end"
+offset = 8
+type = "f32"
+source = "derived"
+anchor = "| 4 + `w` | `w` | `t_end` (`scalar`) |"
+note = "Offset 4 + w with w = 4."
+
+[[record]]
+name = "singular_use_f64"
+kind = "byte"
+section = "8.13"
+anchor = "Tag `0x01000012` belongs to the current face:"
+size = 20
+note = "Exact version 4 (w = 8)."
+
+[[record.field]]
+name = "edge"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "| 0 | 4 | `edge` (`u32`) |"
+
+[[record.field]]
+name = "t_start"
+offset = 4
+type = "f64"
+source = "derived"
+anchor = "| 4 | `w` | `t_start` (`scalar`) |"
+note = "Scalar width w = 8 for exact version 4 (§8.1)."
+
+[[record.field]]
+name = "t_end"
+offset = 12
+type = "f64"
+source = "derived"
+anchor = "| 4 + `w` | `w` | `t_end` (`scalar`) |"
+note = "Offset 4 + w with w = 8."
+
+[[record]]
+name = "bspline_curve_head"
+kind = "byte"
+section = "8.15"
+anchor = "| 6 | Rational B-spline | `rational:u8`, `order:u32`, `knot_count:u32`"
+size = 11
+note = "knot_count scalar knots follow at +11. The same head opens a B-spline pcurve (§8.16)."
+
+[[record.field]]
+name = "curve_type"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "Every edge curve record begins with `curve_type` (`u8`) and `flags` (`u8`)"
+value = 6
+
+[[record.field]]
+name = "flags"
+offset = 1
+type = "u8"
+source = "spec"
+anchor = "Every edge curve record begins with `curve_type` (`u8`) and `flags` (`u8`)"
+
+[[record.field]]
+name = "rational"
+offset = 2
+type = "u8"
+source = "derived"
+anchor = "`rational:u8`, `order:u32`, `knot_count:u32`"
+note = "First field after the two head bytes."
+
+[[record.field]]
+name = "order"
+offset = 3
+type = "u32"
+source = "derived"
+anchor = "`rational:u8`, `order:u32`, `knot_count:u32`"
+note = "Follows the one-byte rational flag."
+
+[[record.field]]
+name = "knot_count"
+offset = 7
+type = "u32"
+source = "derived"
+anchor = "`rational:u8`, `order:u32`, `knot_count:u32`"
+note = "Follows the four-byte order."
+
+[[record]]
+name = "polyline_head"
+kind = "byte"
+section = "8.15"
+anchor = "| 7 | Polyline | `count:u32`, `points:scalar[count × 3]`, `00` |"
+size = 6
+note = "count points of three scalars follow at +6, then one 0x00 byte. A polyline pcurve (§8.16) uses the same head with two scalars per point."
+
+[[record.field]]
+name = "curve_type"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "Every edge curve record begins with `curve_type` (`u8`) and `flags` (`u8`)"
+value = 7
+
+[[record.field]]
+name = "flags"
+offset = 1
+type = "u8"
+source = "spec"
+anchor = "Every edge curve record begins with `curve_type` (`u8`) and `flags` (`u8`)"
+
+[[record.field]]
+name = "count"
+offset = 2
+type = "u32"
+source = "derived"
+anchor = "| 7 | Polyline | `count:u32`"
+note = "First field after the two head bytes."
+
+[[not_applicable]]
+area = "PVS element streams"
+reason = "Variable-width elements: the descriptor selects the length and type widths, payloads hold ULEB128 atoms, and child lists nest."
+section = "3.4"
+anchor = "All expanded PVS streams use one element grammar."
+
+[[not_applicable]]
+area = "Analytic surface, conic, and line records"
+reason = "Scalar width depends on the exact version, and range pairs depend on flag bits; the field order is a sequence of scalars."
+section = "8.3"
+anchor = "An analytic surface record (types 1, 2, 5, 8, 9) is:"
