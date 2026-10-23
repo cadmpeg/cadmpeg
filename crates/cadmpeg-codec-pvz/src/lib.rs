@@ -13,7 +13,7 @@
 //! crate is read-only.
 //!
 //! <!-- generated: capability pvz -->
-//! Support: L1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#creo-view-pvz)).
+//! Support: L2 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#creo-view-pvz)).
 //! <!-- /generated: capability pvz -->
 //!
 //! # Quick start

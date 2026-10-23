@@ -225,7 +225,10 @@ fn exact_geometry(
         Ok(body) => {
             ir.model.extend_rewritten(model, &mut Unchanged)?;
             annotations.append(builder.build())?;
-            losses.append(&mut notes);
+            losses.extend(notes.into_iter().map(|mut note| {
+                note.message = format!("geometry member {name:?}: {}", note.message);
+                note
+            }));
             Ok(body)
         }
         Err(error @ CodecError::ResourceLimit(_)) => Err(error),

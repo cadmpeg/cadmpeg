@@ -57,7 +57,7 @@ edit without a re-render fails the gate.
 | Siemens NX `.prt`                                 | L1    |
 | CATIA V5 `.CATPart`                               | L3    |
 | Creo Parametric `.prt`                            | L1    |
-| Creo View `.pvz`                                  | L1    |
+| Creo View `.pvz`                                  | L2    |
 | STEP Part 21                                      | L8    |
 
 <!-- /generated: ladder-table -->
@@ -498,7 +498,7 @@ See [`formats/creo_prt.md`](formats/creo_prt.md) and [`formats/creo_prt-open-ite
 
 <!-- generated: dialects pvz -->
 
-**Ladder: L1.**
+**Ladder: L2.**
 
 | Dialect        | Read                   | Write |
 | -------------- | ---------------------- | ----- |
@@ -511,7 +511,7 @@ See [`formats/creo_prt.md`](formats/creo_prt.md) and [`formats/creo_prt-open-ite
 
 <!-- /generated: dialects pvz -->
 
-The codec opens the ZIP framing, the `.pvs` stream directory, and the `.ol` stream directory, expands each GZIP stream under the decode caps and checks its CRC-32, classifies the package from the `.pvs` signature, and decodes product structure, exact B-rep, and tessellation. Every undecoded record family is named by a loss. No committed real file exercises the level: the code-built golden packages cover every structure signature.
+The codec opens the ZIP framing, the `.pvs` stream directory, and the `.ol` stream directory, expands each GZIP stream under the decode caps and checks its CRC-32, classifies the package from the `.pvs` signature, and decodes product structure, exact B-rep, and tessellation. Every undecoded record family is named by a loss. L2 holds: exact faces carry placed analytic and B-spline carriers, and edges carry curves, in millimetres. L3 does not yet hold across the band. The connected B-rep passes structural validation without errors, but some streams resolve every face into its own shell, some faces disagree with their loop winding, and some coedge pcurves miss their edge curves, so area and volume are unavailable for those bodies. No committed real file exercises the level: the code-built golden packages cover every structure signature and both exact-stream scalar widths.
 
 ### Read profile
 
