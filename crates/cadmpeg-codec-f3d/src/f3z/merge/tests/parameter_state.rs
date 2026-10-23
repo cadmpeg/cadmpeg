@@ -26,7 +26,6 @@ fn occurrence_merge_keeps_parameter_state_links_local_without_rewriting_paramete
         record_index: 702,
         control: 1,
         control_word: 1,
-        state: state.id.clone(),
     };
     let header = DesignParameterDocumentHeader {
         id: state.document_root.clone(),
@@ -117,7 +116,10 @@ fn occurrence_merge_keeps_parameter_state_links_local_without_rewriting_paramete
             format!("f3d:xref/{occurrence}/Design1:design-parameter-state#21")
         );
         assert_eq!(states[index].companion, companions[index].id);
-        assert_eq!(companions[index].state, states[index].id);
+        assert_eq!(
+            companions[index].id,
+            format!("f3d:xref/{occurrence}/Design1:design-parameter-state-companion#82")
+        );
         assert_eq!(states[index].document_root, headers[index].id);
         let wire = serde_json::to_value(&parameters[index]).expect("parameter wire");
         assert_eq!(wire["parameter_state"], states[index].id);

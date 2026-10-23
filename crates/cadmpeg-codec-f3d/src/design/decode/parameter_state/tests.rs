@@ -128,7 +128,6 @@ fn state_records_keep_actual_nonconstant_links_and_only_owned_reads() {
     assert_eq!(states[0].record_index, 401);
     assert_eq!(companions[0].record_index, 702);
     assert_eq!(states[0].companion, companions[0].id);
-    assert_eq!(companions[0].state, states[0].id);
     assert_eq!((companions[0].control, companions[0].control_word), (1, 1));
     let captures = ctx.take_record_captures().expect("capture drain");
     let ranges = |id: &str| {

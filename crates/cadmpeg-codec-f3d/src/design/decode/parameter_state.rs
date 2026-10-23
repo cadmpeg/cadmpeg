@@ -376,7 +376,9 @@ fn decode_stream(
                         },
                     )?;
                 } else {
-                    let (class_tag, record_index, control, control_word, other) =
+                    // `validate_pair` proves the state link reciprocal; the
+                    // companion holds no reference back to its state.
+                    let (class_tag, record_index, control, control_word, _) =
                         companion(view, frame)?;
                     stage.insert_native(
                         ctx,
@@ -387,7 +389,6 @@ fn decode_stream(
                             record_index,
                             control,
                             control_word,
-                            state: identity(stream, target(frames, other, STATE_GUID, 4)?),
                         },
                     )?;
                 }

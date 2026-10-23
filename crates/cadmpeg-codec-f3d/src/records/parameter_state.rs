@@ -40,8 +40,6 @@ pub(crate) struct DesignParameterStateCompanion {
     pub(crate) control: u8,
     /// State-control word.
     pub(crate) control_word: u32,
-    /// Required reciprocal parameter state.
-    pub(crate) state: String,
 }
 
 /// Indexed header of the Fusion document root; its members are separate content.
@@ -84,5 +82,5 @@ macro_rules! state_identity {
     };
 }
 state_identity!(DesignParameterState; companion, document_root);
-state_identity!(DesignParameterStateCompanion; state);
+rewrite_native_identity_record!(DesignParameterStateCompanion;);
 rewrite_native_identity_record!(DesignParameterDocumentHeader;);
