@@ -17,7 +17,10 @@ use crate::SldprtCodec;
 const MEMBER: &str = "Contents/Config-0-ResolvedFeatures";
 
 fn shared_member() -> (EditableDecodeResult, Vec<u8>) {
-    let mut payload = resolved_features_payload(&[0]);
+    shared_member_with_payload(resolved_features_payload(&[0]))
+}
+
+fn shared_member_with_payload(mut payload: Vec<u8>) -> (EditableDecodeResult, Vec<u8>) {
     payload.extend(b"moBBoxCenterData_c");
     payload.extend(1u32.to_le_bytes());
     for value in [0.01f64, 0.02, -0.03, 0.04] {
@@ -433,4 +436,89 @@ fn source_unit_code_uses_its_separate_units_route() {
             .collect::<Vec<_>>(),
         vec![MEMBER]
     );
+}
+
+#[test]
+fn legacy_marker_metadata_edits_preserve_the_complete_marker_bytes() {
+    for prefix in [
+        [0xff, 0xff, 0x07, 0x00, 0x01],
+        [0xff, 0xff, 0x1f, 0x00, 0x01],
+    ] {
+        let mut payload = resolved_features_payload(&[0]);
+        let offset = payload
+            .windows(5)
+            .position(|bytes| bytes == [0xff, 0xff, 0x1f, 0x00, 0x03])
+            .unwrap();
+        payload[offset..offset + 5].copy_from_slice(&prefix);
+        let (mut decoded, original) = shared_member_with_payload(payload);
+        let native = sldprt_native(decoded.ir());
+        let lane = &native.feature_input_lanes[0];
+        assert_eq!(lane.sketch_entities.len(), 1);
+        assert_eq!(
+            crate::writer::resolved_feature_payload(lane, &native.feature_histories, &[]).unwrap(),
+            original
+        );
+        edit_radius(&mut decoded.ir_mut());
+        let mut written = Vec::new();
+        crate::test_support::plan_inherited_write(
+            decoded.ir(),
+            decoded.source_fidelity(),
+            &mut written,
+        )
+        .unwrap();
+        let scan = crate::test_support::container::scan(&written);
+        let members: Vec<_> = scan
+            .blocks
+            .iter()
+            .filter(|block| block.section.name() == Some(MEMBER))
+            .collect();
+        assert_eq!(members.len(), 1);
+        let mut expected = original;
+        let start = expected.len() - 8;
+        expected[start..].copy_from_slice(&0.041f64.to_le_bytes());
+        assert_eq!(members[0].payload, expected);
+        let readback = SldprtCodec
+            .decode(&mut Cursor::new(written), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(readback.ir().model.vertices.len(), 3);
+        assert_eq!(
+            sldprt_native(readback.ir()).feature_input_lanes[0]
+                .sketch_entities
+                .len(),
+            1
+        );
+    }
+}
+
+#[test]
+fn marker_replay_requires_reparsed_membership_identity_and_values() {
+    let mut payload = resolved_features_payload(&[0]);
+    let offset = payload
+        .windows(5)
+        .position(|bytes| bytes == [0xff, 0xff, 0x1f, 0x00, 0x03])
+        .unwrap();
+    payload[offset + 4] = 1;
+    let (decoded, _) = shared_member_with_payload(payload);
+    let native = sldprt_native(decoded.ir());
+    let lane = &native.feature_input_lanes[0];
+    assert_eq!(lane.sketch_entities.len(), 1);
+    for mutation in 0..4 {
+        let mut changed = lane.clone();
+        match mutation {
+            0 => {
+                changed.sketch_entities.clear();
+            }
+            1 => changed.sketch_entities[0].set_test_id("forged-marker"),
+            2 => changed.sketch_entities[0].set_test_parent("forged-lane"),
+            _ => {
+                changed.sketch_entities[0].state_value =
+                    Some(cadmpeg_ir::scalar::FiniteReal::new(97.0).unwrap())
+            }
+        }
+        assert!(
+            crate::writer::resolved_feature_payload(&changed, &native.feature_histories, &[])
+                .is_err(),
+            "mutation {mutation}"
+        );
+    }
 }

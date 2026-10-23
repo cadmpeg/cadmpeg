@@ -1470,6 +1470,12 @@ fn resolved_feature_payload(
         )));
     }
     let mut expected_lane = lane.clone();
+    // Reconstruct marker identities from bytes before binding history ownership.
+    // Cloning the supplied markers would make the comparison below circular.
+    expected_lane.sketch_entities = crate::resolved_features::markers::admit_sketch_input_entities(
+        &lane.native_payload,
+        &lane.id,
+    )?;
     expected_lane.scalars = crate::resolved_features::scalars::named_scalars(
         &lane.native_payload,
         &lane.id,
@@ -1517,22 +1523,43 @@ fn resolved_feature_payload(
             lane.id
         )));
     }
+    if lane.sketch_entities.len() != expected_lane.sketch_entities.len() {
+        return Err(CodecError::NotImplemented(format!(
+            "feature-input lane {} has edited marker membership",
+            lane.id
+        )));
+    }
     for (entity, expected_entity) in lane
         .sketch_entities
         .iter()
         .zip(&expected_lane.sketch_entities)
     {
-        if entity.feature_ref != expected_entity.feature_ref
+        if entity.id() != expected_entity.id()
+            || entity.parent() != expected_entity.parent()
+            || entity.ordinal() != expected_entity.ordinal()
+            || entity.offset() != expected_entity.offset()
+            || entity.object_index() != expected_entity.object_index()
+            || entity.local_id() != expected_entity.local_id()
+            || entity.feature_ref != expected_entity.feature_ref
             || entity.links != expected_entity.links
         {
             return Err(CodecError::malformed(format_args!(
-                "feature-input lane {} has inconsistent marker order",
+                "feature-input lane {} has inconsistent marker identity or ownership",
                 lane.id
             )));
         }
     }
     let mut payload = lane.native_payload.clone();
-    for entity in &lane.sketch_entities {
+    for (entity, expected_entity) in lane
+        .sketch_entities
+        .iter()
+        .zip(&expected_lane.sketch_entities)
+    {
+        // All decoder-supported layouts can replay an unchanged marker. Writing
+        // current-family offsets into legacy markers would alter unrelated bytes.
+        if entity == expected_entity {
+            continue;
+        }
         entity
             .validate_against_payload(&lane.native_payload)
             .map_err(|error| {
@@ -1549,8 +1576,8 @@ fn resolved_feature_payload(
             .checked_add(MARKER.len())
             .ok_or_else(|| CodecError::Malformed("feature-input offset overflow".into()))?;
         if payload.get(offset..marker_end) != Some(MARKER) {
-            return Err(CodecError::Malformed(
-                "feature-input marker does not match retained payload".into(),
+            return Err(CodecError::NotImplemented(
+                "editing this feature-input marker layout is not implemented".into(),
             ));
         }
         let field_start = offset
