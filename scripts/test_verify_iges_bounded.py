@@ -46,7 +46,7 @@ class DecodeRefusalReportTests(unittest.TestCase):
         }
         self.write(
             {
-                "ir_version": "10",
+                "ir_version": "11",
                 "command": "dump",
                 "status": "refused",
                 "refusal": refusal,
@@ -61,7 +61,7 @@ class DecodeRefusalReportTests(unittest.TestCase):
     def test_rejects_success_report_as_refusal(self) -> None:
         self.write(
             {
-                "ir_version": "10",
+                "ir_version": "11",
                 "command": "dump",
                 "status": "ok",
                 "refusal": None,

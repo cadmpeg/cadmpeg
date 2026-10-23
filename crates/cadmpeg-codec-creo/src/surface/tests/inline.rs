@@ -970,7 +970,7 @@ fn complete_cone_operands_reconcile_compound_and_terminal_carriers() {
     for second_apex in [-4.0, -5.0] {
         let second = complete_support_apex_cone_operand(second_apex, [0, 0, 0, 0, 0, 0xe3, 0], 1.0);
         for operands in [[&first, &second], [&second, &first]] {
-            let mut body = operands[0].to_vec();
+            let mut body = operands[0].clone();
             body.push(0xe3);
             body.extend_from_slice(operands[1]);
             let direct = decode_positional_cone_frame(&body, &scalar::ScalarCache::default());

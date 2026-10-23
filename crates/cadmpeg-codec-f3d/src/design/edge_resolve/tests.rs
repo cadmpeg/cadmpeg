@@ -1021,10 +1021,8 @@ fn edge_flange_uses_one_updated_edge_without_recipe_context() {
             std::slice::from_ref(&group),
             &[operand],
             &[],
-            super::EdgeGroupTransition {
-                previous_state_id: Some(7),
-                feature_id: &feature_id,
-            },
+            Some(7),
+            &feature_id,
             decode_ctx,
         )
     })
@@ -1053,10 +1051,8 @@ fn edge_flange_does_not_choose_an_ambiguous_updated_boundary() {
             std::slice::from_ref(&group),
             &[operand],
             &[],
-            super::EdgeGroupTransition {
-                previous_state_id: Some(7),
-                feature_id: &feature_id
-            },
+            Some(7),
+            &feature_id,
             decode_ctx
         ))
         .unwrap(),

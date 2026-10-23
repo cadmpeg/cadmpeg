@@ -120,7 +120,7 @@ fn query_requires_the_current_version_for_every_artifact_and_writes_it() {
             Some(serde_json::json!("32")),
             Some(serde_json::json!("7")),
             Some(serde_json::json!("9")),
-            Some(serde_json::json!("11")),
+            Some(serde_json::json!("10")),
             Some(serde_json::json!("12")),
             Some(serde_json::json!({})),
         ] {
@@ -1754,7 +1754,10 @@ fn every_view_json_is_a_query_command_report() {
     let source = dir.path().join("triangle.sldprt");
     fs::write(
         &source,
-        include_bytes!("fixtures/sldprt_triangle_body.sldprt").as_slice(),
+        include_bytes!(
+            "../../cadmpeg-codec-sldprt/tests/golden/fixtures/authored_complete_planar.sldprt"
+        )
+        .as_slice(),
     )
     .unwrap();
     let doc = dir.path().join("triangle.cadir.json");

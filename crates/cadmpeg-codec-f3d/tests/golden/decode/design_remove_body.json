@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "8",
+    "ir_version": "11",
     "decode_depth": "full",
     "source": {
       "identity": {
@@ -648,6 +648,7 @@
         ],
         "design_parameters": [],
         "design_placement_constructions": [],
+        "design_profile_curve_selections": [],
         "design_record_headers": [
           {
             "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#1006",

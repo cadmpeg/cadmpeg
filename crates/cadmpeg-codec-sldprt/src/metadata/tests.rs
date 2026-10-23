@@ -442,7 +442,7 @@ fn enclosure_metadata_edit_preserves_config_owner_and_opaque_prologue() {
         -0.1,
         -0.2,
         -0.3,
-        0.4739137435296747,
+        0.473_913_743_529_674_7,
     ];
     let payload = authored_enclosure(1, 0x53, values);
     let mut source = sldprt_with_body(&triangle_body());

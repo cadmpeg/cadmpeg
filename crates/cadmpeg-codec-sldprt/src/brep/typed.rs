@@ -838,7 +838,7 @@ pub(super) fn scan_with_payload_exclusions(bytes: &[u8], prefixed: bool) -> Fact
     let mut region_offsets = HashSet::new();
     let mut face_offsets = HashSet::new();
     let mut schema_ranges = Vec::new();
-    let mut offset = 0;
+    let mut offset = 0usize;
     while offset.checked_add(2).is_some_and(|end| end < bytes.len()) {
         while payload_ranges
             .get(payload_index)
