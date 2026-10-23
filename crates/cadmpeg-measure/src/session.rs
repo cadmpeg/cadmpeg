@@ -386,7 +386,7 @@ impl<'ir> Measurer<'ir> {
         let mut edge_out: Vec<EdgeMeasures> = edge_rows
             .iter()
             .filter_map(|id| edges.get(id))
-            .map(|geometry| geometry.row(&self.owners))
+            .map(|geometry| geometry.row(&self.owners, self.input.fidelity))
             .collect();
         let bodies = BodyInput {
             owners: &self.owners,

@@ -185,3 +185,84 @@ fn an_ellipse_quarter_integrates_to_its_series_length() {
         "{value} {expected}"
     );
 }
+
+/// The box edges of the cuboid from the origin to (2, 3, 4) under
+/// `placement`, each with its row.
+fn cuboid_rows(
+    placement: &super::Outcome<Placement>,
+) -> Vec<(cadmpeg_ir::math::Point3, crate::report::EdgeMeasures)> {
+    let ir = crate::test_support::cuboid([0.0; 3], [2.0, 3.0, 4.0]);
+    let ctx = service_context();
+    let owners = Owners::new(&ir);
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
+    let pass = PassAllowance::new(WorkProfile::Desktop.pass_allowance(1).unwrap());
+    ir.model
+        .edges
+        .iter()
+        .map(|edge| {
+            let slice = pass.edge_slice();
+            let eval = Eval {
+                ctx: &ctx,
+                index: &index,
+                work: &slice,
+            };
+            let geometry = measure_edge(&eval, &owners, edge, placement, Work::Row).unwrap();
+            let stored = owners.vertex_position(edge.start.as_str()).unwrap();
+            (stored, geometry.row(&owners, None))
+        })
+        .collect()
+}
+
+/// A stored endpoint is `source` with its vertex point as provenance; an
+/// endpoint the body transform moves by (0, 0, 5) is `closed_form`, with
+/// the body transform in its provenance as well; under a placement that
+/// does not resolve, the endpoint is unavailable with its reason.
+#[test]
+fn placed_endpoints_are_closed_form_and_name_the_body_transform() {
+    let moved = cadmpeg_ir::transform::Transform::affine([
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 5.0],
+    ])
+    .unwrap();
+    let placed = Placement::of(moved).unwrap();
+    for (placement, offset, method, fields) in [
+        (
+            Ok(Placement::identity()),
+            0.0,
+            Method::Source,
+            vec!["position"],
+        ),
+        (
+            Ok(placed),
+            5.0,
+            Method::ClosedForm,
+            vec!["position", "transform"],
+        ),
+    ] {
+        for (stored, row) in cuboid_rows(&placement) {
+            let start = row.start().measured().expect("a measured start");
+            assert_eq!(start.method(), method);
+            let point = start.value().value.get();
+            assert_eq!(
+                [point.x, point.y, point.z],
+                [stored.x, stored.y, stored.z + offset]
+            );
+            let named: Vec<&str> = start
+                .provenance()
+                .iter()
+                .map(crate::value::SourceField::field)
+                .collect();
+            assert_eq!(named, fields);
+        }
+    }
+    let unresolved = super::Missing {
+        reason: UnavailableReason::PlacementNonSimilarity,
+        entity: Some("test:model:body#0000".to_owned()),
+        message: "the body transform is not a similarity".to_owned(),
+    };
+    for (_, row) in cuboid_rows(&Err(unresolved)) {
+        let start = row.start().unavailable().expect("an unavailable start");
+        assert_eq!(start.reason(), UnavailableReason::PlacementNonSimilarity);
+    }
+}

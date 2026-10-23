@@ -11,13 +11,14 @@ use std::rc::Rc;
 
 use cadmpeg_core::decode::ResourceLimit;
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::source_fidelity::SourceFidelity;
 use cadmpeg_ir::topology::{Edge, EdgeCarrier};
 
 use crate::bbox::{curve_box, point_box, CurveBox};
 use crate::boundary::pcurve::{Span, UseFrame};
 use crate::canonical::curve::{CurveChart, CurveShape};
 use crate::canonical::placement::Placement;
-use crate::canonical::Carrier;
+use crate::canonical::{exactness, Carrier};
 use crate::context::{Eval, Work};
 use crate::face::box_value;
 use crate::failure::{settle, Measure, MeasureFailure, Missing, Outcome};
@@ -26,9 +27,11 @@ use crate::length::{curve_length, Length};
 use crate::owners::Owners;
 use crate::quadrature::{extrema, integrate, Target};
 use crate::reason::UnavailableReason;
-use crate::report::{CurveKind, EdgeMeasures, EdgeParameters, RowStatus, StatusTally};
+use crate::report::{
+    CurveKind, EdgeMeasures, EdgeParameters, PlacementClass, RowStatus, StatusTally,
+};
 use crate::tolerance::{allowance, model_tolerance};
-use crate::value::{measured, BoxKind, Errors, Method, Point, Quantity, Scalar, Unit};
+use crate::value::{measured, BoxKind, Errors, Method, Point, Quantity, Scalar, SourceField, Unit};
 
 /// One edge's geometry in model space.
 pub(crate) struct EdgeGeometry<'ir> {
@@ -42,6 +45,10 @@ pub(crate) struct EdgeGeometry<'ir> {
     pub(crate) start: Option<Point3>,
     pub(crate) end: Option<Point3>,
     pub(crate) degenerate: bool,
+    /// Whether the body placement moves the edge's points.
+    pub(crate) placed: bool,
+    /// Why the body placement does not resolve.
+    pub(crate) unplaced: Option<Missing>,
 }
 
 impl EdgeGeometry<'_> {
@@ -65,6 +72,8 @@ pub(crate) fn measure_edge<'ir>(
 ) -> Result<EdgeGeometry<'ir>, ResourceLimit> {
     let id = edge.id.as_str();
     let placement = body.clone().unwrap_or(Placement::identity());
+    let placed = placement.class != PlacementClass::Identity;
+    let unplaced = body.as_ref().err().cloned();
     let linear = owners.ir.tolerances.linear.get();
     let vertex_tolerance = |vertex: &str| {
         owners
@@ -146,6 +155,8 @@ pub(crate) fn measure_edge<'ir>(
                     start: Some(start),
                     end: Some(end),
                     degenerate: trace.degenerate,
+                    placed,
+                    unplaced,
                 });
             }
         }
@@ -184,6 +195,8 @@ pub(crate) fn measure_edge<'ir>(
         start,
         end,
         degenerate,
+        placed,
+        unplaced,
     })
 }
 
@@ -397,7 +410,11 @@ fn interval(
 
 impl EdgeGeometry<'_> {
     /// The edge row.
-    pub(crate) fn row(&self, owners: &Owners<'_>) -> EdgeMeasures {
+    pub(crate) fn row(
+        &self,
+        owners: &Owners<'_>,
+        fidelity: Option<&SourceFidelity>,
+    ) -> EdgeMeasures {
         let id = self.edge.id.as_str();
         let chart = self.curve.as_ref().ok();
         let kind = match (&self.curve, self.edge.carrier.curve()) {
@@ -440,15 +457,44 @@ impl EdgeGeometry<'_> {
             ),
             _ => (None, None),
         };
-        let endpoint = |point: Option<Point3>, vertex: &str| match point {
-            Some(point) => measured(
-                Point::new(point),
-                Unit::Millimeter,
-                Method::Source,
-                Errors::ZERO,
-                vertex,
-            ),
-            None => Quantity::missing(
+        let body = owners.edge_body(id);
+        let endpoint = |point: Option<Point3>, vertex: &str| match (point, &self.unplaced) {
+            (_, Some(missing)) => missing.quantity(),
+            (Some(point), None) => {
+                let mut fields: Vec<SourceField> = owners
+                    .vertex(vertex)
+                    .map(|record| {
+                        let point = record.point.as_str();
+                        SourceField::new(point, "position", exactness(fidelity, point, "position"))
+                    })
+                    .into_iter()
+                    .collect();
+                if let Some(body) = body.filter(|_| self.placed) {
+                    fields.push(SourceField::new(
+                        body,
+                        "transform",
+                        exactness(fidelity, body, "transform"),
+                    ));
+                }
+                let method = if self.placed {
+                    Method::ClosedForm
+                } else {
+                    Method::Source
+                };
+                match measured(
+                    Point::new(point),
+                    Unit::Millimeter,
+                    method,
+                    Errors::ZERO,
+                    vertex,
+                ) {
+                    Quantity::Measured(measured) => {
+                        Quantity::Measured(measured.with_provenance(fields))
+                    }
+                    unavailable @ Quantity::Unavailable(_) => unavailable,
+                }
+            }
+            (None, None) => Quantity::missing(
                 UnavailableReason::BoundaryCoedgeUnresolved,
                 Some(vertex),
                 "the vertex has no point",
