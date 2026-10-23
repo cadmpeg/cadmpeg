@@ -769,8 +769,8 @@ struct EmbeddedImageRecord {
     uncompressed_byte_len: u64,
     #[serde(skip_serializing)]
     buffer_offset: u64,
+    #[serde(skip_serializing)]
     buffer_byte_len: u64,
-    buffer_sha256: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -792,8 +792,8 @@ struct WindowsBitmapRecord {
     important_colors: i32,
     #[serde(skip_serializing)]
     pixel_buffer_offset: u64,
+    #[serde(skip_serializing)]
     pixel_buffer_byte_len: u64,
-    pixel_buffer_sha256: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -3865,7 +3865,6 @@ fn parse_embedded_image(
         uncompressed_byte_len,
         buffer_offset: cadmpeg_core::decode::u64_from_index(buffer_offset),
         buffer_byte_len: cadmpeg_core::decode::u64_from_index(buffer_end - buffer_offset),
-        buffer_sha256: hex(&cadmpeg_ir::hash::sha256(&data[buffer_offset..buffer_end])),
     })
 }
 
@@ -3993,7 +3992,6 @@ fn parse_windows_bitmap(
         reader.position()
     };
     reader.skip_remaining()?;
-    let buffer = &data[pixel_buffer_offset..pixel_buffer_end];
     Ok(WindowsBitmapRecord {
         id: format!("rhino:presentation:windows_bitmap#offset-{source_offset}"),
         source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
@@ -4012,8 +4010,9 @@ fn parse_windows_bitmap(
         colors_used,
         important_colors,
         pixel_buffer_offset: cadmpeg_core::decode::u64_from_index(pixel_buffer_offset),
-        pixel_buffer_byte_len: cadmpeg_core::decode::u64_from_index(buffer.len()),
-        pixel_buffer_sha256: hex(&cadmpeg_ir::hash::sha256(buffer)),
+        pixel_buffer_byte_len: cadmpeg_core::decode::u64_from_index(
+            pixel_buffer_end - pixel_buffer_offset,
+        ),
     })
 }
 
@@ -5343,18 +5342,8 @@ pub(crate) fn install(
     }
     for image in &images {
         source_layout.insert(
-            format!("rhino.layout.{}.buffer_offset", image.id),
-            image.buffer_offset.to_string(),
-        );
-        source_layout.insert(
             format!("rhino.layout.{}.crc32", image.id),
             image.image_crc32.to_string(),
-        );
-    }
-    for bitmap in &windows_bitmaps {
-        source_layout.insert(
-            format!("rhino.layout.{}.pixel_buffer_offset", bitmap.id),
-            bitmap.pixel_buffer_offset.to_string(),
         );
     }
     let namespace = ir.native.namespace_mut("rhino");

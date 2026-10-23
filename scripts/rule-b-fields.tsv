@@ -2087,6 +2087,7 @@ rhino	(unpopulated) embedded_images	crates/cadmpeg-codec-rhino/src/presentation.
 rhino	(unpopulated) embedded_images	crates/cadmpeg-codec-rhino/src/presentation.rs:732 [EmbeddedImage.source_uuid]	Option<String>	keep	fixed-size identifier (GUID/UUID/class id)
 rhino	(unpopulated) embedded_images	crates/cadmpeg-codec-rhino/src/presentation.rs:738 [EmbeddedImage.buffer_offset]	u64	move-layout	byte offset of the embedded image buffer in the source
 rhino	(unpopulated) embedded_images	crates/cadmpeg-codec-rhino/src/presentation.rs:740 [EmbeddedImage.buffer_sha256]	String	move-payload	a digest of source bytes is a fact about the source; it moves with the bytes
+rhino	(unpopulated) embedded_images	crates/cadmpeg-codec-rhino/src/presentation.rs:773 [EmbeddedImage.buffer_byte_len]	u64	move-layout	length of the source extent whose offset is move-layout
 rhino	(unpopulated) external_references	crates/cadmpeg-codec-rhino/src/product.rs:101 [ExternalReference.embedded_file_uuid]	Option<String>	keep	fixed-size identifier (GUID/UUID/class id)
 rhino	(unpopulated) external_references	crates/cadmpeg-codec-rhino/src/product.rs:84 [ExternalReference.definition_uuid]	String	keep	fixed-size identifier (GUID/UUID/class id)
 rhino	(unpopulated) external_references	crates/cadmpeg-codec-rhino/src/product.rs:95 [ExternalReference.name_sha1]	Option<String>	move-payload	a digest of source bytes is a fact about the source; it moves with the bytes
@@ -2182,6 +2183,7 @@ rhino	(unpopulated) windows_bitmaps	crates/cadmpeg-codec-rhino/src/presentation.
 rhino	(unpopulated) windows_bitmaps	crates/cadmpeg-codec-rhino/src/presentation.rs:747 [WindowsBitmap.class_uuid]	String	keep	fixed-size identifier (GUID/UUID/class id)
 rhino	(unpopulated) windows_bitmaps	crates/cadmpeg-codec-rhino/src/presentation.rs:759 [WindowsBitmap.pixel_buffer_offset]	u64	move-layout	byte offset of the bitmap pixel buffer in the source
 rhino	(unpopulated) windows_bitmaps	crates/cadmpeg-codec-rhino/src/presentation.rs:761 [WindowsBitmap.pixel_buffer_sha256]	String	move-payload	a digest of source bytes is a fact about the source; it moves with the bytes
+rhino	(unpopulated) windows_bitmaps	crates/cadmpeg-codec-rhino/src/presentation.rs:796 [WindowsBitmap.pixel_buffer_byte_len]	u64	move-layout	length of the source extent whose offset is move-layout
 rhino	native/rhino/document_settings/#/current_color	crates/cadmpeg-codec-rhino/src/document_data.rs:76 [DocumentSettings.current_color]	Option<NativeBytes<[u8; 4]>>	keep	fixed-size byte value [u8; 4]
 rhino	native/rhino/layers/#/color	crates/cadmpeg-codec-rhino/src/presentation.rs:1041 (key; field crates/cadmpeg-codec-rhino/src/settings.rs:767) [LayerPerViewportSettings.color]	Option<[u8; 4]>	keep	fixed-size byte value [u8; 4]
 rhino	native/rhino/layers/#/color	crates/cadmpeg-codec-rhino/src/presentation.rs:1109 [LayerPresentation.color]	NativeBytes<[u8; 4]>	keep	fixed-size byte value [u8; 4]

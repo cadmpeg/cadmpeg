@@ -140,6 +140,43 @@ fn payload(asset: &cadmpeg_ir::assets::Asset) -> &[u8] {
 }
 
 #[test]
+fn image_source_buffers_are_record_layout_extents_not_document_fields() {
+    let (source, bitmap_buffer) = source();
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
+        .unwrap();
+    let namespace = decoded.ir().native.namespace("rhino").unwrap();
+    let image = &namespace.arenas()["embedded_images"][0];
+    let bitmap = &namespace.arenas()["windows_bitmaps"][0];
+    for key in ["buffer_offset", "buffer_byte_len", "buffer_sha256"] {
+        assert_eq!(image.field(key), None, "{key}");
+    }
+    for key in [
+        "pixel_buffer_offset",
+        "pixel_buffer_byte_len",
+        "pixel_buffer_sha256",
+    ] {
+        assert_eq!(bitmap.field(key), None, "{key}");
+    }
+    assert!(bitmap.field("image_byte_len").is_some());
+    let mut image_buffer = 3_u32.to_le_bytes().to_vec();
+    image_buffer.extend([0x11, 0x22, 0x33]);
+    for (record, buffer) in [(image, image_buffer), (bitmap, bitmap_buffer)] {
+        let layout = &decoded.source_fidelity().record_layout()[record.id()];
+        let start = usize::try_from(layout.offset()).unwrap();
+        let len = usize::try_from(layout.byte_len()).unwrap();
+        assert_eq!(len, buffer.len(), "{}", record.id());
+        assert_eq!(
+            &source[start..start + len],
+            buffer.as_slice(),
+            "{}",
+            record.id()
+        );
+        assert!(layout.payloads().is_empty(), "{}", record.id());
+    }
+}
+
+#[test]
 fn images_keep_native_headers_buffers_and_payloads_without_asset_backlinks() {
     let (source, _) = source();
     let decoded = RhinoCodec

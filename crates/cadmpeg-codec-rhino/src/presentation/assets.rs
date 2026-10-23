@@ -11,6 +11,7 @@ use cadmpeg_ir::assets::{Asset, AssetContent, AssetData, AssetId};
 use cadmpeg_ir::ids::IdentityKey;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::CadIr;
+use std::collections::HashSet;
 
 fn framing(error: FramingError) -> CodecError {
     match error {
@@ -251,6 +252,33 @@ fn insert(
     Ok(())
 }
 
+/// Decode one image resource inside its native record's scope, so that the
+/// record's `record_layout` extent is the stored buffer region.
+fn in_record_extent(
+    ctx: &DecodeContext<'_>,
+    root: View<'_>,
+    captured: &mut HashSet<String>,
+    id: &str,
+    offset: u64,
+    byte_len: u64,
+    decode: impl FnOnce() -> Result<Vec<u8>, CodecError>,
+) -> Result<Vec<u8>, CodecError> {
+    if !root.has_source_tracking() || captured.contains(id) {
+        return decode();
+    }
+    let start = usize::try_from(offset).map_err(CodecError::malformed)?;
+    let end = offset
+        .checked_add(byte_len)
+        .and_then(|end| usize::try_from(end).ok())
+        .ok_or_else(|| CodecError::malformed("Rhino image source range overflows"))?;
+    let extent = root
+        .child(start, end)
+        .ok_or_else(|| CodecError::malformed("Rhino image buffer escapes the source view"))?;
+    let decoded = ctx.record(id, extent, || Ok(decode()))?;
+    captured.insert(id.to_owned());
+    decoded
+}
+
 pub(super) fn project(
     ctx: &DecodeContext<'_>,
     root: View<'_>,
@@ -261,8 +289,18 @@ pub(super) fn project(
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<u64>, CodecError> {
     let mut unresolved = Vec::new();
+    let mut captured = HashSet::new();
     for (ordinal, image) in images.iter().enumerate() {
-        match image_bytes(ctx, root, scan, image) {
+        let decoded = in_record_extent(
+            ctx,
+            root,
+            &mut captured,
+            &image.id,
+            image.buffer_offset,
+            image.buffer_byte_len,
+            || image_bytes(ctx, root, scan, image),
+        );
+        match decoded {
             Ok(bytes) => {
                 insert(
                     ctx,
@@ -288,7 +326,16 @@ pub(super) fn project(
         }
     }
     for (ordinal, bitmap) in bitmaps.iter().enumerate() {
-        match bitmap_bytes(ctx, root, scan, bitmap) {
+        let decoded = in_record_extent(
+            ctx,
+            root,
+            &mut captured,
+            &bitmap.id,
+            bitmap.pixel_buffer_offset,
+            bitmap.pixel_buffer_byte_len,
+            || bitmap_bytes(ctx, root, scan, bitmap),
+        );
+        match decoded {
             Ok(bytes) => {
                 insert(
                     ctx,
