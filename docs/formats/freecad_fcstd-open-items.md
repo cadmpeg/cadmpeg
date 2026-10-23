@@ -17,35 +17,6 @@ listed in [the coverage document](freecad_fcstd-coverage.md).
 
 
 
-## 11. Presentation and application records
-
-### AG-01. Mesh placement in neutral geometry
-
-**Question.** How must an application mesh's local coordinates and owning
-`Placement` compose with parent containers and link occurrences in neutral geometry?
-
-**Known.** `parse_mesh` in
-`crates/cadmpeg-codec-freecad/src/application_geometry.rs` copies the binary
-vertices into the neutral tessellation without the owning object's `Placement`.
-A `Mesh::Feature` triangle with local vertices `(0,0,0)`, `(2,0,0)`, `(0,3,0)`,
-translation `(100,200,300)` mm, and a 90-degree Z rotation has native world
-coordinates `(100,200,300)`, `(100,202,300)`, `(97,200,300)`. The neutral mesh
-keeps the local coordinates. No neutral body, occurrence, or product definition
-carries the missing transform. The source check reports no findings or losses.
-
-**Need.** Define and implement the placement composition so each transform
-applies once. Check translation, rotation, nested containers, linked meshes, and
-mesh arrays against native world coordinates. Name any unsupported placement
-path in a loss rather than returning geometry in the wrong frame.
-
-**Conflict.** The mesh is reported as transferred, but its neutral position and
-orientation differ from the native object. Retaining the native placement
-property does not correct the neutral tessellation consumed by other formats.
-
-**Note.** Keep mesh placement separate from point-cloud transform handling and
-from appearance. A point-cloud control with the same placement produces the
-expected world coordinates.
-
 ## 12. Validation
 
 ### QA-01. Native geometry equivalence and profile assertions

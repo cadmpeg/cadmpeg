@@ -1085,6 +1085,14 @@ impl CodecBackend for FcstdCodec {
             )?;
             ir.model.product_definitions = product_definitions;
             ir.model.occurrences = occurrences;
+            application_geometry::mesh_placement::project(
+                ctx,
+                &mut ir,
+                &graph.properties,
+                &product_nodes,
+                &mut transfer_losses,
+                &mut admitted_entities,
+            )?;
             ir.model.assembly_joints =
                 joint::transfer_neutral(&joint_records, &ir.model.occurrences)?;
             ctx.admit_entities(

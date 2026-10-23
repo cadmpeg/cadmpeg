@@ -172,3 +172,23 @@ Admission completes before topology mutation. A bound withholds that payload's e
 topology with blocking `topology.location-identity-bounded`; later payloads continue. Allocation
 failures remain decode errors. Canonical identities are
 derived state and do not change the native record format.
+
+## Application mesh placement
+
+Neutral application meshes carry model-space vertices. The projection applies owning placements,
+nested geometric containers, direct mesh links, expanded and collapsed link arrays, and links to
+geometric containers. Each linked use has a distinct tessellation identity and an occurrence path
+in its source association. Parent transforms are not carried a second time by a neutral body.
+Native mesh bytes and placement properties remain retained for preserving writes.
+
+A link to a link, a link to an ordinary document group, or a link that selects mesh subelements
+has no complete mesh projection. The affected use is withheld with blocking
+`geometry.mesh-placement-not-transferred`; independent source meshes and supported uses remain.
+This boundary does not change point-cloud transform handling.
+
+Mesh occurrence expansion admits at least 65,536 visits, or 64 times the combined native product
+and neutral occurrence row count, whichever is larger. Mesh-less targets and child subtrees are
+removed from the expansion index. Local work exhaustion withholds the entire current use and
+all subsequent uses with blocking `geometry.mesh-placement-bounded`. Independent source meshes
+and earlier complete uses remain. Cloned mesh storage, loss text, and mesh entities are admitted
+before retention.

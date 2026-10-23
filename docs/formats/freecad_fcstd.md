@@ -1267,6 +1267,18 @@ bounded, point indices must resolve, coordinates and bounds must be finite, and 
 truncated bytes are invalid. Neighbour indices and the complete entry bytes remain native even
 when only the indexed triangle mesh is projected neutrally.
 
+Binary mesh coordinates are local to the owning object. Its `Placement` maps those coordinates
+to the immediate geometric container. Parent `App::Part` and link-group placements compose from
+outermost to innermost, followed by the mesh placement. An ordinary document group does not add
+a geometric parent transform. The mesh payload carries no second placement matrix.
+
+A mesh link uses its link placement, scale, array-element placement, and array-element scale in
+that order. `LinkTransform=true` then includes the prototype placement; false omits that root
+placement. Descendant placements of a linked geometric container remain relative to that
+container. Expanded arrays take element placement from their element objects; collapsed arrays
+take it from the saved placement list. Each use applies this composition once to the local
+vertices. The native mesh payload remains unchanged.
+
 `Points::PropertyPointKernel` contains exactly one direct `Points` value root. A duplicate or
 missing root is malformed. Its zero or one non-empty lowercase `file` attribute identifies the
 property's only side entry. A non-empty file attribute on another direct or nested value, or a
