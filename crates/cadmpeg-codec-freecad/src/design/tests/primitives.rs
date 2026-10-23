@@ -1030,7 +1030,39 @@ fn retains_vendor_qualified_primitive_like_types_as_native_objects() {
                 .source_fidelity()
                 .record_layout()
                 .contains_key(object.id())));
-    assert!(result.ir().model.features.is_empty());
+    let [feature] = result.ir().model.features.as_slice() else {
+        panic!("one Native feature for the one vendor object")
+    };
+    let object = objects
+        .iter()
+        .find(|object| object.type_name == "Part::VendorBox")
+        .unwrap();
+    assert_eq!(feature.native_ref.as_deref(), Some(object.id().as_str()));
+    let FeatureDefinition::Operation(FeatureOperation::Native { kind, parameters }) =
+        feature.evaluation.definition()
+    else {
+        panic!("a vendor primitive-like kind must keep its actual Native operation")
+    };
+    assert_eq!(kind.as_str(), "Part::VendorBox");
+    assert_eq!(parameters.len(), 3);
+    for (name, expected) in [("Length", 10.0), ("Width", 20.0), ("Height", 30.0)] {
+        let cadmpeg_ir::Dimension::Parameter(id) = &parameters[name] else {
+            panic!("the held dimension keeps its canonical source parameter")
+        };
+        let parameter = result
+            .ir()
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| &parameter.id == id)
+            .unwrap();
+        assert_eq!(parameter.owner.as_ref(), Some(&feature.id));
+        assert_eq!(parameter.name, name);
+        let Some(cadmpeg_ir::features::ParameterValue::Length(value)) = &parameter.value else {
+            panic!("the source length remains a typed length")
+        };
+        assert!((value.get() - expected).abs() < EPS_SCALAR_ROUND_TRIP);
+    }
 }
 
 #[test]
