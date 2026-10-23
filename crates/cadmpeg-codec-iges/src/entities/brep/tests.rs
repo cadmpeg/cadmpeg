@@ -795,3 +795,153 @@ fn coedge_index_lookups_match_the_unindexed_scan() {
     assert_eq!(indexed[0].radial_next.as_str(), second);
     assert_eq!(indexed[1].radial_next.as_str(), first);
 }
+
+/// The area of the face loop `loop_id` about `normal`, from the start vertex
+/// of each coedge in traversal order: positive when the loop runs
+/// counterclockwise about `normal`.
+fn polygon_loop_area_about(ir: &CadIr, loop_id: &LoopId, normal: Vector3) -> f64 {
+    let loop_ = ir
+        .model
+        .loops
+        .iter()
+        .find(|loop_| loop_.id == *loop_id)
+        .unwrap();
+    let position = |vertex_id: &VertexId| {
+        let vertex = ir
+            .model
+            .vertices
+            .iter()
+            .find(|vertex| vertex.id == *vertex_id)
+            .unwrap();
+        ir.model
+            .points
+            .iter()
+            .find(|point| point.id == vertex.point)
+            .unwrap()
+            .position()
+            .get()
+    };
+    let points = loop_
+        .coedges()
+        .iter()
+        .map(|coedge_id| {
+            let coedge = ir
+                .model
+                .coedges
+                .iter()
+                .find(|coedge| coedge.id == *coedge_id)
+                .unwrap();
+            let edge = ir
+                .model
+                .edges
+                .iter()
+                .find(|edge| edge.id == coedge.edge)
+                .unwrap();
+            match coedge.sense {
+                Sense::Forward => position(&edge.start),
+                Sense::Reversed => position(&edge.end),
+            }
+        })
+        .collect::<Vec<Point3>>();
+    let origin = points[0];
+    let mut area = 0.0;
+    for (index, point) in points.iter().enumerate() {
+        let next = points[(index + 1) % points.len()];
+        area += point
+            .vector_from(origin)
+            .cross(next.vector_from(origin))
+            .dot(normal);
+    }
+    area
+}
+
+/// Every planar face of `ir` has an outer loop that runs counterclockwise
+/// about its oriented normal: the plane normal, reversed for the sense
+/// `reversed`.
+fn assert_outer_loops_counterclockwise_about_oriented_normal(ir: &CadIr) {
+    assert!(!ir.model.faces.is_empty());
+    for face in &ir.model.faces {
+        let surface = ir
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == face.surface)
+            .unwrap();
+        let cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+            cadmpeg_ir::geometry::SolvedSurfaceGeometry::Plane(plane),
+        ) = &surface.geometry
+        else {
+            panic!("every face is planar");
+        };
+        let normal = *plane.frame().axis().as_raw();
+        let oriented = match face.sense {
+            Sense::Forward => normal,
+            Sense::Reversed => Vector3::new(-normal.x, -normal.y, -normal.z),
+        };
+        let [loop_id] = face.loops.iter().collect::<Vec<_>>()[..] else {
+            panic!("every face has one loop");
+        };
+        let area = polygon_loop_area_about(ir, loop_id, oriented);
+        assert!(area > 0.0, "an outer loop runs counterclockwise");
+    }
+}
+
+#[test]
+fn decode_runs_the_loops_of_reversed_void_faces_backward() {
+    let (bytes, _, _, void_sequence) = explicit_void_solid_file();
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let ir = result.ir();
+    let void_faces = ir
+        .model
+        .faces
+        .iter()
+        .filter(|face| face.shell.as_str().ends_with(&format!(":D{void_sequence}")))
+        .collect::<Vec<_>>();
+    assert_eq!(void_faces.len(), 4);
+    assert!(void_faces.iter().all(|face| face.sense == Sense::Reversed));
+    assert_outer_loops_counterclockwise_about_oriented_normal(ir);
+    let validation =
+        cadmpeg_ir::validate_neutral(ir, Vec::new()).expect("validate the neutral model");
+    assert!(validation.is_ok());
+}
+
+#[test]
+fn decode_keeps_the_loops_of_forward_faces() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_tetrahedron_solid_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(result
+        .ir()
+        .model
+        .faces
+        .iter()
+        .all(|face| face.sense == Sense::Forward));
+    assert_outer_loops_counterclockwise_about_oriented_normal(result.ir());
+}
+
+#[test]
+fn pole_use_follows_the_next_edge_use_of_a_reversed_face() {
+    let coedge = |name: &str| CoedgeId::mint(format!("test:iges:coedge#{name}")).unwrap();
+    let coedge_by_use = BTreeMap::from([(0, coedge("a")), (2, coedge("b"))]);
+    assert_eq!(
+        super::vertex_use_anchor(&coedge_by_use, 1, 4, Sense::Forward),
+        Some(&coedge("a"))
+    );
+    assert_eq!(
+        super::vertex_use_anchor(&coedge_by_use, 1, 4, Sense::Reversed),
+        Some(&coedge("b"))
+    );
+    assert_eq!(
+        super::vertex_use_anchor(&coedge_by_use, 3, 4, Sense::Reversed),
+        Some(&coedge("a"))
+    );
+    assert_eq!(
+        super::vertex_use_anchor(&BTreeMap::new(), 0, 1, Sense::Reversed),
+        None
+    );
+}
