@@ -15,35 +15,7 @@ When an item is resolved, delete it in the same change that writes the answer in
 the specification. Do not keep a Resolved part. Neutral projection limits are
 listed in [the coverage document](freecad_fcstd-coverage.md).
 
-## 2. Container identity
 
-### WR-01. Deferred side-entry restoration order
-
-**Question.** What order must ZIP members follow so document, GUI, string-table,
-shape, and property-owned payloads restore with their dependencies across the
-supported document schemas?
-
-**Known.** `freecad_fcstd.md` §1 "The synthesis catalog is"
-requires `Document.xml` first and preservation of named entries. The writer then
-sorts the other entries by name. A native-authored two-box document can lose one
-saved shape on native reopen after this sort, although the XML and uncompressed
-side entries survive. A document with two `Part::Feature` boxes declared as
-`ZFirst`, then `ASecond`, reopens with `ZFirst.Shape` null after an FCStd rewrite.
-Each original box has six faces and volume 6,000 mm³. The conversion reports no
-findings or losses. Preserving source member order avoids the missing shape.
-
-**Need.** Define a deterministic restoration schedule for preserving writes and
-source-less construction, including shared payload dependencies and GUI entries.
-The safe order for one retained archive does not define that schedule for every
-supported graph or schema.
-
-**Conflict.** The current write checks treat preservation by entry name and digest
-as semantic preservation. Native restoration can change when member order changes.
-
-**Note.** The member sort is in `crates/cadmpeg-codec-freecad/src/writer.rs`.
-Check per-object shape nullness, topology counts, volume, and placement on native
-reopen after an unchanged write and a typed leaf edit. Entry name and digest
-equality does not supply those checks.
 
 ## 11. Presentation and application records
 

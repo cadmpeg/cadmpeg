@@ -30,6 +30,11 @@ fn unsafe_entry_names_refuse_construction_and_duplicates_remain_writer_limits() 
         Vec::new(),
         Vec::new(),
     );
+    let missing_order_error = crate::writer::restore_entry_order(&mut [entry.clone()], &[])
+        .expect_err("output order cannot be inferred from identity");
+    assert!(missing_order_error
+        .to_string()
+        .contains("no retained restoration order"));
     let duplicate_error = validate_entry_names(&[entry.clone(), entry])
         .expect_err("duplicate output paths are refused");
     assert!(matches!(
@@ -368,4 +373,74 @@ pub(crate) fn writer_rejects_unserialized_declaration_and_stale_payload_edits() 
     assert!(error
         .to_string()
         .contains("entry byte_len/sha256 disagrees with data"));
+}
+
+#[test]
+fn retaining_writes_preserve_physical_restoration_order_after_cadir_finalization() {
+    for schema in ["2", "3", "4"] {
+        let (objects_tag, data_tag) = if schema == "2" {
+            ("Features", "FeatureData")
+        } else {
+            ("Objects", "ObjectData")
+        };
+        let xml = format!(
+            r#"<Document SchemaVersion="{schema}" FileVersion="1"><Properties Count="1"><Property name="Label" type="App::PropertyString"><String value="original"/></Property></Properties><{objects_tag} Count="0"/><{data_tag} Count="0"/></Document>"#
+        );
+        let source = archive_entries(&[
+            ("Document.xml", xml.as_bytes()),
+            ("ZFirst.brp", b"first"),
+            ("ASecond.brp", b"second"),
+            ("GuiDocument.xml", br#"<Document SchemaVersion="1"><ViewProviderData Count="0"/><Camera settings=""/></Document>"#),
+            ("ZGui.bin", b"gui"),
+            ("AOpaque.bin", b"opaque"),
+        ]);
+        let decoded = FcstdCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .expect("required invariant");
+        for edit in [false, true] {
+            let mut ir = decoded.ir().clone();
+            ir.finalize();
+            if edit {
+                FcstdCodec
+                    .set_property_value_attribute(
+                        &mut ir,
+                        crate::FcstdPropertyOwner::Document,
+                        "Label",
+                        0,
+                        "value",
+                        "edited",
+                    )
+                    .expect("required invariant");
+            }
+            let mut output = Vec::new();
+            FcstdCodec
+                .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+                .and_then(|plan| plan.write_to(&mut output))
+                .expect("required invariant");
+            let mut archive =
+                zip::ZipArchive::new(Cursor::new(output)).expect("required invariant");
+            let names = (0..archive.len())
+                .map(|index| {
+                    archive
+                        .by_index(index)
+                        .expect("required invariant")
+                        .name()
+                        .expect("required invariant")
+                        .into_owned()
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(
+                names,
+                [
+                    "Document.xml",
+                    "ZFirst.brp",
+                    "ASecond.brp",
+                    "GuiDocument.xml",
+                    "ZGui.bin",
+                    "AOpaque.bin"
+                ],
+                "schema={schema}, edit={edit}"
+            );
+        }
+    }
 }

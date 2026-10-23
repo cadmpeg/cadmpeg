@@ -87,3 +87,139 @@ fn builds_and_writes_a_source_less_typed_application_graph() {
         Some(b"edited payload".as_slice())
     );
 }
+
+#[test]
+fn source_less_payloads_follow_request_order_before_gui_payloads() {
+    let mut builder = super::FcstdDocumentBuilder::new("ordered payloads");
+    for (object, payload) in [("ZFirst", "ZFirst.bin"), ("ASecond", "ASecond.bin")] {
+        builder
+            .add_object(object, "App::FeaturePython")
+            .expect("required invariant");
+        builder
+            .add_property(
+                object,
+                "Attachment",
+                "App::PropertyFileIncluded",
+                vec![super::FcstdPropertyValue::attribute(
+                    "FileIncluded",
+                    "file",
+                    payload,
+                )],
+            )
+            .expect("required invariant");
+    }
+    let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="0"/><Camera settings=""/><Property><ColorList file="Colors.bin"/></Property></Document>"#;
+    for (name, bytes) in [
+        ("Colors.bin", b"colors".as_slice()),
+        ("GuiDocument.xml", gui.as_slice()),
+        ("ASecond.bin", b"second".as_slice()),
+        ("ZFirst.bin", b"first".as_slice()),
+        ("Opaque.bin", b"opaque".as_slice()),
+    ] {
+        builder
+            .add_side_entry(name, bytes.to_vec())
+            .expect("required invariant");
+    }
+    let document = builder.document_xml();
+    let order = builder
+        .restoration_entries(&document)
+        .expect("required invariant");
+    assert_eq!(
+        order
+            .iter()
+            .map(|entry| entry.0.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "ZFirst.bin",
+            "ASecond.bin",
+            "GuiDocument.xml",
+            "Colors.bin",
+            "Opaque.bin"
+        ]
+    );
+    let bytes = builder.clone().archive_bytes().expect("required invariant");
+    assert_eq!(bytes, builder.archive_bytes().expect("required invariant"));
+    let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).expect("required invariant");
+    let names = (0..archive.len())
+        .map(|index| {
+            archive
+                .by_index(index)
+                .expect("required invariant")
+                .name()
+                .expect("required invariant")
+                .into_owned()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        names,
+        [
+            "Document.xml",
+            "ZFirst.bin",
+            "ASecond.bin",
+            "GuiDocument.xml",
+            "Colors.bin",
+            "Opaque.bin"
+        ]
+    );
+}
+
+#[test]
+fn source_less_shared_payload_requests_require_distinct_members() {
+    let mut builder = super::FcstdDocumentBuilder::new("shared payload");
+    for object in ["First", "Second"] {
+        builder
+            .add_object(object, "App::FeaturePython")
+            .expect("required invariant");
+        builder
+            .add_property(
+                object,
+                "Attachment",
+                "App::PropertyFileIncluded",
+                vec![super::FcstdPropertyValue::attribute(
+                    "FileIncluded",
+                    "file",
+                    "Shared.bin",
+                )],
+            )
+            .expect("required invariant");
+    }
+    builder
+        .add_side_entry("Shared.bin", b"shared".to_vec())
+        .expect("required invariant");
+    let error = builder
+        .archive_bytes()
+        .expect_err("refused restoration schedule");
+    assert!(error.to_string().contains("multiple restoration requests"));
+}
+
+#[test]
+fn source_less_payload_names_and_missing_requests_are_rejected() {
+    let mut builder = super::FcstdDocumentBuilder::new("missing payload");
+    for name in ["Document.xml", "../Escape.bin", "/Absolute.bin"] {
+        assert!(builder.add_side_entry(name, Vec::new()).is_err());
+    }
+    builder
+        .add_side_entry("Unique.bin", Vec::new())
+        .expect("required invariant");
+    assert!(builder.add_side_entry("Unique.bin", Vec::new()).is_err());
+    builder
+        .add_object("Owner", "App::FeaturePython")
+        .expect("required invariant");
+    builder
+        .add_property(
+            "Owner",
+            "Attachment",
+            "App::PropertyFileIncluded",
+            vec![super::FcstdPropertyValue::attribute(
+                "FileIncluded",
+                "file",
+                "Missing.bin",
+            )],
+        )
+        .expect("required invariant");
+    assert!(builder
+        .archive_bytes()
+        .expect_err("refused restoration schedule")
+        .to_string()
+        .contains("missing side entry Missing.bin"));
+}

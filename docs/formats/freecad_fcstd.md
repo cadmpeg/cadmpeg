@@ -13,7 +13,8 @@ independently optional.
 
 The synthesis catalog is `fcstd:schema-4`, the one band an explicit write target may name. A
 retained document write regenerates the ZIP container deterministically, writes `Document.xml`
-first, preserves every unedited XML record and every named side entry, and serializes checked
+first, preserves the physical order of the retained side entries, preserves every unedited XML
+record and every named side entry, and serializes checked
 leaf-value edits with XML escaping. It writes the band the retained `Document.xml` already
 declares, so a preserving write reproduces schemas 2 and 3 as well. An edit to a nested value
 without a typed serializer is refused rather than flattening or discarding children.
@@ -65,6 +66,30 @@ The producer allocates one archive member for each typed side-entry request. A r
 name receives a unique suffixed name, and the returned name is the XML reference. Two properties
 requesting the same source payload therefore receive separate archive members; a producer-created
 typed side entry has one requesting property or payload owner.
+
+Side-entry restoration is a forward-only request stream, not a lookup by entry name. Parsing
+`Document.xml` registers requests in restore order: the document string hasher, document
+properties, then object values and their property-owned payloads. Schema 2 uses `FeatureData`;
+schemas 3 and 4 use `ObjectData`. A shape registers its B-rep before its saved string hasher and
+element map. Each encountered ZIP member is matched only against the unconsumed suffix of the
+request stream. A match consumes that request and every earlier unconsumed request. An
+unregistered member is skipped. A member that registers a local XML reader consumes that reader's
+side-entry stream recursively before the parent resumes. Physical local-member order determines
+this stream; central-directory order does not.
+
+`GuiDocument.xml` is registered after the application document's requests. Its view-provider
+payloads belong to its local reader and follow it. Independent named records can be skipped
+without advancing the request stream. A retained archive keeps these physical order relations,
+including records whose internal request grammar is opaque. An identity-sorted native record
+arena does not define member order; local-header positions in the physical ledger do.
+
+A source-less document uses its emitted property order as its request order. Named payloads for
+these requests precede `GuiDocument.xml`; its payloads follow it in GUI request order. Unreferenced
+named payloads retain their supplied order after the registered streams. A source-less request
+must name an available payload. Distinct restoration requests require distinct member names,
+even when their payload bytes are equal: one member cannot satisfy two positions in the request
+stream. External document links do not register side-entry requests. A dependency reference to a
+shared string hasher uses its hasher index; it does not repeat a request for its member.
 
 `GuiDocument.xml` has at most one `ViewProviderData` container. `ViewProvider` names are unique.
 Each provider has one direct `Properties` container, and direct property names are unique within

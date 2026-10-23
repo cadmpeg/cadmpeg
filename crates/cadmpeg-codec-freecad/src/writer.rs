@@ -15,7 +15,8 @@ use cadmpeg_core::CodecError;
 use zip::write::SimpleFileOptions;
 
 use crate::native::{
-    EntryRecord, ExtensionRecord, ObjectRecord, PropertyBody, PropertyRecord, ValueRecord,
+    ArchiveSpan, ArchiveSpanRole, EntryRecord, ExtensionRecord, ObjectRecord, PropertyBody,
+    PropertyRecord, ValueRecord,
 };
 use target::Resolution;
 
@@ -51,6 +52,7 @@ fn write_seekable(
         return Err(CodecError::NotImplemented("FCStd repacking cannot preserve unreadable ZIP payloads; retained stored bytes are source-only".into()));
     }
     let mut entries = namespace.arena_as::<EntryRecord>("entries")?;
+    let physical_ledger = namespace.arena_as::<ArchiveSpan>("physical_ledger")?;
     let objects = namespace.arena_as::<ObjectRecord>("objects")?;
     let extensions = namespace.arena_as::<ExtensionRecord>("extensions")?;
     let properties = namespace.arena_as::<PropertyRecord>("properties")?;
@@ -106,10 +108,7 @@ fn write_seekable(
         let file_options = SimpleFileOptions::default()
             .compression_method(zip::CompressionMethod::Deflated)
             .last_modified_time(zip::DateTime::default());
-        entries.sort_by(|left, right| {
-            (left.name() != "Document.xml", left.name())
-                .cmp(&(right.name() != "Document.xml", right.name()))
-        });
+        restore_entry_order(&mut entries, &physical_ledger)?;
         for entry in &entries {
             archive
                 .start_file(entry.name(), file_options)
@@ -146,6 +145,32 @@ fn write_seekable(
 struct WriteOutcome {
     census: cadmpeg_ir::report::export::EntityCensus,
     notes: Vec<String>,
+}
+
+fn restore_entry_order(
+    entries: &mut [EntryRecord],
+    physical_ledger: &[ArchiveSpan],
+) -> Result<(), CodecError> {
+    let mut offsets = HashMap::new();
+    for span in physical_ledger {
+        if let ArchiveSpanRole::LocalSignature(name) = &span.role {
+            if offsets.insert(name.as_str(), span.span.start()).is_some() {
+                return Err(CodecError::malformed(format_args!(
+                    "FCStd physical ledger repeats local entry {name}"
+                )));
+            }
+        }
+    }
+    for entry in &*entries {
+        if !offsets.contains_key(entry.name()) {
+            return Err(CodecError::NotImplemented(format!(
+                "FCStd output entry {} has no retained restoration order",
+                entry.name()
+            )));
+        }
+    }
+    entries.sort_by_key(|entry| (entry.name() != "Document.xml", offsets[entry.name()]));
+    Ok(())
 }
 
 fn validate_entry_names(entries: &[EntryRecord]) -> Result<(), CodecError> {
