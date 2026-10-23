@@ -5,6 +5,7 @@ use crate::FcstdCodec;
 use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
 use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::{Codec, DecodeOptions, DecodeResult};
+use std::fmt::Write;
 use std::io::Cursor;
 
 fn pcurve_brep(
@@ -42,11 +43,13 @@ fn decode_shapes(shapes: &[(&str, String)]) -> DecodeResult {
     let mut objects = String::new();
     let mut object_data = String::new();
     for (index, (name, _)) in shapes.iter().enumerate() {
-        objects.push_str(&format!(
+        write!(
+            objects,
             "<Object type=\"Part::Feature\" name=\"{name}\" id=\"{}\"/>",
             index + 1
-        ));
-        object_data.push_str(&format!("<Object name=\"{name}\"><Properties Count=\"1\"><Property name=\"Shape\" type=\"Part::PropertyPartShape\"><Part file=\"{name}.brp\"/></Property></Properties></Object>"));
+        )
+        .expect("fixture object declaration");
+        write!(object_data,"<Object name=\"{name}\"><Properties Count=\"1\"><Property name=\"Shape\" type=\"Part::PropertyPartShape\"><Part file=\"{name}.brp\"/></Property></Properties></Object>").expect("fixture object properties");
     }
     let document = format!("<Document SchemaVersion=\"4\" FileVersion=\"1\"><Objects Count=\"{count}\">{objects}</Objects><ObjectData Count=\"{count}\">{object_data}</ObjectData></Document>", count=shapes.len());
     let names: Vec<_> = shapes
