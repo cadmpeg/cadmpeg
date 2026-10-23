@@ -412,7 +412,9 @@ impl<'ir> Measurer<'ir> {
                 row.placement = placement.clone();
             }
             for row in &mut surface_out {
-                row.placement = placement.clone();
+                if row.placement == (RowPlacement::Model {}) {
+                    row.placement = placement.clone();
+                }
             }
         }
 

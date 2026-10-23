@@ -281,6 +281,8 @@ pub enum RowPlacement {
         /// The occurrence ID.
         occurrence: String,
     },
+    /// The surface as stored: no face uses it, so no body places it.
+    Stored {},
 }
 
 /// The occurrence whose instance space a pass measures.

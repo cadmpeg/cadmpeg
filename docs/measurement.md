@@ -434,19 +434,26 @@ same classes over the body rows.
 `measure --surface ID` reports the carrier of a surface: `surface`,
 `placement` (see Placement space), `carrier` as a face row states it,
 `bodies` and `faces`, the bodies and faces that use the surface, and
-`status`. A surface row has no area, length, box or extent. It
-is in model space under the placement of the bodies of its faces; a surface
-that no face uses is measured as stored. When those bodies have different
-placements, the row has no parameters and its `unresolved` member is the
-unavailable value `placement.carrier-shared`; `kind` and `chain` are then
-read from the surface alone. A placement or carrier chain that does not
-resolve gives `unresolved` with its own reason in the same way.
+`status`. A surface row has no area, length, box or extent. A face uses a
+surface when it names it as its surface; a face that reaches the surface
+only through a carrier chain, such as the basis of an offset or the
+support of a curve-bounded construction, does not use it. The row is in
+model space under the placement of the bodies of its faces. A surface
+that no face uses is measured as stored, and its row has the placement
+`{"space": "stored"}`. When those bodies have different placements, the
+row has no parameters and its `unresolved` member is the unavailable value
+`placement.carrier-shared`; `kind` and `chain` are then read from the
+surface alone. A placement or carrier chain that does not resolve gives
+`unresolved` with its own reason in the same way. A carrier with no chart,
+such as `carrier.procedural-unevaluated`, has no parameters, and its
+reason is the `unresolved` value.
 
 ## Placement space
 
 Every body, face, edge and surface row has a `placement` member:
 `{"space": "model"}`, or `{"space": "occurrence", "occurrence": ID}` under
-`--occurrence ID`. In model space each body is placed by its own
+`--occurrence ID`, or `{"space": "stored"}` for a surface row that no face
+uses (see Surface rows). In model space each body is placed by its own
 `Body.transform`. In the instance space of an occurrence, each body of the
 occurrence's prototype is placed by its own transform first and then by the
 occurrence chain: `E(root) ∘ … ∘ E(ID) ∘ Body.transform`, where `E` is the

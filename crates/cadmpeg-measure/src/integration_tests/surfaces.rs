@@ -8,7 +8,7 @@ use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
 use crate::reason::{Category, UnavailableReason};
-use crate::report::{CarrierParameters, RowStatus, SurfaceMeasures};
+use crate::report::{CarrierParameters, RowPlacement, RowStatus, SurfaceMeasures};
 use crate::select::{Selection, SurfaceKind};
 use crate::test_support::{assert_measured, measure, Builder, Frame};
 use crate::value::Quantity;
@@ -219,6 +219,62 @@ fn a_surface_no_face_uses_is_reported_as_stored() {
     assert_eq!(point(origin), [1.0, 2.0, 3.0]);
     assert!(row.faces().is_empty());
     assert!(row.bodies().is_empty());
+    assert_eq!(*row.placement(), RowPlacement::Stored {});
+}
+
+/// The cylinder side moved onto the parallel offset of its cylinder by
+/// 1 mm: an unknown carrier with a construction and no solved cache.
+fn offset_side() -> (CadIr, SurfaceId, SurfaceId) {
+    let (ir, cylinder) = cylinder_side();
+    let mut wire = serde_json::to_value(&ir).expect("finite document");
+    let offset = "test:model:surface#offset";
+    wire["model"]["surfaces"]
+        .as_array_mut()
+        .expect("surfaces")
+        .push(serde_json::json!({"id": offset, "geometry": {"kind": "unknown"}}));
+    wire["model"]["procedural_surfaces"] = serde_json::json!([{
+        "id": "test:construction:offset_surface#offset",
+        "surface": offset,
+        "definition": {
+            "kind": "parallel_offset",
+            "support": cylinder.as_str(),
+            "distance": 1.0,
+            "self_intersect": false
+        }
+    }]);
+    wire["model"]["faces"][0]["surface"] = serde_json::json!(offset);
+    let mut ir: CadIr = serde_json::from_value(wire).expect("admitted document");
+    ir.finalize();
+    (ir, SurfaceId::mint(offset).expect("identity"), cylinder)
+}
+
+/// The offset carrier has no evaluator result: its row has no parameters
+/// and states why. Its support is named by no face, so the row is in the
+/// stored space: the face reaches it only through the construction.
+#[test]
+fn a_procedural_surface_row_states_why_it_has_no_parameters() {
+    let (ir, offset, cylinder) = offset_side();
+    let row = surface_row(&ir, &offset);
+    assert!(matches!(
+        row.carrier().parameters(),
+        CarrierParameters::None {}
+    ));
+    let unresolved = row.unresolved().as_ref().expect("a reason");
+    assert_eq!(
+        unresolved.reason(),
+        UnavailableReason::CarrierProceduralUnevaluated
+    );
+    assert_eq!(*row.status(), RowStatus::Unavailable);
+    assert_eq!(row.faces(), &[ir.model.faces[0].id.as_str().to_owned()]);
+    assert_eq!(*row.placement(), RowPlacement::Model {});
+
+    let support = surface_row(&ir, &cylinder);
+    assert!(support.faces().is_empty());
+    assert_eq!(*support.placement(), RowPlacement::Stored {});
+    let CarrierParameters::Cylinder { axis_point, .. } = support.carrier().parameters() else {
+        panic!("cylinder parameters");
+    };
+    assert_eq!(point(axis_point), [0.0, 0.0, 0.0]);
 }
 
 #[test]

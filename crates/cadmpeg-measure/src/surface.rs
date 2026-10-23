@@ -4,7 +4,10 @@
 //! A surface row is measured under the placement of the bodies whose faces
 //! use the surface. Those bodies must agree on it: a surface used by faces
 //! of bodies with different placements has no placed parameters. A surface
-//! no body uses is measured as stored.
+//! that no face names is measured as stored, in the stored space: a face
+//! that reaches it only through a carrier chain does not place it. A carrier
+//! with no chart has no parameters, and its reason is the row's
+//! `unresolved` value.
 
 use std::collections::BTreeSet;
 
@@ -67,20 +70,30 @@ impl<'ir> SurfaceInput<'_, 'ir> {
             Err(missing) => Err(missing.clone()),
         };
         let (carrier, unresolved) = match resolved {
-            Ok(carrier) => (
-                carrier.measures(Sources {
-                    fidelity: self.fidelity,
-                    surface: carrier.id(),
-                    depth: carrier.depth,
-                    body: placed_body,
-                }),
-                None,
-            ),
+            Ok(carrier) => {
+                let unresolved = settle(carrier.chart())?
+                    .err()
+                    .map(|missing| missing.unavailable::<()>());
+                (
+                    carrier.measures(Sources {
+                        fidelity: self.fidelity,
+                        surface: carrier.id(),
+                        depth: carrier.depth,
+                        body: placed_body,
+                    }),
+                    unresolved,
+                )
+            }
             Err(missing) => (self.unplaced(surface)?, Some(missing.unavailable::<()>())),
+        };
+        let placement = if faces.is_empty() {
+            crate::report::RowPlacement::Stored {}
+        } else {
+            crate::report::RowPlacement::Model {}
         };
         let mut row = SurfaceMeasures {
             surface: id.to_owned(),
-            placement: crate::report::RowPlacement::Model {},
+            placement,
             carrier,
             bodies: bodies.iter().map(|body| (*body).to_owned()).collect(),
             faces: faces
