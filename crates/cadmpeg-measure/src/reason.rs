@@ -146,11 +146,14 @@ pub enum UnavailableReason {
     LengthDerivativeUnavailable,
     /// The surface is used by faces of bodies with different placements.
     PlacementCarrierShared,
+    /// Two principal moments agree within their separation tolerance, so
+    /// the principal axes are not determined.
+    MassPrincipalAxesDegenerate,
 }
 
 impl UnavailableReason {
     /// Every reason, in declaration order.
-    pub const ALL: [Self; 40] = [
+    pub const ALL: [Self; 41] = [
         Self::CarrierUnknown,
         Self::CarrierUnresolved,
         Self::CarrierProceduralUnevaluated,
@@ -191,6 +194,7 @@ impl UnavailableReason {
         Self::BboxNonpositiveWeights,
         Self::LengthDerivativeUnavailable,
         Self::PlacementCarrierShared,
+        Self::MassPrincipalAxesDegenerate,
     ];
 
     /// The pinned `family.detail` string.
@@ -237,6 +241,7 @@ impl UnavailableReason {
             Self::BboxNonpositiveWeights => "bbox.nonpositive-weights",
             Self::LengthDerivativeUnavailable => "length.derivative-unavailable",
             Self::PlacementCarrierShared => "placement.carrier-shared",
+            Self::MassPrincipalAxesDegenerate => "mass.principal-axes-degenerate",
         }
     }
 
@@ -267,7 +272,9 @@ impl UnavailableReason {
             | Self::EvaluationNonFinite
             | Self::VolumeOrientationConflict
             | Self::VolumeClosureFlux => Category::Input,
-            Self::BoundaryUnboundedFace | Self::VolumeShellOpen => Category::Undefined,
+            Self::BoundaryUnboundedFace
+            | Self::VolumeShellOpen
+            | Self::MassPrincipalAxesDegenerate => Category::Undefined,
             Self::CarrierProceduralUnevaluated
             | Self::CarrierPolygonal
             | Self::CarrierCompositeCurve
@@ -404,7 +411,7 @@ impl Serialize for CompareCause {
 mod tests {
     use super::{Category, CaveatCode, CompareCause, UnavailableReason};
 
-    const REASONS: [(&str, Option<&str>); 40] = [
+    const REASONS: [(&str, Option<&str>); 41] = [
         ("carrier.unknown", Some("input")),
         ("carrier.unresolved", Some("input")),
         ("carrier.procedural-unevaluated", Some("unsupported")),
@@ -445,6 +452,7 @@ mod tests {
         ("bbox.nonpositive-weights", Some("unsupported")),
         ("length.derivative-unavailable", Some("unsupported")),
         ("placement.carrier-shared", Some("placement")),
+        ("mass.principal-axes-degenerate", Some("undefined")),
     ];
 
     #[test]

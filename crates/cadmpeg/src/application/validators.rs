@@ -51,7 +51,10 @@ pub(crate) fn validate_loaded(
         report.findings.extend(cadmpeg_measure::findings(
             &ctx,
             &document.ir,
-            MeasureOptions { work },
+            MeasureOptions {
+                work,
+                density: None,
+            },
         )?);
         ctx.finish_session()?;
         Ok::<_, CodecError>(report)

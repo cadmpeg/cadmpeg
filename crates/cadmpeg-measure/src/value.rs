@@ -351,6 +351,37 @@ pub struct Sweep {
     pub intervals: Vec<[FiniteReal; 2]>,
 }
 
+/// A finite symmetric 3×3 tensor by its six distinct entries.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct Tensor {
+    /// Entry `xx`.
+    pub xx: FiniteReal,
+    /// Entry `yy`.
+    pub yy: FiniteReal,
+    /// Entry `zz`.
+    pub zz: FiniteReal,
+    /// Entries `xy` and `yx`.
+    pub xy: FiniteReal,
+    /// Entries `yz` and `zy`.
+    pub yz: FiniteReal,
+    /// Entries `zx` and `xz`.
+    pub zx: FiniteReal,
+}
+
+/// Three finite values in ascending order.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct Moments {
+    /// The values, smallest first.
+    pub value: [FiniteReal; 3],
+}
+
+/// Three orthonormal directions.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct Axes {
+    /// The unit directions, in the order of the values they belong to.
+    pub value: [FinitePoint3; 3],
+}
+
 /// Whether a box is tight.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -373,6 +404,15 @@ pub enum Unit {
     /// Cubic millimetre.
     #[serde(rename = "mm3")]
     CubicMillimeter,
+    /// Millimetre to the fifth power: a second moment of volume.
+    #[serde(rename = "mm5")]
+    MillimeterToTheFifth,
+    /// Kilogram.
+    #[serde(rename = "kg")]
+    Kilogram,
+    /// Kilogram square millimetre: a moment of inertia.
+    #[serde(rename = "kg.mm2")]
+    KilogramSquareMillimeter,
     /// Radian.
     #[serde(rename = "rad")]
     Radian,
@@ -398,7 +438,7 @@ pub enum Method {
     CriticalPoints,
     /// A NURBS Bézier control-net bound.
     ControlHull,
-    /// Volume, centroid and closure from face fluxes.
+    /// Volume, centroid, closure and mass properties from face fluxes.
     DivergenceQuadrature,
     /// The sum of member values.
     Sum,
@@ -556,6 +596,52 @@ impl Point {
     /// A finite point, absent otherwise.
     pub(crate) fn new(value: Point3) -> Option<Self> {
         FinitePoint3::new(value).map(|value| Self { value })
+    }
+}
+
+impl Tensor {
+    /// A finite tensor from its entries `xx yy zz xy yz zx`, absent
+    /// otherwise.
+    pub(crate) fn new([xx, yy, zz, xy, yz, zx]: [f64; 6]) -> Option<Self> {
+        Some(Self {
+            xx: FiniteReal::new(xx)?,
+            yy: FiniteReal::new(yy)?,
+            zz: FiniteReal::new(zz)?,
+            xy: FiniteReal::new(xy)?,
+            yz: FiniteReal::new(yz)?,
+            zx: FiniteReal::new(zx)?,
+        })
+    }
+
+    /// The tensor as a symmetric matrix.
+    #[must_use]
+    pub fn rows(&self) -> [[f64; 3]; 3] {
+        let [xx, yy, zz, xy, yz, zx] =
+            [self.xx, self.yy, self.zz, self.xy, self.yz, self.zx].map(FiniteReal::get);
+        [[xx, xy, zx], [xy, yy, yz], [zx, yz, zz]]
+    }
+}
+
+impl Moments {
+    /// Finite values, absent otherwise.
+    pub(crate) fn new(values: [f64; 3]) -> Option<Self> {
+        Some(Self {
+            value: [
+                FiniteReal::new(values[0])?,
+                FiniteReal::new(values[1])?,
+                FiniteReal::new(values[2])?,
+            ],
+        })
+    }
+}
+
+impl Axes {
+    /// Finite directions, absent otherwise.
+    pub(crate) fn new(axes: [[f64; 3]; 3]) -> Option<Self> {
+        let point = |[x, y, z]: [f64; 3]| FinitePoint3::new(Point3::new(x, y, z));
+        Some(Self {
+            value: [point(axes[0])?, point(axes[1])?, point(axes[2])?],
+        })
     }
 }
 

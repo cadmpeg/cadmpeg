@@ -228,6 +228,7 @@ impl<'ir> Measurer<'ir> {
             edges: &edges,
             origins: &flux_origins,
             placements: &placements,
+            density: None,
         };
         for body in &model.bodies {
             let id = body.id.as_str();

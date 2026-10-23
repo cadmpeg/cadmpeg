@@ -23,7 +23,7 @@ A measured value has these members, in this order:
 | `status` | `"measured"`. |
 | `value` | A finite number, or `{x, y, z}` for a point or a direction. A range or a box has `min` and `max` in its place. |
 | shape members | `angular_sweep`: `full` and `intervals`. `bbox`: `kind` (`tight` or `conservative`) and `boundary`, a lower bound of the tight box: the box of the boundary pieces of a face, the box of the lower bounds of the members of a union (see Boxes). |
-| `unit` | `mm`, `mm2`, `mm3`, `rad` or `1`. The unit of the value and of both error terms. |
+| `unit` | `mm`, `mm2`, `mm3`, `mm5`, `kg`, `kg.mm2`, `rad` or `1`. The unit of the value and of both error terms. |
 | `method` | How the value was obtained (below). |
 | `numeric_error` | A non-negative a-posteriori estimate of the computation error. It is zero for `source` and `closed_form`. It is not a certified bound. |
 | `model_uncertainty` | The non-negative first-order change of the value when the boundary moves by the larger of the declared tolerance, the measured boundary deviations and the bridged gaps, plus the placement term. |
@@ -41,7 +41,9 @@ the value unavailable with `evaluation.non-finite`.
 ## Units
 
 Lengths are in millimetres, areas in square millimetres, volumes in cubic
-millimetres and angles in radians. Directions and ratios have unit `1`.
+millimetres, second moments of volume in millimetres to the fifth power,
+masses in kilograms, moments of inertia in kilogram square millimetres and
+angles in radians. Directions and ratios have unit `1`.
 
 ## Methods
 
@@ -53,7 +55,7 @@ millimetres and angles in radians. Directions and ratios have unit `1`.
 | `boundary_extremum` | Extremum search along boundary pieces only. |
 | `critical_points` | Boundary extremes and the carrier's interior critical points in the region. |
 | `control_hull` | A NURBS Bézier control-net bound. |
-| `divergence_quadrature` | Volume, centroid and closure from face fluxes. |
+| `divergence_quadrature` | Volume, centroid, closure and mass properties from face fluxes. |
 | `sum` | The sum of member values; errors add. |
 
 ## Exactness
@@ -129,6 +131,7 @@ cites.
 | `bbox.nonpositive-weights` | unsupported | The NURBS control hull needs positive weights. |
 | `length.derivative-unavailable` | unsupported | A procedural curve without a solved cache has no derivative evaluator. |
 | `placement.carrier-shared` | placement | A surface row's surface is used by faces of bodies with different placements. |
+| `mass.principal-axes-degenerate` | undefined | Two principal moments agree within their separation, so the principal axes are not determined. |
 
 ## Caveats
 
@@ -447,9 +450,11 @@ reach natural edges (`natural_edge_faces`).
 
 ## Volume, centroid and closure
 
-Each face region gives four flux integrals over the face, with
+Each face region gives five flux integrals over the face, with
 `N = S_u × S_v` and `d = P − P_ref`: `∫ d·N / 3` (volume), `∫ d_i² N_i / 2`
-(first moments), `∫ N` (closure vector) and `∫ d_i |N|` (area moments). By
+(first moments), `∫ N` (closure vector), `∫ d_i³ N_i / 3` and
+`∫ d_i² d_j N_i / 2` (second moments, see Mass properties) and
+`∫ d_i |N|` (area moments). By
 Green's theorem each is `∮ F du` over the region's loops with the inner
 integral `F(u, v) = −∫_{v₀}^{v} f(u, s) ds` from the region's base `v₀`,
 plus the whole domain when the region reaches the domain's natural edges.
@@ -509,6 +514,40 @@ error over `A` plus the largest area moment times the area error over
 `A`.
 `document.closed_volume` is the sum of the body volumes; it is unavailable
 when one is.
+
+## Mass properties
+
+A body with faces reports `second_moments`, the symmetric tensor
+`∫ (x − C)(x − C)ᵀ dV` about the centroid in mm⁵, as the entries `xx`,
+`yy`, `zz`, `xy`, `yz` and `zx`. It comes from the same fluxes, reading and
+preconditions as the volume: with the second moments `S = Σ σ Φ_S` and the
+first moments `m` about `P_ref`, it is `S − m mᵀ / V`. When the volume is
+unavailable, every mass property is unavailable with the same reason, and
+it carries no candidate.
+
+- `numeric_error` is the largest first-order propagation of the flux
+  errors of `S`, `m` and `V` into one entry.
+- `model_uncertainty` is the volume's boundary term × the squared body box
+  diagonal, plus the placement term. The move of the centroid changes the
+  tensor only at second order.
+
+`principal_moments` is the three eigenvalues of `second_moments`, smallest
+first, as `value: [λ₁, λ₂, λ₃]` in mm⁵, by cyclic Jacobi rotations. Its
+error terms are three times those of the tensor; the numeric error adds the
+off-diagonal norm the last rotation leaves. `principal_axes` is the unit
+eigenvectors in the order of the moments, as `value: [{x, y, z} × 3]` with
+unit `1`; each has its component of largest magnitude positive. Its error
+terms are those of the moments over the smallest gap between consecutive
+moments. When that gap is at most `1e-6` of the largest moment plus twice
+the moments' summed error terms, the axes are unavailable with
+`mass.principal-axes-degenerate` (category `undefined`).
+
+With `--density VALUE` (kilograms per cubic metre, finite and positive),
+the body also reports `mass` in kg, `ρ V`, and `inertia`, the inertia tensor
+about the centroid in kg·mm² (unit `kg.mm2`): `ρ (tr(M) E − M)` for the
+second moments `M`, so `I_xx = ρ (M_yy + M_zz)` and `I_xy = −ρ M_xy`. Their
+error terms scale with `ρ`; those of `inertia` are twice those of
+`second_moments`. Without a density, `mass` and `inertia` are absent.
 
 ## Comparison
 

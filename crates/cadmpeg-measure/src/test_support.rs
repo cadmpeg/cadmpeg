@@ -662,6 +662,144 @@ impl Builder {
     }
 }
 
+/// A box face: outward normal, plane origin, `u` axis, and its ring of
+/// edge indices with their forward flags.
+type BoxFace = ([f64; 3], [f64; 3], [f64; 3], [(usize, bool); 4]);
+
+/// The solid box from `min` to `max`: eight corners, twelve line edges and
+/// six plane faces whose carriers face outward and whose rings run
+/// counterclockwise about the outward normal.
+pub(crate) fn cuboid(min: [f64; 3], max: [f64; 3]) -> CadIr {
+    let mut builder = Builder::new();
+    let corners: Vec<VertexId> = (0..8)
+        .map(|index: usize| {
+            let x = if matches!(index % 4, 1 | 2) {
+                max[0]
+            } else {
+                min[0]
+            };
+            let y = if matches!(index % 4, 2 | 3) {
+                max[1]
+            } else {
+                min[1]
+            };
+            let z = if index < 4 { min[2] } else { max[2] };
+            builder.vertex([x, y, z])
+        })
+        .collect();
+    let edges: Vec<EdgeId> = [
+        (0, 1),
+        (1, 2),
+        (2, 3),
+        (3, 0),
+        (4, 5),
+        (5, 6),
+        (6, 7),
+        (7, 4),
+        (0, 4),
+        (1, 5),
+        (2, 6),
+        (3, 7),
+    ]
+    .iter()
+    .map(|(start, end)| builder.line(&corners[*start], &corners[*end]))
+    .collect();
+    let x_axis = [1.0, 0.0, 0.0];
+    let faces: [BoxFace; 6] = [
+        (
+            [0.0, 0.0, -1.0],
+            min,
+            x_axis,
+            [(0, false), (3, false), (2, false), (1, false)],
+        ),
+        (
+            [0.0, 0.0, 1.0],
+            [min[0], min[1], max[2]],
+            x_axis,
+            [(7, true), (4, true), (5, true), (6, true)],
+        ),
+        (
+            [0.0, -1.0, 0.0],
+            min,
+            x_axis,
+            [(0, true), (9, true), (4, false), (8, false)],
+        ),
+        (
+            [1.0, 0.0, 0.0],
+            [max[0], min[1], min[2]],
+            [0.0, 1.0, 0.0],
+            [(1, true), (10, true), (5, false), (9, false)],
+        ),
+        (
+            [0.0, 1.0, 0.0],
+            [min[0], max[1], min[2]],
+            x_axis,
+            [(2, true), (11, true), (6, false), (10, false)],
+        ),
+        (
+            [-1.0, 0.0, 0.0],
+            min,
+            [0.0, 1.0, 0.0],
+            [(3, true), (8, true), (7, false), (11, false)],
+        ),
+    ];
+    for (normal, origin, u_axis, ring) in faces {
+        let surface = builder.plane(origin, normal, u_axis);
+        let ring: Vec<(EdgeId, Sense)> = ring
+            .iter()
+            .map(|(edge, forward)| {
+                let sense = if *forward {
+                    Sense::Forward
+                } else {
+                    Sense::Reversed
+                };
+                (edges[*edge].clone(), sense)
+            })
+            .collect();
+        builder.face(&surface, Sense::Forward, &[ring], true);
+    }
+    builder.finish(BodyKind::Solid)
+}
+
+/// The solid right circular cylinder of `radius` about `+z` through the
+/// origin, from `z = 0` to `z = height`: a seam-cut side and two discs.
+pub(crate) fn cylinder_solid(radius: f64, height: f64) -> CadIr {
+    let mut builder = Builder::new();
+    let low = builder.vertex([radius, 0.0, 0.0]);
+    let high = builder.vertex([radius, 0.0, height]);
+    let bottom = builder.circle([0.0; 3], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0], radius, &low);
+    let top = builder.circle(
+        [0.0, 0.0, height],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+        radius,
+        &high,
+    );
+    let seam = builder.line(&low, &high);
+    let side = builder.cylinder(Frame::z_up([0.0; 3]), radius);
+    builder.face(
+        &side,
+        Sense::Forward,
+        &[vec![
+            (bottom.clone(), Sense::Forward),
+            (seam.clone(), Sense::Forward),
+            (top.clone(), Sense::Reversed),
+            (seam, Sense::Reversed),
+        ]],
+        true,
+    );
+    let floor = builder.plane([0.0; 3], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]);
+    builder.face(
+        &floor,
+        Sense::Reversed,
+        &[vec![(bottom, Sense::Reversed)]],
+        true,
+    );
+    let roof = builder.plane([0.0, 0.0, height], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]);
+    builder.face(&roof, Sense::Forward, &[vec![(top, Sense::Forward)]], true);
+    builder.finish(BodyKind::Solid)
+}
+
 /// The plate of #188 case 3: the square `[0, 40]²` at `z = 0` with a hole of
 /// diameter 20 centred at `(20, 20)`.
 pub(crate) fn plate_with_hole(classified: bool) -> CadIr {

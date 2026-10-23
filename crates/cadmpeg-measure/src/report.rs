@@ -11,7 +11,9 @@ use serde::Serialize;
 
 use crate::reason::{Category, CaveatCode};
 use crate::select::SurfaceKind;
-use crate::value::{BoxValue, Point, Quantity, Range, Scalar, Sweep, Unavailable};
+use crate::value::{
+    Axes, BoxValue, Moments, Point, Quantity, Range, Scalar, Sweep, Tensor, Unavailable,
+};
 
 /// Read accessors for private report fields.
 macro_rules! accessors {
@@ -953,6 +955,16 @@ pub struct BodyMeasures {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) centroid: Option<Quantity<Point>>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) second_moments: Option<Quantity<Tensor>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) principal_moments: Option<Quantity<Moments>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) principal_axes: Option<Quantity<Axes>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) mass: Option<Quantity<Scalar>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) inertia: Option<Quantity<Tensor>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) area_centroid: Option<Quantity<Point>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) length: Option<Quantity<Scalar>>,
@@ -989,6 +1001,19 @@ accessors!(BodyMeasures {
     volume: Option<Quantity<Scalar>>;
     /// Volume centroid; absent for a body with no faces.
     centroid: Option<Quantity<Point>>;
+    /// Second moments of volume about the centroid, `∫ (x − c)(x − c)ᵀ
+    /// dV`; absent for a body with no faces.
+    second_moments: Option<Quantity<Tensor>>;
+    /// Eigenvalues of the second moments, ascending.
+    principal_moments: Option<Quantity<Moments>>;
+    /// Unit eigenvectors of the second moments, in the order of the
+    /// principal moments.
+    principal_axes: Option<Quantity<Axes>>;
+    /// Mass at the given density; absent without one.
+    mass: Option<Quantity<Scalar>>;
+    /// Inertia tensor about the centroid at the given density; absent
+    /// without one.
+    inertia: Option<Quantity<Tensor>>;
     /// Area-weighted centroid of a body with faces and no closed shell.
     area_centroid: Option<Quantity<Point>>;
     /// Total edge length of a body with edges and no faces.
@@ -1300,6 +1325,11 @@ impl BodyMeasures {
         visitor.visit_option(self.area.as_ref());
         visitor.visit_option(self.volume.as_ref());
         visitor.visit_option(self.centroid.as_ref());
+        visitor.visit_option(self.second_moments.as_ref());
+        visitor.visit_option(self.principal_moments.as_ref());
+        visitor.visit_option(self.principal_axes.as_ref());
+        visitor.visit_option(self.mass.as_ref());
+        visitor.visit_option(self.inertia.as_ref());
         visitor.visit_option(self.area_centroid.as_ref());
         visitor.visit_option(self.length.as_ref());
         visitor.visit(&self.bbox);

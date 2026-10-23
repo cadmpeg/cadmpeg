@@ -51,6 +51,29 @@ pub struct MeasureInput<'ir> {
 pub struct MeasureOptions {
     /// The work profile that sets the pass allowance.
     pub work: WorkProfile,
+    /// The material density of every body; body rows report mass and
+    /// inertia only with one.
+    pub density: Option<Density>,
+}
+
+/// A material density in kilograms per cubic metre: finite and positive.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Density(f64);
+
+impl Density {
+    /// The density `kilograms_per_cubic_metre`, absent unless it is finite
+    /// and positive.
+    #[must_use]
+    pub fn new(kilograms_per_cubic_metre: f64) -> Option<Self> {
+        (kilograms_per_cubic_metre.is_finite() && kilograms_per_cubic_metre > 0.0)
+            .then_some(Self(kilograms_per_cubic_metre))
+    }
+
+    /// The density in kilograms per cubic metre.
+    #[must_use]
+    pub const fn get(self) -> f64 {
+        self.0
+    }
 }
 
 /// Why a measurement pass did not complete.
@@ -328,6 +351,7 @@ impl<'ir> Measurer<'ir> {
             edges: &edges,
             origins: &flux_origins,
             placements: &placements,
+            density: self.options.density,
         };
         let body_out: Vec<BodyMeasures> = body_rows.iter().map(|body| bodies.row(body)).collect();
 

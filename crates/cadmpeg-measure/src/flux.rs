@@ -3,7 +3,8 @@
 //!
 //! With `N = S_u × S_v` and `d = P − P_ref`, a face contributes the surface
 //! integrals of `d·N / 3` (volume), `d_i² N_i / 2` (first moments), `N_i`
-//! (closure) and `d_i |N|` (area moments). Each is `∮ F du` by Green's
+//! (closure), `d_i³ N_i / 3` and `d_i² d_j N_i / 2` (second moments `∫ d_i²`
+//! and `∫ d_i d_j` of the volume) and `d_i |N|` (area moments). Each is `∮ F du` by Green's
 //! theorem with the inner integral `F(u, v) = −∫_{v₀}^{v} f(u, s) ds` from
 //! the region's base `v₀`, plus the whole domain when the region reaches
 //! the domain's natural edges. A body sums its faces' fluxes with the sign
@@ -22,9 +23,9 @@ use crate::quadrature::{integrate, Target};
 use crate::reason::UnavailableReason;
 use crate::region::Region;
 
-/// Flux components: volume, three first moments, three closure components
-/// and three area moments.
-pub(crate) const FLUX: usize = 10;
+/// Flux components: volume, three first moments, three closure components,
+/// six second moments and three area moments.
+pub(crate) const FLUX: usize = 16;
 
 /// Integrated values and their error estimates.
 const TRACKED: usize = 2 * FLUX;
@@ -38,9 +39,12 @@ const MOMENTS: usize = 1;
 /// The first of the three closure components.
 const CLOSURE: usize = 4;
 
+/// The first of the six second moments, in the order `xx yy zz xy yz zx`.
+const SECOND_MOMENTS: usize = 7;
+
 /// The first area moment component; the components before it change sign
 /// with the oriented normal.
-const AREA_MOMENTS: usize = 7;
+const AREA_MOMENTS: usize = 13;
 
 /// One face's flux integrals and their error estimates.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -115,6 +119,20 @@ impl Flux {
     fn triple_error(&self, first: usize) -> [f64; 3] {
         std::array::from_fn(|axis| self.error[first + axis])
     }
+
+    /// The second moments `∫ d_i d_j dV` about `P_ref`, in the order
+    /// `xx yy zz xy yz zx`, and their error estimates.
+    pub(crate) fn second_moments(&self) -> ([f64; 6], [f64; 6]) {
+        (
+            std::array::from_fn(|k| self.value[SECOND_MOMENTS + k]),
+            std::array::from_fn(|k| self.error[SECOND_MOMENTS + k]),
+        )
+    }
+
+    /// The error estimate of each first moment.
+    pub(crate) fn moment_errors(&self) -> [f64; 3] {
+        self.triple_error(MOMENTS)
+    }
 }
 
 /// The largest of three non-negative estimates.
@@ -135,6 +153,12 @@ fn density(partials: &Partials, origin: Point3) -> [f64; FLUX] {
         normal.x,
         normal.y,
         normal.z,
+        d.x * d.x * d.x * normal.x / 3.0,
+        d.y * d.y * d.y * normal.y / 3.0,
+        d.z * d.z * d.z * normal.z / 3.0,
+        d.x * d.x * d.y * normal.x / 2.0,
+        d.y * d.y * d.z * normal.y / 2.0,
+        d.z * d.z * d.x * normal.z / 2.0,
         d.x * magnitude,
         d.y * magnitude,
         d.z * magnitude,
@@ -143,7 +167,7 @@ fn density(partials: &Partials, origin: Point3) -> [f64; FLUX] {
 
 /// The magnitude scale `scale^d` of each component.
 fn scales(scale: f64) -> [f64; TRACKED] {
-    let powers = [3, 4, 4, 4, 2, 2, 2, 3, 3, 3];
+    let powers = [3, 4, 4, 4, 2, 2, 2, 5, 5, 5, 5, 5, 5, 3, 3, 3];
     std::array::from_fn(|k| scale.powi(powers[k % FLUX]))
 }
 

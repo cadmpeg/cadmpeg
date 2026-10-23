@@ -319,10 +319,10 @@ fn measures_cylinder_body() {
     assert_eq!(body["status"], "measured");
     let document = &report["measure"]["document"];
     assert_measured(&document["closed_volume"], 3000.0 * pi, 1.0);
-    assert!(
-        document["unavailable"]
-            .as_object()
-            .is_none_or(serde_json::Map::is_empty),
+    // The two radial principal moments of a circular cylinder are equal.
+    assert_eq!(
+        document["unavailable"],
+        serde_json::json!({"undefined": {"mass.principal-axes-degenerate": 1}}),
         "{document:#}"
     );
     assert_eq!(document["work"]["exhausted"], false);

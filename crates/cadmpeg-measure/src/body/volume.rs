@@ -11,15 +11,24 @@
 
 use cadmpeg_ir::math::Point3;
 
+use crate::eigen::symmetric_eigen;
 use crate::face::{FaceFlux, FaceResult, Verdict};
 use crate::failure::Missing;
 use crate::flux::Flux;
 use crate::reason::{Category, UnavailableReason};
 use crate::report::{BodyOrientation, ClosureFlux, NormalReading, RegionRule};
+use crate::session::Density;
+use crate::tolerance::PRINCIPAL_AXIS_RELATIVE_SEPARATION;
 use crate::value::{
-    measured, Candidate, Errors, Measured, Method, Point, Quantity, Reading, Scalar, Unavailable,
-    Unit,
+    measured, Axes, Candidate, Errors, Measured, Method, Moments, Point, Quantity, Reading, Scalar,
+    Tensor, Unavailable, Unit,
 };
+
+/// Cubic millimetres in one cubic metre.
+const CUBIC_MILLIMETRES_PER_CUBIC_METRE: f64 = 1.0e9;
+
+/// The index pairs of a tensor's entries `xx yy zz xy yz zx`.
+const TENSOR_ENTRIES: [(usize, usize); 6] = [(0, 0), (1, 1), (2, 2), (0, 1), (1, 2), (2, 0)];
 
 /// One orientation reading of a body.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -143,15 +152,29 @@ pub(super) struct VolumeInput<'a> {
     pub(super) diagonal: f64,
     /// The placement term of a value of dimension `d`.
     pub(super) placement: &'a dyn Fn(u8, f64) -> f64,
+    /// The material density of mass and inertia.
+    pub(super) density: Option<Density>,
 }
 
-/// The body's volume, centroid, area centroid and orientation facts.
+/// The body's volume, centroid, area centroid, mass properties and
+/// orientation facts.
 pub(super) struct VolumeFacts {
     pub(super) volume: Quantity<Scalar>,
     pub(super) centroid: Quantity<Point>,
     pub(super) area_centroid: Option<Quantity<Point>>,
+    pub(super) mass: MassFacts,
     pub(super) shell_volumes: Vec<Option<Quantity<Scalar>>>,
     pub(super) orientation: BodyOrientation,
+}
+
+/// Second moments of volume about the centroid, their principal moments and
+/// axes, and, with a density, mass and inertia about the centroid.
+pub(super) struct MassFacts {
+    pub(super) second_moments: Quantity<Tensor>,
+    pub(super) principal_moments: Quantity<Moments>,
+    pub(super) principal_axes: Quantity<Axes>,
+    pub(super) mass: Option<Quantity<Scalar>>,
+    pub(super) inertia: Option<Quantity<Tensor>>,
 }
 
 impl VolumeInput<'_> {
@@ -208,16 +231,182 @@ impl VolumeInput<'_> {
         Ok(sum)
     }
 
-    fn volume_errors(&self, flux: &Flux, value: f64) -> Errors {
+    /// The volume change when the boundary moves by the largest `τ_b`: the
+    /// body area times that tolerance.
+    fn boundary_term(&self) -> f64 {
         let tau = self
             .members
             .iter()
             .map(|member| member.result.tau_b)
             .fold(0.0, f64::max);
+        self.area * tau
+    }
+
+    fn volume_errors(&self, flux: &Flux, value: f64) -> Errors {
         Errors::new(
             flux.volume_error(),
-            self.area * tau + (self.placement)(3, value),
+            self.boundary_term() + (self.placement)(3, value),
         )
+    }
+
+    /// The second moments of volume about the centroid, `M = S − m mᵀ / V`
+    /// from the second moments `S` and first moments `m` about `P_ref`.
+    /// The numeric error is the first-order propagation of the flux
+    /// estimates. The model uncertainty is the change when the boundary
+    /// moves by `τ_b`, the volume term times the squared body box diagonal,
+    /// plus the placement term; the centroid's own move changes `M` only at
+    /// second order.
+    fn mass_facts(&self, sum: &Sum) -> MassFacts {
+        let volume = sum.flux.volume();
+        let moment = sum.flux.moment();
+        let moment_errors = sum.flux.moment_errors();
+        let volume_error = sum.flux.volume_error();
+        let (second, second_errors) = sum.flux.second_moments();
+        let central: [f64; 6] = std::array::from_fn(|k| {
+            let (i, j) = TENSOR_ENTRIES[k];
+            second[k] - moment[i] * moment[j] / volume
+        });
+        let numeric = (0..6)
+            .map(|k| {
+                let (i, j) = TENSOR_ENTRIES[k];
+                second_errors[k]
+                    + (moment[i].abs() * moment_errors[j] + moment[j].abs() * moment_errors[i])
+                        / volume.abs()
+                    + (moment[i] * moment[j]).abs() * volume_error / (volume * volume)
+            })
+            .fold(0.0, f64::max);
+        let largest = central
+            .iter()
+            .fold(0.0_f64, |most, entry| most.max(entry.abs()));
+        let model =
+            self.boundary_term() * self.diagonal * self.diagonal + (self.placement)(5, largest);
+        let errors = Errors::new(numeric, model);
+        let second_moments = measured(
+            Tensor::new(central),
+            Unit::MillimeterToTheFifth,
+            Method::DivergenceQuadrature,
+            errors,
+            self.id,
+        );
+        let (principal_moments, principal_axes) = match &second_moments {
+            Quantity::Measured(tensor) => self.principal(&tensor.value().rows(), errors),
+            Quantity::Unavailable(unavailable) => (
+                Quantity::Unavailable(unavailable.recast()),
+                Quantity::Unavailable(unavailable.recast()),
+            ),
+        };
+        let (mass, inertia) = match self.density {
+            Some(density) => {
+                let per_cubic_millimetre = density.get() / CUBIC_MILLIMETRES_PER_CUBIC_METRE;
+                let volume_errors = self.volume_errors(&sum.flux, volume);
+                let mass = measured(
+                    Scalar::new(per_cubic_millimetre * volume),
+                    Unit::Kilogram,
+                    Method::DivergenceQuadrature,
+                    Errors::new(
+                        per_cubic_millimetre * volume_errors.numeric,
+                        per_cubic_millimetre * volume_errors.model,
+                    ),
+                    self.id,
+                );
+                let [xx, yy, zz, xy, yz, zx] = central;
+                let inertia = measured(
+                    Tensor::new(
+                        [yy + zz, zz + xx, xx + yy, -xy, -yz, -zx]
+                            .map(|entry| per_cubic_millimetre * entry),
+                    ),
+                    Unit::KilogramSquareMillimeter,
+                    Method::DivergenceQuadrature,
+                    Errors::new(
+                        2.0 * per_cubic_millimetre * numeric,
+                        2.0 * per_cubic_millimetre * model,
+                    ),
+                    self.id,
+                );
+                (Some(mass), Some(inertia))
+            }
+            None => (None, None),
+        };
+        MassFacts {
+            second_moments,
+            principal_moments,
+            principal_axes,
+            mass,
+            inertia,
+        }
+    }
+
+    /// The principal moments of `matrix` and its principal axes, or
+    /// `mass.principal-axes-degenerate` when two moments agree within
+    /// `PRINCIPAL_AXIS_RELATIVE_SEPARATION` of the largest plus their error
+    /// terms. A matrix perturbation of entries at most `e` moves each
+    /// eigenvalue by at most `3e` and each eigenvector by at most that over
+    /// the eigenvalue gap.
+    fn principal(
+        &self,
+        matrix: &[[f64; 3]; 3],
+        errors: Errors,
+    ) -> (Quantity<Moments>, Quantity<Axes>) {
+        let eigen = symmetric_eigen(*matrix);
+        let moment_errors = Errors::new(3.0 * errors.numeric + eigen.residual, 3.0 * errors.model);
+        let moments = measured(
+            Moments::new(eigen.values),
+            Unit::MillimeterToTheFifth,
+            Method::DivergenceQuadrature,
+            moment_errors,
+            self.id,
+        );
+        let [low, middle, high] = eigen.values;
+        let gap = (middle - low).min(high - middle);
+        let largest = eigen
+            .values
+            .iter()
+            .fold(0.0_f64, |most, value| most.max(value.abs()));
+        let separation = PRINCIPAL_AXIS_RELATIVE_SEPARATION * largest
+            + 2.0 * (moment_errors.numeric + moment_errors.model);
+        let axes = if gap > separation {
+            measured(
+                Axes::new(eigen.vectors),
+                Unit::One,
+                Method::DivergenceQuadrature,
+                Errors::new(moment_errors.numeric / gap, moment_errors.model / gap),
+                self.id,
+            )
+        } else {
+            Quantity::missing(
+                UnavailableReason::MassPrincipalAxesDegenerate,
+                Some(self.id),
+                format!(
+                    "two principal moments are {gap} mm⁵ apart, within their separation \
+                     {separation} mm⁵"
+                ),
+            )
+        };
+        (moments, axes)
+    }
+
+    /// Mass properties unavailable as the volume is.
+    fn unavailable_mass(
+        &self,
+        reason: UnavailableReason,
+        message: &str,
+        category: Option<Category>,
+    ) -> MassFacts {
+        let missing = || match category {
+            Some(category) => Unavailable::<()>::aggregate(category, self.id, message),
+            None => Unavailable::new(reason, Some(self.id), message),
+        };
+        MassFacts {
+            second_moments: Quantity::Unavailable(missing().recast()),
+            principal_moments: Quantity::Unavailable(missing().recast()),
+            principal_axes: Quantity::Unavailable(missing().recast()),
+            mass: self
+                .density
+                .map(|_| Quantity::Unavailable(missing().recast())),
+            inertia: self
+                .density
+                .map(|_| Quantity::Unavailable(missing().recast())),
+        }
     }
 
     fn volume_quantity(&self, sum: &Sum) -> Quantity<Scalar> {
@@ -447,6 +636,7 @@ impl VolumeInput<'_> {
                     volume: self.volume_quantity(&sum),
                     centroid: self.centroid_quantity(&sum),
                     area_centroid,
+                    mass: self.mass_facts(&sum),
                     shell_volumes,
                     orientation,
                 }
@@ -470,6 +660,7 @@ impl VolumeInput<'_> {
         area_centroid: Option<Quantity<Point>>,
     ) -> VolumeFacts {
         let (volumes, centroids) = self.candidates(reason);
+        let mass = self.unavailable_mass(reason, &message, category);
         let (volume, centroid) = match category {
             Some(category) => (
                 Unavailable::aggregate(category, self.id, message.clone()),
@@ -484,6 +675,7 @@ impl VolumeInput<'_> {
             volume: Quantity::Unavailable(volume.with_candidates(volumes)),
             centroid: Quantity::Unavailable(centroid.with_candidates(centroids)),
             area_centroid,
+            mass,
             shell_volumes: vec![None; self.shells.len()],
             orientation,
         }

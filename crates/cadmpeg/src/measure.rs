@@ -193,6 +193,7 @@ fn run(
         input,
         MeasureOptions {
             work: session.profile,
+            density: None,
         },
     )
     .measure(&ctx, selection);

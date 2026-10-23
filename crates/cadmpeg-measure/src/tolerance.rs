@@ -48,6 +48,14 @@ pub(crate) const COMPARE_RELATIVE_FLOOR: f64 = 1.0e-9;
 /// squared encloses no area.
 pub(crate) const LOOP_DEGENERATE_RELATIVE_AREA: f64 = 1.0e-12;
 
+/// Principal moments closer than this fraction of the largest moment, plus
+/// their error terms, leave the principal axes undetermined.
+pub(crate) const PRINCIPAL_AXIS_RELATIVE_SEPARATION: f64 = 1.0e-6;
+
+/// A cyclic Jacobi sweep stops when the off-diagonal norm is below this
+/// fraction of the matrix norm.
+pub(crate) const JACOBI_RELATIVE_RESIDUAL: f64 = f64::EPSILON;
+
 /// Largest of the inputs, ignoring absent ones.
 fn largest(values: impl IntoIterator<Item = f64>) -> f64 {
     values.into_iter().fold(0.0, f64::max)

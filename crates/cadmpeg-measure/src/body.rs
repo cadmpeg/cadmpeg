@@ -39,6 +39,8 @@ pub(crate) struct BodyInput<'a, 'ir> {
     pub(crate) origins: &'a HashMap<&'ir str, Point3>,
     /// The placement of each body.
     pub(crate) placements: &'a HashMap<&'ir str, Outcome<Placement>>,
+    /// The material density of mass and inertia.
+    pub(crate) density: Option<crate::session::Density>,
 }
 
 impl<'a> BodyInput<'a, '_> {
@@ -124,10 +126,11 @@ impl<'a> BodyInput<'a, '_> {
                 area: area_value,
                 diagonal,
                 placement: &placement_term,
+                density: self.density,
             };
             input.measure()
         });
-        let (volume, centroid, area_centroid, orientation) = match volume {
+        let (volume, centroid, area_centroid, mass, orientation) = match volume {
             Some(volume) => {
                 for (shell, value) in shells.iter_mut().zip(volume.shell_volumes) {
                     shell.volume = value;
@@ -136,10 +139,12 @@ impl<'a> BodyInput<'a, '_> {
                     Some(volume.volume),
                     Some(volume.centroid),
                     volume.area_centroid,
+                    Some(volume.mass),
                     volume.orientation,
                 )
             }
             None => (
+                None,
                 None,
                 None,
                 None,
@@ -166,6 +171,11 @@ impl<'a> BodyInput<'a, '_> {
             area,
             volume,
             centroid,
+            second_moments: mass.as_ref().map(|mass| mass.second_moments.clone()),
+            principal_moments: mass.as_ref().map(|mass| mass.principal_moments.clone()),
+            principal_axes: mass.as_ref().map(|mass| mass.principal_axes.clone()),
+            mass: mass.as_ref().and_then(|mass| mass.mass.clone()),
+            inertia: mass.and_then(|mass| mass.inertia),
             area_centroid,
             length,
             bbox,
@@ -207,6 +217,7 @@ impl<'a> BodyInput<'a, '_> {
             area: 0.0,
             diagonal: 0.0,
             placement: &no_term,
+            density: None,
         };
         let failure = input.conflict()?;
         let mut related = failure.related;

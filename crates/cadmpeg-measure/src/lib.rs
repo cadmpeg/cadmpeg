@@ -38,6 +38,7 @@ mod canonical;
 pub mod compare;
 mod context;
 mod edges;
+mod eigen;
 mod extent;
 mod face;
 mod failure;
@@ -65,7 +66,7 @@ pub use budget::{
     MEASURE_PASS_WORK_FLOOR,
 };
 pub use select::{FaceFilter, RadiusRange, Selection, SurfaceKind};
-pub use session::{findings, MeasureError, MeasureInput, MeasureOptions, Measurer};
+pub use session::{findings, Density, MeasureError, MeasureInput, MeasureOptions, Measurer};
 
 #[cfg(test)]
 mod integration_tests;
