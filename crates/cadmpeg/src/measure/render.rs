@@ -12,7 +12,9 @@ use cadmpeg_measure::report::{
     BodyMeasures, BodyOrientation, CarrierParameters, EdgeMeasures, EdgeParameters, FaceMeasures,
     LoopMeasures, MeasureReport, NormalReading, RegionRule, SurfaceMeasures,
 };
-use cadmpeg_measure::value::{BoxValue, Measured, Point, Quantity, Range, Scalar, Sweep};
+use cadmpeg_measure::value::{
+    Axes, BoxValue, Measured, Moments, Point, Quantity, Range, Scalar, Sweep, Tensor,
+};
 use serde::Serialize;
 
 use super::args::Level;
@@ -46,6 +48,37 @@ fn point_cells(quantity: Option<&Quantity<Point>>) -> [String; 3] {
             [point.x, point.y, point.z].map(|value| value.to_string())
         }
         None => [String::new(), String::new(), String::new()],
+    }
+}
+
+fn tensor_cells(quantity: Option<&Quantity<Tensor>>) -> [String; 6] {
+    match quantity.and_then(Quantity::measured) {
+        Some(measured) => {
+            let value = measured.value();
+            [value.xx, value.yy, value.zz, value.xy, value.yz, value.zx]
+                .map(|entry| entry.get().to_string())
+        }
+        None => std::array::from_fn(|_| String::new()),
+    }
+}
+
+fn moments_cells(quantity: Option<&Quantity<Moments>>) -> [String; 3] {
+    match quantity.and_then(Quantity::measured) {
+        Some(measured) => measured.value().value.map(|value| value.get().to_string()),
+        None => std::array::from_fn(|_| String::new()),
+    }
+}
+
+fn axes_cells(quantity: Option<&Quantity<Axes>>) -> [String; 9] {
+    match quantity.and_then(Quantity::measured) {
+        Some(measured) => {
+            let axes = measured.value().value.map(|axis| {
+                let axis = axis.get();
+                [axis.x, axis.y, axis.z]
+            });
+            std::array::from_fn(|index| axes[index / 3][index % 3].to_string())
+        }
+        None => std::array::from_fn(|_| String::new()),
     }
 }
 
@@ -148,7 +181,7 @@ const FACE_HEADER: [&str; 28] = [
     "caveats",
 ];
 
-const BODY_HEADER: [&str; 23] = [
+const BODY_HEADER: [&str; 48] = [
     "body",
     "name",
     "kind",
@@ -161,6 +194,31 @@ const BODY_HEADER: [&str; 23] = [
     "centroid_x_mm",
     "centroid_y_mm",
     "centroid_z_mm",
+    "second_moment_xx_mm5",
+    "second_moment_yy_mm5",
+    "second_moment_zz_mm5",
+    "second_moment_xy_mm5",
+    "second_moment_yz_mm5",
+    "second_moment_zx_mm5",
+    "principal_moment_1_mm5",
+    "principal_moment_2_mm5",
+    "principal_moment_3_mm5",
+    "principal_axis_1_x",
+    "principal_axis_1_y",
+    "principal_axis_1_z",
+    "principal_axis_2_x",
+    "principal_axis_2_y",
+    "principal_axis_2_z",
+    "principal_axis_3_x",
+    "principal_axis_3_y",
+    "principal_axis_3_z",
+    "mass_kg",
+    "inertia_xx_kg_mm2",
+    "inertia_yy_kg_mm2",
+    "inertia_zz_kg_mm2",
+    "inertia_xy_kg_mm2",
+    "inertia_yz_kg_mm2",
+    "inertia_zx_kg_mm2",
     "bbox_min_x_mm",
     "bbox_min_y_mm",
     "bbox_min_z_mm",
@@ -287,6 +345,11 @@ fn body_row(body: &BodyMeasures) -> Vec<String> {
         scalar_cell(body.length().as_ref()),
     ];
     row.extend(point_cells(body.centroid().as_ref()));
+    row.extend(tensor_cells(body.second_moments().as_ref()));
+    row.extend(moments_cells(body.principal_moments().as_ref()));
+    row.extend(axes_cells(body.principal_axes().as_ref()));
+    row.push(scalar_cell(body.mass().as_ref()));
+    row.extend(tensor_cells(body.inertia().as_ref()));
     row.extend(box_cells(body.bbox()));
     let orientation = if *body.faces() == 0 {
         ""
@@ -483,6 +546,67 @@ fn point_value(value: &Point, unit: &str) -> String {
         number(point.y),
         number(point.z)
     )
+}
+
+/// A symmetric tensor as `xx yy zz xy yz zx` with its unit.
+fn tensor_text(quantity: &Quantity<Tensor>, unit: &str) -> String {
+    if let Some(text) = unavailable_text(quantity) {
+        return text;
+    }
+    let Some(measured) = quantity.measured() else {
+        return String::new();
+    };
+    let value = measured.value();
+    let entries: Vec<String> = [value.xx, value.yy, value.zz, value.xy, value.yz, value.zx]
+        .iter()
+        .zip(["xx", "yy", "zz", "xy", "yz", "zx"])
+        .map(|(entry, name)| format!("{name} {}", number(entry.get())))
+        .collect();
+    format!(
+        "{} {unit}  {}{}",
+        entries.join(", "),
+        name(&measured.method()),
+        errors(measured)
+    )
+}
+
+fn moments_text(quantity: &Quantity<Moments>) -> String {
+    if let Some(text) = unavailable_text(quantity) {
+        return text;
+    }
+    let Some(measured) = quantity.measured() else {
+        return String::new();
+    };
+    let [first, second, third] = measured.value().value.map(|value| number(value.get()));
+    format!(
+        "{first}, {second}, {third} mm⁵  {}{}",
+        name(&measured.method()),
+        errors(measured)
+    )
+}
+
+fn axes_text(quantity: &Quantity<Axes>) -> String {
+    if let Some(text) = unavailable_text(quantity) {
+        return text;
+    }
+    let Some(measured) = quantity.measured() else {
+        return String::new();
+    };
+    let axes: Vec<String> = measured
+        .value()
+        .value
+        .iter()
+        .map(|axis| {
+            let axis = axis.get();
+            format!(
+                "({}, {}, {})",
+                number(axis.x),
+                number(axis.y),
+                number(axis.z)
+            )
+        })
+        .collect();
+    format!("{}{}", axes.join(", "), errors(measured))
 }
 
 fn box_text(quantity: &Quantity<BoxValue>) -> String {
@@ -944,6 +1068,21 @@ fn body_text(out: &mut impl Write, body: &BodyMeasures) -> io::Result<()> {
     if let Some(centroid) = body.centroid() {
         line(out, "centroid", &point_text(centroid, "mm"))?;
         candidates_text(out, centroid, |point| point_value(point, "mm"))?;
+    }
+    if let Some(second) = body.second_moments() {
+        line(out, "second moments", &tensor_text(second, "mm⁵"))?;
+    }
+    if let Some(moments) = body.principal_moments() {
+        line(out, "principal", &moments_text(moments))?;
+    }
+    if let Some(axes) = body.principal_axes() {
+        line(out, "axes", &axes_text(axes))?;
+    }
+    if let Some(mass) = body.mass() {
+        line(out, "mass", &scalar_text(mass, "kg"))?;
+    }
+    if let Some(inertia) = body.inertia() {
+        line(out, "inertia", &tensor_text(inertia, "kg·mm²"))?;
     }
     if let Some(centroid) = body.area_centroid() {
         line(out, "area centroid", &point_text(centroid, "mm"))?;

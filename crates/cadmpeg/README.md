@@ -258,7 +258,10 @@ ID suffix, as for `query item`.
 
 A face row gives the carrier kind and parameters, the trimmed area, the
 boundary and seam lengths, the box, the loop roles and the orientation
-reading. Every value has a unit, a method, a numeric error and a model
+reading. A body row gives the area, the volume and centroid of a closed
+body, its second moments of volume about the centroid (mm⁵) with their
+principal moments and axes, and, with `--density VALUE` in kg/m³, its mass
+(kg) and inertia tensor about the centroid (kg·mm²). Every value has a unit, a method, a numeric error and a model
 uncertainty, or is unavailable with a pinned reason code and a category.
 [`docs/measurement.md`][measurement] is the contract of the values, the
 reason codes and the caveats.

@@ -469,6 +469,88 @@ fn tsv_requires_one_level() {
         ));
 }
 
+/// The cylinder solid `r = 10`, `h = 30` of steel (7850 kg/m³):
+/// `m = ρ π r² h`, `I_zz = m r²/2`, `I_xx = I_yy = m(3r² + h²)/12` about the
+/// centroid; second moments `V r²/4` (radial) and `V h²/12` (axial); two
+/// equal principal moments, so no principal axes.
+#[cfg(feature = "step")]
+#[test]
+fn density_gives_mass_and_inertia_with_units() {
+    let solid = fixture("measure_cylinder_solid.p21");
+    let solid = solid.to_str().unwrap();
+    let pi = std::f64::consts::PI;
+    let [radius, height] = [10.0, 30.0];
+    let volume = pi * radius * radius * height;
+    let mass = 7850.0 / 1.0e9 * volume;
+    let report = measure_json(&[solid, "--density", "7850"]);
+    let body = only_body(&report);
+    assert_measured(&body["mass"], mass, mass);
+    assert_eq!(body["mass"]["unit"], "kg");
+    let inertia = &body["inertia"];
+    assert_eq!(inertia["unit"], "kg.mm2");
+    let transverse = mass * (3.0 * radius * radius + height * height) / 12.0;
+    for (entry, expected) in [
+        ("xx", transverse),
+        ("yy", transverse),
+        ("zz", mass * radius * radius / 2.0),
+        ("xy", 0.0),
+        ("yz", 0.0),
+        ("zx", 0.0),
+    ] {
+        let value = inertia[entry].as_f64().unwrap();
+        let bound = inertia["numeric_error"].as_f64().unwrap() + TEST_ABSOLUTE_FLOOR * transverse;
+        assert!((value - expected).abs() <= bound, "{entry}: {value}");
+    }
+    assert_eq!(body["second_moments"]["unit"], "mm5");
+    assert_eq!(
+        body["principal_axes"]["reason"],
+        "mass.principal-axes-degenerate"
+    );
+
+    let text = measure_text(&[solid, "--density", "7850", "--tsv"]);
+    let lines: Vec<Vec<&str>> = text
+        .lines()
+        .map(|line| line.split('\t').collect())
+        .collect();
+    let column = |name: &str| {
+        let index = lines[0].iter().position(|cell| *cell == name).unwrap();
+        lines[1][index]
+    };
+    let cell = |name: &str| column(name).parse::<f64>().unwrap();
+    let radial = volume * radius * radius / 4.0;
+    let axial = volume * height * height / 12.0;
+    for (name, expected) in [
+        ("mass_kg", mass),
+        ("inertia_zz_kg_mm2", mass * radius * radius / 2.0),
+        ("inertia_xx_kg_mm2", transverse),
+        ("second_moment_xx_mm5", radial),
+        ("second_moment_zz_mm5", axial),
+        ("principal_moment_1_mm5", radial),
+        ("principal_moment_3_mm5", axial),
+    ] {
+        let value = cell(name);
+        assert!(
+            (value - expected).abs() <= TEST_ABSOLUTE_FLOOR * expected,
+            "{name}: {value} vs {expected}"
+        );
+    }
+    assert_eq!(column("principal_axis_1_x"), "");
+    let plain = measure_text(&[solid, "--tsv"]);
+    let header: Vec<&str> = plain.lines().next().unwrap().split('\t').collect();
+    let row: Vec<&str> = plain.lines().nth(1).unwrap().split('\t').collect();
+    let mass_index = header.iter().position(|cell| *cell == "mass_kg").unwrap();
+    assert_eq!(row[mass_index], "");
+
+    for invalid in ["0", "-1", "inf", "steel"] {
+        cadmpeg()
+            .arg("measure")
+            .arg(solid)
+            .args(["--density", invalid])
+            .assert()
+            .code(2);
+    }
+}
+
 /// The cylinder solid's surfaces: `#16` the cylinder of radius 10 about +z
 /// through the origin, used by the side face `#46`; `#18` the plane at
 /// z = 30, used by the top face `#63`.

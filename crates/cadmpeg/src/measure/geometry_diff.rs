@@ -70,6 +70,7 @@ impl GeometryDiff {
         let session = Session {
             options,
             profile: args.profile,
+            density: None,
         };
         let measured = |loaded: &LoadedDocument| -> Result<MeasureReport, ApplicationError> {
             require_geometry(loaded)?;

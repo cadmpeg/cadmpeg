@@ -316,6 +316,11 @@ enum Command {
         /// Write one tab-separated table to standard output.
         #[arg(long)]
         tsv: bool,
+        /// Material density in kg/m³, finite and positive. Body rows then
+        /// report mass in kg and the inertia tensor about the centroid in
+        /// kg·mm².
+        #[arg(long, value_name = "VALUE", value_parser = parse_density)]
+        density: Option<cadmpeg_measure::Density>,
         #[command(flatten)]
         report: OptionalFileDestination,
         #[command(flatten)]
@@ -374,6 +379,14 @@ enum Command {
 }
 
 /// Parse a relative comparison floor.
+fn parse_density(text: &str) -> Result<cadmpeg_measure::Density, String> {
+    let value: f64 = text
+        .parse()
+        .map_err(|_| format!("{text} is not a number"))?;
+    cadmpeg_measure::Density::new(value)
+        .ok_or_else(|| format!("{text} is not a finite positive density in kg/m³"))
+}
+
 fn parse_relative_floor(text: &str) -> Result<f64, String> {
     let value: f64 = text
         .parse()
@@ -525,12 +538,14 @@ fn main() -> ExitCode {
             selection,
             json,
             tsv,
+            density,
             report,
             input_args,
             decode,
         } => measure::measure(
             &inputs,
             &measure::MeasureCommand {
+                density,
                 path: file.path(),
                 selection: &selection,
                 output: if json {

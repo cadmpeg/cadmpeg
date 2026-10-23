@@ -51,6 +51,7 @@ pub(crate) struct MeasureCommand<'a> {
     pub(crate) forced: Option<ForcedInput>,
     pub(crate) options: DecodeOptions,
     pub(crate) profile: WorkProfile,
+    pub(crate) density: Option<cadmpeg_measure::Density>,
 }
 
 /// Where the measured document came from.
@@ -116,6 +117,7 @@ pub(crate) fn measure(
             Session {
                 options: &command.options,
                 profile: command.profile,
+                density: command.density,
             },
             &loaded,
             &selection,
@@ -157,6 +159,7 @@ pub(crate) fn measure(
 struct Session<'a> {
     options: &'a DecodeOptions,
     profile: WorkProfile,
+    density: Option<cadmpeg_measure::Density>,
 }
 
 /// Refuse a document that holds no geometry.
@@ -193,7 +196,7 @@ fn run(
         input,
         MeasureOptions {
             work: session.profile,
-            density: None,
+            density: session.density,
         },
     )
     .measure(&ctx, selection);
