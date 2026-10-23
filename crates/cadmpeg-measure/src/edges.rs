@@ -466,6 +466,7 @@ impl EdgeGeometry<'_> {
         };
         let mut row = EdgeMeasures {
             edge: id.to_owned(),
+            placement: crate::report::RowPlacement::Model {},
             curve: self
                 .edge
                 .carrier

@@ -10,6 +10,7 @@ use cadmpeg_core::decode::{DecodeContext, ResourceDimension, ResourceFailure, Re
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::source_fidelity::SourceFidelity;
+use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
 use crate::aggregate::{BoxUnion, ReadingSum};
@@ -21,14 +22,14 @@ use crate::canonical::Carrier;
 use crate::context::{Eval, Work};
 use crate::edges::{measure_edge, EdgeGeometry};
 use crate::face::{FaceInput, FaceResult, Verdict};
-use crate::failure::{settle, Outcome};
+use crate::failure::{settle, Missing, Outcome};
 use crate::geom::Aabb;
 use crate::owners::Owners;
 use crate::reason::CaveatCode;
 use crate::report::{
     BodyMeasures, Caveat, DocumentMeasures, DocumentOrientation, EdgeMeasures, FaceMeasures,
-    Histogram, ListedOrder, MeasureReport, NormalReading, ReportTolerances, SurfaceMeasures,
-    WorkReport,
+    Histogram, ListedOrder, MeasureReport, NormalReading, ReportTolerances, RowPlacement,
+    SurfaceMeasures, WorkReport,
 };
 use crate::select::Selection;
 use crate::surface::SurfaceInput;
@@ -96,6 +97,14 @@ pub enum MeasureError {
         /// The entity outside the scope.
         entity: String,
     },
+    /// A selector names an entity outside the occurrence's prototype.
+    #[error("{entity} is not in the prototype of occurrence {occurrence}")]
+    OutsideOccurrence {
+        /// The entity outside the prototype.
+        entity: String,
+        /// The occurrence.
+        occurrence: String,
+    },
 }
 
 impl From<ResourceLimit> for MeasureError {
@@ -159,7 +168,16 @@ impl<'ir> Measurer<'ir> {
         selection: &Selection,
     ) -> Result<MeasureReport, MeasureError> {
         let model = &self.input.ir.model;
-        let scope = self.scope(selection)?;
+        let space = match &selection.occurrence {
+            None => None,
+            Some(id) => Some(crate::occurrence::space(self.input.ir, id).ok_or_else(|| {
+                MeasureError::UnknownEntity {
+                    arena: "model.occurrences",
+                    id: id.as_str().to_owned(),
+                }
+            })?),
+        };
+        let scope = self.scope(selection, space.as_ref())?;
         let face_level = selection.face_level();
         let edge_level = selection.edge_level();
         let body_level = !face_level && !edge_level && !selection.surface_level();
@@ -235,13 +253,27 @@ impl<'ir> Measurer<'ir> {
         };
         let pass = PassAllowance::new(allowance);
 
+        let world = space.as_ref().and_then(|space| space.world);
         let placements: HashMap<&'ir str, Outcome<Placement>> = model
             .bodies
             .iter()
             .map(|body| {
-                let placement = match body.transform {
-                    Some(transform) => settle(Placement::of(transform)),
-                    None => Ok(Ok(Placement::identity())),
+                let placed = match (world, body.transform) {
+                    (None, transform) => Ok(transform),
+                    (Some(world), transform) => world
+                        .compose(transform.unwrap_or_else(Transform::identity))
+                        .map(Some),
+                };
+                let placement = match placed {
+                    Ok(Some(transform)) => settle(Placement::of(transform)),
+                    Ok(None) => Ok(Ok(Placement::identity())),
+                    Err(_) => Ok(Err(Missing {
+                        reason: crate::reason::UnavailableReason::PlacementNonFinite,
+                        entity: Some(body.id.as_str().to_owned()),
+                        message: "the occurrence placement and the body transform do not \
+                                  compose to a finite placement"
+                            .to_owned(),
+                    })),
                 };
                 placement.map(|placement| (body.id.as_str(), placement))
             })
@@ -264,7 +296,8 @@ impl<'ir> Measurer<'ir> {
             placement: &placement_of,
         };
         let mut surface_out: Vec<SurfaceMeasures> = Vec::new();
-        for id in surface_ids {
+        let placed = space.as_ref().is_none_or(|space| space.world.is_some());
+        for id in surface_ids.into_iter().filter(|_| placed) {
             if let Some(surface) = self.owners.surface(id) {
                 surface_out.push(surfaces.row(surface)?);
             }
@@ -328,19 +361,20 @@ impl<'ir> Measurer<'ir> {
                 index: &self.index,
                 work: &witness_slice,
             },
+            placements: &placements,
         }
         .run(&mut faces)?;
         if let Some(limit) = ctx.resource_refusal() {
             return Err(limit.into());
         }
 
-        let face_out: Vec<FaceMeasures> = face_rows
+        let mut face_out: Vec<FaceMeasures> = face_rows
             .iter()
             .filter_map(|id| faces.get(id))
             .filter(|result| filter_matches(selection, result))
             .map(|result| result.row.clone())
             .collect();
-        let edge_out: Vec<EdgeMeasures> = edge_rows
+        let mut edge_out: Vec<EdgeMeasures> = edge_rows
             .iter()
             .filter_map(|id| edges.get(id))
             .map(|geometry| geometry.row(&self.owners))
@@ -353,7 +387,25 @@ impl<'ir> Measurer<'ir> {
             placements: &placements,
             density: self.options.density,
         };
-        let body_out: Vec<BodyMeasures> = body_rows.iter().map(|body| bodies.row(body)).collect();
+        let mut body_out: Vec<BodyMeasures> =
+            body_rows.iter().map(|body| bodies.row(body)).collect();
+        if let Some(space) = space.as_ref().filter(|space| space.world.is_some()) {
+            let placement = RowPlacement::Occurrence {
+                occurrence: space.report.occurrence.clone(),
+            };
+            for row in &mut body_out {
+                row.placement = placement.clone();
+            }
+            for row in &mut face_out {
+                row.placement = placement.clone();
+            }
+            for row in &mut edge_out {
+                row.placement = placement.clone();
+            }
+            for row in &mut surface_out {
+                row.placement = placement.clone();
+            }
+        }
 
         let rows = Rows {
             bodies: &body_out,
@@ -402,6 +454,7 @@ impl<'ir> Measurer<'ir> {
         }
         caveats.sort();
         Ok(MeasureReport {
+            occurrence: space.map(|space| space.report),
             tolerances: ReportTolerances {
                 linear: self.input.ir.tolerances.linear.get(),
                 angular: self.input.ir.tolerances.angular.get(),
@@ -503,8 +556,23 @@ impl<'ir> Measurer<'ir> {
         }
     }
 
-    /// The body scope, or `None` for every body.
-    fn scope(&self, selection: &Selection) -> Result<Option<BTreeSet<&'ir str>>, MeasureError> {
+    /// The body scope, or `None` for every body. With an occurrence, the
+    /// scope is its prototype's bodies, and empty when its space has no
+    /// rows.
+    fn scope(
+        &self,
+        selection: &Selection,
+        space: Option<&crate::occurrence::Space<'ir>>,
+    ) -> Result<Option<BTreeSet<&'ir str>>, MeasureError> {
+        let outside = |entity: &str| match space {
+            Some(space) => MeasureError::OutsideOccurrence {
+                entity: entity.to_owned(),
+                occurrence: space.report.occurrence.clone(),
+            },
+            None => MeasureError::OutsideScope {
+                entity: entity.to_owned(),
+            },
+        };
         let mut scope = BTreeSet::new();
         for body in &selection.bodies {
             let Some(body) = self.owners.body(body.as_str()) else {
@@ -513,9 +581,16 @@ impl<'ir> Measurer<'ir> {
                     id: body.as_str().to_owned(),
                 });
             };
+            if space.is_some_and(|space| !space.bodies.contains(body.id.as_str())) {
+                return Err(outside(body.id.as_str()));
+            }
             scope.insert(body.id.as_str());
         }
-        let scope = (!scope.is_empty()).then_some(scope);
+        let scope = match space {
+            Some(space) if scope.is_empty() => Some(space.bodies.clone()),
+            Some(_) => Some(scope),
+            None => (!scope.is_empty()).then_some(scope),
+        };
         for face in &selection.faces {
             let Some(record) = self.owners.face(face.as_str()) else {
                 return Err(MeasureError::UnknownEntity {
@@ -529,9 +604,7 @@ impl<'ir> Measurer<'ir> {
                     .face_body(record)
                     .is_some_and(|body| scope.contains(body))
                 {
-                    return Err(MeasureError::OutsideScope {
-                        entity: face.as_str().to_owned(),
-                    });
+                    return Err(outside(face.as_str()));
                 }
             }
         }
@@ -551,9 +624,7 @@ impl<'ir> Measurer<'ir> {
                             .is_some_and(|body| scope.contains(body))
                 });
                 if !used {
-                    return Err(MeasureError::OutsideScope {
-                        entity: surface.as_str().to_owned(),
-                    });
+                    return Err(outside(surface.as_str()));
                 }
             }
         }
@@ -570,11 +641,12 @@ impl<'ir> Measurer<'ir> {
                     .edge_body(edge.as_str())
                     .is_some_and(|body| scope.contains(body))
                 {
-                    return Err(MeasureError::OutsideScope {
-                        entity: edge.as_str().to_owned(),
-                    });
+                    return Err(outside(edge.as_str()));
                 }
             }
+        }
+        if space.is_some_and(|space| space.world.is_none()) {
+            return Ok(Some(BTreeSet::new()));
         }
         Ok(scope)
     }

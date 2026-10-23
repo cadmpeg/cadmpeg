@@ -132,6 +132,9 @@ cites.
 | `length.derivative-unavailable` | unsupported | A procedural curve without a solved cache has no derivative evaluator. |
 | `placement.carrier-shared` | placement | A surface row's surface is used by faces of bodies with different placements. |
 | `mass.principal-axes-degenerate` | undefined | Two principal moments agree within their separation, so the principal axes are not determined. |
+| `placement.occurrence-scale` | placement | An occurrence of the `--occurrence` chain has a scale other than `(1, 1, 1)`. |
+| `placement.prototype-unresolved` | placement | The `--occurrence` prototype is external or unresolved, or its definition does not resolve. |
+| `placement.occurrence-chain-broken` | input | The `--occurrence` parent chain does not reach a root occurrence: a parent is missing or the chain repeats. |
 
 ## Caveats
 
@@ -426,16 +429,42 @@ same classes over the body rows.
 
 ## Surface rows
 
-`measure --surface ID` reports the carrier of a surface: the face row's
-`carrier` members (`surface`, `kind`, `chain`, `analytic`, `placement`,
-`parameters`), then `bodies` and `faces`, the bodies and faces that use the
-surface, and `status`. A surface row has no area, length, box or extent. It
+`measure --surface ID` reports the carrier of a surface: `surface`,
+`placement` (see Placement space), `carrier` as a face row states it,
+`bodies` and `faces`, the bodies and faces that use the surface, and
+`status`. A surface row has no area, length, box or extent. It
 is in model space under the placement of the bodies of its faces; a surface
 that no face uses is measured as stored. When those bodies have different
 placements, the row has no parameters and its `unresolved` member is the
 unavailable value `placement.carrier-shared`; `kind` and `chain` are then
 read from the surface alone. A placement or carrier chain that does not
 resolve gives `unresolved` with its own reason in the same way.
+
+## Placement space
+
+Every body, face, edge and surface row has a `placement` member:
+`{"space": "model"}`, or `{"space": "occurrence", "occurrence": ID}` under
+`--occurrence ID`. In model space each body is placed by its own
+`Body.transform`. In the instance space of an occurrence, each body of the
+occurrence's prototype is placed by its own transform first and then by the
+occurrence chain: `E(root) ∘ … ∘ E(ID) ∘ Body.transform`, where `E` is the
+occurrence's effective transform (its transform composed with its linked
+prototype contribution) and each occurrence applies inside its parent. The
+scope is the prototype's bodies; a `--body`, `--face`, `--edge` or
+`--surface` selector outside it is refused.
+
+The report then has an `occurrence` member: `occurrence`, `prototype` (the
+local product definition), `chain` (root first), `transform` (the composed
+chain as three rows of a 3 × 4 affine map) and `bodies` (the prototype's
+bodies). When the chain cannot place the prototype, the report has no row,
+and `occurrence.unavailable` states why: `placement.occurrence-chain-broken`
+(a parent is missing or the chain repeats), `placement.occurrence-scale`
+(an occurrence of the chain has a scale other than `(1, 1, 1)`; `entity`
+names it), `placement.prototype-unresolved` (an external or unresolved
+prototype, or a definition that does not resolve), or
+`placement.non-finite`. Provenance lists the stored fields of the carrier
+chain and of the body transform; the chain's transforms are in the
+`occurrence` member. `diff --geometry` measures in model space.
 
 ## Shells
 

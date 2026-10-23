@@ -205,6 +205,7 @@ impl<'ir> Measurer<'ir> {
                 index: &self.index,
                 work: &witness_slice,
             },
+            placements: &placements,
         }
         .run(&mut faces)?;
         if let Some(limit) = ctx.resource_refusal() {

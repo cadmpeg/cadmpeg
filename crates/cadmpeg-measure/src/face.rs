@@ -514,6 +514,7 @@ impl<'ir> FaceInput<'_, 'ir> {
         let radius = radius_of(&carrier_row);
         let row = FaceMeasures {
             face: id.to_owned(),
+            placement: crate::report::RowPlacement::Model {},
             name: face.name.clone(),
             body: self.body.map(str::to_owned),
             shell: face.shell.as_str().to_owned(),

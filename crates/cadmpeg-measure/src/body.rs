@@ -94,8 +94,8 @@ impl<'a> BodyInput<'a, '_> {
             })
             .collect();
         let volume = (!face_ids.is_empty()).then(|| {
-            let placement = body.transform.map(Placement::of);
-            let handedness = handedness(placement.as_ref());
+            let placement = self.placements.get(id);
+            let handedness = handedness(placement);
             let placement_term = |dimension: u8, value: f64| match &placement {
                 Some(Ok(placement)) => placement.model_term(dimension, value),
                 _ => 0.0,
@@ -160,6 +160,7 @@ impl<'a> BodyInput<'a, '_> {
         };
         let mut row = BodyMeasures {
             body: id.to_owned(),
+            placement: crate::report::RowPlacement::Model {},
             name: body.name.clone(),
             kind: body.kind,
             visible: body.visible,
@@ -199,7 +200,7 @@ impl<'a> BodyInput<'a, '_> {
             return None;
         }
         let id = body.id.as_str();
-        let placement = body.transform.map(Placement::of);
+        let placement = self.placements.get(id);
         let no_term = |_: u8, _: f64| 0.0;
         let input = VolumeInput {
             id,
@@ -213,7 +214,7 @@ impl<'a> BodyInput<'a, '_> {
                 .get(id)
                 .copied()
                 .unwrap_or(Point3::new(0.0, 0.0, 0.0)),
-            handedness: handedness(placement.as_ref()),
+            handedness: handedness(placement),
             area: 0.0,
             diagonal: 0.0,
             placement: &no_term,

@@ -106,6 +106,11 @@ pub(crate) struct SelectionArgs {
     /// no bounded measure.
     #[arg(long = "surface", value_name = "ID")]
     surfaces: Vec<String>,
+    /// Measure in the instance space of this occurrence: an exact ID or a
+    /// unique ID suffix. The scope is its prototype's bodies, each placed by
+    /// its own transform and then by the occurrence chain from the root.
+    #[arg(long, value_name = "ID")]
+    occurrence: Option<String>,
     /// Print a row for every face in scope.
     #[arg(long = "faces")]
     all_faces: bool,
@@ -199,6 +204,14 @@ impl SelectionArgs {
             cadmpeg_ir::ids::SurfaceId::as_str,
             &mut errors,
         );
+        let occurrence = resolve_all(
+            self.occurrence.as_slice(),
+            "model.occurrences",
+            &ir.model.occurrences.iter().map(|occurrence| &occurrence.id),
+            cadmpeg_ir::ids::OccurrenceId::as_str,
+            &mut errors,
+        )
+        .pop();
         if !errors.is_empty() {
             return Err(anyhow!("{}", errors.join("\n")).into());
         }
@@ -207,6 +220,7 @@ impl SelectionArgs {
             faces,
             edges,
             surfaces,
+            occurrence,
             all_faces: self.all_faces,
             all_edges: self.all_edges,
             face_filter: FaceFilter {

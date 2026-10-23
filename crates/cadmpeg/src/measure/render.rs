@@ -10,7 +10,7 @@ use std::io::{self, Write};
 
 use cadmpeg_measure::report::{
     BodyMeasures, BodyOrientation, CarrierParameters, EdgeMeasures, EdgeParameters, FaceMeasures,
-    LoopMeasures, MeasureReport, NormalReading, RegionRule, SurfaceMeasures,
+    LoopMeasures, MeasureReport, NormalReading, OccurrenceMeasures, RegionRule, SurfaceMeasures,
 };
 use cadmpeg_measure::value::{
     Axes, BoxValue, Measured, Moments, Point, Quantity, Range, Scalar, Sweep, Tensor,
@@ -1113,8 +1113,43 @@ fn body_text(out: &mut impl Write, body: &BodyMeasures) -> io::Result<()> {
     Ok(())
 }
 
+fn occurrence_text(out: &mut impl Write, occurrence: &OccurrenceMeasures) -> io::Result<()> {
+    writeln!(out, "occurrence {}", occurrence.occurrence())?;
+    if let Some(prototype) = occurrence.prototype() {
+        line(out, "prototype", prototype)?;
+    }
+    line(out, "chain", &occurrence.chain().join(" > "))?;
+    if let Some(rows) = occurrence.transform() {
+        let rows: Vec<String> = rows
+            .iter()
+            .map(|row| {
+                let row: Vec<String> = row.iter().map(|value| number(*value)).collect();
+                format!("[{}]", row.join(", "))
+            })
+            .collect();
+        line(out, "transform", &rows.join(" "))?;
+    }
+    line(out, "bodies", &occurrence.bodies().join(", "))?;
+    if let Some(unavailable) = occurrence.unavailable() {
+        line(
+            out,
+            "rows",
+            &format!(
+                "none: {} ({}): {}",
+                unavailable.reason().code(),
+                name(&unavailable.category()),
+                unavailable.message()
+            ),
+        )?;
+    }
+    Ok(())
+}
+
 /// Human-readable blocks: one per row, then the document block.
 pub(super) fn text(out: &mut impl Write, report: &MeasureReport) -> io::Result<()> {
+    if let Some(occurrence) = report.occurrence() {
+        occurrence_text(out, occurrence)?;
+    }
     for face in report.faces() {
         face_text(out, face)?;
     }

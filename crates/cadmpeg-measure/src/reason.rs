@@ -149,11 +149,17 @@ pub enum UnavailableReason {
     /// Two principal moments agree within their separation tolerance, so
     /// the principal axes are not determined.
     MassPrincipalAxesDegenerate,
+    /// An occurrence of the chain has a scale other than `(1, 1, 1)`.
+    PlacementOccurrenceScale,
+    /// The occurrence's prototype is external or unresolved.
+    PlacementPrototypeUnresolved,
+    /// The occurrence's parent chain does not reach a root occurrence.
+    PlacementOccurrenceChainBroken,
 }
 
 impl UnavailableReason {
     /// Every reason, in declaration order.
-    pub const ALL: [Self; 41] = [
+    pub const ALL: [Self; 44] = [
         Self::CarrierUnknown,
         Self::CarrierUnresolved,
         Self::CarrierProceduralUnevaluated,
@@ -195,6 +201,9 @@ impl UnavailableReason {
         Self::LengthDerivativeUnavailable,
         Self::PlacementCarrierShared,
         Self::MassPrincipalAxesDegenerate,
+        Self::PlacementOccurrenceScale,
+        Self::PlacementPrototypeUnresolved,
+        Self::PlacementOccurrenceChainBroken,
     ];
 
     /// The pinned `family.detail` string.
@@ -242,6 +251,9 @@ impl UnavailableReason {
             Self::LengthDerivativeUnavailable => "length.derivative-unavailable",
             Self::PlacementCarrierShared => "placement.carrier-shared",
             Self::MassPrincipalAxesDegenerate => "mass.principal-axes-degenerate",
+            Self::PlacementOccurrenceScale => "placement.occurrence-scale",
+            Self::PlacementPrototypeUnresolved => "placement.prototype-unresolved",
+            Self::PlacementOccurrenceChainBroken => "placement.occurrence-chain-broken",
         }
     }
 
@@ -271,7 +283,8 @@ impl UnavailableReason {
             | Self::EvaluationNoValue
             | Self::EvaluationNonFinite
             | Self::VolumeOrientationConflict
-            | Self::VolumeClosureFlux => Category::Input,
+            | Self::VolumeClosureFlux
+            | Self::PlacementOccurrenceChainBroken => Category::Input,
             Self::BoundaryUnboundedFace
             | Self::VolumeShellOpen
             | Self::MassPrincipalAxesDegenerate => Category::Undefined,
@@ -289,7 +302,9 @@ impl UnavailableReason {
             Self::EvaluationWorkExhausted | Self::QuadratureNotConverged => Category::Budget,
             Self::PlacementNonSimilarity
             | Self::PlacementNonFinite
-            | Self::PlacementCarrierShared => Category::Placement,
+            | Self::PlacementCarrierShared
+            | Self::PlacementOccurrenceScale
+            | Self::PlacementPrototypeUnresolved => Category::Placement,
             Self::AggregateMemberUnavailable => return None,
         })
     }
@@ -411,7 +426,7 @@ impl Serialize for CompareCause {
 mod tests {
     use super::{Category, CaveatCode, CompareCause, UnavailableReason};
 
-    const REASONS: [(&str, Option<&str>); 41] = [
+    const REASONS: [(&str, Option<&str>); 44] = [
         ("carrier.unknown", Some("input")),
         ("carrier.unresolved", Some("input")),
         ("carrier.procedural-unevaluated", Some("unsupported")),
@@ -453,6 +468,9 @@ mod tests {
         ("length.derivative-unavailable", Some("unsupported")),
         ("placement.carrier-shared", Some("placement")),
         ("mass.principal-axes-degenerate", Some("undefined")),
+        ("placement.occurrence-scale", Some("placement")),
+        ("placement.prototype-unresolved", Some("placement")),
+        ("placement.occurrence-chain-broken", Some("input")),
     ];
 
     #[test]

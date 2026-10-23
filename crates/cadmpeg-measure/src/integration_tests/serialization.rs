@@ -71,6 +71,7 @@ fn a_face_report_serializes_members_in_contract_order() {
         keys(&serde_json::to_string(face).unwrap()),
         [
             "face",
+            "placement",
             "name",
             "body",
             "shell",
@@ -104,11 +105,8 @@ fn a_face_report_serializes_members_in_contract_order() {
         keys(&serde_json::to_string(&surfaces.surfaces()[0]).unwrap()),
         [
             "surface",
-            "kind",
-            "chain",
-            "analytic",
             "placement",
-            "parameters",
+            "carrier",
             "bodies",
             "faces",
             "status"
@@ -116,6 +114,7 @@ fn a_face_report_serializes_members_in_contract_order() {
     );
     let value: serde_json::Value = serde_json::from_str(&text).unwrap();
     let face = &value["faces"][0];
+    assert_eq!(face["placement"], serde_json::json!({"space": "model"}));
     assert_eq!(face["carrier"]["kind"], "plane");
     assert_eq!(face["carrier"]["parameters"]["origin"]["method"], "source");
     assert_eq!(

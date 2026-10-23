@@ -182,6 +182,8 @@ mod check;
 mod freecad;
 #[cfg(feature = "iges")]
 mod iges;
+#[cfg(feature = "step")]
+mod occurrence;
 
 #[cfg(feature = "step")]
 #[test]
@@ -573,10 +575,15 @@ fn surface_rows_hold_carrier_parameters_only() {
     assert_eq!(surfaces.len(), 1);
     let row = &surfaces[0];
     assert_eq!(row["surface"], "step:data:surface#16");
-    assert_eq!(row["kind"], "cylinder");
-    assert_measured(&row["parameters"]["radius"], 10.0, 10.0);
-    assert_measured(&row["parameters"]["diameter"], 20.0, 10.0);
-    assert_point(&row["parameters"]["axis_direction"], [0.0, 0.0, 1.0], 1.0);
+    assert_eq!(row["placement"], serde_json::json!({"space": "model"}));
+    assert_eq!(row["carrier"]["kind"], "cylinder");
+    assert_measured(&row["carrier"]["parameters"]["radius"], 10.0, 10.0);
+    assert_measured(&row["carrier"]["parameters"]["diameter"], 20.0, 10.0);
+    assert_point(
+        &row["carrier"]["parameters"]["axis_direction"],
+        [0.0, 0.0, 1.0],
+        1.0,
+    );
     assert_eq!(row["faces"], serde_json::json!(["step:data:face#46"]));
     assert_eq!(row["bodies"].as_array().unwrap().len(), 1);
     assert!(row.get("area").is_none() && row.get("bbox").is_none());

@@ -45,6 +45,7 @@ mod failure;
 mod flux;
 mod geom;
 mod length;
+mod occurrence;
 mod orientation;
 mod owners;
 mod quadrature;

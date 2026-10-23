@@ -10,6 +10,7 @@ mod cylinders;
 mod findings;
 mod mass;
 mod nurbs;
+mod occurrences;
 mod pcurves;
 mod serialization;
 mod spheres;

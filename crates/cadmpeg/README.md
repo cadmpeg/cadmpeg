@@ -252,7 +252,10 @@ document block. `--face ID` and `--edge ID` print rows for those entities;
 `--faces` and `--edges` print a row for every face or edge in scope.
 `--surface ID` prints the carrier row of a surface: its parameters and the
 faces and bodies that use it, with no bounded measure. `--body ID` limits
-the scope. `--kind KIND[,KIND...]` and `--radius RANGE` (`MIN..MAX`,
+the scope. `--occurrence ID` measures in the instance space of an assembly
+occurrence: the scope is its prototype's bodies, each placed by its own
+transform and then by the occurrence chain from the root, and every row
+states its `placement` space. `diff --geometry` stays in model space. `--kind KIND[,KIND...]` and `--radius RANGE` (`MIN..MAX`,
 `MIN..`, `..MAX`, or `R`) filter face rows. An ID is an exact ID or a unique
 ID suffix, as for `query item`.
 

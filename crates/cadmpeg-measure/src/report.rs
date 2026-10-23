@@ -35,6 +35,8 @@ macro_rules! accessors {
 pub struct MeasureReport {
     pub(crate) tolerances: ReportTolerances,
     pub(crate) caveats: Vec<Caveat>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) occurrence: Option<OccurrenceMeasures>,
     pub(crate) bodies: Vec<BodyMeasures>,
     pub(crate) faces: Vec<FaceMeasures>,
     pub(crate) edges: Vec<EdgeMeasures>,
@@ -47,6 +49,9 @@ accessors!(MeasureReport {
     tolerances: ReportTolerances;
     /// Document-level caveats.
     caveats: Vec<Caveat>;
+    /// The occurrence whose instance space the rows are in; absent for
+    /// model space.
+    occurrence: Option<OccurrenceMeasures>;
     /// Body rows, in ID order.
     bodies: Vec<BodyMeasures>;
     /// Face rows, in ID order.
@@ -257,11 +262,54 @@ accessors!(CarrierMeasures {
     parameters: CarrierParameters;
 });
 
+/// The space a row is measured in.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "space", rename_all = "snake_case")]
+pub enum RowPlacement {
+    /// Model space: each body placed by its own transform.
+    Model {},
+    /// The instance space of an occurrence: each body placed by its own
+    /// transform, then by the occurrence chain from the root.
+    Occurrence {
+        /// The occurrence ID.
+        occurrence: String,
+    },
+}
+
+/// The occurrence whose instance space a pass measures.
+#[derive(Debug, Clone, Serialize)]
+pub struct OccurrenceMeasures {
+    pub(crate) occurrence: String,
+    pub(crate) prototype: Option<String>,
+    pub(crate) chain: Vec<String>,
+    pub(crate) transform: Option<[[f64; 4]; 3]>,
+    pub(crate) bodies: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) unavailable: Option<Unavailable<()>>,
+}
+
+accessors!(OccurrenceMeasures {
+    /// The occurrence ID.
+    occurrence: String;
+    /// The local product definition the occurrence places, when it has one.
+    prototype: Option<String>;
+    /// The occurrences from the root to this one.
+    chain: Vec<String>;
+    /// The composed placement of the chain, as three rows of a 3×4 affine
+    /// map, when it composes.
+    transform: Option<[[f64; 4]; 3]>;
+    /// The bodies of the prototype, sorted.
+    bodies: Vec<String>;
+    /// Why the pass emits no row in this space.
+    unavailable: Option<Unavailable<()>>;
+});
+
 /// One surface row: the carrier of a surface, and the faces and bodies
 /// that use it.
 #[derive(Debug, Clone, Serialize)]
 pub struct SurfaceMeasures {
-    #[serde(flatten)]
+    pub(crate) surface: String,
+    pub(crate) placement: RowPlacement,
     pub(crate) carrier: CarrierMeasures,
     pub(crate) bodies: Vec<String>,
     pub(crate) faces: Vec<String>,
@@ -271,6 +319,10 @@ pub struct SurfaceMeasures {
 }
 
 accessors!(SurfaceMeasures {
+    /// The surface ID.
+    surface: String;
+    /// The space the row is measured in.
+    placement: RowPlacement;
     /// The carrier and its parameters.
     carrier: CarrierMeasures;
     /// The bodies of the faces that use the surface, sorted.
@@ -713,6 +765,7 @@ accessors!(FaceQuantities {
 #[derive(Debug, Clone, Serialize)]
 pub struct FaceMeasures {
     pub(crate) face: String,
+    pub(crate) placement: RowPlacement,
     pub(crate) name: Option<String>,
     pub(crate) body: Option<String>,
     pub(crate) shell: String,
@@ -727,6 +780,8 @@ pub struct FaceMeasures {
 accessors!(FaceMeasures {
     /// The face ID.
     face: String;
+    /// The space the row is measured in.
+    placement: RowPlacement;
     /// The stored name.
     name: Option<String>;
     /// The owning body.
@@ -784,6 +839,7 @@ pub enum EdgeParameters {
 #[derive(Debug, Clone, Serialize)]
 pub struct EdgeMeasures {
     pub(crate) edge: String,
+    pub(crate) placement: RowPlacement,
     pub(crate) curve: Option<String>,
     pub(crate) kind: CurveKind,
     pub(crate) parameters: EdgeParameters,
@@ -804,6 +860,8 @@ pub struct EdgeMeasures {
 accessors!(EdgeMeasures {
     /// The edge ID.
     edge: String;
+    /// The space the row is measured in.
+    placement: RowPlacement;
     /// The curve ID.
     curve: Option<String>;
     /// The curve kind.
@@ -940,6 +998,7 @@ accessors!(CaveatCount {
 #[derive(Debug, Clone, Serialize)]
 pub struct BodyMeasures {
     pub(crate) body: String,
+    pub(crate) placement: RowPlacement,
     pub(crate) name: Option<String>,
     pub(crate) kind: cadmpeg_ir::topology::BodyKind,
     pub(crate) visible: Option<bool>,
@@ -979,6 +1038,8 @@ pub struct BodyMeasures {
 accessors!(BodyMeasures {
     /// The body ID.
     body: String;
+    /// The space the row is measured in.
+    placement: RowPlacement;
     /// The stored name.
     name: Option<String>;
     /// The stored kind.

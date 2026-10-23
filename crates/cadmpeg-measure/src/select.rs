@@ -2,7 +2,7 @@
 //! What one measurement pass measures: body scope, row levels and face
 //! filters.
 
-use cadmpeg_ir::ids::{BodyId, EdgeId, FaceId, SurfaceId};
+use cadmpeg_ir::ids::{BodyId, EdgeId, FaceId, OccurrenceId, SurfaceId};
 use cadmpeg_ir::scalar::NonNegativeLength;
 use serde::Serialize;
 
@@ -20,6 +20,9 @@ pub struct Selection {
     pub edges: Vec<EdgeId>,
     /// Surfaces whose carrier rows to report.
     pub surfaces: Vec<SurfaceId>,
+    /// The occurrence whose instance space the rows are measured in; model
+    /// space when absent. The scope is then its prototype's bodies.
+    pub occurrence: Option<OccurrenceId>,
     /// Measure every face in scope.
     pub all_faces: bool,
     /// Measure every edge in scope.

@@ -209,7 +209,9 @@ fn run(
         Err(MeasureError::OutsideScope { entity }) => {
             return Err(anyhow!("{entity} is not in the --body scope").into())
         }
-        Err(error @ MeasureError::UnknownEntity { .. }) => return Err(anyhow!("{error}").into()),
+        Err(
+            error @ (MeasureError::UnknownEntity { .. } | MeasureError::OutsideOccurrence { .. }),
+        ) => return Err(anyhow!("{error}").into()),
     };
     finished.map_err(|error| ApplicationError::from(error).at_stage(RefusalStage::Measure))?;
     Ok(report)

@@ -33,7 +33,7 @@ use crate::canonical::surface::Chart;
 use crate::context::Eval;
 use crate::edges::EdgeGeometry;
 use crate::face::{FaceResult, Verdict};
-use crate::failure::{settle, Measure};
+use crate::failure::{settle, Measure, Outcome};
 use crate::owners::Owners;
 use crate::report::{NormalReading, RegionRule, Witness, WitnessKind};
 use crate::tolerance::TANGENT_WITNESS_ANGLE;
@@ -44,6 +44,8 @@ pub(crate) struct WitnessInput<'a, 'ir> {
     pub(crate) edges: &'a HashMap<&'ir str, EdgeGeometry<'ir>>,
     pub(crate) pass: &'a PassAllowance,
     pub(crate) eval: Eval<'a, 'ir>,
+    /// The placement of each body.
+    pub(crate) placements: &'a HashMap<&'ir str, Outcome<Placement>>,
 }
 
 /// The sign of an oriented normal reading.
@@ -263,8 +265,7 @@ impl<'ir> WitnessInput<'_, 'ir> {
             .shells
             .first()
             .is_some_and(|first| *first == shell.id);
-        let body = self.owners.body(region.body.as_str())?;
-        let handedness = match body.transform.map(Placement::of) {
+        let handedness = match self.placements.get(region.body.as_str()) {
             Some(Ok(placement)) if placement.reflection => -1.0,
             _ => 1.0,
         };

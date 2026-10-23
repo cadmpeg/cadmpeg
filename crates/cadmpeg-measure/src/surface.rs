@@ -68,6 +68,8 @@ impl<'ir> SurfaceInput<'_, 'ir> {
             Err(missing) => (self.unplaced(surface)?, Some(missing.unavailable::<()>())),
         };
         let mut row = SurfaceMeasures {
+            surface: id.to_owned(),
+            placement: crate::report::RowPlacement::Model {},
             carrier,
             bodies: bodies.iter().map(|body| (*body).to_owned()).collect(),
             faces: faces
