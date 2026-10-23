@@ -7,18 +7,66 @@ use super::super::reader::{bad, Ptr, Reader, Res, V};
 use super::feature::{isclass, isver, objat, refblock, ver_or, M12345, UCS};
 
 /// `g_sketch.py`'s rule state: the Python's module flags.
-#[allow(clippy::struct_excessive_bools)]
-#[derive(Debug, Clone, Default)]
-pub(crate) struct SketchState {
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct SketchState(u8);
+
+impl SketchState {
+    const MIRROR: u8 = 1 << 0;
+    const BYREF: u8 = 1 << 1;
+    const DIMLAST: u8 = 1 << 2;
+    const PGMDONE: u8 = 1 << 3;
+
     /// `MIRROR[0]`.
-    pub(crate) mirror: bool,
+    pub(crate) fn mirror(self) -> bool {
+        self.0 & Self::MIRROR != 0
+    }
+
+    /// Sets `MIRROR[0]`.
+    pub(crate) fn set_mirror(&mut self, value: bool) {
+        self.set(Self::MIRROR, value);
+    }
+
     /// `BYREF[0]`.
-    pub(crate) byref: bool,
+    pub(crate) fn byref(self) -> bool {
+        self.0 & Self::BYREF != 0
+    }
+
+    /// Sets `BYREF[0]`.
+    pub(crate) fn set_byref(&mut self, value: bool) {
+        self.set(Self::BYREF, value);
+    }
+
     /// `DIMLAST[0]`.
-    pub(crate) dimlast: bool,
+    pub(crate) fn dimlast(self) -> bool {
+        self.0 & Self::DIMLAST != 0
+    }
+
+    /// Sets `DIMLAST[0]`.
+    pub(crate) fn set_dimlast(&mut self, value: bool) {
+        self.set(Self::DIMLAST, value);
+    }
+
     /// `PGMDONE[0] is not None`: an offset chain read the offset profile.
-    pub(crate) pgmdone: bool,
+    pub(crate) fn pgmdone(self) -> bool {
+        self.0 & Self::PGMDONE != 0
+    }
+
+    /// Sets `PGMDONE[0]`.
+    pub(crate) fn set_pgmdone(&mut self, value: bool) {
+        self.set(Self::PGMDONE, value);
+    }
+
+    fn set(&mut self, flag: u8, value: bool) {
+        if value {
+            self.0 |= flag;
+        } else {
+            self.0 &= !flag;
+        }
+    }
 }
+
+/// Largest deviation of a stored unit vector from unit length.
+const UNIT_VECTOR_TOLERANCE: f64 = 1e-6;
 
 /// `isattr(b, p)`: the 17-byte attribute record.
 fn isattr(r: &Reader<'_>, p: usize) -> bool {
@@ -36,8 +84,8 @@ fn m3() -> [u8; 12] {
 }
 
 /// `bytes(n) + tail`.
-fn zeros_then(n: usize, tail: &[u8]) -> Vec<u8> {
-    let mut x = vec![0; n];
+fn zeros12_then(tail: &[u8]) -> Vec<u8> {
+    let mut x = vec![0; 12];
     x.extend_from_slice(tail);
     x
 }
@@ -108,188 +156,200 @@ fn rhead(r: &mut Reader<'_>) -> Res<V> {
 }
 
 /// `line(r)`: a curve record.
-fn line(r: &mut Reader<'_>) -> Res<V> {
-    let mut v = rhead(r)?;
-    let i0 = r.u16()?;
-    let i1 = r.u16()?;
-    let a = r.u32()?;
-    v.set("i0", V::from(i0));
-    v.set("i1", V::from(i1));
-    v.set("a", V::from(a));
+fn line(reader: &mut Reader<'_>) -> Res<V> {
+    let mut value = rhead(reader)?;
+    let i0 = reader.u16()?;
+    let i1 = reader.u16()?;
+    let first = reader.u32()?;
+    value.set("i0", V::from(i0));
+    value.set("i1", V::from(i1));
+    value.set("a", V::from(first));
     if i1 == 0xffff
-        && a == 0xffff_fffe
-        && r.zeros(r.p, 4)
-        && r.eq(r.p + 4, &[0, 0, 0, 0, 0, 0, 0xf0, 0xbf])
+        && first == 0xffff_fffe
+        && reader.zeros(reader.p, 4)
+        && reader.eq(reader.p + 4, &[0, 0, 0, 0, 0, 0, 0xf0, 0xbf])
     {
-        r.skip(4);
+        reader.skip(4);
     }
-    let m1 = r.f64()?;
+    let m1 = reader.f64()?;
     let fe4 = [
         0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff,
         0xff,
     ];
-    if m1 != -1.0 && !(r.eq(r.p, &[1, 0]) && r.eq(r.p + 6, &fe4)) {
+    if m1 != -1.0 && !(reader.eq(reader.p, &[1, 0]) && reader.eq(reader.p + 6, &fe4)) {
         return Err(bad("curve f64 -1"));
     }
-    if isclass(r, r.p, &["moDimText_c"])? {
-        v.set("b", V::from("text"));
-        let text = r.ptr(None)?;
-        v.set("text", V::from(text));
-        return Ok(v);
+    if isclass(reader, reader.p, &["moDimText_c"])? {
+        value.set("b", V::from("text"));
+        let text = reader.ptr(None)?;
+        value.set("text", V::from(text));
+        return Ok(value);
     }
-    let b = r.u16()?;
-    v.set("b", V::from(b));
+    let second = reader.u16()?;
+    value.set("b", V::from(second));
     let fe = [0xfe, 0xff, 0xff, 0xff];
-    if b == 1 && !r.eq(r.p + 4, &fe) && r.eq(r.p, &[0, 0]) {
-        r.u16()?;
-        let centre = r.u16()?;
+    if second == 1 && !reader.eq(reader.p + 4, &fe) && reader.eq(reader.p, &[0, 0]) {
+        reader.u16()?;
+        let centre = reader.u16()?;
         let mut axes = Vec::new();
         for _ in 0..4 {
-            axes.push(V::from(r.u16()?));
+            axes.push(V::from(reader.u16()?));
         }
-        v.set("ell", V::List(vec![V::from(centre), V::List(axes)]));
-        let q = r.p + 2;
-        if r.eq(r.p, &[0, 0]) && r.eq(q, &[0, 0]) && r.eq(q + 4, &[0, 0, 1, 0]) && isattr(r, q + 16)
+        value.set("ell", V::List(vec![V::from(centre), V::List(axes)]));
+        let at = reader.p + 2;
+        if reader.eq(reader.p, &[0, 0])
+            && reader.eq(at, &[0, 0])
+            && reader.eq(at + 4, &[0, 0, 1, 0])
+            && isattr(reader, at + 16)
         {
-            r.skip(2);
-            v.set("c", V::Int(0));
-            v.set("d", V::Int(0));
-            v.set("id", V::Int(0));
-            return Ok(v);
+            reader.skip(2);
+            value.set("c", V::Int(0));
+            value.set("d", V::Int(0));
+            value.set("id", V::Int(0));
+            return Ok(value);
         }
-    } else if b == 0xffff && r.eq(r.p, &[0xff, 0xff]) && !r.eq(r.p + 4, &fe) {
-        r.u16()?;
-        let centre = r.u16()?;
+    } else if second == 0xffff
+        && reader.eq(reader.p, &[0xff, 0xff])
+        && !reader.eq(reader.p + 4, &fe)
+    {
+        reader.u16()?;
+        let centre = reader.u16()?;
         let mut axes = Vec::new();
         for _ in 0..4 {
-            axes.push(V::from(r.u16()?));
+            axes.push(V::from(reader.u16()?));
         }
-        v.set("ell", V::List(vec![V::from(centre), V::List(axes)]));
-        v.set("pell", V::Bool(true));
-    } else if b == 1 || b == 0xffff {
-        let x = r.u32()?;
+        value.set("ell", V::List(vec![V::from(centre), V::List(axes)]));
+        value.set("pell", V::Bool(true));
+    } else if second == 1 || second == 0xffff {
+        let x_value = reader.u32()?;
         let mut ys = Vec::new();
         for _ in 0..4 {
-            ys.push(V::from(r.u32()?));
+            ys.push(V::from(reader.u32()?));
         }
-        v.set("arc", V::List(vec![V::from(x), V::List(ys)]));
-    } else if b == 2 {
-        r.expect_bytes(&[0, 0], "spline u16 0")?;
-        let order = r.u16()?;
-        r.ptr(Some(&["cptsSplineList_c", "modifSplineList_c"]))?;
-        if !r.eq(r.p, &[1, 0, 0, 0, 0, 0, 0, 0])
-            && !r.zeros(r.p, 8)
-            && !r.eq(r.p, &[1, 0, 1, 0, 0, 0, 0, 0])
+        value.set("arc", V::List(vec![V::from(x_value), V::List(ys)]));
+    } else if second == 2 {
+        reader.expect_bytes(&[0, 0], "spline u16 0")?;
+        let order = reader.u16()?;
+        reader.ptr(Some(&["cptsSplineList_c", "modifSplineList_c"]))?;
+        if !reader.eq(reader.p, &[1, 0, 0, 0, 0, 0, 0, 0])
+            && !reader.zeros(reader.p, 8)
+            && !reader.eq(reader.p, &[1, 0, 1, 0, 0, 0, 0, 0])
         {
             // u32 1 (or 0) and u32 0; a u16 1 and u32 1 in one part.
             return Err(bad("spline 1 0"));
         }
-        r.skip(8);
-        r.f64()?;
-        r.f64()?;
-        r.f64()?;
-        r.u32()?;
-        r.expect_zeros(48, "spline 48 zero")?;
-        r.expect_bytes(&[1, 0], "spline u16 1")?;
-        let nk = r.u32()?;
+        reader.skip(8);
+        reader.f64()?;
+        reader.f64()?;
+        reader.f64()?;
+        reader.u32()?;
+        reader.expect_zeros(48, "spline 48 zero")?;
+        reader.expect_bytes(&[1, 0], "spline u16 1")?;
+        let nk = reader.u32()?;
         if nk > 4096 {
             return Err(bad("spline knots"));
         }
         for _ in 0..nk {
-            r.f64()?;
+            reader.f64()?;
         }
-        let nc = r.u32()?;
+        let nc = reader.u32()?;
         if nc > 4096 {
             return Err(bad("spline points"));
         }
         for _ in 0..nc {
-            r.f64()?;
-            r.f64()?;
-            r.f64()?;
+            reader.f64()?;
+            reader.f64()?;
+            reader.f64()?;
         }
-        if r.zeros(r.p, 4) && r.pu32(r.p + 4)? == 0 && r.pu32(r.p + 8)? == 2 {
+        if reader.zeros(reader.p, 4)
+            && reader.pu32(reader.p + 4)? == 0
+            && reader.pu32(reader.p + 8)? == 2
+        {
             // A spline whose geometry may be a compressed Parasolid body: u32 0, u32 0, u32 2, the parameter
             // range, u32 0, u32 1. When a body follows, a zero run (24 or 56 bytes), u16 1 and a blob
             // (00 A 00 B, B = A - 5) stand before it; when none does, the record's tail follows the two u32.
-            r.skip(12);
-            r.f64()?;
-            r.f64()?;
-            r.expect_zeros(4, "spline body u32 0")?;
-            r.u32()?;
-            let q = r.p;
-            let mut j = r.p;
-            while j < r.p + 64 && j < r.len() && r.byte(j)? == 0 {
-                j += 1;
+            reader.skip(12);
+            reader.f64()?;
+            reader.f64()?;
+            reader.expect_zeros(4, "spline body u32 0")?;
+            reader.u32()?;
+            let at = reader.p;
+            let mut stop = reader.p;
+            while stop < reader.p + 64 && stop < reader.len() && reader.byte(stop)? == 0 {
+                stop += 1;
             }
             let mut hasbody = false;
-            if j + 12 <= r.len() && r.eq(j, &[1, 0]) && r.eq(j + 2, &[0]) {
-                let a = r.pu32(j + 3)?;
-                let b = r.pu32(j + 8)?;
-                hasbody = r.eq(j + 7, &[0]) && a.checked_sub(5) == Some(b);
+            if stop + 12 <= reader.len() && reader.eq(stop, &[1, 0]) && reader.eq(stop + 2, &[0]) {
+                let first = reader.pu32(stop + 3)?;
+                let second = reader.pu32(stop + 8)?;
+                hasbody = reader.eq(stop + 7, &[0]) && first.checked_sub(5) == Some(second);
             }
             if hasbody {
-                r.skip(j - r.p);
-                r.u16()?;
-                let data = blob(r)?;
+                reader.skip(stop - reader.p);
+                reader.u16()?;
+                let data = blob(reader)?;
                 let len = match &data {
                     V::Bytes(bytes) => bytes.len(),
                     _ => 0,
                 };
-                v.set(
+                value.set(
                     "spline",
-                    V::List(vec![V::from("body"), V::from(len as i64)]),
+                    V::List(vec![
+                        V::from("body"),
+                        V::from(i64::try_from(len).map_err(|_| bad("spline length exceeds i64"))?),
+                    ]),
                 );
             } else {
-                r.p = q;
-                v.set("spline", V::List(vec![V::from("bodyless")]));
+                reader.p = at;
+                value.set("spline", V::List(vec![V::from("bodyless")]));
             }
-            let c = r.u16()?;
-            let d = r.u32()?;
-            let id = r.u32()?;
-            v.set("c", V::from(c));
-            v.set("d", V::from(d));
-            v.set("id", V::from(id));
-            return Ok(v);
+            let class = reader.u16()?;
+            let distance = reader.u32()?;
+            let id = reader.u32()?;
+            value.set("c", V::from(class));
+            value.set("d", V::from(distance));
+            value.set("id", V::from(id));
+            return Ok(value);
         }
-        r.expect_bytes(
+        reader.expect_bytes(
             &[0, 0, 0, 0, 0xff, 0xff, 0xff, 0xff, 1, 0, 0, 0, 1, 0, 0, 0],
             "spline 0 -1 1 1",
         )?;
-        if r.u32()? != nc {
+        if reader.u32()? != nc {
             return Err(bad("spline weight count"));
         }
-        r.u32()?;
-        r.f64()?;
-        r.f64()?;
+        reader.u32()?;
+        reader.f64()?;
+        reader.f64()?;
         for _ in 0..nc {
-            r.f64()?;
+            reader.f64()?;
         }
-        r.expect_zeros(8, "spline 8 zero")?;
-        let sf = r.u16()?;
-        r.f64()?;
+        reader.expect_zeros(8, "spline 8 zero")?;
+        let sf = reader.u16()?;
+        reader.f64()?;
         if sf != 0 {
-            r.f64()?;
+            reader.f64()?;
         }
-        r.expect_zeros(12, "spline 12 zero")?;
-        v.set(
+        reader.expect_zeros(12, "spline 12 zero")?;
+        value.set(
             "spline",
             V::List(vec![V::from(order), V::from(nk), V::from(nc)]),
         );
-        let c = r.u16()?;
-        let d = r.u32()?;
-        let id = r.u32()?;
-        v.set("c", V::from(c));
-        v.set("d", V::from(d));
-        v.set("id", V::from(id));
-        return Ok(v);
-    } else if b == 0x40 {
-        r.expect_bytes(&[0, 0], "style spline u16 0")?;
-        r.u16()?;
-        let cps = r.ptr(Some(&["cptsSplineList_c"]))?;
-        r.expect_zeros(8, "style spline 8 zero")?;
-        let x = r.f64()?;
-        let y = r.f64()?;
-        if (x, y) != (-1000.0, -1000.0) {
+        let class = reader.u16()?;
+        let distance = reader.u32()?;
+        let id = reader.u32()?;
+        value.set("c", V::from(class));
+        value.set("d", V::from(distance));
+        value.set("id", V::from(id));
+        return Ok(value);
+    } else if second == 0x40 {
+        reader.expect_bytes(&[0, 0], "style spline u16 0")?;
+        reader.u16()?;
+        let cps = reader.ptr(Some(&["cptsSplineList_c"]))?;
+        reader.expect_zeros(8, "style spline 8 zero")?;
+        let x_value = reader.f64()?;
+        let y_value = reader.f64()?;
+        if (x_value, y_value) != (-1000.0, -1000.0) {
             return Err(bad("style spline -1000"));
         }
         let mut fixed = vec![0; 60];
@@ -299,18 +359,18 @@ fn line(r: &mut Reader<'_>) -> Res<V> {
         fixed.extend_from_slice(&[0; 4]);
         fixed.extend_from_slice(&[1, 0, 0, 0]);
         fixed.extend_from_slice(&[0; 6]);
-        r.expect_bytes(&fixed, "style spline fixed")?;
-        v.set("style", V::from(cps));
-    } else if b != 0 {
-        return Err(bad(format!("curve type {b}")));
+        reader.expect_bytes(&fixed, "style spline fixed")?;
+        value.set("style", V::from(cps));
+    } else if second != 0 {
+        return Err(bad(format!("curve type {second}")));
     }
-    let c = r.u16()?;
-    let d = r.u32()?;
-    let id = r.u32()?;
-    v.set("c", V::from(c));
-    v.set("d", V::from(d));
-    v.set("id", V::from(id));
-    Ok(v)
+    let class = reader.u16()?;
+    let distance = reader.u32()?;
+    let id = reader.u32()?;
+    value.set("c", V::from(class));
+    value.set("d", V::from(distance));
+    value.set("id", V::from(id));
+    Ok(value)
 }
 
 /// `record(r)`: a sketch entity record.
@@ -571,101 +631,101 @@ fn linpatt(r: &mut Reader<'_>, gi: usize) -> Res<(usize, Rel)> {
 }
 
 /// `islinpatt(q)` (inside `sketch`).
-fn islinpatt(r: &Reader<'_>, q: usize) -> Res<bool> {
-    if r.zeros(q, 8) {
+fn islinpatt(reader: &Reader<'_>, at: usize) -> Res<bool> {
+    if reader.zeros(at, 8) {
         return Ok(false);
     }
-    let n1 = r.pu16(q + 14)?;
-    let n2 = r.pu16(q + 16)?;
-    let a = r.pu16(q + 18)?;
-    let c = r.pu16(q + 20)?;
-    if (n1, n2) != (a, c) || n1 == 0 {
+    let n1 = reader.pu16(at + 14)?;
+    let n2 = reader.pu16(at + 16)?;
+    let first = reader.pu16(at + 18)?;
+    let class = reader.pu16(at + 20)?;
+    if (n1, n2) != (first, class) || n1 == 0 {
         return Ok(false);
     }
-    let d0 = r.pf64(q + 26)?;
-    let d1 = r.pf64(q + 34)?;
-    let d2 = r.pf64(q + 42)?;
-    let s = d0 * d0 + d1 * d1 + d2 * d2;
-    if (s - 1.0).abs() > 1e-6 {
+    let d0 = reader.pf64(at + 26)?;
+    let d1 = reader.pf64(at + 34)?;
+    let d2 = reader.pf64(at + 42)?;
+    let span = d0 * d0 + d1 * d1 + d2 * d2;
+    if (span - 1.0).abs() > UNIT_VECTOR_TOLERANCE {
         return Ok(false);
     }
-    let w = r.pu16(q + 50)?;
-    Ok(tagword(w))
+    let word = reader.pu16(at + 50)?;
+    Ok(tagword(word))
 }
 
 /// `ispoly(q)` (inside `sketch`).
-fn ispoly(r: &Reader<'_>, q: usize) -> Res<bool> {
-    if r.zeros(q, 8) {
+fn ispoly(reader: &Reader<'_>, at: usize) -> Res<bool> {
+    if reader.zeros(at, 8) {
         return Ok(false);
     }
-    let mut n = r.pu32(q + 4)?;
-    if r.ffs(q, 4) && n == 1 {
-        n = u32::from(r.pu16(q + 18)?);
+    let mut count_ = reader.pu32(at + 4)?;
+    if reader.ffs(at, 4) && count_ == 1 {
+        count_ = u32::from(reader.pu16(at + 18)?);
     }
     // The u16 pair repeats a count, not always n (a circular pattern's: 3
     // with 8 instances, 15 with 30).
-    let a = r.pu16(q + 18)?;
-    let b = r.pu16(q + 20)?;
-    if !(0 < n && n < 1000) || a != b || !(0 < a && a < 1000) {
+    let first = reader.pu16(at + 18)?;
+    let second = reader.pu16(at + 20)?;
+    if !(0 < count_ && count_ < 1000) || first != second || !(0 < first && first < 1000) {
         return Ok(false);
     }
-    let w = r.pu16(q + 46)?;
-    Ok(tagword(w))
+    let word = reader.pu16(at + 46)?;
+    Ok(tagword(word))
 }
 
 /// `sgSketch` (`sketch`).
-pub(crate) fn sketch(r: &mut Reader<'_>) -> Res<V> {
-    r.st.sk.pgmdone = false;
-    let big_n = r.u32()?;
-    r.expect_bytes(&[0, 0], "")?;
-    r.u16()?;
-    r.expect_bytes(&[0, 0], "")?;
-    let big_k = r.u32()?;
+pub(crate) fn sketch(reader: &mut Reader<'_>) -> Res<V> {
+    reader.st.sk.set_pgmdone(false);
+    let big_n = reader.u32()?;
+    reader.expect_bytes(&[0, 0], "")?;
+    reader.u16()?;
+    reader.expect_bytes(&[0, 0], "")?;
+    let big_k = reader.u32()?;
     for _ in 0..big_n {
-        record(r)?;
+        record(reader)?;
     }
-    r.u32()?;
+    reader.u32()?;
     let mut lines: Vec<V> = Vec::new();
     loop {
-        if isattr(r, r.p) {
-            lines.push(line(r)?);
+        if isattr(reader, reader.p) {
+            lines.push(line(reader)?);
             continue;
         }
-        if r.eq(r.p, &[0, 0])
-            && r.eq(r.p + 4, &[0, 0])
-            && r.byte(r.p + 7)? == 0
-            && isattr(r, r.p + 16)
+        if reader.eq(reader.p, &[0, 0])
+            && reader.eq(reader.p + 4, &[0, 0])
+            && reader.byte(reader.p + 7)? == 0
+            && isattr(reader, reader.p + 16)
         {
-            r.pu16(r.p + 2)?;
-            r.skip(4);
+            reader.pu16(reader.p + 2)?;
+            reader.skip(4);
             continue;
         }
-        if r.eq(r.p, &[0, 0])
-            && matches!(r.byte(r.p + 2)?, 0..=2)
-            && r.byte(r.p + 3)? == 0
-            && isattr(r, r.p + 12)
+        if reader.eq(reader.p, &[0, 0])
+            && matches!(reader.byte(reader.p + 2)?, 0..=2)
+            && reader.byte(reader.p + 3)? == 0
+            && isattr(reader, reader.p + 12)
         {
-            r.pu32(r.p + 4)?;
-            r.pu32(r.p + 8)?;
-            r.skip(12);
+            reader.pu32(reader.p + 4)?;
+            reader.pu32(reader.p + 8)?;
+            reader.skip(12);
             continue;
         }
-        if r.eq(r.p, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0])
-            && r.eq(r.p + 12, &[0, 0])
-            && r.eq(r.p + 20, &[1, 0, 0, 0])
-            && isattr(r, r.p + 24)
+        if reader.eq(reader.p, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0])
+            && reader.eq(reader.p + 12, &[0, 0])
+            && reader.eq(reader.p + 20, &[1, 0, 0, 0])
+            && isattr(reader, reader.p + 24)
         {
-            r.pu32(r.p + 16)?;
-            r.skip(24);
+            reader.pu32(reader.p + 16)?;
+            reader.skip(24);
             continue;
         }
-        if r.eq(r.p, &[0, 0]) && isattr(r, r.p + 2) {
-            r.skip(2);
+        if reader.eq(reader.p, &[0, 0]) && isattr(reader, reader.p + 2) {
+            reader.skip(2);
             continue;
         }
-        let u = r.pu32(r.p)?;
-        if 0 < u && u < 0x10000 && isattr(r, r.p + 4) {
-            r.skip(4);
+        let u = reader.pu32(reader.p)?;
+        if 0 < u && u < 0x10000 && isattr(reader, reader.p + 4) {
+            reader.skip(4);
             continue;
         }
         break;
@@ -680,292 +740,307 @@ pub(crate) fn sketch(r: &mut Reader<'_>) -> Res<V> {
         &[36, 34, 22, 24]
     };
     let mut found = None;
-    for &z in order {
-        if r.zeros(r.p, z) && okat(r, r.p + z)? {
-            found = Some(z);
+    for &zeros_ in order {
+        if reader.zeros(reader.p, zeros_) && okat(reader, reader.p + zeros_)? {
+            found = Some(zeros_);
             break;
         }
     }
-    let Some(z) = found else {
+    let Some(zeros_) = found else {
         return Err(bad("sketch list trailer"));
     };
-    r.skip(z);
+    reader.skip(zeros_);
     let mut rels: Vec<(usize, Rel)> = Vec::new();
     let mut ndims = 0_usize;
     for gi in 0..3 {
-        let k = r.u16()?;
-        for i in 0..k {
-            if !isdim(r, r.p)? {
-                if r.zeros(r.p, 8) && r.ffs(r.p + 8, 4) {
-                    core(r, gi)?;
+        let found_ = reader.u16()?;
+        for i in 0..found_ {
+            if !isdim(reader, reader.p)? {
+                if reader.zeros(reader.p, 8) && reader.ffs(reader.p + 8, 4) {
+                    core(reader, gi)?;
                     ndims += 1;
                     continue;
                 }
                 return Err(bad("dimension group: not a dimension"));
             }
-            r.st.sk.dimlast = i + 1 == k;
-            let res = r.ptr(None);
-            r.st.sk.dimlast = false;
+            reader.st.sk.set_dimlast(i + 1 == found_);
+            let res = reader.ptr(None);
+            reader.st.sk.set_dimlast(false);
             res?;
             ndims += 1;
         }
     }
     for gi in 0..8 {
-        let w = r.pu16(r.p)?;
-        if gi >= 1 && tagword(w) {
+        let word = reader.pu16(reader.p)?;
+        if gi >= 1 && tagword(word) {
             break;
         }
-        let k = r.u16()?;
-        for _ in 0..k {
-            let w0 = r.pu16(r.p)?;
-            if r.ffs(r.p, 4) && ispoly(r, r.p)? {
-                rels.push(polygon(r, gi)?);
+        let found_ = reader.u16()?;
+        for _ in 0..found_ {
+            let w0 = reader.pu16(reader.p)?;
+            if reader.ffs(reader.p, 4) && ispoly(reader, reader.p)? {
+                rels.push(polygon(reader, gi)?);
                 continue;
             }
-            if r.ffs(r.p, 4) && islinpatt(r, r.p)? {
-                rels.push(linpatt(r, gi)?);
+            if reader.ffs(reader.p, 4) && islinpatt(reader, reader.p)? {
+                rels.push(linpatt(reader, gi)?);
                 continue;
             }
             if tagword(w0) {
-                r.ptr(None)?;
+                reader.ptr(None)?;
                 rels.push((gi, Rel::Obj));
                 continue;
             }
-            if ispoly(r, r.p)? {
-                rels.push(polygon(r, gi)?);
+            if ispoly(reader, reader.p)? {
+                rels.push(polygon(reader, gi)?);
                 continue;
             }
-            if islinpatt(r, r.p)? {
-                rels.push(linpatt(r, gi)?);
+            if islinpatt(reader, reader.p)? {
+                rels.push(linpatt(reader, gi)?);
                 continue;
             }
-            rels.push(core(r, gi)?);
+            rels.push(core(reader, gi)?);
         }
         if rels
             .iter()
-            .any(|x| x.0 == gi && matches!(x.1, Rel::Polygon | Rel::Pattern))
+            .any(|x_value| x_value.0 == gi && matches!(x_value.1, Rel::Polygon | Rel::Pattern))
         {
-            let m = r.u16()?;
-            if m > 4096 {
+            let mask = reader.u16()?;
+            if mask > 4096 {
                 return Err(bad("polygon relation count"));
             }
-            for _ in 0..m {
-                rels.push(core(r, gi)?);
-                r.skip(20);
+            for _ in 0..mask {
+                rels.push(core(reader, gi)?);
+                reader.skip(20);
             }
         }
     }
-    while r.eq(r.p, &[0, 0]) {
-        r.skip(2);
+    while reader.eq(reader.p, &[0, 0]) {
+        reader.skip(2);
     }
-    r.ptr(None)?;
-    let q = r.p + 10;
-    if r.zeros(r.p, 8) && r.eq(r.p + 8, &[1, 0]) && q + 8 <= r.len() {
-        let c = r.pu32(q)? as usize;
-        if 0 < c && c < 256 && q + 4 * c + 8 <= r.len() {
+    reader.ptr(None)?;
+    let at = reader.p + 10;
+    if reader.zeros(reader.p, 8) && reader.eq(reader.p + 8, &[1, 0]) && at + 8 <= reader.len() {
+        let class_ = usize::try_from(reader.pu32(at)?)
+            .map_err(|_| bad("sketch table count exceeds address space"))?;
+        if 0 < class_ && class_ < 256 && at + 4 * class_ + 8 <= reader.len() {
             let mut ok = true;
-            for i in 0..c {
-                let x = r.pu32(q + 4 + 4 * i)?;
-                if !(0 < x && x < 1_000_000) {
+            for i in 0..class_ {
+                let x_value = reader.pu32(at + 4 + 4 * i)?;
+                if !(0 < x_value && x_value < 1_000_000) {
                     ok = false;
                 }
             }
-            let a = r.pu32(q + 4 + 4 * c)? as usize;
-            if ok && (a == 0 || a == 1 || a == c) {
-                r.skip(2);
+            let first = usize::try_from(reader.pu32(at + 4 + 4 * class_)?)
+                .map_err(|_| bad("sketch table end exceeds address space"))?;
+            if ok && (first == 0 || first == 1 || first == class_) {
+                reader.skip(2);
             }
         }
     }
-    if r.p + 12 <= r.len() && r.zeros(r.p, 4) && r.pu16(r.p + 4)? == 0 {
-        let n0 = r.pu16(r.p + 6)?;
-        let c = r.pu32(r.p + 8)?;
-        if 0 < n0 && n0 <= 256 && c > 0xffff {
+    if reader.p + 12 <= reader.len() && reader.zeros(reader.p, 4) && reader.pu16(reader.p + 4)? == 0
+    {
+        let n0 = reader.pu16(reader.p + 6)?;
+        let class_ = reader.pu32(reader.p + 8)?;
+        if 0 < n0 && n0 <= 256 && class_ > 0xffff {
             // The same 52-byte tail before a group header: n0 is the shifted n, and the group data's class
             // tag read as a chain count is not a count (2025 Margie).
-            r.skip(2);
+            reader.skip(2);
         }
     }
-    r.expect_zeros(4, "settings u32 0")?;
-    let n = r.u16()?;
-    let mut k = u32::from(r.u16()?);
-    if n > 256 || k > 4096 {
+    reader.expect_zeros(4, "settings u32 0")?;
+    let count_ = reader.u16()?;
+    let mut found_ = u32::from(reader.u16()?);
+    if count_ > 256 || found_ > 4096 {
         return Err(bad("in-context block counts"));
     }
-    for g in 0..n {
-        k = ingroup(r, k)?;
-        if g + 1 == n && k != 0 && chains(r)? != 0 {
+    for g in 0..count_ {
+        found_ = ingroup(reader, found_)?;
+        if g + 1 == count_ && found_ != 0 && chains(reader)? != 0 {
             return Err(bad("group count"));
         }
     }
-    if n == 0 && k != 0 && chains(r)? != 0 {
+    if count_ == 0 && found_ != 0 && chains(reader)? != 0 {
         return Err(bad("chain list end"));
     }
-    if r.st.sk.pgmdone {
-        r.st.sk.pgmdone = false;
+    if reader.st.sk.pgmdone() {
+        reader.st.sk.set_pgmdone(false);
     } else {
-        if r.eq(r.p, &[0, 0, 1, 0, 0, 0]) && objat(r, r.p + 18) {
-            r.skip(2);
+        if reader.eq(reader.p, &[0, 0, 1, 0, 0, 0]) && objat(reader, reader.p + 18) {
+            reader.skip(2);
             for _ in 0..4 {
-                r.u32()?;
+                reader.u32()?;
             }
-            r.ptr(None)?;
+            reader.ptr(None)?;
         }
-        r.expect_zeros(4, "settings u32 0 b")?;
-        let w = r.pu16(r.p + 4)?;
-        if r.eq(r.p, &[0, 0, 2, 0]) && tagword(w) {
-            r.skip(4);
-            r.ptr(Some(&["sgPGMProfileData_c"]))?;
+        reader.expect_zeros(4, "settings u32 0 b")?;
+        let word = reader.pu16(reader.p + 4)?;
+        if reader.eq(reader.p, &[0, 0, 2, 0]) && tagword(word) {
+            reader.skip(4);
+            reader.ptr(Some(&["sgPGMProfileData_c"]))?;
         }
     }
-    let ver = ver_or(r, 0);
-    let mut l = if ver >= 19000 { 78 } else { 76 };
-    if !r.eq(r.p + l, &[0xff, 0xfe, 0xff]) && r.eq(r.p + 76, &[0xff, 0xfe, 0xff]) {
-        l = 76;
+    let ver = ver_or(reader, 0);
+    let mut length = if ver >= 19000 { 78 } else { 76 };
+    if !reader.eq(reader.p + length, &[0xff, 0xfe, 0xff])
+        && reader.eq(reader.p + 76, &[0xff, 0xfe, 0xff])
+    {
+        length = 76;
     }
-    r.skip(l);
-    r.cstring()?;
-    r.skip(42);
-    r.u32()?;
-    r.u32()?;
-    let k = r.u32()?;
-    if k > 4096 {
+    reader.skip(length);
+    reader.cstring()?;
+    reader.skip(42);
+    reader.u32()?;
+    reader.u32()?;
+    let found_ = reader.u32()?;
+    if found_ > 4096 {
         return Err(bad("settings list count"));
     }
-    for _ in 0..k {
-        r.ptr(None)?;
+    for _ in 0..found_ {
+        reader.ptr(None)?;
     }
-    r.expect_zeros(24, "settings 24 zero")?;
-    r.ptr(None)?;
-    let t = sktail(r)?;
+    reader.expect_zeros(24, "settings 24 zero")?;
+    reader.ptr(None)?;
+    let kind = sktail(reader)?;
     Ok(V::map([
         ("N", V::from(big_n)),
         ("K", V::from(big_k)),
-        ("lines", V::Int(lines.len() as i64)),
-        ("dims", V::Int(ndims as i64)),
-        ("rels", V::Int(rels.len() as i64)),
-        ("plane", t.get("plane").clone()),
+        (
+            "lines",
+            V::Int(i64::try_from(lines.len()).map_err(|_| bad("line count exceeds i64"))?),
+        ),
+        (
+            "dims",
+            V::Int(i64::try_from(ndims).map_err(|_| bad("dimension count exceeds i64"))?),
+        ),
+        (
+            "rels",
+            V::Int(i64::try_from(rels.len()).map_err(|_| bad("relation count exceeds i64"))?),
+        ),
+        ("plane", kind.get("plane").clone()),
     ]))
 }
 
 /// `sktail(r)`: the end of a sketch, to its plane.
-pub(crate) fn sktail(r: &mut Reader<'_>) -> Res<V> {
-    let q = r.p + 18;
-    if r.zeros(r.p, 18) && q + 14 <= r.len() {
-        let nxt = r.pu32(q)?;
-        let cnt = r.pu32(q + 4)?;
-        if 0 < cnt && cnt <= nxt && nxt < 4096 && objat(r, q + 12) {
-            r.p = q + 8;
+pub(crate) fn sktail(reader: &mut Reader<'_>) -> Res<V> {
+    let at = reader.p + 18;
+    if reader.zeros(reader.p, 18) && at + 14 <= reader.len() {
+        let nxt = reader.pu32(at)?;
+        let cnt = reader.pu32(at + 4)?;
+        if 0 < cnt && cnt <= nxt && nxt < 4096 && objat(reader, at + 12) {
+            reader.p = at + 8;
             for _ in 0..cnt {
-                r.u32()?;
-                r.ptr(Some(&["sgSlot_c"]))?;
+                reader.u32()?;
+                reader.ptr(Some(&["sgSlot_c"]))?;
             }
         }
     }
-    let mut z = 0;
-    while r.p + z < r.len() && r.byte(r.p + z)? == 0 && z < 80 {
-        z += 1;
+    let mut zeros_ = 0;
+    while reader.p + zeros_ < reader.len() && reader.byte(reader.p + zeros_)? == 0 && zeros_ < 80 {
+        zeros_ += 1;
     }
-    if r.p + z + 8 < r.len() {
-        let a2 = r.pu32(r.p + z)?;
-        let n2 = r.pu32(r.p + z + 4)?;
-        if 0 < a2 && a2 < 64 && n2 > a2 && isclass(r, r.p + z + 8, &["sgBlock"])? {
-            r.skip(z + 4);
+    if reader.p + zeros_ + 8 < reader.len() {
+        let a2 = reader.pu32(reader.p + zeros_)?;
+        let n2 = reader.pu32(reader.p + zeros_ + 4)?;
+        if 0 < a2 && a2 < 64 && n2 > a2 && isclass(reader, reader.p + zeros_ + 8, &["sgBlock"])? {
+            reader.skip(zeros_ + 4);
             for _ in 0..a2 {
-                r.u32()?;
-                r.ptr(Some(&["sgBlock"]))?;
+                reader.u32()?;
+                reader.ptr(Some(&["sgBlock"]))?;
             }
         } else if a2 == 1
             && n2 == 0
-            && r.zeros(r.p + z + 8, 4)
-            && (r.eq(r.p + z + 12, &[3, 0, 0, 0]) || r.eq(r.p + z + 12, &[7, 0, 0, 0]))
+            && reader.zeros(reader.p + zeros_ + 8, 4)
+            && (reader.eq(reader.p + zeros_ + 12, &[3, 0, 0, 0])
+                || reader.eq(reader.p + zeros_ + 12, &[7, 0, 0, 0]))
         {
-            r.skip(z + 8);
-        } else if 0 < n2 && n2 <= a2 && a2 < 4096 && objat(r, r.p + z + 8) {
-            r.skip(z + 8);
+            reader.skip(zeros_ + 8);
+        } else if 0 < n2 && n2 <= a2 && a2 < 4096 && objat(reader, reader.p + zeros_ + 8) {
+            reader.skip(zeros_ + 8);
             for _ in 0..n2 {
-                r.ptr(None)?;
+                reader.ptr(None)?;
             }
         }
     }
     loop {
-        let marker = r.eq(r.p, &[3, 0, 0, 0]) || r.eq(r.p, &[7, 0, 0, 0]);
-        if marker && r.byte(r.p + 4)? <= 1 {
+        let marker = reader.eq(reader.p, &[3, 0, 0, 0]) || reader.eq(reader.p, &[7, 0, 0, 0]);
+        if marker && reader.byte(reader.p + 4)? <= 1 {
             break;
         }
-        if r.byte(r.p)? != 0 {
+        if reader.byte(reader.p)? != 0 {
             return Err(bad("sketch tail"));
         }
-        r.p += 1;
+        reader.p += 1;
     }
-    let mk = r.u32()?;
-    if r.byte(r.p)? == 0 {
-        blob(r)?;
+    let mk = reader.u32()?;
+    if reader.byte(reader.p)? == 0 {
+        blob(reader)?;
     } else {
-        r.skip(1);
+        reader.skip(1);
     }
-    r.expect_zeros(4, "sketch tail u32 0")?;
-    let c = r.u16()?;
-    for _ in 0..c {
-        r.ptr(None)?;
+    reader.expect_zeros(4, "sketch tail u32 0")?;
+    let class = reader.u16()?;
+    for _ in 0..class {
+        reader.ptr(None)?;
     }
-    if c != 0 {
-        let a = r.u32()?;
-        let b = r.u32()?;
-        let d = r.u32()?;
-        if [a, b, d] != [4, 16, 1] {
+    if class != 0 {
+        let first = reader.u32()?;
+        let second = reader.u32()?;
+        let distance = reader.u32()?;
+        if [first, second, distance] != [4, 16, 1] {
             return Err(bad("sketch tail 4 16 1"));
         }
-        let n = r.u32()?;
-        for _ in 0..n {
-            r.u32()?;
+        let count_ = reader.u32()?;
+        for _ in 0..count_ {
+            reader.u32()?;
         }
     }
     // `(mk == 3 or not c) and not (c and 100000 <= u32 <= 100064)`.
-    if mk == 3 || c == 0 {
-        let marked = c != 0 && (100_000..=100_064).contains(&r.pu32(r.p)?);
+    if mk == 3 || class == 0 {
+        let marked = class != 0 && (100_000..=100_064).contains(&reader.pu32(reader.p)?);
         if !marked {
-            r.expect_zeros(4, "sketch tail u32 0 b")?;
+            reader.expect_zeros(4, "sketch tail u32 0 b")?;
         }
     }
-    let mv = r.u32()?;
+    let mv = reader.u32()?;
     if !(100_000..=100_064).contains(&mv) {
         return Err(bad("sketch tail 100000"));
     }
     if mv > 100_000 {
-        let g = r.u16()?;
+        let groups_ = reader.u16()?;
         let mut ids = Vec::new();
-        if u32::from(g) != mv - 100_000 {
+        if u32::from(groups_) != mv - 100_000 {
             return Err(bad("sketch tail group count"));
         }
-        if g > 64 {
+        if groups_ > 64 {
             return Err(bad("sketch tail groups"));
         }
-        for _ in 0..g {
-            r.ptr(Some(&["moOneContour_c"]))?;
-            r.st.core.skbox = true;
+        for _ in 0..groups_ {
+            reader.ptr(Some(&["moOneContour_c"]))?;
+            reader.st.core.skbox = true;
             let res = (|| -> Res<()> {
-                let n = r.u16()?;
-                for _ in 0..n {
-                    r.ptr(None)?;
+                let count_ = reader.u16()?;
+                for _ in 0..count_ {
+                    reader.ptr(None)?;
                 }
                 Ok(())
             })();
-            r.st.core.skbox = false;
+            reader.st.core.skbox = false;
             res?;
-            r.u16()?;
-            ids.push(r.u32()?);
+            reader.u16()?;
+            ids.push(reader.u32()?);
         }
         ids.sort_unstable();
-        if ids != (100_000..100_000 + u32::from(g)).collect::<Vec<_>>() {
+        if ids != (100_000..100_000 + u32::from(groups_)).collect::<Vec<_>>() {
             return Err(bad(format!("sketch tail group ids {ids:?}")));
         }
-        r.ptr(None)?;
-        let plane = r.ptr(None)?;
+        reader.ptr(None)?;
+        let plane = reader.ptr(None)?;
         return Ok(V::map([("plane", V::from(plane))]));
     }
-    r.expect_bytes(&[0, 0], "sketch tail u16 0")?;
-    r.ptr(None)?;
-    let plane = r.ptr(None)?;
+    reader.expect_bytes(&[0, 0], "sketch tail u16 0")?;
+    reader.ptr(None)?;
+    let plane = reader.ptr(None)?;
     Ok(V::map([("plane", V::from(plane))]))
 }
 
@@ -1047,7 +1122,7 @@ pub(crate) fn support(r: &mut Reader<'_>, st: i64) -> Res<V> {
         if r.zeros(r.p, 12) && !r.ffs(r.p + 12, 4) {
             r.skip(12);
         } else {
-            r.expect_bytes(&zeros_then(12, &[0xff; 4]), "support -1")?;
+            r.expect_bytes(&zeros12_then(&[0xff; 4]), "support -1")?;
         }
     } else {
         if r.zeros(r.p, 8)
@@ -1061,7 +1136,7 @@ pub(crate) fn support(r: &mut Reader<'_>, st: i64) -> Res<V> {
             r.expect_zeros(4, "")?;
             r.u32()?;
             if r.ffs(r.p + 12, 4) {
-                r.expect_bytes(&zeros_then(12, &[0xff; 4]), "support face -1")?;
+                r.expect_bytes(&zeros12_then(&[0xff; 4]), "support face -1")?;
             } else {
                 r.expect_zeros(12, "support face 12 zero")?;
             }
@@ -1106,7 +1181,7 @@ pub(crate) fn support(r: &mut Reader<'_>, st: i64) -> Res<V> {
         if isver(r, r.p) {
             r.skip(4);
         }
-        r.expect_bytes(&zeros_then(12, &[0xff; 4]), "support block -1")?;
+        r.expect_bytes(&zeros12_then(&[0xff; 4]), "support block -1")?;
     }
     if st == 1 {
         for _ in 0..4 {
@@ -1142,7 +1217,7 @@ fn chains(r: &mut Reader<'_>) -> Res<u32> {
             }
             r.skip(2);
             r.ptr(Some(&["sgPGMProfileData_c"]))?;
-            r.st.sk.pgmdone = true;
+            r.st.sk.set_pgmdone(true);
             return Ok(0);
         }
         if c == 0 && 0 < a && a < 4096 && fl <= 1 && r.pu32(r.p)? < 256 {
@@ -1174,16 +1249,21 @@ pub(crate) fn blob(r: &mut Reader<'_>) -> Res<V> {
     let q = r.p;
     let ul = r.pu32(q + 16)?;
     let cl = r.pu32(q + 20)?;
-    let compressed = r.slice(q + 24, cl as usize);
+    let compressed = r.slice(
+        q + 24,
+        usize::try_from(cl).map_err(|_| bad("compressed length exceeds address space"))?,
+    );
     let mut data = Vec::new();
     flate2::read::ZlibDecoder::new(compressed)
         .take(u64::from(ul) + 1)
         .read_to_end(&mut data)
         .map_err(|_| bad("blob zlib"))?;
-    if data.len() != ul as usize {
+    if data.len()
+        != usize::try_from(ul).map_err(|_| bad("uncompressed length exceeds address space"))?
+    {
         return Err(bad("blob length"));
     }
-    r.p = q + b as usize;
+    r.p = q + usize::try_from(b).map_err(|_| bad("blob length exceeds address space"))?;
     Ok(V::Bytes(data))
 }
 
@@ -1202,157 +1282,173 @@ fn iscomp(r: &Reader<'_>, q: usize) -> Res<bool> {
 }
 
 /// `moSketchExtRef_w`, `moSingleFaceRef_w`, ... (`sketchextref`).
-pub(crate) fn sketchextref(r: &mut Reader<'_>) -> Res<V> {
-    let me = r.last_class().map_or_else(String::new, |c| c.to_string());
-    let e = r.ptr(None)?;
-    let q = r.p;
-    let eclass = e.obj_class().map(str::to_owned);
+pub(crate) fn sketchextref(reader: &mut Reader<'_>) -> Res<V> {
+    let me = reader
+        .last_class()
+        .map_or_else(String::new, |c| c.to_string());
+    let entry = reader.ptr(None)?;
+    let at = reader.p;
+    let eclass = entry.obj_class().map(str::to_owned);
     let eclass = eclass.as_deref();
     if eclass == Some("moCompSilhVertex_c")
-        && (1..=16).contains(&r.pu32(q)?)
-        && (1..=8).contains(&r.pu32(q + 20)?)
+        && (1..=16).contains(&reader.pu32(at)?)
+        && (1..=8).contains(&reader.pu32(at + 20)?)
     {
-        r.skip(4);
-        let a = vec![V::from(r.f64()?), V::from(r.f64()?)];
-        r.skip(4);
-        r.expect_zeros(10, "silhouette vertex 10 zero")?;
-        r.u32()?;
-        let mut x = zeros_then(12, &m3());
-        x.extend_from_slice(&[0; 4]);
-        r.expect_bytes(&x, "silhouette vertex -12345")?;
-        r.u32()?;
-        let mut y = zeros_then(12, &[0xff; 4]);
-        y.extend_from_slice(&[0, 0]);
-        r.expect_bytes(&y, "silhouette vertex -1")?;
-        let bk = r.ptr(None)?;
-        let nm = entname(r)?;
-        return Ok(V::List(vec![V::from(e), V::List(a), V::from(bk), nm]));
+        reader.skip(4);
+        let first = vec![V::from(reader.f64()?), V::from(reader.f64()?)];
+        reader.skip(4);
+        reader.expect_zeros(10, "silhouette vertex 10 zero")?;
+        reader.u32()?;
+        let mut x_value = zeros12_then(&m3());
+        x_value.extend_from_slice(&[0; 4]);
+        reader.expect_bytes(&x_value, "silhouette vertex -12345")?;
+        reader.u32()?;
+        let mut y_value = zeros12_then(&[0xff; 4]);
+        y_value.extend_from_slice(&[0, 0]);
+        reader.expect_bytes(&y_value, "silhouette vertex -1")?;
+        let bk = reader.ptr(None)?;
+        let nm = entname(reader)?;
+        return Ok(V::List(vec![
+            V::from(entry),
+            V::List(first),
+            V::from(bk),
+            nm,
+        ]));
     }
-    if eclass == Some("moCompSilhEdge_c") && (1..=16).contains(&r.pu32(q)?) {
-        r.skip(4);
-        let a = vec![V::from(r.f64()?), V::from(r.f64()?)];
-        let mut z = 0;
-        while r.byte(r.p + z)? == 0 && z < 200 {
-            z += 1;
+    if eclass == Some("moCompSilhEdge_c") && (1..=16).contains(&reader.pu32(at)?) {
+        reader.skip(4);
+        let first = vec![V::from(reader.f64()?), V::from(reader.f64()?)];
+        let mut zeros_ = 0;
+        while reader.byte(reader.p + zeros_)? == 0 && zeros_ < 200 {
+            zeros_ += 1;
         }
-        r.skip(z);
-        if r.eq(r.p + 16, &m3()) && !r.eq(r.p, &[1, 0, 0, 0]) {
-            r.skip(16);
-            r.skip(12);
-            r.expect_zeros(4, "silhouette u32 0")?;
-            r.u32()?;
-            let mut x = zeros_then(12, &[0xff; 4]);
-            x.extend_from_slice(&[0; 10]);
-            r.expect_bytes(&x, "silhouette -1")?;
-            let nm = if r.eq(r.p, &[0xff, 0xfe, 0xff]) {
-                V::Str(r.cstring()?)
+        reader.skip(zeros_);
+        if reader.eq(reader.p + 16, &m3()) && !reader.eq(reader.p, &[1, 0, 0, 0]) {
+            reader.skip(16);
+            reader.skip(12);
+            reader.expect_zeros(4, "silhouette u32 0")?;
+            reader.u32()?;
+            let mut x_value = zeros12_then(&[0xff; 4]);
+            x_value.extend_from_slice(&[0; 10]);
+            reader.expect_bytes(&x_value, "silhouette -1")?;
+            let nm = if reader.eq(reader.p, &[0xff, 0xfe, 0xff]) {
+                V::Str(reader.cstring()?)
             } else {
                 V::None
             };
-            return Ok(V::List(vec![V::from(e), V::List(a), nm]));
+            return Ok(V::List(vec![V::from(entry), V::List(first), nm]));
         }
-        r.expect_bytes(&[1, 0, 0, 0], "silhouette u32 1")?;
-        let fl = r.u8()?;
+        reader.expect_bytes(&[1, 0, 0, 0], "silhouette u32 1")?;
+        let fl = reader.u8()?;
         if fl > 1 {
             return Err(bad("silhouette flag"));
         }
         for _ in 0..if fl != 0 { 12 } else { 3 } {
-            r.f64()?;
+            reader.f64()?;
         }
-        if r.f64()? != 1.0 {
+        if reader.f64()? != 1.0 {
             return Err(bad("silhouette scale"));
         }
-        r.expect_bytes(&[0], "silhouette u8 0")?;
-        let t = cseh_tail(r, true)?;
-        return Ok(V::List(vec![V::from(e), V::List(a), t]));
+        reader.expect_bytes(&[0], "silhouette u8 0")?;
+        let kind = cseh_tail(reader, true)?;
+        return Ok(V::List(vec![V::from(entry), V::List(first), kind]));
     }
-    let mut z = 0;
-    while r.byte(q + z)? == 0 && z < 80 {
-        z += 1;
+    let mut zeros_ = 0;
+    while reader.byte(at + zeros_)? == 0 && zeros_ < 80 {
+        zeros_ += 1;
     }
     if me == "moEndPointRef_w"
-        && z >= 2
-        && r.eq(q + z, &[1, 0])
-        && isclass(r, q + z + 2, &["moContextChainComponent_c"])?
-        && r.byte(q + z - 1)? == 0
+        && zeros_ >= 2
+        && reader.eq(at + zeros_, &[1, 0])
+        && isclass(reader, at + zeros_ + 2, &["moContextChainComponent_c"])?
+        && reader.byte(at + zeros_ - 1)? == 0
     {
-        r.p = q + z + 2;
-        r.ptr(None)?;
-        r.expect_zeros(12, "end point 12 zero")?;
-        if r.eq(r.p, &[0xff, 0xff, 0xff, 0xff]) {
-            r.skip(4); // an i32 -1 before the point (1 part)
+        reader.p = at + zeros_ + 2;
+        reader.ptr(None)?;
+        reader.expect_zeros(12, "end point 12 zero")?;
+        if reader.eq(reader.p, &[0xff, 0xff, 0xff, 0xff]) {
+            reader.skip(4); // an i32 -1 before the point (1 part)
         }
-        let pt = f64s(r, 3)?;
-        let fr = r.f64()?;
+        let pt = f64s(reader, 3)?;
+        let fr = reader.f64()?;
         if !(0.0..=1.0).contains(&fr) {
             // The fraction along the edge (1.0 in one sample, 0.5 in another).
             return Err(bad("end point fraction"));
         }
-        r.expect_bytes(&[0, 0], "end point u16 0")?;
-        return Ok(V::List(vec![V::from(e), pt]));
+        reader.expect_bytes(&[0, 0], "end point u16 0")?;
+        return Ok(V::List(vec![V::from(entry), pt]));
     }
-    if r.st.sk.byref && r.zeros(q, 62) && r.eq(q + 62, &[1, 0]) && r.eq(q + 66 + 20, &m3()) {
-        r.skip(58);
-        let t = cseh_tail(r, false)?;
-        return Ok(V::List(vec![V::from(e), t]));
-    }
-    if r.zeros(q, 64)
-        && (iscomp(r, q + 64)?
-            || r.eq(q + 66 + 20, &m3())
-            || (r.zeros(q + 66 + 32, 4) && isver(r, q + 66 + 36))
-            || (r.eq(q + 66 + 20, &M12345[..8]) && isver(r, q + 66 + 32)))
+    if reader.st.sk.byref()
+        && reader.zeros(at, 62)
+        && reader.eq(at + 62, &[1, 0])
+        && reader.eq(at + 66 + 20, &m3())
     {
-        r.skip(58);
-        let t = cseh_tail(r, false)?;
-        return Ok(V::List(vec![V::from(e), t]));
+        reader.skip(58);
+        let kind = cseh_tail(reader, false)?;
+        return Ok(V::List(vec![V::from(entry), kind]));
+    }
+    if reader.zeros(at, 64)
+        && (iscomp(reader, at + 64)?
+            || reader.eq(at + 66 + 20, &m3())
+            || (reader.zeros(at + 66 + 32, 4) && isver(reader, at + 66 + 36))
+            || (reader.eq(at + 66 + 20, &M12345[..8]) && isver(reader, at + 66 + 32)))
+    {
+        reader.skip(58);
+        let kind = cseh_tail(reader, false)?;
+        return Ok(V::List(vec![V::from(entry), kind]));
     }
     if eclass == Some("moCompVertex_c")
-        && r.zeros(q, 4)
-        && isclass(r, q + 4, &["moContextChainComponent_c"])?
+        && reader.zeros(at, 4)
+        && isclass(reader, at + 4, &["moContextChainComponent_c"])?
     {
-        r.skip(4);
-        r.ptr(None)?;
-        if r.zeros(r.p, 14) && objat(r, r.p + 14) {
-            r.skip(14);
+        reader.skip(4);
+        reader.ptr(None)?;
+        if reader.zeros(reader.p, 14) && objat(reader, reader.p + 14) {
+            reader.skip(14);
         } else {
-            let mut x = zeros_then(12, &[0xff; 4]);
-            x.extend_from_slice(&[0, 0]);
-            r.expect_bytes(&x, "vertex context tail")?;
+            let mut x_value = zeros12_then(&[0xff; 4]);
+            x_value.extend_from_slice(&[0, 0]);
+            reader.expect_bytes(&x_value, "vertex context tail")?;
         }
-        let bk = r.ptr(None)?;
-        let nm = entname(r)?;
-        return Ok(V::List(vec![V::from(e), V::from(bk), nm]));
+        let bk = reader.ptr(None)?;
+        let nm = entname(reader)?;
+        return Ok(V::List(vec![V::from(entry), V::from(bk), nm]));
     }
     // `blk = r.b[q+6:q+64]`: its offsets below are `blk + i`.
-    let blk = q + 6;
+    let blk = at + 6;
     if eclass == Some("moCompVertex_c")
-        && r.zeros(q, 6)
-        && r.eq(blk + 20, &M12345[..8])
-        && r.zeros(blk + 28, 4)
-        && isver(r, blk + 32)
-        && r.zeros(blk + 36, 22)
+        && reader.zeros(at, 6)
+        && reader.eq(blk + 20, &M12345[..8])
+        && reader.zeros(blk + 28, 4)
+        && isver(reader, blk + 32)
+        && reader.zeros(blk + 36, 22)
     {
-        r.skip(64);
-        let nm = if r.eq(r.p, &[0xff, 0xfe, 0xff]) {
-            V::Str(r.cstring()?)
+        reader.skip(64);
+        let nm = if reader.eq(reader.p, &[0xff, 0xfe, 0xff]) {
+            V::Str(reader.cstring()?)
         } else {
             V::None
         };
-        return Ok(V::List(vec![V::from(e), V::None, nm]));
+        return Ok(V::List(vec![V::from(entry), V::None, nm]));
     }
     if eclass == Some("moCompVertex_c")
-        && r.zeros(q, 6)
-        && (r.eq(q + 6 + 20, &m3()) || (r.zeros(q + 6 + 32, 4) && isver(r, q + 6 + 36)))
+        && reader.zeros(at, 6)
+        && (reader.eq(at + 6 + 20, &m3())
+            || (reader.zeros(at + 6 + 32, 4) && isver(reader, at + 6 + 36)))
     {
-        r.skip(6);
-        let q = r.p + 40;
-        let w = r.pu16(q + 14)?;
-        r.skip(if r.zeros(q, 14) && tagword(w) { 54 } else { 58 });
-        let bk = r.ptr(None)?;
-        let nm = entname(r)?;
-        return Ok(V::List(vec![V::from(e), V::from(bk), nm]));
+        reader.skip(6);
+        let at = reader.p + 40;
+        let word = reader.pu16(at + 14)?;
+        reader.skip(if reader.zeros(at, 14) && tagword(word) {
+            54
+        } else {
+            58
+        });
+        let bk = reader.ptr(None)?;
+        let nm = entname(reader)?;
+        return Ok(V::List(vec![V::from(entry), V::from(bk), nm]));
     }
-    Ok(V::from(e))
+    Ok(V::from(entry))
 }
 
 /// `entname(r)`: an entity's optional name after its backed-up geometry.
@@ -1376,11 +1472,10 @@ fn entname(r: &mut Reader<'_>) -> Res<V> {
 }
 
 /// `moSkIntersectInfo_c` (`skintersect`).
-#[allow(clippy::unnecessary_wraps)]
-pub(crate) fn skintersect(r: &mut Reader<'_>) -> Res<V> {
+pub(crate) fn skintersect(r: &mut Reader<'_>) -> V {
     let b = r.slice(r.p, 20).to_vec();
     r.skip(20);
-    Ok(V::Bytes(b))
+    V::Bytes(b)
 }
 
 /// `cseh_tail(r, nok)`: a `moCompSketchEntHandle_c`'s tail; `nok`: no
@@ -1397,7 +1492,7 @@ fn cseh_tail(r: &mut Reader<'_>, nok: bool) -> Res<V> {
         if r.zeros(r.p, 14) && tagword(r.pu16(r.p + 14)?) {
             r.skip(14);
         } else {
-            let mut x = zeros_then(12, &[0xff; 4]);
+            let mut x = zeros12_then(&[0xff; 4]);
             x.extend_from_slice(&[0, 0]);
             r.expect_bytes(&x, "cseh context tail")?;
         }
@@ -1469,7 +1564,7 @@ pub(crate) fn pntpntdist(r: &mut Reader<'_>) -> Res<V> {
     r.expect_zeros(4, "dim u32 0")?;
     let p = r.obj(None)?;
     let mut l = 34;
-    if r.st.sk.dimlast {
+    if r.st.sk.dimlast() {
         for l2 in [32_usize, 34] {
             let w = r.pu16(r.p + l2)?;
             let w2 = r.pu16(r.p + l2 + 2)?;
@@ -1507,7 +1602,7 @@ pub(crate) fn valg3dim(r: &mut Reader<'_>) -> Res<V> {
         .known
         .get(&u32::from(w2 & 0x7fff))
         .is_some_and(|c| c.ends_with("Dim") || c.ends_with("Dist"));
-    if r.st.sk.dimlast && 0 < w && w < 4096 && (w2 == 0xffff || (w2 & 0x8000 != 0 && dimish)) {
+    if r.st.sk.dimlast() && 0 < w && w < 4096 && (w2 == 0xffff || (w2 & 0x8000 != 0 && dimish)) {
         return Ok(V::from(p));
     }
     r.u16()?;
@@ -1518,15 +1613,6 @@ pub(crate) fn valg3dim(r: &mut Reader<'_>) -> Res<V> {
 pub(crate) fn pattcntdim(r: &mut Reader<'_>) -> Res<V> {
     r.expect_zeros(4, "dim u32 0")?;
     Ok(V::from(r.obj(None)?))
-}
-
-/// `dimtail(r)` (no caller in the grammar).
-fn dimtail(r: &mut Reader<'_>) -> Res<()> {
-    let w = r.pu16(r.p + 32)?;
-    // `(w & 0x8000 and w != 0xffff) or w == 0xffff`.
-    let l = if w & 0x8000 != 0 { 32 } else { 34 };
-    r.skip(l);
-    Ok(())
 }
 
 /// `sgOffsetDim`, `sgSkOffsetDim` (`offsetdim`).
@@ -1575,7 +1661,8 @@ pub(crate) fn comprefplane(r: &mut Reader<'_>) -> Res<V> {
             ("plane", V::from(pl)),
         ]));
     }
-    if r.eq(r.p + 30, &m3()) && (r.st.sk.mirror || (r.ffs(r.p + 62, 4) && !r.eq(r.p + 66, &[0, 0])))
+    if r.eq(r.p + 30, &m3())
+        && (r.st.sk.mirror() || (r.ffs(r.p + 62, 4) && !r.eq(r.p + 66, &[0, 0])))
     {
         r.expect_bytes(&[0, 0], "plane u16 0")?;
         r.u32()?;
@@ -1586,7 +1673,7 @@ pub(crate) fn comprefplane(r: &mut Reader<'_>) -> Res<V> {
         x.extend_from_slice(&[0; 4]);
         r.expect_bytes(&x, "mirror plane -12345")?;
         r.u32()?;
-        r.expect_bytes(&zeros_then(12, &[0xff; 4]), "mirror plane -1")?;
+        r.expect_bytes(&zeros12_then(&[0xff; 4]), "mirror plane -1")?;
         for _ in 0..4 {
             r.f64()?;
         }
@@ -1667,58 +1754,61 @@ pub(crate) fn planeframe(r: &mut Reader<'_>, short: bool) -> Res<V> {
 }
 
 /// `planetrailer(r, short)`.
-fn planetrailer(r: &mut Reader<'_>, short: bool) -> Res<()> {
-    let q = r.p;
-    let z = if matches!(r.byte(q + 1)?, 2..=4) && r.zeros(q + 2, 3) {
+fn planetrailer(reader: &mut Reader<'_>, short: bool) -> Res<()> {
+    let at = reader.p;
+    let zeros_ = if matches!(reader.byte(at + 1)?, 2..=4) && reader.zeros(at + 2, 3) {
         1
     } else {
         3
     };
-    if !r.zeros(q, z) || !matches!(r.byte(q + z)?, 2..=4) || !r.zeros(q + z + 1, 3) {
+    if !reader.zeros(at, zeros_)
+        || !matches!(reader.byte(at + zeros_)?, 2..=4)
+        || !reader.zeros(at + zeros_ + 1, 3)
+    {
         return Err(bad("plane trailer"));
     }
-    r.skip(z + 16);
+    reader.skip(zeros_ + 16);
     if short {
-        if r.zeros(r.p, 12) {
-            r.skip(12);
+        if reader.zeros(reader.p, 12) {
+            reader.skip(12);
             return Ok(());
         }
-        r.u32()?;
-        r.expect_bytes(&[0, 0, 0, 0, 1, 0, 0, 0], "plane trailer 0 1")?;
+        reader.u32()?;
+        reader.expect_bytes(&[0, 0, 0, 0, 1, 0, 0, 0], "plane trailer 0 1")?;
         return Ok(());
     }
-    if isclass(r, r.p + 2, &["moContourChooser_c"])? {
-        r.u16()?;
-        r.ptr(None)?;
-        let n = r.u16()?;
-        for _ in 0..n {
-            r.ptr(None)?;
+    if isclass(reader, reader.p + 2, &["moContourChooser_c"])? {
+        reader.u16()?;
+        reader.ptr(None)?;
+        let count = reader.u16()?;
+        for _ in 0..count {
+            reader.ptr(None)?;
         }
-        r.expect_zeros(2, "plane trailer chooser zero")?;
+        reader.expect_zeros(2, "plane trailer chooser zero")?;
         return Ok(());
     }
-    let w = r.pu16(r.p + 2)?;
-    let nok = r.pu16(r.p)? != 0 && tagword(w);
+    let word = reader.pu16(reader.p + 2)?;
+    let nok = reader.pu16(reader.p)? != 0 && tagword(word);
     if !nok {
-        r.u32()?;
+        reader.u32()?;
     }
-    let n = r.u16()?;
-    for _ in 0..n {
-        r.ptr(None)?;
+    let count = reader.u16()?;
+    for _ in 0..count {
+        reader.ptr(None)?;
     }
-    let m = r.u16()?;
-    for _ in 0..m {
-        r.ptr(None)?;
+    let mask = reader.u16()?;
+    for _ in 0..mask {
+        reader.ptr(None)?;
     }
-    if !nok && n == 0 && m == 0 {
-        for z in [0_usize, 2, 6, 8] {
-            if zeros0(r, r.p, z) && objat(r, r.p + z) {
-                r.skip(z);
+    if !nok && count == 0 && mask == 0 {
+        for zeros_ in [0_usize, 2, 6, 8] {
+            if zeros0(reader, reader.p, zeros_) && objat(reader, reader.p + zeros_) {
+                reader.skip(zeros_);
                 return Ok(());
             }
         }
     }
-    r.expect_zeros(if nok { 2 } else { 4 }, "plane trailer zero")
+    reader.expect_zeros(if nok { 2 } else { 4 }, "plane trailer zero")
 }
 
 /// `moSketchRegion_c` (`region`).
@@ -1775,39 +1865,44 @@ pub(crate) fn chain(r: &mut Reader<'_>) -> Res<V> {
 }
 
 /// `sgPGMProfileData_c` (`pgmprofile`).
-pub(crate) fn pgmprofile(r: &mut Reader<'_>) -> Res<V> {
-    let nl = r.u16()?;
+pub(crate) fn pgmprofile(reader: &mut Reader<'_>) -> Res<V> {
+    let nl = reader.u16()?;
     for _ in 0..nl {
-        r.ptr(None)?;
+        reader.ptr(None)?;
     }
-    r.u16()?;
-    let d = r.f64()?;
-    let mut z = 0;
-    while r.byte(r.p + z)? == 0 && z < 64 {
-        z += 1;
+    reader.u16()?;
+    let distance = reader.f64()?;
+    let mut zeros = 0;
+    while reader.byte(reader.p + zeros)? == 0 && zeros < 64 {
+        zeros += 1;
     }
-    let q = r.p + z;
-    let n = if z >= 8 { r.pu32(q)? } else { 0 };
-    let ok = z >= 8 && 0 < n && n < 1000 && r.pu32(q + 4 + 4 * n as usize + 4)? == 0;
+    let at = reader.p + zeros;
+    let count_ = if zeros >= 8 { reader.pu32(at)? } else { 0 };
+    let n_width = usize::try_from(count_).map_err(|_| bad("offset count exceeds address space"))?;
+    let ok =
+        zeros >= 8 && 0 < count_ && count_ < 1000 && reader.pu32(at + 4 + 4 * n_width + 4)? == 0;
     if !ok {
-        r.expect_zeros(12, "offset profile 12 zero")?;
-        return Ok(V::map([("loops", V::from(nl)), ("dist", V::from(d))]));
+        reader.expect_zeros(12, "offset profile 12 zero")?;
+        return Ok(V::map([
+            ("loops", V::from(nl)),
+            ("dist", V::from(distance)),
+        ]));
     }
-    r.skip(z + 4);
-    for _ in 0..n {
-        r.u32()?;
+    reader.skip(zeros + 4);
+    for _ in 0..count_ {
+        reader.u32()?;
     }
-    r.u32()?;
-    r.expect_zeros(4, "offset profile u32 0")?;
-    r.f64()?;
+    reader.u32()?;
+    reader.expect_zeros(4, "offset profile u32 0")?;
+    reader.f64()?;
     for _ in 0..6 {
-        r.f64()?;
+        reader.f64()?;
     }
-    r.expect_bytes(&[2, 0], "offset profile u16 2")?;
-    let nxt = r.ptr(Some(&["sgPGMProfileData_c"]))?;
+    reader.expect_bytes(&[2, 0], "offset profile u16 2")?;
+    let nxt = reader.ptr(Some(&["sgPGMProfileData_c"]))?;
     Ok(V::map([
         ("loops", V::from(nl)),
-        ("dist", V::from(d)),
+        ("dist", V::from(distance)),
         ("next", V::from(nxt)),
     ]))
 }
@@ -1832,7 +1927,7 @@ pub(crate) fn pgmedge(r: &mut Reader<'_>) -> Res<V> {
 /// eight zero bytes, or twenty zero bytes in older files.
 fn tempaxis_tail(r: &mut Reader<'_>, what: &str) -> Res<()> {
     if r.ffs(r.p + 12, 4) {
-        r.expect_bytes(&zeros_then(12, &[0xff; 4]), what)?;
+        r.expect_bytes(&zeros12_then(&[0xff; 4]), what)?;
         r.expect_zeros(8, "temp axis 8 zero")
     } else {
         r.expect_zeros(20, "temp axis 20 zero")
@@ -1926,7 +2021,7 @@ fn contours_boxed(r: &mut Reader<'_>, g: u16, cs: &mut usize) -> Res<V> {
     }
     let (n, m) = hops2(r)?;
     Ok(V::List(vec![
-        V::Int(*cs as i64),
+        V::Int(i64::try_from(*cs).map_err(|_| bad("contour count exceeds i64"))?),
         V::List(vec![triple(bid, n, m)]),
     ]))
 }
@@ -1953,7 +2048,10 @@ fn contour_boxes(r: &mut Reader<'_>, g: u16, cs: usize) -> Res<V> {
         let (n, m) = hops2(r)?;
         out.push(triple(bid, n, m));
     }
-    Ok(V::List(vec![V::Int(cs as i64), V::List(out)]))
+    Ok(V::List(vec![
+        V::Int(i64::try_from(cs).map_err(|_| bad("contour count exceeds i64"))?),
+        V::List(out),
+    ]))
 }
 
 /// `moContourChooser_c` (`contourchooser`).
@@ -1979,7 +2077,7 @@ pub(crate) fn contourchooser(r: &mut Reader<'_>) -> Res<V> {
         r.st.core.skbox = false;
         return res;
     }
-    for _ in 0..g.saturating_sub(1) {
+    for _ in 1..g {
         r.ptr(None)?;
         cs += 1;
     }
@@ -2036,7 +2134,11 @@ pub(crate) fn compprofile(r: &mut Reader<'_>) -> Res<V> {
     let Some(k) = r.find(&1.0_f64.to_le_bytes(), r.p, r.p + 40) else {
         return Err(bad("comp profile f64 1"));
     };
-    let gap = r.slice(r.p, k.saturating_sub(r.p));
+    let gap = r.slice(
+        r.p,
+        k.checked_sub(r.p)
+            .ok_or_else(|| bad("comp profile marker before position"))?,
+    );
     if gap.iter().any(|&b| b != 0 && b != 0xff) || r.byte(k + 8)? > 1 {
         return Err(bad("comp profile f64 1"));
     }
@@ -2055,7 +2157,10 @@ pub(crate) fn compprofile(r: &mut Reader<'_>) -> Res<V> {
     r.expect_bytes(&x, "comp profile ff")?;
     Ok(V::map([
         ("fid", V::from(fid)),
-        ("body", V::Int(body as i64)),
+        (
+            "body",
+            V::Int(i64::try_from(body).map_err(|_| bad("body length exceeds i64"))?),
+        ),
     ]))
 }
 
@@ -2080,69 +2185,76 @@ pub(crate) fn dimentityhelp(r: &mut Reader<'_>) -> Res<V> {
 }
 
 /// `moDimText_c` (`dimtext`).
-pub(crate) fn dimtext(r: &mut Reader<'_>) -> Res<V> {
-    let t = r.cstring()?;
-    let pos = f64s(r, 3)?;
-    r.u32()?;
-    let fmt = r.ptr(None)?;
+pub(crate) fn dimtext(reader: &mut Reader<'_>) -> Res<V> {
+    let kind = reader.cstring()?;
+    let pos = f64s(reader, 3)?;
+    reader.u32()?;
+    let fmt = reader.ptr(None)?;
     if fmt.is_null() {
-        outlines(r)?;
+        outlines(reader)?;
     }
-    r.u32()?;
-    r.u32()?;
-    let m = r.u32()?;
-    if m > 4096 {
+    reader.u32()?;
+    reader.u32()?;
+    let mask = reader.u32()?;
+    if mask > 4096 {
         return Err(bad("text character count"));
     }
-    if m != 0 {
-        for _ in 0..m * 3 {
-            r.f64()?;
+    if mask != 0 {
+        for _ in 0..mask * 3 {
+            reader.f64()?;
         }
-        for _ in 0..m {
-            r.u32()?;
+        for _ in 0..mask {
+            reader.u32()?;
         }
-        r.expect_zeros(8, "text 8 zero")?;
-        for _ in 0..m * 3 {
-            r.f64()?;
+        reader.expect_zeros(8, "text 8 zero")?;
+        for _ in 0..mask * 3 {
+            reader.f64()?;
         }
     }
-    r.f64()?;
-    r.f64()?;
-    r.expect_zeros(18, "text 18 zero")?;
-    if r.f64()? != 1.0 {
+    reader.f64()?;
+    reader.f64()?;
+    reader.expect_zeros(18, "text 18 zero")?;
+    if reader.f64()? != 1.0 {
         return Err(bad("text f64 1"));
     }
-    r.expect_zeros(4, "text u32 0")?;
-    if r.eq(r.p, &[0xff, 0xfe, 0xff]) {
-        r.cstring()?;
-        r.expect_bytes(&[1, 0, 0, 0, 1, 0, 0, 0], "text 1 1")?;
-        return Ok(V::map([("text", V::Str(t)), ("pos", pos)]));
+    reader.expect_zeros(4, "text u32 0")?;
+    if reader.eq(reader.p, &[0xff, 0xfe, 0xff]) {
+        reader.cstring()?;
+        reader.expect_bytes(&[1, 0, 0, 0, 1, 0, 0, 0], "text 1 1")?;
+        return Ok(V::map([("text", V::Str(kind)), ("pos", pos)]));
     }
-    r.st.sk.byref = true;
-    let path = r.ptr(None);
-    r.st.sk.byref = false;
+    reader.st.sk.set_byref(true);
+    let path = reader.ptr(None);
+    reader.st.sk.set_byref(false);
     let path = path?;
     for _ in 0..6 {
-        r.f64()?;
+        reader.f64()?;
     }
-    let q = r.p;
-    let mut z = 0;
-    while z < 16 && r.byte(q + z)? == 0 {
-        z += 1;
+    let at = reader.p;
+    let mut zeros = 0;
+    while zeros < 16 && reader.byte(at + zeros)? == 0 {
+        zeros += 1;
     }
-    let a = if z != 0 { i64::from(r.pu32(q + z)?) } else { 0 };
-    if z == 0 || r.byte(q + z + 4)? != 0 || i64::from(r.pu32(q + z + 5)?) != a - 5 {
+    let first = if zeros != 0 {
+        i64::from(reader.pu32(at + zeros)?)
+    } else {
+        0
+    };
+    if zeros == 0
+        || reader.byte(at + zeros + 4)? != 0
+        || i64::from(reader.pu32(at + zeros + 5)?) != first - 5
+    {
         return Err(bad("text path: no body"));
     }
-    if z != 10 {
+    if zeros != 10 {
         return Err(bad("text path zero bytes"));
     }
-    r.p = q + 9;
-    blob(r)?;
-    r.cstring()?;
-    r.expect_bytes(&[1, 0, 0, 0, 1, 0, 0, 0], "text 1 1")?;
+    reader.p = at + 9;
+    blob(reader)?;
+    reader.cstring()?;
+    reader.expect_bytes(&[1, 0, 0, 0, 1, 0, 0, 0], "text 1 1")?;
     Ok(V::map([
-        ("text", V::Str(t)),
+        ("text", V::Str(kind)),
         ("pos", pos),
         ("path", V::from(path)),
     ]))
@@ -2188,15 +2300,23 @@ fn outlines(r: &mut Reader<'_>) -> Res<V> {
     for _ in 0..s {
         p += u64::from(r.u32()?);
     }
-    let left = r.len() as i128 - r.p as i128;
+    let left = i128::try_from(r.len()).map_err(|_| bad("stream length exceeds i128"))?
+        - i128::try_from(r.p).map_err(|_| bad("position exceeds i128"))?;
     if i128::from(p) * 24 > left {
         return Err(bad("glyph point count"));
     }
-    r.skip(24 * p as usize);
+    let point_bytes = usize::try_from(p).map_err(|_| bad("point count exceeds address space"))?;
+    r.skip(24 * point_bytes);
     Ok(V::map([
         ("loops", V::from(n)),
-        ("segments", V::Int(s as i64)),
-        ("points", V::Int(p as i64)),
+        (
+            "segments",
+            V::Int(i64::try_from(s).map_err(|_| bad("segment count exceeds i64"))?),
+        ),
+        (
+            "points",
+            V::Int(i64::try_from(p).map_err(|_| bad("point count exceeds i64"))?),
+        ),
     ]))
 }
 
@@ -2319,9 +2439,9 @@ pub(crate) fn sgblock(r: &mut Reader<'_>) -> Res<V> {
     }
     let class = Arc::<str>::from("sgEntHandleData_c");
     r.known.insert(r.counter, class.clone());
-    r.counter += 1;
+    r.bump_counter()?;
     r.objs.insert(r.counter, class);
-    r.counter += 1;
+    r.bump_counter()?;
     enthandledata(r)?;
     r.ptr(None)?;
     r.ptr(Some(&["moProfileFeature_c"]))?;
@@ -2342,7 +2462,7 @@ pub(crate) fn comprefaxis(r: &mut Reader<'_>) -> Res<V> {
     r.p = j + 12;
     r.expect_zeros(4, "axis u32 0")?;
     r.u32()?;
-    if r.eq(r.p, &zeros_then(12, &[0xff; 4])) {
+    if r.eq(r.p, &zeros12_then(&[0xff; 4])) {
         r.skip(16);
     } else {
         r.expect_zeros(12, "axis 12 zero")?;

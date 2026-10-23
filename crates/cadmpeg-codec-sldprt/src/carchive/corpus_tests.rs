@@ -79,7 +79,10 @@ fn dump_walks() {
         let ver = ver.trim().parse::<u32>().ok();
         let row = (|| {
             let (config, resolved) = streams(&path, cfg)?;
-            let walk = super::walk_configuration(&config, &resolved, ver).ok()??;
+            let arena = DecodeArena::new();
+            let (ctx, _root) =
+                DecodeContext::from_root_bytes(&config, &arena, &DecodePolicy::desktop()).ok()?;
+            let walk = super::walk_configuration(&ctx, &config, &resolved, ver).ok()??;
             let (st, why) = match &walk.status {
                 super::Status::End => ("END", String::new()),
                 super::Status::Stop(stop) => ("STOP", format!("{stop:?}")),
@@ -135,11 +138,17 @@ fn dump_scalar_classes() {
             let (config, resolved) = streams(&path, cfg)?;
             let declared = crate::container::declared_sw_version(&scan);
             let version = super::walk_version(declared, &config);
-            let walk = super::walk_configuration(&config, &resolved, Some(version)).ok()??;
+            let walk =
+                super::walk_configuration(&ctx, &config, &resolved, Some(version)).ok()??;
             let at = walk
                 .parameters
                 .iter()
-                .map(|p| (p.value_at as u64, p.class.to_string()))
+                .map(|p| {
+                    (
+                        u64::try_from(p.value_at).expect("offset fits u64"),
+                        p.class.to_string(),
+                    )
+                })
                 .collect::<std::collections::HashMap<_, _>>();
             let mut annotations = cadmpeg_ir::annotations::Annotations::default();
             let lanes =

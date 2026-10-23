@@ -187,130 +187,138 @@ pub(crate) fn backlink(r: &Reader<'_>, q: usize) -> bool {
 }
 
 /// `block(r, c, endtag)`: the feature-object block; returns the children.
-pub(crate) fn block(r: &mut Reader<'_>, c: &str, endtag: bool) -> Res<V> {
-    r.expect_zeros(4, &format!("{c} head zeros"))?;
-    let _w4 = r.u16()?;
-    let n = r.u16()?;
+pub(crate) fn block(reader: &mut Reader<'_>, class: &str, endtag: bool) -> Res<V> {
+    reader.expect_zeros(4, &format!("{class} head zeros"))?;
+    let _w4 = reader.u16()?;
+    let count = reader.u16()?;
     let mut kids: Vec<Ptr> = Vec::new();
-    for i in 0..n {
-        if i != 0 && r.zeros(r.p, 12) && tailat(r, r.p + 12 + fixed(c))?.is_some() && !objat(r, r.p)
+    for cursor in 0..count {
+        if cursor != 0
+            && reader.zeros(reader.p, 12)
+            && tailat(reader, reader.p + 12 + fixed(class))?.is_some()
+            && !objat(reader, reader.p)
         {
             break;
         }
-        let kid = r.ptr(None)?;
+        let kid = reader.ptr(None)?;
         let plane = kid.obj_class() == Some("moRefPlane_c");
         kids.push(kid);
-        if plane && isclass(r, r.p, PLNDATA)? {
-            r.ptr(None)?;
+        if plane && isclass(reader, reader.p, PLNDATA)? {
+            reader.ptr(None)?;
         }
     }
-    while n != 0
+    while count != 0
         && isclass(
-            r,
-            r.p,
+            reader,
+            reader.p,
             &[
                 "moFoldUpDownSketchXformData_c",
                 "moFoldUpDownFeatXformData_c",
             ],
         )?
     {
-        kids.push(r.ptr(None)?);
+        kids.push(reader.ptr(None)?);
     }
-    if c == "moEdgeFlange_c" {
+    if class == "moEdgeFlange_c" {
         // A sheet-metal flange's display object follows its counted children, then a block whose fields are open
         // (EV-23); the block is framed by the next named object, as the bend's first form is.
-        while isclass(r, r.p, DISPLAY)? {
-            kids.push(r.ptr(None)?);
+        while isclass(reader, reader.p, DISPLAY)? {
+            kids.push(reader.ptr(None)?);
         }
-        let mut i = r.p;
+        let mut cursor = reader.p;
         let end = loop {
-            if i >= r.p + 400 || i + 8 >= r.len() {
+            if cursor >= reader.p + 400 || cursor + 8 >= reader.len() {
                 return Err(bad("flange tail: no next object"));
             }
-            if r.eq(i, &[0xff, 0xfe, 0xff]) {
-                let a = r.pu16(i - 4)?;
-                let cc = r.pu16(i - 2)?;
-                if a & 0x8000 != 0
+            if reader.eq(cursor, &[0xff, 0xfe, 0xff]) {
+                let first_ = reader.pu16(cursor - 4)?;
+                let cc = reader.pu16(cursor - 2)?;
+                if first_ & 0x8000 != 0
                     && cc & 0x8000 != 0
-                    && r.known
+                    && reader
+                        .known
                         .get(&u32::from(cc & 0x7fff))
                         .is_some_and(|s| &**s == "moNodeName_c")
                 {
-                    break i - 4;
+                    break cursor - 4;
                 }
             }
-            i += 1;
+            cursor += 1;
         };
-        r.p = end;
+        reader.p = end;
         return Ok(V::from(kids));
     }
-    while n != 0 && c == "moSketchBlockInst_c" && isclass(r, r.p, &["moDetailFolder_c"])? {
-        kids.push(r.ptr(None)?);
-    }
-    let mut w = r.pu16(r.p)?;
-    if n != 0
-        && r.eq(r.p, &[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
-        && tailat(r, r.p + 16 + fixed(c))?.is_some()
+    while count != 0
+        && class == "moSketchBlockInst_c"
+        && isclass(reader, reader.p, &["moDetailFolder_c"])?
     {
-        r.skip(4);
-        w = 0;
+        kids.push(reader.ptr(None)?);
     }
-    if n != 0 && w != 0 && w & 0x8000 == 0 {
-        ftrlink(r, &format!("{c} children"))?;
+    let mut word = reader.pu16(reader.p)?;
+    if count != 0
+        && reader.eq(reader.p, &[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+        && tailat(reader, reader.p + 16 + fixed(class))?.is_some()
+    {
+        reader.skip(4);
+        word = 0;
+    }
+    if count != 0 && word != 0 && word & 0x8000 == 0 {
+        ftrlink(reader, &format!("{class} children"))?;
     }
     let mut found = None;
-    for z in [12_usize, 14, 10, 16, 8, 2] {
-        if r.zeros(r.p, z) && tailat(r, r.p + z + fixed(c))?.is_some() {
-            found = Some(z);
+    for zeros_ in [12_usize, 14, 10, 16, 8, 2] {
+        if reader.zeros(reader.p, zeros_)
+            && tailat(reader, reader.p + zeros_ + fixed(class))?.is_some()
+        {
+            found = Some(zeros_);
             break;
         }
     }
-    let z = match found {
-        Some(z) => z,
+    let zeros_ = match found {
+        Some(zeros_) => zeros_,
         None => {
-            if r.zeros(r.p, 8)
-                && (1..16).contains(&r.pu32(r.p + 8)?)
-                && tailat(r, r.p + 12 + fixed(c))?.is_some()
-            {
-                12
-            } else if c == "moSketchBlockInst_c" && n != 0 && {
-                let mut k = None;
-                for q in r.p..r.p + 2000 {
-                    if r.zeros(q, 12) && tailat(r, q + 47)?.is_some() {
-                        k = Some(q);
-                        break;
+            if (reader.zeros(reader.p, 8)
+                && (1..16).contains(&reader.pu32(reader.p + 8)?)
+                && tailat(reader, reader.p + 12 + fixed(class))?.is_some())
+                || (class == "moSketchBlockInst_c" && count != 0 && {
+                    let mut found_ = None;
+                    for q in reader.p..reader.p + 2000 {
+                        if reader.zeros(q, 12) && tailat(reader, q + 47)?.is_some() {
+                            found_ = Some(q);
+                            break;
+                        }
                     }
-                }
-                if let Some(k) = k {
-                    r.p = k;
-                    true
-                } else {
-                    false
-                }
-            } {
-                12
-            } else if r.eq(r.p, &[0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0])
-                && tailat(r, r.p + 12 + 35)?.is_some()
+                    if let Some(found_) = found_ {
+                        reader.p = found_;
+                        true
+                    } else {
+                        false
+                    }
+                })
             {
-                if EXTRUDE.contains(&c) {
+                12
+            } else if reader.eq(reader.p, &[0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0])
+                && tailat(reader, reader.p + 12 + 35)?.is_some()
+            {
+                if EXTRUDE.contains(&class) {
                     10
                 } else {
                     12
                 }
             } else {
-                return Err(bad(format!("{c} head zeros 2")));
+                return Err(bad(format!("{class} head zeros 2")));
             }
         }
     };
-    r.skip(z);
-    r.skip(fixed(c));
-    let Some(t) = tailat(r, r.p)? else {
-        return Err(bad(format!("{c}: block +55 string and tail")));
+    reader.skip(zeros_);
+    reader.skip(fixed(class));
+    let Some(kind) = tailat(reader, reader.p)? else {
+        return Err(bad(format!("{class}: block +55 string and tail")));
     };
-    r.p = t + 64;
-    let link = endtag && backlink(r, r.p);
-    if new(r) && !objat(r, r.p) && !ownnext(r, c) && !link {
-        r.skip(4);
+    reader.p = kind + 64;
+    let link = endtag && backlink(reader, reader.p);
+    if new(reader) && !objat(reader, reader.p) && !ownnext(reader, class) && !link {
+        reader.skip(4);
     }
     Ok(V::from(kids))
 }
@@ -374,80 +382,89 @@ pub(crate) fn endtag_next(r: &Reader<'_>) -> Res<bool> {
 }
 
 /// `bodyhead(r, c)`: the feature body head.
-pub(crate) fn bodyhead(r: &mut Reader<'_>, c: &str) -> Res<V> {
-    r.expect_zeros(6, &format!("{c} head"))?;
-    let h = r.u16()?;
-    r.expect_bytes(&[0, 0], "")?;
-    let n = r.u16()?;
-    for _ in 0..n {
-        r.ptr(None)?;
+pub(crate) fn bodyhead(reader: &mut Reader<'_>, class: &str) -> Res<V> {
+    reader.expect_zeros(6, &format!("{class} head"))?;
+    let head_ = reader.u16()?;
+    reader.expect_bytes(&[0, 0], "")?;
+    let count_ = reader.u16()?;
+    for _ in 0..count_ {
+        reader.ptr(None)?;
     }
-    let f = r.u32()?;
-    if f != 0 && f != 1 {
-        return Err(bad(format!("{c} head f")));
+    let flag = reader.u32()?;
+    if flag != 0 && flag != 1 {
+        return Err(bad(format!("{class} head f")));
     }
-    if f != 0 {
-        let k = r.u16()?;
-        for _ in 0..k {
-            r.ptr(None)?;
+    if flag != 0 {
+        let found = reader.u16()?;
+        for _ in 0..found {
+            reader.ptr(None)?;
         }
     }
-    if h != 0 {
-        r.expect_bytes(&[0, 0], "")?;
+    if head_ != 0 {
+        reader.expect_bytes(&[0, 0], "")?;
     }
-    let m = r.u32()?;
+    let mask = reader.u32()?;
     let mut big_m = Vec::new();
-    for _ in 0..m {
-        big_m.push(V::from(r.u32()?));
+    for _ in 0..mask {
+        big_m.push(V::from(reader.u32()?));
     }
-    let t = r.u32()?;
-    let g = r.u32()?;
-    if !matches!(t, 0 | 2 | 3) || !matches!(g, 0 | 1) {
-        return Err(bad(format!("{c} head t={t} g={g}")));
+    let kind = reader.u32()?;
+    let groups = reader.u32()?;
+    if !matches!(kind, 0 | 2 | 3) || !matches!(groups, 0 | 1) {
+        return Err(bad(format!("{class} head t={kind} g={groups}")));
     }
-    if g != 0 {
-        let k = r.u16()?;
+    if groups != 0 {
+        let found = reader.u16()?;
         let mut bodies = Vec::new();
-        for i in 0..k {
+        for i in 0..found {
             if i != 0 {
-                let ns = r.pu32(r.p)?;
-                let len = 4 + 4 * ns as usize + 12;
-                if 0 < ns && ns <= 16 && r.zeros(r.p + len - 8, 8) && objat(r, r.p + len) {
-                    r.skip(len);
+                let ns = reader.pu32(reader.p)?;
+                let ns = usize::try_from(ns)
+                    .map_err(|_| bad("body selector count exceeds address space"))?;
+                let len = 4 + 4 * ns + 12;
+                if 0 < ns
+                    && ns <= 16
+                    && reader.zeros(reader.p + len - 8, 8)
+                    && objat(reader, reader.p + len)
+                {
+                    reader.skip(len);
                 }
             }
-            bodies.push(r.ptr(None)?);
+            bodies.push(reader.ptr(None)?);
         }
         return Ok(V::map([
-            ("h", V::from(h)),
-            ("n", V::from(n)),
-            ("f", V::from(f)),
-            ("m", V::from(m)),
-            ("t", V::from(t)),
-            ("g", V::from(g)),
+            ("h", V::from(head_)),
+            ("n", V::from(count_)),
+            ("f", V::from(flag)),
+            ("m", V::from(mask)),
+            ("t", V::from(kind)),
+            ("g", V::from(groups)),
             ("bodies", V::from(bodies)),
         ]));
     }
-    let e = r.u32()?;
-    let x = r.u16()?;
-    if x == 0 {
-        r.expect_bytes(&[1, 0], "")?;
-        if !r.eq(r.p + 18, &[1, 0, 0, 0]) && r.zeros(r.p, 14) && r.eq(r.p + 14, &[1, 0, 0, 0]) {
-            r.skip(14);
+    let entry = reader.u32()?;
+    let x_value = reader.u16()?;
+    if x_value == 0 {
+        reader.expect_bytes(&[1, 0], "")?;
+        if !reader.eq(reader.p + 18, &[1, 0, 0, 0])
+            && reader.zeros(reader.p, 14)
+            && reader.eq(reader.p + 14, &[1, 0, 0, 0])
+        {
+            reader.skip(14);
         } else {
-            r.skip(18);
+            reader.skip(18);
         }
-        r.expect_bytes(&[1, 0, 0, 0], "")?;
+        reader.expect_bytes(&[1, 0, 0, 0], "")?;
     }
     Ok(V::map([
-        ("h", V::from(h)),
-        ("n", V::from(n)),
-        ("f", V::from(f)),
-        ("m", V::from(m)),
-        ("t", V::from(t)),
-        ("g", V::from(g)),
-        ("e", V::from(e)),
-        ("x", V::from(x)),
+        ("h", V::from(head_)),
+        ("n", V::from(count_)),
+        ("f", V::from(flag)),
+        ("m", V::from(mask)),
+        ("t", V::from(kind)),
+        ("g", V::from(groups)),
+        ("e", V::from(entry)),
+        ("x", V::from(x_value)),
         ("M", V::List(big_m)),
     ]))
 }
@@ -550,13 +567,13 @@ pub(crate) fn refblock(r: &mut Reader<'_>) -> Res<()> {
     m.extend_from_slice(&[0; 4]);
     r.expect_bytes(&m, "ref block -12345")?;
     r.u32()?;
-    if !r.ffs(r.p + 12, 4) {
-        // No i32 -1 (14000 and 15000 samples).
-        r.expect_zeros(12, "ref block 12 zero (no -1)")?;
-    } else {
+    if r.ffs(r.p + 12, 4) {
         let mut x = vec![0; 12];
         x.extend_from_slice(&[0xff; 4]);
         r.expect_bytes(&x, "ref block -1")?;
+    } else {
+        // No i32 -1 (14000 and 15000 samples).
+        r.expect_zeros(12, "ref block 12 zero (no -1)")?;
     }
     Ok(())
 }
@@ -594,17 +611,22 @@ pub(crate) fn is76(r: &Reader<'_>, q: usize) -> bool {
 }
 
 /// `isclass(r, q, names)`: the object at `q` is of one of `names`.
-pub(crate) fn isclass(r: &Reader<'_>, q: usize, names: &[&str]) -> Res<bool> {
-    let w = r.pu16(q)?;
-    if w == 0xffff {
-        let n = usize::from(r.pu16(q + 4)?);
-        let c: String = r.slice(q + 6, n).iter().map(|&b| char::from(b)).collect();
-        return Ok(names.contains(&c.as_str()));
+pub(crate) fn isclass(reader: &Reader<'_>, at: usize, names: &[&str]) -> Res<bool> {
+    let word = reader.pu16(at)?;
+    if word == 0xffff {
+        let count = usize::from(reader.pu16(at + 4)?);
+        let class: String = reader
+            .slice(at + 6, count)
+            .iter()
+            .map(|&b| char::from(b))
+            .collect();
+        return Ok(names.contains(&class.as_str()));
     }
-    Ok(w & 0x8000 != 0
-        && r.known
-            .get(&u32::from(w & 0x7fff))
-            .is_some_and(|c| names.contains(&&**c)))
+    Ok(word & 0x8000 != 0
+        && reader
+            .known
+            .get(&u32::from(word & 0x7fff))
+            .is_some_and(|class| names.contains(&&**class)))
 }
 
 /// `ftrlink(r, c)`.
@@ -744,43 +766,46 @@ const BOX: [u8; 32] = {
 };
 
 /// `oldgeo(r)`: reads the older face-plane form, or nothing and `false`.
-pub(crate) fn oldgeo(r: &mut Reader<'_>) -> Res<bool> {
-    let q = r.p + 12;
-    let Some(j) = r.find(&M12345[..8], q, q + 40) else {
+pub(crate) fn oldgeo(reader: &mut Reader<'_>) -> Res<bool> {
+    let at = reader.p + 12;
+    let Some(stop) = reader.find(&M12345[..8], at, at + 40) else {
         return Ok(false);
     };
-    let Some(k) = r.find(&BOX, j, j + 100) else {
+    let Some(found) = reader.find(&BOX, stop, stop + 100) else {
         return Ok(false);
     };
-    let between = r.slice(j + 8, k.saturating_sub(j + 8));
-    let zeros = between.iter().filter(|&&b| b == 0).count();
-    if zeros < between.len().saturating_sub(12) && between.len() >= 12 {
+    let start = stop + 8;
+    let between = if found > start {
+        reader.slice(start, found - start)
+    } else {
+        &[]
+    };
+    let zeros = between
+        .iter()
+        .fold(0_usize, |count, &byte| count + usize::from(byte == 0));
+    if between.len() >= 12 && zeros < between.len() - 12 {
         return Ok(false);
     }
-    let mut p = k + 32 + 48;
-    let fl = r.byte(p)?;
+    let mut pos = found + 32 + 48;
+    let fl = reader.byte(pos)?;
     if fl > 1 {
         return Ok(false);
     }
-    p += 1 + 8 * if fl != 0 { 12 } else { 3 };
-    if r.pf64(p)? != 1.0 {
+    pos += 1 + 8 * if fl != 0 { 12 } else { 3 };
+    if reader.pf64(pos)? != 1.0 {
         return Ok(false);
     }
-    p += 8;
-    let mut z = 0;
-    while r.byte(p + z)? == 0 && z < 64 {
-        z += 1;
+    pos += 8;
+    let mut zeros_ = 0;
+    while reader.byte(pos + zeros_)? == 0 && zeros_ < 64 {
+        zeros_ += 1;
     }
-    if !objat(r, p + z) && !r.eq(p + z, &[0, 0]) {
+    if !objat(reader, pos + zeros_) && !reader.eq(pos + zeros_, &[0, 0]) {
         return Ok(false);
     }
-    r.p = p + z;
+    reader.p = pos + zeros_;
     Ok(true)
 }
-
-/// Part a's rule state. Its module globals are logs only.
-#[derive(Debug, Clone, Default)]
-pub(crate) struct AState {}
 
 /// `GEO_END.search(r.b, start, end) is not None` (the search core's
 /// `geo_frame` makes).
@@ -1019,15 +1044,18 @@ pub(crate) fn refplndata(r: &mut Reader<'_>) -> Res<V> {
         ]));
     }
     if byref {
-        r.st.sk.byref = true;
+        r.st.sk.set_byref(true);
         let refs = byref_refs(r);
-        r.st.sk.byref = false;
+        r.st.sk.set_byref(false);
         let refs = refs?;
         let done = V::map([
             ("pt", V::List(pt)),
             ("M", m),
             ("box", V::List(bx)),
-            ("refs", V::from(refs as u32)),
+            (
+                "refs",
+                V::from(u32::try_from(refs).map_err(|_| bad("reference count exceeds u32"))?),
+            ),
         ]);
         if r.eq(r.p, &[0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]) && objat(r, r.p + 12) {
             r.skip(12);
@@ -1260,19 +1288,18 @@ pub(crate) fn parameter(r: &mut Reader<'_>, integer: bool) -> Res<V> {
     let name = n.get("name").clone();
     let featdim = r.st.core.featdim.last().copied().unwrap_or(false);
     if featdim {
-        let oid;
-        if r.byte(r.p)? == 0 && isclass(r, r.p + 1, &["moDimTolerance_c"])? {
+        let oid = if r.byte(r.p)? == 0 && isclass(r, r.p + 1, &["moDimTolerance_c"])? {
             r.skip(1);
             r.ptr(None)?;
-            oid = V::None;
+            V::None
         } else {
             let q = r.p;
             r.skip(23);
             if r.slice(q, 23).len() < 7 {
                 return Err(Stop::End(r.p));
             }
-            oid = V::from(r.pu32(q + 3)?);
-        }
+            V::from(r.pu32(q + 3)?)
+        };
         let Some(j) = r.find(&FFFEFF, r.p, r.p + 2000) else {
             return Err(bad("feature dim placement: no string"));
         };
@@ -1550,83 +1577,86 @@ fn units_after_head(r: &mut Reader<'_>, hd: &V) -> Res<()> {
 }
 
 /// `moLPattern_c`, `moCirPattern_c`, `moMirrorPattern_c`.
-pub(crate) fn featpattern(r: &mut Reader<'_>) -> Res<V> {
-    let c = r.last_class().ok_or(Stop::End(r.p))?;
-    let c = &*c;
-    let n = feature(r, c)?;
-    let hd = bodyhead(r, c)?;
-    units_after_head(r, &hd)?;
-    r.ptr(Some(&["moPMarkRecord_c"]))?;
-    r.ptr(Some(&["suObList"]))?;
-    r.ptr(Some(&["suObList"]))?;
-    if !r.eq(r.p, &[1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0])
-        && !r.eq(r.p, &[1, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0])
+pub(crate) fn featpattern(reader: &mut Reader<'_>) -> Res<V> {
+    let class = reader.last_class().ok_or(Stop::End(reader.p))?;
+    let class = &*class;
+    let count = feature(reader, class)?;
+    let hd = bodyhead(reader, class)?;
+    units_after_head(reader, &hd)?;
+    reader.ptr(Some(&["moPMarkRecord_c"]))?;
+    reader.ptr(Some(&["suObList"]))?;
+    reader.ptr(Some(&["suObList"]))?;
+    if !reader.eq(reader.p, &[1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0])
+        && !reader.eq(reader.p, &[1, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0])
     {
         return Err(bad("pattern head"));
     }
-    r.skip(11);
-    r.ptr(Some(&["suObList"]))?;
-    r.skip(if c == "moCirPattern_c" { 228 } else { 192 });
-    r.ptr(Some(&["suObList"]))?;
-    r.expect_zeros(
-        if c == "moMirrorPattern_c" { 13 } else { 11 },
+    reader.skip(11);
+    reader.ptr(Some(&["suObList"]))?;
+    reader.skip(if class == "moCirPattern_c" { 228 } else { 192 });
+    reader.ptr(Some(&["suObList"]))?;
+    reader.expect_zeros(
+        if class == "moMirrorPattern_c" { 13 } else { 11 },
         "pattern zero run",
     )?;
-    display_objects(r)?;
-    if c == "moLPattern_c" {
-        r.u32()?;
-        r.expect_bytes(&[0, 0], "lpattern u16 0")?;
-        let d1 = r.ptr(None)?;
-        item1(r, &d1)?;
-        axistail(r)?;
-        let d2 = r.ptr(None)?;
+    display_objects(reader)?;
+    if class == "moLPattern_c" {
+        reader.u32()?;
+        reader.expect_bytes(&[0, 0], "lpattern u16 0")?;
+        let d1 = reader.ptr(None)?;
+        item1(reader, &d1)?;
+        axistail(reader)?;
+        let d2 = reader.ptr(None)?;
         if d2.is_obj() {
-            axistail(r)?;
+            axistail(reader)?;
         }
-        let mut x = vec![0; 13];
-        x.extend_from_slice(&[1, 0, 0, 0, 1, 0, 0, 0]);
-        x.extend_from_slice(&[0; 12]);
-        r.expect_bytes(&x, "lpattern 1 1")?;
-        display_objects(r)?;
-        let mut z = 0;
-        while r.p + z < r.len() && r.byte(r.p + z)? == 0 {
-            z += 1;
+        let mut x_value = vec![0; 13];
+        x_value.extend_from_slice(&[1, 0, 0, 0, 1, 0, 0, 0]);
+        x_value.extend_from_slice(&[0; 12]);
+        reader.expect_bytes(&x_value, "lpattern 1 1")?;
+        display_objects(reader)?;
+        let mut zeros_ = 0;
+        while reader.p + zeros_ < reader.len() && reader.byte(reader.p + zeros_)? == 0 {
+            zeros_ += 1;
         }
-        if r.p + z == r.len() || z == 9 || (z == 13 && objat(r, r.p + 13)) {
-            r.skip(z);
-            return Ok(n);
+        if reader.p + zeros_ == reader.len()
+            || zeros_ == 9
+            || (zeros_ == 13 && objat(reader, reader.p + 13))
+        {
+            reader.skip(zeros_);
+            return Ok(count);
         }
-        return Err(bad(format!("lpattern end {z}")));
+        return Err(bad(format!("lpattern end {zeros_}")));
     }
-    if c == "moCirPattern_c" {
-        r.expect_bytes(&[0, 0], "cirpattern u16 0")?;
-        let ax = r.ptr(None)?;
-        item1(r, &ax)?;
-        axistail(r)?;
-        if r.u8()? > 1 {
+    if class == "moCirPattern_c" {
+        reader.expect_bytes(&[0, 0], "cirpattern u16 0")?;
+        let ax = reader.ptr(None)?;
+        item1(reader, &ax)?;
+        axistail(reader)?;
+        if reader.u8()? > 1 {
             return Err(bad("cirpattern flag byte"));
         }
-        display_objects(r)?;
-        r.expect_bytes(
+        display_objects(reader)?;
+        reader.expect_bytes(
             &[1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
             "cirpattern end",
         )?;
-        if !objat(r, r.p) && r.p < r.len() && r.zeros(r.p, 8) {
-            r.skip(8);
+        if !objat(reader, reader.p) && reader.p < reader.len() && reader.zeros(reader.p, 8) {
+            reader.skip(8);
             for _ in 0..5 {
-                r.f64()?;
+                reader.f64()?;
             }
-        } else if r.p + 52 == r.len() {
-            r.skip(52);
+        } else if reader.p + 52 == reader.len() {
+            reader.skip(52);
         }
-        return Ok(n);
+        return Ok(count);
     }
-    if c == "moMirrorPattern_c" {
-        r.st.sk.mirror = true;
-        let pl = r.ptr(Some(&["moCompRefPlane_c"]));
-        r.st.sk.mirror = false;
+    if class == "moMirrorPattern_c" {
+        reader.st.sk.set_mirror(true);
+        let pl = reader.ptr(Some(&["moCompRefPlane_c"]));
+        reader.st.sk.set_mirror(false);
         pl?;
-        return Ok(n);
+        return Ok(count);
     }
     Err(bad("pattern form not read (EV-17)"))
 }
@@ -1823,111 +1853,119 @@ const REVOLVES: &[&str] = &["moRevolution_c", "moRevCut_c", "moRevolutionThin_c"
 
 /// The extrusion family (`moExtrusion_c`, `moRevolution_c`, `moSweepCut_c`,
 /// `moSMBaseFlange_c`, ...).
-pub(crate) fn extrusion(r: &mut Reader<'_>, c: &str) -> Res<V> {
-    let cls = r
+pub(crate) fn extrusion(reader: &mut Reader<'_>, class: &str) -> Res<V> {
+    let cls = reader
         .last_class()
-        .map_or_else(|| c.to_owned(), |c| c.to_string());
+        .map_or_else(|| class.to_owned(), |class| class.to_string());
     let cls = cls.as_str();
-    let n = feature(r, "moExtrusion_c")?;
-    let hd = bodyhead(r, "moExtrusion_c")?;
+    let count = feature(reader, "moExtrusion_c")?;
+    let hd = bodyhead(reader, "moExtrusion_c")?;
     let mut hx = hd.get("x").as_int();
     if hd.get("g").as_int() == Some(1) {
-        hx = Some(i64::from(body_ids(r)?));
+        hx = Some(i64::from(body_ids(reader)?));
     }
     if hx == Some(1) {
-        units(r)?;
+        units(reader)?;
     }
-    if REVOLVES.contains(&cls) && zrun_to(r, r.p, "suObList")? >= 40 {
-        let z = zrun_to(r, r.p, "suObList")?;
-        r.skip(z - 9);
-    } else if !REVOLVES.contains(&cls) && zrun_to(r, r.p, "moEndSpec_c")? >= 40 {
+    if REVOLVES.contains(&cls) && zrun_to(reader, reader.p, "suObList")? >= 40 {
+        let z = zrun_to(reader, reader.p, "suObList")?;
+        reader.skip(z - 9);
+    } else if !REVOLVES.contains(&cls) && zrun_to(reader, reader.p, "moEndSpec_c")? >= 40 {
         // Zero bytes in place of the mark record (64; extruded cuts).
-        let z = zrun_to(r, r.p, "moEndSpec_c")?;
-        r.skip(z);
+        let z = zrun_to(reader, reader.p, "moEndSpec_c")?;
+        reader.skip(z);
     } else {
-        r.ptr(Some(&["moPMarkRecord_c"]))?;
+        reader.ptr(Some(&["moPMarkRecord_c"]))?;
     }
     if cls == "moSMBaseFlange_c" {
         let mut dims = 0_u32;
-        while isclass(r, r.p, DISPLAY)? {
-            r.ptr(None)?;
+        while isclass(reader, reader.p, DISPLAY)? {
+            reader.ptr(None)?;
             dims += 1;
         }
-        let mut k = None;
-        for q in r.p..r.p + 40 {
-            if isclass(r, q, &["moCompSheetmetalFeat_c"])? {
-                k = Some(q);
+        let mut found = None;
+        for q in reader.p..reader.p + 40 {
+            if isclass(reader, q, &["moCompSheetmetalFeat_c"])? {
+                found = Some(q);
                 break;
             }
         }
-        let Some(k) = k else {
+        let Some(found) = found else {
             return Err(bad("base flange: no sheet metal component"));
         };
-        r.p = k;
-        r.ptr(None)?;
-        let e = (r.p..r.p + 200).find(|&q| q >= r.len() || objat(r, q));
-        let Some(e) = e else {
+        reader.p = found;
+        reader.ptr(None)?;
+        let entry = (reader.p..reader.p + 200).find(|&q| q >= reader.len() || objat(reader, q));
+        let Some(entry) = entry else {
             return Err(bad("base flange tail None"));
         };
-        let tail = if e == 0 {
+        let tail = if entry == 0 {
             0
         } else {
-            r.slice(r.p, e - r.p).len()
+            reader.slice(reader.p, entry - reader.p).len()
         };
         if !matches!(tail, 71 | 74 | 75) {
             return Err(bad(format!("base flange tail {tail}")));
         }
-        r.p = e;
-        return Ok(V::map([("n", n), ("dims", V::from(dims))]));
+        reader.p = entry;
+        return Ok(V::map([("n", count), ("dims", V::from(dims))]));
     }
     if (cls == "moSweepCut_c" || cls == "moSweep_c")
-        && r.eq(r.p, &[1, 0])
-        && isclass(r, r.p + 2, &["moGeneralCurveRef_w"])?
+        && reader.eq(reader.p, &[1, 0])
+        && isclass(reader, reader.p + 2, &["moGeneralCurveRef_w"])?
     {
-        r.skip(2);
-        let path = r.ptr(None)?;
-        r.expect_bytes(&[1, 0], "sweep u16 1")?;
-        r.ptr(Some(&["moWireContact_c"]))?;
-        r.ptr(Some(&["moGeneralCurveRef_w"]))?;
-        r.skip(105);
-        let guide = r.ptr(None)?;
-        r.skip(17);
+        reader.skip(2);
+        let path = reader.ptr(None)?;
+        reader.expect_bytes(&[1, 0], "sweep u16 1")?;
+        reader.ptr(Some(&["moWireContact_c"]))?;
+        reader.ptr(Some(&["moGeneralCurveRef_w"]))?;
+        reader.skip(105);
+        let guide = reader.ptr(None)?;
+        reader.skip(17);
         return Ok(V::map([
-            ("n", n),
+            ("n", count),
             ("path", V::from(path)),
             ("guide", V::from(guide)),
         ]));
     }
     if REVOLVES.contains(&cls) {
-        if r.zeros(r.p, 5) && r.eq(r.p + 5, &[1, 0, 0, 0]) && isclass(r, r.p + 9, &["suObList"])? {
-            r.skip(9);
+        if reader.zeros(reader.p, 5)
+            && reader.eq(reader.p + 5, &[1, 0, 0, 0])
+            && isclass(reader, reader.p + 9, &["suObList"])?
+        {
+            reader.skip(9);
         } else {
-            r.expect_zeros(9, "revolve 9 zero")?;
+            reader.expect_zeros(9, "revolve 9 zero")?;
         }
-        r.ptr(Some(&["suObList"]))?;
-        r.u32()?;
-        r.u32()?;
-        r.ptr(None)?;
-        if ver_or(r, 99999) >= 16000 {
-            r.expect_zeros(4, "revolve u32 0")?;
+        reader.ptr(Some(&["suObList"]))?;
+        reader.u32()?;
+        reader.u32()?;
+        reader.ptr(None)?;
+        if ver_or(reader, 99999) >= 16000 {
+            reader.expect_zeros(4, "revolve u32 0")?;
         }
         for _ in 0..7 {
-            r.f64()?;
+            reader.f64()?;
         }
-        r.expect_bytes(&[0], "revolve u8 0")?;
-        r.ptr(Some(&["moRevEndSpec_c"]))?;
+        reader.expect_bytes(&[0], "revolve u8 0")?;
+        reader.ptr(Some(&["moRevEndSpec_c"]))?;
     } else {
-        r.ptr(Some(&["moEndSpec_c"]))?;
+        reader.ptr(Some(&["moEndSpec_c"]))?;
     }
     let mut dims = 0_u32;
     loop {
-        let w = r.pu16(r.p)?;
-        let nm: String = if w == 0xffff {
-            let k = usize::from(r.pu16(r.p + 4)?);
-            r.slice(r.p + 6, k).iter().map(|&b| char::from(b)).collect()
-        } else if w & 0x8000 != 0 {
-            r.known
-                .get(&u32::from(w & 0x7fff))
+        let word = reader.pu16(reader.p)?;
+        let nm: String = if word == 0xffff {
+            let found = usize::from(reader.pu16(reader.p + 4)?);
+            reader
+                .slice(reader.p + 6, found)
+                .iter()
+                .map(|&b| char::from(b))
+                .collect()
+        } else if word & 0x8000 != 0 {
+            reader
+                .known
+                .get(&u32::from(word & 0x7fff))
                 .map_or_else(String::new, ToString::to_string)
         } else {
             String::new()
@@ -1935,31 +1973,35 @@ pub(crate) fn extrusion(r: &mut Reader<'_>, c: &str) -> Res<V> {
         if !nm.starts_with("moDisplay") {
             break;
         }
-        r.ptr(None)?;
+        reader.ptr(None)?;
         dims += 1;
     }
     if REVOLVES.contains(&cls) {
-        let mut z = if ver_or(r, 99999) >= 18000 { 7 } else { 6 };
-        if z == 6 && r.zeros(r.p, 7) && objat(r, r.p + 7) && !objat(r, r.p + 6) {
+        let mut z = if ver_or(reader, 99999) >= 18000 { 7 } else { 6 };
+        if z == 6
+            && reader.zeros(reader.p, 7)
+            && objat(reader, reader.p + 7)
+            && !objat(reader, reader.p + 6)
+        {
             z = 7;
         }
-        r.expect_zeros(z, "revolve zero bytes")?;
-        return Ok(V::map([("n", n), ("dims", V::from(dims))]));
+        reader.expect_zeros(z, "revolve zero bytes")?;
+        return Ok(V::map([("n", count), ("dims", V::from(dims))]));
     }
-    if r.eq(r.p, &[0, 0, 1, 1, 0]) && objat(r, r.p + 5) {
-        r.skip(5);
-        r.ptr(None)?;
-        refblock(r)?;
-        if r.zeros(r.p, 2) && r.pf64(r.p + 2)?.abs() == 1.0 {
-            r.skip(2); // u16 0 before the four gaps (1 sample)
+    if reader.eq(reader.p, &[0, 0, 1, 1, 0]) && objat(reader, reader.p + 5) {
+        reader.skip(5);
+        reader.ptr(None)?;
+        refblock(reader)?;
+        if reader.zeros(reader.p, 2) && reader.pf64(reader.p + 2)?.abs() == 1.0 {
+            reader.skip(2); // u16 0 before the four gaps (1 sample)
         }
         for _ in 0..4 {
-            r.f64()?;
+            reader.f64()?;
         }
-        r.expect_zeros(4, "up-to-face u32 0")?;
-        r.u32()?;
-        r.u32()?;
-        let t = r.slice(r.p, 71);
+        reader.expect_zeros(4, "up-to-face u32 0")?;
+        reader.u32()?;
+        reader.u32()?;
+        let t = reader.slice(reader.p, 71);
         let sub = |a: usize, b: usize| t.get(a.min(t.len())..b.min(t.len())).unwrap_or(&[]);
         if sub(0, 3) != [1, 0, 0]
             || !(sub(59, 63) == [1, 0, 0, 0] || sub(59, 63) == [0, 0, 0, 0])
@@ -1967,13 +2009,16 @@ pub(crate) fn extrusion(r: &mut Reader<'_>, c: &str) -> Res<V> {
         {
             return Err(bad("up-to-face block tail"));
         }
-        r.skip(71);
-    } else if r.eq(r.p, &[0]) && r.eq(r.p + 4, &[0, 1, 0, 0]) && objat(r, r.p + 40) {
+        reader.skip(71);
+    } else if reader.eq(reader.p, &[0])
+        && reader.eq(reader.p + 4, &[0, 1, 0, 0])
+        && objat(reader, reader.p + 40)
+    {
         // A drafted extrusion: the block's pointer slot at +40 holds the draft
         // angle's display dimension, then the block's last 34 bytes.
-        r.skip(40);
-        r.ptr(None)?;
-        let t = r.slice(r.p, 34);
+        reader.skip(40);
+        reader.ptr(None)?;
+        let t = reader.slice(reader.p, 34);
         let sub = |a: usize, b: usize| t.get(a.min(t.len())..b.min(t.len())).unwrap_or(&[]);
         if sub(0, 22) != [0; 22]
             || !(sub(22, 26) == [1, 0, 0, 0] || sub(22, 26) == [0, 0, 0, 0])
@@ -1981,27 +2026,27 @@ pub(crate) fn extrusion(r: &mut Reader<'_>, c: &str) -> Res<V> {
         {
             return Err(bad("drafted extrusion block tail"));
         }
-        r.skip(34);
-    } else if !is76(r, r.p) {
-        let mut joined = r.slice(r.p, 4).to_vec();
-        joined.extend_from_slice(r.slice(r.p + 6, 74));
-        if r.eq(r.p + 4, &[0, 0]) && is76_bytes(&joined) && objat(r, r.p + 78) {
-            r.skip(78);
+        reader.skip(34);
+    } else if !is76(reader, reader.p) {
+        let mut joined = reader.slice(reader.p, 4).to_vec();
+        joined.extend_from_slice(reader.slice(reader.p + 6, 74));
+        if reader.eq(reader.p + 4, &[0, 0]) && is76_bytes(&joined) && objat(reader, reader.p + 78) {
+            reader.skip(78);
         } else {
             return Err(bad("extrusion 76-byte block"));
         }
     } else {
-        r.skip(76);
+        reader.skip(76);
     }
-    r.ptr(Some(&["moFromEndSpec_c"]))?;
-    if r.p >= r.len() {
-        return Ok(V::map([("n", n), ("dims", V::from(dims))]));
+    reader.ptr(Some(&["moFromEndSpec_c"]))?;
+    if reader.p >= reader.len() {
+        return Ok(V::map([("n", count), ("dims", V::from(dims))]));
     }
-    r.ptr(None)?;
-    if r.p < r.len() {
-        r.ptr(None)?;
+    reader.ptr(None)?;
+    if reader.p < reader.len() {
+        reader.ptr(None)?;
     }
-    Ok(V::map([("n", n), ("dims", V::from(dims))]))
+    Ok(V::map([("n", count), ("dims", V::from(dims))]))
 }
 
 /// `moCompSolidBody_c`, `moCompSurfaceBody_c`.
@@ -2016,7 +2061,9 @@ pub(crate) fn pmark(r: &mut Reader<'_>) -> Res<V> {
     let f = r.u32()?;
     if f == 1 {
         let n = r.u32()?;
-        r.skip(6 * n as usize);
+        let entries =
+            usize::try_from(n).map_err(|_| bad("pmark entry count exceeds address space"))?;
+        r.skip(6 * entries);
         r.expect_zeros(8, "pmark 8 zero")?;
         r.u32()?;
         r.u32()?;
@@ -2208,9 +2255,17 @@ fn list(values: Vec<V>) -> V {
     V::List(values)
 }
 
-/// `bytes(n) + b'\xff' * f + bytes(t)`.
-fn zff(n: usize, f: usize, t: usize) -> Vec<u8> {
-    let mut out = vec![0; n];
+/// `b'\xff' * f + bytes(t)`.
+fn zff_zero(f: usize, t: usize) -> Vec<u8> {
+    let mut out = vec![0; 0];
+    out.extend(std::iter::repeat_n(0xff, f));
+    out.extend(std::iter::repeat_n(0, t));
+    out
+}
+
+/// `bytes(12) + b'\xff' * f + bytes(t)`.
+fn zff_twelve(f: usize, t: usize) -> Vec<u8> {
+    let mut out = vec![0; 12];
     out.extend(std::iter::repeat_n(0xff, f));
     out.extend(std::iter::repeat_n(0, t));
     out
@@ -2253,8 +2308,9 @@ fn hd_x_is_1(hd: &V) -> bool {
     hd.get("x").as_int() == Some(1)
 }
 
-fn len_v(n: usize) -> V {
-    V::Int(i64::try_from(n).unwrap_or(i64::MAX))
+fn len_v(n: usize) -> Res<V> {
+    let n = i64::try_from(n).map_err(|_| bad("count exceeds i64"))?;
+    Ok(V::Int(n))
 }
 
 /// `moEndSpec_c`.
@@ -2508,21 +2564,24 @@ pub(crate) fn ppdd(r: &mut Reader<'_>) -> Res<V> {
 }
 
 /// `favblock(b, p)`: the length of a dimension's view block at `p`.
-fn favblock(r: &Reader<'_>, p: usize) -> Option<usize> {
-    let b = r.b;
-    if p + 122 > b.len()
-        || !(r.zeros(p, 4) || r.eq(p, &[1, 0, 0, 0]))
-        || !r.zeros(p + 76, 8)
-        || b[p + 84] > 1
+fn favblock(reader: &Reader<'_>, pos: usize) -> Option<usize> {
+    let second = reader.b;
+    if pos + 122 > second.len()
+        || !(reader.zeros(pos, 4) || reader.eq(pos, &[1, 0, 0, 0]))
+        || !reader.zeros(pos + 76, 8)
+        || second[pos + 84] > 1
     {
         return None;
     }
-    let n = if b[p + 84] != 0 { 12 } else { 3 };
-    let q = p + 85 + 8 * n;
-    if q + 13 > b.len() || r.pf64(q).ok()? != 1.0 || !r.eq(q + 8, &[0, 1, 0, 0, 0]) {
+    let count = if second[pos + 84] != 0 { 12 } else { 3 };
+    let at = pos + 85 + 8 * count;
+    if at + 13 > second.len()
+        || reader.pf64(at).ok()? != 1.0
+        || !reader.eq(at + 8, &[0, 1, 0, 0, 0])
+    {
         return None;
     }
-    Some(q + 13 - p)
+    Some(at + 13 - pos)
 }
 
 /// `moFavoriteHandle_c`.
@@ -2823,7 +2882,7 @@ pub(crate) fn savedext(r: &mut Reader<'_>) -> Res<V> {
         return Err(bad("saved body ids"));
     }
     u32s(r, k)?;
-    r.expect_bytes(&zff(0, 4, 4), "saved body -1 0")?;
+    r.expect_bytes(&zff_zero(4, 4), "saved body -1 0")?;
     r.u32()?;
     r.u32()?;
     r.u32()?;
@@ -2834,7 +2893,7 @@ pub(crate) fn savedext(r: &mut Reader<'_>) -> Res<V> {
     if isver(r, r.p) {
         r.skip(4);
     }
-    r.expect_bytes(&zff(12, 4, 4), "saved body -1")?;
+    r.expect_bytes(&zff_twelve(4, 4), "saved body -1")?;
     let count = r.u32()?;
     let mut bodies = 0_i64;
     for _ in 0..count {
@@ -2935,22 +2994,25 @@ pub(crate) fn mbimport(r: &mut Reader<'_>) -> Res<V> {
     Ok(V::map([
         ("name", V::from(name)),
         ("path", V::from(path)),
-        ("maps", len_v(maps)),
+        ("maps", len_v(maps)?),
         ("format", V::from(fmt)),
         ("schema", V::from(schema)),
-        ("filetime", V::Int(i64::try_from(ft).unwrap_or(i64::MAX))),
+        (
+            "filetime",
+            V::Int(i64::try_from(ft).map_err(|_| bad("FILETIME exceeds i64"))?),
+        ),
     ]))
 }
 
 /// `mbBodyImportIDMaps_c`.
-pub(crate) fn idmaps(r: &mut Reader<'_>) -> Res<V> {
-    let n = r.u32()?;
+pub(crate) fn idmaps(reader: &mut Reader<'_>) -> Res<V> {
+    let count = reader.u32()?;
     let mut out = Vec::new();
-    for _ in 0..n {
-        let s = r.cstring()?;
-        let a = r.u32()?;
-        let b = r.u32()?;
-        out.push(list(vec![V::from(s), V::from(a), V::from(b)]));
+    for _ in 0..count {
+        let span = reader.cstring()?;
+        let first = reader.u32()?;
+        let second = reader.u32()?;
+        out.push(list(vec![V::from(span), V::from(first), V::from(second)]));
     }
     Ok(list(out))
 }
@@ -2987,9 +3049,9 @@ pub(crate) fn planeiface(r: &mut Reader<'_>) -> Res<V> {
 
 /// The constraint-plane geometry classes (`planegeom`).
 pub(crate) fn planegeom(r: &mut Reader<'_>) -> Res<V> {
-    r.st.sk.mirror = true;
+    r.st.sk.set_mirror(true);
     let rf = r.ptr(None);
-    r.st.sk.mirror = false;
+    r.st.sk.set_mirror(false);
     let rf = rf?;
     if !rf.is_null() && objat(r, r.p) {
         // A line reference whose slot ends at once: the next geometry object follows.
@@ -3016,7 +3078,7 @@ pub(crate) fn planegeom(r: &mut Reader<'_>) -> Res<V> {
         m.extend_from_slice(&[0; 4]);
         r.expect_bytes(&m, "plane geom -12345")?;
         r.u32()?;
-        r.expect_bytes(&zff(12, 4, 0), "plane geom -1")?;
+        r.expect_bytes(&zff_twelve(4, 0), "plane geom -1")?;
         f64s(r, 4)?;
         f64s(r, 6)?;
         let fl = r.u8()?;
@@ -3071,36 +3133,36 @@ fn isblob(r: &Reader<'_>, q: usize) -> Res<bool> {
 }
 
 /// `moHelix_c`.
-pub(crate) fn helix(r: &mut Reader<'_>) -> Res<V> {
-    let n = feature(r, "moHelix_c")?;
-    r.expect_bytes(&[0, 0], "helix u16 0")?;
-    let k = r.u16()?;
-    ptrs(r, usize::from(k))?;
-    let mut l = 142;
-    for k in std::iter::once(142_usize).chain((136..160).step_by(2)) {
-        if isblob(r, r.p + k)? && r.eq(r.p + k + 10, &BLOB_MARK) {
-            l = k;
+pub(crate) fn helix(reader: &mut Reader<'_>) -> Res<V> {
+    let count = feature(reader, "moHelix_c")?;
+    reader.expect_bytes(&[0, 0], "helix u16 0")?;
+    let found = reader.u16()?;
+    ptrs(reader, usize::from(found))?;
+    let mut length = 142;
+    for found in std::iter::once(142_usize).chain((136..160).step_by(2)) {
+        if isblob(reader, reader.p + found)? && reader.eq(reader.p + found + 10, &BLOB_MARK) {
+            length = found;
             break;
         }
     }
-    r.skip(l);
-    sketch::blob(r)?;
-    r.expect_bytes(&[6, 0, 0, 0], "helix u32 6")?;
-    r.skip(18);
-    r.expect_bytes(&[1, 0, 0, 0], "helix u32 1")?;
-    let v = f64s(r, 5)?;
-    let mut z = 0;
-    while r.byte(r.p + z)? == 0 && z < 200 {
-        z += 1;
+    reader.skip(length);
+    sketch::blob(reader)?;
+    reader.expect_bytes(&[6, 0, 0, 0], "helix u32 6")?;
+    reader.skip(18);
+    reader.expect_bytes(&[1, 0, 0, 0], "helix u32 1")?;
+    let value = f64s(reader, 5)?;
+    let mut zeros = 0;
+    while reader.byte(reader.p + zeros)? == 0 && zeros < 200 {
+        zeros += 1;
     }
-    r.skip(z);
+    reader.skip(zeros);
     let mut dims = Vec::new();
-    displays(r, &mut dims)?;
-    r.expect_bytes(&[0], "helix u8 0")?;
+    displays(reader, &mut dims)?;
+    reader.expect_bytes(&[0], "helix u8 0")?;
     Ok(V::map([
-        ("n", n),
-        ("values", list(v)),
-        ("dims", len_v(dims.len())),
+        ("n", count),
+        ("values", list(value)),
+        ("dims", len_v(dims.len())?),
     ]))
 }
 
@@ -3140,12 +3202,17 @@ pub(crate) fn cutlist(r: &mut Reader<'_>) -> Res<V> {
 }
 
 /// `moCutListSortOptions_c`.
-pub(crate) fn cutlistsort(r: &mut Reader<'_>) -> Res<V> {
-    let a = r.u32()?;
-    let b = r.u16()?;
-    let c = r.u16()?;
-    let d = r.u16()?;
-    Ok(list(vec![V::from(a), V::from(b), V::from(c), V::from(d)]))
+pub(crate) fn cutlistsort(reader: &mut Reader<'_>) -> Res<V> {
+    let first = reader.u32()?;
+    let second = reader.u16()?;
+    let class = reader.u16()?;
+    let distance = reader.u16()?;
+    Ok(list(vec![
+        V::from(first),
+        V::from(second),
+        V::from(class),
+        V::from(distance),
+    ]))
 }
 
 /// `upto(lim)` inside `sheetmetal`: bytes to the next display object, then
@@ -3235,9 +3302,9 @@ pub(crate) fn mirrorsolid(r: &mut Reader<'_>) -> Res<V> {
         r.u32()?;
     }
     r.expect_zeros(4, "mirror body u32 0")?;
-    r.st.sk.mirror = true;
+    r.st.sk.set_mirror(true);
     let plane = r.ptr(None);
-    r.st.sk.mirror = false;
+    r.st.sk.set_mirror(false);
     plane?;
     r.expect_zeros(4, "mirror body plane u32 0")?;
     r.ptr(Some(&["moMatrixIndexHelper_c"]))?;
@@ -3246,7 +3313,7 @@ pub(crate) fn mirrorsolid(r: &mut Reader<'_>) -> Res<V> {
         return Err(bad("mirror body tail count"));
     }
     u32s(r, c)?;
-    let mut tail = zff(0, 4, 8);
+    let mut tail = zff_zero(4, 8);
     tail.extend_from_slice(&[2, 0, 0, 0]);
     tail.extend_from_slice(&[0; 6]);
     tail.extend_from_slice(&[1, 1]);
@@ -3283,83 +3350,85 @@ pub(crate) fn matrixhelper(r: &mut Reader<'_>) -> Res<V> {
 }
 
 /// `moHoleWzd_c`.
-pub(crate) fn holewzd(r: &mut Reader<'_>) -> Res<V> {
-    let n = feature(r, "moHoleWzd_c")?;
-    let hd = bodyhead(r, "moHoleWzd_c")?;
+pub(crate) fn holewzd(reader: &mut Reader<'_>) -> Res<V> {
+    let count_ = feature(reader, "moHoleWzd_c")?;
+    let hd = bodyhead(reader, "moHoleWzd_c")?;
     if hd_x_is_1(&hd) {
-        units(r)?;
+        units(reader)?;
     }
-    let w = r.pu16(r.p)?;
-    if 0 < w && w < 64 && isclass(r, r.p + 2, &["moCompSolidBody_c"])? {
-        let k = r.u16()?;
-        ptrs(r, usize::from(k))?;
-        let k = r.u32()?;
+    let word = reader.pu16(reader.p)?;
+    if 0 < word && word < 64 && isclass(reader, reader.p + 2, &["moCompSolidBody_c"])? {
+        let k = reader.u16()?;
+        ptrs(reader, usize::from(k))?;
+        let k = reader.u32()?;
         if k > 4096 {
             return Err(bad("hole body ids"));
         }
-        u32s(r, k)?;
-        u32s(r, 4)?;
+        u32s(reader, k)?;
+        u32s(reader, 4)?;
     }
-    r.ptr(Some(PMARK))?;
-    r.expect_zeros(6, "hole 6 zero")?;
-    let d1 = r.f64()?;
-    r.expect_bytes(&[1, 0, 0, 0], "hole u32 1")?;
-    r.cstring()?;
-    r.cstring()?;
-    r.u32()?;
-    r.u32()?;
-    r.u32()?;
-    let std = r.cstring()?;
-    let ftype = r.cstring()?;
-    let size = r.cstring()?;
-    f64s(r, 5)?;
-    r.cstring()?;
-    r.u32()?;
-    r.u32()?;
-    let desc = r.cstring()?;
-    r.cstring()?;
-    r.u32()?;
-    r.u32()?;
-    r.cstring()?;
-    r.expect_zeros(4, "hole list u32 0")?;
-    let n2 = r.u32()?;
+    reader.ptr(Some(PMARK))?;
+    reader.expect_zeros(6, "hole 6 zero")?;
+    let d1 = reader.f64()?;
+    reader.expect_bytes(&[1, 0, 0, 0], "hole u32 1")?;
+    reader.cstring()?;
+    reader.cstring()?;
+    reader.u32()?;
+    reader.u32()?;
+    reader.u32()?;
+    let std = reader.cstring()?;
+    let ftype = reader.cstring()?;
+    let size = reader.cstring()?;
+    f64s(reader, 5)?;
+    reader.cstring()?;
+    reader.u32()?;
+    reader.u32()?;
+    let desc = reader.cstring()?;
+    reader.cstring()?;
+    reader.u32()?;
+    reader.u32()?;
+    reader.cstring()?;
+    reader.expect_zeros(4, "hole list u32 0")?;
+    let n2 = reader.u32()?;
     if n2 > 4096 {
         return Err(bad("hole instance count"));
     }
     let mut inst = Vec::new();
     for _ in 0..n2 {
-        let i = r.u32()?;
-        let x = r.f64()?;
-        inst.push(list(vec![V::from(i), V::from(x)]));
+        let cursor = reader.u32()?;
+        let x_value = reader.f64()?;
+        inst.push(list(vec![V::from(cursor), V::from(x_value)]));
     }
-    r.expect_zeros(52, "hole 52 zero")?;
-    r.cstring()?;
-    r.expect_zeros(12, "hole 12 zero")?;
+    reader.expect_zeros(52, "hole 52 zero")?;
+    reader.cstring()?;
+    reader.expect_zeros(12, "hole 12 zero")?;
     let mut one_one = vec![1, 0, 0, 0, 1, 0, 0, 0];
-    one_one.extend_from_slice(&zff(0, 4, 8));
-    r.expect_bytes(&one_one, "hole 1 1 -1")?;
-    r.cstring()?;
-    r.cstring()?;
-    r.expect_zeros(4, "hole u32 0")?;
-    r.f64()?;
-    if (r.eq(r.p, &[1, 0, 0, 0]) || r.zeros(r.p, 4)) && r.zeros(r.p + 4, 12) {
+    one_one.extend_from_slice(&zff_zero(4, 8));
+    reader.expect_bytes(&one_one, "hole 1 1 -1")?;
+    reader.cstring()?;
+    reader.cstring()?;
+    reader.expect_zeros(4, "hole u32 0")?;
+    reader.f64()?;
+    if (reader.eq(reader.p, &[1, 0, 0, 0]) || reader.zeros(reader.p, 4))
+        && reader.zeros(reader.p + 4, 12)
+    {
         // 14000: the u32 before the zeros.
-        r.skip(4);
-        r.expect_zeros(12, "hole end 12 zero 14000")?;
+        reader.skip(4);
+        reader.expect_zeros(12, "hole end 12 zero 14000")?;
     } else {
-        r.expect_zeros(12, "hole end 12 zero")?;
-        r.u32()?;
+        reader.expect_zeros(12, "hole end 12 zero")?;
+        reader.u32()?;
     }
     let mut z = 0;
-    while r.p + z < r.len() && r.byte(r.p + z)? == 0 && z < 16 {
+    while reader.p + z < reader.len() && reader.byte(reader.p + z)? == 0 && z < 16 {
         z += 1;
     }
-    if !(r.p + z >= r.len() || objat(r, r.p + z)) {
+    if !(reader.p + z >= reader.len() || objat(reader, reader.p + z)) {
         return Err(bad(format!("hole end zeros {z}")));
     }
-    r.skip(z);
+    reader.skip(z);
     Ok(V::map([
-        ("n", n),
+        ("n", count_),
         ("standard", V::from(std)),
         ("type", V::from(ftype)),
         ("size", V::from(size)),
@@ -3407,40 +3476,43 @@ pub(crate) fn refsurface(r: &mut Reader<'_>) -> Res<V> {
 /// displays, then a block whose fields are open (EV-23). A block that opens `00 00 80 00 08 00 00 00` is 608 bytes
 /// and ends at the next object; any other block is framed by the next named object: a class tag, the name object's
 /// class tag and a Unicode `CString`.
-pub(crate) fn onebend(r: &mut Reader<'_>) -> Res<V> {
-    let n = feature(r, "moOneBend_c")?;
-    r.skip(122);
+pub(crate) fn onebend(reader: &mut Reader<'_>) -> Res<V> {
+    let count = feature(reader, "moOneBend_c")?;
+    reader.skip(122);
     let mut dims = Vec::new();
-    displays(r, &mut dims)?;
-    let cf = r.ptr(Some(&["moCompFeature_c"]))?;
-    r.skip(33);
-    r.ptr(Some(&["moCompEdge_c"]))?;
-    displays(r, &mut dims)?;
-    if r.p + 8 <= r.len() && r.eq(r.p, &[0x00, 0x00, 0x80, 0x00, 0x08, 0x00, 0x00, 0x00]) {
-        r.skip(608);
-        return Ok(V::map([("n", n), ("cf", V::from(cf))]));
+    displays(reader, &mut dims)?;
+    let cf = reader.ptr(Some(&["moCompFeature_c"]))?;
+    reader.skip(33);
+    reader.ptr(Some(&["moCompEdge_c"]))?;
+    displays(reader, &mut dims)?;
+    if reader.p + 8 <= reader.len()
+        && reader.eq(reader.p, &[0x00, 0x00, 0x80, 0x00, 0x08, 0x00, 0x00, 0x00])
+    {
+        reader.skip(608);
+        return Ok(V::map([("n", count), ("cf", V::from(cf))]));
     }
-    let mut i = r.p;
+    let mut cursor = reader.p;
     let end = loop {
-        if i >= r.p + 400 || i + 8 >= r.len() {
+        if cursor >= reader.p + 400 || cursor + 8 >= reader.len() {
             return Err(bad("bend tail: no next object"));
         }
-        if r.eq(i, &[0xff, 0xfe, 0xff]) {
-            let a = r.pu16(i - 4)?;
-            let c = r.pu16(i - 2)?;
-            if a & 0x8000 != 0
-                && c & 0x8000 != 0
-                && r.known
-                    .get(&u32::from(c & 0x7fff))
+        if reader.eq(cursor, &[0xff, 0xfe, 0xff]) {
+            let first = reader.pu16(cursor - 4)?;
+            let class = reader.pu16(cursor - 2)?;
+            if first & 0x8000 != 0
+                && class & 0x8000 != 0
+                && reader
+                    .known
+                    .get(&u32::from(class & 0x7fff))
                     .is_some_and(|s| &**s == "moNodeName_c")
             {
-                break i - 4;
+                break cursor - 4;
             }
         }
-        i += 1;
+        cursor += 1;
     };
-    r.p = end;
-    Ok(V::map([("n", n), ("cf", V::from(cf))]))
+    reader.p = end;
+    Ok(V::map([("n", count), ("cf", V::from(cf))]))
 }
 
 /// `moTemplateFlatPattern_c`, `moFlatPattern_c`.
@@ -3474,7 +3546,10 @@ pub(crate) fn flatpattern(r: &mut Reader<'_>) -> Res<V> {
         r.ptr(Some(&["moCompFace_c"]))?;
         r.skip(66);
         r.ptr(Some(&["moCompFeature_c"]))?;
-        let rest = r.len() as i64 - r.p as i64;
+        let rest = r
+            .len()
+            .checked_sub(r.p)
+            .ok_or_else(|| bad("flat pattern position past end"))?;
         if rest > 400 || objat(r, r.p) {
             return Err(bad(format!("flat pattern tail {rest}")));
         }
@@ -3554,14 +3629,14 @@ pub(crate) fn compbody(r: &mut Reader<'_>) -> Res<V> {
     };
     r.p = k;
     sketch::blob(r)?;
-    Ok(V::map([("gap", len_v(k - q))]))
+    Ok(V::map([("gap", len_v(k - q)?)]))
 }
 
 /// `moNativeConfigurationTableFeature_c`.
 pub(crate) fn cfgtable(r: &mut Reader<'_>) -> Res<V> {
     let n = feature(r, "moNativeConfigurationTableFeature_c")?;
     r.cstring()?;
-    r.expect_bytes(&zff(12, 4, 0), "configuration table -1")?;
+    r.expect_bytes(&zff_twelve(4, 0), "configuration table -1")?;
     Ok(n)
 }
 
@@ -3606,7 +3681,7 @@ pub(crate) fn combine(r: &mut Reader<'_>) -> Res<V> {
     r.p = j + 12;
     r.expect_zeros(4, "combine u32 0")?;
     r.u32()?;
-    r.expect_bytes(&zff(12, 4, 8), "combine -1")?;
+    r.expect_bytes(&zff_twelve(4, 8), "combine -1")?;
     let mut done = false;
     for l in [4_usize, 5] {
         let head = r.eq(r.p, &[1, 0, 0, 0]) || r.zeros(r.p, 4);
@@ -3679,38 +3754,43 @@ pub(crate) fn facecenterpt(r: &mut Reader<'_>) -> Res<V> {
 }
 
 /// `moMoveFace_c`.
-pub(crate) fn moveface(r: &mut Reader<'_>) -> Res<V> {
-    let n = feature(r, "moMoveFace_c")?;
-    let hd = bodyhead(r, "moMoveFace_c")?;
+pub(crate) fn moveface(reader: &mut Reader<'_>) -> Res<V> {
+    let count = feature(reader, "moMoveFace_c")?;
+    let hd = bodyhead(reader, "moMoveFace_c")?;
     if hd_x_is_1(&hd) {
-        units(r)?;
+        units(reader)?;
     }
-    r.ptr(Some(PMARK))?;
-    let a = r.f64()?;
-    let b = r.f64()?;
-    r.skip(14);
-    let k = r.u16()?;
-    for _ in 0..k {
-        r.ptr(Some(&["moCompFace_c"]))?;
-        if r.eq(r.p, &[0, 0]) && isclass(r, r.p + 2, &["moCompFace_c"])? {
-            r.skip(2);
+    reader.ptr(Some(PMARK))?;
+    let first = reader.f64()?;
+    let second = reader.f64()?;
+    reader.skip(14);
+    let found = reader.u16()?;
+    for _ in 0..found {
+        reader.ptr(Some(&["moCompFace_c"]))?;
+        if reader.eq(reader.p, &[0, 0]) && isclass(reader, reader.p + 2, &["moCompFace_c"])? {
+            reader.skip(2);
         }
     }
-    r.expect_zeros(4, "move face u32 0")?;
-    r.ptr(Some(SUOBLIST))?;
+    reader.expect_zeros(4, "move face u32 0")?;
+    reader.ptr(Some(SUOBLIST))?;
     let mut dims = Vec::new();
-    displays(r, &mut dims)?;
-    let mut k = (r.p..r.p + 600).find(|&q| objat(r, q));
-    if k.is_none() && r.len() as i64 - r.p as i64 <= 600 {
-        k = Some(r.len());
+    displays(reader, &mut dims)?;
+    let mut found = (reader.p..reader.p + 600).find(|&q| objat(reader, q));
+    if found.is_none()
+        && reader
+            .len()
+            .checked_sub(reader.p)
+            .is_none_or(|rest| rest <= 600)
+    {
+        found = Some(reader.len());
     }
-    let Some(k) = k else {
+    let Some(found) = found else {
         return Err(bad("move face end"));
     };
-    r.p = k;
+    reader.p = found;
     Ok(V::map([
-        ("n", n),
-        ("v", list(vec![V::from(a), V::from(b)])),
+        ("n", count),
+        ("v", list(vec![V::from(first), V::from(second)])),
     ]))
 }
 

@@ -36,14 +36,13 @@ pub(crate) fn contextcomp(r: &mut Reader<'_>) -> Res<V> {
     r.skip(8);
     let _fl = r.u32()?;
     let cid = r.u32()?;
-    let form;
-    if r.pu32(r.p)? == cid {
+    let form = if r.pu32(r.p)? == cid {
         r.u32()?;
         r.u32()?;
         r.skip(24);
         r.expect_bytes(&[0xff; 16], "context ff")?;
         r.skip(20);
-        form = "A";
+        "A"
     } else {
         xform(r)?;
         let mut c = vec![0; 12];
@@ -67,8 +66,8 @@ pub(crate) fn contextcomp(r: &mut Reader<'_>) -> Res<V> {
         for _ in 0..6 {
             r.u32()?;
         }
-        form = "B";
-    }
+        "B"
+    };
     if isver(r, r.p) {
         r.skip(4);
     }
@@ -131,20 +130,20 @@ pub(crate) fn extfeature(r: &mut Reader<'_>) -> Res<V> {
 }
 
 /// `moArcBackedUpData_c`.
-pub(crate) fn arcbackup(r: &mut Reader<'_>) -> Res<V> {
-    let a = r.ptr(None)?;
-    let b = r.ptr(None)?;
-    let x = r.f64()?;
-    let k = r.u32()?;
-    let c = r.ptr(None)?;
-    let y = r.f64()?;
+pub(crate) fn arcbackup(reader: &mut Reader<'_>) -> Res<V> {
+    let first = reader.ptr(None)?;
+    let second = reader.ptr(None)?;
+    let x_value = reader.f64()?;
+    let found = reader.u32()?;
+    let class = reader.ptr(None)?;
+    let y_value = reader.f64()?;
     Ok(V::List(vec![
-        V::from(a),
-        V::from(b),
-        V::from(x),
-        V::from(k),
-        V::from(c),
-        V::from(y),
+        V::from(first),
+        V::from(second),
+        V::from(x_value),
+        V::from(found),
+        V::from(class),
+        V::from(y_value),
     ]))
 }
 

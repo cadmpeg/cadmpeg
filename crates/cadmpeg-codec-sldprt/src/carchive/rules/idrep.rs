@@ -9,30 +9,33 @@ pub(crate) fn cstringhandle(r: &mut Reader<'_>) -> Res<V> {
 }
 
 /// `moExtObject_c`.
-pub(crate) fn extobject(r: &mut Reader<'_>) -> Res<V> {
-    let path = r.ptr(None)?;
-    let name = r.ptr(None)?;
-    if r.u16()? != 2 {
+pub(crate) fn extobject(reader: &mut Reader<'_>) -> Res<V> {
+    let path = reader.ptr(None)?;
+    let name = reader.ptr(None)?;
+    if reader.u16()? != 2 {
         return Err(bad("ExtObject version"));
     }
-    r.u8()?;
-    r.u32()?;
-    r.cstring()?;
-    r.cstring()?;
-    r.cstring()?;
-    let q = r.p;
-    let Some(j) = r.find(&[0xff, 0xfe, 0xff], q, q + 64) else {
+    reader.u8()?;
+    reader.u32()?;
+    reader.cstring()?;
+    reader.cstring()?;
+    reader.cstring()?;
+    let at = reader.p;
+    let Some(stop) = reader.find(&[0xff, 0xfe, 0xff], at, at + 64) else {
         return Err(bad("ExtObject: no configuration string"));
     };
-    let x = j - q;
-    r.p = j;
-    let v = super::feature::ver_or(r, 0);
-    let cfg = r.cstring()?;
-    r.skip(if v >= 17000 { 16 } else { 12 });
+    let x_value = stop - at;
+    reader.p = stop;
+    let value = super::feature::ver_or(reader, 0);
+    let cfg = reader.cstring()?;
+    reader.skip(if value >= 17000 { 16 } else { 12 });
     Ok(V::map([
         ("path", V::from(path)),
         ("name", V::from(name)),
-        ("X", V::Int(i64::try_from(x).unwrap_or(i64::MAX))),
+        (
+            "X",
+            V::Int(i64::try_from(x_value).map_err(|_| bad("offset exceeds i64"))?),
+        ),
         ("cfg", V::from(cfg)),
     ]))
 }

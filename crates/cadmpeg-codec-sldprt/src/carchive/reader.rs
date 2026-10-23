@@ -10,6 +10,8 @@
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
+use cadmpeg_core::decode::{DecodeContext, ResourceLimit, View};
+
 /// Why a read stopped.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Stop {
@@ -20,6 +22,8 @@ pub(crate) enum Stop {
     /// A read or index past the end of the stream (`IndexError`,
     /// `struct.error`).
     End(usize),
+    /// The decode context refused more objects or nesting.
+    Refused(ResourceLimit),
 }
 
 pub(crate) type Res<T> = Result<T, Stop>;
@@ -27,6 +31,14 @@ pub(crate) type Res<T> = Result<T, Stop>;
 /// A `Stop::Bad` with `message`.
 pub(crate) fn bad(message: impl Into<String>) -> Stop {
     Stop::Bad(message.into())
+}
+
+/// A stop from a decode-context refusal.
+fn stopped(error: cadmpeg_core::CodecError) -> Stop {
+    match error {
+        cadmpeg_core::CodecError::ResourceLimit(limit) => Stop::Refused(limit),
+        error => Stop::Bad(error.to_string()),
+    }
 }
 
 /// A `CObject*` as read: null, a back-reference to an object read earlier,
@@ -136,10 +148,6 @@ impl V {
         }
     }
 
-    pub(crate) fn is_none(&self) -> bool {
-        matches!(self, Self::None)
-    }
-
     pub(crate) fn as_int(&self) -> Option<i64> {
         match self {
             Self::Int(value) => Some(*value),
@@ -151,8 +159,7 @@ impl V {
     pub(crate) fn as_f64(&self) -> Option<f64> {
         match self {
             Self::F(value) => Some(*value),
-            #[allow(clippy::cast_precision_loss)]
-            Self::Int(value) => Some(*value as f64),
+            Self::Int(value) => cadmpeg_core::convert::f64_from_i64(*value),
             _ => None,
         }
     }
@@ -160,13 +167,6 @@ impl V {
     pub(crate) fn as_str(&self) -> Option<&str> {
         match self {
             Self::Str(value) => Some(value),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn as_ptr(&self) -> Option<&Ptr> {
-        match self {
-            Self::Ptr(value) => Some(value),
             _ => None,
         }
     }
@@ -296,6 +296,8 @@ pub(crate) struct NamedRecord {
 pub(crate) struct Reader<'b> {
     /// The stream (`r.b`).
     pub(crate) b: &'b [u8],
+    /// The decode context that charges the walk and caps its nesting.
+    ctx: &'b DecodeContext<'b>,
     /// The read position (`r.p`).
     pub(crate) p: usize,
     /// Map index to class name (`r.known`).
@@ -324,6 +326,7 @@ impl<'b> Reader<'b> {
     /// A reader at `pos` of `b` with the class map `known` and the map
     /// counter at `counter`.
     pub(crate) fn new(
+        ctx: &'b DecodeContext<'b>,
         b: &'b [u8],
         pos: usize,
         known: HashMap<u32, Arc<str>>,
@@ -332,6 +335,7 @@ impl<'b> Reader<'b> {
     ) -> Self {
         Self {
             b,
+            ctx,
             p: pos,
             known,
             counter,
@@ -363,36 +367,42 @@ impl<'b> Reader<'b> {
     }
 
     pub(crate) fn u16(&mut self) -> Res<u16> {
-        Ok(u16::from_le_bytes(self.take()?))
-    }
-
-    pub(crate) fn i16(&mut self) -> Res<i16> {
-        Ok(i16::from_le_bytes(self.take()?))
+        let value = View::u16_le_at(self.b, self.p).ok_or(Stop::End(self.p))?;
+        self.p += 2;
+        Ok(value)
     }
 
     pub(crate) fn u32(&mut self) -> Res<u32> {
-        Ok(u32::from_le_bytes(self.take()?))
-    }
-
-    pub(crate) fn i32(&mut self) -> Res<i32> {
-        Ok(i32::from_le_bytes(self.take()?))
+        let value = View::u32_le_at(self.b, self.p).ok_or(Stop::End(self.p))?;
+        self.p += 4;
+        Ok(value)
     }
 
     pub(crate) fn u64(&mut self) -> Res<u64> {
-        Ok(u64::from_le_bytes(self.take()?))
-    }
-
-    pub(crate) fn f32(&mut self) -> Res<f32> {
-        Ok(f32::from_le_bytes(self.take()?))
+        let value = View::u64_le_at(self.b, self.p).ok_or(Stop::End(self.p))?;
+        self.p += 8;
+        Ok(value)
     }
 
     pub(crate) fn f64(&mut self) -> Res<f64> {
-        Ok(f64::from_le_bytes(self.take()?))
+        let value = View::f64_le_at(self.b, self.p).ok_or(Stop::End(self.p))?;
+        self.p += 8;
+        Ok(value)
     }
 
-    /// `r.skip(n)`: moves without a bounds check, as the Python does.
+    /// `r.skip(n)`: moves without a bounds check, as the Python does. A
+    /// position past the end makes the next read stop with `Stop::End`.
     pub(crate) fn skip(&mut self, n: usize) {
-        self.p = self.p.saturating_add(n);
+        self.p = self.p.checked_add(n).unwrap_or(self.b.len());
+    }
+
+    /// Advances the map counter, refusing the wrap.
+    pub(crate) fn bump_counter(&mut self) -> Res<()> {
+        self.counter = self
+            .counter
+            .checked_add(1)
+            .ok_or_else(|| bad("archive map counter overflows"))?;
+        Ok(())
     }
 
     /// `r.expect_bytes(bs, what)`.
@@ -432,13 +442,15 @@ impl<'b> Reader<'b> {
             n = usize::from(self.u16()?);
         }
         let start = self.p;
-        let end = start.saturating_add(2 * n);
+        let end = start.checked_add(2 * n).ok_or(Stop::End(start))?;
         // A short slice decodes what is there, as Python's slicing does.
         let bytes = &self.b[start.min(self.b.len())..end.min(self.b.len())];
-        let units = bytes
-            .chunks(2)
-            .map(|pair| u16::from_le_bytes([pair[0], *pair.get(1).unwrap_or(&0)]))
-            .collect::<Vec<_>>();
+        let mut units = Vec::new();
+        let mut at = 0;
+        while at < bytes.len() {
+            units.push(View::u16_le_at(bytes, at).unwrap_or_else(|| u16::from(bytes[at])));
+            at += 2;
+        }
         self.p = end;
         Ok(String::from_utf16_lossy(&units))
     }
@@ -455,7 +467,7 @@ impl<'b> Reader<'b> {
             self.u16()?;
             let n = usize::from(self.u16()?);
             let start = self.p;
-            let end = start.saturating_add(n);
+            let end = start.checked_add(n).ok_or(Stop::End(start))?;
             let bytes = &self.b[start.min(self.b.len())..end.min(self.b.len())];
             let class: Arc<str> = bytes
                 .iter()
@@ -464,7 +476,7 @@ impl<'b> Reader<'b> {
                 .into();
             self.p = end;
             self.known.insert(self.counter, class.clone());
-            self.counter += 1;
+            self.bump_counter()?;
             class
         } else if w == 0x7fff {
             let v = self.u32()?;
@@ -497,7 +509,7 @@ impl<'b> Reader<'b> {
             });
         };
         self.objs.insert(self.counter, class.clone());
-        self.counter += 1;
+        self.bump_counter()?;
         if let Some(want) = want {
             if !want.contains(&&*class) {
                 return Err(bad(format!("{class} where {} expected", want.join("/"))));
@@ -511,8 +523,19 @@ impl<'b> Reader<'b> {
             body: self.p,
             at,
         });
-        self.depth += 1;
+        self.ctx
+            .charge_entities(1, "walk SLDPRT CArchive object")
+            .map_err(stopped)?;
+        let guard = self
+            .ctx
+            .enter_nested_limit("walk SLDPRT CArchive object")
+            .map_err(Stop::Refused)?;
+        self.depth = self
+            .depth
+            .checked_add(1)
+            .ok_or_else(|| bad("archive object depth overflows"))?;
         let value = rule(self);
+        drop(guard);
         self.depth -= 1;
         let value = value?;
         Ok(Ptr::Obj { class, value })
@@ -562,7 +585,9 @@ impl<'b> Reader<'b> {
     /// `r.b[a:a+n]`, clipped to the stream as Python slices are.
     pub(crate) fn slice(&self, at: usize, n: usize) -> &'b [u8] {
         let start = at.min(self.b.len());
-        let end = at.saturating_add(n).min(self.b.len());
+        let end = at
+            .checked_add(n)
+            .map_or(self.b.len(), |end| end.min(self.b.len()));
         &self.b[start..end]
     }
 
@@ -571,39 +596,19 @@ impl<'b> Reader<'b> {
         self.b.get(at).copied().ok_or(Stop::End(at))
     }
 
-    fn peek<const N: usize>(&self, at: usize) -> Res<[u8; N]> {
-        let bytes = at
-            .checked_add(N)
-            .and_then(|end| self.b.get(at..end))
-            .ok_or(Stop::End(at))?;
-        let mut out = [0; N];
-        out.copy_from_slice(bytes);
-        Ok(out)
-    }
-
     /// `struct.unpack_from('<H', r.b, at)[0]`.
     pub(crate) fn pu16(&self, at: usize) -> Res<u16> {
-        Ok(u16::from_le_bytes(self.peek(at)?))
-    }
-
-    /// `struct.unpack_from('<h', r.b, at)[0]`.
-    pub(crate) fn pi16(&self, at: usize) -> Res<i16> {
-        Ok(i16::from_le_bytes(self.peek(at)?))
+        View::u16_le_at(self.b, at).ok_or(Stop::End(at))
     }
 
     /// `struct.unpack_from('<I', r.b, at)[0]`.
     pub(crate) fn pu32(&self, at: usize) -> Res<u32> {
-        Ok(u32::from_le_bytes(self.peek(at)?))
-    }
-
-    /// `struct.unpack_from('<i', r.b, at)[0]`.
-    pub(crate) fn pi32(&self, at: usize) -> Res<i32> {
-        Ok(i32::from_le_bytes(self.peek(at)?))
+        View::u32_le_at(self.b, at).ok_or(Stop::End(at))
     }
 
     /// `struct.unpack_from('<d', r.b, at)[0]`.
     pub(crate) fn pf64(&self, at: usize) -> Res<f64> {
-        Ok(f64::from_le_bytes(self.peek(at)?))
+        View::f64_le_at(self.b, at).ok_or(Stop::End(at))
     }
 
     /// `r.b.find(pattern, start, end)`, `None` for -1.

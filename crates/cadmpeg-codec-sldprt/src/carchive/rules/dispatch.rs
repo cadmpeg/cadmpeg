@@ -207,7 +207,7 @@ pub(crate) fn rule(class: &str) -> Option<RuleFn> {
         "moSkDimHandleOffset_c" => |r| feature::skdimhandle(r),
         "moSkDimHandleRadial_c" => |r| feature::skdimhandle(r),
         "moSkDimHandleValG2_c" => |r| feature::skdimhandle(r),
-        "moSkIntersectInfo_c" => |r| sketch::skintersect(r),
+        "moSkIntersectInfo_c" => |r| Ok(sketch::skintersect(r)),
         "moSketchBitmapData_c" => |r| feature::bitmapdata(r),
         "moSketchBitmap_c" => |r| feature::sketchbitmap(r),
         "moSketchBlockDef_c" => |r| feature::profile(r, "moProfileFeature_c"),
