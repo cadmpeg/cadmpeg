@@ -171,8 +171,18 @@ fn scales(scale: f64) -> [f64; TRACKED] {
     std::array::from_fn(|k| scale.powi(powers[k % FLUX]))
 }
 
-/// Every component.
-pub(crate) const ALL_COMPONENTS: [bool; FLUX] = [true; FLUX];
+/// The components a measurement pass targets. The second moments ride
+/// along: on a face of size `s` at a distance `|d| ≫ s` from `P_ref` their
+/// round-off, about `ε |d|³ s²`, exceeds any goal relative to `s^5`.
+pub(crate) const MEASURE_COMPONENTS: [bool; FLUX] = {
+    let mut active = [true; FLUX];
+    let mut k = SECOND_MOMENTS;
+    while k < AREA_MOMENTS {
+        active[k] = false;
+        k += 1;
+    }
+    active
+};
 
 /// The volume and closure components: what orientation findings read.
 pub(crate) const ORIENTATION_COMPONENTS: [bool; FLUX] = {

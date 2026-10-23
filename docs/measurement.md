@@ -555,7 +555,10 @@ unavailable, every mass property is unavailable with the same reason, and
 it carries no candidate.
 
 - `numeric_error` is the largest first-order propagation of the flux
-  errors of `S`, `m` and `V` into one entry.
+  errors of `S`, `m` and `V` into one entry. The second moments do not
+  drive the flux quadrature. They are integrated on the panels that the
+  volume, first-moment, closure and area-moment components refine, and the
+  flux error of each is its own Gauss–Kronrod estimate on those panels.
 - `model_uncertainty` is the volume's boundary term × the squared body box
   diagonal, plus the placement term. The move of the centroid changes the
   tensor only at second order.

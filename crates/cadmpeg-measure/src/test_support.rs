@@ -670,6 +670,66 @@ type BoxFace = ([f64; 3], [f64; 3], [f64; 3], [(usize, bool); 4]);
 /// six plane faces whose carriers face outward and whose rings run
 /// counterclockwise about the outward normal.
 pub(crate) fn cuboid(min: [f64; 3], max: [f64; 3]) -> CadIr {
+    placed_cuboid(min, max, |point| point, |direction| direction)
+}
+
+/// The rotation by `angle` radians about `axis`, as three rows.
+pub(crate) fn rotation(axis: [f64; 3], angle: f64) -> [[f64; 3]; 3] {
+    let length = axis.iter().map(|c| c * c).sum::<f64>().sqrt();
+    let [x, y, z] = axis.map(|c| c / length);
+    let (sin, cos) = angle.sin_cos();
+    let rest = 1.0 - cos;
+    [
+        [
+            cos + x * x * rest,
+            x * y * rest - z * sin,
+            x * z * rest + y * sin,
+        ],
+        [
+            y * x * rest + z * sin,
+            cos + y * y * rest,
+            y * z * rest - x * sin,
+        ],
+        [
+            z * x * rest - y * sin,
+            z * y * rest + x * sin,
+            cos + z * z * rest,
+        ],
+    ]
+}
+
+/// `rows · vector`.
+fn rotate(rows: &[[f64; 3]; 3], vector: [f64; 3]) -> [f64; 3] {
+    rows.map(|row| row[0] * vector[0] + row[1] * vector[1] + row[2] * vector[2])
+}
+
+/// The box from `min` to `max` in a frame turned by `rows` and then moved
+/// by `offset`: the model point of the frame point `p` is `rows · p + offset`.
+pub(crate) fn rotated_cuboid(
+    rows: &[[f64; 3]; 3],
+    offset: [f64; 3],
+    min: [f64; 3],
+    max: [f64; 3],
+) -> CadIr {
+    placed_cuboid(
+        min,
+        max,
+        |point| {
+            let turned = rotate(rows, point);
+            std::array::from_fn(|axis| turned[axis] + offset[axis])
+        },
+        |direction| rotate(rows, direction),
+    )
+}
+
+/// The box from `min` to `max` with each point mapped by `place` and each
+/// direction by `turn`, a rigid motion.
+fn placed_cuboid(
+    min: [f64; 3],
+    max: [f64; 3],
+    place: impl Fn([f64; 3]) -> [f64; 3],
+    turn: impl Fn([f64; 3]) -> [f64; 3],
+) -> CadIr {
     let mut builder = Builder::new();
     let corners: Vec<VertexId> = (0..8)
         .map(|index: usize| {
@@ -684,7 +744,7 @@ pub(crate) fn cuboid(min: [f64; 3], max: [f64; 3]) -> CadIr {
                 min[1]
             };
             let z = if index < 4 { min[2] } else { max[2] };
-            builder.vertex([x, y, z])
+            builder.vertex(place([x, y, z]))
         })
         .collect();
     let edges: Vec<EdgeId> = [
@@ -744,7 +804,7 @@ pub(crate) fn cuboid(min: [f64; 3], max: [f64; 3]) -> CadIr {
         ),
     ];
     for (normal, origin, u_axis, ring) in faces {
-        let surface = builder.plane(origin, normal, u_axis);
+        let surface = builder.plane(place(origin), turn(normal), turn(u_axis));
         let ring: Vec<(EdgeId, Sense)> = ring
             .iter()
             .map(|(edge, forward)| {

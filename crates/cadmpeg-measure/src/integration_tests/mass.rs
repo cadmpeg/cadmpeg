@@ -12,7 +12,8 @@ use crate::report::{BodyMeasures, MeasureReport, RowStatus};
 use crate::select::Selection;
 use crate::session::{Density, MeasureInput, MeasureOptions, Measurer};
 use crate::test_support::{
-    cuboid, cylinder_solid, service_context, Builder, Frame, TEST_ABSOLUTE_FLOOR,
+    assert_measured, cuboid, cylinder_solid, rotated_cuboid, rotation, service_context, Builder,
+    Frame, TEST_ABSOLUTE_FLOOR,
 };
 use crate::value::{Measured, Quantity, Tensor};
 
@@ -134,6 +135,55 @@ fn a_box_has_closed_form_second_moments_inertia_and_axes() {
         mass * c * c,
     );
     assert_eq!(*body.status(), RowStatus::Measured);
+}
+
+/// Work units that measure a box of twelve edges and six plane faces when
+/// only the volume, moment, closure and area-moment components drive the
+/// flux quadrature.
+const BOX_WORK: usize = 1 << 16;
+
+/// A 10000 × 1 × 1 bar turned about `(1, 2, 3)` by 0.7 rad, centred at
+/// `(5, 7, 9)`: `V = 10000`, `C = (5, 7, 9)`, and second moments
+/// `R · diag(V L²/12, V/12, V/12) · Rᵀ`. Its end faces are far from `P_ref`
+/// relative to their own size: second moments that drove the quadrature
+/// would subdivide their panels to the interval cap and fail its acceptance.
+#[test]
+fn an_elongated_rotated_bar_keeps_its_volume_within_a_small_work_count() {
+    let length = 10000.0;
+    let rows = rotation([1.0, 2.0, 3.0], 0.7);
+    let centre = [5.0, 7.0, 9.0];
+    let half = [length / 2.0, 0.5, 0.5];
+    let ir = rotated_cuboid(&rows, centre, half.map(|h| -h), half);
+    let report = measure_with(&ir, None);
+    let work = report.document().work();
+    assert!(work.used() <= BOX_WORK, "{} work units", work.used());
+    assert!(!work.exhausted());
+    let body = only_body(&report);
+    assert_measured(body.volume().as_ref().expect("volume"), length, length);
+    let centroid = body
+        .centroid()
+        .as_ref()
+        .and_then(Quantity::measured)
+        .expect("a measured centroid");
+    let point = centroid.value().value.get();
+    for (component, expected) in [point.x, point.y, point.z].into_iter().zip(centre) {
+        assert_close(component, expected, centroid.numeric_error().get(), length);
+    }
+    let local = [length * length, 1.0, 1.0].map(|square| length * square / 12.0);
+    let entry =
+        |i: usize, j: usize| -> f64 { (0..3).map(|k| local[k] * rows[i][k] * rows[j][k]).sum() };
+    assert_tensor(
+        body.second_moments().as_ref().expect("second moments"),
+        [
+            entry(0, 0),
+            entry(1, 1),
+            entry(2, 2),
+            entry(0, 1),
+            entry(1, 2),
+            entry(2, 0),
+        ],
+        local[0],
+    );
 }
 
 fn assert_degenerate_axes(body: &BodyMeasures) {

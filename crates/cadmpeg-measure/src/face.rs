@@ -18,7 +18,7 @@ use crate::context::{Eval, Work};
 use crate::edges::EdgeGeometry;
 use crate::extent::{angular_sweep, axial_range, parameter_ranges, sphere_extent};
 use crate::failure::{settle, Measure, Missing, Outcome};
-use crate::flux::{Flux, FluxFrame, ALL_COMPONENTS, ORIENTATION_COMPONENTS};
+use crate::flux::{Flux, FluxFrame, MEASURE_COMPONENTS, ORIENTATION_COMPONENTS};
 use crate::geom::Aabb;
 use crate::orientation::{declared_normal, face_orientation, opposite};
 use crate::owners::Owners;
@@ -539,7 +539,7 @@ impl<'ir> FaceInput<'_, 'ir> {
                     origin,
                     scale,
                     active: match self.work {
-                        Work::Row => ALL_COMPONENTS,
+                        Work::Row => MEASURE_COMPONENTS,
                         Work::Orientation => ORIENTATION_COMPONENTS,
                     },
                 };
