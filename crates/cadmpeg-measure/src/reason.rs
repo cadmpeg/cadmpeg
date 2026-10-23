@@ -146,8 +146,8 @@ pub enum UnavailableReason {
     LengthDerivativeUnavailable,
     /// The surface is used by faces of bodies with different placements.
     PlacementCarrierShared,
-    /// Two principal moments agree within their separation tolerance, so
-    /// the principal axes are not determined.
+    /// A principal moment agrees with another within their separation
+    /// tolerance, so its principal axis is not determined.
     MassPrincipalAxesDegenerate,
     /// An occurrence of the chain has a scale other than `(1, 1, 1)`.
     PlacementOccurrenceScale,

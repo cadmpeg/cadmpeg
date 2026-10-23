@@ -20,8 +20,8 @@ use crate::report::{BodyOrientation, ClosureFlux, NormalReading, RegionRule};
 use crate::session::Density;
 use crate::tolerance::PRINCIPAL_AXIS_RELATIVE_SEPARATION;
 use crate::value::{
-    measured, Axes, Candidate, Errors, Measured, Method, Moments, Point, Quantity, Reading, Scalar,
-    Tensor, Unavailable, Unit,
+    measured, Candidate, Errors, Measured, Method, Point, Quantity, Reading, Scalar, Tensor,
+    Unavailable, Unit,
 };
 
 /// Cubic millimetres in one cubic metre.
@@ -171,8 +171,8 @@ pub(super) struct VolumeFacts {
 /// axes, and, with a density, mass and inertia about the centroid.
 pub(super) struct MassFacts {
     pub(super) second_moments: Quantity<Tensor>,
-    pub(super) principal_moments: Quantity<Moments>,
-    pub(super) principal_axes: Quantity<Axes>,
+    pub(super) principal_moments: [Quantity<Scalar>; 3],
+    pub(super) principal_axes: [Quantity<Point>; 3],
     pub(super) mass: Option<Quantity<Scalar>>,
     pub(super) inertia: Option<Quantity<Tensor>>,
 }
@@ -291,8 +291,8 @@ impl VolumeInput<'_> {
         let (principal_moments, principal_axes) = match &second_moments {
             Quantity::Measured(tensor) => self.principal(&tensor.value().rows(), errors),
             Quantity::Unavailable(unavailable) => (
-                Quantity::Unavailable(unavailable.recast()),
-                Quantity::Unavailable(unavailable.recast()),
+                std::array::from_fn(|_| Quantity::Unavailable(unavailable.recast())),
+                std::array::from_fn(|_| Quantity::Unavailable(unavailable.recast())),
             ),
         };
         let (mass, inertia) = match self.density {
@@ -336,52 +336,60 @@ impl VolumeInput<'_> {
         }
     }
 
-    /// The principal moments of `matrix` and its principal axes, or
-    /// `mass.principal-axes-degenerate` when two moments agree within
-    /// `PRINCIPAL_AXIS_RELATIVE_SEPARATION` of the largest plus their error
-    /// terms. A matrix perturbation of entries at most `e` moves each
-    /// eigenvalue by at most `3e` and each eigenvector by at most that over
-    /// the eigenvalue gap.
+    /// The principal moments of `matrix` and its principal axes. The axis
+    /// of a moment is `mass.principal-axes-degenerate` when another moment
+    /// agrees with it within `PRINCIPAL_AXIS_RELATIVE_SEPARATION` of the
+    /// largest plus their error terms. A matrix perturbation of entries at
+    /// most `e` moves each eigenvalue by at most `3e` and the eigenvector of
+    /// an isolated eigenvalue by at most that over its gap to the others.
     fn principal(
         &self,
         matrix: &[[f64; 3]; 3],
         errors: Errors,
-    ) -> (Quantity<Moments>, Quantity<Axes>) {
+    ) -> ([Quantity<Scalar>; 3], [Quantity<Point>; 3]) {
         let eigen = symmetric_eigen(*matrix);
         let moment_errors = Errors::new(3.0 * errors.numeric + eigen.residual, 3.0 * errors.model);
-        let moments = measured(
-            Moments::new(eigen.values),
-            Unit::MillimeterToTheFifth,
-            Method::DivergenceQuadrature,
-            moment_errors,
-            self.id,
-        );
-        let [low, middle, high] = eigen.values;
-        let gap = (middle - low).min(high - middle);
+        let moments = eigen.values.map(|value| {
+            measured(
+                Scalar::new(value),
+                Unit::MillimeterToTheFifth,
+                Method::DivergenceQuadrature,
+                moment_errors,
+                self.id,
+            )
+        });
         let largest = eigen
             .values
             .iter()
             .fold(0.0_f64, |most, value| most.max(value.abs()));
         let separation = PRINCIPAL_AXIS_RELATIVE_SEPARATION * largest
             + 2.0 * (moment_errors.numeric + moment_errors.model);
-        let axes = if gap > separation {
-            measured(
-                Axes::new(eigen.vectors),
-                Unit::One,
-                Method::DivergenceQuadrature,
-                Errors::new(moment_errors.numeric / gap, moment_errors.model / gap),
-                self.id,
-            )
-        } else {
-            Quantity::missing(
-                UnavailableReason::MassPrincipalAxesDegenerate,
-                Some(self.id),
-                format!(
-                    "two principal moments are {gap} mm⁵ apart, within their separation \
-                     {separation} mm⁵"
-                ),
-            )
-        };
+        let axes = std::array::from_fn(|k| {
+            let gap = (0..3)
+                .filter(|j| *j != k)
+                .map(|j| (eigen.values[k] - eigen.values[j]).abs())
+                .fold(f64::INFINITY, f64::min);
+            if gap > separation {
+                let [x, y, z] = eigen.vectors[k];
+                measured(
+                    Point::new(Point3::new(x, y, z)),
+                    Unit::One,
+                    Method::DivergenceQuadrature,
+                    Errors::new(moment_errors.numeric / gap, moment_errors.model / gap),
+                    self.id,
+                )
+            } else {
+                Quantity::missing(
+                    UnavailableReason::MassPrincipalAxesDegenerate,
+                    Some(self.id),
+                    format!(
+                        "principal moment {} is {gap} mm⁵ from another, within their \
+                         separation {separation} mm⁵",
+                        k + 1
+                    ),
+                )
+            }
+        });
         (moments, axes)
     }
 
@@ -398,8 +406,8 @@ impl VolumeInput<'_> {
         };
         MassFacts {
             second_moments: Quantity::Unavailable(missing().recast()),
-            principal_moments: Quantity::Unavailable(missing().recast()),
-            principal_axes: Quantity::Unavailable(missing().recast()),
+            principal_moments: std::array::from_fn(|_| Quantity::Unavailable(missing().recast())),
+            principal_axes: std::array::from_fn(|_| Quantity::Unavailable(missing().recast())),
             mass: self
                 .density
                 .map(|_| Quantity::Unavailable(missing().recast())),

@@ -321,10 +321,11 @@ fn measures_cylinder_body() {
     assert_eq!(body["status"], "measured");
     let document = &report["measure"]["document"];
     assert_measured(&document["closed_volume"], 3000.0 * pi, 1.0);
-    // The two radial principal moments of a circular cylinder are equal.
+    // The two radial principal moments of a circular cylinder are equal, so
+    // their two axes are undetermined; the axial one is measured.
     assert_eq!(
         document["unavailable"],
-        serde_json::json!({"undefined": {"mass.principal-axes-degenerate": 1}}),
+        serde_json::json!({"undefined": {"mass.principal-axes-degenerate": 2}}),
         "{document:#}"
     );
     assert_eq!(document["work"]["exhausted"], false);
@@ -474,7 +475,7 @@ fn tsv_requires_one_level() {
 /// The cylinder solid `r = 10`, `h = 30` of steel (7850 kg/m³):
 /// `m = ρ π r² h`, `I_zz = m r²/2`, `I_xx = I_yy = m(3r² + h²)/12` about the
 /// centroid; second moments `V r²/4` (radial) and `V h²/12` (axial); two
-/// equal principal moments, so no principal axes.
+/// equal principal moments, so only the third principal axis, `+z`.
 #[cfg(feature = "step")]
 #[test]
 fn density_gives_mass_and_inertia_with_units() {
@@ -499,15 +500,24 @@ fn density_gives_mass_and_inertia_with_units() {
         ("yz", 0.0),
         ("zx", 0.0),
     ] {
-        let value = inertia[entry].as_f64().unwrap();
+        let value = inertia["value"][entry].as_f64().unwrap();
         let bound = inertia["numeric_error"].as_f64().unwrap() + TEST_ABSOLUTE_FLOOR * transverse;
         assert!((value - expected).abs() <= bound, "{entry}: {value}");
     }
     assert_eq!(body["second_moments"]["unit"], "mm5");
-    assert_eq!(
-        body["principal_axes"]["reason"],
-        "mass.principal-axes-degenerate"
-    );
+    let radial = volume * radius * radius / 4.0;
+    let axial = volume * height * height / 12.0;
+    let moments = body["principal_moments"].as_array().unwrap();
+    for (moment, expected) in moments.iter().zip([radial, radial, axial]) {
+        assert_measured(moment, expected, axial);
+        assert_eq!(moment["unit"], "mm5");
+    }
+    let axes = body["principal_axes"].as_array().unwrap();
+    for axis in &axes[..2] {
+        assert_eq!(axis["reason"], "mass.principal-axes-degenerate");
+    }
+    assert_point(&axes[2], [0.0, 0.0, 1.0], 1.0);
+    assert_eq!(axes[2]["unit"], "1");
 
     let text = measure_text(&[solid, "--density", "7850", "--tsv"]);
     let lines: Vec<Vec<&str>> = text
@@ -519,8 +529,6 @@ fn density_gives_mass_and_inertia_with_units() {
         lines[1][index]
     };
     let cell = |name: &str| column(name).parse::<f64>().unwrap();
-    let radial = volume * radius * radius / 4.0;
-    let axial = volume * height * height / 12.0;
     for (name, expected) in [
         ("mass_kg", mass),
         ("inertia_zz_kg_mm2", mass * radius * radius / 2.0),
@@ -537,6 +545,8 @@ fn density_gives_mass_and_inertia_with_units() {
         );
     }
     assert_eq!(column("principal_axis_1_x"), "");
+    assert_eq!(column("principal_axis_2_z"), "");
+    assert!((cell("principal_axis_3_z") - 1.0).abs() <= TEST_ABSOLUTE_FLOOR);
     let plain = measure_text(&[solid, "--tsv"]);
     let header: Vec<&str> = plain.lines().next().unwrap().split('\t').collect();
     let row: Vec<&str> = plain.lines().nth(1).unwrap().split('\t').collect();

@@ -21,7 +21,7 @@ A measured value has these members, in this order:
 | Member | Meaning |
 | --- | --- |
 | `status` | `"measured"`. |
-| `value` | A finite number, or `{x, y, z}` for a point or a direction. A range or a box has `min` and `max` in its place. |
+| `value` | A finite number, `{x, y, z}` for a point or a direction, or `{xx, yy, zz, xy, yz, zx}` for a symmetric tensor. A range or a box has `min` and `max` in its place. |
 | shape members | `angular_sweep`: `full` and `intervals`. `bbox`: `kind` (`tight` or `conservative`) and `boundary`, a lower bound of the tight box: the box of the boundary pieces of a face, the box of the lower bounds of the members of a union (see Boxes). |
 | `unit` | `mm`, `mm2`, `mm3`, `mm5`, `kg`, `kg.mm2`, `rad` or `1`. The unit of the value and of both error terms. |
 | `method` | How the value was obtained (below). |
@@ -131,7 +131,7 @@ cites.
 | `bbox.nonpositive-weights` | unsupported | The NURBS control hull needs positive weights. |
 | `length.derivative-unavailable` | unsupported | A procedural curve without a solved cache has no derivative evaluator. |
 | `placement.carrier-shared` | placement | A surface row's surface is used by faces of bodies with different placements. |
-| `mass.principal-axes-degenerate` | undefined | Two principal moments agree within their separation, so the principal axes are not determined. |
+| `mass.principal-axes-degenerate` | undefined | A principal moment agrees with another within their separation, so its principal axis is not determined. |
 | `placement.occurrence-scale` | placement | An occurrence of the `--occurrence` chain or of its subtree has a scale other than `(1, 1, 1)`. |
 | `placement.prototype-unresolved` | placement | The prototype of the `--occurrence` occurrence or of an occurrence of its subtree is external or unresolved, or its definition does not resolve. |
 | `placement.occurrence-chain-broken` | input | The `--occurrence` parent chain does not reach a root occurrence: a parent is missing or the chain repeats. |
@@ -568,8 +568,8 @@ when one is.
 ## Mass properties
 
 A body with faces reports `second_moments`, the symmetric tensor
-`∫ (x − C)(x − C)ᵀ dV` about the centroid in mm⁵, as the entries `xx`,
-`yy`, `zz`, `xy`, `yz` and `zx`. It comes from the same fluxes, reading and
+`∫ (x − C)(x − C)ᵀ dV` about the centroid in mm⁵, with the `value`
+`{xx, yy, zz, xy, yz, zx}`. It comes from the same fluxes, reading and
 preconditions as the volume: with the second moments `S = Σ σ Φ_S` and the
 first moments `m` about `P_ref`, it is `S − m mᵀ / V`. When the volume is
 unavailable, every mass property is unavailable with the same reason, and
@@ -584,20 +584,24 @@ it carries no candidate.
   diagonal, plus the placement term. The move of the centroid changes the
   tensor only at second order.
 
-`principal_moments` is the three eigenvalues of `second_moments`, smallest
-first, as `value: [λ₁, λ₂, λ₃]` in mm⁵, by cyclic Jacobi rotations. Its
-error terms are three times those of the tensor; the numeric error adds the
-off-diagonal norm the last rotation leaves. `principal_axes` is the unit
-eigenvectors in the order of the moments, as `value: [{x, y, z} × 3]` with
-unit `1`; each has its component of largest magnitude positive. Its error
-terms are those of the moments over the smallest gap between consecutive
-moments. When that gap is at most `1e-6` of the largest moment plus twice
-the moments' summed error terms, the axes are unavailable with
-`mass.principal-axes-degenerate` (category `undefined`).
+`principal_moments` is a list of three values, the eigenvalues of
+`second_moments` in mm⁵, smallest first, by cyclic Jacobi rotations. The
+error terms of each are three times those of the tensor; the numeric error
+adds the off-diagonal norm the last rotation leaves. `principal_axes` is a
+list of three values in the order of the moments: the unit eigenvector of
+each moment as a direction `{x, y, z}` with unit `1` and its component of
+largest magnitude positive. The gap of a moment is its smallest distance to
+the other two moments. The error terms of an axis are those of the moments
+over its gap. When the gap is at most `1e-6` of the largest moment plus
+twice the moments' summed error terms, the axis is unavailable with
+`mass.principal-axes-degenerate` (category `undefined`). An axisymmetric
+body thus has its axis of symmetry and two undetermined axes; a body with
+three equal moments has none.
 
 With `--density VALUE` (kilograms per cubic metre, finite and positive),
 the body also reports `mass` in kg, `ρ V`, and `inertia`, the inertia tensor
-about the centroid in kg·mm² (unit `kg.mm2`): `ρ (tr(M) E − M)` for the
+about the centroid in kg·mm² (unit `kg.mm2`, `value` as for
+`second_moments`): `ρ (tr(M) E − M)` for the
 second moments `M`, so `I_xx = ρ (M_yy + M_zz)` and `I_xy = −ρ M_xy`. Their
 error terms scale with `ρ`; those of `inertia` are twice those of
 `second_moments`. Without a density, `mass` and `inertia` are absent.

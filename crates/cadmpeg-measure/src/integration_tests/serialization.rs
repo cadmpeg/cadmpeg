@@ -196,3 +196,43 @@ fn quantities_that_do_not_apply_are_absent() {
     assert!(!block.contains_key("descendants"));
     assert_eq!(block["unavailable"]["reason"], "placement.occurrence-empty");
 }
+
+/// Each mass property is a value object with a `value` member: the tensor
+/// entries under `value`, and one value per principal moment and axis.
+#[test]
+fn mass_properties_are_value_objects() {
+    let ir = crate::test_support::cylinder_solid(10.0, 30.0);
+    let report = measure(&ir, &Selection::default());
+    let typed = report.bodies()[0]
+        .second_moments()
+        .as_ref()
+        .expect("tensor");
+    let body = &serde_json::to_value(&report).unwrap()["bodies"][0];
+    let tensor = &body["second_moments"];
+    assert_eq!(
+        keys(&serde_json::to_string(typed).unwrap()),
+        [
+            "status",
+            "value",
+            "unit",
+            "method",
+            "numeric_error",
+            "model_uncertainty"
+        ]
+    );
+    for entry in ["xx", "yy", "zz", "xy", "yz", "zx"] {
+        assert!(tensor["value"][entry].is_f64(), "{entry}");
+    }
+    let moments = body["principal_moments"].as_array().unwrap();
+    assert_eq!(moments.len(), 3);
+    for moment in moments {
+        assert!(moment["value"].is_f64());
+        assert_eq!(moment["unit"], "mm5");
+    }
+    let axes = body["principal_axes"].as_array().unwrap();
+    assert_eq!(axes.len(), 3);
+    assert_eq!(axes[0]["status"], "unavailable");
+    assert_eq!(axes[1]["status"], "unavailable");
+    assert!(axes[2]["value"]["z"].is_f64());
+    assert_eq!(axes[2]["unit"], "1");
+}

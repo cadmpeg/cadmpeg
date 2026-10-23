@@ -38,7 +38,7 @@ fn the_unit_cube_body_has_area_600_a_tight_box_and_a_closed_shell() {
     assert_measured(document.area().as_ref().expect("total"), 600.0, 600.0);
     let degenerate_axes = std::collections::BTreeMap::from([(
         crate::reason::Category::Undefined,
-        std::collections::BTreeMap::from([("mass.principal-axes-degenerate".to_owned(), 1)]),
+        std::collections::BTreeMap::from([("mass.principal-axes-degenerate".to_owned(), 3)]),
     )]);
     assert_eq!(*document.unavailable(), degenerate_axes);
     assert!(!document.work().exhausted());

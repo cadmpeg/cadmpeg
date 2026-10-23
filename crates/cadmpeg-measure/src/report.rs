@@ -11,9 +11,7 @@ use serde::Serialize;
 
 use crate::reason::{Category, CaveatCode};
 use crate::select::SurfaceKind;
-use crate::value::{
-    Axes, BoxValue, Moments, Point, Quantity, Range, Scalar, Sweep, Tensor, Unavailable,
-};
+use crate::value::{BoxValue, Point, Quantity, Range, Scalar, Sweep, Tensor, Unavailable};
 
 /// Read accessors for private report fields.
 macro_rules! accessors {
@@ -1058,9 +1056,9 @@ pub struct BodyMeasures {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) second_moments: Option<Quantity<Tensor>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) principal_moments: Option<Quantity<Moments>>,
+    pub(crate) principal_moments: Option<[Quantity<Scalar>; 3]>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) principal_axes: Option<Quantity<Axes>>,
+    pub(crate) principal_axes: Option<[Quantity<Point>; 3]>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) mass: Option<Quantity<Scalar>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1107,11 +1105,12 @@ accessors!(BodyMeasures {
     /// Second moments of volume about the centroid, `∫ (x − c)(x − c)ᵀ
     /// dV`; absent for a body with no faces.
     second_moments: Option<Quantity<Tensor>>;
-    /// Eigenvalues of the second moments, ascending.
-    principal_moments: Option<Quantity<Moments>>;
-    /// Unit eigenvectors of the second moments, in the order of the
-    /// principal moments.
-    principal_axes: Option<Quantity<Axes>>;
+    /// The three eigenvalues of the second moments, smallest first.
+    principal_moments: Option<[Quantity<Scalar>; 3]>;
+    /// The unit eigenvector of each principal moment, in their order; an
+    /// axis whose moment another moment equals within their separation is
+    /// unavailable.
+    principal_axes: Option<[Quantity<Point>; 3]>;
     /// Mass at the given density; absent without one.
     mass: Option<Quantity<Scalar>>;
     /// Inertia tensor about the centroid at the given density; absent
@@ -1437,8 +1436,12 @@ impl BodyMeasures {
         visitor.visit_option(self.volume.as_ref());
         visitor.visit_option(self.centroid.as_ref());
         visitor.visit_option(self.second_moments.as_ref());
-        visitor.visit_option(self.principal_moments.as_ref());
-        visitor.visit_option(self.principal_axes.as_ref());
+        for moment in self.principal_moments.iter().flatten() {
+            visitor.visit(moment);
+        }
+        for axis in self.principal_axes.iter().flatten() {
+            visitor.visit(axis);
+        }
         visitor.visit_option(self.mass.as_ref());
         visitor.visit_option(self.inertia.as_ref());
         visitor.visit_option(self.area_centroid.as_ref());

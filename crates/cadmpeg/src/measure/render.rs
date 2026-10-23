@@ -12,9 +12,7 @@ use cadmpeg_measure::report::{
     BodyMeasures, BodyOrientation, CarrierParameters, EdgeMeasures, EdgeParameters, FaceMeasures,
     LoopMeasures, MeasureReport, NormalReading, OccurrenceMeasures, RegionRule, SurfaceMeasures,
 };
-use cadmpeg_measure::value::{
-    Axes, BoxValue, Measured, Moments, Point, Quantity, Range, Scalar, Sweep, Tensor,
-};
+use cadmpeg_measure::value::{BoxValue, Measured, Point, Quantity, Range, Scalar, Sweep, Tensor};
 use serde::Serialize;
 
 use super::args::Level;
@@ -53,33 +51,23 @@ fn point_cells(quantity: Option<&Quantity<Point>>) -> [String; 3] {
 
 fn tensor_cells(quantity: Option<&Quantity<Tensor>>) -> [String; 6] {
     match quantity.and_then(Quantity::measured) {
-        Some(measured) => {
-            let value = measured.value();
-            [value.xx, value.yy, value.zz, value.xy, value.yz, value.zx]
-                .map(|entry| entry.get().to_string())
-        }
+        Some(measured) => measured
+            .value()
+            .value
+            .entries()
+            .map(|entry| entry.to_string()),
         None => std::array::from_fn(|_| String::new()),
     }
 }
 
-fn moments_cells(quantity: Option<&Quantity<Moments>>) -> [String; 3] {
-    match quantity.and_then(Quantity::measured) {
-        Some(measured) => measured.value().value.map(|value| value.get().to_string()),
-        None => std::array::from_fn(|_| String::new()),
-    }
+fn moments_cells(moments: Option<&[Quantity<Scalar>; 3]>) -> [String; 3] {
+    std::array::from_fn(|index| scalar_cell(moments.map(|moments| &moments[index])))
 }
 
-fn axes_cells(quantity: Option<&Quantity<Axes>>) -> [String; 9] {
-    match quantity.and_then(Quantity::measured) {
-        Some(measured) => {
-            let axes = measured.value().value.map(|axis| {
-                let axis = axis.get();
-                [axis.x, axis.y, axis.z]
-            });
-            std::array::from_fn(|index| axes[index / 3][index % 3].to_string())
-        }
-        None => std::array::from_fn(|_| String::new()),
-    }
+fn axes_cells(axes: Option<&[Quantity<Point>; 3]>) -> [String; 9] {
+    let cells: [[String; 3]; 3] =
+        std::array::from_fn(|index| point_cells(axes.map(|axes| &axes[index])));
+    std::array::from_fn(|index| cells[index / 3][index % 3].clone())
 }
 
 fn box_cells(quantity: &Quantity<BoxValue>) -> [String; 7] {
@@ -556,11 +544,13 @@ fn tensor_text(quantity: &Quantity<Tensor>, unit: &str) -> String {
     let Some(measured) = quantity.measured() else {
         return String::new();
     };
-    let value = measured.value();
-    let entries: Vec<String> = [value.xx, value.yy, value.zz, value.xy, value.yz, value.zx]
+    let entries: Vec<String> = measured
+        .value()
+        .value
+        .entries()
         .iter()
         .zip(["xx", "yy", "zz", "xy", "yz", "zx"])
-        .map(|(entry, name)| format!("{name} {}", number(entry.get())))
+        .map(|(entry, name)| format!("{name} {}", number(*entry)))
         .collect();
     format!(
         "{} {unit}  {}{}",
@@ -570,43 +560,17 @@ fn tensor_text(quantity: &Quantity<Tensor>, unit: &str) -> String {
     )
 }
 
-fn moments_text(quantity: &Quantity<Moments>) -> String {
-    if let Some(text) = unavailable_text(quantity) {
-        return text;
-    }
-    let Some(measured) = quantity.measured() else {
-        return String::new();
-    };
-    let [first, second, third] = measured.value().value.map(|value| number(value.get()));
-    format!(
-        "{first}, {second}, {third} mm⁵  {}{}",
-        name(&measured.method()),
-        errors(measured)
-    )
+fn moments_text(moments: &[Quantity<Scalar>; 3]) -> String {
+    let moments: Vec<String> = moments
+        .iter()
+        .map(|moment| scalar_text(moment, "mm⁵"))
+        .collect();
+    moments.join("; ")
 }
 
-fn axes_text(quantity: &Quantity<Axes>) -> String {
-    if let Some(text) = unavailable_text(quantity) {
-        return text;
-    }
-    let Some(measured) = quantity.measured() else {
-        return String::new();
-    };
-    let axes: Vec<String> = measured
-        .value()
-        .value
-        .iter()
-        .map(|axis| {
-            let axis = axis.get();
-            format!(
-                "({}, {}, {})",
-                number(axis.x),
-                number(axis.y),
-                number(axis.z)
-            )
-        })
-        .collect();
-    format!("{}{}", axes.join(", "), errors(measured))
+fn axes_text(axes: &[Quantity<Point>; 3]) -> String {
+    let axes: Vec<String> = axes.iter().map(|axis| point_text(axis, "")).collect();
+    axes.join("; ")
 }
 
 fn box_text(quantity: &Quantity<BoxValue>) -> String {

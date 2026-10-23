@@ -351,9 +351,16 @@ pub struct Sweep {
     pub intervals: Vec<[FiniteReal; 2]>,
 }
 
-/// A finite symmetric 3×3 tensor by its six distinct entries.
+/// A finite symmetric 3×3 tensor.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct Tensor {
+    /// The six distinct entries.
+    pub value: TensorEntries,
+}
+
+/// The six distinct entries of a symmetric 3×3 tensor.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct TensorEntries {
     /// Entry `xx`.
     pub xx: FiniteReal,
     /// Entry `yy`.
@@ -366,20 +373,6 @@ pub struct Tensor {
     pub yz: FiniteReal,
     /// Entries `zx` and `xz`.
     pub zx: FiniteReal,
-}
-
-/// Three finite values in ascending order.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
-pub struct Moments {
-    /// The values, smallest first.
-    pub value: [FiniteReal; 3],
-}
-
-/// Three orthonormal directions.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
-pub struct Axes {
-    /// The unit directions, in the order of the values they belong to.
-    pub value: [FinitePoint3; 3],
 }
 
 /// Whether a box is tight.
@@ -604,44 +597,30 @@ impl Tensor {
     /// otherwise.
     pub(crate) fn new([xx, yy, zz, xy, yz, zx]: [f64; 6]) -> Option<Self> {
         Some(Self {
-            xx: FiniteReal::new(xx)?,
-            yy: FiniteReal::new(yy)?,
-            zz: FiniteReal::new(zz)?,
-            xy: FiniteReal::new(xy)?,
-            yz: FiniteReal::new(yz)?,
-            zx: FiniteReal::new(zx)?,
+            value: TensorEntries {
+                xx: FiniteReal::new(xx)?,
+                yy: FiniteReal::new(yy)?,
+                zz: FiniteReal::new(zz)?,
+                xy: FiniteReal::new(xy)?,
+                yz: FiniteReal::new(yz)?,
+                zx: FiniteReal::new(zx)?,
+            },
         })
     }
 
     /// The tensor as a symmetric matrix.
     #[must_use]
     pub fn rows(&self) -> [[f64; 3]; 3] {
-        let [xx, yy, zz, xy, yz, zx] =
-            [self.xx, self.yy, self.zz, self.xy, self.yz, self.zx].map(FiniteReal::get);
+        let [xx, yy, zz, xy, yz, zx] = self.value.entries();
         [[xx, xy, zx], [xy, yy, yz], [zx, yz, zz]]
     }
 }
 
-impl Moments {
-    /// Finite values, absent otherwise.
-    pub(crate) fn new(values: [f64; 3]) -> Option<Self> {
-        Some(Self {
-            value: [
-                FiniteReal::new(values[0])?,
-                FiniteReal::new(values[1])?,
-                FiniteReal::new(values[2])?,
-            ],
-        })
-    }
-}
-
-impl Axes {
-    /// Finite directions, absent otherwise.
-    pub(crate) fn new(axes: [[f64; 3]; 3]) -> Option<Self> {
-        let point = |[x, y, z]: [f64; 3]| FinitePoint3::new(Point3::new(x, y, z));
-        Some(Self {
-            value: [point(axes[0])?, point(axes[1])?, point(axes[2])?],
-        })
+impl TensorEntries {
+    /// The entries in the order `xx yy zz xy yz zx`.
+    #[must_use]
+    pub fn entries(&self) -> [f64; 6] {
+        [self.xx, self.yy, self.zz, self.xy, self.yz, self.zx].map(FiniteReal::get)
     }
 }
 

@@ -15,7 +15,7 @@ use crate::test_support::{
     assert_measured, cuboid, cylinder_solid, rotated_cuboid, rotation, service_context, Builder,
     Frame, TEST_ABSOLUTE_FLOOR,
 };
-use crate::value::{Measured, Quantity, Tensor};
+use crate::value::{Measured, Point, Quantity, Tensor};
 
 /// Steel, in kilograms per cubic metre.
 const STEEL: f64 = 7850.0;
@@ -60,10 +60,8 @@ fn assert_close(value: f64, expected: f64, numeric: f64, scale: f64) {
 
 fn assert_tensor(quantity: &Quantity<Tensor>, expected: [f64; 6], scale: f64) {
     let measured: &Measured<Tensor> = quantity.measured().expect("a measured tensor");
-    let value = measured.value();
-    let entries = [value.xx, value.yy, value.zz, value.xy, value.yz, value.zx];
-    for (entry, expected) in entries.into_iter().zip(expected) {
-        assert_close(entry.get(), expected, measured.numeric_error().get(), scale);
+    for (entry, expected) in measured.value().value.entries().into_iter().zip(expected) {
+        assert_close(entry, expected, measured.numeric_error().get(), scale);
     }
 }
 
@@ -88,27 +86,20 @@ fn a_box_has_closed_form_second_moments_inertia_and_axes() {
     let principal = body
         .principal_moments()
         .as_ref()
-        .and_then(Quantity::measured)
         .expect("principal moments");
-    for (value, expected) in principal.value().value.iter().zip(moments) {
+    for (moment, expected) in principal.iter().zip(moments) {
+        let moment = moment.measured().expect("a measured moment");
         assert_close(
-            value.get(),
+            moment.value().value.get(),
             expected,
-            principal.numeric_error().get(),
+            moment.numeric_error().get(),
             scale,
         );
     }
-    let axes = body
-        .principal_axes()
-        .as_ref()
-        .and_then(Quantity::measured)
-        .expect("principal axes");
+    let axes = body.principal_axes().as_ref().expect("principal axes");
     let expected_axes = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
-    for (axis, expected) in axes.value().value.iter().zip(expected_axes) {
-        let axis = axis.get();
-        for (component, expected) in [axis.x, axis.y, axis.z].into_iter().zip(expected) {
-            assert_close(component, expected, axes.numeric_error().get(), 1.0);
-        }
+    for (axis, expected) in axes.iter().zip(expected_axes) {
+        assert_axis(axis, expected);
     }
     let mass = STEEL_PER_CUBIC_MILLIMETRE * volume;
     let measured_mass = body
@@ -186,17 +177,32 @@ fn an_elongated_rotated_bar_keeps_its_volume_within_a_small_work_count() {
     );
 }
 
-fn assert_degenerate_axes(body: &BodyMeasures) {
-    let axes = body
-        .principal_axes()
-        .as_ref()
-        .and_then(Quantity::unavailable)
-        .expect("unavailable axes");
-    assert_eq!(
-        axes.reason(),
-        UnavailableReason::MassPrincipalAxesDegenerate
-    );
-    assert_eq!(axes.category(), Category::Undefined);
+/// A measured unit axis along `expected`.
+fn assert_axis(axis: &Quantity<Point>, expected: [f64; 3]) {
+    let axis = axis.measured().expect("a measured axis");
+    let value = axis.value().value.get();
+    for (component, expected) in [value.x, value.y, value.z].into_iter().zip(expected) {
+        assert_close(component, expected, axis.numeric_error().get(), 1.0);
+    }
+}
+
+/// The axes of the moments at `degenerate` are undetermined; the others
+/// are measured.
+fn assert_degenerate_axes(body: &BodyMeasures, degenerate: &[usize]) {
+    let axes = body.principal_axes().as_ref().expect("principal axes");
+    for (index, axis) in axes.iter().enumerate() {
+        match axis.unavailable() {
+            Some(unavailable) => {
+                assert!(degenerate.contains(&index), "axis {index}");
+                assert_eq!(
+                    unavailable.reason(),
+                    UnavailableReason::MassPrincipalAxesDegenerate
+                );
+                assert_eq!(unavailable.category(), Category::Undefined);
+            }
+            None => assert!(!degenerate.contains(&index), "axis {index}"),
+        }
+    }
 }
 
 /// The cylinder `r = 10`, `h = 30`: `I_zz = m r²/2`,
@@ -228,7 +234,9 @@ fn a_cylinder_has_closed_form_inertia_and_degenerate_axes() {
         [radial, radial, axial, 0.0, 0.0, 0.0],
         volume * height * height,
     );
-    assert_degenerate_axes(body);
+    assert_degenerate_axes(body, &[0, 1]);
+    let axes = body.principal_axes().as_ref().expect("principal axes");
+    assert_axis(&axes[2], [0.0, 0.0, 1.0]);
     assert_eq!(*body.status(), RowStatus::Measured);
 }
 
@@ -258,7 +266,7 @@ fn a_ball_has_two_fifths_m_r_squared_and_degenerate_axes() {
         [second, second, second, 0.0, 0.0, 0.0],
         second,
     );
-    assert_degenerate_axes(body);
+    assert_degenerate_axes(body, &[0, 1, 2]);
 }
 
 /// The cube of edge 10 without a density: second moments
@@ -276,7 +284,7 @@ fn without_a_density_a_cube_has_second_moments_and_no_mass() {
     );
     assert!(body.mass().is_none());
     assert!(body.inertia().is_none());
-    assert_degenerate_axes(body);
+    assert_degenerate_axes(body, &[0, 1, 2]);
 }
 
 #[test]
@@ -295,11 +303,11 @@ fn an_unavailable_volume_leaves_the_mass_properties_unavailable() {
             .map(crate::value::Unavailable::reason),
         body.principal_moments()
             .as_ref()
-            .and_then(Quantity::unavailable)
+            .and_then(|moments| moments[0].unavailable())
             .map(crate::value::Unavailable::reason),
         body.principal_axes()
             .as_ref()
-            .and_then(Quantity::unavailable)
+            .and_then(|axes| axes[2].unavailable())
             .map(crate::value::Unavailable::reason),
         body.mass()
             .as_ref()
