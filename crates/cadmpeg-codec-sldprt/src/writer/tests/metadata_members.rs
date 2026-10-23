@@ -8,10 +8,12 @@ use cadmpeg_ir::attributes::AttributeValue;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_test_support::EditableDecodeResult;
 
-use crate::test_support::container::{make_block, native_envelope_fixture, sldprt_with_body};
+use crate::test_support::container::{
+    make_block, native_envelope_fixture, outer_header, sldprt_with_body,
+};
 use crate::test_support::history::resolved_features_payload;
 use crate::test_support::native::sldprt_native;
-use crate::test_support::parasolid::triangle_body;
+use crate::test_support::parasolid::{parasolid_with_body, triangle_body};
 use crate::SldprtCodec;
 
 const MEMBER: &str = "Contents/Config-0-ResolvedFeatures";
@@ -20,14 +22,41 @@ fn shared_member() -> (EditableDecodeResult, Vec<u8>) {
     shared_member_with_payload(resolved_features_payload(&[0]))
 }
 
-fn shared_member_with_payload(mut payload: Vec<u8>) -> (EditableDecodeResult, Vec<u8>) {
+fn shared_member_with_payload(payload: Vec<u8>) -> (EditableDecodeResult, Vec<u8>) {
+    shared_member_with_sections(payload, &[])
+}
+
+fn shared_member_with_sections(
+    payload: Vec<u8>,
+    extra: &[(&str, &[u8])],
+) -> (EditableDecodeResult, Vec<u8>) {
+    shared_member_with_partition(payload, extra, "Contents/Config-0-Partition")
+}
+
+fn shared_member_with_partition(
+    mut payload: Vec<u8>,
+    extra: &[(&str, &[u8])],
+    partition: &str,
+) -> (EditableDecodeResult, Vec<u8>) {
     payload.extend(b"moBBoxCenterData_c");
     payload.extend(1u32.to_le_bytes());
     for value in [0.01f64, 0.02, -0.03, 0.04] {
         payload.extend(value.to_le_bytes());
     }
-    let mut source = sldprt_with_body(&triangle_body());
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x20,
+        partition,
+        &parasolid_with_body("partition body", "SCH_SW_33103_11000", &triangle_body()),
+    ));
     source.extend(make_block(0x45, MEMBER, &payload));
+    for (index, (name, bytes)) in extra.iter().enumerate() {
+        source.extend(make_block(
+            0x90 + u32::try_from(index).unwrap(),
+            name,
+            bytes,
+        ));
+    }
     let source = native_envelope_fixture(&source);
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -297,17 +326,8 @@ fn configuration_manager_and_feature_metadata_keep_their_separate_owners() {
             AttributeValue::Integer(132_537_600_000_000_000),
         ],
     });
-    let retained = cadmpeg_ir::source_fidelity::RetainedSourceRecord::from_bytes(
-        "Contents/CMgr",
-        999999,
-        cadmpeg_ir::source_fidelity::RetainedBytes::Inline {
-            data: payload.clone(),
-        },
-    )
-    .unwrap();
     records.push(crate::SourceRecord {
         id: record_id,
-        sha256: retained.sha256(),
         data: Some(&payload),
     });
     let mut sections =
@@ -345,7 +365,6 @@ fn duplicate_physical_metadata_owners_are_ambiguous_even_with_identical_bytes() 
         .unwrap();
     let duplicate = crate::SourceRecord {
         id: cadmpeg_ir::ids::UnknownId::mint("sldprt:file:block#999999").unwrap(),
-        sha256: record.sha256.clone(),
         data: record.data,
     };
     crate::annotations::note(
@@ -521,4 +540,372 @@ fn marker_replay_requires_reparsed_membership_identity_and_values() {
             "mutation {mutation}"
         );
     }
+}
+
+#[test]
+fn metadata_edits_preserve_unemitted_named_members_and_physical_duplicates() {
+    let units: &[u8] = b"authored user units table\0\x01\xff";
+    let opaque: &[u8] = b"authored opaque member\0\x02\xfe";
+    let lookalike = "ThirdPty/UnitsKeywordsDisplayListsNote";
+    let extra = [
+        ("Contents/User Units Table", units),
+        (lookalike, opaque),
+        (lookalike, opaque),
+    ];
+    let (mut decoded, _) = shared_member_with_sections(resolved_features_payload(&[0]), &extra);
+    edit_radius(&mut decoded.ir_mut());
+    let mut written = Vec::new();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut written,
+    )
+    .unwrap();
+    let scan = crate::test_support::container::scan(&written);
+    let units_blocks: Vec<_> = scan
+        .blocks
+        .iter()
+        .filter(|block| block.section.name() == Some("Contents/User Units Table"))
+        .collect();
+    assert_eq!(units_blocks.len(), 1);
+    assert_eq!(units_blocks[0].payload, units);
+    let opaque_blocks: Vec<_> = scan
+        .blocks
+        .iter()
+        .filter(|block| block.section.name() == Some(lookalike))
+        .collect();
+    assert_eq!(opaque_blocks.len(), 2);
+    assert!(opaque_blocks.iter().all(|block| block.payload == opaque));
+    assert_eq!(
+        opaque_blocks
+            .iter()
+            .map(|block| block.type_id)
+            .collect::<Vec<_>>(),
+        vec![0x91, 0x92]
+    );
+    let readback = SldprtCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(readback.ir().model.vertices.len(), 3);
+}
+
+#[test]
+fn unchanged_history_replays_full_source_xml_and_an_edited_history_regenerates() {
+    let history: &[u8] = br#"<?xml version="1.0"?><Keywords Name="Authored">
+<!-- retain source XML bytes -->
+<Feature Name="NativeTree" Type="Origin" id="11"/>
+</Keywords>"#;
+    let (mut decoded, _) = shared_member_with_sections(
+        resolved_features_payload(&[0]),
+        &[("Contents/Keywords", history)],
+    );
+    let native = sldprt_native(decoded.ir());
+    assert_eq!(native.feature_histories.len(), 1);
+    assert_eq!(native.feature_histories[0].features.len(), 1);
+    edit_radius(&mut decoded.ir_mut());
+    let mut written = Vec::new();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut written,
+    )
+    .unwrap();
+    let scan = crate::test_support::container::scan(&written);
+    let blocks: Vec<_> = scan
+        .blocks
+        .iter()
+        .filter(|block| block.section.name() == Some("Contents/Keywords"))
+        .collect();
+    assert_eq!(blocks.len(), 1);
+    assert_eq!(blocks[0].payload, history);
+    let mut changed = native.feature_histories[0].clone();
+    changed.features[0].name = "EditedTree".into();
+    let regenerated = crate::writer::retained_history_payload(
+        &changed,
+        "Contents/Keywords",
+        &[(
+            native.feature_histories[0].clone(),
+            "Contents/Keywords".into(),
+            history.to_vec(),
+        )],
+    )
+    .unwrap();
+    assert_ne!(regenerated, history);
+    assert!(String::from_utf8(regenerated)
+        .unwrap()
+        .contains("EditedTree"));
+}
+
+#[test]
+fn metadata_edits_preserve_unedited_f64_bits_and_complete_display_member() {
+    let raw_length = 9.0f64 / 10000.0;
+    assert_ne!(
+        raw_length.to_bits(),
+        (raw_length * 1000.0 * 0.001).to_bits()
+    );
+    let mut metadata = b"moBBoxCenterData_c".to_vec();
+    metadata.extend(1u32.to_le_bytes());
+    for value in [raw_length, 0.0, -raw_length, raw_length] {
+        metadata.extend(value.to_le_bytes());
+    }
+    metadata.extend(b"moDefaultRefPlnData_c");
+    for value in [raw_length, -raw_length, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0] {
+        metadata.extend(value.to_le_bytes());
+    }
+    let mut display = crate::test_support::tessellation::display_list_payload();
+    display.extend(b"authored opaque display suffix");
+    let (mut decoded, _) = shared_member_with_sections(
+        resolved_features_payload(&[0]),
+        &[
+            ("Contents/ExtraMetadata", metadata.as_slice()),
+            ("Contents/DisplayLists", display.as_slice()),
+        ],
+    );
+    assert!(!decoded.ir().model.tessellations.is_empty());
+    let original_meshes = decoded.ir().model.tessellations.clone();
+    let original_appearances = decoded.ir().model.appearances.len();
+    let target = decoded
+        .ir()
+        .model
+        .attributes
+        .iter()
+        .find(|attribute| {
+            attribute.name == "bounding_envelope"
+                && decoded
+                    .source_fidelity()
+                    .annotations
+                    .provenance
+                    .get(attribute.id.as_str())
+                    .is_some_and(|source| source.stream() == MEMBER)
+        })
+        .unwrap()
+        .id
+        .clone();
+    {
+        let mut edit = decoded.ir_mut();
+        let attribute = edit
+            .model
+            .attributes
+            .iter_mut()
+            .find(|attribute| attribute.id == target)
+            .unwrap();
+        let AttributeValue::Vector(values) = &mut attribute.values[0] else {
+            panic!("bbox vector");
+        };
+        values[3] = cadmpeg_ir::scalar::FiniteReal::new(41.0).unwrap();
+    }
+    let mut written = Vec::new();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut written,
+    )
+    .unwrap();
+    let scan = crate::test_support::container::scan(&written);
+    for (name, expected) in [
+        ("Contents/ExtraMetadata", &metadata),
+        ("Contents/DisplayLists", &display),
+    ] {
+        let blocks: Vec<_> = scan
+            .blocks
+            .iter()
+            .filter(|block| block.section.name() == Some(name))
+            .collect();
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(&blocks[0].payload, expected);
+    }
+    let readback = SldprtCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        readback.ir().model.tessellations.len(),
+        original_meshes.len()
+    );
+    assert_eq!(readback.ir().model.appearances.len(), original_appearances);
+    for (original, actual) in original_meshes
+        .iter()
+        .zip(&readback.ir().model.tessellations)
+    {
+        assert_eq!(original.mesh(), actual.mesh());
+        assert_eq!(original.channels(), actual.channels());
+        assert_eq!(original.faces, actual.faces);
+    }
+}
+
+#[test]
+fn changed_display_semantics_do_not_replay_an_unchanged_source_member() {
+    let display = crate::test_support::tessellation::display_list_payload();
+    let (decoded, _) = shared_member_with_sections(
+        resolved_features_payload(&[0]),
+        &[("Contents/DisplayLists", &display)],
+    );
+    let mut changed = decoded.ir().clone();
+    assert!(!changed.model.tessellations.is_empty());
+    changed.model.tessellations[0] = changed.model.tessellations[0]
+        .clone()
+        .with_chordal_deflection(Some(0.25))
+        .unwrap();
+    let source = decoded
+        .source_fidelity()
+        .retained_record(crate::SOURCE_IMAGE_ID)
+        .unwrap()
+        .data()
+        .unwrap();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        source,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::desktop(),
+    )
+    .unwrap();
+    let baseline = crate::decode::decode(&ctx, root).unwrap();
+    let scan = crate::container::scan(&ctx, root).unwrap();
+    let retained =
+        crate::writer::retained_display_sections(decoded.ir(), Some(&baseline), Some(&scan))
+            .unwrap()
+            .unwrap();
+    assert_eq!(retained, vec![("Contents/DisplayLists".into(), display)]);
+    assert!(
+        crate::writer::retained_display_sections(&changed, Some(&baseline), Some(&scan))
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[test]
+fn metadata_edits_preserve_configuration_xml_and_explicit_renames_update_it() {
+    let history: &[u8] = br#"<Keywords Name="Authored"><Configuration Name="Saved"/><Feature Name="NativeTree" Type="Origin" id="11"/></Keywords>"#;
+    let ordinary: &[u8] = br#"<?xml version="1.0"?><swSolidWorks swVersion="34000"><swModel swConfigurationName = 'Saved'/></swSolidWorks>"#;
+    let stale: &[u8] = br#"<?xml version="1.0"?><swSolidWorks swVersion="34000"><swModel swConfigurationName="Stale"/><swConfiguration swID="0" swName="Saved" swMostRecentConfiguration="YES"/></swSolidWorks>"#;
+    for (xml, indexed, rename) in [
+        (ordinary, false, false),
+        (stale, true, false),
+        (ordinary, true, true),
+    ] {
+        let partition = if indexed {
+            "Contents/Config-0-Partition"
+        } else {
+            "Geometry/Partition"
+        };
+        let (mut decoded, _) = shared_member_with_partition(
+            resolved_features_payload(&[0]),
+            &[
+                ("Contents/Keywords", history),
+                ("swXmlContents/Features", xml),
+            ],
+            partition,
+        );
+        let source = decoded.ir().clone();
+        let selected = source
+            .model
+            .configurations
+            .iter()
+            .find(|configuration| configuration.active)
+            .unwrap();
+        assert_eq!(selected.name.as_deref(), Some("Saved"));
+        assert_eq!(selected.source_index, indexed.then_some(0));
+        let source_intent = crate::writer::active_configuration_intent(&source);
+        let mut indexed = source.clone();
+        crate::writer::assign_configuration_indices(&mut indexed.model.configurations).unwrap();
+        if selected.source_index.is_none() {
+            assert!(selected.bodies.is_none());
+        }
+        assert_eq!(
+            crate::writer::active_configuration_intent(&indexed),
+            source_intent
+        );
+        edit_radius(&mut decoded.ir_mut());
+        let mut unchanged = Vec::new();
+        crate::test_support::plan_inherited_write(
+            decoded.ir(),
+            decoded.source_fidelity(),
+            &mut unchanged,
+        )
+        .unwrap();
+        let scan = crate::test_support::container::scan(&unchanged);
+        let original_xml = scan
+            .blocks
+            .iter()
+            .find(|block| block.section.name() == Some("swXmlContents/Features"))
+            .unwrap();
+        assert_eq!(original_xml.payload, xml);
+        if rename {
+            decoded
+                .ir_mut()
+                .model
+                .configurations
+                .iter_mut()
+                .find(|configuration| configuration.active)
+                .unwrap()
+                .name = Some("RenamedSaved".into());
+            let mut renamed = Vec::new();
+            crate::test_support::plan_inherited_write(
+                decoded.ir(),
+                decoded.source_fidelity(),
+                &mut renamed,
+            )
+            .unwrap();
+            let scan = crate::test_support::container::scan(&renamed);
+            let changed_xml = scan
+                .blocks
+                .iter()
+                .find(|block| block.section.name() == Some("swXmlContents/Features"))
+                .unwrap();
+            let envelope =
+                crate::container::first_solidworks_envelope([changed_xml.payload.as_slice()])
+                    .unwrap();
+            assert_eq!(envelope.configuration_name.as_deref(), Some("RenamedSaved"));
+            let readback = SldprtCodec
+                .decode(&mut Cursor::new(renamed), &DecodeOptions::default())
+                .unwrap();
+            assert_eq!(
+                readback
+                    .ir()
+                    .model
+                    .configurations
+                    .iter()
+                    .find(|configuration| configuration.active)
+                    .unwrap()
+                    .name
+                    .as_deref(),
+                Some("RenamedSaved")
+            );
+        }
+    }
+}
+
+#[test]
+fn duplicate_feature_owned_names_refuse_ambiguous_source_member_identity() {
+    let mut payload = resolved_features_payload(&[0]);
+    payload.extend(b"moBBoxCenterData_c");
+    payload.extend(1u32.to_le_bytes());
+    for value in [0.01f64, 0.02, -0.03, 0.04] {
+        payload.extend(value.to_le_bytes());
+    }
+    let member = "ThirdPty/ResolvedFeaturesNote";
+    let opaque = b"authored feature-owned opaque payload";
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(0x45, MEMBER, &payload));
+    source.extend(make_block(0x91, member, opaque));
+    source.extend(make_block(0x92, member, opaque));
+    let source = native_envelope_fixture(&source);
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(sldprt_native(decoded.ir()).feature_input_lanes.len(), 3);
+    let mut decoded = EditableDecodeResult::from(decoded);
+    edit_radius(&mut decoded.ir_mut());
+    let mut written = Vec::new();
+    let error = crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut written,
+    )
+    .unwrap_err();
+    assert!(matches!(error, CodecError::NotImplemented(_)));
+    assert!(
+        error.to_string().contains("ambiguous retained owners"),
+        "{error}"
+    );
+    assert!(written.is_empty());
 }

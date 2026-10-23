@@ -163,7 +163,6 @@ pub struct SldprtCodec;
 /// source-fidelity sidecar throughout export.
 struct SourceRecord<'a> {
     id: UnknownId,
-    sha256: String,
     data: Option<&'a [u8]>,
 }
 
@@ -467,7 +466,6 @@ fn source_records<'a>(
                 })?;
             Ok(SourceRecord {
                 id: reference.id,
-                sha256: retained.sha256(),
                 data: retained.data(),
             })
         })
@@ -475,7 +473,6 @@ fn source_records<'a>(
     if let Some(source) = source_fidelity.retained_record(SOURCE_IMAGE_ID) {
         records.push(SourceRecord {
             id: source_image_id(),
-            sha256: source.sha256(),
             data: source.data(),
         });
     }
