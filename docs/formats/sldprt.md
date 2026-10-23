@@ -1529,9 +1529,10 @@ adjacent `00 53` record. An unnamed system definition uses the same two
 structural forms when its owner-local color record is valid; no numeric
 definition id selects that family.
 
-The bridge owner field `00 0e.ref0` joins a topology bridge to a face
-attribute when that entity relation is present. Typed FACE ownership remains
-the authoritative face-to-shell relation in §4.
+The FACE `attributes_groups` pointer joins the FACE to its ATTRIBUTE-chain
+head. Each ATTRIBUTE owner pointer joins that ATTRIBUTE to its owning FACE.
+The ATTRIBUTE-chain head does not supply the FACE identity. Typed FACE
+ownership remains the face-to-shell relation in §4.
 
 A face-color record is an inline child of a framed `00 53` link record:
 
