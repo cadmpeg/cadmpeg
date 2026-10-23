@@ -108,42 +108,6 @@ const SECTION_SCOPED_IDENTIFIERS: [&str; 6] = [
     "sldprt:model:",
 ];
 
-/// Every container byte position one identifier carries, as
-/// `(family, position)` pairs sharing a rank space. Only the section-ordinal
-/// key head is normalized; remaining components compare exactly.
-fn byte_positions(id: &str) -> Vec<(String, u64)> {
-    let Some(key) = identifier_key(id) else {
-        return Vec::new();
-    };
-    if !SECTION_SCOPED_IDENTIFIERS
-        .iter()
-        .any(|scope| id.starts_with(scope))
-    {
-        return Vec::new();
-    }
-    let (head, _) = split_key(key);
-    let Ok(section) = head.parse::<u64>() else {
-        return Vec::new();
-    };
-    vec![(String::from("section"), section)]
-}
-
-/// Rewrites one identifier, replacing each byte position it carries with that
-/// position's rank in `ranks`.
-fn normalize_identifier(id: &str, ranks: &BTreeMap<(String, u64), usize>) -> Option<String> {
-    let positions = byte_positions(id);
-    if positions.is_empty() {
-        return None;
-    }
-    let (prefix, key) = id.rsplit_once('#')?;
-    let mut components = key.split(':').map(String::from).collect::<Vec<_>>();
-    for (index, position) in positions.iter().enumerate() {
-        let rank = ranks.get(position)?;
-        *components.get_mut(index)? = format!("<{rank}>");
-    }
-    Some(format!("{prefix}#{}", components.join(":")))
-}
-
 /// Walks a decoded document, applying `visit` to every identifier it carries,
 /// as an object key or as a value.
 fn walk_identifiers(value: &mut serde_json::Value, visit: &mut impl FnMut(&str) -> Option<String>) {
@@ -176,86 +140,20 @@ fn walk_identifiers(value: &mut serde_json::Value, visit: &mut impl FnMut(&str) 
     }
 }
 
-/// Serializes the neutral document a byte string decodes to, with every
-/// container byte position an identifier carries replaced by its rank.
-///
-/// Identifiers embed container byte offsets, so a repack renames entities
-/// without changing relative order; ranks capture that order. The snapshot
-/// covers the model, units, and tolerances only — not `ir.native` or
-/// `ir.source.attributes`, which describe the rebuilt container.
+/// Compare neutral semantics after mapping source section positions through
+/// their unique admitted member names. Native and source metadata are excluded.
 fn neutral_document(bytes: &[u8]) -> String {
     let value =
         match SldprtCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
-            Ok(result) => normalized_document(result.ir()),
+            Ok(result) => {
+                let scan = crate::test_support::container::scan(bytes);
+                let sections =
+                    section_identities(&scan).expect("unique admitted source member identities");
+                normalized_document(result.ir(), &sections)
+            }
             Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
         };
     snapshot_text(&value)
-}
-
-/// The model, units, and tolerances with container byte positions rank-normalized.
-fn normalized_document(ir: &cadmpeg_ir::CadIr) -> serde_json::Value {
-    let mut document = serde_json::json!({
-        "model": serde_json::to_value(&ir.model).expect("serialize model"),
-        "units": { "length": "millimeter" },
-        "tolerances": serde_json::to_value(ir.tolerances).expect("serialize tolerances"),
-    });
-    let mut positions = BTreeSet::new();
-    walk_identifiers(&mut document, &mut |id| {
-        positions.extend(byte_positions(id));
-        None
-    });
-    let mut ranks = BTreeMap::new();
-    for (family, position) in positions {
-        let rank = ranks
-            .keys()
-            .filter(|(seen, _): &&(String, u64)| *seen == family)
-            .count();
-        ranks.insert((family, position), rank);
-    }
-    walk_identifiers(&mut document, &mut |id| normalize_identifier(id, &ranks));
-    document
-}
-
-#[test]
-fn normalization_replaces_only_container_positions() {
-    let ranks = BTreeMap::from([
-        (("section".to_string(), 247_u64), 0_usize),
-        (("section".to_string(), 400), 1),
-        (("record@247".to_string(), 0), 0),
-        (("record@247".to_string(), 269), 1),
-    ]);
-
-    // Two sections rank apart.
-    assert_ne!(
-        normalize_identifier("sldprt:model:feature#247:0", &ranks),
-        normalize_identifier("sldprt:model:feature#400:0", &ranks)
-    );
-    // Two records of one section rank apart.
-    assert_ne!(
-        normalize_identifier("sldprt:metadata:part_record#247:0", &ranks),
-        normalize_identifier("sldprt:metadata:part_record#247:269", &ranks)
-    );
-    // Indices after the position survive.
-    assert_eq!(
-        normalize_identifier("sldprt:model:sketch-entity#247:0:0:1", &ranks).as_deref(),
-        Some("sldprt:model:sketch-entity#<0>:0:0:1")
-    );
-    assert_ne!(
-        normalize_identifier("sldprt:model:sketch-entity#247:0:0:1", &ranks),
-        normalize_identifier("sldprt:model:sketch-entity#247:0:0:2", &ranks)
-    );
-    // A Parasolid entity tag is not a container position.
-    assert_eq!(normalize_identifier("sldprt:brep:face#247", &ranks), None);
-    assert_eq!(
-        normalize_identifier("sldprt:appearance:entity53#247", &ranks),
-        None
-    );
-    // A metadata record offset is a position; the second component of any other
-    // scope is an index and stays exact.
-    assert_eq!(
-        normalize_identifier("sldprt:feature-input:class#247:106", &ranks).as_deref(),
-        Some("sldprt:feature-input:class#<0>:106")
-    );
 }
 
 /// Every committed golden still matches what the codec produces.
@@ -675,5 +573,216 @@ fn complete_authored_golden_inputs_have_typed_geometry_and_active_configuration(
             .filter(|(name, _)| name == "body_history")
             .count(),
         LEGACY_FIXTURES_WITH_A_BLIND_DEPTH
+    );
+}
+
+mod authored_coverage;
+
+/// Match physical section ordinals only through unique admitted source names.
+fn section_identities(
+    scan: &crate::container::ContainerScan<'_>,
+) -> Result<BTreeMap<u64, String>, &'static str> {
+    let mut names = BTreeSet::new();
+    let mut identities = BTreeMap::new();
+    for section in scan.sections() {
+        let name = section
+            .name()
+            .ok_or("unnamed source section cannot be normalized")?;
+        if !names.insert(name) {
+            return Err("duplicate source section name cannot be normalized");
+        }
+        let position = u64::try_from(section.ordinal())
+            .map_err(|_| "source section ordinal does not fit u64")?;
+        let mut identity = String::from("<section=");
+        for byte in name.as_bytes() {
+            use std::fmt::Write as _;
+            write!(&mut identity, "{byte:02x}").expect("write canonical section identity");
+        }
+        identity.push('>');
+        if identities.insert(position, identity).is_some() {
+            return Err("duplicate source section ordinal cannot be normalized");
+        }
+    }
+    Ok(identities)
+}
+
+fn normalize_identifier(id: &str, sections: &BTreeMap<u64, String>) -> Option<String> {
+    if !SECTION_SCOPED_IDENTIFIERS
+        .iter()
+        .any(|scope| id.starts_with(scope))
+    {
+        return None;
+    }
+    let key = identifier_key(id)?;
+    let (head, rest) = split_key(key);
+    let position = head.parse::<u64>().ok()?;
+    let identity = sections.get(&position)?;
+    let (prefix, _) = id.rsplit_once('#')?;
+    Some(match rest {
+        Some(rest) => format!("{prefix}#{identity}:{rest}"),
+        None => format!("{prefix}#{identity}"),
+    })
+}
+
+/// Arena storage order is not a semantic nested-list order.
+fn canonicalize_model_arena_order(document: &mut serde_json::Value) {
+    let Some(model) = document
+        .get_mut("model")
+        .and_then(serde_json::Value::as_object_mut)
+    else {
+        return;
+    };
+    for arena in model.values_mut() {
+        let Some(rows) = arena.as_array_mut() else {
+            continue;
+        };
+        let ids = rows
+            .iter()
+            .map(|row| row.get("id").and_then(serde_json::Value::as_str))
+            .collect::<Option<BTreeSet<_>>>();
+        if ids.is_some_and(|ids| ids.len() == rows.len()) {
+            rows.sort_by(|left, right| left["id"].as_str().cmp(&right["id"].as_str()));
+        }
+    }
+}
+
+fn normalized_document(
+    ir: &cadmpeg_ir::CadIr,
+    sections: &BTreeMap<u64, String>,
+) -> serde_json::Value {
+    let mut document = serde_json::json!({
+        "model": serde_json::to_value(&ir.model).expect("serialize model"),
+        "units": { "length": "millimeter" },
+        "tolerances": serde_json::to_value(ir.tolerances).expect("serialize tolerances"),
+    });
+    walk_identifiers(&mut document, &mut |id| normalize_identifier(id, sections));
+    canonicalize_model_arena_order(&mut document);
+    document
+}
+
+#[test]
+fn normalization_replaces_only_container_positions() {
+    let sections = BTreeMap::from([
+        (247_u64, "<keywords>".to_owned()),
+        (400, "<resolved>".to_owned()),
+    ]);
+    assert_ne!(
+        normalize_identifier("sldprt:model:feature#247:0", &sections),
+        normalize_identifier("sldprt:model:feature#400:0", &sections)
+    );
+    assert_ne!(
+        normalize_identifier("sldprt:metadata:part_record#247:0", &sections),
+        normalize_identifier("sldprt:metadata:part_record#247:269", &sections)
+    );
+    assert_eq!(
+        normalize_identifier("sldprt:model:sketch-entity#247:0:0:1", &sections).as_deref(),
+        Some("sldprt:model:sketch-entity#<keywords>:0:0:1")
+    );
+    assert_ne!(
+        normalize_identifier("sldprt:model:sketch-entity#247:0:0:1", &sections),
+        normalize_identifier("sldprt:model:sketch-entity#247:0:0:2", &sections)
+    );
+    assert_eq!(
+        normalize_identifier("sldprt:brep:face#247", &sections),
+        None
+    );
+    assert_eq!(
+        normalize_identifier("sldprt:appearance:entity53#247", &sections),
+        None
+    );
+    assert_eq!(
+        normalize_identifier("sldprt:feature-input:class#247:106", &sections).as_deref(),
+        Some("sldprt:feature-input:class#<keywords>:106")
+    );
+    assert_eq!(
+        normalize_identifier("sldprt:model:feature#999:0", &sections),
+        None
+    );
+}
+
+#[test]
+fn normalized_comparison_follows_unique_members_when_their_physical_order_changes() {
+    use crate::test_support::container::{make_block, native_envelope_fixture, outer_header, scan};
+    let fixtures = harness().fixture_inputs();
+    let (_, bytes) = fixtures
+        .iter()
+        .find(|(name, _)| name == "authored_nested_arc")
+        .expect("authored complete arc fixture");
+    let indexed = scan(bytes);
+    let mut blocks = indexed.blocks.iter().collect::<Vec<_>>();
+    let before = blocks
+        .iter()
+        .map(|block| block.section.name())
+        .collect::<Vec<_>>();
+    blocks.reverse();
+    assert_ne!(
+        before,
+        blocks
+            .iter()
+            .map(|block| block.section.name())
+            .collect::<Vec<_>>()
+    );
+    let mut source = outer_header();
+    for block in blocks {
+        source.extend(make_block(
+            block.type_id,
+            block.section.name().expect("named fixture member"),
+            &block.payload,
+        ));
+    }
+    let reordered = native_envelope_fixture(&source);
+    assert_ne!(bytes, &reordered);
+    assert_eq!(neutral_document(bytes), neutral_document(&reordered));
+}
+
+#[test]
+fn normalized_comparison_preserves_references_depth_values_and_nested_order() {
+    let fixtures = harness().fixture_inputs();
+    let (_, bytes) = fixtures
+        .iter()
+        .find(|(name, _)| name == "authored_complete_history")
+        .expect("authored complete history fixture");
+    let indexed = crate::test_support::container::scan(bytes);
+    let sections = section_identities(&indexed).expect("unique authored member names");
+    let result = SldprtCodec
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
+        .expect("complete history decode");
+    let original = normalized_document(result.ir(), &sections);
+    let mut changed = result.ir().clone();
+    changed.model.coedges[0].owner_loop =
+        cadmpeg_ir::ids::LoopId::mint("sldprt:brep:loop#999").expect("authored distinct reference");
+    assert_ne!(original, normalized_document(&changed, &sections));
+    let mut changed = result.ir().clone();
+    assert!(
+        visit_blind_extrude_lengths(&mut changed, |length| {
+            *length = cadmpeg_ir::scalar::NonZeroLength::new(length.get() + 1.0)
+                .expect("positive changed depth");
+        }) > 0
+    );
+    assert_ne!(original, normalized_document(&changed, &sections));
+    let mut ordered = serde_json::json!({"model": {"entities": [
+        {"id": "b", "members": ["a", "b"]}, {"id": "a", "members": []}
+    ]}});
+    canonicalize_model_arena_order(&mut ordered);
+    let mut changed = ordered.clone();
+    changed["model"]["entities"][1]["members"]
+        .as_array_mut()
+        .expect("semantic list")
+        .reverse();
+    canonicalize_model_arena_order(&mut changed);
+    assert_ne!(ordered, changed);
+}
+
+#[test]
+fn duplicate_source_member_names_are_not_conflated() {
+    use crate::test_support::container::{make_block, outer_header, scan};
+    let mut source = outer_header();
+    source.extend(make_block(0x40, "Contents/Duplicate", b"first"));
+    source.extend(make_block(0x40, "Contents/Duplicate", b"second"));
+    let indexed = scan(&source);
+    assert_eq!(indexed.sections().count(), 2);
+    assert_eq!(
+        section_identities(&indexed),
+        Err("duplicate source section name cannot be normalized")
     );
 }

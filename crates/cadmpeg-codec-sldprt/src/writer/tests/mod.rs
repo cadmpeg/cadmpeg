@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Semantic-writer unit tests.
 
+mod anonymous_metadata;
 mod brep_agreement;
 pub(crate) mod configuration_carriers;
 mod digests;
 mod flex_history;
 mod helix_surfaces;
 mod homogeneous_poles;
+mod metadata_members;
 mod normalization;
 mod parameters_extrude;
 mod patterns_history;

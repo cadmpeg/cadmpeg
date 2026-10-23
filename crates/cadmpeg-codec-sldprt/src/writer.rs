@@ -197,6 +197,8 @@ pub(crate) fn write_semantic_with_records(
     let mut sections = partition_sections;
     let materials = materials_payload(ir)?;
     let mut retained_swobjects = retained_swobjects_sections(ir, retained_records, annotations)?;
+    require_named_metadata_members(&retained_swobjects, source_scan.as_ref())?;
+    let original_metadata_sections = retained_swobjects.clone();
     let replay_swobjects = if retained_swobjects.is_empty() {
         false
     } else {
@@ -238,7 +240,14 @@ pub(crate) fn write_semantic_with_records(
     if replay_swobjects {
         generated_partition_sections
             .extend(retained_swobjects.iter().map(|(name, _)| name.clone()));
-        sections.extend(retained_swobjects);
+        for (name, payload) in retained_swobjects {
+            push_generated_metadata_member(
+                &mut sections,
+                &original_metadata_sections,
+                name,
+                payload,
+            )?;
+        }
     } else {
         if !materials.is_empty() {
             sections.push(("SWObjects".into(), materials));
@@ -248,13 +257,20 @@ pub(crate) fn write_semantic_with_records(
         }
     }
     if let Some(units) = units {
-        sections.push(("Units".into(), units));
+        push_generated_metadata_member(
+            &mut sections,
+            &original_metadata_sections,
+            "Units".into(),
+            units,
+        )?;
     }
     if !ir.model.tessellations.is_empty() {
-        sections.push((
+        push_generated_metadata_member(
+            &mut sections,
+            &original_metadata_sections,
             "Contents/DisplayLists".into(),
             tessellation_payload(ir, length_scale)?,
-        ));
+        )?;
     }
     for (index, history) in native
         .iter()
@@ -265,7 +281,12 @@ pub(crate) fn write_semantic_with_records(
             || format!("Contents/Keywords-{index}"),
             |provenance| provenance.stream().to_owned(),
         );
-        sections.push((section, history_payload(history)?));
+        push_generated_metadata_member(
+            &mut sections,
+            &original_metadata_sections,
+            section,
+            history_payload(history)?,
+        )?;
     }
     for lane in native.iter().flat_map(|native| &native.feature_input_lanes) {
         let section = lane.configuration.as_ref().map_or_else(
@@ -280,10 +301,12 @@ pub(crate) fn write_semantic_with_records(
         let histories = native
             .as_ref()
             .map_or(&[][..], |native| native.feature_histories.as_slice());
-        sections.push((
+        push_generated_metadata_member(
+            &mut sections,
+            &original_metadata_sections,
             section,
             resolved_feature_payload(lane, histories, &feature_input_renames)?,
-        ));
+        )?;
     }
     let opaque = opaque_blocks(
         ir,
@@ -300,14 +323,21 @@ pub(crate) fn write_semantic_with_records(
             CodecError::Malformed("active SLDPRT configuration has no resolved name".into())
         })?;
         if document_envelope.is_none() {
-            sections.push((
+            push_generated_metadata_member(
+                &mut sections,
+                &original_metadata_sections,
                 "Contents/SolidWorks".into(),
                 generated_solidworks_xml(ir, active_name),
-            ));
+            )?;
         }
     }
     for (section, payload) in opaque {
-        sections.push((section, payload));
+        push_generated_metadata_member(
+            &mut sections,
+            &original_metadata_sections,
+            section,
+            payload,
+        )?;
     }
     let written_declaration = document_envelope.and_then(|envelope| envelope.sw_version);
     let written_dialect =
@@ -1034,9 +1064,9 @@ fn retained_swobjects_sections(
     records: &[SourceRecord<'_>],
     annotations: &Annotations,
 ) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
-    let enclosure_streams = metadata_attributes(ir)
+    let metadata_streams = metadata_attributes(ir)
         .into_iter()
-        .filter(|attribute| attribute.name == "transformed_reference_enclosure")
+        .filter(|attribute| attribute.name != "source_linear_unit_code")
         .filter_map(|attribute| {
             annotations
                 .provenance
@@ -1050,25 +1080,113 @@ fn retained_swobjects_sections(
             let provenance = annotations.provenance.get(record.id.as_str())?;
             let section = provenance.stream();
             (section.to_ascii_lowercase().contains("swobjects")
-                || enclosure_streams.contains(section))
+                || metadata_streams.contains(section))
             .then_some((section, record))
         })
         .collect::<Vec<_>>();
     sections.sort_by_key(|(section, _)| *section);
-    let mut seen = HashSet::new();
-    sections
-        .into_iter()
-        .filter_map(|(section, record)| {
-            seen.insert((section, record.sha256.clone()))
-                .then_some((section, record))
-        })
-        .map(|(section, record)| {
-            let data = record.data.ok_or_else(|| {
-                CodecError::Malformed("retained SLDPRT SWObjects section has no bytes".into())
-            })?;
-            Ok((section.to_string(), data.to_vec()))
-        })
-        .collect()
+    let mut seen = HashMap::new();
+    let mut retained = Vec::new();
+    for (section, record) in sections {
+        if let Some(previous) = seen.insert(section, &record.id) {
+            if previous == &record.id {
+                continue;
+            }
+            return Err(CodecError::NotImplemented(format!(
+                "SLDPRT metadata owner {section} has ambiguous retained members"
+            )));
+        }
+        let data = record.data.ok_or_else(|| {
+            CodecError::Malformed("retained SLDPRT SWObjects section has no bytes".into())
+        })?;
+        retained.push((section.to_string(), data.to_vec()));
+    }
+    for stream in metadata_streams {
+        if !seen.contains_key(stream) {
+            return Err(CodecError::malformed(format_args!(
+                "SLDPRT metadata owner {stream} has no retained source member"
+            )));
+        }
+    }
+    Ok(retained)
+}
+
+fn require_named_metadata_members(
+    members: &[(String, Vec<u8>)],
+    source: Option<&crate::container::ContainerScan<'_>>,
+) -> Result<(), CodecError> {
+    if members.is_empty() {
+        return Ok(());
+    }
+    let source = source.ok_or_else(|| CodecError::NotImplemented(
+        "SLDPRT retained metadata editing requires the original native envelope and named members".into(),
+    ))?;
+    for (name, payload) in members {
+        let mut candidates = source
+            .sections()
+            .filter(|section| section.source_stream().as_str() == name);
+        let Some(member) = candidates.next() else {
+            return Err(CodecError::malformed(format_args!(
+                "SLDPRT metadata owner {name} is absent from the retained source envelope"
+            )));
+        };
+        if candidates.next().is_some() {
+            return Err(CodecError::NotImplemented(format!(
+                "SLDPRT metadata owner {name} has ambiguous source envelope members"
+            )));
+        }
+        if member.name() != Some(name.as_str()) {
+            return Err(CodecError::NotImplemented(
+                "SLDPRT anonymous metadata owner has no supported output member identity".into(),
+            ));
+        }
+        if member.payload() != payload.as_slice() {
+            return Err(CodecError::malformed(format_args!(
+                "SLDPRT metadata owner {name} bytes do not match the retained source envelope"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn push_generated_metadata_member(
+    sections: &mut Vec<(String, Vec<u8>)>,
+    originals: &[(String, Vec<u8>)],
+    name: String,
+    generated: Vec<u8>,
+) -> Result<(), CodecError> {
+    let mut candidates = originals.iter().filter(|(candidate, _)| *candidate == name);
+    let Some((_, original)) = candidates.next() else {
+        sections.push((name, generated));
+        return Ok(());
+    };
+    if candidates.next().is_some() {
+        return Err(CodecError::NotImplemented(format!(
+            "SLDPRT metadata owner {name} has ambiguous retained members"
+        )));
+    }
+    let mut outputs = sections
+        .iter_mut()
+        .filter(|(candidate, _)| *candidate == name);
+    let Some((_, patched)) = outputs.next() else {
+        sections.push((name, generated));
+        return Ok(());
+    };
+    if outputs.next().is_some() {
+        return Err(CodecError::NotImplemented(format!(
+            "SLDPRT metadata owner {name} has ambiguous output members"
+        )));
+    }
+    if &generated == original || generated == *patched {
+        return Ok(());
+    }
+    if *patched == *original {
+        *patched = generated;
+        return Ok(());
+    }
+    Err(CodecError::NotImplemented(format!(
+        "SLDPRT metadata owner {name} has conflicting metadata and generated payload edits"
+    )))
 }
 
 fn patch_retained_swobjects_metadata(
