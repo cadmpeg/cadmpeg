@@ -27,8 +27,6 @@ pub enum ResourceFailure {
     BudgetExceeded,
     /// The allocator refused, surfaced via `try_reserve`.
     AllocationFailed,
-    /// The shared accounting state was poisoned by an interrupted update.
-    AccountingPoisoned,
 }
 
 /// An offset qualified by its address space.
@@ -65,7 +63,7 @@ pub struct ResourceLimit {
     pub scope: LimitScope,
     /// The dimension that refused the request.
     pub dimension: ResourceDimension,
-    /// Whether policy, allocation, or accounting integrity refused.
+    /// Whether policy or allocation refused.
     pub reason: ResourceFailure,
     /// The allowance in force.
     pub limit: u64,
@@ -102,7 +100,6 @@ impl std::fmt::Display for ResourceLimit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let boundary = match (self.reason, self.scope, self.dimension) {
             (ResourceFailure::AllocationFailed, _, _) => "allocation failure",
-            (ResourceFailure::AccountingPoisoned, _, _) => "accounting state poisoned",
             (ResourceFailure::BudgetExceeded, LimitScope::Session, _) => "session allowance",
             (
                 ResourceFailure::BudgetExceeded,
@@ -178,20 +175,6 @@ mod tests {
         )
         .to_string()
         .ends_with("part allowance"));
-    }
-
-    #[test]
-    fn accounting_failure_does_not_claim_exhaustion_or_allocation_failure() {
-        let message = limit(
-            LimitScope::Session,
-            ResourceDimension::RetainedBytes,
-            ResourceFailure::AccountingPoisoned,
-        )
-        .to_string();
-        assert!(message.contains("AccountingPoisoned"));
-        assert!(message.ends_with("accounting state poisoned"));
-        assert!(!message.contains("allowance"));
-        assert!(!message.contains("allocation failure"));
     }
 
     #[test]

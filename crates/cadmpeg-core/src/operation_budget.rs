@@ -35,23 +35,7 @@ impl OperationBudget {
     pub(crate) fn state(&self) -> MutexGuard<'_, OperationBudgetState> {
         match self.state.lock() {
             Ok(state) => state,
-            Err(poisoned) => {
-                let mut state = poisoned.into_inner();
-                let used = state.retained;
-                Self::refuse_locked(
-                    &mut state,
-                    ResourceLimit {
-                        scope: LimitScope::Session,
-                        dimension: ResourceDimension::RetainedBytes,
-                        reason: ResourceFailure::AccountingPoisoned,
-                        limit: self.limits.max_retained_bytes,
-                        used,
-                        additional: 0,
-                        operation: "access shared operation budget",
-                    },
-                );
-                state
-            }
+            Err(poisoned) => poisoned.into_inner(),
         }
     }
 
@@ -242,21 +226,30 @@ mod tests {
             .charge_retained(6, "native fields")
             .expect("native fits");
         poison(&account);
-        let error = account
+        assert_eq!(account.retained_used(), 6);
+        assert_eq!(account.fused(), None);
+        account
             .charge_retained(2, "verification fields")
-            .expect_err("poisoned accounting cannot admit even available capacity");
-        assert_eq!(error.reason, ResourceFailure::AccountingPoisoned);
+            .expect("recovered accounting admits the remaining capacity");
+        let verification = Box::new(*b"ok");
+        assert_eq!(account.retained_used(), 8);
+        assert_eq!(account.fused(), None);
+        let error = account
+            .charge_retained(1, "over limit after poison recovery")
+            .expect_err("the actual retained ceiling remains enforced");
+        assert_eq!(error.reason, ResourceFailure::BudgetExceeded);
         assert_eq!(error.scope, LimitScope::Session);
         assert_eq!(error.dimension, ResourceDimension::RetainedBytes);
-        assert_eq!((error.limit, error.used, error.additional), (8, 6, 0));
-        assert_eq!(error.operation, "access shared operation budget");
-        assert_eq!(account.retained_used(), 6);
+        assert_eq!((error.limit, error.used, error.additional), (8, 8, 1));
+        assert_eq!(error.operation, "over limit after poison recovery");
+        assert_eq!(account.retained_used(), 8);
         account.release_retained(6);
-        assert_eq!(account.retained_used(), 0);
+        assert_eq!(account.retained_used(), 2);
         assert_eq!(account.fused(), Some(error));
         assert_eq!(account.charge_entities(1, 1, "later field"), Err(error));
         assert_eq!(account.charge_retained(0, "empty request"), Err(error));
         assert_eq!(account.recover_part(error), Err(error));
+        assert_eq!(verification.as_slice(), b"ok");
         assert_eq!(native.as_slice(), b"native");
     }
 
@@ -272,6 +265,47 @@ mod tests {
         poison(&account);
         assert_eq!(account.fused(), Some(first));
         assert_eq!(account.charge_entities(1, 1, "later field"), Err(first));
+        assert_eq!(account.recover_part(first), Err(first));
+    }
+
+    #[test]
+    fn poisoned_lock_preserves_entity_usage_and_live_capacity_reservations() {
+        let mut limits = ResourceLimits::service();
+        limits.max_retained_bytes = 8;
+        limits.max_entities = 3;
+        let account = Arc::new(OperationBudget::new(limits));
+        account
+            .charge_retained(6, "native fields")
+            .expect("native fields fit");
+        account
+            .charge_entities(3, 3, "native entities")
+            .expect("native entities fit");
+        poison(&account);
+        assert_eq!(account.retained_used(), 6);
+        assert_eq!(account.entities_used(), 3);
+        assert_eq!(account.fused(), None);
+        assert_eq!(
+            account
+                .reserve_retained(2, 8, "live output")
+                .expect("remaining output capacity fits"),
+            2
+        );
+        assert_eq!(account.retained_used(), 8);
+        assert_eq!(account.entities_used(), 3);
+        assert_eq!(account.fused(), None);
+        let first = account
+            .charge_entities(3, 1, "additional entity")
+            .expect_err("the actual entity ceiling remains enforced");
+        assert_eq!(first.dimension, ResourceDimension::Entities);
+        assert_eq!(first.reason, ResourceFailure::BudgetExceeded);
+        assert_eq!((first.limit, first.used, first.additional), (3, 3, 1));
+        account.release_retained(2);
+        poison(&account);
+        assert_eq!(account.retained_used(), 6);
+        assert_eq!(account.entities_used(), 3);
+        assert_eq!(account.fused(), Some(first));
+        assert_eq!(account.reserve_retained(0, 0, "empty output"), Err(first));
+        assert_eq!(account.charge_retained(0, "empty fields"), Err(first));
         assert_eq!(account.recover_part(first), Err(first));
     }
 }
