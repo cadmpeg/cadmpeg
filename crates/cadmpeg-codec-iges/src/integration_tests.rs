@@ -49,6 +49,8 @@ use crate::test_support::test_surface_fixtures::{
     tabulated_cylinder_file,
 };
 
+mod measured_geometry;
+
 fn assert_valid(result: &EditableDecodeResult) {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
         .expect("validate the neutral model");

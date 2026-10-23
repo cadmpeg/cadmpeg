@@ -6556,12 +6556,19 @@ fn edge_span(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> Result<CurveS
         })?;
         return curve_reference_span(ir, curve_id, geometry);
     }
-    let range = edge.param_range().ok_or_else(|| {
+    let missing_range = || {
         CodecError::NotImplemented(format!(
             "IGES semantic writer requires a parameter range for edge {}",
             edge.id
         ))
-    })?;
+    };
+    let (range, full_period) = match edge.param_range() {
+        Some(range) => (range, false),
+        None => (
+            closed_edge_full_period(edge, geometry)?.ok_or_else(missing_range)?,
+            true,
+        ),
+    };
     if range[0] >= range[1] {
         return Err(CodecError::malformed(format_args!(
             "IGES edge {} requires a finite non-zero parameter span",
@@ -6613,6 +6620,9 @@ fn edge_span(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> Result<CurveS
         if !close_point_with_tolerance(start, evaluated_start.get(), tolerance)
             || !close_point_with_tolerance(end, evaluated_end.get(), tolerance)
         {
+            if full_period {
+                return Err(missing_range());
+            }
             return Err(CodecError::malformed(format_args!(
                 "IGES edge {} endpoints disagree with its curve parameter range",
                 edge.id
@@ -6620,6 +6630,26 @@ fn edge_span(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> Result<CurveS
         }
     }
     Ok(CurveSpan { range, start, end })
+}
+
+/// The canonical period of a closed edge whose carrier is closed, when the
+/// edge stores no parameter range. `None` means the period is not defined.
+fn closed_edge_full_period(
+    edge: &Edge,
+    geometry: &CurveGeometry,
+) -> Result<Option<FiniteVector<2>>, CodecError> {
+    if edge.start != edge.end {
+        return Ok(None);
+    }
+    match geometry.solved() {
+        Some(solved @ (SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_))) => {
+            default_range(solved).map(Some)
+        }
+        Some(SolvedCurveGeometry::Nurbs(nurbs)) if nurbs.periodic() => {
+            nurbs_domain(nurbs).map(|domain| Some(FiniteVector::from(domain)))
+        }
+        _ => Ok(None),
+    }
 }
 
 fn edge_topology_tolerance(ir: &CadIr, edge: &Edge) -> Result<f64, CodecError> {
