@@ -2715,13 +2715,16 @@ fn build_one(
                 note_failure(failure, face_step, CarrierKind::FaceCarrier);
                 return Err(BuildError::Absent);
             }
-            let face_info = require_carrier(
+            let mut face_info = require_carrier(
                 face_attributes(face_step, fr, exchange, &mut BTreeSet::new(), ctx)?,
                 failure,
                 face_step,
                 CarrierKind::FaceAttributes,
             )
             .ok_or(BuildError::Absent)?;
+            if !shell_forward {
+                face_info.reverse();
+            }
             let outer_bound_count = face_info
                 .bounds
                 .iter()
@@ -3244,12 +3247,11 @@ fn build_one(
                 // order; `unspecified` keeps that order with no outer claim.
                 None => cadmpeg_ir::topology::FaceLoops::unspecified(inner),
             };
-            let face_forward = face_same_sense == shell_forward;
             faces.push(Face {
                 id: fid.clone(),
                 shell: sid.clone(),
                 surface: surface_id,
-                sense: if face_forward {
+                sense: if face_same_sense {
                     Sense::Forward
                 } else {
                     Sense::Reversed
@@ -5167,6 +5169,15 @@ struct FaceInfo<'a> {
     typed: HashSet<u64>,
 }
 
+impl FaceInfo<'_> {
+    /// Reverses the face use: the oriented normal and the traversal of every
+    /// bound change together, so the face stays on the left of each loop.
+    fn reverse(&mut self) {
+        self.same_sense = !self.same_sense;
+        self.reverse_bound_orientation = !self.reverse_bound_orientation;
+    }
+}
+
 fn is_face_record(record: &RawRecord) -> bool {
     record.partial("FACE").is_some()
         || record.partial("ADVANCED_FACE").is_some()
@@ -5228,9 +5239,8 @@ fn face_attributes_inner<'a>(
                 return Ok(None);
             };
             if !orientation {
-                base.reverse_bound_orientation = !base.reverse_bound_orientation;
+                base.reverse();
             }
-            base.same_sense = base.same_sense == orientation;
             if let Some(name) = face_name_value(record) {
                 base.name = Some(name);
             }
