@@ -306,9 +306,9 @@
           "boundary": {
             "coedges": [
               "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%40location1%3A1%3A1",
-              "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%40location1%3A1%3A2",
+              "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%40location1%3A1%3A4",
               "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%40location1%3A1%3A3",
-              "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%40location1%3A1%3A4"
+              "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%40location1%3A1%3A2"
             ],
             "kind": "ring"
           },
