@@ -288,8 +288,9 @@ depth holds no geometry; `measure` refuses it with `insufficient_depth`.
 
 The built-in codecs recognize `.f3d`, `.FCStd`, `.ipt`, `.iam`, `.sldprt`,
 `.3dm`, `.CATPart`, IGES, STEP, bare ASM/ACIS `.sat`/`.smt`/`.smb`/`.sab`
-streams, and the NX and Creo `.prt` layouts by content. Commands that load
-models also accept CADIR JSON. Use `--input-format` (alias `--from`) to bypass
+streams, the NX and Creo `.prt` layouts, and Creo View `.pvz` packages by
+content. Commands that load models also accept CADIR JSON. Use
+`--input-format` (alias `--from`) to bypass
 detection for an ambiguous or extensionless input. Every command that takes
 one input file also accepts `--input FILE` as a spelling of the positional;
 the two-file commands (`diff`, `inspect cmp`, `inspect extract`) take their
