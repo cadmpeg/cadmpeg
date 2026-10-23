@@ -394,14 +394,13 @@ pub(crate) fn project_assembly_joints(
     let mut undecoded_motion_count = 0_usize;
     let mut paired_joints = 0_usize;
     let mut unprojected_members = 0_usize;
-    let mut sensed_joints = 0_usize;
     for scope in scopes {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
         let motion = scope_joint_motion(scope, stream, motions);
         match project_assembly_joint(scope, stream, &occurrences, scopes, inserts, motion) {
-            Ok(Some((joint, undecoded))) => {
+            Ok(Some((mut joint, undecoded))) => {
                 let paired = scope
                     .assembly_alignment()
                     .and_then(|alignment| alignment.operand_path_refs())
@@ -413,12 +412,20 @@ pub(crate) fn project_assembly_joints(
                 if paired {
                     paired_joints += 1;
                 }
-                if scope
-                    .assembly_alignment()
-                    .is_some_and(|alignment| alignment.frame_sense.is_some())
-                {
-                    sensed_joints += 1;
-                }
+                // Every projected `Assemble` joint is paired.
+                joint.set_frame_sense(
+                    scope
+                        .assembly_alignment()
+                        .and_then(|alignment| alignment.frame_sense)
+                        .map(|sense| match sense {
+                            crate::records::feature::assembly::DesignJointFrameSense::Aligned => {
+                                cadmpeg_ir::products::PlaneSense::Aligned
+                            }
+                            crate::records::feature::assembly::DesignJointFrameSense::Opposed => {
+                                cadmpeg_ir::products::PlaneSense::Opposed
+                            }
+                        }),
+                );
                 if let Some(reason) = undecoded {
                     undecoded_motion_count += 1;
                     undecoded_motions.insert(reason);
@@ -443,11 +450,6 @@ pub(crate) fn project_assembly_joints(
         let reasons = undecoded_motions.into_iter().collect::<Vec<_>>().join("; ");
         losses.push(F3dLossCode::AssemblyJointMotionUndecoded.note(format!(
             "{undecoded_motion_count} Design assembly joint(s) were projected as fixed: their motion does not map to a joint kind ({reasons})."
-        )));
-    }
-    if sensed_joints != 0 {
-        losses.push(F3dLossCode::AssemblyJointFrameSenseUnprojected.note(format!(
-            "{sensed_joints} projected Design assembly joint(s) state whether their operand frames mate aligned or opposed; the neutral joint does not carry that sense, which is retained natively."
         )));
     }
     if paired_joints != 0 {
@@ -1295,7 +1297,7 @@ mod tests {
             [crate::loss::F3dLossCode::AssemblyOperandPathPairsNative.kind()]
         );
 
-        // A stored frame sense keeps the joint and says it with a loss.
+        // A stored frame sense is the neutral joint's frame sense.
         let mut sensed = scopes(true, false);
         sensed[0]
             .try_edit(|draft| {
@@ -1308,13 +1310,10 @@ mod tests {
         let projection = super::project_assembly_joints(&sensed, &[], &inserts, &[]);
         assert_eq!(projection.joints.len(), 1);
         assert_eq!(
-            projection
-                .losses
-                .iter()
-                .map(|loss| loss.code.clone())
-                .collect::<Vec<_>>(),
-            [crate::loss::F3dLossCode::AssemblyJointFrameSenseUnprojected.kind()]
+            projection.joints[0].frame_sense(),
+            Some(cadmpeg_ir::products::PlaneSense::Opposed)
         );
+        assert!(projection.losses.is_empty());
 
         // A rigid group's members after its first two each tie to its first
         // member, and every joint names the group's scope.
