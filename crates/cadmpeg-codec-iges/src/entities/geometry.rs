@@ -1707,11 +1707,13 @@ pub(crate) fn project_geometry(
         ctx.charge_entities(2, "iges_geometry_primitives")?;
         ir.model.vertices.extend([
             Vertex {
+                native_ref: None,
                 id: start_vertex.clone(),
                 point: start_point,
                 tolerance: None,
             },
             Vertex {
+                native_ref: None,
                 id: end_vertex.clone(),
                 point: end_point,
                 tolerance: None,
@@ -1721,6 +1723,7 @@ pub(crate) fn project_geometry(
 
         ctx.charge_entities(1, "iges_geometry_primitives")?;
         ir.model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
@@ -1745,6 +1748,7 @@ pub(crate) fn project_geometry(
 
         ctx.charge_entities(1, "iges_geometry_primitives")?;
         ir.model.edges.push(Edge {
+            native_ref: None,
             id: edge.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve), Some([0.0, angle]))
                 .map_err(CodecError::malformed)?,
@@ -1924,6 +1928,7 @@ pub(crate) fn project_geometry(
 
             ctx.charge_entities(1, "iges_geometry_primitives")?;
             ir.model.vertices.push(Vertex {
+                native_ref: None,
                 id: vertex.clone(),
                 point,
                 tolerance: None,
@@ -2018,6 +2023,7 @@ pub(crate) fn project_geometry(
 
         ctx.charge_entities(1, "iges_geometry_primitives")?;
         ir.model.curves.push(Curve {
+            native_ref: None,
             parameter_range: if entry.form == 0 {
                 Some(
                     IncreasingParameterInterval::new([0.0, length]).ok_or_else(|| {
@@ -2056,11 +2062,13 @@ pub(crate) fn project_geometry(
         ctx.charge_entities(2, "iges_geometry_primitives")?;
         ir.model.vertices.extend([
             Vertex {
+                native_ref: None,
                 id: start_vertex.clone(),
                 point: start_point,
                 tolerance: None,
             },
             Vertex {
+                native_ref: None,
                 id: end_vertex.clone(),
                 point: end_point,
                 tolerance: None,
@@ -2069,6 +2077,7 @@ pub(crate) fn project_geometry(
 
         ctx.charge_entities(1, "iges_geometry_primitives")?;
         ir.model.edges.push(Edge {
+            native_ref: None,
             id: edge.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve), Some([0.0, length]))
                 .map_err(CodecError::malformed)?,
@@ -2470,11 +2479,13 @@ pub(crate) fn project_geometry(
         ctx.charge_entities(2, "iges_geometry_primitives")?;
         ir.model.vertices.extend([
             Vertex {
+                native_ref: None,
                 id: start_vertex.clone(),
                 point: start_point,
                 tolerance: None,
             },
             Vertex {
+                native_ref: None,
                 id: end_vertex.clone(),
                 point: end_point,
                 tolerance: None,
@@ -2484,6 +2495,7 @@ pub(crate) fn project_geometry(
 
         ctx.charge_entities(1, "iges_geometry_primitives")?;
         ir.model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
@@ -2492,6 +2504,7 @@ pub(crate) fn project_geometry(
 
         ctx.charge_entities(1, "iges_geometry_primitives")?;
         ir.model.edges.push(Edge {
+            native_ref: None,
             id: edge.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::Bounded(curve, parameter_interval.into()),
             start: start_vertex,
@@ -2563,6 +2576,7 @@ pub(crate) fn project_geometry(
 
         ctx.charge_entities(1, "iges_geometry_wire_topology")?;
         ir.model.bodies.push(Body {
+            native_ref: None,
             id: body.clone(),
             kind: BodyKind::Wire,
             regions: body_regions,
@@ -2575,6 +2589,7 @@ pub(crate) fn project_geometry(
 
         ctx.charge_entities(1, "iges_geometry_wire_topology")?;
         ir.model.regions.push(Region {
+            native_ref: None,
             id: region.clone(),
             body,
             shells: region_shells,

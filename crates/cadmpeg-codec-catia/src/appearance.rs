@@ -487,6 +487,7 @@ mod tests {
     fn model(face_count: usize) -> CadIr {
         let mut ir = CadIr::empty();
         ir.model.bodies.push(Body {
+            native_ref: None,
             id: BodyId::mint("catia:test:body#body").expect("identity grammar"),
             kind: BodyKind::Solid,
             regions: vec![],
@@ -497,6 +498,7 @@ mod tests {
         });
         for index in 0..face_count {
             ir.model.faces.push(Face {
+                native_ref: None,
                 id: FaceId::mint(format!("catia:test:face#face-{index}"))
                     .expect("identity grammar"),
                 shell: ShellId::mint("catia:test:shell#shell").expect("identity grammar"),

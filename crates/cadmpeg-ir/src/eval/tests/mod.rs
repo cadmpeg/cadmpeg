@@ -408,6 +408,7 @@ fn budgeted_model_surface_charges_nurbs_directrix_work() {
     let surface_id = SurfaceId::mint("test:model:entity#budgeted-sweep").expect("valid identity");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: directrix_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -423,6 +424,7 @@ fn budgeted_model_surface_charges_nurbs_directrix_work() {
         source_object: None,
     });
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
@@ -656,6 +658,7 @@ fn direct_analytic_curve_inverses_preserve_native_parameters() {
         let id = CurveId::mint(format!("test:inverse:curve#{index}")).expect("valid identity");
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: id.clone(),
             geometry: CurveGeometry::Solved(geometry.clone()),
@@ -752,6 +755,7 @@ fn polyline_inverse_searches_every_segment_in_native_parameter_space() {
             CurveId::mint(format!("test:polyline-inverse:curve#{index}")).expect("valid identity");
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: id.clone(),
             geometry: CurveGeometry::Solved(geometry),
@@ -776,6 +780,7 @@ fn indexed_curve_inverse_uses_the_caller_tolerance() {
     let id = CurveId::mint("test:model:entity#test:inverse-tolerance").expect("valid identity");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -843,6 +848,7 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
     let id = CurveId::mint("test:model:entity#test:transformed-inverse").expect("valid identity");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: id.clone(),
         geometry: CurveGeometry::Solved(geometry.clone()),
@@ -889,6 +895,7 @@ fn degenerate_curve_inverse_preserves_the_selected_parameter() {
     let id = CurveId::mint("test:model:entity#test:degenerate-inverse").expect("valid identity");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
@@ -993,6 +1000,7 @@ fn recursive_offsets_use_exact_support_normals_at_large_parameters() {
     let mut ir = CadIr::empty();
     ir.model.surfaces = vec![
         Surface {
+            native_ref: None,
             id: support_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 crate::geometry::analytic::PlaneSurface::try_new(
@@ -1005,6 +1013,7 @@ fn recursive_offsets_use_exact_support_normals_at_large_parameters() {
             source_object: None,
         },
         Surface {
+            native_ref: None,
             id: first_id.clone(),
             geometry: SurfaceGeometry::Procedural {
                 construction: first_construction.clone(),
@@ -1013,6 +1022,7 @@ fn recursive_offsets_use_exact_support_normals_at_large_parameters() {
             source_object: None,
         },
         Surface {
+            native_ref: None,
             id: second_id.clone(),
             geometry: SurfaceGeometry::Procedural {
                 construction: second_construction.clone(),
@@ -1088,6 +1098,7 @@ fn linear_offset_support_extension_uses_the_boundary_tangent_plane() {
     let mut ir = CadIr::empty();
     ir.model.surfaces = vec![
         Surface {
+            native_ref: None,
             id: support_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                 NurbsSurface::from_lanes(
@@ -1112,6 +1123,7 @@ fn linear_offset_support_extension_uses_the_boundary_tangent_plane() {
             source_object: None,
         },
         Surface {
+            native_ref: None,
             id: offset_id.clone(),
             geometry: SurfaceGeometry::Procedural {
                 construction: construction.clone(),
@@ -1173,11 +1185,13 @@ fn offset_uses_the_nurbs_carrier_normal_orientation() {
     let mut ir = CadIr::empty();
     ir.model.surfaces = vec![
         Surface {
+            native_ref: None,
             id: support_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(support)),
             source_object: None,
         },
         Surface {
+            native_ref: None,
             id: offset_id.clone(),
             geometry: SurfaceGeometry::Procedural {
                 construction: construction.clone(),
@@ -1230,16 +1244,19 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
     let mut ir = CadIr::empty();
     ir.model.surfaces = vec![
         Surface {
+            native_ref: None,
             id: base_id.clone(),
             geometry: SurfaceGeometry::Solved(plane.clone()),
             source_object: None,
         },
         Surface {
+            native_ref: None,
             id: subset_id.clone(),
             geometry: SurfaceGeometry::Solved(plane),
             source_object: None,
         },
         Surface {
+            native_ref: None,
             id: offset_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
@@ -1294,6 +1311,7 @@ fn curve_bounded_surface_delegates_evaluation_to_its_support() {
     let mut ir = CadIr::empty();
     ir.model.surfaces = vec![
         Surface {
+            native_ref: None,
             id: support_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 crate::geometry::analytic::PlaneSurface::try_new(
@@ -1306,6 +1324,7 @@ fn curve_bounded_surface_delegates_evaluation_to_its_support() {
             source_object: None,
         },
         Surface {
+            native_ref: None,
             id: bounded_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
@@ -1354,6 +1373,7 @@ fn linear_sweep_surface_evaluation_uses_directrix_and_sweep_parameters() {
     let surface_id = SurfaceId::mint("test:model:entity#sweep").expect("valid identity");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: directrix_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
@@ -1377,6 +1397,7 @@ fn linear_sweep_surface_evaluation_uses_directrix_and_sweep_parameters() {
         source_object: None,
     });
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
@@ -1440,6 +1461,7 @@ fn cacheless_revision_extrusion_uses_the_directrix_sense_chart() {
             .expect("valid identity");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: directrix_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -1455,6 +1477,7 @@ fn cacheless_revision_extrusion_uses_the_directrix_sense_chart() {
         source_object: None,
     });
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Procedural {
             construction: construction_id.clone(),
@@ -1542,6 +1565,7 @@ fn axis_revolution_surface_evaluation_rotates_the_profile_parameterization() {
     let surface_id = SurfaceId::mint("test:model:entity#revolution").expect("valid identity");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: directrix_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
@@ -1560,6 +1584,7 @@ fn axis_revolution_surface_evaluation_rotates_the_profile_parameterization() {
         source_object: None,
     });
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
@@ -1622,6 +1647,7 @@ fn revolution_surface_maps_its_angular_parameter_interval() {
         SurfaceId::mint("test:model:entity#mapped-revolution").expect("valid identity");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: directrix_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -1634,6 +1660,7 @@ fn revolution_surface_maps_its_angular_parameter_interval() {
         source_object: None,
     });
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
@@ -1673,6 +1700,7 @@ fn revolution_over_wide_angular_parameter_interval_maps_interior_angle() {
         SurfaceId::mint("test:model:entity#wide-angle-revolution").expect("valid identity");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: directrix_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -1685,6 +1713,7 @@ fn revolution_over_wide_angular_parameter_interval_maps_interior_angle() {
         source_object: None,
     });
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
@@ -1736,6 +1765,7 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
         VertexId::mint("test:model:entity#normalized-profile-end-vertex").expect("valid identity");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: directrix_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -1763,17 +1793,20 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
     ]);
     ir.model.vertices.extend([
         Vertex {
+            native_ref: None,
             id: start_vertex_id.clone(),
             point: start_point_id,
             tolerance: None,
         },
         Vertex {
+            native_ref: None,
             id: end_vertex_id.clone(),
             point: end_point_id,
             tolerance: None,
         },
     ]);
     ir.model.edges.push(Edge {
+        native_ref: None,
         id: EdgeId::mint("test:model:entity#normalized-profile-edge").expect("valid identity"),
         carrier: crate::topology::EdgeCarrier::new(Some(directrix_id.clone()), Some([0.0, 10.0]))
             .unwrap(),
@@ -1782,6 +1815,7 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
         tolerance: None,
     });
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,

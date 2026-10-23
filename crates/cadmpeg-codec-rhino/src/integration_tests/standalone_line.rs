@@ -49,6 +49,7 @@ fn native_line_geometry(bytes: &[u8]) -> CurveGeometry {
 fn round_trip(origin: Point3, direction: UnitVector3, domain: [f64; 2], endpoints: [Point3; 2]) {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        native_ref: None,
         id: "test:geometry:curve#0"
             .try_into()
             .expect("standalone curve identity"),

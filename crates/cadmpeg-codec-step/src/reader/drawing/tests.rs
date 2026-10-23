@@ -32,6 +32,24 @@ fn drawing_graph_transfers_pages_revisions_views_and_opaque_items() {
     );
 
     assert_eq!(result.ir().model.drawings.len(), 6);
+    assert!(result
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .all(|drawing| drawing.native_ref.is_none()));
+    assert_eq!(
+        super::super::NATIVE_ARENAS,
+        &["drawing_targets", "unknowns"]
+    );
+    assert!(result
+        .ir()
+        .native
+        .namespace("step")
+        .expect("STEP native namespace")
+        .arenas()
+        .keys()
+        .all(|arena| super::super::NATIVE_ARENAS.contains(&arena.as_str())));
     let page = result
         .ir()
         .model

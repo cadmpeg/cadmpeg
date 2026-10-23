@@ -195,6 +195,7 @@ fn planar_brep_serializes_trim_iso_without_changing_its_topology_or_curves() {
 #[test]
 fn bounded_free_line_uses_native_endpoints_and_its_declared_domain() {
     let curve = cadmpeg_ir::geometry::Curve {
+        native_ref: None,
         id: "test:geometry:curve#bounded-line"
             .try_into()
             .expect("curve identity"),
@@ -229,6 +230,7 @@ fn bounded_free_line_uses_native_endpoints_and_its_declared_domain() {
 #[test]
 fn unbounded_or_collapsed_free_line_does_not_invent_a_native_domain_or_geometry() {
     let mut curve = cadmpeg_ir::geometry::Curve {
+        native_ref: None,
         id: "test:geometry:curve#unbounded-line"
             .try_into()
             .expect("curve identity"),

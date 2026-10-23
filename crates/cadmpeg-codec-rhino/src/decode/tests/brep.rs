@@ -23,6 +23,7 @@ fn plane_pcurve_scaling_keeps_the_plane_surface() {
         .expect("valid identity");
     let mut staged = BrepDraft::default();
     staged.draft.model_mut().surfaces.push(Surface {
+        native_ref: None,
         id: surface_id.clone(),
         geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             plane,
@@ -52,12 +53,14 @@ fn fallback_discards_topology_and_unknown_record_self_link() {
         ..BrepDraft::default()
     };
     staged.draft.model_mut().curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
         source_object: None,
     });
     staged.draft.model_mut().surfaces.push(Surface {
+        native_ref: None,
         id: surface_id.clone(),
         geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
             record: None,
@@ -65,6 +68,7 @@ fn fallback_discards_topology_and_unknown_record_self_link() {
         source_object: None,
     });
     staged.draft.model_mut().bodies.push(Body {
+        native_ref: None,
         id: "rhino:object:body#x".try_into().expect("valid identity"),
         kind: BodyKind::Sheet,
         regions: Vec::new(),
@@ -165,6 +169,7 @@ fn fallback_candidate_links_free_carrier_before_full_ir_validation() {
         ..BrepDraft::default()
     };
     staged.draft.model_mut().curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(line_nurbs(0.0, 1.0, false))),
@@ -202,6 +207,7 @@ fn colliding_staged_ids_are_rejected_without_mutating_the_candidate() {
         .try_into()
         .expect("valid identity");
     let curve = Curve {
+        native_ref: None,
         parameter_range: None,
         id: curve_id,
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(line_nurbs(0.0, 1.0, false))),
@@ -674,6 +680,7 @@ fn fallback_keeps_thousands_of_free_carriers() {
         let id: cadmpeg_ir::ids::CurveId =
             format!("rhino:object:curve#{index:08}").try_into().unwrap();
         staged.draft.model_mut().curves.push(Curve {
+            native_ref: None,
             id: id.clone(),
             parameter_range: None,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(

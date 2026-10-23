@@ -593,6 +593,7 @@ fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
     use cadmpeg_ir::topology::{Body, BodyKind};
 
     let body = |id: &str, kind| Body {
+        native_ref: None,
         id: BodyId::mint(id).expect("identity grammar"),
         kind,
         regions: Vec::new(),

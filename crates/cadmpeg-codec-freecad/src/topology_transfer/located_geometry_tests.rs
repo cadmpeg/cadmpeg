@@ -47,6 +47,7 @@ fn located_surfaces_copy_only_their_own_construction_and_reuse_placements() {
     let solved = SurfaceId::mint(crate::native::model_id("surface", &payload.id, "2")).unwrap();
     for id in [&base, &solved] {
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 PlaneSurface::try_new(

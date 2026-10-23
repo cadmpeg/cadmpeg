@@ -4551,6 +4551,7 @@ mod shape_association_tests {
     fn shape_ir() -> cadmpeg_ir::CadIr {
         let mut ir = cadmpeg_ir::CadIr::empty();
         ir.model.bodies.push(cadmpeg_ir::topology::Body {
+            native_ref: None,
             id: cadmpeg_ir::ids::BodyId::mint("fcstd:model:body#payload:1").expect("body identity"),
             kind: cadmpeg_ir::topology::BodyKind::default(),
             regions: Vec::new(),

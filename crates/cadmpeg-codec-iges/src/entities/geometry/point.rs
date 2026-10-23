@@ -72,6 +72,7 @@ pub(super) fn project(
         && (entry.status.subordinate() == Some(Subordinate::Independent)
             || !analytic_surface_location))
         .then(|| Vertex {
+            native_ref: None,
             id: crate::ids::vertex(&crate::ids::Stem::directory(entry.sequence)),
             point: point.clone(),
             tolerance: None,

@@ -303,6 +303,14 @@ impl SurfaceGeometry {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Surface {
+    /// Native record projected into this neutral record, when present.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
+
     /// Arena id.
     pub id: SurfaceId,
     /// Surface shape.
@@ -631,6 +639,14 @@ pub fn derive_reference_direction(axis: Vector3) -> Vector3 {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Curve {
+    /// Native record projected into this neutral record, when present.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
+
     /// Arena id.
     pub id: CurveId,
     /// Curve shape.
@@ -732,6 +748,14 @@ impl From<RecordBounds> for [Option<f64>; 4] {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct ProceduralSurface {
+    /// Native record projected into this neutral record, when present.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
+
     /// Stable construction identity.
     pub id: ProceduralSurfaceId,
     /// Neutral construction definition, which states its own cache contract.
@@ -1922,6 +1946,7 @@ impl ProceduralSurface {
         record_bounds: Option<RecordBounds>,
     ) -> Self {
         Self {
+            native_ref: None,
             id,
             definition,
             record_bounds,
@@ -6474,6 +6499,14 @@ impl BlendRadiusLaw {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct ProceduralCurve {
+    /// Native record projected into this neutral record, when present.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
+
     /// Stable construction identity.
     pub id: ProceduralCurveId,
     /// Neutral construction definition, which states its own cache contract.
@@ -7961,7 +7994,11 @@ impl ProceduralCurveDefinition {
 impl ProceduralCurve {
     /// Build a procedural curve from its construction definition.
     pub fn new(id: ProceduralCurveId, definition: ProceduralCurveDefinition) -> Self {
-        Self { id, definition }
+        Self {
+            native_ref: None,
+            id,
+            definition,
+        }
     }
 
     /// Borrow the neutral construction definition.
@@ -8035,6 +8072,14 @@ impl ProceduralCurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ProceduralSurfaceRow {
+    /// Native record projected into this neutral record, when present.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    native_ref: Option<String>,
+
     /// Stable construction identity.
     id: ProceduralSurfaceId,
     /// Carrier surface this construction produces.
@@ -8055,6 +8100,14 @@ pub(crate) struct ProceduralSurfaceRow {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ProceduralCurveRow {
+    /// Native record projected into this neutral record, when present.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    native_ref: Option<String>,
+
     /// Stable construction identity.
     id: ProceduralCurveId,
     /// Carrier curve this construction produces.
@@ -8067,6 +8120,7 @@ impl ProceduralSurfaceRow {
     /// The row a construction and its carrier state.
     pub(crate) fn new(surface: SurfaceId, procedural: &ProceduralSurface) -> Self {
         Self {
+            native_ref: procedural.native_ref.clone(),
             id: procedural.id.clone(),
             surface,
             definition: procedural.definition.clone(),
@@ -8078,7 +8132,12 @@ impl ProceduralSurfaceRow {
     pub(crate) fn into_parts(self) -> (SurfaceId, ProceduralSurface) {
         (
             self.surface,
-            ProceduralSurface::new(self.id, self.definition, self.record_bounds),
+            ProceduralSurface {
+                native_ref: self.native_ref,
+                id: self.id,
+                definition: self.definition,
+                record_bounds: self.record_bounds,
+            },
         )
     }
 }
@@ -8087,6 +8146,7 @@ impl ProceduralCurveRow {
     /// The row a construction and its carrier state.
     pub(crate) fn new(curve: CurveId, procedural: &ProceduralCurve) -> Self {
         Self {
+            native_ref: procedural.native_ref.clone(),
             id: procedural.id.clone(),
             curve,
             definition: procedural.definition.clone(),
@@ -8098,6 +8158,7 @@ impl ProceduralCurveRow {
         (
             self.curve,
             ProceduralCurve {
+                native_ref: self.native_ref,
                 id: self.id,
                 definition: self.definition,
             },
@@ -8375,3 +8436,5 @@ cadmpeg_core::named_optional_field!(deserialize_record_bounds, RecordBounds, "re
 mod identity_rewrite;
 
 mod serialization;
+
+cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");

@@ -123,6 +123,7 @@ fn unencodable_free_surface_keeps_an_independent_solid() {
         .expect("independent solid fixture decodes");
     let mut ir = decoded.ir().clone();
     ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+        native_ref: None,
         id: "test:model:surface#free"
             .try_into()
             .expect("valid authored test identity"),

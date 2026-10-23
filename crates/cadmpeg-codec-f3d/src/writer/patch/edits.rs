@@ -4015,6 +4015,7 @@ mod tests {
 
     fn curve(id: &str, geometry: SolvedCurveGeometry) -> Vec<Curve> {
         vec![Curve {
+            native_ref: None,
             parameter_range: None,
             id: CurveId::mint(id).expect("identity grammar"),
             geometry: CurveGeometry::Solved(geometry),
@@ -4024,6 +4025,7 @@ mod tests {
 
     fn surface(id: &str, geometry: SolvedSurfaceGeometry) -> Vec<Surface> {
         vec![Surface {
+            native_ref: None,
             id: SurfaceId::mint(id).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(geometry),
             source_object: None,

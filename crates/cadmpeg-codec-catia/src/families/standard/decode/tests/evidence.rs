@@ -650,6 +650,7 @@ fn circle_pair_selection_bound_rejects_the_solution_with_a_loss() {
     let surface_id =
         SurfaceId::mint("catia:test:surface#plane".to_string()).expect("identity grammar");
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1307,6 +1308,7 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
     let surface_id =
         SurfaceId::mint("catia:test:surface#surface".to_string()).expect("identity grammar");
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1431,6 +1433,7 @@ fn limit_curve_point_search_bound_skips_the_curve_with_a_loss() {
     let surface_id =
         SurfaceId::mint("catia:test:surface#surface".to_string()).expect("identity grammar");
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1598,6 +1601,7 @@ fn witnessed_cylinder_circle_edge_uses_complementary_angular_range() {
     let surface_id =
         SurfaceId::mint("catia:test:surface#cylinder".to_string()).expect("identity grammar");
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(

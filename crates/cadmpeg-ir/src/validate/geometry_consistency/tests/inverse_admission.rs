@@ -10,6 +10,7 @@ fn fixture() -> (crate::CadIr, crate::ids::SurfaceId, PcurveGeometry) {
     let id: crate::ids::SurfaceId = "test:model:surface#inverse-admission".try_into().unwrap();
     let mut ir = crate::CadIr::empty();
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: id.clone(),
         source_object: None,
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(

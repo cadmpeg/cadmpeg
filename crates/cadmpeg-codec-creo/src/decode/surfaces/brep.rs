@@ -1951,6 +1951,7 @@ pub(in super::super) fn transfer_native_brep(
         source_carriers.admit_vertex(
             ir,
             Vertex {
+                native_ref: None,
                 id: vertex,
                 point: point_id,
                 tolerance: None,
@@ -2037,6 +2038,7 @@ pub(in super::super) fn transfer_native_brep(
             ctx,
             ir,
             Edge {
+                native_ref: None,
                 id,
                 carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                     Some(crate::identity::copy_checked_id(curve.as_str())?),
@@ -2065,6 +2067,7 @@ pub(in super::super) fn transfer_native_brep(
                 ctx,
                 ir,
                 Curve {
+                    native_ref: None,
                     parameter_range: None,
                     id: curve,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
@@ -2192,6 +2195,7 @@ pub(in super::super) fn transfer_native_brep(
         source_carriers.admit_body(
             ir,
             Body {
+                native_ref: None,
                 id: crate::identity::copy_checked_id(body_id.as_str())?,
                 kind: if !wire_curves.is_empty() {
                     BodyKind::General
@@ -2209,6 +2213,7 @@ pub(in super::super) fn transfer_native_brep(
         )?;
         ctx.charge_entities(1, "admit Creo model regions")?;
         ir.model.regions.push(Region {
+            native_ref: None,
             id: crate::identity::copy_checked_id(region_id.as_str())?,
             body: body_id,
             shells: shell_ids,
@@ -2252,6 +2257,7 @@ pub(in super::super) fn transfer_native_brep(
                     ctx,
                     ir,
                     Surface {
+                        native_ref: None,
                         id: crate::identity::copy_checked_id(surface.as_str())?,
                         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                             record: geometry_section_record(scan, face_offset)?,
@@ -2304,6 +2310,7 @@ pub(in super::super) fn transfer_native_brep(
             source_carriers.admit_face(
                 ir,
                 Face {
+                    native_ref: None,
                     id: crate::identity::copy_checked_id(face.as_str())?,
                     shell: shell_id,
                     surface,
@@ -2321,6 +2328,7 @@ pub(in super::super) fn transfer_native_brep(
                 let ring = native_loop_ring(native_loop, *face_id)?;
                 ctx.charge_entities(1, "admit Creo model loops")?;
                 ir.model.loops.push(IrLoop {
+                    native_ref: None,
                     id: crate::identity::copy_checked_id(loop_id.as_str())?,
                     face: crate::identity::copy_checked_id(face.as_str())?,
                     boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
@@ -2475,7 +2483,7 @@ pub(in super::super) fn transfer_native_brep(
                                 source_carriers.admit_pcurve_indexed(
                                     ctx,
                                     ir,
-                                    Pcurve {
+                                    Pcurve { native_ref: None,
                                         id: crate::identity::copy_checked_id(
                                             pcurve.as_str())?,
                                         geometry,
@@ -2503,6 +2511,7 @@ pub(in super::super) fn transfer_native_brep(
                         ctx,
                         ir,
                         Coedge {
+                            native_ref: None,
                             id,
                             owner_loop: crate::identity::copy_checked_id(loop_id.as_str())?,
                             edge: crate::identity::compose_checked(
@@ -2573,6 +2582,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
             ctx,
             ir,
             Surface {
+                native_ref: None,
                 id,
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                     cylinder_surface,
@@ -2649,6 +2659,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                 ctx,
                 ir,
                 Curve {
+                    native_ref: None,
                     parameter_range: None,
                     id,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),

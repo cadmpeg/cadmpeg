@@ -10,6 +10,7 @@ fn form33_without_unique_body_proof_remains_unresolved() {
     use cadmpeg_ir::topology::{Body, BodyKind, Region, Shell};
 
     let body = |slot| Body {
+        native_ref: None,
         id: BodyId::mint(format!("f3d:brep:body#{slot}")).expect("identity grammar"),
         kind: BodyKind::Solid,
         regions: vec![
@@ -23,11 +24,13 @@ fn form33_without_unique_body_proof_remains_unresolved() {
     let bodies = [body(1), body(2)];
     let regions = [
         Region {
+            native_ref: None,
             id: RegionId::mint("test:model:region#1").expect("identity grammar"),
             body: bodies[0].id.clone(),
             shells: vec![ShellId::mint("test:model:shell#1").expect("identity grammar")],
         },
         Region {
+            native_ref: None,
             id: RegionId::mint("test:model:region#2").expect("identity grammar"),
             body: bodies[1].id.clone(),
             shells: vec![ShellId::mint("test:model:shell#2").expect("identity grammar")],

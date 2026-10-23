@@ -256,6 +256,7 @@ mod full_turn_carrier_tests {
                 offset: usize::try_from(id).expect("fixture index fits usize"),
             });
             ir.model.surfaces.push(Surface {
+                native_ref: None,
                 id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("surface ID"),
                 geometry: SurfaceGeometry::Solved(geometry),
                 source_object: None,

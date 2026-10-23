@@ -297,6 +297,7 @@ fn brep_and_free_geometry_round_trip_in_one_archive() {
         None,
     ));
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: CurveId::mint("cadir:model:curve#free").expect("identity grammar"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
@@ -311,6 +312,7 @@ fn brep_and_free_geometry_round_trip_in_one_archive() {
         source_object: None,
     });
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: SurfaceId::mint("cadir:model:surface#free").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(

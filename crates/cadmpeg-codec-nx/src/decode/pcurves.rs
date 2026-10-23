@@ -4319,6 +4319,7 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
             .map_err(cadmpeg_core::CodecError::from)?;
 
         ir.model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: curve_id.clone(),
             geometry: CurveGeometry::Procedural {
@@ -4645,6 +4646,7 @@ mod tests {
 
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Procedural {
@@ -4681,6 +4683,7 @@ mod tests {
             )
             .unwrap();
         ir.model.coedges.push(Coedge {
+            native_ref: None,
             id: coedge_id,
             owner_loop: loop_id.clone(),
             edge: edge_id.clone(),
@@ -4707,6 +4710,7 @@ mod tests {
                 procedural_curves: ir.model.procedural_curves.len(),
             };
             ir.model.faces.push(Face {
+                native_ref: None,
                 id: face_id.clone(),
                 shell: ShellId::mint("nx:s1:shell#0").expect("identity grammar"),
                 surface: completed_surface.clone(),
@@ -4717,6 +4721,7 @@ mod tests {
                 tolerance: None,
             });
             ir.model.loops.push(Loop {
+                native_ref: None,
                 id: loop_id,
                 face: face_id,
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
@@ -4728,6 +4733,7 @@ mod tests {
                 ),
             });
             ir.model.edges.push(Edge {
+                native_ref: None,
                 id: edge_id,
                 carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(
                     CurveId::mint("nx:s0:intersection-crv#0").expect("identity grammar"),
@@ -4737,6 +4743,7 @@ mod tests {
                 tolerance: None,
             });
             ir.model.pcurves.push(Pcurve {
+                native_ref: None,
                 id: pcurve_id,
                 geometry: PcurveGeometry::Line(
                     cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(

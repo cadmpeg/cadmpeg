@@ -181,6 +181,7 @@ fn ellipse_edge_annotation_names_only_a_stored_carrier_range() {
     for range in [None, Some([0.0, 1.0])] {
         let mut out = AsmBrep {
             edges: vec![Edge {
+                native_ref: None,
                 id: EdgeId::from(crate::brep::id(crate::asm_format!("sat"), 1)),
                 carrier: EdgeCarrier::new(
                     Some(CurveId::from(crate::brep::id(crate::asm_format!("sat"), 2))),
@@ -237,11 +238,13 @@ fn unresolved_analytic_carriers_have_no_derived_geometry_fields() {
     ];
     let mut out = AsmBrep {
         surfaces: vec![Surface {
+            native_ref: None,
             id: SurfaceId::from(crate::brep::id(crate::asm_format!("sat"), 0)),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
         }],
         curves: vec![Curve {
+            native_ref: None,
             id: CurveId::from(crate::brep::id(crate::asm_format!("sat"), 1)),
             parameter_range: None,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),

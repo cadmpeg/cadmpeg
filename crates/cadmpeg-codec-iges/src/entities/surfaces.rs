@@ -1488,6 +1488,7 @@ pub(super) fn project(
 
         ctx.charge_entities(1, "iges_geometry_surfaces")?;
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::new(origin, frame),
@@ -1653,6 +1654,7 @@ pub(super) fn project(
 
         ctx.charge_entities(1, "iges_geometry_surfaces")?;
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
             source_object: Some(source_object(entry)?),
@@ -1863,6 +1865,7 @@ pub(super) fn project(
 
                 ctx.charge_entities(1, "iges_geometry_surfaces")?;
                 ir.model.curves.push(Curve {
+                    native_ref: None,
                     parameter_range: IncreasingParameterInterval::new(carrier_interval),
                     id: placed_id.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
@@ -1885,6 +1888,7 @@ pub(super) fn project(
 
             ctx.charge_entities(1, "iges_geometry_surfaces")?;
             ir.model.surfaces.push(Surface {
+                native_ref: None,
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Procedural {
                     construction: procedural_id.clone(),
@@ -2090,6 +2094,7 @@ pub(super) fn project(
         if entry.transform != 0 {
             ctx.charge_entities(1, "iges_geometry_surfaces")?;
             ir.model.curves.push(Curve {
+                native_ref: None,
                 parameter_range: IncreasingParameterInterval::new(cached_interval),
                 id: procedural_directrix.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(placed_directrix)),
@@ -2100,6 +2105,7 @@ pub(super) fn project(
 
         ctx.charge_entities(1, "iges_geometry_surfaces")?;
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
             source_object: Some(source_object(entry)?),
@@ -2297,6 +2303,7 @@ pub(super) fn project(
 
                 ctx.charge_entities(1, "iges_geometry_surfaces")?;
                 ir.model.curves.push(Curve {
+                    native_ref: None,
                     parameter_range: IncreasingParameterInterval::new(carrier_interval),
                     id: procedural_directrix.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
@@ -2337,6 +2344,7 @@ pub(super) fn project(
 
             ctx.charge_entities(1, "iges_geometry_surfaces")?;
             ir.model.surfaces.push(Surface {
+                native_ref: None,
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Procedural {
                     construction: procedural_id.clone(),
@@ -2489,6 +2497,7 @@ pub(super) fn project(
 
         ctx.charge_entities(1, "iges_geometry_surfaces")?;
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
             source_object: Some(source_object(entry)?),
@@ -2521,6 +2530,7 @@ pub(super) fn project(
 
             ctx.charge_entities(1, "iges_geometry_surfaces")?;
             ir.model.curves.push(Curve {
+                native_ref: None,
                 parameter_range: IncreasingParameterInterval::new(cached_interval),
                 id: procedural_directrix.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(placed_generatrix)),
@@ -3001,6 +3011,7 @@ pub(super) fn project(
 
         ctx.charge_entities(1, "iges_geometry_surfaces")?;
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
             source_object: Some(source_object(entry)?),
@@ -3168,6 +3179,7 @@ pub(super) fn project(
 
         ctx.charge_entities(1, "iges_geometry_surfaces")?;
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: surface_id.clone(),
             geometry,
             source_object: Some(source_object(entry)?),

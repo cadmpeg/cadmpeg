@@ -1854,6 +1854,7 @@ fn append_legacy_brep(
             .points
             .push(Point::new(point_id.clone(), finite_position, None));
         model.vertices.push(Vertex {
+            native_ref: None,
             id: vertex_id.clone(),
             point: point_id,
             tolerance: (tolerance > 0.0)
@@ -1890,6 +1891,7 @@ fn append_legacy_brep(
             );
             let domain = curve_domain(&curve)?;
             model.curves.push(Curve {
+                native_ref: None,
                 parameter_range: None,
                 id: id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
@@ -1907,6 +1909,7 @@ fn append_legacy_brep(
             .get(&root)
             .ok_or_else(|| CodecError::Malformed("V1 edge has no vertices".to_string()))?;
         model.edges.push(Edge {
+            native_ref: None,
             id: edge_id.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                 curve_id.as_ref().map(|value| value.0.clone()),
@@ -1941,6 +1944,7 @@ fn append_legacy_brep(
             legacy_identity_key(format!("{suffix}.slot-{face_index}"))?,
         );
         model.surfaces.push(Surface {
+            native_ref: None,
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(face_record.surface)),
             source_object: None,
@@ -1995,7 +1999,7 @@ fn append_legacy_brep(
                         }
                     }
                 }
-                model.pcurves.push(Pcurve {
+                model.pcurves.push(Pcurve { native_ref: None,
                     id: pcurve_id.clone(),
                     geometry: PcurveGeometry::Nurbs {
                         nurbs: PcurveNurbs::from_checked_lanes(
@@ -2037,6 +2041,7 @@ fn append_legacy_brep(
                     .push(coedge_id.clone());
                 coedge_ids.push(coedge_id.clone());
                 model.coedges.push(Coedge {
+                    native_ref: None,
                     id: coedge_id.clone(),
                     owner_loop: loop_id.clone(),
                     edge: group_edges[&root].clone(),
@@ -2061,6 +2066,7 @@ fn append_legacy_brep(
             let ring = cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new())
                 .map_err(|error| CodecError::Malformed(error.to_string()))?;
             model.loops.push(Loop {
+                native_ref: None,
                 id: loop_id.clone(),
                 face: face_id.clone(),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
@@ -2094,6 +2100,7 @@ fn append_legacy_brep(
             cadmpeg_ir::topology::FaceLoops::unspecified(face_loops)
         };
         model.faces.push(Face {
+            native_ref: None,
             id: face_id.clone(),
             shell: shell_id.clone(),
             surface: surface_id,
@@ -2133,11 +2140,13 @@ fn append_legacy_brep(
         .map_err(|message| cadmpeg_core::CodecError::Malformed(message.to_string()))?,
     );
     model.regions.push(Region {
+        native_ref: None,
         id: region_id.clone(),
         body: body_id.clone(),
         shells: vec![shell_id],
     });
     model.bodies.push(Body {
+        native_ref: None,
         id: body_id,
         kind: BodyKind::General,
         regions: vec![region_id],
@@ -2684,6 +2693,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                 .points
                 .push(Point::new(point_id.clone(), position, None));
             ir.model.vertices.push(Vertex {
+                native_ref: None,
                 id: vertex_id.clone(),
                 point: point_id,
                 tolerance: None,
@@ -2694,11 +2704,13 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                 vertex_id,
             ));
             ir.model.regions.push(Region {
+                native_ref: None,
                 id: region_id.clone(),
                 body: body_id.clone(),
                 shells: vec![shell_id],
             });
             ir.model.bodies.push(Body {
+                native_ref: None,
                 id: body_id,
                 kind: BodyKind::General,
                 regions: vec![region_id],
@@ -2824,6 +2836,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                         let start = evaluate_nurbs(&segment, parameter_range[0])?;
                         let end = evaluate_nurbs(&segment, parameter_range[1])?;
                         ir.model.curves.push(Curve {
+                            native_ref: None,
                             parameter_range: None,
                             id: curve_id.clone(),
                             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(segment)),
@@ -2841,17 +2854,20 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                         ]);
                         ir.model.vertices.extend([
                             Vertex {
+                                native_ref: None,
                                 id: start_vertex.clone(),
                                 point: start_point,
                                 tolerance: None,
                             },
                             Vertex {
+                                native_ref: None,
                                 id: end_vertex.clone(),
                                 point: end_point,
                                 tolerance: None,
                             },
                         ]);
                         ir.model.edges.push(Edge {
+                            native_ref: None,
                             id: edge_id.clone(),
                             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                                 Some(curve_id),
@@ -2868,11 +2884,13 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                             edge_id,
                         ));
                         ir.model.regions.push(Region {
+                            native_ref: None,
                             id: region_id.clone(),
                             body: body_id.clone(),
                             shells: vec![shell_id],
                         });
                         ir.model.bodies.push(Body {
+                            native_ref: None,
                             id: body_id,
                             kind: BodyKind::General,
                             regions: vec![region_id],

@@ -83,11 +83,13 @@ fn add_bounded_curve(
     ctx.charge_entities(2, "iges_geometry_conics")?;
     ir.model.vertices.extend([
         Vertex {
+            native_ref: None,
             id: start_vertex.clone(),
             point: start_point,
             tolerance,
         },
         Vertex {
+            native_ref: None,
             id: end_vertex.clone(),
             point: end_point,
             tolerance,
@@ -97,6 +99,7 @@ fn add_bounded_curve(
 
     ctx.charge_entities(1, "iges_geometry_conics")?;
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: curve.clone(),
         geometry,
@@ -105,6 +108,7 @@ fn add_bounded_curve(
 
     ctx.charge_entities(1, "iges_geometry_conics")?;
     ir.model.edges.push(Edge {
+        native_ref: None,
         id: edge.clone(),
         carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve), Some(parameter_range))
             .map_err(cadmpeg_core::CodecError::malformed)?,

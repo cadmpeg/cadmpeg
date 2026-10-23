@@ -20,6 +20,7 @@ fn a_type_122_directrix_start_that_overflows_is_refused_as_non_finite() {
         ProceduralSurfaceId::mint("test:iges:procedural#extrusion").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: directrix.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
@@ -71,6 +72,7 @@ fn a_type_122_hyperbola_directrix_whose_minor_cosh_alone_overflows_has_finite_en
         ProceduralSurfaceId::mint("test:iges:procedural#extrusion").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: directrix.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(

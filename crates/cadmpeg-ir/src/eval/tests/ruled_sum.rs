@@ -30,6 +30,7 @@ fn direct_surface_fixture(
     let mut ir = CadIr::empty();
     ir.model.curves = vec![
         Curve {
+            native_ref: None,
             parameter_range: None,
             id: CurveId::mint("test:model:entity#first").expect("valid identity"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -45,6 +46,7 @@ fn direct_surface_fixture(
             source_object: None,
         },
         Curve {
+            native_ref: None,
             parameter_range: None,
             id: CurveId::mint("test:model:entity#second").expect("valid identity"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -61,6 +63,7 @@ fn direct_surface_fixture(
         },
     ];
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Procedural {
             construction: construction_id.clone(),

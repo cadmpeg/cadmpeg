@@ -711,6 +711,7 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
     };
     scan.surfaces.rows.extend([row(31), row(32), row(33)]);
     let plane = |id, z| Surface {
+        native_ref: None,
         id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1241,6 +1242,7 @@ fn named_linear_sweep_reuses_materialized_cap_extent() {
     };
     scan.surfaces.rows.extend([row(31), row(32)]);
     let plane = |id, z| Surface {
+        native_ref: None,
         id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1461,6 +1463,7 @@ fn datum_feature_uses_its_unique_transferred_plane_carrier() {
     });
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: SurfaceId::mint("creo:visibgeom:surface#6".to_string()).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(

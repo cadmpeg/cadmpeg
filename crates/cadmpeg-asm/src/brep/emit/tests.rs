@@ -796,11 +796,13 @@ fn failed_procedural_curves_discard_only_their_candidate_children() {
     ] {
         let mut out = AsmBrep::default();
         out.surfaces.push(Surface {
+            native_ref: None,
             id: SurfaceId::mint("f3d:brep:entity#existing-surface").unwrap(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
         });
         out.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: CurveId::mint("f3d:brep:entity#existing-curve").unwrap(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),

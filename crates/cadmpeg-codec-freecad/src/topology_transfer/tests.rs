@@ -704,6 +704,7 @@ fn non_manifold_incidence_does_not_invent_a_radial_order() {
             let id =
                 CoedgeId::mint(format!("fcstd:test:coedge#{index}")).expect("identity grammar");
             Coedge {
+                native_ref: None,
                 id: id.clone(),
                 owner_loop: LoopId::mint(format!("fcstd:test:loop#{index}"))
                     .expect("identity grammar"),
@@ -723,6 +724,7 @@ fn non_manifold_incidence_does_not_invent_a_radial_order() {
             let id = CoedgeId::mint(format!("fcstd:test:coedge#four-{index}"))
                 .expect("identity grammar");
             Coedge {
+                native_ref: None,
                 id: id.clone(),
                 owner_loop: LoopId::mint(format!("fcstd:test:loop#four-{index}"))
                     .expect("identity grammar"),
@@ -748,6 +750,7 @@ fn non_manifold_incidence_does_not_invent_a_radial_order() {
 
     let id = CoedgeId::mint("fcstd:test:coedge#single").expect("identity grammar");
     let mut singleton = vec![Coedge {
+        native_ref: None,
         id: id.clone(),
         owner_loop: LoopId::mint("fcstd:test:loop#single").expect("identity grammar"),
         edge,

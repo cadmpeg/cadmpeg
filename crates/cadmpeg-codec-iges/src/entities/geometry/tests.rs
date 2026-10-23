@@ -47,6 +47,7 @@ fn composite_coplanarity_refuses_recursion_depth() {
 
     let child_id = CurveId::mint("iges:model:curve#D1").unwrap();
     let child = Curve {
+        native_ref: None,
         parameter_range: None,
         id: child_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(

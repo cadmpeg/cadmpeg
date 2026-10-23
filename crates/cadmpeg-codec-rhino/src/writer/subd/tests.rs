@@ -30,6 +30,7 @@ fn triangle() -> SubdSurface {
     )
     .unwrap();
     SubdSurface {
+        native_ref: None,
         id: "test:model:subd#triangle".try_into().unwrap(),
         scheme: SubdScheme::CatmullClark,
         cage: SubdCage::new(vertices, edges, vec![face], Vec::new()).unwrap(),
@@ -68,6 +69,7 @@ fn two_faces() -> SubdSurface {
         .unwrap()
     };
     SubdSurface {
+        native_ref: None,
         id: "test:model:subd#two-faces".try_into().unwrap(),
         scheme: SubdScheme::CatmullClark,
         cage: SubdCage::new(

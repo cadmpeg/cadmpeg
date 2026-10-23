@@ -1080,6 +1080,7 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.model.curves.extend([
             Curve {
+                native_ref: None,
                 parameter_range: None,
                 id: id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -1092,6 +1093,7 @@ mod tests {
                 source_object: None,
             },
             Curve {
+                native_ref: None,
                 parameter_range: None,
                 id: id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -1132,6 +1134,7 @@ mod tests {
             "creo:visibgeom:curve#4294967295",
         ] {
             ir.model.curves.push(Curve {
+                native_ref: None,
                 parameter_range: None,
                 id: CurveId::mint(id.to_owned()).expect("identity grammar"),
                 geometry: line.clone(),

@@ -75,7 +75,7 @@ rewrite_enum!(CompoundLoftTail<R, V>, [R, V]; {
     Seven {first_flag, first_scale, second_flag, second_scale, selector, direction, trailing_flags},
     Zero {flags, direction, trailing_flags},
 });
-rewrite_record!(Curve, []; {id, geometry, parameter_range, source_object});
+rewrite_record!(Curve, []; {id, geometry, parameter_range, source_object, native_ref});
 rewrite_enum!(CurveGeometry, []; {
     Procedural {construction, cache},
     Solved(field0),
@@ -196,7 +196,7 @@ rewrite_enum!(OffsetSide<V>, [V]; {
 rewrite_scalar!(ParametricSurfaceCurveFlags);
 rewrite_record!(PlacedCurve, []; {basis, transform, depth});
 rewrite_record!(PlacedSurface, []; {basis, transform, depth});
-rewrite_record!(ProceduralCurve, []; {id, definition});
+rewrite_record!(ProceduralCurve, []; {id, definition, native_ref});
 rewrite_enum!(ProceduralCurveDefinition, []; {
     Exact {cache},
     Law {context, version, extension, primary, additional, cache},
@@ -220,7 +220,7 @@ rewrite_enum!(ProceduralCurveDefinition, []; {
     BlendSpine {blend_surface},
     Unknown {native_kind, record, cache},
 });
-rewrite_record!(ProceduralSurface, []; {id, definition, record_bounds});
+rewrite_record!(ProceduralSurface, []; {id, definition, record_bounds, native_ref});
 rewrite_enum!(ProceduralSurfaceDefinition, []; {
     Exact(field0),
     Compound(field0),
@@ -354,7 +354,7 @@ rewrite_enum!(SpringSupport<R>, [R]; {
 });
 rewrite_scalar!(SubtypeTableIndex);
 rewrite_record!(SupportPcurve, []; {geometry, parameter_range});
-rewrite_record!(Surface, []; {id, geometry, source_object});
+rewrite_record!(Surface, []; {id, geometry, source_object, native_ref});
 rewrite_record!(SurfaceCurveCacheFirst<F>, [F]; {form, flags});
 rewrite_enum!(SurfaceCurveFamily, []; {
     Blend {context, tail},

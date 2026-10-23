@@ -76,6 +76,7 @@ fn add_free_vertex(ir: &mut CadIr) {
         None,
     ));
     ir.model.vertices.push(Vertex {
+        native_ref: None,
         id: vertex.clone(),
         point,
         tolerance: None,

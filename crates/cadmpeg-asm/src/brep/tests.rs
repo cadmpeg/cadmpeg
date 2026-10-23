@@ -923,6 +923,7 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
         )
         .unwrap()],
         loops: vec![Loop {
+            native_ref: None,
             id: LoopId::mint(id(FORMAT, 4).into_string()).expect("identity grammar"),
             face: face_id,
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
@@ -1012,6 +1013,7 @@ fn lump_named_attributes_bind_to_their_owning_body() {
     let body_id = BodyId::mint(id(FORMAT, 1).into_string()).expect("identity grammar");
     let mut brep = AsmBrep {
         bodies: vec![Body {
+            native_ref: None,
             id: body_id.clone(),
             kind: BodyKind::Sheet,
             regions: vec![RegionId::mint(id(FORMAT, 2).into_string()).expect("identity grammar")],
@@ -1021,6 +1023,7 @@ fn lump_named_attributes_bind_to_their_owning_body() {
             visible: None,
         }],
         regions: vec![Region {
+            native_ref: None,
             id: RegionId::mint(id(FORMAT, 2).into_string()).expect("identity grammar"),
             body: body_id.clone(),
             shells: Vec::new(),

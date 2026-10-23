@@ -1205,6 +1205,7 @@ mod tests {
         let mut draft = ModelDraft::new();
         draft
             .insert(Vertex {
+                native_ref: None,
                 id: id.try_into().expect("valid identity"),
                 point: point.try_into().expect("valid identity"),
                 tolerance: None,
@@ -1420,6 +1421,7 @@ mod tests {
         let target = "test:model:point#direct-missing";
         let mut draft = ModelDraft::new();
         draft.model_mut().vertices.push(Vertex {
+            native_ref: None,
             id: owner.try_into().expect("valid identity"),
             point: target.try_into().expect("valid identity"),
             tolerance: None,
@@ -1612,6 +1614,7 @@ mod tests {
         let mut rejected = ModelDraft::new();
         rejected
             .insert(Vertex {
+                native_ref: None,
                 id: rejected_identity.try_into().expect("valid identity"),
                 point: "test:model:point#missing"
                     .try_into()

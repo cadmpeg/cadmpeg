@@ -50,6 +50,7 @@ fn reversed_composite_with_shared_vertex() -> EditableDecodeResult {
                 .points
                 .push(Point::new(point.clone(), position, None));
             ir.model.vertices.push(Vertex {
+                native_ref: None,
                 id: vertices[index].clone(),
                 point,
                 tolerance: None,
@@ -58,6 +59,7 @@ fn reversed_composite_with_shared_vertex() -> EditableDecodeResult {
         let edge = EdgeId::mint("test:model:edge#child").unwrap();
         ir.model.shells[0].add_wire_edge(edge.clone());
         ir.model.edges.push(Edge {
+            native_ref: None,
             id: edge,
             carrier: EdgeCarrier::new(Some(curve_id), Some(range)).unwrap(),
             start: vertices[0].clone(),

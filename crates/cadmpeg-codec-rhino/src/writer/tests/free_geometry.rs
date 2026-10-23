@@ -118,6 +118,7 @@ fn invalid_archive_tolerances_are_rejected_before_output() {
 fn unsupported_curve_is_omitted_with_error() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+        native_ref: None,
         parameter_range: None,
         id: cadmpeg_ir::ids::CurveId::mint("rhino:test:curve#a").expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
@@ -148,6 +149,7 @@ fn unsupported_curve_is_omitted_with_error() {
 fn source_less_circle_round_trips_with_its_frame() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+        native_ref: None,
         parameter_range: None,
         id: cadmpeg_ir::ids::CurveId::mint("rhino:test:curve#circle").expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Circle(
@@ -196,6 +198,7 @@ fn source_less_circle_round_trips_with_its_frame() {
 fn rational_nurbs_curve_round_trips_homogeneous_poles() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+        native_ref: None,
         parameter_range: None,
         id: cadmpeg_ir::ids::CurveId::mint("rhino:test:curve#nurbs").expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -258,6 +261,7 @@ fn reversed_unclamped_nurbs_knots_are_native_canonical() {
 fn free_plane_and_rational_nurbs_surface_round_trip() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+        native_ref: None,
         id: cadmpeg_ir::ids::SurfaceId::mint("rhino:test:surface#plane").expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -270,6 +274,7 @@ fn free_plane_and_rational_nurbs_surface_round_trip() {
         source_object: None,
     });
     ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+        native_ref: None,
         id: cadmpeg_ir::ids::SurfaceId::mint("rhino:test:surface#nurbs").expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
             cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
@@ -616,6 +621,7 @@ fn free_vertex_body_preserves_point_cloud_grouping() {
         cadmpeg_ir::ids::PointId::mint("cadir:model:point#cloud.1").expect("identity grammar"),
     ];
     ir.model.bodies.push(cadmpeg_ir::topology::Body {
+        native_ref: None,
         id: body_id.clone(),
         kind: cadmpeg_ir::topology::BodyKind::General,
         regions: vec![region_id.clone()],
@@ -627,6 +633,7 @@ fn free_vertex_body_preserves_point_cloud_grouping() {
         visible: Some(false),
     });
     ir.model.regions.push(cadmpeg_ir::topology::Region {
+        native_ref: None,
         id: region_id.clone(),
         body: body_id,
         shells: vec![shell_id.clone()],
@@ -643,6 +650,7 @@ fn free_vertex_body_preserves_point_cloud_grouping() {
     );
     for (index, (vertex, point)) in vertex_ids.into_iter().zip(point_ids).enumerate() {
         ir.model.vertices.push(cadmpeg_ir::topology::Vertex {
+            native_ref: None,
             id: vertex,
             point: point.clone(),
             tolerance: None,
@@ -784,6 +792,7 @@ fn unsupported_retained_native_records_are_refused_before_output() {
 fn noncanonical_nurbs_periodicity_is_omitted_with_error() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+        native_ref: None,
         parameter_range: None,
         id: cadmpeg_ir::ids::CurveId::mint("cadir:model:curve#periodic").expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -894,6 +903,7 @@ fn standalone_support_points_and_curves_are_withheld_with_counted_export_loss() 
         Some(support.clone()),
     ));
     ir.model.curves.push(Curve {
+        native_ref: None,
         id: "test:model:curve#support"
             .try_into()
             .expect("synthetic support fixture is admitted"),

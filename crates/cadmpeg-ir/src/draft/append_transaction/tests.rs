@@ -27,6 +27,7 @@ fn vertex_draft(id: &str, point: &str) -> ModelDraft {
     let mut draft = ModelDraft::new();
     draft
         .insert(Vertex {
+            native_ref: None,
             id: id.try_into().expect("vertex identity"),
             point: point.try_into().expect("point reference"),
             tolerance: None,

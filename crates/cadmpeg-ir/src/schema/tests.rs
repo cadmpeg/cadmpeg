@@ -352,6 +352,7 @@ fn borrowed_reference_walk_preserves_a_callback_resource_refusal() {
     use cadmpeg_core::decode::{ResourceDimension, ResourceLimit};
     use cadmpeg_core::CodecError;
     let entity = crate::topology::Vertex {
+        native_ref: None,
         id: "test:model:vertex#owner".try_into().unwrap(),
         point: "test:model:point#target".try_into().unwrap(),
         tolerance: None,

@@ -66,6 +66,7 @@ pub(super) fn sketch_brep(
     );
     let v_axis = normal.cross(u_axis);
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin, normal, u_axis)
@@ -212,12 +213,14 @@ pub(super) fn sketch_brep(
                     .colon(use_index),
             );
             ir.model.curves.push(Curve {
+                native_ref: None,
                 parameter_range: None,
                 id: curve_id.clone(),
                 geometry: generated.curve,
                 source_object: None,
             });
             ir.model.edges.push(Edge {
+                native_ref: None,
                 id: edge_id.clone(),
                 carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                     Some(curve_id),
@@ -235,6 +238,7 @@ pub(super) fn sketch_brep(
                 None => ring = Some(cadmpeg_ir::topology::LoopRing::single(coedge_id.clone())),
             }
             ir.model.coedges.push(Coedge {
+                native_ref: None,
                 id: coedge_id.clone(),
                 owner_loop: loop_id.clone(),
                 edge: edge_id,
@@ -249,6 +253,7 @@ pub(super) fn sketch_brep(
             });
         }
         ir.model.loops.push(Loop {
+            native_ref: None,
             id: loop_id,
             face: face_id.clone(),
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring.ok_or_else(|| {
@@ -286,6 +291,7 @@ pub(super) fn sketch_brep(
             .points
             .push(Point::new(point_id.clone(), finite_position, None));
         ir.model.vertices.push(Vertex {
+            native_ref: None,
             id: vertex_id.clone(),
             point: point_id,
             tolerance: None,
@@ -312,6 +318,7 @@ pub(super) fn sketch_brep(
                 .colon(ordinal),
         );
         ir.model.edges.push(Edge {
+            native_ref: None,
             id: edge_id.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(None),
             start: vertex_id.clone(),
@@ -319,6 +326,7 @@ pub(super) fn sketch_brep(
             tolerance: None,
         });
         ir.model.coedges.push(Coedge {
+            native_ref: None,
             id: coedge_id.clone(),
             owner_loop: loop_id.clone(),
             edge: edge_id,
@@ -328,6 +336,7 @@ pub(super) fn sketch_brep(
             pcurves: Vec::new(),
         });
         ir.model.loops.push(Loop {
+            native_ref: None,
             id: loop_id.clone(),
             face: face_id.clone(),
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
@@ -343,6 +352,7 @@ pub(super) fn sketch_brep(
         )));
     }
     ir.model.faces.push(Face {
+        native_ref: None,
         id: face_id.clone(),
         shell: shell_id.clone(),
         surface: surface_id,
@@ -358,11 +368,13 @@ pub(super) fn sketch_brep(
         face_id,
     ));
     ir.model.regions.push(Region {
+        native_ref: None,
         id: region_id.clone(),
         body: body_id.clone(),
         shells: vec![shell_id],
     });
     ir.model.bodies.push(Body {
+        native_ref: None,
         id: body_id,
         kind: BodyKind::Sheet,
         regions: vec![region_id],
@@ -575,6 +587,7 @@ fn sketch_vertex(
         .points
         .push(Point::new(point_id.clone(), finite_position, None));
     ir.model.vertices.push(Vertex {
+        native_ref: None,
         id: vertex_id.clone(),
         point: point_id,
         tolerance: None,

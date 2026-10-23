@@ -64,6 +64,7 @@ fn standard_full_circle_edge_uses_vertex_seam_and_radian_domain() {
     ));
     let surface_id = SurfaceId::mint("catia:test:surface#surface-0").expect("identity grammar");
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -667,6 +668,7 @@ fn edge_support_reuses_the_surface_with_matching_source_record() {
     let geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: id.clone(),
         geometry: geometry.clone(),
         source_object: Some(source),

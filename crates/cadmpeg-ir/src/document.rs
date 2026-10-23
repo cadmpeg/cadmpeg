@@ -167,8 +167,11 @@ impl Serialize for SurfaceWire<'_> {
     where
         S: Serializer,
     {
-        let mut state = serializer.serialize_struct("Surface", 3)?;
+        let mut state = serializer.serialize_struct("Surface", 4)?;
         state.serialize_field("id", &self.0.id)?;
+        if let Some(native_ref) = &self.0.native_ref {
+            state.serialize_field("native_ref", native_ref)?;
+        }
         match self.0.geometry.solved_cache() {
             Some(cache) => state.serialize_field("geometry", cache)?,
             None => state.serialize_field("geometry", &self.0.geometry)?,
@@ -187,8 +190,11 @@ impl Serialize for CurveWire<'_> {
     where
         S: Serializer,
     {
-        let mut state = serializer.serialize_struct("Curve", 4)?;
+        let mut state = serializer.serialize_struct("Curve", 5)?;
         state.serialize_field("id", &self.0.id)?;
+        if let Some(native_ref) = &self.0.native_ref {
+            state.serialize_field("native_ref", native_ref)?;
+        }
         match self.0.geometry.solved_cache() {
             Some(cache) => state.serialize_field("geometry", cache)?,
             None => state.serialize_field("geometry", &self.0.geometry)?,
@@ -870,8 +876,11 @@ impl Serialize for ProceduralSurfaceRows<'_> {
         }
         impl Serialize for Row<'_> {
             fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-                let mut state = serializer.serialize_struct("ProceduralSurfaceRow", 4)?;
+                let mut state = serializer.serialize_struct("ProceduralSurfaceRow", 5)?;
                 state.serialize_field("id", &self.procedural.id)?;
+                if let Some(native_ref) = &self.procedural.native_ref {
+                    state.serialize_field("native_ref", native_ref)?;
+                }
                 state.serialize_field("surface", self.owner)?;
                 state.serialize_field("definition", self.procedural.definition())?;
                 if let Some(bounds) = self.procedural.record_bounds() {
@@ -904,8 +913,11 @@ impl Serialize for ProceduralCurveRows<'_> {
         }
         impl Serialize for Row<'_> {
             fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-                let mut state = serializer.serialize_struct("ProceduralCurveRow", 3)?;
+                let mut state = serializer.serialize_struct("ProceduralCurveRow", 4)?;
                 state.serialize_field("id", &self.procedural.id)?;
+                if let Some(native_ref) = &self.procedural.native_ref {
+                    state.serialize_field("native_ref", native_ref)?;
+                }
                 state.serialize_field("curve", self.owner)?;
                 state.serialize_field("definition", self.procedural.definition())?;
                 state.end()

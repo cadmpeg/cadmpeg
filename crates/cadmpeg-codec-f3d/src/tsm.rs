@@ -1595,6 +1595,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
         .unwrap_or(name);
     Ok(ParsedCage {
         surface: SubdSurface {
+            native_ref: None,
             id: subd_id(name, source_key)?,
             scheme: SubdScheme::CatmullClark,
             source_object: Some(SourceObjectAssociation {

@@ -36,6 +36,7 @@ fn rectangle() -> CadIr {
     let mut ir = CadIr::empty();
     let id = "test:model:surface#rectangle".try_into().unwrap();
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id,
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(basis)),
         source_object: None,
@@ -513,6 +514,7 @@ fn free_curve_duplicating_a_written_parameter_curve_has_an_export_loss() {
     .unwrap();
     let curve_id: cadmpeg_ir::ids::CurveId = "test:model:curve#duplicate".try_into().unwrap();
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+        native_ref: None,
         id: curve_id.clone(),
         geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(
             cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(carrier),

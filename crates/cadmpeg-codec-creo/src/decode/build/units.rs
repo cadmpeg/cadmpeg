@@ -1520,6 +1520,7 @@ mod tests {
                     ctx,
                     &mut ir,
                     cadmpeg_ir::geometry::Curve {
+                        native_ref: None,
                         parameter_range: None,
                         id: curve_id,
                         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
@@ -1655,6 +1656,7 @@ mod tests {
                 ctx,
                 &mut ir,
                 cadmpeg_ir::geometry::Surface {
+                    native_ref: None,
                     id: surface_id.clone(),
                     geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(
                         SolvedSurfaceGeometry::Unknown { record: None },
@@ -1699,6 +1701,7 @@ mod tests {
                 ctx,
                 &mut ir,
                 cadmpeg_ir::geometry::Curve {
+                    native_ref: None,
                     parameter_range: None,
                     id: curve_id.clone(),
                     geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(
@@ -1855,6 +1858,7 @@ mod tests {
             let surface_id = cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#surface")
                 .expect("identity grammar");
             ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+                native_ref: None,
                 id: surface_id.clone(),
                 geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(
                     SolvedSurfaceGeometry::Unknown { record: None },

@@ -123,6 +123,7 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
             .model
             .surfaces
             .push(cadmpeg_ir::geometry::Surface {
+                native_ref: None,
                 id: nested_surface.clone(),
                 geometry: SurfaceGeometry::Procedural {
                     construction: nested_construction.clone(),
@@ -261,6 +262,7 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
                 .expect("identity grammar");
         let mut ir = cadmpeg_ir::document::CadIr::empty();
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: support.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                 NurbsSurface::from_lanes(
@@ -290,6 +292,7 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
             source_object: None,
         });
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: offset.clone(),
             geometry: SurfaceGeometry::Procedural {
                 construction: construction.clone(),
@@ -346,6 +349,7 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
         )
         .expect("identity grammar");
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: nested.clone(),
             geometry: SurfaceGeometry::Procedural {
                 construction: nested_construction.clone(),
@@ -913,6 +917,7 @@ fn linear_intersection_endpoint_witness_requires_a_clamped_linear_curve() {
     let last = Point3::new(4.0, 5.0, 6.0);
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+        native_ref: None,
         parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -1121,6 +1126,7 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
                     .expect("identity grammar");
             let mut ir = cadmpeg_ir::document::CadIr::empty();
             ir.model.surfaces.push(Surface {
+                native_ref: None,
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                     NurbsSurface::from_lanes(
@@ -1148,6 +1154,7 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
                 source_object: None,
             });
             ir.model.curves.push(Curve {
+                native_ref: None,
                 parameter_range: None,
                 id: curve_id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -1286,6 +1293,7 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
         let mut ir = cadmpeg_ir::document::CadIr::empty();
         ir.model.surfaces.extend([
             Surface {
+                native_ref: None,
                 id: base_surfaces[0].clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1298,6 +1306,7 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
                 source_object: None,
             },
             Surface {
+                native_ref: None,
                 id: base_surfaces[1].clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1312,6 +1321,7 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
         ]);
         for (side, surface) in procedural_surfaces.iter().enumerate() {
             ir.model.surfaces.push(Surface {
+                native_ref: None,
                 id: surface.clone(),
                 geometry: SurfaceGeometry::Procedural {
                     construction: constructions[side].clone(),
@@ -1345,6 +1355,7 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
         let carrier =
             CurveId::mint("test:model:entity#synthetic:coupled-carrier").expect("identity grammar");
         ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+            native_ref: None,
             parameter_range: None,
             id: carrier.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
@@ -1474,6 +1485,7 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
             let id = SurfaceId::mint(format!("test:model:entity#synthetic:offset-support-{side}"))
                 .expect("identity grammar");
             result.ir_mut().model.surfaces.push(Surface {
+                native_ref: None,
                 id: id.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1497,6 +1509,7 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
             ProceduralSurfaceId::mint("test:model:entity#synthetic:dependent-blend-definition")
                 .expect("identity grammar");
         result.ir_mut().model.surfaces.push(Surface {
+            native_ref: None,
             id: blend.clone(),
             geometry: SurfaceGeometry::Procedural {
                 construction: blend_construction.clone(),

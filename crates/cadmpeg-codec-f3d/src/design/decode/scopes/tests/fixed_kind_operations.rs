@@ -1097,6 +1097,7 @@ fn fixed_kind_edge_and_revolve_operations(
         std::slice::from_ref(&axis_selection),
         &[],
         &[cadmpeg_ir::topology::Face {
+            native_ref: None,
             id: cadmpeg_ir::ids::FaceId::mint("f3d:brep:entity#40").expect("identity grammar"),
             shell: cadmpeg_ir::ids::ShellId::mint("test:model:shell#1").expect("identity grammar"),
             surface: surface_id.clone(),
@@ -1107,6 +1108,7 @@ fn fixed_kind_edge_and_revolve_operations(
             tolerance: None,
         }],
         &[cadmpeg_ir::geometry::Surface {
+            native_ref: None,
             id: surface_id,
             geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1198,6 +1200,7 @@ fn fixed_kind_edge_and_revolve_operations(
     };
     let axis_faces = [
         cadmpeg_ir::topology::Face {
+            native_ref: None,
             id: cadmpeg_ir::ids::FaceId::mint("test:model:face#axis-a").expect("identity grammar"),
             shell: cadmpeg_ir::ids::ShellId::mint("test:model:shell#axis")
                 .expect("identity grammar"),
@@ -1210,6 +1213,7 @@ fn fixed_kind_edge_and_revolve_operations(
             tolerance: None,
         },
         cadmpeg_ir::topology::Face {
+            native_ref: None,
             id: cadmpeg_ir::ids::FaceId::mint("test:model:face#axis-b").expect("identity grammar"),
             shell: cadmpeg_ir::ids::ShellId::mint("test:model:shell#axis")
                 .expect("identity grammar"),
@@ -1224,6 +1228,7 @@ fn fixed_kind_edge_and_revolve_operations(
     ];
     let mut axis_surfaces = [
         cadmpeg_ir::geometry::Surface {
+            native_ref: None,
             id: cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#axis-a")
                 .expect("identity grammar"),
             geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(
@@ -1240,6 +1245,7 @@ fn fixed_kind_edge_and_revolve_operations(
             source_object: None,
         },
         cadmpeg_ir::geometry::Surface {
+            native_ref: None,
             id: cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#axis-b")
                 .expect("identity grammar"),
             geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(

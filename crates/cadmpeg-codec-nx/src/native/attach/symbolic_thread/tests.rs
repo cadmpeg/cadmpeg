@@ -43,11 +43,13 @@ fn fixture(cylinders: &[(&str, &str, f64)]) -> CadIr {
                 None,
             ));
             ir.model.vertices.push(Vertex {
+                native_ref: None,
                 id: vertex.clone(),
                 point,
                 tolerance: None,
             });
             ir.model.edges.push(Edge {
+                native_ref: None,
                 id: edge.clone(),
                 start: vertex.clone(),
                 end: vertex,
@@ -55,6 +57,7 @@ fn fixture(cylinders: &[(&str, &str, f64)]) -> CadIr {
                 tolerance: None,
             });
             ir.model.coedges.push(Coedge {
+                native_ref: None,
                 id: coedge.clone(),
                 owner_loop: boundary.clone(),
                 edge,
@@ -64,6 +67,7 @@ fn fixture(cylinders: &[(&str, &str, f64)]) -> CadIr {
                 use_curve: None,
             });
             ir.model.loops.push(Loop {
+                native_ref: None,
                 id: boundary.clone(),
                 face: face.clone(),
                 boundary: LoopBoundary::Ring(LoopRing::single(coedge)),
@@ -71,6 +75,7 @@ fn fixture(cylinders: &[(&str, &str, f64)]) -> CadIr {
             loops.push(boundary);
         }
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: surface.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -84,6 +89,7 @@ fn fixture(cylinders: &[(&str, &str, f64)]) -> CadIr {
             source_object: None,
         });
         ir.model.faces.push(Face {
+            native_ref: None,
             id: face.clone(),
             shell: shell.clone(),
             surface,
@@ -107,11 +113,13 @@ fn fixture(cylinders: &[(&str, &str, f64)]) -> CadIr {
                 .unwrap(),
             );
             ir.model.regions.push(Region {
+                native_ref: None,
                 id: region.clone(),
                 body: body.clone(),
                 shells: vec![shell],
             });
             ir.model.bodies.push(Body {
+                native_ref: None,
                 id: body,
                 kind: BodyKind::Sheet,
                 regions: vec![region],

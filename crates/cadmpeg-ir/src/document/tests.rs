@@ -28,6 +28,7 @@ fn procedural_curve_attachment_moves_the_solved_carrier_into_the_cache() {
         let owner = CurveId::mint("test:model:curve#charged").expect("valid curve identity");
         let mut model = Model::default();
         model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: owner.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
@@ -73,6 +74,7 @@ fn procedural_surface_attachment_moves_the_solved_knot_storage() {
     let original_knot_storage = carrier.u_knots().as_ptr();
     let mut model = Model::default();
     model.surfaces.push(Surface {
+        native_ref: None,
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(carrier)),
         source_object: None,
@@ -113,6 +115,7 @@ fn procedural_curve_attachment_moves_the_solved_knot_storage() {
     let original_knot_storage = carrier.knots().as_ptr();
     let mut model = Model::default();
     model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(carrier)),
@@ -468,6 +471,7 @@ fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
     let surface_construction =
         ProceduralSurfaceId::mint("test:model:surface-construction#cache").expect("valid identity");
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: surface.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             crate::geometry::analytic::PlaneSurface::try_new(
@@ -497,6 +501,7 @@ fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
     let curve_construction =
         ProceduralCurveId::mint("test:model:curve-construction#direct").expect("valid identity");
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: curve.clone(),
         geometry: CurveGeometry::Procedural {
@@ -539,6 +544,7 @@ fn procedural_surface_attachment_moves_solved_cache() {
     let construction = ProceduralSurfaceId::mint("test:model:surface-construction#1").unwrap();
     let mut base = CadIr::empty();
     base.model.surfaces.push(Surface {
+        native_ref: None,
         id: owner.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
@@ -582,6 +588,7 @@ fn procedural_curve_attachment_moves_solved_cache() {
     let construction = ProceduralCurveId::mint("test:model:curve-construction#1").unwrap();
     let mut base = CadIr::empty();
     base.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: owner.clone(),
         geometry: CurveGeometry::Solved(crate::geometry::SolvedCurveGeometry::Unknown {
@@ -1175,6 +1182,7 @@ fn repeated_finalize_admits_thousands_of_sorted_long_identities() {
     let suffix = "x".repeat(128);
     for index in 0..4096 {
         model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: CurveId::mint(format!("test:model:curve#{index:04}{suffix}")).unwrap(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),

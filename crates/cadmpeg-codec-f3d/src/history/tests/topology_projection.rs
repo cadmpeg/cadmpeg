@@ -57,12 +57,14 @@ fn historical_coedge_neighbors_follow_ring_order() {
         .map(|slot| CoedgeId::mint(format!("test:brep:coedge#{slot}")).unwrap())
         .collect();
     brep.loops.push(Loop {
+        native_ref: None,
         id: owner.clone(),
         face: FaceId::mint("test:brep:face#2").unwrap(),
         boundary: LoopBoundary::Ring(LoopRing::new(ids.clone(), Vec::new()).unwrap()),
     });
     for id in &ids {
         brep.coedges.push(Coedge {
+            native_ref: None,
             id: id.clone(),
             owner_loop: owner.clone(),
             edge: EdgeId::mint("test:brep:edge#3").unwrap(),
@@ -94,6 +96,7 @@ fn appended_tolerant_coedge_curves_join_the_curve_family_in_key_order() {
         ("test:brep:tolerant-coedge-curve#5", 5.0),
     ] {
         brep.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: CurveId::mint(id).unwrap(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(

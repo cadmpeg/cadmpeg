@@ -1825,6 +1825,7 @@ impl<'a> DecodeContext<'a> {
                 )?;
             }
             candidate.model.surfaces.push(Surface {
+                native_ref: None,
                 id: surface_id.clone(),
                 geometry: surface_geometry,
                 source_object: Some(association.identity),
@@ -2551,6 +2552,7 @@ impl<'a> DecodeContext<'a> {
                     Some(association.identity.clone()),
                 ));
                 self.session.append_model_mut()?.vertices.push(Vertex {
+                    native_ref: None,
                     id: vertex_id.clone(),
                     point: point_id.clone(),
                     tolerance: None,
@@ -2564,6 +2566,7 @@ impl<'a> DecodeContext<'a> {
                         vertex_id.clone(),
                     ));
                 self.session.append_model_mut()?.regions.push(Region {
+                    native_ref: None,
                     id: region_id.clone(),
                     body: body_id.clone(),
                     shells: vec![shell_id.clone()],
@@ -2641,6 +2644,7 @@ impl<'a> DecodeContext<'a> {
                         Some(association.identity.clone()),
                     ));
                     self.session.append_model_mut()?.vertices.push(Vertex {
+                        native_ref: None,
                         id: vertex_id.clone(),
                         point: point_id,
                         tolerance: None,
@@ -2662,6 +2666,7 @@ impl<'a> DecodeContext<'a> {
                 };
                 self.session.append_model_mut()?.shells.push(shell);
                 self.session.append_model_mut()?.regions.push(Region {
+                    native_ref: None,
                     id: region_id.clone(),
                     body: body_id.clone(),
                     shells: vec![shell_id],
@@ -2740,6 +2745,7 @@ impl<'a> DecodeContext<'a> {
                         ))
                     }?;
                     self.session.append_model_mut()?.surfaces.push(Surface {
+                        native_ref: None,
                         id: surface_id.clone(),
                         geometry: geometry.into_geometry(),
                         source_object: Some(association.identity.clone()),
@@ -2829,6 +2835,7 @@ impl<'a> DecodeContext<'a> {
             ])
             .map_err(|error| error.to_string())?;
             candidate.model.surfaces.push(Surface {
+                native_ref: None,
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(geometry)),
                 source_object: Some(association.identity),
@@ -2945,6 +2952,7 @@ impl<'a> DecodeContext<'a> {
                     )
                 }?;
                 candidate.model.surfaces.push(Surface {
+                    native_ref: None,
                     id: surface_id.clone(),
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                         boundary.boundary.lateral.clone(),
@@ -3038,6 +3046,7 @@ impl<'a> DecodeContext<'a> {
         let association = Self::source_association(identity)?;
         let validation = self.validate_candidate_fallible(|candidate, candidate_annotations| {
             candidate.model.surfaces.push(Surface {
+                native_ref: None,
                 id: id.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                     record: Some(unknown.clone()),
@@ -3541,6 +3550,7 @@ fn stage_extrusion_caps(
                 "extrusion cap staging: PlaneSurface.origin must be finite".to_string()
             })?;
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::new(origin, frame),
@@ -3567,6 +3577,7 @@ fn stage_extrusion_caps(
                     ))
                 }?;
                 ir.model.curves.push(Curve {
+                    native_ref: None,
                     parameter_range: None,
                     id: id.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -3668,18 +3679,20 @@ fn stage_extrusion_caps(
                 Some(association.identity.clone()),
             ));
             ir.model.vertices.push(Vertex {
+                native_ref: None,
                 id: vertex_id.clone(),
                 point: point_id.clone(),
                 tolerance: None,
             });
             ir.model.edges.push(Edge {
+                native_ref: None,
                 id: edge_id.clone(),
                 carrier,
                 start: vertex_id.clone(),
                 end: vertex_id.clone(),
                 tolerance: None,
             });
-            ir.model.pcurves.push(Pcurve {
+            ir.model.pcurves.push(Pcurve { native_ref: None,
                 id: pcurve_id.clone(),
                 geometry: PcurveGeometry::Nurbs { nurbs },
                 metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
@@ -3696,6 +3709,7 @@ fn stage_extrusion_caps(
                 ),
             });
             ir.model.coedges.push(Coedge {
+                native_ref: None,
                 id: coedge_id.clone(),
                 owner_loop: loop_id.clone(),
                 edge: edge_id.clone(),
@@ -3709,6 +3723,7 @@ fn stage_extrusion_caps(
                 use_curve: None,
             });
             ir.model.loops.push(Loop {
+                native_ref: None,
                 id: loop_id.clone(),
                 face: face_id.clone(),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
@@ -3729,6 +3744,7 @@ fn stage_extrusion_caps(
             }
         }
         ir.model.faces.push(Face {
+            native_ref: None,
             id: face_id.clone(),
             shell: shell_id.clone(),
             surface: surface_id.clone(),
@@ -3750,6 +3766,7 @@ fn stage_extrusion_caps(
             face_id,
         ));
         ir.model.regions.push(Region {
+            native_ref: None,
             id: region_id.clone(),
             body: body_id.clone(),
             shells: vec![shell_id.clone()],
@@ -3762,6 +3779,7 @@ fn stage_extrusion_caps(
         return Err("extrusion cap staging: no enabled caps".to_string().into());
     }
     ir.model.bodies.push(Body {
+        native_ref: None,
         id: body_id.clone(),
         kind: BodyKind::Sheet,
         regions: region_ids,
@@ -4077,6 +4095,7 @@ fn stage_brep_carriers(
                         .then(index),
                 );
                 staged.draft.model_mut().surfaces.push(Surface {
+                    native_ref: None,
                     id: id.clone(),
                     geometry: geometry.into_geometry(),
                     source_object: Some(association.identity.clone()),
@@ -4257,6 +4276,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
             Some(association.identity.clone()),
         ));
         staged.draft.model_mut().vertices.push(Vertex {
+            native_ref: None,
             id: vertex_id.clone(),
             point: point_id,
             tolerance: scaled_tolerance(resolved.vertices[index].tolerance, scale)?,
@@ -4277,6 +4297,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         let curve = c3.get(&resolved.edges[index].curve).cloned();
         let vertices = edge_vertices(edge, &resolved.edges[index]);
         staged.draft.model_mut().edges.push(Edge {
+            native_ref: None,
             id: id.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(curve, Some(edge_param_range(edge)))
                 .map_err(crate::curves::GeometryError::unpositioned)?,
@@ -4396,6 +4417,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
                 }?;
                 if coedge_positions[*trim_index].is_none() {
                     staged.draft.model_mut().edges.push(Edge {
+                        native_ref: None,
                         id: synthetic_id.clone(),
                         carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(None),
                         start: vertex_ids[trim_refs.vertices[0]].clone(),
@@ -4420,6 +4442,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
                 });
             }
             staged.draft.model_mut().coedges.push(Coedge {
+                native_ref: None,
                 id: coedge_id.clone(),
                 owner_loop: id.clone(),
                 edge: edge_id,
@@ -4436,6 +4459,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
             coedges.push(coedge_id);
         }
         staged.draft.model_mut().loops.push(Loop {
+            native_ref: None,
             id: id.clone(),
             face: face_id.clone(),
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
@@ -4449,6 +4473,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
     }
     for (face_index, (id, shell, surface, sense, color)) in pending_faces.into_iter().enumerate() {
         staged.draft.model_mut().faces.push(Face {
+            native_ref: None,
             id,
             shell,
             surface,
@@ -4525,6 +4550,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
             region.shells.push(shell_id);
         } else {
             regions.push(Region {
+                native_ref: None,
                 id: region_id,
                 body: body_id.clone(),
                 shells: vec![shell_id],
@@ -4542,6 +4568,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
     }
 
     staged.draft.model_mut().bodies.push(Body {
+        native_ref: None,
         id: body_id.clone(),
         kind: match body_kind {
             crate::brep::BrepBodyKind::Solid => BodyKind::Solid,
@@ -4827,6 +4854,7 @@ fn stage_brep_procedural_surface(
         ))
     }?;
     staged.draft.model_mut().surfaces.push(Surface {
+        native_ref: None,
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(geometry)),
         source_object: Some(context.association.identity.clone()),
@@ -4923,6 +4951,7 @@ fn stage_curve_tree_indexed(
         ))
     }?;
     staged.draft.model_mut().curves.push(Curve {
+        native_ref: None,
         parameter_range,
         id: id.clone(),
         geometry,
@@ -5109,6 +5138,7 @@ fn decode_pcurves(
         };
 
         values.push(Pcurve {
+            native_ref: None,
             id: id.clone(),
             geometry: PcurveGeometry::Nurbs { nurbs },
             metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
@@ -5510,6 +5540,7 @@ fn commit_curve_tree_indexed(
         ))
     }?;
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range,
         id: id.clone(),
         geometry,
@@ -5607,6 +5638,7 @@ fn transform_decoded_curve(
                 CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             );
             let mut carrier = Curve {
+                native_ref: None,
                 parameter_range: None,
                 id: cadmpeg_ir::ids::CurveId::compose(
                     &cadmpeg_ir::identity_namespace!("rhino", "hatch", "curve"),
@@ -5773,6 +5805,7 @@ fn body(
     association: &ObjectContext,
 ) -> Body {
     Body {
+        native_ref: None,
         id,
         kind: BodyKind::General,
         regions,

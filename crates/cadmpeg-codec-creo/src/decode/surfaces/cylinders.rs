@@ -138,6 +138,7 @@ pub(in super::super) fn transfer_active_datum_cylinders(
             ctx,
             ir,
             Surface {
+                native_ref: None,
                 id,
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                     cylinder_surface,
@@ -262,6 +263,7 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
             ctx,
             ir,
             Surface {
+                native_ref: None,
                 id,
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                     cylinder_surface,
@@ -343,6 +345,7 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
             ctx,
             ir,
             Surface {
+                native_ref: None,
                 id,
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                     cylinder_surface,
@@ -417,6 +420,7 @@ pub(in super::super) fn transfer_hole_cylinders(
                 ctx,
                 ir,
                 Surface {
+                    native_ref: None,
                     id,
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(geometry)),
                     source_object: Some(SourceObjectAssociation {
@@ -551,6 +555,7 @@ pub(in super::super) fn transfer_split_outline_cylinders(
                 ctx,
                 ir,
                 Surface {
+                    native_ref: None,
                     id,
                     geometry: geometry.clone(),
                     source_object: Some(SourceObjectAssociation {
@@ -1270,6 +1275,7 @@ pub(in super::super) fn transfer_positional_cylinders(
             ctx,
             ir,
             Surface {
+                native_ref: None,
                 id,
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                     cylinder_surface,
@@ -1516,6 +1522,7 @@ pub(in super::super) fn transfer_positional_cones(
             ctx,
             ir,
             Surface {
+                native_ref: None,
                 id,
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)),
                 source_object: Some(SourceObjectAssociation {
@@ -1588,6 +1595,7 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
                 ctx,
                 ir,
                 Surface {
+                    native_ref: None,
                     id,
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                         sweep.geometry,
@@ -1660,6 +1668,7 @@ pub(in super::super) fn transfer_cross_section_planes(
             ctx,
             ir,
             Surface {
+                native_ref: None,
                 id,
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
                 source_object: Some(SourceObjectAssociation {
@@ -1706,6 +1715,7 @@ pub(in super::super) fn transfer_cross_section_planes(
             ctx,
             ir,
             Surface {
+                native_ref: None,
                 id,
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
                 source_object: Some(SourceObjectAssociation {

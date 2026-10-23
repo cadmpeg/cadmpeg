@@ -20,6 +20,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         ];
         for surface in &surfaces {
             ir.model.surfaces.push(Surface {
+                native_ref: None,
                 id: surface.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -36,6 +37,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         let procedural = ProceduralCurveId::mint("test:model:entity#nx:test:intersection")
             .expect("identity grammar");
         ir.model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Procedural {
@@ -80,6 +82,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
                 None,
             ));
             ir.model.vertices.push(Vertex {
+                native_ref: None,
                 id: vertices[index].clone(),
                 point: points[index].clone(),
                 tolerance: None,
@@ -87,6 +90,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         }
         let edge = EdgeId::mint("test:model:entity#nx:test:edge").expect("identity grammar");
         ir.model.edges.push(Edge {
+            native_ref: None,
             id: edge.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve)),
             start: vertices[0].clone(),
@@ -113,6 +117,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         ];
         for index in 0..2 {
             ir.model.pcurves.push(Pcurve {
+                native_ref: None,
                 id: pcurves[index].clone(),
                 geometry: PcurveGeometry::Line(
                     cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
@@ -134,6 +139,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
                 ),
             });
             ir.model.faces.push(Face {
+                native_ref: None,
                 id: faces[index].clone(),
                 shell: ShellId::mint("test:model:entity#nx:test:shell").expect("identity grammar"),
                 surface: surfaces[index].clone(),
@@ -146,6 +152,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
                 ),
             });
             ir.model.loops.push(Loop {
+                native_ref: None,
                 id: loops[index].clone(),
                 face: faces[index].clone(),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
@@ -154,6 +161,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
                 ),
             });
             ir.model.coedges.push(Coedge {
+                native_ref: None,
                 id: coedges[index].clone(),
                 owner_loop: loops[index].clone(),
                 edge: edge.clone(),
@@ -436,6 +444,7 @@ fn closed_serialized_pcurve_uses_carrier_tangent_for_orientation() {
         let support = SurfaceId::mint("test:model:entity#nx:test:closed-orientation-support")
             .expect("identity grammar");
         ir.model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
@@ -450,6 +459,7 @@ fn closed_serialized_pcurve_uses_carrier_tangent_for_orientation() {
             source_object: None,
         });
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: support.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(

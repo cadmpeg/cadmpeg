@@ -90,7 +90,7 @@ fn presentation_layer_expands_all_product_definition_views() {
         .iter()
         .any(|definition| {
             definition.id.as_str() == "step:product:product#3-definition-8"
-                && definition.native_ref.as_deref() == Some("#8")
+                && definition.native_ref.is_none()
         }));
     assert!(result
         .ir()
@@ -99,8 +99,14 @@ fn presentation_layer_expands_all_product_definition_views() {
         .iter()
         .any(|definition| {
             definition.id.as_str() == "step:product:product#3-definition-6"
-                && definition.native_ref.as_deref() == Some("#6")
+                && definition.native_ref.is_none()
         }));
+    if let Some(namespace) = result.ir().native.namespace("step") {
+        assert!(namespace
+            .arenas()
+            .keys()
+            .all(|arena| super::super::NATIVE_ARENAS.contains(&arena.as_str())));
+    }
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);

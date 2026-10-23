@@ -16,6 +16,7 @@ fn plane() -> (cadmpeg_ir::CadIr, SurfaceId) {
     let mut ir = cadmpeg_ir::CadIr::empty();
     let id = SurfaceId::mint("test:audit:surface#1").unwrap();
     ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+        native_ref: None,
         id: id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -117,6 +118,7 @@ fn periodic_surface_selection_keeps_quarter_seeds_across_a_wide_domain() {
     )
     .expect("wide periodic surface");
     ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+        native_ref: None,
         id: id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
         source_object: None,
@@ -146,6 +148,7 @@ fn pcurve_locus_accepts_a_wide_finite_line_parameter_interval() {
     let (mut ir, surface_id) = plane();
     let curve_id = CurveId::from(ids::data(kind!("curve"), 54));
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+        native_ref: None,
         parameter_range: None,
         id: curve_id,
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -223,6 +226,7 @@ fn pcurve_locus_finds_an_interior_curve_branch_near_the_float_limit() {
         .map(|index| Point3::new(if index == control_count / 2 { 1.0 } else { 0.0 }, 0.0, 0.0))
         .collect();
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+        native_ref: None,
         parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(

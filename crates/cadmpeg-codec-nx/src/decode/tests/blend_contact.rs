@@ -72,6 +72,7 @@ fn blend_grid_samples_a_wide_finite_spine_domain() {
             (second.clone(), Vector3::new(0.0, 1.0, 0.0)),
         ] {
             ir.model.surfaces.push(Surface {
+                native_ref: None,
                 id,
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -87,6 +88,7 @@ fn blend_grid_samples_a_wide_finite_spine_domain() {
         let spine =
             CurveId::mint("test:model:entity#nx:test:wide-blend-spine").expect("identity grammar");
         ir.model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: spine.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -107,6 +109,7 @@ fn blend_grid_samples_a_wide_finite_spine_domain() {
             ProceduralSurfaceId::mint("test:model:entity#nx:test:wide-blend-construction")
                 .expect("identity grammar");
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: surface.clone(),
             geometry: SurfaceGeometry::Procedural {
                 construction: construction.clone(),
@@ -218,6 +221,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
             .expect("identity grammar");
         ir.model.surfaces.extend([
             Surface {
+                native_ref: None,
                 id: first.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -230,6 +234,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
                 source_object: None,
             },
             Surface {
+                native_ref: None,
                 id: second.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -304,6 +309,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
                 .expect("identity grammar");
         ir.model.surfaces.extend([
             Surface {
+                native_ref: None,
                 id: cylinder.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                     cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -317,6 +323,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
                 source_object: None,
             },
             Surface {
+                native_ref: None,
                 id: section_plane.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -367,6 +374,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
             SurfaceId::mint("test:model:entity#synthetic:tangent-plane").expect("identity grammar");
         ir.model.surfaces.extend([
             Surface {
+                native_ref: None,
                 id: tangent_cylinder.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                     cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -380,6 +388,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
                 source_object: None,
             },
             Surface {
+                native_ref: None,
                 id: tangent_plane.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -436,6 +445,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
         );
         ir.model.surfaces.extend([
             Surface {
+                native_ref: None,
                 id: periodic_nurbs.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                     periodic_geometry.clone(),
@@ -443,6 +453,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
                 source_object: None,
             },
             Surface {
+                native_ref: None,
                 id: nurbs_section.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -493,6 +504,7 @@ fn surface_intersection_jacobian_is_stable_at_large_model_coordinates() {
         let origin = Point3::new(1.0e16, 1.0e16, 0.0);
         ir.model.surfaces.extend([
             Surface {
+                native_ref: None,
                 id: horizontal.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -505,6 +517,7 @@ fn surface_intersection_jacobian_is_stable_at_large_model_coordinates() {
                 source_object: None,
             },
             Surface {
+                native_ref: None,
                 id: vertical.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -579,6 +592,7 @@ fn periodic_surface_lookup_rejects_a_cyclic_offset_graph() {
     ];
     for side in 0..2 {
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: surfaces[side].clone(),
             geometry: SurfaceGeometry::Procedural {
                 construction: constructions[side].clone(),
@@ -707,6 +721,7 @@ fn nurbs_curve_closest_parameter_does_not_trust_a_remote_seed() {
         let curve =
             CurveId::mint("test:model:entity#synthetic:piecewise-spine").expect("identity grammar");
         ir.model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -918,6 +933,7 @@ fn blend_contact_matches_separate_analytic_offset_carriers() {
     let offset =
         SurfaceId::mint("test:model:entity#synthetic:offset-cylinder").expect("identity grammar");
     let cylinder = |id, radius| Surface {
+        native_ref: None,
         id,
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -964,6 +980,7 @@ fn blend_contact_matches_separate_analytic_offset_carriers() {
     let offset_plane =
         SurfaceId::mint("test:model:entity#synthetic:offset-plane").expect("identity grammar");
     let plane = |id, origin| Surface {
+        native_ref: None,
         id,
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1012,6 +1029,7 @@ fn blend_contact_matches_concentric_blend_carriers() {
     let second_offset =
         SurfaceId::mint("test:model:entity#synthetic:second-offset").expect("identity grammar");
     let plane = |id, origin, normal, u_axis| Surface {
+        native_ref: None,
         id,
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin, normal, u_axis).unwrap(),
@@ -1058,6 +1076,7 @@ fn blend_contact_matches_concentric_blend_carriers() {
         let construction =
             ProceduralSurfaceId::mint(format!("{surface}:construction")).expect("identity grammar");
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: surface.clone(),
             geometry: SurfaceGeometry::Procedural {
                 construction: construction.clone(),
@@ -1159,6 +1178,7 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
             ProceduralSurfaceId::mint("test:model:entity#synthetic:reverse-contact-blend-record")
                 .expect("identity grammar");
         let plane = |id, origin, normal| Surface {
+            native_ref: None,
             id,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1188,6 +1208,7 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
                 Vector3::new(0.0, 1.0, 0.0),
             ),
             Surface {
+                native_ref: None,
                 id: blend.clone(),
                 geometry: SurfaceGeometry::Procedural {
                     construction: blend_construction.clone(),
@@ -1241,6 +1262,7 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
             None,
         ));
         ir.model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: spine.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -1352,6 +1374,7 @@ fn closest_spine_parameter_inverts_periodic_analytic_curves() {
         .get();
         point.y += 3.0;
         ir.model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: ellipse.clone(),
             geometry,

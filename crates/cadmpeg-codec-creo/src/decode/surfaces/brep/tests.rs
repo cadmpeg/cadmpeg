@@ -68,6 +68,7 @@ fn brep_edge_indexes_preserve_model_curve_multiplicity() {
         mut ir,
     } = brep_edge_index_input();
     let curve = Curve {
+        native_ref: None,
         parameter_range: None,
         id: CurveId::compose(&crate::identity::VISIBGEOM_CURVE, 10),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
@@ -156,6 +157,7 @@ fn brep_pcurve_candidates_preserve_source_order() {
 fn typed_curve_id_fixture() -> CadIr {
     let mut ir = CadIr::empty();
     let circle = |id: u32| Curve {
+        native_ref: None,
         parameter_range: None,
         id: CurveId::mint(format!("creo:visibgeom:curve#{id}")).expect("fixture curve identity"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
@@ -774,6 +776,7 @@ fn native_parameter_loops_admit_proven_two_edge_circles() {
         ((21, 5), vec![([[-1.0, 0.0], [1.0, 0.0]], 0)]),
     ]);
     let circle = |id, radius| Curve {
+        native_ref: None,
         parameter_range: None,
         id: CurveId::mint(format!("creo:visibgeom:curve#{id}")).expect("identity grammar"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
@@ -966,6 +969,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
 
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: SurfaceId::mint("creo:visibgeom:surface#5".to_string()).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -987,6 +991,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
         ),
     ] {
         let curve = Curve {
+            native_ref: None,
             parameter_range: None,
             id: CurveId::mint(format!("creo:visibgeom:curve#{id}")).expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -1070,6 +1075,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
         pcurve.face_1_endpoints = pcurve.face_0_endpoints;
     }
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: SurfaceId::mint("creo:visibgeom:surface#5".to_string()).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1082,6 +1088,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
         source_object: None,
     });
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: SurfaceId::mint("creo:visibgeom:surface#6".to_string()).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(

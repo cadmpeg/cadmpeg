@@ -233,6 +233,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 ctx,
                 ir,
                 Surface {
+                    native_ref: None,
                     id: cap_surface.clone(),
                     geometry: cap_surface_geometry,
                     source_object: None,
@@ -243,6 +244,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 ctx,
                 ir,
                 Curve {
+                    native_ref: None,
                     parameter_range: None,
                     id: curve_id.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
@@ -274,6 +276,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             source_carriers.admit_vertex(
                 ir,
                 Vertex {
+                    native_ref: None,
                     id: vertex_id.clone(),
                     point: point_id,
                     tolerance: None,
@@ -284,6 +287,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 ctx,
                 ir,
                 Edge {
+                    native_ref: None,
                     id: edge_id.clone(),
                     carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                         Some(curve_id),
@@ -297,6 +301,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             )?;
             ctx.charge_entities(1, "admit Creo model loops")?;
             ir.model.loops.push(IrLoop {
+                native_ref: None,
                 id: cap_loop.clone(),
                 face: cap_face.clone(),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
@@ -312,6 +317,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 ctx,
                 ir,
                 Coedge {
+                    native_ref: None,
                     id: cap_coedge.clone(),
                     owner_loop: cap_loop.clone(),
                     edge: edge_id.clone(),
@@ -333,6 +339,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             source_carriers.admit_face(
                 ir,
                 Face {
+                    native_ref: None,
                     id: cap_face.clone(),
                     shell: shell_id.clone(),
                     surface: cap_surface,
@@ -358,6 +365,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             ctx,
             ir,
             Surface {
+                native_ref: None,
                 id: side_surface.clone(),
                 geometry: side_surface_geometry,
                 source_object: None,
@@ -369,6 +377,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             let loop_id: LoopId = circular_identity(feature_id, format_args!("loop:side:{side}"))?;
             ctx.charge_entities(1, "admit Creo model loops")?;
             ir.model.loops.push(IrLoop {
+                native_ref: None,
                 id: loop_id.clone(),
                 face: side_face.clone(),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
@@ -381,6 +390,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 ctx,
                 ir,
                 Coedge {
+                    native_ref: None,
                     id: coedge.clone(),
                     owner_loop: loop_id.clone(),
                     edge,
@@ -404,6 +414,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
         source_carriers.admit_face(
             ir,
             Face {
+                native_ref: None,
                 id: side_face.clone(),
                 shell: shell_id.clone(),
                 surface: side_surface,
@@ -432,6 +443,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
         );
         ctx.charge_entities(1, "admit Creo model regions")?;
         ir.model.regions.push(Region {
+            native_ref: None,
             id: region_id.clone(),
             body: body_id.clone(),
             shells: circular_item(shell_id),
@@ -440,6 +452,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
         source_carriers.admit_body(
             ir,
             Body {
+                native_ref: None,
                 id: body_id,
                 kind: BodyKind::Solid,
                 regions: circular_item(region_id),

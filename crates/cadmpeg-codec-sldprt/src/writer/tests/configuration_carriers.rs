@@ -1217,6 +1217,7 @@ pub(crate) fn semantic_writer_drops_subds_with_loss() {
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.subds.push(cadmpeg_ir::SubdSurface {
+        native_ref: None,
         id: cadmpeg_ir::ids::SubdId::mint("test:sldprt:subd#0").expect("identity grammar"),
         scheme: cadmpeg_ir::SubdScheme::CatmullClark,
         source_object: None,

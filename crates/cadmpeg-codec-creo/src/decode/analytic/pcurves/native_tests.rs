@@ -74,6 +74,7 @@ fn reconciles_pcurve_endpoints_across_evaluable_face_charts() {
         (2, [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]),
     ] {
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(

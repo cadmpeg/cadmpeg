@@ -913,6 +913,7 @@ fn unrepresented_source_does_not_redecode_retained_bytes_for_content() {
 fn partition_graph_comparison_includes_pcurve_geometry_and_face_colours() {
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let pcurve = cadmpeg_ir::geometry::pcurve::Pcurve {
+        native_ref: None,
         id: "test:model:pcurve#patch".try_into().unwrap(),
         geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
             cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
@@ -993,6 +994,7 @@ fn native_partition_patch_refuses_changed_face_colours_and_pcurves() {
             .model
             .pcurves
             .push(cadmpeg_ir::geometry::pcurve::Pcurve {
+                native_ref: None,
                 id: "test:model:pcurve#patch".try_into().unwrap(),
                 geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
                     cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(

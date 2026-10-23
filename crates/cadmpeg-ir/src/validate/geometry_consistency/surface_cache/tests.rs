@@ -22,6 +22,7 @@ fn swept_plane(height: f64) -> CadIr {
         .try_into()
         .unwrap();
     ir.model.curves.push(Curve {
+        native_ref: None,
         id: directrix,
         parameter_range: None,
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(

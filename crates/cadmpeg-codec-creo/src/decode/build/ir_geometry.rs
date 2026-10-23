@@ -901,6 +901,7 @@ mod tests {
 
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: CurveId::mint("creo:visibgeom:curve#10".to_string()).expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
@@ -915,6 +916,7 @@ mod tests {
             source_object: None,
         });
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: SurfaceId::mint("creo:visibgeom:surface#6".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(

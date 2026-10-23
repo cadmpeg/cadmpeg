@@ -113,6 +113,7 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
         })
         .collect();
     let surface = |id, x| Surface {
+        native_ref: None,
         id: SurfaceId::mint(format!("test:model:entity#surface-{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -179,6 +180,7 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
     );
 
     let opposite_side = |id, x| Surface {
+        native_ref: None,
         id: SurfaceId::mint(format!("test:model:entity#surface-{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -280,6 +282,7 @@ fn curve_markers_can_contain_unmatched_construction_loci() {
         .into_iter()
         .enumerate()
         .map(|(id, x)| Surface {
+            native_ref: None,
             id: SurfaceId::mint(format!("test:model:entity#carrier-{id}"))
                 .expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
@@ -439,6 +442,7 @@ fn paired_object_loci_select_a_congruent_bore_pattern() {
     );
 
     surfaces.push(Surface {
+        native_ref: None,
         id: SurfaceId::mint("test:model:entity#duplicate-locus-bore").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -1236,6 +1240,7 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
     .with_construction(true)
     .with_native_ref(Some("construction-point".into()));
     let surface = Surface {
+        native_ref: None,
         id: SurfaceId::mint("test:model:entity#bore").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -1466,6 +1471,7 @@ fn spatial_position_relation_handle_uses_its_model_space_bore_locus() {
     )
     .with_native_ref(Some("relation-handle".into()));
     let surface = Surface {
+        native_ref: None,
         id: SurfaceId::mint("test:model:entity#bore").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(

@@ -1456,6 +1456,7 @@ pub(super) fn build_standard_edge_curve(
     );
     admission.charge()?;
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: id.clone(),
         geometry,
@@ -1637,6 +1638,7 @@ pub(super) fn ensure_native_edge_support_surface(
         Exactness::ByteExact,
     )?;
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: id.clone(),
         geometry,
         source_object: Some(source),
@@ -2049,6 +2051,7 @@ pub(super) fn attach_standard_circles(
         annotations.derived(&id, "geometry.axis")?;
         admission.charge()?;
         ir.model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(payload)),
@@ -2269,6 +2272,7 @@ pub(super) fn attach_standard_lines(
         annotations.derived(&id, "geometry.direction")?;
         admission.charge()?;
         ir.model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(payload)),

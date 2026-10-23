@@ -328,6 +328,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 let primary_id = self.pcurve_id(position + 1, representation_index, false)?;
                 if !ir.model.pcurves.iter().any(|curve| curve.id == primary_id) {
                     ir.model.pcurves.push(Pcurve {
+                        native_ref: None,
                         id: primary_id,
                         geometry: primary_geometry,
                         metadata: PcurveMetadata::general(
@@ -370,6 +371,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                         .any(|curve| curve.id == secondary_id)
                     {
                         ir.model.pcurves.push(Pcurve {
+                            native_ref: None,
                             id: secondary_id,
                             geometry: secondary_geometry,
                             metadata: PcurveMetadata::general(
@@ -542,6 +544,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             return Ok(());
         }
         ir.model.bodies.push(Body {
+            native_ref: None,
             id: body_id.clone(),
             kind,
             regions,
@@ -620,6 +623,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         }
         if !shells.is_empty() {
             ir.model.regions.push(Region {
+                native_ref: None,
                 id: region_id.clone(),
                 body: body.clone(),
                 shells,
@@ -927,6 +931,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 );
 
                 ir.model.surfaces.push(Surface {
+                    native_ref: None,
                     id: SurfaceId::mint(id.as_str().to_owned()).map_err(CodecError::malformed)?,
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(
                         PolygonalSurface::from_admitted_scaled_deflection(
@@ -1041,7 +1046,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 let pcurve =
                     self.face_pcurve(edge_use, edge_transform, surface, surface_transform)?;
                 let id: CoedgeId = coedge_ids[index].clone();
-                ir.model.coedges.push(Coedge {
+                ir.model.coedges.push(Coedge { native_ref: None,
                     id: id.clone(),
                     owner_loop: loop_id.clone(),
                     edge,
@@ -1064,6 +1069,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 });
             }
             ir.model.loops.push(Loop {
+                native_ref: None,
                 id: loop_id.clone(),
                 face: face_id.clone(),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
@@ -1087,6 +1093,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             loops.push(loop_id);
         }
         ir.model.faces.push(Face {
+            native_ref: None,
             id: face_id.clone(),
             shell: shell.clone(),
             surface: surface_id,
@@ -1184,6 +1191,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 normalize_occt_curve_range(curve.geometry.solved()?, param_range)
             });
         ir.model.edges.push(Edge {
+            native_ref: None,
             id: id.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::from_finite_parts(curve, param_range)
                 .map_err(CodecError::malformed)?,
@@ -1239,6 +1247,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         };
         let id = Self::polygon_curve_id(edge, ordinal, false)?;
         ir.model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: CurveId::mint(id.as_str().to_owned()).map_err(CodecError::malformed)?,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline({
@@ -1259,6 +1268,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 deflection,
             } = self.indexed_polygon(polygons[1], *triangulation)?;
             ir.model.curves.push(Curve {
+                native_ref: None,
                 parameter_range: None,
                 id: Self::polygon_curve_id(edge, ordinal, true)?,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline({
@@ -1380,6 +1390,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             Some(self.source_association()?),
         ));
         ir.model.vertices.push(Vertex {
+            native_ref: None,
             id: vertex_id.clone(),
             point: point_id,
             tolerance: positive_tolerance(tolerance.get() * uniform_scale(transform)?.get()),
@@ -1428,6 +1439,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             let geometry = transform_curve(&base.geometry, transform)?;
             let source_object = base.source_object.clone();
             ir.model.curves.push(Curve {
+                native_ref: None,
                 parameter_range: None,
                 id: id.clone(),
                 geometry,
@@ -1470,6 +1482,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             let source_object = base.source_object.clone();
             let has_procedural_construction = base.geometry.procedural_construction().is_some();
             ir.model.surfaces.push(Surface {
+                native_ref: None,
                 id: id.clone(),
                 geometry,
                 source_object,

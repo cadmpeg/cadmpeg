@@ -487,6 +487,7 @@ mod tests {
         let curve = crate::ids::CurveId::mint("test:model:curve#line").unwrap();
         let surface = crate::ids::SurfaceId::mint("test:model:surface#plane").unwrap();
         ir.model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -499,6 +500,7 @@ mod tests {
             source_object: None,
         });
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: surface.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 crate::geometry::analytic::PlaneSurface::try_new(
@@ -567,6 +569,7 @@ mod tests {
         let mut ir = crate::CadIr::empty();
         let id = crate::ids::CurveId::mint("test:model:curve#cycle").unwrap();
         ir.model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
@@ -614,6 +617,7 @@ mod tests {
         use crate::math::{Point2, Point3, Vector3};
 
         let line = |id: &CurveId| Curve {
+            native_ref: None,
             parameter_range: None,
             id: id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -636,6 +640,7 @@ mod tests {
                 .map(|side| SurfaceId::mint(format!("test:model:surface#{level}-{side}")).unwrap());
             for (side, support) in supports.iter().enumerate() {
                 ir.model.surfaces.push(Surface {
+                    native_ref: None,
                     id: support.clone(),
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                         crate::geometry::analytic::PlaneSurface::try_new(

@@ -595,6 +595,7 @@ mod tests {
             crate::ids::ProceduralSurfaceId::mint("test:model:procedural#exact")
                 .expect("valid identity");
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: exact_surface.clone(),
             geometry: SurfaceGeometry::Procedural {
                 construction: exact_construction.clone(),
@@ -612,6 +613,7 @@ mod tests {
         let cached_surface = crate::ids::SurfaceId::mint("test:model:surface#cached".to_string())
             .expect("valid identity");
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: cached_surface.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 crate::geometry::analytic::PlaneSurface::try_new(

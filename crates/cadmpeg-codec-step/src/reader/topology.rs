@@ -1167,6 +1167,7 @@ fn build_wire_set(
             .dash(set_id);
         wire_edges.push(ir_id.clone());
         built_edges.push(Edge {
+            native_ref: None,
             id: ir_id,
             carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(edge_curve_id_reported(
                 edge_id, edge, exchange, losses,
@@ -1202,6 +1203,7 @@ fn build_wire_set(
             return Ok(None);
         }
         built_vertices.push(Vertex {
+            native_ref: None,
             id: VertexId::from(ids::data(
                 kind!("vertex"),
                 IdentityKey::from(vertex_id).with_tail(&vertex_suffix),
@@ -1248,11 +1250,13 @@ fn build_wire_set(
         surfaces: Vec::new(),
         shells: vec![shell_value],
         region: Region {
+            native_ref: None,
             id: region.clone(),
             body: body.clone(),
             shells: vec![shell],
         },
         body: Body {
+            native_ref: None,
             id: body.clone(),
             kind: BodyKind::Wire,
             regions: vec![region],
@@ -1458,6 +1462,7 @@ fn build_shell_wire_set(
         ));
         wire_edges.push(ir_id.clone());
         edges.push(Edge {
+            native_ref: None,
             id: ir_id,
             carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(edge_curve_id_reported(
                 edge_id, edge, exchange, losses,
@@ -1482,6 +1487,7 @@ fn build_shell_wire_set(
             return Ok(None);
         }
         vertices.push(Vertex {
+            native_ref: None,
             id: VertexId::from(ids::data(
                 kind!("vertex"),
                 IdentityKey::from(vertex_id).with_tail(&vertex_suffix),
@@ -1530,11 +1536,13 @@ fn build_shell_wire_set(
         surfaces: Vec::new(),
         shells: vec![shell_value],
         region: Region {
+            native_ref: None,
             id: region.clone(),
             body: body.clone(),
             shells: vec![shell],
         },
         body: Body {
+            native_ref: None,
             id: body.clone(),
             kind: BodyKind::Wire,
             regions: vec![region],
@@ -1641,6 +1649,7 @@ fn build_geometric_set(
             let surface = SurfaceId::from(ids::data(kind!("surface"), surface_step));
             if carrier_index.surfaces.contains_key(&surface_step) {
                 let face = Face {
+                    native_ref: None,
                     id: FaceId::from(ids::data(
                         kind!("face"),
                         IdentityKey::from(surface_step)
@@ -1685,11 +1694,13 @@ fn build_geometric_set(
         surfaces: Vec::new(),
         shells: vec![shell],
         region: Region {
+            native_ref: None,
             id: region.clone(),
             body: body.clone(),
             shells: vec![shell_id],
         },
         body: Body {
+            native_ref: None,
             id: body,
             kind: BodyKind::Sheet,
             regions: vec![region],
@@ -2605,11 +2616,13 @@ fn build_one(
     let mut surfaces = Vec::new();
     let mut shells = Vec::new();
     let mut region = Region {
+        native_ref: None,
         id: rid.clone(),
         body: bid.clone(),
         shells: Vec::new(),
     };
     let body = Body {
+        native_ref: None,
         id: bid,
         kind: if solid {
             BodyKind::Solid
@@ -2779,6 +2792,7 @@ fn build_one(
                 if !implicit_surface_ids.contains(&surface_id) {
                     implicit_surface_ids.insert(surface_id.clone());
                     surfaces.push(Surface {
+                        native_ref: None,
                         id: surface_id.clone(),
                         geometry: require_carrier(
                             implicit_face_plane(
@@ -2868,6 +2882,7 @@ fn build_one(
                         return Err(BuildError::Absent);
                     }
                     loops.push(Loop {
+                        native_ref: None,
                         id: lid.clone(),
                         face: fid.clone(),
                         boundary: cadmpeg_ir::topology::LoopBoundary::Vertex {
@@ -2962,6 +2977,7 @@ fn build_one(
                         ));
                         coedge_ids.push(cid.clone());
                         coedges.push(Coedge {
+                            native_ref: None,
                             id: cid.clone(),
                             owner_loop: lid.clone(),
                             edge: edge_id.clone(),
@@ -2983,6 +2999,7 @@ fn build_one(
                         return Err(BuildError::Absent);
                     };
                     loops.push(Loop {
+                        native_ref: None,
                         id: lid.clone(),
                         face: fid.clone(),
                         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
@@ -3177,6 +3194,7 @@ fn build_one(
                     }
                     coedge_ids.push(cid.clone());
                     coedges.push(Coedge {
+                        native_ref: None,
                         id: cid.clone(),
                         owner_loop: lid.clone(),
                         edge: scoped_edge_id(o.edge, id, shell_step, scope_edges, scope_root),
@@ -3215,6 +3233,7 @@ fn build_one(
                     return Err(BuildError::Absent);
                 };
                 loops.push(Loop {
+                    native_ref: None,
                     id: lid.clone(),
                     face: fid.clone(),
                     boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
@@ -3247,6 +3266,7 @@ fn build_one(
             };
             let face_forward = face_same_sense == shell_forward;
             faces.push(Face {
+                native_ref: None,
                 id: fid.clone(),
                 shell: sid.clone(),
                 surface: surface_id,
@@ -3377,6 +3397,7 @@ fn build_one(
         .ok_or(BuildError::Absent)?;
         let (start, end) = e.curve_vertices();
         edges.push(Edge {
+            native_ref: None,
             id: scoped_edge_id(edge_id, id, shell_step, scope_edges, scope_root),
             carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(edge_curve_id_reported(
                 edge_id, e, exchange, losses,
@@ -3388,6 +3409,7 @@ fn build_one(
     }
     for ((shell_step, edge_identity), (start, end)) in poly_edges {
         edges.push(Edge {
+            native_ref: None,
             id: edge_identity,
             carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(None),
             start: scoped_poly_vertex_id(start, id, shell_step, scope_edges, scope_root),
@@ -3411,6 +3433,7 @@ fn build_one(
         )
         .ok_or(BuildError::Absent)?;
         vertices.push(Vertex {
+            native_ref: None,
             id: scoped_vertex_id(vertex_id, id, shell_step, scope_edges, scope_root),
             point: PointId::from(ids::data(kind!("point"), v.point)),
             tolerance: None,
@@ -3426,6 +3449,7 @@ fn build_one(
         )
         .ok_or(BuildError::Absent)?;
         vertices.push(Vertex {
+            native_ref: None,
             id: scoped_poly_vertex_id(point_id, id, shell_step, scope_edges, scope_root),
             point: PointId::from(ids::data(kind!("point"), point_id)),
             tolerance: None,

@@ -41,6 +41,7 @@ pub(super) fn construction(
         let id = CurveId::mint(format!("{}.sweep-origin", directrix.as_str()))
             .map_err(|error| error.to_string())?;
         ir.model.curves.push(Curve {
+            native_ref: None,
             id: id.clone(),
             parameter_range: None,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),

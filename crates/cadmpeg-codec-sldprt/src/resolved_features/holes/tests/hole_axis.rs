@@ -72,6 +72,7 @@ fn midplane_sketch_uses_component_basis_and_never_arbitrary_datum_axis() {
 #[test]
 fn cylindrical_support_point_defines_its_radial_axis() {
     let surface = Surface {
+        native_ref: None,
         id: SurfaceId::mint("test:model:entity#support").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -115,6 +116,7 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
     .unwrap();
     let mut faces = [
         Face {
+            native_ref: None,
             id: FaceId::mint("test:model:entity#bore").expect("identity grammar"),
             shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
             surface: surfaces[0].id.clone(),
@@ -125,6 +127,7 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
             tolerance: None,
         },
         Face {
+            native_ref: None,
             id: FaceId::mint("test:model:entity#boss").expect("identity grammar"),
             shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
             surface: surfaces[1].id.clone(),
@@ -135,6 +138,7 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
             tolerance: None,
         },
         Face {
+            native_ref: None,
             id: FaceId::mint("test:model:entity#coaxial-bore-segment").expect("identity grammar"),
             shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
             surface: surfaces[2].id.clone(),
@@ -249,6 +253,7 @@ fn generated_face_identities_resolve_primary_bore_axes() {
         .iter()
         .enumerate()
         .map(|(index, surface)| Face {
+            native_ref: None,
             id: FaceId::mint(format!("test:model:entity#face-{index}")).expect("identity grammar"),
             shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
             surface: surface.id.clone(),
@@ -370,6 +375,7 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
         .iter()
         .enumerate()
         .map(|(index, surface)| Face {
+            native_ref: None,
             id: FaceId::mint(format!("test:model:entity#face-{index}")).expect("identity grammar"),
             shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
             surface: surface.id.clone(),
@@ -566,6 +572,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let surface = Surface {
+        native_ref: None,
         id: SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -579,6 +586,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
         source_object: None,
     };
     let cone = Surface {
+        native_ref: None,
         id: SurfaceId::mint("test:model:entity#cone").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
             cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
@@ -594,6 +602,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
         source_object: None,
     };
     let face = Face {
+        native_ref: None,
         id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
         shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
         surface: surface.id.clone(),
@@ -607,6 +616,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
         tolerance: None,
     };
     let loop_ = Loop {
+        native_ref: None,
         id: LoopId::mint("test:model:entity#loop").expect("identity grammar"),
         face: face.id.clone(),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
@@ -618,6 +628,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
         ),
     };
     let coedge = Coedge {
+        native_ref: None,
         id: CoedgeId::mint("test:model:entity#coedge").expect("identity grammar"),
         owner_loop: loop_.id.clone(),
         edge: EdgeId::mint("test:model:entity#edge").expect("identity grammar"),
@@ -627,6 +638,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
         use_curve: None,
     };
     let edge = Edge {
+        native_ref: None,
         id: EdgeId::mint("test:model:entity#edge").expect("identity grammar"),
         carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(None),
         start: VertexId::mint("test:model:entity#start").expect("identity grammar"),
@@ -635,11 +647,13 @@ fn hole_topology_uses_exact_cylinder_spans() {
     };
     let vertices = [
         Vertex {
+            native_ref: None,
             id: VertexId::mint("test:model:entity#start").expect("identity grammar"),
             point: PointId::mint("test:model:entity#start-point").expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
+            native_ref: None,
             id: VertexId::mint("test:model:entity#end").expect("identity grammar"),
             point: PointId::mint("test:model:entity#end-point").expect("identity grammar"),
             tolerance: None,
@@ -1022,6 +1036,7 @@ fn seeded_drilled_bore_candidates_exclude_claimed_axes_and_unresolved_competitor
         .iter()
         .enumerate()
         .map(|(index, (origin, axis))| Surface {
+            native_ref: None,
             id: SurfaceId::mint(format!("test:model:entity#seed-surface-{index}"))
                 .expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
@@ -1044,6 +1059,7 @@ fn seeded_drilled_bore_candidates_exclude_claimed_axes_and_unresolved_competitor
         .iter()
         .enumerate()
         .map(|(index, surface)| Face {
+            native_ref: None,
             id: FaceId::mint(format!("test:model:entity#seed-face-{index}"))
                 .expect("identity grammar"),
             shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),

@@ -296,9 +296,7 @@ pub(super) fn decode(
                 part_number: Some(product_id.clone()),
                 bom_properties: BTreeMap::new(),
                 bodies,
-                native_ref: Some(
-                    definition.map_or_else(|| format!("#{step_id}"), |id| format!("#{id}")),
-                ),
+                native_ref: None,
             });
 
             let grouped = product_definition_ids_by_source.entry(step_id).or_default();
@@ -534,7 +532,7 @@ pub(super) fn decode(
                 name: usage.name.as_deref().map(std::borrow::ToOwned::to_owned),
                 visible: None,
                 link: None,
-                native_ref: Some(format!("#{usage_id}")),
+                native_ref: None,
             });
             ctx.admit_entities(
                 u64_from_index(ir.model.entity_count()),

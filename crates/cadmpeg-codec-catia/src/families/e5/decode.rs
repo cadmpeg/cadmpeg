@@ -182,7 +182,7 @@ pub(in crate::families) fn try_decode_e5(
             if let Err(error) = admission.charge() {
                 return Some(Err(error));
             }
-            ir.model.vertices.push(Vertex {
+            ir.model.vertices.push(Vertex { native_ref: None,
                 id: vertex_id,
                 point: point_id,
                 tolerance: None,
@@ -194,7 +194,7 @@ pub(in crate::families) fn try_decode_e5(
             if let Err(error) = admission.charge() {
                 return Some(Err(error));
             }
-            ir.model.curves.push(Curve {
+            ir.model.curves.push(Curve { native_ref: None,
 parameter_range: None,
                 id,
                 geometry: circle.geometry.clone(),
@@ -214,7 +214,7 @@ parameter_range: None,
             if let Err(error) = admission.charge() {
                 return Some(Err(error));
             }
-            ir.model.surfaces.push(Surface {
+            ir.model.surfaces.push(Surface { native_ref: None,
                 id,
                 geometry: surface.geometry.clone(),
                 source_object: None,
@@ -240,7 +240,7 @@ parameter_range: None,
             if let Err(error) = admission.charge() {
                 return Some(Err(error));
             }
-            ir.model.surfaces.push(Surface {
+            ir.model.surfaces.push(Surface { native_ref: None,
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Procedural {
                     construction: procedural_id.clone(),
@@ -1039,6 +1039,7 @@ fn attach_e5_free_vertices(
         .collect::<Vec<_>>();
     admission.charge()?;
     ir.model.bodies.push(Body {
+        native_ref: None,
         id: body_id.clone(),
         kind: BodyKind::Wire,
         regions,
@@ -1049,6 +1050,7 @@ fn attach_e5_free_vertices(
     });
     admission.charge()?;
     ir.model.regions.push(Region {
+        native_ref: None,
         id: region_id.clone(),
         body: body_id,
         shells,
@@ -1921,6 +1923,7 @@ fn emit_e5_curves_and_edges(
         annotations.derived(&id, "geometry")?;
         admission.charge()?;
         ir.model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id,
             geometry: (geometry).clone(),
@@ -2024,6 +2027,7 @@ fn emit_e5_curves_and_edges(
         }
         admission.charge()?;
         ir.model.edges.push(Edge {
+            native_ref: None,
             id,
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                 edge_curve_ids.get(&record_id).cloned(),
@@ -2061,7 +2065,7 @@ fn emit_e5_pcurves(
         )?;
         annotations.derived(&id, "geometry")?;
         admission.charge()?;
-        ir.model.pcurves.push(Pcurve {
+        ir.model.pcurves.push(Pcurve { native_ref: None,
             id,
             geometry: geometry.clone(),
             metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
@@ -2110,6 +2114,7 @@ fn emit_e5_bodies(
         annotations.derived(&body_id, "regions")?;
         admission.charge()?;
         ir.model.bodies.push(Body {
+            native_ref: None,
             id: body_id.clone(),
             kind: plan.kind,
             regions: region_ids.clone(),
@@ -2135,6 +2140,7 @@ fn emit_e5_bodies(
             let shells = vec![shell_id.clone()];
             admission.charge()?;
             ir.model.regions.push(Region {
+                native_ref: None,
                 id: region_id.clone(),
                 body: body_id.clone(),
                 shells,
@@ -2266,6 +2272,7 @@ fn emit_e5_faces_loops_coedges(
         }
         admission.charge()?;
         ir.model.faces.push(Face {
+            native_ref: None,
             id: face_id.clone(),
             shell: face_shell[&face.record_id].clone(),
             surface: surface_for_ref[&face.surface].0.clone(),
@@ -2329,6 +2336,7 @@ fn emit_e5_faces_loops_coedges(
             };
             admission.charge()?;
             ir.model.loops.push(Loop {
+                native_ref: None,
                 id: loop_id.clone(),
                 face: face_id.clone(),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
@@ -2383,6 +2391,7 @@ fn emit_e5_faces_loops_coedges(
                 });
                 admission.charge()?;
                 ir.model.coedges.push(Coedge {
+                    native_ref: None,
                     id: id.clone(),
                     owner_loop: loop_id.clone(),
                     edge: edge_ids[&edge_ref].clone(),
@@ -4297,6 +4306,7 @@ mod route_tests {
         ]);
         ir.model.vertices.extend([
             Vertex {
+                native_ref: None,
                 id: VertexId::mint("catia:test:vertex#vertex-10".to_string())
                     .expect("identity grammar"),
                 point: PointId::mint("catia:test:point#point-10".to_string())
@@ -4304,6 +4314,7 @@ mod route_tests {
                 tolerance: None,
             },
             Vertex {
+                native_ref: None,
                 id: VertexId::mint("catia:test:vertex#vertex-11".to_string())
                     .expect("identity grammar"),
                 point: PointId::mint("catia:test:point#point-11".to_string())
@@ -4317,6 +4328,7 @@ mod route_tests {
             None,
         ));
         ir.model.vertices.push(Vertex {
+            native_ref: None,
             id: VertexId::mint("catia:test:vertex#vertex-12".to_string())
                 .expect("identity grammar"),
             point: PointId::mint("catia:test:point#point-12".to_string())
@@ -4721,6 +4733,7 @@ mod route_tests {
         let run = |_: &cadmpeg_core::decode::DecodeContext<'_>| {
             let mut ir = CadIr::empty();
             ir.model.surfaces.push(super::Surface {
+                native_ref: None,
                 id: SurfaceId::compose(
                     &cadmpeg_ir::identity_namespace!("catia", "e5", "surf"),
                     0usize,

@@ -15,6 +15,7 @@ fn failed_parser_owner_is_named_without_a_provisional_native_record() {
         .insert_model(
             &ctx,
             crate::topology::Vertex {
+                native_ref: None,
                 id: "step:model:vertex#1".try_into().unwrap(),
                 point: missing.try_into().unwrap(),
                 tolerance: None,

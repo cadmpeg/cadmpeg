@@ -51,6 +51,7 @@ fn free_vertices(transform: Transform) -> CadIr {
         .expect("shell identity");
     body.regions = vec![region.clone()];
     ir.model.regions.push(Region {
+        native_ref: None,
         id: region.clone(),
         body: body.id.clone(),
         shells: vec![shell.clone()],
@@ -68,6 +69,7 @@ fn free_vertices(transform: Transform) -> CadIr {
             .expect("point identity");
         vertices.push(vertex.clone());
         ir.model.vertices.push(Vertex {
+            native_ref: None,
             id: vertex,
             point: point.clone(),
             tolerance: None,

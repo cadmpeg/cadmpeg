@@ -55,6 +55,7 @@ fn boundary_scan() -> crate::container::ContainerScan<'static> {
 
 fn boundary_circle() -> cadmpeg_ir::geometry::Curve {
     cadmpeg_ir::geometry::Curve {
+        native_ref: None,
         parameter_range: None,
         id: CurveId::mint("creo:visibgeom:curve#11".to_string()).expect("identity grammar"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
@@ -72,6 +73,7 @@ fn boundary_circle() -> cadmpeg_ir::geometry::Curve {
 
 fn model_plane(origin: [f64; 3]) -> cadmpeg_ir::geometry::Surface {
     cadmpeg_ir::geometry::Surface {
+        native_ref: None,
         id: SurfaceId::mint("creo:visibgeom:surface#1".to_string()).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -465,6 +467,7 @@ fn counterbore_patch_rows_cover_each_source_row() {
             offset: 0,
         });
     let model_cylinder = |id| cadmpeg_ir::geometry::Surface {
+        native_ref: None,
         id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(

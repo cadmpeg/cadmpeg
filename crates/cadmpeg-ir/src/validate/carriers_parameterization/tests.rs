@@ -277,6 +277,7 @@ fn cube_with_one_coedge_pcurve(
     let id = crate::ids::PcurveId::mint("synthetic:cube:pcurve#nested").expect("valid identity");
     let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.model.pcurves.push(crate::geometry::pcurve::Pcurve {
+        native_ref: None,
         id: id.clone(),
         geometry,
         metadata: crate::geometry::pcurve::PcurveMetadata::default(),
@@ -549,6 +550,7 @@ fn carrier_reachability_preserves_orphan_arena_order() {
     curve.source_object = None;
     ir.model.curves.push(curve);
     ir.model.pcurves.push(crate::geometry::pcurve::Pcurve {
+        native_ref: None,
         id: "test:model:pcurve#orphan".try_into().unwrap(),
         geometry: line_pcurve_leaf(),
         metadata: crate::geometry::pcurve::PcurveMetadata::default(),

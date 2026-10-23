@@ -1022,6 +1022,7 @@ mod tests {
         let carrier = CurveId::mint("test:model:entity#report-intersection-carrier")
             .expect("identity grammar");
         ir.model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: carrier.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),

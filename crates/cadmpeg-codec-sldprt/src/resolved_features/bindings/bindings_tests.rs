@@ -273,6 +273,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         }],
     };
     let face = Face {
+        native_ref: None,
         id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
         shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
         surface: SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
@@ -289,6 +290,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
     ])
     .expect("affine transform");
     let surface = Surface {
+        native_ref: None,
         id: SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(
             cadmpeg_ir::geometry::PlacedSurface::try_new(

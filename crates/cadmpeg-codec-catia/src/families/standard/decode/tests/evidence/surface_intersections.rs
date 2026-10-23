@@ -44,6 +44,7 @@ fn standard_planar_spline_edge_solves_line_and_retains_intersection_construction
     }
     for index in 0..2 {
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: SurfaceId::mint(format!("catia:test:surface#surface-{index}"))
                 .expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -169,6 +170,7 @@ fn standard_sphere_plane_spline_edge_derives_unbounded_circle_carrier() {
         SurfaceId::mint("catia:test:surface#plane".to_string()).expect("identity grammar");
     ir.model.surfaces.extend([
         Surface {
+            native_ref: None,
             id: sphere_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
                 cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
@@ -182,6 +184,7 @@ fn standard_sphere_plane_spline_edge_derives_unbounded_circle_carrier() {
             source_object: None,
         },
         Surface {
+            native_ref: None,
             id: plane_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -263,6 +266,7 @@ fn standard_cylinder_plane_spline_edge_derives_ellipse_carrier() {
         SurfaceId::mint("catia:test:surface#plane".to_string()).expect("identity grammar");
     ir.model.surfaces.extend([
         Surface {
+            native_ref: None,
             id: cylinder_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -276,6 +280,7 @@ fn standard_cylinder_plane_spline_edge_derives_ellipse_carrier() {
             source_object: None,
         },
         Surface {
+            native_ref: None,
             id: plane_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -369,6 +374,7 @@ fn standard_equal_perpendicular_cylinders_select_one_ellipse_branch() {
         .expect("identity grammar");
     ir.model.surfaces.extend([
         Surface {
+            native_ref: None,
             id: first_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -382,6 +388,7 @@ fn standard_equal_perpendicular_cylinders_select_one_ellipse_branch() {
             source_object: None,
         },
         Surface {
+            native_ref: None,
             id: second_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -663,6 +670,7 @@ fn same_surface_spline_requires_an_exact_ruled_surface_generator() {
     let solve = |geometry, points: [Point3; 2]| {
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: SurfaceId::mint("catia:test:surface#surface".to_string())
                 .expect("identity grammar"),
             geometry,

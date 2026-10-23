@@ -202,6 +202,7 @@ mod tests {
             .expect("test root fits policy");
         let mut brep = AsmBrep::default();
         brep.regions.push(Region {
+            native_ref: None,
             id: RegionId::mint("sat:brep:region#1").unwrap(),
             body: BodyId::mint("sat:brep:body#1").unwrap(),
             shells: Vec::new(),

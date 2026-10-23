@@ -1127,6 +1127,7 @@ pub(super) fn project(
 
             ctx.charge_entities(1, "iges_geometry_offsets")?;
             ir.model.curves.push(Curve {
+                native_ref: None,
                 parameter_range: None,
                 id: offset_source_id.clone(),
                 geometry: CurveGeometry::Solved(placed_geometry),
@@ -1153,11 +1154,13 @@ pub(super) fn project(
         ctx.charge_entities(2, "iges_geometry_offsets")?;
         ir.model.vertices.extend([
             Vertex {
+                native_ref: None,
                 id: start_vertex.clone(),
                 point: start_point,
                 tolerance: None,
             },
             Vertex {
+                native_ref: None,
                 id: end_vertex.clone(),
                 point: end_point,
                 tolerance: None,
@@ -1167,6 +1170,7 @@ pub(super) fn project(
 
         ctx.charge_entities(1, "iges_geometry_offsets")?;
         ir.model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: curve_id.clone(),
             geometry,
@@ -1195,6 +1199,7 @@ pub(super) fn project(
 
         ctx.charge_entities(1, "iges_geometry_offsets")?;
         ir.model.edges.push(Edge {
+            native_ref: None,
             id: edge_id.clone(),
             carrier,
             start: start_vertex,

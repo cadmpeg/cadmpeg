@@ -208,6 +208,7 @@ fn actual_candidate_refusals_and_unowned_annotation_edits_leave_both_destination
             let vertex = "test:model:vertex#missing";
             missing
                 .insert(Vertex {
+                    native_ref: None,
                     id: vertex.try_into().expect("vertex identity"),
                     point: fresh.try_into().expect("missing target"),
                     tolerance: None,

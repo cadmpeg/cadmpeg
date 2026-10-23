@@ -83,6 +83,7 @@ fn cube_with_a_collapsed_edge(ring_kind: Ring) -> CadIr {
     let edge = EdgeId::mint("test:model:edge#collapsed").unwrap();
     let coedge = CoedgeId::mint("test:model:coedge#collapsed").unwrap();
     source.model.curves.push(Curve {
+        native_ref: None,
         id: curve.clone(),
         parameter_range: None,
         source_object: None,
@@ -91,6 +92,7 @@ fn cube_with_a_collapsed_edge(ring_kind: Ring) -> CadIr {
         )),
     });
     source.model.edges.push(Edge {
+        native_ref: None,
         id: edge.clone(),
         carrier: EdgeCarrier::unbounded(Some(curve)),
         start: if same_vertex { corner.clone() } else { other },
@@ -98,6 +100,7 @@ fn cube_with_a_collapsed_edge(ring_kind: Ring) -> CadIr {
         tolerance: None,
     });
     source.model.coedges.push(Coedge {
+        native_ref: None,
         id: coedge.clone(),
         owner_loop: source.model.loops[loop_index].id.clone(),
         edge,
@@ -119,6 +122,7 @@ fn cube_with_a_collapsed_edge(ring_kind: Ring) -> CadIr {
     if ring_kind == Ring::AloneWithPcurves {
         let pcurve = PcurveId::mint("test:model:pcurve#collapsed").unwrap();
         source.model.pcurves.push(Pcurve {
+            native_ref: None,
             id: pcurve.clone(),
             geometry: PcurveGeometry::Nurbs {
                 nurbs: PcurveNurbs::new(
@@ -151,6 +155,7 @@ fn cube_with_a_collapsed_edge(ring_kind: Ring) -> CadIr {
         let circle_edge = EdgeId::mint("test:model:edge#closed-circle").unwrap();
         let circle_coedge = CoedgeId::mint("test:model:coedge#closed-circle").unwrap();
         source.model.curves.push(Curve {
+            native_ref: None,
             id: circle.clone(),
             parameter_range: None,
             source_object: None,
@@ -165,6 +170,7 @@ fn cube_with_a_collapsed_edge(ring_kind: Ring) -> CadIr {
             )),
         });
         source.model.edges.push(Edge {
+            native_ref: None,
             id: circle_edge.clone(),
             carrier: EdgeCarrier::unbounded(Some(circle)),
             start: corner_vertex.clone(),
@@ -172,6 +178,7 @@ fn cube_with_a_collapsed_edge(ring_kind: Ring) -> CadIr {
             tolerance: None,
         });
         source.model.coedges.push(Coedge {
+            native_ref: None,
             id: circle_coedge.clone(),
             owner_loop: source.model.loops[loop_index].id.clone(),
             edge: circle_edge,

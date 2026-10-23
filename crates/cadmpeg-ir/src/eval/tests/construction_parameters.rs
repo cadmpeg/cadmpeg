@@ -19,6 +19,7 @@ fn line_in_nurbs_carrier() -> (CadIr, CurveId) {
     .unwrap();
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
@@ -94,6 +95,7 @@ fn line_construction_keeps_surface_and_directrix_intervals_independent() {
     let curve_id = CurveId::mint("test:model:curve#independent-intervals").unwrap();
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        native_ref: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             crate::geometry::analytic::LineCurve::try_new(

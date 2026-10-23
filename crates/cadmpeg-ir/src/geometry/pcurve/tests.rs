@@ -320,6 +320,7 @@ fn pcurve_lift_rejects_non_finite_model_poles() {
 #[test]
 fn asm_inline_pcurve_metadata_lives_under_its_own_nested_key() {
     let pcurve = crate::geometry::pcurve::Pcurve {
+        native_ref: None,
         id: crate::ids::PcurveId::mint("test:model:pcurve#inline").expect("valid identity"),
         geometry: crate::geometry::pcurve::PcurveGeometry::Line(
             crate::geometry::pcurve::LinePcurve::try_new(

@@ -165,6 +165,7 @@ fn repeated_occurrence_merge_remaps_typed_graphs_disjointly() {
     let mut merged = Model::default();
     let mut component = Model::default();
     component.bodies = vec![Body {
+        native_ref: None,
         id: BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
         kind: BodyKind::Solid,
         regions: vec![RegionId::mint("f3d:brep:entity#2").expect("identity grammar")],
@@ -174,6 +175,7 @@ fn repeated_occurrence_merge_remaps_typed_graphs_disjointly() {
         visible: None,
     }];
     component.regions = vec![Region {
+        native_ref: None,
         id: RegionId::mint("f3d:brep:entity#2").expect("identity grammar"),
         body: BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
         shells: Vec::new(),
@@ -208,6 +210,7 @@ fn occurrence_merge_preserves_a_body_name_that_spells_its_identity() {
     let ctx = cadmpeg_test_support::service_decode_context();
     let source_id = "f3d:model:body#source";
     let body = Body {
+        native_ref: None,
         id: BodyId::mint(source_id).unwrap(),
         kind: BodyKind::Solid,
         regions: vec![RegionId::mint("f3d:model:region#source").unwrap()],

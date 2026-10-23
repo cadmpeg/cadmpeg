@@ -465,6 +465,7 @@ fn buf_line_count(buf: &[u8]) -> usize {
 pub(super) fn cylinder_surface_doc() -> CadIr {
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: SurfaceId::mint("test:model:surface#cyl").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -946,12 +947,14 @@ pub(crate) fn analytic_conics_round_trip_through_step() {
     let mut source = CadIr::empty();
     source.model.curves.extend([
         Curve {
+            native_ref: None,
             parameter_range: None,
             id: CurveId::mint("test:model:curve#parabola").expect("identity grammar"),
             geometry: parabola.clone(),
             source_object: None,
         },
         Curve {
+            native_ref: None,
             parameter_range: None,
             id: CurveId::mint("test:model:curve#hyperbola").expect("identity grammar"),
             geometry: hyperbola.clone(),
@@ -988,6 +991,7 @@ pub(crate) fn analytic_conics_round_trip_through_step() {
 pub(crate) fn standalone_geometry_uses_general_shape_representation() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: CurveId::mint("test:model:curve#line").expect("identity grammar"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -1476,6 +1480,7 @@ fn analytic_surfaces_map_to_their_step_entities() {
     for (geom, kw) in cases {
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: SurfaceId::mint("test:model:surface#s").expect("identity grammar"),
             geometry: geom,
             source_object: None,
@@ -1724,6 +1729,7 @@ fn a_linear_sweep_whose_magnitude_overflows_uses_held_carrier() {
         let mut ir = CadIr::empty();
         let directrix: CurveId = "test:model:curve#directrix".try_into().unwrap();
         ir.model.curves.push(Curve {
+            native_ref: None,
             id: directrix.clone(),
             parameter_range: None,
             source_object: None,
@@ -1747,6 +1753,7 @@ fn a_linear_sweep_whose_magnitude_overflows_uses_held_carrier() {
             None,
         );
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: "test:model:surface#sweep".try_into().unwrap(),
             source_object: None,
             geometry: SurfaceGeometry::Procedural {

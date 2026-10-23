@@ -146,6 +146,7 @@ fn generated_table_cap_classes_bind_the_ordered_cap_planes() {
         offset: usize::try_from(id).expect("fixture index fits usize"),
     };
     let plane = |id, z| Surface {
+        native_ref: None,
         id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -232,6 +233,7 @@ fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
             row(35, true),
         ]);
         let plane = |id, origin, normal| Surface {
+            native_ref: None,
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -246,6 +248,7 @@ fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
         let mut ir = CadIr::empty();
         ir.model.surfaces.extend([
             Surface {
+                native_ref: None,
                 id: SurfaceId::mint("creo:visibgeom:surface#37".to_string())
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),

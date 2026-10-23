@@ -136,6 +136,7 @@ fn saved_spline_definition() -> crate::feature::definitions::FeatureDefinition {
 
 fn saved_spline_curve() -> Curve {
     Curve {
+        native_ref: None,
         parameter_range: None,
         id: CurveId::mint("creo:featdefs:saved_spline_curve#40:1".to_string())
             .expect("identity grammar"),

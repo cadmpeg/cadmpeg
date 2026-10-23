@@ -573,6 +573,7 @@ pub(super) fn transfer_fc05_cap_circles(
                 ctx,
                 ir,
                 Curve {
+                    native_ref: None,
                     parameter_range: None,
                     id,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),
@@ -626,6 +627,7 @@ pub(super) fn transfer_fc05_cap_circles(
             ctx,
             ir,
             Surface {
+                native_ref: None,
                 id: surface_id,
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                     cylinder_surface,

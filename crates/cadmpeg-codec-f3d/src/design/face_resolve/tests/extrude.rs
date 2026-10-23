@@ -74,6 +74,7 @@ fn start_binder_fixture(
     };
     let surface_id = faces[0].surface.clone();
     let surfaces = vec![Surface {
+        native_ref: None,
         id: surface_id,
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -270,6 +271,7 @@ fn selected_face_start_requires_unique_sketch_plane_coincidence() {
         native_ref: None,
     };
     let face = |id: &str, surface: &str| Face {
+        native_ref: None,
         id: FaceId::mint(format!("test:model:face#{id}")).expect("identity grammar"),
         shell: ShellId::mint("test:model:shell#shell").expect("identity grammar"),
         surface: SurfaceId::mint(format!("test:model:surface#{surface}"))
@@ -281,6 +283,7 @@ fn selected_face_start_requires_unique_sketch_plane_coincidence() {
         tolerance: None,
     };
     let plane = |id: &str, origin: Point3, normal: Vector3| Surface {
+        native_ref: None,
         id: SurfaceId::mint(format!("test:model:surface#{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -423,6 +426,7 @@ fn extrude_target_geometry_requires_one_forward_parallel_plane() {
     const TARGET_ANGULAR_TOLERANCE: f64 = 1.0e-9;
 
     let face_with_surface = |slot: i64, surface: &str| Face {
+        native_ref: None,
         id: face(slot),
         shell: ShellId::mint("test:model:shell#shell").expect("identity grammar"),
         surface: SurfaceId::mint(format!("test:model:surface#{surface}"))
@@ -434,6 +438,7 @@ fn extrude_target_geometry_requires_one_forward_parallel_plane() {
         tolerance: None,
     };
     let plane = |id: &str, origin: Point3, normal: Vector3| Surface {
+        native_ref: None,
         id: SurfaceId::mint(format!("test:model:surface#{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(

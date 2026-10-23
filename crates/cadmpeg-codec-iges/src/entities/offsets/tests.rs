@@ -180,6 +180,7 @@ fn offset_source_range_uses_the_unique_curve_endpoint_match() {
     let source_id = CurveId::mint("test:model:curve#source").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: source_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -219,22 +220,26 @@ fn offset_source_range_uses_the_unique_curve_endpoint_match() {
     ]);
     ir.model.vertices.extend([
         Vertex {
+            native_ref: None,
             id: VertexId::mint("test:model:vertex#wrong-start").expect("identity grammar"),
             point: PointId::mint("test:model:point#wrong-start-point").expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
+            native_ref: None,
             id: VertexId::mint("test:model:vertex#wrong-end").expect("identity grammar"),
             point: PointId::mint("test:model:point#wrong-end-point").expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
+            native_ref: None,
             id: VertexId::mint("test:model:vertex#matching-start").expect("identity grammar"),
             point: PointId::mint("test:model:point#matching-start-point")
                 .expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
+            native_ref: None,
             id: VertexId::mint("test:model:vertex#matching-end").expect("identity grammar"),
             point: PointId::mint("test:model:point#matching-end-point").expect("identity grammar"),
             tolerance: None,
@@ -242,6 +247,7 @@ fn offset_source_range_uses_the_unique_curve_endpoint_match() {
     ]);
     ir.model.edges.extend([
         Edge {
+            native_ref: None,
             id: EdgeId::mint("test:model:edge#wrong-occurrence").expect("identity grammar"),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                 Some(source_id.clone()),
@@ -253,6 +259,7 @@ fn offset_source_range_uses_the_unique_curve_endpoint_match() {
             tolerance: None,
         },
         Edge {
+            native_ref: None,
             id: EdgeId::mint("test:model:edge#matching-occurrence").expect("identity grammar"),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                 Some(source_id.clone()),

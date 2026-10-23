@@ -506,6 +506,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
             ctx,
             ir,
             Surface {
+                native_ref: None,
                 id,
                 geometry,
                 source_object: Some(SourceObjectAssociation {
@@ -657,6 +658,7 @@ pub(in super::super) fn transfer_positional_spline_replays(
             ctx,
             ir,
             Surface {
+                native_ref: None,
                 id,
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
                 source_object: Some(SourceObjectAssociation {
@@ -840,6 +842,7 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
             ctx,
             ir,
             Surface {
+                native_ref: None,
                 id,
                 geometry,
                 source_object: Some(SourceObjectAssociation {

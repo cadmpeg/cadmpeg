@@ -238,6 +238,7 @@ mod tests {
         Brep {
             asm: AsmBrep {
                 bodies: vec![Body {
+                    native_ref: None,
                     id: BodyId::mint("f3d:brep:entity#1").unwrap(),
                     kind: BodyKind::default(),
                     regions: vec![],
@@ -329,6 +330,7 @@ mod tests {
         let carrier = model.faces[0].surface.clone();
         let support = cadmpeg_ir::ids::SurfaceId::mint("f3d:brep:surface#support").unwrap();
         model.surfaces.push(Surface {
+            native_ref: None,
             id: support.clone(),
             geometry: model.surfaces[0].geometry.clone(),
             source_object: None,

@@ -243,7 +243,7 @@ pub(crate) fn transfer_neutral(
             rotation_degrees,
             parameters: cadmpeg_core::text::named_entries(&record.object, parameters)?,
             assets,
-            native_ref: record.id.clone(),
+            native_ref: Some(record.id.clone()),
         });
     }
     Ok(())

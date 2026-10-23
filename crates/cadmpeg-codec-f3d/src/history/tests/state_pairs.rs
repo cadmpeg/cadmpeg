@@ -1271,6 +1271,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
     let id = |slot| format!("f3d:brep:entity#{slot}");
     let mut brep = cadmpeg_asm::brep::AsmBrep::default();
     brep.bodies.push(Body {
+        native_ref: None,
         id: BodyId::mint(id(1)).expect("identity grammar"),
         kind: BodyKind::Solid,
         regions: vec![RegionId::mint(id(2)).expect("identity grammar")],
@@ -1280,6 +1281,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         visible: None,
     });
     brep.regions.push(Region {
+        native_ref: None,
         id: RegionId::mint(id(2)).expect("identity grammar"),
         body: BodyId::mint(id(1)).expect("identity grammar"),
         shells: vec![ShellId::mint(id(3)).expect("identity grammar")],
@@ -1290,6 +1292,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         FaceId::mint(id(4)).expect("identity grammar"),
     ));
     brep.faces.push(Face {
+        native_ref: None,
         id: FaceId::mint(id(4)).expect("identity grammar"),
         shell: ShellId::mint(id(3)).expect("identity grammar"),
         surface: SurfaceId::mint(id(20)).expect("identity grammar"),
@@ -1302,6 +1305,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         tolerance: None,
     });
     brep.loops.push(Loop {
+        native_ref: None,
         id: LoopId::mint(id(5)).expect("identity grammar"),
         face: FaceId::mint(id(4)).expect("identity grammar"),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
@@ -1313,6 +1317,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         ),
     });
     brep.coedges.push(Coedge {
+        native_ref: None,
         id: CoedgeId::mint(id(6)).expect("identity grammar"),
         owner_loop: LoopId::mint(id(5)).expect("identity grammar"),
         edge: EdgeId::mint(id(7)).expect("identity grammar"),
@@ -1322,6 +1327,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         use_curve: None,
     });
     brep.edges.push(Edge {
+        native_ref: None,
         id: EdgeId::mint(id(7)).expect("identity grammar"),
         carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(
             CurveId::mint(id(21)).expect("identity grammar"),
@@ -1332,6 +1338,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
     });
     for slot in [8, 9] {
         brep.vertices.push(Vertex {
+            native_ref: None,
             id: VertexId::mint(id(slot)).expect("identity grammar"),
             point: PointId::mint(id(slot + 20)).expect("identity grammar"),
             tolerance: None,

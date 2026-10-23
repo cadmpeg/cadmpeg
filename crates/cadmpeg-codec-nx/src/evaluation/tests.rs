@@ -19,6 +19,7 @@ use cadmpeg_ir::ids::BodyId;
 
 fn model_body(id: &str) -> Body {
     Body {
+        native_ref: None,
         id: BodyId::mint(id.to_string()).expect("identity grammar"),
         kind: BodyKind::Solid,
         regions: Vec::new(),

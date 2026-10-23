@@ -59,6 +59,7 @@ fn projected_sketch_nurbs_edge_projects() {
     let start_point = PointId::mint("test:model:entity#start-point").expect("point id");
     let end_point = PointId::mint("test:model:entity#end-point").expect("point id");
     let edge = Edge {
+        native_ref: None,
         id: EdgeId::mint("test:model:entity#edge").expect("edge id"),
         carrier: EdgeCarrier::unbounded(Some(curve_id.clone())),
         start: start_vertex.clone(),
@@ -154,6 +155,7 @@ fn sketch_projection_projects_opaque_curve() {
     let start_point = PointId::mint("test:model:point#start").expect("start point ID");
     let end_point = PointId::mint("test:model:point#end").expect("end point ID");
     let edge = Edge {
+        native_ref: None,
         id: EdgeId::mint("test:model:edge#opaque").expect("edge ID"),
         carrier: EdgeCarrier::unbounded(Some(curve_id.clone())),
         start: start_vertex.clone(),

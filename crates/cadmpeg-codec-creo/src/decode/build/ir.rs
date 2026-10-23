@@ -250,6 +250,7 @@ fn transfer_reference_lines(
             ctx,
             ir,
             Curve {
+                native_ref: None,
                 parameter_range: None,
                 id,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -324,6 +325,7 @@ fn transfer_reference_circles(
             ctx,
             ir,
             Curve {
+                native_ref: None,
                 parameter_range: None,
                 id,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
@@ -395,6 +397,7 @@ fn transfer_reference_ellipses(
             ctx,
             ir,
             Curve {
+                native_ref: None,
                 parameter_range: None,
                 id,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
@@ -583,6 +586,7 @@ fn transfer_datum_plane_surfaces(
             ctx,
             ir,
             Surface {
+                native_ref: None,
                 id,
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -670,6 +674,7 @@ fn transfer_placed_plane_surfaces_into_ir(
             ctx,
             ir,
             Surface {
+                native_ref: None,
                 id,
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(

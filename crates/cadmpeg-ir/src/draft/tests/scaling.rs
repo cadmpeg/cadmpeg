@@ -64,6 +64,7 @@ fn rejected_candidates_keep_the_reusable_admission_facts() {
     assert_eq!(append(asset(0), true), Ok(()));
     let mut dangling = CadIr::empty();
     dangling.model.vertices.push(crate::topology::Vertex {
+        native_ref: None,
         id: "test:model:vertex#dangling".try_into().unwrap(),
         point: "test:model:point#missing".try_into().unwrap(),
         tolerance: None,

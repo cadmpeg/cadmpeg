@@ -51,6 +51,7 @@ fn profile_closure_rejects_conflicting_edge_occurrences() {
     let curve_id = CurveId::mint("iges:model:curve#D1").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -78,21 +79,25 @@ fn profile_closure_rejects_conflicting_edge_occurrences() {
     ]);
     ir.model.vertices.extend([
         Vertex {
+            native_ref: None,
             id: VertexId::mint("test:model:vertex#closed-start").expect("identity grammar"),
             point: PointId::mint("test:model:point#closed-point").expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
+            native_ref: None,
             id: VertexId::mint("test:model:vertex#closed-end").expect("identity grammar"),
             point: PointId::mint("test:model:point#closed-point").expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
+            native_ref: None,
             id: VertexId::mint("test:model:vertex#open-start").expect("identity grammar"),
             point: PointId::mint("test:model:point#closed-point").expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
+            native_ref: None,
             id: VertexId::mint("test:model:vertex#open-end").expect("identity grammar"),
             point: PointId::mint("test:model:point#open-point").expect("identity grammar"),
             tolerance: None,
@@ -100,6 +105,7 @@ fn profile_closure_rejects_conflicting_edge_occurrences() {
     ]);
     ir.model.edges.extend([
         Edge {
+            native_ref: None,
             id: EdgeId::mint("test:model:edge#closed-occurrence").expect("identity grammar"),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                 Some(curve_id.clone()),
@@ -111,6 +117,7 @@ fn profile_closure_rejects_conflicting_edge_occurrences() {
             tolerance: None,
         },
         Edge {
+            native_ref: None,
             id: EdgeId::mint("test:model:edge#open-occurrence").expect("identity grammar"),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some([0.0, 1.0]))
                 .unwrap(),

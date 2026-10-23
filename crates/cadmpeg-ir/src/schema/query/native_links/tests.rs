@@ -40,3 +40,5 @@ fn empty_model_has_no_placeholder_projection() {
     });
     assert_eq!(count, 0);
 }
+
+mod geometry;

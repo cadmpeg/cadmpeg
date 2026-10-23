@@ -1164,6 +1164,7 @@ pub(super) fn attach_point_edge_carriers(out: &mut AsmBrep, records: &[Record], 
         let curve = brep_id!(format, CurveId, "point-edge-curve", *index);
         edge.carrier = EdgeCarrier::Curve(curve.clone());
         curves.push(Curve {
+            native_ref: None,
             id: curve,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(DegenerateCurve::new(
                 *position,
@@ -1457,6 +1458,7 @@ mod tests {
         )
         .unwrap();
         let edge = Edge {
+            native_ref: None,
             id: EdgeId::mint("sat:audit:edge#domain").unwrap(),
             carrier: EdgeCarrier::new(Some(id.clone()), Some([-1e-10, 5e-13])).unwrap(),
             start: VertexId::mint("sat:audit:vertex#a").unwrap(),
@@ -1465,6 +1467,7 @@ mod tests {
         };
         let mut out = super::AsmBrep {
             curves: vec![Curve {
+                native_ref: None,
                 parameter_range: None,
                 id,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),

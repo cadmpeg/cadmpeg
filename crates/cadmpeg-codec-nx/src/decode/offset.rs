@@ -2572,6 +2572,7 @@ mod tests {
         let mut ir = CadIr::empty();
         let surface = SurfaceId::mint("test:model:surface#unknown").unwrap();
         ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+            native_ref: None,
             id: surface.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
@@ -2674,6 +2675,7 @@ mod tests {
             let surface = SurfaceId::mint("test:model:entity#nx:test:wide-coarse-surface")
                 .expect("identity grammar");
             ir.model.surfaces.push(Surface {
+                native_ref: None,
                 id: surface.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                     NurbsSurface::from_lanes(
@@ -2842,6 +2844,7 @@ mod tests {
             SurfaceId::mint("test:model:entity#synthetic:hull-support").expect("identity grammar");
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+            native_ref: None,
             id: support.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                 NurbsSurface::from_lanes(
@@ -2898,6 +2901,7 @@ mod tests {
             .expect("identity grammar");
             let mut ir = CadIr::empty();
             ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+                native_ref: None,
                 id: support.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                     NurbsSurface::from_lanes(
@@ -2925,6 +2929,7 @@ mod tests {
                 source_object: None,
             });
             ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+                native_ref: None,
                 id: offset.clone(),
                 geometry: SurfaceGeometry::Procedural {
                     construction: construction.clone(),
@@ -3187,11 +3192,13 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.model.surfaces.extend([
             cadmpeg_ir::geometry::Surface {
+                native_ref: None,
                 id: support.clone(),
                 geometry: SurfaceGeometry::Solved(geometry),
                 source_object: None,
             },
             cadmpeg_ir::geometry::Surface {
+                native_ref: None,
                 id: offset.clone(),
                 geometry: SurfaceGeometry::Procedural {
                     construction: construction.clone(),

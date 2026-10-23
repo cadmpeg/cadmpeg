@@ -579,6 +579,7 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
     )
     .unwrap();
     let body = |id: &str, region: &str, visible| Body {
+        native_ref: None,
         id: BodyId::mint(id).expect("identity grammar"),
         kind: BodyKind::Solid,
         regions: vec![RegionId::mint(region).expect("identity grammar")],
@@ -606,11 +607,13 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
     ];
     let regions = [
         Region {
+            native_ref: None,
             id: RegionId::mint("test:model:region#current-region").expect("identity grammar"),
             body: bodies[0].id.clone(),
             shells: vec![ShellId::mint("test:model:shell#current-shell").expect("identity grammar")],
         },
         Region {
+            native_ref: None,
             id: RegionId::mint("test:model:region#external-region").expect("identity grammar"),
             body: bodies[1].id.clone(),
             shells: vec![
@@ -618,6 +621,7 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
             ],
         },
         Region {
+            native_ref: None,
             id: RegionId::mint("test:model:region#cache-region").expect("identity grammar"),
             body: bodies[2].id.clone(),
             shells: vec![ShellId::mint("test:model:shell#cache-shell").expect("identity grammar")],
@@ -989,6 +993,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     )
     .unwrap();
     let body = Body {
+        native_ref: None,
         id: BodyId::mint("f3d:brep:body#1").expect("identity grammar"),
         kind: BodyKind::Solid,
         regions: vec![RegionId::mint("test:model:region#1").expect("identity grammar")],
@@ -998,6 +1003,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         visible: Some(true),
     };
     let region = Region {
+        native_ref: None,
         id: RegionId::mint("test:model:region#1").expect("identity grammar"),
         body: body.id.clone(),
         shells: vec![ShellId::mint("test:model:shell#1").expect("identity grammar")],

@@ -9,6 +9,7 @@ fn numerical_audit_mapped_pcurve_search_ignores_knot_units() {
     let mut ir = crate::CadIr::empty();
     let id = SurfaceId::mint("test:audit:surface#1").unwrap();
     ir.model.surfaces.push(crate::geometry::Surface {
+        native_ref: None,
         id: id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             crate::geometry::analytic::PlaneSurface::try_new(

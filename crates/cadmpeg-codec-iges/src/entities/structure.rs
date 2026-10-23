@@ -1776,6 +1776,7 @@ fn plane_face_draft(
 
         ctx.charge_entities(1, "iges_geometry_structure")?;
         candidate.model_mut().coedges.push(Coedge {
+            native_ref: None,
             id: coedge_id.clone(),
             owner_loop: loop_id.clone(),
             edge: edge_id,
@@ -1791,6 +1792,7 @@ fn plane_face_draft(
 
         ctx.charge_entities(1, "iges_geometry_structure")?;
         candidate.model_mut().loops.push(Loop {
+            native_ref: None,
             id: loop_id.clone(),
             face: face_id.clone(),
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
@@ -1806,6 +1808,7 @@ fn plane_face_draft(
 
     ctx.charge_entities(1, "iges_geometry_structure")?;
     candidate.model_mut().faces.push(Face {
+        native_ref: None,
         id: face_id.clone(),
         shell: shell_id.clone(),
         surface: crate::ids::surface(&crate::ids::Stem::directory(surface_sequence)),
@@ -1831,6 +1834,7 @@ fn plane_face_draft(
 
     ctx.charge_entities(1, "iges_geometry_structure")?;
     candidate.model_mut().regions.push(Region {
+        native_ref: None,
         id: region_id.clone(),
         body: body_id.clone(),
         shells: region_shells,
@@ -1839,6 +1843,7 @@ fn plane_face_draft(
 
     ctx.charge_entities(1, "iges_geometry_structure")?;
     candidate.model_mut().bodies.push(Body {
+        native_ref: None,
         id: body_id,
         kind: BodyKind::Sheet,
         regions: body_regions,

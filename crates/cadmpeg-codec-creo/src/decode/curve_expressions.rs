@@ -727,6 +727,7 @@ pub(super) fn transfer_curve_expression_features(
                 ctx,
                 ir,
                 Curve {
+                    native_ref: None,
                     parameter_range: None,
                     id: crate::identity::copy_checked_id(curve_id.as_str())?,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),

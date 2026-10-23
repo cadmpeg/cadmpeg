@@ -178,6 +178,7 @@ fn explicit_nurbs_pcurves_round_trip_owned_geometry_and_tolerance() {
             control_points.reverse();
         }
         ir.model.pcurves.push(cadmpeg_ir::geometry::pcurve::Pcurve {
+            native_ref: None,
             id: id.clone(),
             geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs {
                 nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
@@ -264,6 +265,7 @@ fn inconsistent_explicit_pcurve_is_rejected_before_output() {
         .try_into()
         .expect("valid identity");
     ir.model.pcurves.push(cadmpeg_ir::geometry::pcurve::Pcurve {
+        native_ref: None,
         id: id.clone(),
         geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
             cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
@@ -315,6 +317,7 @@ fn multiple_pcurve_uses_omit_the_unsupported_sheet_face() {
         (second.clone(), cadmpeg_ir::math::Point2::new(0.0, 1.0)),
     ] {
         ir.model.pcurves.push(cadmpeg_ir::geometry::pcurve::Pcurve {
+            native_ref: None,
             id,
             geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
                 cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
@@ -373,6 +376,7 @@ fn explicit_line_pcurve_round_trips_as_native_c2() {
         .try_into()
         .expect("valid identity");
     ir.model.pcurves.push(cadmpeg_ir::geometry::pcurve::Pcurve {
+        native_ref: None,
         id: id.clone(),
         geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
             cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
@@ -833,6 +837,7 @@ fn reversed_trim_reflects_interior_knots_without_domain_sum_overflow() {
         Point2::new(0.0, 0.0),
     ];
     let pcurve = Pcurve {
+        native_ref: None,
         id: cadmpeg_ir::ids::PcurveId::mint("test:model:pcurve#large-domain").unwrap(),
         geometry: PcurveGeometry::Nurbs {
             nurbs: PcurveNurbs::from_lanes(1, knots, uv.clone(), None, false).unwrap(),
@@ -908,6 +913,7 @@ fn numerical_ranges_trim_sampling_avoids_wide_domain_subtraction() {
     .unwrap();
     let uv = vec![Point2::new(1.0, 0.0), Point2::new(0.0, 0.0)];
     let pcurve = Pcurve {
+        native_ref: None,
         id: cadmpeg_ir::ids::PcurveId::mint("test:model:pcurve#large-domain").unwrap(),
         geometry: PcurveGeometry::Nurbs {
             nurbs: PcurveNurbs::from_lanes(1, knots, uv.clone(), None, false).unwrap(),

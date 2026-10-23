@@ -49,6 +49,7 @@ fn with_projection_context<R>(
 #[test]
 fn cosmetic_thread_radius_requires_one_topological_cylinder_face() {
     let surface = Surface {
+        native_ref: None,
         id: SurfaceId::mint("test:model:entity#cylinder").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -62,6 +63,7 @@ fn cosmetic_thread_radius_requires_one_topological_cylinder_face() {
         source_object: None,
     };
     let face = Face {
+        native_ref: None,
         id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
         shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
         surface: surface.id.clone(),
@@ -113,6 +115,7 @@ fn cosmetic_thread_radius_requires_one_topological_cylinder_face() {
 #[test]
 fn frame_only_plane_support_requires_one_coincident_face() {
     let surface = Surface {
+        native_ref: None,
         id: SurfaceId::mint("test:model:entity#plane").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -125,6 +128,7 @@ fn frame_only_plane_support_requires_one_coincident_face() {
         source_object: None,
     };
     let face = Face {
+        native_ref: None,
         id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
         shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
         surface: surface.id.clone(),
@@ -169,6 +173,7 @@ fn frame_only_plane_support_requires_one_coincident_face() {
 #[test]
 fn resolved_plane_binds_to_a_face_without_retaining_a_duplicate_frame() {
     let surface = Surface {
+        native_ref: None,
         id: SurfaceId::mint("test:model:entity#plane").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -181,6 +186,7 @@ fn resolved_plane_binds_to_a_face_without_retaining_a_duplicate_frame() {
         source_object: None,
     };
     let face = Face {
+        native_ref: None,
         id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
         shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
         surface: surface.id.clone(),
@@ -241,6 +247,7 @@ fn resolved_plane_binds_to_a_face_without_retaining_a_duplicate_frame() {
 #[test]
 fn generic_native_offset_plane_support_stays_native() {
     let surface = Surface {
+        native_ref: None,
         id: SurfaceId::mint("test:model:entity#plane").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -253,6 +260,7 @@ fn generic_native_offset_plane_support_stays_native() {
         source_object: None,
     };
     let face = Face {
+        native_ref: None,
         id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
         shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
         surface: surface.id.clone(),
@@ -462,6 +470,7 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
     );
 
     let surface = Surface {
+        native_ref: None,
         id: SurfaceId::mint("test:model:entity#cylinder").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -475,6 +484,7 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
         source_object: None,
     };
     let topology_face = Face {
+        native_ref: None,
         id: FaceId::mint("test:model:entity#cylinder-face").expect("identity grammar"),
         shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
         surface: surface.id.clone(),

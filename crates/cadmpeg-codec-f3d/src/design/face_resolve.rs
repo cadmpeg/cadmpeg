@@ -3506,6 +3506,7 @@ mod tests {
             })
             .expect("FromFace group");
         let faces = vec![Face {
+            native_ref: None,
             id: face(10),
             shell: ShellId::mint("test:model:shell#shell").expect("identity grammar"),
             surface: SurfaceId::mint("test:model:surface#surface").expect("identity grammar"),

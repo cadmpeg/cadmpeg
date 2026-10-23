@@ -54,16 +54,19 @@ pub(super) fn edgeless_doc() -> CadIr {
         None,
     ));
     ir.model.vertices.push(Vertex {
+        native_ref: None,
         id: VertexId::mint("test:model:vertex#v0").expect("identity grammar"),
         point: PointId::mint("test:model:point#p0").expect("identity grammar"),
         tolerance: None,
     });
     ir.model.vertices.push(Vertex {
+        native_ref: None,
         id: VertexId::mint("test:model:vertex#v1").expect("identity grammar"),
         point: PointId::mint("test:model:point#p1").expect("identity grammar"),
         tolerance: None,
     });
     ir.model.edges.push(Edge {
+        native_ref: None,
         id: EdgeId::mint("test:model:edge#e0").expect("identity grammar"),
         carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(None),
         start: VertexId::mint("test:model:vertex#v0").expect("identity grammar"),
@@ -71,6 +74,7 @@ pub(super) fn edgeless_doc() -> CadIr {
         tolerance: None,
     });
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: SurfaceId::mint("test:model:surface#s0").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -83,6 +87,7 @@ pub(super) fn edgeless_doc() -> CadIr {
         source_object: None,
     });
     ir.model.coedges.push(Coedge {
+        native_ref: None,
         id: CoedgeId::mint("test:model:coedge#ce0").expect("identity grammar"),
         owner_loop: LoopId::mint("test:model:loop#lp0").expect("identity grammar"),
         edge: EdgeId::mint("test:model:edge#e0").expect("identity grammar"),
@@ -92,6 +97,7 @@ pub(super) fn edgeless_doc() -> CadIr {
         use_curve: None,
     });
     ir.model.loops.push(Loop {
+        native_ref: None,
         id: LoopId::mint("test:model:loop#lp0").expect("identity grammar"),
         face: FaceId::mint("test:model:face#f0").expect("identity grammar"),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
@@ -103,6 +109,7 @@ pub(super) fn edgeless_doc() -> CadIr {
         ),
     });
     ir.model.faces.push(Face {
+        native_ref: None,
         id: FaceId::mint("test:model:face#f0").expect("identity grammar"),
         shell: ShellId::mint("test:model:shell#sh0").expect("identity grammar"),
         surface: SurfaceId::mint("test:model:surface#s0").expect("identity grammar"),
@@ -121,11 +128,13 @@ pub(super) fn edgeless_doc() -> CadIr {
         FaceId::mint("test:model:face#f0").expect("identity grammar"),
     ));
     ir.model.regions.push(Region {
+        native_ref: None,
         id: RegionId::mint("test:model:region#l0").expect("identity grammar"),
         body: BodyId::mint("test:model:body#b0").expect("identity grammar"),
         shells: vec![ShellId::mint("test:model:shell#sh0").expect("identity grammar")],
     });
     ir.model.bodies.push(Body {
+        native_ref: None,
         id: BodyId::mint("test:model:body#b0").expect("identity grammar"),
         kind: cadmpeg_ir::topology::BodyKind::Solid,
         regions: vec![RegionId::mint("test:model:region#l0").expect("identity grammar")],
@@ -973,6 +982,7 @@ fn unsupported_standalone_curve_is_omitted_with_an_error_loss() {
     let curve_id =
         CurveId::mint("step:test:curve#standalone-unsupported").expect("identity grammar");
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Procedural {
@@ -1248,6 +1258,7 @@ fn edge_without_curve_is_reported_and_omitted() {
     )
     .unwrap();
     let curve = Curve {
+        native_ref: None,
         parameter_range: None,
         id: CurveId::mint("test:model:curve#unused").expect("identity grammar"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -1284,6 +1295,7 @@ fn subds_tessellations_and_source_associations_are_reported_as_losses() {
     };
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model.subds.push(cadmpeg_ir::SubdSurface {
+        native_ref: None,
         id: cadmpeg_ir::ids::SubdId::mint("test:step:subd#0").expect("identity grammar"),
         scheme: cadmpeg_ir::SubdScheme::CatmullClark,
         source_object: Some(source_object.clone()),
@@ -1445,6 +1457,7 @@ fn procedural_surface_outside_the_writable_set_is_reported_not_panicked() {
         cadmpeg_ir::ids::ProceduralSurfaceId::mint("step:test:construction-surface#unsupported")
             .expect("identity grammar");
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Procedural {
             construction: construction_id.clone(),
@@ -1487,6 +1500,7 @@ fn procedural_curve_outside_the_writable_set_is_reported_not_panicked() {
     let construction_id = ProceduralCurveId::mint("step:test:construction-curve#unsupported")
         .expect("identity grammar");
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Procedural {

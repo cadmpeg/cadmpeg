@@ -24,7 +24,7 @@ rewrite_record!(SubdRadialSymmetry, []; {segments, sweep, radial_maps});
 rewrite_record!(SubdRadialSymmetryMap, []; {selector, pairs});
 rewrite_scalar!(SubdScheme);
 rewrite_record!(SubdSecondaryGrip, []; {source_index, point, weight});
-rewrite_record!(SubdSurface, []; {id, scheme, cage, source_object});
+rewrite_record!(SubdSurface, []; {id, scheme, cage, source_object, native_ref});
 rewrite_record!(SubdSymmetry, []; {kind, plane, face_pairs, edge_pairs, vertex_pairs});
 rewrite_enum!(SubdSymmetryKind, []; {
     Correspondence {},

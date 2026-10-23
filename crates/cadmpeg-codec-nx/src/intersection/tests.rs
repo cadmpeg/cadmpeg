@@ -100,6 +100,7 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
         .unwrap(),
     );
     ir.model.pcurves.push(Pcurve {
+        native_ref: None,
         id: pcurve_id.clone(),
         geometry: pcurve_geometry.clone(),
         metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(

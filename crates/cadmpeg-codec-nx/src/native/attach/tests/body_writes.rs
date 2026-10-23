@@ -294,6 +294,7 @@ fn group_partition_witness_projects_every_write_of_the_bound_body_identity() {
         parasolid_group_members: Vec::new(),
     };
     let body = cadmpeg_ir::topology::Body {
+        native_ref: None,
         id: BodyId::mint("nx:s4:body#8").expect("identity grammar"),
         kind: cadmpeg_ir::topology::BodyKind::Solid,
         regions: Vec::new(),

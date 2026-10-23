@@ -34,6 +34,7 @@ fn carrier_model() -> cadmpeg_ir::CadIr {
         );
     }
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: cadmpeg_ir::ids::SurfaceId::mint("synthetic:test:id#polygonal").unwrap(),
         geometry: SurfaceGeometry::Solved(placed),
         source_object: Some(SourceObjectAssociation {
@@ -96,6 +97,7 @@ fn carrier_model() -> cadmpeg_ir::CadIr {
         )
         .unwrap();
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: cadmpeg_ir::ids::SurfaceId::mint(format!("synthetic:test:id#nurbs-{rational}"))
                 .unwrap(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(geometry)),
@@ -103,6 +105,7 @@ fn carrier_model() -> cadmpeg_ir::CadIr {
         });
     }
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: cadmpeg_ir::ids::SurfaceId::mint("synthetic:test:id#procedural").unwrap(),
         geometry: SurfaceGeometry::Procedural {
             construction: cadmpeg_ir::ids::ProceduralSurfaceId::mint(

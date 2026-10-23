@@ -207,6 +207,7 @@ pub(super) fn emit_topology(
         bodies.insert(body_xmt, id.clone());
 
         ir.model.bodies.push(Body {
+            native_ref: None,
             id,
             kind: cadmpeg_ir::topology::BodyKind::Solid,
             regions: Vec::new(),
@@ -261,6 +262,7 @@ pub(super) fn emit_topology(
             annotations.derived(region.as_str(), "body")?;
 
             ir.model.regions.push(Region {
+                native_ref: None,
                 id: region.clone(),
                 body: body.clone(),
                 shells: Vec::new(),
@@ -358,6 +360,7 @@ pub(super) fn emit_topology(
         }
 
         ir.model.vertices.push(Vertex {
+            native_ref: None,
             id: vertex.clone(),
             point: point_ref.clone(),
             tolerance,
@@ -462,6 +465,7 @@ pub(super) fn emit_topology(
                 annotations.derived(carrier.as_str(), "geometry")?;
 
                 ir.model.curves.push(Curve {
+                    native_ref: None,
                     parameter_range: None,
                     id: carrier.clone(),
                     geometry: CurveGeometry::Procedural {
@@ -634,6 +638,7 @@ pub(super) fn emit_topology(
         }
 
         ir.model.edges.push(Edge {
+            native_ref: None,
             id: id.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(curve, param_range)
                 .map_err(CodecError::malformed)?,
@@ -1023,6 +1028,7 @@ pub(super) fn emit_topology(
                 }
 
                 ir.model.pcurves.push(Pcurve {
+                    native_ref: None,
                     id: pcurve_id.clone(),
                     geometry: geometry.clone(),
                     metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
@@ -1059,6 +1065,7 @@ pub(super) fn emit_topology(
             fields.sense
         };
         ir.model.coedges.push(Coedge {
+            native_ref: None,
             id: id.clone(),
             owner_loop: loop_id.clone(),
             edge,
@@ -1097,6 +1104,7 @@ pub(super) fn emit_topology(
             };
 
             ir.model.loops.push(Loop {
+                native_ref: None,
                 id: id.clone(),
                 face: face.clone(),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
@@ -1121,6 +1129,7 @@ pub(super) fn emit_topology(
         let loops = face_loops.remove(&pending.id).unwrap_or_default();
 
         ir.model.faces.push(Face {
+            native_ref: None,
             id: pending.id,
             shell: pending.shell,
             surface: pending.surface,
@@ -1237,6 +1246,7 @@ pub(super) fn retain_unresolved_topology_carriers(
         annotations.exactness(id.as_str(), Exactness::Unknown);
 
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                 record: Some(unknown.clone()),
@@ -1269,6 +1279,7 @@ pub(super) fn retain_unresolved_topology_carriers(
         annotations.exactness(id.as_str(), Exactness::Unknown);
 
         ir.model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
@@ -1406,6 +1417,7 @@ fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
         .push(Point::new(point.clone(), position, None));
 
     ir.model.vertices.push(Vertex {
+        native_ref: None,
         id: vertex.clone(),
         point,
         tolerance,

@@ -20,6 +20,7 @@ use crate::{RhinoArchiveVersion, RhinoCodec};
 fn source_less_solved_line_preserves_the_required_record_under_same_comparison() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        native_ref: None,
         id: "test:geometry:curve#0"
             .try_into()
             .expect("standalone curve identity"),

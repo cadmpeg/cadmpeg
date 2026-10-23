@@ -1700,3 +1700,47 @@ END-ISO-10303-21;"
         assert_eq!(decoded.ir().model.faces.len(), 1);
     }
 }
+
+#[test]
+fn direct_product_and_occurrence_projection_has_no_invented_native_counterpart() {
+    let decoded = StepCodec::default()
+        .decode(
+            &mut Cursor::new(PRODUCT_STRING_LIMIT_SOURCE),
+            &DecodeOptions::default(),
+        )
+        .expect("typed product and occurrence source");
+    let ir = decoded.ir();
+    assert_eq!(ir.model.product_definitions.len(), 2);
+    assert!(ir
+        .model
+        .product_definitions
+        .iter()
+        .all(|record| record.native_ref.is_none()));
+    assert_eq!(ir.model.occurrences.len(), 2);
+    assert!(ir
+        .model
+        .occurrences
+        .iter()
+        .all(|record| record.native_ref.is_none()));
+    let child = ir
+        .model
+        .occurrences
+        .iter()
+        .find(|record| record.name.as_deref() == Some("Child instance"))
+        .expect("source occurrence name");
+    assert!(matches!(
+        child.parent,
+        cadmpeg_ir::products::OccurrenceParent::Occurrence { .. }
+    ));
+    assert_eq!(
+        super::super::NATIVE_ARENAS,
+        &["drawing_targets", "unknowns"]
+    );
+    assert!(ir.native.namespace("step").is_none_or(|namespace| namespace
+        .arenas()
+        .keys()
+        .all(|arena| super::super::NATIVE_ARENAS.contains(&arena.as_str()))));
+    let validation = cadmpeg_ir::validate_neutral(ir, decoded.report().losses.clone())
+        .expect("validate the current model");
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}

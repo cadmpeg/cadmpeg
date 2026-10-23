@@ -113,6 +113,7 @@ fn hole_keeps_a_surviving_current_face_and_refuses_an_unemitted_history() {
     let topologies = [input(&feature, 2)];
     let face = FaceId::mint("f3d:brep:entity#2").unwrap();
     let current = [cadmpeg_ir::topology::Face {
+        native_ref: None,
         id: face.clone(),
         shell: cadmpeg_ir::ids::ShellId::mint("test:brep:shell#1").unwrap(),
         surface: cadmpeg_ir::ids::SurfaceId::mint("test:brep:surface#1").unwrap(),

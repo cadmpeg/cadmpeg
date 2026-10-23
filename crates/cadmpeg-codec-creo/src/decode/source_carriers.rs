@@ -705,6 +705,7 @@ mod tests {
     #[test]
     fn replacement_curve_records_source_geometry() {
         let mut curve = Curve {
+            native_ref: None,
             parameter_range: None,
             id: CurveId::mint("creo:test:replacement-curve#1").expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
@@ -730,6 +731,7 @@ mod tests {
             ),
         });
         let mut curve = Curve {
+            native_ref: None,
             parameter_range: None,
             id,
             geometry: geometry.clone(),
@@ -746,6 +748,7 @@ mod tests {
     #[test]
     fn replacement_surface_records_source_geometry() {
         let mut surface = Surface {
+            native_ref: None,
             id: SurfaceId::mint("creo:test:replacement-surface#1").expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
@@ -770,6 +773,7 @@ mod tests {
             ),
         });
         let mut surface = Surface {
+            native_ref: None,
             id,
             geometry: geometry.clone(),
             source_object: None,
@@ -785,6 +789,7 @@ mod tests {
     #[test]
     fn source_curve_admission_pushes_curve_and_records_source_geometry() {
         let curve = Curve {
+            native_ref: None,
             parameter_range: None,
             id: CurveId::mint("creo:test:source-curve#1").expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
@@ -814,6 +819,7 @@ mod tests {
             ),
         });
         let curve = Curve {
+            native_ref: None,
             parameter_range: None,
             id,
             geometry: geometry.clone(),
@@ -831,6 +837,7 @@ mod tests {
     #[test]
     fn source_surface_admission_pushes_surface_and_records_source_geometry() {
         let surface = Surface {
+            native_ref: None,
             id: SurfaceId::mint("creo:test:source-surface#1").expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
@@ -859,6 +866,7 @@ mod tests {
             ),
         });
         let surface = Surface {
+            native_ref: None,
             id,
             geometry: geometry.clone(),
             source_object: None,
@@ -874,6 +882,7 @@ mod tests {
 
     fn admission_pcurve() -> cadmpeg_ir::geometry::pcurve::Pcurve {
         cadmpeg_ir::geometry::pcurve::Pcurve {
+            native_ref: None,
             id: cadmpeg_ir::ids::PcurveId::mint("creo:test:pcurve#0").expect("identity grammar"),
             geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
                 cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
@@ -1185,6 +1194,7 @@ mod tests {
             carriers.admit_body(
                 &mut ir,
                 Body {
+                    native_ref: None,
                     id: cadmpeg_ir::ids::BodyId::mint("creo:test:body#0")
                         .expect("identity grammar"),
                     kind: BodyKind::Solid,
@@ -1259,6 +1269,7 @@ mod tests {
         )
         .expect("finite source cylinder");
         let surface = Surface {
+            native_ref: None,
             id: SurfaceId::mint("creo:visibgeom:surface#1").expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(geometry)),
             source_object: None,
@@ -1281,6 +1292,7 @@ mod tests {
         )
         .expect("finite source line");
         let curve = Curve {
+            native_ref: None,
             parameter_range: None,
             id: CurveId::mint("creo:visibgeom:curve#1").expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(geometry)),
@@ -1300,6 +1312,7 @@ mod tests {
     fn extrusion_construction_direction_is_in_millimeters_at_attachment() {
         let surface_id = SurfaceId::mint("creo:visibgeom:surface#1").expect("identity grammar");
         let surface = Surface {
+            native_ref: None,
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1391,6 +1404,7 @@ mod tests {
         );
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: owner.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
@@ -1412,6 +1426,7 @@ mod tests {
         );
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: owner.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
@@ -1433,6 +1448,7 @@ mod tests {
                 ctx,
                 &mut ir,
                 Curve {
+                    native_ref: None,
                     parameter_range: None,
                     id: curve_id.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
@@ -1502,6 +1518,7 @@ mod tests {
                 ctx,
                 &mut ir,
                 Curve {
+                    native_ref: None,
                     parameter_range: None,
                     id: curve_id.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -1519,6 +1536,7 @@ mod tests {
         let vertex =
             cadmpeg_ir::ids::VertexId::mint("creo:visibgeom:vertex#1").expect("identity grammar");
         let edge = Edge {
+            native_ref: None,
             id: cadmpeg_ir::ids::EdgeId::mint("creo:visibgeom:edge#1").expect("identity grammar"),
             carrier: EdgeCarrier::new(Some(curve_id), Some([0.0, 2.0])).expect("bounded line"),
             start: vertex.clone(),
@@ -1552,6 +1570,7 @@ mod tests {
                 ctx,
                 &mut ir,
                 Curve {
+                    native_ref: None,
                     parameter_range: None,
                     id: curve_id.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -1579,6 +1598,7 @@ mod tests {
                 ctx,
                 &mut ir,
                 Edge {
+                    native_ref: None,
                     id: cadmpeg_ir::ids::EdgeId::mint("creo:visibgeom:edge#1")
                         .expect("identity grammar"),
                     carrier: EdgeCarrier::new(Some(curve_id), Some([0.0, f64::MAX]))
@@ -1605,6 +1625,7 @@ mod tests {
                     ctx,
                     &mut ir,
                     Coedge {
+                        native_ref: None,
                         id: coedge_id.clone(),
                         owner_loop: cadmpeg_ir::ids::LoopId::mint("creo:visibgeom:loop#1")
                             .expect("identity grammar"),
@@ -1637,6 +1658,7 @@ mod tests {
                     ctx,
                     &mut ir,
                     Curve {
+                        native_ref: None,
                         parameter_range: None,
                         id: curve_id.clone(),
                         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -1655,6 +1677,7 @@ mod tests {
                 .admit_vertex(
                     &mut ir,
                     Vertex {
+                        native_ref: None,
                         id: cadmpeg_ir::ids::VertexId::mint("creo:visibgeom:vertex#1")
                             .expect("identity grammar"),
                         point: cadmpeg_ir::ids::PointId::mint("creo:visibgeom:point#1")
@@ -1667,6 +1690,7 @@ mod tests {
                 .admit_face(
                     &mut ir,
                     Face {
+                        native_ref: None,
                         id: cadmpeg_ir::ids::FaceId::mint("creo:visibgeom:face#1")
                             .expect("identity grammar"),
                         shell: cadmpeg_ir::ids::ShellId::mint("creo:visibgeom:shell#1")
@@ -1688,6 +1712,7 @@ mod tests {
                     ctx,
                     &mut ir,
                     Coedge {
+                        native_ref: None,
                         id: coedge_id.clone(),
                         owner_loop: cadmpeg_ir::ids::LoopId::mint("creo:visibgeom:loop#1")
                             .expect("identity grammar"),
@@ -1731,6 +1756,7 @@ mod tests {
                 .admit_vertex(
                     &mut ir,
                     Vertex {
+                        native_ref: None,
                         id: cadmpeg_ir::ids::VertexId::mint("creo:visibgeom:vertex#1")
                             .expect("identity grammar"),
                         point: cadmpeg_ir::ids::PointId::mint("creo:visibgeom:point#1")
@@ -1755,6 +1781,7 @@ mod tests {
                     ctx,
                     &mut ir,
                     Surface {
+                        native_ref: None,
                         id: surface_id.clone(),
                         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1774,6 +1801,7 @@ mod tests {
                     ctx,
                     &mut ir,
                     cadmpeg_ir::geometry::pcurve::Pcurve {
+                        native_ref: None,
                         id: cadmpeg_ir::ids::PcurveId::mint("creo:visibgeom:pcurve#1")
                             .expect("identity grammar"),
                         geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
@@ -1812,6 +1840,7 @@ mod tests {
                     ctx,
                     &mut ir,
                     cadmpeg_ir::geometry::pcurve::Pcurve {
+                        native_ref: None,
                         id: cadmpeg_ir::ids::PcurveId::mint("creo:visibgeom:pcurve#1")
                             .expect("identity grammar"),
                         geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
@@ -1844,6 +1873,7 @@ mod tests {
                     ctx,
                     &mut ir,
                     Surface {
+                        native_ref: None,
                         id: surface_id.clone(),
                         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1863,6 +1893,7 @@ mod tests {
                     ctx,
                     &mut ir,
                     cadmpeg_ir::geometry::pcurve::Pcurve {
+                        native_ref: None,
                         id: cadmpeg_ir::ids::PcurveId::mint("creo:visibgeom:pcurve#1")
                             .expect("identity grammar"),
                         geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(

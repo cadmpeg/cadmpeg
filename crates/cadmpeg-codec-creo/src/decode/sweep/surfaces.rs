@@ -332,6 +332,7 @@ pub(in super::super) fn transfer_saved_spline_curves(
                 ctx,
                 ir,
                 Curve {
+                    native_ref: None,
                     parameter_range: None,
                     id: curve_id,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(placed)),
@@ -599,6 +600,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 ctx,
                 ir,
                 Surface {
+                    native_ref: None,
                     id,
                     geometry,
                     source_object: Some(SourceObjectAssociation {
@@ -661,6 +663,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 ctx,
                 ir,
                 Surface {
+                    native_ref: None,
                     id,
                     geometry,
                     source_object: Some(SourceObjectAssociation {
@@ -780,6 +783,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     ctx,
                     ir,
                     Curve {
+                        native_ref: None,
                         parameter_range: None,
                         id: curve_id.clone(),
                         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix)),
@@ -826,6 +830,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 ctx,
                 ir,
                 Surface {
+                    native_ref: None,
                     id: surface_id.clone(),
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
                     source_object: Some(SourceObjectAssociation {

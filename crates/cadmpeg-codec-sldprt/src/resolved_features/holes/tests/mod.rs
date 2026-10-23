@@ -165,6 +165,7 @@ fn lane_with_position_reference(position_source: u32) -> FeatureInputLane {
 
 fn cylinder(id: usize, x: f64) -> Surface {
     Surface {
+        native_ref: None,
         id: SurfaceId::mint(format!("test:model:entity#surface-{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(

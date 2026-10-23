@@ -32,6 +32,7 @@ fn shared_vertex_joins_faces_into_one_component() {
     let vertex = VertexId::try_from("step:data:vertex#1").expect("test vertex id");
     let loops = [
         Loop {
+            native_ref: None,
             id: LoopId::try_from("step:data:loop#1").expect("test loop id"),
             face: faces[0].clone(),
             boundary: LoopBoundary::Vertex {
@@ -40,6 +41,7 @@ fn shared_vertex_joins_faces_into_one_component() {
             },
         },
         Loop {
+            native_ref: None,
             id: LoopId::try_from("step:data:loop#2").expect("test loop id"),
             face: faces[1].clone(),
             boundary: LoopBoundary::Vertex {
@@ -69,6 +71,7 @@ fn shared_vertex_components_use_spanning_links_and_preserve_partitions() {
             .iter()
             .enumerate()
             .map(|(index, face)| Loop {
+                native_ref: None,
                 id: LoopId::try_from(format!("step:data:loop#{index}")).expect("loop id"),
                 face: face.clone(),
                 boundary: LoopBoundary::Vertex {

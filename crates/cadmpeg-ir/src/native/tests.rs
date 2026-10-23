@@ -1028,6 +1028,7 @@ fn native_field_copy_and_typed_rewrite_refuse_at_the_depth_limit() {
     )
     .unwrap();
     let body = NativeRecord::from_typed(&Body {
+        native_ref: None,
         id: BodyId::mint("test:model:body#one").unwrap(),
         kind: BodyKind::Solid,
         regions: Vec::new(),

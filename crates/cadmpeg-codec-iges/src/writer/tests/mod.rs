@@ -284,17 +284,20 @@ fn generated_resolution_covers_large_coordinate_endpoint_admission() {
     ]);
     ir.model.vertices.extend([
         Vertex {
+            native_ref: None,
             id: vertex_start.clone(),
             point: point_start,
             tolerance: None,
         },
         Vertex {
+            native_ref: None,
             id: vertex_end.clone(),
             point: point_end,
             tolerance: None,
         },
     ]);
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -307,6 +310,7 @@ fn generated_resolution_covers_large_coordinate_endpoint_admission() {
         source_object: None,
     });
     ir.model.edges.push(Edge {
+        native_ref: None,
         id: EdgeId::mint("test:model:edge#line").expect("identity grammar"),
         carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some([0.0, 1.0]))
             .expect("valid edge carrier"),
@@ -1069,6 +1073,7 @@ fn face_loop_order_places_the_explicit_outer_loop_first() {
     let inner_id = LoopId::mint("test:model:loop#inner").expect("valid identity");
     let outer_id = LoopId::mint("test:model:loop#outer").expect("valid identity");
     let face = Face {
+        native_ref: None,
         id: face_id.clone(),
         shell: ShellId::mint("test:model:shell#shell").expect("valid identity"),
         surface: SurfaceId::mint("test:model:surface#surface").expect("valid identity"),
@@ -1084,6 +1089,7 @@ fn face_loop_order_places_the_explicit_outer_loop_first() {
     let mut ir = CadIr::empty();
     ir.model.loops = vec![
         Loop {
+            native_ref: None,
             id: inner_id,
             face: face_id.clone(),
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
@@ -1096,6 +1102,7 @@ fn face_loop_order_places_the_explicit_outer_loop_first() {
             ),
         },
         Loop {
+            native_ref: None,
             id: outer_id.clone(),
             face: face_id,
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
@@ -1122,6 +1129,7 @@ fn face_loop_order_does_not_promote_an_unclassified_loop() {
     let inner_id = LoopId::mint("test:model:loop#inner").expect("valid identity");
     let unclassified_id = LoopId::mint("test:model:loop#unclassified").expect("valid identity");
     let face = Face {
+        native_ref: None,
         id: face_id.clone(),
         shell: ShellId::mint("test:model:shell#shell").expect("valid identity"),
         surface: SurfaceId::mint("test:model:surface#surface").expect("valid identity"),
@@ -1137,6 +1145,7 @@ fn face_loop_order_does_not_promote_an_unclassified_loop() {
     let mut ir = CadIr::empty();
     ir.model.loops = vec![
         Loop {
+            native_ref: None,
             id: inner_id,
             face: face_id.clone(),
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
@@ -1149,6 +1158,7 @@ fn face_loop_order_does_not_promote_an_unclassified_loop() {
             ),
         },
         Loop {
+            native_ref: None,
             id: unclassified_id.clone(),
             face: face_id,
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(

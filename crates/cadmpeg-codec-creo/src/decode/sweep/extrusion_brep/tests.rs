@@ -125,6 +125,7 @@ fn admitted_extrusion_fixture() -> (crate::container::ContainerScan<'static>, Ca
     };
     scan.surfaces.rows.extend((31..=36).map(row));
     let plane = |id, z| Surface {
+        native_ref: None,
         id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("surface identity"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(

@@ -314,6 +314,7 @@ fn an_empty_leading_region_keeps_the_bodys_nonempty_boundary() {
         let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube admitted");
         ir.model.bodies[0].kind = kind;
         let region = cadmpeg_ir::topology::Region {
+            native_ref: None,
             id: cadmpeg_ir::ids::RegionId::mint("synthetic:test:region#empty").expect("region id"),
             body: ir.model.bodies[0].id.clone(),
             shells: Vec::new(),

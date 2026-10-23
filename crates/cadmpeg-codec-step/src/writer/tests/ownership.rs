@@ -94,6 +94,7 @@ fn an_unwritten_vertex_does_not_promote_its_support_point() {
 fn independent_curve_preserves_its_active_parameter_interval() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        native_ref: None,
         id: CurveId::mint("test:model:curve#active").unwrap(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::new(
@@ -157,6 +158,7 @@ fn independent_exact_surface_preserves_its_active_uv_rectangle() {
     let mut ir = CadIr::empty();
     let id = cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#active").unwrap();
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
         source_object: None,
@@ -244,6 +246,7 @@ fn procedural_support_is_not_an_export_root_even_when_construction_fails() {
             );
             ir.model.surfaces.push(support);
             ir.model.surfaces.push(Surface {
+                native_ref: None,
                 id: "test:model:surface#subset".try_into().unwrap(),
                 geometry: SurfaceGeometry::Procedural {
                     construction: construction.id.clone(),
@@ -319,6 +322,7 @@ fn standalone_subset_curve_does_not_export_its_untrimmed_basis_as_a_root() {
         ),
     );
     ir.model.curves.push(Curve {
+        native_ref: None,
         id: basis,
         parameter_range: None,
         source_object: None,
@@ -330,6 +334,7 @@ fn standalone_subset_curve_does_not_export_its_untrimmed_basis_as_a_root() {
         )),
     });
     ir.model.curves.push(Curve {
+        native_ref: None,
         id: "test:model:curve#subset".try_into().unwrap(),
         parameter_range: None,
         source_object: None,
@@ -378,6 +383,7 @@ fn failed_composite_curve_does_not_export_its_children_as_roots() {
         let mut ir = CadIr::empty();
         let child: CurveId = "test:model:curve#child".try_into().unwrap();
         ir.model.curves.push(Curve {
+            native_ref: None,
             id: child.clone(),
             parameter_range: None,
             source_object: None,
@@ -402,6 +408,7 @@ fn failed_composite_curve_does_not_export_its_children_as_roots() {
             });
         }
         ir.model.curves.push(Curve {
+            native_ref: None,
             id: "test:model:curve#composite".try_into().unwrap(),
             parameter_range: None,
             source_object: None,

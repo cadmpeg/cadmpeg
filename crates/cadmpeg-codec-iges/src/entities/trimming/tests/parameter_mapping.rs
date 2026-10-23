@@ -21,6 +21,7 @@ fn extrusions(count: usize) -> CadIr {
     let mut ir = CadIr::empty();
     let directrix = CurveId::mint("test:model:curve#line").unwrap();
     ir.model.curves.push(Curve {
+        native_ref: None,
         id: directrix.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)).unwrap(),
@@ -45,6 +46,7 @@ fn extrusions(count: usize) -> CadIr {
             Some(RecordBounds::try_new([Some(2.0), Some(5.0), None, None]).unwrap()),
         ));
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: SurfaceId::mint(format!("test:model:surface#{ordinal}")).unwrap(),
             geometry: SurfaceGeometry::Procedural {
                 construction: id,

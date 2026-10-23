@@ -45,6 +45,7 @@ pub(crate) fn attach_test_body_surface(
     let shell_id = ShellId::mint(format!("{body_id}:shell")).expect("identity grammar");
     if !ir.model.bodies.iter().any(|body| body.id == *body_id) {
         ir.model.bodies.push(Body {
+            native_ref: None,
             id: body_id.clone(),
             kind: BodyKind::Solid,
             regions: vec![region_id.clone()],
@@ -54,6 +55,7 @@ pub(crate) fn attach_test_body_surface(
             visible: None,
         });
         ir.model.regions.push(Region {
+            native_ref: None,
             id: region_id.clone(),
             body: body_id.clone(),
             shells: vec![shell_id.clone()],
@@ -76,6 +78,7 @@ pub(crate) fn attach_test_body_surface(
         ));
     }
     ir.model.faces.push(Face {
+        native_ref: None,
         id: face_id,
         shell: shell_id,
         surface,

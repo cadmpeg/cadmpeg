@@ -358,6 +358,7 @@ fn reversed_offset_pcurve_reverses_its_basis_and_signed_side() {
             .expect("identity grammar");
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: support.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(

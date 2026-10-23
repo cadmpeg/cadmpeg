@@ -153,6 +153,7 @@ fn charted(with_supports: bool) -> CadIr {
             .zip([Vector3::new(0.0, 0.0, 1.0), Vector3::new(0.0, -1.0, 0.0)])
         {
             ir.model.surfaces.push(Surface {
+                native_ref: None,
                 id: id.clone(),
                 source_object: None,
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -168,6 +169,7 @@ fn charted(with_supports: bool) -> CadIr {
     }
     let curve: crate::ids::CurveId = "test:model:curve#charted".try_into().unwrap();
     ir.model.curves.push(crate::geometry::Curve {
+        native_ref: None,
         parameter_range: None,
         id: curve.clone(),
         source_object: None,

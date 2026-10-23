@@ -1087,6 +1087,7 @@ fn form_dispatcher_binds_the_legacy_single_cage_gate() {
         native_ref: Some(scope.id.clone()),
     }];
     let cages = [cadmpeg_ir::SubdSurface {
+        native_ref: None,
         id: cadmpeg_ir::ids::SubdId::mint("f3d:model:subd#1").expect("identity grammar"),
         scheme: cadmpeg_ir::subd::SubdScheme::CatmullClark,
         source_object: None,
@@ -1215,6 +1216,7 @@ fn form_dispatcher_binds_a_unique_long_cage_list() {
         native_ref: Some(scope.id.clone()),
     }];
     let cages = [cadmpeg_ir::SubdSurface {
+        native_ref: None,
         id: cadmpeg_ir::ids::SubdId::mint("f3d:model:subd#1").expect("identity grammar"),
         scheme: cadmpeg_ir::subd::SubdScheme::CatmullClark,
         source_object: None,

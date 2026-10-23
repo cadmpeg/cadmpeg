@@ -668,6 +668,7 @@ pub(super) fn project(
 
         ctx.charge_entities(1, "iges_geometry_analytic_surfaces")?;
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),
             geometry: result,
             source_object: Some(match source_object(entry) {

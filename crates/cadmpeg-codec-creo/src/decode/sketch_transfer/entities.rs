@@ -872,6 +872,7 @@ pub(super) fn transfer_section_entities(
                 ctx,
                 ir,
                 Curve {
+                    native_ref: None,
                     parameter_range: None,
                     id,
                     geometry,
@@ -918,6 +919,7 @@ pub(super) fn transfer_section_entities(
                 ctx,
                 ir,
                 Curve {
+                    native_ref: None,
                     parameter_range: None,
                     id,
                     geometry,
@@ -964,6 +966,7 @@ pub(super) fn transfer_section_entities(
                 ctx,
                 ir,
                 Curve {
+                    native_ref: None,
                     parameter_range: None,
                     id,
                     geometry,
@@ -994,6 +997,7 @@ pub(super) fn transfer_section_entities(
                 ctx,
                 ir,
                 Curve {
+                    native_ref: None,
                     parameter_range: None,
                     id,
                     geometry,

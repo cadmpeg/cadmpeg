@@ -46,6 +46,7 @@ fn surface_coverage_separates_transferred_unique_rows_from_ambiguous_ids() {
         row(43, crate::surface::SurfaceKind::Cone),
     ];
     let plane = |id: &str, native_id: u32| Surface {
+        native_ref: None,
         id: SurfaceId::mint(format!("test:model:surface#{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -133,6 +134,7 @@ fn curve_coverage_excludes_unknown_carriers_and_ambiguous_ids() {
     };
     let curves = vec![
         Curve {
+            native_ref: None,
             parameter_range: None,
             id: CurveId::mint("test:model:entity#typed".to_string()).expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -145,6 +147,7 @@ fn curve_coverage_excludes_unknown_carriers_and_ambiguous_ids() {
             source_object: Some(source(41)),
         },
         Curve {
+            native_ref: None,
             parameter_range: None,
             id: CurveId::mint("test:model:entity#opaque".to_string()).expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),

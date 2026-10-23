@@ -54,12 +54,14 @@ fn curve_surface_model(
     ir.model
         .curves
         .extend(ids.iter().zip(curves).map(|(id, geometry)| Curve {
+            native_ref: None,
             parameter_range: None,
             id: id.clone(),
             geometry,
             source_object: None,
         }));
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: surface_id.clone(),
         geometry: geometry.clone(),
         source_object: None,
@@ -209,12 +211,14 @@ fn procedural_curve_model(
     ir.model
         .curves
         .extend(ids.iter().zip(curves).map(|(id, geometry)| Curve {
+            native_ref: None,
             parameter_range: None,
             id: id.clone(),
             geometry,
             source_object: None,
         }));
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: owner.clone(),
         geometry: CurveGeometry::Procedural {
@@ -383,6 +387,7 @@ fn an_extrusion_over_a_helix_whose_tangent_overflows_has_its_finite_point() {
         cache: None,
     };
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: surface.clone(),
         geometry: geometry.clone(),
         source_object: None,
@@ -944,6 +949,7 @@ fn an_extrusion_over_a_helix_whose_acceleration_overflows_keeps_its_first_partia
     let construction =
         ProceduralSurfaceId::mint("test:model:procedural#extrusion").expect("valid identity");
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: surface.clone(),
         geometry: SurfaceGeometry::Procedural {
             construction: construction.clone(),

@@ -913,6 +913,7 @@ fn cylinder_centers_resolve_dimensioned_circle_frame() {
         .into_iter()
         .enumerate()
         .map(|(index, (y, z))| Surface {
+            native_ref: None,
             id: SurfaceId::mint(format!("test:model:entity#cylinder-{index}"))
                 .expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
@@ -1061,6 +1062,7 @@ fn dimensioned_circle_matching_keeps_large_radius_identity() {
         profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
     };
     let surface = Surface {
+        native_ref: None,
         id: SurfaceId::mint("test:model:surface#large-cylinder").unwrap(),
         source_object: None,
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(

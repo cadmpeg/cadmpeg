@@ -33,6 +33,7 @@ fn standalone_geometry_is_not_an_empty_result_without_brep() {
     ));
     let mut curve = CadIr::empty();
     curve.model.curves.push(cadmpeg_ir::geometry::Curve {
+        native_ref: None,
         id: "test:geometry:curve#0".try_into().unwrap(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::new(
@@ -59,6 +60,7 @@ fn standalone_geometry_is_not_an_empty_result_without_brep() {
     );
     let mut subd = CadIr::empty();
     subd.model.subds.push(SubdSurface {
+        native_ref: None,
         id: "test:geometry:subd#0".try_into().unwrap(),
         scheme: SubdScheme::CatmullClark,
         source_object: None,

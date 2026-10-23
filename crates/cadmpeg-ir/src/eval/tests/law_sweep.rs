@@ -77,6 +77,7 @@ fn law_sweep_maps_wide_profile_interval_into_finite_nurbs_domain() {
     let profile = CurveId::mint("test:model:curve#wide-sweep-profile").unwrap();
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: profile.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -238,6 +239,7 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
     let mut ir = CadIr::empty();
     ir.model.curves = vec![
         Curve {
+            native_ref: None,
             parameter_range: None,
             id: profile_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -253,6 +255,7 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
             source_object: None,
         },
         Curve {
+            native_ref: None,
             parameter_range: None,
             id: spine_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -269,6 +272,7 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
         },
     ];
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Procedural {
             construction: construction_id.clone(),
@@ -536,6 +540,7 @@ pub(super) fn law_sweep_model(first_law: LawExpression) -> (CadIr, SurfaceId) {
     let mut ir = CadIr::empty();
     ir.model.curves = vec![
         Curve {
+            native_ref: None,
             parameter_range: None,
             id: profile_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -548,6 +553,7 @@ pub(super) fn law_sweep_model(first_law: LawExpression) -> (CadIr, SurfaceId) {
             source_object: None,
         },
         Curve {
+            native_ref: None,
             parameter_range: None,
             id: spine_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -561,6 +567,7 @@ pub(super) fn law_sweep_model(first_law: LawExpression) -> (CadIr, SurfaceId) {
         },
     ];
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Procedural {
             construction: ProceduralSurfaceId::mint(

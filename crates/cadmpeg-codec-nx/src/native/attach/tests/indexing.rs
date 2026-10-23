@@ -54,6 +54,7 @@ fn segment_body_index_groups_bodies_by_object_and_binding() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     let body = cadmpeg_ir::ids::BodyId::mint("nx:s2:body#3").unwrap();
     ir.model.bodies.push(cadmpeg_ir::topology::Body {
+        native_ref: None,
         id: body.clone(),
         kind: cadmpeg_ir::topology::BodyKind::Solid,
         regions: Vec::new(),

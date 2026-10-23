@@ -422,6 +422,7 @@ pub(super) fn project(
 
                 ctx.charge_entities(1, "iges_geometry_copious")?;
                 ir.model.vertices.push(Vertex {
+                    native_ref: None,
                     id: vertex.clone(),
                     point,
                     tolerance: None,
@@ -521,6 +522,7 @@ pub(super) fn project(
 
         ctx.charge_entities(1, "iges_geometry_copious")?;
         ir.model.vertices.push(Vertex {
+            native_ref: None,
             id: start_vertex.clone(),
             point: start_point,
             tolerance: topology_tolerance,
@@ -533,6 +535,7 @@ pub(super) fn project(
 
             ctx.charge_entities(1, "iges_geometry_copious")?;
             ir.model.vertices.push(Vertex {
+                native_ref: None,
                 id: end_vertex.clone(),
                 point: end_point,
                 tolerance: topology_tolerance,
@@ -551,6 +554,7 @@ pub(super) fn project(
 
         ctx.charge_entities(1, "iges_geometry_copious")?;
         ir.model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.map_err(
@@ -561,6 +565,7 @@ pub(super) fn project(
 
         ctx.charge_entities(1, "iges_geometry_copious")?;
         ir.model.edges.push(Edge {
+            native_ref: None,
             id: edge.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                 Some(curve),

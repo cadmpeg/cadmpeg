@@ -224,6 +224,7 @@ fn encode_emits_the_legacy_plane_target_for_4_0_and_5_0() {
     for version in [IgesVersion::V4_0, IgesVersion::V5_0] {
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: SurfaceId::mint(format!("test:model:surface#{version:?}"))
                 .expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -576,6 +577,7 @@ fn encode_regenerates_planar_and_nurbs_surfaces() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.extend([
         Surface {
+            native_ref: None,
             id: SurfaceId::mint("test:model:surface#plane").expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -588,6 +590,7 @@ fn encode_regenerates_planar_and_nurbs_surfaces() {
             source_object: None,
         },
         Surface {
+            native_ref: None,
             id: SurfaceId::mint("test:model:surface#nurbs").expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                 NurbsSurface::from_lanes(
@@ -729,6 +732,7 @@ fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.extend([
         Surface {
+            native_ref: None,
             id: SurfaceId::mint("test:model:surface#cylinder").expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -742,6 +746,7 @@ fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
             source_object: None,
         },
         Surface {
+            native_ref: None,
             id: SurfaceId::mint("test:model:surface#cone").expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
                 cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
@@ -757,6 +762,7 @@ fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
             source_object: None,
         },
         Surface {
+            native_ref: None,
             id: SurfaceId::mint("test:model:surface#sphere").expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
                 cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
@@ -770,6 +776,7 @@ fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
             source_object: None,
         },
         Surface {
+            native_ref: None,
             id: SurfaceId::mint("test:model:surface#torus").expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
                 cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
@@ -801,6 +808,7 @@ fn encode_refuses_a_free_analytic_surface_beside_brep_topology() {
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.surfaces.push(Surface {
+        native_ref: None,
         id: SurfaceId::mint("test:model:surface#free-sphere").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
             cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
@@ -881,6 +889,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
         .collect::<Vec<_>>();
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -900,6 +909,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
             None,
         ));
         ir.model.vertices.push(Vertex {
+            native_ref: None,
             id: vertex_ids[index].clone(),
             point: point_ids[index].clone(),
             tolerance: None,
@@ -908,6 +918,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
     for index in 0..4 {
         let end = (index + 1) % 4;
         ir.model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: curve_ids[index].clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -920,6 +931,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
             source_object: None,
         });
         ir.model.edges.push(Edge {
+            native_ref: None,
             id: edge_ids[index].clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                 Some(curve_ids[index].clone()),
@@ -941,6 +953,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
             Point2::new(end_position.x, end_position.y)
         };
         ir.model.pcurves.push(Pcurve {
+            native_ref: None,
             id: pcurve_ids[index].clone(),
             geometry: PcurveGeometry::Nurbs {
                 nurbs: PcurveNurbs::from_lanes(
@@ -970,6 +983,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
             let split_pcurve_id =
                 PcurveId::mint("test:model:pcurve#sheet:split").expect("identity grammar");
             ir.model.pcurves.push(Pcurve {
+                native_ref: None,
                 id: split_pcurve_id.clone(),
                 geometry: PcurveGeometry::Nurbs {
                     nurbs: PcurveNurbs::from_lanes(
@@ -997,6 +1011,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
             });
         }
         ir.model.coedges.push(Coedge {
+            native_ref: None,
             id: coedge_ids[index].clone(),
             owner_loop: loop_id.clone(),
             edge: edge_ids[index].clone(),
@@ -1007,6 +1022,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
         });
     }
     ir.model.loops.push(Loop {
+        native_ref: None,
         id: loop_id.clone(),
         face: face_id.clone(),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
@@ -1015,6 +1031,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
         ),
     });
     ir.model.faces.push(Face {
+        native_ref: None,
         id: face_id.clone(),
         shell: shell_id.clone(),
         surface: surface_id,
@@ -1030,11 +1047,13 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
         face_id,
     ));
     ir.model.regions.push(Region {
+        native_ref: None,
         id: region_id,
         body: body_id.clone(),
         shells: vec![shell_id],
     });
     ir.model.bodies.push(Body {
+        native_ref: None,
         id: body_id,
         kind: BodyKind::Sheet,
         regions: vec![RegionId::mint("test:model:region#sheet").expect("identity grammar")],
@@ -1541,6 +1560,7 @@ fn encode_orients_a_source_less_brep_pcurve_for_a_reversed_edge_use() {
     let end_uv = cadmpeg_ir::eval::analytic_surface_parameters(&surface.geometry, end).unwrap();
     let pcurve_id = PcurveId::mint("test:model:pcurve#brep:source-less").expect("identity grammar");
     decoded.ir_mut().model.pcurves.push(Pcurve {
+        native_ref: None,
         id: pcurve_id.clone(),
         geometry: PcurveGeometry::Nurbs {
             nurbs: PcurveNurbs::from_lanes(

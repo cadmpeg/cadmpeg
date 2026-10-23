@@ -624,6 +624,7 @@ fn round_support_planes_define_radius_without_generated_surface_rows() {
         (4, [-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
     ] {
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -717,6 +718,7 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
 
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: SurfaceId::mint("creo:visibgeom:surface#11".to_string()).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -739,6 +741,7 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
         });
     for (id, x) in [(3, -9.0), (4, -8.0)] {
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -816,6 +819,7 @@ fn placed_cylinder_samples_identify_variable_radius_with_unresolved_siblings() {
     let mut ir = CadIr::empty();
     for (id, radius) in [(11, 15.0), (13, 1.0)] {
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -953,6 +957,7 @@ fn unequal_round_samples_are_not_hidden_by_support_radius() {
         (4, [-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
     ] {
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1038,6 +1043,7 @@ fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
     let mut ir = CadIr::empty();
     for (id, radius) in [(11, 15.0), (12, 1.0)] {
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -1058,6 +1064,7 @@ fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
         (4, [-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
     ] {
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1155,6 +1162,7 @@ fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
     let mut ir = CadIr::empty();
     for (id, radius) in [(11, 15.0), (13, 1.0)] {
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -1175,6 +1183,7 @@ fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
         (4, [-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
     ] {
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(

@@ -613,6 +613,7 @@ fn coincident_plane_frame_does_not_infer_an_offset_reference() {
 #[test]
 fn planar_face_reference_requires_one_coincident_face() {
     let surface = Surface {
+        native_ref: None,
         id: cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#surface")
             .expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -626,6 +627,7 @@ fn planar_face_reference_requires_one_coincident_face() {
         source_object: None,
     };
     let face = Face {
+        native_ref: None,
         id: cadmpeg_ir::ids::FaceId::mint("test:model:entity#face").expect("identity grammar"),
         shell: cadmpeg_ir::ids::ShellId::mint("test:model:entity#shell").expect("identity grammar"),
         surface: surface.id.clone(),
@@ -695,6 +697,7 @@ fn planar_face_reference_requires_one_coincident_face() {
 #[test]
 fn offset_plane_face_reference_does_not_mirror_the_serialized_origin() {
     let surface = Surface {
+        native_ref: None,
         id: cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#surface")
             .expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -708,6 +711,7 @@ fn offset_plane_face_reference_does_not_mirror_the_serialized_origin() {
         source_object: None,
     };
     let face = Face {
+        native_ref: None,
         id: cadmpeg_ir::ids::FaceId::mint("test:model:entity#face").expect("identity grammar"),
         shell: cadmpeg_ir::ids::ShellId::mint("test:model:entity#shell").expect("identity grammar"),
         surface: surface.id.clone(),

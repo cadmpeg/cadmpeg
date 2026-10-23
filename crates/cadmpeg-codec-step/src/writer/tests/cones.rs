@@ -184,6 +184,7 @@ fn point_edge_ring_is_written_as_vertex_loop() {
         .retain(|point| point.id.as_str() != "test:model:point#p1");
     let point_curve = CurveId::mint("test:model:curve#point").expect("identity grammar");
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: point_curve.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(

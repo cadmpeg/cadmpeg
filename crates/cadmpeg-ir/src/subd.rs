@@ -16,6 +16,14 @@ use serde::{Deserialize, Serialize};
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct SubdSurface {
+    /// Native record projected into this neutral record, when present.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
+
     /// Arena identity.
     pub id: SubdId,
     /// Subdivision scheme.
@@ -1100,3 +1108,5 @@ cadmpeg_core::named_optional_field!(deserialize_knot_interval, f64, "knot_interv
 mod identity_rewrite;
 
 mod serialization;
+
+cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");

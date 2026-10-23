@@ -14,6 +14,7 @@ const EPS_FIT: f64 = 1e-6;
 #[test]
 fn numerical_audit_trim_domain_check_ignores_surface_knot_units() {
     let source = Edge {
+        native_ref: None,
         id: EdgeId::mint("test:audit:edge#1").unwrap(),
         carrier: EdgeCarrier::new(
             Some(CurveId::mint("test:audit:curve#1").unwrap()),
@@ -49,6 +50,7 @@ fn numerical_audit_trim_domain_check_ignores_surface_knot_units() {
             .unwrap();
             let uv = vec![Point2::new(x * d, 0.), Point2::new(x * d, 1.)];
             let p = Pcurve {
+                native_ref: None,
                 id: PcurveId::mint("test:audit:pcurve#1").unwrap(),
                 geometry: PcurveGeometry::Nurbs {
                     nurbs: PcurveNurbs::from_lanes(
@@ -158,6 +160,7 @@ fn trim_result_on(
     domain: [f64; 2],
 ) -> Result<(), cadmpeg_core::CodecError> {
     let source = Edge {
+        native_ref: None,
         id: EdgeId::mint("test:overflow:edge#1").unwrap(),
         carrier: EdgeCarrier::new(
             Some(CurveId::mint("test:overflow:curve#1").unwrap()),
@@ -169,6 +172,7 @@ fn trim_result_on(
         tolerance: None,
     };
     let p = Pcurve {
+        native_ref: None,
         id: PcurveId::mint("test:overflow:pcurve#1").unwrap(),
         geometry,
         metadata: PcurveMetadata::default(),

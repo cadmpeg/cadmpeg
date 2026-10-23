@@ -971,6 +971,7 @@ fn cached_face_point_membership_matches_the_source_predicate() {
     ]);
     let surface_id = SurfaceId::mint("catia:test:surface#surface-0").expect("identity grammar");
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1064,6 +1065,7 @@ fn point_face_membership_matches_a_dense_face_point_table() {
         .collect::<Vec<_>>();
     for (id, geometry) in surface_ids.iter().zip(geometries) {
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: id.clone(),
             geometry,
             source_object: None,
@@ -1238,6 +1240,7 @@ fn standard_emission_reverses_face_pcurve_range() {
             ),
         ]);
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: SurfaceId::mint("catia:test:surface#surface-0").expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1250,6 +1253,7 @@ fn standard_emission_reverses_face_pcurve_range() {
             source_object: None,
         });
         ir.model.faces.push(Face {
+            native_ref: None,
             id: FaceId::mint("catia:standard:face#0").expect("identity grammar"),
             shell: ShellId::mint("catia:test:shell#shell-0").expect("identity grammar"),
             surface: SurfaceId::mint("catia:test:surface#surface-0").expect("identity grammar"),
@@ -1587,11 +1591,13 @@ fn a5_owner_binding_binds_no_surface_without_face_bounds() {
     let mut ir = CadIr::empty();
     let surface_id = SurfaceId::mint("catia:standard:surface#a5-limit").expect("identity grammar");
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
     });
     ir.model.faces.push(Face {
+        native_ref: None,
         id: FaceId::mint("catia:standard:face#0").expect("identity grammar"),
         shell: ShellId::mint("catia:standard:shell#0").expect("identity grammar"),
         surface: surface_id,

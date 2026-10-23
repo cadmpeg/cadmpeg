@@ -223,6 +223,7 @@ fn regenerated_shell_wire_members_and_pcurve_uses_have_counted_losses() {
     )
     .unwrap();
     let pcurve = Pcurve {
+        native_ref: None,
         id: "test:model:pcurve#use".try_into().unwrap(),
         geometry: PcurveGeometry::Line(
             LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)).unwrap(),

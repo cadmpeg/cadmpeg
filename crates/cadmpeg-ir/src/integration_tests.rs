@@ -52,6 +52,7 @@ fn free_carrier(object_id: &str) -> SourceObjectAssociation {
 fn source_association_is_a_free_carrier_root() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: CurveId::mint("synthetic:source:curve#0").expect("valid identity"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
@@ -123,6 +124,7 @@ fn insert_free_vertex_shell(
     draft.insert(point(point_id)).unwrap();
     draft
         .insert(Vertex {
+            native_ref: None,
             id: VertexId::mint(vertex_id).expect("valid identity"),
             point: PointId::mint(point_id).expect("valid identity"),
             tolerance: None,
@@ -130,6 +132,7 @@ fn insert_free_vertex_shell(
         .unwrap();
     draft
         .insert(Body {
+            native_ref: None,
             id: BodyId::mint(body_id).expect("valid identity"),
             kind: BodyKind::Wire,
             regions: vec![RegionId::mint(region_id).expect("valid identity")],
@@ -141,6 +144,7 @@ fn insert_free_vertex_shell(
         .unwrap();
     draft
         .insert(Region {
+            native_ref: None,
             id: RegionId::mint(region_id).expect("valid identity"),
             body: BodyId::mint(body_id).expect("valid identity"),
             shells: vec![ShellId::mint(shell_id).expect("valid identity")],
@@ -210,7 +214,7 @@ proptest! {
 
         {
             let mut broken = ir.clone();
-            broken.model.vertices.push(Vertex {
+            broken.model.vertices.push(Vertex { native_ref: None,
                 id: "prop:test:vertex#dangling".try_into().expect("valid identity"),
                 point: PointId::mint("x:y:z#missing").expect("valid identity"),
                 tolerance: None,
@@ -249,7 +253,7 @@ proptest! {
         let missing = "x:y:z#missing";
         let mut dangling = ModelDraft::new();
         dangling
-            .insert(Vertex {
+            .insert(Vertex { native_ref: None,
                 id: vertex_id.clone().try_into().expect("valid identity"),
                 point: missing.try_into().expect("valid identity"),
                 tolerance: None,

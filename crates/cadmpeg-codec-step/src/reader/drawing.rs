@@ -292,7 +292,7 @@ pub(super) fn decode(
                 rotation_degrees: None,
                 parameters: stored_parameters,
                 assets: Vec::new(),
-                native_ref: identity.into_string(),
+                native_ref: None,
             },
         );
     }

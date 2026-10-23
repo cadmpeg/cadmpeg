@@ -285,6 +285,7 @@ fn generated_compound_loft_writes_every_tail_shape_source_less() {
             .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
             .unwrap();
         source_less.model.curves.push(cadmpeg_ir::geometry::Curve {
+            native_ref: None,
             parameter_range: None,
             id: line_curve.clone(),
             geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(

@@ -944,6 +944,7 @@ fn bounded_profile_chords_place_implicit_revolution_axes() {
 #[test]
 fn generated_revolution_axis_requires_multiple_coaxial_surfaces() {
     let cylinder = |id: &str, origin: Point3| Surface {
+        native_ref: None,
         id: SurfaceId::mint(format!("test:model:entity#{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(

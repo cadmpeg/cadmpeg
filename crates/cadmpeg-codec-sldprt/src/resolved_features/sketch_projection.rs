@@ -460,6 +460,7 @@ mod projected_brep_output_tests {
         let point_id = PointId::mint("test:model:point#free").expect("point ID");
         crate::brep::graph::Brep {
             surfaces: vec![Surface {
+                native_ref: None,
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     PlaneSurface::try_new(
@@ -472,6 +473,7 @@ mod projected_brep_output_tests {
                 source_object: None,
             }],
             faces: vec![Face {
+                native_ref: None,
                 id: FaceId::mint("test:model:face#plane").expect("face ID"),
                 shell: ShellId::mint("test:model:shell#one").expect("shell ID"),
                 surface: surface_id,
@@ -482,6 +484,7 @@ mod projected_brep_output_tests {
                 tolerance: None,
             }],
             vertices: vec![Vertex {
+                native_ref: None,
                 id: VertexId::mint("test:model:vertex#free").expect("vertex ID"),
                 point: point_id.clone(),
                 tolerance: None,
@@ -505,6 +508,7 @@ mod projected_brep_output_tests {
         let mut brep = point_brep();
         for ordinal in 1..32 {
             brep.vertices.push(Vertex {
+                native_ref: None,
                 id: VertexId::mint(format!("test:model:vertex#{ordinal}")).unwrap(),
                 point: brep.points[0].id.clone(),
                 tolerance: None,
@@ -514,6 +518,7 @@ mod projected_brep_output_tests {
         brep.vertices.insert(
             1,
             Vertex {
+                native_ref: None,
                 id: VertexId::mint("test:model:vertex#missing").unwrap(),
                 point: PointId::mint("test:model:point#missing").unwrap(),
                 tolerance: None,

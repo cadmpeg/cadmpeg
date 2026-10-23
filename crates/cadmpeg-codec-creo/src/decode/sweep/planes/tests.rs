@@ -52,6 +52,7 @@ fn plane_row(id: u32) -> crate::surface::SurfaceRow {
 
 fn plane_surface(id: u32, z: f64) -> Surface {
     Surface {
+        native_ref: None,
         id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -77,6 +78,7 @@ fn plane_outline(id: u32, z: f64) -> crate::surface::OutlinePlane {
 
 fn cylinder_surface(id: u32, origin: Point3, axis: Vector3) -> Surface {
     Surface {
+        native_ref: None,
         id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -205,6 +207,7 @@ fn feature_plane_extent_reconciles_native_and_transferred_carriers() {
     .is_none());
 
     ir.model.surfaces[1] = Surface {
+        native_ref: None,
         id: SurfaceId::mint("creo:visibgeom:surface#32".to_string()).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,

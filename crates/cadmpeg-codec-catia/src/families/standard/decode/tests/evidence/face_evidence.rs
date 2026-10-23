@@ -59,6 +59,7 @@ fn standard_surface_entity_limit_refuses_before_first_surface_append() {
 fn standard_free_vertex_owner_limit_refuses_before_shell_creation() {
     let mut ir = CadIr::empty();
     ir.model.vertices.push(Vertex {
+        native_ref: None,
         id: VertexId::mint("catia:test:vertex#v").expect("identity grammar"),
         point: PointId::mint("catia:test:point#p").expect("identity grammar"),
         tolerance: None,
@@ -86,6 +87,7 @@ fn standard_free_vertex_owner_limit_refuses_before_shell_creation() {
 fn standard_unbound_vertices_receive_one_free_vertex_owner() {
     let mut ir = CadIr::empty();
     ir.model.vertices.push(Vertex {
+        native_ref: None,
         id: VertexId::mint("catia:test:vertex#v".to_string()).expect("identity grammar"),
         point: PointId::mint("catia:test:point#p".to_string()).expect("identity grammar"),
         tolerance: None,
@@ -118,6 +120,7 @@ fn standard_spline_retains_complete_surface_incidence_pair_domain() {
     }
     for index in 0..2 {
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: SurfaceId::mint(format!("catia:test:surface#s{index}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
@@ -239,6 +242,7 @@ fn standard_planar_intersection_spline_uses_the_common_line_domain() {
         .enumerate()
     {
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: SurfaceId::mint(format!("catia:test:surface#s{index}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -315,6 +319,7 @@ fn standard_antipodal_circle_candidates_admit_full_circle_seams() {
     }
     for index in 0..2 {
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: SurfaceId::mint(format!("catia:test:surface#s{index}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -396,6 +401,7 @@ fn standard_parallel_line_rows_retain_domains_independent_of_allocation_order() 
     }
     for index in 0..2 {
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: SurfaceId::mint(format!("catia:test:surface#s{index}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -600,6 +606,7 @@ fn a_native_endpoint_pair_reads_from_the_finite_support_when_its_placed_partner_
 fn free_vertices_attach_to_a_shell() {
     let mut ir = CadIr::empty();
     ir.model.vertices.push(Vertex {
+        native_ref: None,
         id: VertexId::mint("catia:test:vertex#limit").expect("identity grammar"),
         point: PointId::mint("catia:test:point#limit").expect("identity grammar"),
         tolerance: None,

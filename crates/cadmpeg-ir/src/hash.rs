@@ -920,6 +920,7 @@ mod tests {
             let construction =
                 ProceduralCurveId::mint(format!("test:model:construction#{index:04}")).unwrap();
             ir.model.curves.push(Curve {
+                native_ref: None,
                 parameter_range: None,
                 id: CurveId::mint(format!("test:model:curve#{index:04}")).unwrap(),
                 geometry: CurveGeometry::Procedural {
@@ -963,6 +964,7 @@ mod tests {
             ));
             for index in 0..count {
                 ir.model.curves.push(Curve {
+                    native_ref: None,
                     parameter_range: None,
                     id: CurveId::mint(format!("test:model:curve#{index}")).unwrap(),
                     geometry: CurveGeometry::Procedural {

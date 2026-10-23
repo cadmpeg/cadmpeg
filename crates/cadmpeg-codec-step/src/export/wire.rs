@@ -63,6 +63,7 @@ mod tests {
             .carrier
             .clone();
         let edge = |id: usize, start: usize, end: usize| Edge {
+            native_ref: None,
             id: EdgeId::mint(format!("test:model:edge#{id}")).expect("edge id"),
             carrier: carrier.clone(),
             start: VertexId::mint(format!("test:model:vertex#{start}")).expect("vertex id"),

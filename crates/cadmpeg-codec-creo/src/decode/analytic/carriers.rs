@@ -188,6 +188,7 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
             ctx,
             ir,
             Surface {
+                native_ref: None,
                 id,
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
                 source_object: Some(SourceObjectAssociation {
@@ -275,6 +276,7 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
                 ctx,
                 ir,
                 Surface {
+                    native_ref: None,
                     id,
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                         record: geometry_section_record(scan, row.offset)?,
@@ -312,6 +314,7 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
             ctx,
             ir,
             Curve {
+                native_ref: None,
                 parameter_range: None,
                 id,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
