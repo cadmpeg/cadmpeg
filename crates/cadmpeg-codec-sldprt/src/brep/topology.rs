@@ -1125,6 +1125,10 @@ fn scan_records(
         let first = record.refs[1];
         let owner_exists = t.bridges.contains_key(&owner)
             || base.is_some_and(|base| base.bridges.contains_key(&owner));
+        let partition_head = !deltas
+            && t.bridges
+                .get(&owner)
+                .is_some_and(|bridge| bridge.refs[2] == record.attr);
         let first_owners = base
             .and_then(|base| base.coedge_owners.get(&first))
             .or_else(|| t.coedge_owners.get(&first));
@@ -1136,7 +1140,7 @@ fn scan_records(
             },
             |owners| owners.contains(&record.attr),
         );
-        if owner_exists && first_is_owned {
+        if owner_exists && (first_is_owned || partition_head) {
             let frame = RecordFrame {
                 partition: !deltas,
                 bytes: Some(body[record.offset..end].to_vec()),
@@ -1617,6 +1621,23 @@ mod tests {
             .unwrap();
         drop(bytes.drain(at..at + original.len()));
         bytes
+    }
+
+    #[test]
+    fn partition_face_head_retains_its_loop_before_first_fin_is_available() {
+        let loop_frame = framed_topology_loop(20, 811, [0, 30, 10, 0], false, true);
+        let body = [topology_bridge(10, 20), loop_frame.clone()].concat();
+        let tables = scan(&body);
+        assert_eq!(tables.loops()[&20].refs, [0, 30, 10, 0]);
+        assert!(tables.loop_frames[&20].partition);
+        assert_eq!(
+            tables.loop_frames[&20].bytes.as_deref(),
+            Some(loop_frame.as_slice())
+        );
+        let history = delta_topology(&body, &super::Tables::default());
+        assert!(!history.loops().contains_key(&20));
+        let non_head = [topology_bridge(10, 21), loop_frame].concat();
+        assert!(!scan(&non_head).loops().contains_key(&20));
     }
 
     #[test]

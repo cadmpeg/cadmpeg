@@ -152,6 +152,77 @@ fn partition_missing_middle_fin() -> Vec<u8> {
     partition
 }
 
+fn partition_missing_first_fin() -> Vec<u8> {
+    let mut partition = triangle_body();
+    let original = crate::test_support::parasolid::coedge(30, 20, 31, 50, 0, 40, false);
+    let at = partition
+        .windows(original.len())
+        .position(|window| window == original)
+        .unwrap();
+    drop(partition.drain(at..at + original.len()));
+    partition
+}
+
+#[test]
+fn first_delta_fin_recovers_the_partition_face_head_loop() {
+    let fin = framed_topology_fin(30, [0, 20, 0, 31, 50, 0, 40, 0, 0], true, true, false);
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_partition_and_deltas(
+                &partition_missing_first_fin(),
+                &fin,
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().model.loops.len(), 1);
+    assert_eq!(result.ir().model.coedges.len(), 3);
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "topology.fin-record-ambiguous"));
+}
+
+#[test]
+fn conflicting_first_delta_fin_remains_referenced_on_both_decode_paths() {
+    let refs = [0, 20, 0, 31, 50, 0, 40, 0, 0];
+    let first = framed_topology_fin(30, refs, true, false, false);
+    let second = framed_topology_fin(30, refs, true, true, false);
+    for metadata_fallback in [false, true] {
+        let mut partition = partition_missing_first_fin();
+        if metadata_fallback {
+            partition.extend(entity51(1, 711, 712, &[10, 1, 1, 1, 1, 1]));
+        }
+        for records in [[&first, &second, &first], [&second, &first, &second]] {
+            let deltas: Vec<u8> = records.into_iter().flatten().copied().collect();
+            let result = SldprtCodec
+                .decode(
+                    &mut Cursor::new(sldprt_with_partition_and_deltas(&partition, &deltas)),
+                    &DecodeOptions::default(),
+                )
+                .unwrap();
+            assert!(result.ir().model.faces.is_empty());
+            let losses: Vec<_> = result
+                .report()
+                .losses
+                .iter()
+                .filter(|loss| loss.code.local_code() == "topology.fin-record-ambiguous")
+                .collect();
+            assert_eq!(losses.len(), 1);
+            assert!(losses[0].message.starts_with("1 referenced FIN"));
+            if metadata_fallback {
+                assert!(result
+                    .report()
+                    .losses
+                    .iter()
+                    .any(|loss| loss.code.local_code() == "topology.graph-not-transferred"));
+            }
+        }
+    }
+}
+
 #[test]
 fn missing_fin_closes_through_partition_loop_and_ring_context() {
     let fin = framed_topology_fin(31, [0, 20, 0, 32, 51, 0, 41, 0, 0], true, true, false);
