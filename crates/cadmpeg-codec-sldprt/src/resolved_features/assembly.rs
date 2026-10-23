@@ -5,10 +5,13 @@ use super::names::{class_declarations, configuration, object_names};
 use super::scalars::named_scalars;
 use super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
 use crate::container::ContainerScan;
-use crate::records::{FeatureInputClassRole, FeatureInputLane};
+use crate::records::{ArchiveParameterClass, FeatureInputClassRole, FeatureInputLane};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::Exactness;
+use std::collections::HashMap;
+
+const RESOLVED_FEATURES_SUFFIX: &str = "-resolvedfeatures";
 
 pub(crate) fn is_supplemental_config_lane(lane: &FeatureInputLane) -> bool {
     lane.id.contains(":config-objects#")
@@ -36,10 +39,73 @@ pub(crate) fn lanes(
         } {
             continue;
         }
-        let lane = feature_input_lane(ctx, source, section, "resolved-features", annotations)?;
+        let mut lane = feature_input_lane(ctx, source, section, "resolved-features", annotations)?;
+        if has_explicit_lanes {
+            type_scalars_from_archive(ctx, scan, section, source.payload(), &mut lane)?;
+        }
         result.push(lane);
     }
     Ok(result)
+}
+
+/// Give each scalar of a `Config-N-ResolvedFeatures` lane the class of the
+/// parameter object whose value it is, from the exact walk of the stream.
+/// Scalars the walk did not reach keep no class.
+fn type_scalars_from_archive(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+    section: &str,
+    resolved: &[u8],
+    lane: &mut FeatureInputLane,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let Some(config_name) = configuration_name(section) else {
+        return Ok(());
+    };
+    let Some(config) = scan.sections().find_map(|other| {
+        other
+            .name()
+            .filter(|name| name.replace('\\', "/").eq_ignore_ascii_case(&config_name))
+            .map(|_| other.payload())
+    }) else {
+        return Ok(());
+    };
+    let version =
+        crate::carchive::walk_version(crate::container::declared_sw_version(scan), config);
+    let Some(walk) = crate::carchive::walk_configuration(ctx, config, resolved, Some(version))?
+    else {
+        return Ok(());
+    };
+    let classes = scalar_archive_classes(&walk);
+    for scalar in &mut lane.scalars {
+        scalar.archive_class = classes.get(&scalar.offset).copied();
+    }
+    Ok(())
+}
+
+/// The `Config-N` name a `Config-N-ResolvedFeatures` section belongs to.
+fn configuration_name(section: &str) -> Option<String> {
+    let normalized = section.replace('\\', "/");
+    normalized
+        .len()
+        .checked_sub(RESOLVED_FEATURES_SUFFIX.len())
+        .filter(|&length| {
+            normalized.is_char_boundary(length)
+                && normalized[length..].eq_ignore_ascii_case(RESOLVED_FEATURES_SUFFIX)
+        })
+        .map(|length| normalized[..length].to_owned())
+}
+
+/// The archive parameter class of each scalar value offset.
+fn scalar_archive_classes(walk: &crate::carchive::Walk) -> HashMap<u64, ArchiveParameterClass> {
+    walk.parameters
+        .iter()
+        .filter_map(|parameter| {
+            Some((
+                u64_from_index(parameter.value_at),
+                ArchiveParameterClass::from_class_name(&parameter.class)?,
+            ))
+        })
+        .collect()
 }
 
 pub(crate) fn supplemental_config_lanes(
