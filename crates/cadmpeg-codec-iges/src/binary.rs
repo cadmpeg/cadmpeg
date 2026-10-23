@@ -1264,28 +1264,67 @@ fn finish_parameter_record(
     })
 }
 
+fn parameter_owner<'a>(
+    parameter: &BinaryParameter,
+    directory: &'a [BinaryDirectory],
+    directory_by_offset: &BTreeMap<u32, usize>,
+) -> Result<&'a BinaryDirectory, CodecError> {
+    let directory_pointer = positive_pointer(parameter.directory_pointer, "Parameter Directory")?;
+    directory_by_offset
+        .get(&directory_pointer)
+        .and_then(|index| directory.get(*index))
+        .ok_or_else(|| malformed("Binary Parameter Directory pointer does not resolve"))
+}
+
+/// The resolved Directory reference held at one Parameter value position.
+fn parameter_reference(
+    value: &BinaryValue,
+    index: usize,
+    point_owner: bool,
+    directory: &[BinaryDirectory],
+    directory_by_offset: &BTreeMap<u32, usize>,
+) -> Result<Option<BinaryValue>, CodecError> {
+    match value {
+        BinaryValue::Pointer(_) => resolve_value(value, directory, directory_by_offset).map(Some),
+        BinaryValue::Integer(pointer) if point_owner && index == 3 && *pointer != 0 => {
+            resolve_value(
+                &BinaryValue::Pointer(*pointer),
+                directory,
+                directory_by_offset,
+            )
+            .map(Some)
+        }
+        _ => Ok(None),
+    }
+}
+
+/// Check that every Directory reference of one Parameter record resolves to
+/// a surviving Directory record.
+fn check_parameter_references(
+    parameter: &BinaryParameter,
+    directory: &[BinaryDirectory],
+    directory_by_offset: &BTreeMap<u32, usize>,
+) -> Result<(), CodecError> {
+    let point_owner =
+        parameter_owner(parameter, directory, directory_by_offset)?.has_point_parameters();
+    for (index, value) in parameter.values.iter().enumerate() {
+        parameter_reference(value, index, point_owner, directory, directory_by_offset)?;
+    }
+    Ok(())
+}
+
 fn parameter_lines(
     parameter: &mut BinaryParameter,
     directory: &[BinaryDirectory],
     directory_by_offset: &BTreeMap<u32, usize>,
 ) -> Result<Vec<Vec<u8>>, CodecError> {
-    let directory_pointer = positive_pointer(parameter.directory_pointer, "Parameter Directory")?;
-    let directory_index = *directory_by_offset
-        .get(&directory_pointer)
-        .ok_or_else(|| malformed("Binary Parameter Directory pointer does not resolve"))?;
+    let point_owner =
+        parameter_owner(parameter, directory, directory_by_offset)?.has_point_parameters();
     for (index, value) in parameter.values.iter_mut().enumerate() {
-        if matches!(value, BinaryValue::Pointer(_)) {
-            *value = resolve_value(value, directory, directory_by_offset)?;
-        } else if directory[directory_index].has_point_parameters() && index == 3 {
-            if let BinaryValue::Integer(pointer) = value {
-                if *pointer != 0 {
-                    *value = resolve_value(
-                        &BinaryValue::Pointer(*pointer),
-                        directory,
-                        directory_by_offset,
-                    )?;
-                }
-            }
+        if let Some(resolved) =
+            parameter_reference(value, index, point_owner, directory, directory_by_offset)?
+        {
+            *value = resolved;
         }
     }
     let text = parameter_text(parameter.entity_type, &parameter.values)?;

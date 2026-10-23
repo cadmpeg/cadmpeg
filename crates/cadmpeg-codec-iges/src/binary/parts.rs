@@ -277,6 +277,14 @@ fn read_parameters(
                         let owner = &directory[*index];
                         check_owner(&record, owner, offset, dependencies)?;
                         if !admission::allows_handoff(&record, owner, dependencies) {
+                            // An unresolved reference gives up this record,
+                            // the nearest part the decoder runs that holds the
+                            // value (#215 §4.5; #222).
+                            super::check_parameter_references(
+                                &record,
+                                directory,
+                                directory_by_offset,
+                            )?;
                             return Ok(record);
                         }
                         ctx.record(
