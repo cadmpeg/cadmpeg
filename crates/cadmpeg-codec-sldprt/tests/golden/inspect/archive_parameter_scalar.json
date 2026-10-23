@@ -1,0 +1,59 @@
+{
+  "container_kind": "sldprt-blocks",
+  "entries": [
+    {
+      "attributes": {
+        "family": "sw-objects",
+        "offset": "8",
+        "sha256": "bdcb0ee1629d5e16eac8d871d37520a9320ac5eef60e090456043e0782f8d5c0",
+        "type_id": "0x00000020"
+      },
+      "compression": "deflate",
+      "expanded": 73,
+      "name": "Contents/Config-0",
+      "role": "block",
+      "stored": 72
+    },
+    {
+      "attributes": {
+        "family": "unknown",
+        "offset": "123",
+        "sha256": "24d8600efbf4d770b458f4213cdff33637030129e74f0e7bc3c4f80f9bd7ee44",
+        "type_id": "0x00000021"
+      },
+      "compression": "deflate",
+      "expanded": 81,
+      "name": "Contents/Config-0-ResolvedFeatures",
+      "role": "block",
+      "stored": 44
+    }
+  ],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "residual",
+        "dialect": "sldprt:unknown"
+      }
+    }
+  },
+  "losses": [
+    {
+      "code": {
+        "code": "source.dialect-unverified",
+        "kind": "source_dialect_unverified",
+        "namespace": "sldprt",
+        "scope": "namespaced",
+        "strict_floor": "warning"
+      },
+      "message": "the document carries no swSolidWorks swVersion declaration, so no declared identity was verified. The document is read on the `sldprt:unknown` residual path without substituting a declared dialect grammar: the feature-operation form-code padding filter is not applied, and an operation code binds only where the four- and eight-byte candidates agree. Agreement is consistency, not a declaration.",
+      "severity": "warning"
+    }
+  ],
+  "notes": [
+    "outer version word: 0x00000004; 2 CRC-validated block(s), 0 tail-directory entry/entries, 0 cache-cell(s), 0 compound stream(s)",
+    "no unique active Parasolid partition located; available B-rep sites remain decodable",
+    "Parasolid body streams supply the typed topology and analytic carriers used by decode"
+  ]
+}

@@ -1,5 +1,5 @@
-//! The persistent-identity family (`g_idrep.py`): `moFR_c`, the `*IdRep_c`
-//! classes, `moExtObject_c`, `moCStringHandle_c`.
+//! The persistent-identity family: `moFR_c`, the `*IdRep_c` classes,
+//! `moExtObject_c`, `moCStringHandle_c`.
 
 use super::super::reader::{bad, Reader, Res, V};
 

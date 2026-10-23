@@ -1,26 +1,23 @@
 //! The byte reader and object-pointer resolution behind the class rules.
 //!
-//! A line-for-line port of the research grammar's engine
-//! (`research/sldprt-mfc-archive/grammar/gram.py`). Rules read with the
-//! consuming primitives (`u16`, `f64`, `cstring`, `ptr`, ...) and look ahead
-//! with the peeking ones (`eq`, `zeros`, `byte`, `pu32`, ...), which take an
-//! absolute offset and follow Python's slicing: a range past the end compares
-//! unequal rather than failing, while an index past the end fails.
+//! Rules read with the consuming primitives (`u16`, `f64`, `cstring`, `ptr`,
+//! ...) and look ahead with the peeking ones (`eq`, `zeros`, `byte`, `pu32`,
+//! ...), which take an absolute offset: a range past the end compares unequal
+//! rather than failing, while an index past the end fails.
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
-use cadmpeg_core::decode::{DecodeContext, ResourceLimit, View};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceLimit, View};
 
 /// Why a read stopped.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Stop {
-    /// The bytes do not have the shape a rule expects (`gram.Bad`).
+    /// The bytes do not have the shape a rule expects.
     Bad(String),
-    /// An object of a class with no rule (`gram.Unknown`).
+    /// An object of a class with no rule.
     Unknown(Arc<str>),
-    /// A read or index past the end of the stream (`IndexError`,
-    /// `struct.error`).
+    /// A read or index past the end of the stream.
     End(usize),
     /// The decode context refused more objects or nesting.
     Refused(ResourceLimit),
@@ -106,7 +103,7 @@ impl Ptr {
     }
 }
 
-/// A rule's return value: the dynamic values the Python rules return.
+/// A rule's return value.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub(crate) enum V {
     #[default]
@@ -178,7 +175,7 @@ impl V {
         }
     }
 
-    /// Python truthiness.
+    /// Whether the value counts as true.
     pub(crate) fn truthy(&self) -> bool {
         match self {
             Self::None => false,
@@ -284,14 +281,6 @@ pub(crate) struct ParameterRecord {
     pub(crate) value_at: usize,
 }
 
-/// A named object read by the named-object header rule.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct NamedRecord {
-    pub(crate) class: Option<Arc<str>>,
-    pub(crate) name: V,
-    pub(crate) oid: u32,
-}
-
 /// The reader over one stream.
 pub(crate) struct Reader<'b> {
     /// The stream (`r.b`).
@@ -308,14 +297,12 @@ pub(crate) struct Reader<'b> {
     pub(crate) objs: HashMap<u32, Arc<str>>,
     /// Every object opened, in order (`r.trace`).
     pub(crate) trace: Vec<Trace>,
-    /// The file's `swVersion` (`gram.CTX['ver']`).
+    /// The file's `swVersion`.
     pub(crate) ver: Option<u32>,
     /// Rule state shared across the rule modules.
     pub(crate) st: super::rules::State,
     /// Parameter objects read.
     pub(crate) parameters: Vec<ParameterRecord>,
-    /// Named objects read.
-    pub(crate) named: Vec<NamedRecord>,
     /// The rule nesting depth (`r.depth`): 1 for a top-level object.
     pub(crate) depth: usize,
     /// The flag position of a favourite handle followed by a view block (`FAVFLAG`).
@@ -344,7 +331,6 @@ impl<'b> Reader<'b> {
             ver,
             st: super::rules::State::default(),
             parameters: Vec::new(),
-            named: Vec::new(),
             depth: 0,
             favflag: None,
         }
@@ -390,7 +376,7 @@ impl<'b> Reader<'b> {
         Ok(value)
     }
 
-    /// `r.skip(n)`: moves without a bounds check, as the Python does. A
+    /// `r.skip(n)`: moves without a bounds check. A
     /// position past the end makes the next read stop with `Stop::End`.
     pub(crate) fn skip(&mut self, n: usize) {
         self.p = self.p.checked_add(n).unwrap_or(self.b.len());
@@ -443,7 +429,7 @@ impl<'b> Reader<'b> {
         }
         let start = self.p;
         let end = start.checked_add(2 * n).ok_or(Stop::End(start))?;
-        // A short slice decodes what is there, as Python's slicing does.
+        // A short slice decodes the bytes that are there.
         let bytes = &self.b[start.min(self.b.len())..end.min(self.b.len())];
         let mut units = Vec::new();
         let mut at = 0;
@@ -452,7 +438,11 @@ impl<'b> Reader<'b> {
             at += 2;
         }
         self.p = end;
-        Ok(String::from_utf16_lossy(&units))
+        let value = String::from_utf16_lossy(&units);
+        self.ctx
+            .retain_bytes(u64_from_index(value.len()), "retain SLDPRT archive CString")
+            .map_err(stopped)?;
+        Ok(value)
     }
 
     /// `r.ptr(want)`: a `CObject*`. An object's body is read by its class's
@@ -508,6 +498,12 @@ impl<'b> Reader<'b> {
                 class: self.objs.get(&index).cloned(),
             });
         };
+        self.ctx
+            .retain_bytes(
+                u64_from_index(class.len()),
+                "retain SLDPRT archive class name",
+            )
+            .map_err(stopped)?;
         self.objs.insert(self.counter, class.clone());
         self.bump_counter()?;
         if let Some(want) = want {
@@ -538,6 +534,10 @@ impl<'b> Reader<'b> {
         drop(guard);
         self.depth -= 1;
         let value = value?;
+        let retained = retained_value_bytes(&value)?;
+        self.ctx
+            .retain_bytes(retained, "retain SLDPRT CArchive object value")
+            .map_err(stopped)?;
         Ok(Ptr::Obj { class, value })
     }
 
@@ -555,7 +555,7 @@ impl<'b> Reader<'b> {
         self.trace.last().map(|trace| trace.class.clone())
     }
 
-    // --- Peeking at absolute offsets, with Python's slice semantics. ---
+    // --- Peeking at absolute offsets, with slice semantics. ---
 
     /// `r.b[at:at+len(bytes)] == bytes`.
     pub(crate) fn eq(&self, at: usize, bytes: &[u8]) -> bool {
@@ -582,7 +582,7 @@ impl<'b> Reader<'b> {
             .is_some_and(|window| window.iter().all(|&byte| byte == 0xff))
     }
 
-    /// `r.b[a:a+n]`, clipped to the stream as Python slices are.
+    /// `r.b[a:a+n]`, clipped to the stream.
     pub(crate) fn slice(&self, at: usize, n: usize) -> &'b [u8] {
         let start = at.min(self.b.len());
         let end = at
@@ -633,7 +633,41 @@ impl<'b> Reader<'b> {
     }
 }
 
-/// Lower-case hex of `bytes`, as Python's `bytes.hex()`.
+/// Retained bytes of a rule's value: one node per value, the entries of its
+/// lists and maps, and its map keys. A pointer's target was charged when the
+/// object opened, and a string when it was decoded.
+fn retained_value_bytes(value: &V) -> Res<u64> {
+    let overflow = || bad("archive value size overflows");
+    let mut total = u64_from_index(std::mem::size_of::<V>());
+    match value {
+        V::List(items) => {
+            for item in items {
+                total = total
+                    .checked_add(retained_value_bytes(item)?)
+                    .ok_or_else(overflow)?;
+            }
+        }
+        V::Map(map) => {
+            for (key, value) in map {
+                let key_bytes = u64_from_index(key.len());
+                let value_bytes = retained_value_bytes(value)?;
+                total = total
+                    .checked_add(key_bytes)
+                    .and_then(|total| total.checked_add(value_bytes))
+                    .ok_or_else(overflow)?;
+            }
+        }
+        V::Ptr(_) => {
+            total = total
+                .checked_add(u64_from_index(std::mem::size_of::<Ptr>()))
+                .ok_or_else(overflow)?;
+        }
+        V::None | V::Bool(_) | V::Int(_) | V::F(_) | V::Str(_) | V::Bytes(_) => {}
+    }
+    Ok(total)
+}
+
+/// Lower-case hex of `bytes`.
 pub(crate) fn hex(bytes: &[u8]) -> String {
     const DIGITS: &[u8; 16] = b"0123456789abcdef";
     let mut out = String::with_capacity(bytes.len() * 2);

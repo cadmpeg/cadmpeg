@@ -24,6 +24,6 @@ pub(crate) struct State {
     pub(crate) core: feature::CoreState,
     /// The sketch rules' state (`MIRROR`, `BYREF`, ...).
     pub(crate) sk: sketch::SketchState,
-    /// `g_ref.py`'s `FACE[0]`.
+    /// The face-reference rule's flag.
     pub(crate) face: bool,
 }

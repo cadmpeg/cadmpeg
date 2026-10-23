@@ -1,9 +1,9 @@
-//! Feature rules (`g_feat.py`): the named-object header, the feature-object
-//! block and body head, folders, reference planes and their data, components,
-//! profiles, parameters, dimensions, bodies, fillets, sheet metal, patterns
-//! and geometry records.
+//! Feature rules: the named-object header, the feature-object block and body
+//! head, folders, reference planes and their data, components, profiles,
+//! parameters, dimensions, bodies, fillets, sheet metal, patterns and
+//! geometry records.
 
-use super::super::reader::{bad, NamedRecord, ParameterRecord, Ptr, Reader, Res, Stop, V};
+use super::super::reader::{bad, ParameterRecord, Ptr, Reader, Res, Stop, V};
 use super::{ctx, sketch};
 
 const FFFEFF: [u8; 3] = [0xff, 0xfe, 0xff];
@@ -89,7 +89,7 @@ pub(crate) const M12345: [u8; 12] = [
     0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff,
 ];
 
-/// The shared rule state the Python keeps in module globals.
+/// The shared rule state.
 #[derive(Debug, Clone)]
 pub(crate) struct CoreState {
     /// `FEATDIM`: a stack, `[False]` at the start.
@@ -135,7 +135,6 @@ pub(crate) fn nodename(r: &mut Reader<'_>) -> Res<V> {
 
 /// `named(r)`: the named-object header.
 pub(crate) fn named(r: &mut Reader<'_>) -> Res<V> {
-    let class = r.last_class();
     let nm = r.ptr(Some(&["moNodeName_c"]))?;
     r.u32()?;
     let fam = r.u16()?;
@@ -148,11 +147,6 @@ pub(crate) fn named(r: &mut Reader<'_>) -> Res<V> {
         Ptr::Obj { value, .. } => value,
         other => V::from(other),
     };
-    r.named.push(NamedRecord {
-        class,
-        name: name.clone(),
-        oid,
-    });
     Ok(V::map([
         ("name", name),
         ("fam", V::from(fam)),
@@ -572,7 +566,7 @@ pub(crate) fn refblock(r: &mut Reader<'_>) -> Res<()> {
         x.extend_from_slice(&[0xff; 4]);
         r.expect_bytes(&x, "ref block -1")?;
     } else {
-        // No i32 -1 (14000 and 15000 samples).
+        // The twelve bytes are zero when no i32 -1 stands before them.
         r.expect_zeros(12, "ref block 12 zero (no -1)")?;
     }
     Ok(())
@@ -830,7 +824,7 @@ fn geo_end_found(r: &Reader<'_>, start: usize, end: usize) -> bool {
 }
 
 /// `x[1]` of a pointer tuple: an object's class, a reference's index; a null
-/// pointer has none (`IndexError`).
+/// pointer has none.
 fn item1(r: &Reader<'_>, p: &Ptr) -> Res<V> {
     match p {
         Ptr::Obj { class, .. } => Ok(V::from(&**class)),
@@ -1993,7 +1987,7 @@ pub(crate) fn extrusion(reader: &mut Reader<'_>, class: &str) -> Res<V> {
         reader.ptr(None)?;
         refblock(reader)?;
         if reader.zeros(reader.p, 2) && reader.pf64(reader.p + 2)?.abs() == 1.0 {
-            reader.skip(2); // u16 0 before the four gaps (1 sample)
+            reader.skip(2); // a u16 0 can stand before the four gaps
         }
         for _ in 0..4 {
             reader.f64()?;
@@ -2173,8 +2167,7 @@ fn pmark_zero(r: &mut Reader<'_>, big_x: u32) -> Res<V> {
     {
         r.u32()?;
     }
-    let obj_kind: &str;
-    if r.pu16(r.p)? & 0x8000 != 0 {
+    let obj_kind: &str = if r.pu16(r.p)? & 0x8000 != 0 {
         let mut obj = r.ptr(None)?;
         r.u16()?;
         while r.eq(r.p, &FFFEFF)
@@ -2187,7 +2180,7 @@ fn pmark_zero(r: &mut Reader<'_>, big_x: u32) -> Res<V> {
         if r.eq(r.p, &FFFEFF) {
             r.cstring()?;
         }
-        obj_kind = obj.kind();
+        obj.kind()
     } else {
         let n = r.u32()?;
         if n > 4096 {
@@ -2202,8 +2195,8 @@ fn pmark_zero(r: &mut Reader<'_>, big_x: u32) -> Res<V> {
         if n != 0 {
             r.expect_zeros(4, "pmark list u32 0")?;
         }
-        obj_kind = "n";
-    }
+        "n"
+    };
     let g = r.u32()?;
     if g == 0 {
         r.expect_zeros(14, "pmark 14 zero")?;
@@ -3521,8 +3514,6 @@ pub(crate) fn flatpattern(r: &mut Reader<'_>) -> Res<V> {
     r.skip(122);
     r.expect_bytes(&[0, 0], "flat pattern null")?;
     let cf = r.ptr(Some(&["moCompFeature_c"]))?;
-    // `r.trace and r.trace[-1][0]=='moFlatPattern_c' or isclass(...)`: the
-    // most recently opened object, as the Python reads it.
     if r.trace
         .last()
         .is_some_and(|t| &*t.class == "moFlatPattern_c")

@@ -5,9 +5,11 @@ use super::names::{class_declarations, configuration, object_names};
 use super::scalars::named_scalars;
 use super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
 use crate::container::ContainerScan;
+use crate::loss::SldprtLossCode;
 use crate::records::{ArchiveParameterClass, FeatureInputClassRole, FeatureInputLane};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_ir::annotations::Annotations;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::Exactness;
 use std::collections::HashMap;
 
@@ -21,6 +23,7 @@ pub(crate) fn lanes(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     annotations: &mut Annotations,
+    losses: &mut Vec<LossNote>,
 ) -> Result<Vec<FeatureInputLane>, cadmpeg_core::CodecError> {
     let has_explicit_lanes = scan.sections().any(|source| {
         source
@@ -41,7 +44,7 @@ pub(crate) fn lanes(
         }
         let mut lane = feature_input_lane(ctx, source, section, "resolved-features", annotations)?;
         if has_explicit_lanes {
-            type_scalars_from_archive(ctx, scan, section, source.payload(), &mut lane)?;
+            type_scalars_from_archive(ctx, scan, section, source.payload(), &mut lane, losses)?;
         }
         result.push(lane);
     }
@@ -57,6 +60,7 @@ fn type_scalars_from_archive(
     section: &str,
     resolved: &[u8],
     lane: &mut FeatureInputLane,
+    losses: &mut Vec<LossNote>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let Some(config_name) = configuration_name(section) else {
         return Ok(());
@@ -75,6 +79,13 @@ fn type_scalars_from_archive(
     else {
         return Ok(());
     };
+    if let crate::carchive::Status::Stop(_) = walk.status {
+        losses.push(SldprtLossCode::FeatureInputArchiveWalkStopped.note(format!(
+            "the archive walk of {config_name} stopped before the end of the stream, so its \
+             scalars keep no parameter class"
+        )));
+        return Ok(());
+    }
     let classes = scalar_archive_classes(&walk);
     for scalar in &mut lane.scalars {
         scalar.archive_class = classes.get(&scalar.offset).copied();

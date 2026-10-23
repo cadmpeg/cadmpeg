@@ -1,4 +1,4 @@
-//! Sketch rules (`g_sketch.py`): the inline entity record, handle objects,
+//! Sketch rules: the inline entity record, handle objects,
 //! `sgSketch`, its tail and the objects a sketch refers to.
 
 use std::sync::Arc;
@@ -6,7 +6,7 @@ use std::sync::Arc;
 use super::super::reader::{bad, Ptr, Reader, Res, V};
 use super::feature::{isclass, isver, objat, refblock, ver_or, M12345, UCS};
 
-/// `g_sketch.py`'s rule state: the Python's module flags.
+/// The rule state shared by the sketch rules.
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct SketchState(u8);
 
@@ -16,42 +16,42 @@ impl SketchState {
     const DIMLAST: u8 = 1 << 2;
     const PGMDONE: u8 = 1 << 3;
 
-    /// `MIRROR[0]`.
+    /// The mirror flag.
     pub(crate) fn mirror(self) -> bool {
         self.0 & Self::MIRROR != 0
     }
 
-    /// Sets `MIRROR[0]`.
+    /// Sets the mirror flag.
     pub(crate) fn set_mirror(&mut self, value: bool) {
         self.set(Self::MIRROR, value);
     }
 
-    /// `BYREF[0]`.
+    /// The by-reference flag.
     pub(crate) fn byref(self) -> bool {
         self.0 & Self::BYREF != 0
     }
 
-    /// Sets `BYREF[0]`.
+    /// Sets the by-reference flag.
     pub(crate) fn set_byref(&mut self, value: bool) {
         self.set(Self::BYREF, value);
     }
 
-    /// `DIMLAST[0]`.
+    /// The last-dimension flag.
     pub(crate) fn dimlast(self) -> bool {
         self.0 & Self::DIMLAST != 0
     }
 
-    /// Sets `DIMLAST[0]`.
+    /// Sets the last-dimension flag.
     pub(crate) fn set_dimlast(&mut self, value: bool) {
         self.set(Self::DIMLAST, value);
     }
 
-    /// `PGMDONE[0] is not None`: an offset chain read the offset profile.
+    /// An offset chain read the offset profile.
     pub(crate) fn pgmdone(self) -> bool {
         self.0 & Self::PGMDONE != 0
     }
 
-    /// Sets `PGMDONE[0]`.
+    /// Sets the offset-profile flag.
     pub(crate) fn set_pgmdone(&mut self, value: bool) {
         self.set(Self::PGMDONE, value);
     }
@@ -90,7 +90,7 @@ fn zeros12_then(tail: &[u8]) -> Vec<u8> {
     x
 }
 
-/// `r.b[p:p+z] == bytes(z)`, true for an empty slice as in Python.
+/// `r.b[p:p+z] == bytes(z)`, true for an empty slice.
 fn zeros0(r: &Reader<'_>, p: usize, z: usize) -> bool {
     z == 0 || r.zeros(p, z)
 }
@@ -235,7 +235,7 @@ fn line(reader: &mut Reader<'_>) -> Res<V> {
             && !reader.zeros(reader.p, 8)
             && !reader.eq(reader.p, &[1, 0, 1, 0, 0, 0, 0, 0])
         {
-            // u32 1 (or 0) and u32 0; a u16 1 and u32 1 in one part.
+            // u32 1 (or 0) and u32 0; or u16 1 and u32 1.
             return Err(bad("spline 1 0"));
         }
         reader.skip(8);
@@ -615,8 +615,7 @@ fn linpatt(r: &mut Reader<'_>, gi: usize) -> Res<(usize, Rel)> {
             r.skip(zz);
         } else {
             r.expect_zeros(7, "pattern direction 7 zero")?;
-            // The Python then calls `r.skip(None)`: a TypeError.
-            return Err(bad("pattern direction: skip(None)"));
+            return Err(bad("pattern direction: no zero run to skip"));
         }
     } else {
         r.expect_zeros(8, "linear pattern 8 zero")?;
@@ -1372,7 +1371,7 @@ pub(crate) fn sketchextref(reader: &mut Reader<'_>) -> Res<V> {
         let pt = f64s(reader, 3)?;
         let fr = reader.f64()?;
         if !(0.0..=1.0).contains(&fr) {
-            // The fraction along the edge (1.0 in one sample, 0.5 in another).
+            // The fraction along the edge lies in [0, 1].
             return Err(bad("end point fraction"));
         }
         reader.expect_bytes(&[0, 0], "end point u16 0")?;
@@ -2322,7 +2321,7 @@ fn outlines(r: &mut Reader<'_>) -> Res<V> {
 
 /// `sgEntHandleData_c` (`enthandledata`): a block's entity-handle table. u32 `0`, a u32, 22-byte entries (a
 /// handle class token and 20 bytes of data) until a null token, then a zero run, u32 `3` and either a
-/// compressed body or u32 `1`, seven bytes and a u64 (100000 in the sample).
+/// compressed body or u32 `1`, seven bytes and a u64.
 fn enthandledata(r: &mut Reader<'_>) -> Res<()> {
     if r.u32()? != 0 {
         return Err(bad("entity handle data u32 0"));

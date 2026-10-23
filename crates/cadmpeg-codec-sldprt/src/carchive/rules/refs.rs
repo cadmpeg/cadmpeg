@@ -1,4 +1,4 @@
-//! Face, edge, loop and vertex references (`g_ref.py`).
+//! Face, edge, loop and vertex references.
 
 use super::super::reader::{bad, Reader, Res, V};
 

@@ -13,8 +13,6 @@ use std::sync::Arc;
 use cadmpeg_core::decode::{DecodeContext, View};
 
 #[cfg(test)]
-mod corpus_tests;
-#[cfg(test)]
 mod tests;
 
 pub(crate) mod reader;
@@ -33,17 +31,11 @@ pub(crate) enum Status {
 #[derive(Debug, Clone)]
 pub(crate) struct Walk {
     pub(crate) status: Status,
-    /// Where the walk ended or stopped.
-    #[cfg(test)]
-    pub(crate) p: usize,
     /// Every object opened, in order.
     #[cfg(test)]
     pub(crate) trace: Vec<reader::Trace>,
     /// Parameter objects read.
     pub(crate) parameters: Vec<reader::ParameterRecord>,
-    /// Named objects read.
-    #[cfg(test)]
-    pub(crate) named: Vec<reader::NamedRecord>,
     /// Top-level pointers read.
     #[cfg(test)]
     pub(crate) tops: usize,
@@ -84,11 +76,7 @@ pub(crate) fn walk<'b>(
         status,
         parameters: r.parameters,
         #[cfg(test)]
-        p: r.p,
-        #[cfg(test)]
         trace: r.trace,
-        #[cfg(test)]
-        named: r.named,
         #[cfg(test)]
         tops,
     })
@@ -120,9 +108,7 @@ pub(crate) fn walk_configuration(
 
 /// The version the walk reads a configuration with: the declared `swVersion`
 /// when it is a number, else the u32 at offset 22 of the `Config-N` stream
-/// when it lies in 9000..=40000, else 17000. On the corpus this is the
-/// version the research grammar settled for every part (288 without a
-/// declaration: 274 by the offset-22 value, 14 by 17000).
+/// when it lies in 9000..=40000, else 17000.
 pub(crate) fn walk_version(declared: Option<&str>, config: &[u8]) -> u32 {
     if let Some(version) = declared.and_then(|value| value.trim().parse::<u32>().ok()) {
         return version;

@@ -4,7 +4,14 @@ use super::super::CLASS_MARKER;
 use super::{configuration_name, legacy_feature_input_section, scalar_archive_classes};
 use crate::carchive::reader::{ParameterRecord, V};
 use crate::carchive::{Status, Walk};
+use crate::loss::SldprtLossCode;
 use crate::records::ArchiveParameterClass;
+use crate::test_support::carchive::{
+    sldprt_with_archive_parameter, sldprt_with_stopped_archive_walk,
+};
+use crate::test_support::container::scan;
+use cadmpeg_ir::annotations::Annotations;
+use cadmpeg_ir::report::loss::LossNote;
 use std::sync::Arc;
 
 #[test]
@@ -61,14 +68,12 @@ fn configuration_names_strip_the_resolved_features_suffix() {
 fn scalar_archive_classes_map_each_value_offset() {
     let walk = Walk {
         status: Status::End,
-        p: 0,
         trace: Vec::new(),
         parameters: vec![
             parameter("moLengthParameter_c", 42),
             parameter("moAngleParameter_c", 43),
             parameter("moNodeName_c", 44),
         ],
-        named: Vec::new(),
         tops: 1,
     };
     let classes = scalar_archive_classes(&walk);
@@ -87,4 +92,37 @@ fn archive_parameter_classes_serialize_as_snake_case() {
     ] {
         assert_eq!(serde_json::to_string(&class).unwrap(), text);
     }
+}
+
+fn lanes_of(bytes: &[u8]) -> (Vec<crate::records::FeatureInputLane>, Vec<LossNote>) {
+    let scan = scan(bytes);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut annotations = Annotations::default();
+    let mut losses = Vec::new();
+    let lanes =
+        super::lanes(&ctx, &scan, &mut annotations, &mut losses).expect("lane assembly succeeds");
+    (lanes, losses)
+}
+
+#[test]
+fn a_reconciled_archive_walk_types_the_lane_scalar() {
+    let (lanes, losses) = lanes_of(&sldprt_with_archive_parameter());
+    assert_eq!(lanes.len(), 1);
+    assert_eq!(lanes[0].scalars.len(), 1);
+    assert_eq!(
+        lanes[0].scalars[0].archive_class,
+        Some(ArchiveParameterClass::Length)
+    );
+    assert_eq!(losses.len(), 0);
+}
+
+#[test]
+fn a_stopped_archive_walk_charges_a_loss_and_types_no_scalar() {
+    let (lanes, losses) = lanes_of(&sldprt_with_stopped_archive_walk());
+    assert_eq!(lanes.len(), 1);
+    assert_eq!(lanes[0].scalars.len(), 1);
+    assert_eq!(lanes[0].scalars[0].archive_class, None);
+    assert!(losses
+        .iter()
+        .any(|note| note.code == SldprtLossCode::FeatureInputArchiveWalkStopped.kind()));
 }

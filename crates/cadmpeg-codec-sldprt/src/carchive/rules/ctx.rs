@@ -1,5 +1,5 @@
-//! In-context (assembly) references (`g_ctx.py`): `moContextChainComponent_c`
-//! and the chain it names, and the backed-up sketch geometry records.
+//! In-context (assembly) references: `moContextChainComponent_c` and the
+//! chain it names, and the backed-up sketch geometry records.
 
 use super::super::reader::{bad, Reader, Res, V};
 use super::feature::isver;
