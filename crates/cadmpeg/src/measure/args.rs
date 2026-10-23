@@ -107,8 +107,9 @@ pub(crate) struct SelectionArgs {
     #[arg(long = "surface", value_name = "ID")]
     surfaces: Vec<String>,
     /// Measure in the instance space of this occurrence: an exact ID or a
-    /// unique ID suffix. The scope is its prototype's bodies, each placed by
-    /// its own transform and then by the occurrence chain from the root.
+    /// unique ID suffix. The scope is the bodies of its prototype and of
+    /// the prototypes of its subtree, each placed by its own transform and
+    /// then by the occurrence chain from the root.
     #[arg(long, value_name = "ID")]
     occurrence: Option<String>,
     /// Print a row for every face in scope.

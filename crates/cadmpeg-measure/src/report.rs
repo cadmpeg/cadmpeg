@@ -223,15 +223,22 @@ impl StatusTally {
 #[derive(Debug, Default)]
 pub(crate) struct Histogram(pub(crate) BTreeMap<Category, BTreeMap<String, usize>>);
 
+impl Histogram {
+    /// Count one unavailable value.
+    pub(crate) fn count<T>(&mut self, unavailable: &Unavailable<T>) {
+        *self
+            .0
+            .entry(unavailable.category())
+            .or_default()
+            .entry(unavailable.reason().code().to_owned())
+            .or_default() += 1;
+    }
+}
+
 impl QuantityVisitor for Histogram {
     fn visit<T>(&mut self, quantity: &Quantity<T>) {
         if let Some(unavailable) = quantity.unavailable() {
-            *self
-                .0
-                .entry(unavailable.category())
-                .or_default()
-                .entry(unavailable.reason().code().to_owned())
-                .or_default() += 1;
+            self.count(unavailable);
         }
     }
 }
@@ -280,10 +287,14 @@ pub enum RowPlacement {
 #[derive(Debug, Clone, Serialize)]
 pub struct OccurrenceMeasures {
     pub(crate) occurrence: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) prototype: Option<String>,
     pub(crate) chain: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) transform: Option<[[f64; 4]; 3]>,
     pub(crate) bodies: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) descendants: Vec<DescendantMeasures>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) unavailable: Option<Unavailable<()>>,
 }
@@ -296,12 +307,41 @@ accessors!(OccurrenceMeasures {
     /// The occurrences from the root to this one.
     chain: Vec<String>;
     /// The composed placement of the chain, as three rows of a 3×4 affine
-    /// map, when it composes.
+    /// map, when the space places its bodies.
     transform: Option<[[f64; 4]; 3]>;
-    /// The bodies of the prototype, sorted.
+    /// The bodies of the subtree, sorted.
     bodies: Vec<String>;
+    /// The occurrences below this one, breadth first.
+    descendants: Vec<DescendantMeasures>;
     /// Why the pass emits no row in this space.
     unavailable: Option<Unavailable<()>>;
+});
+
+/// One occurrence below the occurrence whose instance space a pass
+/// measures.
+#[derive(Debug, Clone, Serialize)]
+pub struct DescendantMeasures {
+    pub(crate) occurrence: String,
+    pub(crate) parent: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) prototype: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) transform: Option<[[f64; 4]; 3]>,
+    pub(crate) bodies: Vec<String>,
+}
+
+accessors!(DescendantMeasures {
+    /// The occurrence ID.
+    occurrence: String;
+    /// The containing occurrence.
+    parent: String;
+    /// The local product definition the occurrence places, when it has one.
+    prototype: Option<String>;
+    /// The composed placement from the root to this occurrence, as three
+    /// rows of a 3×4 affine map, when the space places its bodies.
+    transform: Option<[[f64; 4]; 3]>;
+    /// The bodies its prototype lists.
+    bodies: Vec<String>;
 });
 
 /// One surface row: the carrier of a surface, and the faces and bodies
@@ -1171,15 +1211,20 @@ accessors!(DocumentMeasures {
     edges: usize;
     /// Surface rows.
     surfaces: usize;
-    /// Total area of the body rows; absent without body rows.
+    /// Total area of the body rows; absent without body rows. Unavailable
+    /// with the occurrence's reason when the occurrence space has no rows.
     area: Option<Quantity<Scalar>>;
     /// Total volume of the body rows with faces; absent without them.
+    /// Unavailable with the occurrence's reason when the occurrence space
+    /// has no rows.
     closed_volume: Option<Quantity<Scalar>>;
-    /// Union box of the body rows; absent without body rows.
+    /// Union box of the body rows; absent without body rows. Unavailable
+    /// with the occurrence's reason when the occurrence space has no rows.
     bbox: Option<Quantity<BoxValue>>;
     /// Orientation lists.
     orientation: DocumentOrientation;
-    /// Unavailable values in the emitted rows, by category and code.
+    /// Unavailable values in the emitted rows and the occurrence block, by
+    /// category and code.
     unavailable: BTreeMap<Category, BTreeMap<String, usize>>;
     /// The work the pass used.
     work: WorkReport;

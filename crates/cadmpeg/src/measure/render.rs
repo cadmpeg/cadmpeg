@@ -1113,6 +1113,18 @@ fn body_text(out: &mut impl Write, body: &BodyMeasures) -> io::Result<()> {
     Ok(())
 }
 
+/// Three rows of a 3 × 4 affine map.
+fn transform_text(rows: &[[f64; 4]; 3]) -> String {
+    let rows: Vec<String> = rows
+        .iter()
+        .map(|row| {
+            let row: Vec<String> = row.iter().map(|value| number(*value)).collect();
+            format!("[{}]", row.join(", "))
+        })
+        .collect();
+    rows.join(" ")
+}
+
 fn occurrence_text(out: &mut impl Write, occurrence: &OccurrenceMeasures) -> io::Result<()> {
     writeln!(out, "occurrence {}", occurrence.occurrence())?;
     if let Some(prototype) = occurrence.prototype() {
@@ -1120,16 +1132,27 @@ fn occurrence_text(out: &mut impl Write, occurrence: &OccurrenceMeasures) -> io:
     }
     line(out, "chain", &occurrence.chain().join(" > "))?;
     if let Some(rows) = occurrence.transform() {
-        let rows: Vec<String> = rows
-            .iter()
-            .map(|row| {
-                let row: Vec<String> = row.iter().map(|value| number(*value)).collect();
-                format!("[{}]", row.join(", "))
-            })
-            .collect();
-        line(out, "transform", &rows.join(" "))?;
+        line(out, "transform", &transform_text(rows))?;
     }
     line(out, "bodies", &occurrence.bodies().join(", "))?;
+    for descendant in occurrence.descendants() {
+        let placement = descendant
+            .transform()
+            .as_ref()
+            .map_or_else(String::new, |rows| {
+                format!(", transform {}", transform_text(rows))
+            });
+        line(
+            out,
+            "descendant",
+            &format!(
+                "{} in {}, bodies [{}]{placement}",
+                descendant.occurrence(),
+                descendant.parent(),
+                descendant.bodies().join(", ")
+            ),
+        )?;
+    }
     if let Some(unavailable) = occurrence.unavailable() {
         line(
             out,

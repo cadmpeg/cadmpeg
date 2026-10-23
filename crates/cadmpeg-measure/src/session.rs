@@ -33,7 +33,7 @@ use crate::report::{
 };
 use crate::select::Selection;
 use crate::surface::SurfaceInput;
-use crate::value::{Quantity, Scalar, Unit};
+use crate::value::{Quantity, Scalar, Unavailable, Unit};
 use crate::witness::WitnessInput;
 
 /// The document a measurement pass reads.
@@ -253,17 +253,24 @@ impl<'ir> Measurer<'ir> {
         };
         let pass = PassAllowance::new(allowance);
 
-        let world = space.as_ref().and_then(|space| space.world);
+        let world = |body: &str| space.as_ref().and_then(|space| space.placements.get(body));
+        let mut composed: HashMap<&'ir str, Option<Transform>> = HashMap::new();
         let placements: HashMap<&'ir str, Outcome<Placement>> = model
             .bodies
             .iter()
             .map(|body| {
-                let placed = match (world, body.transform) {
+                let placed = match (world(body.id.as_str()), body.transform) {
                     (None, transform) => Ok(transform),
                     (Some(world), transform) => world
                         .compose(transform.unwrap_or_else(Transform::identity))
                         .map(Some),
                 };
+                if let Ok(transform) = placed {
+                    composed.insert(
+                        body.id.as_str(),
+                        transform.filter(|transform| *transform != Transform::identity()),
+                    );
+                }
                 let placement = match placed {
                     Ok(Some(transform)) => settle(Placement::of(transform)),
                     Ok(None) => Ok(Ok(Placement::identity())),
@@ -293,10 +300,12 @@ impl<'ir> Measurer<'ir> {
             owners: &self.owners,
             fidelity: self.input.fidelity,
             faces: &model.faces,
+            scope: space.as_ref().map(|space| &space.bodies),
+            transform: &|body: &str| composed.get(body).copied().flatten(),
             placement: &placement_of,
         };
         let mut surface_out: Vec<SurfaceMeasures> = Vec::new();
-        let placed = space.as_ref().is_none_or(|space| space.world.is_some());
+        let placed = space.as_ref().is_none_or(crate::occurrence::Space::placed);
         for id in surface_ids.into_iter().filter(|_| placed) {
             if let Some(surface) = self.owners.surface(id) {
                 surface_out.push(surfaces.row(surface)?);
@@ -389,7 +398,7 @@ impl<'ir> Measurer<'ir> {
         };
         let mut body_out: Vec<BodyMeasures> =
             body_rows.iter().map(|body| bodies.row(body)).collect();
-        if let Some(space) = space.as_ref().filter(|space| space.world.is_some()) {
+        if let Some(space) = space.as_ref().filter(|space| space.placed()) {
             let placement = RowPlacement::Occurrence {
                 occurrence: space.report.occurrence.clone(),
             };
@@ -413,6 +422,9 @@ impl<'ir> Measurer<'ir> {
             edges: &edge_out,
             surfaces: &surface_out,
             body_level,
+            unplaced: space
+                .as_ref()
+                .and_then(crate::occurrence::Space::unavailable),
         };
         let document = Self::document(
             &rows,
@@ -557,7 +569,7 @@ impl<'ir> Measurer<'ir> {
     }
 
     /// The body scope, or `None` for every body. With an occurrence, the
-    /// scope is its prototype's bodies, and empty when its space has no
+    /// scope is the bodies of its subtree, and empty when its space has no
     /// rows.
     fn scope(
         &self,
@@ -645,7 +657,7 @@ impl<'ir> Measurer<'ir> {
                 }
             }
         }
-        if space.is_some_and(|space| space.world.is_none()) {
+        if space.is_some_and(|space| !space.placed()) {
             return Ok(Some(BTreeSet::new()));
         }
         Ok(scope)
@@ -663,8 +675,12 @@ impl<'ir> Measurer<'ir> {
             edges,
             surfaces,
             body_level,
+            unplaced,
         } = *rows;
         let mut histogram = Histogram::default();
+        if let Some(unplaced) = unplaced {
+            histogram.count(unplaced);
+        }
         for body in bodies {
             body.visit(&mut histogram);
         }
@@ -677,13 +693,22 @@ impl<'ir> Measurer<'ir> {
         for surface in surfaces {
             surface.visit(&mut histogram);
         }
-        let (area, bbox) = if body_level {
-            (Some(total_area(bodies)), Some(union_box(bodies)))
-        } else {
-            (None, None)
+        let (area, bbox, closed_volume) = match unplaced {
+            Some(unplaced) if body_level => (
+                Some(Quantity::Unavailable(unplaced.recast())),
+                Some(Quantity::Unavailable(unplaced.recast())),
+                Some(Quantity::Unavailable(unplaced.recast())),
+            ),
+            _ if body_level && !bodies.is_empty() => (
+                Some(total_area(bodies)),
+                Some(union_box(bodies)),
+                bodies
+                    .iter()
+                    .any(|body| body.volume.is_some())
+                    .then(|| total_volume(bodies)),
+            ),
+            _ => (None, None, None),
         };
-        let closed_volume = (body_level && bodies.iter().any(|body| body.volume.is_some()))
-            .then(|| total_volume(bodies));
         let mut orientation = DocumentOrientation::default();
         let mut face_ids: Vec<&&str> = face_results.keys().collect();
         face_ids.sort();
@@ -747,6 +772,8 @@ struct Rows<'a> {
     edges: &'a [EdgeMeasures],
     surfaces: &'a [SurfaceMeasures],
     body_level: bool,
+    /// Why the occurrence space has no rows.
+    unplaced: Option<&'a Unavailable<()>>,
 }
 
 /// Whether a face row passes the kind and radius filters.

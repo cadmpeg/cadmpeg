@@ -27,11 +27,38 @@ fn definition_id() -> ProductDefinitionId {
     ProductDefinitionId::mint("test:model:product-definition#block").expect("identity")
 }
 
+fn assembly_id() -> ProductDefinitionId {
+    ProductDefinitionId::mint("test:model:product-definition#assembly").expect("identity")
+}
+
+fn definition(id: ProductDefinitionId, bodies: Vec<cadmpeg_ir::ids::BodyId>) -> ProductDefinition {
+    ProductDefinition {
+        id,
+        kind: ProductDefinitionKind::Part,
+        source_name: None,
+        label: None,
+        description: None,
+        part_number: None,
+        bom_properties: std::collections::BTreeMap::default(),
+        bodies,
+        native_ref: None,
+    }
+}
+
 fn occurrence(key: &str, parent: Option<&str>, transform: [[f64; 4]; 3]) -> Occurrence {
+    placing(definition_id(), key, parent, transform)
+}
+
+fn placing(
+    prototype: ProductDefinitionId,
+    key: &str,
+    parent: Option<&str>,
+    transform: [[f64; 4]; 3],
+) -> Occurrence {
     Occurrence {
         id: occurrence_id(key),
         prototype: PrototypeReference::Local {
-            definition: definition_id(),
+            definition: prototype,
         },
         parent: parent.map_or(OccurrenceParent::Root {}, |parent| {
             OccurrenceParent::Occurrence {
@@ -49,10 +76,25 @@ fn occurrence(key: &str, parent: Option<&str>, transform: [[f64; 4]; 3]) -> Occu
     }
 }
 
-/// The box from (0, 0, 0) to (2, 3, 4), its body moved by (0, 0, 5), in a
-/// definition placed by `top` at the root and `inner` inside it. `top`
-/// moves by (100, 0, 0); `inner` turns +z onto +x and +x onto −z and moves
-/// by (0, 50, 0).
+/// The move by (100, 0, 0).
+const MOVE_X: [[f64; 4]; 3] = [
+    [1.0, 0.0, 0.0, 100.0],
+    [0.0, 1.0, 0.0, 0.0],
+    [0.0, 0.0, 1.0, 0.0],
+];
+
+/// The turn of +z onto +x and +x onto −z, then the move by (0, 50, 0).
+const TURN_AND_MOVE_Y: [[f64; 4]; 3] = [
+    [0.0, 0.0, 1.0, 0.0],
+    [0.0, 1.0, 0.0, 50.0],
+    [-1.0, 0.0, 0.0, 0.0],
+];
+
+/// The box from (0, 0, 0) to (2, 3, 4), its body moved by (0, 0, 5), in the
+/// `block` definition. `single` places `block` at the root by (100, 0, 0).
+/// `top` places the `assembly` definition, which lists no body, at the root
+/// by (100, 0, 0); `inner` places `block` inside `top`, turning +z onto +x
+/// and +x onto −z and moving by (0, 50, 0).
 fn placed_block() -> CadIr {
     let mut ir = cuboid([0.0; 3], [2.0, 3.0, 4.0]);
     ir.model.bodies[0].transform = Transform::affine([
@@ -60,35 +102,22 @@ fn placed_block() -> CadIr {
         [0.0, 1.0, 0.0, 0.0],
         [0.0, 0.0, 1.0, 5.0],
     ]);
-    ir.model.product_definitions.push(ProductDefinition {
-        id: definition_id(),
-        kind: ProductDefinitionKind::Part,
-        source_name: None,
-        label: None,
-        description: None,
-        part_number: None,
-        bom_properties: std::collections::BTreeMap::default(),
-        bodies: vec![ir.model.bodies[0].id.clone()],
-        native_ref: None,
-    });
-    ir.model.occurrences.push(occurrence(
-        "top",
-        None,
-        [
-            [1.0, 0.0, 0.0, 100.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-        ],
+    ir.model.product_definitions.push(definition(
+        definition_id(),
+        vec![ir.model.bodies[0].id.clone()],
     ));
-    ir.model.occurrences.push(occurrence(
-        "inner",
-        Some("top"),
-        [
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 1.0, 0.0, 50.0],
-            [-1.0, 0.0, 0.0, 0.0],
-        ],
-    ));
+    ir.model
+        .product_definitions
+        .push(definition(assembly_id(), Vec::new()));
+    ir.model
+        .occurrences
+        .push(placing(assembly_id(), "top", None, MOVE_X));
+    let mut single = occurrence("single", None, MOVE_X);
+    single.ordinal = 1;
+    ir.model.occurrences.push(single);
+    ir.model
+        .occurrences
+        .push(occurrence("inner", Some("top"), TURN_AND_MOVE_Y));
     ir.finalize();
     ir
 }
@@ -126,7 +155,7 @@ fn assert_point(quantity: &Quantity<crate::value::Point>, expected: [f64; 3]) {
     }
 }
 
-/// `top`: the body's centroid (1, 1.5, 2) moves to (1, 1.5, 7), then to
+/// `single`: the body's centroid (1, 1.5, 2) moves to (1, 1.5, 7), then to
 /// (101, 1.5, 7); its box to (100, 0, 5)..(102, 3, 9).
 ///
 /// `inner`: `top ∘ inner ∘ body` maps `p` to
@@ -135,6 +164,9 @@ fn assert_point(quantity: &Quantity<crate::value::Point>, expected: [f64; 3]) {
 /// turns to (7, 1.5, −1) and moves to (107, 51.5, −1); the box
 /// x ∈ [0, 2], y ∈ [0, 3], z ∈ [5, 9] turns to x ∈ [5, 9], z ∈ [−2, 0] and
 /// moves to (105, 50, −2)..(109, 53, 0).
+///
+/// `top`: its prototype lists no body; its subtree places the body through
+/// `inner` by the same composition, so the rows are those of `inner`.
 #[test]
 fn rows_are_placed_by_the_body_transform_then_the_occurrence_chain() {
     let ir = placed_block();
@@ -146,15 +178,24 @@ fn rows_are_placed_by_the_body_transform_then_the_occurrence_chain() {
     assert_eq!(*body.placement(), RowPlacement::Model {});
     assert_point(body.centroid().as_ref().expect("centroid"), [1.0, 1.5, 7.0]);
 
-    for (key, centroid, low, high) in [
+    for (key, prototype, centroid, low, high) in [
         (
-            "top",
+            "single",
+            definition_id(),
             [101.0, 1.5, 7.0],
             [100.0, 0.0, 5.0],
             [102.0, 3.0, 9.0],
         ),
         (
             "inner",
+            definition_id(),
+            [107.0, 51.5, -1.0],
+            [105.0, 50.0, -2.0],
+            [109.0, 53.0, 0.0],
+        ),
+        (
+            "top",
+            assembly_id(),
             [107.0, 51.5, -1.0],
             [105.0, 50.0, -2.0],
             [109.0, 53.0, 0.0],
@@ -192,8 +233,30 @@ fn rows_are_placed_by_the_body_transform_then_the_occurrence_chain() {
         let block = report.occurrence().as_ref().expect("occurrence block");
         assert!(block.unavailable().is_none());
         assert_eq!(block.bodies(), &[ir.model.bodies[0].id.as_str().to_owned()]);
-        assert_eq!(block.prototype().as_deref(), Some(definition_id().as_str()));
+        assert_eq!(block.prototype().as_deref(), Some(prototype.as_str()));
     }
+    let top = in_occurrence(&ir, "top");
+    let [descendant] = top
+        .occurrence()
+        .as_ref()
+        .expect("block")
+        .descendants()
+        .as_slice()
+    else {
+        panic!("one descendant");
+    };
+    assert_eq!(descendant.occurrence(), occurrence_id("inner").as_str());
+    assert_eq!(descendant.parent(), occurrence_id("top").as_str());
+    assert_eq!(
+        descendant.bodies(),
+        &[ir.model.bodies[0].id.as_str().to_owned()]
+    );
+    let expected = [
+        [0.0, 0.0, 1.0, 100.0],
+        [0.0, 1.0, 0.0, 50.0],
+        [-1.0, 0.0, 0.0, 0.0],
+    ];
+    assert_eq!(descendant.transform(), &Some(expected));
     let report = in_occurrence(&ir, "inner");
     assert_eq!(
         report.occurrence().as_ref().expect("block").chain(),
@@ -204,16 +267,42 @@ fn rows_are_placed_by_the_body_transform_then_the_occurrence_chain() {
     );
 }
 
+/// No row, no transform, and every document quantity unavailable with the
+/// space's reason, which the document histogram counts once.
 fn assert_no_rows(report: &MeasureReport, reason: UnavailableReason, entity: &str) {
     assert!(report.bodies().is_empty());
     assert!(report.faces().is_empty());
-    let unavailable = report
-        .occurrence()
-        .as_ref()
-        .and_then(|block| block.unavailable().as_ref())
-        .expect("unavailable space");
+    let block = report.occurrence().as_ref().expect("occurrence block");
+    assert!(block.transform().is_none());
+    let unavailable = block.unavailable().as_ref().expect("unavailable space");
     assert_eq!(unavailable.reason(), reason);
     assert_eq!(unavailable.entity(), Some(entity));
+    let document = report.document();
+    let reasons = [
+        document
+            .area()
+            .as_ref()
+            .and_then(Quantity::unavailable)
+            .map(crate::value::Unavailable::reason),
+        document
+            .bbox()
+            .as_ref()
+            .and_then(Quantity::unavailable)
+            .map(crate::value::Unavailable::reason),
+        document
+            .closed_volume()
+            .as_ref()
+            .and_then(Quantity::unavailable)
+            .map(crate::value::Unavailable::reason),
+    ];
+    assert_eq!(reasons, [Some(reason); 3]);
+    let counted: usize = document
+        .unavailable()
+        .get(&unavailable.category())
+        .and_then(|codes| codes.get(reason.code()))
+        .copied()
+        .unwrap_or_default();
+    assert_eq!(counted, 1);
 }
 
 #[test]
@@ -266,6 +355,64 @@ fn an_external_prototype_gives_no_rows() {
 }
 
 #[test]
+fn an_external_prototype_in_the_subtree_gives_no_rows() {
+    let mut ir = placed_block();
+    let inner = ir
+        .model
+        .occurrences
+        .iter_mut()
+        .find(|occurrence| occurrence.id == occurrence_id("inner"))
+        .expect("inner");
+    inner.prototype = PrototypeReference::Unresolved {};
+    let report = in_occurrence(&ir, "top");
+    assert_no_rows(
+        &report,
+        UnavailableReason::PlacementPrototypeUnresolved,
+        occurrence_id("inner").as_str(),
+    );
+}
+
+/// `top` places `block` twice, through `inner` and through a second child:
+/// one row per body cannot hold both instances.
+#[test]
+fn a_body_placed_twice_in_the_subtree_gives_no_rows() {
+    let mut ir = placed_block();
+    let mut twin = occurrence("twin", Some("top"), MOVE_X);
+    twin.ordinal = 1;
+    ir.model.occurrences.push(twin);
+    ir.finalize();
+    let report = in_occurrence(&ir, "top");
+    assert_no_rows(
+        &report,
+        UnavailableReason::PlacementOccurrenceBodyRepeated,
+        ir.model.bodies[0].id.as_str(),
+    );
+}
+
+/// An occurrence of a definition that lists no body and has no child has
+/// no body to measure; its document quantities are not a measured zero.
+#[test]
+fn an_occurrence_with_no_body_in_its_subtree_gives_no_rows() {
+    let mut ir = placed_block();
+    let mut empty = placing(assembly_id(), "empty", None, MOVE_X);
+    empty.ordinal = 2;
+    ir.model.occurrences.push(empty);
+    ir.finalize();
+    let report = in_occurrence(&ir, "empty");
+    assert_no_rows(
+        &report,
+        UnavailableReason::PlacementOccurrenceEmpty,
+        occurrence_id("empty").as_str(),
+    );
+    let category = report
+        .occurrence()
+        .as_ref()
+        .and_then(|block| block.unavailable().as_ref())
+        .map(crate::value::Unavailable::category);
+    assert_eq!(category, Some(Category::Undefined));
+}
+
+#[test]
 fn a_chain_with_a_missing_parent_gives_no_rows() {
     let mut ir = placed_block();
     ir.model
@@ -300,7 +447,12 @@ fn selectors_outside_the_prototype_and_unknown_occurrences_are_refused() {
     ));
     ir.model.product_definitions = block.model.product_definitions.clone();
     ir.model.occurrences = block.model.occurrences.clone();
-    ir.model.product_definitions[0].bodies =
+    ir.model
+        .product_definitions
+        .iter_mut()
+        .find(|definition| definition.id == definition_id())
+        .expect("block")
+        .bodies =
         vec![cadmpeg_ir::ids::BodyId::mint("test:model:body#elsewhere").expect("identity")];
     let outside = measure_in(
         &ir,

@@ -155,11 +155,16 @@ pub enum UnavailableReason {
     PlacementPrototypeUnresolved,
     /// The occurrence's parent chain does not reach a root occurrence.
     PlacementOccurrenceChainBroken,
+    /// Two occurrences of the subtree place the same body.
+    PlacementOccurrenceBodyRepeated,
+    /// Neither the occurrence's prototype nor a prototype of its subtree
+    /// lists a body.
+    PlacementOccurrenceEmpty,
 }
 
 impl UnavailableReason {
     /// Every reason, in declaration order.
-    pub const ALL: [Self; 44] = [
+    pub const ALL: [Self; 46] = [
         Self::CarrierUnknown,
         Self::CarrierUnresolved,
         Self::CarrierProceduralUnevaluated,
@@ -204,6 +209,8 @@ impl UnavailableReason {
         Self::PlacementOccurrenceScale,
         Self::PlacementPrototypeUnresolved,
         Self::PlacementOccurrenceChainBroken,
+        Self::PlacementOccurrenceBodyRepeated,
+        Self::PlacementOccurrenceEmpty,
     ];
 
     /// The pinned `family.detail` string.
@@ -254,6 +261,8 @@ impl UnavailableReason {
             Self::PlacementOccurrenceScale => "placement.occurrence-scale",
             Self::PlacementPrototypeUnresolved => "placement.prototype-unresolved",
             Self::PlacementOccurrenceChainBroken => "placement.occurrence-chain-broken",
+            Self::PlacementOccurrenceBodyRepeated => "placement.occurrence-body-repeated",
+            Self::PlacementOccurrenceEmpty => "placement.occurrence-empty",
         }
     }
 
@@ -287,7 +296,8 @@ impl UnavailableReason {
             | Self::PlacementOccurrenceChainBroken => Category::Input,
             Self::BoundaryUnboundedFace
             | Self::VolumeShellOpen
-            | Self::MassPrincipalAxesDegenerate => Category::Undefined,
+            | Self::MassPrincipalAxesDegenerate
+            | Self::PlacementOccurrenceEmpty => Category::Undefined,
             Self::CarrierProceduralUnevaluated
             | Self::CarrierPolygonal
             | Self::CarrierCompositeCurve
@@ -304,7 +314,8 @@ impl UnavailableReason {
             | Self::PlacementNonFinite
             | Self::PlacementCarrierShared
             | Self::PlacementOccurrenceScale
-            | Self::PlacementPrototypeUnresolved => Category::Placement,
+            | Self::PlacementPrototypeUnresolved
+            | Self::PlacementOccurrenceBodyRepeated => Category::Placement,
             Self::AggregateMemberUnavailable => return None,
         })
     }
@@ -426,7 +437,7 @@ impl Serialize for CompareCause {
 mod tests {
     use super::{Category, CaveatCode, CompareCause, UnavailableReason};
 
-    const REASONS: [(&str, Option<&str>); 44] = [
+    const REASONS: [(&str, Option<&str>); 46] = [
         ("carrier.unknown", Some("input")),
         ("carrier.unresolved", Some("input")),
         ("carrier.procedural-unevaluated", Some("unsupported")),
@@ -471,6 +482,8 @@ mod tests {
         ("placement.occurrence-scale", Some("placement")),
         ("placement.prototype-unresolved", Some("placement")),
         ("placement.occurrence-chain-broken", Some("input")),
+        ("placement.occurrence-body-repeated", Some("placement")),
+        ("placement.occurrence-empty", Some("undefined")),
     ];
 
     #[test]

@@ -30,6 +30,10 @@ pub(crate) struct SurfaceInput<'a, 'ir> {
     pub(crate) fidelity: Option<&'a SourceFidelity>,
     /// The faces of the document, in ID order.
     pub(crate) faces: &'ir [cadmpeg_ir::topology::Face],
+    /// The bodies of the occurrence space; absent in model space.
+    pub(crate) scope: Option<&'a BTreeSet<&'ir str>>,
+    /// The composed transform of each body, absent for the identity.
+    pub(crate) transform: &'a dyn Fn(&str) -> Option<Transform>,
     /// The placement of each body.
     pub(crate) placement: &'a dyn Fn(Option<&str>) -> Outcome<Placement>,
 }
@@ -38,10 +42,17 @@ impl<'ir> SurfaceInput<'_, 'ir> {
     /// The row of `surface`.
     pub(crate) fn row(&self, surface: &'ir Surface) -> Result<SurfaceMeasures, ResourceLimit> {
         let id = surface.id.as_str();
+        let in_scope = |face: &cadmpeg_ir::topology::Face| match self.scope {
+            None => true,
+            Some(scope) => self
+                .owners
+                .face_body(face)
+                .is_some_and(|body| scope.contains(body)),
+        };
         let faces: Vec<&'ir cadmpeg_ir::topology::Face> = self
             .faces
             .iter()
-            .filter(|face| face.surface == surface.id)
+            .filter(|face| face.surface == surface.id && in_scope(face))
             .collect();
         let bodies: BTreeSet<&'ir str> = faces
             .iter()
@@ -92,12 +103,7 @@ impl<'ir> SurfaceInput<'_, 'ir> {
         id: &str,
         bodies: &BTreeSet<&'ir str>,
     ) -> (Outcome<Placement>, Option<&'ir str>) {
-        let transform = |body: &str| {
-            self.owners
-                .body(body)
-                .and_then(|body| body.transform)
-                .filter(|transform| *transform != Transform::identity())
-        };
+        let transform = self.transform;
         let mut placed: Option<(Option<Transform>, &'ir str)> = None;
         for body in bodies {
             let own = transform(body);

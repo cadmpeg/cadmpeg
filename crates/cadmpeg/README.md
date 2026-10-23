@@ -253,9 +253,11 @@ document block. `--face ID` and `--edge ID` print rows for those entities;
 `--surface ID` prints the carrier row of a surface: its parameters and the
 faces and bodies that use it, with no bounded measure. `--body ID` limits
 the scope. `--occurrence ID` measures in the instance space of an assembly
-occurrence: the scope is its prototype's bodies, each placed by its own
-transform and then by the occurrence chain from the root, and every row
-states its `placement` space. `diff --geometry` stays in model space. `--kind KIND[,KIND...]` and `--radius RANGE` (`MIN..MAX`,
+occurrence: the scope is the bodies of its prototype and of the
+prototypes of its subtree, each placed by its own transform and then by
+the occurrence chain from the root, and every row states its `placement`
+space. When the space cannot place its bodies, the report has no row and
+the document totals are unavailable with the reason. `diff --geometry` stays in model space. `--kind KIND[,KIND...]` and `--radius RANGE` (`MIN..MAX`,
 `MIN..`, `..MAX`, or `R`) filter face rows. An ID is an exact ID or a unique
 ID suffix, as for `query item`.
 

@@ -21,7 +21,7 @@ pub struct Selection {
     /// Surfaces whose carrier rows to report.
     pub surfaces: Vec<SurfaceId>,
     /// The occurrence whose instance space the rows are measured in; model
-    /// space when absent. The scope is then its prototype's bodies.
+    /// space when absent. The scope is then the bodies of its subtree.
     pub occurrence: Option<OccurrenceId>,
     /// Measure every face in scope.
     pub all_faces: bool,

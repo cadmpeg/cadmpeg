@@ -132,9 +132,11 @@ cites.
 | `length.derivative-unavailable` | unsupported | A procedural curve without a solved cache has no derivative evaluator. |
 | `placement.carrier-shared` | placement | A surface row's surface is used by faces of bodies with different placements. |
 | `mass.principal-axes-degenerate` | undefined | Two principal moments agree within their separation, so the principal axes are not determined. |
-| `placement.occurrence-scale` | placement | An occurrence of the `--occurrence` chain has a scale other than `(1, 1, 1)`. |
-| `placement.prototype-unresolved` | placement | The `--occurrence` prototype is external or unresolved, or its definition does not resolve. |
+| `placement.occurrence-scale` | placement | An occurrence of the `--occurrence` chain or of its subtree has a scale other than `(1, 1, 1)`. |
+| `placement.prototype-unresolved` | placement | The prototype of the `--occurrence` occurrence or of an occurrence of its subtree is external or unresolved, or its definition does not resolve. |
 | `placement.occurrence-chain-broken` | input | The `--occurrence` parent chain does not reach a root occurrence: a parent is missing or the chain repeats. |
+| `placement.occurrence-body-repeated` | placement | Two occurrences of the `--occurrence` subtree place the same body; a pass has one row per body. |
+| `placement.occurrence-empty` | undefined | Neither the `--occurrence` prototype nor a prototype of its subtree lists a body. |
 
 ## Caveats
 
@@ -450,21 +452,33 @@ occurrence's prototype is placed by its own transform first and then by the
 occurrence chain: `E(root) ∘ … ∘ E(ID) ∘ Body.transform`, where `E` is the
 occurrence's effective transform (its transform composed with its linked
 prototype contribution) and each occurrence applies inside its parent. The
-scope is the prototype's bodies; a `--body`, `--face`, `--edge` or
-`--surface` selector outside it is refused.
+subtree of the occurrence is in the same space: a child `C` of an
+occurrence `O` places the bodies of its prototype by `P(O) ∘ E(C)`, where
+`P(O)` is the composed placement of `O`. The scope is the bodies of the
+prototypes of the occurrence and of its subtree; a `--body`, `--face`,
+`--edge` or `--surface` selector outside it is refused.
 
 The report then has an `occurrence` member: `occurrence`, `prototype` (the
 local product definition), `chain` (root first), `transform` (the composed
-chain as three rows of a 3 × 4 affine map) and `bodies` (the prototype's
-bodies). When the chain cannot place the prototype, the report has no row,
-and `occurrence.unavailable` states why: `placement.occurrence-chain-broken`
+chain as three rows of a 3 × 4 affine map), `bodies` (the bodies of the
+scope) and `descendants`, breadth first, each with `occurrence`, `parent`,
+`prototype`, `transform` (its composed placement from the root) and
+`bodies` (the bodies its prototype lists). When the space cannot place its
+bodies, the report has no row, every document quantity that applies to the
+selection is unavailable with the same reason, `transform` is absent, and
+`occurrence.unavailable` states why: `placement.occurrence-chain-broken`
 (a parent is missing or the chain repeats), `placement.occurrence-scale`
-(an occurrence of the chain has a scale other than `(1, 1, 1)`; `entity`
-names it), `placement.prototype-unresolved` (an external or unresolved
-prototype, or a definition that does not resolve), or
-`placement.non-finite`. Provenance lists the stored fields of the carrier
-chain and of the body transform; the chain's transforms are in the
-`occurrence` member. `diff --geometry` measures in model space.
+(an occurrence of the chain or of the subtree has a scale other than
+`(1, 1, 1)`; `entity` names it), `placement.prototype-unresolved` (an
+external or unresolved prototype, or a definition that does not resolve),
+`placement.non-finite`, `placement.occurrence-body-repeated` (two
+occurrences of the subtree place one body; `entity` names it) or
+`placement.occurrence-empty` (the scope has no body). The first failure in
+the order chain, occurrence, subtree breadth first is the reason.
+`document.unavailable` counts it. Provenance lists the stored fields of
+the carrier chain and of the body transform; the transforms of the chain
+and of the subtree are in the `occurrence` member. `diff --geometry`
+measures in model space.
 
 ## Shells
 
