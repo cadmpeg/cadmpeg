@@ -1,6 +1,6 @@
 # cadmpeg architecture
 
-cadmpeg routes native CAD through format codecs into `CadIr` version 10. Source fidelity rides beside the product document as a sidecar. Codecs may validate and encode afterward. [cad-ir.md](cad-ir.md) defines the IR. Crate docs and `cadmpeg --help` define APIs and CLI options. [dialects.toml](dialects.toml) owns dialect identity, [dialect-support.toml](../crates/cadmpeg-registry/docs/dialect-support.toml) owns per-dialect capability, and [format-support.md](format-support.md) renders aggregate format capability.
+cadmpeg routes native CAD through format codecs into `CadIr` version 11. Source fidelity rides beside the product document as a sidecar. Codecs may validate and encode afterward. [cad-ir.md](cad-ir.md) defines the IR. Crate docs and `cadmpeg --help` define APIs and CLI options. [dialects.toml](dialects.toml) owns dialect identity, [dialect-support.toml](../crates/cadmpeg-registry/docs/dialect-support.toml) owns per-dialect capability, and [format-support.md](format-support.md) renders aggregate format capability.
 
 ## Pipeline
 
@@ -119,7 +119,7 @@ These hold across every codec, every dialect, and every release. A change that b
 | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
 | `cadmpeg`                | CLI orchestration, conversion workflow, native validators, and output dispatch.                                                        |
 | `cadmpeg-registry`       | Codec registration, prefix detection, `identify`, the output-format vocabulary, and the embedded dialect registries.                   |
-| `cadmpeg-ir`             | `CadIr` version 10, validation, diff, codec traits, reports, and source-fidelity sidecars.                                              |
+| `cadmpeg-ir`             | `CadIr` version 11, validation, diff, codec traits, reports, and source-fidelity sidecars.                                              |
 | `cadmpeg-measure`        | Geometric measurement of decoded models and ID-free comparison of measured bodies; an oracle that no codec consumes.                   |
 | `cadmpeg-core`           | Shared decode budgets, arenas, views, container summaries, and I/O helpers.                                                            |
 | `cadmpeg-container`      | Shared archive and compression helpers for container codecs.                                                                           |
