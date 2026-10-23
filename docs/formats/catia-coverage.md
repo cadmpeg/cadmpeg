@@ -65,8 +65,8 @@ current levels require those matrices and representative fixtures.
   governing FBB face-row population; that population supersedes an accompanying
   `EB` binding. Appearance assets are deduplicated by RGBA value. A singular
   `EC` packet accompanying an `EB` packet retains its
-  color asset and remains an unresolved binding until the `FeatureForColor`
-  face incidence is known. Coverage counts decoded packets, unresolved
+  color asset and remains an unresolved binding until its presentation-target
+  incidence is known. Coverage counts decoded packets, unresolved
   packets, emitted assets, and emitted bindings independently.
 - Structurally complete object graphs retain design objects, ordered fields,
   exact field classes, definition-bound values, and inter-object reference
