@@ -314,11 +314,13 @@ occupies the first indexed position. A distinct copied shape at that location an
 different location occupy separate indexed positions. A nested compound root therefore occupies
 one `Compound` position; its nested and later sibling compounds are not visited for that map.
 
-CADIR decision: neutral occurrence keys, topology labels, and located curve or surface identities
-use the exact components of the fully composed transform. Any nonzero component difference keeps
-the identities separate, including a difference below `1.0e-12`. Identity elision occurs only for
-an exact identity transform. This preserves source-distinct placements when the text carrier has
-already composed a location chain.
+Location zero is the empty datum chain. Each elementary location record introduces a distinct
+identity, including an elementary record whose matrix is the identity matrix. Compound factors
+refer to earlier location records and multiply on the left in serialized order. Signed powers
+expand a referenced chain; negative powers reverse its order and negate its powers. Adjacent
+powers of the same elementary datum combine, and a zero sum removes that datum pair. Nonadjacent
+datums do not commute. This reduced chain determines location identity independently of matrix
+arithmetic. An empty compound record has the empty chain.
 
 The native location chain is applied exactly once at the owning topology level. Display
 tessellation is presentation data and does not replace an available exact shape. Each root shape

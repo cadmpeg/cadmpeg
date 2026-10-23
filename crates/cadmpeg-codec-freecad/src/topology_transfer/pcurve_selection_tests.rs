@@ -7,12 +7,13 @@ use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::{Codec, DecodeOptions, DecodeResult};
 use std::io::Cursor;
 
-fn decode_pcurves(locations: &str, representations: &str) -> DecodeResult {
-    let document = br#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
-<ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData>
-</Document>"#;
-    let brep = format!(
+fn pcurve_brep(
+    locations: &str,
+    representations: &str,
+    face_support: usize,
+    wire_location: usize,
+) -> String {
+    format!(
         "CASCADE Topology V1, (c) Matra-Datavision
 {locations}
 Curve2ds 3
@@ -32,13 +33,41 @@ Ve 0.001 0 0 0 0 0 1001000 *
 Ve 0.001 1 0 0 0 0 1001000 *
 Ed 0.001 1 1 0 1 1 0 0 1 {representations} 0 1001000 +5 0 -4 0 *
 Wi 1001000 +3 0 -3 0 *
-Fa 0 0.001 1 0 1001000 +2 0 *
+Fa 0 0.001 1 {face_support} 1001000 +2 {wire_location} *
 +1 0 *"
+    )
+}
+
+fn decode_shapes(shapes: &[(&str, String)]) -> DecodeResult {
+    let mut objects = String::new();
+    let mut object_data = String::new();
+    for (index, (name, _)) in shapes.iter().enumerate() {
+        objects.push_str(&format!(
+            "<Object type=\"Part::Feature\" name=\"{name}\" id=\"{}\"/>",
+            index + 1
+        ));
+        object_data.push_str(&format!("<Object name=\"{name}\"><Properties Count=\"1\"><Property name=\"Shape\" type=\"Part::PropertyPartShape\"><Part file=\"{name}.brp\"/></Property></Properties></Object>"));
+    }
+    let document = format!("<Document SchemaVersion=\"4\" FileVersion=\"1\"><Objects Count=\"{count}\">{objects}</Objects><ObjectData Count=\"{count}\">{object_data}</ObjectData></Document>", count=shapes.len());
+    let names: Vec<_> = shapes
+        .iter()
+        .map(|(name, _)| format!("{name}.brp"))
+        .collect();
+    let mut entries = vec![("Document.xml", document.as_bytes())];
+    entries.extend(
+        names
+            .iter()
+            .zip(shapes)
+            .map(|(name, (_, brep))| (name.as_str(), brep.as_bytes())),
     );
-    let bytes = archive_entries(&[("Document.xml", document), ("Shape.brp", brep.as_bytes())]);
+    let bytes = archive_entries(&entries);
     FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("pcurve representations decode")
+}
+
+fn decode_pcurves(locations: &str, representations: &str) -> DecodeResult {
+    decode_shapes(&[("Shape", pcurve_brep(locations, representations, 0, 0))])
 }
 
 fn selected_origins(result: &DecodeResult) -> Vec<f64> {
@@ -121,4 +150,106 @@ fn distinct_location_references_with_equal_transforms_report_ambiguity() {
             validation.findings
         );
     }
+}
+
+#[test]
+fn canonical_location_aliases_select_last_exact_chain_and_ignore_equal_matrices() {
+    let locations =
+        "Locations 3\n1\n1 0 0 7\n0 1 0 0\n0 0 1 0\n1\n1 0 0 7\n0 1 0 0\n0 0 1 0\n2\n1 1 0";
+    for representations in [
+        "2 1 1 1 0 1 2 2 1 3 2 5 2 3 1 2 0 1",
+        "2 3 1 2 0 1 2 1 1 1 0 1 2 2 1 3 2 5",
+    ] {
+        let result = decode_shapes(&[("Shape", pcurve_brep(locations, representations, 1, 0))]);
+        assert_eq!(selected_origins(&result), [3.0, 3.0]);
+        assert!(!result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code.local_code() == "pcurve.location-ambiguous"));
+        assert!(result
+            .ir()
+            .model
+            .coedges
+            .iter()
+            .all(|coedge| coedge.pcurves[0].parameter_range.unwrap().endpoints() == [2.0, 5.0]));
+    }
+}
+
+#[test]
+fn edge_placement_and_inverse_representation_cancel_before_pcurve_matching() {
+    let locations =
+        "Locations 3\n1\n1 0 0 7\n0 1 0 0\n0 0 1 0\n1\n1 0 0 -7\n0 1 0 0\n0 0 1 0\n2\n1 -1 0";
+    let result = decode_shapes(&[(
+        "Shape",
+        pcurve_brep(locations, "2 2 1 3 0 1 2 3 1 2 0 1", 0, 1),
+    )]);
+    assert_eq!(selected_origins(&result), [3.0, 3.0]);
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "pcurve.location-ambiguous"));
+}
+
+#[test]
+fn distinct_equal_matrix_datums_do_not_merge_topology_but_aliases_do() {
+    let locations =
+        "Locations 3\n1\n1 0 0 7\n0 1 0 0\n0 0 1 0\n1\n1 0 0 7\n0 1 0 0\n0 0 1 0\n2\n1 1 0";
+    for (second_location, expected_edges) in [(2, 2), (3, 1)] {
+        let brep = format!(
+            "CASCADE Topology V1, (c) Matra-Datavision
+{locations}
+Curve2ds 0
+Curves 1
+1 0 0 0 1 0 0
+Polygon3D 0
+PolygonOnTriangulations 0
+Surfaces 0
+Triangulations 0
+TShapes 4
+Ve 0.001 0 0 0 0 0 1001000 *
+Ve 0.001 1 0 0 0 0 1001000 *
+Ed 0.001 1 1 0 1 1 0 0 1 0 1001000 +4 0 -3 0 *
+Co 1001000 +2 1 +2 {second_location} *
++1 0 *"
+        );
+        let result = decode_shapes(&[("Shape", brep)]);
+        assert_eq!(result.ir().model.edges.len(), expected_edges);
+        assert_eq!(result.ir().model.vertices.len(), 2 * expected_edges);
+        assert_eq!(result.ir().model.points.len(), 2 * expected_edges);
+    }
+}
+
+#[test]
+fn bounded_location_expansion_withholds_only_its_payload_before_topology_mutation() {
+    let locations = "Locations 4\n1\n1 0 0 0\n0 1 0 0\n0 0 1 0\n1\n1 0 0 0\n0 1 0 0\n0 0 1 0\n2\n1 1 2 1 0\n2\n3 32769 0";
+    let result = decode_shapes(&[
+        ("Bounded", pcurve_brep(locations, "2 1 1 0 0 1", 0, 0)),
+        ("Complete", pcurve_brep("Locations 0", "2 1 1 0 0 1", 0, 0)),
+    ]);
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().model.edges.len(), 1);
+    assert_eq!(result.ir().model.vertices.len(), 2);
+    assert!(result
+        .ir()
+        .model
+        .faces
+        .iter()
+        .all(|face| face.id.as_str().contains("Complete")));
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(
+            |loss| loss.code.local_code() == "topology.location-identity-bounded"
+                && loss.severity == Severity::Blocking
+        ));
+    assert!(result
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .all(|coedge| !coedge.pcurves.is_empty()));
 }

@@ -91,14 +91,17 @@ Apply this boundary to every phase:
 
 ## Pcurve location identity
 
-Pcurve candidates match by surface identity and exact composed transform. A nonzero
-transform difference, including a sub-`1.0e-12` difference, does not match. Competing candidates with
-one native location-table index select the last serialized representation. Competing candidates
-with distinct location-table indices retain their native records but omit the neutral pcurve with
-`pcurve.location-ambiguous`; matrix equality does not prove native location equality.
-This conservative case includes compound-location aliases: neutral projection does not yet compare
-the native datum/power chains. The affected coedge retains its edge incidence but has no neutral
-pcurve. The loss has blocking severity.
+Pcurve candidates match by surface identity and the fully composed native location chain. The
+last serialized matching representation supplies the pcurve references and range. Compound aliases
+match after adjacent datum-power reduction; distinct elementary datums do not match even when their
+matrices are equal. The edge placement and representation location compose before comparison with
+the placed face support.
+
+If no native chain matches but a candidate has an equal matrix, the affected coedge retains its
+edge incidence and omits its neutral pcurve with blocking `pcurve.location-ambiguous`. Native records
+remain retained. The native record model does not distinguish an empty compound location from an
+elementary location with no factors. Projection conservatively treats each such table row as a
+distinct datum; it does not infer an empty chain from an identity matrix.
 
 ## Product metadata projection
 
@@ -148,14 +151,24 @@ An empty or mismatched array leaves those default bindings in place.
 
 ## Exact location identity
 
-Topology indexing and representation association use ordered elementary datum identities and
-signed powers. Equal affine matrices do not merge distinct datum identities. Adjacent equal datums
+Topology indexing, vertex and edge sharing, and representation association use ordered elementary
+datum identities and signed powers. Equal affine matrices do not merge distinct datum identities. Adjacent equal datums
 combine their powers, and a zero sum cancels that pair. Records with no retained factors keep a
 distinct table identity, including records whose affine matrix is the identity matrix.
+
+One interned chain has one canonical transform evaluated from its reduced datum powers. A canceled
+chain evaluates to the exact identity transform. Topology labels and ordered source indices use
+native chain identity; curve and surface placement caches use their canonical affine matrices.
+Repeated shape/chain states are visited once per root or source-index target, preserving first
+encounter order.
 
 Canonical location words admit at most 65,536 terms. Location-table reconstruction admits the
 larger of 16,777,216 term visits and 1,024 visits per location row, including intermediate powers
 and compositions. Compound powers use repeated squaring. Word expansion, work exhaustion, or
 signed 64-bit exponent overflow returns a local bound outcome; the caller withholds the affected
-topology and reports a loss. Allocation failures remain decode errors. Canonical identities are
+topology and reports a loss. Topology admission also bounds visits, composition calls and term scans, cached products, and total
+interned terms by the larger of 16,777,216 and 1,024 times the combined location and shape row count.
+Admission completes before topology mutation. A bound withholds that payload's entire neutral
+topology with blocking `topology.location-identity-bounded`; later payloads continue. Allocation
+failures remain decode errors. Canonical identities are
 derived state and do not change the native record format.

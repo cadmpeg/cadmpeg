@@ -32,6 +32,10 @@ impl LocationIdentity {
         Self(Vec::new())
     }
 
+    pub(crate) fn term_count(&self) -> usize {
+        self.0.len()
+    }
+
     pub(crate) fn transform(&self, locations: &[TextLocation]) -> Result<Transform, CodecError> {
         let mut result = Transform::identity();
         for &(datum, power) in &self.0 {

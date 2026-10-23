@@ -3,8 +3,8 @@ use super::{
     bounded_pcurve_range, close_radial_rings, connected_components, edge_endpoint_uses,
     is_identity, normalize_occt_curve_range, normalize_pcurve_parameter_range, occurrence_label,
     pcurve_geometry, select_exact_curve_representation, select_pcurve_representation,
-    source_topology_indices, unique_fallback_polygon_representation, IndexedPolygon, OccurrenceKey,
-    PcurveSelection, SourceOccurrenceKey, Tables,
+    source_topology_indices, unique_fallback_polygon_representation, IndexedPolygon, Located,
+    Locations, OccurrenceKey, PcurveSelection, SourceOccurrenceKey, Tables,
 };
 use crate::brep::{
     surface_parameter_affine, TextCurve, TextCurve2d, TextEdgeRepresentation, TextLocation,
@@ -21,7 +21,7 @@ use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::{Coedge, Sense};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::{Codec, DecodeOptions};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io::Cursor;
 
 fn admitted_range(values: [f64; 2]) -> [FiniteReal; 2] {
@@ -131,43 +131,58 @@ fn indexed_polygon_admits_only_aligned_parameters() {
 }
 
 #[test]
-fn neutral_identity_keys_preserve_exact_composed_locations() {
-    let positive = translation(0.5e-12, 0.0, 0.0);
-    let negative = translation(-0.5e-12, 0.0, 0.0);
-
-    assert_ne!(
-        OccurrenceKey::new(7, positive),
-        OccurrenceKey::new(7, negative)
+fn neutral_identity_keys_use_native_identity_independent_of_matrix_rounding() {
+    let first = Located {
+        transform: translation(258.75, 0.0, -1.4e-14),
+        identity: 1,
+    };
+    let same_chain = Located {
+        transform: translation(258.75, 0.0, 0.0),
+        identity: 1,
+    };
+    let distinct_chain = Located {
+        transform: first.transform,
+        identity: 2,
+    };
+    assert_eq!(
+        OccurrenceKey::new(7, first),
+        OccurrenceKey::new(7, same_chain)
     );
     assert_eq!(
-        OccurrenceKey::new(7, positive).0,
-        occurrence_label(7, positive)
+        SourceOccurrenceKey::new(7, first),
+        SourceOccurrenceKey::new(7, same_chain)
+    );
+    assert_eq!(OccurrenceKey::new(7, first).0, occurrence_label(7, first));
+    assert_ne!(
+        OccurrenceKey::new(7, first),
+        OccurrenceKey::new(7, distinct_chain)
     );
     assert_ne!(
-        SourceOccurrenceKey::new(7, positive),
-        SourceOccurrenceKey::new(7, negative)
-    );
-
-    let composed = translation(258.75, 0.0, -1.4e-14);
-    let mut direct = translation(258.75, 0.0, 0.0);
-
-    assert_ne!(
-        OccurrenceKey::new(14, composed),
-        OccurrenceKey::new(14, direct)
+        SourceOccurrenceKey::new(7, first),
+        SourceOccurrenceKey::new(7, distinct_chain)
     );
     assert_ne!(
-        SourceOccurrenceKey::new(14, composed),
-        SourceOccurrenceKey::new(14, direct)
+        OccurrenceKey::new(7, Located::identity()),
+        OccurrenceKey::new(
+            7,
+            Located {
+                transform: Transform::identity(),
+                identity: 1
+            }
+        )
     );
-
-    direct = translation(258.75, 0.0, 1.0e-8);
-    assert_ne!(
-        OccurrenceKey::new(14, composed),
-        OccurrenceKey::new(14, direct)
-    );
-
     assert!(is_identity(Transform::identity()));
-    assert!(!is_identity(positive));
+    assert!(!is_identity(translation(0.5e-12, 0.0, 0.0)));
+}
+
+fn test_source_topology_indices(
+    tables: Tables<'_>,
+) -> Result<HashMap<(TextShapeKind, SourceOccurrenceKey), usize>, super::LocationIdentityError> {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)?;
+    let mut locations = Locations::new(&ctx, tables)?;
+    source_topology_indices(&ctx, tables, &mut locations)
 }
 
 #[test]
@@ -211,17 +226,26 @@ fn source_indices_span_root_order_and_deduplicate_repeated_placements() {
         roots: &roots,
     };
 
-    let indices = source_topology_indices(tables).expect("valid locations");
+    let indices = test_source_topology_indices(tables).expect("valid locations");
 
     assert_eq!(
         indices.get(&(
             TextShapeKind::Edge,
-            SourceOccurrenceKey::new(1, Transform::identity()),
+            SourceOccurrenceKey::new(1, Located::identity()),
         )),
         Some(&1)
     );
     assert_eq!(
-        indices.get(&(TextShapeKind::Edge, SourceOccurrenceKey::new(1, translated),)),
+        indices.get(&(
+            TextShapeKind::Edge,
+            SourceOccurrenceKey::new(
+                1,
+                Located {
+                    transform: translated,
+                    identity: 1
+                }
+            ),
+        )),
         Some(&2)
     );
 }
@@ -251,12 +275,12 @@ fn repeated_source_roots_index_one_vertex_occurrence() {
         triangulations: &[],
         roots: &roots,
     };
-    let indices = source_topology_indices(tables).expect("source topology indices");
+    let indices = test_source_topology_indices(tables).expect("source topology indices");
     assert_eq!(indices.len(), 1);
     assert_eq!(
         indices.get(&(
             TextShapeKind::Vertex,
-            SourceOccurrenceKey::new(1, Transform::identity()),
+            SourceOccurrenceKey::new(1, Located::identity()),
         )),
         Some(&1)
     );
@@ -303,9 +327,9 @@ fn source_indices_follow_depth_first_topology_order() {
         triangulations: &[],
         roots: &roots,
     };
-    let indices = source_topology_indices(tables).expect("valid locations");
+    let indices = test_source_topology_indices(tables).expect("valid locations");
     let index =
-        |kind, shape| indices.get(&(kind, SourceOccurrenceKey::new(shape, Transform::identity())));
+        |kind, shape| indices.get(&(kind, SourceOccurrenceKey::new(shape, Located::identity())));
 
     assert_eq!(index(TextShapeKind::Compound, 1), Some(&1));
     assert_eq!(index(TextShapeKind::Solid, 2), Some(&1));
@@ -355,33 +379,33 @@ fn source_indices_stop_at_nested_same_kind_shapes() {
         roots: &roots,
     };
 
-    let indices = source_topology_indices(tables).expect("valid locations");
+    let indices = test_source_topology_indices(tables).expect("valid locations");
 
     assert_eq!(
         indices.get(&(
             TextShapeKind::Compound,
-            SourceOccurrenceKey::new(1, Transform::identity()),
+            SourceOccurrenceKey::new(1, Located::identity()),
         )),
         Some(&1)
     );
     assert_eq!(
         indices.get(&(
             TextShapeKind::Compound,
-            SourceOccurrenceKey::new(2, Transform::identity()),
+            SourceOccurrenceKey::new(2, Located::identity()),
         )),
         None
     );
     assert_eq!(
         indices.get(&(
             TextShapeKind::Compound,
-            SourceOccurrenceKey::new(4, Transform::identity()),
+            SourceOccurrenceKey::new(4, Located::identity()),
         )),
         None
     );
     assert_eq!(
         indices.get(&(
             TextShapeKind::Solid,
-            SourceOccurrenceKey::new(3, Transform::identity()),
+            SourceOccurrenceKey::new(3, Located::identity()),
         )),
         Some(&1)
     );
@@ -533,13 +557,18 @@ fn edge_representation_selection_follows_family_rules() {
         Err(CodecError::Malformed(_))
     ));
 
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
+    let locations = Locations::new(&ctx, tables).unwrap();
     let matching_pcurves = [representation(2, 1), representation(2, 1)];
     let selected = select_pcurve_representation(
         &matching_pcurves,
         &tables,
-        Transform::identity(),
+        &locations,
+        Located::identity(),
         0,
-        Transform::identity(),
+        Located::identity(),
     )
     .unwrap();
     assert!(matches!(selected, PcurveSelection::Selected(1, _)));
