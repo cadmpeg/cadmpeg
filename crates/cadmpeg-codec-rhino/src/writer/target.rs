@@ -35,7 +35,8 @@ pub(crate) fn plan(
         limits: input.limits,
     };
     let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
-    let (bytes, outcome) = super::write(&ctx, input.ir, version)?;
+    let session = cadmpeg_core::encode::EncodeSession::from_context(&ctx)?;
+    let (bytes, outcome) = super::write(&ctx, input.ir, version, &session)?;
     let mut losses = outcome.losses;
     let vertex_quantization = !version.stores_mesh_vertices_as_f64()
         && input
@@ -262,13 +263,18 @@ pub(crate) fn plan(
              so no other target avoids it",
         ));
     }
-    let coverage =
-        ArenaCoverage::Declared(coverage::verified(&ctx, input.ir, &bytes, outcome.subds));
+    let coverage = ArenaCoverage::Declared(coverage::verified(
+        &ctx,
+        input.ir,
+        bytes.as_bytes(),
+        outcome.subds,
+    ));
     ctx.finish_session()?;
+    session.finish()?;
     Ok(ExportBody {
         native_dispositions: super::native_dispositions(input.ir)?,
         synthesis_cause: None,
-        bytes,
+        bytes: bytes.into_vec(),
         census: cadmpeg_ir::report::export::EntityCensus {
             basis: cadmpeg_ir::report::export::CensusBasis::IrArenas,
             counts: input.ir.census(),

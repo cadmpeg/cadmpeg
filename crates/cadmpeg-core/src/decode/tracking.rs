@@ -804,7 +804,10 @@ impl Session {
     fn activate(&mut self) -> Result<(), CodecError> {
         if !self.activated {
             self.budget.retain_bytes(
-                u64_from_index(size_of::<SessionSlot>()),
+                u64_from_index(
+                    size_of::<SessionSlot>()
+                        + size_of::<crate::operation_budget::OperationBudget>(),
+                ),
                 "record tracking session",
             )?;
             self.activated = true;

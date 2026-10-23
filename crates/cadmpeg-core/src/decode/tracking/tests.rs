@@ -467,3 +467,31 @@ fn transaction_lease_outlives_context_without_releasing_a_new_sessions_depth() {
     assert!(new.finish_session().is_err());
     assert_eq!(root.read_at(0, 3), Some(&b"new"[..])); // byte view remains valid after context ends
 }
+
+#[test]
+fn tracking_charges_the_shared_account_body_once_without_recharging_encode_clones() {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let ctx = DecodeContext::new(&arena, &policy, crate::decode::DecodeDepth::Full);
+    let before = ctx.retained_bytes_available();
+    let first = crate::encode::EncodeSession::from_context(&ctx).expect("first shared account");
+    let second = crate::encode::EncodeSession::from_context(&ctx).expect("same shared account");
+    assert_eq!(ctx.retained_bytes_available(), before);
+    ctx.budget
+        .session(|session| session.activate())
+        .expect("first actual tracking activation");
+    let storage = crate::decode::u64_from_index(
+        size_of::<super::SessionSlot>() + size_of::<crate::operation_budget::OperationBudget>(),
+    );
+    assert_eq!(ctx.retained_bytes_available(), before - storage);
+    let third = crate::encode::EncodeSession::from_context(&ctx).expect("clone after activation");
+    ctx.budget
+        .session(|session| session.activate())
+        .expect("existing tracking activation");
+    assert_eq!(ctx.retained_bytes_available(), before - storage);
+    first.finish().expect("first handle");
+    second.finish().expect("second handle");
+    third.finish().expect("third handle");
+    ctx.finish_session()
+        .expect("one actual account body charge");
+}

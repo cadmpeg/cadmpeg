@@ -11,6 +11,7 @@ pub mod distinct_keys;
 pub mod encode;
 pub mod error;
 pub mod io;
+mod operation_budget;
 pub mod target;
 pub mod text;
 

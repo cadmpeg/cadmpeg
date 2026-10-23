@@ -140,16 +140,16 @@ struct WriteOutcome {
 }
 
 /// Build the archive and hand over its staged bytes with no copy.
-fn write(
+fn write<'budget>(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
     version: RhinoArchiveVersion,
-) -> Result<(Vec<u8>, WriteOutcome), CodecError> {
-    let session = EncodeSession::new(ctx.policy().limits);
+    session: &'budget EncodeSession,
+) -> Result<(EncodeBuffer<'budget>, WriteOutcome), CodecError> {
     let mut staged = session.buffer();
-    let outcome = write_buffered(ctx, ir, version, &session, &mut staged)?;
+    let outcome = write_buffered(ctx, ir, version, session, &mut staged);
     session.finish()?;
-    Ok((staged.into_vec(), outcome))
+    Ok((staged, outcome?))
 }
 
 fn write_buffered<'budget>(

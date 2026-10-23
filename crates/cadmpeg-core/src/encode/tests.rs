@@ -176,7 +176,7 @@ fn geometric_growth_charges_actual_backing_capacity_instead_of_only_written_byte
     assert!(first.capacity() >= 6);
     assert_eq!(first.capacity(), first.bytes.capacity());
     assert_eq!(
-        session.retained.get(),
+        session.account.retained_used(),
         crate::decode::u64_from_index(first.capacity())
     );
     let mut second = session.buffer();
@@ -184,12 +184,12 @@ fn geometric_growth_charges_actual_backing_capacity_instead_of_only_written_byte
         .append(b"ef", "second backing allocation")
         .expect("shared capacity");
     assert_eq!(
-        session.retained.get(),
+        session.account.retained_used(),
         crate::decode::u64_from_index(first.capacity() + second.capacity())
     );
     drop(first);
     assert_eq!(
-        session.retained.get(),
+        session.account.retained_used(),
         crate::decode::u64_from_index(second.capacity())
     );
 }
@@ -210,7 +210,7 @@ fn excess_actual_capacity_is_released_before_a_fused_refusal_returns() {
     let previous_charge = buffer.capacity();
     let other_charge = unrelated.capacity();
     assert_eq!(
-        session.retained.get(),
+        session.account.retained_used(),
         crate::decode::u64_from_index(previous_charge + other_charge)
     );
 
@@ -224,7 +224,7 @@ fn excess_actual_capacity_is_released_before_a_fused_refusal_returns() {
     let actual_capacity = buffer.bytes.capacity();
     assert!(actual_capacity >= 8);
     let error = buffer
-        .admit_reserved_capacity("actual reserved record")
+        .admit_reserved_capacity("actual reserved record", 0)
         .expect_err("the actual backing capacity exceeds the shared allowance");
     assert_eq!(error.dimension, ResourceDimension::RetainedBytes);
     assert_eq!(error.reason, ResourceFailure::BudgetExceeded);
@@ -242,7 +242,7 @@ fn excess_actual_capacity_is_released_before_a_fused_refusal_returns() {
     assert_eq!(buffer.capacity(), 0);
     assert_eq!(buffer.bytes.capacity(), 0);
     assert_eq!(
-        session.retained.get(),
+        session.account.retained_used(),
         crate::decode::u64_from_index(other_charge)
     );
     assert_eq!(unrelated.as_bytes(), b"keep");
@@ -255,9 +255,238 @@ fn excess_actual_capacity_is_released_before_a_fused_refusal_returns() {
     );
     drop(buffer);
     assert_eq!(
-        session.retained.get(),
+        session.account.retained_used(),
         crate::decode::u64_from_index(other_charge)
     );
     drop(unrelated);
-    assert_eq!(session.retained.get(), 0);
+    assert_eq!(session.account.retained_used(), 0);
+}
+
+#[test]
+fn context_and_output_share_eight_bytes_in_both_allocation_orders() {
+    use crate::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
+    for native_first in [true, false] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 8;
+        let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
+        let session = EncodeSession::from_context(&ctx).expect("one caller account");
+        let mut output = session.buffer();
+        let mut native = None;
+        let refusal = if native_first {
+            ctx.retain_bytes(6, "retain six native bytes")
+                .expect("native fits");
+            native = Some(Box::new(*b"native"));
+            output
+                .append(b"output", "retain six output bytes")
+                .expect_err("aggregate exceeds eight")
+        } else {
+            output
+                .append(b"output", "retain six output bytes")
+                .expect("output fits");
+            let crate::CodecError::ResourceLimit(refusal) = ctx
+                .retain_bytes(6, "retain six native bytes")
+                .expect_err("aggregate exceeds eight")
+            else {
+                panic!("resource refusal")
+            };
+            refusal
+        };
+        assert_eq!(refusal.scope, LimitScope::Session);
+        assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
+        assert_eq!(refusal.reason, ResourceFailure::BudgetExceeded);
+        assert_eq!((refusal.limit, refusal.used, refusal.additional), (8, 6, 6));
+        assert_eq!(
+            native.as_ref().map(|bytes| bytes.as_slice()),
+            if native_first {
+                Some(b"native".as_slice())
+            } else {
+                None
+            },
+        );
+        assert_eq!(
+            output.as_bytes(),
+            if native_first {
+                b"".as_slice()
+            } else {
+                b"output".as_slice()
+            }
+        );
+        drop(output);
+        assert_eq!(session.finish(), Err(refusal));
+        assert!(
+            matches!(ctx.finish_session(), Err(crate::CodecError::ResourceLimit(error)) if error == refusal)
+        );
+    }
+}
+
+#[test]
+fn verification_charges_overlap_live_output_and_refund_only_that_buffer() {
+    use crate::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 8;
+    let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
+    let session = EncodeSession::from_context(&ctx).expect("caller account");
+    let mut output = session.buffer();
+    output
+        .append(b"output", "serialized output")
+        .expect("six bytes");
+    let verification = Box::new(*b"ok");
+    ctx.retain_bytes(2, "verification fields")
+        .expect("two bytes remain");
+    assert_eq!(output.as_bytes(), b"output");
+    assert_eq!(verification.as_slice(), b"ok");
+    assert_eq!(ctx.retained_bytes_available(), 0);
+    drop(output);
+    assert_eq!(ctx.retained_bytes_available(), 6);
+    let mut final_output = session.buffer();
+    final_output
+        .append(b"output", "same live output allowance")
+        .expect("only buffer was refunded");
+    let error = final_output
+        .append(b"!", "extra serialized byte")
+        .expect_err("verification remains charged");
+    assert_eq!((error.limit, error.used, error.additional), (8, 8, 1));
+    assert_eq!(verification.as_slice(), b"ok");
+}
+
+#[test]
+fn shared_entity_refusal_overrides_a_later_structural_error() {
+    use crate::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_entities = 0;
+    let (ctx, root) = DecodeContext::from_root_bytes(b"x", &arena, &policy).expect("source");
+    let session = EncodeSession::from_context(&ctx).expect("caller account");
+    let result = ctx.record("test:actual-record", root, || {
+        let _ignored = session.charge_entities(1, "emit actual record");
+        Err::<(), _>(crate::CodecError::malformed("later structural error"))
+    });
+    let Err(crate::CodecError::ResourceLimit(error)) = result else {
+        panic!("fatal caller refusal wins")
+    };
+    assert_eq!(error.dimension, ResourceDimension::Entities);
+    assert_eq!((error.limit, error.used, error.additional), (0, 0, 1));
+    assert_eq!(session.finish(), Err(error));
+    assert!(
+        matches!(ctx.finish_session(), Err(crate::CodecError::ResourceLimit(actual)) if actual == error)
+    );
+}
+
+#[test]
+fn shared_entities_and_retention_survive_context_moves_and_drop() {
+    use crate::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_entities = 2;
+    policy.limits.max_retained_bytes = 8;
+    let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
+    let session = EncodeSession::from_context(&ctx).expect("caller account");
+    let moved = ctx;
+    moved
+        .charge_entities(1, "first written record")
+        .expect("first entity");
+    session
+        .charge_entities(1, "second written record")
+        .expect("second entity");
+    let native = Box::new(*b"native");
+    moved
+        .retain_bytes(6, "native remains live")
+        .expect("six bytes");
+    drop(moved);
+    let mut output = session.buffer();
+    let error = output
+        .append(b"abc", "output after context drop")
+        .expect_err("context drop cannot refund native content");
+    assert_eq!((error.limit, error.used, error.additional), (8, 6, 3));
+    assert_eq!(native.as_slice(), b"native");
+    assert_eq!(session.charge_entities(1, "third record"), Err(error));
+}
+
+#[test]
+fn context_and_encoder_entities_use_one_cumulative_counter() {
+    use crate::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_entities = 2;
+    let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
+    let session = EncodeSession::from_context(&ctx).expect("caller account");
+    ctx.charge_entities(1, "first native record")
+        .expect("first record");
+    session
+        .charge_entities(1, "second written record")
+        .expect("second record");
+    let crate::CodecError::ResourceLimit(error) = ctx
+        .charge_entities(1, "verification record")
+        .expect_err("two prior records remain charged")
+    else {
+        panic!("entity resource refusal")
+    };
+    assert_eq!(error.dimension, ResourceDimension::Entities);
+    assert_eq!((error.limit, error.used, error.additional), (2, 2, 1));
+    assert_eq!(session.finish(), Err(error));
+    assert!(
+        matches!(ctx.finish_session(), Err(crate::CodecError::ResourceLimit(actual)) if actual == error)
+    );
+}
+
+#[test]
+fn encode_output_does_not_inherit_the_decode_only_proportional_ceiling() {
+    use crate::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
+    let decode_allowance = ctx.retained_bytes_available();
+    assert!(decode_allowance < policy.limits.max_retained_bytes);
+    let output_len = usize::try_from(decode_allowance + 1).expect("test allocation fits");
+    let serialized = vec![0_u8; output_len];
+    let session = EncodeSession::from_context(&ctx).expect("caller account");
+    let mut output = session.buffer();
+    output
+        .append(&serialized, "source-free output")
+        .expect("caller absolute ceiling permits the output");
+    let field = Box::new([1_u8]);
+    ctx.retain_bytes(1, "verification field")
+        .expect("decode-local proportional counter is separate");
+    assert_eq!(output.as_bytes(), serialized);
+    assert_eq!(field.as_slice(), &[1]);
+    session.finish().expect("shared account remains valid");
+    ctx.finish_session()
+        .expect("decode local allowance remains valid");
+}
+
+#[test]
+fn accounts_moved_to_threads_reserve_against_one_aggregate_ceiling() {
+    use crate::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
+    use std::sync::mpsc;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 8;
+    let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
+    let session = EncodeSession::from_context(&ctx).expect("same account");
+    let (ready, received) = mpsc::channel();
+    let (release, released) = mpsc::channel();
+    let thread = std::thread::spawn(move || {
+        let mut buffer = session.buffer();
+        buffer
+            .append(b"output", "thread's six output bytes")
+            .expect("six bytes fit");
+        ready.send(()).expect("signal actual live allocation");
+        released.recv().expect("caller checked overlapping charge");
+        (buffer.len(), session.finish())
+    });
+    received.recv().expect("thread's output is live");
+    let result = ctx.retain_bytes(6, "caller's six native bytes");
+    release.send(()).expect("release thread");
+    let (len, finish) = thread.join().expect("bounded thread");
+    let Err(crate::CodecError::ResourceLimit(error)) = result else {
+        panic!("one aggregate resource ceiling")
+    };
+    assert_eq!((error.limit, error.used, error.additional), (8, 6, 6));
+    assert_eq!(len, 6);
+    assert_eq!(finish, Err(error));
+    assert!(
+        matches!(ctx.finish_session(), Err(crate::CodecError::ResourceLimit(actual)) if actual == error)
+    );
 }

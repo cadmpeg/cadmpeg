@@ -445,6 +445,7 @@ impl From<&ResourceLimit> for ResourceReport {
         let reason = match limit.reason {
             ResourceFailure::BudgetExceeded => "budget_exceeded",
             ResourceFailure::AllocationFailed => "allocation_failed",
+            ResourceFailure::AccountingPoisoned => "accounting_poisoned",
         };
         Self {
             dimension,
@@ -934,6 +935,7 @@ mod tests {
             for (reason, reason_name) in [
                 (ResourceFailure::BudgetExceeded, "budget_exceeded"),
                 (ResourceFailure::AllocationFailed, "allocation_failed"),
+                (ResourceFailure::AccountingPoisoned, "accounting_poisoned"),
             ] {
                 let limit = ResourceLimit {
                     scope: match dimension {

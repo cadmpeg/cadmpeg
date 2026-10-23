@@ -37,6 +37,13 @@ pub struct DecodeContext<'a> {
 }
 
 impl<'a> DecodeContext<'a> {
+    pub(crate) fn operation_budget(
+        &self,
+    ) -> std::sync::Arc<crate::operation_budget::OperationBudget> {
+        self.budget
+            .with_budget(super::budget::DecodeBudget::operation_budget)
+    }
+
     /// Creates one session before input acquisition and detection.
     pub fn new(arena: &'a DecodeArena, policy: &DecodePolicy, depth: DecodeDepth) -> Self {
         Self {

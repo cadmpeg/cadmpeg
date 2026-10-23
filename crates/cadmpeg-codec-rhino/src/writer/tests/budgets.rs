@@ -29,9 +29,10 @@ fn emit(ir: &CadIr, limit: u64, already_used: u64) -> Result<Vec<u8>, CodecError
     policy.limits.max_entities = limit;
     let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
     ctx.charge_entities(already_used, "earlier writer work")?;
-    let (bytes, _) = super::super::write(&ctx, ir, RhinoArchiveVersion::V8)?;
+    let session = cadmpeg_core::encode::EncodeSession::from_context(&ctx)?;
+    let (bytes, _) = super::super::write(&ctx, ir, RhinoArchiveVersion::V8, &session)?;
     ctx.finish_session()?;
-    Ok(bytes)
+    Ok(bytes.into_vec())
 }
 
 #[test]

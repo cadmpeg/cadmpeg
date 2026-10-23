@@ -1,31 +1,36 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Caller-bounded encode sessions and fallible retained output buffers.
 
-use std::cell::Cell;
+use std::sync::Arc;
+
+use crate::operation_budget::OperationBudget;
 
 use crate::decode::{
-    LimitScope, ResourceDimension, ResourceFailure, ResourceLimit, ResourceLimits,
+    DecodeContext, LimitScope, ResourceDimension, ResourceFailure, ResourceLimit, ResourceLimits,
 };
 
 /// One encode operation's cumulative entities and live retained allocations.
 #[derive(Debug)]
 pub struct EncodeSession {
-    limits: ResourceLimits,
-    entities: Cell<u64>,
-    retained: Cell<u64>,
-    failure: Cell<Option<ResourceLimit>>,
+    account: Arc<OperationBudget>,
 }
 
 impl EncodeSession {
     /// Starts an encode operation with the caller's ceilings.
     #[must_use]
-    pub const fn new(limits: ResourceLimits) -> Self {
+    pub fn new(limits: ResourceLimits) -> Self {
         Self {
-            limits,
-            entities: Cell::new(0),
-            retained: Cell::new(0),
-            failure: Cell::new(None),
+            account: Arc::new(OperationBudget::new(limits)),
         }
+    }
+
+    /// Shares the context's caller account, including every prior fatal refusal.
+    pub fn from_context(context: &DecodeContext<'_>) -> Result<Self, ResourceLimit> {
+        let account = context.operation_budget();
+        if let Some(error) = account.fused() {
+            return Err(error);
+        }
+        Ok(Self { account })
     }
 
     /// Charges semantic or native records at their actual emission boundary.
@@ -34,15 +39,8 @@ impl EncodeSession {
         count: u64,
         operation: &'static str,
     ) -> Result<(), ResourceLimit> {
-        self.admit(
-            ResourceDimension::Entities,
-            self.limits.max_entities,
-            self.entities.get(),
-            count,
-            operation,
-        )?;
-        self.entities.set(self.entities.get() + count);
-        Ok(())
+        self.account
+            .charge_entities(self.account.limits.max_entities, count, operation)
     }
 
     /// Creates an empty buffer sharing this session's retained-byte allowance.
@@ -57,45 +55,11 @@ impl EncodeSession {
 
     /// Returns a prior fused resource failure even if a caller ignored it.
     pub fn finish(&self) -> Result<(), ResourceLimit> {
-        self.failure.get().map_or(Ok(()), Err)
-    }
-
-    fn admit(
-        &self,
-        dimension: ResourceDimension,
-        limit: u64,
-        used: u64,
-        additional: u64,
-        operation: &'static str,
-    ) -> Result<(), ResourceLimit> {
-        if let Some(error) = self.failure.get() {
-            return Err(error);
-        }
-        if !limit
-            .checked_sub(used)
-            .is_some_and(|remaining| additional <= remaining)
-        {
-            return Err(self.fail(ResourceLimit {
-                scope: LimitScope::Session,
-                dimension,
-                reason: ResourceFailure::BudgetExceeded,
-                limit,
-                used,
-                additional,
-                operation,
-            }));
-        }
-        Ok(())
+        self.account.fused().map_or(Ok(()), Err)
     }
 
     fn fail(&self, error: ResourceLimit) -> ResourceLimit {
-        match self.failure.get() {
-            Some(first) => first,
-            None => {
-                self.failure.set(Some(error));
-                error
-            }
-        }
+        self.account.refuse(error)
     }
 }
 
@@ -197,69 +161,67 @@ impl EncodeBuffer<'_> {
         } else {
             0
         };
-        self.session.admit(
-            ResourceDimension::RetainedBytes,
-            self.session.limits.max_retained_bytes,
-            self.session.retained.get(),
-            crate::decode::u64_from_index(required_growth),
-            operation,
-        )?;
         if required_growth == 0 {
             return Ok(());
         }
-        let preferred_growth = if current_capacity == 0 {
+        let preferred = if current_capacity == 0 {
             required_growth
         } else {
             required_growth.max(current_capacity)
         };
-        let available = self.session.limits.max_retained_bytes - self.session.retained.get();
-        let growth = match usize::try_from(available) {
-            Ok(remaining) => preferred_growth.min(remaining),
-            Err(_) => preferred_growth,
+        let preferred = if unused.checked_add(preferred).is_some() {
+            preferred
+        } else {
+            required_growth
         };
-        let (reserve_additional, requested_growth) = match unused.checked_add(growth) {
-            Some(amount) => (amount, growth),
-            None => (additional, required_growth),
+        let growth =
+            self.session
+                .account
+                .reserve_retained(required_growth, preferred, operation)?;
+        let session = self.session;
+        let mut reservation = CapacityReservation {
+            account: &session.account,
+            bytes: crate::decode::u64_from_index(growth),
         };
-        self.bytes
-            .try_reserve_exact(reserve_additional)
-            .map_err(|_| {
-                self.session.fail(ResourceLimit {
-                    scope: LimitScope::Session,
-                    dimension: ResourceDimension::RetainedBytes,
-                    reason: ResourceFailure::AllocationFailed,
-                    limit: self.session.limits.max_retained_bytes,
-                    used: self.session.retained.get(),
-                    additional: crate::decode::u64_from_index(requested_growth),
-                    operation,
-                })
-            })?;
-        self.admit_reserved_capacity(operation)
+        self.bytes.try_reserve_exact(unused + growth).map_err(|_| {
+            self.session.fail(ResourceLimit {
+                scope: LimitScope::Session,
+                dimension: ResourceDimension::RetainedBytes,
+                reason: ResourceFailure::AllocationFailed,
+                limit: self.session.account.limits.max_retained_bytes,
+                used: self.session.account.retained_used(),
+                additional: crate::decode::u64_from_index(growth),
+                operation,
+            })
+        })?;
+        self.admit_reserved_capacity(operation, reservation.bytes)?;
+        reservation.bytes = 0;
+        Ok(())
     }
 
-    fn admit_reserved_capacity(&mut self, operation: &'static str) -> Result<(), ResourceLimit> {
+    fn admit_reserved_capacity(
+        &mut self,
+        operation: &'static str,
+        reserved: u64,
+    ) -> Result<(), ResourceLimit> {
         let actual_growth = self.bytes.capacity() - self.charged_capacity;
         let actual_bytes = crate::decode::u64_from_index(actual_growth);
-        if let Err(error) = self.session.admit(
-            ResourceDimension::RetainedBytes,
-            self.session.limits.max_retained_bytes,
-            self.session.retained.get(),
-            actual_bytes,
-            operation,
-        ) {
-            // The allocator may return more capacity than requested. Release
-            // both the previous charge and the excess allocation immediately:
-            // this failed, fused session cannot retain uncharged backing bytes.
+        debug_assert!(
+            actual_bytes >= reserved,
+            "Vec capacity covers the exact reservation"
+        );
+        if let Err(error) = self
+            .session
+            .account
+            .charge_retained(actual_bytes - reserved, operation)
+        {
             self.bytes = Vec::new();
-            self.session.retained.set(
-                self.session.retained.get() - crate::decode::u64_from_index(self.charged_capacity),
-            );
+            self.session
+                .account
+                .release_retained(crate::decode::u64_from_index(self.charged_capacity));
             self.charged_capacity = 0;
             return Err(error);
         }
-        self.session
-            .retained
-            .set(self.session.retained.get() + actual_bytes);
         self.charged_capacity = self.bytes.capacity();
         Ok(())
     }
@@ -267,9 +229,19 @@ impl EncodeBuffer<'_> {
 
 impl Drop for EncodeBuffer<'_> {
     fn drop(&mut self) {
-        self.session.retained.set(
-            self.session.retained.get() - crate::decode::u64_from_index(self.charged_capacity),
-        );
+        self.session
+            .account
+            .release_retained(crate::decode::u64_from_index(self.charged_capacity));
+    }
+}
+
+struct CapacityReservation<'a> {
+    account: &'a OperationBudget,
+    bytes: u64,
+}
+impl Drop for CapacityReservation<'_> {
+    fn drop(&mut self) {
+        self.account.release_retained(self.bytes);
     }
 }
 

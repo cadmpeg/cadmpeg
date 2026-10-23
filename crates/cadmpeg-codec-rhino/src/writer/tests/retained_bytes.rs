@@ -16,9 +16,10 @@ fn emit(ir: &CadIr, retained: u64) -> Result<Vec<u8>, CodecError> {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = retained;
     let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
-    let (bytes, _) = super::super::write(&ctx, ir, RhinoArchiveVersion::V8)?;
+    let session = cadmpeg_core::encode::EncodeSession::from_context(&ctx)?;
+    let (bytes, _) = super::super::write(&ctx, ir, RhinoArchiveVersion::V8, &session)?;
     ctx.finish_session()?;
-    Ok(bytes)
+    Ok(bytes.into_vec())
 }
 
 #[test]
@@ -69,7 +70,7 @@ fn brep_and_final_archive_staging_share_one_actual_live_allowance() {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
-    let session = EncodeSession::new(policy.limits);
+    let session = EncodeSession::from_context(&ctx).expect("caller account");
     let plan = super::super::prepare_write(&ctx, &ir, RhinoArchiveVersion::V8, &session)
         .expect("actual native Brep records");
     let staged_brep = cadmpeg_core::decode::u64_from_index(plan.brep_records.capacity());
@@ -89,4 +90,35 @@ fn brep_and_final_archive_staging_share_one_actual_live_allowance() {
     assert!(error.used <= error.limit);
     assert!(error.additional > 0);
     assert_eq!(error.used + error.additional, peak);
+}
+
+#[test]
+fn actual_archive_header_shares_preexisting_native_retention() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    let header = cadmpeg_core::decode::u64_from_index(crate::layout::file_header::LEN);
+    policy.limits.max_retained_bytes = header + 5;
+    let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
+    let native = Box::new(*b"native");
+    ctx.retain_bytes(6, "preexisting native fields")
+        .expect("native fields");
+    let session = EncodeSession::from_context(&ctx).expect("one account");
+    let CodecError::ResourceLimit(error) =
+        super::super::write(&ctx, &CadIr::empty(), RhinoArchiveVersion::V8, &session)
+            .err()
+            .expect("header plus native exceeds caller limit")
+    else {
+        panic!("actual retained refusal")
+    };
+    assert_eq!(error.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(
+        (error.limit, error.used, error.additional),
+        (header + 5, 6, header)
+    );
+    assert_eq!(error.operation, "retain Rhino archive bytes");
+    assert_eq!(native.as_slice(), b"native");
+    assert_eq!(session.finish(), Err(error));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == error)
+    );
 }
