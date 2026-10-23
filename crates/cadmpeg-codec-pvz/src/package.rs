@@ -114,6 +114,14 @@ impl<'a> Package<'a> {
         self.archive.open(ctx, &self.structure)
     }
 
+    /// Whether the archive holds a member named exactly `name`.
+    pub(crate) fn contains(&self, name: &str) -> bool {
+        self.archive
+            .entries()
+            .iter()
+            .any(|entry| entry.name == name)
+    }
+
     /// Opens one member by its exact archive name.
     pub(crate) fn member(
         &self,

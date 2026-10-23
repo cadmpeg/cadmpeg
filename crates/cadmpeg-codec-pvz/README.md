@@ -1,21 +1,24 @@
 # cadmpeg-codec-pvz
 
-`cadmpeg-codec-pvz` inspects PTC Creo View (`ProductView`) `.pvz` packages for
+`cadmpeg-codec-pvz` inspects and decodes PTC Creo View (`ProductView`) `.pvz` packages for
 [`cadmpeg-ir`][ir]. A `.pvz` package is a ZIP archive with one `.pvs`
 structure member and `.ol` geometry members.
 
 <!-- generated: capability pvz -->
 
-Support: L0 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#creo-view-pvz)).
+Support: L1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#creo-view-pvz)).
 
 <!-- /generated: capability pvz -->
 
 The codec is read-only. It detects a package by its `.pvs` member, lists every
 member with its role and leading signature, and classifies the package dialect
-from the `.pvs` signature. Decode returns a classified document with an empty
-model. A decode deeper than the container reports the blocking loss
-`pvz/package.content-undecoded`: the structure and geometry members are
-located, not decoded.
+from the `.pvs` signature. Decode reads the `.pvs` member, in its binary or XML
+form, into product definitions and the expanded occurrence tree, and reads each
+`.ol` member a definition names into one body with its tessellations and
+appearances. Lengths are converted from metres to millimetres. The exact B-rep
+stream of an `.ol` member is located and reported with the loss
+`pvz/geometry.exact-undecoded`. Every other record the model does not carry is
+named by a `pvz/*` loss.
 
 ## Install
 

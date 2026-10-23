@@ -106,7 +106,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What do the `word`, `byte_0`, `generation`, and `byte_2` fields of the OL preamble block mean, and what decides the presence of the block?
 
-**Known.** `creo_view_pvz.md` §4.3. `generation` is `0x09` only in `DIV-OL09BL` members. `word` is 2 in members that carry only the attribute stream, and 3 in members with more streams.
+**Known.** `creo_view_pvz.md` §4.3 gives the fields. `generation` is `0x09` only in `DIV-OL09BL` members. `word` is 2 in members that carry only the attribute stream, and 3 in members with more streams.
 
 **Need.** We must know whether the block selects a grammar difference between `DIV-OL08BL` and `DIV-OL09BL`.
 
@@ -140,9 +140,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What do the tessellation records with tags `0x0100000b`, `0x0100000c`, `0x0a`, `0x01000017`, `0x01000018`, `0x26`, `0x01000021`, and `0x01000027` mean, and which records open a scope that a terminator closes?
 
-**Known.** `creo_view_pvz.md` §6.5 gives the payload lengths.
+**Known.** `creo_view_pvz.md` §6.5 gives the payload lengths. §6.1 gives the line groups of a surface tessellation stream.
 
-**Need.** We must know the scope structure to validate a tessellation stream and to read line primitives in a surface tessellation stream.
+**Need.** We must know the scope structure to validate a tessellation stream.
 
 ### PVZ-16. Edge tessellation fields
 
@@ -156,7 +156,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Where does an OL or PVS member store texture images, texture bindings, and decals?
 
-**Known.** `creo_view_pvz.md` §6.3 defines the texture coordinate of a vertex. Packages with textured parts contain `.png` members.
+**Known.** `creo_view_pvz.md` §6.3 defines the texture coordinate of a vertex. Packages with textured parts contain `.png` members. A tag-6 attribute record (§5.4) names a texture, for example `plain.png` or `undefined`, and stands between a tag-5 record and the tag-7 record it pairs with (§5.3).
 
 **Need.** We must know the binding to decode textured appearance.
 

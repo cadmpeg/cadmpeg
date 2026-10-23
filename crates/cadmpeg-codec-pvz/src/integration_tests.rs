@@ -11,7 +11,10 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 use cadmpeg_ir::ContainerSummary;
 
 use crate::loss::PvzLossCode;
-use crate::test_support::{package, OL_08, OL_09, PVS_0301, PVS_0304};
+use crate::test_support::{
+    assembly, assembly_structure, bracket_member, package, plate_member, OL_08, OL_09, PVS_0301,
+    PVS_0304,
+};
 use crate::PvzCodec;
 
 fn inspect(bytes: &[u8]) -> ContainerSummary {
@@ -98,7 +101,7 @@ fn inspect_lists_every_member_with_its_role_and_signature() {
 }
 
 #[test]
-fn decode_classifies_the_package_and_reports_undecoded_content() {
+fn decode_classifies_the_package_and_reports_an_undecodable_structure() {
     let bytes = package(&[("model.pvs", PVS_0301), ("model.ol", OL_09)]);
     let result = decode(&bytes);
 
@@ -121,19 +124,163 @@ fn decode_classifies_the_package_and_reports_undecoded_content() {
     assert!(!result.report().geometry_transferred());
     assert_eq!(
         loss_codes(&result),
-        [PvzLossCode::PackageContentUndecoded.kind()]
+        [PvzLossCode::StructureMemberMalformed.kind()]
     );
-    assert!(result.ir().model.bodies.is_empty());
-    assert!(result.ir().model.faces.is_empty());
+    assert!(result.ir().model.product_definitions.is_empty());
+    assert!(result.ir().model.tessellations.is_empty());
 
     let report = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).unwrap();
     assert!(report.is_ok(), "{report:?}");
 }
 
 #[test]
+fn every_structure_signature_decodes_the_assembly() {
+    for (signature, dialect) in [
+        ("PV-PVS0301", "pvz:pvs-0301"),
+        ("PV-PVS0302", "pvz:pvs-0302"),
+        ("PV-PVS0303", "pvz:pvs-0303"),
+        ("PV-PVS0304", "pvz:pvs-0304"),
+        ("PV-PVS0305", "pvz:pvs-0305"),
+    ] {
+        let result = decode(&assembly(signature));
+        assert_eq!(primary_dialect(&result), dialect);
+        let model = &result.ir().model;
+        assert_eq!(
+            (
+                model.product_definitions.len(),
+                model.occurrences.len(),
+                model.bodies.len(),
+                model.tessellations.len(),
+                model.appearances.len(),
+                model.appearance_bindings.len(),
+            ),
+            (3, 4, 2, 2, 1, 1),
+            "{signature}"
+        );
+        assert!(result.report().geometry_transferred());
+    }
+}
+
+#[test]
+fn the_assembly_maps_to_products_placements_meshes_and_appearances() {
+    let result = decode(&assembly("PV-PVS0304"));
+    let model = &result.ir().model;
+
+    let definitions: Vec<_> = model
+        .product_definitions
+        .iter()
+        .map(|definition| {
+            (
+                definition.source_name.as_deref().unwrap(),
+                definition
+                    .bodies
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        definitions,
+        [
+            ("TOP.ASM", vec![]),
+            ("BRACKET.PRT", vec!["pvz:model:body#bracket.ol".to_owned()]),
+            ("PLATE.PRT", vec!["pvz:model:body#plate.ol".to_owned()]),
+        ]
+    );
+    assert_eq!(
+        model.product_definitions[0]
+            .bom_properties
+            .values()
+            .collect::<Vec<_>>(),
+        ["TOP-001"]
+    );
+
+    let turned = model
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.id.as_str() == "pvz:model:occurrence#r0/1")
+        .unwrap();
+    assert_eq!(turned.name.as_deref(), Some("42"));
+    assert_eq!(
+        turned.transform.affine_rows(),
+        [
+            [0.0, -1.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0, 200.0],
+            [0.0, 0.0, 1.0, 0.0]
+        ]
+    );
+    assert_eq!(
+        turned.scale.map(cadmpeg_ir::scalar::FiniteReal::get),
+        [2.0; 3]
+    );
+
+    let bracket = &model.tessellations[0];
+    assert_eq!(bracket.vertex_count(), 4);
+    assert_eq!(bracket.triangle_count(), 4);
+    assert!(bracket.vertex_normals().is_empty());
+    let plate = &model.tessellations[1];
+    assert_eq!(plate.triangles(), [[0, 1, 2], [2, 1, 3]]);
+    assert_eq!(plate.vertex_normals().len(), 4);
+    let far = plate.vertices()[3].get();
+    assert!((far.x - 20.0).abs() < 1e-4 && (far.y - 20.0).abs() < 1e-4);
+
+    let appearance = &model.appearances[0];
+    assert_eq!(appearance.name.as_deref(), Some("red"));
+    let color = appearance.base_color.unwrap();
+    assert_eq!(
+        (color.r(), color.g(), color.b(), color.a()),
+        (1.0, 0.0, 0.0, 1.0)
+    );
+    assert_eq!(model.appearance_bindings[0].appearance, appearance.id);
+
+    assert_eq!(
+        loss_codes(&result),
+        [
+            PvzLossCode::StructureBoundsNotTransferred.kind(),
+            PvzLossCode::GeometryExactUndecoded.kind(),
+            PvzLossCode::AttributeRecordsUndecoded.kind(),
+            PvzLossCode::AttributeAppearanceTail.kind(),
+            PvzLossCode::TessellationPatchFields.kind(),
+            PvzLossCode::TessellationEdgesNotTransferred.kind(),
+            PvzLossCode::GeometryPreambleUndecoded.kind(),
+        ]
+    );
+    let report = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).unwrap();
+    assert!(report.is_ok(), "{report:?}");
+}
+
+#[test]
+fn missing_and_unreferenced_members_are_reported() {
+    let bytes = package(&[
+        ("model.pvs", &assembly_structure("PV-PVS0301")),
+        ("bracket.ol", &bracket_member()),
+        ("spare.ol", &plate_member()),
+    ]);
+    let result = decode(&bytes);
+    let codes = loss_codes(&result);
+    assert!(codes.contains(&PvzLossCode::GeometryMemberMissing.kind()));
+    assert!(codes.contains(&PvzLossCode::GeometryMemberUnreferenced.kind()));
+    assert_eq!(result.ir().model.tessellations.len(), 1);
+    assert!(result.ir().model.product_definitions[2].bodies.is_empty());
+}
+
+#[test]
+fn a_malformed_geometry_member_is_reported_and_the_rest_decodes() {
+    let bytes = package(&[
+        ("model.pvs", &assembly_structure("PV-PVS0301")),
+        ("bracket.ol", OL_08),
+        ("plate.ol", &plate_member()),
+    ]);
+    let result = decode(&bytes);
+    assert!(loss_codes(&result).contains(&PvzLossCode::GeometryMemberMalformed.kind()));
+    assert_eq!(result.ir().model.tessellations.len(), 1);
+    assert_eq!(result.ir().model.occurrences.len(), 4);
+}
+
+#[test]
 fn a_container_decode_reports_no_content_loss() {
-    let bytes = package(&[("model.pvs", PVS_0304), ("model.ol", OL_09)]);
-    let result = decode_at(&bytes, DecodeDepth::Container).unwrap();
+    let result = decode_at(&assembly("PV-PVS0304"), DecodeDepth::Container).unwrap();
 
     assert!(result.report().container_only());
     assert!(loss_codes(&result).is_empty());
@@ -158,7 +305,7 @@ fn an_unknown_structure_signature_is_residual_and_charged() {
         loss_codes(&result),
         [
             PvzLossCode::SourceDialectUnverified.kind(),
-            PvzLossCode::PackageContentUndecoded.kind(),
+            PvzLossCode::StructureMemberMalformed.kind(),
         ]
     );
 }
@@ -178,7 +325,7 @@ fn an_unreadable_central_directory_is_recovered_and_charged() {
         loss_codes(&result),
         [
             PvzLossCode::ContainerDirectoryRecovered.kind(),
-            PvzLossCode::PackageContentUndecoded.kind(),
+            PvzLossCode::StructureMemberMalformed.kind(),
         ]
     );
 }

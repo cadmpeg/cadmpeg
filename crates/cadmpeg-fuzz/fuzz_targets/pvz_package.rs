@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Fuzz target for Creo View package admission and member signatures.
+//! Fuzz target for Creo View package admission, member signatures, and the
+//! structure-member and geometry-member decoders over raw member bytes.
 //! No input may panic.
 
 #![no_main]
@@ -14,6 +15,8 @@ fuzz_target!(|data: &[u8]| {
         cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
     {
         let _result = cadmpeg_codec_pvz::fuzz::package(&ctx, root);
+        let _structure = cadmpeg_codec_pvz::fuzz::structure(&ctx, root);
+        let _geometry = cadmpeg_codec_pvz::fuzz::geometry(&ctx, root);
         let _ = ctx.finish_session();
     }
 });

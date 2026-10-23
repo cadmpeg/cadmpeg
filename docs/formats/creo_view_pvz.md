@@ -328,19 +328,21 @@ The `tail` fields are an open item.
 
 The tag-7 records, in stored order, form the appearance table. A table index is the zero-based position of a tag-7 record among the tag-7 records of the stream.
 
-A tag-5 record immediately followed by a tag-7 record defines the appearance for that record's `base_index`. Each `base_index` has at most one definition. A tag-7 record without a preceding tag-5 record refers to the appearance that an earlier pair defined for its `base_index`.
+A tag-5 record followed by a tag-7 record defines the appearance for that record's `base_index`. Between the two records there is no record, or one tag-6 texture record (§5.4). Each `base_index` has at most one definition. A tag-7 record without a preceding tag-5 record refers to the appearance that an earlier pair defined for its `base_index`.
 
 A tessellation patch header (§6.2) stores a table index. The appearance of table entry `i` is the appearance defined for `base_index[i]`. The value `0xffffffff` means no appearance.
 
 ### 5.4 Other attribute records
 
-The attribute stream also carries records with tags 3, 4, `0x2b`, `0xc8`, `0xcd`, `0x01000008`, `0x0100002c`, `0x19`, `0x1a`, `0x1b`, and others. Tag 3 holds a named list of identifiers, for example the source feature identifiers of the member. Tag `0x0100002c` maps a feature identifier to a feature name. These records are open items.
+The attribute stream also carries records with tags 3, 4, 6, `0x2b`, `0xc8`, `0xcd`, `0x01000008`, `0x0100002c`, `0x19`, `0x1a`, `0x1b`, and others. Tag 3 holds a named list of identifiers, for example the source feature identifiers of the member. Tag `0x0100002c` maps a feature identifier to a feature name. Tag 6 is a texture record: a `u32` name length, then a NUL-padded texture name such as `plain.png`, then further bytes. These records are open items.
 
 ## 6. Surface tessellation stream
 
 ### 6.1 Record sequence
 
 After the stream index record, the stream holds one group per tessellated patch. A group begins with a patch header (tag `0x0100000d`). It contains a vertex block (tag `0x01000016`) and the triangle primitives that follow that vertex block and index into it. A group can also contain the records of §6.5.
+
+The stream can also hold line groups. A line group begins with an edge header (tag `0x01000012`, §7.2) and holds a vertex block and line primitives (tags `0x1c` and `0x1d`) that index into it, with the layout of an edge group of §7.2. A line group holds no triangle primitives. A vertex block after an edge header belongs to the line group, not to a patch.
 
 ### 6.2 Patch header
 

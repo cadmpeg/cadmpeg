@@ -234,6 +234,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-step`     | `src/parse.rs`                                     | `MAX_EXPANDED_PAYLOAD_PER_INPUT_BYTE`     | `16`, plus `EXPANDED_PAYLOAD_BASE` (16 MiB)             | 4    | String, binary and name octets that the anchor pass, and separately the REFERENCE pass, may copy out of anchors, per input byte. Copies that an omitted item discards stay charged. An item whose copy does not fit is omitted with its exact source and `parse.expansion-bounded`, naming this constant. Recorded anchor and reference outcomes carry their octets, so a later item that cannot fit is decided before anything is copied. Working storage, not `retain_bytes`. |
 | `cadmpeg-codec-step`     | `src/reader/tessellation.rs`                       | `MAX_ITEM_PLACEMENTS`                     | `64`                                                    | 4    | Distinct inherited placements that one association walk follows into a tessellated item. Past it the item and the items it contains keep source coordinates, and `tessellation.placement-ambiguous` names the limit.                                                        |
 | `cadmpeg-codec-step`     | `src/reader/product.rs`                            | `MAX_OCCURRENCES`                         | `100_000`                                               | 4    | Occurrences expanded from the NAUO graph. At the limit expansion stops and `occurrence.expansion-output-truncated` is reported. A NAUO path of `max_recursion_depth` usages stops that branch with `occurrence.expansion-depth-truncated`.                                   |
+| `cadmpeg-codec-pvz`      | `src/model.rs`                                     | `MAX_OCCURRENCES`                         | `100_000`                                               | 4    | Occurrences expanded from the structure definition graph. At the limit, and at a path of `max_recursion_depth` definitions, expansion stops and `structure.occurrence-expansion-truncated` is reported.                                                                      |
 | `cadmpeg-codec-step`     | `src/export/approximation.rs`                      | `MAX_PATCHES`                             | `1024`                                                  | N    | STEP writer: sampled B-spline patches along one parameter axis. A fit that needs more keeps the face or curve omitted; not a decode path.                                                                                                                                    |
 | `cadmpeg-codec-step`     | `src/export/approximation.rs`                      | `MAX_POLES`                               | `1 << 20`                                               | N    | STEP writer: sampled approximation poles of one export. A carrier that does not fit keeps the face or curve omitted; not a decode path.                                                                                                                                      |
 | `cadmpeg-codec-step`     | `src/export/approximation.rs`                      | `MAX_SAMPLES`                             | `1 << 23`                                               | N    | STEP writer: procedural point evaluations of one export for sampling and residual probes. Exhaustion keeps the face or curve omitted; not a decode path.                                                                                                                     |
@@ -471,16 +472,16 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 256.
+Production `MAX_*` constants: 257.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 31    |
 | 2    | Per-input bound            | 69    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 128   |
+| 4    | Local work cap             | 129   |
 | N    | Not a decode bound         | 28    |
-|      | Total                      | 256   |
+|      | Total                      | 257   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -490,7 +491,7 @@ By crate: `cadmpeg-core` 3, `cadmpeg-ir` 12, `cadmpeg-measure` 20, `cadmpeg-asm`
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 3,
 `cadmpeg-codec-freecad` 14, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 18,
 `cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 14,
-and `cadmpeg-codec-catia` 57.
+`cadmpeg-codec-catia` 57, and `cadmpeg-codec-pvz` 1.
 
 ## Routing
 
@@ -527,6 +528,11 @@ Current codec routes:
   Assembly occurrence expansion stops at `MAX_OCCURRENCES` or at a path of
   `max_recursion_depth` usages and reports a loss. Occurrence paths are
   parent links, so their storage is linear in the occurrences.
+- Creo View PVS element child lists charge `enter_nested`. Every PVS and OL
+  GZIP stream expands through `begin_expand` with no declared size, and its
+  trailer is checked after expansion. Occurrence expansion stops at
+  `MAX_OCCURRENCES` or at a path of `max_recursion_depth` definitions and
+  reports a loss; occurrences are admitted with `admit_entities`.
 - IGES occurrence expansion, type-124 chains, and composite flattening
   charge `enter_nested`. The occurrence and type-124 depth limits take `min`
   with `max_recursion_depth`. At a local limit the walk stops and reports a

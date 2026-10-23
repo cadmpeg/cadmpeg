@@ -147,8 +147,8 @@ level = 3
 scored = ["sat:text"]
 
 [format.pvz]
-level = 0
-scored = ["pvz:pvs-0301", "pvz:pvs-0304"]
+level = 1
+scored = ["pvz:pvs-0301", "pvz:pvs-0302", "pvz:pvs-0303", "pvz:pvs-0304", "pvz:pvs-0305"]
 
 
 # --------------------------------------------------------------------------
@@ -940,26 +940,54 @@ dialect = "pvz:pvs-0301"
 read = "detected"
 write = "none"
 reason = """
-the package is classified from its structure-member signature; the structure
-and geometry members are located, not decoded, and no golden fixture pins the
-row"""
+no committed real file exercises the row; the structure member decodes into product definitions and the occurrence tree,
+and the geometry members into tessellation and appearances; exact B-rep is not
+decoded"""
+
+[[support]]
+dialect = "pvz:pvs-0302"
+read = "detected"
+write = "none"
+reason = """
+no committed real file exercises the row; the structure member decodes into product definitions and the occurrence tree,
+and the geometry members into tessellation and appearances; exact B-rep is not
+decoded"""
+
+[[support]]
+dialect = "pvz:pvs-0303"
+read = "detected"
+write = "none"
+reason = """
+no committed real file exercises the row; the structure member decodes into product definitions and the occurrence tree,
+and the geometry members into tessellation and appearances; exact B-rep is not
+decoded"""
 
 [[support]]
 dialect = "pvz:pvs-0304"
 read = "detected"
 write = "none"
 reason = """
-the package is classified from its structure-member signature; the structure
-and geometry members are located, not decoded, and no golden fixture pins the
-row"""
+no committed real file exercises the row; the structure member decodes into product definitions and the occurrence tree,
+and the geometry members into tessellation and appearances; exact B-rep is not
+decoded"""
+
+[[support]]
+dialect = "pvz:pvs-0305"
+read = "detected"
+write = "none"
+reason = """
+no committed real file exercises the row; the structure member decodes into product definitions and the occurrence tree,
+and the geometry members into tessellation and appearances; exact B-rep is not
+decoded"""
 
 [[support]]
 dialect = "pvz:unknown"
 read = "unclassified-recovered"
 write = "none"
 reason = """
-no known structure-member signature; the package framing is read on the
-residual path and charges pvz/source.dialect-unverified"""
+no known structure-member signature; the member is read on the residual path
+with the grammar its leading bytes select and charges
+pvz/source.dialect-unverified"""
 
 # --------------------------------------------------------------------------
 # acis

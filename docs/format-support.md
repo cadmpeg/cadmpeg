@@ -57,7 +57,7 @@ edit without a re-render fails the gate.
 | Siemens NX `.prt`                                 | L1    |
 | CATIA V5 `.CATPart`                               | L3    |
 | Creo Parametric `.prt`                            | L1    |
-| Creo View `.pvz`                                  | L0    |
+| Creo View `.pvz`                                  | L1    |
 | STEP Part 21                                      | L8    |
 
 <!-- /generated: ladder-table -->
@@ -498,23 +498,26 @@ See [`formats/creo_prt.md`](formats/creo_prt.md) and [`formats/creo_prt-open-ite
 
 <!-- generated: dialects pvz -->
 
-**Ladder: L0.**
+**Ladder: L1.**
 
 | Dialect        | Read                   | Write |
 | -------------- | ---------------------- | ----- |
 | `pvz:pvs-0301` | detected               | none  |
+| `pvz:pvs-0302` | detected               | none  |
+| `pvz:pvs-0303` | detected               | none  |
 | `pvz:pvs-0304` | detected               | none  |
+| `pvz:pvs-0305` | detected               | none  |
 | `pvz:unknown`  | unclassified-recovered | none  |
 
 <!-- /generated: dialects pvz -->
 
-The codec detects the package, opens the ZIP framing, and classifies the package from the `.pvs` signature. Document metadata, preview images, and tessellation are not extracted, so L0 does not pass on its extraction criterion. No real file exercises the level.
+The codec opens the ZIP framing, the `.pvs` stream directory, and the `.ol` stream directory, expands each GZIP stream under the decode caps and checks its CRC-32, classifies the package from the `.pvs` signature, and decodes product structure and tessellation. Every undecoded record family is named by a loss. No committed real file exercises the level: the code-built golden packages cover every structure signature.
 
 ### Read profile
 
-- **Container and versions: Partial.** The codec admits the ZIP package through the shared archive snapshot, requires exactly one `.pvs` structure member, classifies the `PV-PVS0301` and `PV-PVS0304` structure signatures, and reports the `DIV-OL08BL` and `DIV-OL09BL` signatures of each `.ol` member. A package with any other structure signature is read on the residual path and reports `pvz/source.dialect-unverified`.
-- **Structure: None.** Product structure in the `.pvs` member is not decoded.
-- **Geometry and tessellation: None.** The `.ol` members are not decoded. Decode reports the blocking loss `pvz/package.content-undecoded`.
+- **Container and versions: Partial.** The codec admits the ZIP package through the shared archive snapshot, requires exactly one `.pvs` structure member, and classifies the `PV-PVS0301` to `PV-PVS0305` structure signatures. A structure member with any other signature is read on the residual path and reports `pvz/source.dialect-unverified`. Loose `.pvs` and `.ol` files outside a package are not detected.
+- **Structure: Partial.** The binary and XML structure forms decode into product definitions with their names and properties, and into the expanded occurrence tree with placements as a rigid transform and a uniform scale. Appearance palettes, illustration and group elements, occurrence flags and extensions, typed definition bytes, and geometry-element bounds report `pvz/structure.*` losses.
+- **Geometry and tessellation: Partial.** Each geometry member a definition names becomes one body owned by every such definition, with one tessellation per appearance and vertex layout, per-patch triangle groups, and the member's appearances bound to the tessellations. Edge tessellation, texture coordinates, patch-header face references, and the other attribute and tessellation records report losses. The exact-geometry stream is located and reports `pvz/geometry.exact-undecoded`; no body carries B-rep topology.
 
 ### Write and round trip
 

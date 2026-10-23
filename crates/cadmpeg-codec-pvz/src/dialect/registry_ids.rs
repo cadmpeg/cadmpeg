@@ -7,7 +7,13 @@ pub(crate) const FORMAT: &str = "pvz";
 
 /// Registry-owned dialect id `pvz:pvs-0301`.
 pub(crate) const PVZ_PVS_0301: DialectId = cadmpeg_core::dialect_id!("pvz:pvs-0301");
+/// Registry-owned dialect id `pvz:pvs-0302`.
+pub(crate) const PVZ_PVS_0302: DialectId = cadmpeg_core::dialect_id!("pvz:pvs-0302");
+/// Registry-owned dialect id `pvz:pvs-0303`.
+pub(crate) const PVZ_PVS_0303: DialectId = cadmpeg_core::dialect_id!("pvz:pvs-0303");
 /// Registry-owned dialect id `pvz:pvs-0304`.
 pub(crate) const PVZ_PVS_0304: DialectId = cadmpeg_core::dialect_id!("pvz:pvs-0304");
+/// Registry-owned dialect id `pvz:pvs-0305`.
+pub(crate) const PVZ_PVS_0305: DialectId = cadmpeg_core::dialect_id!("pvz:pvs-0305");
 /// Registry-owned dialect id `pvz:unknown`.
 pub(crate) const PVZ_UNKNOWN: DialectId = cadmpeg_core::dialect_id!("pvz:unknown");

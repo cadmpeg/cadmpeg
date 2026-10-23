@@ -1,18 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 #![cfg_attr(test, allow(clippy::unwrap_used))]
-//! Inspect PTC Creo View (`ProductView`) `.pvz` packages.
+//! Inspect and decode PTC Creo View (`ProductView`) `.pvz` packages.
 //!
 //! A `.pvz` package is a ZIP archive. It holds one `.pvs` structure member
 //! and `.ol` geometry members. [`PvzCodec`] implements
 //! [`cadmpeg_ir::codec::Codec`]: it detects the package by its structure
 //! member, inspects every member with its signature, and classifies the
-//! package dialect from the structure member's signature. Decode opens the
-//! package and returns a classified document with an empty model and a
-//! blocking loss: the structure and geometry members are located, not
-//! decoded. The crate is read-only.
+//! package dialect from the structure member's signature. Decode reads the
+//! structure member into product definitions and an occurrence tree, and
+//! each geometry member a definition names into a body with tessellations
+//! and appearances. The exact B-rep of a geometry member is located and
+//! reported, not decoded. The crate is read-only.
 //!
 //! <!-- generated: capability pvz -->
-//! Support: L0 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#creo-view-pvz)).
+//! Support: L1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#creo-view-pvz)).
 //! <!-- /generated: capability pvz -->
 //!
 //! # Quick start
@@ -37,11 +38,17 @@
 mod decode;
 mod detect;
 mod dialect;
+mod gzip;
+mod ids;
 mod inspect;
+/// Byte-offset constants generated from `docs/layouts/creo_view_pvz.toml`.
+mod layout;
 mod loss;
+mod model;
 mod ol;
 mod package;
 mod pvs;
+mod read;
 
 #[doc(hidden)]
 pub mod fuzz;
@@ -79,6 +86,8 @@ impl CodecBackend for PvzCodec {
     }
 }
 
+#[cfg(test)]
+mod golden_tests;
 #[cfg(test)]
 mod integration_tests;
 #[cfg(test)]

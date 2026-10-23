@@ -1220,18 +1220,37 @@ complete = false
 id = "pvz:pvs-0301"
 title = "Creo View package, PV-PVS0301 structure member"
 discriminants = { pvs_signature = "PV-PVS0301" }
-witness = "code:crates/cadmpeg-codec-pvz/src/pvs.rs:24"
+witness = "spec:docs/formats/creo_view_pvz.md section 3.1"
+
+[[dialect]]
+id = "pvz:pvs-0302"
+title = "Creo View package, PV-PVS0302 structure member"
+discriminants = { pvs_signature = "PV-PVS0302" }
+witness = "spec:docs/formats/creo_view_pvz.md section 3.1"
+
+[[dialect]]
+id = "pvz:pvs-0303"
+title = "Creo View package, PV-PVS0303 structure member"
+discriminants = { pvs_signature = "PV-PVS0303" }
+witness = "spec:docs/formats/creo_view_pvz.md section 3.1"
 
 [[dialect]]
 id = "pvz:pvs-0304"
 title = "Creo View package, PV-PVS0304 structure member"
 discriminants = { pvs_signature = "PV-PVS0304" }
-witness = "code:crates/cadmpeg-codec-pvz/src/pvs.rs:25"
+witness = "spec:docs/formats/creo_view_pvz.md section 3.1"
+
+[[dialect]]
+id = "pvz:pvs-0305"
+title = "Creo View package, PV-PVS0305 structure member"
+discriminants = { pvs_signature = "PV-PVS0305" }
+witness = "spec:docs/formats/creo_view_pvz.md section 3.1"
 
 [[dialect]]
 # Mandatory `unknown` row (B4). A package whose one `.pvs` member opens with
 # no known signature is admitted on the residual path: decode charges
-# `pvz/source.dialect-unverified` and reads the package framing only.
+# `pvz/source.dialect-unverified` and reads the member with the binary or XML
+# grammar that its leading bytes select.
 id = "pvz:unknown"
 unknown_kind = "recovered-residual"
 title = "Creo View package with an unrecognized structure-member signature"

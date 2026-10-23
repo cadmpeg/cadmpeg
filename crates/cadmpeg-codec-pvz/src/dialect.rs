@@ -37,7 +37,10 @@ enum State {
 const fn id(generation: Generation) -> DialectId {
     match generation {
         Generation::Pvs0301 => PVZ_PVS_0301,
+        Generation::Pvs0302 => PVZ_PVS_0302,
+        Generation::Pvs0303 => PVZ_PVS_0303,
         Generation::Pvs0304 => PVZ_PVS_0304,
+        Generation::Pvs0305 => PVZ_PVS_0305,
     }
 }
 
@@ -79,17 +82,23 @@ mod tests {
     use cadmpeg_core::decode::View;
     use cadmpeg_core::dialect::Admission;
 
-    use super::{classify, PVZ_PVS_0301, PVZ_PVS_0304, PVZ_UNKNOWN};
+    use super::{
+        classify, PVZ_PVS_0301, PVZ_PVS_0302, PVZ_PVS_0303, PVZ_PVS_0304, PVZ_PVS_0305, PVZ_UNKNOWN,
+    };
     use crate::loss::PvzLossCode;
-    use crate::test_support::{PVS_0301, PVS_0304};
 
     #[test]
     fn known_signatures_are_admitted_with_their_declared_signature() {
-        for (member, dialect, signature) in [
-            (PVS_0301, PVZ_PVS_0301, "PV-PVS0301"),
-            (PVS_0304, PVZ_PVS_0304, "PV-PVS0304"),
+        for (dialect, signature) in [
+            (PVZ_PVS_0301, "PV-PVS0301"),
+            (PVZ_PVS_0302, "PV-PVS0302"),
+            (PVZ_PVS_0303, "PV-PVS0303"),
+            (PVZ_PVS_0304, "PV-PVS0304"),
+            (PVZ_PVS_0305, "PV-PVS0305"),
         ] {
-            let classification = classify(View::over_retained(member));
+            let mut member = signature.as_bytes().to_vec();
+            member.extend_from_slice(b"\0 body");
+            let classification = classify(View::over_retained(&member));
             assert!(classification.loss().is_none());
             let matched = classification.into_matched();
             assert_eq!(matched.dialect(), &dialect);

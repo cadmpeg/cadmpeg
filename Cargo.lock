@@ -354,6 +354,9 @@ dependencies = [
  "cadmpeg-core",
  "cadmpeg-ir",
  "cadmpeg-test-support",
+ "crc32fast",
+ "roxmltree",
+ "serde_json",
 ]
 
 [[package]]

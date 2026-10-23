@@ -1,0 +1,266 @@
+// SPDX-License-Identifier: Apache-2.0
+
+use cadmpeg_ir::products::OccurrenceParent;
+use cadmpeg_ir::CadIr;
+
+use super::{definitions, display_geometry, occurrences, placement, Placed};
+use crate::loss::PvzLossCode;
+use crate::ol::{MemberGeometry, Mesh};
+use crate::pvs::{ChildOccurrence, Definition, DefinitionRole, Placement, Property, Structure};
+use crate::test_support::SCALED_TURN;
+
+fn definition(name: &str, children: &[usize]) -> Definition {
+    Definition {
+        name: name.to_owned(),
+        role: DefinitionRole::Component,
+        geometry: None,
+        occurrences: children
+            .iter()
+            .map(|&definition| ChildOccurrence {
+                definition,
+                placement: Placement::default(),
+                feature_id: String::new(),
+            })
+            .collect(),
+        properties: Vec::new(),
+    }
+}
+
+fn structure(definitions: Vec<Definition>) -> Structure {
+    Structure {
+        definitions,
+        ..Structure::default()
+    }
+}
+
+fn expand(structure: &Structure) -> (CadIr, Vec<cadmpeg_ir::report::loss::LossKind>) {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut ir = CadIr::empty();
+    let mut losses = Vec::new();
+    definitions(structure, &mut ir, &mut losses);
+    occurrences(&ctx, structure, &mut ir, &mut losses).unwrap();
+    (ir, losses.into_iter().map(|loss| loss.code).collect())
+}
+
+fn rows(placed: &Placed) -> ([[f64; 4]; 3], f64) {
+    match placed {
+        Placed::Similarity(transform, scale) => (transform.affine_rows(), scale.get()),
+        Placed::Affine(transform) => (transform.affine_rows(), f64::NAN),
+        Placed::Invalid => panic!("invalid placement"),
+    }
+}
+
+#[test]
+fn a_translation_is_scaled_to_millimetres() {
+    let placed = placement(&Placement {
+        translation: Some([0.1, -0.2, 0.0]),
+        basis: None,
+    });
+    let (rows, scale) = rows(&placed);
+    assert_eq!(
+        rows,
+        [
+            [1.0, 0.0, 0.0, 100.0],
+            [0.0, 1.0, 0.0, -200.0],
+            [0.0, 0.0, 1.0, 0.0]
+        ]
+    );
+    assert_eq!(scale, 1.0);
+}
+
+#[test]
+fn basis_vectors_are_matrix_columns_and_their_length_is_the_scale() {
+    let placed = placement(&Placement {
+        translation: Some([0.0, 0.2, 0.0]),
+        basis: Some(SCALED_TURN),
+    });
+    let (rows, scale) = rows(&placed);
+    assert_eq!(
+        rows,
+        [
+            [0.0, -1.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0, 200.0],
+            [0.0, 0.0, 1.0, 0.0]
+        ]
+    );
+    assert_eq!(scale, 2.0);
+}
+
+#[test]
+fn a_unit_basis_keeps_its_stored_values() {
+    let turn = [0.6, 0.8, 0.0, -0.8, 0.6, 0.0, 0.0, 0.0, 1.000_000_1];
+    let (rows, scale) = rows(&placement(&Placement {
+        translation: None,
+        basis: Some(turn),
+    }));
+    assert_eq!(rows[0], [0.6, -0.8, 0.0, 0.0]);
+    assert_eq!(rows[2], [0.0, 0.0, 1.000_000_1, 0.0]);
+    assert_eq!(scale, 1.0);
+}
+
+#[test]
+fn mirrored_skewed_or_unequal_bases_stay_affine() {
+    for basis in [
+        [-1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0, 0.5, 1.0, 0.0, 0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 1.0],
+        [0.0; 9],
+    ] {
+        let placed = placement(&Placement {
+            translation: None,
+            basis: Some(basis),
+        });
+        assert!(matches!(placed, Placed::Affine(_)), "{basis:?}");
+    }
+    assert!(matches!(
+        placement(&Placement {
+            translation: Some([f64::NAN, 0.0, 0.0]),
+            basis: None,
+        }),
+        Placed::Invalid
+    ));
+}
+
+#[test]
+fn shared_definitions_expand_to_one_occurrence_per_path() {
+    let (ir, losses) = expand(&structure(vec![
+        definition("TOP", &[1, 1, 2]),
+        definition("SUB", &[2]),
+        definition("LEAF", &[]),
+    ]));
+    let tree: Vec<_> = ir
+        .model
+        .occurrences
+        .iter()
+        .map(|occurrence| {
+            let parent = match &occurrence.parent {
+                OccurrenceParent::Root {} => String::new(),
+                OccurrenceParent::Occurrence { occurrence } => occurrence.to_string(),
+            };
+            (occurrence.id.to_string(), parent, occurrence.ordinal)
+        })
+        .collect();
+    let id = |path: &str| format!("pvz:model:occurrence#{path}");
+    assert_eq!(
+        tree,
+        [
+            (id("r0"), String::new(), 0),
+            (id("r0/0"), id("r0"), 0),
+            (id("r0/1"), id("r0"), 1),
+            (id("r0/2"), id("r0"), 2),
+            (id("r0/0/0"), id("r0/0"), 0),
+            (id("r0/1/0"), id("r0/1"), 0),
+        ]
+    );
+    assert!(losses.is_empty());
+    let mut ir = ir;
+    ir.model.finalize();
+    let report = cadmpeg_ir::validate_neutral(&ir, Vec::new()).unwrap();
+    assert!(report.is_ok(), "{report:?}");
+}
+
+#[test]
+fn cycles_and_extra_roots_are_reported() {
+    let (ir, losses) = expand(&structure(vec![
+        definition("A", &[1]),
+        definition("B", &[2]),
+        definition("C", &[1]),
+        definition("D", &[]),
+    ]));
+    assert_eq!(ir.model.occurrences.len(), 4);
+    assert_eq!(
+        losses,
+        [
+            PvzLossCode::StructureRootAmbiguous.kind(),
+            PvzLossCode::StructureOccurrenceCycle.kind(),
+        ]
+    );
+}
+
+#[test]
+fn properties_become_bom_properties_keyed_by_stream() {
+    let mut root = definition("TOP", &[]);
+    for (stream, name, value) in [
+        ("", "PART_NUMBER", "TOP-001"),
+        ("sbom", "PART_NUMBER", "X"),
+        ("", "PART_NUMBER", "again"),
+        ("", "PART_NUMBER", "TOP-001"),
+        ("", " ", "blank"),
+    ] {
+        root.properties.push(Property {
+            stream: stream.to_owned(),
+            name: name.to_owned(),
+            value: value.to_owned(),
+        });
+    }
+    let (ir, losses) = expand(&structure(vec![root]));
+    let definition = &ir.model.product_definitions[0];
+    assert_eq!(definition.source_name.as_deref(), Some("TOP"));
+    let properties: Vec<_> = definition
+        .bom_properties
+        .iter()
+        .map(|(key, value)| (key.as_str(), value.as_str()))
+        .collect();
+    assert_eq!(
+        properties,
+        [("PART_NUMBER", "TOP-001"), ("sbom/PART_NUMBER", "X")]
+    );
+    assert_eq!(losses, [PvzLossCode::StructurePropertyKeyDropped.kind()]);
+}
+
+#[test]
+fn a_mesh_with_a_non_finite_vertex_is_rejected() {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let geometry = MemberGeometry {
+        appearances: crate::ol::AppearanceTable::default(),
+        meshes: vec![
+            Mesh {
+                positions: vec![[0.0, 0.0, 0.0], [0.001, 0.0, 0.0], [0.0, 0.001, 0.0]],
+                triangles: vec![[0, 1, 2]],
+                patches: vec![(0, vec![0])],
+                ..Mesh::default()
+            },
+            Mesh {
+                positions: vec![[f32::NAN, 0.0, 0.0]],
+                triangles: vec![[0, 0, 0]],
+                ..Mesh::default()
+            },
+            Mesh {
+                positions: vec![[0.0, 0.0, 0.0]],
+                ..Mesh::default()
+            },
+        ],
+        has_exact: false,
+        residue: crate::ol::MemberResidue::default(),
+    };
+    let mut ir = CadIr::empty();
+    let mut losses = Vec::new();
+    let body = display_geometry(&ctx, "part.ol", &geometry, &mut ir, &mut losses)
+        .unwrap()
+        .unwrap();
+    assert_eq!(body.as_str(), "pvz:model:body#part.ol");
+    assert_eq!(ir.model.tessellations.len(), 1);
+    let mesh = &ir.model.tessellations[0];
+    assert_eq!(mesh.body.as_ref(), Some(&body));
+    assert_eq!(
+        mesh.vertices()[1].get(),
+        cadmpeg_ir::math::Point3::new(f64::from(0.001_f32) * 1000.0, 0.0, 0.0)
+    );
+    assert_eq!(
+        losses.into_iter().map(|loss| loss.code).collect::<Vec<_>>(),
+        [
+            PvzLossCode::TessellationRecordsUndecoded.kind(),
+            PvzLossCode::TessellationMeshRejected.kind(),
+        ]
+    );
+
+    let empty = MemberGeometry {
+        meshes: Vec::new(),
+        ..geometry
+    };
+    assert!(
+        display_geometry(&ctx, "e.ol", &empty, &mut ir, &mut Vec::new())
+            .unwrap()
+            .is_none()
+    );
+}

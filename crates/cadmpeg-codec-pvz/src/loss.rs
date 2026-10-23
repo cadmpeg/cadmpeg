@@ -20,31 +20,155 @@ const NAMESPACE: LossNamespace<'static> = cadmpeg_ir::loss_namespace!("pvz");
 /// The string form (via [`PvzLossCode::code`]) is the stable contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum PvzLossCode {
-    /// The structure and geometry members were located but not decoded.
-    PackageContentUndecoded,
     /// The structure member carries no signature of a declared dialect row.
     SourceDialectUnverified,
     /// The ZIP central directory was unreadable and members were recovered
     /// from local headers.
     ContainerDirectoryRecovered,
+    /// The structure member did not decode: the package has no product
+    /// structure, and no geometry member is placed.
+    StructureMemberMalformed,
+    /// A structure-member stream of an undefined type was not decoded.
+    StructureStreamUndecoded,
+    /// A property stream did not decode; none of its properties transferred.
+    StructurePropertyStreamMalformed,
+    /// Structure elements outside the decoded model were not transferred.
+    StructureElementUndecoded,
+    /// Bytes after a typed definition's name (PVZ-04) were not transferred.
+    StructureDefinitionAttributes,
+    /// Placement flags and occurrence extension bytes (PVZ-05) were not
+    /// transferred.
+    StructureOccurrenceAttributes,
+    /// An occurrence with an undefined placement encoding was not placed.
+    StructureOccurrenceUndecoded,
+    /// Geometry-element bounds were not transferred.
+    StructureBoundsNotTransferred,
+    /// Bytes after a typed property's value (PVZ-09) were not transferred.
+    StructurePropertyAttributes,
+    /// A property with a blank or repeated name was not transferred.
+    StructurePropertyKeyDropped,
+    /// The definitions do not have exactly one root.
+    StructureRootAmbiguous,
+    /// A child occurrence closes a definition cycle and was not expanded.
+    StructureOccurrenceCycle,
+    /// Occurrence expansion stopped at its count or depth limit.
+    StructureOccurrenceTruncated,
+    /// A placement basis is not a uniformly scaled rotation; the placement
+    /// was kept as a general affine transform.
+    StructurePlacementNotSimilarity,
+    /// A placement with non-finite values was replaced by the identity.
+    StructurePlacementInvalid,
+    /// A geometry element names a member that the package does not hold.
+    GeometryMemberMissing,
+    /// A geometry member's container did not decode; none of its streams
+    /// transferred.
+    GeometryMemberMalformed,
+    /// A geometry member that no definition names was not transferred.
+    GeometryMemberUnreferenced,
+    /// A geometry-member stream was not decoded.
+    GeometryStreamUndecoded,
+    /// The OL preamble block (PVZ-11) was not transferred.
+    GeometryPreambleUndecoded,
+    /// An exact-geometry stream was located but its B-rep was not decoded.
+    GeometryExactUndecoded,
+    /// Attribute-stream records outside the appearance records (PVZ-13) were
+    /// not transferred.
+    AttributeRecordsUndecoded,
+    /// An appearance definition or reference did not resolve.
+    AttributeAppearanceUnresolved,
+    /// Appearance-reference tails (PVZ-12) were not transferred.
+    AttributeAppearanceTail,
+    /// An appearance colour or shading value outside its range was not
+    /// transferred.
+    AttributeAppearanceColorRejected,
+    /// Patch-header face references, flags, and references (PVZ-14) were not
+    /// transferred.
+    TessellationPatchFields,
+    /// Surface-tessellation records outside the patch, vertex, and triangle
+    /// records (PVZ-15) were not transferred.
+    TessellationRecordsUndecoded,
+    /// Vertex texture coordinates (PVZ-17) were not transferred.
+    TessellationTextureCoordinates,
+    /// Decoded edge tessellation was not transferred.
+    TessellationEdgesNotTransferred,
+    /// A decoded mesh failed tessellation admission and was not transferred.
+    TessellationMeshRejected,
 }
 
 impl PvzLossCode {
     /// Every code, in declaration order.
     #[cfg(test)]
     const ALL: &'static [PvzLossCode] = &[
-        Self::PackageContentUndecoded,
         Self::SourceDialectUnverified,
         Self::ContainerDirectoryRecovered,
+        Self::StructureMemberMalformed,
+        Self::StructureStreamUndecoded,
+        Self::StructurePropertyStreamMalformed,
+        Self::StructureElementUndecoded,
+        Self::StructureDefinitionAttributes,
+        Self::StructureOccurrenceAttributes,
+        Self::StructureOccurrenceUndecoded,
+        Self::StructureBoundsNotTransferred,
+        Self::StructurePropertyAttributes,
+        Self::StructurePropertyKeyDropped,
+        Self::StructureRootAmbiguous,
+        Self::StructureOccurrenceCycle,
+        Self::StructureOccurrenceTruncated,
+        Self::StructurePlacementNotSimilarity,
+        Self::StructurePlacementInvalid,
+        Self::GeometryMemberMissing,
+        Self::GeometryMemberMalformed,
+        Self::GeometryMemberUnreferenced,
+        Self::GeometryStreamUndecoded,
+        Self::GeometryPreambleUndecoded,
+        Self::GeometryExactUndecoded,
+        Self::AttributeRecordsUndecoded,
+        Self::AttributeAppearanceUnresolved,
+        Self::AttributeAppearanceTail,
+        Self::AttributeAppearanceColorRejected,
+        Self::TessellationPatchFields,
+        Self::TessellationRecordsUndecoded,
+        Self::TessellationTextureCoordinates,
+        Self::TessellationEdgesNotTransferred,
+        Self::TessellationMeshRejected,
     ];
 
     /// The stable string identifier. This is the gating contract.
     #[must_use]
     const fn code(self) -> &'static str {
         match self {
-            Self::PackageContentUndecoded => "package.content-undecoded",
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::ContainerDirectoryRecovered => "container.directory-recovered",
+            Self::StructureMemberMalformed => "structure.member-malformed",
+            Self::StructureStreamUndecoded => "structure.stream-undecoded",
+            Self::StructurePropertyStreamMalformed => "structure.property-stream-malformed",
+            Self::StructureElementUndecoded => "structure.element-undecoded",
+            Self::StructureDefinitionAttributes => "structure.definition-attributes-undecoded",
+            Self::StructureOccurrenceAttributes => "structure.occurrence-attributes-undecoded",
+            Self::StructureOccurrenceUndecoded => "structure.occurrence-undecoded",
+            Self::StructureBoundsNotTransferred => "structure.bounds-not-transferred",
+            Self::StructurePropertyAttributes => "structure.property-attributes-undecoded",
+            Self::StructurePropertyKeyDropped => "structure.property-key-dropped",
+            Self::StructureRootAmbiguous => "structure.root-ambiguous",
+            Self::StructureOccurrenceCycle => "structure.occurrence-cycle",
+            Self::StructureOccurrenceTruncated => "structure.occurrence-expansion-truncated",
+            Self::StructurePlacementNotSimilarity => "structure.placement-not-similarity",
+            Self::StructurePlacementInvalid => "structure.placement-invalid",
+            Self::GeometryMemberMissing => "geometry.member-missing",
+            Self::GeometryMemberMalformed => "geometry.member-malformed",
+            Self::GeometryMemberUnreferenced => "geometry.member-unreferenced",
+            Self::GeometryStreamUndecoded => "geometry.stream-undecoded",
+            Self::GeometryPreambleUndecoded => "geometry.preamble-undecoded",
+            Self::GeometryExactUndecoded => "geometry.exact-undecoded",
+            Self::AttributeRecordsUndecoded => "attributes.records-undecoded",
+            Self::AttributeAppearanceUnresolved => "attributes.appearance-unresolved",
+            Self::AttributeAppearanceTail => "attributes.appearance-tail-undecoded",
+            Self::AttributeAppearanceColorRejected => "attributes.appearance-color-rejected",
+            Self::TessellationPatchFields => "tessellation.patch-fields-undecoded",
+            Self::TessellationRecordsUndecoded => "tessellation.records-undecoded",
+            Self::TessellationTextureCoordinates => "tessellation.texture-coordinates-dropped",
+            Self::TessellationEdgesNotTransferred => "tessellation.edges-not-transferred",
+            Self::TessellationMeshRejected => "tessellation.mesh-rejected",
         }
     }
 
@@ -52,16 +176,78 @@ impl PvzLossCode {
     #[must_use]
     const fn severity(self) -> Severity {
         match self {
-            Self::PackageContentUndecoded => Severity::Blocking,
-            Self::SourceDialectUnverified | Self::ContainerDirectoryRecovered => Severity::Warning,
+            Self::StructureElementUndecoded
+            | Self::StructureDefinitionAttributes
+            | Self::StructureOccurrenceAttributes
+            | Self::StructureBoundsNotTransferred
+            | Self::StructurePropertyAttributes
+            | Self::GeometryPreambleUndecoded
+            | Self::AttributeRecordsUndecoded
+            | Self::AttributeAppearanceTail
+            | Self::TessellationPatchFields
+            | Self::TessellationRecordsUndecoded => Severity::Info,
+            Self::SourceDialectUnverified
+            | Self::ContainerDirectoryRecovered
+            | Self::StructureStreamUndecoded
+            | Self::StructurePropertyStreamMalformed
+            | Self::StructureOccurrenceUndecoded
+            | Self::StructurePropertyKeyDropped
+            | Self::StructureRootAmbiguous
+            | Self::StructureOccurrenceCycle
+            | Self::StructureOccurrenceTruncated
+            | Self::StructurePlacementNotSimilarity
+            | Self::StructurePlacementInvalid
+            | Self::GeometryMemberMissing
+            | Self::GeometryMemberMalformed
+            | Self::GeometryMemberUnreferenced
+            | Self::GeometryStreamUndecoded
+            | Self::GeometryExactUndecoded
+            | Self::AttributeAppearanceUnresolved
+            | Self::AttributeAppearanceColorRejected
+            | Self::TessellationTextureCoordinates
+            | Self::TessellationEdgesNotTransferred
+            | Self::TessellationMeshRejected => Severity::Warning,
+            Self::StructureMemberMalformed => Severity::Blocking,
         }
     }
 
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
-            Self::PackageContentUndecoded => LossTaxonomy::GeometryNotTransferred,
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
             Self::ContainerDirectoryRecovered => LossTaxonomy::NoncanonicalSourceSyntax,
+            Self::StructureMemberMalformed
+            | Self::GeometryMemberMalformed
+            | Self::GeometryStreamUndecoded
+            | Self::GeometryExactUndecoded
+            | Self::TessellationEdgesNotTransferred
+            | Self::TessellationMeshRejected => LossTaxonomy::GeometryNotTransferred,
+            Self::StructureStreamUndecoded
+            | Self::StructureElementUndecoded
+            | Self::StructureDefinitionAttributes
+            | Self::StructureOccurrenceAttributes
+            | Self::StructurePropertyAttributes
+            | Self::GeometryPreambleUndecoded
+            | Self::TessellationPatchFields
+            | Self::TessellationRecordsUndecoded => LossTaxonomy::RecordNotTyped,
+            Self::StructurePropertyStreamMalformed
+            | Self::StructureBoundsNotTransferred
+            | Self::StructurePropertyKeyDropped => LossTaxonomy::MetadataNotTransferred,
+            Self::StructureOccurrenceUndecoded
+            | Self::StructureRootAmbiguous
+            | Self::StructureOccurrenceCycle
+            | Self::StructureOccurrenceTruncated
+            | Self::StructurePlacementInvalid => LossTaxonomy::AssemblyPlacementsNotTransferred,
+            Self::StructurePlacementNotSimilarity => LossTaxonomy::DecodeDiagnostic,
+            Self::GeometryMemberMissing | Self::GeometryMemberUnreferenced => {
+                LossTaxonomy::AssetNotTransferred
+            }
+            Self::AttributeRecordsUndecoded | Self::TessellationTextureCoordinates => {
+                LossTaxonomy::AttributesNotTransferred
+            }
+            Self::AttributeAppearanceUnresolved | Self::AttributeAppearanceTail => {
+                LossTaxonomy::MaterialNotTransferred
+            }
+            Self::AttributeAppearanceColorRejected => LossTaxonomy::AppearanceReduced,
         }
     }
 
@@ -93,9 +279,38 @@ mod tests {
         assert_eq!(
             codes,
             [
-                "package.content-undecoded",
                 "source.dialect-unverified",
                 "container.directory-recovered",
+                "structure.member-malformed",
+                "structure.stream-undecoded",
+                "structure.property-stream-malformed",
+                "structure.element-undecoded",
+                "structure.definition-attributes-undecoded",
+                "structure.occurrence-attributes-undecoded",
+                "structure.occurrence-undecoded",
+                "structure.bounds-not-transferred",
+                "structure.property-attributes-undecoded",
+                "structure.property-key-dropped",
+                "structure.root-ambiguous",
+                "structure.occurrence-cycle",
+                "structure.occurrence-expansion-truncated",
+                "structure.placement-not-similarity",
+                "structure.placement-invalid",
+                "geometry.member-missing",
+                "geometry.member-malformed",
+                "geometry.member-unreferenced",
+                "geometry.stream-undecoded",
+                "geometry.preamble-undecoded",
+                "geometry.exact-undecoded",
+                "attributes.records-undecoded",
+                "attributes.appearance-unresolved",
+                "attributes.appearance-tail-undecoded",
+                "attributes.appearance-color-rejected",
+                "tessellation.patch-fields-undecoded",
+                "tessellation.records-undecoded",
+                "tessellation.texture-coordinates-dropped",
+                "tessellation.edges-not-transferred",
+                "tessellation.mesh-rejected",
             ]
         );
     }
