@@ -4196,6 +4196,23 @@ to every carrier emitted from that member, including a body carrier and any
 point, curve, surface, mesh, or subdivision carrier. The wire format has no
 per-carrier transform or carrier-selection field.
 
+A plane surface transforms as `ON_Plane::Transform`: the images of its x and
+y axes rebuild the frame, so every `(u, v)` keeps its point under an
+orientation-reversing transform; the face orientation flag does not change.
+A compound curve construction keeps its component carriers, which the same
+transform places. A sum surface `b + c0(u) + c1(v)` keeps its construction
+under every affine map `x -> Lx + t` with base point `Lb - t`. An extrusion
+keeps its construction with sweep vector `Ld`. A revolution keeps its
+construction under a similarity in the sense of `ON_Xform::IsSimilarity`; the
+axis origin and direction take their images, and an orientation-reversing
+map reverses the axis direction as `ON_RevSurface::Transform` does. CADIR
+reduces every other procedural construction under an instance transform to
+its transformed solved carrier.
+
+A general annotation or dimension member of a definition has no
+instance-placed neutral form. Each occurrence places the definition's other
+members and reports the annotation member with `annotation.record-dropped`.
+
 ### 18.1 Modern dimensions
 
 The linear, angular, and radial dimension class payloads use an anonymous

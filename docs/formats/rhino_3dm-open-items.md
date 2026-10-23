@@ -654,15 +654,21 @@ arbitrary parameter when the arc is not a full circle whose angle and domain
 start on whole turns?
 
 **Known.** `ON_ArcCurve::Evaluate` maps its domain linearly onto the arc
-angle. `curves.rs` `read_arc` keeps a neutral circle for a full circle whose
-angle interval and domain each span `2π` and start on whole turns, and Brep
-edges on that carrier wrap their proxy interval into the first turn. Every
-other arc becomes a rational quadratic NURBS whose knots span the native
-domain. The rational quadratic form is not linear in angle, so a point at an
-interior parameter differs from the arc point at the same parameter. A Brep
-edge whose proxy domain is a proper sub-interval of such an arc then misses
-its vertex.
+angle: `θ = a0 + (t − t0)(a1 − a0)/(t1 − t0)`. When the domain length differs
+from the angle span, as for an arc-length domain, the map has a scale other
+than one. The neutral `CircleCurve` parameter is the angle
+itself, and `Curve`, `Edge`, and `PcurveUse` carry intervals but no parameter
+map. A circle carrier whose frame is rotated by `a0 − t0` reproduces the
+source parameter only when the scale is one. The rational quadratic NURBS
+form that `curves.rs` `read_arc` emits reproduces the arc point set and the
+domain ends, but not the linear angle map, so a Brep edge whose proxy domain
+is a proper sub-interval of such an arc misses its vertex. The neutral
+`RevolutionSurfaceConstruction` already carries the equivalent surface map as
+`angular_parameter_interval`.
 
-**Need.** A carrier or parameter map that reproduces `ON_ArcCurve`
-evaluation for partial arcs and for full circles with a phase offset, applied
-to object curves, Brep C3 curves, and Brep C2 curves.
+**Need.** An IR change: an optional affine parameter map on the circle and
+ellipse curve carriers (or on `Curve`), stated as a source interval that maps
+linearly onto the carrier angle interval, and the same map on the parameter
+space circle carrier. With it, object curves, Brep C3 curves, and Brep C2
+curves keep the source parameter exactly.
+
