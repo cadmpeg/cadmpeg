@@ -19535,3 +19535,280 @@ offset = 209
 type = "bytes[11]"
 source = "spec"
 anchor = "One zero byte and the marked scope reference at offset 209 close the frame."
+
+[[record]]
+name = "component_insert_identity_scope_272_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/component_constructions.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The class-`357` / class-`262` 272-byte Component Insert scope"
+size = 126
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "fourteen zero bytes at offsets 11 through 24"
+
+[[record.field]]
+name = "zero_prefix"
+offset = 11
+type = "bytes[14]"
+source = "spec"
+anchor = "fourteen zero bytes at offsets 11 through 24"
+
+[[record.field]]
+name = "occurrence_identity"
+offset = 25
+type = "u64"
+source = "spec"
+anchor = "its occurrence identity u64 at offset 25"
+
+[[record.field]]
+name = "zero_after_identity"
+offset = 33
+type = "bytes[4]"
+source = "spec"
+anchor = "four zero bytes at offset 33"
+
+[[record.field]]
+name = "relation_reference"
+offset = 37
+type = "bytes[5]"
+source = "spec"
+anchor = "its marked relation reference at offset 37"
+
+[[record.field]]
+name = "zero_after_relation"
+offset = 42
+type = "bytes[6]"
+source = "spec"
+anchor = "six zero bytes at offset 42"
+
+[[record.field]]
+name = "identity_markers"
+offset = 48
+type = "bytes[2]"
+source = "spec"
+anchor = "identity bytes `01 01` at offset 48"
+
+[[record.field]]
+name = "null_guid"
+offset = 50
+type = "bytes[76]"
+source = "spec"
+anchor = "The LP-UTF16 null GUID starts at offset 50"
+
+[[record]]
+name = "component_insert_identity_scope_276_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/component_constructions.rs"
+kind = "byte"
+section = "3.1"
+anchor = "All subsequent fields move four bytes later"
+size = 130
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "All subsequent fields move four bytes later"
+
+[[record.field]]
+name = "prologue"
+offset = 11
+type = "bytes[18]"
+source = "spec"
+anchor = "All subsequent fields move four bytes later"
+
+[[record.field]]
+name = "occurrence_identity"
+offset = 29
+type = "u64"
+source = "spec"
+anchor = "All subsequent fields move four bytes later"
+
+[[record.field]]
+name = "zero_after_identity"
+offset = 37
+type = "bytes[4]"
+source = "spec"
+anchor = "All subsequent fields move four bytes later"
+
+[[record.field]]
+name = "relation_reference"
+offset = 41
+type = "bytes[5]"
+source = "spec"
+anchor = "All subsequent fields move four bytes later"
+
+[[record.field]]
+name = "zero_after_relation"
+offset = 46
+type = "bytes[6]"
+source = "spec"
+anchor = "All subsequent fields move four bytes later"
+
+[[record.field]]
+name = "identity_markers"
+offset = 52
+type = "bytes[2]"
+source = "spec"
+anchor = "All subsequent fields move four bytes later"
+
+[[record.field]]
+name = "null_guid"
+offset = 54
+type = "bytes[76]"
+source = "spec"
+anchor = "All subsequent fields move four bytes later"
+
+[[record]]
+name = "component_insert_identity_carrier"
+parsed_by = "crates/cadmpeg-codec-f3d/src/xref.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The 420-byte identity insertion carrier"
+size = 420
+note = "The sequential legacy target-reference grammar and the fixed identity insertion members determine these offsets."
+
+[[record.field]]
+name = "indexed_entity_and_empty_name"
+offset = 0
+type = "bytes[19]"
+source = "spec"
+anchor = "The 420-byte identity insertion carrier"
+
+[[record.field]]
+name = "path_marker"
+offset = 19
+type = "u8"
+source = "spec"
+anchor = "The 420-byte identity insertion carrier"
+
+[[record.field]]
+name = "path_count"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "The 420-byte identity insertion carrier"
+
+[[record.field]]
+name = "target_reference"
+offset = 24
+type = "bytes[60]"
+source = "spec"
+anchor = "The 420-byte identity insertion carrier"
+
+[[record.field]]
+name = "instance_discriminator"
+offset = 84
+type = "u32"
+source = "spec"
+anchor = "The 420-byte identity insertion carrier"
+
+[[record.field]]
+name = "member_count"
+offset = 88
+type = "u32"
+source = "spec"
+anchor = "The 420-byte identity insertion carrier"
+
+[[record.field]]
+name = "zero_after_count"
+offset = 92
+type = "u8"
+source = "spec"
+anchor = "The 420-byte identity insertion carrier"
+
+[[record.field]]
+name = "metadata_boolean"
+offset = 93
+type = "u8"
+source = "spec"
+anchor = "The 420-byte identity insertion carrier"
+
+[[record.field]]
+name = "zero_after_boolean"
+offset = 94
+type = "u8"
+source = "spec"
+anchor = "The 420-byte identity insertion carrier"
+
+[[record.field]]
+name = "metadata_count"
+offset = 95
+type = "u32"
+source = "spec"
+anchor = "The 420-byte identity insertion carrier"
+
+[[record.field]]
+name = "placement_metadata_guid"
+offset = 99
+type = "bytes[76]"
+source = "spec"
+anchor = "The 420-byte identity insertion carrier"
+
+[[record.field]]
+name = "tracking_link_guid"
+offset = 175
+type = "bytes[76]"
+source = "spec"
+anchor = "The 420-byte identity insertion carrier"
+
+[[record.field]]
+name = "metadata_marker"
+offset = 251
+type = "u8"
+source = "spec"
+anchor = "The 420-byte identity insertion carrier"
+
+[[record.field]]
+name = "opaque_metadata_token"
+offset = 252
+type = "u64"
+source = "spec"
+anchor = "The 420-byte identity insertion carrier"
+
+[[record.field]]
+name = "metadata_tail"
+offset = 260
+type = "bytes[7]"
+source = "spec"
+anchor = "The 420-byte identity insertion carrier"
+
+[[record.field]]
+name = "repeated_target_reference"
+offset = 267
+type = "bytes[60]"
+source = "spec"
+anchor = "The 420-byte identity insertion carrier"
+
+[[record.field]]
+name = "identity_flag"
+offset = 327
+type = "u8"
+source = "spec"
+anchor = "The 420-byte identity insertion carrier"
+
+[[record.field]]
+name = "zero_after_identity"
+offset = 328
+type = "u32"
+source = "spec"
+anchor = "The 420-byte identity insertion carrier"
+
+[[record.field]]
+name = "occurrence_role"
+offset = 332
+type = "bytes[76]"
+source = "spec"
+anchor = "The 420-byte identity insertion carrier"
+
+[[record.field]]
+name = "closure"
+offset = 408
+type = "bytes[12]"
+source = "spec"
+anchor = "The 420-byte identity insertion carrier"

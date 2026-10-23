@@ -5898,6 +5898,74 @@ Parsed by:
 | 208 | 1 | `scope_separator` | `u8` | little | spec | One zero byte and the marked scope reference at offset 209 close the frame. |
 | 209 | 11 | `scope_reference` | `bytes[11]` | little | spec | One zero byte and the marked scope reference at offset 209 close the frame. |
 
+## `component_insert_identity_scope_272_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 126 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/component_constructions.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | fourteen zero bytes at offsets 11 through 24 |
+| 11 | 14 | `zero_prefix` | `bytes[14]` | little | spec | fourteen zero bytes at offsets 11 through 24 |
+| 25 | 8 | `occurrence_identity` | `u64` | little | spec | its occurrence identity u64 at offset 25 |
+| 33 | 4 | `zero_after_identity` | `bytes[4]` | little | spec | four zero bytes at offset 33 |
+| 37 | 5 | `relation_reference` | `bytes[5]` | little | spec | its marked relation reference at offset 37 |
+| 42 | 6 | `zero_after_relation` | `bytes[6]` | little | spec | six zero bytes at offset 42 |
+| 48 | 2 | `identity_markers` | `bytes[2]` | little | spec | identity bytes `01 01` at offset 48 |
+| 50 | 76 | `null_guid` | `bytes[76]` | little | spec | The LP-UTF16 null GUID starts at offset 50 |
+
+## `component_insert_identity_scope_276_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 130 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/component_constructions.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | All subsequent fields move four bytes later |
+| 11 | 18 | `prologue` | `bytes[18]` | little | spec | All subsequent fields move four bytes later |
+| 29 | 8 | `occurrence_identity` | `u64` | little | spec | All subsequent fields move four bytes later |
+| 37 | 4 | `zero_after_identity` | `bytes[4]` | little | spec | All subsequent fields move four bytes later |
+| 41 | 5 | `relation_reference` | `bytes[5]` | little | spec | All subsequent fields move four bytes later |
+| 46 | 6 | `zero_after_relation` | `bytes[6]` | little | spec | All subsequent fields move four bytes later |
+| 52 | 2 | `identity_markers` | `bytes[2]` | little | spec | All subsequent fields move four bytes later |
+| 54 | 76 | `null_guid` | `bytes[76]` | little | spec | All subsequent fields move four bytes later |
+
+## `component_insert_identity_carrier`
+
+Spec §3.1 · layout: byte offsets · size: 420 B
+
+The sequential legacy target-reference grammar and the fixed identity insertion members determine these offsets.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/xref.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 19 | `indexed_entity_and_empty_name` | `bytes[19]` | little | spec | The 420-byte identity insertion carrier |
+| 19 | 1 | `path_marker` | `u8` | little | spec | The 420-byte identity insertion carrier |
+| 20 | 4 | `path_count` | `u32` | little | spec | The 420-byte identity insertion carrier |
+| 24 | 60 | `target_reference` | `bytes[60]` | little | spec | The 420-byte identity insertion carrier |
+| 84 | 4 | `instance_discriminator` | `u32` | little | spec | The 420-byte identity insertion carrier |
+| 88 | 4 | `member_count` | `u32` | little | spec | The 420-byte identity insertion carrier |
+| 92 | 1 | `zero_after_count` | `u8` | little | spec | The 420-byte identity insertion carrier |
+| 93 | 1 | `metadata_boolean` | `u8` | little | spec | The 420-byte identity insertion carrier |
+| 94 | 1 | `zero_after_boolean` | `u8` | little | spec | The 420-byte identity insertion carrier |
+| 95 | 4 | `metadata_count` | `u32` | little | spec | The 420-byte identity insertion carrier |
+| 99 | 76 | `placement_metadata_guid` | `bytes[76]` | little | spec | The 420-byte identity insertion carrier |
+| 175 | 76 | `tracking_link_guid` | `bytes[76]` | little | spec | The 420-byte identity insertion carrier |
+| 251 | 1 | `metadata_marker` | `u8` | little | spec | The 420-byte identity insertion carrier |
+| 252 | 8 | `opaque_metadata_token` | `u64` | little | spec | The 420-byte identity insertion carrier |
+| 260 | 7 | `metadata_tail` | `bytes[7]` | little | spec | The 420-byte identity insertion carrier |
+| 267 | 60 | `repeated_target_reference` | `bytes[60]` | little | spec | The 420-byte identity insertion carrier |
+| 327 | 1 | `identity_flag` | `u8` | little | spec | The 420-byte identity insertion carrier |
+| 328 | 4 | `zero_after_identity` | `u32` | little | spec | The 420-byte identity insertion carrier |
+| 332 | 76 | `occurrence_role` | `bytes[76]` | little | spec | The 420-byte identity insertion carrier |
+| 408 | 12 | `closure` | `bytes[12]` | little | spec | The 420-byte identity insertion carrier |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

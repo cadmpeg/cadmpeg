@@ -5746,3 +5746,25 @@ pub(crate) mod rectangular_pattern_direction_record {
     /// Offset of `scope_reference` (`bytes[11]`). Spec §Assembly operands.
     pub(crate) const SCOPE_REFERENCE: usize = 209;
 }
+
+/// Byte offsets for the `component_insert_identity_scope_272_prefix` record.
+///
+/// Spec §3.1. Record length 126 B.
+pub(crate) mod component_insert_identity_scope_272_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 126;
+    /// Offset of `zero_prefix` (`bytes[14]`). Spec §3.1.
+    pub(crate) const ZERO_PREFIX: usize = 11;
+    /// Offset of `occurrence_identity` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const OCCURRENCE_IDENTITY: usize = 25;
+    /// Offset of `zero_after_identity` (`bytes[4]`). Spec §3.1.
+    pub(crate) const ZERO_AFTER_IDENTITY: usize = 33;
+    /// Offset of `relation_reference` (`bytes[5]`). Spec §3.1.
+    pub(crate) const RELATION_REFERENCE: usize = 37;
+    /// Offset of `zero_after_relation` (`bytes[6]`). Spec §3.1.
+    pub(crate) const ZERO_AFTER_RELATION: usize = 42;
+    /// Offset of `identity_markers` (`bytes[2]`). Spec §3.1.
+    pub(crate) const IDENTITY_MARKERS: usize = 48;
+    /// Offset of `null_guid` (`bytes[76]`). Spec §3.1.
+    pub(crate) const NULL_GUID: usize = 50;
+}

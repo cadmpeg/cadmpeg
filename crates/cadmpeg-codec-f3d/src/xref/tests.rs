@@ -1172,3 +1172,36 @@ fn redirections_leaf_form_parses_empty_object_references() {
 mod schema;
 
 mod document_admission;
+
+#[test]
+fn identity_insert_carrier_requires_duplicate_targets_and_exact_closure() {
+    let role = "aaaabbbb-cccc-dddd-eeee-ffff00001111";
+    let mut body = crate::test_support::component_insert_test::identity_insert_carrier(role, 10);
+    let metadata_tail = 251;
+    for flag in [0, 1] {
+        for token in [1_u64, 2] {
+            body[93] = flag;
+            body[metadata_tail + 1..metadata_tail + 9].copy_from_slice(&token.to_le_bytes());
+            assert!(super::identity_component_insert_carrier(&body, 0, body.len(), 10).is_some());
+        }
+    }
+    body[metadata_tail + 1..metadata_tail + 9].copy_from_slice(&0_u64.to_le_bytes());
+    assert!(super::identity_component_insert_carrier(&body, 0, body.len(), 10).is_none());
+    body[metadata_tail + 1..metadata_tail + 9].copy_from_slice(&1_u64.to_le_bytes());
+    let closure = body.len() - 10;
+    assert_eq!(body.len(), 420);
+    let decoded = super::identity_component_insert_carrier(&body, 0, body.len(), 10).unwrap();
+    assert_eq!(decoded, (role.to_owned(), 336));
+    assert!(super::identity_component_insert_carrier(&body, 0, body.len(), 11).is_none());
+    for offset in [93, metadata_tail, metadata_tail + 17, 327, 328, closure] {
+        let saved = body[offset];
+        body[offset] ^= 2;
+        assert!(super::identity_component_insert_carrier(&body, 0, body.len(), 10).is_none());
+        body[offset] = saved;
+    }
+    for end in 0..body.len() {
+        assert!(super::identity_component_insert_carrier(&body, 0, end, 10).is_none());
+    }
+    body.push(0);
+    assert!(super::identity_component_insert_carrier(&body, 0, body.len(), 10).is_none());
+}
