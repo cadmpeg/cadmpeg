@@ -109,7 +109,7 @@ fn query_requires_the_current_version_for_every_artifact_and_writes_it() {
             Some(serde_json::json!(0)),
             Some(serde_json::json!(false)),
             Some(serde_json::json!("unsupported")),
-            Some(serde_json::json!("8")),
+            Some(serde_json::json!("11")),
             Some(serde_json::json!("13")),
             Some(serde_json::json!("14")),
             Some(serde_json::json!("18")),
