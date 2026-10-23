@@ -714,8 +714,11 @@ direct `Sub` values; a zero-sub target has neither `sub` nor `count`, one sub us
 multiple subs use `count` with exactly that many direct leaf `Sub` elements. An empty `name` is an
 explicit null target occupying the connector slot. Nested or extra value roots, a link-list carrier,
 or multiple targets are malformed. `Angle`, `AngleMin`, and `AngleMax` are
-`App::PropertyAngle` properties with one `Float` value. `Distance`, `Distance2`, `LengthMin`, and
-`LengthMax` are `App::PropertyLength` properties with one `Float` value. `EnableAngleMin`,
+`App::PropertyAngle` or `App::PropertyFloat` properties with one `Float` value in degrees.
+`Distance`, `Distance2`, `LengthMin`, and `LengthMax` are `App::PropertyLength` or
+`App::PropertyFloat` properties with one `Float` value. Their values are in millimetres,
+except that an `Angle` joint's `Distance` value is in degrees. Its absolute value supplies
+the joint angle when no `Angle` property is present. `EnableAngleMin`,
 `EnableAngleMax`, `EnableLengthMin`, `EnableLengthMax`, `Detach1`, `Detach2`, and `Suppressed`
 are `App::PropertyBool` properties with one `Bool` value. Wrong runtime types, root value tags,
 missing values, and duplicate values are malformed.
