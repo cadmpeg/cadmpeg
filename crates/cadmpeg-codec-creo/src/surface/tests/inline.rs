@@ -843,6 +843,32 @@ fn legacy_planar_cone_envelope_witness_resolves_inline_suffix_origin() {
 }
 
 #[test]
+fn complete_planar_cone_witness_blocks_conflicting_suffix_angle() {
+    let local_system = [
+        0x10, 0x18, 0xe6, 0x10, 0x18, 0x10, 0x18, 0x2f, 0x00, 0x00, 0x2f, 0x00, 0x00, 0x18,
+    ];
+    let conflicting_angle = 1.0_f64;
+    let angle_bits = conflicting_angle.to_be_bytes();
+    assert_eq!(&angle_bits[..2], &[0x3f, 0xf0]);
+    let mut suffix = vec![0x7b];
+    suffix.extend_from_slice(&angle_bits[2..]);
+    let record =
+        parameter_records(&legacy_planar_cone_suffix_row(&local_system, &suffix)).remove(0);
+
+    assert_eq!(record.kind(), SurfaceKind::Cone);
+    assert_eq!(
+        record
+            .cone_half_angle_override()
+            .unwrap()
+            .radians
+            .get()
+            .get(),
+        conflicting_angle
+    );
+    assert!(record.positional_cone_frame().is_none());
+}
+
+#[test]
 fn retains_a_structurally_complete_inline_row_when_center_sign_is_ambiguous() {
     let record = inline_non_plane_record(
         0x24,

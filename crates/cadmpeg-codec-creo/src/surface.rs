@@ -4275,15 +4275,15 @@ fn inline_surface_suffix_body(
                         .iter()
                         .all(|candidate| *candidate == Some(*first))
                 });
-            let carrier = inline_suffix_witness(kind, body, local_start, cache)
-                .filter(|witness| {
-                    inline_suffix_witness_agrees(
-                        *witness,
-                        &carriers[..carrier_count],
-                        geometric_interpretation_count,
-                    )
-                })
-                .or(carrier);
+            let carrier = match inline_suffix_witness(kind, body, local_start, cache) {
+                Some(witness) => inline_suffix_witness_agrees(
+                    witness,
+                    &carriers[..carrier_count],
+                    geometric_interpretation_count,
+                )
+                .then_some(witness),
+                None => carrier,
+            };
             let layout = InlineSurfaceBody {
                 terminal_close,
                 carrier,
