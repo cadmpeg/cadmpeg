@@ -3171,6 +3171,58 @@ mod tests {
         parse(&line([2, 0]), |_, source| {
             assert!(parse_entity(SketchEntityTag::Line, source, 25).is_err());
         });
+
+        // A version 25 circle whose closed gate stores no auxiliary list.
+        let mut circle = content_at(8, 25, &[-1, 2502]);
+        circle.extend_from_slice(&0u32.to_le_bytes());
+        circle.extend_from_slice(&0x8000_0003u32.to_le_bytes());
+        circle.extend(list(2, &[]));
+        circle.extend_from_slice(&[0; 8]);
+        circle.extend_from_slice(&4u32.to_le_bytes());
+        circle.extend_from_slice(&2.5f64.to_le_bytes());
+        circle.push(1);
+        let parsed = parse(&circle, |_, source| {
+            parse_entity(SketchEntityTag::Circle, source, 25).expect("gated circle")
+        });
+        assert!(matches!(
+            parsed.kind,
+            PmDcSketchEntityKind::Circle { ref auxiliary, radius, .. }
+                if auxiliary.is_empty() && radius.get() == 2.5
+        ));
+
+        // A version 23 entity stores one stamp; a stamp below -1 is refused.
+        let one_stamp = |stamp: i32| {
+            let mut bytes = content_at(7, 23, &[stamp]);
+            bytes.extend_from_slice(&0u32.to_le_bytes());
+            bytes.extend_from_slice(&0x8000_0003u32.to_le_bytes());
+            bytes.extend(list(2, &[0x8000_0004, 0x8000_0005]));
+            for value in [0.0f64, 0.0, 1.0, 0.0] {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+            bytes
+        };
+        let parsed = parse(&one_stamp(2301), |_, source| {
+            parse_entity(SketchEntityTag::Line, source, 23).expect("one-stamp line")
+        });
+        assert_eq!(parsed.header.flags_extension, None);
+        assert_eq!(parsed.header.stamps, [2301]);
+        parse(&one_stamp(-2), |_, source| {
+            assert!(parse_entity(SketchEntityTag::Line, source, 23).is_err());
+        });
+
+        // From version 28 the u32 after the flags is 0.
+        let mut extended = content_at(4, 29, &[-1, 2908]);
+        extended[14..18].copy_from_slice(&1u32.to_le_bytes());
+        extended.extend_from_slice(&0u32.to_le_bytes());
+        extended.extend_from_slice(&0x8000_0003u32.to_le_bytes());
+        for value in [1.0f64, 2.0] {
+            extended.extend_from_slice(&value.to_le_bytes());
+        }
+        extended.extend(list(2, &[]));
+        extended.extend(list(2, &[]));
+        parse(&extended, |_, source| {
+            assert!(parse_entity(SketchEntityTag::Point, source, 29).is_err());
+        });
     }
 
     #[test]

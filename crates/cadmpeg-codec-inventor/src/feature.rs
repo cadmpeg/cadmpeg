@@ -45,7 +45,7 @@ const FEATURE_TYPE: [u8; 16] = [
 const END_OF_FEATURES_TYPE: [u8; 16] = [
     0x24, 0xfd, 0x41, 0x8f, 0xd2, 0x11, 0xac, 0x6e, 0x00, 0x08, 0x2a, 0xab, 0x32, 0xa3, 0xdc, 0x09,
 ];
-const BOOLEAN_TYPE: [u8; 16] = inventor_id(0x9087_4d28);
+pub(crate) const BOOLEAN_TYPE: [u8; 16] = inventor_id(0x9087_4d28);
 const SURFACE_BODY_TYPE: [u8; 16] = inventor_id(0x9087_4d47);
 const ENTITY_STYLE_LINK_TYPE: [u8; 16] = inventor_id(0x9087_4d15);
 const PART_OPERATION_TYPE: [u8; 16] = [
@@ -199,7 +199,7 @@ pub(crate) enum PmDcFeaturePropertyKind {
         selection: crate::pmdc::PmDcReference,
         continuity: crate::pmdc::PmDcReference,
         /// The fifth reference that segment major version 23 and later store:
-        /// null or a feature enumeration.
+        /// null or a Boolean record.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
@@ -713,8 +713,8 @@ fn parse_pattern_feature(
     }
     let control = cursor.u8("pattern-feature control")?;
     let mut extension_values = Vec::new();
-    // From segment major version 29, eight u32 values follow the twelfth
-    // reference word after `control`.
+    // Read the version-specific suffix in stored order, keeping its reference
+    // words with the slots and its u32 values as extension values.
     match family {
         PmDcPatternFamily::Rectangular if version >= 29 => {
             pattern_slots(&mut cursor, 12, &mut property_slots)?;
@@ -3202,6 +3202,29 @@ mod tests {
             source_index: 0,
             stamps: Vec::new(),
         }
+    }
+
+    #[test]
+    fn a_fillet_edge_set_option_is_null_or_a_boolean_record() {
+        let edge_set = |option| PmDcFeaturePropertyKind::FilletEdgeSet {
+            edges: reference(5),
+            radius: reference(21),
+            selection: reference(6),
+            continuity: reference(7),
+            option,
+        };
+        let boolean = crate::pmdc::type_id_string(BOOLEAN_TYPE);
+        let types = |ordinal: u32| match ordinal {
+            8 => Some(boolean.as_str()),
+            9 => Some("00000000000000000000000000000009"),
+            _ => None,
+        };
+        let admitted = crate::validate::fillet_option_is_admitted;
+        assert!(admitted(&edge_set(None), types));
+        assert!(admitted(&edge_set(Some(reference(0))), types));
+        assert!(admitted(&edge_set(Some(reference(9))), types));
+        assert!(!admitted(&edge_set(Some(reference(10))), types));
+        assert!(!admitted(&edge_set(Some(reference(11))), types));
     }
 
     fn test_property(ordinal: u32, kind: PmDcFeaturePropertyKind) -> PmDcFeatureProperty {

@@ -937,6 +937,16 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
                 Some(property.id()),
             ));
         }
+        if !fillet_option_is_admitted(&property.kind, |ordinal| {
+            raw.get(&(property.identity.segment_token.as_str(), ordinal))
+                .copied()
+        }) {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor PmDc fillet edge-set option is not a Boolean record".into(),
+                Some(property.id()),
+            ));
+        }
     }
     for link in &data.pm_dc_entity_style_links {
         let references = [
@@ -2392,4 +2402,23 @@ pub(crate) fn sketch_constraint_references(constraint: &PmDcSketchConstraint) ->
         ]),
     }
     references
+}
+
+/// Whether a fillet edge set's fifth reference is null or selects a Boolean
+/// record. `type_at` gives the type identifier of the record at an ordinal.
+pub(crate) fn fillet_option_is_admitted<'a>(
+    kind: &PmDcFeaturePropertyKind,
+    type_at: impl Fn(u32) -> Option<&'a str>,
+) -> bool {
+    let PmDcFeaturePropertyKind::FilletEdgeSet {
+        option: Some(option),
+        ..
+    } = kind
+    else {
+        return true;
+    };
+    option.index() == 0
+        || type_at(option.index() - 1).is_some_and(|type_id| {
+            type_id == crate::pmdc::type_id_string(crate::feature::BOOLEAN_TYPE)
+        })
 }

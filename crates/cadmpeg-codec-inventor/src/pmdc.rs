@@ -154,15 +154,19 @@ pub(crate) const fn record_version_supported(version: u8) -> bool {
     matches!(version, 15..=23 | 25 | 28..=31)
 }
 
-/// The u32 that segment major versions from 28 store after a record's `flags`.
+/// The zero u32 that segment major versions from 28 store after a record's `flags`.
 pub(crate) fn flags_extension(
     cursor: &mut Cursor<'_>,
     version: u8,
 ) -> Result<Option<u32>, CodecError> {
-    if version >= 28 {
-        cursor.u32("flags extension").map(Some)
-    } else {
-        Ok(None)
+    if version < 28 {
+        return Ok(None);
+    }
+    match cursor.u32("flags extension")? {
+        0 => Ok(Some(0)),
+        value => Err(CodecError::malformed(format_args!(
+            "Inventor PmDc flags extension is {value}, not 0"
+        ))),
     }
 }
 
@@ -603,7 +607,13 @@ fn header_with_stamps(
     let source_index = cursor.u32("content header source index")?;
     let mut stamps = Vec::with_capacity(stamp_count);
     for _ in 0..stamp_count {
-        stamps.push(cursor.i32("content header stamp")?);
+        let stamp = cursor.i32("content header stamp")?;
+        if stamp < -1 {
+            return Err(CodecError::malformed(format_args!(
+                "Inventor PmDc content header stamp is {stamp}"
+            )));
+        }
+        stamps.push(stamp);
     }
     Ok(PmDcContentHeader {
         header_value,

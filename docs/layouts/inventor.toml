@@ -55,11 +55,68 @@ source = "spec"
 anchor = "source_index u32"
 
 [[record]]
+name = "pm_dc_content_header_v28"
+kind = "byte"
+section = "12"
+anchor = "From segment major version 28, PmDc content records start with this 26-byte header"
+size = 26
+
+[[record.field]]
+name = "header_value"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "header_value u32"
+
+[[record.field]]
+name = "header_id"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "header_id u16"
+
+[[record.field]]
+name = "next_reference"
+offset = 6
+type = "u32"
+source = "spec"
+anchor = "next_reference u32"
+
+[[record.field]]
+name = "flags"
+offset = 10
+type = "u32"
+source = "spec"
+anchor = "flags u32"
+
+[[record.field]]
+name = "flags_extension"
+offset = 14
+type = "u32"
+source = "spec"
+anchor = "flags_extension u32 = 0"
+
+[[record.field]]
+name = "context_reference"
+offset = 18
+type = "u32"
+source = "spec"
+anchor = "context_reference u32"
+
+[[record.field]]
+name = "source_index"
+offset = 22
+type = "u32"
+source = "spec"
+anchor = "source_index u32"
+
+[[record]]
 name = "pm_dc_sketch_entity_header"
 kind = "byte"
 section = "12"
 anchor = "Planar sketch entities add"
 size = 30
+note = "Offsets hold in segment major versions 15 through 22. Later versions extend the embedded content header as section 12 states."
 
 [[record.field]]
 name = "content_header"
@@ -130,6 +187,7 @@ kind = "byte"
 section = "12"
 anchor = "A planar constraint starts with"
 size = 30
+note = "Offsets hold in segment major versions 15 through 22. Later versions extend the embedded content header as section 12 states."
 
 [[record.field]]
 name = "content_header"
@@ -200,6 +258,7 @@ kind = "byte"
 section = "13"
 anchor = "Its fixed prefix contains"
 size = 38
+note = "Offsets hold in segment major versions 15 through 22. Later versions extend the embedded content header as section 12 states."
 
 [[record.field]]
 name = "content_header"
@@ -235,6 +294,7 @@ kind = "byte"
 section = "13"
 anchor = "Its 26-byte payload contains"
 size = 26
+note = "Offsets hold in segment major versions 15 through 22. Later versions extend the embedded content header as section 12 states."
 
 [[record.field]]
 name = "content_header"
@@ -256,6 +316,7 @@ kind = "byte"
 section = "13"
 anchor = "enumeration records add"
 size = 26
+note = "Offsets hold in segment major versions 15 through 22. Later versions extend the embedded content header as section 12 states."
 
 [[record.field]]
 name = "content_header"
@@ -284,6 +345,7 @@ kind = "byte"
 section = "13"
 anchor = "stores the chamfer form"
 size = 30
+note = "Offsets hold in segment major versions 15 through 22. Later versions extend the embedded content header as section 12 states."
 
 [[record.field]]
 name = "content_header"
@@ -319,6 +381,7 @@ kind = "byte"
 section = "13"
 anchor = "stores a fillet edge-selection enumeration"
 size = 30
+note = "Offsets hold in segment major versions 15 through 22. Later versions extend the embedded content header as section 12 states."
 
 [[record.field]]
 name = "content_header"
@@ -345,7 +408,7 @@ anchor = "value:u32"
 name = "pm_dc_linked_element_header"
 kind = "byte"
 section = "13"
-anchor = "starts with this 26-byte linked-element header"
+anchor = "Before segment major version 28, a feature label record"
 size = 26
 
 [[record.field]]
@@ -391,12 +454,68 @@ source = "spec"
 anchor = "next_reference u32"
 
 [[record]]
+name = "pm_dc_linked_element_header_v28"
+kind = "byte"
+section = "13"
+anchor = "From segment major version 28, the record starts with this 30-byte linked-element header"
+size = 30
+
+[[record.field]]
+name = "header_value"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "header_value u32"
+
+[[record.field]]
+name = "header_id"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "header_id u16"
+
+[[record.field]]
+name = "values"
+offset = 6
+type = "u32[2]"
+source = "spec"
+anchor = "values u32[2]"
+
+[[record.field]]
+name = "flags_extension"
+offset = 14
+type = "u32"
+source = "spec"
+anchor = "flags_extension u32 = 0"
+
+[[record.field]]
+name = "owner_reference"
+offset = 18
+type = "u32"
+source = "spec"
+anchor = "owner_reference u32"
+
+[[record.field]]
+name = "parent_reference"
+offset = 22
+type = "u32"
+source = "spec"
+anchor = "parent_reference u32"
+
+[[record.field]]
+name = "next_reference"
+offset = 26
+type = "u32"
+source = "spec"
+anchor = "next_reference u32"
+
+[[record]]
 name = "pm_dc_parameter_prefix"
 kind = "byte"
 section = "11"
-anchor = "stores one numeric design parameter"
+anchor = "In segment major versions 15 through 22 its payload contains"
 size = 26
-note = "The counted UTF-16LE parameter name starts at byte 22."
+note = "In segment major versions 15 through 22 the counted UTF-16LE parameter name starts at byte 22. Later versions extend the content header as section 12 states."
 
 [[record.field]]
 name = "header_value"
@@ -1070,7 +1189,7 @@ anchor = "title_count u32"
 name = "assembly_occurrence_prefix"
 kind = "byte"
 section = "9"
-anchor = "Its payload contains"
+anchor = "Before segment major version 28 the fields from header_value through related_count occupy 50 bytes"
 size = 50
 
 [[record.field]]
@@ -1156,3 +1275,101 @@ offset = 46
 type = "u32"
 source = "spec"
 anchor = "related_count u32"
+[[record]]
+name = "assembly_occurrence_prefix_v28"
+kind = "byte"
+section = "9"
+anchor = "From segment major version 28 the flags_extension field makes them occupy 54 bytes"
+size = 54
+
+[[record.field]]
+name = "header_value"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "header_value u32"
+
+[[record.field]]
+name = "header_id"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "header_id u16"
+
+[[record.field]]
+name = "next_reference"
+offset = 6
+type = "u32"
+source = "spec"
+anchor = "next_reference u32"
+
+[[record.field]]
+name = "flags"
+offset = 10
+type = "u32"
+source = "spec"
+anchor = "flags u32"
+
+[[record.field]]
+name = "flags_extension"
+offset = 14
+type = "u32"
+source = "spec"
+anchor = "flags_extension u32 = 0  from segment major version 28"
+
+[[record.field]]
+name = "owner_reference"
+offset = 18
+type = "u32"
+source = "spec"
+anchor = "owner_reference u32"
+
+[[record.field]]
+name = "node_index"
+offset = 22
+type = "u32"
+source = "spec"
+anchor = "node_index u32"
+
+[[record.field]]
+name = "state"
+offset = 26
+type = "i32[2]"
+source = "spec"
+anchor = "state i32[2]"
+
+[[record.field]]
+name = "relation_marker"
+offset = 34
+type = "u32"
+source = "spec"
+anchor = "relation_marker u32"
+
+[[record.field]]
+name = "relation_count"
+offset = 38
+type = "u32"
+source = "spec"
+anchor = "relation_count u32"
+
+[[record.field]]
+name = "ordinal_key"
+offset = 42
+type = "u32"
+source = "spec"
+anchor = "ordinal_key u32"
+
+[[record.field]]
+name = "related_marker"
+offset = 46
+type = "u32"
+source = "spec"
+anchor = "related_marker u32"
+
+[[record.field]]
+name = "related_count"
+offset = 50
+type = "u32"
+source = "spec"
+anchor = "related_count u32"
+
