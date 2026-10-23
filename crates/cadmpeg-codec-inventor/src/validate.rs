@@ -889,6 +889,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             )
         })
         .collect::<HashMap<_, _>>();
+    let selection_list_type = crate::pmdc::type_id_string(crate::feature::SELECTION_LIST_TYPE);
     for property in &data.pm_dc_feature_properties {
         let mut references = vec![
             property.header.next.index(),
@@ -969,6 +970,20 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor PmDc fillet edge-set option is not a Boolean record".into(),
+                Some(property.id()),
+            ));
+        }
+        if matches!(
+            property.kind,
+            PmDcFeaturePropertyKind::References {
+                family: crate::feature::PmDcFeatureReferenceFamily::SelectionList,
+                ..
+            }
+        ) != (property.identity.type_id.as_str() == selection_list_type)
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor selection list has the wrong PmDc record type".into(),
                 Some(property.id()),
             ));
         }
@@ -1127,6 +1142,39 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         .map(PmDcPatternFeature::id)
         .chain(data.pm_dc_sketches.iter().map(PmDcSketch::id))
         .collect::<HashSet<_>>();
+    let thicken_record_types =
+        cadmpeg_core::decode::unique_index(data.records.iter().map(|record| {
+            (
+                (record.token.as_str(), record.ordinal),
+                record.type_id.as_str(),
+            )
+        }));
+    let thicken_properties =
+        cadmpeg_core::decode::unique_index(data.pm_dc_feature_properties.iter().map(|property| {
+            (
+                (
+                    property.identity.segment_token.as_str(),
+                    property.identity.record_ordinal,
+                ),
+                property,
+            )
+        }));
+    let thicken_parameters =
+        cadmpeg_core::decode::unique_index(data.pm_dc_parameters.iter().map(|parameter| {
+            (
+                (
+                    parameter.identity.segment_token.as_str(),
+                    parameter.identity.record_ordinal,
+                ),
+                parameter,
+            )
+        }));
+    let thicken_values = cadmpeg_core::decode::unique_index(
+        ir.model
+            .parameters
+            .iter()
+            .filter_map(|parameter| Some((parameter.native_ref.as_deref()?, parameter))),
+    );
     for feature in &ir.model.features {
         if is_flat_pattern_feature(feature)
             && feature
@@ -1207,6 +1255,51 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         };
         let expected_class = family.class_id();
         let output_slot = family.output_slot();
+        if let cadmpeg_ir::features::FeatureDefinition::Operation(
+            actual @ cadmpeg_ir::features::FeatureOperation::Thicken { .. },
+        ) = feature.evaluation.definition()
+        {
+            let token = raw_feature.identity.segment_token.as_str();
+            let expected = crate::feature::thicken_operation(
+                raw_feature,
+                |slot| {
+                    let ordinal = raw_feature
+                        .properties
+                        .references()
+                        .get(slot)?
+                        .record_ordinal()?;
+                    thicken_properties.get(&(token, ordinal))?.as_ref().copied()
+                },
+                |slot| {
+                    let ordinal = raw_feature
+                        .properties
+                        .references()
+                        .get(slot)?
+                        .record_ordinal()?;
+                    let parameter = thicken_parameters.get(&(token, ordinal))?.as_ref()?;
+                    let native = parameter.id();
+                    let value = thicken_values
+                        .get(native.as_str())?
+                        .as_ref()?
+                        .value
+                        .as_ref()?;
+                    Some((*parameter, value))
+                },
+                |ordinal| {
+                    thicken_record_types
+                        .get(&(token, ordinal))?
+                        .as_ref()
+                        .copied()
+                },
+            );
+            if expected.as_ref() != Some(actual) {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    "Inventor neutral thicken operands do not match their PmDc slots".into(),
+                    Some(feature.id.as_str().to_owned()),
+                ));
+            }
+        }
         if labels
             .get(&(
                 raw_feature.identity.segment_token.as_str(),
