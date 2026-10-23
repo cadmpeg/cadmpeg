@@ -36,6 +36,9 @@ const EPS_TORUS_FRAME_COLUMN_DOT: f64 = 1.0e-10;
 const EPS_AXIS_COMPONENT_NONZERO: f64 = 1.0e-9;
 const EPS_AXIS_ALIGNMENT: f64 = 1.0e-9;
 const EPS_SUPPORT_ORTHOGONALITY: f64 = 1.0e-9;
+const EPS_CONE_OPERAND_POSITION: f64 = 1.0e-12;
+const EPS_CONE_OPERAND_DIRECTION: f64 = 1.0e-12;
+const EPS_CONE_OPERAND_ANGLE: f64 = 1.0e-12;
 
 /// Surface family encoded by an `srf_array` row's `geom_type` byte.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1014,6 +1017,31 @@ struct ConeHalfAngleLayout {
     value: ApexConeHalfAngle,
     start: usize,
     end: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SupportApexConeOperand {
+    frame: PositionalConeFrame,
+    start: usize,
+    reference_start: usize,
+    reference_end: usize,
+    angle: ConeHalfAngleLayout,
+}
+
+impl SupportApexConeOperand {
+    fn scalar_end_at(self, offset: usize) -> Option<usize> {
+        if (self.start..self.reference_start).contains(&offset) {
+            Some(self.reference_start)
+        } else if (self.reference_start..self.reference_end).contains(&offset) {
+            Some(self.reference_end)
+        } else if (self.reference_end..self.angle.start).contains(&offset) {
+            Some(self.angle.start)
+        } else if (self.angle.start..self.angle.end).contains(&offset) {
+            Some(self.angle.end)
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -4115,6 +4143,25 @@ fn inline_surface_body(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Result<Option<InlineSurfaceBody>, CodecError> {
+    if kind == SurfaceKind::Cone {
+        let operands = bounded_support_apex_cone_operands(body, cache);
+        let mut terminal_close: Option<usize> = None;
+        for operand in operands {
+            if terminal_close.is_some_and(|previous| previous.checked_add(1) != Some(operand.start))
+            {
+                break;
+            }
+            terminal_close = Some(operand.angle.end);
+        }
+        if let Some(terminal_close) =
+            terminal_close.filter(|close| body.get(*close) == Some(&psb::token::COMPOUND_CLOSE))
+        {
+            return Ok(Some(InlineSurfaceBody {
+                terminal_close,
+                carrier: decode_positional_cone_frame(body, cache).map(InlineSurfaceCarrier::Cone),
+            }));
+        }
+    }
     let standard_envelope = decode_inline_surface_envelope(kind, body, cache);
     let four_bound_envelope = decode_inline_four_bound_cylinder_envelope(kind, body, cache);
     let referenced_envelope = decode_inline_referenced_cylinder_envelope(kind, body, cache);
@@ -5172,6 +5219,7 @@ fn parameter_records_for_rows(
             }
             SurfaceKind::Cone => match inline_carrier {
                 Some(InlineSurfaceCarrier::Cone(frame)) => Some(InlineSurfaceCarrier::Cone(frame)),
+                _ if inline.is_some() => None,
                 _ => decode_positional_cone_frame(&record.body, &cache)
                     .map(InlineSurfaceCarrier::Cone),
             },
@@ -5487,43 +5535,108 @@ fn decode_positional_torus_frame(
     PositionalTorusFrame::new(origin, axis, ref_direction, major_radius, minor_radius)
 }
 
+fn support_apex_cone_operands<'a>(
+    body: &'a [u8],
+    cache: &'a scalar::ScalarCache,
+) -> impl Iterator<Item = SupportApexConeOperand> + 'a {
+    (0..body.len()).filter_map(move |start| {
+        let (value, end) = scalar::decode_positive_dict(body, start)?;
+        let value = ApexConeHalfAngle::new(value)?;
+        (end == body.len() || body.get(end) == Some(&psb::token::COMPOUND_CLOSE)).then_some(())?;
+        let (frame, support_start, reference_start, reference_end) =
+            decode_support_apex_cone_layout(&body[..start], value, cache)?;
+        (support_start == 0 || body.get(support_start - 1) == Some(&psb::token::COMPOUND_CLOSE))
+            .then_some(())?;
+        Some(SupportApexConeOperand {
+            frame,
+            start: support_start,
+            reference_start,
+            reference_end,
+            angle: ConeHalfAngleLayout { value, start, end },
+        })
+    })
+}
+
+fn bounded_support_apex_cone_operands(
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Vec<SupportApexConeOperand> {
+    let candidates = support_apex_cone_operands(body, cache).collect::<Vec<_>>();
+    let operands = candidates
+        .iter()
+        .copied()
+        .filter(|operand| {
+            operand.start.checked_sub(1).is_none_or(|anchor| {
+                !candidates.iter().any(|owner| {
+                    owner.start < operand.start && owner.scalar_end_at(anchor).is_some()
+                })
+            })
+        })
+        .collect::<Vec<_>>();
+    let named_boundary = (0..body.len())
+        .find(|offset| {
+            named_record_length(body, *offset).is_some()
+                && !operands
+                    .iter()
+                    .any(|operand| operand.scalar_end_at(*offset).is_some())
+        })
+        .unwrap_or(body.len());
+    operands
+        .into_iter()
+        .take_while(|operand| operand.angle.end <= named_boundary)
+        .collect()
+}
+
+fn cone_operand_components(frame: PositionalConeFrame) -> [f64; 10] {
+    let [ox, oy, oz] = frame.frame().origin();
+    let [ax, ay, az] = frame.frame().axis();
+    let [rx, ry, rz] = frame.frame().ref_direction();
+    [
+        ox,
+        oy,
+        oz,
+        ax,
+        ay,
+        az,
+        rx,
+        ry,
+        rz,
+        frame.half_angle().get().get(),
+    ]
+}
+
 fn decode_positional_cone_frame(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Option<PositionalConeFrame> {
-    decode_planar_envelope_cone_frame(body, cache)
-        .or_else(|| decode_compound_support_apex_cone_frame(body, cache))
-        .or_else(|| {
-            let angle = terminal_cone_half_angle_layout(body)?;
-            decode_support_apex_cone_frame(&body[..angle.start], angle.value, cache)
-        })
-}
-
-fn decode_compound_support_apex_cone_frame(
-    body: &[u8],
-    cache: &scalar::ScalarCache,
-) -> Option<PositionalConeFrame> {
-    let mut candidate = None;
-    let mut segment_start = 0;
-    for segment_end in body
-        .iter()
-        .enumerate()
-        .filter_map(|(offset, byte)| (*byte == psb::token::COMPOUND_CLOSE).then_some(offset))
-    {
-        let segment = body.get(segment_start..segment_end)?;
-        if let Some(angle) = terminal_cone_half_angle_layout(segment) {
-            if let Some(frame) =
-                decode_support_apex_cone_frame(&segment[..angle.start], angle.value, cache)
-            {
-                if candidate.is_some_and(|previous| previous != frame) {
-                    return None;
-                }
-                candidate = Some(frame);
+    let mut support_operands = bounded_support_apex_cone_operands(body, cache).into_iter();
+    let Some(first_support) = support_operands.next() else {
+        return decode_planar_envelope_cone_frame(body, cache);
+    };
+    let planar = (0..=body.len())
+        .filter(|end| *end == body.len() || body.get(*end) == Some(&psb::token::COMPOUND_CLOSE))
+        .filter_map(|end| decode_planar_envelope_cone_frame(&body[..end], cache));
+    let mut candidates = planar
+        .chain(std::iter::once(first_support.frame))
+        .chain(support_operands.map(|operand| operand.frame));
+    let candidate = candidates.next()?;
+    let mut lower = cone_operand_components(candidate);
+    let mut upper = lower;
+    for frame in candidates {
+        for (index, value) in cone_operand_components(frame).into_iter().enumerate() {
+            lower[index] = lower[index].min(value);
+            upper[index] = upper[index].max(value);
+            let tolerance = match index {
+                0..=2 => EPS_CONE_OPERAND_POSITION,
+                3..=8 => EPS_CONE_OPERAND_DIRECTION,
+                _ => EPS_CONE_OPERAND_ANGLE,
+            };
+            if upper[index] - lower[index] > tolerance {
+                return None;
             }
         }
-        segment_start = segment_end + 1;
     }
-    candidate
+    Some(candidate)
 }
 
 fn decode_planar_envelope_cone_frame(
@@ -5608,6 +5721,14 @@ fn decode_support_apex_cone_frame(
     half_angle: ApexConeHalfAngle,
     cache: &scalar::ScalarCache,
 ) -> Option<PositionalConeFrame> {
+    decode_support_apex_cone_layout(body, half_angle, cache).map(|(frame, _, _, _)| frame)
+}
+
+fn decode_support_apex_cone_layout(
+    body: &[u8],
+    half_angle: ApexConeHalfAngle,
+    cache: &scalar::ScalarCache,
+) -> Option<(PositionalConeFrame, usize, usize, usize)> {
     const MAX_SUPPORT_FRAME_BYTES: usize = 12 * 9;
 
     let mut reference_candidates = (0..body.len()).filter_map(|start| {
@@ -5641,11 +5762,12 @@ fn decode_support_apex_cone_frame(
         else {
             continue;
         };
-        if sole_slots.replace(slots).is_some() {
+        if sole_slots.replace((slots, start)).is_some() {
             return None;
         }
     }
-    let [first, _, second, _] = local_system_lanes(sole_slots?);
+    let (slots, support_start) = sole_slots?;
+    let [first, _, second, _] = local_system_lanes(slots);
     let normalize = |vector: [f64; 3]| {
         let magnitude = vector.iter().map(|value| value * value).sum::<f64>().sqrt();
         (magnitude.is_finite() && magnitude > 0.0).then(|| vector.map(|value| value / magnitude))
@@ -5678,7 +5800,12 @@ fn decode_support_apex_cone_frame(
     if axis[axis_index] * apex_coordinate > 0.0 {
         axis = axis.map(|value| -value);
     }
-    PositionalConeFrame::new(apex, axis, second.map(|value| -value), half_angle)
+    Some((
+        PositionalConeFrame::new(apex, axis, second.map(|value| -value), half_angle)?,
+        support_start,
+        reference_start,
+        body.len().checked_sub(3)?,
+    ))
 }
 
 /// Decode a named cone prototype whose local-system body carries the complete

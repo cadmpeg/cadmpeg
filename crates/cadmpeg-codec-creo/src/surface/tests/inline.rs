@@ -822,6 +822,222 @@ fn inline_cone_accepts_a_complete_support_apex_operand_after_its_envelope() {
     assert!(decode_positional_cone_frame(&ambiguous, &scalar::ScalarCache::default()).is_none());
 }
 
+fn complete_support_apex_cone_operand(
+    apex: f64,
+    reference_payload: [u8; 7],
+    angle: f64,
+) -> Vec<u8> {
+    let mut body = vec![0x18, 0xe4, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0xe4];
+    push_inline_test_negative_coordinate(&mut body, apex);
+    body.push(0x19);
+    body.extend_from_slice(&reference_payload);
+    body.extend_from_slice(&[0x20, 0, 0]);
+    let raw = angle.to_be_bytes();
+    let prefix = match raw[..2] {
+        [0x3f, 0xe9] => 0x74,
+        [0x3f, 0xf0] => 0x7b,
+        _ => panic!("unsupported test cone angle"),
+    };
+    body.push(prefix);
+    body.extend_from_slice(&raw[2..]);
+    body
+}
+
+fn support_apex_cone_record(body: &[u8]) -> SurfaceParameterRecord {
+    let mut payload = vec![7, 0x25, 4, 0x01, 0, 0];
+    payload.extend_from_slice(body);
+    payload.extend_from_slice(&[0xe3, 0x98]);
+    let records = parameter_records(&payload);
+    assert_eq!(records.len(), 1);
+    records.into_iter().next().unwrap()
+}
+
+#[test]
+fn complete_cone_operand_bounds_model_reference_payload_closes() {
+    let references = [
+        [0; 7],
+        [0, 0, 0, 0, 0, 0xe3, 0],
+        [0xe0, 0, b'a', 0, 0, 0xe3, 0],
+    ];
+    for reference in references {
+        let mut body = vec![0x7b, 0, 0, 0, 0, 0, 0, 0xe3];
+        body.extend_from_slice(&complete_support_apex_cone_operand(
+            -4.0,
+            reference,
+            std::f64::consts::FRAC_PI_4,
+        ));
+        let record = support_apex_cone_record(&body);
+        assert_eq!(record.body, body);
+        assert_eq!(record.boundary, SurfaceBodyBoundary::CompoundClose);
+        let frame = record.positional_cone_frame().unwrap();
+        assert_eq!(frame.frame().origin(), [-4.0, 0.0, 0.0]);
+        assert_eq!(frame.frame().axis(), [1.0, 0.0, 0.0]);
+        assert_eq!(frame.frame().ref_direction(), [0.0, 0.0, -1.0]);
+        assert_eq!(frame.half_angle().get().get(), std::f64::consts::FRAC_PI_4);
+        assert_eq!(
+            decode_positional_cone_frame(&body, &scalar::ScalarCache::default()),
+            Some(frame)
+        );
+    }
+}
+
+#[test]
+fn complete_cone_operand_framing_stops_before_an_adjacent_positional_row() {
+    let first = complete_support_apex_cone_operand(-4.0, [0; 7], 1.0);
+    let second = complete_support_apex_cone_operand(-5.0, [0; 7], 1.0);
+    let mut payload = vec![7, 0x25, 4, 0x01, 0, 0];
+    payload.extend_from_slice(&first);
+    payload.extend_from_slice(&[0xe3, 8, 0x25, 4, 0x01, 0, 0]);
+    payload.extend_from_slice(&second);
+    payload.push(0xe3);
+    let records = parameter_records(&payload);
+    assert_eq!(records.len(), 2);
+    for ((record, expected_body), expected_apex) in
+        records.iter().zip([&first, &second]).zip([-4.0, -5.0])
+    {
+        assert_eq!(&record.body, expected_body);
+        assert_eq!(
+            record.positional_cone_frame().unwrap().frame().origin(),
+            [expected_apex, 0.0, 0.0]
+        );
+    }
+}
+
+#[test]
+fn complete_cone_operand_framing_cannot_claim_a_later_named_production() {
+    let owned = complete_support_apex_cone_operand(-4.0, [0; 7], 1.0);
+    let foreign = complete_support_apex_cone_operand(-5.0, [0; 7], 1.0);
+    for prefix in [&owned[..], &[0x99][..]] {
+        let mut body = prefix.to_vec();
+        body.extend_from_slice(b"\xe3\xe0\0srf_prim_ptr(cone)\0\xe3");
+        body.extend_from_slice(&foreign);
+        let record = support_apex_cone_record(&body);
+        if prefix == &owned[..] {
+            assert_eq!(record.body, owned);
+            assert_eq!(
+                record.positional_cone_frame().unwrap().frame().origin(),
+                [-4.0, 0.0, 0.0]
+            );
+        } else {
+            assert!(record.positional_cone_frame().is_none());
+        }
+        assert!(!record
+            .body
+            .windows(foreign.len())
+            .any(|bytes| bytes == foreign.as_slice()));
+    }
+}
+
+#[test]
+fn complete_cone_operand_framing_leaves_the_terminal_contour_to_its_owner() {
+    let owned = complete_support_apex_cone_operand(-4.0, [0; 7], 1.0);
+    let foreign = complete_support_apex_cone_operand(-5.0, [0; 7], 1.0);
+    let contour = [0x80, 0x80, 1, 0x0f, 0x0f, 0x0f, 0x0f, 0xe1];
+    let mut body = owned.clone();
+    body.push(0xe3);
+    body.extend_from_slice(&contour);
+    body.push(0xe3);
+    body.extend_from_slice(&foreign);
+    let record = support_apex_cone_record(&body);
+    assert_eq!(record.body, owned);
+    assert!(record.positional_cone_frame().is_none());
+    assert!(decode_positional_cone_frame(&body, &scalar::ScalarCache::default()).is_none());
+    let mut payload = vec![7, 0x25, 4, 0x01, 0, 0];
+    payload.extend_from_slice(&body);
+    payload.push(0xe3);
+    let contours = super::contour_records(&payload);
+    assert_eq!(contours.len(), 1);
+    assert_eq!(contours[0].surface_id, 7);
+    assert_eq!(contours[0].curve_header_id, 128);
+    assert_eq!(contours[0].body, contour);
+}
+
+#[test]
+fn complete_cone_operand_bounds_apex_and_angle_payload_closes() {
+    let apex = f64::from_bits(0xc010_0000_00e3_0000);
+    let angle = f64::from_bits(0x3ff0_0000_00e3_0000);
+    let body = complete_support_apex_cone_operand(apex, [0; 7], angle);
+    let record = support_apex_cone_record(&body);
+    assert_eq!(record.body, body);
+    let frame = record.positional_cone_frame().unwrap();
+    assert_eq!(frame.frame().origin(), [apex, 0.0, 0.0]);
+    assert_eq!(frame.half_angle().get().get(), angle);
+}
+
+#[test]
+fn complete_cone_operands_reconcile_compound_and_terminal_carriers() {
+    let first = complete_support_apex_cone_operand(-4.0, [0; 7], 1.0);
+    for second_apex in [-4.0, -5.0] {
+        let second = complete_support_apex_cone_operand(second_apex, [0, 0, 0, 0, 0, 0xe3, 0], 1.0);
+        for operands in [[&first, &second], [&second, &first]] {
+            let mut body = operands[0].to_vec();
+            body.push(0xe3);
+            body.extend_from_slice(operands[1]);
+            let direct = decode_positional_cone_frame(&body, &scalar::ScalarCache::default());
+            let record = support_apex_cone_record(&body);
+            assert_eq!(record.body, body);
+            assert_eq!(record.positional_cone_frame(), direct);
+            assert_eq!(direct.is_some(), second_apex == -4.0);
+            if let Some(frame) = direct {
+                assert_eq!(frame.frame().origin(), [-4.0, 0.0, 0.0]);
+                assert_eq!(frame.half_angle().get().get(), 1.0);
+            }
+        }
+    }
+}
+
+#[test]
+fn cone_operand_agreement_requires_one_order_independent_component_range() {
+    let operands = [-4.0, -4.0 - 0.75e-12, -4.0 - 1.5e-12]
+        .map(|apex| complete_support_apex_cone_operand(apex, [0; 7], 1.0));
+    for order in [
+        [0, 1, 2],
+        [0, 2, 1],
+        [1, 0, 2],
+        [1, 2, 0],
+        [2, 0, 1],
+        [2, 1, 0],
+    ] {
+        let mut body = Vec::new();
+        for (index, operand) in order.into_iter().enumerate() {
+            if index != 0 {
+                body.push(0xe3);
+            }
+            body.extend_from_slice(&operands[operand]);
+        }
+        assert!(decode_positional_cone_frame(&body, &scalar::ScalarCache::default()).is_none());
+        assert!(support_apex_cone_record(&body)
+            .positional_cone_frame()
+            .is_none());
+    }
+}
+
+#[test]
+fn planar_and_support_apex_cone_operands_require_agreement() {
+    let prefix = legacy_planar_cone_suffix_row(&[], &[]);
+    let prefix = &prefix[6..prefix.len() - 1];
+    for angle in [
+        std::f64::consts::FRAC_PI_4,
+        f64::from_bits(std::f64::consts::FRAC_PI_4.to_bits() + 1),
+        1.0,
+    ] {
+        let mut operand = complete_support_apex_cone_operand(-2.0, [0; 7], angle);
+        operand[..9].copy_from_slice(&[0x10, 0x10, 0x0d, 0x10, 0x10, 0x10, 0x0d, 0x10, 0x10]);
+        let mut body = prefix.to_vec();
+        body.extend_from_slice(&operand);
+        let direct = decode_positional_cone_frame(&body, &scalar::ScalarCache::default());
+        let record = support_apex_cone_record(&body);
+        assert_eq!(record.positional_cone_frame(), direct);
+        assert_eq!(direct.is_some(), angle != 1.0);
+        if let Some(frame) = direct {
+            assert_eq!(frame.frame().origin(), [0.0, -2.0, 0.0]);
+            assert_eq!(frame.frame().axis(), [0.0, 1.0, 0.0]);
+            assert_eq!(frame.frame().ref_direction(), [1.0, 0.0, 0.0]);
+            assert_eq!(frame.half_angle().get().get(), std::f64::consts::FRAC_PI_4);
+        }
+    }
+}
+
 #[test]
 fn legacy_planar_cone_envelope_witness_resolves_inline_suffix_origin() {
     let local_system = [
