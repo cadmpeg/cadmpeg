@@ -229,7 +229,7 @@ fn source_less_offset_plane_resolves_a_native_feature_reference() {
 }
 
 #[test]
-fn body_modifier_uses_one_based_modeling_history_ordinal() {
+fn body_modifier_uses_native_source_identity_instead_of_history_position() {
     let first = feature("first-native", Some("700"), 0);
     let second = feature("second-native", Some("900"), 1);
     let histories = vec![FeatureHistory {
@@ -241,7 +241,7 @@ fn body_modifier_uses_one_based_modeling_history_ordinal() {
         features: vec![first, second],
     }];
     let mut projected = project_features(&histories).unwrap();
-    let body_modifiers = vec![("sldprt:brep:body#333".into(), 2)];
+    let body_modifiers = vec![("sldprt:brep:body#333".into(), 900)];
 
     derive_feature_outputs(
         &mut projected,
@@ -264,7 +264,38 @@ fn body_modifier_uses_one_based_modeling_history_ordinal() {
 }
 
 #[test]
-fn body_modifier_ordinal_is_unresolved_when_history_is_ambiguous() {
+fn a_history_position_does_not_resolve_a_body_modifier_source() {
+    let histories = vec![FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![
+            feature("first-native", Some("700"), 0),
+            feature("second-native", Some("900"), 1),
+        ],
+    }];
+    let mut projected = project_features(&histories).unwrap();
+    derive_feature_outputs(
+        &mut projected,
+        &histories,
+        crate::history::bind::FeatureOutputSources {
+            face_producers: &[],
+            body_modifiers: &[("sldprt:brep:body#333".into(), 2)],
+        },
+        &[],
+        &[],
+        &[],
+    )
+    .unwrap();
+    assert!(projected
+        .iter()
+        .all(|feature| feature.evaluation.outputs().is_empty()));
+}
+
+#[test]
+fn body_modifier_source_is_unresolved_when_history_is_ambiguous() {
     let histories = vec![
         FeatureHistory {
             id: "history-a".into(),
@@ -272,7 +303,7 @@ fn body_modifier_ordinal_is_unresolved_when_history_is_ambiguous() {
             properties: BTreeMap::new(),
             content: Vec::new(),
             configurations: Vec::new(),
-            features: vec![feature("a", None, 0), feature("a-next", None, 1)],
+            features: vec![feature("a", Some("900"), 0), feature("a-next", None, 1)],
         },
         FeatureHistory {
             id: "history-b".into(),
@@ -280,11 +311,11 @@ fn body_modifier_ordinal_is_unresolved_when_history_is_ambiguous() {
             properties: BTreeMap::new(),
             content: Vec::new(),
             configurations: Vec::new(),
-            features: vec![feature("b", None, 0), feature("b-next", None, 1)],
+            features: vec![feature("b", Some("900"), 0), feature("b-next", None, 1)],
         },
     ];
     let mut projected = project_features(&histories).unwrap();
-    let body_modifiers = vec![("sldprt:brep:body#333".into(), 2)];
+    let body_modifiers = vec![("sldprt:brep:body#333".into(), 900)];
 
     derive_feature_outputs(
         &mut projected,

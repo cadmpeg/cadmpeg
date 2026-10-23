@@ -425,7 +425,7 @@ prefixes `3F FF`, `40 01`, `40 10`, and `40 11`, respectively.
 In that lane, `92 <signed-i48>` and `da <signed-i48>` store an exact signed
 six-byte big-endian integer and convert it directly to a finite scalar.
 
-Each record grammar defines the DICT lane for its scalar slots. A decoder must not apply DICT sign rules across unrelated record grammars.
+Each record grammar defines the DICT lane for its scalar slots. A decoder must not apply DICT sign rules across unrelated record grammars. A seven-byte opaque span without an owning scalar production does not establish a signed-DICT value. The first directrix-coordinate negative-DICT range begins at `a5`; the second-coordinate negative-DICT range begins at `a4`. Prefix `a4` does not acquire a first-coordinate value from the second-coordinate rule.
 
 #### World-coordinate tokens
 
@@ -508,6 +508,18 @@ slot and has no numeric value. An `e3` contour close may be followed by the
 optional separator reference `f7 <reference_ci>` before the next contour. The
 terminal `e1` closes the chain; row-tail data follows it. A chain requires its
 terminal marker and all four envelope slots for every entry.
+The contour role byte follows the complete two-byte curve-header reference.
+`trv = 01` identifies an outer boundary; `trv = f6` identifies an inner
+boundary. The role is independent of chain order and surface-row orientation.
+The role does not change the envelope coordinates. The values `00`, `02`, and
+`03` do not establish an outer or inner role.
+
+A contour binds to the unique closed successor loop on the same surface
+reference and in the same topology namespace that contains its curve-header
+reference. A complete classification requires a bijection between the stored
+contours and those loops. A missing or ambiguous join does not classify a
+loop. Several outer contours on one carrier do not by themselves assign each
+inner contour to a distinct bounded face instance.
 A `geom_type = 22`, `boundary_type = 01`, `next_geom_ptr = 0` row is an
 unbounded feature plane. When it is the unique plane row carrying its
 `feat_id`, its placed carrier is the datum-plane definition for that feature.
@@ -1384,13 +1396,14 @@ belongs to the nearest preceding `geom_type = 2c` surface row after the
 previous replay signature. Intervening rows from other surface families do not
 consume it.
 Ambiguous separators or a missing unique owner leave the bytes opaque.
+The four point entities form the ordered cubic control polygon `P0, P1, P2, P3`. The first and last poles are the curve endpoints; the two interior poles are control points.
 Each packed point body contains two directrix coordinates. A control point is
 numeric only when two defined scalar tokens consume its entire bounded body;
 partial scalar matches do not assign either coordinate.
 In the first-coordinate lane, prefixes `4b..a3` use the positive DICT mapping.
 Negative prefixes `b2..cf`, `d0..dc`, `dd`, and `de..df` derive their two
 leading IEEE bytes by adding the prefix to `BF2D`, `BF2E`, `BF2F`, and `BF32`,
-respectively. Negative prefixes `a5..a6` and `a7..ae` add to `BF2B` and `BF2C`.
+respectively. Negative prefixes `a5..a6` and `a7..b1` add to `BF2B` and `BF2C`.
 Prefixes `2c`, `4e..4f`, `52`, `54`, and `58..5a` reconstruct
 `3F <tail6> 00`; `45` reconstructs `BF <tail6> 00`.
 The fixed-width forms are `28 <tail7> → 3F <tail7>`,
@@ -1682,7 +1695,12 @@ the row.
 Each bounded positional body transfers to the Creo native
 `surface_parameters` arena with its surface identifier, family, boundary kind,
 exact body bytes, ordered decoded or opaque scalar slots, and maximal opaque
-spans covering every byte outside those slots. Defined type-26 contiguous and
+spans covering every byte outside those slots. A terminal scalar frame is the
+last maximal contiguous scalar run whose final token ends at the bounded body
+end. Its slot count assigns no endpoints, vectors, corners, or radius roles.
+The complete owning production assigns those roles and selects its scalar
+lanes; surface family or coordinate equality alone does not identify that
+production. Defined type-26 contiguous and
 control-split coordinate envelopes retain their ordered coordinates and
 body-relative first coordinate offset in that arena. Scalar frames are the maximal
 contiguous scalar-token sequences in byte order. The terminal scalar frame is
@@ -2054,6 +2072,14 @@ Every edge represented in a topological vertex orbit contributes both of its
 non-null face carriers to that vertex. The orbit stores outgoing half-edges;
 carrier incidence is not limited to the stored side of each edge.
 
+The six-reference curve suffix stores face, successor-edge, and referenced
+geometry identities. It does not store a vertex identifier or an XYZ tuple.
+Its vertex identity is the equivalence class of incident oriented sides.
+Sorting those sides and numbering their connected orbit components defines a
+derived label, not a native persistent reference. Sketch `vert_tab.vertex_id`
+instead belongs to the trim-vertex namespace joined by
+`ent_tab.start_vtx`, `end_vtx`, and `center_vtx`.
+
 The raw `type_byte` does not by itself identify a curve family.
 
 The parameter body is the byte range after the two direction flags and before
@@ -2213,12 +2239,28 @@ An `fc` prefix is resolved by exact body grammar. A complete two-chart body
 uses the byte after `fc` as its sample count. Other complete forms use it as a
 body-family subtype. A partial token match does not select either meaning.
 
+For `fc 02`, the counted production is a two-row, two-chart array. Its eight
+scalar slots have this order:
+
+| Slots | Meaning |
+| ----- | ------- |
+| `0..1` | Endpoint A in face `F0`'s chart |
+| `2..3` | Endpoint A in face `F1`'s chart |
+| `4..5` | Endpoint B in face `F0`'s chart |
+| `6..7` | Endpoint B in face `F1`'s chart |
+
+The complete short production below supplies one face path. The complete
+counted production supplies two face paths. A zero face reference does not
+shift either chart's slots. A reference operand, undefined scalar, unread
+byte, truncated scalar, or nonunique complete parse prevents the counted
+production from supplying endpoints.
+
 | Subtype | Body family                              |
 | ------- | ---------------------------------------- |
 | `fc 02` | Short pcurve-style endpoint record       |
 | `fc 05` | Cap-circle arc record family             |
 | `fc 08` | World-coordinate control-polyline family |
-| `fc 13` | Held-cap-ordinate control polyline       |
+| `fc 13` | Four-role parameter and coordinate path  |
 
 The complete short `fc 02` endpoint body has the form
 `fc 02 | u0 | v0 | 0 | 1 | u1 | v1 | 2 | T`, where each `u`/`v` slot is a
@@ -2232,7 +2274,28 @@ parameter path. A decoder may transfer this path only after mapping both
 endpoints through the first face chart and applying the ordinary endpoint and
 carrier admission rules.
 
-`fc 05` records store cap-circle control points in the order `A`, `B`, `t`, `C`, where `A` and `C` use eight-byte world-coordinate tokens and `B` and `t` use DICT or standalone-zero scalar tokens. `C` is the owning cylinder's row-frame axial ordinate; the paired cap planes provide its model-space axial coordinate. `t` is the angular curve parameter in radians. The signed relation between successive polar angles and `t` determines curve sense and the parameter-zero radial direction; it does not select the cylinder's axial direction when the paired-cap span witness is complete. For a model-X axis, `(A, B, C)` maps to `(Z, Y, X)`; for a model-Y axis it maps to `(X, Z, Y)`; for a model-Z axis it maps to `(Y, X, Z)`. The row-frame radial vector `(A, B)` maps to `(0, B, A)`, `(A, 0, B)`, or `(B, A, 0)`, respectively. `fc 13` stores a control polyline rather than an analytic circle.
+`fc 05` records store cap-circle control points in the order `A`, `B`, `t`, `C`, where `A` and `C` use eight-byte world-coordinate tokens and `B` and `t` use DICT or standalone-zero scalar tokens. `C` is the owning cylinder's row-frame axial ordinate; the paired cap planes provide its model-space axial coordinate. `t` is the angular curve parameter in radians. The signed relation between successive polar angles and `t` determines curve sense and the parameter-zero radial direction; it does not select the cylinder's axial direction when the paired-cap span witness is complete. For a model-X axis, `(A, B, C)` maps to `(Z, Y, X)`; for a model-Y axis it maps to `(X, Z, Y)`; for a model-Z axis it maps to `(Y, X, Z)`. The row-frame radial vector `(A, B)` maps to `(0, B, A)`, `(A, 0, B)`, or `(B, A, 0)`, respectively.
+
+A complete four-role `fc 13` path associates a curve parameter `t` with
+three coordinate roles `A`, `B`, and `C`. In a circular chart, `A` and `B`
+are transverse ordinates, `C` is the held axial ordinate, and `t` is angular.
+The point-first phase stores `[A_i, B_i, t_i, C_i]`. The parameter-first
+phase stores `[t_i, C_i, A_i, B_i]`.
+
+If a retained scalar walk starts after `t_0`, its four-field physical groups
+are `[C_i, A_i, B_i, t_(i+1)]`. The final `[C_n, A_n, B_n]` completes the
+sample whose parameter precedes it. It is not a trailer. The sample count
+includes this terminal sample. Normalize the complete role cycle before
+pairing parameters with coordinate values.
+
+In a complete owned parameter position, `20 10 00` encodes zero and consumes
+one parameter slot. It does not separate a terminal point from its path.
+An undefined parameter or coordinate image retains its bounded role and raw
+bytes; it does not remove the terminal sample or supply an invented value.
+These role and terminal rules do not define a spatial control polyline,
+NURBS control poles, signed chart branches, or a model-space placement.
+A model-space carrier requires a complete native chart and independent
+endpoint and carrier invariants.
 
 In an `fc 14` body for a circle shared by an axis-aligned coaxial circular cone
 and cylinder, every `2d` world-coordinate token is the same exact token image.
@@ -2258,12 +2321,14 @@ curve parameter body as maximal opaque spans. The coordinate-token and opaque
 span sets partition the complete retained body. Scalar order does not assign
 point or parameter roles.
 
-Within the `fc 05` scalar lane, the positive DICT prefixes `71`, `74`, `76`,
-`81`, `8b`, `90`, `91`, `a1`, `a2`, `a3`, and `b7` each consume six payload bytes
+Within the complete `fc 05` point-group scalar lane, the positive DICT prefixes
+`70`, `71`, `74`, `76`, `80`, `81`, `8b`, `90`, `91`, `a1`, `a2`, `a3`, and `b7` each consume six payload bytes
 and reconstruct the two high IEEE-754 bytes from the prefix. In particular,
 `8b <tail6>` reconstructs `40 00 <tail6>` and `71 <tail6>` reconstructs `3f e6
 <tail6>`. These lane-specific interpretations take precedence over wider
-context-independent forms of the same prefix.
+context-independent forms of the same prefix. Prefix `70` reconstructs
+`3f e5 <tail6>` and prefix `80` reconstructs `3f f5 <tail6>`. A prefix outside
+an admitted scalar slot does not establish a positive-DICT value.
 
 An `fc 05` cap pair belongs to one cylinder when each curve suffix binds one
 side to the same `geom_type = 24` face and the other side to a `geom_type = 22`
@@ -2363,6 +2428,13 @@ radius reference.
 A type-1 point row stores direction slots `[0, 0, 0]`, point slots `[f6, 1]`,
 a non-null point identifier in the center field, zero arc-orientation and
 vertical/horizontal slots, and `f6` in both radius-reference fields.
+
+`relat_ptr.used` retains an opaque compact integer. It does not select activity,
+relation operands, a dimension, an equation, or a formula entry. A unique
+complete `triples_ptr` join from the relation identifier to a `skamp_ptr` row
+supplies activity from that row's status low bit. A set low bit means active;
+a clear low bit means inactive. An absent or ambiguous join leaves activity
+unspecified, independently of `used`.
 
 The `skamp_ptr` and `triples_ptr` array headers retain their declared counts,
 table-class references, and source offsets independently of the number of rows
@@ -2545,6 +2617,8 @@ table only when all rows declared by that table decode. Complete prefix rows in
 an incomplete table remain native records but cannot establish unique solver
 identities.
 
+A `var_arr` row type identifies a solver-variable namespace, not a physical dimension. Equation function, complete argument signature, and argument position select the numeric role. Type `0` can carry an angular difference or a section-coordinate distance. Type `6` can carry a polar angle or section-coordinate result. Type `7` is an auxiliary namespace and does not imply a zero value. An unsupported equation signature leaves the physical dimension unresolved. Missing scalar values remain distinct from stored zero. Section coordinates require the section placement before they become model coordinates.
+
 The first `var_arr` row is the named field prototype between the table header
 and schema close. It is a data row and contributes to the declared count;
 positional replay rows follow the close.
@@ -2672,6 +2746,12 @@ point locus also establishes the line role when that entity's geometry remains
 native. Other senses select a locus and do not define an entity-level
 orientation constraint. Disabling the unary equation does not change the
 referenced entity family.
+A decoded type-5 `segtab` point is not a line from a unary orientation code
+alone. An agreeing `verhor` without the complete type-fourteen axis form does
+not promote it to an axis. The point row, its `verhor`, and the unary incidence
+retain their separate source identities. An absent or conflicting `verhor`
+does not supply an implicit axis, origin, second point, or point-alignment
+equation.
 A `segtab` row with coincident endpoint identifiers is an axis line when its
 `verhor` selector agrees with its unary type-one or type-two incidence
 and the row is the sense-zero axis operand of a type-fourteen symmetry
@@ -2845,6 +2925,14 @@ Within the three four-slot `relat_ptr` operand vectors, `e5` expands to two
 zero slots and `e6` expands to three zero slots. `e4` is the integer value one,
 and `f6` is a null operand. Expansion is bounded independently at four slots
 for each of `a`, `b`, and `c`.
+
+The tuples have relation-type-specific roles. A slot can hold a point key,
+order-table internal identifier, radius key, selector, null, or scalar
+coefficient. The complete relation type and a unique namespace join establish
+a reference role. An integer projection does not make every non-null slot an
+object index. The complete source tuples remain native data independently of
+joined entity operands. A complete `triples_ptr` and `skamp_ptr` join supplies
+its ordered entity and sense operands separately.
 
 For a type-zero linear-distance relation with operand-vector forms
 `a = [point0, point1, null, 1]`, `b = [0, 0, 0, 0]` or
@@ -3172,6 +3260,8 @@ surface-of-revolution reductions require `ratio = 1`.
 
 ## 6. Features and datums
 
+`MdlStatus` creation-event rows retain feature identities. In `typed_data(MTTyped_CreateData).created_features`, `feat_id` owns `icon_name` and `ft_type`; `prev_feat_id` is a preceding feature identity. These fields do not identify an input body. Display text that names an operation does not change its feature identifier into a body identifier. Generated surface ownership binds result geometry to a feature and does not select the material body changed by that feature.
+
 `MdlStatus` names encode feature kinds as `<Kind> id <N>`. Defined names include
 `Annotation Feature`, `Cross Section`, `Datum Plane`, `Round`, `Chamfer`,
 `Protrusion`, `Extrude`, `Revolve`, `Hole`, `Cut`, `Draft`, `Mirror`, and
@@ -3339,9 +3429,15 @@ internal sketch-datum chain. A procedural recipe feature
 `F` immediately followed in feature-state order by a non-recipe feature
 `F + 1` owns the unique section definition whose `gsec3d_ptr.sketch_plane`
 entity is `F + 2`. The intermediate feature is the section datum. When more
-than one definition selects the same sketch-plane entity, the chain does not
-select a regeneration snapshot and none of those definitions acquires the
-owner. A definition is eligible for this join only while its byte offset lies
+than one definition within the same complete source-owner range selects the
+same sketch-plane entity, the chain alone does not select one definition.
+Repeated sketch-plane identifiers across distinct physical `AllFeatur` rows
+are not competing regeneration snapshots: the row identities remain distinct.
+For the bounded class-916 pattern-member form, each canonical row identifier
+precedes its own header and root-schema declaration. The repeated section
+records retain that physical separation even when a member identifier is
+absent from the decoded visible/current feature namespace. Skipping a row from
+that namespace must not extend a preceding row's ownership through it. A definition is eligible for this join only while its byte offset lies
 inside the complete source range that contains it. When the definition is
 contained by an `AllFeatur` row, `F` depends on that row's saved-section
 history feature; the row context does not replace the section-definition
@@ -3611,6 +3707,8 @@ first plane row is the hole's native placement-face selection.
 When that surface is a transferred B-rep face, the surface identifier selects
 the face with the same native identifier.
 
+In a class-911 feature, `feat_type_ptr.form` identifies the broad construction form: `1` is straight or extruded and `2` is sketched or revolved. This field does not select a plain, counterbored, or countersunk entry. Counterbore and countersink additions have separate semantics. A counterbore entry joins the bore to a larger coaxial entry cylinder through a planar annular shoulder. A countersink entry joins the bore to a larger coaxial entry radius through a conical annulus. A conical drill point at the bottom does not establish an entry countersink. The profile and transition must belong to the same feature and entry; missing placement or topology leaves the detailed form unresolved.
+
 A class-911 simple-hole generated table has four entries in the order entry
 plane, termination plane, first cylinder use, and second cylinder use. Both
 plane outlines store diagonal corners of the same axis-normal square. The
@@ -3653,6 +3751,17 @@ class-200 companion for that source. At least one adjacent class-204 and
 class-203 pair is wholly rowless. This layout selects the same counterbore
 form as the paired-replay layout; dimensions, carriers, entry position, and
 direction still require their independent proofs.
+
+In the recognized class-911 outer definition-entry form, the compact current
+feature key belongs to the containing entry. It is distinct from the optional
+`feat_id / ref_model_info` replay-source reference before an `S2D` definition.
+A copied replay can retain an older source feature while its current entry key
+names a different history feature. Neither the `S2D` name nor a parallel table
+ordinal identifies that current owner. A per-feature dimension selection must
+first own the complete outer entry and its unique eligible definition; equal
+envelopes or equal dimension tuples elsewhere do not establish that identity.
+Ordinary positive entry headers and an array's declared count alone do not
+establish the complete compound-entry boundary grammar.
 
 A class-911 table-class-29 simple-drilled recipe has one paired source that
 materializes two cone rows, one paired source that materializes two cylinder
@@ -3732,7 +3841,13 @@ One available frame is sufficient because the recipe binds both rows to one
 cylinder source. This carrier supplies an unoriented hole-axis placement. It
 does not supply the hole entry position or drilling direction.
 The dimension tuple alone does not assign the hole axis, entry position,
-placement face, or depth-to-tip state.
+placement face, or depth-to-tip state. When the independently owned blind
+depth equals the paired cylinder's proved axial span, that depth ends at the
+cylindrical shoulder. The conical drill point contributes the additional
+positive axial extension `radius / tan(included_angle / 2)`. A neutral angled
+bottom may then set `depth_to_tip = false`; the angle and owned cylinder span
+must both be established. Missing cylinder envelopes, a non-unique axial
+span, or a depth mismatch supplies no Shoulder/Tip selector.
 Unsourced class-200 entries are admitted only when they are rowless
 non-surface entities; they do not create source section entity groups.
 When a feature owns multiple table-class-29 tables, exactly one table must have
@@ -4383,7 +4498,28 @@ The `41` scalar form therefore occupies eight bytes: the prefix followed by
 seven payload bytes. The seven-byte `45` and `5c` tokens consume one slot but
 retain an unresolved numeric value.
 
-`ref_planes` stores an outer reference followed by a nested `plane_id`. The nested identifier is the geometric datum identifier and joins `ActDatums.srf_array.geom_id`. A referenced datum normal orients a sketch in-plane axis only when it is perpendicular to the sketch-plane normal.
+A `gsec3d_ptr.ref_planes` row stores a typed model reference. Its first four
+fields are `plane_id`, `ref_type`, `ext_ref_id`, and `known_ext_id`; the last
+name can be `seg_id`. The fourth field identifies the known section entity,
+not a dimension or relation. A complete unique row whose fourth field equals
+an incidence entity identifier supplies that entity's external model binding.
+Absence from `segtab` alone does not establish an external reference.
+
+`plane_id` is a model-item identifier in the namespace selected by `ref_type`.
+Surface type `5` and edge type `6` are distinct namespaces. The reference type
+uses the public `ProType` discriminator. An edge reference does not join a
+datum plane because its integer identifier happens to match one. A table's
+`f7` class reference is distinct from the model-item `plane_id`.
+The six-field reference form ends with `sub_index` and `flip_flag`. A schema
+can declare another collection qualifier after the fourth field. A non-null
+external-reference qualifier, sub-item selector, or unhandled collection
+qualifier requires its own complete grammar before projection. A missing or
+ambiguous typed target does not supply geometry.
+
+Only a complete surface reference whose geometry is a datum plane supplies a
+datum normal. That normal orients a sketch in-plane axis only when it is
+perpendicular to the sketch-plane normal. The resolved 3-D model item and the
+section's owned location frame are separate inputs to a section projection.
 
 ### 8.2 Section topology
 
@@ -4399,7 +4535,9 @@ first following `p_saved_result` record. If that close is absent, the span ends
 at the next `gsec3d_ptr` header or at the enclosing definition boundary. Named
 fields outside this span do not belong to the record. The placement's plain
 `plane_id` field supplies the sketch-plane entity; an `e0 01 plane_id` field
-inside `ref_planes` supplies the nested datum-geometry identifier.
+inside `ref_planes` supplies the nested typed model-item identifier. It is a
+datum-geometry identifier only under the complete surface-reference form; an
+array class reference does not supply that identity.
 
 Positional `segtab_ptr` replay ends at the first following section-table label,
 including `dimtab_ptr`, `relat_ptr`, `var_arr`, `gsec3d_ptr`, `order_ptr`, or
@@ -4823,11 +4961,15 @@ The `segtab` positional replay stores `type`, three direction fields, two endpoi
 For line rows, `verhor = 0` constrains the line vertical in section coordinates and `verhor = 1` constrains it horizontal. Other `verhor` values are not direction selectors.
 
 A type-58 `segtab` row identifies a saved conic. Its direction triple is
-zero, its point fields are absent and one, its center field is present,
-`arcorient = 0`, and `verhor = 2`. The two radius fields are references to
-the saved conic's first and second coefficients, not a circle radius and a
-secondary radius. `ext_id` joins the row through `order_table` to the
-type-58 `entity(conic)` record.
+zero, its point fields are absent and one, its center field is present, and
+`arcorient = 0`. The stored `verhor` field is a separate selector; it does
+not change the conic family. The two radius fields are references to the
+saved conic's first and second coefficients, not a circle radius and a
+secondary radius. An `order_table` match identifies a saved `entity(conic)`
+record only within its proved section ownership. The entity identifier is
+sketch-local and does not encode the geometry family. A conic owner takes
+precedence over sense-based circular inference. An unresolved conic locus
+remains native.
 
 ### 8.3 DEPDB profiles and operations
 
@@ -4871,7 +5013,10 @@ and supplies following assignments. Unknowns may have different physical
 dimensions; multiplication or division by a known dimensioned value supplies
 the corresponding affine coefficient. A nonlinear system requires one
 preceding finite numeric value of the resolved physical dimension for each
-unknown. Those values initialize the solve. The system uses the same dimension
+unknown. Block entry snapshots the ordered current values before invalidating
+the unknowns. Those snapshots initialize the solve. An explicit numeric zero
+is a value; an absent or nonnumeric value does not supply a default seed. A
+preceding solved block can supply a current value for the next block. The system uses the same dimension
 checks and replaces the unknown values only when its numeric residual equations
 have one finite root with a full-rank local Jacobian. Other diagnostic starting
 points can reject competing roots but cannot supply the accepted root. A root
@@ -4963,6 +5108,25 @@ dependency.
 `min(x,y)` selects `x` only when `x < y`; `max(x,y)` selects `x` only when
 `x > y`. Both functions select `y` when the operands are equal.
 
+A resolved basic custom unit owns its quantity type, reference unit, and
+conversion pair. The conversion maps a reference value to an actual unit value
+as `actual = offset + scale * reference`. Only basic temperature, quantity type
+four, admits a nonzero offset. Normalize a value already expressed in the
+actual unit by `(actual - offset) / scale` before reference-unit conversion.
+If the reference map is `canonical = a_ref * reference + b_ref`, the composed
+map is `canonical = (a_ref / scale) * actual + b_ref - a_ref * offset / scale`.
+A zero or non-finite scale, unresolved or ambiguous reference, reference cycle,
+or non-temperature offset leaves the conversion unresolved. Custom-unit names
+do not select process-wide offsets.
+
+An `xp_custom_sys_unit` stores six `unit_names` in length, mass, force, time,
+temperature, and angle order. Its `_conv_factors` is a count-bounded array of
+two-scalar conversion pairs indexed by numeric quantity type. The named first
+pair uses `__scale f8 02`; the two slots are scale followed by offset. Later
+pairs replay those slots positionally. The pair array belongs to a unit-system
+conversion and has no per-pair custom-unit name or reference-unit name. It does
+not define named custom units or replace their reference bindings.
+
 Square brackets following a numeric literal or parameter expression contain a
 unit expression. Identifiers inside the brackets are unit symbols, not relation
 dependencies. Length symbols `mm`, `cm`, `m`, `in`, `inch`, `ft`, `foot`, and
@@ -5033,7 +5197,7 @@ A curve-equation entity carries its placement in `local_sys f9 <dimensions> <cou
 Curve-equation rows use the shared rank-two local-system image defined for
 plane rows.
 
-A `protextrude` or `protrevolve` operation references its sweep axis through `gsec3d_ptr` placement fields rather than an inline axis vector. The `srf_array` row `feat_id` binds each materialized carrier to the generating feature. Extruding a section line yields a plane, extruding an arc yields a cylinder, and extruding an interpolation spline yields a degree-one ruled NURBS surface that retains the spline's degree, knot vector, control points, and weights along the directrix parameter. The feature's cap-plane offsets bound the translation parameter, including symmetric and two-sided spans. A closed profile yields cap planes. Each solved carrier in an `ent_tab` profile or a closed point-incidence fallback profile defines an unbounded surface of revolution independently of the operation's angular trim. A line parallel, angled, or perpendicular to the axis yields a cylinder, circular cone, or plane. A circular arc or complete circle with center on or off the axis yields a sphere or torus. An interpolation spline yields a full-turn tensor-product NURBS carrier. Saved analytic entities use their `order_table` source identity and same-feature generated-surface entry exactly as saved splines do. The projected carrier-to-axis vector defines the zero-azimuth direction; construction segments outside the resolved profile do not generate surfaces.
+A sweep operation requires an independently unique join to its section before section placement can supply operation geometry. `ActDatums` is one placement substrate; its absence does not authorize a default axis or imply that the saved section has no frame. A complete saved section-plane equation and eligible typed model-plane reference can instead place the section. An extrusion uses the placed section normal as its sweep line; its operation extent and side state separately select the oriented side. A revolution additionally requires an independently established in-plane centerline or an exact external linear-geometry reference. The nested `gsec3d_ptr.ref_planes` section-entity identifier is reference metadata, not a revolution-axis selector. The bounded internal-centerline path requires complete segment and variable tables and exactly one nondegenerate line whose resolved endpoints have section coordinate `u=0`; both endpoints are placed through the owned section frame. A resolved frame without a unique operation-to-section join leaves the operation profile unresolved. Missing or ambiguous axis evidence remains unresolved unless a separately guarded generated-carrier rule supplies it. The `srf_array` row `feat_id` binds each materialized carrier to the generating feature. Extruding a section line yields a plane, extruding an arc yields a cylinder, and extruding an interpolation spline yields a degree-one ruled NURBS surface that retains the spline's degree, knot vector, control points, and weights along the directrix parameter. The feature's cap-plane offsets bound the translation parameter, including symmetric and two-sided spans. A closed profile yields cap planes. Each solved carrier in an `ent_tab` profile or a closed point-incidence fallback profile defines an unbounded surface of revolution independently of the operation's angular trim. A line parallel, angled, or perpendicular to the axis yields a cylinder, circular cone, or plane. A circular arc or complete circle with center on or off the axis yields a sphere or torus. An interpolation spline yields a full-turn tensor-product NURBS carrier. Saved analytic entities use their `order_table` source identity and same-feature generated-surface entry exactly as saved splines do. The projected carrier-to-axis vector defines the zero-azimuth direction; construction segments outside the resolved profile do not generate surfaces.
 
 Each closed-profile vertex of a linear sweep defines a line carrier through its
 placed section position in the normalized section-normal direction. The

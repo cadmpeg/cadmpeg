@@ -262,6 +262,9 @@ impl DesignEdgeIdentityOperand {
     pub(crate) fn layout(&self) -> DesignEdgeIdentityLayout {
         self.layout
     }
+    pub(crate) fn lineage_key(&self) -> (&str, &str) {
+        (self.asset_id.as_str(), self.context_id.as_str())
+    }
     fn asset_id_offset(&self) -> u64 {
         self.local_id_offset() + 18
     }

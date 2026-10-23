@@ -17,6 +17,7 @@ pub(crate) mod binding;
 mod body_candidates;
 mod body_index;
 mod cache;
+pub(crate) mod compact_lineage;
 pub(crate) mod face_admission;
 mod loop_index;
 mod recipe_index;
@@ -6993,12 +6994,17 @@ fn surface_patch_edge_operand_slot<'a>(
     if edge_reference.candidate_edges.is_empty() {
         return None;
     }
-    let face_candidates = if face_reference.candidate_faces.is_empty() {
-        &face_reference.alternate_selector_faces
-    } else {
-        &face_reference.candidate_faces
-    };
-    let faces = selection::faces_in_topology(face_candidates, topology);
+    if face_reference.candidate_faces.is_empty()
+        || face_reference
+            .candidate_faces
+            .iter()
+            .collect::<HashSet<_>>()
+            .len()
+            != face_reference.candidate_faces.len()
+    {
+        return None;
+    }
+    let faces = selection::faces_in_topology(&face_reference.candidate_faces, topology);
     let face_boundary_edges = face_boundary_edges(&faces, topology, topology_queries);
     let mut candidates = edge_reference
         .candidate_edges
@@ -7015,11 +7021,11 @@ fn surface_patch_edge_operand_slot<'a>(
 }
 
 fn common_surface_patch_reference(left: [u32; 2], right: [u32; 2]) -> Option<u32> {
-    let mut common = left
-        .into_iter()
-        .filter(|reference| right.contains(reference));
-    let reference = common.next()?;
-    common.next().is_none().then_some(reference)
+    let mut common = left.into_iter().collect::<HashSet<_>>();
+    common.retain(|reference| right.contains(reference));
+    (common.len() == 1)
+        .then(|| common.into_iter().next())
+        .flatten()
 }
 
 fn bind_active_edge_operand_candidates<'a>(

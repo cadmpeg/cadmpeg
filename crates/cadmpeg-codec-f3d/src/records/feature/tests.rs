@@ -463,8 +463,8 @@ fn snapshot_body_rows_preserve_wire_and_reject_unequal_arrays() {
                 let offsets_wire = ["[]", "[22]", "[22,37]"][offsets];
                 let fields_wire = [
                     "[]",
-                    "[\"010203040506\"]",
-                    "[\"010203040506\",\"060504030201\"]",
+                    "[\"000003040506\"]",
+                    "[\"000003040506\",\"000004030201\"]",
                 ][fields];
                 let wire = format!(
                     r#"{{"body_entity_suffixes":{values_wire},"body_entity_suffix_offsets":{offsets_wire},"body_entity_fields":{fields_wire},"related_guids":["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb","cccccccc-cccc-4ccc-8ccc-cccccccccccc"],"related_guid_offsets":[66,142,275],"linkage_record":301,"linkage_record_offset":234,"auxiliary_record":401,"auxiliary_record_offset":253}}"#

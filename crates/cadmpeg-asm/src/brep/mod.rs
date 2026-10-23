@@ -24,6 +24,7 @@ pub mod geometry;
 pub mod key_maps;
 pub mod records;
 pub mod stats;
+mod subsets;
 use stats::Stats;
 mod topology;
 pub mod transfer;

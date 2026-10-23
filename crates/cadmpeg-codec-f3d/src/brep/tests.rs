@@ -518,3 +518,37 @@ fn design_body_selectors_prefer_exact_keys_then_fall_back_to_ordinals() {
         )])
     );
 }
+
+#[test]
+fn source_curve_keys_retain_distinct_qualifiers_in_every_payload_form() {
+    for qualifier in [0u64, 165, 26302, u64::MAX] {
+        let mut forms = vec![vec![
+            AttributeValue::Integer(1),
+            AttributeValue::Integer(1),
+            AttributeValue::Integer(3),
+            AttributeValue::String(format!("149 {qualifier} 1 0 2 1")),
+        ]];
+        if let Ok(qualifier) = i64::try_from(qualifier) {
+            for form in [0, 2] {
+                let mut values = vec![
+                    AttributeValue::Integer(1),
+                    AttributeValue::Integer(1),
+                    AttributeValue::Integer(form),
+                    AttributeValue::Integer(149),
+                    AttributeValue::Integer(qualifier),
+                    AttributeValue::Integer(1),
+                    AttributeValue::Integer(2),
+                    AttributeValue::Integer(1),
+                ];
+                if form == 2 {
+                    values.push(AttributeValue::Integer(0));
+                }
+                forms.push(values);
+            }
+        }
+        for values in forms {
+            let payload = super::sketch_link_payload(&values).expect("source-curve key");
+            assert_eq!((payload.sketch_curve_id, payload.ref_b), (149, qualifier));
+        }
+    }
+}

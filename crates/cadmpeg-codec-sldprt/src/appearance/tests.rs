@@ -74,7 +74,7 @@ fn inline_display_appearance(name: &str, rgb: [u8; 3]) -> Vec<u8> {
 fn feature_visual_record(source_id: u32, timestamp: u32, rgb: [u8; 3]) -> Vec<u8> {
     let mut record = vec![0; feature_visual::LEN];
     for (offset, value) in [
-        (feature_visual::VERSION, feature_visual::VERSION_VALUE),
+        (feature_visual::PRELUDE, 0),
         (feature_visual::FEATURE_SOURCE_ID, source_id),
         (feature_visual::FEATURE_TIMESTAMP, timestamp),
         (
@@ -171,7 +171,7 @@ fn display_colors(bytes: Vec<u8>) -> Vec<[u8; 3]> {
         .model
         .tessellations
         .iter()
-        .map(|tessellation| {
+        .filter_map(|tessellation| {
             let binding = result
                 .ir()
                 .model
@@ -179,8 +179,7 @@ fn display_colors(bytes: Vec<u8>) -> Vec<[u8; 3]> {
                 .iter()
                 .find(|binding| {
                     binding.target == AppearanceTarget::Tessellation(tessellation.id.to_string())
-                })
-                .unwrap();
+                })?;
             let color = colors[&binding.appearance];
             let table_index = tessellation
                 .id
@@ -190,11 +189,11 @@ fn display_colors(bytes: Vec<u8>) -> Vec<[u8; 3]> {
                 .unwrap()
                 .parse::<usize>()
                 .unwrap();
-            (
+            Some((
                 table_index,
                 [color.r(), color.g(), color.b()]
                     .map(|value| truncate_f64_to_u8(f64::from((value * 255.0).round())).unwrap()),
-            )
+            ))
         })
         .collect::<Vec<_>>();
     colors.sort_by_key(|(table_index, _)| *table_index);
@@ -253,7 +252,7 @@ fn display_body_and_face_assignments_use_structural_precedence() {
 }
 
 #[test]
-fn persistent_surface_sources_bind_feature_appearances() {
+fn unresolved_history_and_display_state_do_not_bind_feature_appearances() {
     let classes = [
         "moFromSktEntSurfIdRep_c",
         "moFromSktEnt3IntSurfIdRep_c",
@@ -278,9 +277,7 @@ fn persistent_surface_sources_bind_feature_appearances() {
         (44, 20, [239, 0, 0]),
         (51, 30, [7, 255, 43]),
     ];
-    let mut expected = vec![[236, 255, 0]; 6];
-    expected.extend([[239, 0, 0]; 4]);
-    expected.extend([[7, 255, 43]; 2]);
+    let expected: Vec<[u8; 3]> = Vec::new();
     assert_eq!(
         display_colors(display_fixture([128; 3], &faces, &[], &features)),
         expected
@@ -288,7 +285,7 @@ fn persistent_surface_sources_bind_feature_appearances() {
 }
 
 #[test]
-fn display_feature_binding_records_source_entity() {
+fn unresolved_feature_scope_withholds_display_fallback() {
     let source = display_fixture(
         [128; 3],
         &[vec![("moFromSktEntSurfIdRep_c", 36, 1)]],
@@ -298,9 +295,14 @@ fn display_feature_binding_records_source_entity() {
     let result = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert!(result.ir().model.appearance_bindings.iter().any(|binding| {
-        binding.source_entity_id.as_deref() == Some("Contents/DisplayLists::DisplayFace[0]")
-    }));
+    assert!(
+        !result.ir().model.appearance_bindings.iter().any(|binding| {
+            matches!(
+                binding.target,
+                cadmpeg_ir::appearance::AppearanceTarget::Tessellation(_)
+            )
+        })
+    );
 }
 
 #[test]
@@ -323,7 +325,7 @@ fn face_local_wins_and_conflicting_or_missing_feature_sources_do_not_guess() {
             &[(0, [0, 0, 255])],
             &[(36, 10, [255, 0, 0]), (44, 20, [0, 255, 0])],
         )),
-        [[0, 0, 255], [128; 3], [128; 3]]
+        [[0, 0, 255]]
     );
 }
 
@@ -379,8 +381,12 @@ fn decode_preserves_ambiguous_materials_without_fabricating_ownership() {
         .expect("a finite position is a point"),
     );
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(result.ir(), result.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_fixture_write_with_native_envelope(
+        result.ir(),
+        result.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();

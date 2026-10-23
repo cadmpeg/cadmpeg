@@ -50,9 +50,8 @@ use body_selection::{
 };
 
 use feature_projection::{
-    blend_feature_definition, blind_hole_axis_placements_for_operations,
-    blind_hole_body_projection, blind_hole_operations, block_placement,
-    body_writing_unresolved_feature_definition, brep_feature_definition,
+    blind_hole_axis_placements_for_operations, blind_hole_body_projection, blind_hole_operations,
+    block_placement, body_writing_unresolved_feature_definition, brep_feature_definition,
     counterbore_axis_placements_for_operations, counterbore_body_projection,
     counterbore_operations, expressions_by_id, feature_source_content,
     hole_axis_placements_for_operations, hole_body_projection, hole_package_projection,
@@ -60,8 +59,7 @@ use feature_projection::{
     non_modeling_history_definition, offset_surface_feature_definition, primary_hole_outputs,
     selection_indices_native, simple_hole_chamfers, simple_hole_native_properties,
     simple_hole_operations, sphere_body_projection, thicken_feature_definition,
-    FeatureProjectionIndex, HolePackageSources, HoleProjection, NewBodyEvidence, NxBlendFamily,
-    ProjectionArenas,
+    FeatureProjectionIndex, HolePackageSources, HoleProjection, NewBodyEvidence, ProjectionArenas,
 };
 
 const MIN_LINEAR_TOLERANCE: f64 = 1.0e-9;
@@ -4024,25 +4022,6 @@ fn attach_feature_operations(
                 );
             }
         }
-        let blend_family = match label.value.as_str() {
-            "BLEND" => Some(NxBlendFamily::Edge),
-            "FACE_BLEND" => Some(NxBlendFamily::Face),
-            _ => None,
-        };
-        let blend_projection = if let Some(family) = blend_family {
-            blend_feature_definition(&projection_index, &outputs, family)
-        } else {
-            None
-        };
-        if let Some((_, surfaces)) = &blend_projection {
-            for (surface_ordinal, surface) in surfaces.iter().enumerate() {
-                insert_source_property(
-                    &mut source_properties,
-                    format_args!("blend_result_surface.{surface_ordinal}"),
-                    format_args!("{}", surface.as_str()),
-                );
-            }
-        }
         let extrude_projection = if label.value == "EXTRUDE" {
             let mut output_kinds = Vec::new();
             for output in &outputs {
@@ -4143,7 +4122,6 @@ fn attach_feature_operations(
             .or(extract_body_projection)
             .or(sew_projection)
             .or(extrude_projection)
-            .or_else(|| blend_projection.map(|(definition, _)| definition))
             .or_else(|| thicken_projection.map(|(definition, _)| definition))
             .or_else(|| offset_projection.map(|(definition, _)| definition))
             .or(sphere_definition)

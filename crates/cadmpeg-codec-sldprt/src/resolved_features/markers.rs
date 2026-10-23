@@ -744,7 +744,7 @@ pub(super) fn spatial_vertex_offsets(payload: &[u8]) -> Vec<usize> {
 /// failure to read its native code, ordinal, or checked identity is a
 /// malformed lane. Returning an error keeps the marker from disappearing
 /// through an iterator's `filter_map`.
-pub(super) fn admit_sketch_input_entities(
+pub(crate) fn admit_sketch_input_entities(
     payload: &[u8],
     parent: &str,
 ) -> Result<Vec<SketchInputEntity>, cadmpeg_core::CodecError> {

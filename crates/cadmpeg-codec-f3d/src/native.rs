@@ -50,6 +50,7 @@ use crate::records::{
     },
     mesh::DesignMeshFeature,
     parameters::{DesignParameter, DesignParameterCompanion, DesignParameterOwner},
+    placement_construction::DesignPlacementConstruction,
     recipes::{ConstructionRecipe, CreationTimestamp, DesignComponentNamingSpace},
     references::{DesignMaterialAssignment, LostEdgeReference, PersistentReference},
     sketch_geometry::{SketchCurveIdentity, SketchPoint, SketchSurface, SketchText},
@@ -121,6 +122,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "design_body_bounds",
     "design_body_members",
     "design_body_recipe_operands",
+    "design_body_reference_tails",
     "design_canvas_images",
     "design_component_naming_spaces",
     "design_component_occurrences",
@@ -154,6 +156,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "design_parameter_owners",
     "design_parameter_scopes",
     "design_parameters",
+    "design_placement_constructions",
     "design_profile_curve_selections",
     "design_record_headers",
     "design_sheet_metal_settings",
@@ -505,6 +508,16 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         counts_toward_emptiness: true,
     },
     F3dFamilyRow {
+        arena: "design_body_reference_tails",
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_body_reference_tails)
+        },
+        len: |model| model.design_body_reference_tails.len(),
+        counts_toward_emptiness: true,
+    },
+    F3dFamilyRow {
         arena: "design_loft_legacy_body_carriers",
         exactness: (),
         phase: Phase::ArenaOnly,
@@ -813,6 +826,16 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
             namespace.set_arena(ctx, row.arena, &model.design_record_headers)
         },
         len: |model| model.design_record_headers.len(),
+        counts_toward_emptiness: true,
+    },
+    F3dFamilyRow {
+        arena: "design_placement_constructions",
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_placement_constructions)
+        },
+        len: |model| model.design_placement_constructions.len(),
         counts_toward_emptiness: true,
     },
     F3dFamilyRow {
@@ -1234,6 +1257,10 @@ pub(crate) struct F3dNative {
     /// Whole-body operands joined to persistent body construction recipes.
     #[serde(default)]
     pub(crate) design_body_recipe_operands: Vec<DesignBodyRecipeOperand>,
+    /// Independent reference runs after whole-body operand UUIDs.
+    #[serde(default)]
+    pub(crate) design_body_reference_tails:
+        Vec<crate::records::body_reference_tail::DesignBodyReferenceTail>,
     /// Exact role-less body carriers paired with legacy Boolean-Loft groups.
     #[serde(default)]
     pub(crate) design_loft_legacy_body_carriers: Vec<DesignLoftLegacyBodyCarrier>,
@@ -1339,6 +1366,9 @@ pub(crate) struct F3dNative {
     /// Local-to-model placement frames for Design sketches.
     #[serde(default)]
     pub(crate) design_sketch_placements: Vec<DesignSketchPlacement>,
+    /// Versioned placement members and their exact reference encodings.
+    #[serde(default)]
+    pub(crate) design_placement_constructions: Vec<DesignPlacementConstruction>,
     /// Self-validating per-entity headers from the Design `BulkStream`.
     #[serde(default)]
     pub(crate) design_entity_headers: Vec<DesignEntityHeader>,
@@ -1505,6 +1535,7 @@ impl F3dNative {
             design_component_occurrences: read_arena!("design_component_occurrences"),
             design_component_naming_spaces: read_arena!("design_component_naming_spaces"),
             design_body_recipe_operands: read_arena!("design_body_recipe_operands"),
+            design_body_reference_tails: read_arena!("design_body_reference_tails"),
             design_loft_legacy_body_carriers: read_arena!("design_loft_legacy_body_carriers"),
             design_dimension_annotation_frames: read_arena!("design_dimension_annotation_frames"),
             design_dimension_presentation_frames: read_arena!(
@@ -1547,6 +1578,7 @@ impl F3dNative {
             design_entity_headers: read_arena!("design_entity_headers"),
             design_record_headers: read_arena!("design_record_headers"),
             design_sketch_placements: read_arena!("design_sketch_placements"),
+            design_placement_constructions: read_arena!("design_placement_constructions"),
             design_body_bindings: read_arena!("design_body_bindings"),
             design_body_bounds: read_arena!("design_body_bounds"),
             design_body_members: read_arena!("design_body_members"),

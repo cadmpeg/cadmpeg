@@ -28,6 +28,7 @@ use cadmpeg_core::CodecError;
 mod carried;
 mod coverage;
 mod loss;
+pub mod subset_lowering;
 pub mod target;
 
 use carried::{EntityLocation, FindingLocator};

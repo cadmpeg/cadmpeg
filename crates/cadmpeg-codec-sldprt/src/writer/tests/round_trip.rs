@@ -6,7 +6,6 @@ use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use std::{collections::BTreeMap, io::Cursor};
 
-use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::compare::floats_agree;
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
@@ -71,24 +70,22 @@ fn source_less_spatial_line(start: Point3, end: Point3) -> cadmpeg_ir::CadIr {
 #[test]
 fn retained_spatial_line_endpoint_edits_round_trip() {
     let mut first_encoding = Vec::new();
-    SldprtCodec
-        .plan(
-            EncodeInput::new(
-                &source_less_spatial_line(Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)),
-                None,
-            ),
-            TargetRequest::Inherit,
-        )
-        .and_then(|plan| plan.write_to(&mut first_encoding))
-        .expect("source-less spatial line should encode");
-    let mut decoded = SldprtCodec
+    crate::test_support::plan_fixture_with_native_envelope(
+        EncodeInput::new(
+            &source_less_spatial_line(Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)),
+            None,
+        ),
+        TargetRequest::Inherit,
+    )
+    .and_then(|plan| plan.write_to(&mut first_encoding))
+    .expect("source-less spatial line should encode");
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(first_encoding), &DecodeOptions::default())
-        .expect("encoded spatial line should decode")
-        .into_parts()
-        .0;
+        .expect("encoded spatial line should decode");
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let replacement_start = Point3::new(-7.5, 8.25, 9.0);
     let replacement_end = Point3::new(10.0, -11.5, 12.75);
-    decoded.model.spatial_sketch_entities[0].geometry =
+    decoded.ir_mut().model.spatial_sketch_entities[0].geometry =
         SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
             start: replacement_start,
             end: replacement_end,
@@ -96,10 +93,12 @@ fn retained_spatial_line_endpoint_edits_round_trip() {
         .unwrap();
 
     let mut second_encoding = Vec::new();
-    SldprtCodec
-        .plan(EncodeInput::new(&decoded, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut second_encoding))
-        .expect("edited retained spatial line should encode");
+    crate::test_support::plan_fixture_with_native_envelope(
+        EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+        TargetRequest::Inherit,
+    )
+    .and_then(|plan| plan.write_to(&mut second_encoding))
+    .expect("edited retained spatial line should encode");
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(second_encoding), &DecodeOptions::default())
         .expect("edited retained spatial line should decode")
@@ -137,7 +136,7 @@ fn mutated_semantic_write_round_trips() {
     let expected_faces = decoded.ir().model.faces.len();
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -182,7 +181,7 @@ fn bake_transform_is_applied_and_output_stays_valid() {
     );
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,

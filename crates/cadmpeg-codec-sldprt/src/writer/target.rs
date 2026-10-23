@@ -29,7 +29,20 @@ pub(crate) fn plan(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
-    let (written, bytes) = write(input, resolved.preserves_source())?;
+    let (written, bytes) = match write(input, resolved.preserves_source()) {
+        Err(error @ CodecError::NotImplemented(_)) if resolved.entry().is_none() => {
+            let synthesis_targets = crate::dialect::TARGETS
+                .iter()
+                .map(|entry| entry.id.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(resolved.unavailable(format!(
+                "cannot preserve {}; synthesis catalog targets: {synthesis_targets}; {error}",
+                resolved.target_id()
+            )));
+        }
+        result => result?,
+    };
     check_honesty(resolved, &written)?;
     Ok(finish(
         input,
@@ -112,7 +125,13 @@ fn finish(
         })
         .into_iter()
         .collect();
-    if let Written::Semantic { coverage, .. } = written {
+    if let Written::Semantic {
+        coverage,
+        omitted_envelope_bytes,
+        ..
+    } = written
+    {
+        losses.extend(super::envelope::auxiliary_loss(*omitted_envelope_bytes));
         // An unknown carrier cannot be generated. A successful semantic write
         // with one therefore retained or patched its native partition.
         let regenerated_brep = coverage.pcurves

@@ -886,10 +886,44 @@ pub(super) fn check_parameter_domains(
             add(curve.id.as_str(), &curve.geometry);
         }
     });
+    let subset_spans = crate::index::identities::BorrowedIdentities::build(|add| {
+        for procedural in &ir.model.procedural_curves {
+            if let crate::geometry::ProceduralCurveDefinition::Subset(subset) =
+                procedural.definition()
+            {
+                add(procedural.id.as_str(), subset.parameter_range());
+            }
+        }
+    });
     for edge in &ir.model.edges {
         let Some([start, end]) = edge.param_range().map(crate::units::FiniteVector::get) else {
             continue;
         };
+        let subset_span = edge
+            .curve()
+            .and_then(|id| curves.get(id.as_str()))
+            .and_then(|geometry| geometry.procedural_construction())
+            .and_then(|construction| subset_spans.get(construction.as_str()))
+            .map(|range| {
+                let [first, last] = range.endpoints();
+                last - first
+            });
+        if let Some(span) = subset_span {
+            let tolerance =
+                EPS_CARRIERS_PARAMETERIZATION_CHECK_PARAMETER_DOMAINS_E9 * span.abs().max(1.0);
+            if start < -tolerance || end > span + tolerance {
+                super::record_finding(
+                    findings,
+                    Check::ParameterDomain,
+                    Severity::Error,
+                    Some(edge.id.as_str()),
+                    format_args!(
+                        "edge parameter range [{start}, {end}] is outside the local domain \
+                         [0, {span}] of its subset curve"
+                    ),
+                );
+            }
+        }
         let mut valid = true;
         let curve = match edge.curve() {
             Some(id) => curves.get(id.as_str()).copied(),

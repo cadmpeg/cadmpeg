@@ -9,7 +9,9 @@ table records and regenerating, never by merging the derived text by hand.
 Without `--run-layout` the check compares which of the three files changed
 and prints the regeneration commands. With `--run-layout` it regenerates
 both derived files, reports what regeneration changed, and runs the
-`layout_tables` test. That builds the `cadmpeg` test target.
+`layout_tables` test. That builds the `cadmpeg` test target. A derived file
+that changed without its table passes when regeneration reproduces it byte
+for byte.
 """
 
 from __future__ import annotations
@@ -48,11 +50,14 @@ def run(context):
             sources.add(owners[path])
     if not (tables or pages or sources):
         return context.passed("no layout table or derived file changed")
-    problems = []
+    conflicts = []
     for name in sorted(tables | pages | sources):
         for path in (f"docs/layouts/{name}.toml", f"docs/layouts/{name}.md", code.get(name)):
             if path and CONFLICT.search(context.read(path) or ""):
-                problems.append(f"{path}: conflict markers")
+                conflicts.append(f"{path}: conflict markers")
+    if conflicts:
+        return context.failed("layout files contain conflict markers", *conflicts)
+    problems = []
     for name in sorted(tables - pages):
         problems.append(f"docs/layouts/{name}.toml changed but docs/layouts/{name}.md did not")
     for name in sorted((pages | sources) - tables):
@@ -60,10 +65,15 @@ def run(context):
                   if path in changed]
         problems.append(f"{', '.join(edited)} changed without docs/layouts/{name}.toml; "
                         "derived files are never edited by hand")
-    if problems:
-        return context.failed("layout tables and derived files disagree", *problems,
-                              "fix: keep every table record in the .toml, then run "
-                              f"{REGENERATE} and commit the result")
+    if problems and not (context.options.run_layout and context.worktree):
+        disagree = context.failed("layout tables and derived files disagree", *problems,
+                                  "fix: keep every table record in the .toml, then run "
+                                  f"{REGENERATE} and commit the result",
+                                  "or rerun preflight with --run-layout: a derived file "
+                                  "that regenerates byte for byte passes")
+        if not context.options.run_layout:
+            return disagree
+        return [disagree, context.skipped("--run-layout needs the working tree, not --rev")]
     if not context.options.run_layout:
         return context.warned(
             f"layout table(s) changed: {', '.join(sorted(tables))}; regeneration not verified",

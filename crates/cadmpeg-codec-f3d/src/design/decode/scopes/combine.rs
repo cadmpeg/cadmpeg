@@ -12,6 +12,7 @@ use crate::design::DesignFeatureFamily;
 use crate::layout::combine_compact_operation_prefix as combine_compact;
 use crate::layout::combine_extended_reference_operation_prefix as combine_extended;
 use crate::layout::combine_external_selector_prefix as combine_external;
+use crate::layout::combine_external_selector_tail as combine_tail;
 use crate::layout::combine_standard_operation_prefix as combine_standard;
 use crate::records::feature::combine;
 use crate::records::feature::combine::DesignCombineBodySelection;
@@ -309,22 +310,21 @@ fn exact_combine_external_body_identity(
             Ok(None) => return None,
             Err(error) => return Some(Err(error)),
         };
-        if View::u32_le_at(bytes, cursor)? != 9
-            || View::u16_le_at(bytes, cursor.checked_add(4)?)? != 2
+        let tail_at = cursor;
+        if View::u32_le_at(bytes, tail_at.checked_add(combine_tail::CONSTANT_NINE)?)? != 9
+            || View::u16_le_at(bytes, tail_at.checked_add(combine_tail::CONSTANT_TWO)?)? != 2
         {
             return None;
         }
-        cursor = cursor.checked_add(6)?;
-        let first_tail_value_at = cursor;
-        let first_tail_value = View::u64_le_at(bytes, cursor)?;
-        cursor = cursor.checked_add(8)?;
-        if View::u32_le_at(bytes, cursor)? != 48 {
+        let first_tail_value_at = tail_at.checked_add(combine_tail::SELECTION_PAYLOAD_STAMP)?;
+        let first_tail_value = View::u64_le_at(bytes, first_tail_value_at)?;
+        let second_tail_value_at = tail_at.checked_add(combine_tail::EVALUATION_SCALAR)?;
+        let evaluation_scalar = View::f64_le_at(bytes, second_tail_value_at)?;
+        if !evaluation_scalar.is_finite() || evaluation_scalar < 0.0 {
             return None;
         }
-        cursor = cursor.checked_add(4)?;
-        let second_tail_value_at = cursor;
-        let second_tail_value = View::u64_le_at(bytes, cursor)?;
-        cursor = cursor.checked_add(8)?;
+        let second_tail_value = View::u64_le_at(bytes, second_tail_value_at)?;
+        cursor = tail_at.checked_add(combine_tail::NESTED_TWO_REFERENCE)?;
         let take_local = |cursor: &mut usize, expected| {
             let reference = take_reference(bytes, cursor)?;
             (reference.local()?.0 == u64::from(expected)).then_some(())

@@ -209,6 +209,7 @@ fn external_reference_placements_project_as_root_occurrences_in_millimetres() {
         }],
         placement_failures: Vec::new(),
         placement_overrides: Vec::new(),
+        placement_metadata_missing: false,
     };
 
     let occurrences = super::project_occurrences(&table).unwrap();
@@ -653,9 +654,7 @@ fn legacy_occurrence_reference(target: u64, identity: u64) -> Vec<u8> {
     bytes
 }
 
-/// One legacy typed placement envelope. The target-reference fields are
-/// deliberately built from independent values; only the role and transform
-/// are projected by the placement reader.
+/// One legacy typed placement envelope.
 fn legacy_occurrence_record(
     role: &str,
     entity_id: u64,
@@ -682,7 +681,7 @@ fn legacy_occurrence_record(
             .expect("fixture UTF-16 code-unit count fits u32"),
     );
     bytes.push(0);
-    bytes.extend(legacy_occurrence_reference(3, 0x1112_1314_1516_1718));
+    bytes.extend(legacy_occurrence_reference(3, 0x0102_0304_0506_0708));
     match transform {
         Some(transform) => {
             bytes.push(0);

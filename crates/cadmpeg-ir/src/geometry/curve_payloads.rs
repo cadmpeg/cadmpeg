@@ -1323,6 +1323,8 @@ fn ordered(range: &[FiniteReal; 2]) -> bool {
     range[0] <= range[1]
 }
 
+mod subset_cache;
+
 #[cfg(test)]
 mod tests;
 

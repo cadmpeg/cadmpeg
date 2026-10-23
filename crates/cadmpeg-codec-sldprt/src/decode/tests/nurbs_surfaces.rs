@@ -467,6 +467,7 @@ fn strict_rejects_topology_decode_resting_on_untyped_surface() {
     body.extend(world_point(60, [0.0, 0.0, 0.0]));
     body.extend(world_point(61, [1.0, 0.0, 0.0]));
     body.extend(world_point(62, [0.0, 1.0, 0.0]));
+    crate::test_support::parasolid::complete_fixture_vertex_owners(&mut body);
     let fixture = sldprt_with_body(&body);
 
     let salvaged = SldprtCodec

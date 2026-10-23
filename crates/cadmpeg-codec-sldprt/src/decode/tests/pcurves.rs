@@ -216,6 +216,7 @@ fn oblique_cylinder_section_gets_an_exact_polar_harmonic_pcurve() {
     body.extend(vertex_use(50, 60));
     body.extend(world_point(60, [1.0, 0.0, 1.0]));
 
+    crate::test_support::parasolid::complete_fixture_vertex_owners(&mut body);
     let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&body)),
@@ -263,6 +264,7 @@ fn coaxial_cone_circle_preserves_parameter_direction() {
     body.extend(vertex_use(50, 60));
     body.extend(world_point(60, [2.0, 0.0, 1.0]));
 
+    crate::test_support::parasolid::complete_fixture_vertex_owners(&mut body);
     let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&body)),
@@ -303,6 +305,7 @@ fn coaxial_torus_circle_gets_constant_minor_angle_pcurve() {
     body.extend(vertex_use(50, 60));
     body.extend(world_point(60, [2.0, 0.0, 1.0]));
 
+    crate::test_support::parasolid::complete_fixture_vertex_owners(&mut body);
     let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&body)),

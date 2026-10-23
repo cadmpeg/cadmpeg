@@ -165,7 +165,7 @@ fn decode_projects_every_dimension_as_a_neutral_parameter() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -285,7 +285,7 @@ fn parameter_references_distinguish_reserved_expression_syntax() {
             .name = new_name.into();
     }
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -425,7 +425,12 @@ fn decode_projects_evaluated_equations_into_feature_semantics() {
     ));
 
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &(source),
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
@@ -462,7 +467,7 @@ fn decode_projects_evaluated_equations_into_feature_semantics() {
 
     decoded.ir_mut().model.features[0].name = Some("Renamed equation boss".into());
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -584,7 +589,7 @@ fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -652,7 +657,12 @@ fn feature_rename_rewrites_only_its_qualified_parameter_references() {
         br#"<Keywords><Feature Name="Sketch1" Type="Sketch" id="10"><Dimension Name="D1">2mm</Dimension></Feature><Feature Name="Sketch2" Type="Sketch" id="11"><Dimension Name="D1">3mm</Dimension></Feature><Feature Name="Equations" Type="EquationDriven" id="12"><Dimension Name="Result">D1@Sketch1 + D1@Sketch2</Dimension></Feature></Keywords>"#,
     ));
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &(source),
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     decoded
@@ -665,7 +675,7 @@ fn feature_rename_rewrites_only_its_qualified_parameter_references() {
         .name = Some("Profile".into());
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -764,7 +774,12 @@ fn configuration_local_modeling_edits_without_brep_are_refused() {
 
     let decoded = EditableDecodeResult::from(
         SldprtCodec
-            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .decode(
+                &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                    &(source),
+                )),
+                &DecodeOptions::default(),
+            )
             .unwrap(),
     );
     assert!(!decoded.report().losses.iter().any(|loss| loss
@@ -830,7 +845,7 @@ fn configuration_local_modeling_edits_without_brep_are_refused() {
         parameter_id.clone(),
         ParameterValue::Length(Length::new(75.0).unwrap()),
     );
-    let error = crate::test_support::plan_inherited_write(
+    let error = crate::test_support::plan_fixture_write_with_native_envelope(
         &incoherent,
         decoded.source_fidelity(),
         &mut Vec::new(),
@@ -877,7 +892,7 @@ fn configuration_local_modeling_edits_without_brep_are_refused() {
         let offset = usize::try_from(scalar.offset).unwrap();
         lane.native_payload[offset..offset + 8].copy_from_slice(&0.060f64.to_le_bytes());
     });
-    let error = crate::test_support::plan_inherited_write(
+    let error = crate::test_support::plan_fixture_write_with_native_envelope(
         &conflicting,
         decoded.source_fidelity(),
         &mut Vec::new(),
@@ -895,10 +910,16 @@ fn configuration_local_modeling_edits_without_brep_are_refused() {
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
     assert!(error
         .to_string()
-        .contains("configuration design-state edit"));
+        .contains("validated retained local, central and EOCD signature tokens"));
+
+    assert!(unavailable_fidelity
+        .retained_record(crate::SOURCE_IMAGE_ID)
+        .unwrap()
+        .data()
+        .is_none());
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
         &edited,
         decoded.source_fidelity(),
         &mut encoded,

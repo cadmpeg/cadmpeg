@@ -1078,3 +1078,114 @@ fn unterminated_solve_block_cannot_create_assignments() {
     assert_eq!(assignments.len(), 1);
     assert_eq!(assignments[0].parameter_target(), Some(("before", None)));
 }
+
+#[test]
+fn unresolved_non_smooth_blocks_invalidate_seeds_without_losing_constants() {
+    for seed in [-4, 0, 4] {
+        for equation in ["min(x,-x)=-2", "mod(x,2)=0"] {
+            let lines = [
+                format!("x={seed}"),
+                "c=7".to_owned(),
+                "SOLVE".to_owned(),
+                equation.to_owned(),
+                "FOR x".to_owned(),
+                "r=x+c".to_owned(),
+                "q=c+1".to_owned(),
+            ]
+            .into_iter()
+            .enumerate()
+            .map(|(offset, text)| CurveExpressionLine { text, offset })
+            .collect::<Vec<_>>();
+            let evaluation = evaluate_expression_program_details(
+                &lines,
+                None,
+                &ExternalRelationSymbols::default(),
+            );
+            assert!(evaluation.solve_solutions.is_empty());
+            assert_eq!(evaluation.assignments.len(), 4);
+            assert_eq!(evaluation.assignments[0].value, None);
+            assert_eq!(evaluation.assignments[2].value, None);
+            assert_eq!(
+                evaluation.assignments[1].value,
+                Some(CurveExpressionValue::Number(
+                    cadmpeg_ir::scalar::FiniteReal::new(7.0).expect("finite constant")
+                ))
+            );
+            assert_eq!(
+                evaluation.assignments[3].value,
+                Some(CurveExpressionValue::Number(
+                    cadmpeg_ir::scalar::FiniteReal::new(8.0).expect("finite constant expression")
+                ))
+            );
+        }
+    }
+}
+
+#[test]
+fn nonlinear_explicit_zero_is_a_seed_and_failed_blocks_do_not_leak_old_values() {
+    for (equation, expected) in [("x*x*x+x=10", Some(2.0)), ("x*x+1=0", None)] {
+        let lines = ["x=0", "c=7", "SOLVE", equation, "FOR x", "r=x+c", "q=c+1"]
+            .into_iter()
+            .enumerate()
+            .map(|(offset, text)| CurveExpressionLine {
+                text: text.to_owned(),
+                offset,
+            })
+            .collect::<Vec<_>>();
+        let evaluation =
+            evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+        if let Some(expected) = expected {
+            let [CurveExpressionValue::Number(value)] = evaluation.solve_solutions[&2].as_slice()
+            else {
+                panic!("explicit numeric zero must initialize the nonlinear solve");
+            };
+            assert!((value.get() - expected).abs() <= EPS_NONLINEAR_VALUE);
+            let Some(CurveExpressionValue::Number(after)) = &evaluation.assignments[2].value else {
+                panic!("solved value must supply the dependent relation");
+            };
+            assert!((after.get() - 9.0).abs() <= EPS_NONLINEAR_VALUE);
+        } else {
+            assert!(evaluation.solve_solutions.is_empty());
+            assert_eq!(evaluation.assignments[0].value, None);
+            assert_eq!(evaluation.assignments[2].value, None);
+        }
+        assert_eq!(
+            evaluation.assignments[3].value,
+            quantity_value(8.0, RelationDimension::default())
+        );
+    }
+}
+
+#[test]
+fn preceding_affine_solution_supplies_the_next_nonlinear_seed() {
+    let lines = [
+        "SOLVE",
+        "x=2",
+        "FOR x",
+        "SOLVE",
+        "x*x*x+x=10",
+        "FOR x",
+        "after=x+1",
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(offset, text)| CurveExpressionLine {
+        text: text.to_owned(),
+        offset,
+    })
+    .collect::<Vec<_>>();
+    let evaluation =
+        evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+    assert_eq!(evaluation.solve_solutions.len(), 2);
+    for offset in [0, 3] {
+        let [CurveExpressionValue::Number(value)] = evaluation.solve_solutions[&offset].as_slice()
+        else {
+            panic!("the ordered solve must supply a numeric result");
+        };
+        assert!((value.get() - 2.0).abs() <= EPS_NONLINEAR_VALUE);
+    }
+    let Some(CurveExpressionValue::Number(after)) = &evaluation.assignments[0].value else {
+        panic!("the second result must supply the following assignment");
+    };
+    assert!((after.get() - 3.0).abs() <= EPS_NONLINEAR_VALUE);
+}

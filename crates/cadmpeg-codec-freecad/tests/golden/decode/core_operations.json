@@ -1,7 +1,7 @@
 {
   "ir": {
     "decode_depth": "full",
-    "ir_version": "10",
+    "ir_version": "8",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -11927,8 +11927,8 @@
             },
             "kind": "line",
             "origin": {
-              "x": 0.9558823529411764,
-              "y": 0.9264705882352942,
+              "x": -2.220446049250313e-16,
+              "y": 1.5,
               "z": 9.0
             }
           },
@@ -12027,8 +12027,8 @@
             },
             "kind": "line",
             "origin": {
-              "x": 0.9558823529411764,
-              "y": 0.926470588235294,
+              "x": -2.220446049250313e-16,
+              "y": 1.5,
               "z": 0.0
             }
           },
@@ -12273,9 +12273,9 @@
             "kind": "circle",
             "radius": 2.0,
             "ref_direction": {
-              "x": 0.0,
-              "y": -1.0,
-              "z": 0.0
+              "x": -1.0,
+              "y": 1.8369701987210297e-16,
+              "z": -0.0
             }
           },
           "id": "fcstd:model:curve#PartFillet:Shape:PartFillet.Shape.brp:5",
@@ -12385,9 +12385,9 @@
             "kind": "circle",
             "radius": 2.0,
             "ref_direction": {
-              "x": 0.0,
-              "y": -1.0,
-              "z": 0.0
+              "x": -1.0,
+              "y": 1.8369701987210297e-16,
+              "z": -0.0
             }
           },
           "id": "fcstd:model:curve#PartFillet:Shape:PartFillet.Shape.brp:9",
@@ -16720,8 +16720,8 @@
           "carrier": {
             "curve": "fcstd:model:curve#PartChamfer:Shape:PartChamfer.Shape.brp:5",
             "param_range": [
-              -1.114740803426308,
-              1.800735143996343
+              0.0,
+              2.9154759474226504
             ]
           },
           "end": "fcstd:model:vertex#PartChamfer:Shape:PartChamfer.Shape.brp:11%40location1",
@@ -16772,8 +16772,8 @@
           "carrier": {
             "curve": "fcstd:model:curve#PartChamfer:Shape:PartChamfer.Shape.brp:9",
             "param_range": [
-              -1.114740803426308,
-              1.800735143996343
+              0.0,
+              2.9154759474226504
             ]
           },
           "end": "fcstd:model:vertex#PartChamfer:Shape:PartChamfer.Shape.brp:20%40location1",
@@ -16915,8 +16915,8 @@
           "carrier": {
             "curve": "fcstd:model:curve#PartFillet:Shape:PartFillet.Shape.brp:5",
             "param_range": [
-              4.71238898038469,
-              6.283185307179586
+              0.0,
+              1.5707963267948966
             ]
           },
           "end": "fcstd:model:vertex#PartFillet:Shape:PartFillet.Shape.brp:11%40location1",
@@ -16967,8 +16967,8 @@
           "carrier": {
             "curve": "fcstd:model:curve#PartFillet:Shape:PartFillet.Shape.brp:9",
             "param_range": [
-              4.71238898038469,
-              6.283185307179586
+              0.0,
+              1.5707963267948966
             ]
           },
           "end": "fcstd:model:vertex#PartFillet:Shape:PartFillet.Shape.brp:20%40location1",

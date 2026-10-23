@@ -1380,3 +1380,13 @@ fn opaque_history_span_retains_the_precise_framing_error() {
 }
 
 mod hem_carriers;
+
+#[test]
+fn surface_patch_reference_roles_deduplicate_repeated_ordinals() {
+    let common = crate::history::common_surface_patch_reference;
+    assert_eq!(common([1, 1], [3, 1]), Some(1));
+    assert_eq!(common([0, 2], [0, 4]), Some(0));
+    assert_eq!(common([0, 0], [0, 0]), Some(0));
+    assert_eq!(common([1, 2], [1, 2]), None);
+    assert_eq!(common([1, 2], [3, 4]), None);
+}

@@ -46,6 +46,7 @@ use super::work_geometry::exact_work_plane_frame;
 use crate::bytes::lp_ascii_filtered_view;
 use crate::container::ContainerScan;
 use crate::design::decode::assembly::exact_legacy_as_built_421_operands;
+use crate::design::decode::canvas::typed_canvas_reference;
 use crate::design::decode::operands::RecordFrame;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::decode::text::design_record_id;
@@ -53,6 +54,9 @@ use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
 use crate::ids;
 use crate::ids::native_stream;
+use crate::layout::canvas_scope_tail_98 as canvas_tail;
+use crate::layout::canvas_scope_typed_tail as typed_canvas_tail;
+use crate::layout::thread_bound_hole_tail as hole_tail;
 use crate::layout::typed_reference_parameter_scope_tail as typed_tail;
 use crate::records::feature::assembly;
 use crate::records::feature::coil;
@@ -115,6 +119,14 @@ pub(crate) fn decode_parameter_scopes(
             };
             scope.id =
                 design_record_id(&entry.name, ":design-parameter-scope#", scope.byte_offset());
+            let normal = super::super::patch::surface_patch_normal(
+                bytes,
+                &scope,
+                stream_types.get(&u64::from(scope.record_index)).copied(),
+            );
+            if let scope::DesignScopePayloadMut::SurfacePatch(patch) = scope.payload_mut() {
+                patch.normal = normal;
+            }
             bind_coil_extent_from_parameters(&mut scope, parameters, parameter_owners);
             bind_hem_operation_from_parameters(bytes, &mut scope, parameters, parameter_owners);
             if design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sketch) {
@@ -843,6 +855,7 @@ pub(crate) fn parameter_scope_tail_length_is_valid(
     }
     match kind {
         "CopyPasteBodies" => tail_length == 110,
+        "Hole" => matches!(tail_length, 72 | 76 | 77 | 78 | 87 | 109),
         "CoilPrimitive" => matches!(tail_length, 72 | 76 | 77 | 78 | 87 | 88),
         _ => matches!(tail_length, 72 | 76 | 77 | 78 | 87),
     }
@@ -898,7 +911,7 @@ fn parameter_scope_previous_history_offset_for_form(
         ScopeTailForm::Fixed => {}
     }
     match (kind, tail_length) {
-        ("CopyPasteBodies", 110) => Some(53),
+        ("CopyPasteBodies", 110) | ("Hole", 109) => Some(53),
         ("CoilPrimitive", 88) => None,
         (_, 72 | 76) => Some(30),
         (_, 77 | 78) => Some(31),
@@ -939,7 +952,13 @@ pub(in crate::design::decode) fn parse_parameter_scope(
             let Some(tail_length) = paired_at.checked_sub(kind_end) else {
                 continue;
             };
-            let fixed_tail = matches!(tail_length, 72 | 76 | 77 | 78 | 82 | 87 | 88 | 104 | 110);
+            let fixed_tail = matches!(tail_length, 72 | 76 | 77 | 78 | 82 | 87 | 88 | 104 | 110)
+                || (kind == "Canvas"
+                    && (exact_canvas_scope_tail(bytes.get(kind_end..paired_at)?, record_index)
+                        || exact_typed_canvas_scope_tail(bytes.get(kind_end..paired_at)?)));
+            let fixed_tail = fixed_tail
+                || (kind == "Hole"
+                    && exact_thread_bound_hole_tail(bytes.get(kind_end..paired_at)?, record_index));
             if fixed_tail
                 && parameter_scope_tail_length_is_valid(&kind, tail_length)
                 && fixed_candidate
@@ -948,7 +967,8 @@ pub(in crate::design::decode) fn parse_parameter_scope(
             {
                 fixed_ambiguous = true;
             }
-            if tail_length == typed_tail::LEN
+            if kind != "Canvas"
+                && tail_length == typed_tail::LEN
                 && typed_fixed_scope_tail_is_valid(bytes, kind_end, paired_at)
                 && fixed_candidate
                     .replace((at, kind_end, tail_length, ScopeTailForm::TypedFixed))
@@ -1012,7 +1032,9 @@ pub(in crate::design::decode) fn parse_parameter_scope(
         });
         // Every reference in one scope frame uses one spelling; the typed
         // tail selects the 51-byte typed reference-table entries.
-        let typed_references = tail_form == ScopeTailForm::TypedFixed;
+        let typed_canvas =
+            kind == scope::DesignFeatureKind::Canvas && tail_length == typed_canvas_tail::LEN;
+        let typed_references = tail_form == ScopeTailForm::TypedFixed || typed_canvas;
         let stride = if typed_references {
             crate::bytes::TYPED_LOCAL_REFERENCE_LEN
         } else {
@@ -1036,7 +1058,18 @@ pub(in crate::design::decode) fn parse_parameter_scope(
             let mut offsets = Vec::new();
             for ordinal in 0..count {
                 let marker = first.checked_add(ordinal.checked_mul(stride)?)?;
-                let member = if typed_references {
+                let member = if typed_canvas {
+                    if count == 2 {
+                        let guid = if ordinal == 0 {
+                            "5A1BF548-241F-46FD-9FB5-E4B05126EB9D"
+                        } else {
+                            "7B6C3C2D-4096-4E6D-B225-699E8C2D9355"
+                        };
+                        typed_canvas_reference(bytes, marker, guid)
+                    } else {
+                        None
+                    }
+                } else if typed_references {
                     crate::bytes::typed_local_reference_target(bytes, marker)
                 } else if bytes.get(marker) == Some(&1)
                     && bytes.get(marker + 5..marker + 11)? == [0; 6]
@@ -1298,7 +1331,7 @@ pub(in crate::design::decode) fn parse_parameter_scope(
             {
                 let construction = surface_patch_boundaries;
                 if let scope::DesignScopePayloadMut::SurfacePatch(slot) = scope.payload_mut() {
-                    *slot = construction;
+                    slot.boundaries = construction;
                 }
             }
         }
@@ -1324,6 +1357,96 @@ pub(in crate::design::decode) fn parse_parameter_scope(
         Some(Ok(scope))
     })()
     .transpose()
+}
+
+fn exact_thread_bound_hole_tail(tail: &[u8], hole: u32) -> bool {
+    if tail.len() != hole_tail::LEN {
+        return false;
+    }
+    let reference = |at| super::shared_frames::marked_record_reference(tail, at);
+    let Some(thread) =
+        reference(hole_tail::THREAD_REFERENCE).filter(|thread| *thread > 3 && *thread != hole)
+    else {
+        return false;
+    };
+    View::u32_le_at(tail, hole_tail::FEATURE_ORDINAL).is_some_and(|ordinal| ordinal != 0)
+        && tail.get(hole_tail::ZERO_PREFIX..hole_tail::MEMBER_COUNT) == Some(&[0; 8])
+        && View::u32_le_at(tail, hole_tail::MEMBER_COUNT) == Some(2)
+        && reference(hole_tail::SELF_REFERENCE) == Some(hole)
+        && tail.get(hole_tail::ZERO_BEFORE_COMPANION..hole_tail::FIRST_COMPANION) == Some(&[0; 3])
+        && reference(hole_tail::FIRST_COMPANION) == thread.checked_sub(1)
+        && tail.get(hole_tail::ZERO_BEFORE_HISTORY) == Some(&0)
+        && View::u32_le_at(tail, hole_tail::PREVIOUS_HISTORY_STATE).is_some()
+        && View::f64_le_at(tail, hole_tail::DURATION)
+            .is_some_and(|duration| duration.is_finite() && duration >= 0.0)
+        && View::u32_le_at(tail, hole_tail::EPOCH)
+            == View::u32_le_at(tail, hole_tail::REPEATED_EPOCH)
+        && reference(hole_tail::SECOND_COMPANION) == thread.checked_sub(2)
+        && tail.get(hole_tail::ZERO_BEFORE_THIRD..hole_tail::THIRD_COMPANION) == Some(&[0; 2])
+        && reference(hole_tail::THIRD_COMPANION) == thread.checked_sub(3)
+        && reference(hole_tail::CLOSING_SELF_REFERENCE) == Some(hole)
+        && tail.get(hole_tail::ZERO_TAIL) == Some(&0)
+}
+
+fn exact_typed_canvas_scope_tail(tail: &[u8]) -> bool {
+    tail.len() == typed_canvas_tail::LEN
+        && View::u32_le_at(tail, typed_canvas_tail::FEATURE_ORDINAL)
+            .is_some_and(|ordinal| ordinal != 0)
+        && tail.get(typed_canvas_tail::ZERO_PREFIX..typed_canvas_tail::FIRST_COMPANION)
+            == Some(&[0; 15])
+        && typed_canvas_reference(
+            tail,
+            typed_canvas_tail::FIRST_COMPANION,
+            "B7F34D7B-DAC4-41A5-B67D-D672537C3BFA",
+        )
+        .is_some_and(|index| index != 0)
+        && View::u32_le_at(tail, typed_canvas_tail::HISTORY_STATE) == Some(u32::MAX)
+        && View::f64_le_at(tail, typed_canvas_tail::DURATION)
+            .is_some_and(|duration| duration.is_finite() && duration >= 0.0)
+        && View::u32_le_at(tail, typed_canvas_tail::EPOCH)
+            == View::u32_le_at(tail, typed_canvas_tail::REPEATED_EPOCH)
+        && typed_canvas_reference(
+            tail,
+            typed_canvas_tail::SECOND_COMPANION,
+            "5FBE538E-139B-46D4-BCAF-CC796D1E1F78",
+        )
+        .is_some_and(|index| index != 0)
+        && tail.get(typed_canvas_tail::ZERO_BEFORE_THIRD..typed_canvas_tail::THIRD_COMPANION)
+            == Some(&[0; 2])
+        && typed_canvas_reference(
+            tail,
+            typed_canvas_tail::THIRD_COMPANION,
+            "6CCF41D5-40BE-48ED-A834-18F3EAED6C57",
+        )
+        .is_some_and(|index| index != 0)
+        && tail.get(typed_canvas_tail::ZERO_TAIL..) == Some(&[0; 2])
+}
+
+fn exact_canvas_scope_tail(tail: &[u8], record_index: u32) -> bool {
+    if tail.len() != canvas_tail::LEN {
+        return false;
+    }
+    let reference = |at| super::shared_frames::marked_record_reference(tail, at);
+    View::u32_le_at(tail, canvas_tail::FEATURE_ORDINAL).is_some_and(|ordinal| ordinal != 0)
+        && tail.get(canvas_tail::ZERO_PREFIX..canvas_tail::MEMBER_COUNT) == Some(&[0; 8])
+        && View::u32_le_at(tail, canvas_tail::MEMBER_COUNT) == Some(canvas_tail::MEMBER_COUNT_VALUE)
+        && reference(canvas_tail::SELF_REFERENCE) == Some(record_index)
+        && tail.get(canvas_tail::ZERO_BEFORE_COMPANION..canvas_tail::FIRST_COMPANION)
+            == Some(&[0; 3])
+        && reference(canvas_tail::FIRST_COMPANION).is_some_and(|index| index != 0)
+        && tail.get(canvas_tail::ZERO_BEFORE_HISTORY)
+            == Some(&canvas_tail::ZERO_BEFORE_HISTORY_VALUE)
+        && View::u32_le_at(tail, canvas_tail::HISTORY_STATE)
+            == Some(canvas_tail::HISTORY_STATE_VALUE)
+        && View::f64_le_at(tail, canvas_tail::DURATION)
+            .is_some_and(|value| value.is_finite() && value >= 0.0)
+        && View::u32_le_at(tail, canvas_tail::EPOCH)
+            == View::u32_le_at(tail, canvas_tail::REPEATED_EPOCH)
+        && reference(canvas_tail::SECOND_COMPANION).is_some_and(|index| index != 0)
+        && tail.get(canvas_tail::ZERO_BEFORE_THIRD..canvas_tail::THIRD_COMPANION) == Some(&[0; 2])
+        && reference(canvas_tail::THIRD_COMPANION).is_some_and(|index| index != 0)
+        && reference(canvas_tail::CLOSING_SELF_REFERENCE) == Some(record_index)
+        && tail.get(canvas_tail::ZERO_TAIL) == Some(&canvas_tail::ZERO_TAIL_VALUE)
 }
 
 fn named_parameter_scope_tail_is_valid(

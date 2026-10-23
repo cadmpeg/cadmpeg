@@ -8,7 +8,7 @@ checks against the merge base with the upstream default branch, and prints one
 summary line per result:
 
     preflight: PASS  branch      up to date with origin/main
-    preflight: FAIL  ir-version  serialized IR types changed; IR_VERSION is still 8
+    preflight: FAIL  ir-version  IR_VERSION is 8 but 1 file(s) still pin "ir_version": "11"
       fix: ...
 
 A FAIL is a problem that review or CI rejects. A WARN asks for a human

@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "10",
+    "ir_version": "8",
     "decode_depth": "full",
     "source": {
       "identity": {
@@ -515,6 +515,7 @@
             "selector_tail_offset": 3525
           }
         ],
+        "design_body_reference_tails": [],
         "design_canvas_images": [],
         "design_component_naming_spaces": [],
         "design_component_occurrences": [],
@@ -646,6 +647,7 @@
           }
         ],
         "design_parameters": [],
+        "design_placement_constructions": [],
         "design_profile_curve_selections": [],
         "design_record_headers": [
           {

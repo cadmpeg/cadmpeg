@@ -176,3 +176,24 @@ fn construction_group_rejects_overflowed_second_transform() {
 fn construction_group_rejects_overflowed_flag() {
     assert_eq!(tail_findings(u64::MAX, true).len(), 1);
 }
+
+#[test]
+fn hole_construction_group_accepts_its_retained_auxiliary_role() {
+    use crate::records::topology::construction::DesignConstructionOperandRole;
+    use crate::records::topology::extrude_selection::DesignOperandRole;
+    crate::test_support::with_decode_context(|decode| {
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let mut native = native(true, false);
+        native.design_construction_operand_groups[0].operand_role =
+            DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X21);
+        let ctx = super::super::Ctx::new(&ir, &native, decode);
+        let mut findings = Vec::new();
+        super::super::validate_construction_operand_groups(&ctx, &mut findings);
+        assert!(findings.is_empty());
+        native.design_construction_operand_groups[0].operand_role =
+            DesignConstructionOperandRole::Other(DesignOperandRole::PROFILE);
+        let ctx = super::super::Ctx::new(&ir, &native, decode);
+        super::super::validate_construction_operand_groups(&ctx, &mut findings);
+        assert_eq!(findings.len(), 1);
+    });
+}

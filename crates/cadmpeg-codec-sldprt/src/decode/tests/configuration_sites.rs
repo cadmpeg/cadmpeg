@@ -173,7 +173,8 @@ fn decode_synthesizes_sparse_partition_configuration() {
         .expect("a finite position is a point"),
     );
     let mut written = Vec::new();
-    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut written).unwrap();
+    crate::test_support::plan_fixture_write_with_native_envelope(&edited, &fidelity, &mut written)
+        .unwrap();
     let scan = crate::test_support::container::scan(&written);
     assert!(scan
         .blocks

@@ -446,9 +446,8 @@ pub(crate) struct SketchRelation {
     pub(crate) owner_entity_id: Option<cadmpeg_core::text::NonBlankString>,
     /// Nullable or role-specific references stored before the owner reference.
     auxiliary_references: ReferenceRun<u32, u32>,
-    /// Serialized count of the rectangular class's reference run. Zero selects
-    /// seed-to-final spans; a nonzero count selects adjacent spacing. `None`
-    /// for other relation classes and native data that did not retain it.
+    /// Serialized count of the rectangular class's ordered optional direction
+    /// reference slots. `None` for other classes or data without a retained count.
     pub(crate) rectangular_counted_reference_count: Option<u32>,
     /// First reference run, interleaved with per-member relation ordinals.
     /// Its order does not define relation operand order.
@@ -599,9 +598,8 @@ pub(crate) struct SketchRelationDraft {
     pub(crate) owner_entity_id: Option<cadmpeg_core::text::NonBlankString>,
     /// Nullable or role-specific references stored before the owner reference.
     pub(crate) auxiliary_references: ReferenceRun<u32, u32>,
-    /// Serialized count of the rectangular class's reference run. Zero selects
-    /// seed-to-final spans; a nonzero count selects adjacent spacing. `None`
-    /// for other relation classes and native data that did not retain it.
+    /// Serialized count of the rectangular class's ordered optional direction
+    /// reference slots. `None` for other classes or data without a retained count.
     pub(crate) rectangular_counted_reference_count: Option<u32>,
     /// First reference run, interleaved with per-member relation ordinals.
     /// Its order does not define relation operand order.
@@ -1218,10 +1216,10 @@ impl SketchPatternCount {
 pub(crate) enum SketchPatternDefinition {
     /// A circular-pattern relation's auxiliary operands.
     Circular {
-        /// Record index of the total-angle parameter value record.
-        angle_parameter: u32,
-        /// Record index of the instance-count parameter value record.
-        count_parameter: u32,
+        /// Optional record index of the total-angle parameter value record.
+        angle_parameter: Option<u32>,
+        /// Optional record index of the instance-count parameter value record.
+        count_parameter: Option<u32>,
         /// Evaluated total pattern angle in radians.
         evaluated_angle: FiniteReal,
         /// Evaluated instance count.
@@ -1252,17 +1250,16 @@ pub(crate) enum SketchPatternDefinition {
 pub(crate) struct SketchPatternDirection {
     /// Evaluated instance count along this direction.
     pub(crate) evaluated_count: SketchPatternCount,
-    /// Record index of the count parameter value record.
-    pub(crate) count_parameter: u32,
+    /// Optional record index of the count parameter value record.
+    pub(crate) count_parameter: Option<u32>,
     /// Direction in sketch coordinates; the decoder admits a squared length
     /// within `1e-6` of one.
     pub(crate) direction: SketchPatternUnitDirection,
     /// Evaluated source distance along this direction, in source units. The
-    /// owning relation's [`SketchRelation::rectangular_counted_reference_count`]
-    /// gives its meaning.
+    /// source record's first rectangular flag selects extent or spacing.
     pub(crate) evaluated_distance: FiniteReal,
-    /// Record index of the distance parameter value record.
-    pub(crate) distance_parameter: u32,
+    /// Optional record index of the distance parameter value record.
+    pub(crate) distance_parameter: Option<u32>,
 }
 
 #[cfg(test)]

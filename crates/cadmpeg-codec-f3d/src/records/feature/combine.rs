@@ -83,7 +83,7 @@ pub(crate) struct DesignCombineExternalBodyIdentity {
     external_link_name_offset: u64,
     /// Located property key and referenced-document version identity.
     external_version: Option<DesignExternalVersion>,
-    /// Retained u64 values around the fixed `u32 48` member in the selector tail.
+    /// Raw selection stamp and binary64 evaluation-scalar bits, separated by the epoch.
     #[serde(default)]
     tail_values: [u64; 2],
     /// Byte offsets of `tail_values` in source order.
@@ -248,7 +248,7 @@ pub(crate) struct DesignCombineExternalBodyIdentityWire {
         deserialize_with = "deserialize_external_version_urn_offset"
     )]
     pub(crate) external_version_urn_offset: Option<u64>,
-    /// Retained u64 values around the fixed `u32 48` member in the selector tail.
+    /// Raw selection stamp and binary64 evaluation-scalar bits, separated by the epoch.
     #[serde(default)]
     pub(crate) tail_values: [u64; 2],
     /// Byte offsets of `tail_values` in source order.

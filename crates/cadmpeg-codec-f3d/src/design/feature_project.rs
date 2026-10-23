@@ -8,6 +8,7 @@ use crate::design::dimensions::expression_identifiers;
 use crate::design::edge_resolve::{
     project_fixed_fillet_with_corners, resolved_edge_flange_group, resolved_edge_group,
     resolved_edge_treatment_group_with_corners, resolved_surface_patch_edge_group,
+    EdgeGroupTransition,
 };
 use crate::design::face_resolve::{
     design_angle, extrude_omits_zero_side_one_offset, extrude_profile_group_roots,
@@ -631,6 +632,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         body_bindings,
         component_naming_spaces,
         histories,
+        face_boundaries,
         sheet_metal_settings,
         ..
     } = inputs;
@@ -790,21 +792,14 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         parameters: BTreeMap::new(),
                     })
                 }),
-                Some(DesignFeatureFamily::Pipe) => project_fixed_pipe(
-                    scope,
-                    &parameters,
-                    construction_groups,
-                    edge_operands,
-                    edge_identity_operands,
-                    ctx,
-                )?
-                .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
+                Some(DesignFeatureFamily::Pipe) => native_scope_definition(scope, &parameters)?,
                 Some(DesignFeatureFamily::SurfacePatch) => project_surface_patch(
                     ctx,
                     scope,
                     construction_groups,
                     edge_operands,
                     edge_identity_operands,
+                    face_boundaries,
                 )?
                 .unwrap_or_else(|| {
                     FeatureDefinition::Operation(FeatureOperation::Native {
@@ -896,23 +891,33 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         })
                     })
                 }
-                Some(DesignFeatureFamily::CircularPattern) => {
-                    project_circular_pattern(scope, construction_groups, face_operands)
-                        .unwrap_or_else(|| {
-                            FeatureDefinition::Operation(FeatureOperation::Pattern {
-                                seeds: Vec::new(),
-                                pattern: PatternKind::UNRESOLVED_CIRCULAR,
-                            })
-                        })
-                }
+                Some(DesignFeatureFamily::CircularPattern) => project_circular_pattern(
+                    scope,
+                    construction_groups,
+                    face_operands,
+                    entity_selection_operands,
+                    scopes,
+                )
+                .unwrap_or_else(|| {
+                    FeatureDefinition::Operation(FeatureOperation::Pattern {
+                        seeds: Vec::new(),
+                        pattern: PatternKind::UNRESOLVED_CIRCULAR,
+                    })
+                }),
                 Some(DesignFeatureFamily::RectangularPattern) => {
-                    project_rectangular_pattern_scalars(scope, construction_groups, face_operands)
-                        .unwrap_or_else(|| {
-                            FeatureDefinition::Operation(FeatureOperation::Pattern {
-                                seeds: Vec::new(),
-                                pattern: PatternKind::UNRESOLVED_LINEAR,
-                            })
+                    project_rectangular_pattern_scalars(
+                        scope,
+                        construction_groups,
+                        face_operands,
+                        entity_selection_operands,
+                        scopes,
+                    )
+                    .unwrap_or_else(|| {
+                        FeatureDefinition::Operation(FeatureOperation::Pattern {
+                            seeds: Vec::new(),
+                            pattern: PatternKind::UNRESOLVED_LINEAR,
                         })
+                    })
                 }
                 Some(DesignFeatureFamily::Mirror) => {
                     project_mirror(scope, construction_groups, face_operands, scopes)
@@ -5917,8 +5922,8 @@ fn resolved_loft_path(
 }
 
 #[derive(Clone, Copy)]
-enum SurfacePatchRecipe {
-    Grouped,
+enum SurfacePatchRecipe<'a> {
+    Grouped(&'a [crate::records::topology::historical_context::AsmFaceBoundary]),
     Direct,
 }
 
@@ -5928,21 +5933,24 @@ fn resolved_surface_patch_path(
     operands: &[DesignEdgeOperand],
     identity_operands: &[DesignEdgeIdentityOperand],
     scope: &DesignParameterScope,
-    recipe: SurfacePatchRecipe,
+    recipe: SurfacePatchRecipe<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<cadmpeg_ir::features::PathRef, CodecError> {
     use cadmpeg_ir::features::PathRef;
 
     let mut paths = Vec::new();
     for group in groups {
-        let selection = if matches!(recipe, SurfacePatchRecipe::Grouped) {
+        let selection = if let SurfacePatchRecipe::Grouped(face_boundaries) = recipe {
             resolved_surface_patch_edge_group(
                 group,
                 all_groups,
                 operands,
                 identity_operands,
-                scope.previous_history_state_id(),
-                &crate::ids::neutral_feature_id(scope),
+                face_boundaries,
+                EdgeGroupTransition {
+                    previous_state_id: scope.previous_history_state_id(),
+                    feature_id: &crate::ids::neutral_feature_id(scope),
+                },
                 ctx,
             )
         } else {
@@ -5959,7 +5967,7 @@ fn resolved_surface_patch_path(
         let path = loft_path_from_edge_selection(&group.id, selection);
         paths.push(path);
     }
-    if matches!(recipe, SurfacePatchRecipe::Grouped) && paths.len() == 1 {
+    if matches!(recipe, SurfacePatchRecipe::Grouped(_)) && paths.len() == 1 {
         if let Some(path) = paths.pop() {
             return Ok(path);
         }
@@ -6043,9 +6051,11 @@ fn project_circular_pattern(
     scope: &DesignParameterScope,
     groups: &[DesignConstructionOperandGroup],
     face_operands: &[DesignFaceOperand],
+    entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
+    scopes: &[DesignParameterScope],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
-        patterns::{PatternKind, PatternSeed, PatternTransform},
+        patterns::{PatternKind, PatternTransform},
         FeatureDefinition, FeatureOperation,
     };
     let construction = scope.circular_pattern_construction()?;
@@ -6060,23 +6070,13 @@ fn project_circular_pattern(
             )
             && !group.members().is_empty()
     }))?;
-    let seed = if group.role() == DesignOperandRole::BODIES_A {
-        PatternSeed::Faces(
-            match resolved_historical_face_group(
-                scope,
-                scope.previous_history_state_id(),
-                group,
-                face_operands,
-            ) {
-                Some(selection) => selection,
-                None => cadmpeg_ir::features::FaceSelection::Native(group.id.clone()),
-            },
-        )
-    } else {
-        PatternSeed::Bodies(cadmpeg_ir::features::BodySelection::Native(
-            group.id.clone(),
-        ))
-    };
+    let seeds = pattern_group_seeds(
+        scope,
+        group,
+        face_operands,
+        entity_selection_operands,
+        scopes,
+    );
     let axis_origin = cadmpeg_ir::features::FinitePoint3::new(axis_origin)?;
     let axis_dir = cadmpeg_ir::features::FeatureDirection3::new(axis_dir)?;
     let pattern = PatternKind::new(PatternTransform::Circular {
@@ -6087,9 +6087,85 @@ fn project_circular_pattern(
     })
     .ok()?;
     Some(FeatureDefinition::Operation(FeatureOperation::Pattern {
-        seeds: vec![seed],
+        seeds,
         pattern,
     }))
+}
+
+/// Seeds of a pattern's seed group. A body-role group selects its bodies. A
+/// face-role group selects its historical faces in the scope's preceding
+/// state; otherwise, when every member is a compact entity selection that
+/// names a feature scope, it selects those features in member order.
+fn pattern_group_seeds(
+    scope: &DesignParameterScope,
+    group: &DesignConstructionOperandGroup,
+    face_operands: &[DesignFaceOperand],
+    entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
+    scopes: &[DesignParameterScope],
+) -> Vec<cadmpeg_ir::features::patterns::PatternSeed> {
+    use cadmpeg_ir::features::patterns::PatternSeed;
+
+    if group.role() != DesignOperandRole::BODIES_A {
+        return vec![PatternSeed::Bodies(
+            cadmpeg_ir::features::BodySelection::Native(group.id.clone()),
+        )];
+    }
+    if let Some(selection) = resolved_historical_face_group(
+        scope,
+        scope.previous_history_state_id(),
+        group,
+        face_operands,
+    ) {
+        return vec![PatternSeed::Faces(selection)];
+    }
+    entity_selection_feature_seeds(scope, group, entity_selection_operands, scopes).unwrap_or_else(
+        || {
+            vec![PatternSeed::Faces(
+                cadmpeg_ir::features::FaceSelection::Native(group.id.clone()),
+            )]
+        },
+    )
+}
+
+/// Feature seeds named by a face-role group whose members are all compact
+/// entity selections. Each compact identity is the record index of a
+/// modelling feature scope in the same stream other than `scope`.
+fn entity_selection_feature_seeds(
+    scope: &DesignParameterScope,
+    group: &DesignConstructionOperandGroup,
+    entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
+    scopes: &[DesignParameterScope],
+) -> Option<Vec<cadmpeg_ir::features::patterns::PatternSeed>> {
+    let stream = native_stream(&scope.id)?;
+    if group.members().is_empty() {
+        return None;
+    }
+    group
+        .members()
+        .iter()
+        .enumerate()
+        .map(|(ordinal, member)| {
+            let ordinal = u32::try_from(ordinal).ok()?;
+            let selection =
+                unique_feature_match(entity_selection_operands.iter().filter(|operand| {
+                    native_stream(&operand.id) == Some(stream)
+                        && operand.scope_record_index == scope.record_index
+                        && operand.group_record_index == group.record_index
+                        && operand.group_member_ordinal == ordinal
+                        && operand.record_index() == member.value
+                }))?;
+            let record_index = u32::try_from(selection.compact_identity()?).ok()?;
+            let seed_scope = unique_feature_match(scopes.iter().filter(|candidate| {
+                native_stream(&candidate.id) == Some(stream)
+                    && candidate.record_index == record_index
+                    && candidate.record_index != scope.record_index
+                    && candidate.history_state_id().is_some()
+            }))?;
+            Some(cadmpeg_ir::features::patterns::PatternSeed::Feature(
+                crate::ids::neutral_feature_id(seed_scope),
+            ))
+        })
+        .collect()
 }
 
 fn circular_pattern_axis(
@@ -6139,6 +6215,8 @@ fn project_rectangular_pattern_scalars(
     scope: &DesignParameterScope,
     groups: &[DesignConstructionOperandGroup],
     face_operands: &[DesignFaceOperand],
+    entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
+    scopes: &[DesignParameterScope],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
         patterns::{PatternKind, PatternSeed, PatternTransform},
@@ -6207,32 +6285,22 @@ fn project_rectangular_pattern_scalars(
         let first = matching_groups.next();
         let second = matching_groups.next();
         match (first, second) {
-            (Some(group), None) => Some(if group.role() == DesignOperandRole::BODIES_A {
-                PatternSeed::Faces(
-                    match resolved_historical_face_group(
-                        scope,
-                        scope.previous_history_state_id(),
-                        group,
-                        face_operands,
-                    ) {
-                        Some(selection) => selection,
-                        None => cadmpeg_ir::features::FaceSelection::Native(group.id.clone()),
-                    },
-                )
-            } else {
-                PatternSeed::Bodies(cadmpeg_ir::features::BodySelection::Native(
-                    group.id.clone(),
-                ))
-            }),
+            (Some(group), None) => Some(pattern_group_seeds(
+                scope,
+                group,
+                face_operands,
+                entity_selection_operands,
+                scopes,
+            )),
             _ => None,
         }
     } else {
         None
     };
-    let mut seeds = Vec::new();
-    if let Some(seed) = component_seed.or(group_seed) {
-        seeds.push(seed);
-    }
+    let seeds = component_seed
+        .map(|seed| vec![seed])
+        .or(group_seed)
+        .unwrap_or_default();
     let (count, spacing, direction, second) = match active.as_slice() {
         // The instance run is the established direction of a single-direction
         // pattern; a direction record only fills it in when the run is absent
@@ -6585,211 +6653,6 @@ pub(super) fn project_fixed_sweep(
     )))
 }
 
-fn legacy_pipe_references_complete(
-    scope: &DesignParameterScope,
-    path_group: &DesignConstructionOperandGroup,
-    record_indexes: [u32; 4],
-) -> bool {
-    let mut claimed = HashSet::new();
-    for record_index in record_indexes {
-        if !claimed.insert(record_index) {
-            return false;
-        }
-    }
-    if path_group.members().is_empty() || !claimed.insert(path_group.record_index) {
-        return false;
-    }
-    for member in path_group.members() {
-        if !claimed.insert(member.value) {
-            return false;
-        }
-    }
-    if scope.reference_members().len() != path_group.members().len() + 6 {
-        return false;
-    }
-    let mut references = HashSet::new();
-    for value in scope.reference_members().values() {
-        if !references.insert(*value) {
-            return false;
-        }
-    }
-    claimed
-        .iter()
-        .all(|record_index| references.contains(record_index))
-}
-
-fn project_fixed_pipe(
-    scope: &DesignParameterScope,
-    parameters: &[(u32, &DesignParameter)],
-    construction_groups: &[DesignConstructionOperandGroup],
-    edge_operands: &[DesignEdgeOperand],
-    edge_identity_operands: &[DesignEdgeIdentityOperand],
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
-    use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureOperation, GeneratedSweepSection, SweepSection,
-    };
-
-    let Some((path_group, section_size, wall_thickness, record_indexes, legacy_reference_layout)) =
-        (|| {
-            let crate::records::feature::scope::DesignScopePayload::Pipe(Some(
-                crate::records::feature::path_features::DesignPipeConstruction {
-                    operation,
-                    section_shape,
-                    filled,
-                    values,
-                    record_indexes,
-                    ..
-                },
-            )) = &scope.payload()
-            else {
-                return None;
-            };
-            let values = values.map(cadmpeg_ir::scalar::FiniteReal::get);
-            if *operation != DesignExtrudeOperation::NewBody
-                || *section_shape
-                    != crate::records::feature::surface_ops::DesignPipeSectionShape::Circular
-                || values[0..2] != [1.0, 1.0]
-                || values[2] <= 0.0
-                || values[3] <= 0.0
-                || parameters.len() != 4
-            {
-                return None;
-            }
-            let unique = |source_kind: &str| {
-                unique_feature_match(
-                    parameters
-                        .iter()
-                        .filter(|(_, parameter)| parameter.source_kind() == source_kind)
-                        .map(|(_, parameter)| *parameter),
-                )
-            };
-            let along = unique("AlongDistance")?;
-            let against = unique("AgainstDistance")?;
-            let section_size_parameter = unique("SectionSize")?;
-            let section_thickness_parameter = unique("SectionThickness")?;
-            let section_size = design_length(section_size_parameter)?;
-            let section_thickness = design_positive_length(section_thickness_parameter)?;
-            if along.unit().is_some()
-                || against.unit().is_some()
-                || along.evaluated_value().get() != values[0]
-                || against.evaluated_value().get() != values[1]
-                || section_size_parameter.evaluated_value().get() != values[2]
-                || section_thickness_parameter.evaluated_value().get() != values[3]
-                || section_size.get() <= 0.0
-            {
-                return None;
-            }
-            let wall_thickness = if *filled {
-                None
-            } else if section_thickness.get() < section_size.get() / 2.0 {
-                Some(section_thickness)
-            } else {
-                return None;
-            };
-            let stream = native_stream(&scope.id)?;
-            let matching = || {
-                construction_groups.iter().filter(|group| {
-                    native_stream(&group.id) == Some(stream)
-                        && group.scope_record_index == scope.record_index
-                })
-            };
-            let legacy_reference_layout = matches!(
-                (scope.class_tag.as_str(), scope.paired_class_tag.as_str()),
-                ("405", "259") | ("421", "257") | ("475", "260")
-            );
-            let path_group = if legacy_reference_layout {
-                if matching().any(|group| group.role() != DesignOperandRole::ROLE_0X5) {
-                    return None;
-                }
-                let mut legacy_paths =
-                    matching().filter(|group| group.role() == DesignOperandRole::ROLE_0X5);
-                let path_group = legacy_paths.next()?;
-                if legacy_paths.next().is_some() {
-                    return None;
-                }
-                path_group
-            } else {
-                let mut groups = matching();
-                let path_group = groups.next()?;
-                if groups.next().is_some() {
-                    return None;
-                }
-                if path_group.role() != DesignOperandRole::ROLE_0X5
-                    || path_group.scope_reference_ordinal != 5
-                    || scope.reference_members().values().nth(5) != Some(&path_group.record_index)
-                    || path_group.members().is_empty()
-                    || scope.reference_members().len() != path_group.members().len() + 8
-                    || !path_group
-                        .members()
-                        .iter()
-                        .map(|member| member.value)
-                        .eq(scope
-                            .reference_members()
-                            .values_in(6..scope.reference_members().len() - 2)?
-                            .copied())
-                {
-                    return None;
-                }
-                path_group
-            };
-            Some((
-                path_group,
-                section_size,
-                wall_thickness,
-                *record_indexes,
-                legacy_reference_layout,
-            ))
-        })()
-    else {
-        return Ok(None);
-    };
-    if legacy_reference_layout
-        && !legacy_pipe_references_complete(scope, path_group, record_indexes)
-    {
-        return Ok(None);
-    }
-    let path = resolved_loft_path(
-        path_group,
-        construction_groups,
-        edge_operands,
-        edge_identity_operands,
-        scope,
-        ctx,
-    )?;
-    Ok(Some(FeatureDefinition::Operation(
-        FeatureOperation::Sweep {
-            shape: cadmpeg_ir::features::SweepShape::Solid {
-                op: cadmpeg_ir::features::SolidSweepOperation::NewBody,
-                section: SweepSection::Generated(GeneratedSweepSection::CircularRegion {
-                    region: or_none!(cadmpeg_ir::features::SweepCircularRegion::new(
-                        or_none!(cadmpeg_ir::scalar::PositiveLength::new(
-                            section_size.get() / 2.0
-                        )),
-                        wall_thickness,
-                    )
-                    .ok()),
-                }),
-                sections: Vec::new(),
-            },
-
-            path: Some(path),
-
-            orientation: None,
-            transition: None,
-            transformation: None,
-            path_tangent: false,
-            linearize: false,
-            twist: None,
-            path_extent: None,
-            guide_rail: None,
-            taper: None,
-            scale: None,
-            allow_multi_profile_faces: None,
-        },
-    )))
-}
-
 /// Project each boundary condition and its resolved continuity weight.
 ///
 /// An unknown continuity or unsupported active weight leaves the complete
@@ -6840,12 +6703,23 @@ fn project_surface_patch(
     construction_groups: &[DesignConstructionOperandGroup],
     edge_operands: &[DesignEdgeOperand],
     edge_identity_operands: &[DesignEdgeIdentityOperand],
+    face_boundaries: &[crate::records::topology::historical_context::AsmFaceBoundary],
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{
         FaceSelection, FeatureDefinition, FeatureOperation, SurfaceBoundary,
     };
 
     if scope.kind() != crate::records::feature::scope::DesignFeatureKind::SurfacePatch {
+        return Ok(None);
+    }
+    if scope.surface_patch_normal().is_some_and(|normal| {
+        !matches!(
+            normal,
+            crate::records::feature::surface_ops::DesignSurfacePatchNormalState::Explicit {
+                reversed: crate::records::identity::Located { value: false, .. }
+            }
+        )
+    }) {
         return Ok(None);
     }
     let Some(stream) = native_stream(&scope.id) else {
@@ -6907,7 +6781,7 @@ fn project_surface_patch(
                     edge_operands,
                     edge_identity_operands,
                     scope,
-                    SurfacePatchRecipe::Grouped,
+                    SurfacePatchRecipe::Grouped(face_boundaries),
                     ctx,
                 )?),
                 support_faces: FaceSelection::Faces(Vec::new()),
