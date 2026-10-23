@@ -8,7 +8,7 @@ use super::{
     ProductDefinitionKind, PrototypeReference, TangentContact,
 };
 
-rewrite_record!(AssemblyJoint, []; {id, operands, suppressed, driving_parameter, native_ref});
+rewrite_record!(AssemblyJoint, []; {id, operands, suppressed, driving_parameter, frame_sense, native_ref});
 rewrite_record!(CopyOnChange, []; {policy, source, group, touched});
 rewrite_enum!(CopyOnChangePolicy, []; {
     Disabled,

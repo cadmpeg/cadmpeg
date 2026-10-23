@@ -340,3 +340,34 @@ fn insert_and_tangent_joints_keep_their_sense_and_contact() {
         assert!(serde_json::from_value::<AssemblyJoint>(missing).is_err());
     }
 }
+
+/// A joint states how its connector frames mate, and omits the key when the
+/// source does not say.
+#[test]
+fn a_joint_frame_sense_round_trips_and_is_optional() {
+    let mut joint = AssemblyJoint::paired(
+        joint_id(),
+        PairedJointKind::Fixed {
+            angle: None,
+            translation_offset: None,
+            angular_limits: None,
+            linear_limits: None,
+        },
+        [connector(), connector()],
+        None,
+    );
+    let unsensed = serde_json::to_value(&joint).unwrap();
+    assert!(unsensed.get("frame_sense").is_none());
+    assert_eq!(
+        serde_json::from_value::<AssemblyJoint>(unsensed).unwrap(),
+        joint
+    );
+
+    joint.frame_sense = Some(PlaneSense::Opposed);
+    let wire = serde_json::to_value(&joint).unwrap();
+    assert_eq!(wire["frame_sense"], "opposed");
+    assert_eq!(
+        serde_json::from_value::<AssemblyJoint>(wire).unwrap(),
+        joint
+    );
+}

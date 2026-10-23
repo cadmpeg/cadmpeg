@@ -1247,7 +1247,8 @@ pub enum JointOperands {
     },
 }
 
-/// Relative direction of the two normals of a plane coincidence or an insert.
+/// Relative direction of the two normals of a plane coincidence or an insert,
+/// or of the z axes of a joint's two connector frames.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
@@ -1583,6 +1584,15 @@ pub struct AssemblyJoint {
         deserialize_with = "deserialize_driving_parameter"
     )]
     pub driving_parameter: Option<crate::features::ParameterId>,
+    /// How the z axes of the two connector frames mate when the joint is
+    /// solved, when the source states it: `aligned` is `z₁ = z₀` and `opposed`
+    /// is `z₁ = −z₀`.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_frame_sense"
+    )]
+    pub frame_sense: Option<PlaneSense>,
     /// Format-native joint record supplying this constraint.
     #[serde(
         default,
@@ -1631,6 +1641,7 @@ impl AssemblyJoint {
             operands,
             suppressed: false,
             driving_parameter: None,
+            frame_sense: None,
             native_ref: None,
         }
     }
@@ -1687,6 +1698,7 @@ cadmpeg_core::named_optional_field!(deserialize_linear_limits, JointLimits, "lin
 cadmpeg_core::named_optional_field!(deserialize_distance, FiniteReal, "distance");
 cadmpeg_core::named_optional_field!(deserialize_distance2, FiniteReal, "distance2");
 cadmpeg_core::named_optional_field!(deserialize_offset, FiniteReal, "offset");
+cadmpeg_core::named_optional_field!(deserialize_frame_sense, PlaneSense, "frame_sense");
 cadmpeg_core::named_optional_field!(
     deserialize_driving_parameter,
     crate::features::ParameterId,
