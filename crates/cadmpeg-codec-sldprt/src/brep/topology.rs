@@ -27,10 +27,14 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::topology::Sense;
 
+use crate::layout::edge_tripled as edge_delta;
 use crate::layout::world_point as world_pt;
+use crate::layout::world_point_tripled as world_pt_delta;
 
 /// The magic anchoring magic-bearing topology records ([spec §5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#4-typed-topology-records)).
 const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
+
+const MAX_SHORT_POINTER_INDEX: u16 = 0x7ffe;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct Bridge {
@@ -228,12 +232,7 @@ fn parse_loop(buf: &[u8], off: usize) -> Option<Loop> {
     })
 }
 
-/// Return all syntactically valid edge-use readings at one offset.
-///
-/// A prefixed edge-use does not carry the complete six-cell array in the
-/// compact form. The third post-magic cell is the support-curve carrier, so
-/// preserve that field in the compact variant. The missing
-/// canonical-coedge slot is resolved from the coedge table by the graph walk.
+/// Return complete or compact edge-use readings at one offset.
 fn parse_edge_use_candidates(buf: &[u8], off: usize) -> Vec<EdgeUse> {
     let Some(p) = body_start(buf, off, 0x10) else {
         return Vec::new();
@@ -247,6 +246,25 @@ fn parse_edge_use_candidates(buf: &[u8], off: usize) -> Vec<EdgeUse> {
     let Some(sequence) = View::u32_be_at(buf, p + 2) else {
         return Vec::new();
     };
+    if buf.get(p + edge_delta::TOLERANCE - 1) == Some(&1)
+        && buf.get(p + edge_delta::TOLERANCE..p + edge_delta::REFS) == Some(MAGIC.as_slice())
+    {
+        if let Some(refs) = refs_tripled::<7>(buf, p + edge_delta::REFS).filter(|refs| {
+            refs.iter()
+                .all(|reference| *reference <= MAX_SHORT_POINTER_INDEX)
+                && View::u16_be_at(buf, p + edge_delta::ATTRIBUTES_HEAD)
+                    .is_some_and(|head| head <= MAX_SHORT_POINTER_INDEX)
+        }) {
+            return vec![EdgeUse {
+                attr,
+                sequence,
+                references: EdgeReferences::Bare([
+                    refs[0], refs[1], refs[2], refs[3], refs[4], refs[5],
+                ]),
+                offset: off,
+            }];
+        }
+    }
     let mut out = Vec::new();
     if buf.get(p + 8..p + 16) == Some(MAGIC.as_slice()) {
         if let Some(refs) = refs_be::<6>(buf, p + 16) {
@@ -299,7 +317,7 @@ fn parse_edge_use_candidates(buf: &[u8], off: usize) -> Vec<EdgeUse> {
     out
 }
 
-/// Edge-use `00 10`: 28-byte body, magic at body+8, `refs[6]` at body+16.
+/// Edge-use `00 10`: six-cell projection at body+16, magic at body+8.
 /// `refs[0]` = canonical forward coedge when the bare record stores one;
 /// `refs[3]` = support curve carrier. The compact layout has no canonical-coedge slot.
 ///
@@ -341,7 +359,7 @@ fn parse_coedge_candidates(buf: &[u8], off: usize) -> Vec<Coedge> {
     out
 }
 
-/// Vertex-use `00 12`: 24-byte body, magic at body+16, `refs[5]` at body+6.
+/// Vertex-use `00 12`: five-cell projection at body+6, magic at body+16.
 /// `refs[4]` = world-point attr.
 fn parse_vertex_use(buf: &[u8], off: usize) -> Option<VertexUse> {
     let p = body_start(buf, off, 0x12)?;
@@ -377,45 +395,33 @@ fn parse_vertex_use(buf: &[u8], off: usize) -> Option<VertexUse> {
 /// three big-endian f64 (metres) at body+14.
 fn parse_point(buf: &[u8], off: usize, prefixed: bool) -> Option<Point> {
     let p = body_start(buf, off, 0x1d)?;
-    if p + world_pt::LEN > buf.len() {
-        return None;
-    }
-    let attr = attr_at(buf, p)?;
-    let (references, reference_count, xyz_at) = if prefixed {
-        let mut refs = [0_u16; 16];
-        let mut len = 0;
-        let mut cursor = p + world_pt::REFS;
-        while buf.get(cursor + 2) == Some(&1) && len < refs.len() {
-            refs[len] = View::u16_be_at(buf, cursor)?;
-            len += 1;
-            cursor += 3;
-        }
-        if len == 0 {
-            return None;
-        }
-        (refs, len, cursor)
+    let attr = attr_at(buf, p).filter(|attr| *attr > 1)?;
+    let (references, xyz_at) = if prefixed {
+        buf.get(p..p + world_pt_delta::LEN)?;
+        (
+            refs_tripled::<4>(buf, p + world_pt_delta::REFS)?,
+            p + world_pt_delta::XYZ,
+        )
     } else {
-        let references = refs_be::<4>(buf, p + world_pt::REFS)?;
-        let mut refs = [0_u16; 16];
-        refs[..4].copy_from_slice(&references);
-        (refs, 4, p + world_pt::XYZ)
+        buf.get(p..p + world_pt::LEN)?;
+        (refs_be::<4>(buf, p + world_pt::REFS)?, p + world_pt::XYZ)
     };
-    if references[0] > 1 {
+    if references[0] > 1
+        || references
+            .iter()
+            .any(|reference| *reference > MAX_SHORT_POINTER_INDEX)
+    {
         return None;
     }
     let x = View::f64_be_at(buf, xyz_at)?;
     let y = View::f64_be_at(buf, xyz_at + 8)?;
     let z = View::f64_be_at(buf, xyz_at + 16)?;
-    for v in [x, y, z] {
-        // Reject exponent-poisoned reads from a misaligned candidate: real part
-        // coordinates in metres sit well under this cap.
-        if !v.is_finite() || v.abs() > 1e4 {
-            return None;
-        }
+    if [x, y, z].iter().any(|value| !value.is_finite()) {
+        return None;
     }
     Some(Point {
         attr,
-        refs: references[..reference_count].to_vec(),
+        refs: references.to_vec(),
         xyz_m: [x, y, z],
         xyz_offset: xyz_at,
         offset: off,
@@ -841,11 +847,7 @@ fn scan_with_point_framing(
                 }
             }
             0x1d => {
-                let record = if prefixed_points {
-                    parse_point(body, i, true).or_else(|| parse_point(body, i, false))
-                } else {
-                    parse_point(body, i, false)
-                };
+                let record = parse_point(body, i, prefixed_points);
                 if let Some(record) = record {
                     t.points.insert(record.attr, record);
                 }
@@ -1237,6 +1239,99 @@ mod tests {
         let curve_attrs = HashSet::from([0x0103]);
         let tables = scan_deltas_with_curve_attrs_excluding(&bytes, &curve_attrs, &HashSet::new());
         assert_eq!(tables.edge_uses[&40].references.curve(), 0x0103);
+    }
+
+    fn tripled_point(attr: u16, xyz: [f64; 3], first_of_type: bool) -> Vec<u8> {
+        let mut bytes = vec![0, 0x1d];
+        if first_of_type {
+            bytes.push(0xff);
+        }
+        bytes.extend(attr.to_be_bytes());
+        bytes.extend(947u32.to_be_bytes());
+        for reference in [1u16, 101, 102, 103] {
+            bytes.extend(reference.to_be_bytes());
+            bytes.push(1);
+        }
+        for coordinate in xyz {
+            bytes.extend(coordinate.to_be_bytes());
+        }
+        bytes
+    }
+
+    #[test]
+    fn point_coordinates_do_not_extend_the_four_reference_fields() {
+        let x = f64::from_bits(0x3ff0_0100_0001_0000);
+        for first_of_type in [false, true] {
+            let bytes = tripled_point(211, [x, 2.0, 3.0], first_of_type);
+            let point = parse_point(&bytes, 0, true).expect("complete POINT");
+            assert_eq!(point.refs, [1, 101, 102, 103]);
+            assert_eq!(point.xyz_m, [x, 2.0, 3.0]);
+            assert_eq!(point.xyz_offset, 20 + usize::from(first_of_type));
+        }
+    }
+
+    #[test]
+    fn point_coordinates_have_no_format_magnitude_cap() {
+        let xyz = [20_000.0, -20_000.0, 0.0];
+        let bare = crate::test_support::parasolid::world_point(211, xyz);
+        assert_eq!(parse_point(&bare, 0, false).unwrap().xyz_m, xyz);
+        let tripled = tripled_point(211, xyz, false);
+        assert_eq!(parse_point(&tripled, 0, true).unwrap().xyz_m, xyz);
+    }
+
+    #[test]
+    fn point_admission_requires_finite_complete_coordinates_and_real_identity() {
+        for xyz in [[f64::INFINITY, 2.0, 3.0], [1.0, f64::NAN, 3.0]] {
+            assert!(parse_point(&tripled_point(211, xyz, false), 0, true).is_none());
+        }
+        let mut extended = tripled_point(211, [1.0, 2.0, 3.0], false);
+        let owner = 2 + crate::layout::world_point_tripled::REFS + 3;
+        extended[owner..owner + 2].copy_from_slice(&0x7ffeu16.to_be_bytes());
+        assert!(parse_point(&extended, 0, true).is_some());
+        extended[owner..owner + 2].copy_from_slice(&0x7fffu16.to_be_bytes());
+        assert!(parse_point(&extended, 0, true).is_none());
+        let mut bytes = tripled_point(211, [1.0, 2.0, 3.0], false);
+        bytes.pop();
+        assert!(parse_point(&bytes, 0, true).is_none());
+        for attr in [0, 1] {
+            assert!(parse_point(&tripled_point(attr, [1.0, 2.0, 3.0], false), 0, true).is_none());
+        }
+    }
+
+    #[test]
+    fn deltas_point_admission_has_no_bare_pointer_fallback() {
+        let bytes = crate::test_support::parasolid::world_point(211, [1.0, 2.0, 3.0]);
+        assert!(parse_point(&bytes, 0, false).is_some());
+        let tables =
+            scan_deltas_with_curve_attrs_excluding(&bytes, &HashSet::new(), &HashSet::new());
+        assert!(!tables.points.contains_key(&211));
+    }
+
+    #[test]
+    fn complete_tripled_edge_retains_canonical_fin_and_fourth_pointer_curve() {
+        for first_of_type in [false, true] {
+            let mut bytes = vec![0, 0x10];
+            if first_of_type {
+                bytes.push(0xff);
+            }
+            bytes.extend(211u16.to_be_bytes());
+            bytes.extend(947u32.to_be_bytes());
+            bytes.extend([0, 1, 1]);
+            bytes.extend(MAGIC);
+            for reference in [171u16, 172, 173, 174, 175, 176, 177] {
+                bytes.extend(reference.to_be_bytes());
+                bytes.push(1);
+            }
+            let records = super::parse_edge_use_candidates(&bytes, 0);
+            assert_eq!(records.len(), 1);
+            assert_eq!(
+                records[0].references,
+                EdgeReferences::Bare([171, 172, 173, 174, 175, 176])
+            );
+            assert_eq!(records[0].references.canonical(), Some(171));
+            assert_eq!(records[0].references.curve(), 174);
+            assert_eq!(records[0].sequence, 947);
+        }
     }
 
     #[test]

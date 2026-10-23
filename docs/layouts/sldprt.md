@@ -25,9 +25,9 @@ the table says `unstated` and says so in the field note.
 | --- | ---- | ------: | ------- | ---- |
 | `00 0e` | bridge | 37 B | face-use → surface link; attr u16 BE at body +0; sequence u32 BE at body +2; magic at body +8; bare record length 37 | §4 |
 | `00 0f` | loop head | variable | bare record length is at least 14; no magic | §4 |
-| `00 10` | edge-use | 28 B | sequence u32 BE at body +2; bare magic at body +8; deltas magic at body +9 with post-magic [01][hi][lo] or [hi][lo][01] cells; deltas cell 2 carries the curve and direction uses the unique same-edge 0x2b coedge | §4 |
+| `00 10` | edge-use | 30 B | sequence u32 BE at body +2; bare magic at body +8; deltas magic at body +9 with post-magic [01][hi][lo] or [hi][lo][01] cells; the complete tripled form has seven post-magic pointers, with fin at cell 0, curve at cell 3 and owner at cell 6 | §4 |
 | `00 11` | oriented coedge | 21 B | bare body has no magic; deltas refs are nine [hi][lo][01] cells and the marker follows | §4 |
-| `00 12` | vertex-use | 24 B | sequence u32 BE at body +2; magic at body +16 | §4 |
+| `00 12` | vertex-use | 26 B | sequence u32 BE at body +2; magic at body +16 | §4 |
 | `00 1d` | world point | 38 B | no magic; four references at body +6 and xyz as three f64 BE at body +14 | §4 |
 
 ## `feature_input_shifted_scalar_trailer`
@@ -175,12 +175,132 @@ Offsets are body-relative, i.e. after the two-byte `00 1d` tag. Attrs `0` and `1
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `attr` | `u16` | big | spec | bare POINT stores its transmit index at body +0 |
+| 2 | 4 | `node_id` | `u32` | big | spec | node ID at body +2 |
 | 6 | 8 | `refs` | `u16[4]` | big | spec | `00 1d` record has four references at body +6 |
 | 14 | 24 | `xyz` | `f64[3]` | big | spec | stores xyz as three f64 BE at body +14 |
 
-Unstated regions:
+## `face_bare`
 
-- `0..6` (6 B): §4 states no field between the body start and the reference block at +6.
+Spec §4 · layout: byte offsets · size: 37 B
+
+Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/brep/topology.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `attr` | `u16` | big | spec | face_bare.attr at +0 |
+| 2 | 4 | `node_id` | `u32` | big | spec | face_bare.node_id at +2 |
+| 6 | 2 | `attributes_head` | `u16` | big | spec | face_bare.attributes_head at +6 |
+| 8 | 8 | `tolerance` | `bytes[8]` | big | spec | face_bare.tolerance at +8 |
+| 16 | 10 | `refs` | `u16[5]` | big | spec | face_bare.refs at +16 |
+| 26 | 1 | `sense` | `u8` | big | spec | face_bare.sense at +26 |
+| 27 | 10 | `surface_front_refs` | `u16[5]` | big | spec | face_bare.surface_front_refs at +27 |
+
+## `face_tripled`
+
+Spec §4 · layout: byte offsets · size: 48 B
+
+Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/brep/topology.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `attr` | `u16` | big | spec | face_tripled.attr at +0 |
+| 2 | 4 | `node_id` | `u32` | big | spec | face_tripled.node_id at +2 |
+| 6 | 3 | `attributes_head` | `bytes[3]` | big | spec | face_tripled.attributes_head at +6 |
+| 9 | 8 | `tolerance` | `bytes[8]` | big | spec | face_tripled.tolerance at +9 |
+| 17 | 15 | `refs` | `bytes[15]` | big | spec | face_tripled.refs at +17 |
+| 32 | 1 | `sense` | `u8` | big | spec | face_tripled.sense at +32 |
+| 33 | 15 | `surface_front_refs` | `bytes[15]` | big | spec | face_tripled.surface_front_refs at +33 |
+
+## `edge_bare`
+
+Spec §4 · layout: byte offsets · size: 30 B
+
+Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/brep/topology.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `attr` | `u16` | big | spec | edge_bare.attr at +0 |
+| 2 | 4 | `node_id` | `u32` | big | spec | edge_bare.node_id at +2 |
+| 6 | 2 | `attributes_head` | `u16` | big | spec | edge_bare.attributes_head at +6 |
+| 8 | 8 | `tolerance` | `bytes[8]` | big | spec | edge_bare.tolerance at +8 |
+| 16 | 14 | `refs` | `u16[7]` | big | spec | edge_bare.refs at +16 |
+
+## `edge_tripled`
+
+Spec §4 · layout: byte offsets · size: 38 B
+
+Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/brep/topology.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `attr` | `u16` | big | spec | edge_tripled.attr at +0 |
+| 2 | 4 | `node_id` | `u32` | big | spec | edge_tripled.node_id at +2 |
+| 6 | 3 | `attributes_head` | `bytes[3]` | big | spec | edge_tripled.attributes_head at +6 |
+| 9 | 8 | `tolerance` | `bytes[8]` | big | spec | edge_tripled.tolerance at +9 |
+| 17 | 21 | `refs` | `bytes[21]` | big | spec | edge_tripled.refs at +17 |
+
+## `vertex_bare`
+
+Spec §4 · layout: byte offsets · size: 26 B
+
+Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/brep/topology.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `attr` | `u16` | big | spec | vertex_bare.attr at +0 |
+| 2 | 4 | `node_id` | `u32` | big | spec | vertex_bare.node_id at +2 |
+| 6 | 10 | `refs` | `u16[5]` | big | spec | vertex_bare.refs at +6 |
+| 16 | 8 | `tolerance` | `bytes[8]` | big | spec | vertex_bare.tolerance at +16 |
+| 24 | 2 | `owner` | `u16` | big | spec | vertex_bare.owner at +24 |
+
+## `vertex_tripled`
+
+Spec §4 · layout: byte offsets · size: 32 B
+
+Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/brep/topology.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `attr` | `u16` | big | spec | vertex_tripled.attr at +0 |
+| 2 | 4 | `node_id` | `u32` | big | spec | vertex_tripled.node_id at +2 |
+| 6 | 15 | `refs` | `bytes[15]` | big | spec | vertex_tripled.refs at +6 |
+| 21 | 8 | `tolerance` | `bytes[8]` | big | spec | vertex_tripled.tolerance at +21 |
+| 29 | 3 | `owner` | `bytes[3]` | big | spec | vertex_tripled.owner at +29 |
+
+## `world_point_tripled`
+
+Spec §4 · layout: byte offsets · size: 42 B
+
+Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/brep/topology.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `attr` | `u16` | big | spec | world_point_tripled.attr at +0 |
+| 2 | 4 | `node_id` | `u32` | big | spec | world_point_tripled.node_id at +2 |
+| 6 | 12 | `refs` | `bytes[12]` | big | spec | world_point_tripled.refs at +6 |
+| 18 | 24 | `xyz` | `f64[3]` | big | spec | world_point_tripled.xyz at +18 |
 
 ## `entity_common_header`
 

@@ -973,7 +973,7 @@ pub(crate) fn world_point(attr: u16, xyz: [f64; 3]) -> Vec<u8> {
     b
 }
 
-fn tripled_world_point(attr: u16, xyz: [f64; 3]) -> Vec<u8> {
+pub(crate) fn tripled_world_point(attr: u16, xyz: [f64; 3]) -> Vec<u8> {
     let mut b = vec![0x00, 0x1d];
     be16(&mut b, attr);
     be32(&mut b, 0);

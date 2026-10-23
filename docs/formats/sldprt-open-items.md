@@ -22,7 +22,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which occurrence is authoritative when one stream contains multiple valid topology records with the same attribute but different references or coordinates?
 
-**Known.** Topology records are keyed by stream-local attribute. The specification does not define a duplicate-record rule or a native precedence field.
+**Known.** Topology records are keyed by stream-local attribute. A complete short-index FACE includes five pointers after its sense. Complete EDGE and VERTEX bodies include their trailing owner pointers. POINT has exactly four pointers before its coordinate vector. Equal projected fields do not establish equality of complete record bytes. The specification does not define a duplicate-record rule or a native precedence field.
 
 **Need.** We must select the authoritative topology record to avoid silently changing body connectivity or vertex positions when a duplicate identity is present.
 

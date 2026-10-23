@@ -394,10 +394,10 @@ anchor = "`00 0f` | loop head | ≥14 | none"
 [[token]]
 tag = "00 10"
 name = "edge-use"
-payload_bytes = 28
-note = "sequence u32 BE at body +2; bare magic at body +8; deltas magic at body +9 with post-magic [01][hi][lo] or [hi][lo][01] cells; deltas cell 2 carries the curve and direction uses the unique same-edge 0x2b coedge"
+payload_bytes = 30
+note = "sequence u32 BE at body +2; bare magic at body +8; deltas magic at body +9 with post-magic [01][hi][lo] or [hi][lo][01] cells; the complete tripled form has seven post-magic pointers, with fin at cell 0, curve at cell 3 and owner at cell 6"
 section = "4"
-anchor = "`00 10` | edge-use | 28 | at body +8"
+anchor = "`00 10` | edge-use | 30 | at body +8"
 
 [[token]]
 tag = "00 11"
@@ -410,10 +410,10 @@ anchor = "`00 11` | oriented coedge | 21 | none"
 [[token]]
 tag = "00 12"
 name = "vertex-use"
-payload_bytes = 24
+payload_bytes = 26
 note = "sequence u32 BE at body +2; magic at body +16"
 section = "4"
-anchor = "`00 12` | vertex-use | 24 | at body +16"
+anchor = "`00 12` | vertex-use | 26 | at body +16"
 
 [[token]]
 tag = "00 1d"
@@ -446,10 +446,400 @@ type = "f64[3]"
 source = "spec"
 anchor = "stores xyz as three f64 BE at body +14"
 
-[[record.gap]]
+[[record.field]]
+name = "attr"
 offset = 0
-size = 6
-note = "§4 states no field between the body start and the reference block at +6."
+type = "u16"
+source = "spec"
+anchor = "bare POINT stores its transmit index at body +0"
+
+[[record.field]]
+name = "node_id"
+offset = 2
+type = "u32"
+source = "spec"
+anchor = "node ID at body +2"
+
+
+[[record]]
+name = "face_bare"
+kind = "byte"
+section = "4"
+anchor = "`face_bare` has a 37-byte body"
+size = 37
+endianness = "big"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/brep/topology.rs"
+note = "Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01."
+
+
+[[record.field]]
+name = "attr"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "face_bare.attr at +0"
+
+
+[[record.field]]
+name = "node_id"
+offset = 2
+type = "u32"
+source = "spec"
+anchor = "face_bare.node_id at +2"
+
+
+[[record.field]]
+name = "attributes_head"
+offset = 6
+type = "u16"
+source = "spec"
+anchor = "face_bare.attributes_head at +6"
+
+
+[[record.field]]
+name = "tolerance"
+offset = 8
+type = "bytes[8]"
+source = "spec"
+anchor = "face_bare.tolerance at +8"
+
+
+[[record.field]]
+name = "refs"
+offset = 16
+type = "u16[5]"
+source = "spec"
+anchor = "face_bare.refs at +16"
+
+
+[[record.field]]
+name = "sense"
+offset = 26
+type = "u8"
+source = "spec"
+anchor = "face_bare.sense at +26"
+
+
+[[record.field]]
+name = "surface_front_refs"
+offset = 27
+type = "u16[5]"
+source = "spec"
+anchor = "face_bare.surface_front_refs at +27"
+
+
+[[record]]
+name = "face_tripled"
+kind = "byte"
+section = "4"
+anchor = "`face_tripled` has a 48-byte body"
+size = 48
+endianness = "big"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/brep/topology.rs"
+note = "Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01."
+
+
+[[record.field]]
+name = "attr"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "face_tripled.attr at +0"
+
+
+[[record.field]]
+name = "node_id"
+offset = 2
+type = "u32"
+source = "spec"
+anchor = "face_tripled.node_id at +2"
+
+
+[[record.field]]
+name = "attributes_head"
+offset = 6
+type = "bytes[3]"
+source = "spec"
+anchor = "face_tripled.attributes_head at +6"
+
+
+[[record.field]]
+name = "tolerance"
+offset = 9
+type = "bytes[8]"
+source = "spec"
+anchor = "face_tripled.tolerance at +9"
+
+
+[[record.field]]
+name = "refs"
+offset = 17
+type = "bytes[15]"
+source = "spec"
+anchor = "face_tripled.refs at +17"
+
+
+[[record.field]]
+name = "sense"
+offset = 32
+type = "u8"
+source = "spec"
+anchor = "face_tripled.sense at +32"
+
+
+[[record.field]]
+name = "surface_front_refs"
+offset = 33
+type = "bytes[15]"
+source = "spec"
+anchor = "face_tripled.surface_front_refs at +33"
+
+
+[[record]]
+name = "edge_bare"
+kind = "byte"
+section = "4"
+anchor = "`edge_bare` has a 30-byte body"
+size = 30
+endianness = "big"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/brep/topology.rs"
+note = "Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01."
+
+
+[[record.field]]
+name = "attr"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "edge_bare.attr at +0"
+
+
+[[record.field]]
+name = "node_id"
+offset = 2
+type = "u32"
+source = "spec"
+anchor = "edge_bare.node_id at +2"
+
+
+[[record.field]]
+name = "attributes_head"
+offset = 6
+type = "u16"
+source = "spec"
+anchor = "edge_bare.attributes_head at +6"
+
+
+[[record.field]]
+name = "tolerance"
+offset = 8
+type = "bytes[8]"
+source = "spec"
+anchor = "edge_bare.tolerance at +8"
+
+
+[[record.field]]
+name = "refs"
+offset = 16
+type = "u16[7]"
+source = "spec"
+anchor = "edge_bare.refs at +16"
+
+
+[[record]]
+name = "edge_tripled"
+kind = "byte"
+section = "4"
+anchor = "`edge_tripled` has a 38-byte body"
+size = 38
+endianness = "big"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/brep/topology.rs"
+note = "Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01."
+
+
+[[record.field]]
+name = "attr"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "edge_tripled.attr at +0"
+
+
+[[record.field]]
+name = "node_id"
+offset = 2
+type = "u32"
+source = "spec"
+anchor = "edge_tripled.node_id at +2"
+
+
+[[record.field]]
+name = "attributes_head"
+offset = 6
+type = "bytes[3]"
+source = "spec"
+anchor = "edge_tripled.attributes_head at +6"
+
+
+[[record.field]]
+name = "tolerance"
+offset = 9
+type = "bytes[8]"
+source = "spec"
+anchor = "edge_tripled.tolerance at +9"
+
+
+[[record.field]]
+name = "refs"
+offset = 17
+type = "bytes[21]"
+source = "spec"
+anchor = "edge_tripled.refs at +17"
+
+
+[[record]]
+name = "vertex_bare"
+kind = "byte"
+section = "4"
+anchor = "`vertex_bare` has a 26-byte body"
+size = 26
+endianness = "big"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/brep/topology.rs"
+note = "Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01."
+
+
+[[record.field]]
+name = "attr"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "vertex_bare.attr at +0"
+
+
+[[record.field]]
+name = "node_id"
+offset = 2
+type = "u32"
+source = "spec"
+anchor = "vertex_bare.node_id at +2"
+
+
+[[record.field]]
+name = "refs"
+offset = 6
+type = "u16[5]"
+source = "spec"
+anchor = "vertex_bare.refs at +6"
+
+
+[[record.field]]
+name = "tolerance"
+offset = 16
+type = "bytes[8]"
+source = "spec"
+anchor = "vertex_bare.tolerance at +16"
+
+
+[[record.field]]
+name = "owner"
+offset = 24
+type = "u16"
+source = "spec"
+anchor = "vertex_bare.owner at +24"
+
+
+[[record]]
+name = "vertex_tripled"
+kind = "byte"
+section = "4"
+anchor = "`vertex_tripled` has a 32-byte body"
+size = 32
+endianness = "big"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/brep/topology.rs"
+note = "Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01."
+
+
+[[record.field]]
+name = "attr"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "vertex_tripled.attr at +0"
+
+
+[[record.field]]
+name = "node_id"
+offset = 2
+type = "u32"
+source = "spec"
+anchor = "vertex_tripled.node_id at +2"
+
+
+[[record.field]]
+name = "refs"
+offset = 6
+type = "bytes[15]"
+source = "spec"
+anchor = "vertex_tripled.refs at +6"
+
+
+[[record.field]]
+name = "tolerance"
+offset = 21
+type = "bytes[8]"
+source = "spec"
+anchor = "vertex_tripled.tolerance at +21"
+
+
+[[record.field]]
+name = "owner"
+offset = 29
+type = "bytes[3]"
+source = "spec"
+anchor = "vertex_tripled.owner at +29"
+
+
+[[record]]
+name = "world_point_tripled"
+kind = "byte"
+section = "4"
+anchor = "`world_point_tripled` has a 42-byte body"
+size = 42
+endianness = "big"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/brep/topology.rs"
+note = "Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01."
+
+
+[[record.field]]
+name = "attr"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "world_point_tripled.attr at +0"
+
+
+[[record.field]]
+name = "node_id"
+offset = 2
+type = "u32"
+source = "spec"
+anchor = "world_point_tripled.node_id at +2"
+
+
+[[record.field]]
+name = "refs"
+offset = 6
+type = "bytes[12]"
+source = "spec"
+anchor = "world_point_tripled.refs at +6"
+
+
+[[record.field]]
+name = "xyz"
+offset = 18
+type = "f64[3]"
+source = "spec"
+anchor = "world_point_tripled.xyz at +18"
 
 # --- §5 Entity records -----------------------------------------------------
 

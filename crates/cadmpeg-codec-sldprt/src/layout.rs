@@ -195,6 +195,38 @@ pub(crate) mod world_point {
     pub(crate) const XYZ: usize = 14;
 }
 
+/// Byte offsets for the `edge_tripled` record.
+///
+/// Spec §4. Record length 38 B.
+///
+/// ```text
+/// Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01.
+/// ```
+pub(crate) mod edge_tripled {
+    /// Offset of `attributes_head` (`bytes[3]`). Spec §4.
+    pub(crate) const ATTRIBUTES_HEAD: usize = 6;
+    /// Offset of `tolerance` (`bytes[8]`). Spec §4.
+    pub(crate) const TOLERANCE: usize = 9;
+    /// Offset of `refs` (`bytes[21]`). Spec §4.
+    pub(crate) const REFS: usize = 17;
+}
+
+/// Byte offsets for the `world_point_tripled` record.
+///
+/// Spec §4. Record length 42 B.
+///
+/// ```text
+/// Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01.
+/// ```
+pub(crate) mod world_point_tripled {
+    /// Record length in bytes. Spec §4.
+    pub(crate) const LEN: usize = 42;
+    /// Offset of `refs` (`bytes[12]`). Spec §4.
+    pub(crate) const REFS: usize = 6;
+    /// Offset of `xyz` (`f64[3]`, big-endian). Spec §4.
+    pub(crate) const XYZ: usize = 18;
+}
+
 /// Byte offsets for the `entity_common_header` record.
 ///
 /// Spec §5. Record length 12 B.

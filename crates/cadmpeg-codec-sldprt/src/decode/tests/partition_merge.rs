@@ -25,6 +25,7 @@ use crate::test_support::parasolid::suffix_prefixed_edge_triangle_body;
 use crate::test_support::parasolid::triangle_body;
 use crate::test_support::parasolid::triangle_body_with_overlapping_point;
 use crate::test_support::parasolid::tripled_triangle_body;
+use crate::test_support::parasolid::tripled_world_point;
 use crate::test_support::parasolid::untyped_triangle;
 use crate::test_support::parasolid::world_point;
 use crate::test_support::parasolid::FACE_COLOR_DEFINITION_ID;
@@ -39,7 +40,7 @@ fn decode_merges_partition_and_deltas_records() {
         .position(|window| window == missing_point.as_slice())
         .expect("partition point record");
     drop(partition.drain(point_start..point_start + missing_point.len()));
-    let deltas = world_point(60, [2.0, 0.0, 0.0]);
+    let deltas = tripled_world_point(60, [2.0, 0.0, 0.0]);
     let f = sldprt_with_partition_and_deltas(&partition, &deltas);
     let mut cur = Cursor::new(f);
 

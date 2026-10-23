@@ -1265,9 +1265,9 @@ face → 00 0f loop head → 00 11 coedge ring → 00 10 edge-use → support cu
 | `00 0d` | XT SHELL ownership node       |    variable | first/edit or tagged |
 | `00 0e` | bridge / face-use→surface link |          37 | at body +8  |
 | `00 0f` | loop head                      |         ≥14 | none        |
-| `00 10` | edge-use                       |          28 | at body +8  |
+| `00 10` | edge-use                       |          30 | at body +8  |
 | `00 11` | oriented coedge                |          21 | none        |
-| `00 12` | vertex-use                     |          24 | at body +16 |
+| `00 12` | vertex-use                     |          26 | at body +16 |
 | `00 13` | XT REGION ownership node       |    variable | first/edit or tagged |
 | `00 1d` | world point                    |          38 | none        |
 
@@ -1283,9 +1283,36 @@ sentinels where a field permits them.
 
 - **Bridge `00 0e`:** `attr` is u16 BE at body +0, `sequence` is u32 BE at body +2, and the ATTRIBUTE-chain head (`attributes_groups`) is u16 BE at body +6. `sequence` is the active-partition face identity used by SWIFT `CadIdentifier` suffixes; it is distinct from `attr`, and sequence values are unique within one partition stream. `refs[2]` = owning loop-head, `refs[4]` = primary surface carrier (compact analytic or `00 7c`), `marker` = face orientation versus the surface natural normal (`0x2b` forward / `0x2d` reversed). `refs[0]` and `refs[1]` are the next and previous FACE pointers; `refs[3]` is the SHELL pointer. The five references are either adjacent big-endian u16 cells followed by the marker at body +26 or `[hi][lo][01]` cells followed by the marker at body +31.
 - **Loop head `00 0f`:** `refs[1]` = first coedge, `refs[2]` = owning bridge, `refs[3]` = next sibling loop head.
-- **Edge-use `00 10`:** `sequence` is u32 BE at body +2. Bare `refs[0]` = canonical forward coedge (`0x2b`) when the reference is not a sentinel, `refs[3]` = support curve (compact analytic or `00 86`). The prefixed deltas form carries the support curve in its third post-magic reference cell and has no serialized canonical-coedge slot.
+- **Edge-use `00 10`:** `sequence` is u32 BE at body +2. Bare `refs[0]` = canonical forward coedge (`0x2b`) when the reference is not a sentinel, `refs[3]` = support curve (compact analytic or `00 86`). The complete tripled form has the same seven post-magic pointer fields, including its canonical-fin and owner pointers.
 - **Coedge `00 11`:** `refs[1]` owning loop, `refs[2]`/`refs[3]` reciprocal ring links (prev/next), `refs[4]` start vertex-use, `refs[5]` twin coedge, `refs[6]` edge-use, `marker` sense vs canonical (`0x2b` forward, `0x2d` reversed).
-- **Vertex-use `00 12` / point `00 1d`:** `00 12.sequence` is u32 BE at body +2 and `00 12.refs[4]` = point attr; a bare `00 1d` record has four references at body +6, requires reference 0 to be sentinel `0` or `1`, and stores xyz as three f64 BE at body +14, in metres. Attrs `0` and `1` are sentinels, not world points. A `[00 1d][attr]` adjacency-table entry does not satisfy the reference-0 sentinel invariant and is not a point record.
+- **Vertex-use `00 12` / point `00 1d`:** `00 12.sequence` is u32 BE at body +2 and `00 12.refs[4]` = point attr; a bare `00 1d` record has four references at body +6, reference 0 is its ATTRIBUTE-group head (`0` or `1` when null), and it stores xyz as three f64 BE at body +14, in metres. Attrs `0` and `1` are sentinels, not world points. A `[00 1d][attr]` adjacency-table entry supplies no POINT node ID, four-pointer block, or coordinate vector and is not a point record.
+
+The complete short-index bodies below exclude the type tag and optional
+first-of-type `ff` byte. A tripled pointer is a big-endian u16 followed by
+`01`. The complete FACE includes five pointers after its sense, ordered as
+next-on-surface, previous-on-surface, next-front, previous-front, and
+front-shell. The complete EDGE includes seven post-tolerance pointers:
+fin, previous, next, curve, next-on-curve, previous-on-curve, and owner.
+The complete VERTEX has five pointers before tolerance and its owner pointer
+after tolerance. A bare POINT stores its transmit index at body +0 and node ID at body +2.
+POINT has exactly four pointers before its coordinate vector.
+Coordinate bytes do not extend that pointer list. Coordinates are finite
+big-endian f64 values in metres, with no format magnitude limit. A deltas
+POINT in the tripled form has no bare-pointer fallback.
+
+`face_bare` has a 37-byte body: `face_bare.attr at +0` (u16), `face_bare.node_id at +2` (u32), `face_bare.attributes_head at +6` (u16), `face_bare.tolerance at +8` (bytes[8]), `face_bare.refs at +16` (u16[5]), `face_bare.sense at +26` (u8), `face_bare.surface_front_refs at +27` (u16[5]).
+
+`face_tripled` has a 48-byte body: `face_tripled.attr at +0` (u16), `face_tripled.node_id at +2` (u32), `face_tripled.attributes_head at +6` (bytes[3]), `face_tripled.tolerance at +9` (bytes[8]), `face_tripled.refs at +17` (bytes[15]), `face_tripled.sense at +32` (u8), `face_tripled.surface_front_refs at +33` (bytes[15]).
+
+`edge_bare` has a 30-byte body: `edge_bare.attr at +0` (u16), `edge_bare.node_id at +2` (u32), `edge_bare.attributes_head at +6` (u16), `edge_bare.tolerance at +8` (bytes[8]), `edge_bare.refs at +16` (u16[7]).
+
+`edge_tripled` has a 38-byte body: `edge_tripled.attr at +0` (u16), `edge_tripled.node_id at +2` (u32), `edge_tripled.attributes_head at +6` (bytes[3]), `edge_tripled.tolerance at +9` (bytes[8]), `edge_tripled.refs at +17` (bytes[21]).
+
+`vertex_bare` has a 26-byte body: `vertex_bare.attr at +0` (u16), `vertex_bare.node_id at +2` (u32), `vertex_bare.refs at +6` (u16[5]), `vertex_bare.tolerance at +16` (bytes[8]), `vertex_bare.owner at +24` (u16).
+
+`vertex_tripled` has a 32-byte body: `vertex_tripled.attr at +0` (u16), `vertex_tripled.node_id at +2` (u32), `vertex_tripled.refs at +6` (bytes[15]), `vertex_tripled.tolerance at +21` (bytes[8]), `vertex_tripled.owner at +29` (bytes[3]).
+
+`world_point_tripled` has a 42-byte body: `world_point_tripled.attr at +0` (u16), `world_point_tripled.node_id at +2` (u32), `world_point_tripled.refs at +6` (bytes[12]), `world_point_tripled.xyz at +18` (f64[3]).
 
 A support surface belongs to a face through `face -> bridge -> bridge.refs[4] -> carrier`. Face and carrier attribute equality does not establish ownership. The carrier reference uses the bridge's site.
 
