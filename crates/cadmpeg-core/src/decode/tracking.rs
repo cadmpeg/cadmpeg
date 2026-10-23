@@ -8,12 +8,14 @@ use std::ops::Range;
 use super::budget::DecodeBudget;
 
 mod batches;
+mod owners;
 mod streams;
 use super::{
     u64_from_index, DecodePolicy, ResourceDimension, ResourceFailure, ResourceLimit, SpaceId, View,
 };
 use crate::CodecError;
 pub use batches::RecordBatchId;
+pub use owners::RecordOwner;
 use streams::{Origin, Streams};
 pub use streams::{SourceOrigin, SourceSegment, SourceStream};
 
@@ -31,6 +33,7 @@ pub struct RecordCapture {
     offset: u64,
     byte_len: u64,
     reads: BTreeMap<String, Vec<Range<u64>>>,
+    owner: Option<owners::CaptureOwner>,
 }
 
 impl RecordCapture {
@@ -572,26 +575,7 @@ impl SessionHandle<'_> {
             let record = record
                 .map(|(id, extent)| session.new_record(id, extent))
                 .transpose()?;
-            if let Some(record) = &record {
-                if let Some(attempts) = innermost_part_attempts(&mut session.frames) {
-                    reserve_working(&session.budget, attempts, 1)?;
-                    attempts.push(copy_working(&session.budget, &record.id)?);
-                }
-            }
-            reserve(&session.budget, &mut session.frames, 1)?;
-            let token = session.next_token;
-            session.next_token = token
-                .checked_add(1)
-                .ok_or_else(|| CodecError::malformed("read scope identities exhausted"))?;
-            session.frames.push(Frame {
-                token,
-                batch: None,
-                record,
-                captures: Vec::new(),
-                deltas: Vec::new(),
-                part_attempts: part.then(Vec::new),
-            });
-            Ok(token)
+            session.push_frame(record, part)
         })
     }
 
@@ -780,7 +764,7 @@ impl SessionHandle<'_> {
             }
             session.sealed = true;
             let mut captures = std::mem::take(&mut session.committed);
-            captures.sort_unstable_by(|a, b| a.batch.cmp(&b.batch).then_with(|| a.id.cmp(&b.id)));
+            owners::coalesce(&session.budget, &mut captures)?;
             Ok(captures)
         })
     }
@@ -825,6 +809,37 @@ impl Session {
         Ok(())
     }
 
+    fn push_frame(
+        &mut self,
+        record: Option<RecordCapture>,
+        part: bool,
+    ) -> Result<usize, CodecError> {
+        if let Some(record) = record.as_ref().filter(|record| {
+            !record
+                .owner
+                .is_some_and(owners::CaptureOwner::is_continuation)
+        }) {
+            if let Some(attempts) = innermost_part_attempts(&mut self.frames) {
+                reserve_working(&self.budget, attempts, 1)?;
+                attempts.push(copy_working(&self.budget, &record.id)?);
+            }
+        }
+        reserve(&self.budget, &mut self.frames, 1)?;
+        let token = self.next_token;
+        self.next_token = token
+            .checked_add(1)
+            .ok_or_else(|| CodecError::malformed("read scope identities exhausted"))?;
+        self.frames.push(Frame {
+            token,
+            batch: None,
+            record,
+            captures: Vec::new(),
+            deltas: Vec::new(),
+            part_attempts: part.then(Vec::new),
+        });
+        Ok(token)
+    }
+
     fn new_record(&self, id: &str, extent: View<'_>) -> Result<RecordCapture, CodecError> {
         if id.is_empty() {
             return Err(CodecError::malformed("record identity is empty"));
@@ -843,6 +858,11 @@ impl Session {
         if duplicate {
             return Err(CodecError::malformed("duplicate record read scope"));
         }
+        self.capture(id, extent)
+    }
+
+    fn capture(&self, id: &str, extent: View<'_>) -> Result<RecordCapture, CodecError> {
+        let batch = self.frames.iter().rev().find_map(|frame| frame.batch);
         let stream = self.streams.extent_name(
             extent.space(),
             super::ByteRange {
@@ -857,6 +877,7 @@ impl Session {
             offset: u64_from_index(extent.start()),
             byte_len: u64_from_index(extent.end().abs_diff(extent.start())),
             reads: BTreeMap::new(),
+            owner: None,
         })
     }
 }
@@ -946,7 +967,14 @@ fn merge_delta(
         });
         deltas.len() - 1
     };
-    let ranges = &mut deltas[index].ranges;
+    merge_range(budget, &mut deltas[index].ranges, range)
+}
+
+fn merge_range(
+    budget: &DecodeBudget,
+    ranges: &mut Vec<Range<u64>>,
+    range: Range<u64>,
+) -> Result<bool, CodecError> {
     let first = ranges.partition_point(|old| old.end < range.start);
     let after = ranges.partition_point(|old| old.start <= range.end);
     if first < after {
