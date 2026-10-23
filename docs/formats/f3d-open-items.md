@@ -442,7 +442,7 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Need.** A reader must convert both extent owners to adjacent spacing and must define each active direction's vector, including the vector of a class-261 direction.
 
-**Conflict.** A Features-type rectangular pattern with 3 by 2 instances at 10 mm spacing stores an extent of 1.0 cm in both directions. Extent divided by count minus one gives 5 mm and 10 mm, not 10 mm and 10 mm. That scope stores its direction in the 221-byte form. Scopes that store 220-byte direction records hold the seed-to-final-instance extent: a 4 by 2 pattern of 7.95 mm and 8 mm pitch stores 2.385 cm and 0.8 cm.
+**Conflict.** A Features-type rectangular pattern with 3 by 2 instances at 10 mm spacing stores an extent of 1.0 cm in both directions. Extent divided by count minus one gives 5 mm and 10 mm, not 10 mm and 10 mm. That scope stores its direction in the 221-byte form. In scopes that store 220-byte direction records, the extent divided by count minus one reproduces the measured pitch in both directions.
 
 ## 2. External references
 

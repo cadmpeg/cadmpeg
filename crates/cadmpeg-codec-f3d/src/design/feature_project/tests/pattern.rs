@@ -241,8 +241,8 @@ fn two_direction_scope(
                 crate::records::feature::patterns::DesignRectangularPatternConstructionWire {
                     u_count: 4,
                     v_count: 2,
-                    u_extent: 2.4,
-                    v_extent: -0.8,
+                    u_extent: 3.0,
+                    v_extent: -1.2,
                     owner_record_indices: [11, 12, 13, 14],
                     value_offsets: [101, 102, 103, 104],
                     instances: None,
@@ -260,7 +260,7 @@ fn two_direction_scope(
 fn rectangular_pattern_direction_records_supply_both_directions() {
     let scope = two_direction_scope(vec![
         direction_record(20, [2.0, 0.0, 0.0]),
-        direction_record(30, [0.0, 1.58, 0.0]),
+        direction_record(30, [0.0, 2.5, 0.0]),
     ]);
     let definition = project_rectangular_pattern_scalars(&scope, &[], &[])
         .expect("two-direction rectangular pattern");
@@ -280,13 +280,13 @@ fn rectangular_pattern_direction_records_supply_both_directions() {
         cadmpeg_ir::features::FiniteVector3::from(direction.expect("first direction")).get();
     assert!((direction.x - 1.0).abs() < EPS_SPACING);
     assert!(direction.y.abs() < EPS_SPACING && direction.z.abs() < EPS_SPACING);
-    assert!((spacing.get() - 8.0).abs() < EPS_SPACING);
+    assert!((spacing.get() - 10.0).abs() < EPS_SPACING);
     assert_eq!(count, 4);
     let second = second.expect("second direction");
     let second_direction = cadmpeg_ir::features::FiniteVector3::from(second.direction).get();
     assert!((second_direction.y + 1.0).abs() < EPS_SPACING);
     assert!(second_direction.x.abs() < EPS_SPACING && second_direction.z.abs() < EPS_SPACING);
-    assert!((second.spacing.get() - 8.0).abs() < EPS_SPACING);
+    assert!((second.spacing.get() - 12.0).abs() < EPS_SPACING);
     assert_eq!(second.count, 2);
 }
 

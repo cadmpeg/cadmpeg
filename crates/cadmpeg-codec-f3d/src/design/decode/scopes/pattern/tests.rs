@@ -1575,7 +1575,7 @@ fn rectangular_pattern_direction_frame(selection_kind: u32, displacement: [f64; 
     indexed_header(&mut bytes, *b"439", 20);
     bytes.extend_from_slice(&[0; 10]);
     bytes.extend_from_slice(&selection_kind.to_le_bytes());
-    for value in [-1.59, 0.79, 0.96].into_iter().chain(displacement) {
+    for value in [-2.0, 1.0, 0.5].into_iter().chain(displacement) {
         bytes.extend_from_slice(&f64::to_le_bytes(value));
     }
     bytes.extend_from_slice(&[0; 16]);
@@ -1606,7 +1606,7 @@ fn rectangular_pattern_direction_frame(selection_kind: u32, displacement: [f64; 
 
 #[test]
 fn rectangular_pattern_direction_record_stores_origin_and_displacement() {
-    let bytes = rectangular_pattern_direction_frame(8, [0.0, -1.58, 0.0]);
+    let bytes = rectangular_pattern_direction_frame(8, [0.0, -2.5, 0.0]);
     let direction = super::exact_rectangular_pattern_direction(&bytes, 0, 220, 20, 23, 10)
         .expect("direction record");
     assert_eq!(direction.record_index, 20);
@@ -1614,12 +1614,12 @@ fn rectangular_pattern_direction_record_stores_origin_and_displacement() {
     assert_eq!(direction.selection_kind, 8);
     assert_eq!(
         direction.origin,
-        crate::test_support::reals([-1.59, 0.79, 0.96])
+        crate::test_support::reals([-2.0, 1.0, 0.5])
     );
     assert_eq!(direction.origin_offset, 25);
     assert_eq!(
         direction.displacement,
-        crate::test_support::reals([0.0, -1.58, 0.0])
+        crate::test_support::reals([0.0, -2.5, 0.0])
     );
     assert_eq!(direction.displacement_offset, 49);
     assert_eq!(
