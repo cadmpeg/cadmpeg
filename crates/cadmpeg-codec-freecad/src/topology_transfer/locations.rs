@@ -202,3 +202,6 @@ pub(super) fn allocation_failed(ctx: &DecodeContext<'_>) -> CodecError {
         "freecad_topology_location_cache",
     ))
 }
+
+#[cfg(test)]
+mod tests;
