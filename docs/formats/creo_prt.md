@@ -227,11 +227,21 @@ rows. An ordinary row begins with `<name> <offset-hex> <stored-length-hex>`.
 Offsets are relative to the byte after `#-END_OF_UGC_HEADER\n`; stored lengths
 include the `#<name>\n` section header. A `ModelView` row inserts its decimal
 view identifier before the offset and has raw section name
-`ModelView#<identifier>`. `NEXT_TOC_ENTRY` identifies another TOC block and is
+`ModelView#<identifier>`. The identifier can instead be part of the row's
+first field as `ModelView#<identifier>`, with no separate identifier field.
+`NEXT_TOC_ENTRY` identifies another TOC block and is
 not a body section. Every TOC-derived entry is valid only when its computed
 offset contains the matching section header and its stored extent is inside the
 file. Valid TOC entries are the authoritative section directory; delimiter
 scanning is the fallback when no TOC entry validates.
+
+The count and row width bound a TOC without an `#END_OF_TOC_HEADER` marker.
+The next ordinary TOC field after the stored length is the hexadecimal
+expanded payload length. It excludes the section header. The following
+decimal producer declaration does not select a persistence layout. Additional
+row fields and `#` padding do not change the section extent. A continuation
+TOC uses the same header-relative offset base as the first TOC; its own
+position does not become a new base.
 
 A section payload beginning `1f 9d <flags>` uses Unix `compress` LZW framing.
 The low five flag bits give the maximum code width from 9 through 16; bit 7
@@ -268,6 +278,49 @@ not change the outer layout. An `ND:` decoration on an outer section identifies
 an ND layout. The complete header-adjacent `P_OBJECT` framing identifies the
 legacy ASCII layout. A file with none of these discriminators is an unknown
 layout. Section cardinality is descriptive and does not select a layout.
+
+#### ND release declarations
+
+The binary-generation product banner is an ASCII line between
+`#-END_OF_UGC_HEADER\n` and the first TOC. Its form is
+`#Creo  TM  <release>  <copyright-text> <build>\n`. The release token can be
+a dotted value or an integer. The final dotted numeric token is the build
+declaration. Banner length is variable; the first TOC does not have a fixed
+file offset.
+
+These ND header forms use the same section-directory grammar. The two fields
+in the third column are the first two decimal tokens after `PART` on the
+`#UGC:2` line. They are producer declarations, separate from the banner's
+release and build tokens. The four intervening decimal tokens before the
+declarations in the last column are `800 1 1 15`.
+
+| Release token | Build token | First two `PART` tokens | Following two decimal declarations |
+| --- | --- | --- | --- |
+| `7.0` | `7.0.12.0` | `1986 1560` | `3800 2023154` |
+| `8.0` | `8.0.12.0` | `2014 1660` | `3900 2024325` |
+| `9.0` | `9.0.12.0` | `2083 1760` | `4000 2025304` |
+| `10.0` | `10.0.11.0` | `2239 1860` | `4100 2026024` |
+| `11.0` | `11.0.9.0` | `2420 1960` | `4200 2026123` |
+| `12` | `12.4.5.0` | `2602 2120` | `4300 2026183` |
+| `13` | `13.4.2.0` | `2794 2280` | `4400 2026283` |
+
+The banner and producer declarations do not replace the layout discriminators.
+An ND directory can decorate the outer model, unit-system, and
+trail sections and leave `VisibGeom`, `AllFeatur`, and `FeatDefs`
+undecorated. A `ModelView` identifier uses either TOC spelling and the
+`#<identifier>` section-name suffix. Its magnitude does not change the extent
+grammar.
+
+`IdsGenAllRepsDb` and `IdsGenSimpRepDb` are additional section names in the
+Creo 8 through 13 ND forms. `SldRegenRevInfo` is an additional section name in
+the Creo 10 through 13 ND forms. These entries use the same stored-length,
+expanded-length, and header-relative offset rules. Their presence does not
+change the material-geometry namespace or select DEPDB.
+
+`MdlStatus` can contain the named byte-string field
+`e0 03 Proe_version\0` followed by a NUL-terminated `Version <token>` value.
+Such a value belongs to its stored record. It can differ from the outer Creo
+banner and is not a current product-release discriminator.
 
 ### 1.2 Section map
 
@@ -4732,6 +4785,18 @@ The positional `order_table` opener is `f8 <count> f7 <table_class> fb e2 f7
 <table_class> e2`; the following `count - 1` tuples are stored entries.
 Stored tuples are separated by `e2`. The final tuple may end directly at the
 following named field without an `e2` separator.
+
+An extended order-table prototype stores the additional field
+`e0 01 rg_ref_id\0 f6` immediately after `bitmask`. Its positional prototype
+stores the same `f6` immediately after the three ordinary fields and before
+`f1 f7 <table_class> e2`. In this form every stored row has exactly one
+additional `f6` slot after `bitmask`. The slot is a null reference and supplies
+no reference operand. It does not change the count, identifier join, or flag
+semantics. The prototype selects the three-field or extended form for the
+whole table. A missing, non-null, repeated, or undeclared reference slot does
+not form a complete row. An incomplete table has only its complete row prefix
+and establishes no semantic join. Creo 11 through 13 ND
+order tables admit this extended null-reference form.
 
 A section arc bound this way supplies a cylinder radius from its `cntrid` and endpoint in `var_arr`; its axis direction is the resolved `gsec3d` extrude axis, and its axis point is the section arc center transformed into model space.
 
