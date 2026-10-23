@@ -26,21 +26,36 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know each custom conversion to evaluate a relation that uses the symbol.
 
-### SE-02. Custom affine units
+### SE-02. Owned custom affine-unit definitions
 
-**Question.** Which custom unit definitions use an affine offset, and what offset does each definition use?
+**Question.** Which complete basic custom-unit record binds its quantity type,
+reference unit, scale, and offset to one model-local unit name?
 
-**Known.** `creo_prt.md` §8.3 "Square brackets following a numeric literal or parameter expression contain a" states that an affine unit cannot be part of a compound unit.
+**Known.** `creo_prt.md` §8.3 defines the reference-to-actual conversion and
+its inverse. A nonzero offset belongs only to basic temperature. The separate
+`xp_custom_sys_unit._conv_factors` array holds system-conversion pairs and
+cannot assign an offset to a named custom unit.
 
-**Need.** We must know the offset to normalize temperature-like custom values.
+**Need.** We must know the complete nonempty definition grammar and reference
+ownership before resolving model-local affine units, including missing,
+ambiguous, or cyclic references.
 
 ### SE-03. Other curve-equation frame transitions
 
-**Question.** What slot transition does each other stateful `local_sys f9 04 03` token encode?
+**Question.** Which additional stateful productions are owned by a
+curve-equation `local_sys` body beyond the defined explicit slot language?
 
-**Known.** `creo_prt.md` §8.3 "The identifiers `r`, `theta`, and `z` define cylindrical curve coordinates" defines the twelve explicit frame slots. `creo_prt.md` §8.3 "A curve-equation entity carries its placement" assigns the rank-two image to the shared plane-frame production.
+**Known.** `creo_prt.md` §8.3 defines the curve-owned wrapper and twelve frame
+slots. The complete rank-two image `18 e4 0f e4 18 e5 0f 18 e6` consumes nine
+bytes and supplies all twelve slots. Its middle triple is zero; splitting its
+`e4` bytes into generic unit scalars changes that rank. The next named field
+bounds the owned body. Active and backup images of one saved equation are
+persistence copies, not distinct transition productions.
 
-**Need.** We must know the other transitions to decode a complete curve-equation placement.
+**Need.** We must know the complete curve-owned byte extent, slot transition,
+and independent placement constraints before admitting another stateful
+production. A common `f9 04 03` wrapper does not establish that feature,
+surface, or pcurve transition semantics apply.
 
 ### SE-04. Other pcurve array transitions
 
@@ -49,22 +64,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `creo_prt.md` §4.1 "A direct curve body consisting of exactly eight scalar slots and no references" defines the direct eight-slot pcurve body, its endpoint order, standalone zero slots, and the exact held-scalar wrapper.
 
 **Need.** We must know the other transitions to decode all pcurve endpoint arrays.
-
-### SE-05. Other positive DICT prefixes
-
-**Question.** What value does each positive DICT prefix outside a defined scalar lane encode?
-
-**Known.** `creo_prt.md` §2.3 "`<prefix> <tail6>` uses the prefix" defines the DICT reconstruction rule and the lane-specific prefix tables. `creo_prt.md` §2.3 "Each record grammar defines the DICT lane for its scalar slots." gives the lane-specific priority rule.
-
-**Need.** We must know the remaining prefixes to decode scalar values without using a value from the wrong lane.
-
-### SE-06. Negative DICT prefixes
-
-**Question.** What value does each undefined negative DICT prefix encode in its scalar lane?
-
-**Known.** `creo_prt.md` §2.3 "`<prefix> <tail6>` uses the prefix" defines the negative prefixes that have a complete reconstruction rule and the byte widths of unresolved forms. `creo_prt.md` §5 "`feat_outl_info.outline f9 02 03` stores six sequential feature-local scalar" states that an undefined prefix does not remove a scalar slot.
-
-**Need.** We must know the remaining prefixes to decode geometry records that contain negative values.
 
 ### SE-07. Other `double_xar` slots
 
@@ -89,14 +88,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `creo_prt.md` §3.4 "Plane row bodies contain envelope/domain data" through `creo_prt.md` §3.4 "In the frame-bound held-coordinate outline form" define the standard, compact, held-coordinate, and planar-envelope plane forms.
 
 **Need.** We must know the remaining prefixes to construct the plane envelope and domain.
-
-### SE-10. Six-scalar terminal frames
-
-**Question.** What role does each value in an unsuffixed terminal six-scalar frame have?
-
-**Known.** `creo_prt.md` §8.5 "`MdlRefInfo`" defines six-scalar `MdlRefInfo` line rows as `end1.xyz` followed by `end2.xyz`. Equality of one coordinate pair does not identify that grammar in another record family.
-
-**Need.** We must know the roles to distinguish endpoints, frame vectors, plane data, and trailers.
 
 ### SE-11. Dimension-driven `00 XX YY` values
 
@@ -313,15 +304,11 @@ witnesses; it does not by itself define the remaining carrier equation.
 
 **Known.** `creo_prt.md` §8.3 "`SOLVE` opens a simultaneous-equation block and `FOR` followed by one or more" defines the block framing. The decoder solves complete, dimensionally valid affine systems and smooth numeric nonlinear systems when one finite full-rank root is established, and retains other blocks.
 
-**Need.** The neutral format model does not yet define a transfer for non-smooth, piecewise, or discrete function forms whose affine reduction does not resolve them.
+**Need.** Obtain saved programs with regenerated numeric or geometry witnesses for non-smooth, piecewise, and discrete forms that do not reduce affinely. Vary preceding unknown values, equation order, and `FOR` variable order. The witnesses must distinguish the selected root or branch from nearest-seed and fixed-order rules.
 
-### SP-02. Other simultaneous-solve states
+**Conflict.** A simultaneous system can have more than one mathematical result set. The returned set does not by itself identify the initialization or branch rule.
 
-**Question.** How must a simultaneous-solve block evaluate when an unknown does not have a previous numeric value?
-
-**Known.** The defined affine solver uses the ordered equations, declared unknowns, and previous or uniquely constrained physical dimensions. An underdetermined dimension system remains unresolved. A nonlinear block without a preceding finite numeric value for every unknown remains unresolved.
-
-**Need.** We must know the initialization rule to evaluate the block deterministically.
+**Note.** Preserve an unsolved block and invalidate its preceding unknown values until the complete source semantics supplies a unique transfer.
 
 ### SP-03. Section-to-datum joins
 
@@ -372,11 +359,15 @@ native.
 
 ### SP-05. Type-1 direction selectors
 
-**Question.** What direction does each selector in a type-1 angular relation specify?
+**Question.** How does the complete `b`, `c`, and `sign` selector tuple choose the rays and their order for a type-1 angular relation?
 
-**Known.** The decoder retains the relation type, operands, direction selector, and value as separate fields.
+**Known.** The relation retains its operand vectors, complete raw body, selector, and selected angular dimension separately. The line operands bind through the section order table. A scalar projection of `c` does not establish its direction semantics.
 
-**Need.** We must know the direction to select the correct signed angle.
+**Need.** Obtain regenerated section saves with fixed ordered line entities and endpoint order. Change only the dimension label sector, then reverse each line independently. Retain the ordered dimension references, point types, label location, and value from the section API. Compare the complete source tuple for each save.
+
+**Conflict.** The angular magnitude and the stored `sign` do not establish the selected rays or a direction convention. A rule for labelled legacy sections does not establish the binary selector codebook.
+
+**Note.** Retain the complete selector tuple. Transfer a directed target constraint only when its ray and direction semantics are independently resolved.
 
 ### SP-06. Other type-35 operands
 
@@ -404,19 +395,31 @@ native.
 
 ### SP-09. Multiple `transf` frames
 
-**Question.** What geometric role does each feature-definition `transf` frame have when one definition contains more than one frame?
+**Question.** Which owner-specific role distinguishes complete `transf` frames if one bounded feature definition contains more than one?
 
-**Known.** `creo_prt.md` §6 "Feature-definition `local_sys f9 04 03` and `transf f9 04 03` bodies use the" defines the twelve-slot transform body. A unique feature-bound section transform selects its section definition.
+**Known.** `creo_prt.md` §6 "Feature-definition `local_sys f9 04 03` and `transf f9 04 03` bodies use the" defines the twelve-slot body. A frame belongs to its bounded source definition and nested owner. A field with the same name outside that definition is not a competing frame.
 
-**Need.** We must know each role to select the section-to-model transform.
+**Need.** Obtain a definition that contains multiple complete transforms with independently identified owners and geometric results. Distinguish those roles before selecting a section-to-model transform.
 
-### SP-10. Frame selection order
+**Note.** An absent, incomplete, or ambiguous owner-specific transform does not permit a file-wide lookup or selection by field order.
 
-**Question.** Which field selects one frame when a feature definition contains multiple complete `local_sys` or `transf` frames?
+### SP-10. Selection within one frame owner
 
-**Known.** Frame order alone does not override the unique owner and feature-bound transform rules.
+**Question.** If one parsed owning object contains multiple complete frames of
+one kind, what instance identity, index, or selector distinguishes the field
+required by its consumer?
 
-**Need.** We must know the selector to avoid an arbitrary placement.
+**Known.** Complete `local_sys` and `transf` fields under different owners do
+not form one selection array. The placement record, each transformation-array
+entry, and the section saved-result retain separate owner/kind identities.
+Order, equality, or completeness across owners cannot establish a section
+location frame. A uniquely owned section frame is independent of unrelated
+feature-placement and generated-carrier evidence.
+
+**Need.** We must establish an actual within-owner multiple-frame grammar
+before selecting one such instance. Missing, incomplete, or ambiguous evidence
+in the required owner must remain unresolved; a complete sibling object is not
+a fallback.
 
 ### SP-11. `relat_ptr` operand-vector roles
 
@@ -452,19 +455,18 @@ dimension-driven sentinel.
 **Need.** We must know the remaining non-equality equation and relation joins
 that assign a dimension value to a dimension-driven solver variable.
 
-### SP-13. `relat_ptr.used` states
-
-**Question.** What solver state does each value of `relat_ptr.used` represent?
-
-**Known.** The field has more than two values and is not a Boolean constraint-activation flag.
-
-**Need.** We must know the states to decide how the solver uses the relation.
-
 ### SP-14. Unary point incidence
 
-**Question.** What neutral constraint does a unary type-1 or type-2 `skamp_ptr` incidence represent when its sense-0 operand is a `segtab` point and it has no matching `verhor` or type-14 axis line?
+**Question.** What independent geometric meaning applies to a unary type-one
+or type-two sense-zero incidence on a type-5 `segtab` point when `verhor` is
+absent or conflicts and no complete type-fourteen symmetry-axis role exists?
 
-**Known.** `creo_prt.md` §5 "Build the B-rep half-edge graph from the `crv_array` suffixes. A single-loop face has an outer" through `creo_prt.md` §5 "A positive-ratio elliptical cone uses local frame coordinates" define the incidence forms that have a proven point, line, or axis structure.
+**Known.** A unary orientation incidence and agreeing point `verhor` can
+persist without type-fourteen axis use. Such records retain the point and two
+separate native constraints. A degenerate symmetry axis instead requires its
+complete agreeing orientation and type-fourteen conjunction. Missing or
+conflicting orientation evidence does not establish an implicit line or origin.
+Entity-orientation and point-alignment constraint families are distinct.
 
 **Need.** We must know the constraint to transfer it without inventing an axis.
 
@@ -478,43 +480,55 @@ that assign a dimension value to a dimension-driven solver variable.
 
 ### SP-17. Solver-only external references
 
-**Question.** Which record binds a solver-only `skamp_ptr` entity identifier to its external geometry?
+**Question.** What complete schema and projection rules handle qualified
+external `ref_planes` rows, including a collection qualifier or non-null
+`ext_ref_id` or `sub_index`, while preserving their typed model-item namespace?
 
-**Known.** A solver-only identifier does not bind through the local `segtab` geometry join.
+**Known.** A complete `gsec3d_ptr.ref_planes` row binds its fourth field,
+`known_ext_id` or `seg_id`, to the known section-entity identifier. The typed
+external target is `(ref_type, plane_id)`. The six-field form adds `sub_index`
+and `flip_flag`. Surface and edge references are distinct from table-class,
+point-key, relation, and dimension namespaces. Missing local `segtab` geometry
+does not prove an external binding. A counted class reference is not a
+model-item identifier. The section location frame is a separate projection
+input.
 
-**Need.** We must know the binding to evaluate constraints on external geometry.
+**Need.** We must own the complete row schema and any qualifiers before
+looking up and projecting the typed model item. Missing or multiple candidate
+rows, unknown types, unhandled qualifiers, or an unresolved section frame must
+retain native geometry instead of selecting a same-valued datum or class ID.
 
-### SP-18. `exists()` model-item joins
+### SP-18. `exists()` serialized owner graph
 
-**Question.** Which owner and namespace joins expose model, feature, component, and scoped dimension items to a curve-expression `exists()` query?
+**Question.** Which serialized owner records bind a relation context to complete model, feature, component, and section item namespaces?
 
-**Known.** `creo_prt.md` §8.3 "A curve-from-equation entity stores `expression f8 <count>` followed by exactly" defines the `exists()` query's complete-program identifier and decoded-section-dimension namespaces. Other item classes retain their complete source identity.
+**Known.** Exact complete-program targets establish existence even when their values are unresolved. A numeric model qualifier selects the zero-based `ref_part_table` row ordinal, not its stored `id`. An `FID_` qualifier selects a feature inside the selected model before the base item selects that feature's parameter or measurement. `CID_` selects a component occurrence by its internal component feature ID. Session and component identities are distinct. Qualifiers resolve from right to left. Section `sd#`, `rsd#`, and `kd#` identities belong to the current section. Parent-model dimensions use `d#` or `rd#`.
 
-**Need.** We must know the joins to return the correct query result.
+**Need.** Bind the current relation owner and referenced documents without filename guessing. Preserve model parameters, feature parameters and measurements, occurrence parameters, and dimension namespaces separately. Resolve name-based features only when unique. Record namespace completeness independently of values. A proved member returns one; a missing member returns zero only in a complete resolved namespace. Missing documents, ambiguous owners, unsupported qualifiers, and incomplete namespaces remain unresolved. Preserve exact program targets before external owner resolution.
 
-### SP-19. Sweep axis without `ActDatums`
+### SP-19. External and designated sweep-axis references
 
-**Question.** Which DEPDB relation supplies the `protextrude` or `protrevolve` axis when the part has no `ActDatums` section?
+**Question.** Which owned fields distinguish an explicitly designated or external revolution axis from the internal centerline, and retain its exact typed model-geometry reference?
 
-**Known.** `creo_prt.md` §8.3 "A `protextrude` or `protrevolve` operation references its sweep axis through" states that the operation references its axis through `gsec3d_ptr` placement fields, not through an inline vector.
+**Known.** Absence of `ActDatums` does not select an operation axis. An independently owned placed section supplies the extrusion sweep line. The bounded internal revolution path requires complete tables and one nondegenerate resolved `u=0` line; the nested `gsec3d_ptr.ref_planes` section-entity identifier is not its axis selector. A resolved saved-section frame without an exact operation owner remains insufficient. PTC separately permits designated, geometry, construction, and external linear references; their selection priority does not establish their native field encoding.
 
-**Need.** We must know the relation to construct the sweep direction or revolution axis.
+**Need.** A positively owned designated/external-axis witness and independent geometry oracle must establish the selector and typed reference without assigning a nearby saved section or interpreting a reference-table identifier as a centerline.
 
-### SP-20. Default sweep datums
+### SP-20. Complete placement-instruction reconciliation
 
-**Question.** Which feature-definition datum default or standard-datum convention supplies a sweep axis when no explicit datum joins to the section?
+**Question.** Which complete bounded placement-instruction grammar preserves competing nonzero or unresolved offset states before the zero-offset standard-datum placement test?
 
-**Known.** Datum names do not define geometric orientation. A referenced datum can orient an in-plane axis only when it is perpendicular to the sketch-plane normal.
+**Known.** A type-20127 zero-offset instruction with the reference datum as its first geometry operand can select a sketch plane through the exact standard-datum guards in §6. This rule does not select a sweep axis or its sign. Section-plane orientation and section origin require their own geometric evidence. The interactive default orientation convention applies after selecting a sketch plane; it does not supply a missing native sweep direction.
 
-**Need.** We must know the convention to place the sweep without guessing from a name.
+**Need.** Bound all instantiated instructions to their declared class and owning table. Retain each complete row's offset state and reject this fallback when owned instructions disagree or a candidate's offset remains unresolved. Preserve independently proved section transforms and generated-cap-pair placement as separate mechanisms.
 
-### SP-21. Competing regeneration snapshots
+### SP-21. Physical row ownership of repeated section-plane records
 
-**Question.** Which field selects the current regeneration snapshot when several section definitions select the same internal sketch-plane entity?
+**Question.** What complete boundary and root-schema grammar safely discovers every physical `AllFeatur` row before decoded feature-namespace admission, and bounds positional section definitions without extending an earlier owner through an omitted row?
 
-**Known.** `creo_prt.md` §6 "`DEPDB_DATA` and each complete bounded `AllFeatur` feature row store an" states that the immediate feature-state chain does not select a snapshot when more than one definition uses that entity.
+**Known.** The bounded class-916 rows with a shared sketch-plane identifier are separate records. In the verified pattern-member form, independent audit rows retain a pattern header and five predecessor-linked members; each member has its own physical row header and positional section record. A shared datum identifier is therefore insufficient to group those records as alternative states. The current fixed-prefix probe and known-feature filter do not establish a general row grammar. A canonical row identifier, a model operation, and a stored section/schema identifier remain separate identities.
 
-**Need.** We must know the selector to bind the feature to one section definition.
+**Need.** A complete owned boundary/root grammar and positional section parser must preserve each row range independently of current-feature filtering. Repeated definitions within one genuine owner range, or unresolved `DEPDB_DATA` repeats, require their own selector evidence; first/last order and sketch-plane arithmetic supply none.
 
 ### SP-22. Ambiguous sketch-datum parent
 
@@ -524,13 +538,13 @@ that assign a dimension value to a dimension-driven solver variable.
 
 **Need.** We must know the selection rule to place the sketch.
 
-### SP-23. Parallel orienting datum
+### SP-23. Owned fallback when the orientation reference is parallel
 
-**Question.** Which datum supplies the in-plane orientation when the nested reference datum is parallel to the sketch normal?
+**Question.** Which complete owner-qualified frame or generated carrier places a section when its typed orientation reference is parallel to the sketch normal?
 
-**Known.** `creo_prt.md` §8.1 "`ref_planes`" states that the nested datum orients an in-plane axis only when it is perpendicular to the sketch-plane normal.
+**Known.** A parallel plane normal has no nonzero projection into the sketch plane and supplies no in-plane direction. The existing resolver can use a fully established generated carrier or a unique complete definition local frame, with owner, finite/nonzero axes, and perpendicular-axis guards. The two bounded named reference controls are perpendicular, so they do not establish an authored parallel-case selector. Their direct placement origin differs from their saved local-frame origin; those frames are not interchangeable. `SP-08` retains the distinct placement/transform/saved-result owner problem, and `SP-17` retains qualified typed reference-row ownership.
 
-**Need.** We must know the alternate datum to complete the sketch frame.
+**Need.** An authored parallel-reference witness with complete frame ownership and independent placed geometry must establish the eligible fallback. Do not select another table member, reinterpret a PSB table class as a model datum, or choose the first/last nearby local frame.
 
 ### SP-24. `ActDatums` outline tokens
 
@@ -556,61 +570,21 @@ that assign a dimension value to a dimension-driven solver variable.
 
 **Need.** We must know the recipe discriminator and conflict rule to assign the feature family and Boolean effect.
 
-### SP-39. Simple-drilled template selection and depth endpoint
+### SP-39. Complete outer-entry ownership for simple-drilled dimensions
 
-**Question.** Which replay identity distinguishes class-911 three-row
-simple-drilled dimension tables that have the same bore-radius and blind-depth
-envelope, and does the blind depth terminate at the cylindrical shoulder or
-the conical tip?
+**Question.** Which complete PSB compound-entry grammar binds each class-911 dimension definition to its current outer feature key, including entries whose declared array count differs from the ordinary keyed-entry count?
 
-**Known.** `creo_prt.md` §6 "A class-911 table-class-29 simple-drilled recipe"
-defines the generated-surface recipe and the bore-radius, included-angle, and
-blind-depth dimension roles. The paired cylinder parameter records provide
-per-axis common and adjacent-union spans. Bore diameter and blind depth select
-the complete tables that match those spans on distinct axes. All matching
-tables must define one equal tuple. Two rowless materialization-source pairs
-select the external-ID-2 depth family; three select the external-ID-4 depth
-family. Complementary envelopes define placement
-directly. A one-sided envelope pair defines the second radial coordinate when
-the patches share exactly one normalized bound and their non-shared bounds
-differ by the bore diameter. A clipped envelope pair defines its missing radial
-coordinate when the corresponding seven-token compound-close cone bodies
-cross-bind the cylinder corners in generated order. The neutral hole bottom
-retains no depth-to-tip state.
+**Known.** The current outer key and optional `feat_id / ref_model_info` replay-source reference are separate identities. A copied replay can retain an older source while belonging to a different current key. A complete three-row table still requires the recipe-selected external-ID/type roles. Equal envelopes, names, ordinals, or dimension tuples elsewhere do not establish that owner. A blind depth proved equal to the owned cylinder's axial span ends at its shoulder; the conical point extends beyond it. This independently earns `depth_to_tip = false` only with the cylinder-span and angle evidence.
 
-**Need.** We must identify the per-feature replay join when competing tuples
-have equal bore-radius and blind-depth envelopes, and identify the depth
-endpoint to set `HoleBottom::Angled`.
+**Need.** The parser must retain complete current-entry bounds and bind exactly one eligible table before model projection. Unknown compound/replay boundaries must abstain. A missing or invalid owned table must not borrow another feature's equal-radius/depth tuple. Different point-angle controls and envelope-free negatives must preserve both the ownership and Shoulder/Tip boundary.
 
-### SP-40. `var_arr` scalar classes
+### SP-41. Native counterbore and countersink additions
 
-**Question.** What scalar class does each `var_arr` row `type` value outside
-`1`, `2`, and `3` denote?
+**Question.** Which complete feature-owned parameter grammar binds the independent counterbore and countersink additions when entry-profile or transition topology is unavailable?
 
-**Known.** `creo_prt.md` §5 "| `var_arr` | Solver-variable table keyed by `key`;"
-gives point `u` for type `1`, point `v` for type `2`, and radius for type `3`.
-`creo_prt.md` §5 "Function `0` has exactly six argument slots" gives type `4` or
-type `6` as an angle in that form. `creo_prt.md` §5 "Function `42` has three
-argument slots" gives type `6` as a coordinate mean in that form.
-`creo_prt.md` §5 "Function `16` has a direct four-slot form" gives type `4` as an
-angle operand and type `0` as a result. The argument position in the equation
-row, and not the row `type`, selects the role.
+**Known.** Class-911 `feat_type_ptr.form` distinguishes straight/extruded construction from sketched/revolved construction. It does not declare the detailed entry treatment. `draft_choice` and `misc_choice` are separate fields; a bit position without the complete enclosing production does not identify an entry treatment. Generated conical bottom geometry alone does not identify a countersink. A positively owned entry profile can distinguish a planar shoulder from a conical entry transition.
 
-**Need.** We must know each class to bind a solver row to its equation role
-without argument position.
-
-### SP-41. Drilled hole form declaration
-
-**Question.** Which field declares the form of a class-911 drilled hole?
-
-**Known.** `creo_prt.md` §6 "A cylindrical stepped entry has two source section
-entities" selects counterbore form from the paired generated-surface structure.
-`creo_prt.md` §6 "A split-patch class-29 counterbore table has exactly five
-unique" selects the same form from a second generated-surface shape. No known
-field declares the form, and counterbore is the only recognized stepped form.
-
-**Need.** We must know the declared form to separate a counterbore from a
-countersink and from other stepped forms, and to set the neutral hole kind.
+**Need.** Bind the complete current feature parameter production and its source profile before interpreting packed choices. Preserve counterbore and countersink evidence independently. Bound each outer keyed definition before the next owner; a named sketch prototype boundary does not define the owner interval. Unresolved operands or ambiguous entry transitions must remain unresolved.
 
 ### SP-43. Structural `e3` separator
 
@@ -632,13 +606,13 @@ in the next 24 bytes. The specification does not give this window.
 
 ## 4. Topology and appearance
 
-### TP-01. DEPDB recipe-to-body binding
+### TP-01. Current feature-to-body binding
 
-**Question.** Which DEPDB fields bind a feature recipe to the body topology that it changes?
+**Question.** Which stored regime discriminator and complete current feature-local body references bind an admitted recipe to its input body?
 
-**Known.** `creo_prt.md` §7 "DEPDB `crv_array` rows are sparse topology views with one-sided `[0, X1, F1, 0]` suffixes. They" states that sparse DEPDB curve rows do not encode final loops or trims. Feature identifiers bind materialized surface carriers to generating features.
+**Known.** The recipe feature and preceding-feature fields in creation-event rows are feature identities, not body selectors. Modern named `body_tree`, `body_array`, and `used_bodies` records contain explicit `body_id` fields; `body_array.first_geom_ptr` supplies a separate material-geometry root. A body count does not identify a feature target. Current generated carriers identify feature outputs rather than input material.
 
-**Need.** We must know the binding to apply the feature to the correct body.
+**Need.** Bind complete body identities to the same model owner and current feature scope, then resolve their topology roster independently. Validate the part's material regime before applying a legacy single-material replay rule. Missing, duplicate, unresolved, or conflicting target identities must remain unresolved; neither chronology nor the first or sole decoded body selects a modern target. Creation history alone does not establish the current recipe or its body operands.
 
 ### TP-02. Sparse-edge topology binding
 
@@ -648,29 +622,42 @@ in the next 24 bytes. The specification does not give this window.
 
 **Need.** We must know the binding to reconstruct the final B-rep.
 
-### TP-03. Multi-loop classification
+### TP-03. Remaining contour roles and incomplete joins
 
-**Question.** Which byte-backed field identifies an outer loop or an inner loop on a multi-loop face?
+**Question.** Which roles do contour values `00`, `02`, and `03` encode, and
+which source-owned reference resolves a contour whose head does not join one
+unique closed loop in its topology namespace?
 
-**Known.** Positional surface rows carry a contour chain after the local-system
-close. Each entry stores a two-byte curve-header reference, `trv`, four ordered
-parameter-space envelope slots, and an intermediate `e3` or terminal `e1`
-close; an optional `f7` separator reference may precede the next entry.
-Parameter-space containment can classify loops only when complete pcurves and a
-surface chart are available. The stored chain fields do not yet identify an
-outer or inner loop. A plane with complete two-edge typed circular loops can
-instead prove outer-to-inner order from a common center, distinct radii, and
-antipodal pcurve endpoints.
+**Known.** Positional `trv = 01` identifies an outer boundary and `trv = f6`
+identifies an inner boundary. The preceding complete two-byte curve-header
+reference selects the unique same-surface closed successor loop containing
+that header. A complete classification requires a contour-to-loop bijection.
+The role is independent of chain order and surface-row orientation. The
+remaining grammar values do not establish a role. Incomplete or ambiguous
+joins do not establish loop ownership. Multiple outer loops require the
+face-instance partition described by TP-06.
 
-**Need.** We must know the field to classify loops when containment is unavailable.
+**Need.** We must know the remaining role values and owner-qualified joins to
+classify loops that the complete stored role mapping does not cover.
 
-### TP-04. Vertex-coordinate binding
+### TP-04. Additional vertex-coordinate selectors
 
-**Question.** Which fields bind a topology vertex identifier to its XYZ coordinates?
+**Question.** Which source-owned coordinate witness selects one point for a
+B-rep vertex orbit when directed pcurve endpoints, intrinsic edge endpoints,
+and incident analytic carrier constraints leave several candidates or none?
 
-**Known.** `creo_prt.md` §8.2 "`vert_tab` chains bind a solved trim-vertex identifier to its incident `segtab` external" through `creo_prt.md` §8.2 "`vert_tab` chains bind a solved trim-vertex identifier to its incident `segtab` external" define coordinate recovery from unique incident analytic carriers.
+**Known.** `crv_array` face and successor references define half-edge vertex
+orbits. The orbit labels are derived from that graph; the six-reference suffix
+does not store vertex identifiers or XYZ tuples. Complete agreeing directed
+pcurve paths bind their mapped endpoints to the two oriented start orbits.
+Intrinsic edge endpoints and incident carrier intersections supply further
+constraints. A point requires one consistent candidate. Sketch
+`vert_tab.vertex_id` belongs to a separate trim namespace and does not bind a
+B-rep orbit. The defined suffix grammar does not establish a direct stored
+vertex-coordinate fallback in another record family.
 
-**Need.** We must know the stored binding to place vertices that carrier intersection cannot resolve uniquely.
+**Need.** We must know any additional owner-qualified coordinate selector to
+place an orbit whose existing evidence does not select one point.
 
 ### TP-05. General rowless face-use binding
 

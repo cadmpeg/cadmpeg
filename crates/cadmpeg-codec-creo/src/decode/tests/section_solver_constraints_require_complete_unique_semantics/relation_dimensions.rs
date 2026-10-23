@@ -166,6 +166,32 @@ fn section_solver_relation_incidence_and_angular_dimensions_require_complete_joi
                 .expect("identity grammar"),
         }
     );
+    let sketch = SketchId::mint("creo:model:sketch#917").expect("valid test fixture");
+    for used in [0, 1, 2, 19, 255] {
+        for status in [34, 35] {
+            let mut changed = incidence_distance.clone();
+            let relations = changed.relations.as_mut().expect("relations");
+            relations.rows[0].used = used;
+            declared_solver_rows(&mut relations.skamps)[0].status = status;
+            let constraints = crate::decode::with_service_context(|ctx| {
+                section_dimension_constraints(ctx, &changed, &sketch)
+            })
+            .expect("complete activity join");
+            assert_eq!(constraints.len(), 1);
+            assert_eq!(constraints[0].0.active, Some(status & 1 != 0));
+        }
+        let mut missing = incidence_distance.clone();
+        let relations = missing.relations.as_mut().expect("relations");
+        relations.rows[0].used = used;
+        relations.triples = None;
+        let constraints = crate::decode::with_service_context(|ctx| {
+            section_dimension_constraints(ctx, &missing, &sketch)
+        })
+        .expect("relation with unspecified activity");
+        assert_eq!(constraints.len(), 1);
+        assert_eq!(constraints[0].0.active, None);
+    }
+
     let mut incomplete_triples = incidence_distance.clone();
     *incomplete_triples
         .relations

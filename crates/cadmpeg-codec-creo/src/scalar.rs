@@ -3580,6 +3580,43 @@ mod tests {
     }
 
     #[test]
+    fn signed_directrix_lanes_keep_their_distinct_lower_boundary_and_generic_alias() {
+        let cache = ScalarCache::default();
+        let lower = [0xa4, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc];
+        assert!(decode_tabulated_cylinder_first_coordinate(&lower, 0, &cache).is_none());
+        assert_eq!(
+            decode_tabulated_cylinder_second_coordinate(&lower, 0, &cache),
+            Some((
+                f64::from_be_bytes([0xbf, 0xcf, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc]),
+                7
+            ))
+        );
+        let aliased = [0xb0, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc];
+        assert_eq!(
+            super::decode(&aliased, 0),
+            Some((
+                f64::from_be_bytes([0xbf, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0]),
+                7
+            ))
+        );
+        assert_eq!(
+            decode_tabulated_cylinder_first_coordinate(&aliased, 0, &cache),
+            Some((
+                f64::from_be_bytes([0xbf, 0xdc, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc]),
+                7
+            ))
+        );
+        for length in 1..7 {
+            assert!(
+                decode_tabulated_cylinder_second_coordinate(&lower[..length], 0, &cache).is_none()
+            );
+            assert!(
+                decode_tabulated_cylinder_first_coordinate(&aliased[..length], 0, &cache).is_none()
+            );
+        }
+    }
+
+    #[test]
     fn tabulated_first_coordinate_preserves_the_negative_subunit_boundary() {
         let cache = ScalarCache::default();
         for (head, ieee_head) in [
