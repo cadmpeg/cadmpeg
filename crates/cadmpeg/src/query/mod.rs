@@ -906,8 +906,14 @@ fn summary(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
     Ok(())
 }
 
+/// The category of values that do not exist for their entity; they count
+/// against no row status.
+const UNDEFINED_CATEGORY: &str = "undefined";
+
 /// Rows per level, unavailable values per category, and the pass work of
-/// a measure report.
+/// a measure report. `measure_unavailable` counts the values that leave a
+/// row less than measured; values of the `undefined` category count in
+/// `measure_undefined`.
 fn push_measure_summary(rows: &mut Vec<(String, SummaryCell)>, measure: &MeasureProbe) {
     for (level, count) in [
         ("bodies", measure.bodies.len()),
@@ -920,11 +926,16 @@ fn push_measure_summary(rows: &mut Vec<(String, SummaryCell)>, measure: &Measure
     let Some(document) = &measure.document else {
         return;
     };
-    let per_category: Vec<(&String, u64)> = document
-        .unavailable
-        .iter()
-        .map(|(category, codes)| (category, codes.values().sum::<u64>()))
-        .collect();
+    let mut undefined = 0_u64;
+    let mut per_category: Vec<(&String, u64)> = Vec::new();
+    for (category, codes) in &document.unavailable {
+        let count = codes.values().sum::<u64>();
+        if category.as_str() == UNDEFINED_CATEGORY {
+            undefined += count;
+        } else {
+            per_category.push((category, count));
+        }
+    }
     rows.push((
         "measure_unavailable".to_owned(),
         per_category
@@ -940,6 +951,7 @@ fn push_measure_summary(rows: &mut Vec<(String, SummaryCell)>, measure: &Measure
             count.to_string().into(),
         ));
     }
+    rows.push(("measure_undefined".to_owned(), undefined.to_string().into()));
     if let Some(work) = &document.work {
         if let (Some(used), Some(allowance)) = (work.used, work.allowance) {
             rows.push((

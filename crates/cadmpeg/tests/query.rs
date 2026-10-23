@@ -632,6 +632,7 @@ fn summary_names_a_measure_report_and_counts_its_rows_and_unavailable_values() {
         .unwrap();
     let per_category: Vec<(String, u64)> = unavailable
         .iter()
+        .filter(|(category, _)| category.as_str() != "undefined")
         .map(|(category, codes)| {
             let count = codes
                 .as_object()
@@ -676,6 +677,28 @@ fn summary_names_a_measure_report_and_counts_its_rows_and_unavailable_values() {
         );
     }
     assert_eq!(payload["measure_work_exhausted"], "false");
+    assert!(payload.get("measure_unavailable.undefined").is_none());
+
+    // The unflipped cube is measured: its three equal principal moments
+    // leave three undetermined axes, which count as undefined only.
+    let cube = dir.path().join("cube_ok.cadir.json");
+    let measured_cube = dir.path().join("cube_ok.measure.json");
+    let ir = unit_cube().expect("unit cube fixture is admitted");
+    fs::write(&cube, ir.to_canonical_json().unwrap()).unwrap();
+    cadmpeg()
+        .args(["measure", cube.to_str().unwrap(), "-o"])
+        .arg(&measured_cube)
+        .assert()
+        .success();
+    cadmpeg()
+        .args(["query", "summary"])
+        .arg(&measured_cube)
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("measure_unavailable\t0\n")
+                .and(predicate::str::contains("measure_undefined\t3\n")),
+        );
 
     cadmpeg()
         .args(["query", "findings"])
