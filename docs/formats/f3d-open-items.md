@@ -240,7 +240,7 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Question.** What is the entity that a linked component context binding names between the component reference and the context UUID?
 
-**Known.** `f3d.md` §3.1 "A Design component naming-space type" gives the linked form. The entity is registered to type GUID `8ACBA2E5-5A4C-4438-8351-276DE96E6982`, add-in name `Fusion`, base-type GUID `046D6232-EDAB-414D-9CB0-A2E3F115AE1C`, and type version `4`. In a Design stream that uses the linked form, every component except the root component binds in this form, and several components can name the same entity.
+**Known.** `f3d.md` §3.1 "A Design component naming-space type" gives the linked form. In a Design stream that uses the linked form, every component except the root component binds in this form, and several components can name the same entity. In one such stream the entity is registered to type GUID `8ACBA2E5-5A4C-4438-8351-276DE96E6982`, add-in name `Fusion`, base-type GUID `046D6232-EDAB-414D-9CB0-A2E3F115AE1C`, and type version `4`. In others, the components name one entity that the MetaStream registers to no type and whose record it does not index.
 
 **Need.** A writer must emit the entity to produce the linked form. The shared entity can group components by their parent component or source document.
 
