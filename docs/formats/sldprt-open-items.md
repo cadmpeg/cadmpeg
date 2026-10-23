@@ -332,13 +332,13 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Need.** We must distinguish a face consumed by a later operation from a face whose owner or identity attribute was not decoded.
 
-### DI-21. Other inline extrusion operation bytes
+### DI-21. Class-scoped inline extrusion operations
 
-**Question.** What Boolean operation does each inline family-word and operation-byte combination outside family `0x0140` byte `00` and family `0x01ca` byte `00` or `02` represent?
+**Question.** What Boolean operation does the inline family `0x0140` with operation byte `00` represent for `moCutThin_c`, and what operation does each other unsupported family-word and operation-byte combination represent?
 
-**Known.** `sldprt.md` §2 "Feature-tree" defines the three supported combinations. The family word establishes join or cut independently of a shared class token; family `0x01ca` byte `00` derives subtraction from its family rather than from the zero byte alone.
+**Known.** `sldprt.md` §2 "Feature-tree" defines the supported ordinary extrusion combinations. The ordinary `0x0140`/`00` join mapping does not establish the operation of a `moCutThin_c` object. Family `0x01ca` with byte `00` or `02` establishes cut. A normalized Keywords `CutExtrudeThin` type also establishes cut independently. A complete configuration-local operation carrier is distinct from the base configuration's operation state.
 
-**Need.** We must know the other byte values to construct the extrusion Boolean operation.
+**Need.** We must identify an independent, class-scoped Boolean discriminator for the `moCutThin_c` `0x0140`/`00` form and define the remaining family-word and operation-byte combinations.
 
 ### DI-22. Other sparse extrusion form codes
 
