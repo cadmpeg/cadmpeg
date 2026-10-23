@@ -1829,7 +1829,7 @@ fn brep_entities(
                 geometry: &geometry,
                 span: Some(&span),
                 sense: Sense::Forward,
-                status: ownership.status(curve.source_object.as_ref()),
+                status: ownership.topology_status(curve.source_object.as_ref()),
                 reference_offset: 0,
             },
         )?;
