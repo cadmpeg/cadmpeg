@@ -13,7 +13,7 @@ fn trimmed_sphere_face_uses_unrestricted_support_without_healing_pcurves() {
 <Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
 <ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData>
 </Document>"#;
-    for (longitude, last_latitude, trims, placed) in [
+    for (longitude, last_latitude, trim_count, placed) in [
         (-1.0e-17_f64, 0.25_f64, 1, false),
         (-0.125_f64, 0.25_f64, 1, false),
         (0.125_f64, 0.75_f64, 2, true),
@@ -32,7 +32,7 @@ fn trimmed_sphere_face_uses_unrestricted_support_without_healing_pcurves() {
             "Locations 0"
         };
         let face_location = usize::from(placed);
-        let trims = "10 0 6.283185307179586 -0.5 0.5 ".repeat(trims);
+        let trims = "10 0 6.283185307179586 -0.5 0.5 ".repeat(trim_count);
         let brep = format!(
             "CASCADE Topology V1, (c) Matra-Datavision
 {locations}
@@ -69,10 +69,41 @@ Co 1001000 +2 {face_location} *
         let index = cadmpeg_ir::index::ModelIndex::build(ir);
         let face = &ir.model.faces[0];
         assert!(face.surface.as_str().contains("basis"));
-        assert!(ir.model.procedural_surfaces.iter().any(|surface| matches!(
-            surface.definition(),
-            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset(_)
-        )));
+        let subsets = ir
+            .model
+            .procedural_surfaces
+            .iter()
+            .filter(|surface| {
+                matches!(
+                    surface.definition(),
+                    cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset(_)
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(subsets.len(), trim_count);
+        for subset in subsets {
+            let owner = ir
+                .model
+                .procedural_surface_owner(&subset.id)
+                .expect("retained subset owner");
+            let wrapper = ir
+                .model
+                .surfaces
+                .iter()
+                .find(|surface| &surface.id == owner)
+                .unwrap();
+            assert_eq!(
+                wrapper.source_object.as_ref().unwrap().geometry_role,
+                Some(cadmpeg_ir::SourceGeometryRole::Support)
+            );
+        }
+        let support = ir
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == face.surface)
+            .unwrap();
+        assert_eq!(support.source_object.as_ref().unwrap().geometry_role, None);
         let pcurve = &ir.model.pcurves[0];
         for (parameter, expected) in [(0.0, first), (last_latitude, last)] {
             let uv = cadmpeg_ir::eval::decode::pcurve_uv(

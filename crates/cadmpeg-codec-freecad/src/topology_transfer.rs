@@ -1411,6 +1411,18 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         ))
         .map_err(CodecError::malformed)?;
         for _ in 0..trimmed_layers {
+            let wrapper = ir
+                .model
+                .surfaces
+                .iter_mut()
+                .find(|surface| surface.id == base_id)
+                .ok_or_else(|| {
+                    CodecError::malformed(format_args!("missing trimmed surface {base_id}"))
+                })?;
+            wrapper
+                .source_object
+                .get_or_insert(self.source_association()?)
+                .geometry_role = Some(cadmpeg_ir::SourceGeometryRole::Support);
             base_key.push_str(":basis");
             base_id = SurfaceId::mint(crate::native::model_id(
                 "surface",

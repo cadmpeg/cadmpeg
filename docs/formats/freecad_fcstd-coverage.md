@@ -120,7 +120,9 @@ rotations and translations.
 A face on a rectangular-trimmed surface binds to the unrestricted basis surface. Nested outer trims
 are removed from that face's support chain, and its pcurves use the basis UV chart. This preserves
 evaluation at and outside the declared rectangle without clamping or changing pcurve coordinates.
-The bounded subset constructions and the native trim bounds remain retained independently.
+The bounded subset constructions and the native trim bounds remain retained independently. Each
+bypassed subset carrier has the support geometry role so exporters do not emit it as a separate
+free surface.
 
 ## Topology appearance association
 
