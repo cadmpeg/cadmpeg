@@ -430,3 +430,21 @@ pub(crate) fn plain_line_then_point(start_x: i32, invalid_coordinate_tag: bool) 
     parameters.extend_from_slice(&point_parameters(peer));
     assemble(&prefix, point_parameter, &parameters)
 }
+
+/// The native entity of a Directory record whose Parameter Data record is
+/// given up or absent. The Directory fields stay (#215 rule 1). The
+/// normalized Fixed ASCII image holds no Parameter Data line for the entry,
+/// so its parameter list and comment are empty and its line count is zero
+/// (iges.md, Binary normalization).
+pub(crate) fn entity_without_parameter_data(
+    entity: &cadmpeg_ir::native::NativeRecord,
+) -> serde_json::Value {
+    let mut value = serde_json::to_value(entity).expect("native entity");
+    value["parameters"] = serde_json::json!([]);
+    value["comment"] = serde_json::to_value(cadmpeg_ir::native::bytes::NativeBytes::from(
+        Vec::<u8>::new(),
+    ))
+    .expect("empty comment");
+    value["parameter_line_count"] = serde_json::json!(0);
+    value
+}

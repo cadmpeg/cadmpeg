@@ -119,12 +119,13 @@ impl BinaryDirectory {
         self.parameter_pointer
     }
 
+    /// State no Parameter Data for a record whose Parameter Data record is
+    /// given up or absent.
+    fn detach_parameter_data(&mut self) {
+        self.parameter_pointer = 0;
+    }
+
     fn admit_directory_fields(&self) -> Result<(), CodecError> {
-        if self.entity_type != 0 && self.parameter_pointer == 0 {
-            return Err(malformed(
-                "a non-null Binary entity has no Parameter Data record",
-            ));
-        }
         for (slot, name) in [
             (DirectoryFieldSlot::Structure, "structure"),
             (DirectoryFieldSlot::Form, "form"),

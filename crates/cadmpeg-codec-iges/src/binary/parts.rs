@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Counted Binary entity parsing with original-source failure ownership.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceDimension, ResourceLimit, View};
 use cadmpeg_core::CodecError;
@@ -39,7 +39,7 @@ pub(crate) fn normalize(
                 )?;
                 directory_by_offset.insert(record.offset, index);
             }
-            let (parameters, failed) = read_parameters(
+            let parameters = read_parameters(
                 source,
                 sections,
                 &directory,
@@ -49,10 +49,7 @@ pub(crate) fn normalize(
                 &dependencies,
                 global,
             )?;
-            directory.retain(|record| {
-                !u32::try_from(record.parameter_pointer())
-                    .is_ok_and(|offset| failed.contains(&offset))
-            });
+            detach_absent_parameters(&mut directory, &parameters);
             Ok((directory, parameters))
         },
         |bytes, directory, admission| {
@@ -170,7 +167,7 @@ fn read_parameters(
     output: &mut ParserPartOutput,
     dependencies: &Dependencies,
     global: &crate::global::ResolvedGlobal,
-) -> Result<(Vec<BinaryParameter>, BTreeSet<u32>), CodecError> {
+) -> Result<Vec<BinaryParameter>, CodecError> {
     let payload = sections.parameter;
     let start = payload
         .start()
@@ -197,7 +194,6 @@ fn read_parameters(
             u64_from_index(payload.end())..u64_from_index(end),
         )?;
     }
-    let mut failed = BTreeSet::new();
     let result = ctx.decode_parser_scope(
         output,
         extent,
@@ -300,11 +296,8 @@ fn read_parameters(
                         )
                     },
                 )?;
-                match record {
-                    Some(record) => append(ctx, &mut records, record)?,
-                    None => {
-                        insert_failed(ctx, &mut failed, offset)?;
-                    }
+                if let Some(record) = record {
+                    append(ctx, &mut records, record)?;
                 }
                 cursor = extent
                     .end()
@@ -314,18 +307,24 @@ fn read_parameters(
             Ok(records)
         },
     )?;
-    match result {
-        Some(records) => Ok((records, failed)),
-        None => {
-            failed.clear();
-            for owner in directory {
-                if let Ok(offset) = u32::try_from(owner.parameter_pointer()) {
-                    if offset > 0 && u64::from(offset) <= u64_from_index(payload.window().len()) {
-                        insert_failed(ctx, &mut failed, offset)?;
-                    }
-                }
-            }
-            Ok((Vec::new(), failed))
+    Ok(result.unwrap_or_default())
+}
+
+/// A Directory record whose Parameter Data record is given up or absent keeps
+/// its fields with no parameters, as in Fixed ASCII (#215 rule 1). Its
+/// Parameter Data pointer is framing; the normalized image states no
+/// Parameter Data for it.
+fn detach_absent_parameters(directory: &mut [BinaryDirectory], parameters: &[BinaryParameter]) {
+    // Parameter records are read in source order, so their offsets ascend.
+    for record in directory {
+        if record.parameter_pointer() != 0
+            && !u32::try_from(record.parameter_pointer()).is_ok_and(|offset| {
+                parameters
+                    .binary_search_by_key(&offset, |parameter| parameter.offset)
+                    .is_ok()
+            })
+        {
+            record.detach_parameter_data();
         }
     }
 }
@@ -375,21 +374,6 @@ fn handoff(
     )?;
     record.admitted = Some(super::AdmittedBinaryParameter { lines, content });
     Ok(record)
-}
-
-fn insert_failed(
-    ctx: &DecodeContext<'_>,
-    failed: &mut BTreeSet<u32>,
-    offset: u32,
-) -> Result<(), CodecError> {
-    if !failed.contains(&offset) {
-        ctx.retain_bytes(
-            u64_from_index(size_of::<u32>()),
-            "IGES Binary failed Parameter target",
-        )?;
-        failed.insert(offset);
-    }
-    Ok(())
 }
 
 fn spec(name: &str, framing: Vec<std::ops::Range<u64>>) -> Result<PartSpec, CodecError> {

@@ -54,7 +54,7 @@ fn an_unported_line_coordinate_reference_keeps_the_original_normalization_result
 }
 
 #[test]
-fn a_required_point_symbol_failure_has_both_actual_source_homes_and_an_exact_peer() {
+fn a_required_point_symbol_failure_gives_up_only_its_parameter_record_and_keeps_an_exact_peer() {
     let original = crate::test_support::binary_parts::broken_parameter_reference(false);
     let bytes = crate::test_support::binary_parts::broken_parameter_reference(true);
     assert_eq!(original.len(), bytes.len());
@@ -76,31 +76,37 @@ fn a_required_point_symbol_failure_has_both_actual_source_homes_and_an_exact_pee
         serde_json::to_value(expected_point).expect("expected point")
     );
     let native = decoded.ir().native.namespace("iges").expect("native");
-    assert_eq!(native.arenas()["entities"].len(), 1);
+    let old = baseline
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("original native");
+    // #215 rule 1: the Point's Directory record keeps its fields; only the
+    // Parameter Data record that holds the unresolved symbol is given up.
+    assert_eq!(native.arenas()["entities"].len(), 2);
     assert_eq!(
-        native.arenas()["entities"][0],
-        baseline
-            .ir()
-            .native
-            .namespace("iges")
-            .expect("original native")
-            .arenas()["entities"][1]
+        serde_json::to_value(&native.arenas()["entities"][0]).expect("damaged Point entity"),
+        crate::test_support::binary_parts::entity_without_parameter_data(
+            &old.arenas()["entities"][0]
+        )
     );
+    assert_eq!(native.arenas()["entities"][1], old.arenas()["entities"][1]);
     assert!(native.arenas()["quarantined_parameter_records"].is_empty());
     assert!(native.arenas()["quarantined_directory_records"].is_empty());
     let unknowns = native
         .arena_as::<NativeUnknownRecord>("unknowns")
         .expect("unknowns");
-    assert_eq!(unknowns.len(), 2);
+    assert_eq!(unknowns.len(), 1);
     let fidelity = decoded.source_fidelity();
     let arena = DecodeArena::new();
     let (_ctx, source) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
         .expect("independent physical source envelope");
     let sections = crate::binary::parse_sections(source).expect("original section boundaries");
-    for (level, section) in [
-        ("iges.binary_directory_record", sections.directory),
-        ("iges.binary_parameter_record", sections.parameter),
-    ] {
+    assert!(!fidelity.parts().values().any(|part| {
+        part.level().as_str() == "iges.binary_directory_record"
+            && part.state() == &PartState::GivenUp {}
+    }));
+    for (level, section) in [("iges.binary_parameter_record", sections.parameter)] {
         let (_, extent, _) = crate::binary::counted_record(section, 0, "source")
             .expect("original actual counted source record");
         let failed: Vec<_> = fidelity
@@ -136,7 +142,7 @@ fn a_required_point_symbol_failure_has_both_actual_source_homes_and_an_exact_pee
         .iter()
         .filter(|loss| loss.code.local_code() == "record.unreadable")
         .collect();
-    assert_eq!(errors.len(), 2);
+    assert_eq!(errors.len(), 1);
     assert!(errors
         .iter()
         .all(|loss| loss.severity == cadmpeg_ir::report::Severity::Error));
