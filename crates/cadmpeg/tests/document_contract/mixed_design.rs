@@ -9,7 +9,8 @@ use assert_cmd::Command;
 use cadmpeg_codec_freecad::FcstdCodec;
 use cadmpeg_ir::codec::write::EncodeInput;
 use cadmpeg_ir::document::{ArenaClass, ArenaName, ContentScope};
-use cadmpeg_ir::report::export::WritePath;
+use cadmpeg_ir::features::{Dimension, FeatureOperation, ParameterValue};
+use cadmpeg_ir::report::export::{ExportReport, WritePath};
 use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::CadIr;
 use predicates::prelude::predicate;
@@ -78,6 +79,120 @@ fn mixed(kind: MixedKind) -> Vec<u8> {
         output.write_all(&data).unwrap();
     }
     output.finish().unwrap().into_inner()
+}
+
+fn assert_partial_design(ir: &CadIr, kind: MixedKind, written: bool) {
+    let mut names = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| feature.name.as_deref().unwrap())
+        .collect::<Vec<_>>();
+    names.sort_unstable();
+    assert_eq!(
+        names,
+        [
+            "Body",
+            "Fillet",
+            "Pad",
+            "PadSketch",
+            "Pocket",
+            "PocketSketch"
+        ]
+    );
+    let pad = ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Pad"))
+        .unwrap();
+    let FeatureOperation::Native {
+        kind: native_kind,
+        parameters,
+    } = pad.definition().operation()
+    else {
+        panic!("{kind:?}: Pad must retain its actual native operation");
+    };
+    assert_eq!(
+        native_kind.as_str(),
+        match kind {
+            MixedKind::Unreadable => "PartDesign::Pad",
+            MixedKind::Vendor => "Vendor::PartDesign::PadLike",
+        }
+    );
+    let parameter = |name: &str| {
+        parameters.get(name).map(|dimension| {
+            let Dimension::Parameter(id) = dimension else {
+                panic!("{kind:?}: {name} must use its canonical parameter");
+            };
+            let parameter = ir
+                .model
+                .parameters
+                .iter()
+                .find(|parameter| &parameter.id == id)
+                .unwrap();
+            assert_eq!(parameter.owner.as_ref(), Some(&pad.id));
+            assert_eq!(parameter.name, name);
+            let Some(ParameterValue::Length(value)) = &parameter.value else {
+                panic!("{kind:?}: {name} must retain its length value");
+            };
+            value.get()
+        })
+    };
+    assert_eq!(parameter("Length2"), Some(10.0));
+    match kind {
+        MixedKind::Unreadable => assert_eq!(parameter("Length"), None),
+        MixedKind::Vendor => assert_eq!(parameter("Length"), Some(10.0)),
+    }
+    let native = serde_json::to_value(ir.native.namespace("fcstd").unwrap()).unwrap();
+    let object = native["objects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|object| object["name"] == "Pad")
+        .unwrap();
+    assert_eq!(object["type_name"], native_kind.as_str());
+    assert_eq!(pad.native_ref.as_deref(), object["id"].as_str());
+    let length = native["properties"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|property| property["owner"] == object["id"] && property["name"] == "Length");
+    match (kind, written) {
+        (MixedKind::Unreadable, true) => assert!(length.is_none()),
+        (MixedKind::Unreadable, false) => {
+            let length = length.expect("unreadable value must retain its property header");
+            assert_eq!(length["type_name"], "App::PropertyLength");
+        }
+        (MixedKind::Vendor, _) => {
+            let length = length.expect("vendor property remains document-held");
+            assert_eq!(length["values"][0]["tag"], "Float");
+            let value = length["values"][0]["attributes"]["value"].as_str().unwrap();
+            assert_eq!(value.parse::<f64>().unwrap(), 10.0);
+            if !written {
+                assert_eq!(value, "10.0000000000000000");
+            }
+        }
+    }
+}
+
+fn assert_partial_export(report: &ExportReport, kind: MixedKind) {
+    let omitted = report
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code.local_code() == "source.undecoded-omitted"
+                && loss.message.contains("Length")
+                && loss.message.contains("Pad")
+        })
+        .collect::<Vec<_>>();
+    match kind {
+        MixedKind::Unreadable => {
+            assert_eq!(omitted.len(), 1, "{:?}", report.losses);
+            assert_eq!(omitted[0].severity, Severity::Warning);
+        }
+        MixedKind::Vendor => assert!(omitted.is_empty()),
+    }
 }
 
 fn clear_design(ir: &CadIr, scope: ContentScope) -> CadIr {
@@ -238,23 +353,19 @@ fn partial_design_default_exports_and_loss_policy_judges_the_current_decode() {
         let written_bytes = fs::read(&output).unwrap();
         let xml = String::from_utf8(entry(&written_bytes, "Document.xml")).unwrap();
         let written = decode(&FcstdCodec, &written_bytes);
-        assert!(!written
-            .ir()
-            .model
-            .features
-            .iter()
-            .any(|feature| feature.name.as_deref() == Some("Pad")));
-        match kind {
-            MixedKind::Unreadable => assert!(!xml.contains("name=\"Pad\"")),
-            MixedKind::Vendor => {
-                assert!(xml.contains("Vendor::PartDesign::PadLike"));
-                assert!(written
-                    .report()
-                    .losses
-                    .iter()
-                    .any(|loss| loss.code.local_code() == "feature.object-unprojected"));
-            }
-        }
+        assert!(written.report().losses.iter().any(|loss| {
+            loss.code.local_code() == "feature.native-kind-retained" && loss.message.contains("Pad")
+        }));
+        assert_partial_design(decoded.ir(), kind, false);
+        assert_partial_design(written.ir(), kind, true);
+        assert!(xml.contains("name=\"Pad\""));
+        let export: ExportReport = serde_json::from_value(report["export"].clone()).unwrap();
+        assert_partial_export(&export, kind);
+        cadmpeg_test_support::contract::assert_written_arenas_agree(
+            &export,
+            decoded.ir(),
+            written.ir(),
+        );
         let refusal_path = dir.path().join("decode-refusal.json");
         Command::cargo_bin("cadmpeg")
             .unwrap()
@@ -339,7 +450,14 @@ fn partial_design_native_guard_and_synthesis_do_not_resurrect_unreadable_objects
             None,
         );
         assert!(matches!(report.write_path(), WritePath::Synthesized { .. }));
-        assert_eq!(written.ir().model.features.len(), 5);
+        assert_partial_design(result.ir(), kind, false);
+        assert_partial_design(written.ir(), kind, true);
+        assert_partial_export(&report, kind);
+        cadmpeg_test_support::contract::assert_written_arenas_agree(
+            &report,
+            result.ir(),
+            written.ir(),
+        );
         assert_eq!(
             written.ir().model.bodies.len(),
             result.ir().model.bodies.len()
