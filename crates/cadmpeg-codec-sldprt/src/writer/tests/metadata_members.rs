@@ -829,6 +829,21 @@ fn metadata_edits_preserve_configuration_xml_and_explicit_renames_update_it() {
             .find(|block| block.section.name() == Some("swXmlContents/Features"))
             .unwrap();
         assert_eq!(original_xml.payload, xml);
+        // Source XML deliberately has no SourceIndex. An indexed active
+        // partition enriches the decoded native configuration to Some(0),
+        // while the untouched complete Keywords bytes must still replay.
+        let source_native = sldprt_native(&source);
+        assert_eq!(source_native.feature_histories.len(), 1);
+        assert_eq!(
+            source_native.feature_histories[0].configurations[0].source_index,
+            selected.source_index
+        );
+        let original_history = scan
+            .blocks
+            .iter()
+            .find(|block| block.section.name() == Some("Contents/Keywords"))
+            .unwrap();
+        assert_eq!(original_history.payload, history);
         if rename {
             decoded
                 .ir_mut()
@@ -855,6 +870,12 @@ fn metadata_edits_preserve_configuration_xml_and_explicit_renames_update_it() {
                 crate::container::first_solidworks_envelope([changed_xml.payload.as_slice()])
                     .unwrap();
             assert_eq!(envelope.configuration_name.as_deref(), Some("RenamedSaved"));
+            let changed_history = scan
+                .blocks
+                .iter()
+                .find(|block| block.section.name() == Some("Contents/Keywords"))
+                .unwrap();
+            assert_ne!(changed_history.payload, history);
             let readback = SldprtCodec
                 .decode(&mut Cursor::new(renamed), &DecodeOptions::default())
                 .unwrap();

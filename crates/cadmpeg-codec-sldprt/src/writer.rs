@@ -286,9 +286,17 @@ pub(crate) fn write_semantic_with_records(
             )?;
         }
     }
-    let retained_histories = match (source_context.as_ref(), source_scan.as_ref()) {
-        (Some((ctx, _)), Some(scan)) => retained_history_sections(ctx, scan)?,
-        _ => Vec::new(),
+    let retained_histories = if native
+        .as_ref()
+        .is_some_and(|native| !native.feature_histories.is_empty())
+    {
+        let baseline = retained_source_baseline(&mut source_baseline, source_context.as_ref())?;
+        match (baseline, source_scan.as_ref()) {
+            (Some(baseline), Some(scan)) => retained_history_sections(baseline, scan)?,
+            _ => Vec::new(),
+        }
+    } else {
+        Vec::new()
     };
     for (index, history) in native
         .iter()
@@ -2160,15 +2168,19 @@ fn retained_display_sections(
 }
 
 fn retained_history_sections(
-    ctx: &DecodeContext<'_>,
+    baseline: &cadmpeg_ir::codec::Decoded,
     scan: &crate::container::ContainerScan<'_>,
 ) -> Result<Vec<(crate::records::FeatureHistory, String, Vec<u8>)>, CodecError> {
-    let mut annotations = Annotations::default();
-    let mut losses = Vec::new();
-    let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut losses)?;
-    let lanes = crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations)?;
-    crate::resolved_features::classes::bind_history_classes(&mut histories, &lanes);
-    histories
+    // Compare the same source-only decode stage that supplied the caller's
+    // native records. In particular, decoding infers configuration source
+    // indices from the active partition after parsing the Keywords XML.
+    let Some(namespace) = baseline.ir.native.namespace("sldprt") else {
+        return Ok(Vec::new());
+    };
+    let native = SldprtNative::load(namespace)?;
+    let annotations = &baseline.source_fidelity.annotations;
+    native
+        .feature_histories
         .into_iter()
         .map(|history| {
             let provenance = annotations.provenance.get(&history.id).ok_or_else(|| {
