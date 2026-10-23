@@ -644,6 +644,25 @@ impl SessionHandle<'_> {
                 }
             }
             if let Some(mut record) = frame.record.take() {
+                // A continuation is working storage: `coalesce` folds it into
+                // its primary capture and charges only what the primary gains.
+                let continuation = record
+                    .owner
+                    .is_some_and(owners::CaptureOwner::is_continuation);
+                if !continuation {
+                    let text = record
+                        .id
+                        .len()
+                        .checked_add(record.stream.len())
+                        .ok_or_else(|| {
+                            session
+                                .budget
+                                .retained_allocation_failed(u64::MAX, "record tracking text")
+                        })?;
+                    session
+                        .budget
+                        .retain_bytes(u64_from_index(text), "record tracking text")?;
+                }
                 while let Some(index) = frame.deltas.iter().position(|delta| delta.owner == token) {
                     let delta = frame.deltas.remove(index);
                     // Retained-byte accounting charges the owned key/value,
@@ -651,18 +670,33 @@ impl SessionHandle<'_> {
                     // for other retained maps, allocator node metadata is not
                     // a serialized value; its growth is bounded by this charged
                     // entry count, not guessed from private std node layouts.
-                    session.budget.retain_bytes(
-                        u64_from_index(size_of::<(String, Vec<Range<u64>>)>()),
-                        "record reads table",
-                    )?;
-                    let stream = copy_string(&session.budget, session.streams.name(delta.space)?)?;
+                    // Open-scope deltas are working storage, so the ranges a
+                    // record keeps are charged here, once.
+                    let name = session.streams.name(delta.space)?;
+                    let stream = if continuation {
+                        copy_working(&session.budget, name)?
+                    } else {
+                        let entry = reads_entry_bytes(&delta.ranges).ok_or_else(|| {
+                            session
+                                .budget
+                                .retained_allocation_failed(u64::MAX, "record reads table")
+                        })?;
+                        session
+                            .budget
+                            .retain_bytes(u64_from_index(entry), "record reads table")?;
+                        copy_string(&session.budget, name)?
+                    };
                     record.reads.insert(stream, delta.ranges);
                 }
-                reserve(&session.budget, &mut frame.captures, 1)?;
+                reserve_captures(
+                    &session.budget,
+                    &mut frame.captures,
+                    std::slice::from_ref(&record),
+                )?;
                 frame.captures.push(record);
             }
             if let Some(parent) = session.frames.last_mut() {
-                reserve(&session.budget, &mut parent.captures, frame.captures.len())?;
+                reserve_captures(&session.budget, &mut parent.captures, &frame.captures)?;
                 parent.captures.extend(frame.captures);
                 for delta in frame.deltas {
                     for range in delta.ranges {
@@ -680,11 +714,7 @@ impl SessionHandle<'_> {
                     session.error = Some("record read lost its owning scope");
                     return Err(CodecError::malformed("record read lost its owning scope"));
                 }
-                reserve(
-                    &session.budget,
-                    &mut session.committed,
-                    frame.captures.len(),
-                )?;
+                reserve_captures(&session.budget, &mut session.committed, &frame.captures)?;
                 session.committed.extend(frame.captures);
             }
             Ok(())
@@ -870,10 +900,13 @@ impl Session {
                 end: u64_from_index(extent.end()),
             },
         )?;
+        // An open record scope is working storage until it commits: a scope
+        // that rolls back retains nothing. `commit` charges the text of a
+        // primary record capture it keeps.
         Ok(RecordCapture {
-            id: copy_string(&self.budget, id)?,
+            id: copy_working(&self.budget, id)?,
             batch,
-            stream: copy_string(&self.budget, stream)?,
+            stream: copy_working(&self.budget, stream)?,
             offset: u64_from_index(extent.start()),
             byte_len: u64_from_index(extent.end().abs_diff(extent.start())),
             reads: BTreeMap::new(),
@@ -904,6 +937,43 @@ fn reserve<T>(
     })
 }
 
+/// Retained bytes of one record reads-table entry: the owned key/value and its
+/// range storage. The key text is charged separately.
+pub(super) fn reads_entry_bytes(ranges: &[Range<u64>]) -> Option<usize> {
+    ranges
+        .len()
+        .checked_mul(size_of::<Range<u64>>())?
+        .checked_add(size_of::<(String, Vec<Range<u64>>)>())
+}
+
+/// Reserve room for `incoming` captures in `values`. A primary capture is
+/// retained storage. A continuation is working storage until `coalesce` folds
+/// it into its primary.
+fn reserve_captures(
+    budget: &DecodeBudget,
+    values: &mut Vec<RecordCapture>,
+    incoming: &[RecordCapture],
+) -> Result<(), CodecError> {
+    let continuations = incoming
+        .iter()
+        .filter(|capture| {
+            capture
+                .owner
+                .is_some_and(owners::CaptureOwner::is_continuation)
+        })
+        .count();
+    reserve(budget, values, incoming.len().abs_diff(continuations))?;
+    let bytes = incoming
+        .len()
+        .checked_mul(size_of::<RecordCapture>())
+        .ok_or_else(|| budget.retained_allocation_failed(u64::MAX, "record tracking capacity"))?;
+    values.try_reserve_exact(incoming.len()).map_err(|_| {
+        budget
+            .retained_allocation_failed(u64_from_index(bytes), "record tracking storage")
+            .into()
+    })
+}
+
 /// The attempt list of the innermost open part frame.
 fn innermost_part_attempts(frames: &mut [Frame]) -> Option<&mut Vec<String>> {
     frames
@@ -912,8 +982,10 @@ fn innermost_part_attempts(frames: &mut [Frame]) -> Option<&mut Vec<String>> {
         .find_map(|frame| frame.part_attempts.as_mut())
 }
 
-/// Part attempt lists are working storage: the part helper charges an id
-/// when a given-up part's loss message keeps it.
+/// Working storage charges nothing. Part attempt lists are working storage:
+/// the part helper charges an id when a given-up part's loss message keeps it.
+/// Open-scope read deltas are working storage: `commit` charges the ranges a
+/// record keeps.
 fn reserve_working<T>(
     budget: &DecodeBudget,
     values: &mut Vec<T>,
@@ -959,7 +1031,7 @@ fn merge_delta(
     {
         index
     } else {
-        reserve(budget, deltas, 1)?;
+        reserve_working(budget, deltas, 1)?;
         deltas.push(ReadDelta {
             owner,
             space,
@@ -967,13 +1039,33 @@ fn merge_delta(
         });
         deltas.len() - 1
     };
-    merge_range(budget, &mut deltas[index].ranges, range)
+    merge_range_with(&mut deltas[index].ranges, range, |ranges| {
+        reserve_working(budget, ranges, 1)
+    })
 }
 
+/// Merge `range` into a kept capture's reads. Each disjoint range it adds is
+/// charged once, whatever spare capacity the working storage left.
 fn merge_range(
     budget: &DecodeBudget,
     ranges: &mut Vec<Range<u64>>,
     range: Range<u64>,
+) -> Result<bool, CodecError> {
+    merge_range_with(ranges, range, |ranges| {
+        let bytes = u64_from_index(size_of::<Range<u64>>());
+        budget.retain_bytes(bytes, "record tracking storage")?;
+        ranges
+            .try_reserve(1)
+            .map_err(|_| budget.retained_allocation_failed(bytes, "record tracking storage"))
+    })
+}
+
+/// Merge `range` into the sorted disjoint `ranges`; `grow` reserves the one
+/// slot that a disjoint range needs.
+fn merge_range_with(
+    ranges: &mut Vec<Range<u64>>,
+    range: Range<u64>,
+    grow: impl FnOnce(&mut Vec<Range<u64>>) -> Result<(), CodecError>,
 ) -> Result<bool, CodecError> {
     let first = ranges.partition_point(|old| old.end < range.start);
     let after = ranges.partition_point(|old| old.start <= range.end);
@@ -989,7 +1081,7 @@ fn merge_range(
         ranges[first] = start..end;
         drop(ranges.drain(first + 1..after));
     } else {
-        reserve(budget, ranges, 1)?;
+        grow(ranges)?;
         ranges.insert(first, range);
     }
     Ok(true)

@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Transactional continuations for records produced from disjoint source parts.
 
-use super::{merge_range, DecodeBudget, ReadTransaction, RecordCapture, SessionHandle};
+use super::{
+    merge_range, reads_entry_bytes, DecodeBudget, ReadTransaction, RecordCapture, SessionHandle,
+};
 use crate::decode::{DecodeContext, View};
 use crate::CodecError;
 
@@ -188,6 +190,9 @@ pub(super) fn coalesce(
                 return false;
             }
         }
+        // The continuation held its reads as working storage. The primary is
+        // charged for what it gains: a range that a held range does not
+        // cover, or a reads-table entry for a stream new to the primary.
         for (stream, ranges) in std::mem::take(&mut later.reads) {
             if let Some(held) = primary.reads.get_mut(&stream) {
                 for range in ranges {
@@ -197,6 +202,23 @@ pub(super) fn coalesce(
                     }
                 }
             } else {
+                let charged = reads_entry_bytes(&ranges)
+                    .and_then(|entry| entry.checked_add(stream.len()))
+                    .ok_or_else(|| {
+                        budget.retained_allocation_failed(u64::MAX, "record reads table")
+                    })
+                    .and_then(|bytes| {
+                        budget
+                            .retain_bytes(
+                                crate::decode::u64_from_index(bytes),
+                                "record reads table",
+                            )
+                            .map_err(CodecError::from)
+                    });
+                if let Err(failure) = charged {
+                    error = Some(failure);
+                    return false;
+                }
                 primary.reads.insert(stream, ranges);
             }
         }

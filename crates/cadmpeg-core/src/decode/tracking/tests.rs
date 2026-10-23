@@ -136,6 +136,34 @@ fn committed_child_is_discarded_with_failed_ancestor_without_refunding_budget() 
 }
 
 #[test]
+fn a_rolled_back_record_scope_retains_no_text_and_a_kept_record_pays_for_its_own() {
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(b"abc", &arena, &DecodePolicy::default()).expect("root");
+    ctx.record("warm", root, || Ok(()))
+        .expect("session activation");
+    let before = ctx.retained_bytes_available();
+    let refused: Result<(), CodecError> = ctx.record("attempt", root, || {
+        assert_eq!(root.read_at(1, 1), Some(&b"b"[..]));
+        Err(CodecError::malformed("frame matches no grammar"))
+    });
+    assert!(refused.is_err());
+    assert_eq!(ctx.retained_bytes_available(), before);
+    ctx.record("a", root, || Ok(())).expect("short id");
+    let short = before - ctx.retained_bytes_available();
+    let middle = ctx.retained_bytes_available();
+    ctx.record("abcd", root, || Ok(())).expect("long id");
+    let long = middle - ctx.retained_bytes_available();
+    // Each kept capture pays once for its id and stream text. The two ids
+    // differ by three bytes; their stream and storage charges are equal.
+    assert_eq!(long - short, 3);
+    let captures = ctx.take_record_captures().expect("captures");
+    let mut ids: Vec<_> = captures.iter().map(super::RecordCapture::id).collect();
+    ids.sort_unstable();
+    assert_eq!(ids, ["a", "abcd", "warm"]);
+}
+
+#[test]
 fn successful_transaction_preserves_reads_made_for_an_open_outer_record() {
     let arena = DecodeArena::new();
     let (ctx, root) = DecodeContext::from_root_bytes(b"abcdefgh", &arena, &DecodePolicy::default())
@@ -340,7 +368,7 @@ fn tracking_and_native_storage_share_one_fused_retained_budget() {
 }
 
 #[test]
-fn read_allocation_failure_does_not_advance_and_record_returns_the_resource_error() {
+fn an_exhausted_budget_refuses_the_record_when_it_keeps_its_reads() {
     let arena = DecodeArena::new();
     let (ctx, mut root) =
         DecodeContext::from_root_bytes(b"abc", &arena, &DecodePolicy::default()).expect("root");
@@ -348,8 +376,9 @@ fn read_allocation_failure_does_not_advance_and_record_returns_the_resource_erro
     let error = ctx
         .record("record", extent, || {
             ctx.retain_bytes(ctx.retained_bytes_available(), "synthetic retained output")?;
-            assert_eq!(root.take(1), None);
-            assert_eq!(root.position(), 0);
+            // An open scope's read deltas are working storage.
+            assert_eq!(root.take(1), Some(&b"a"[..]));
+            assert_eq!(root.position(), 1);
             Ok(())
         })
         .expect_err("tracking must not bypass the native retained-byte charge");

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 use std::collections::BTreeMap;
+use std::ops::Range;
 
-use crate::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, View};
+use crate::decode::{ByteRange, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, View};
 use crate::CodecError;
 
 #[test]
@@ -532,4 +533,72 @@ fn failed_part_still_seeds_ordinary_and_new_primary_records_but_not_continuation
         captures[0].reads(),
         &BTreeMap::from([("file".into(), vec![0..1, 7..8])])
     );
+}
+
+/// Retained bytes that `run` charges, through capture extraction, in a fresh
+/// session, and the reads of its `joined` capture.
+fn charged_reads(
+    run: impl FnOnce(&DecodeContext<'_>, View<'_>, View<'_>) -> Result<(), CodecError>,
+) -> (u64, BTreeMap<String, Vec<Range<u64>>>) {
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(b"AB--CD--EF--GH", &arena, &DecodePolicy::default())
+            .unwrap();
+    let member = ctx
+        .register_named_slice(root, ByteRange { start: 12, end: 14 }, "member")
+        .unwrap();
+    ctx.record("warm", root.child(0, 1).unwrap(), || Ok(()))
+        .unwrap();
+    let before = ctx.retained_bytes_available();
+    run(&ctx, root, member).unwrap();
+    let captures = ctx.take_record_captures().unwrap();
+    let spent = before - ctx.retained_bytes_available();
+    let joined = captures
+        .iter()
+        .find(|capture| capture.id() == "joined")
+        .unwrap()
+        .reads()
+        .clone();
+    (spent, joined)
+}
+
+#[test]
+fn coalescing_fragments_charges_what_one_primary_record_with_the_same_reads_charges() {
+    let spans = [(4, 6), (8, 10)];
+    let fragments = charged_reads(|ctx, root, member| {
+        let (_, owner) = ctx.record_owner("joined", root.child(0, 2).unwrap(), || {
+            assert_eq!(root.read_at(0, 2), Some(b"AB".as_slice()));
+            Ok(())
+        })?;
+        for (start, end) in spans {
+            ctx.record_fragment(&owner, root.child(start, end).unwrap(), || {
+                assert!(root.read_at(start, end - start).is_some());
+                Ok(())
+            })?;
+        }
+        // A stream new to the primary record.
+        ctx.record_fragment(&owner, member, || {
+            assert_eq!(member.read_at(0, 2), Some(b"GH".as_slice()));
+            Ok(())
+        })
+    });
+    let primary = charged_reads(|ctx, root, member| {
+        ctx.record("joined", root.child(0, 2).unwrap(), || {
+            assert_eq!(root.read_at(0, 2), Some(b"AB".as_slice()));
+            for (start, end) in spans {
+                assert!(root.read_at(start, end - start).is_some());
+            }
+            assert_eq!(member.read_at(0, 2), Some(b"GH".as_slice()));
+            Ok(())
+        })
+    });
+    // The member is bytes 12..14 of the root, so its read is also a root read.
+    assert_eq!(
+        primary.1,
+        BTreeMap::from([
+            ("file".into(), vec![0..2, 4..6, 8..10, 12..14]),
+            ("member".into(), vec![0..2]),
+        ])
+    );
+    assert_eq!(fragments, primary);
 }
