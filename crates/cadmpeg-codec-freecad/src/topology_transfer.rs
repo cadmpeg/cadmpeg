@@ -4,6 +4,7 @@
 use std::collections::{HashMap, HashSet};
 
 mod locations;
+mod ring_order;
 use crate::brep::location_identity::LocationIdentityError;
 use locations::{Located, Locations};
 
@@ -204,13 +205,31 @@ impl SourceOccurrenceKey {
     }
 }
 
+/// An edge occurrence and its start and end vertex occurrences.
+#[derive(Clone)]
+struct PlacedEdge {
+    id: EdgeId,
+    start: VertexId,
+    end: VertexId,
+}
+
+impl PlacedEdge {
+    /// The vertices a use of this edge runs from and to.
+    fn oriented_ends(&self, sense: Sense) -> (&VertexId, &VertexId) {
+        match sense {
+            Sense::Forward => (&self.start, &self.end),
+            Sense::Reversed => (&self.end, &self.start),
+        }
+    }
+}
+
 struct Builder<'a, 'c, 'r> {
     procedural_admission: Option<cadmpeg_ir::document::procedural::ProceduralAdmission>,
     ctx: &'c DecodeContext<'r>,
     payload: &'a ShapePayloadRecord,
     tables: Tables<'a>,
     vertices: HashMap<OccurrenceKey, VertexId>,
-    edges: HashMap<OccurrenceKey, EdgeId>,
+    edges: HashMap<OccurrenceKey, PlacedEdge>,
     emitted_curves: HashSet<CurveId>,
     emitted_surfaces: HashSet<SurfaceId>,
     emitted_triangulations: HashSet<usize>,
@@ -702,7 +721,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 for child in &shape.children {
                     if self.shape(child.shape)?.kind() == TextShapeKind::Edge {
                         let edge = self.ensure_edge(ir, child, transform)?;
-                        wire_edges.push(edge);
+                        wire_edges.push(edge.id);
                     }
                 }
             }
@@ -717,7 +736,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                     location: 0.into(),
                 };
                 let edge = self.ensure_edge(ir, &edge_use, transform)?;
-                wire_edges.push(edge);
+                wire_edges.push(edge.id);
             }
             TextShapeKind::Vertex => {
                 let vertex_use = TextShapeUse {
@@ -989,6 +1008,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                         .map_err(CodecError::malformed)?,
                 );
             }
+            let mut placed_uses = Vec::new();
             for (index, edge_use) in edge_uses.iter().enumerate() {
                 let edge_transform =
                     self.compose(wire_transform, self.location(edge_use.location)?)?;
@@ -996,12 +1016,13 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 let pcurve =
                     self.face_pcurve(edge_use, edge_transform, surface, surface_transform)?;
                 let id: CoedgeId = coedge_ids[index].clone();
+                let use_sense = sense(is_reversed(edge_use.orientation) ^ wire_reversed);
                 ir.model.coedges.push(Coedge {
                     id: id.clone(),
                     owner_loop: loop_id.clone(),
-                    edge,
+                    edge: edge.id.clone(),
                     radial_next: id,
-                    sense: sense(is_reversed(edge_use.orientation) ^ wire_reversed),
+                    sense: use_sense,
                     use_curve: None,
                     pcurves: pcurve
                         .into_iter()
@@ -1017,20 +1038,27 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                         })
                         .collect::<Result<Vec<_>, CodecError>>()?,
                 });
+                placed_uses.push((edge, use_sense));
             }
+            let ends = placed_uses
+                .iter()
+                .map(|(edge, use_sense)| edge.oriented_ends(*use_sense))
+                .collect::<Vec<_>>();
+            let ring = ring_order::traversal_order(&ends)
+                .into_iter()
+                .map(|position| coedge_ids[position].clone())
+                .collect();
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id.clone(),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                    cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new()).map_err(
-                        |error| {
-                            CodecError::malformed(format_args!(
-                                "FCStd face {} loop {} has invalid ring: {error}",
-                                face_id,
-                                loop_index + 1,
-                            ))
-                        },
-                    )?,
+                    cadmpeg_ir::topology::LoopRing::new(ring, Vec::new()).map_err(|error| {
+                        CodecError::malformed(format_args!(
+                            "FCStd face {} loop {} has invalid ring: {error}",
+                            face_id,
+                            loop_index + 1,
+                        ))
+                    })?,
                 ),
             });
             self.bind_topology(
@@ -1065,13 +1093,18 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         ir: &mut CadIr,
         edge_use: &TextShapeUse,
         parent: Located,
-    ) -> Result<EdgeId, CodecError> {
+    ) -> Result<PlacedEdge, CodecError> {
         let transform = self.compose(parent, self.location(edge_use.location)?)?;
         let key = OccurrenceKey::new(edge_use.shape, self.compose(self.body_scope, transform)?);
-        if let Some(id) = self.edges.get(&key) {
-            let id: EdgeId = id.clone();
-            self.bind_topology(TextShapeKind::Edge, edge_use.shape, transform, id.as_str())?;
-            return Ok(id);
+        if let Some(placed) = self.edges.get(&key) {
+            let placed = placed.clone();
+            self.bind_topology(
+                TextShapeKind::Edge,
+                edge_use.shape,
+                transform,
+                placed.id.as_str(),
+            )?;
+            return Ok(placed);
         }
         let shape = self.shape(edge_use.shape)?.clone();
         let TextTShapeGeometry::Edge {
@@ -1129,6 +1162,11 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             .map_or(param_range, |curve| {
                 normalize_occt_curve_range(curve.geometry.solved()?, param_range)
             });
+        let placed = PlacedEdge {
+            id: id.clone(),
+            start: start.clone(),
+            end: end.clone(),
+        };
         ir.model.edges.push(Edge {
             id: id.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::from_finite_parts(curve, param_range)
@@ -1138,9 +1176,8 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             tolerance: PositiveReal::from_finite(tolerance),
         });
         self.bind_topology(TextShapeKind::Edge, edge_use.shape, transform, id.as_str())?;
-        let cached_id = EdgeId::mint(id.as_str().to_owned()).map_err(CodecError::malformed)?;
-        self.edges.insert(key, cached_id);
-        Ok(id)
+        self.edges.insert(key, placed.clone());
+        Ok(placed)
     }
 
     fn polygon_curve(

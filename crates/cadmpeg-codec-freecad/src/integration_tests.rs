@@ -3,6 +3,7 @@
 //! Integration contracts over synthesized `FCStd` archives and application graphs.
 
 mod metadata_recovery;
+mod ring_traversal;
 
 use super::FcstdCodec;
 use crate::test_support::test_archive::{
