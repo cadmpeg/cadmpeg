@@ -5,7 +5,6 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::report::loss::LossTaxonomy;
 
 use crate::test_support::container::sldprt_with_body;
 use crate::test_support::parasolid::bridge_owned;
@@ -153,7 +152,7 @@ fn typed_ownership_keeps_distinct_bodies_separate() {
 }
 
 #[test]
-fn typed_face_ownership_overrides_compact_bridge_owner() {
+fn typed_face_ownership_is_independent_of_attribute_chain_head() {
     let mut body = triangle_body();
     let bridge = body
         .windows(2)
@@ -181,7 +180,7 @@ fn typed_face_ownership_overrides_compact_bridge_owner() {
 }
 
 #[test]
-fn duplicate_face_uses_emit_one_face() {
+fn a_shared_metadata_head_does_not_supply_loop_or_body_ownership() {
     let mut body = triangle_body();
     let first_bridge = body
         .windows(2)
@@ -204,15 +203,18 @@ fn duplicate_face_uses_emit_one_face() {
 }
 
 #[test]
-fn decode_withholds_non_equivalent_face_uses_with_same_owner() {
+fn distinct_faces_with_shared_metadata_head_retain_typed_body_membership() {
     let mut body = triangle_body();
     let first_bridge = body
         .windows(2)
         .position(|w| w == [0x00, 0x0e])
         .expect("bridge");
     body[first_bridge + 8..first_bridge + 10].copy_from_slice(&700u16.to_be_bytes());
-    body.extend(bridge_owned(11, 20, 200, 700));
-    body.extend(owned_triangle(200, 701, 2.0));
+    let mut other_use = bridge_owned(11, 20, 200, 700);
+    other_use[4..8].copy_from_slice(&400_011u32.to_be_bytes());
+    other_use[24..26].copy_from_slice(&901u16.to_be_bytes());
+    body.extend(other_use);
+    body.extend(owned_triangle(200, 700, 2.0));
     let result = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&body)),
@@ -220,13 +222,23 @@ fn decode_withholds_non_equivalent_face_uses_with_same_owner() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().model.faces.len(), 2);
+    let identities: std::collections::HashSet<_> = result
+        .ir()
+        .model
+        .faces
+        .iter()
+        .map(|face| face.id.as_str())
+        .collect();
     assert_eq!(
-        result.ir().model.faces[0].id.as_str(),
-        "sldprt:brep:face#210"
+        identities,
+        std::collections::HashSet::from(["sldprt:brep:face#10", "sldprt:brep:face#210"])
     );
-    assert!(result.report().losses.iter().any(|loss| {
-        loss.code.taxonomy() == LossTaxonomy::TopologyGaugeSubstituted
-            && loss.message.contains("non-equivalent bridge uses")
-    }));
+    assert_eq!(result.ir().model.bodies.len(), 2);
+    assert!(result
+        .ir()
+        .model
+        .shells
+        .iter()
+        .all(|shell| shell.faces().len() == 1));
 }

@@ -2253,7 +2253,6 @@ fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
         .append(&mut source.stats.surface_solver_capped);
     target.stats.source_entity_records += source.stats.source_entity_records;
     target.stats.unresolved_face_colors += source.stats.unresolved_face_colors;
-    target.stats.ambiguous_face_owners += source.stats.ambiguous_face_owners;
     target.stats.unclaimed_faces += source.stats.unclaimed_faces;
     target.stats.synthetic_body_grouping |= source.stats.synthetic_body_grouping;
     Ok(())
@@ -3540,12 +3539,6 @@ fn build_geometry_report(
         losses.push(SldprtLossCode::AppearanceFaceColorUnresolved.note(format!(
             "{} face-color binding(s) were withheld because the current face and link records do not select one consistent framed color record.",
             s.unresolved_face_colors
-        )));
-    }
-    if s.ambiguous_face_owners > 0 {
-        losses.push(SldprtLossCode::TopologyFaceOwnerAmbiguous.note(format!(
-            "{} face owner(s) have non-equivalent bridge uses; all uses for each owner remain unresolved.",
-            s.ambiguous_face_owners
         )));
     }
     if s.unclaimed_faces > 0 {

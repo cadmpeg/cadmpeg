@@ -471,8 +471,6 @@ pub(crate) struct Stats {
     pub(crate) source_entity_records: usize,
     /// Face-color bindings withheld because current records conflict.
     pub(crate) unresolved_face_colors: usize,
-    /// Face owners with multiple non-equivalent bridge uses.
-    pub(crate) ambiguous_face_owners: usize,
     /// Canonical faces that no explicit body record claims.
     pub(crate) unclaimed_faces: usize,
     /// Faces on a support surface this codec does not type; emitted with an
@@ -1003,14 +1001,7 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
             break;
         };
         let owner_bridge = lp.refs[2];
-        let same_face_use = owner_bridge == bridge.attr
-            || bridge.owner.is_some_and(|owner| {
-                t.bridges()
-                    .get(&owner_bridge)
-                    .and_then(|candidate| candidate.owner)
-                    == Some(owner)
-            });
-        if !same_face_use {
+        if owner_bridge != bridge.attr {
             break;
         }
         let first = lp.refs[1];
@@ -1590,43 +1581,12 @@ fn decode_graph(
         return Ok(out);
     }
 
-    // Walk every face-use bridge to collect its ordered loop/coedge structure.
-    // A bridge owner identifies the canonical face entity, not an additional
-    // face identity. Equivalent bridge payloads are duplicate uses; distinct
-    // payloads have no source selector and must remain unresolved together.
-    let mut faces = Vec::new();
-    let mut owned_faces = HashMap::<u16, Vec<(&topology::Bridge, WalkedFace)>>::new();
-    for bridge in t.bridges().values() {
-        let face = walk_face(bridge, t);
-        if let Some(owner) = bridge.owner {
-            owned_faces.entry(owner).or_default().push((bridge, face));
-        } else {
-            faces.push(face);
-        }
-    }
-    let mut ambiguous_face_owners = 0;
-    for mut uses in owned_faces.into_values() {
-        uses.sort_by_key(|(bridge, _)| (bridge.offset, bridge.attr));
-        let Some((first_bridge, first_face)) = uses.first() else {
-            continue;
-        };
-        let equivalent = uses.iter().skip(1).all(|(bridge, face)| {
-            bridge.refs == first_bridge.refs
-                && bridge.sense == first_bridge.sense
-                && face.surface_attr == first_face.surface_attr
-                && face.sense == first_face.sense
-                && face.loops == first_face.loops
-        });
-        if equivalent {
-            if let Some((_, first_face)) = uses.into_iter().next() {
-                faces.push(first_face);
-            }
-        } else {
-            ambiguous_face_owners += 1;
-        }
-    }
+    let mut faces: Vec<_> = t
+        .bridges()
+        .values()
+        .map(|bridge| walk_face(bridge, t))
+        .collect();
     faces.sort_by_key(|face| face.bridge_attr);
-    out.stats.ambiguous_face_owners += ambiguous_face_owners;
 
     // Edge attr -> [(coedge attr, start vuse, next coedge's start vuse)] from
     // the ring walk. The ring order supplies a boundary edge's second endpoint;
@@ -2114,19 +2074,13 @@ fn decode_graph(
         let mut bridge_shell = HashMap::new();
         for (group, body_record) in body_records.iter().enumerate() {
             for face in faces {
-                let owner = t.bridges().get(&face.bridge_attr).and_then(|r| r.owner);
-                if body_record.refs.contains(&face.bridge_attr)
-                    || owner.is_some_and(|owner| body_record.refs.contains(&owner))
-                {
+                if body_record.refs.contains(&face.bridge_attr) {
                     bridge_group.insert(face.bridge_attr, group);
                     if let Some(shell) = body_record
                         .regions
                         .iter()
                         .flat_map(|region| &region.shells)
-                        .find(|shell| {
-                            shell.refs.contains(&face.bridge_attr)
-                                || owner.is_some_and(|owner| shell.refs.contains(&owner))
-                        })
+                        .find(|shell| shell.refs.contains(&face.bridge_attr))
                     {
                         bridge_shell.insert(face.bridge_attr, shell.attr);
                     }
@@ -2454,7 +2408,7 @@ fn decode_graph(
             color: t
                 .bridges()
                 .get(&f.bridge_attr)
-                .and_then(|bridge| bridge.owner)
+                .and_then(|bridge| bridge.attributes_head)
                 .and_then(|owner| {
                     out.face_colors
                         .iter()
@@ -2472,7 +2426,7 @@ fn decode_graph(
             .find(|face| {
                 t.bridges()
                     .get(&face.bridge_attr)
-                    .and_then(|bridge| bridge.owner)
+                    .and_then(|bridge| bridge.attributes_head)
                     == Some(appearance.value.face_attr)
             })
             .map(|face| id_face(face.bridge_attr))
@@ -6999,7 +6953,7 @@ mod tests {
             sequence: 0,
             refs,
             sense: Sense::Forward,
-            owner: None,
+            attributes_head: None,
             offset: 0,
         }
     }
@@ -7023,8 +6977,12 @@ mod tests {
 
     #[test]
     fn face_walk_rejects_a_loop_owned_by_another_bridge() {
-        let bridge = bridge_record(10, [0, 0, 20, 0, 30]);
+        let mut bridge = bridge_record(10, [0, 0, 20, 0, 30]);
+        bridge.attributes_head = Some(700);
+        let mut other = bridge_record(11, [0, 0, 20, 0, 30]);
+        other.attributes_head = Some(700);
         let mut tables = Tables::default();
+        tables.insert_bridge(other);
         tables.insert_loop(loop_record(20, [0, 40, 11, 0]));
         tables.insert_coedge(coedge_record(40, [0, 0, 0, 40, 0, 0, 0, 0, 0]));
 
@@ -7845,7 +7803,7 @@ mod tests {
             sequence: 0,
             refs: [1, 1, 49, 7, 8],
             sense: Sense::Forward,
-            owner: None,
+            attributes_head: None,
             offset: 11,
         });
 
@@ -7866,40 +7824,31 @@ mod tests {
     }
 
     #[test]
-    fn ambiguous_face_owner_stats_survive_when_all_uses_are_withheld() {
+    fn attribute_chain_heads_do_not_merge_distinct_face_identities() {
+        let mut body = crate::test_support::parasolid::owned_triangle(0, 700, 0.0);
+        let mut other = crate::test_support::parasolid::owned_triangle(200, 701, 2.0);
+        let face = other
+            .windows(2)
+            .position(|bytes| bytes == [0x00, 0x0e])
+            .expect("FACE");
+        other[face + 8..face + 10].copy_from_slice(&700u16.to_be_bytes());
+        body.extend(other);
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
+            &body,
             &arena,
             &cadmpeg_core::decode::DecodePolicy::service(),
         )
         .unwrap();
-        let bridge = |attr, surface, offset| Bridge {
-            attr,
-            sequence: 0,
-            refs: [0, 0, 0, 0, surface],
-            sense: Sense::Forward,
-            owner: Some(700),
-            offset,
-        };
-        let mut tables = super::topology::Tables::default();
-        tables.insert_bridge(bridge(10, 100, 20));
-        tables.insert_bridge(bridge(11, 200, 10));
-        let decoded = super::decode_graph(
+        let decoded = super::decode_body(
             &ctx,
-            &mut crate::brep::index::CarrierIndex::default(),
-            &tables,
-            super::entity::Facts {
-                entity_count: 1,
-                ..Default::default()
-            },
-            &super::typed::Facts::default(),
-            &cadmpeg_ir::stream_name!("empty"),
+            &body,
+            &cadmpeg_ir::stream_name!("shared-metadata-head"),
         )
         .expect("valid exactness fields");
 
-        assert!(decoded.faces.is_empty());
-        assert_eq!(decoded.stats.ambiguous_face_owners, 1);
+        assert_eq!(decoded.faces.len(), 2);
+        assert_ne!(decoded.faces[0].id, decoded.faces[1].id);
     }
 
     #[test]

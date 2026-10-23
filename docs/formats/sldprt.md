@@ -1281,7 +1281,7 @@ second carries the remaining high bits. The decoded value is
 `(first & 0x7fff) | (second << 15)`. Values `0` and `1` are null-like
 sentinels where a field permits them.
 
-- **Bridge `00 0e`:** `attr` is u16 BE at body +0, `sequence` is u32 BE at body +2, and the owner/use field is u16 BE at body +6. `sequence` is the active-partition face identity used by SWIFT `CadIdentifier` suffixes; it is distinct from `attr`, and sequence values are unique within one partition stream. `refs[2]` = owning loop-head, `refs[4]` = primary surface carrier (compact analytic or `00 7c`), `marker` = face orientation versus the surface natural normal (`0x2b` forward / `0x2d` reversed). `ref0` = owner/use discriminator. The five references are either adjacent big-endian u16 cells followed by the marker at body +26 or `[hi][lo][01]` cells followed by the marker at body +31.
+- **Bridge `00 0e`:** `attr` is u16 BE at body +0, `sequence` is u32 BE at body +2, and the ATTRIBUTE-chain head (`attributes_groups`) is u16 BE at body +6. `sequence` is the active-partition face identity used by SWIFT `CadIdentifier` suffixes; it is distinct from `attr`, and sequence values are unique within one partition stream. `refs[2]` = owning loop-head, `refs[4]` = primary surface carrier (compact analytic or `00 7c`), `marker` = face orientation versus the surface natural normal (`0x2b` forward / `0x2d` reversed). `refs[0]` and `refs[1]` are the next and previous FACE pointers; `refs[3]` is the SHELL pointer. The five references are either adjacent big-endian u16 cells followed by the marker at body +26 or `[hi][lo][01]` cells followed by the marker at body +31.
 - **Loop head `00 0f`:** `refs[1]` = first coedge, `refs[2]` = owning bridge, `refs[3]` = next sibling loop head.
 - **Edge-use `00 10`:** `sequence` is u32 BE at body +2. Bare `refs[0]` = canonical forward coedge (`0x2b`) when the reference is not a sentinel, `refs[3]` = support curve (compact analytic or `00 86`). The prefixed deltas form carries the support curve in its third post-magic reference cell and has no serialized canonical-coedge slot.
 - **Coedge `00 11`:** `refs[1]` owning loop, `refs[2]`/`refs[3]` reciprocal ring links (prev/next), `refs[4]` start vertex-use, `refs[5]` twin coedge, `refs[6]` edge-use, `marker` sense vs canonical (`0x2b` forward, `0x2d` reversed).
@@ -1400,23 +1400,27 @@ Partition topology is the base set for one site. Typed BODY, SHELL, REGION,
 and FACE nodes are combined before body membership is validated. A deltas
 node with an identity present in the partition does not replace the partition
 node. When the partition bridge table is nonempty, a deltas bridge with an
-absent identity is retained only when its bridge attribute or bridge owner is
+absent identity is retained only when its FACE transmit index is
 named by the validated typed FACE set. Without valid typed ownership, no
 deltas bridge is added to a nonempty partition bridge table.
 
 An empty partition bridge table adopts all deltas bridges when valid typed
 ownership is absent. With valid typed ownership, it adopts only deltas bridges
-selected by bridge attribute or bridge owner. This adoption fills an empty
+selected by FACE transmit index. This adoption fills an empty
 table; it does not replace a partition face. In every branch, missing loop,
 edge-use, coedge, vertex-use, and point identities are filled from deltas.
 Existing partition point coordinates remain unchanged.
 
 A compact FACE bridge and a change-roster cell contain no old-face-to-new-face
 relation. A different bridge identity does not select a partition face for
-replacement. Sequence equality, owner changes, reference overlap, geometry,
+replacement. Sequence equality, attribute-chain changes, reference overlap, geometry,
 record order, and roster adjacency do not establish partition-face replacement.
 
-For bridges whose owner field is greater than one, the owner identifies the canonical face entity and the bridge identifies a face use. Bridges with the same owner and identical reference, marker, and walked loop/surface payload are duplicate uses; the bridge encoded first is canonical. Bridges with the same owner and non-equivalent payloads are alternate uses without a selector; the decoder withholds every use for that owner and reports the unresolved owner.
+The FACE `attributes_groups` pointer names the head of its ATTRIBUTE chain.
+An ATTRIBUTE names its owning FACE through its first pointer slot. The head
+is metadata identity; it does not select a FACE, assign it to a BODY, or
+identify another FACE use. Each FACE transmit index supplies a distinct face
+identity. A LOOP belongs to the FACE named by its owning-FACE pointer.
 
 ## 5. Entity records and face families
 

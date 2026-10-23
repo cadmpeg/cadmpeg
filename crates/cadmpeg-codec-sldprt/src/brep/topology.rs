@@ -38,7 +38,7 @@ pub(super) struct Bridge {
     pub(super) refs: [u16; 5],
     pub(super) sequence: u32,
     pub(super) sense: Sense,
-    pub(super) owner: Option<u16>,
+    pub(super) attributes_head: Option<u16>,
     pub(super) offset: usize,
 }
 
@@ -171,14 +171,14 @@ fn attr_at(buf: &[u8], p: usize) -> Option<u16> {
 
 /// Bridge `00 0e`: 37-byte body, magic at body+8, `refs[5]` at body+16,
 /// marker at body+26. `refs[4]` = surface carrier, `refs[2]` = loop head.
-/// The deltas form stores the owner as a `[hi][lo][01]` triple, so the magic
+/// The deltas form stores the attribute-chain head as a `[hi][lo][01]` triple, so the magic
 /// sits at body+9 and the five refs follow as triples with the marker after.
 fn parse_bridge(buf: &[u8], off: usize) -> Option<Bridge> {
     let p = body_start(buf, off, 0x0e)?;
     if buf.get(p + 8) == Some(&1) && buf.get(p + 9..p + 17) == Some(MAGIC.as_slice()) {
         let attr = attr_at(buf, p)?;
         let sequence = View::u32_be_at(buf, p + 2)?;
-        let owner = View::u16_be_at(buf, p + 6)?;
+        let attributes_head = View::u16_be_at(buf, p + 6)?;
         let refs = refs_tripled::<5>(buf, p + 17)?;
         let marker = *buf.get(p + 32)?;
         return Some(Bridge {
@@ -186,7 +186,7 @@ fn parse_bridge(buf: &[u8], off: usize) -> Option<Bridge> {
             sequence,
             refs,
             sense: parse_sense(marker)?,
-            owner: (owner > 1).then_some(owner),
+            attributes_head: (attributes_head > 1).then_some(attributes_head),
             offset: off,
         });
     }
@@ -195,7 +195,7 @@ fn parse_bridge(buf: &[u8], off: usize) -> Option<Bridge> {
     }
     let attr = attr_at(buf, p)?;
     let sequence = View::u32_be_at(buf, p + 2)?;
-    let owner = View::u16_be_at(buf, p + 6)?;
+    let attributes_head = View::u16_be_at(buf, p + 6)?;
     let tripled = (0..5).all(|index| buf.get(p + 18 + index * 3) == Some(&1));
     let (refs, marker) = if tripled {
         (refs_tripled::<5>(buf, p + 16)?, *buf.get(p + 31)?)
@@ -207,7 +207,7 @@ fn parse_bridge(buf: &[u8], off: usize) -> Option<Bridge> {
         sequence,
         refs,
         sense: parse_sense(marker)?,
-        owner: (owner > 1).then_some(owner),
+        attributes_head: (attributes_head > 1).then_some(attributes_head),
         offset: off,
     })
 }
@@ -503,12 +503,7 @@ fn retain_selected_bridges(
     bridges: &mut HashMap<u16, Bridge>,
     selected_bridge_attrs: &HashSet<u16>,
 ) {
-    bridges.retain(|attr, record| {
-        selected_bridge_attrs.contains(attr)
-            || record
-                .owner
-                .is_some_and(|owner| selected_bridge_attrs.contains(&owner))
-    });
+    bridges.retain(|attr, _| selected_bridge_attrs.contains(attr));
 }
 
 fn merge_missing<T>(target: &mut HashMap<u16, T>, source: HashMap<u16, T>) {
@@ -901,19 +896,19 @@ mod tests {
     use cadmpeg_ir::topology::Sense;
     use std::collections::HashSet;
 
-    fn merge_bridge(attr: u16, owner: u16) -> super::Bridge {
+    fn merge_bridge(attr: u16, attributes_head: u16) -> super::Bridge {
         super::Bridge {
             attr,
             refs: [201, 202, 203, 204, 205],
             sequence: 947,
             sense: Sense::Forward,
-            owner: Some(owner),
+            attributes_head: Some(attributes_head),
             offset: 0,
         }
     }
 
     #[test]
-    fn bridge_membership_uses_partition_presence_and_typed_identity_or_owner_selection() {
+    fn bridge_membership_uses_partition_presence_and_typed_face_identity() {
         for partition_present in [false, true] {
             for typed_selection in [false, true] {
                 let original = merge_bridge(71, 101);
@@ -939,7 +934,7 @@ mod tests {
                 partition.merge_deltas(deltas, typed_selection.then_some(&selected));
                 let expected = match (partition_present, typed_selection) {
                     (false, false) => HashSet::from([71, 73, 79, 83]),
-                    (_, true) => HashSet::from([71, 73, 79]),
+                    (_, true) => HashSet::from([71, 73]),
                     (true, false) => HashSet::from([71]),
                 };
                 assert_eq!(
@@ -1090,7 +1085,7 @@ mod tests {
         let bridge = parse_bridge(&bytes, 0).expect("deltas-form bridge");
         assert_eq!(bridge.attr, 0x1234);
         assert_eq!(bridge.sequence, 7);
-        assert_eq!(bridge.owner, Some(0x4321));
+        assert_eq!(bridge.attributes_head, Some(0x4321));
         assert_eq!(bridge.refs.as_slice(), expected);
         assert_eq!(bridge.sense, Sense::Forward);
     }
@@ -1104,7 +1099,7 @@ mod tests {
                 .unwrap_or_else(|| panic!("bridge tripled={tripled} bytes={bytes:02x?}"));
             assert_eq!(bridge.attr, 0x1234);
             assert_eq!(bridge.sequence, 7);
-            assert_eq!(bridge.owner, Some(0x4321));
+            assert_eq!(bridge.attributes_head, Some(0x4321));
             assert_eq!(bridge.refs.as_slice(), expected);
             assert_eq!(bridge.sense, Sense::Reversed);
         }
