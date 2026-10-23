@@ -15,6 +15,7 @@ use cadmpeg_codec_freecad::FcstdCodec;
 use cadmpeg_codec_iges::IgesCodec;
 use cadmpeg_codec_inventor::InventorCodec;
 use cadmpeg_codec_nx::NxCodec;
+use cadmpeg_codec_pvz::PvzCodec;
 use cadmpeg_codec_rhino::RhinoCodec;
 use cadmpeg_codec_sat::SatCodec;
 use cadmpeg_codec_sldprt::SldprtCodec;
@@ -71,6 +72,7 @@ fuzz_target!(|data: &[u8]| {
         Box::new(RhinoCodec),
         Box::new(IgesCodec),
         Box::new(SatCodec),
+        Box::new(PvzCodec),
         Box::new(StepCodec::default()),
     ];
 

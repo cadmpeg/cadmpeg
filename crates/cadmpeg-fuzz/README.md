@@ -77,6 +77,7 @@ decoding:
 - `rhino_container`
 - `iges_container`
 - `sat_container`
+- `pvz_container`
 
 Native writing and replay:
 
@@ -115,6 +116,7 @@ Focused parser coverage. Focused codec parser targets import `::fuzz` only.
   `fcstd_auxiliary`
 - IGES: `iges_cards`, `iges_global`, `iges_directory`, `iges_parameters` go
   through `cadmpeg_codec_iges::fuzz`
+- Creo View: `pvz_package` goes through `cadmpeg_codec_pvz::fuzz`
 
 IR and STEP:
 
