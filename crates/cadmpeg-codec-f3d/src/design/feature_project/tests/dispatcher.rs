@@ -909,13 +909,16 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
                 .expect("test projection has a synthetic exact timeline")
             })
         };
-    let crate::design::feature_project::ProjectedParameterDesign {
-        features,
-        unruled_flange_thicknesses,
-        ..
-    } = project(&[]);
+    let unruled = project(&[]);
     // Without its settings' rule the flange uses its stored copy, and says so.
-    assert_eq!(unruled_flange_thicknesses, 1);
+    assert_eq!(unruled.unruled_flange_thicknesses, 1);
+    assert_eq!(
+        unruled
+            .unruled_flange_thickness_loss()
+            .map(|loss| loss.code),
+        Some(crate::loss::F3dLossCode::SheetThicknessUnruled.kind())
+    );
+    let features = unruled.features;
     // The rule's thickness governs over the stored copy.
     let ruled: crate::records::sheet_metal_settings::DesignSheetMetalSettings =
         serde_json::from_value(serde_json::json!({
@@ -929,6 +932,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         .unwrap();
     let ruled_projection = project(std::slice::from_ref(&ruled));
     assert_eq!(ruled_projection.unruled_flange_thicknesses, 0);
+    assert!(ruled_projection.unruled_flange_thickness_loss().is_none());
     assert!(ruled_projection.features.iter().any(|feature| matches!(
         feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange { thickness, .. })

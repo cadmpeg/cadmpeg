@@ -547,18 +547,9 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             sheet_metal_settings: &design.design_sheet_metal_settings,
         },
     )?;
+    losses.extend(projected.unruled_flange_thickness_loss());
     model.features = projected.features;
     model.parameters = projected.parameters;
-    if projected.unruled_flange_thicknesses != 0 {
-        push_loss_vec(
-            &mut losses,
-            F3dLossCode::SheetThicknessUnruled,
-            format_args!(
-                "{} sheet-metal base flange(s) use the thickness copy their scope stores: their sheet-metal rule states no readable thickness, and the copy can differ from it.",
-                projected.unruled_flange_thicknesses,
-            ),
-        );
-    }
     if projected.unordered_parameter_scopes != 0 {
         push_loss_vec(
             &mut losses,

@@ -584,6 +584,21 @@ pub(crate) struct ProjectedParameterDesign {
     pub(crate) unruled_flange_thicknesses: usize,
 }
 
+impl ProjectedParameterDesign {
+    /// The loss note for base flanges projected with their stored thickness
+    /// copy, when there are any.
+    pub(crate) fn unruled_flange_thickness_loss(
+        &self,
+    ) -> Option<cadmpeg_ir::report::loss::LossNote> {
+        (self.unruled_flange_thicknesses != 0).then(|| {
+            crate::loss::F3dLossCode::SheetThicknessUnruled.note(format!(
+                "{} sheet-metal base flange(s) use the thickness copy their scope stores: their sheet-metal rule states no readable thickness, and the copy can differ from it.",
+                self.unruled_flange_thicknesses,
+            ))
+        })
+    }
+}
+
 /// Project Design parameters and feature scopes, including fixed edge identities.
 pub(crate) fn project_parameter_design_with_edge_identities(
     ctx: &DecodeContext<'_>,
