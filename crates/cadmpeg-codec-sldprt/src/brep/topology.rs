@@ -220,30 +220,38 @@ fn parse_bridge(buf: &[u8], off: usize) -> Option<Bridge> {
     })
 }
 
-/// Loop head `00 0f`: minimal 14-byte body, no magic, `refs[4]` at body+6.
-/// `refs[1]` = first coedge, `refs[2]` = owning bridge, `refs[3]` = next sibling.
-fn parse_loop(buf: &[u8], off: usize) -> Option<(Loop, usize)> {
-    let p = body_start(buf, off, 0x0f)?;
-    if p + loop_body::LEN > buf.len() {
-        return None;
-    }
-    let attr = attr_at(buf, p)?;
-    let tripled = buf
-        .get(p..p + loop_delta::LEN)
-        .and_then(|_| refs_tripled::<4>(buf, p + loop_delta::REFS));
-    let (refs, end) = if let Some(refs) = tripled {
-        (refs, p + loop_delta::LEN)
-    } else {
-        (refs_be::<4>(buf, p + loop_body::REFS)?, p + loop_body::LEN)
+fn parse_loop_candidates(buf: &[u8], off: usize) -> Vec<(Loop, usize)> {
+    let Some(p) = body_start(buf, off, 0x0f) else {
+        return Vec::new();
     };
-    Some((
-        Loop {
-            attr,
-            refs,
-            offset: off,
-        },
-        end,
-    ))
+    let Some(attr) = attr_at(buf, p) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for (len, refs) in [
+        (
+            loop_body::LEN,
+            buf.get(p..p + loop_body::LEN)
+                .and_then(|_| refs_be::<4>(buf, p + loop_body::REFS)),
+        ),
+        (
+            loop_delta::LEN,
+            buf.get(p..p + loop_delta::LEN)
+                .and_then(|_| refs_tripled::<4>(buf, p + loop_delta::REFS)),
+        ),
+    ] {
+        if let Some(refs) = refs {
+            out.push((
+                Loop {
+                    attr,
+                    refs,
+                    offset: off,
+                },
+                p + len,
+            ));
+        }
+    }
+    out
 }
 
 /// Return complete or compact edge-use readings at one offset.
@@ -911,7 +919,7 @@ fn scan_records(
 ) -> Tables {
     let mut t = Tables::default();
     let mut loop_candidates = Vec::new();
-    let mut loop_ends = HashMap::new();
+    let mut loop_frames = Vec::new();
     let mut edge_candidates = CandidateMap::new();
     let mut coedge_candidates = CandidateMap::new();
     let mut i = 0usize;
@@ -932,9 +940,9 @@ fn scan_records(
                 }
             }
             0x0f => {
-                if let Some((record, end)) = parse_loop(body, i) {
-                    loop_ends.insert(record.offset, end);
-                    loop_candidates.push(record);
+                for (record, end) in parse_loop_candidates(body, i) {
+                    loop_candidates.push(record.clone());
+                    loop_frames.push((record, end));
                 }
             }
             0x10 => insert_candidates(&mut edge_candidates, parse_edge_use_candidates(body, i)),
@@ -977,7 +985,7 @@ fn scan_records(
             t.edge_uses.insert(record.attr, record);
         }
     }
-    for record in loop_candidates {
+    for (record, end) in loop_frames {
         let owner = record.refs[2];
         let first = record.refs[1];
         let owner_exists = t.bridges.contains_key(&owner)
@@ -986,7 +994,6 @@ fn scan_records(
             .and_then(|base| base.coedges.get(&first))
             .or_else(|| t.coedges.get(&first));
         if owner_exists && first_coedge.is_some_and(|coedge| coedge.refs[1] == record.attr) {
-            let end = loop_ends[&record.offset];
             let frame = RecordFrame {
                 partition: !deltas,
                 bytes: Some(body[record.offset..end].to_vec()),
@@ -1454,6 +1461,32 @@ mod tests {
 
     fn delta_loops(bytes: &[u8], base: &super::Tables) -> super::Tables {
         scan_deltas_with_curve_attrs_excluding(bytes, &HashSet::new(), &HashSet::new(), base)
+    }
+
+    #[test]
+    fn bare_loop_closure_survives_an_unowned_tripled_reading_at_the_same_offset() {
+        for first_of_type in [false, true] {
+            let frame = framed_topology_loop(20, 811, [0, 258, 769, 0], false, first_of_type);
+            let mut padded = frame.clone();
+            padded.extend([1, 0, 0, 1]);
+            let readings = super::parse_loop_candidates(&padded, 0);
+            assert_eq!(readings.len(), 2);
+            assert_eq!(readings[0].0.refs, [0, 258, 769, 0]);
+            assert_eq!(readings[1].0.refs, [0, 515, 0, 0]);
+            let mut body = topology_bridge(769, 20);
+            body.extend(padded);
+            body.extend(topology_tripled_coedge(
+                258,
+                [0, 20, 0, 258, 50, 0, 40, 0, 0],
+            ));
+            let tables = scan(&body);
+            assert_eq!(tables.loops()[&20].refs, [0, 258, 769, 0]);
+            assert!(!tables.loop_is_ambiguous(20));
+            assert_eq!(
+                tables.loop_frames[&20].bytes.as_deref(),
+                Some(frame.as_slice())
+            );
+        }
     }
 
     #[test]
