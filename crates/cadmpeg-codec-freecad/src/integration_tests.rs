@@ -400,13 +400,124 @@ fn public_cc0_fixtures_decode_deterministically_and_report_unprojected_native_hi
             second.ir().to_canonical_json().expect("canonical fixture"),
             "{name} is nondeterministic"
         );
-        assert!(
-            first.report().losses.iter().all(|loss| loss.severity
-                < cadmpeg_ir::report::Severity::Blocking
-                || loss.code.local_code() == "feature.object-unprojected"),
-            "{name}: {:#?}",
-            first.report().losses
-        );
+        let objects = first
+            .ir()
+            .native
+            .namespace("fcstd")
+            .unwrap()
+            .arena_as::<crate::native::ObjectRecord>("objects")
+            .unwrap();
+        let native_features = first
+            .ir()
+            .model
+            .features
+            .iter()
+            .filter_map(|feature| match feature.definition().operation() {
+                cadmpeg_ir::features::FeatureOperation::Native { kind, .. } => {
+                    Some((feature, kind))
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        if name == "application_payloads.FCStd" {
+            for (source_name, source_kind) in [
+                ("FemAnalysis", "Fem::FemAnalysis"),
+                ("TemperatureConstraint", "Fem::ConstraintTemperature"),
+                ("Toolpath", "Path::Feature"),
+            ] {
+                let object = objects
+                    .iter()
+                    .find(|object| object.name() == source_name)
+                    .expect("the original public fixture source object");
+                assert_eq!(object.type_name, source_kind);
+                assert_eq!(
+                    native_features
+                        .iter()
+                        .filter(|(feature, kind)| {
+                            feature.native_ref.as_deref() == Some(object.id().as_str())
+                                && kind.as_str() == source_kind
+                        })
+                        .count(),
+                    1,
+                    "{name}: {source_name} keeps its attributable Native operation"
+                );
+            }
+        }
+        for (feature, kind) in &native_features {
+            let source = feature
+                .native_ref
+                .as_deref()
+                .expect("the actual Native object owner");
+            let object = objects
+                .iter()
+                .find(|object| object.id().as_str() == source)
+                .expect("Native features keep their actual source object");
+            assert_eq!(kind.as_str(), object.type_name, "{name}");
+            assert_eq!(
+                first
+                    .ir()
+                    .model
+                    .features
+                    .iter()
+                    .filter(|candidate| candidate.native_ref == feature.native_ref)
+                    .count(),
+                1,
+                "{name}: one feature per source object"
+            );
+        }
+        for loss in &first.report().losses {
+            assert_ne!(
+                loss.code.local_code(),
+                "feature.object-unprojected",
+                "{name}"
+            );
+            if loss.severity < cadmpeg_ir::report::Severity::Blocking {
+                continue;
+            }
+            assert_eq!(loss.code.namespace(), "fcstd", "{name}: {loss:?}");
+            assert_eq!(
+                loss.code.local_code(),
+                "feature.native-kind-retained",
+                "{name}: {loss:?}"
+            );
+            let source = loss
+                .provenance
+                .as_ref()
+                .and_then(|provenance| provenance.tag.as_deref())
+                .expect("the retained-kind loss names its actual source object");
+            let matching = native_features
+                .iter()
+                .filter(|(feature, _)| feature.native_ref.as_deref() == Some(source))
+                .collect::<Vec<_>>();
+            assert_eq!(
+                matching.len(),
+                1,
+                "{name}: each retained-kind loss has one actual Native operation"
+            );
+            assert!(
+                loss.message.contains(matching[0].1.as_str()),
+                "{name}: {loss:?}"
+            );
+        }
+        for (feature, _) in &native_features {
+            assert_eq!(
+                first
+                    .report()
+                    .losses
+                    .iter()
+                    .filter(
+                        |loss| loss.code.local_code() == "feature.native-kind-retained"
+                            && loss
+                                .provenance
+                                .as_ref()
+                                .and_then(|provenance| provenance.tag.as_deref())
+                                == feature.native_ref.as_deref()
+                    )
+                    .count(),
+                1,
+                "{name}: each Native operation has one attributable retained-kind diagnostic"
+            );
+        }
         let native_findings = crate::test_support::validate_native(first.ir());
         assert!(native_findings.is_empty(), "{name}: {native_findings:#?}");
         assert_valid_document(first.ir());

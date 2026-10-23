@@ -139,11 +139,6 @@ pub(crate) fn transfer(
             continue;
         }
         if !is_design_object(&object.type_name) {
-            if is_design_kind(&object.type_name) {
-                losses.push(crate::loss::FreecadLossCode::FeatureObjectUnprojected.note(format!(
-                    "design object {} of type {} was not projected into neutral features; its typed native object and properties remain", object.name(), object.type_name
-                )));
-            }
             continue;
         }
         let source = properties_by_owner

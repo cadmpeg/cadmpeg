@@ -54,8 +54,6 @@ pub(crate) enum FreecadLossCode {
     ExportProceduralReduced,
     /// Native-only property content has no synthesized encoding.
     ExportNativePropertyNotTransferred,
-    /// A design-kind object has no neutral feature projection.
-    FeatureObjectUnprojected,
     /// A property payload cannot enter the admitted persistence graph.
     PersistencePayloadUnresolved,
     /// An optional file reference has no readable archive payload.
@@ -122,7 +120,6 @@ impl FreecadLossCode {
         Self::ExportPresentationNotTransferred,
         Self::ExportProceduralReduced,
         Self::ExportNativePropertyNotTransferred,
-        Self::FeatureObjectUnprojected,
         Self::PersistencePayloadUnresolved,
         Self::PersistenceSideEntryUnresolved,
         Self::PersistenceCountNoncanonical,
@@ -166,7 +163,6 @@ impl FreecadLossCode {
             Self::ExportPresentationNotTransferred => "presentation.not-transferred",
             Self::ExportProceduralReduced => "geometry.procedural-reduced",
             Self::ExportNativePropertyNotTransferred => "metadata.native-property-not-transferred",
-            Self::FeatureObjectUnprojected => "feature.object-unprojected",
             Self::PersistencePayloadUnresolved => "metadata.persistence-payload-unresolved",
             Self::PersistenceSideEntryUnresolved => "metadata.persistence-side-entry-unresolved",
             Self::PersistenceCountNoncanonical => "metadata.persistence-count-noncanonical",
@@ -216,8 +212,7 @@ impl FreecadLossCode {
             | Self::ExportAppearanceNotTransferred
             | Self::ExportPresentationNotTransferred
             | Self::ExportProceduralReduced => Severity::Warning,
-            Self::FeatureObjectUnprojected
-            | Self::FeatureNativeKindRetained
+            Self::FeatureNativeKindRetained
             | Self::SketchNativeGeometry
             | Self::SketchNativeConstraint => Severity::Blocking,
             Self::FeatureCyclicHistory
@@ -264,9 +259,9 @@ impl FreecadLossCode {
             Self::PersistencePayloadUnresolved | Self::PersistenceSideEntryUnresolved => {
                 LossTaxonomy::RecordNotTyped
             }
-            Self::FeatureObjectUnprojected
-            | Self::FeatureCyclicHistory
-            | Self::FeatureNativeKindRetained => LossTaxonomy::FeatureHistoryRetained,
+            Self::FeatureCyclicHistory | Self::FeatureNativeKindRetained => {
+                LossTaxonomy::FeatureHistoryRetained
+            }
             Self::SketchExternalCacheUnresolved
             | Self::SketchExternalReferenceUnresolved
             | Self::SketchNativeGeometry
@@ -391,10 +386,6 @@ const SOURCE_RECORD_COVERAGE: &[(FreecadLossCode, SourceRecordCoverage)] = &[
     (
         FreecadLossCode::ExportNativePropertyNotTransferred,
         SourceRecordCoverage::Writer,
-    ),
-    (
-        FreecadLossCode::FeatureObjectUnprojected,
-        SourceRecordCoverage::Typed,
     ),
     (
         FreecadLossCode::PersistencePayloadUnresolved,
@@ -598,7 +589,6 @@ mod tests {
                 "presentation.not-transferred",
                 "geometry.procedural-reduced",
                 "metadata.native-property-not-transferred",
-                "feature.object-unprojected",
                 "metadata.persistence-payload-unresolved",
                 "metadata.persistence-side-entry-unresolved",
                 "metadata.persistence-count-noncanonical",
@@ -688,7 +678,6 @@ mod tests {
         for code in [
             FreecadLossCode::FeatureCyclicHistory,
             FreecadLossCode::FeatureNativeKindRetained,
-            FreecadLossCode::FeatureObjectUnprojected,
             FreecadLossCode::SketchNativeGeometry,
             FreecadLossCode::SketchNativeConstraint,
             FreecadLossCode::SketchProfileMatchingBounded,
