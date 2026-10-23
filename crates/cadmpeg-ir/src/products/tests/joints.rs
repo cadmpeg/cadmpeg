@@ -341,8 +341,9 @@ fn insert_and_tangent_joints_keep_their_sense_and_contact() {
     }
 }
 
-/// A joint states how its connector frames mate, and omits the key when the
-/// source does not say.
+/// A paired joint states how its connector frames mate, and omits the key
+/// when the source does not say. A grounded joint has one connector and cannot
+/// state a sense.
 #[test]
 fn a_joint_frame_sense_round_trips_and_is_optional() {
     let mut joint = AssemblyJoint::paired(
@@ -357,17 +358,24 @@ fn a_joint_frame_sense_round_trips_and_is_optional() {
         None,
     );
     let unsensed = serde_json::to_value(&joint).unwrap();
-    assert!(unsensed.get("frame_sense").is_none());
+    assert!(unsensed["operands"].get("frame_sense").is_none());
     assert_eq!(
         serde_json::from_value::<AssemblyJoint>(unsensed).unwrap(),
         joint
     );
 
-    joint.frame_sense = Some(PlaneSense::Opposed);
+    assert!(joint.set_frame_sense(Some(PlaneSense::Opposed)));
     let wire = serde_json::to_value(&joint).unwrap();
-    assert_eq!(wire["frame_sense"], "opposed");
+    assert_eq!(wire["operands"]["frame_sense"], "opposed");
     assert_eq!(
         serde_json::from_value::<AssemblyJoint>(wire).unwrap(),
         joint
     );
+
+    let mut grounded = AssemblyJoint::grounded(joint_id(), connector(), None);
+    assert!(!grounded.set_frame_sense(Some(PlaneSense::Aligned)));
+    assert_eq!(grounded.frame_sense(), None);
+    let mut wire = serde_json::to_value(&grounded).unwrap();
+    wire["operands"]["frame_sense"] = serde_json::json!("aligned");
+    assert!(serde_json::from_value::<AssemblyJoint>(wire).is_err());
 }

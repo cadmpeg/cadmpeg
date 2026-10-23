@@ -412,17 +412,20 @@ pub(crate) fn project_assembly_joints(
                 if paired {
                     paired_joints += 1;
                 }
-                joint.frame_sense = scope
-                    .assembly_alignment()
-                    .and_then(|alignment| alignment.frame_sense)
-                    .map(|sense| match sense {
-                        crate::records::feature::assembly::DesignJointFrameSense::Aligned => {
-                            cadmpeg_ir::products::PlaneSense::Aligned
-                        }
-                        crate::records::feature::assembly::DesignJointFrameSense::Opposed => {
-                            cadmpeg_ir::products::PlaneSense::Opposed
-                        }
-                    });
+                // Every projected `Assemble` joint is paired.
+                joint.set_frame_sense(
+                    scope
+                        .assembly_alignment()
+                        .and_then(|alignment| alignment.frame_sense)
+                        .map(|sense| match sense {
+                            crate::records::feature::assembly::DesignJointFrameSense::Aligned => {
+                                cadmpeg_ir::products::PlaneSense::Aligned
+                            }
+                            crate::records::feature::assembly::DesignJointFrameSense::Opposed => {
+                                cadmpeg_ir::products::PlaneSense::Opposed
+                            }
+                        }),
+                );
                 if let Some(reason) = undecoded {
                     undecoded_motion_count += 1;
                     undecoded_motions.insert(reason);
@@ -1307,7 +1310,7 @@ mod tests {
         let projection = super::project_assembly_joints(&sensed, &[], &inserts, &[]);
         assert_eq!(projection.joints.len(), 1);
         assert_eq!(
-            projection.joints[0].frame_sense,
+            projection.joints[0].frame_sense(),
             Some(cadmpeg_ir::products::PlaneSense::Opposed)
         );
         assert!(projection.losses.is_empty());
