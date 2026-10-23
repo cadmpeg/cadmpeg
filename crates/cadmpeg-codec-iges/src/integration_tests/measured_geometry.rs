@@ -12,9 +12,10 @@ use cadmpeg_measure::compare::{compare, CompareOptions, Verdict};
 use cadmpeg_measure::report::MeasureReport;
 use cadmpeg_measure::value::Quantity;
 use cadmpeg_measure::{MeasureInput, MeasureOptions, Measurer, Selection};
+use cadmpeg_test_support::solids::{CYLINDER_HEIGHT, CYLINDER_RADIUS};
 
 use crate::test_support::plan_at;
-use crate::test_support::test_closed_cylinder::{solid_cylinder, CYLINDER_HEIGHT, CYLINDER_RADIUS};
+use crate::test_support::test_closed_cylinder::solid_cylinder;
 use crate::test_support::test_drawing_and_trimming::trimmed_plane_with_inner_loop_file;
 use crate::test_support::test_owned::explicit_void_solid_file;
 use crate::{IgesCodec, IgesVersion};
