@@ -13,7 +13,7 @@ use cadmpeg_ir::products::PrototypeReference;
 use cadmpeg_ir::CadIr;
 
 use super::PlacementClass;
-use crate::tolerance::SIMILARITY_RELATIVE_TOLERANCE;
+use crate::tolerance::{COMPARE_OCCURRENCE_LINEAR_DEVIATION, COMPARE_OCCURRENCE_SCALE_DEVIATION};
 
 /// The placement class of a document.
 pub(super) fn class(ir: &CadIr) -> PlacementClass {
@@ -37,7 +37,7 @@ fn trivial(ir: &CadIr) -> bool {
         if occurrence
             .scale
             .iter()
-            .any(|scale| (scale.get() - 1.0).abs() > SIMILARITY_RELATIVE_TOLERANCE)
+            .any(|scale| (scale.get() - 1.0).abs() > COMPARE_OCCURRENCE_SCALE_DEVIATION)
         {
             return false;
         }
@@ -47,7 +47,7 @@ fn trivial(ir: &CadIr) -> bool {
         for (row, coefficients) in transform.affine_rows().iter().enumerate() {
             for (column, coefficient) in coefficients.iter().take(3).enumerate() {
                 let identity = if row == column { 1.0 } else { 0.0 };
-                if (coefficient - identity).abs() > SIMILARITY_RELATIVE_TOLERANCE {
+                if (coefficient - identity).abs() > COMPARE_OCCURRENCE_LINEAR_DEVIATION {
                     return false;
                 }
             }

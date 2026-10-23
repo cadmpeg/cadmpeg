@@ -7,7 +7,7 @@ use cadmpeg_ir::transform::Transform;
 use crate::failure::{Measure, MeasureFailure};
 use crate::reason::UnavailableReason;
 use crate::report::PlacementClass;
-use crate::tolerance::SIMILARITY_RELATIVE_TOLERANCE;
+use crate::tolerance::{RIGID_SCALE_DEVIATION, SIMILARITY_GRAM_RELATIVE_DEVIATION};
 
 /// A composed affine placement and its classification.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -71,9 +71,9 @@ impl Placement {
         if !deviation.is_finite() {
             return Err(non_finite());
         }
-        let class = if deviation > SIMILARITY_RELATIVE_TOLERANCE {
+        let class = if deviation > SIMILARITY_GRAM_RELATIVE_DEVIATION {
             PlacementClass::Affine
-        } else if (scale - 1.0).abs() <= SIMILARITY_RELATIVE_TOLERANCE {
+        } else if (scale - 1.0).abs() <= RIGID_SCALE_DEVIATION {
             PlacementClass::Rigid
         } else {
             PlacementClass::Similarity
