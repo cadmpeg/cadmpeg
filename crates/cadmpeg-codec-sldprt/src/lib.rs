@@ -245,8 +245,11 @@ impl SldprtCodec {
         fidelity: SemanticFidelity,
         writer: &mut dyn Write,
     ) -> Result<Written, CodecError> {
-        let writer::SemanticOutput { dialect, coverage } =
-            writer::write_semantic_with_records(ir, annotations, records, writer)?;
+        let writer::SemanticOutput {
+            dialect,
+            coverage,
+            omitted_envelope_bytes,
+        } = writer::write_semantic_with_records(ir, annotations, records, writer)?;
         let native = ir
             .native
             .namespace("sldprt")
@@ -279,6 +282,7 @@ impl SldprtCodec {
             dialect,
             fidelity,
             coverage,
+            omitted_envelope_bytes,
         })
     }
 }
@@ -356,6 +360,7 @@ enum Written {
         dialect: DialectId,
         fidelity: SemanticFidelity,
         coverage: ArenaDispositions,
+        omitted_envelope_bytes: usize,
     },
 }
 

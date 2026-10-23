@@ -120,6 +120,8 @@ pub(crate) enum SldprtLossCode {
     TopologyFinRecordAmbiguous,
     /// Referenced LOOP records have conflicting complete frames.
     TopologyLoopRecordAmbiguous,
+    /// Referenced VERTEX records lack a complete owner-verified frame or IR-supported tolerance.
+    TopologyVertexRecordUnresolved,
     /// A NURBS edge's vertex range is off its bound surface; no pcurve is derived.
     TopologyPcurveCarrierOffSurface,
     /// Parasolid B-rep geometry was not transferred (no resolved stream).
@@ -164,6 +166,8 @@ pub(crate) enum SldprtLossCode {
     WriterUnboundAppearancesOmitted,
     /// Export omits records named by the counted loss message.
     WriterTessellationMetadataOmitted,
+    /// Semantic regeneration omits native cache or directory-padding bytes.
+    WriterNativeEnvelopeAuxiliaryOmitted,
     SourceDialectDisplaced,
     /// A source record states a property whose key holds no non-whitespace
     /// character, so the property cannot be keyed and is not transferred.
@@ -220,6 +224,7 @@ impl SldprtLossCode {
         Self::TopologyFaceUnclaimed,
         Self::TopologyFinRecordAmbiguous,
         Self::TopologyLoopRecordAmbiguous,
+        Self::TopologyVertexRecordUnresolved,
         Self::TopologyPcurveCarrierOffSurface,
         Self::GeometryParasolidNotTransferred,
         Self::TopologyGraphNotTransferred,
@@ -237,6 +242,7 @@ impl SldprtLossCode {
         Self::WriterAttributesOmitted,
         Self::WriterUnboundAppearancesOmitted,
         Self::WriterTessellationMetadataOmitted,
+        Self::WriterNativeEnvelopeAuxiliaryOmitted,
         Self::SourceDialectDisplaced,
         Self::SourcePropertyKeyBlank,
     ];
@@ -291,6 +297,7 @@ impl SldprtLossCode {
             Self::TopologyFaceUnclaimed => "topology.face-unclaimed",
             Self::TopologyFinRecordAmbiguous => "topology.fin-record-ambiguous",
             Self::TopologyLoopRecordAmbiguous => "topology.loop-record-ambiguous",
+            Self::TopologyVertexRecordUnresolved => "topology.vertex-record-unresolved",
             Self::TopologyPcurveCarrierOffSurface => "topology.pcurve-carrier-off-surface",
             Self::GeometryParasolidNotTransferred => "geometry.parasolid-not-transferred",
             Self::TopologyGraphNotTransferred => "topology.graph-not-transferred",
@@ -308,6 +315,9 @@ impl SldprtLossCode {
             Self::WriterAttributesOmitted => "writer.attributes-omitted",
             Self::WriterUnboundAppearancesOmitted => "writer.unbound-appearances-omitted",
             Self::WriterTessellationMetadataOmitted => "writer.tessellation-metadata-omitted",
+            Self::WriterNativeEnvelopeAuxiliaryOmitted => {
+                "writer.native-envelope-auxiliary-omitted"
+            }
             Self::SourceDialectDisplaced => "target.source-dialect-displaced",
             Self::SourcePropertyKeyBlank => "source.property-key-blank",
         }
@@ -318,6 +328,7 @@ impl SldprtLossCode {
     const fn severity(self) -> Severity {
         match self {
             Self::WriterTessellationMetadataOmitted => Severity::Warning,
+            Self::WriterNativeEnvelopeAuxiliaryOmitted => Severity::Warning,
             Self::WriterUnboundAppearancesOmitted => Severity::Warning,
             Self::WriterAttributesOmitted => Severity::Warning,
             Self::WriterAppearanceBindingsOmitted => Severity::Warning,
@@ -374,6 +385,7 @@ impl SldprtLossCode {
             | Self::TopologyFaceUnclaimed
             | Self::TopologyFinRecordAmbiguous
             | Self::TopologyLoopRecordAmbiguous
+            | Self::TopologyVertexRecordUnresolved
             | Self::TopologyPcurveCarrierOffSurface
             | Self::MaterialMetadataNotTransferred
             | Self::ContainerParasolidProbeCapped
@@ -388,6 +400,7 @@ impl SldprtLossCode {
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
             Self::WriterTessellationMetadataOmitted => LossTaxonomy::AttributesNotTransferred,
+            Self::WriterNativeEnvelopeAuxiliaryOmitted => LossTaxonomy::MetadataNotTransferred,
             Self::WriterUnboundAppearancesOmitted => LossTaxonomy::AppearanceReduced,
             Self::WriterAttributesOmitted => LossTaxonomy::AttributesNotTransferred,
             Self::WriterAppearanceBindingsOmitted => LossTaxonomy::AppearanceReduced,
@@ -407,7 +420,8 @@ impl SldprtLossCode {
             }
             Self::TopologyFaceUnclaimed
             | Self::TopologyFinRecordAmbiguous
-            | Self::TopologyLoopRecordAmbiguous => LossTaxonomy::TopologyNotTransferred,
+            | Self::TopologyLoopRecordAmbiguous
+            | Self::TopologyVertexRecordUnresolved => LossTaxonomy::TopologyNotTransferred,
             Self::TopologyPcurveCarrierOffSurface => LossTaxonomy::PcurveOmitted,
             Self::TopologyGraphNotTransferred => LossTaxonomy::TopologyNotTransferred,
             Self::GeometryFaceSupportSurfaceUntyped
@@ -568,7 +582,10 @@ mod tests {
     #[test]
     fn spline_lane_loss_names_the_record() {
         let note = super::spline_lane_refusal("carrier attribute 9");
-        assert_eq!(note.message, "carrier attribute 9; the carrier is not emitted and the entities that reference it fall back to an untyped support.");
+        assert_eq!(
+            note.message,
+            "carrier attribute 9; the carrier is not emitted and the entities that reference it fall back to an untyped support."
+        );
     }
 
     #[test]
@@ -640,6 +657,7 @@ mod tests {
                 "topology.face-unclaimed",
                 "topology.fin-record-ambiguous",
                 "topology.loop-record-ambiguous",
+                "topology.vertex-record-unresolved",
                 "topology.pcurve-carrier-off-surface",
                 "geometry.parasolid-not-transferred",
                 "topology.graph-not-transferred",
@@ -657,6 +675,7 @@ mod tests {
                 "writer.attributes-omitted",
                 "writer.unbound-appearances-omitted",
                 "writer.tessellation-metadata-omitted",
+                "writer.native-envelope-auxiliary-omitted",
                 "target.source-dialect-displaced",
                 "source.property-key-blank",
             ]

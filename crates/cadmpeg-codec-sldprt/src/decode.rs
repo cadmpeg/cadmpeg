@@ -2268,6 +2268,7 @@ fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
     target.stats.unresolved_topology_points += source.stats.unresolved_topology_points;
     target.stats.unresolved_topology_loops += source.stats.unresolved_topology_loops;
     target.stats.unresolved_topology_fins += source.stats.unresolved_topology_fins;
+    target.stats.unresolved_topology_vertices += source.stats.unresolved_topology_vertices;
     target.stats.unclaimed_faces += source.stats.unclaimed_faces;
     target.stats.synthetic_body_grouping |= source.stats.synthetic_body_grouping;
     Ok(())
@@ -3490,6 +3491,12 @@ fn append_topology_record_losses(
     stats: &crate::brep::graph::Stats,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) {
+    if stats.unresolved_topology_vertices > 0 {
+        losses.push(SldprtLossCode::TopologyVertexRecordUnresolved.note(format!(
+            "{} referenced VERTEX record(s) lack a uniquely framed record with a verified owner class and IR-supported tolerance.",
+            stats.unresolved_topology_vertices,
+        )));
+    }
     for (count, code, family) in [
         (
             stats.unresolved_topology_points,
@@ -3565,12 +3572,12 @@ fn build_geometry_report(
     if !s.surface_solver_capped.is_empty() {
         losses.push(
             SldprtLossCode::GeometrySurfaceSolverWorkCapped.note(format!(
-            "{} coedge pcurve(s) were skipped because a NURBS surface solve exceeded the local \
+                "{} coedge pcurve(s) were skipped because a NURBS surface solve exceeded the local \
              work cap SURFACE_SOLVER_LOCAL_WORK ({}): {}.",
-            s.surface_solver_capped.count(),
-            crate::brep::evaluation::SURFACE_SOLVER_LOCAL_WORK,
-            s.surface_solver_capped,
-        )),
+                s.surface_solver_capped.count(),
+                crate::brep::evaluation::SURFACE_SOLVER_LOCAL_WORK,
+                s.surface_solver_capped,
+            )),
         );
     }
     if s.off_surface_nurbs_pcurves > 0 {

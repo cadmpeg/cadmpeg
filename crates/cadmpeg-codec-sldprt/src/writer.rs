@@ -6,6 +6,8 @@ use std::io::Write;
 use std::num::NonZeroU16;
 
 mod accounting;
+mod envelope;
+mod ownership;
 pub(crate) mod target;
 
 use crate::native::SldprtNative;
@@ -13,6 +15,7 @@ use cadmpeg_core::convert::{f32_from_f64, truncate_f64_to_u8};
 use cadmpeg_core::decode::{index_from_u32, DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::AppearanceTarget;
+use cadmpeg_ir::attributes::AttributeValue;
 use cadmpeg_ir::codec::write::{ArenaDisposition, ArenaDispositions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FinitePoint3;
@@ -63,6 +66,7 @@ pub(crate) struct SemanticOutput {
     pub(crate) dialect: cadmpeg_core::dialect::DialectId,
     /// Which model arenas the written document carries.
     pub(crate) coverage: ArenaDispositions,
+    pub(crate) omitted_envelope_bytes: usize,
 }
 
 /// Writes a semantic document and returns the dialect and arena coverage it
@@ -186,14 +190,13 @@ pub(crate) fn write_semantic_with_records(
             parasolid_stream(&body, schema)?,
         )]
     };
-    let generated_partition_sections = partition_sections
+    let mut generated_partition_sections = partition_sections
         .iter()
         .map(|(section, _)| section.clone())
         .collect::<HashSet<_>>();
     let mut sections = partition_sections;
     let materials = materials_payload(ir)?;
-    let (objects, units) = metadata_payloads(ir, length_scale)?;
-    let mut retained_swobjects = retained_swobjects_sections(retained_records, annotations)?;
+    let mut retained_swobjects = retained_swobjects_sections(ir, retained_records, annotations)?;
     let replay_swobjects = if retained_swobjects.is_empty() {
         false
     } else {
@@ -231,7 +234,10 @@ pub(crate) fn write_semantic_with_records(
         }
         true
     };
+    let (objects, units) = metadata_payloads(ir, length_scale, replay_swobjects)?;
     if replay_swobjects {
+        generated_partition_sections
+            .extend(retained_swobjects.iter().map(|(name, _)| name.clone()));
         sections.extend(retained_swobjects);
     } else {
         if !materials.is_empty() {
@@ -308,19 +314,12 @@ pub(crate) fn write_semantic_with_records(
         crate::dialect::SldprtDialect::from_declaration(written_declaration.as_deref()).id();
 
     let type_ids = section_type_ids(source_scan.as_ref(), &sections)?;
-    writer.write_all(&outer_header(retained_records))?;
-    for ((section, payload), type_id) in sections.iter().zip(&type_ids) {
-        writer.write_all(&block(payload, section, *type_id)?)?;
-    }
-    for cell in retained_cache_cells(source_scan.as_ref(), &sections) {
-        writer.write_all(&cell)?;
-    }
-    for entry in section_directory_entries(source_scan.as_ref(), &sections, &type_ids)? {
-        writer.write_all(&entry)?;
-    }
+    let envelope = envelope::build(&sections, &type_ids, source_scan.as_ref())?;
+    writer.write_all(&envelope.bytes)?;
     Ok(SemanticOutput {
         dialect: written_dialect,
         coverage,
+        omitted_envelope_bytes: envelope.omitted_envelope_bytes,
     })
 }
 
@@ -509,7 +508,7 @@ fn sort_arenas(ir: &mut CadIr) {
     ir.model.attributes.sort_by(|a, b| a.id.cmp(&b.id));
     ir.model
         .appearance_bindings
-        .sort_by_key(|binding| format!("{:?}:{}", binding.target, binding.appearance.as_str()));
+        .sort_by(|left, right| left.id.cmp(&right.id));
 }
 
 fn source_image<'a>(records: &[SourceRecord<'a>]) -> Option<&'a [u8]> {
@@ -517,87 +516,6 @@ fn source_image<'a>(records: &[SourceRecord<'a>]) -> Option<&'a [u8]> {
         .iter()
         .find(|record| record.id.as_str() == "sldprt:file:source-image#0")?
         .data
-}
-
-fn section_directory_entries(
-    source_scan: Option<&crate::container::ContainerScan<'_>>,
-    sections: &[(String, Vec<u8>)],
-    type_ids: &[u32],
-) -> Result<Vec<Vec<u8>>, CodecError> {
-    let source_trailer = if let Some(scan) = source_scan {
-        let mut trailers = scan.directory.iter().map(|entry| entry.trailer);
-        if let Some(first) = trailers.next() {
-            if trailers.any(|trailer| trailer != first) {
-                return Err(CodecError::Malformed(
-                    "SLDPRT source directory has inconsistent entry trailers".into(),
-                ));
-            }
-            Some(first)
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-    sections
-        .iter()
-        .zip(type_ids)
-        .map(|((section, payload), type_id)| {
-            let size = u32::try_from(payload.len())
-                .map_err(|_| CodecError::NotImplemented("SLDPRT section exceeds 4 GiB".into()))?;
-            let source_entry = source_scan.and_then(|scan| {
-                scan.directory
-                    .iter()
-                    .find(|entry| entry.name == *section && entry.type_id == *type_id)
-            });
-            if let (Some(entry), Some(source)) = (
-                source_entry.filter(|entry| entry.size == size),
-                source_scan.map(|scan| scan.source_image),
-            ) {
-                let end = entry
-                    .offset
-                    .checked_add(46 + entry.name.len())
-                    .ok_or_else(|| {
-                        CodecError::Malformed("SLDPRT directory entry extent overflow".into())
-                    })?;
-                if let Some(retained) = source.get(entry.offset..end) {
-                    return Ok(retained.to_vec());
-                }
-            }
-            directory_entry(
-                *type_id,
-                size,
-                section,
-                source_entry.map_or([0; 14], |entry| entry.descriptor),
-                source_trailer.unwrap_or([0xe5, 0x4b, 0x57, 0x5b, 0, 0]),
-            )
-        })
-        .collect()
-}
-
-fn retained_cache_cells(
-    source_scan: Option<&crate::container::ContainerScan<'_>>,
-    sections: &[(String, Vec<u8>)],
-) -> Vec<Vec<u8>> {
-    let Some(scan) = source_scan else {
-        return Vec::new();
-    };
-    scan.cache_cells
-        .iter()
-        .filter(|cell| {
-            let original_matches = scan.blocks.iter().any(|block| {
-                block.section.name() == Some(cell.name.as_str())
-                    && sections.iter().any(|(section, payload)| {
-                        section == &cell.name && payload == &block.payload
-                    })
-            });
-            original_matches
-        })
-        .filter_map(|cell| {
-            let end = cell.offset.checked_add(26 + cell.name.len())?;
-            scan.source_image.get(cell.offset..end).map(<[u8]>::to_vec)
-        })
-        .collect()
 }
 
 /// The retained Parasolid partition to replay, when the decoded B-rep is
@@ -651,18 +569,6 @@ fn remapped_partition_section(ir: &CadIr, native: &SldprtNative, section: &str) 
         .find(|configuration| configuration.native_ref.as_deref() == Some(native_id))?
         .source_index?;
     Some(format!("Contents/Config-{new_index}-Partition"))
-}
-
-fn outer_header(records: &[SourceRecord<'_>]) -> [u8; 8] {
-    source_image(records)
-        .and_then(|source| source.get(..8))
-        .and_then(|header| header.try_into().ok())
-        .unwrap_or_else(|| {
-            let mut header = [0; 8];
-            header[..4].copy_from_slice(&1u32.to_le_bytes());
-            header[4..].copy_from_slice(&4u32.to_be_bytes());
-            header
-        })
 }
 
 fn section_type_ids(
@@ -1124,18 +1030,28 @@ fn opaque_blocks(
 }
 
 fn retained_swobjects_sections(
+    ir: &CadIr,
     records: &[SourceRecord<'_>],
     annotations: &Annotations,
 ) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
+    let enclosure_streams = metadata_attributes(ir)
+        .into_iter()
+        .filter(|attribute| attribute.name == "transformed_reference_enclosure")
+        .filter_map(|attribute| {
+            annotations
+                .provenance
+                .get(attribute.id.as_str())
+                .map(|p| p.stream())
+        })
+        .collect::<HashSet<_>>();
     let mut sections = records
         .iter()
         .filter_map(|record| {
             let provenance = annotations.provenance.get(record.id.as_str())?;
             let section = provenance.stream();
-            section
-                .to_ascii_lowercase()
-                .contains("swobjects")
-                .then_some((section, record))
+            (section.to_ascii_lowercase().contains("swobjects")
+                || enclosure_streams.contains(section))
+            .then_some((section, record))
         })
         .collect::<Vec<_>>();
     sections.sort_by_key(|(section, _)| *section);
@@ -1222,24 +1138,45 @@ fn patch_retained_swobjects_metadata(
                     &bytes,
                 )?;
             }
-            Some(MetadataRecord::TransformedReferencePlane {
+            Some(MetadataRecord::TransformedReferenceEnclosure {
                 center,
-                extents,
-                auxiliary,
-                diagonal,
+                upper,
+                lower,
+                radius,
             }) => {
-                let mut bytes = Vec::with_capacity(72);
-                for value in center
-                    .into_iter()
-                    .chain(extents)
-                    .chain(auxiliary)
-                    .chain([diagonal])
-                {
+                let Some(resident) = crate::metadata::transformed_enclosure(payload, offset) else {
+                    return Err(CodecError::NotImplemented(
+                        "SLDPRT enclosure edit requires a retained complete present record".into(),
+                    ));
+                };
+                let [AttributeValue::Vector(ir_center), AttributeValue::Vector(ir_upper), AttributeValue::Vector(ir_lower), AttributeValue::Float(ir_radius)] =
+                    attribute.values.as_slice()
+                else {
+                    return Err(CodecError::Malformed(
+                        "SLDPRT enclosure attribute has an invalid value shape".into(),
+                    ));
+                };
+                let ir_values = ir_center
+                    .iter()
+                    .chain(ir_upper)
+                    .chain(ir_lower)
+                    .map(|v| v.get())
+                    .chain([ir_radius.get()]);
+                let source_values = center.into_iter().chain(upper).chain(lower).chain([radius]);
+                let mut bytes = Vec::with_capacity(80);
+                for ((value, current), original) in source_values.zip(ir_values).zip(resident) {
+                    let value = if original * (1.0 / length_scale) == current {
+                        original
+                    } else {
+                        value
+                    };
                     bytes.extend(value.to_le_bytes());
                 }
                 overwrite_bytes(
                     payload,
-                    offset + TRANSFORMED_REFERENCE_PLANE_TOKEN.len() + 8,
+                    offset
+                        + TRANSFORMED_REFERENCE_PLANE_TOKEN.len()
+                        + crate::layout::transformed_reference_plane_metadata::LEN,
                     &bytes,
                 )?;
             }
@@ -1610,13 +1547,12 @@ enum MetadataRecord {
     BoundingEnvelope([f64; 4]),
     /// The plane origin in source units and its six unitless frame values.
     DefaultReferencePlane { origin: [f64; 3], frame: [f64; 6] },
-    /// Center, extents and diagonal in source units, and three unitless
-    /// auxiliary values.
-    TransformedReferencePlane {
+    /// Stored center, upper and lower corners, and radius in source units.
+    TransformedReferenceEnclosure {
         center: [f64; 3],
-        extents: [f64; 2],
-        auxiliary: [f64; 3],
-        diagonal: f64,
+        upper: [f64; 3],
+        lower: [f64; 3],
+        radius: f64,
     },
     /// Part identity and version.
     PartRecord { id: u32, version: u32 },
@@ -1669,31 +1605,34 @@ impl MetadataRecord {
                 let origin = scaled(origin, length_scale).ok_or_else(|| invalid(kind))?;
                 Self::DefaultReferencePlane { origin, frame }
             }
-            "transformed_reference_plane" => {
-                let kind = "transformed reference plane";
-                let [AttributeValue::Vector(center), AttributeValue::Vector(extents), AttributeValue::Vector(auxiliary), AttributeValue::Float(diagonal)] =
+            "transformed_reference_enclosure" => {
+                let kind = "transformed reference enclosure";
+                let [AttributeValue::Vector(center), AttributeValue::Vector(upper), AttributeValue::Vector(lower), AttributeValue::Float(radius)] =
                     values
                 else {
                     return Err(invalid(kind));
                 };
-                let (Some(center), Some(extents), Some(auxiliary)) =
-                    (ratios::<3>(center), ratios::<2>(extents), ratios(auxiliary))
-                else {
-                    return Err(invalid(kind));
-                };
-                retained(TRANSFORMED_REFERENCE_PLANE_TOKEN)?;
-                let (Some(center), Some(extents), Some([diagonal])) = (
-                    scaled(center, length_scale),
-                    scaled(extents, length_scale),
-                    scaled([diagonal.get()], length_scale),
+                let (Some(center), Some(upper), Some(lower), Some([radius])) = (
+                    ratios::<3>(center).and_then(|v| scaled(v, length_scale)),
+                    ratios::<3>(upper).and_then(|v| scaled(v, length_scale)),
+                    ratios::<3>(lower).and_then(|v| scaled(v, length_scale)),
+                    scaled([radius.get()], length_scale),
                 ) else {
                     return Err(invalid(kind));
                 };
-                Self::TransformedReferencePlane {
+                let values = [
+                    center[0], center[1], center[2], upper[0], upper[1], upper[2], lower[0],
+                    lower[1], lower[2], radius,
+                ];
+                if !crate::metadata::valid_transformed_enclosure(&values) {
+                    return Err(invalid(kind));
+                }
+                retained(TRANSFORMED_REFERENCE_PLANE_TOKEN)?;
+                Self::TransformedReferenceEnclosure {
                     center,
-                    extents,
-                    auxiliary,
-                    diagonal,
+                    upper,
+                    lower,
+                    radius,
                 }
             }
             "part_record" => {
@@ -1787,6 +1726,7 @@ fn metadata_attributes(ir: &CadIr) -> Vec<&cadmpeg_ir::attributes::SourceAttribu
 fn metadata_payloads(
     ir: &CadIr,
     length_scale: f64,
+    retained_swobjects: bool,
 ) -> Result<(Vec<u8>, Option<Vec<u8>>), CodecError> {
     use cadmpeg_ir::attributes::AttributeTarget;
 
@@ -1812,22 +1752,12 @@ fn metadata_payloads(
                     objects.extend_from_slice(&value.to_le_bytes());
                 }
             }
-            Some(MetadataRecord::TransformedReferencePlane {
-                center,
-                extents,
-                auxiliary,
-                diagonal,
-            }) => {
-                objects.extend_from_slice(TRANSFORMED_REFERENCE_PLANE_TOKEN);
-                objects.extend_from_slice(&[0xff; 8]);
-                for value in center
-                    .into_iter()
-                    .chain(extents)
-                    .chain(auxiliary)
-                    .chain([diagonal])
-                {
-                    objects.extend_from_slice(&value.to_le_bytes());
-                }
+            Some(MetadataRecord::TransformedReferenceEnclosure { .. }) if retained_swobjects => {}
+            Some(MetadataRecord::TransformedReferenceEnclosure { .. }) => {
+                return Err(CodecError::NotImplemented(
+                    "SLDPRT enclosure generation requires a retained opaque serializer prologue"
+                        .into(),
+                ));
             }
             Some(MetadataRecord::PartRecord { id, version }) => {
                 objects.extend_from_slice(PART_RECORD_TOKEN);
@@ -2597,6 +2527,13 @@ pub(crate) fn brep_body(
         .iter()
         .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
+    let body_attrs = ir
+        .model
+        .bodies
+        .iter()
+        .map(|body| Ok((body.id.clone(), take_attr(&mut next)?)))
+        .collect::<Result<HashMap<_, _>, CodecError>>()?;
+    let vertex_owners = ownership::vertex_body_owners(ir, &body_attrs)?;
     let mut out = Vec::new();
     for surface in &ir.model.surfaces {
         if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) = &surface.geometry {
@@ -2674,9 +2611,28 @@ pub(crate) fn brep_body(
         for value in [0, 0, 0, 0, points[&vertex.point]] {
             be16(&mut out, value);
         }
-        out.extend_from_slice(&MAGIC);
+        if let Some(tolerance) = vertex.tolerance {
+            let value = tolerance.get() * length_scale;
+            if !value.is_finite() || value <= 0.0 {
+                return Err(CodecError::NotImplemented(
+                    "SLDPRT vertex tolerance is outside the finite positive source range".into(),
+                ));
+            }
+            bef64(&mut out, value);
+        } else {
+            out.extend_from_slice(&MAGIC);
+        }
+        be16(&mut out, vertex_owners[&vertex.id]);
     }
     for edge in &ir.model.edges {
+        let owner = vertex_owners
+            .get(&edge.start)
+            .ok_or_else(|| CodecError::Malformed("SLDPRT EDGE start has no BODY owner".into()))?;
+        if vertex_owners.get(&edge.end) != Some(owner) {
+            return Err(CodecError::NotImplemented(
+                "SLDPRT EDGE endpoints do not have one BODY owner".into(),
+            ));
+        }
         tag(&mut out, 0x10);
         be16(&mut out, edges[&edge.id]);
         be32(&mut out, 0);
@@ -2695,6 +2651,7 @@ pub(crate) fn brep_body(
         ] {
             be16(&mut out, value);
         }
+        be16(&mut out, *owner);
     }
     for coedge in &ir.model.coedges {
         tag(&mut out, 0x11);
@@ -2794,6 +2751,7 @@ pub(crate) fn brep_body(
         &HierarchyIdentities {
             faces: &faces,
             surfaces: &surfaces,
+            body_attrs: &body_attrs,
             face_owners: &face_owners,
             color_attrs: &color_attrs,
             face_color_definition,
@@ -2814,6 +2772,7 @@ pub(crate) fn brep_body(
 /// hierarchy writers share.
 #[derive(Clone, Copy)]
 struct HierarchyIdentities<'a> {
+    body_attrs: &'a HashMap<cadmpeg_ir::ids::BodyId, u16>,
     faces: &'a HashMap<cadmpeg_ir::ids::FaceId, u16>,
     surfaces: &'a HashMap<cadmpeg_ir::ids::SurfaceId, u16>,
     face_owners: &'a HashMap<cadmpeg_ir::ids::FaceId, u16>,
@@ -2829,6 +2788,7 @@ fn write_body_hierarchy(
     out: &mut Vec<u8>,
 ) -> Result<(), CodecError> {
     let HierarchyIdentities {
+        body_attrs,
         faces,
         surfaces,
         face_owners,
@@ -2889,16 +2849,16 @@ fn write_body_hierarchy(
                     if schema_32001 { 0x0015 } else { 0x0013 },
                 )?;
                 if body.kind == BodyKind::Sheet {
-                    entity51(out, 1, native_region, 0x001d, &[head, 0, 0, 0, 0, 0]);
+                    entity51(out, 1, native_region, 0x001d, &[head, 0, 0, 0, 0, 0])?;
                     continue;
                 }
                 let lump = take_attr(next)?;
                 let shell_node = take_attr(next)?;
                 let shell_link = take_attr(next)?;
                 native_lumps.push(lump);
-                entity51(out, 2, lump, 0x001f, &[shell_node, 0, 0, 0, 0, 0]);
-                entity51(out, 2, shell_node, 0x0021, &[shell_link, 0, 0, 0, 0, 0]);
-                entity51(out, 2, shell_link, 0x0023, &[head, 0, 0, 0, 0, 0]);
+                entity51(out, 2, lump, 0x001f, &[shell_node, 0, 0, 0, 0, 0])?;
+                entity51(out, 2, shell_node, 0x0021, &[shell_link, 0, 0, 0, 0, 0])?;
+                entity51(out, 2, shell_link, 0x0023, &[head, 0, 0, 0, 0, 0])?;
             }
             if body.kind != BodyKind::Sheet {
                 entity51(
@@ -2907,7 +2867,7 @@ fn write_body_hierarchy(
                     native_region,
                     0x001b,
                     &fixed_refs(&native_lumps, "SLDPRT region has more than six shells")?,
-                );
+                )?;
             }
         }
         let mut root_refs = [0; 6];
@@ -2920,14 +2880,14 @@ fn write_body_hierarchy(
             ));
         }
         root_refs[1..=native_regions.len()].copy_from_slice(&native_regions);
-        entity51(out, 2, root, 0x0017, &root_refs);
+        entity51(out, 2, root, 0x0017, &root_refs)?;
     }
     if assigned.len() != ir.model.faces.len() {
         return Err(CodecError::Malformed(
             "face is not assigned to a body".into(),
         ));
     }
-    write_typed_body_hierarchy(ir, faces, surfaces, next, out)?;
+    write_typed_body_hierarchy(ir, faces, surfaces, body_attrs, next, out)?;
     if let Some((key_node, definition_node)) = face_color_definition {
         attribute_definition(out, key_node, definition_node)?;
     }
@@ -2947,7 +2907,7 @@ fn write_body_hierarchy(
         } else {
             0x0015
         };
-        entity51(out, 1, *owner, disc, &refs);
+        entity51(out, 1, *owner, disc, &refs)?;
     }
     Ok(())
 }
@@ -2963,15 +2923,10 @@ fn write_typed_body_hierarchy(
     ir: &CadIr,
     faces: &HashMap<cadmpeg_ir::ids::FaceId, u16>,
     surfaces: &HashMap<cadmpeg_ir::ids::SurfaceId, u16>,
+    body_attrs: &HashMap<cadmpeg_ir::ids::BodyId, u16>,
     next: &mut u16,
     out: &mut Vec<u8>,
 ) -> Result<(), CodecError> {
-    let body_attrs = ir
-        .model
-        .bodies
-        .iter()
-        .map(|body| Ok((body.id.clone(), take_attr(next)?)))
-        .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let region_attrs = ir
         .model
         .regions
@@ -3299,20 +3254,35 @@ fn write_face_list(
         if let Some(chunk) = chunks.get(index) {
             refs[1..=chunk.len()].copy_from_slice(chunk);
         }
-        entity51(out, 2, *attr, disc, &refs);
+        entity51(out, 2, *attr, disc, &refs)?;
     }
     Ok(head)
 }
 
-fn entity51(out: &mut Vec<u8>, flags: u32, attr: u16, disc: u16, refs: &[u16; 6]) {
+fn entity51(
+    out: &mut Vec<u8>,
+    flags: u8,
+    attr: u16,
+    disc: u16,
+    refs: &[u16; 6],
+) -> Result<(), CodecError> {
+    if !(1..=0x20).contains(&flags) {
+        return Err(CodecError::NotImplemented(
+            "SLDPRT ATTRIBUTE count is unsupported".into(),
+        ));
+    }
     tag(out, 0x51);
-    be32(out, flags);
+    be32(out, u32::from(flags));
     be16(out, attr);
     be32(out, 1);
     be16(out, disc);
     for reference in refs {
         be16(out, *reference);
     }
+    for _ in 1..flags {
+        be16(out, 1);
+    }
+    Ok(())
 }
 
 pub(super) fn surface_values(
@@ -4004,32 +3974,6 @@ fn block(payload: &[u8], section: &str, type_id: u32) -> Result<Vec<u8>, CodecEr
     Ok(out)
 }
 
-fn directory_entry(
-    type_id: u32,
-    size: u32,
-    section: &str,
-    descriptor: [u8; 14],
-    trailer: [u8; 6],
-) -> Result<Vec<u8>, CodecError> {
-    let name = section
-        .bytes()
-        .map(|byte| byte.rotate_left(4))
-        .collect::<Vec<_>>();
-    let mut out = MARKER.to_vec();
-    out.extend_from_slice(&type_id.to_le_bytes());
-    out.extend_from_slice(&0u32.to_le_bytes());
-    out.extend_from_slice(&size.to_le_bytes());
-    out.extend_from_slice(&0u32.to_le_bytes());
-    out.extend_from_slice(
-        &u32::try_from(name.len())
-            .map_err(|_| CodecError::NotImplemented("SLDPRT section name is too long".into()))?
-            .to_le_bytes(),
-    );
-    out.extend_from_slice(&descriptor);
-    out.extend_from_slice(&name);
-    out.extend_from_slice(&trailer);
-    Ok(out)
-}
 fn tag(out: &mut Vec<u8>, kind: u8) {
     out.extend_from_slice(&[0, kind]);
 }

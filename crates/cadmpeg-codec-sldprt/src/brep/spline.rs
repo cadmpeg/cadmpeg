@@ -156,6 +156,13 @@ fn parse_surface_descriptor(bytes: &[u8], off: usize) -> Option<SurfaceDescripto
     })
 }
 
+pub(super) fn surface_descriptor_prefix_end(bytes: &[u8], offset: usize) -> Option<usize> {
+    parse_surface_descriptor(bytes, offset)?;
+    let body = offset.checked_add(2)?;
+    let body = body.checked_add(usize::from(bytes.get(body) == Some(&0xff)))?;
+    body.checked_add(surf_desc::LEN)
+}
+
 fn array_body(bytes: &[u8], off: usize, tag: u8) -> Option<usize> {
     if bytes.get(off..off + 2) != Some(&[0x00, tag]) {
         return None;

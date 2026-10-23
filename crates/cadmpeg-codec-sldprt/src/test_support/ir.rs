@@ -5,7 +5,6 @@
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::SldprtCodec;
@@ -286,13 +285,12 @@ pub(crate) fn source_less_cube() -> cadmpeg_ir::CadIr {
 
 pub(crate) fn encode_decode_result(ir: &cadmpeg_ir::CadIr) -> cadmpeg_ir::codec::DecodeResult {
     let mut encoded = Vec::new();
-    SldprtCodec
-        .plan(
-            cadmpeg_ir::codec::write::EncodeInput { ir, fidelity: None },
-            TargetRequest::Inherit,
-        )
-        .and_then(|plan| plan.write_to(&mut encoded))
-        .unwrap();
+    crate::test_support::plan_fixture_with_native_envelope(
+        cadmpeg_ir::codec::write::EncodeInput { ir, fidelity: None },
+        TargetRequest::Inherit,
+    )
+    .and_then(|plan| plan.write_to(&mut encoded))
+    .unwrap();
     SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap()

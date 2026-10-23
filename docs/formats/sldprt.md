@@ -1840,6 +1840,13 @@ leave the body-history relation unresolved. A resolved relation adds that
 body to the named feature's output bodies without fabricating a body or
 replacing an explicit body scope.
 
+The VERTEX owner is a non-null `SHELL_OR_BODY` reference: BODY for a non-acorn vertex, SHELL for an acorn vertex. Its FIN reference may be null. EDGE ownership uses the same union: BODY for a non-wire edge and SHELL for a wire edge. VERTEX tolerance is a double; the null-double sentinel (`-3.14158e13`) denotes an accurate vertex with tolerance half the modeller linear resolution.
+
+An INT_VALUES node has a six-byte prefix: its element count is u32 BE at body +0
+and its transmit index is u16 BE at body +4. Exactly that many u32 BE values
+follow at body +6. The count determines the complete payload extent; values
+that contain node-tag byte patterns remain integer data.
+
 ## 6. Body records
 
 Body membership is the typed XT ownership graph. The `00 0c` BODY node
@@ -2087,11 +2094,12 @@ The offset surface retains the support parameterization. Nested offset carriers 
 |                         | +28    | f64       | maximum radius, metres              |
 | `moDefaultRefPlnData_c` | +0     | f64[3]    | datum origin xyz, metres            |
 |                         | +24    | f64[6]    | datum frame, dimensionless          |
-| `moTransRefPlaneData_c` | +0     | bytes[8]  | `ff ff ff ff ff ff ff ff`           |
-|                         | +8     | f64[3]    | plane center xyz, metres            |
-|                         | +32    | f64[2]    | plane extents, metres               |
-|                         | +48    | f64[3]    | auxiliary frame, dimensionless      |
-|                         | +72    | f64       | plane diagonal, metres              |
+| `moTransRefPlaneData_c` | +0 | bytes[24] | opaque serializer prologue |
+| | +24 | u8 | extent presence: 0 or 1 |
+| | +25 | f64[3] | stored enclosure center xyz, metres; present branch |
+| | +49 | f64[3] | axis-aligned upper xyz, metres; present branch |
+| | +73 | f64[3] | axis-aligned lower xyz, metres; present branch |
+| | +97 | f64 | stored enclosing-sphere radius, metres; present branch |
 | `moPart_c`              | +0     | u32       | part identifier                     |
 |                         | +4     | u32       | `0`                                 |
 |                         | +8     | u32       | part version                        |
@@ -2103,6 +2111,8 @@ The offset surface retains the support parameterization. Nested offset carriers 
 | `moLengthUserUnits_c`   | +0     | bytes[3]  | `ff fe ff`                          |
 |                         | +3     | u8        | UTF-16 code-unit count `n`          |
 |                         | +4     | bytes[2n] | linear-unit name, UTF-16LE          |
+
+The direct `moTransRefPlaneData_c` declaration has the six-byte prefix `ff ff 01 00 15 00` before its 21-byte ASCII token. The body has a 25-byte fixed prologue. Presence zero omits all ten enclosure doubles; presence one includes exactly 80 bytes at body +25. The 24 opaque bytes precede the presence byte without a fixed `ff` gap. Stored center and radius are independent fields; they are not derived from the two corners. The following class continuation is separate from this optional enclosure.
 
 - **Per-face appearance** uses the inline `00 53` child defined in §5.
 - **XML / UnQLite** carry OPC parts, document/feature metadata, unit metadata (`SW_UnitsLinear=0` = millimetres), and MessagePack UI data: auxiliary, not the exact B-rep.

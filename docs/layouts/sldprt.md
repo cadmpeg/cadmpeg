@@ -291,7 +291,7 @@ Parsed by:
 | 2 | 4 | `node_id` | `u32` | big | spec | edge_bare.node_id at +2 |
 | 6 | 2 | `attributes_head` | `u16` | big | spec | edge_bare.attributes_head at +6 |
 | 8 | 8 | `tolerance` | `bytes[8]` | big | spec | edge_bare.tolerance at +8 |
-| 16 | 14 | `refs` | `u16[7]` | big | spec | edge_bare.refs at +16 |
+| 16 | 14 | `refs` | `u16[7]` | big | spec | The final reference is SHELL_OR_BODY: BODY for a non-wire edge; SHELL for a wire edge. |
 
 ## `edge_tripled`
 
@@ -308,7 +308,7 @@ Parsed by:
 | 2 | 4 | `node_id` | `u32` | big | spec | edge_tripled.node_id at +2 |
 | 6 | 3 | `attributes_head` | `bytes[3]` | big | spec | edge_tripled.attributes_head at +6 |
 | 9 | 8 | `tolerance` | `bytes[8]` | big | spec | edge_tripled.tolerance at +9 |
-| 17 | 21 | `refs` | `bytes[21]` | big | spec | edge_tripled.refs at +17 |
+| 17 | 21 | `refs` | `bytes[21]` | big | spec | The final reference is SHELL_OR_BODY: BODY for a non-wire edge; SHELL for a wire edge. |
 
 ## `vertex_bare`
 
@@ -325,7 +325,7 @@ Parsed by:
 | 2 | 4 | `node_id` | `u32` | big | spec | vertex_bare.node_id at +2 |
 | 6 | 10 | `refs` | `u16[5]` | big | spec | vertex_bare.refs at +6 |
 | 16 | 8 | `tolerance` | `bytes[8]` | big | spec | vertex_bare.tolerance at +16 |
-| 24 | 2 | `owner` | `u16` | big | spec | vertex_bare.owner at +24 |
+| 24 | 2 | `owner` | `u16` | big | spec | Non-null SHELL_OR_BODY: BODY for a non-acorn vertex; SHELL for an acorn vertex. |
 
 ## `vertex_tripled`
 
@@ -342,7 +342,7 @@ Parsed by:
 | 2 | 4 | `node_id` | `u32` | big | spec | vertex_tripled.node_id at +2 |
 | 6 | 15 | `refs` | `bytes[15]` | big | spec | vertex_tripled.refs at +6 |
 | 21 | 8 | `tolerance` | `bytes[8]` | big | spec | vertex_tripled.tolerance at +21 |
-| 29 | 3 | `owner` | `bytes[3]` | big | spec | vertex_tripled.owner at +29 |
+| 29 | 3 | `owner` | `bytes[3]` | big | spec | Non-null SHELL_OR_BODY: BODY for a non-acorn vertex; SHELL for an acorn vertex. |
 
 ## `world_point_tripled`
 
@@ -2662,20 +2662,33 @@ Parsed by:
 
 ## `transformed_reference_plane_metadata`
 
-Spec §8 · layout: byte offsets · size: 80 B
+Spec §8 · layout: byte offsets · size: 25 B
 
-Offsets begin immediately after the `moTransRefPlaneData_c` class token.
+Body-relative fixed prologue; ten f64 values follow only when extent_present is one.
 
 Parsed by:
 - `crates/cadmpeg-codec-sldprt/src/metadata.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 8 | `prefix` | `bytes[8]` | little | spec | Fixed prefix. · value `[255, 255, 255, 255, 255, 255, 255, 255]` |
-| 8 | 24 | `center` | `f64[3]` | little | spec | Plane center xyz in metres. |
-| 32 | 16 | `extents` | `f64[2]` | little | spec | Plane extents in metres. |
-| 48 | 24 | `auxiliary_frame` | `f64[3]` | little | spec | Dimensionless auxiliary frame. |
-| 72 | 8 | `diagonal` | `f64` | little | spec | Plane diagonal in metres. |
+| 0 | 24 | `opaque` | `bytes[24]` | little | spec | +0 \| bytes[24] \| opaque serializer prologue |
+| 24 | 1 | `extent_present` | `u8` | little | spec | +24 \| u8 \| extent presence: 0 or 1 |
+
+## `transformed_reference_enclosure_extent`
+
+Spec §8 · layout: byte offsets · size: 80 B
+
+Relative to the optional extent at class body +25. All fields are stored lengths in metres.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/metadata.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 24 | `center` | `f64[3]` | little | spec | +25 \| f64[3] \| stored enclosure center |
+| 24 | 24 | `upper` | `f64[3]` | little | spec | +49 \| f64[3] \| axis-aligned upper |
+| 48 | 24 | `lower` | `f64[3]` | little | spec | +73 \| f64[3] \| axis-aligned lower |
+| 72 | 8 | `radius` | `f64` | little | spec | +97 \| f64 \| stored enclosing-sphere radius |
 
 ## `display_lists_compact_face_header`
 
@@ -3109,6 +3122,20 @@ Native ZIP EOCD header, including substituted signature. Its count and both dire
 | 12 | 4 | `central_size` | `u32` | little | spec | \| +12 \| u32 \| central_size \| |
 | 16 | 4 | `central_offset` | `u32` | little | spec | \| +16 \| u32 \| central_offset \| |
 | 20 | 2 | `comment_len` | `u16` | little | spec | \| +20 \| u16 \| comment_len \| |
+
+## `integer_values_header`
+
+Spec §5 · layout: byte offsets · size: 6 B
+
+Body-relative prefix after the type tag and optional unchanged-schema marker. Exactly count u32 values follow the prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/brep/topology.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `count` | `u32` | big | spec | element count is u32 BE at body +0 |
+| 4 | 2 | `node_index` | `u16` | big | spec | transmit index is u16 BE at body +4 |
 
 ## Not tabulated
 

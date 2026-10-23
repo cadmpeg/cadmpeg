@@ -381,8 +381,12 @@ fn decode_preserves_ambiguous_materials_without_fabricating_ownership() {
         .expect("a finite position is a point"),
     );
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(result.ir(), result.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_fixture_write_with_native_envelope(
+        result.ir(),
+        result.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();

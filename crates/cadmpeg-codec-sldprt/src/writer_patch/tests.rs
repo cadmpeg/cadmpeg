@@ -8,9 +8,9 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
+use crate::test_support::container::anchored_cache_cell;
 use crate::test_support::container::make_block;
-use crate::test_support::container::make_cache_cell;
-use crate::test_support::container::make_directory_entry;
+use crate::test_support::container::native_envelope_fixture;
 use crate::test_support::container::sldprt_with_body;
 use crate::test_support::history::sldprt_with_body_and_history;
 use crate::test_support::native::sldprt_native;
@@ -154,6 +154,7 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
     body.extend(world_point(261, [11.0, 0.0, 0.0]));
     body.extend(world_point(262, [10.0, 1.0, 0.0]));
 
+    crate::test_support::parasolid::complete_fixture_vertex_owners(&mut body);
     let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&body)),
@@ -263,7 +264,7 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
     };
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -323,6 +324,7 @@ fn native_patch_edits_points_without_dropping_untyped_surfaces() {
         "SCH_SW_33103_11000",
         &line_carrier(800, [0.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
     );
+    crate::test_support::parasolid::complete_fixture_vertex_owners(&mut body);
     let mut source = sldprt_with_body(&body);
     source.extend(make_block(0x21, "Contents/Config-0-Deltas", &deltas));
     let decoded = SldprtCodec
@@ -338,7 +340,7 @@ fn native_patch_edits_points_without_dropping_untyped_surfaces() {
     );
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -385,6 +387,7 @@ fn native_patch_requires_point_provenance_annotation() {
     body.extend(world_point(61, [1.0, 0.0, 0.0]));
     body.extend(world_point(62, [0.0, 1.0, 0.0]));
 
+    crate::test_support::parasolid::complete_fixture_vertex_owners(&mut body);
     let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&body)),
@@ -448,6 +451,7 @@ fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
     body.extend(world_point(261, [11.0, 0.0, 0.0]));
     body.extend(world_point(262, [10.0, 1.0, 0.0]));
 
+    crate::test_support::parasolid::complete_fixture_vertex_owners(&mut body);
     let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&body)),
@@ -504,7 +508,7 @@ fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -558,6 +562,7 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
     body.extend(world_point(60, [0.0, 0.0, 0.0]));
     body.extend(world_point(61, [1.0, 0.0, 0.0]));
     body.extend(world_point(62, [0.0, 1.0, 0.0]));
+    crate::test_support::parasolid::complete_fixture_vertex_owners(&mut body);
     let mut source = sldprt_with_body_and_history(&body);
     source.extend(make_block(
         0x66,
@@ -569,38 +574,21 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
         "Contents/Config-0-GhostPartition",
         b"opaque-ghost",
     ));
-    source.extend(make_cache_cell(90, "Contents/Config-0-Partition"));
-    source.extend(make_cache_cell(100, "Contents/Keywords"));
-    let indexed = crate::test_support::container::scan(&source);
-    let partition = indexed
-        .blocks
-        .iter()
-        .find(|block| block.section.name() == Some("Contents/Config-0-Partition"))
-        .unwrap();
-    let keywords = indexed
-        .blocks
-        .iter()
-        .find(|block| block.section.name() == Some("Contents/Keywords"))
-        .unwrap();
-    let mut directory = make_directory_entry(
-        partition.type_id,
-        partition.uncomp_sz().try_into().unwrap(),
+    source.extend(anchored_cache_cell(
+        100,
+        9,
         "Contents/Config-0-Partition",
-    );
-    directory[26] = 0xab;
-    let trailer = directory.len() - 6;
-    directory[trailer..trailer + 4].copy_from_slice(&[0x11, 0x22, 0x33, 0x44]);
-    source.extend(directory);
-    let mut directory = make_directory_entry(
-        keywords.type_id,
-        keywords.uncomp_sz().try_into().unwrap(),
-        "Contents/Keywords",
-    );
-    directory[26] = 0xcd;
-    let trailer = directory.len() - 6;
-    directory[trailer..trailer + 4].copy_from_slice(&[0x11, 0x22, 0x33, 0x44]);
-    source.extend(directory);
+        0,
+    ));
+    source.extend(anchored_cache_cell(100, 10, "Contents/Keywords", 0xff));
+    source = native_envelope_fixture(&source);
     let source_scan = crate::test_support::container::scan(&source);
+    let source_cache = source_scan
+        .cache_cells
+        .iter()
+        .find(|cell| cell.name == "Contents/Config-0-Partition")
+        .map(|cell| source[cell.physical_range.clone().unwrap()].to_vec())
+        .unwrap();
     let source_partition = source_scan
         .blocks
         .iter()
@@ -643,7 +631,7 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
     );
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -665,27 +653,34 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
         written_scan.cache_cells[0].name,
         "Contents/Config-0-Partition"
     );
-    assert_eq!(written_scan.cache_cells[0].logical_len, 90);
+    assert_eq!(written_scan.cache_cells[0].logical_len, 900);
     let partition_directory = written_scan
         .directory
         .iter()
         .find(|entry| entry.name == "Contents/Config-0-Partition")
         .unwrap();
-    assert_eq!(encoded[partition_directory.offset + 26], 0xab);
-    let trailer = partition_directory.offset + 40 + partition_directory.name.len();
-    assert_eq!(&encoded[trailer..trailer + 4], &[0x11, 0x22, 0x33, 0x44]);
-    assert!(written_scan
-        .directory
-        .iter()
-        .all(|entry| entry.trailer == [0x11, 0x22, 0x33, 0x44, 0, 0]));
+    assert_eq!(
+        &partition_directory.descriptor[..10],
+        &[0, 0, 0, 0, 1, 0, 0, 0, 0, 0]
+    );
+    let relative = u32::from_le_bytes(partition_directory.descriptor[10..14].try_into().unwrap());
+    assert_eq!(
+        usize::try_from(relative).unwrap() + 12,
+        written_partition.offset
+    );
+    let retained = &written_scan.cache_cells[0];
+    assert_eq!(
+        &encoded[retained.physical_range.clone().unwrap()],
+        source_cache.as_slice()
+    );
     let keywords_directory = written_scan
         .directory
         .iter()
         .find(|entry| entry.name == "Contents/Keywords")
         .unwrap();
     assert_eq!(
-        keywords_directory.descriptor,
-        [0xcd, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        &keywords_directory.descriptor[..10],
+        &[0, 0, 0, 0, 1, 0, 0, 0, 0, 0]
     );
     assert!(written_scan.blocks.iter().any(|block| {
         block.section.name() == Some("Contents/Config-0-GhostPartition")
@@ -752,7 +747,7 @@ fn opaque_curve_is_retained_and_does_not_block_point_edits() {
         .expect("a finite position is a point"),
     );
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -817,6 +812,7 @@ fn native_patch_refuses_a_baseline_its_own_decoder_refuses() {
     body.extend(world_point(61, [1.0, 0.0, 0.0]));
     body.extend(world_point(62, [0.0, 1.0, 0.0]));
 
+    crate::test_support::parasolid::complete_fixture_vertex_owners(&mut body);
     let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&body)),

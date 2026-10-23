@@ -78,6 +78,9 @@ fn numeric_entity_chains_do_not_claim_faces() {
         .position(|window| window == [0x00, 0x0c, 0xff])
         .expect("typed ownership suffix");
     body.truncate(typed_start);
+    body.extend(crate::test_support::parasolid::fixture_vertex_owner_class(
+        900,
+    ));
     body.extend(entity51(2, 500, 0x0017, &[510, 700, 0, 0, 0, 0, 0]));
     body.extend(entity51(1, 510, 0x001b, &[520, 0, 0, 0, 0, 0]));
     body.extend(entity51(1, 520, 0x001f, &[530, 0, 0, 0, 0, 0]));

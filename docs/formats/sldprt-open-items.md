@@ -114,13 +114,17 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** Parsed grid geometry and EOCD fields do not establish a regeneration rule for opaque residuals.
 
-### CM-07. `moTransRefPlaneData_c` gap
+### CM-07. Transformed enclosure opaque prologue
 
-**Question.** What does the byte run between the `moTransRefPlaneData_c` class token and the first of its nine f64 values encode, and what fixes its length?
+**Question.** How does the producer generate the 24 opaque bytes in a `moTransRefPlaneData_c` serializer prologue?
 
-**Known.** The decoder requires an eight-byte `ff` prefix and reads nine little-endian f64 values after it. The values are the plane center, two in-plane directions, and their normal. A valid transformed reference plane record follows the plane center xyz.
+**Known.** `sldprt.md` §8 defines its fixed 25-byte prologue, presence byte, and optional ten-value enclosure. The stored center, corners, and radius do not define the opaque bytes.
 
-**Need.** We must know the gap to write the record back without moving or inventing undecoded bytes.
+**Need.** An independent producer rule or controlled native edit must determine these bytes for a newly authored record.
+
+**Conflict.** None.
+
+**Note.** Retained prologue bytes can be preserved without assigning a generation rule.
 
 ### CM-10. Parasolid stream boundary
 

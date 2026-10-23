@@ -476,6 +476,7 @@ pub(crate) struct Stats {
     /// Referenced LOOP identities withheld because complete records conflict.
     pub(crate) unresolved_topology_loops: usize,
     pub(crate) unresolved_topology_fins: usize,
+    pub(crate) unresolved_topology_vertices: usize,
     /// Canonical faces that no explicit body record claims.
     pub(crate) unclaimed_faces: usize,
     /// Faces on a support surface this codec does not type; emitted with an
@@ -910,7 +911,7 @@ fn ensure_surface_support(
                     match annotate_surface_frame(annotations, id.as_str(), solved) {
                         Ok(()) => {}
                         Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => {
-                            return Err(error)
+                            return Err(error);
                         }
                         Err(_) => return Ok(None),
                     }
@@ -1246,12 +1247,18 @@ pub(crate) fn decode_bodies(
         entity_streams.push((body, is_deltas_stream(header)));
     }
     let mut typed_streams = Vec::new();
-    for (body, _) in &entity_streams {
-        typed_streams.push(typed::scan(body));
+    for (body, prefixed) in &entity_streams {
+        typed_streams.push(typed::scan_with_payload_exclusions(body, *prefixed));
     }
     for stream_typed_facts in &typed_streams {
         typed_facts.merge_missing(stream_typed_facts.clone());
     }
+    let owner_attrs = typed::topology_owner_attrs_for_streams(
+        entity_streams
+            .iter()
+            .zip(&typed_streams)
+            .map(|((body, deltas), facts)| (facts, *body, *deltas)),
+    );
     let typed_bridge_attrs = typed_facts.valid_ownership_face_attrs();
     let selected_bridge_attrs = typed_bridge_attrs.as_ref();
     for (stream_order, ((payload, header), stream_typed_facts)) in
@@ -1264,14 +1271,15 @@ pub(crate) fn decode_bodies(
         carriers.merge_missing(scan_carriers(ctx, body)?);
         let curve_attrs = carriers.curve_attrs();
         let scanned_tables = if is_deltas {
-            topology::scan_deltas_with_curve_attrs_excluding(
+            topology::scan_deltas_with_owner_attrs(
                 body,
                 &curve_attrs,
                 &typed_face_offsets,
                 &tables,
+                &owner_attrs,
             )
         } else {
-            topology::scan_with_curve_attrs_excluding(body, &curve_attrs, &typed_face_offsets)
+            topology::scan_with_owner_attrs(body, &curve_attrs, &typed_face_offsets, &owner_attrs)
         };
         let mut scanned_facts = entity::scan_metadata(body, is_deltas);
         for color in &mut scanned_facts.face_colors {
@@ -1305,9 +1313,10 @@ fn decode_body(
     let mut carriers = scan_carriers(ctx, body)?;
     let curve_attrs = carriers.curve_attrs();
     let typed_facts = typed::scan(body);
+    let owner_attrs = typed::topology_owner_attrs_for_streams([(&typed_facts, body, false)]);
     let typed_face_attrs = typed_facts.valid_ownership_face_attrs();
     let typed_face_offsets = selected_typed_face_offsets(&typed_facts, typed_face_attrs.as_ref());
-    let t = topology::scan_with_curve_attrs_excluding(body, &curve_attrs, &typed_face_offsets);
+    let t = topology::scan_with_owner_attrs(body, &curve_attrs, &typed_face_offsets, &owner_attrs);
     let entity_facts = entity::scan_metadata(body, false);
     decode_graph(ctx, &mut carriers, &t, entity_facts, &typed_facts, stream)
 }
@@ -1620,6 +1629,7 @@ fn decode_graph(
     // the ring walk. The ring order supplies a boundary edge's second endpoint;
     // a reciprocal twin supplies it for a two-sided edge.
     let mut edge_incidence: HashMap<u16, Vec<(u16, u16, u16)>> = HashMap::new();
+    let mut unresolved_vertices = HashSet::new();
 
     for f in &faces {
         for (_loop_attr, ring) in &f.loops {
@@ -1630,6 +1640,9 @@ fn decode_graph(
                 };
                 let next_attr = ring[(i + 1) % k];
                 let start_vuse = ce.refs[4];
+                if t.vertex_is_unresolved(start_vuse) {
+                    unresolved_vertices.insert(start_vuse);
+                }
                 let next_vuse = t.coedges().get(&next_attr).map_or(0, |next| next.refs[4]);
                 let edge_attr = ce.refs[6];
                 if edge_attr != 0 {
@@ -1641,6 +1654,8 @@ fn decode_graph(
             }
         }
     }
+
+    out.stats.unresolved_topology_vertices = unresolved_vertices.len();
 
     // Kept-entity sets, so only chain-reachable records are emitted.
     let mut kept_vertices: HashSet<u16> = HashSet::new();
@@ -1721,7 +1736,16 @@ fn decode_graph(
         out.vertices.push(Vertex {
             id: id_vertex(a),
             point: id_point(point_attr),
-            tolerance: None,
+            tolerance: rec
+                .tolerance_m
+                .map(|value| {
+                    cadmpeg_ir::scalar::PositiveReal::new(value * LEN_TO_MM).ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed(
+                            "VERTEX tolerance is outside finite millimetres",
+                        )
+                    })
+                })
+                .transpose()?,
         });
     }
 

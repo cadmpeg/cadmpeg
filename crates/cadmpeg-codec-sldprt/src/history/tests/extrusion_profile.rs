@@ -58,7 +58,12 @@ fn decode_projects_compact_extrusion_with_unresolved_extent() {
         br#"<Keywords><Extrusion Name="Compact" Type="Extrusion" id="9"/></Keywords>"#,
     ));
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &(source),
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
@@ -78,7 +83,7 @@ fn decode_projects_compact_extrusion_with_unresolved_extent() {
 
     decoded.ir_mut().model.features[0].name = Some("Renamed compact extrusion".into());
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,

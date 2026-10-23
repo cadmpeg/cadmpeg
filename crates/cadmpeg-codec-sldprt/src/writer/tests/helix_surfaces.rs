@@ -87,7 +87,7 @@ fn semantic_writer_round_trips_reference_coordinate_system() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -177,7 +177,7 @@ fn semantic_writer_round_trips_equation_driven_curve() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -275,7 +275,7 @@ fn semantic_writer_round_trips_helix() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -376,7 +376,7 @@ fn semantic_writer_round_trips_slash_named_helix() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -463,7 +463,7 @@ fn semantic_writer_round_trips_native_axis_helix() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -633,7 +633,7 @@ fn semantic_writer_round_trips_wrap() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -669,7 +669,7 @@ fn semantic_writer_round_trips_wrap() {
         });
     }
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
         scribed.ir(),
         scribed.source_fidelity(),
         &mut encoded,
@@ -766,7 +766,7 @@ fn semantic_writer_round_trips_move_copy_body() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -800,7 +800,7 @@ fn semantic_writer_round_trips_move_copy_body() {
         });
     }
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
         translated.ir(),
         translated.source_fidelity(),
         &mut encoded,
@@ -871,7 +871,7 @@ fn semantic_writer_round_trips_offset_surface() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -945,7 +945,7 @@ fn semantic_writer_round_trips_knit_surface() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1026,7 +1026,7 @@ fn semantic_writer_round_trips_cut_with_surface() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1184,7 +1184,7 @@ fn filled_surface_round_trip(
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1313,7 +1313,7 @@ fn semantic_writer_round_trips_trim_surface() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1387,7 +1387,7 @@ fn semantic_writer_round_trips_extend_surface() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1475,7 +1475,7 @@ fn semantic_writer_round_trips_all_ruled_surface_modes() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1505,7 +1505,7 @@ fn semantic_writer_round_trips_all_ruled_surface_modes() {
         });
     }
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
         regenerated.ir(),
         regenerated.source_fidelity(),
         &mut encoded,
@@ -1587,7 +1587,7 @@ fn semantic_writer_round_trips_projected_curve() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1664,7 +1664,7 @@ fn semantic_writer_round_trips_ordered_composite_curve() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1749,7 +1749,7 @@ fn semantic_writer_round_trips_typed_revolution() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1781,7 +1781,12 @@ fn semantic_writer_retains_partial_native_revolution_construction() {
     ));
 
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &(source),
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
@@ -1808,7 +1813,7 @@ fn semantic_writer_retains_partial_native_revolution_construction() {
     ));
     let mut detached = decoded.ir().clone();
     detached.model.features[0].native_ref = None;
-    let error = crate::test_support::plan_inherited_write(
+    let error = crate::test_support::plan_fixture_write_with_native_envelope(
         &detached,
         decoded.source_fidelity(),
         &mut Vec::new(),
@@ -1820,7 +1825,7 @@ fn semantic_writer_retains_partial_native_revolution_construction() {
     decoded.ir_mut().model.features[0].name = Some("Renamed turn".into());
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1916,7 +1921,7 @@ fn semantic_writer_round_trips_all_revolution_extents() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,

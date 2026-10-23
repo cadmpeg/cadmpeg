@@ -916,7 +916,7 @@ offset = 16
 type = "u16[7]"
 source = "spec"
 anchor = "edge_bare.refs at +16"
-
+note = "The final reference is SHELL_OR_BODY: BODY for a non-wire edge; SHELL for a wire edge."
 
 [[record]]
 name = "edge_tripled"
@@ -967,7 +967,7 @@ offset = 17
 type = "bytes[21]"
 source = "spec"
 anchor = "edge_tripled.refs at +17"
-
+note = "The final reference is SHELL_OR_BODY: BODY for a non-wire edge; SHELL for a wire edge."
 
 [[record]]
 name = "vertex_bare"
@@ -1018,7 +1018,7 @@ offset = 24
 type = "u16"
 source = "spec"
 anchor = "vertex_bare.owner at +24"
-
+note = "Non-null SHELL_OR_BODY: BODY for a non-acorn vertex; SHELL for an acorn vertex."
 
 [[record]]
 name = "vertex_tripled"
@@ -1069,7 +1069,7 @@ offset = 29
 type = "bytes[3]"
 source = "spec"
 anchor = "vertex_tripled.owner at +29"
-
+note = "Non-null SHELL_OR_BODY: BODY for a non-acorn vertex; SHELL for an acorn vertex."
 
 [[record]]
 name = "world_point_tripled"
@@ -10395,52 +10395,62 @@ name = "transformed_reference_plane_metadata"
 parsed_by = "crates/cadmpeg-codec-sldprt/src/metadata.rs"
 kind = "byte"
 section = "8"
-anchor = "`moTransRefPlaneData_c` | +0 | bytes[8]"
-size = 80
+anchor = "The body has a 25-byte fixed prologue"
+size = 25
 endianness = "little"
-note = "Offsets begin immediately after the `moTransRefPlaneData_c` class token."
+note = "Body-relative fixed prologue; ten f64 values follow only when extent_present is one."
 
 [[record.field]]
-name = "prefix"
+name = "opaque"
 offset = 0
-type = "bytes[8]"
+type = "bytes[24]"
 source = "spec"
-anchor = "`ff ff ff ff ff ff ff ff`"
-note = "Fixed prefix."
-value = [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]
+anchor = "+0 | bytes[24] | opaque serializer prologue"
+
+[[record.field]]
+name = "extent_present"
+offset = 24
+type = "u8"
+source = "spec"
+anchor = "+24 | u8 | extent presence: 0 or 1"
+
+[[record]]
+name = "transformed_reference_enclosure_extent"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/metadata.rs"
+kind = "byte"
+section = "8"
+anchor = "presence one includes exactly 80 bytes at body +25"
+size = 80
+endianness = "little"
+note = "Relative to the optional extent at class body +25. All fields are stored lengths in metres."
 
 [[record.field]]
 name = "center"
-offset = 8
+offset = 0
 type = "f64[3]"
 source = "spec"
-anchor = "+8 | f64[3] | plane center xyz, metres"
-note = "Plane center xyz in metres."
+anchor = "+25 | f64[3] | stored enclosure center"
 
 [[record.field]]
-name = "extents"
-offset = 32
-type = "f64[2]"
+name = "upper"
+offset = 24
+type = "f64[3]"
 source = "spec"
-anchor = "+32 | f64[2] | plane extents, metres"
-note = "Plane extents in metres."
+anchor = "+49 | f64[3] | axis-aligned upper"
 
 [[record.field]]
-name = "auxiliary_frame"
+name = "lower"
 offset = 48
 type = "f64[3]"
 source = "spec"
-anchor = "+48 | f64[3] | auxiliary frame, dimensionless"
-note = "Dimensionless auxiliary frame."
+anchor = "+73 | f64[3] | axis-aligned lower"
 
 [[record.field]]
-name = "diagonal"
+name = "radius"
 offset = 72
 type = "f64"
 source = "spec"
-anchor = "+72 | f64 | plane diagonal, metres"
-note = "Plane diagonal in metres."
-
+anchor = "+97 | f64 | stored enclosing-sphere radius"
 
 [[record]]
 name = "display_lists_compact_face_header"
@@ -11994,3 +12004,27 @@ offset = 20
 type = "u16"
 source = "spec"
 anchor = "| +20 | u16 | comment_len |"
+
+[[record]]
+name = "integer_values_header"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/brep/topology.rs"
+kind = "byte"
+section = "5"
+anchor = "An INT_VALUES node has a six-byte prefix"
+size = 6
+endianness = "big"
+note = "Body-relative prefix after the type tag and optional unchanged-schema marker. Exactly count u32 values follow the prefix."
+
+[[record.field]]
+name = "count"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "element count is u32 BE at body +0"
+
+[[record.field]]
+name = "node_index"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "transmit index is u16 BE at body +4"

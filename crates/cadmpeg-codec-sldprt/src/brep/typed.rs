@@ -153,6 +153,31 @@ type OwnershipMaps = (
 );
 
 impl Facts {
+    fn topology_class_masks(&self) -> HashMap<u16, u8> {
+        let mut classes = HashMap::new();
+        for node in &self.bodies {
+            *classes.entry(node.attr).or_insert(0) |= 1;
+        }
+        for node in &self.shells {
+            *classes.entry(node.attr).or_insert(0) |= 2;
+        }
+        for node in &self.regions {
+            *classes.entry(node.attr).or_insert(0) |= 4;
+        }
+        for node in &self.faces {
+            *classes.entry(node.attr).or_insert(0) |= 8;
+        }
+        classes
+    }
+
+    #[cfg(test)]
+    pub(super) fn topology_owner_attrs(&self) -> HashSet<u16> {
+        self.topology_class_masks()
+            .into_iter()
+            .filter_map(|(attr, mask)| (attr > 1 && matches!(mask, 1 | 2)).then_some(attr))
+            .collect()
+    }
+
     /// Add only identities absent from the partition view.  A delta stream is
     /// subordinate to the partition for the same transmit index.
     pub(super) fn merge_missing(&mut self, other: Self) {
@@ -511,6 +536,32 @@ pub(in crate::brep) struct Hierarchy {
     pub(super) faces: Vec<(u16, u16)>,
 }
 
+pub(super) fn topology_owner_attrs_for_streams<'a>(
+    streams: impl IntoIterator<Item = (&'a Facts, &'a [u8], bool)>,
+) -> HashSet<u16> {
+    let mut selected = HashMap::<u16, (bool, u8)>::new();
+    for (facts, bytes, deltas) in streams {
+        let mut classes = facts.topology_class_masks();
+        for point in super::topology::point_class_attrs(bytes, deltas) {
+            *classes.entry(point).or_insert(0) |= 16;
+        }
+        for (attr, mask) in classes {
+            match selected.get_mut(&attr) {
+                Some((partition, previous)) if *partition == !deltas => *previous |= mask,
+                Some((true, _)) => {}
+                Some(value) => *value = (true, mask),
+                None => {
+                    selected.insert(attr, (!deltas, mask));
+                }
+            }
+        }
+    }
+    selected
+        .into_iter()
+        .filter_map(|(attr, (_, mask))| (attr > 1 && matches!(mask, 1 | 2)).then_some(attr))
+        .collect()
+}
+
 fn merge_nodes<T, F>(target: &mut Vec<T>, source: Vec<T>, key: F)
 where
     F: Fn(&T) -> u16,
@@ -754,7 +805,27 @@ fn push_record<T>(offsets: &mut HashSet<usize>, records: &mut Vec<T>, offset: us
     records.push(record);
 }
 
+pub(super) fn tagged_owner_prefix_end(bytes: &[u8], offset: usize) -> Option<usize> {
+    let tag = bytes.get(offset..offset.checked_add(2)?)?;
+    if tag == BODY_TAG {
+        parse_tagged_body(bytes, offset).map(|node| node.end)
+    } else if tag == SHELL_TAG {
+        parse_shell(bytes, offset).map(|node| node.end)
+    } else if tag == REGION_TAG {
+        parse_region(bytes, offset).map(|node| node.end)
+    } else {
+        None
+    }
+}
+
 pub(super) fn scan(bytes: &[u8]) -> Facts {
+    scan_with_payload_exclusions(bytes, false)
+}
+
+pub(super) fn scan_with_payload_exclusions(bytes: &[u8], prefixed: bool) -> Facts {
+    let scopes = super::topology::topology_scopes(bytes, prefixed);
+    let payload_ranges = &scopes.excluded_starts;
+    let mut payload_index = 0;
     let mut facts = Facts::default();
     let mut body_offsets = HashSet::new();
     let mut shell_offsets = HashSet::new();
@@ -762,6 +833,18 @@ pub(super) fn scan(bytes: &[u8]) -> Facts {
     let mut face_offsets = HashSet::new();
     let mut has_edit = false;
     for (z, &byte) in bytes.iter().enumerate().skip(2) {
+        while payload_ranges
+            .get(payload_index)
+            .is_some_and(|range| range.end <= z)
+        {
+            payload_index += 1;
+        }
+        if payload_ranges
+            .get(payload_index)
+            .is_some_and(|range| range.contains(&z))
+        {
+            continue;
+        }
         has_edit |= matches!(byte, b'C' | b'D' | b'I' | b'A');
         if byte != b'Z' || !has_edit {
             continue;
@@ -797,7 +880,20 @@ pub(super) fn scan(bytes: &[u8]) -> Facts {
     }
     // A buffer shorter than the two-byte tag holds no tagged record.
     if let Some(scan_end) = bytes.len().checked_sub(2) {
+        payload_index = 0;
         for offset in 0..scan_end {
+            while payload_ranges
+                .get(payload_index)
+                .is_some_and(|range| range.end <= offset)
+            {
+                payload_index += 1;
+            }
+            if payload_ranges
+                .get(payload_index)
+                .is_some_and(|range| range.contains(&offset))
+            {
+                continue;
+            }
             if bytes.get(offset..offset + 2) == Some(&BODY_TAG) {
                 if let Some(body) = parse_tagged_body(bytes, offset) {
                     if !body_offsets.contains(&body.offset) {
@@ -841,6 +937,32 @@ pub(super) fn scan(bytes: &[u8]) -> Facts {
             }
         }
     }
+    let outside_payload = |start: usize, end: usize| {
+        let index = scopes.payloads.partition_point(|range| range.end <= start);
+        let start_index = scopes
+            .excluded_starts
+            .partition_point(|range| range.end <= start);
+        !scopes
+            .payloads
+            .get(index)
+            .is_some_and(|range| range.start < end)
+            && !scopes
+                .excluded_starts
+                .get(start_index)
+                .is_some_and(|range| range.contains(&start))
+    };
+    facts
+        .bodies
+        .retain(|node| outside_payload(node.offset, node.end));
+    facts
+        .shells
+        .retain(|node| outside_payload(node.offset, node.end));
+    facts
+        .regions
+        .retain(|node| outside_payload(node.offset, node.end));
+    facts
+        .faces
+        .retain(|node| outside_payload(node.offset, node.end));
     facts.bodies.sort_by_key(|node| node.offset);
     facts.shells.sort_by_key(|node| node.offset);
     facts.regions.sort_by_key(|node| node.offset);
@@ -875,11 +997,61 @@ mod tests {
         let body = crate::writer::brep_body(decoded.ir(), 0.001, false).unwrap();
         let facts = scan(&body);
 
-        assert!(facts.has_valid_ownership());
+        assert!(facts.has_valid_ownership(), "{facts:?}");
         assert_eq!(facts.bodies.len(), 1);
         assert!(!facts.shells.is_empty());
         assert!(!facts.regions.is_empty());
         assert!(!facts.faces.is_empty());
+    }
+
+    #[test]
+    fn semantic_writer_nurbs_triangle_keeps_its_closed_topology() {
+        let source = crate::test_support::parasolid::nurbs_triangle_body();
+        let decoded = SldprtCodec
+            .decode(
+                &mut Cursor::new(sldprt_with_body(&source)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        assert_eq!(decoded.ir().model.faces.len(), 1);
+        assert_eq!(decoded.ir().model.loops.len(), 1);
+        assert_eq!(decoded.ir().model.coedges.len(), 3);
+        let curve = &decoded.ir().model.curves[0].id;
+        assert!(decoded
+            .ir()
+            .model
+            .edges
+            .iter()
+            .any(|edge| edge.curve() == Some(curve)));
+        let body = crate::writer::brep_body(decoded.ir(), 0.001, false).unwrap();
+        let facts = scan(&body);
+        let scopes = super::super::topology::topology_scopes(&body, false);
+        assert!(
+            facts.has_valid_ownership(),
+            "{facts:?}; data: {:?}; interiors: {:?}",
+            scopes.payloads,
+            scopes.excluded_starts
+        );
+        let topology = super::super::topology::scan(&body);
+        assert_eq!(topology.bridges().len(), 1, "{:?}", topology.bridges());
+        assert_eq!(topology.points().len(), 3, "{:?}", topology.points());
+        assert_eq!(
+            topology.vertex_uses().len(),
+            3,
+            "{:?}; scopes: {:?}",
+            topology.vertex_uses(),
+            scopes.excluded_starts
+        );
+        assert_eq!(topology.edge_uses().len(), 3, "{:?}", topology.edge_uses());
+        assert_eq!(
+            topology.coedges().len(),
+            3,
+            "FINs: {:?}; loops: {:?}; scopes: {:?}; data: {:?}",
+            topology.coedges(),
+            topology.loops(),
+            scopes.excluded_starts,
+            scopes.payloads
+        );
     }
 
     #[test]
@@ -1505,5 +1677,113 @@ mod tests {
         assert_eq!(hierarchy[0].body.kind, BodyKind::Wire);
         assert!(hierarchy[0].regions.is_empty());
         assert!(hierarchy[0].faces.is_empty());
+    }
+    #[test]
+    fn vertex_owner_inventory_requires_one_unique_typed_class() {
+        let mut facts = scan(&crate::test_support::parasolid::triangle_body());
+        let owner = facts.bodies[0].attr;
+        assert!(facts.topology_owner_attrs().contains(&owner));
+        let mut shell = facts.shells[0].clone();
+        shell.attr = owner;
+        facts.shells.push(shell);
+        assert!(!facts.topology_owner_attrs().contains(&owner));
+        facts.shells.pop();
+        let mut face = facts.faces[0].clone();
+        face.attr = owner;
+        facts.faces.push(face);
+        assert!(!facts.topology_owner_attrs().contains(&owner));
+    }
+    #[test]
+    fn typed_owner_scope_uses_counted_integer_payload_in_both_stream_roles() {
+        let owner = crate::test_support::parasolid::fixture_vertex_owner_class(900);
+        let mut payload = owner;
+        while payload.len() % 4 != 0 {
+            payload.push(0);
+        }
+        let mut bytes = vec![0, 0x52];
+        bytes.extend(u32::try_from(payload.len() / 4).unwrap().to_be_bytes());
+        bytes.extend(710u16.to_be_bytes());
+        bytes.extend(payload);
+        for prefixed in [false, true] {
+            let facts = super::scan_with_payload_exclusions(&bytes, prefixed);
+            assert!(facts.bodies.is_empty());
+            assert!(!facts.topology_owner_attrs().contains(&900));
+        }
+    }
+    #[test]
+    fn owner_class_partition_authority_survives_delta_cross_class_readings() {
+        let partition = scan(&crate::test_support::parasolid::triangle_body());
+        let owner = partition.bodies[0].attr;
+        let mut delta = Facts::default();
+        let mut shell = partition.shells[0].clone();
+        shell.attr = owner;
+        delta.shells.push(shell);
+        let point = crate::test_support::parasolid::tripled_world_point(owner, [0.0; 3]);
+        assert!(super::super::topology::point_class_attrs(&point, true).contains(&owner));
+        for reverse in [false, true] {
+            let mut streams = vec![
+                (&partition, &[][..], false),
+                (&delta, point.as_slice(), true),
+            ];
+            if reverse {
+                streams.reverse();
+            }
+            assert!(super::topology_owner_attrs_for_streams(streams).contains(&owner));
+        }
+    }
+
+    #[test]
+    fn partition_class_conflict_blocks_delta_owner_resurrection() {
+        let mut partition = scan(&crate::test_support::parasolid::triangle_body());
+        let owner = partition.bodies[0].attr;
+        let mut delta = Facts::default();
+        delta.bodies.push(partition.bodies[0].clone());
+        let mut shell = partition.shells[0].clone();
+        shell.attr = owner;
+        partition.shells.push(shell);
+        assert!(!super::topology_owner_attrs_for_streams([
+            (&partition, &[][..], false),
+            (&delta, &[][..], true)
+        ])
+        .contains(&owner));
+    }
+
+    #[test]
+    fn same_class_repetitions_prove_class_without_owner_record_equality() {
+        let mut facts = scan(&crate::test_support::parasolid::triangle_body());
+        let owner = facts.bodies[0].attr;
+        let mut different = facts.bodies[0].clone();
+        different.node_id += 1;
+        facts.bodies.push(different);
+        assert!(facts.topology_owner_attrs().contains(&owner));
+        assert!(facts.valid_ownership_face_attrs().is_none());
+    }
+    #[test]
+    fn delta_owner_class_only_fills_a_partition_identity_absent_from_every_known_class() {
+        let source = scan(&crate::test_support::parasolid::triangle_body());
+        let owner = source.bodies[0].attr;
+        let mut delta = Facts::default();
+        delta.bodies.push(source.bodies[0].clone());
+        let empty = Facts::default();
+        assert!(super::topology_owner_attrs_for_streams([
+            (&empty, &[][..], false),
+            (&delta, &[][..], true)
+        ])
+        .contains(&owner));
+        let mut partition = Facts::default();
+        let mut face = source.faces[0].clone();
+        face.attr = owner;
+        partition.faces.push(face);
+        assert!(!super::topology_owner_attrs_for_streams([
+            (&partition, &[][..], false),
+            (&delta, &[][..], true)
+        ])
+        .contains(&owner));
+        let point = crate::test_support::parasolid::world_point(owner, [0.0; 3]);
+        assert!(!super::topology_owner_attrs_for_streams([
+            (&empty, point.as_slice(), false),
+            (&delta, &[][..], true)
+        ])
+        .contains(&owner));
     }
 }

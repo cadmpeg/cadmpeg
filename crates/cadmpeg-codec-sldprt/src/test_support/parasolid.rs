@@ -324,12 +324,13 @@ pub(crate) fn closed_cylinder_body() -> Vec<u8> {
     b.extend(loop_head(21, 31, 10));
     b.extend(coedge(30, 20, 30, 50, 0, 40, false));
     b.extend(coedge(31, 21, 31, 51, 0, 41, false));
-    b.extend(edge_use_with_canonical(40, 30, 70));
-    b.extend(edge_use_with_canonical(41, 31, 71));
+    b.extend(edge_use_with_canonical(40, 30, 70, 900));
+    b.extend(edge_use_with_canonical(41, 31, 71, 900));
     b.extend(vertex_use(50, 60));
     b.extend(vertex_use(51, 61));
     b.extend(world_point(60, [-1.0, 0.0, 0.0]));
     b.extend(world_point(61, [-1.0, 0.0, 1.0]));
+    complete_fixture_vertex_owners(&mut b);
     b
 }
 
@@ -353,6 +354,7 @@ pub(crate) fn sphere_patch_body() -> Vec<u8> {
     b.extend(world_point(60, [1.0, 0.0, 0.0]));
     b.extend(world_point(61, [0.0, 1.0, 0.0]));
     b.extend(world_point(62, [0.0, 0.0, 1.0]));
+    complete_fixture_vertex_owners(&mut b);
     b
 }
 
@@ -378,6 +380,7 @@ pub(crate) fn sphere_existing_seam_body() -> Vec<u8> {
     b.extend(world_point(60, [0.0, 0.0, -1.0]));
     b.extend(world_point(61, [1.0, 0.0, 0.0]));
     b.extend(world_point(62, [0.0, 1.0, 0.0]));
+    complete_fixture_vertex_owners(&mut b);
     b
 }
 
@@ -804,9 +807,7 @@ pub(crate) fn face_color_definition() -> Vec<u8> {
 
 pub(crate) fn entity51(flags: u32, attr: u16, disc: u16, slots: &[u16]) -> Vec<u8> {
     let slot_count = match u8::try_from(flags).expect("flags fit u8") {
-        1 | 3 => 6,
-        2 => 7,
-        4 => 9,
+        flo @ 1..=0x20 => 5 + usize::from(flo),
         flo => panic!("unsupported synthetic entity flo {flo}"),
     };
     assert!(slots.len() <= slot_count, "too many synthetic entity slots");
@@ -931,13 +932,18 @@ pub(crate) fn framed_topology_fin(
 
 /// Edge-use `00 10`: `refs[3]` = support curve carrier (0 = none).
 pub(crate) fn edge_use(attr: u16, curve_attr: u16) -> Vec<u8> {
-    edge_use_with_canonical(attr, 0, curve_attr)
+    edge_use_with_canonical(attr, 0, curve_attr, 900)
 }
 
 /// Bare edge-use `refs[0]` names the forward coedge that stores the edge
 /// direction. A zero canonical reference is reserved for compact fixtures
 /// whose unique forward coedge supplies the same relation.
-fn edge_use_with_canonical(attr: u16, canonical_coedge: u16, curve_attr: u16) -> Vec<u8> {
+fn edge_use_with_canonical(
+    attr: u16,
+    canonical_coedge: u16,
+    curve_attr: u16,
+    owner: u16,
+) -> Vec<u8> {
     let mut b = vec![0x00, 0x10];
     be16(&mut b, attr); // p+0
     be32(&mut b, 0); // p+2 seq
@@ -947,6 +953,7 @@ fn edge_use_with_canonical(attr: u16, canonical_coedge: u16, curve_attr: u16) ->
     for r in refs {
         be16(&mut b, r); // p+16..28
     }
+    be16(&mut b, owner);
     b
 }
 
@@ -980,27 +987,134 @@ fn suffix_prefixed_edge_use(attr: u16, curve_attr: u16) -> Vec<u8> {
 
 /// Vertex-use `00 12`: `refs[4]` = world-point attr; magic at body+16.
 pub(crate) fn vertex_use(attr: u16, point_attr: u16) -> Vec<u8> {
-    let mut b = vec![0x00, 0x12];
-    be16(&mut b, attr); // p+0
-    be32(&mut b, 0); // p+2 seq
-    let refs = [0u16, 0, 0, 0, point_attr];
-    for r in refs {
-        be16(&mut b, r); // p+6..16
-    }
-    b.extend_from_slice(&MAGIC); // p+16..24
-    b
+    framed_topology_vertex(attr, 0, [0, 0, 0, 0, point_attr], None, 0, false, false)
 }
 
 fn tripled_vertex_use(attr: u16, point_attr: u16) -> Vec<u8> {
-    let mut b = vec![0x00, 0x12];
-    be16(&mut b, attr);
-    be32(&mut b, 0);
-    for reference in [0u16, 0, 0, 0, point_attr] {
-        be16(&mut b, reference);
-        b.push(1);
+    framed_topology_vertex(attr, 0, [0, 0, 0, 0, point_attr], None, 0, true, false)
+}
+
+pub(crate) fn framed_topology_vertex(
+    attr: u16,
+    node: u32,
+    refs: [u16; 5],
+    tolerance: Option<f64>,
+    owner: u16,
+    tripled: bool,
+    first_of_type: bool,
+) -> Vec<u8> {
+    let mut bytes = vec![0, 0x12];
+    if first_of_type {
+        bytes.push(0xff);
     }
-    b.extend_from_slice(&MAGIC);
-    b
+    be16(&mut bytes, attr);
+    be32(&mut bytes, node);
+    for reference in refs {
+        be16(&mut bytes, reference);
+        if tripled {
+            bytes.push(1);
+        }
+    }
+    if let Some(tolerance) = tolerance {
+        bef64(&mut bytes, tolerance);
+    } else {
+        bytes.extend(MAGIC);
+    }
+    be16(&mut bytes, owner);
+    if tripled {
+        bytes.push(1);
+    }
+    bytes
+}
+
+fn fixture_vertex_owner_offsets(bytes: &[u8]) -> Vec<usize> {
+    let mut offsets = Vec::new();
+    for off in 0..bytes.len().saturating_sub(27) {
+        if bytes.get(off..off + 2) != Some(&[0, 0x12]) {
+            continue;
+        }
+        let p = off + 2 + usize::from(bytes.get(off + 2) == Some(&0xff));
+        for (tolerance, owner_at, tripled) in [(16, 24, false), (21, 29, true)] {
+            if bytes.get(p + tolerance..p + tolerance + MAGIC.len()) != Some(MAGIC.as_slice()) {
+                continue;
+            }
+            if bytes.get(p + owner_at..p + owner_at + 2) != Some(&[0, 0]) {
+                continue;
+            }
+            if tripled && bytes.get(p + owner_at + 2) != Some(&1) {
+                continue;
+            }
+            offsets.push(p + owner_at);
+        }
+    }
+    offsets
+}
+
+fn bind_fixture_vertex_owners(bytes: &mut [u8], owner: u16) {
+    for at in fixture_vertex_owner_offsets(bytes) {
+        bytes[at..at + 2].copy_from_slice(&owner.to_be_bytes());
+    }
+}
+
+pub(crate) fn fixture_vertex_owner_class(attr: u16) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    typed_prefix(&mut bytes, [0, 0x0c], attr, 100_000 + u32::from(attr));
+    for _ in 0..6 {
+        typed_ref(&mut bytes, 0);
+    }
+    bef64(&mut bytes, 1000.0);
+    bef64(&mut bytes, 1.0e-8);
+    for _ in 0..3 {
+        typed_ref(&mut bytes, 0);
+    }
+    bytes.push(1);
+    typed_ref(&mut bytes, 0);
+    bytes.extend([6, 1]);
+    for reference in [
+        0,
+        0,
+        0,
+        0,
+        if attr == 0x7ffd { 0x7ffc } else { 0x7ffd },
+        0,
+        0,
+    ] {
+        typed_ref(&mut bytes, reference);
+    }
+    bytes
+}
+
+pub(crate) fn complete_fixture_vertex_owners(bytes: &mut Vec<u8>) {
+    use cadmpeg_core::decode::View;
+    if fixture_vertex_owner_offsets(bytes).is_empty() {
+        return;
+    }
+    let mut bodies = std::collections::BTreeSet::new();
+    for off in 0..bytes.len().saturating_sub(9) {
+        if bytes.get(off..off + 3) != Some(&[0, 0x0c, 0xff]) {
+            continue;
+        }
+        let Some(attr) = View::u16_be_at(bytes, off + 3) else {
+            continue;
+        };
+        if View::u32_be_at(bytes, off + 5) == Some(100_000 + u32::from(attr)) {
+            bodies.insert(attr);
+        }
+    }
+    assert!(
+        bodies.len() <= 1,
+        "multi-owner fixtures must set each VERTEX owner explicitly"
+    );
+    if let Some(owner) = bodies.first() {
+        bind_fixture_vertex_owners(bytes, *owner);
+    } else {
+        let owner = (0x7f00u16..=0x7ffe)
+            .rev()
+            .find(|attr| !bytes.windows(2).any(|window| window == attr.to_be_bytes()))
+            .expect("reserved fixture owner index");
+        bind_fixture_vertex_owners(bytes, owner);
+        bytes.extend(fixture_vertex_owner_class(owner));
+    }
 }
 
 /// World point `00 1d`: xyz f64 BE (metres) at body+14.
@@ -1097,6 +1211,7 @@ fn typed_single_face_ownership(
     surface_attr: u16,
     body_type: u8,
 ) {
+    bind_fixture_vertex_owners(bytes, body_attr);
     typed_prefix(
         bytes,
         [0x00, 0x0c],
@@ -1195,6 +1310,17 @@ pub(crate) fn triangle_body() -> Vec<u8> {
     b
 }
 
+pub(crate) fn nurbs_triangle_body() -> Vec<u8> {
+    let mut body = triangle_body();
+    let bridge_offset = body.windows(2).position(|w| w == [0x00, 0x0e]).unwrap();
+    body[bridge_offset + 26..bridge_offset + 28].copy_from_slice(&180u16.to_be_bytes());
+    let edge = body.windows(2).position(|w| w == [0x00, 0x10]).unwrap();
+    body[edge + 24..edge + 26].copy_from_slice(&170u16.to_be_bytes());
+    body.extend(nurbs_curve_carrier(170, 171));
+    body.extend(nurbs_surface_carrier(180, 181, 10));
+    body
+}
+
 pub(crate) fn triangle_body_with_overlapping_point() -> Vec<u8> {
     let mut b = Vec::new();
     b.extend(plane_carrier(
@@ -1263,9 +1389,9 @@ pub(crate) fn owned_triangle_with_kind(base: u16, owner: u16, x: f64, body_type:
         base + 42,
         false,
     ));
-    b.extend(edge_use(base + 40, 0));
-    b.extend(edge_use(base + 41, 0));
-    b.extend(edge_use(base + 42, 0));
+    b.extend(edge_use_with_canonical(base + 40, 0, 0, owner));
+    b.extend(edge_use_with_canonical(base + 41, 0, 0, owner));
+    b.extend(edge_use_with_canonical(base + 42, 0, 0, owner));
     b.extend(vertex_use(base + 50, base + 60));
     b.extend(vertex_use(base + 51, base + 61));
     b.extend(vertex_use(base + 52, base + 62));

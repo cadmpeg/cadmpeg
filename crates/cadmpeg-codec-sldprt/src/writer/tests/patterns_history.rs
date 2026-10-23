@@ -166,7 +166,7 @@ fn semantic_writer_round_trips_all_pattern_forms() {
 
     let mut inconsistent = decoded.ir().clone();
     inconsistent.model.features[1].dependencies.clear();
-    let error = crate::test_support::plan_inherited_write(
+    let error = crate::test_support::plan_fixture_write_with_native_envelope(
         &inconsistent,
         decoded.source_fidelity(),
         &mut Vec::new(),
@@ -178,7 +178,7 @@ fn semantic_writer_round_trips_all_pattern_forms() {
     );
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -258,7 +258,7 @@ fn semantic_writer_round_trips_sparse_curve_driven_pattern() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -355,7 +355,7 @@ fn semantic_writer_round_trips_sparse_localized_linear_pattern() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -404,7 +404,7 @@ fn semantic_writer_round_trips_pattern_count_pmi() {
         &resolved_feature_classes_with_ids(&[("moLPattern_c", "MatrizL1", 132)]),
     ));
     source.extend(make_block(
-        0x49,
+        0x0021_0049,
         "Contents/PMISemanticDataDB",
         &pmi_semantic_payload_record(
             "D1@MatrizL1",
@@ -415,7 +415,7 @@ fn semantic_writer_round_trips_pattern_count_pmi() {
         ),
     ));
     source.extend(make_block(
-        0x49,
+        0x0021_004a,
         "Contents/PMISemanticDataDB",
         &pmi_semantic_payload_record(
             "D2@MatrizL1",
@@ -426,8 +426,21 @@ fn semantic_writer_round_trips_pattern_count_pmi() {
         ),
     ));
 
+    let pmi_dates: Vec<_> = crate::test_support::container::scan(&source)
+        .blocks
+        .iter()
+        .filter(|block| block.section.name() == Some("Contents/PMISemanticDataDB"))
+        .map(|block| block.type_id)
+        .collect();
+    assert_eq!(pmi_dates, [0x0021_0049, 0x0021_004a]);
+
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &(source),
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let parameter_index = decoded
@@ -467,7 +480,7 @@ fn semantic_writer_round_trips_pattern_count_pmi() {
     decoded.ir_mut().model.parameters[parameter_index].value = Some(ParameterValue::Integer(12));
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -511,7 +524,12 @@ fn semantic_writer_retains_unresolved_native_pattern_construction() {
     ));
 
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &(source),
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
@@ -530,7 +548,7 @@ fn semantic_writer_retains_unresolved_native_pattern_construction() {
     decoded.ir_mut().model.features[0].name = Some("Renamed pattern".into());
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -592,7 +610,7 @@ fn semantic_writer_round_trips_generic_pattern_type() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -692,7 +710,7 @@ fn semantic_writer_round_trips_typed_sweep() {
     dependencies.remove(0);
     inconsistent.model.features[3].dependencies =
         cadmpeg_ir::features::DistinctMembers::try_from(dependencies).unwrap();
-    let error = crate::test_support::plan_inherited_write(
+    let error = crate::test_support::plan_fixture_write_with_native_envelope(
         &inconsistent,
         decoded.source_fidelity(),
         &mut Vec::new(),
@@ -706,7 +724,7 @@ fn semantic_writer_round_trips_typed_sweep() {
     );
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -770,7 +788,7 @@ fn semantic_writer_round_trips_sparse_surface_sweep() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -813,7 +831,12 @@ fn semantic_writer_retains_native_solid_sweep_with_unresolved_operation() {
     ));
 
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &(source),
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
@@ -828,7 +851,7 @@ fn semantic_writer_retains_native_solid_sweep_with_unresolved_operation() {
     decoded.ir_mut().model.features[0].name = Some("Renamed sweep".into());
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -922,7 +945,7 @@ fn semantic_writer_round_trips_typed_loft() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -950,7 +973,12 @@ fn semantic_writer_retains_unresolved_native_loft_construction() {
     ));
 
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &(source),
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
@@ -966,7 +994,7 @@ fn semantic_writer_retains_unresolved_native_loft_construction() {
     decoded.ir_mut().model.features[0].name = Some("Renamed loft".into());
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1055,7 +1083,7 @@ fn semantic_writer_round_trips_boundary_boss_as_loft() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1092,7 +1120,12 @@ fn semantic_writer_retains_partial_native_rib_construction() {
     ));
 
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &(source),
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
@@ -1116,7 +1149,7 @@ fn semantic_writer_retains_partial_native_rib_construction() {
                    })));
     let mut detached = decoded.ir().clone();
     detached.model.features[0].native_ref = None;
-    let error = crate::test_support::plan_inherited_write(
+    let error = crate::test_support::plan_fixture_write_with_native_envelope(
         &detached,
         decoded.source_fidelity(),
         &mut Vec::new(),
@@ -1126,7 +1159,7 @@ fn semantic_writer_retains_partial_native_rib_construction() {
 
     decoded.ir_mut().model.features[0].name = Some("Renamed web".into());
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1200,7 +1233,7 @@ fn semantic_writer_round_trips_typed_rib() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1243,7 +1276,7 @@ fn semantic_writer_preserves_parametric_history() {
     });
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1306,7 +1339,7 @@ fn semantic_writer_applies_neutral_feature_edits() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1425,7 +1458,7 @@ fn semantic_writer_accepts_matching_resolved_feature_edits() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1604,7 +1637,7 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
     });
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1783,7 +1816,7 @@ fn semantic_writer_updates_linked_resolved_feature_scalar() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1849,7 +1882,7 @@ fn semantic_writer_updates_resolved_scalar_from_feature_edit() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1912,7 +1945,7 @@ fn semantic_writer_types_resolved_relation_scalar() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,

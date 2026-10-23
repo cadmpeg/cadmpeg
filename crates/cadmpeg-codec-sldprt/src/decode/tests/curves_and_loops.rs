@@ -47,6 +47,7 @@ fn edge_uses_decoded_line_curve() {
     body.extend(world_point(61, [1.0, 0.0, 0.0]));
     body.extend(world_point(62, [0.0, 1.0, 0.0]));
 
+    crate::test_support::parasolid::complete_fixture_vertex_owners(&mut body);
     let f = sldprt_with_body(&body);
     let mut cur = Cursor::new(f);
     let result = SldprtCodec
@@ -234,6 +235,7 @@ fn decode_removes_edges_and_vertices_from_a_rejected_loop() {
     body.extend(world_point(160, [2.0, 0.0, 0.0]));
     body.extend(world_point(161, [3.0, 0.0, 0.0]));
 
+    crate::test_support::parasolid::complete_fixture_vertex_owners(&mut body);
     let result = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&body)),
