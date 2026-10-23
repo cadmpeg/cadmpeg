@@ -1346,7 +1346,7 @@ fn normalize_directory_and_parameters(
     directory: &[BinaryDirectory],
     parameters: Vec<BinaryParameter>,
     ctx: &DecodeContext<'_>,
-) -> Result<(usize, usize, Vec<crate::parameter::ParameterRecord>), CodecError> {
+) -> Result<(usize, usize, Admitted), CodecError> {
     let mut directory_by_offset = BTreeMap::new();
     for (index, record) in directory.iter().enumerate() {
         directory_by_offset.insert(record.offset, index);
@@ -1531,6 +1531,7 @@ fn normalize_directory_and_parameters(
     }
     let mut parameter_sequence = 1_u32;
     let mut admitted = Vec::new();
+    let mut unadmitted = BTreeSet::new();
     let storage = normalized
         .len()
         .checked_mul(size_of::<crate::parameter::ParameterRecord>())
@@ -1556,8 +1557,11 @@ fn normalize_directory_and_parameters(
                 .checked_add(1)
                 .ok_or_else(|| malformed("normalized Parameter Data sequence overflows"))?;
         }
-        if let Some(content) = parameter.admitted {
-            admitted.push(content.bind_range(first..parameter_sequence));
+        match parameter.admitted {
+            Some(content) => admitted.push(content.bind_range(first..parameter_sequence)),
+            None => {
+                unadmitted.insert(parameter.directory_sequence);
+            }
         }
     }
     let directory_count = directory
@@ -1571,8 +1575,17 @@ fn normalize_directory_and_parameters(
         directory_count,
         usize::try_from(parameter_count)
             .map_err(|_| malformed("normalized Parameter Data count is out of range"))?,
-        admitted,
+        Admitted {
+            records: admitted,
+            unadmitted,
+        },
     ))
+}
+
+/// The normalized Parameter records, admitted one by one.
+struct Admitted {
+    records: Vec<crate::parameter::ParameterRecord>,
+    unadmitted: BTreeSet<u32>,
 }
 
 fn render_parameter_lines(data: &[u8], language: bool) -> Result<Vec<Vec<u8>>, CodecError> {
@@ -1643,7 +1656,11 @@ pub(crate) struct NormalizedBinary {
 pub(crate) struct BinaryAdmission {
     pub(crate) global: crate::global::ResolvedGlobal,
     pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
-    pub(crate) parameters: Option<Vec<crate::parameter::ParameterRecord>>,
+    /// The admitted Parameter records.
+    pub(crate) parameters: Vec<crate::parameter::ParameterRecord>,
+    /// Directory sequences of the Parameter records that are not admitted:
+    /// each is assembled from its normalized cards.
+    pub(crate) unadmitted: BTreeSet<u32>,
 }
 
 pub(crate) struct BinaryIdentities(Vec<u32>);
@@ -1752,11 +1769,14 @@ fn normalize_with_records<T>(
             .ok_or_else(|| malformed("a Binary Global sequence is zero"))?,
     )
     .map_err(|_| malformed("a Binary Global count does not fit memory"))?;
-    let all_admitted = parameters
-        .iter()
-        .all(|parameter| parameter.admitted.is_some());
-    let (directory_count, parameter_count, parameters) =
-        normalize_directory_and_parameters(&mut output, &directory, parameters, ctx)?;
+    let (
+        directory_count,
+        parameter_count,
+        Admitted {
+            records: parameters,
+            unadmitted,
+        },
+    ) = normalize_directory_and_parameters(&mut output, &directory, parameters, ctx)?;
     render_terminate(
         &mut output,
         start_count,
@@ -1770,7 +1790,8 @@ fn normalize_with_records<T>(
         BinaryAdmission {
             global,
             losses,
-            parameters: all_admitted.then_some(parameters),
+            parameters,
+            unadmitted,
         },
     )
 }

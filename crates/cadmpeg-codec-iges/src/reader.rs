@@ -313,7 +313,7 @@ impl<'a> PhysicalParse<'a> {
         let (binary_global, binary_parameters) = match binary_admission {
             Some(admission) => (
                 Some((admission.global, admission.losses)),
-                admission.parameters,
+                Some((admission.parameters, admission.unadmitted)),
             ),
             None => (None, None),
         };
@@ -358,8 +358,17 @@ impl<'a> PhysicalParse<'a> {
                 .chain(quarantined_directory.iter().map(|record| record.sequence));
             if let Some(parameters) = prepared_parameters {
                 parameters
-            } else if let Some(parameters) = binary_parameters {
-                parameter::finish_admitted(&directory, parameters, &global)
+            } else if let Some((admitted, unadmitted)) = binary_parameters {
+                parameter::assemble_with_admitted(
+                    &scan,
+                    &directory,
+                    excluded,
+                    parameter::AdmittedRecords {
+                        records: admitted,
+                        unadmitted: &unadmitted,
+                    },
+                    &global,
+                )?
             } else if scan.source_view().is_some() {
                 parameter::parts::assemble(&scan, &directory, excluded, &global, ctx, &mut parts)?
             } else {
