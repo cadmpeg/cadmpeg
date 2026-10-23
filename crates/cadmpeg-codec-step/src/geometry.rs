@@ -209,7 +209,7 @@ fn transformation_operator_2d(e: &mut Emitter, transform: Transform2) -> Option<
         return None;
     }
     Some(e.emit(
-        "CARTESIAN_TRANSFORMATION_OPERATOR_2D",
+        e.operator_2d_entity(),
         &format!("'','','',{x},{y},{origin},{}", e.real(scale)),
     ))
 }

@@ -5,6 +5,7 @@ use cadmpeg_ir::geometry::pcurve::{
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::transform::{Transform, Transform2};
 
+use crate::options::StepSchema;
 use crate::writer::Emitter;
 
 fn operator_attributes<'a>(lines: &'a [String], entity: &str, arity: usize) -> Vec<&'a str> {
@@ -75,27 +76,41 @@ fn reflected_conic_pcurves_keep_schema_complete_replica_operators() {
     ];
     let transform =
         Transform2::affine([[0.0, 2.0, 10.0], [2.0, 0.0, 20.0]]).expect("reflected similarity");
-    for conic in conics {
-        let mut emitter = Emitter::new();
-        let reflected = PcurveGeometry::Transformed(
-            PlacedPcurve::try_new(Box::new(conic), transform).expect("placed conic"),
-        );
-        let replica = super::pcurve(&mut emitter, &reflected).expect("writable reflected conic");
-        let lines = emitter.into_lines().expect("finite reflected conic");
-        let attributes = operator_attributes(&lines, "CARTESIAN_TRANSFORMATION_OPERATOR_2D", 7);
-        assert_eq!(
-            referenced_record(&lines, attributes[3]),
-            "DIRECTION('',(0.,1.));"
-        );
-        assert_eq!(
-            referenced_record(&lines, attributes[4]),
-            "DIRECTION('',(1.,0.));"
-        );
-        assert_eq!(
-            referenced_record(&lines, attributes[5]),
-            "CARTESIAN_POINT('',(10.,20.));"
-        );
-        assert_eq!(attributes[6], "2.");
-        assert!(referenced_record(&lines, &replica.to_string()).starts_with("CURVE_REPLICA('',"));
+    for schema in StepSchema::ALL {
+        for conic in &conics {
+            let mut emitter = Emitter::for_schema(schema);
+            let reflected = PcurveGeometry::Transformed(
+                PlacedPcurve::try_new(Box::new(conic.clone()), transform).expect("placed conic"),
+            );
+            let replica =
+                super::pcurve(&mut emitter, &reflected).expect("writable reflected conic");
+            let lines = emitter.into_lines().expect("finite reflected conic");
+            let entity = match schema {
+                StepSchema::Ap203Edition1 => {
+                    assert!(!lines
+                        .iter()
+                        .any(|line| line.contains("CARTESIAN_TRANSFORMATION_OPERATOR_2D(")));
+                    "CARTESIAN_TRANSFORMATION_OPERATOR"
+                }
+                _ => "CARTESIAN_TRANSFORMATION_OPERATOR_2D",
+            };
+            let attributes = operator_attributes(&lines, entity, 7);
+            assert_eq!(
+                referenced_record(&lines, attributes[3]),
+                "DIRECTION('',(0.,1.));"
+            );
+            assert_eq!(
+                referenced_record(&lines, attributes[4]),
+                "DIRECTION('',(1.,0.));"
+            );
+            assert_eq!(
+                referenced_record(&lines, attributes[5]),
+                "CARTESIAN_POINT('',(10.,20.));"
+            );
+            assert_eq!(attributes[6], "2.");
+            assert!(
+                referenced_record(&lines, &replica.to_string()).starts_with("CURVE_REPLICA('',")
+            );
+        }
     }
 }

@@ -262,6 +262,7 @@ An OCCT parabola edge parameter `u` maps to the STEP parabola parameter `t = u /
 is the focal distance. A two-dimensional parabola pcurve retains the OCCT parameter `u`.
 A STEP replica of a two-dimensional pcurve uses the seven-parameter
 `CARTESIAN_TRANSFORMATION_OPERATOR_2D` sequence defined in the [STEP specification](step.md).
+AP203 edition 1 uses `CARTESIAN_TRANSFORMATION_OPERATOR` with the same sequence.
 Its inherited representation-item name, transformation name, and transformation
 description precede the two axes, local origin, and scale. A 3D replica adds the
 third axis after scale. A chart reflection retains the curve parameter and reverses
