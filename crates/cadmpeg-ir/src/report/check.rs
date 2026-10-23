@@ -95,6 +95,16 @@ pub enum Check {
     /// or result topology state, a sketch constraint states the wrong number of
     /// members, or a native record census disagrees with the source container.
     Counts,
+    /// A face's edge loop does not list its coedges in traversal order: its
+    /// coedges form one closed traversal by vertex identity in another order,
+    /// several closed traversals, or none.
+    RingOrder,
+    /// A face's sense disagrees with the winding of its loops, or the faces
+    /// of a body whose shells are closed disagree on its volume: a face's
+    /// readings or a shell's volume sign contradict the body's orientation,
+    /// or the flux of the unit field through the shells exceeds its
+    /// tolerance.
+    Orientation,
 }
 
 impl fmt::Display for Check {
@@ -117,6 +127,8 @@ impl fmt::Display for Check {
             Self::Tessellation => "tessellation",
             Self::GeometricConsistency => "geometric_consistency",
             Self::Counts => "counts",
+            Self::RingOrder => "ring_order",
+            Self::Orientation => "orientation",
         })
     }
 }
@@ -202,6 +214,19 @@ mod tests {
         let finding: Finding = serde_json::from_value(wire.clone())?;
         assert!(finding.related.is_empty());
         assert_eq!(serde_json::to_value(finding)?, wire);
+        Ok(())
+    }
+
+    #[test]
+    fn measurement_checks_are_pinned() -> Result<(), serde_json::Error> {
+        for (check, name) in [
+            (Check::RingOrder, "ring_order"),
+            (Check::Orientation, "orientation"),
+        ] {
+            assert_eq!(serde_json::to_value(check)?, name);
+            assert_eq!(check.to_string(), name);
+            assert_eq!(serde_json::from_value::<Check>(name.into())?, check);
+        }
         Ok(())
     }
 

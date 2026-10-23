@@ -355,6 +355,21 @@ mod tests {
     }
 
     #[test]
+    fn measurement_checks_reject_on_no_admission_route() {
+        for allowed in [
+            DRAFT_CORE_CHECKS,
+            RHINO_DRAFT_CHECKS,
+            RHINO_INSTANCE_CHECKS,
+            CATIA_ADMISSION_CHECKS,
+            SLDPRT_EXPORT_PRECONDITION_CHECKS,
+        ] {
+            for check in [Check::RingOrder, Check::Orientation] {
+                assert!(!allowed.contains(&check), "{check}");
+            }
+        }
+    }
+
+    #[test]
     fn documented_route_constants_match_admit_subsets() {
         assert_eq!(
             DRAFT_CORE_CHECKS,
