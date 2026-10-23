@@ -139,3 +139,17 @@ malformed; no source-order choice associates a view provider with one of them.
 An admitted edge or vertex color array replaces the corresponding default color bindings on its
 indexed targets. The effective array appearances retain the default line width or point size.
 An empty or mismatched array leaves those default bindings in place.
+
+## Exact location identity
+
+Topology indexing and representation association use ordered elementary datum identities and
+signed powers. Equal affine matrices do not merge distinct datum identities. Adjacent equal datums
+combine their powers, and a zero sum cancels that pair. Records with no retained factors keep a
+distinct table identity, including records whose affine matrix is the identity matrix.
+
+Canonical location words admit at most 65,536 terms. Location-table reconstruction admits the
+larger of 16,777,216 term visits and 1,024 visits per location row, including intermediate powers
+and compositions. Compound powers use repeated squaring. Word expansion, work exhaustion, or
+signed 64-bit exponent overflow returns a local bound outcome; the caller withholds the affected
+topology and reports a loss. Allocation failures remain decode errors. Canonical identities are
+derived state and do not change the native record format.
