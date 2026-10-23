@@ -252,10 +252,10 @@ blend?
 identity, partition-local GROUP node, endpoint tag, and write-state body-image
 object. Endpoint tags `10`, `12`, and `15` select the body-image field.
 The `BLEND` and `FACE_BLEND` labels with body-write frames identify edge-blend
-and face-blend operations. When the owned circular blend-carrier projection is
-complete, the corresponding neutral family and constant radius are available.
-The edge or face selections and created-face relation remain separate
-questions. GROUP member XMTs are checked against the exact same-family node in
+and face-blend operations. Current body-owned blend carriers do not establish
+which carriers belong to an individual historical operation. The operation
+family is known; its input selections, radius, radius-law form, and created-face
+relation remain unresolved. GROUP member XMTs are checked against the exact same-family node in
 the delta-merged partition graph before the guarded unique-node fallback; this
 resolves current topology identities without assigning creation provenance.
 Explicit Boolean operations independently require the body-image object to
@@ -343,9 +343,9 @@ role relation. A parameter-class name does not identify a physical projection di
 
 ### OM-16. `CPROJ_CMB` construction-reference roles
 
-**Question.** Which `CPROJ_CMB` construction references select the source curves, target surfaces, directions, and combination controls?
+**Question.** Which bounded `CPROJ_CMB` fields identify its two curve sections, two projection-direction option objects, curve-fit controls, and curve options?
 
-**Known.** `siemens_nx.md` §7.1 "A `CPROJ_CMB` payload contains at most one construction-reference graph framed as" defines both complete storage graphs, serialized reference occurrences, block resolution, and logical payload.
+**Known.** `siemens_nx.md` §7.1 "A `CPROJ_CMB` payload contains at most one construction-reference graph framed as" defines both complete storage graphs, serialized reference occurrences, block resolution, and logical payload. The operation has two curve-section subjects and two projection-direction option objects; it does not establish a target-face relation.
 
 **Need.** We must know the roles to construct the combined projected curves.
 
