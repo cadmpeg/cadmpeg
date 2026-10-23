@@ -19,6 +19,8 @@ pub mod depth;
 pub mod detection;
 pub mod edit;
 pub mod golden;
+#[cfg(feature = "measure")]
+pub mod measured;
 pub mod native_serialization;
 pub mod polyhedron;
 pub mod refusal;

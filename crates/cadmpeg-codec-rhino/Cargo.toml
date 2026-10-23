@@ -34,7 +34,7 @@ roxmltree.workspace = true
 
 [dev-dependencies]
 # Test-only golden harness and round-trip helpers.
-cadmpeg-test-support = { workspace = true }
+cadmpeg-test-support = { workspace = true, features = ["measure"] }
 
 [lints]
 workspace = true

@@ -1580,18 +1580,27 @@ def scan_authoring_paths() -> list[Finding]:
 
 MEASUREMENT_CRATE = "cadmpeg-measure"
 MEASUREMENT_CONSUMERS = {"cadmpeg"}
+# Test-only crates that may list the measurement crate as an optional
+# dependency behind a feature that only writer crates enable.
+OPTIONAL_MEASUREMENT_CONSUMERS = {"cadmpeg-test-support"}
 PRODUCTION_DEPENDENCY_HEADER = re.compile(
     r"^\s*\[\s*(?:target\.[^\]]+?\.)?(?:build-)?dependencies\s*(?:\.|\])"
 )
 TABLE_HEADER = re.compile(r"^\s*\[")
+OPTIONAL_ENTRY = re.compile(r"\boptional\s*=\s*true\b")
 
 
-def dependency_packages(table: object) -> set[str]:
-    """The package names a dependency table lists, following `package` renames."""
+def dependency_packages(table: object, *, required_only: bool = False) -> set[str]:
+    """The package names a dependency table lists, following `package` renames.
+
+    With `required_only`, an entry marked `optional = true` is left out.
+    """
     if not isinstance(table, dict):
         return set()
     packages = set()
     for key, value in table.items():
+        if required_only and isinstance(value, dict) and value.get("optional") is True:
+            continue
         package = value.get("package") if isinstance(value, dict) else None
         packages.add(package if isinstance(package, str) else key)
     return packages
@@ -1614,14 +1623,17 @@ def scan_measurement_dependency() -> list[Finding]:
             for target in targets.values():
                 if isinstance(target, dict):
                     tables += [target.get(name) for name in ("dependencies", "build-dependencies")]
-        if not any(MEASUREMENT_CRATE in dependency_packages(table) for table in tables):
+        required_only = manifest.parent.name in OPTIONAL_MEASUREMENT_CONSUMERS
+        if not any(MEASUREMENT_CRATE in dependency_packages(table, required_only=required_only)
+                   for table in tables):
             continue
         line = 1
         production = False
         for number, content in enumerate(text.splitlines(), start=1):
             if TABLE_HEADER.match(content):
                 production = bool(PRODUCTION_DEPENDENCY_HEADER.match(content))
-            if production and MEASUREMENT_CRATE in content:
+            if production and MEASUREMENT_CRATE in content and not (
+                    required_only and OPTIONAL_ENTRY.search(content)):
                 line = number
                 break
         findings.append(Finding(

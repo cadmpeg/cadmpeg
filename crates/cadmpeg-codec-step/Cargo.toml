@@ -30,7 +30,7 @@ zip.workspace = true
 # fixtures out of the normal library build.
 cadmpeg-ir = { workspace = true, features = ["examples"] }
 cadmpeg-measure.workspace = true
-cadmpeg-test-support = { workspace = true }
+cadmpeg-test-support = { workspace = true, features = ["measure"] }
 serde_json.workspace = true
 roxmltree.workspace = true
 hdf5-reader.workspace = true

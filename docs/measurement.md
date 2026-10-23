@@ -9,7 +9,9 @@ rustdoc.
 Measurement is an oracle on decoded output. A decoder or encoder never
 selects a layout, carrier, sense, unit or interpretation by measuring
 geometry. Only the `cadmpeg` command line package depends on
-`cadmpeg-measure` outside `[dev-dependencies]`.
+`cadmpeg-measure` outside `[dev-dependencies]`. The test-only crate
+`cadmpeg-test-support` lists it as an optional dependency behind its
+`measure` feature, which only writer crates enable.
 
 ## Value object
 
@@ -722,7 +724,8 @@ revision.
 Measurement is an oracle on decoded output. A decoder or encoder never
 selects a layout, carrier, sense, unit, or interpretation by measuring
 geometry. Only the `cadmpeg` CLI crate depends on `cadmpeg-measure` outside
-`[dev-dependencies]`; the source-policy rule `measurement_dependency`
+`[dev-dependencies]`, except the optional dependency of the test-only crate
+`cadmpeg-test-support`; the source-policy rule `measurement_dependency`
 enforces this.
 
 ## Check findings

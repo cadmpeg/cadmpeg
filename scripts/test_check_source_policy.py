@@ -77,6 +77,19 @@ class MeasurementDependencyTests(TempSourceCase):
                       '[dependencies]\ncadmpeg-measure = { path = "../cadmpeg-measure" }\n')
         self.assertEqual(len(self.findings("measurement_dependency")), 1)
 
+    def test_test_support_optional_dependency_passes(self) -> None:
+        self.manifest("cadmpeg-test-support",
+                      "[dependencies]\ncadmpeg-measure = { workspace = true, optional = true }\n\n"
+                      '[features]\nmeasure = ["dep:cadmpeg-measure"]\n')
+        self.assertEqual(self.findings("measurement_dependency"), [])
+
+    def test_codec_optional_dependency_fails(self) -> None:
+        self.manifest("cadmpeg-codec-step",
+                      "[dependencies]\ncadmpeg-measure = { workspace = true, optional = true }\n")
+        findings = self.findings("measurement_dependency")
+        self.assertEqual([(item.path, item.line) for item in findings],
+                         [("crates/cadmpeg-codec-step/Cargo.toml", 5)])
+
     def test_target_dependency_fails(self) -> None:
         self.manifest("cadmpeg-codec-iges",
                       "[target.'cfg(unix)'.dependencies]\ncadmpeg-measure.workspace = true\n")

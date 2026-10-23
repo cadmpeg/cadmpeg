@@ -94,6 +94,37 @@ def lock_dependents(old: str, new: str, names: set[str]) -> set[str]:
     return reached & names
 
 
+def enabled_optional(package: dict, optional: dict[str, str], requested: set[str]) -> set[str]:
+    """Return the optional dependencies of `package` that the features `requested` enable.
+
+    `optional` maps each optional dependency alias to its package name. A
+    dependency with no `dep:` entry anywhere also has an implicit feature of its
+    alias name. A weak `alias?/feature` entry does not enable the dependency.
+    """
+    features = package.get('features', {})
+    explicit = {value.removeprefix('dep:') for values in features.values() for value in values
+                if value.startswith('dep:')}
+    enabled = set()
+    seen = set()
+    pending = list(requested)
+    while pending:
+        feature = pending.pop()
+        if feature in seen:
+            continue
+        seen.add(feature)
+        if feature in features:
+            pending.extend(features[feature])
+        elif feature.startswith('dep:'):
+            enabled.add(feature.removeprefix('dep:'))
+        elif '/' in feature:
+            alias = feature.split('/', 1)[0]
+            if not alias.endswith('?'):
+                enabled.add(alias)
+        elif feature not in explicit:
+            enabled.add(feature)
+    return {optional[alias] for alias in enabled if alias in optional}
+
+
 def select(root: Path, paths: list[str], *, full: bool = False,
            base_lock: str | None = None, cache_writer: bool = False,
            tested: bool = False) -> dict:
@@ -108,22 +139,50 @@ def select(root: Path, paths: list[str], *, full: bool = False,
             package = tomllib.loads((directory / 'Cargo.toml').read_text())
             members[directory.relative_to(root).as_posix()] = package
     names = {package['package']['name'] for package in members.values()}
+    # `reverse` holds required edges. An optional dependency reaches the
+    # dependents of the package that lists it only through the consumers whose
+    # requested features enable it.
     reverse = {name: set() for name in names}
+    optional_reverse = {name: set() for name in names}
     required = {name: set() for name in names}
+    optional_aliases = {name: {} for name in names}
+    consumers = {name: {} for name in names}
+    manifests = {package['package']['name']: package for package in members.values()}
     for package in members.values():
+        owner = package['package']['name']
+        aliases = {}
         tables = [package]
         tables.extend(package.get('target', {}).values())
         for table in tables:
             for kind in ('dependencies', 'dev-dependencies', 'build-dependencies'):
                 for alias, dependency in table.get(kind, {}).items():
-                    optional = isinstance(dependency, dict) and dependency.get('optional', False)
-                    if isinstance(dependency, dict) and dependency.get('workspace'):
+                    member = dependency if isinstance(dependency, dict) else {}
+                    optional = member.get('optional', False)
+                    requested = set(member.get('features', []))
+                    if member.get('workspace'):
                         dependency = manifest['workspace']['dependencies'][alias]
-                    name = dependency.get('package', alias) if isinstance(dependency, dict) else alias
-                    if name in names:
-                        reverse[name].add(package['package']['name'])
-                        if not optional:
-                            required[package['package']['name']].add(name)
+                    spec = dependency if isinstance(dependency, dict) else {}
+                    requested |= set(spec.get('features', []))
+                    if spec.get('default-features', True) or member.get('default-features', False):
+                        requested.add('default')
+                    name = spec.get('package', alias)
+                    if name not in names:
+                        continue
+                    aliases[alias] = name
+                    consumers[name].setdefault(owner, set()).update(requested)
+                    if optional:
+                        optional_reverse[name].add(owner)
+                        optional_aliases[owner][alias] = name
+                    else:
+                        reverse[name].add(owner)
+                        required[owner].add(name)
+        for values in package.get('features', {}).values():
+            for value in values:
+                if '/' in value:
+                    alias, feature = value.split('/', 1)
+                    name = aliases.get(alias.removesuffix('?'))
+                    if name is not None:
+                        consumers[name].setdefault(owner, set()).add(feature)
     fuzz_manifest = root / 'crates/cadmpeg-fuzz/Cargo.toml'
     fuzz_inputs = (set(tomllib.loads(fuzz_manifest.read_text()).get('dependencies', {})) & names
                    if fuzz_manifest.exists() else set())
@@ -183,12 +242,21 @@ def select(root: Path, paths: list[str], *, full: bool = False,
     changed = set(affected)
     affected |= tested_only
     cli_changed = bool(changed & {'cadmpeg', 'cadmpeg-registry'})
+    propagated = set()
     pending = list(affected)
     while pending:
-        for dependent in reverse[pending.pop()]:
-            if dependent not in affected:
-                affected.add(dependent)
-                pending.append(dependent)
+        package = pending.pop()
+        if package in propagated:
+            continue
+        propagated.add(package)
+        affected.add(package)
+        pending.extend(reverse[package])
+        for dependent in optional_reverse[package]:
+            affected.add(dependent)
+            for consumer, requested in consumers[dependent].items():
+                if package in enabled_optional(manifests[dependent],
+                                               optional_aliases[dependent], requested):
+                    pending.append(consumer)
     gates = {}
     for output, codec in SINGLE_CODEC_GATES.items():
         inputs = {'cadmpeg', codec}

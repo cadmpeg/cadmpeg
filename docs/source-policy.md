@@ -72,7 +72,10 @@ Use repeatable `--crate NAME` arguments to restrict reported findings to named c
   (`measurement_dependency`). Other crates list it only in
   `[dev-dependencies]`: a decoder or encoder never selects a layout, carrier,
   sense, unit or interpretation by measuring geometry, and codec round-trip
-  tests use measurement as an oracle.
+  tests use measurement as an oracle. The test-only crate
+  `cadmpeg-test-support` may list it as an optional dependency behind its
+  `measure` feature, which only writer crates enable in
+  `[dev-dependencies]`.
 - Every test a `scripts/test_*.py` file declares is collected. A test case class
   or a free `test_` function declared at or after the file's
   `if __name__ == "__main__":` block fails: discovery imports the module and

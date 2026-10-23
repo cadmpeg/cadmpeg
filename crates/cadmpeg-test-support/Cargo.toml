@@ -13,10 +13,16 @@ publish = false
 [dependencies]
 cadmpeg-core = { workspace = true, features = ["test-support"] }
 cadmpeg-ir = { workspace = true, features = ["examples"] }
+cadmpeg-measure = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true
 thiserror.workspace = true
+
+[features]
+# Measured round-trip comparison. Only writer crates enable it, so a
+# measurement change reaches only their tests.
+measure = ["dep:cadmpeg-measure"]
 
 [dev-dependencies]
 cadmpeg-ir = { workspace = true, features = ["examples"] }

@@ -74,6 +74,48 @@ class ScopeTests(unittest.TestCase):
             self.assertEqual(select(root, ['crates/shared/src/lib.rs'])['packages'], expected)
             self.assertEqual(select(root, [], full=True)['packages'], expected)
 
+    def test_optional_dependency_reaches_only_consumers_that_enable_it(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / 'Cargo.toml').write_text(
+                '[workspace]\nmembers=["crates/*"]\n'
+                '[workspace.dependencies]\noracle={path="crates/oracle"}\n'
+                'support={path="crates/support"}\n')
+            manifests = {
+                'oracle': '',
+                'support': ('[dependencies]\noracle={workspace=true,optional=true}\n'
+                            '[features]\nmeasure=["dep:oracle"]\nweak=["oracle?/x"]\n'),
+                'implicit': '[dependencies]\noracle={workspace=true,optional=true}\n',
+                'writer': '[dev-dependencies]\nsupport={workspace=true,features=["measure"]}\n',
+                'featured': ('[dependencies]\nsupport={workspace=true}\n'
+                             '[features]\nextra=["support/measure"]\n'),
+                'weak': '[dev-dependencies]\nsupport={workspace=true,features=["weak"]}\n',
+                'reader': '[dev-dependencies]\nsupport={workspace=true}\n',
+                'implicit-user': '[dependencies]\nimplicit={path="../implicit",features=["oracle"]}\n',
+                'implicit-plain': '[dependencies]\nimplicit={path="../implicit"}\n',
+                'application': '[dependencies]\nwriter={path="../writer"}\nreader={path="../reader"}\n',
+            }
+            for name, dependencies in manifests.items():
+                directory = root / 'crates' / name
+                directory.mkdir(parents=True)
+                (directory / 'Cargo.toml').write_text(f'[package]\nname="{name}"\n' + dependencies)
+            self.assertEqual(select(root, ['crates/oracle/src/lib.rs'])['packages'],
+                             ['application', 'featured', 'implicit', 'implicit-user', 'oracle',
+                              'support', 'writer'])
+            self.assertEqual(select(root, ['crates/support/src/lib.rs'])['packages'],
+                             ['application', 'featured', 'reader', 'support', 'weak', 'writer'])
+
+    def test_measurement_change_selects_only_writer_round_trips(self):
+        scope = select(ROOT, ['crates/cadmpeg-measure/src/compare.rs'])
+        self.assertFalse(scope['full'])
+        for package in ('cadmpeg-measure', 'cadmpeg-test-support', 'cadmpeg',
+                        'cadmpeg-codec-step', 'cadmpeg-codec-iges', 'cadmpeg-codec-freecad'):
+            with self.subTest(package=package):
+                self.assertIn(package, scope['packages'])
+        for package in ('cadmpeg-codec-catia', 'cadmpeg-codec-nx', 'cadmpeg-ir'):
+            with self.subTest(package=package):
+                self.assertNotIn(package, scope['packages'])
+
     def test_bounded_gate_tool_change_selects_iges(self):
         scope = select(ROOT, ['scripts/verify-iges-bounded.py'])
         self.assertIn('cadmpeg-codec-iges', scope['packages'])
