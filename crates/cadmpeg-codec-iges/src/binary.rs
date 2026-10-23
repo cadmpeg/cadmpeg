@@ -1690,7 +1690,7 @@ fn resolve_value(
 /// Normalize one Binary IGES source into the Fixed ASCII image consumed by the
 /// typed reader.
 pub(crate) fn normalize(source: View<'_>, ctx: &DecodeContext<'_>) -> Result<Vec<u8>, CodecError> {
-    ctx.capture_part_extent(source)?;
+    ctx.require_source(source)?;
     normalize_with_records(
         source,
         ctx,
