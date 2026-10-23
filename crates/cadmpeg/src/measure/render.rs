@@ -10,7 +10,8 @@ use std::io::{self, Write};
 
 use cadmpeg_measure::report::{
     BodyMeasures, BodyOrientation, CarrierParameters, EdgeMeasures, EdgeParameters, FaceMeasures,
-    LoopMeasures, MeasureReport, NormalReading, OccurrenceMeasures, RegionRule, SurfaceMeasures,
+    LoopMeasures, MeasureReport, NormalReading, OccurrenceMeasures, RegionRule, RowPlacement,
+    SurfaceMeasures,
 };
 use cadmpeg_measure::value::{BoxValue, Measured, Point, Quantity, Range, Scalar, Sweep, Tensor};
 use serde::Serialize;
@@ -138,8 +139,10 @@ fn body_orientation_cell(orientation: &BodyOrientation) -> &'static str {
     }
 }
 
-const FACE_HEADER: [&str; 28] = [
+const FACE_HEADER: [&str; 30] = [
     "face",
+    "space",
+    "occurrence",
     "body",
     "surface",
     "kind",
@@ -169,8 +172,10 @@ const FACE_HEADER: [&str; 28] = [
     "caveats",
 ];
 
-const BODY_HEADER: [&str; 48] = [
+const BODY_HEADER: [&str; 50] = [
     "body",
+    "space",
+    "occurrence",
     "name",
     "kind",
     "faces",
@@ -220,8 +225,10 @@ const BODY_HEADER: [&str; 48] = [
     "caveats",
 ];
 
-const EDGE_HEADER: [&str; 17] = [
+const EDGE_HEADER: [&str; 19] = [
     "edge",
+    "space",
+    "occurrence",
     "kind",
     "length_mm",
     "radius_mm",
@@ -240,20 +247,31 @@ const EDGE_HEADER: [&str; 17] = [
     "unavailable",
 ];
 
-const SURFACE_HEADER: [&str; 12] = [
+const SURFACE_HEADER: [&str; 14] = [
     "surface",
+    "space",
+    "occurrence",
     "kind",
     "radius_mm",
     "diameter_mm",
     "half_angle_rad",
     "major_radius_mm",
     "minor_radius_mm",
-    "placement",
+    "carrier_placement",
     "bodies",
     "faces",
     "status",
     "unavailable",
 ];
+
+/// The `space` and `occurrence` cells of a row.
+fn space_cells(placement: &RowPlacement) -> [String; 2] {
+    match placement {
+        RowPlacement::Model {} => ["model".to_owned(), String::new()],
+        RowPlacement::Occurrence { occurrence } => ["occurrence".to_owned(), cell(occurrence)],
+        RowPlacement::Stored {} => ["stored".to_owned(), String::new()],
+    }
+}
 
 /// The `radius_mm`, `diameter_mm`, `half_angle_rad`, `major_radius_mm` and
 /// `minor_radius_mm` cells of a carrier.
@@ -287,12 +305,13 @@ fn face_row(face: &FaceMeasures) -> Vec<String> {
     let measures = face.measures();
     let [axial_min, axial_max] = range_cells(measures.axial_range().as_ref());
     let [sweep, full] = sweep_cells(measures.angular_sweep().as_ref());
-    let mut row = vec![
-        cell(face.face()),
+    let mut row = vec![cell(face.face())];
+    row.extend(space_cells(face.placement()));
+    row.extend([
         cell(face.body().as_deref().unwrap_or("")),
         cell(carrier.surface()),
         name(carrier.kind()),
-    ];
+    ]);
     row.extend(carrier_cells(carrier.parameters()));
     row.extend([
         axial_min,
@@ -321,8 +340,9 @@ fn face_row(face: &FaceMeasures) -> Vec<String> {
 
 fn body_row(body: &BodyMeasures) -> Vec<String> {
     let closed = !body.shells().is_empty() && body.shells().iter().all(|shell| *shell.closed());
-    let mut row = vec![
-        cell(body.body()),
+    let mut row = vec![cell(body.body())];
+    row.extend(space_cells(body.placement()));
+    row.extend([
         cell(body.name().as_deref().unwrap_or("")),
         name(body.kind()),
         body.faces().to_string(),
@@ -331,7 +351,7 @@ fn body_row(body: &BodyMeasures) -> Vec<String> {
         scalar_cell(body.area().as_ref()),
         scalar_cell(body.volume().as_ref()),
         scalar_cell(body.length().as_ref()),
-    ];
+    ]);
     row.extend(point_cells(body.centroid().as_ref()));
     row.extend(tensor_cells(body.second_moments().as_ref()));
     row.extend(moments_cells(body.principal_moments().as_ref()));
@@ -361,14 +381,15 @@ fn edge_row(edge: &EdgeMeasures) -> Vec<String> {
         EdgeParameters::Circle { radius, .. } => Some(radius),
         _ => None,
     };
-    let mut row = vec![
-        cell(edge.edge()),
+    let mut row = vec![cell(edge.edge())];
+    row.extend(space_cells(edge.placement()));
+    row.extend([
         name(edge.kind()),
         scalar_cell(Some(edge.length())),
         scalar_cell(radius),
         scalar_cell(edge.arc_angle().as_ref()),
         scalar_cell(edge.parameter_span().as_ref()),
-    ];
+    ]);
     row.extend(point_cells(Some(edge.start())));
     row.extend(point_cells(Some(edge.end())));
     row.push(edge.closed().to_string());
@@ -381,7 +402,9 @@ fn edge_row(edge: &EdgeMeasures) -> Vec<String> {
 
 fn surface_row(surface: &SurfaceMeasures) -> Vec<String> {
     let carrier = surface.carrier();
-    let mut row = vec![cell(carrier.surface()), name(carrier.kind())];
+    let mut row = vec![cell(carrier.surface())];
+    row.extend(space_cells(surface.placement()));
+    row.push(name(carrier.kind()));
     row.extend(carrier_cells(carrier.parameters()));
     row.push(name(&carrier.placement().class()));
     row.push(cell(&surface.bodies().join(",")));

@@ -245,6 +245,37 @@ fn a_scaled_chain_or_an_external_prototype_gives_no_rows() {
     );
 }
 
+/// Each TSV row states its space: `model`, or `occurrence` with the
+/// occurrence ID, in every table.
+#[test]
+fn tsv_rows_state_their_placement_space() {
+    let path = assembly();
+    let path = path.to_str().unwrap();
+    for (extra, space, occurrence) in [
+        (&[][..], "model", ""),
+        (
+            &["--occurrence", "occurrence#160"][..],
+            "occurrence",
+            "step:product:occurrence#160",
+        ),
+    ] {
+        for level in [&[][..], &["--faces"][..], &["--edges"][..]] {
+            let mut args = vec![path, "--tsv"];
+            args.extend_from_slice(extra);
+            args.extend_from_slice(level);
+            let text = super::measure_text(&args);
+            let mut lines = text.lines();
+            let header: Vec<&str> = lines.next().unwrap().split('\t').collect();
+            assert_eq!(&header[1..3], ["space", "occurrence"], "{level:?}");
+            let rows: Vec<Vec<&str>> = lines.map(|line| line.split('\t').collect()).collect();
+            assert!(!rows.is_empty(), "{level:?}");
+            for row in rows {
+                assert_eq!(&row[1..3], [space, occurrence], "{level:?}");
+            }
+        }
+    }
+}
+
 #[test]
 fn occurrence_selectors_resolve_and_scope_the_rows() {
     let path = assembly();

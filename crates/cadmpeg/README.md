@@ -275,7 +275,10 @@ uncertainty, or is unavailable with a pinned reason code and a category.
 reason codes and the caveats.
 
 `--tsv` prints one table with units in the column names: the body table,
-the face table, the edge table, or the surface table. It refuses a selection
+the face table, the edge table, or the surface table. Each row states its
+placement space in `space` (`model`, `occurrence` or `stored`) and
+`occurrence`; `carrier_placement` in the surface table is the placement
+class of the carrier. It refuses a selection
 of more than one of faces, edges and surfaces. `--json` prints the versioned envelope; `--report FILE` (also `-o`
 and `--output`) writes it to a file. `--limits service` selects the smaller
 work allowance of a measurement pass. A CADIR document decoded at container

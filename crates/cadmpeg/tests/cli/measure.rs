@@ -22,7 +22,8 @@ const TEST_ABSOLUTE_FLOOR: f64 = 1.0e-9;
 
 #[cfg(feature = "step")]
 /// The faces table header of the measurement contract.
-const FACE_HEADER: &str = "face\tbody\tsurface\tkind\tradius_mm\tdiameter_mm\thalf_angle_rad\t\
+const FACE_HEADER: &str =
+    "face\tspace\toccurrence\tbody\tsurface\tkind\tradius_mm\tdiameter_mm\thalf_angle_rad\t\
 major_radius_mm\tminor_radius_mm\taxial_min_mm\taxial_max_mm\taxial_extent_mm\t\
 angular_sweep_rad\tsweep_full\tarea_mm2\tboundary_length_mm\tseam_length_mm\tbbox_min_x_mm\t\
 bbox_min_y_mm\tbbox_min_z_mm\tbbox_max_x_mm\tbbox_max_y_mm\tbbox_max_z_mm\tbbox_kind\t\
@@ -30,8 +31,9 @@ orientation\tstatus\tunavailable\tcaveats";
 
 #[cfg(feature = "step")]
 /// The surfaces table header of the measurement contract.
-const SURFACE_HEADER: &str = "surface\tkind\tradius_mm\tdiameter_mm\thalf_angle_rad\t\
-major_radius_mm\tminor_radius_mm\tplacement\tbodies\tfaces\tstatus\tunavailable";
+const SURFACE_HEADER: &str = "surface\tspace\toccurrence\tkind\tradius_mm\tdiameter_mm\t\
+half_angle_rad\tmajor_radius_mm\tminor_radius_mm\tcarrier_placement\tbodies\tfaces\tstatus\t\
+unavailable";
 
 #[cfg(feature = "step")]
 fn fixture(name: &str) -> PathBuf {
@@ -615,16 +617,19 @@ fn surface_rows_hold_carrier_parameters_only() {
     assert_eq!(lines[0].join("\t"), SURFACE_HEADER);
     assert_eq!(lines.len(), 3);
     assert_eq!(
-        &lines[1][..4],
-        ["step:data:surface#16", "cylinder", "10", "20"]
+        &lines[1][..6],
+        ["step:data:surface#16", "model", "", "cylinder", "10", "20"]
     );
-    assert_eq!(lines[1][7], "identity");
-    assert_eq!(lines[1][9], "step:data:face#46");
-    assert_eq!(&lines[2][..3], ["step:data:surface#18", "plane", ""]);
-    assert_eq!(lines[2][9], "step:data:face#63");
+    assert_eq!(lines[1][9], "identity");
+    assert_eq!(lines[1][11], "step:data:face#46");
+    assert_eq!(
+        &lines[2][..5],
+        ["step:data:surface#18", "model", "", "plane", ""]
+    );
+    assert_eq!(lines[2][11], "step:data:face#63");
     for row in &lines[1..] {
         assert_eq!(row.len(), lines[0].len());
-        assert_eq!(row[10], "measured");
+        assert_eq!(row[12], "measured");
     }
 
     cadmpeg()
