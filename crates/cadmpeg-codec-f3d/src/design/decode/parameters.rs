@@ -27,15 +27,79 @@ use crate::records::{
     recipes::ConstructionRecipe,
 };
 use cadmpeg_core::decode::u64_from_index;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
-macro_rules! parameter_text {
-    ($payload:expr, $at:expr, $bounds:expr) => {
-        lp_utf16_bounded($payload, $at, $bounds)?
-    };
+/// One parameter frame read through its source `View`.
+///
+/// Every byte that a parameter grammar consults is a read of this view, so a
+/// parse inside a record scope adds each range it reads to that record.
+#[derive(Clone, Copy)]
+pub(in crate::design) struct ParameterFrame<'a> {
+    view: View<'a>,
+}
+
+impl<'a> ParameterFrame<'a> {
+    /// Frame over one bounded source view.
+    pub(in crate::design) const fn new(view: View<'a>) -> Self {
+        Self { view }
+    }
+
+    /// Frame over bytes that left the source session; its reads attribute nothing.
+    #[cfg(test)]
+    pub(in crate::design) fn over_retained(bytes: &'a [u8]) -> Self {
+        Self::new(View::over_retained(bytes))
+    }
+
+    /// Frame length. The length is the record extent and reads no byte.
+    fn len(self) -> usize {
+        self.view.window().len()
+    }
+
+    /// Read the frame-relative byte range `range`.
+    fn get(self, range: std::ops::Range<usize>) -> Option<&'a [u8]> {
+        let start = self.view.start().checked_add(range.start)?;
+        let end = self.view.start().checked_add(range.end)?;
+        self.view.read_slice(start..end)
+    }
+
+    fn byte(self, at: usize) -> Option<u8> {
+        self.get(at..at.checked_add(1)?)?.first().copied()
+    }
+
+    fn u32_at(self, at: usize) -> Option<u32> {
+        View::u32_le_at(self.get(at..at.checked_add(4)?)?, 0)
+    }
+
+    fn u64_at(self, at: usize) -> Option<u64> {
+        View::u64_le_at(self.get(at..at.checked_add(8)?)?, 0)
+    }
+
+    fn f64_at(self, at: usize) -> Option<f64> {
+        View::f64_le_at(self.get(at..at.checked_add(8)?)?, 0)
+    }
+
+    /// Read a counted UTF-16 field: its u32 count and its code units.
+    fn utf16(self, at: usize, bounds: std::ops::RangeInclusive<usize>) -> Option<(String, usize)> {
+        let (text, end) = lp_utf16_bounded(self.view.window(), at, bounds)?;
+        self.get(at..end)?;
+        Some((text, end))
+    }
+
+    /// Read one reference: its presence byte and every field it carries.
+    fn reference(
+        self,
+        cursor: &mut usize,
+    ) -> Option<crate::bytes::Reference<&'a str, crate::bytes::utf16::Utf16View<'a>>> {
+        let start = *cursor;
+        let mut end = start;
+        let reference = crate::bytes::take_reference(self.view.window(), &mut end)?;
+        self.get(start..end)?;
+        *cursor = end;
+        Some(reference)
+    }
 }
 
 /// Decode every parametric construction-recipe record (`body_recipe_data`,
@@ -72,51 +136,86 @@ pub(crate) struct DecodedParameters {
     pub(crate) parameters: Vec<DesignParameter>,
     /// Per-stream counts of typed parameter frames that match no grammar.
     pub(crate) unparsed: Vec<UnparsedParameterRecords>,
+    /// Source field offsets of each parameter record, by parameter id.
+    pub(crate) pointers: BTreeMap<String, BTreeMap<String, u64>>,
+    /// Local entity index named by each typed parameter tail, by parameter id.
+    pub(crate) state_targets: BTreeMap<String, u64>,
 }
 
 /// Decode every indexed parameter record in each Design `BulkStream`.
 ///
-/// A frame shaped as a typed compact parameter that matches no parameter
-/// grammar is counted per stream so the caller reports it instead of
-/// dropping it silently.
-pub(crate) fn decode_parameters(scan: &ContainerScan) -> Result<DecodedParameters, CodecError> {
+/// Each parameter is parsed once, inside its own record scope, so the record
+/// holds every range its grammar reads. A frame shaped as a typed compact
+/// parameter that matches no parameter grammar is counted per stream so the
+/// caller reports it instead of dropping it silently.
+pub(crate) fn decode_parameters(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<DecodedParameters, CodecError> {
     let mut out = Vec::new();
     let mut unparsed = Vec::new();
+    let mut pointers = BTreeMap::new();
+    let mut state_targets = BTreeMap::new();
     for entry in scan
         .entries
         .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let source = scan.entry_view(&entry.name).ok_or_else(|| {
+            CodecError::malformed("Fusion Design parameter stream has no source View")
+        })?;
+        let bytes = source.window();
         let mut position = 0usize;
         let mut emitted_record_indices = HashSet::new();
         let mut unparsed_count = 0usize;
         while let Some(at) = next_indexed_record_offset(bytes, position) {
             let end = next_indexed_record_offset(bytes, at + 11).unwrap_or(bytes.len());
-            let frame = &bytes[at..end];
-            if let Some(parsed) = parse_design_parameter(frame)? {
-                // The Design primary index exposes one live header for each
-                // logical record index. Keep the first serialized parameter
-                // frame so stale copies cannot create duplicate owner
-                // bindings or duplicate neutral parameter identities.
-                if emitted_record_indices.contains(&parsed.record_index) {
+            let view = source
+                .child(
+                    source.start().checked_add(at).ok_or_else(|| {
+                        CodecError::malformed("Fusion Design parameter frame start overflows")
+                    })?,
+                    source.start().checked_add(end).ok_or_else(|| {
+                        CodecError::malformed("Fusion Design parameter frame end overflows")
+                    })?,
+                )
+                .ok_or_else(|| {
+                    CodecError::malformed("Fusion Design parameter frame exceeds its stream")
+                })?;
+            match source_layout::capture_record(
+                ctx,
+                view,
+                &entry.name,
+                at,
+                &emitted_record_indices,
+                &mut pointers,
+            )? {
+                source_layout::Captured::Parameter {
+                    parameter,
+                    state_target,
+                } => {
+                    // The Design primary index exposes one live header for each
+                    // logical record index. Keep the first serialized parameter
+                    // frame so stale copies cannot create duplicate owner
+                    // bindings or duplicate neutral parameter identities.
+                    emitted_record_indices.insert(parameter.record_index);
+                    if let Some(target) = state_target {
+                        state_targets.insert(parameter.id.clone(), target);
+                    }
+                    out.push(parameter);
                     position = end;
-                    continue;
                 }
-
-                emitted_record_indices.insert(parsed.record_index);
-
-                out.push(locate_design_parameter(parsed, &entry.name, at)?);
-                position = end;
-            } else {
-                if is_typed_parameter_frame(frame) {
-                    unparsed_count = unparsed_count.checked_add(1).ok_or_else(|| {
-                        CodecError::malformed(
-                            "Fusion Design unparsed parameter count exceeds the platform range",
-                        )
-                    })?;
+                source_layout::Captured::Repeated => position = end,
+                source_layout::Captured::Unmatched => {
+                    if is_typed_parameter_frame(ParameterFrame::new(view)) {
+                        unparsed_count = unparsed_count.checked_add(1).ok_or_else(|| {
+                            CodecError::malformed(
+                                "Fusion Design unparsed parameter count exceeds the platform range",
+                            )
+                        })?;
+                    }
+                    position = at + 1;
                 }
-                position = at + 1;
             }
         }
         if unparsed_count != 0 {
@@ -130,6 +229,8 @@ pub(crate) fn decode_parameters(scan: &ContainerScan) -> Result<DecodedParameter
     Ok(DecodedParameters {
         parameters: out,
         unparsed,
+        pointers,
+        state_targets,
     })
 }
 
@@ -151,6 +252,8 @@ pub(in crate::design) struct ParsedDesignParameter {
     name_offset: FrameRelative,
     evaluated_value: f64,
     evaluated_value_offset: FrameRelative,
+    /// Local entity index named by the typed parameter tail reference.
+    state_target: Option<u64>,
 }
 
 /// Unit token parsed in frame-relative coordinates.
@@ -160,6 +263,11 @@ struct ParsedParameterUnit {
 }
 
 impl ParsedDesignParameter {
+    /// Local entity index named by the typed parameter tail reference.
+    pub(in crate::design) const fn state_target(&self) -> Option<u64> {
+        self.state_target
+    }
+
     /// Locate this parameter in its containing stream.
     pub(in crate::design) fn into_record(
         self,
@@ -216,7 +324,7 @@ const WIDE_DISCRIMINATED_SHIFT: usize = 4;
 /// Parse one indexed parameter frame in a Design `BulkStream` test fixture.
 #[cfg(test)]
 pub(crate) fn parse_design_parameter_record(payload: &[u8]) -> Option<DesignParameter> {
-    parse_design_parameter(payload)
+    parse_design_parameter(ParameterFrame::over_retained(payload))
         .unwrap()?
         .into_record(TEST_PARAMETER_STREAM, 0)
 }
@@ -240,10 +348,10 @@ fn locate_design_parameter(
 }
 
 pub(in crate::design) fn parse_design_parameter(
-    payload: &[u8],
+    payload: ParameterFrame<'_>,
 ) -> Result<Option<ParsedDesignParameter>, CodecError> {
     let parsed = (|| {
-        if View::u32_le_at(payload, 0) != Some(3) || payload.get(11..22) != Some(&[0; 11]) {
+        if payload.u32_at(0) != Some(3) || payload.get(11..22) != Some(&[0; 11]) {
             return None;
         }
         let raw_tag = payload.get(4..7)?;
@@ -254,7 +362,7 @@ pub(in crate::design) fn parse_design_parameter(
             std::str::from_utf8(raw_tag).ok()?.to_owned(),
         )
         .ok()?;
-        let record_index = View::u32_le_at(payload, 7)?;
+        let record_index = payload.u32_at(7)?;
         if typed_parameter_tail_start(payload).is_some() {
             return match parse_typed_compact_design_parameter(payload, class_tag, record_index) {
                 Ok(value) => value.map(Ok),
@@ -268,9 +376,9 @@ pub(in crate::design) fn parse_design_parameter(
             };
         }
         let compact_owned = payload.get(11..26) == Some(&[0; 15])
-            && payload.get(30) == Some(&1)
+            && payload.byte(30) == Some(1)
             && payload.get(35..41) == Some(&[0; 6]);
-        let discriminated = !compact_owned && payload.get(30) == Some(&0);
+        let discriminated = !compact_owned && payload.byte(30) == Some(0);
         let shift = if discriminated && wide_discriminated_parameter(payload) {
             WIDE_DISCRIMINATED_SHIFT
         } else {
@@ -287,35 +395,29 @@ pub(in crate::design) fn parse_design_parameter(
             if discriminated {
                 let discriminator =
                     crate::records::parameters::DesignParameterDiscriminator::try_from(
-                        View::u64_le_at(payload, discriminator_at)?,
+                        payload.u64_at(discriminator_at)?,
                     )
                     .ok()?;
-                let owner = match payload.get(35 + shift)? {
+                let owner = match payload.byte(35 + shift)? {
                     0 => (None, 36 + shift, 9),
                     1 if payload.get(40 + shift..46 + shift) == Some(&[0; 6]) => {
-                        (Some(View::u32_le_at(payload, 36 + shift)?), 46 + shift, 9)
+                        (Some(payload.u32_at(36 + shift)?), 46 + shift, 9)
                     }
                     _ => return None,
                 };
                 (
                     Some(discriminator),
-                    View::u32_le_at(payload, 31 + shift)?,
+                    payload.u32_at(31 + shift)?,
                     owner.0,
                     owner.1,
                     owner.2,
                 )
             } else if compact_owned {
-                (
-                    None,
-                    View::u32_le_at(payload, 26)?,
-                    Some(View::u32_le_at(payload, 31)?),
-                    41,
-                    5,
-                )
+                (None, payload.u32_at(26)?, Some(payload.u32_at(31)?), 41, 5)
             } else {
                 return None;
             };
-        let (expression, expression_end) = parameter_text!(payload, expression_at, 1..=256);
+        let (expression, expression_end) = payload.utf16(expression_at, 1..=256)?;
         let expression_trailer = payload.get(expression_end..expression_end + trailer_len)?;
         let valid_expression_trailer = if discriminated && owner_record_index.is_none() {
             expression_trailer == [0, 0, 0, 0, 0, 0, 0, 0, 1]
@@ -329,7 +431,7 @@ pub(in crate::design) fn parse_design_parameter(
             && owner_record_index.is_some()
             && payload.get(expression_end..expression_end + 10) == Some(&[0; 10])
         {
-            lp_utf16_bounded(payload, expression_end + 10, 1..=256)
+            payload.utf16(expression_end + 10, 1..=256)
         } else {
             None
         };
@@ -340,19 +442,19 @@ pub(in crate::design) fn parse_design_parameter(
         };
         let (source_kind, source_kind_end) = match prefixed_kind {
             Some(value) => value,
-            None => parameter_text!(payload, source_kind_at, 1..=256),
+            None => payload.utf16(source_kind_at, 1..=256)?,
         };
         let first_at = source_kind_end + usize::from(discriminated) * 4;
-        if discriminated && View::u32_le_at(payload, source_kind_end) != Some(0) {
+        if discriminated && payload.u32_at(source_kind_end) != Some(0) {
             return None;
         }
-        let (unit, name, name_at, name_end) = if View::u32_le_at(payload, first_at) == Some(0) {
+        let (unit, name, name_at, name_end) = if payload.u32_at(first_at) == Some(0) {
             let name_at = first_at + 4;
-            let (name, name_end) = parameter_text!(payload, name_at, 1..=256);
+            let (name, name_end) = payload.utf16(name_at, 1..=256)?;
             (None, name, name_at, name_end)
         } else {
-            let (first, first_end) = parameter_text!(payload, first_at, 1..=256);
-            let second_field = lp_utf16_bounded(payload, first_end, 1..=256);
+            let (first, first_end) = payload.utf16(first_at, 1..=256)?;
+            let second_field = payload.utf16(first_end, 1..=256);
             if let Some((second, second_end)) = second_field {
                 (
                     Some(ParsedParameterUnit {
@@ -367,8 +469,8 @@ pub(in crate::design) fn parse_design_parameter(
                 (None, first, first_at, first_end)
             }
         };
-        let evaluated_value = View::f64_le_at(payload, name_end)?;
-        let tail = payload.get(name_end + 8..)?;
+        let evaluated_value = payload.f64_at(name_end)?;
+        let tail = payload.get(name_end + 8..payload.len())?;
         if tail.len() != 12
             || tail[0..2] != [0, 1]
             || tail[3..].iter().any(|byte| *byte != 0)
@@ -393,6 +495,7 @@ pub(in crate::design) fn parse_design_parameter(
             name_offset: FrameRelative(i128::from(u64_from_index(name_at + 4))),
             evaluated_value,
             evaluated_value_offset: FrameRelative(i128::from(u64_from_index(name_end))),
+            state_target: None,
         }))
     })();
     parsed.transpose()
@@ -402,16 +505,16 @@ pub(in crate::design) fn parse_design_parameter(
 /// before its discriminator: the discriminator at offset 22 is not one,
 /// offsets 11 through 25 are zero, a discriminator is at offset 26, and
 /// offset 34 is zero.
-fn wide_discriminated_parameter(payload: &[u8]) -> bool {
+fn wide_discriminated_parameter(payload: ParameterFrame<'_>) -> bool {
     let discriminator = |at| {
-        View::u64_le_at(payload, at).is_some_and(|value| {
+        payload.u64_at(at).is_some_and(|value| {
             crate::records::parameters::DesignParameterDiscriminator::try_from(value).is_ok()
         })
     };
     !discriminator(DESIGN_PARAMETER_DISCRIMINATOR_FRAME_OFFSET)
         && payload.get(11..26) == Some(&[0; 15])
         && discriminator(DESIGN_PARAMETER_DISCRIMINATOR_FRAME_OFFSET + WIDE_DISCRIMINATED_SHIFT)
-        && payload.get(34) == Some(&0)
+        && payload.byte(34) == Some(0)
 }
 
 /// Parse the class-287 owned parameter family.
@@ -419,21 +522,20 @@ fn wide_discriminated_parameter(payload: &[u8]) -> bool {
 /// This family uses the compact-owned prefix and a class-specific `0xAF` tail.
 /// Its expression is followed by one of the two fixed five-byte trailers.
 fn parse_legacy_287_design_parameter(
-    payload: &[u8],
+    payload: ParameterFrame<'_>,
     class_tag: crate::records::references::DesignClassTag,
     record_index: u32,
 ) -> Result<Option<ParsedDesignParameter>, CodecError> {
     let parsed = (|| {
         if payload.get(legacy_287::ZERO_RUN_15..legacy_287::SOURCE_ORDINAL) != Some(&[0; 15])
-            || payload.get(legacy_287::OWNER_MARKER) != Some(&legacy_287::OWNER_MARKER_VALUE)
+            || payload.byte(legacy_287::OWNER_MARKER) != Some(legacy_287::OWNER_MARKER_VALUE)
             || payload.get(legacy_287::ZERO_RUN_6..legacy_287::EXPRESSION_LENGTH) != Some(&[0; 6])
         {
             return None;
         }
-        let source_ordinal = View::u32_le_at(payload, legacy_287::SOURCE_ORDINAL)?;
-        let owner_record_index = View::u32_le_at(payload, legacy_287::OWNER_RECORD_INDEX)?;
-        let (expression, expression_end) =
-            parameter_text!(payload, legacy_287::EXPRESSION_LENGTH, 1..=256);
+        let source_ordinal = payload.u32_at(legacy_287::SOURCE_ORDINAL)?;
+        let owner_record_index = payload.u32_at(legacy_287::OWNER_RECORD_INDEX)?;
+        let (expression, expression_end) = payload.utf16(legacy_287::EXPRESSION_LENGTH, 1..=256)?;
         let expression_trailer_end =
             expression_end.checked_add(CLASS_287_EXPRESSION_TRAILER_LEN)?;
         let expression_trailer = payload.get(expression_end..expression_trailer_end)?;
@@ -441,29 +543,28 @@ fn parse_legacy_287_design_parameter(
             return None;
         }
         let source_kind_at = expression_trailer_end;
-        let (source_kind, source_kind_end) = parameter_text!(payload, source_kind_at, 1..=256);
-        let (unit, name, name_at, name_end) =
-            if View::u32_le_at(payload, source_kind_end) == Some(0) {
-                let name_at = source_kind_end.checked_add(4)?;
-                let (name, name_end) = parameter_text!(payload, name_at, 1..=256);
-                (None, name, name_at, name_end)
-            } else {
-                let (unit, unit_end) = parameter_text!(payload, source_kind_end, 1..=64);
-                let (name, name_end) = parameter_text!(payload, unit_end, 1..=256);
-                let unit_offset = source_kind_end.checked_add(4)?;
-                (
-                    Some(ParsedParameterUnit {
-                        value: unit,
-                        offset: FrameRelative(i128::try_from(unit_offset).ok()?),
-                    }),
-                    name,
-                    unit_end,
-                    name_end,
-                )
-            };
-        let evaluated_value = View::f64_le_at(payload, name_end)?;
+        let (source_kind, source_kind_end) = payload.utf16(source_kind_at, 1..=256)?;
+        let (unit, name, name_at, name_end) = if payload.u32_at(source_kind_end) == Some(0) {
+            let name_at = source_kind_end.checked_add(4)?;
+            let (name, name_end) = payload.utf16(name_at, 1..=256)?;
+            (None, name, name_at, name_end)
+        } else {
+            let (unit, unit_end) = payload.utf16(source_kind_end, 1..=64)?;
+            let (name, name_end) = payload.utf16(unit_end, 1..=256)?;
+            let unit_offset = source_kind_end.checked_add(4)?;
+            (
+                Some(ParsedParameterUnit {
+                    value: unit,
+                    offset: FrameRelative(i128::try_from(unit_offset).ok()?),
+                }),
+                name,
+                unit_end,
+                name_end,
+            )
+        };
+        let evaluated_value = payload.f64_at(name_end)?;
         let tail_start = name_end.checked_add(8)?;
-        let tail = payload.get(tail_start..)?;
+        let tail = payload.get(tail_start..payload.len())?;
         if tail.len() != legacy_287_tail::LEN
             || tail[..2] != legacy_287_tail::TAIL_PREFIX_VALUE
             || tail[legacy_287_tail::FAMILY_MARKER] != legacy_287_tail::FAMILY_MARKER_VALUE
@@ -492,6 +593,7 @@ fn parse_legacy_287_design_parameter(
             name_offset: FrameRelative(i128::try_from(name_at.checked_add(4)?).ok()?),
             evaluated_value,
             evaluated_value_offset: FrameRelative(i128::try_from(name_end).ok()?),
+            state_target: None,
         }))
     })();
     parsed.transpose()
@@ -521,20 +623,27 @@ const TYPED_DOCUMENT_EXPRESSION_TRAILER: [u8; 5] = [0, 0, 0, 0, 1];
 ///
 /// The tail is `u8 0` and a typed local reference whose target type GUID is
 /// the parameter-tail type; it ends the frame exactly.
-pub(super) fn typed_parameter_tail_start(payload: &[u8]) -> Option<usize> {
+fn typed_parameter_tail_start(payload: ParameterFrame<'_>) -> Option<usize> {
+    typed_parameter_tail(payload).map(|(start, _)| start)
+}
+
+/// Start of the typed parameter tail and the local entity index its reference
+/// names, when `payload` ends with one.
+fn typed_parameter_tail(payload: ParameterFrame<'_>) -> Option<(usize, u64)> {
     let start = payload.len().checked_sub(TYPED_PARAMETER_TAIL_LEN)?;
-    if payload.get(start) != Some(&0) {
+    if payload.byte(start) != Some(0) {
         return None;
     }
     let mut cursor = start + 1;
-    let reference = crate::bytes::take_reference(payload, &mut cursor)?;
-    let (_, guid) = reference.local()?;
-    (guid == Some(TYPED_PARAMETER_TAIL_TYPE_GUID) && cursor == payload.len()).then_some(start)
+    let reference = payload.reference(&mut cursor)?;
+    let (target, guid) = reference.local()?;
+    (guid == Some(TYPED_PARAMETER_TAIL_TYPE_GUID) && cursor == payload.len())
+        .then_some((start, target))
 }
 
 /// Whether `payload` is shaped as a typed compact parameter frame: the
 /// compact fifteen-byte zero run and the typed parameter tail.
-pub(in crate::design) fn is_typed_parameter_frame(payload: &[u8]) -> bool {
+pub(in crate::design) fn is_typed_parameter_frame(payload: ParameterFrame<'_>) -> bool {
     payload.get(typed::ZERO_RUN_15..typed::SOURCE_ORDINAL) == Some(&[0; 15])
         && typed_parameter_tail_start(payload).is_some()
 }
@@ -545,7 +654,7 @@ pub(in crate::design) fn is_typed_parameter_frame(payload: &[u8]) -> bool {
 /// parameter or the null reference for a document parameter. The evaluated
 /// scalar ends exactly where the typed parameter tail begins.
 fn parse_typed_compact_design_parameter(
-    payload: &[u8],
+    payload: ParameterFrame<'_>,
     class_tag: crate::records::references::DesignClassTag,
     record_index: u32,
 ) -> Result<Option<ParsedDesignParameter>, CodecError> {
@@ -553,11 +662,11 @@ fn parse_typed_compact_design_parameter(
         if !is_typed_parameter_frame(payload) {
             return None;
         }
-        let tail_start = typed_parameter_tail_start(payload)?;
+        let (tail_start, state_target) = typed_parameter_tail(payload)?;
         let scalar_at = tail_start.checked_sub(8)?;
-        let source_ordinal = View::u32_le_at(payload, typed::SOURCE_ORDINAL)?;
+        let source_ordinal = payload.u32_at(typed::SOURCE_ORDINAL)?;
         let mut cursor = typed::OWNER_MARKER;
-        let owner = crate::bytes::take_reference(payload, &mut cursor)?;
+        let owner = payload.reference(&mut cursor)?;
         let (owner_record_index, trailer) = match owner {
             crate::bytes::Reference::Null => (None, TYPED_DOCUMENT_EXPRESSION_TRAILER),
             crate::bytes::Reference::Local {
@@ -577,23 +686,23 @@ fn parse_typed_compact_design_parameter(
             _ => return None,
         };
         let expression_at = cursor;
-        let (expression, expression_end) = parameter_text!(payload, expression_at, 1..=256);
+        let (expression, expression_end) = payload.utf16(expression_at, 1..=256)?;
         let trailer_end = expression_end.checked_add(trailer.len())?;
         if payload.get(expression_end..trailer_end) != Some(&trailer[..]) {
             return None;
         }
         let source_kind_at = trailer_end;
-        let (source_kind, source_kind_end) = parameter_text!(payload, source_kind_at, 1..=256);
-        let (first, first_end) = if View::u32_le_at(payload, source_kind_end) == Some(0) {
+        let (source_kind, source_kind_end) = payload.utf16(source_kind_at, 1..=256)?;
+        let (first, first_end) = if payload.u32_at(source_kind_end) == Some(0) {
             (None, source_kind_end.checked_add(4)?)
         } else {
-            let (first, first_end) = parameter_text!(payload, source_kind_end, 1..=256);
+            let (first, first_end) = payload.utf16(source_kind_end, 1..=256)?;
             (Some(first), first_end)
         };
         let (unit, name, name_at, name_end) = match first {
             Some(first) if first_end == scalar_at => (None, first, source_kind_end, first_end),
             first => {
-                let (name, name_end) = parameter_text!(payload, first_end, 1..=256);
+                let (name, name_end) = payload.utf16(first_end, 1..=256)?;
                 if name_end != scalar_at {
                     return None;
                 }
@@ -604,7 +713,7 @@ fn parse_typed_compact_design_parameter(
                 (unit, name, first_end, name_end)
             }
         };
-        let evaluated_value = View::f64_le_at(payload, name_end)?;
+        let evaluated_value = payload.f64_at(name_end)?;
         // The null owner reference denotes a document parameter; an ownerless
         // feature input or dimension has no admitted typed form.
         if source_kind.is_empty()
@@ -628,38 +737,39 @@ fn parse_typed_compact_design_parameter(
             name_offset: FrameRelative(i128::from(u64_from_index(name_at + 4))),
             evaluated_value,
             evaluated_value_offset: FrameRelative(i128::from(u64_from_index(name_end))),
+            state_target: Some(state_target),
         }))
     })();
     parsed.transpose()
 }
 
 fn parse_legacy_design_parameter(
-    payload: &[u8],
+    payload: ParameterFrame<'_>,
     class_tag: crate::records::references::DesignClassTag,
     record_index: u32,
 ) -> Result<Option<ParsedDesignParameter>, CodecError> {
     let parsed = (|| {
         if payload.get(11..25)? != [0; 14]
-            || payload.get(29) != Some(&1)
+            || payload.byte(29) != Some(1)
             || payload.get(34..40)? != [0; 6]
         {
             return None;
         }
-        let source_ordinal = View::u32_le_at(payload, 25)?;
-        let owner_record_index = View::u32_le_at(payload, 30)?;
+        let source_ordinal = payload.u32_at(25)?;
+        let owner_record_index = payload.u32_at(30)?;
         let expression_at = 40;
-        let (expression, expression_end) = parameter_text!(payload, expression_at, 1..=256);
+        let (expression, expression_end) = payload.utf16(expression_at, 1..=256)?;
         if payload.get(expression_end..expression_end + 5)? != [0; 5] {
             return None;
         }
         let source_kind_at = expression_end + 5;
-        let (source_kind, source_kind_end) = parameter_text!(payload, source_kind_at, 1..=256);
+        let (source_kind, source_kind_end) = payload.utf16(source_kind_at, 1..=256)?;
         let unit_at = source_kind_end;
-        let (unit, unit_end) = parameter_text!(payload, unit_at, 1..=64);
+        let (unit, unit_end) = payload.utf16(unit_at, 1..=64)?;
         let name_at = unit_end;
-        let (name, name_end) = parameter_text!(payload, name_at, 1..=256);
-        let evaluated_value = View::f64_le_at(payload, name_end)?;
-        let tail = payload.get(name_end + 8..)?;
+        let (name, name_end) = payload.utf16(name_at, 1..=256)?;
+        let evaluated_value = payload.f64_at(name_end)?;
+        let tail = payload.get(name_end + 8..payload.len())?;
         if tail != [0, 1, 18, 0, 0, 0, 0, 0, 0, 0, 0, 0] || source_kind.is_empty() {
             return None;
         }
@@ -682,6 +792,7 @@ fn parse_legacy_design_parameter(
             name_offset: FrameRelative(i128::from(u64_from_index(name_at + 4))),
             evaluated_value,
             evaluated_value_offset: FrameRelative(i128::from(u64_from_index(name_end))),
+            state_target: None,
         }))
     })();
     parsed.transpose()

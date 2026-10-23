@@ -21,7 +21,7 @@ use crate::records::{
 };
 use crate::test_support::lp_utf16;
 use crate::test_support::manifest_test::write_synthetic_manifests;
-use crate::test_support::zip_test::with_scan;
+use crate::test_support::zip_test::{with_context_scan, with_scan};
 
 fn compact_owned_parameter_record(
     owner_record_index: u32,
@@ -367,7 +367,7 @@ fn duplicate_parameter_index_keeps_the_first_serialized_frame() {
     zip.write_all(&bulk).unwrap();
     let archive = zip.finish().unwrap().into_inner();
 
-    let parameters = with_scan(&archive, decode_parameters).unwrap();
+    let parameters = with_context_scan(&archive, decode_parameters).unwrap();
     let [parameter] = parameters.parameters.as_slice() else {
         panic!("expected one canonical parameter");
     };
@@ -1312,15 +1312,19 @@ fn frame_relative_offsets_refuse_to_saturate_at_the_end_of_the_address_space() {
 
     let payload = parameter_record(None, "1", "User Parameter", None, "p", 1.0);
     let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
-    assert!(super::parse_design_parameter(&payload)
-        .unwrap()
-        .expect("parsed parameter")
-        .into_record(stream, u64::MAX)
-        .is_none());
+    assert!(super::parse_design_parameter(
+        crate::design::decode::parameters::ParameterFrame::over_retained(&payload)
+    )
+    .unwrap()
+    .expect("parsed parameter")
+    .into_record(stream, u64::MAX)
+    .is_none());
 
-    let parsed = super::parse_design_parameter(&payload)
-        .unwrap()
-        .expect("parsed parameter");
+    let parsed = super::parse_design_parameter(
+        crate::design::decode::parameters::ParameterFrame::over_retained(&payload),
+    )
+    .unwrap()
+    .expect("parsed parameter");
     let error = super::locate_design_parameter(parsed, stream, usize::MAX)
         .expect_err("a frame at the end of the address space cannot be located");
     assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
@@ -1329,7 +1333,11 @@ fn frame_relative_offsets_refuse_to_saturate_at_the_end_of_the_address_space() {
 #[test]
 fn design_parameter_text_fields_keep_the_name() {
     let payload = parameter_record(Some(44), "1", "AlongDistance", Some("mm"), "d71", 1.0);
-    let parsed = super::parse_design_parameter(&payload).unwrap().unwrap();
+    let parsed = super::parse_design_parameter(
+        crate::design::decode::parameters::ParameterFrame::over_retained(&payload),
+    )
+    .unwrap()
+    .unwrap();
     assert_eq!(parsed.name, "d71");
 }
 
@@ -1454,7 +1462,7 @@ fn decode_reports_typed_parameter_frames_that_match_no_grammar() {
     zip.start_file(stream, stored).unwrap();
     zip.write_all(&bulk).unwrap();
     let archive = zip.finish().unwrap().into_inner();
-    let decoded = with_scan(&archive, decode_parameters).unwrap();
+    let decoded = with_context_scan(&archive, decode_parameters).unwrap();
     let [parameter] = decoded.parameters.as_slice() else {
         panic!("expected the one well-formed typed parameter");
     };

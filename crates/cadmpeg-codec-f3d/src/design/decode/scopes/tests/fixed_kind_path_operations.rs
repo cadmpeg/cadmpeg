@@ -996,7 +996,14 @@ pub(super) fn fixed_kind_path_operations(
     );
 
     let mut parameter = crate::design::decode::parameters::parse_design_parameter(
-        &parameter_record(None, "1", "User Parameter", None, "p", 1.0),
+        crate::design::decode::parameters::ParameterFrame::over_retained(&parameter_record(
+            None,
+            "1",
+            "User Parameter",
+            None,
+            "p",
+            1.0,
+        )),
     )
     .unwrap()
     .expect("generated parameter")

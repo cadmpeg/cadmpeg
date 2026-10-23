@@ -386,10 +386,6 @@ impl DesignParameter {
         ]
     }
 
-    pub(crate) fn take_parameter_state(&mut self) -> Option<String> {
-        self.parameter_state.take()
-    }
-
     #[cfg(test)]
     pub(crate) fn source(&self) -> &DesignParameterSource {
         &self.source

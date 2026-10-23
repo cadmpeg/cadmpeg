@@ -1,19 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
+use std::ops::Range;
 
-use cadmpeg_core::decode::{ByteRange, DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::{ByteRange, DecodeArena, DecodeContext, DecodePolicy, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::SourceFidelity;
 
-use super::capture_record;
+use super::{capture_record, Captured};
 use crate::decode::source_layout::{install, PendingLayouts};
+use crate::design::decode::parameters::ParameterFrame;
 use crate::design::test_support::parameter_record;
 use crate::records::parameters::DesignParameter;
 
 const STREAM: &str = "Design1/BulkStream.dat";
 
 fn parsed(bytes: &[u8], offset: usize) -> DesignParameter {
-    super::super::parse_design_parameter(bytes)
+    super::super::parse_design_parameter(ParameterFrame::over_retained(bytes))
         .expect("parameter grammar")
         .expect("typed parameter")
         .into_record(STREAM, u64::try_from(offset).expect("offset fits"))
@@ -32,6 +34,32 @@ fn expected(offset: u64) -> BTreeMap<String, u64> {
         ("name_offset".to_owned(), offset + 107),
         ("evaluated_value_offset".to_owned(), offset + 117),
     ])
+}
+
+/// Source range of the discriminated parameter frame that starts at `offset`.
+///
+/// The f3d.md discriminated grammar consults every byte of the frame: the
+/// indexed header (0..11), the zero run and u64 discriminator (11..30), the
+/// form byte (30), the u32 source ordinal (31..35), the owner presence byte
+/// (35), the counted expression, its nine-byte trailer, the counted source
+/// kind, unit and name, the f64 scalar, and the twelve-byte family tail that
+/// ends the frame.
+fn frame_reads(offset: u64) -> Vec<Range<u64>> {
+    vec![offset..offset + 137]
+}
+
+fn capture(
+    ctx: &DecodeContext<'_>,
+    view: View<'_>,
+    offset: usize,
+    pointers: &mut BTreeMap<String, BTreeMap<String, u64>>,
+) -> Result<DesignParameter, CodecError> {
+    match capture_record(ctx, view, STREAM, offset, &HashSet::new(), pointers)? {
+        Captured::Parameter { parameter, .. } => Ok(parameter),
+        Captured::Repeated | Captured::Unmatched => {
+            Err(CodecError::malformed("expected one parameter"))
+        }
+    }
 }
 
 #[test]
@@ -54,11 +82,10 @@ fn all_parameter_offsets_have_one_original_member_owner_and_no_metadata_copy() {
         .expect("original member");
     let view = member.child(3, 140).expect("actual indexed owner");
     assert_eq!(view.window(), bytes);
-    let mut parameter = parsed(&bytes, 3);
-    let original = serde_json::to_value(&parameter).expect("original semantic fields");
+    let original = serde_json::to_value(parsed(&bytes, 3)).expect("original semantic fields");
     let mut pointers = BTreeMap::new();
-    let (_, batch) = ctx
-        .record_batch(|| capture_record(&ctx, view, STREAM, 3, &mut parameter, &mut pointers))
+    let (parameter, batch) = ctx
+        .record_batch(|| capture(&ctx, view, 3, &mut pointers))
         .expect("actual source producer");
     assert_eq!(
         serde_json::to_value(&parameter).expect("native fields"),
@@ -84,27 +111,36 @@ fn all_parameter_offsets_have_one_original_member_owner_and_no_metadata_copy() {
     assert_eq!(layout.stream(), "f3d:xref/one/Design1/BulkStream.dat");
     assert_eq!((layout.offset(), layout.byte_len()), (3, 137));
     assert_eq!(layout.pointers(), &expected(3));
-    assert!(layout.reads().is_empty());
+    // The member starts at byte 7 of the root, so each member read is also
+    // the root range seven bytes later.
+    assert_eq!(
+        layout.reads(),
+        &BTreeMap::from([
+            (
+                "f3d:xref/one/Design1/BulkStream.dat".to_owned(),
+                frame_reads(3)
+            ),
+            ("f3d:xref/one/file".to_owned(), frame_reads(10)),
+        ])
+    );
     assert!(layout.payloads().is_empty());
     assert!(fidelity.metadata.is_empty());
 }
 
 #[test]
-fn a_preexisting_owner_keeps_its_capture_and_gains_only_source_proven_offsets() {
+fn a_parameter_has_one_capture_that_holds_its_pointers_and_reads() {
     let bytes = parameter_record(None, "12 mm", "User Parameter", Some("mm"), "Width", 1.2);
     let arena = DecodeArena::new();
     let (ctx, root) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).expect("context");
     let root = ctx.name_stream(root, STREAM).expect("stream");
-    let mut parameter = parsed(&bytes, 0);
-    let mut pointers = BTreeMap::from([(
-        parameter.id.clone(),
-        BTreeMap::from([("byte_offset".to_owned(), 0)]),
-    )]);
-    let (_, batch) = ctx
+    let mut pointers = BTreeMap::new();
+    let (parameter, batch) = ctx
         .record_batch(|| {
-            ctx.record(&parameter.id, root, || Ok(()))?;
-            capture_record(&ctx, root, STREAM, 0, &mut parameter, &mut pointers)
+            let parameter = capture(&ctx, root, 0, &mut pointers)?;
+            // A second scope for the same record id is refused.
+            assert!(capture(&ctx, root, 0, &mut BTreeMap::new()).is_err());
+            Ok(parameter)
         })
         .expect("one owner capture");
     let mut fidelity = SourceFidelity::default();
@@ -117,7 +153,10 @@ fn a_preexisting_owner_keeps_its_capture_and_gains_only_source_proven_offsets() 
     assert_eq!(fidelity.record_layout().len(), 1);
     let layout = &fidelity.record_layout()[&parameter.id];
     assert_eq!(layout.pointers(), &expected(0));
-    assert!(layout.reads().is_empty());
+    assert_eq!(
+        layout.reads(),
+        &BTreeMap::from([(STREAM.to_owned(), frame_reads(0))])
+    );
 }
 
 #[test]
@@ -126,16 +165,13 @@ fn conflicting_pointer_and_foreign_source_cannot_replace_the_parameter() {
     let arena = DecodeArena::new();
     let (ctx, root) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).expect("context");
-    let mut parameter = parsed(&bytes, 0);
-    parameter.set_parameter_state("f3d:Design1:parameter-state#401".to_owned());
-    let original = serde_json::to_value(&parameter).expect("original fields");
+    let parameter = parsed(&bytes, 0);
     let mut pointers = BTreeMap::from([(
         parameter.id.clone(),
         BTreeMap::from([("byte_offset".to_owned(), 1)]),
     )]);
     let original_pointers = pointers.clone();
-    assert!(capture_record(&ctx, root, STREAM, 0, &mut parameter, &mut pointers).is_err());
-    assert_eq!(serde_json::to_value(&parameter).expect("fields"), original);
+    assert!(capture(&ctx, root, 0, &mut pointers).is_err());
     assert_eq!(pointers, original_pointers);
     assert!(ctx.take_record_captures().expect("no capture").is_empty());
 
@@ -143,8 +179,7 @@ fn conflicting_pointer_and_foreign_source_cannot_replace_the_parameter() {
     let (other, _) = DecodeContext::from_root_bytes(&bytes, &other_arena, &DecodePolicy::default())
         .expect("other context");
     let mut pointers = BTreeMap::new();
-    assert!(capture_record(&other, root, STREAM, 0, &mut parameter, &mut pointers).is_err());
-    assert_eq!(serde_json::to_value(&parameter).expect("fields"), original);
+    assert!(capture(&other, root, 0, &mut pointers).is_err());
     assert!(pointers.is_empty());
     assert!(other
         .take_record_captures()
@@ -161,11 +196,9 @@ fn source_value_changes_feed_the_stored_parameter_without_offset_metadata() {
     let arena = DecodeArena::new();
     let (ctx, root) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).expect("context");
-    let mut parameter = parsed(&original_bytes, 0);
-    assert_eq!(parameter.evaluated_value().get(), 1.2);
+    assert_eq!(parsed(&original_bytes, 0).evaluated_value().get(), 1.2);
     let mut pointers = BTreeMap::new();
-    capture_record(&ctx, root, STREAM, 0, &mut parameter, &mut pointers)
-        .expect("actual source values");
+    let parameter = capture(&ctx, root, 0, &mut pointers).expect("actual source values");
     assert_eq!(parameter.evaluated_value().get(), 2.4);
     assert_eq!(parameter.expression(), "12 mm");
     assert_eq!(parameter.name(), "Width");
@@ -184,14 +217,11 @@ fn parameter_layout_resource_refusal_has_no_native_or_pointer_substitute() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = 0;
     let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
-    let mut parameter = parsed(&bytes, 0);
-    let original = serde_json::to_value(&parameter).expect("original fields");
     let mut pointers = BTreeMap::new();
     assert!(matches!(
-        capture_record(&ctx, root, STREAM, 0, &mut parameter, &mut pointers),
+        capture(&ctx, root, 0, &mut pointers),
         Err(CodecError::ResourceLimit(_))
     ));
-    assert_eq!(serde_json::to_value(&parameter).expect("fields"), original);
     assert!(pointers.is_empty());
     assert!(matches!(
         ctx.finish_session(),

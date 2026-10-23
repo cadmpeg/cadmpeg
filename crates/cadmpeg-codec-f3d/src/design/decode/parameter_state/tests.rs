@@ -332,6 +332,45 @@ fn parameter_state_session_budget_refusal_escapes_without_a_given_up_substitute(
     ));
 }
 
+/// Parse the typed parameter frame `view` inside its own record scope.
+fn captured(
+    ctx: &DecodeContext<'_>,
+    view: View<'_>,
+    offset: usize,
+    pointers: &mut BTreeMap<String, BTreeMap<String, u64>>,
+) -> crate::records::parameters::DesignParameter {
+    match super::super::parameters::source_layout::capture_record(
+        ctx,
+        view,
+        "Design1/BulkStream.dat",
+        offset,
+        &std::collections::HashSet::new(),
+        pointers,
+    )
+    .expect("parameter record scope")
+    {
+        super::super::parameters::source_layout::Captured::Parameter {
+            parameter,
+            state_target,
+        } => {
+            assert_eq!(state_target, Some(401));
+            parameter
+        }
+        _ => panic!("expected a typed parameter"),
+    }
+}
+
+/// Source range of the 164-byte typed compact document parameter at `offset`.
+///
+/// The f3d.md typed compact grammar consults every byte of the frame: the
+/// indexed header (0..11), the fifteen-byte zero run (11..26), the u32 source
+/// ordinal (26..30), the null owner reference (30), the counted expression and
+/// its five-byte trailer, the counted source kind, unit and name, the f64
+/// scalar, and the 52-byte typed tail reference that ends the frame.
+fn typed_frame_reads(offset: usize) -> std::ops::Range<u64> {
+    u64_from_index(offset)..u64_from_index(offset + 164)
+}
+
 #[test]
 fn compact_parameter_keeps_its_actual_tail_target_through_native_serde() {
     let (mut bytes, meta) = fixture(false);
@@ -368,24 +407,12 @@ fn compact_parameter_keeps_its_actual_tail_target_through_native_serde() {
         .expect("namespace")
         .arena_as::<DesignParameterState>("design_parameter_states")
         .expect("states");
-    let mut parsed = super::super::parameters::parse_design_parameter(&parameter)
-        .expect("parameter grammar")
-        .expect("typed parameter")
-        .into_record("Design1/BulkStream.dat", u64_from_index(parameter_start))
-        .expect("located parameter");
     let view = root
         .child(parameter_start, bytes.len())
         .expect("parameter extent");
-    capture_tail(
-        &ctx,
-        view,
-        u64_from_index(parameter_start),
-        "Design1/BulkStream.dat",
-        &mut parsed,
-        &frames,
-        &states,
-    )
-    .expect("tail");
+    let mut parsed = captured(&ctx, view, parameter_start, &mut BTreeMap::new());
+    let state = linked_state("Design1/BulkStream.dat", 401, &frames, &states).expect("state link");
+    parsed.set_parameter_state(state);
     let wire = serde_json::to_value(&parsed).expect("wire");
     assert_eq!(wire["parameter_state"], states[0].id);
     assert_eq!(wire["record_index"], 905);
@@ -399,8 +426,11 @@ fn compact_parameter_keeps_its_actual_tail_target_through_native_serde() {
         .find(|capture| capture.id() == parsed.id)
         .expect("parameter capture");
     assert_eq!(capture.offset(), u64_from_index(parameter_start));
-    let target = u64_from_index(parameter_start + tail_start + 2);
-    assert_eq!(capture.reads()["file"], [target..target + 8]);
+    assert_eq!(tail_start, 112);
+    assert_eq!(
+        capture.reads()["file"],
+        [typed_frame_reads(parameter_start)]
+    );
 }
 
 #[test]
@@ -451,32 +481,15 @@ fn captured_parameter_byte_offset_moves_only_to_its_actual_layout_and_occurrence
         .expect("namespace")
         .arena_as::<DesignParameterState>("design_parameter_states")
         .expect("states");
-    let mut parsed = super::super::parameters::parse_design_parameter(&parameter)
-        .expect("parameter grammar")
-        .expect("typed parameter")
-        .into_record("Design1/BulkStream.dat", u64_from_index(parameter_start))
-        .expect("located parameter");
     let view = root
         .child(parameter_start, bytes.len())
         .expect("parameter extent");
-    let (pointers, batch) = ctx
-        .record_batch(|| {
-            capture_tail(
-                &ctx,
-                view,
-                u64_from_index(parameter_start),
-                "Design1/BulkStream.dat",
-                &mut parsed,
-                &frames,
-                &states,
-            )?
-            .ok_or_else(|| CodecError::malformed("expected captured parameter tail"))
-        })
+    let mut drafts = BTreeMap::new();
+    let (mut parsed, batch) = ctx
+        .record_batch(|| Ok(captured(&ctx, view, parameter_start, &mut drafts)))
         .expect("actual parameter source callback");
-    assert_eq!(
-        pointers,
-        BTreeMap::from([("byte_offset".to_owned(), u64_from_index(parameter_start))])
-    );
+    let state = linked_state("Design1/BulkStream.dat", 401, &frames, &states).expect("state link");
+    parsed.set_parameter_state(state);
     let wire = serde_json::to_value(&parsed).expect("native scalar content");
     assert_eq!(wire["expression"], "12 mm");
     assert_eq!(wire["name"], "Width");
@@ -522,26 +535,12 @@ fn captured_parameter_byte_offset_moves_only_to_its_actual_layout_and_occurrence
         &ctx,
         view,
         "Design1/BulkStream.dat",
-        u64_from_index(parameter_start),
-        &mut parsed,
+        parameter_start,
+        &std::collections::HashSet::new(),
         &mut wrong_offset,
     )
     .is_err());
     assert_eq!(wrong_offset, original_wrong_offset);
-    assert_eq!(
-        serde_json::to_value(&parsed).expect("unchanged linked owner"),
-        wire
-    );
-    let mut drafts = BTreeMap::from([(parsed.id.clone(), pointers)]);
-    super::super::parameters::source_layout::capture_record(
-        &ctx,
-        view,
-        "Design1/BulkStream.dat",
-        u64_from_index(parameter_start),
-        &mut parsed,
-        &mut drafts,
-    )
-    .expect("all source pointers join the existing actual owner capture");
     assert_eq!(drafts[&parsed.id], expected_pointers);
     let mut fidelity = native
         .retained_fidelity()
@@ -566,17 +565,18 @@ fn captured_parameter_byte_offset_moves_only_to_its_actual_layout_and_occurrence
         )
     );
     assert_eq!(layout.pointers(), &expected_pointers);
-    let target = u64_from_index(parameter_start + tail_start + 2);
+    // The member starts at byte 7 of the root, so each member read is also
+    // the root range seven bytes later.
     assert_eq!(
         layout.reads(),
         &BTreeMap::from([
             (
                 "f3d:xref/one/Design1/BulkStream.dat".to_owned(),
-                vec![target..target + 8]
+                vec![typed_frame_reads(parameter_start)]
             ),
             (
                 "f3d:xref/one/file".to_owned(),
-                vec![target + 7..target + 15]
+                vec![typed_frame_reads(parameter_start + 7)]
             ),
         ])
     );

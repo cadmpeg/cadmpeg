@@ -398,14 +398,17 @@ fn decode_stream(
     Ok(())
 }
 
-/// Read the actual tail link only after its typed state has a current home.
+/// Link each typed parameter to the state its tail reference names.
+///
+/// The parameter record scope read the tail reference. A link forms only when
+/// the named entity is a typed state that has a current home.
 pub(crate) fn link_parameters(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
     parameters: &mut [crate::records::parameters::DesignParameter],
     states: &[DesignParameterState],
-) -> Result<BTreeMap<String, BTreeMap<String, u64>>, CodecError> {
-    let mut pointers = BTreeMap::new();
+    targets: &BTreeMap<String, u64>,
+) -> Result<(), CodecError> {
     for entry in scan.entries.iter().filter(|entry| {
         scan.is_design_stream(entry, cadmpeg_core::container::ContainerRole::Bulkstream)
     }) {
@@ -431,89 +434,40 @@ pub(crate) fn link_parameters(
             if parameter.id != crate::ids::native_design_parameter_id(&entry.name, offset) {
                 continue;
             }
-            let Some(physical) = primary.iter().find(|frame| {
+            if !primary.iter().any(|frame| {
                 u64_from_index(frame.start) == offset
                     && frame.entity_id == u64::from(parameter.record_index)
-            }) else {
+            }) {
+                continue;
+            }
+            let Some(target) = targets.get(&parameter.id) else {
                 continue;
             };
-            let start = source
-                .start()
-                .checked_add(physical.start)
-                .ok_or_else(|| CodecError::malformed("parameter source start overflows"))?;
-            let end = source
-                .start()
-                .checked_add(physical.end)
-                .ok_or_else(|| CodecError::malformed("parameter source end overflows"))?;
-            let view = source.child(start, end).ok_or_else(|| {
-                CodecError::malformed("parameter primary extent exceeds its source")
-            })?;
-            if let Some(fields) = capture_tail(
-                ctx,
-                view,
-                u64_from_index(physical.start),
-                &entry.name,
-                parameter,
-                &frames,
-                states,
-            )? {
-                if pointers.insert(parameter.id.clone(), fields).is_some() {
-                    return Err(CodecError::malformed(
-                        "parameter source owner is duplicated",
-                    ));
-                }
+            if let Some(state) = linked_state(&entry.name, *target, &frames, states) {
+                parameter.set_parameter_state(state);
             }
         }
     }
-    Ok(pointers)
+    Ok(())
 }
 
-fn capture_tail(
-    ctx: &DecodeContext<'_>,
-    view: View<'_>,
-    record_offset: u64,
+/// The id of the typed state at local entity index `target`, when it has a
+/// current home.
+fn linked_state(
     stream: &str,
-    parameter: &mut crate::records::parameters::DesignParameter,
+    target: u64,
     frames: &[Option<DesignPrimaryFrame<'_>>],
     states: &[DesignParameterState],
-) -> Result<Option<BTreeMap<String, u64>>, CodecError> {
-    let Some(tail) = super::parameters::typed_parameter_tail_start(view.window()) else {
-        return Ok(None);
-    };
-    let target_offset = tail
-        .checked_add(2)
-        .ok_or_else(|| CodecError::malformed("parameter tail target offset overflows"))?;
-    let probe = ctx.read_transaction()?;
-    let target_index = at(view, target_offset, 8)?.req_u64_le()?;
-    drop(probe);
-    let Some(state_frame) = frames
+) -> Option<String> {
+    let state_frame = frames
         .iter()
         .flatten()
-        .find(|frame| frame.entity_id == target_index && matching(frame, STATE_GUID, 4))
-    else {
-        return Ok(None);
-    };
-    let state_id = identity(stream, state_frame);
-    if !states.iter().any(|state| state.id == state_id) {
-        return Ok(None);
-    }
-    let (actual_state, pointers) = ctx.record(&parameter.id, view, || {
-        let actual = at(view, target_offset, 8)?.req_u64_le()?;
-        let state = identity(stream, target(frames, actual, STATE_GUID, 4)?);
-        let bytes = parameter
-            .id
-            .len()
-            .checked_add("byte_offset".len())
-            .and_then(|bytes| bytes.checked_add(size_of::<u64>()))
-            .ok_or_else(|| CodecError::malformed("parameter source pointer storage overflows"))?;
-        ctx.retain_bytes(u64_from_index(bytes), "parameter source pointer")?;
-        Ok((
-            state,
-            BTreeMap::from([("byte_offset".to_owned(), record_offset)]),
-        ))
-    })?;
-    parameter.set_parameter_state(actual_state);
-    Ok(Some(pointers))
+        .find(|frame| frame.entity_id == target && matching(frame, STATE_GUID, 4))?;
+    let state = identity(stream, state_frame);
+    states
+        .iter()
+        .any(|candidate| candidate.id == state)
+        .then_some(state)
 }
 
 pub(crate) fn install_unknowns(

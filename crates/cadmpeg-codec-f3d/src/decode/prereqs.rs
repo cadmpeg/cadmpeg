@@ -153,19 +153,16 @@ pub(super) fn decode(
     let crate::design::decode::parameters::DecodedParameters {
         parameters: mut design_parameters,
         unparsed: design_parameter_unparsed,
-    } = crate::design::decode::parameters::decode_parameters(scan)?;
+        pointers: parameter_source_pointers,
+        state_targets: parameter_state_targets,
+    } = crate::design::decode::parameters::decode_parameters(ctx, scan)?;
     let parameter_state_parts = crate::design::decode::parameter_state::decode(ctx, scan)?;
-    let mut parameter_source_pointers = crate::design::decode::parameter_state::link_parameters(
+    crate::design::decode::parameter_state::link_parameters(
         ctx,
         scan,
         &mut design_parameters,
         &parameter_state_parts.states,
-    )?;
-    crate::design::decode::parameters::source_layout::capture(
-        ctx,
-        scan,
-        &mut design_parameters,
-        &mut parameter_source_pointers,
+        &parameter_state_targets,
     )?;
     let design_entity_headers = crate::design::decode::sketch::decode_entity_headers(scan)?;
     let design_record_headers =

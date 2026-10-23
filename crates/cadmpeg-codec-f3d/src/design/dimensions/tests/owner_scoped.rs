@@ -464,14 +464,16 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
         ((stream, 12), &entities[2]),
         ((stream, 13), &entities[3]),
     ]);
-    let parameter = crate::design::decode::parameters::parse_design_parameter(&parameter_record(
-        Some(1),
-        "135 deg",
-        "Angular Dimension-2",
-        Some("deg"),
-        "d1",
-        3.0 * std::f64::consts::FRAC_PI_4,
-    ))
+    let parameter = crate::design::decode::parameters::parse_design_parameter(
+        crate::design::decode::parameters::ParameterFrame::over_retained(&parameter_record(
+            Some(1),
+            "135 deg",
+            "Angular Dimension-2",
+            Some("deg"),
+            "d1",
+            3.0 * std::f64::consts::FRAC_PI_4,
+        )),
+    )
     .unwrap()
     .expect("angular parameter")
     .into_record("A", 100)
