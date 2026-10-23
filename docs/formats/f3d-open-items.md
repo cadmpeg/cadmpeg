@@ -372,7 +372,6 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Need.** A writer must emit the entity to produce the linked form. The shared entity can group components by their parent component or source document.
 
-
 ### DR-87. Parameter-owner flag byte
 
 **Question.** What does the flag byte after the `variant` byte of a parameter owner store?
@@ -380,7 +379,6 @@ the native feature when a fixed lane carries a symmetric distance.
 **Known.** `f3d.md` §3.1 "Every dimension or feature-input parameter stores `owner_record_index`" gives the byte. It is zero in almost every owner. It is one only in scalar owners whose `variant` is one, and one design stores variant one with flag zero.
 
 **Need.** The flag can mark a driven or suppressed parameter. A design that toggles one dimension between driving and driven, saved in each state, fixes the meaning.
-
 
 ### DR-88. Secondary asset-folder run
 
@@ -397,7 +395,6 @@ the native feature when a fixed lane carries a symmetric distance.
 **Known.** `f3d.md` §3.1 "The current sketch entity container" counts the ordinals within the component whose entity cluster holds the sketch entity. The validator selects that component as the naming space with the greatest component record index at or below the sketch entity suffix. In single-component Designs the ordinals increase with the sketch entity suffix. In some Designs with 10 to 362 component naming spaces, two sketches that this rule places in one component carry the same ordinal.
 
 **Need.** The entity cluster boundaries of each component, or the owner link from a sketch entity to its component, give the component of each sketch.
-
 
 ### DR-91. Opposed joint frame mate
 
@@ -428,6 +425,24 @@ the native feature when a fixed lane carries a symmetric distance.
 **Need.** Rules with a different number of entries, or a controlled edit of one rule value, would fix the word's meaning and the bounds of the entry run.
 
 **Conflict.** Treating the word as an entry count reads one entry fewer than the record holds.
+
+### DR-95. Rectangular-pattern direction selection kind `16` and the reference at offset 138
+
+**Question.** What does selection kind `16` select in a rectangular-pattern direction record, what do its origin and displacement mean, and what record does the marked reference at offset 138 name?
+
+**Known.** `f3d.md` §3.1 "A rectangular-pattern direction record is a 220-byte frame" gives the frame, the U-then-V order, and the direction as the normalized displacement. Kind `8` selects a linear edge, with the edge start point and the edge vector. A kind-`16` record stores a unit displacement and an origin on the selected entity; the specification does not name the entity kind. The reference at offset 138 names a record outside the scope reference table.
+
+**Need.** A writer must emit the selection kind, the origin, and the reference at offset 138 for a direction that does not come from a linear edge, and a reader must know whether a kind-`16` origin is a point of a planar face, an axis, or another entity.
+
+### DR-96. Rectangular-pattern distance type and the 221-byte direction form
+
+**Question.** Where does a rectangular-pattern scope store whether its extent owners hold the seed-to-final-instance extent or the adjacent spacing, what does the u32 at direction-record offset 89 select, and how does a direction with no stored displacement define its vector?
+
+**Known.** `f3d.md` §3.1 "A rectangular-pattern direction record is a 220-byte frame" gives the 220-byte form, which stores u32 `8` at offset 89. A 221-byte direction frame stores u32 `7` at offset 89 and one zero byte at offset 93; its later fields keep the 220-byte order one byte later. A frame in this form is not a 220-byte direction record, so a scope that stores one has no direction records. A class-261 frame in the scope reference table holds the selection-operand reference, the auxiliary reference, the role, and the closing references of a direction record, with no selection kind, origin, or displacement.
+
+**Need.** A reader must convert both extent owners to adjacent spacing and must define each active direction's vector, including the vector of a class-261 direction.
+
+**Conflict.** A Features-type rectangular pattern with 3 by 2 instances at 10 mm spacing stores an extent of 1.0 cm in both directions. Extent divided by count minus one gives 5 mm and 10 mm, not 10 mm and 10 mm. That scope stores its direction in the 221-byte form. In scopes that store 220-byte direction records, the extent divided by count minus one reproduces the measured pitch in both directions.
 
 ## 2. External references
 

@@ -172,6 +172,12 @@ class ScopeTests(unittest.TestCase):
         self.assertFalse(scope['full'])
         self.assertIn('cadmpeg-core', scope['packages'])
 
+    def test_measurement_contract_selects_measure_crate(self):
+        scope = select(ROOT, ['docs/measurement.md'])
+        self.assertFalse(scope['full'])
+        self.assertIn('cadmpeg-measure', scope['packages'])
+        self.assertTrue(scope['rust'])
+
     def test_prose_and_static_tables_skip_rust(self):
         for path in ('docs/architecture.md', 'README.md', 'docs/codec-facade.toml',
                      '.github/dependabot.yml'):

@@ -427,6 +427,13 @@ fn append_name_properties(
 }
 
 fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, CodecError> {
+    let lowered = cadmpeg_ir::codec::write::subset_lowering::lower_subset_curves(ir, |curve| {
+        curve
+            .geometry
+            .solved()
+            .is_none_or(|solved| flatten_curve(solved).is_err())
+    })?;
+    let ir = lowered.as_ref();
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())?;
     let ctx = &ctx;

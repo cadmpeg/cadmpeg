@@ -58,6 +58,21 @@ check: OK (0 error(s), 0 warning(s))
 wrote part.step (... entities)
 ```
 
+Measure one face, or every cylindrical face of a part:
+
+```sh
+cadmpeg measure part.step --face face#46
+cadmpeg measure part.step --faces --kind cylinder --tsv
+```
+
+Compare the geometry of two files, for example a native file and its STEP export:
+
+```sh
+cadmpeg diff part.f3d part.step --geometry
+```
+
+[`docs/measurement.md`](docs/measurement.md) states what each value means and how exact it is.
+
 ## Format support
 
 Each format carries one support level from the ladder; `cadmpeg inspect <file>` answers for a specific file.
@@ -86,7 +101,7 @@ Each format carries one support level from the ladder; `cadmpeg inspect <file>` 
 input file ──▶ container decoder ──▶ format decoder ──▶ IR ──▶ validator ──▶ exporter ──▶ output + reports
 ```
 
-- [CAD IR version 9](docs/cad-ir.md)
+- [CAD IR version 10](docs/cad-ir.md)
 - [Architecture](docs/architecture.md)
 - [Format support](docs/format-support.md)
 - [Roadmap](docs/roadmap.md)

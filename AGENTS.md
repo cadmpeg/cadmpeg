@@ -42,6 +42,7 @@ Inspecting:
 
 - Do byte-level work with `cadmpeg inspect` (`hex`, `read`, `find`, `strings`, `struct`, `cmp`, `container`, `extract`), not `xxd`, `od`, `strings`, or `unzip`. `inspect extract` matches a ZIP member name byte for byte; `unzip` reads `[…]` as a glob.
 - Read report and CADIR JSON with `cadmpeg query` before `jq`. `query summary FILE` names the artifact kind. Take arena names from `query counts` and field paths from `query schema`. `crates/cadmpeg/README.md` documents the views and `docs/jq-recipes.md` the `jq` shapes.
+- Check decoded geometry with `cadmpeg measure`, and compare two decodes with `cadmpeg diff A B --geometry`, not with hand-written oracle scripts. `docs/measurement.md` states the contract.
 
 Shared checkouts:
 

@@ -92,6 +92,52 @@ fn an_edge_on_an_uncached_helix_is_written_on_a_fitted_bspline() {
 }
 
 #[test]
+fn an_edge_on_a_subset_of_an_uncached_helix_is_written_on_a_trimmed_fitted_bspline() {
+    let mut ir = helix_edge_doc(false);
+    let helix_id = ir.model.edges[0].curve().unwrap().clone();
+    let subset_id = CurveId::mint("test:model:curve#helix-subset").unwrap();
+    let construction_id =
+        ProceduralCurveId::mint("test:model:procedural_curve#helix-subset").unwrap();
+    ir.model.curves.push(Curve {
+        parameter_range: None,
+        id: subset_id.clone(),
+        geometry: CurveGeometry::Procedural {
+            construction: construction_id.clone(),
+            cache: None,
+        },
+        source_object: None,
+    });
+    ir.model.procedural_curves.push(ProceduralCurve::new(
+        construction_id,
+        ProceduralCurveDefinition::Subset(
+            cadmpeg_ir::geometry::curve_payloads::SubsetCurveConstruction::try_new(
+                helix_id,
+                [0.0, std::f64::consts::TAU],
+                true,
+                None,
+            )
+            .unwrap(),
+        ),
+    ));
+    ir.model.edges[0].carrier = EdgeCarrier::unbounded(Some(subset_id));
+    let mut bytes = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
+
+    assert_eq!(entity_count(&bytes, "EDGE_CURVE"), 1);
+    assert_eq!(entity_count(&bytes, "TRIMMED_CURVE"), 1);
+    assert_eq!(entity_count(&bytes, "B_SPLINE_CURVE_WITH_KNOTS"), 1);
+    let codes: Vec<_> = report.losses.iter().map(|loss| loss.code.clone()).collect();
+    assert!(codes.contains(&StepLossCode::HelixFittedToBspline.kind()));
+    assert!(!codes.contains(&StepLossCode::EdgeCurveUnsupported.kind()));
+}
+
+#[test]
 fn an_edge_on_a_cached_helix_is_written_on_its_cache() {
     let ir = helix_edge_doc(true);
     let mut bytes = Vec::new();

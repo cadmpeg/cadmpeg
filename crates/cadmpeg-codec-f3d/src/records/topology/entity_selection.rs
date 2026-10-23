@@ -292,6 +292,12 @@ impl DesignEntitySelectionOperand {
     pub(crate) fn primary_identity_offset(&self) -> u64 {
         self.identity_record_offset + self.selection.primary_delta()
     }
+    /// The single u64 identity of a compact 29-byte identity record, or
+    /// `None` for a frame that stores an identity pair.
+    pub(crate) fn compact_identity(&self) -> Option<u64> {
+        matches!(self.selection, EntitySelectionFrame::Primary { .. })
+            .then_some(self.primary_identity)
+    }
     pub(crate) fn secondary(&self) -> Option<DesignSecondaryIdentity<Located<u64>>> {
         self.selection.secondary(self.identity_record_offset)
     }

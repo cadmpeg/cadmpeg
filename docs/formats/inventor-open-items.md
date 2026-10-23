@@ -102,7 +102,7 @@ The schema-15 representation/model-state branch and its occurrence table are fra
 
 Pre-schema-15 level-of-detail records are framed, but their member semantics are not transferred: kind 1 members and the kind 2 subassembly level-of-detail selection are retained natively. Which members a level of detail suppresses, and how the active level of detail is chosen, is unproven.
 
-Some assembly saves, for example weldment templates, store occurrence-table records that do not follow the occurrence grammar; they stay malformed UFRx records.
+Some assembly saves, for example weldment templates, store occurrence-table records that do not follow the occurrence grammar; they stay malformed UFRx records. Schema-15 model-state records are framed for section-version entry 2 values 16 or earlier and 18 or later; the suffix length at entry 2 value 17 is not established, and those records are refused. The schema-15 header grammar of an assembly with more than the default representation, model state, or level of detail is unknown.
 
 The meaning of the eight export-entry state bytes, of the export padding byte, and of first-section tag `0x1e` (a second name that usually equals the component name) is unknown.
 
@@ -190,9 +190,9 @@ Visibility is a property of a design-view representation. `DesignViewSegment` st
 
 **Question.** What does the planar-sketch `count_value` count, what locus semantics do nonempty constraint maps encode outside the coincident, tangent, distance, circle-center, and midpoint solver hints, and which PmDc records define elliptical arcs, splines, offset curves, projected geometry, text, and pattern relations, which `entity_flags` bit marks construction geometry, what the midpoint relation's trailing `value:u32` encodes, what the regular-polygon record's `value:u32` and the polygon relation's two trailing u32 values encode, what the tangent hint codes 1 and 2 state for a circular-arc operand, and which angle-dimension `flags` value selects the supplement of the line angle?
 
-**Known.** The `count_value` is the u32 field between sketch state and the type-8 reference array. Point, bounded-line, circle, circular-arc, and closed-ellipse entities form closed planar sketch graphs. An ellipse record with two leading point references is bounded. Profile wire bodies use curves whose `entity_flags` hold bits `0x40`, `0x1000`, `0x40000`, and `0x80000`, so these bits do not mark construction geometry. Bits `0x8000` and `0x200000` occur only on curves that no profile wire uses. Coincident, parallel, perpendicular, tangent, horizontal, vertical, circle-center, equal-radius, equal-length, midpoint, fix, horizontal-alignment, vertical-alignment, collinear, symmetric, polygon, radius, diameter, distance, angle, horizontal-distance, and vertical-distance relations with empty constraint maps have exact operands. The midpoint value is 0 in every record examined.
+**Known.** The `count_value` is the u32 field between sketch state and the type-8 reference array. Point, bounded-line, circle, circular-arc, and closed-ellipse entities form closed planar sketch graphs. An ellipse record with two leading point references is bounded. Profile wire bodies use curves whose `entity_flags` hold bits `0x40`, `0x1000`, `0x40000`, and `0x80000`, so these bits do not mark construction geometry. Bits `0x8000` and `0x200000` occur only on curves that no profile wire uses. Coincident, parallel, perpendicular, tangent, horizontal, vertical, circle-center, equal-radius, equal-length, midpoint, fix, horizontal-alignment, vertical-alignment, collinear, symmetric, polygon, radius, diameter, distance, angle, horizontal-distance, and vertical-distance relations with empty constraint maps have exact operands. The midpoint value is 0 in every record examined. A tangent hint code keyed by a circular-arc operand does not change the tangent relation. Code 1 keyed by an arc occurs where the tangency is at the arc start; code 2 occurs where it is at the arc end and where it is inside the arc.
 
-**Need.** The count requires an exact referent before validation uses it. Nonempty constraint maps outside the coincident, tangent, distance, circle-center, and midpoint solver hints require exact locus semantics before neutral transfer. A tangent hint code 1 or 2 keyed by a circular-arc operand requires its exact meaning before such a relation transfers. The polygon record value and the polygon relation values require exact referents before a polygon transfers as more than its edges and relations. Each additional entity and relation requires its complete solved geometry, ordered operands, parameter role, and profile-boundary semantics.
+**Need.** The count requires an exact referent before validation uses it. Nonempty constraint maps outside the coincident, tangent, distance, circle-center, and midpoint solver hints require exact locus semantics before neutral transfer. A tangent hint code 1 or 2 keyed by a circular-arc operand requires its exact meaning before the hint can place the tangency. The polygon record value and the polygon relation values require exact referents before a polygon transfers as more than its edges and relations. Each additional entity and relation requires its complete solved geometry, ordered operands, parameter role, and profile-boundary semantics.
 
 ### DE-04. Parameter tables without a model owner
 
@@ -217,6 +217,14 @@ Visibility is a property of a design-view representation. `DesignViewSegment` st
 **Known.** A selection whose wire body edges each run along a whole curve or a part of a curve of the consumed sketch is one closed ring of that sketch. Some wire bodies name associative identifiers that the consumed sketch gives to points, or to no entity, and their edges do not lie on the current sketch curves. Some naming attributes store three integers after the five leading fields.
 
 **Need.** Each form requires its exact sketch curves or region rule before the extrusion profile can transfer.
+
+### DE-07. Other PmDc segment versions
+
+**Question.** Which content-header, stamp, list, and record forms do PmDc segments of major versions 24, 26, and 27 use, what do content-header stamps encode, and what does a sketch point with tail state 2 store after its state?
+
+**Known.** Segment major versions 23, 25, and 28 through 31 use the header and record forms of the specification. A stamp is −1 or a nonnegative value; nonnegative stamps include values whose hundreds equal the segment major version. Points with tail state 2 occur from segment major version 25 and store more data after the state than an association list and a link list.
+
+**Need.** Each other version requires its header and record forms before its PmDc records decode. A stamp requires an exact referent before it can affect transfer. A state-2 point requires its complete tail grammar before its sketch can close.
 
 ## 5. Adjacent envelopes
 

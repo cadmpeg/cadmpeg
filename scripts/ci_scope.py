@@ -50,7 +50,10 @@ SINGLE_CODEC_GATES = {'sldprt_cli': 'cadmpeg-codec-sldprt', 'step_cli': 'cadmpeg
 # Read by the `cadmpeg` package's `layout_tables` test.
 LAYOUT_TABLE_INPUTS = ('docs/formats/', 'docs/layouts/')
 
-EMBEDDED_BY = {'docs/dialect-id-conformance.toml': 'cadmpeg-core'}
+EMBEDDED_BY = {
+    'docs/dialect-id-conformance.toml': 'cadmpeg-core',
+    'docs/measurement.md': 'cadmpeg-measure',
+}
 
 
 def is_cache_key_input(path: str) -> bool:

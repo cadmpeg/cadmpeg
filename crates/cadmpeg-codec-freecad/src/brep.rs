@@ -5921,6 +5921,17 @@ fn append_text_curve(
                 .map_err(cadmpeg_core::CodecError::malformed)?;
             let construction_id: ProceduralCurveId =
                 model_identity("curve", id.as_str(), "construction")?;
+            let local_cache = transfer.curves[basis_index]
+                .geometry
+                .solved()
+                .and_then(|basis| admitted_payload.local_cache(basis));
+            let geometry = match local_cache {
+                Some(cache) => CurveGeometry::Solved(cache),
+                None => CurveGeometry::Procedural {
+                    construction: construction_id.clone(),
+                    cache: None,
+                },
+            };
             transfer.procedural.push((
                 procedural_id,
                 ProceduralCurve::new(
@@ -5928,7 +5939,7 @@ fn append_text_curve(
                     ProceduralCurveDefinition::Subset(admitted_payload),
                 ),
             ));
-            transfer.curves[basis_index].geometry.clone()
+            geometry
         }
         TextCurve::Offset {
             distance,

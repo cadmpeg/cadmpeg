@@ -3300,6 +3300,11 @@ fn emit_carrier_curve(
             parsed_domain: solved_domain,
             reversed: record_reversed,
         }) => {
+            // The cache runs against the stored parameter once for a reversed
+            // record and once more for an edge use that reverses it.
+            let edge_reversed =
+                reversed_curve_refs.contains(&i) && !forward_curve_refs.contains(&i);
+            let cache_reversed = record_reversed != edge_reversed;
             let definition = (|| -> Result<_, CarrierCurveError> {
                 Ok(match *construction {
                     ProceduralCurveConstruction::VectorOffset((
@@ -3340,7 +3345,7 @@ fn emit_carrier_curve(
                             cadmpeg_ir::geometry::curve_payloads::SubsetCurveConstruction::try_new(
                                 source_id,
                                 parameter_range,
-                                true,
+                                !cache_reversed,
                                 None,
                             )
                             .map_err(|_| "subset-curve range is not finite and ordered")?,
@@ -3654,9 +3659,7 @@ fn emit_carrier_curve(
             })();
             definition.and_then(|mut definition| {
                 // The pcurves follow each reversal of the cache.
-                let edge_reversed =
-                    reversed_curve_refs.contains(&i) && !forward_curve_refs.contains(&i);
-                if record_reversed != edge_reversed {
+                if cache_reversed {
                     let _unreversed = definition.reverse_support_contexts();
                 }
                 // A construction that owns a revision-gated cache form states

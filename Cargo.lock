@@ -195,6 +195,7 @@ dependencies = [
  "assert_cmd",
  "cadmpeg-codec-catia",
  "cadmpeg-codec-creo",
+ "cadmpeg-codec-f3d",
  "cadmpeg-codec-freecad",
  "cadmpeg-codec-iges",
  "cadmpeg-codec-nx",
@@ -204,6 +205,7 @@ dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
  "cadmpeg-ir",
+ "cadmpeg-measure",
  "cadmpeg-registry",
  "cadmpeg-test-support",
  "clap",
@@ -399,6 +401,7 @@ dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
  "cadmpeg-ir",
+ "cadmpeg-measure",
  "cadmpeg-test-support",
  "encoding_rs",
  "hdf5-reader",
@@ -450,6 +453,17 @@ dependencies = [
  "serde_json",
  "sha2",
  "syn 3.0.9",
+ "thiserror",
+]
+
+[[package]]
+name = "cadmpeg-measure"
+version = "0.6.5"
+dependencies = [
+ "cadmpeg-core",
+ "cadmpeg-ir",
+ "serde",
+ "serde_json",
  "thiserror",
 ]
 

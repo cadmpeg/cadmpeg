@@ -62,6 +62,9 @@ const EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E12: f64 = 1.0e-12;
 const EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E8: f64 = 1.0e-8;
 const EPS_FEATURE_PROJECT_PROJECT_EXTRUDE_E9: f64 = 1.0e-9;
 const EPS_FEATURE_PROJECT_PROJECT_EXTRUDE_E12: f64 = 1.0e-12;
+/// Largest `1 - cos` between a rectangular-pattern direction record and the
+/// instance-run direction that still names the same direction.
+const EPS_RECTANGULAR_PATTERN_DIRECTION_AGREEMENT: f64 = 1.0e-9;
 
 macro_rules! or_none {
     ($value:expr) => {
@@ -893,23 +896,33 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         })
                     })
                 }
-                Some(DesignFeatureFamily::CircularPattern) => {
-                    project_circular_pattern(scope, construction_groups, face_operands)
-                        .unwrap_or_else(|| {
-                            FeatureDefinition::Operation(FeatureOperation::Pattern {
-                                seeds: Vec::new(),
-                                pattern: PatternKind::UNRESOLVED_CIRCULAR,
-                            })
-                        })
-                }
+                Some(DesignFeatureFamily::CircularPattern) => project_circular_pattern(
+                    scope,
+                    construction_groups,
+                    face_operands,
+                    entity_selection_operands,
+                    scopes,
+                )
+                .unwrap_or_else(|| {
+                    FeatureDefinition::Operation(FeatureOperation::Pattern {
+                        seeds: Vec::new(),
+                        pattern: PatternKind::UNRESOLVED_CIRCULAR,
+                    })
+                }),
                 Some(DesignFeatureFamily::RectangularPattern) => {
-                    project_rectangular_pattern_scalars(scope, construction_groups, face_operands)
-                        .unwrap_or_else(|| {
-                            FeatureDefinition::Operation(FeatureOperation::Pattern {
-                                seeds: Vec::new(),
-                                pattern: PatternKind::UNRESOLVED_LINEAR,
-                            })
+                    project_rectangular_pattern_scalars(
+                        scope,
+                        construction_groups,
+                        face_operands,
+                        entity_selection_operands,
+                        scopes,
+                    )
+                    .unwrap_or_else(|| {
+                        FeatureDefinition::Operation(FeatureOperation::Pattern {
+                            seeds: Vec::new(),
+                            pattern: PatternKind::UNRESOLVED_LINEAR,
                         })
+                    })
                 }
                 Some(DesignFeatureFamily::Mirror) => {
                     project_mirror(scope, construction_groups, face_operands, scopes)
@@ -6040,9 +6053,11 @@ fn project_circular_pattern(
     scope: &DesignParameterScope,
     groups: &[DesignConstructionOperandGroup],
     face_operands: &[DesignFaceOperand],
+    entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
+    scopes: &[DesignParameterScope],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
-        patterns::{PatternKind, PatternSeed, PatternTransform},
+        patterns::{PatternKind, PatternTransform},
         FeatureDefinition, FeatureOperation,
     };
     let construction = scope.circular_pattern_construction()?;
@@ -6057,23 +6072,13 @@ fn project_circular_pattern(
             )
             && !group.members().is_empty()
     }))?;
-    let seed = if group.role() == DesignOperandRole::BODIES_A {
-        PatternSeed::Faces(
-            match resolved_historical_face_group(
-                scope,
-                scope.previous_history_state_id(),
-                group,
-                face_operands,
-            ) {
-                Some(selection) => selection,
-                None => cadmpeg_ir::features::FaceSelection::Native(group.id.clone()),
-            },
-        )
-    } else {
-        PatternSeed::Bodies(cadmpeg_ir::features::BodySelection::Native(
-            group.id.clone(),
-        ))
-    };
+    let seeds = pattern_group_seeds(
+        scope,
+        group,
+        face_operands,
+        entity_selection_operands,
+        scopes,
+    );
     let axis_origin = cadmpeg_ir::features::FinitePoint3::new(axis_origin)?;
     let axis_dir = cadmpeg_ir::features::FeatureDirection3::new(axis_dir)?;
     let pattern = PatternKind::new(PatternTransform::Circular {
@@ -6084,9 +6089,85 @@ fn project_circular_pattern(
     })
     .ok()?;
     Some(FeatureDefinition::Operation(FeatureOperation::Pattern {
-        seeds: vec![seed],
+        seeds,
         pattern,
     }))
+}
+
+/// Seeds of a pattern's seed group. A body-role group selects its bodies. A
+/// face-role group selects its historical faces in the scope's preceding
+/// state; otherwise, when every member is a compact entity selection that
+/// names a feature scope, it selects those features in member order.
+fn pattern_group_seeds(
+    scope: &DesignParameterScope,
+    group: &DesignConstructionOperandGroup,
+    face_operands: &[DesignFaceOperand],
+    entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
+    scopes: &[DesignParameterScope],
+) -> Vec<cadmpeg_ir::features::patterns::PatternSeed> {
+    use cadmpeg_ir::features::patterns::PatternSeed;
+
+    if group.role() != DesignOperandRole::BODIES_A {
+        return vec![PatternSeed::Bodies(
+            cadmpeg_ir::features::BodySelection::Native(group.id.clone()),
+        )];
+    }
+    if let Some(selection) = resolved_historical_face_group(
+        scope,
+        scope.previous_history_state_id(),
+        group,
+        face_operands,
+    ) {
+        return vec![PatternSeed::Faces(selection)];
+    }
+    entity_selection_feature_seeds(scope, group, entity_selection_operands, scopes).unwrap_or_else(
+        || {
+            vec![PatternSeed::Faces(
+                cadmpeg_ir::features::FaceSelection::Native(group.id.clone()),
+            )]
+        },
+    )
+}
+
+/// Feature seeds named by a face-role group whose members are all compact
+/// entity selections. Each compact identity is the record index of a
+/// modelling feature scope in the same stream other than `scope`.
+fn entity_selection_feature_seeds(
+    scope: &DesignParameterScope,
+    group: &DesignConstructionOperandGroup,
+    entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
+    scopes: &[DesignParameterScope],
+) -> Option<Vec<cadmpeg_ir::features::patterns::PatternSeed>> {
+    let stream = native_stream(&scope.id)?;
+    if group.members().is_empty() {
+        return None;
+    }
+    group
+        .members()
+        .iter()
+        .enumerate()
+        .map(|(ordinal, member)| {
+            let ordinal = u32::try_from(ordinal).ok()?;
+            let selection =
+                unique_feature_match(entity_selection_operands.iter().filter(|operand| {
+                    native_stream(&operand.id) == Some(stream)
+                        && operand.scope_record_index == scope.record_index
+                        && operand.group_record_index == group.record_index
+                        && operand.group_member_ordinal == ordinal
+                        && operand.record_index() == member.value
+                }))?;
+            let record_index = u32::try_from(selection.compact_identity()?).ok()?;
+            let seed_scope = unique_feature_match(scopes.iter().filter(|candidate| {
+                native_stream(&candidate.id) == Some(stream)
+                    && candidate.record_index == record_index
+                    && candidate.record_index != scope.record_index
+                    && candidate.history_state_id().is_some()
+            }))?;
+            Some(cadmpeg_ir::features::patterns::PatternSeed::Feature(
+                crate::ids::neutral_feature_id(seed_scope),
+            ))
+        })
+        .collect()
 }
 
 fn circular_pattern_axis(
@@ -6136,6 +6217,8 @@ fn project_rectangular_pattern_scalars(
     scope: &DesignParameterScope,
     groups: &[DesignConstructionOperandGroup],
     face_operands: &[DesignFaceOperand],
+    entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
+    scopes: &[DesignParameterScope],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
         patterns::{PatternKind, PatternSeed, PatternTransform},
@@ -6144,27 +6227,29 @@ fn project_rectangular_pattern_scalars(
     use cadmpeg_ir::scalar::PositiveLength;
 
     let construction = scope.rectangular_pattern_construction()?;
-    let mut active = [
-        (
-            construction.u_count(),
-            construction.u_extent(),
-            construction.v_count(),
-        ),
-        (
-            construction.v_count(),
-            construction.v_extent(),
-            construction.u_count(),
-        ),
-    ]
-    .into_iter()
-    .filter_map(|(count, extent, inactive_count)| {
-        Some((count, PatternIntervals::new(count)?, extent, inactive_count))
-    });
-    let (count, intervals, extent, inactive_count) = active.next()?;
-    if active.next().is_some() || inactive_count != 1 {
-        return None;
+    // A scope stores one direction record per active direction or none, so
+    // the records pair with the active directions in U-then-V order.
+    let mut direction_records = construction.directions().iter();
+    let mut active = Vec::new();
+    for (count, extent) in [
+        (construction.u_count(), construction.u_extent()),
+        (construction.v_count(), construction.v_extent()),
+    ] {
+        let Some(intervals) = PatternIntervals::new(count) else {
+            continue;
+        };
+        let direction = direction_records.next().and_then(|record| {
+            let direction = record.direction()?;
+            Some(if extent < 0.0 {
+                direction.negated()
+            } else {
+                direction
+            })
+        });
+        let spacing = PositiveLength::new(extent.abs() * 10.0 / f64::from(intervals.get()))?;
+        active.push((count, spacing, direction));
     }
-    let direction = construction.instances().and_then(|instances| {
+    let instance_direction = construction.instances().and_then(|instances| {
         let first = &instances.frames().next()?.transform.value;
         let last = &instances.frames().next_back()?.transform.value;
         let delta = Vector3::new(
@@ -6202,39 +6287,55 @@ fn project_rectangular_pattern_scalars(
         let first = matching_groups.next();
         let second = matching_groups.next();
         match (first, second) {
-            (Some(group), None) => Some(if group.role() == DesignOperandRole::BODIES_A {
-                PatternSeed::Faces(
-                    match resolved_historical_face_group(
-                        scope,
-                        scope.previous_history_state_id(),
-                        group,
-                        face_operands,
-                    ) {
-                        Some(selection) => selection,
-                        None => cadmpeg_ir::features::FaceSelection::Native(group.id.clone()),
-                    },
-                )
-            } else {
-                PatternSeed::Bodies(cadmpeg_ir::features::BodySelection::Native(
-                    group.id.clone(),
-                ))
-            }),
+            (Some(group), None) => Some(pattern_group_seeds(
+                scope,
+                group,
+                face_operands,
+                entity_selection_operands,
+                scopes,
+            )),
             _ => None,
         }
     } else {
         None
     };
-    let mut seeds = Vec::new();
-    if let Some(seed) = component_seed.or(group_seed) {
-        seeds.push(seed);
-    }
-    let direction = direction.map(cadmpeg_ir::features::FeatureDirection3::from);
-    let spacing = PositiveLength::new(extent.abs() * 10.0 / f64::from(intervals.get()))?;
+    let seeds = component_seed
+        .map(|seed| vec![seed])
+        .or(group_seed)
+        .unwrap_or_default();
+    let (count, spacing, direction, second) = match active.as_slice() {
+        // The instance run is the established direction of a single-direction
+        // pattern; a direction record only fills it in when the run is absent
+        // and must agree with it otherwise.
+        [(count, spacing, direction)] => {
+            let direction = match (instance_direction, *direction) {
+                (Some(run), Some(record))
+                    if 1.0 - run.as_raw().dot(*record.as_raw())
+                        > EPS_RECTANGULAR_PATTERN_DIRECTION_AGREEMENT =>
+                {
+                    None
+                }
+                (run, record) => run.or(record),
+            };
+            (*count, *spacing, direction, None)
+        }
+        [(count, spacing, direction), (second_count, second_spacing, Some(second_direction))] => (
+            *count,
+            *spacing,
+            *direction,
+            Some(cadmpeg_ir::features::patterns::LinearPatternDirection {
+                direction: cadmpeg_ir::features::FeatureDirection3::from(*second_direction),
+                spacing: *second_spacing,
+                count: *second_count,
+            }),
+        ),
+        _ => return None,
+    };
     let pattern = PatternKind::new(PatternTransform::Linear {
-        direction,
+        direction: direction.map(cadmpeg_ir::features::FeatureDirection3::from),
         spacing,
         count,
-        second: None,
+        second,
     })
     .ok()?;
     Some(FeatureDefinition::Operation(FeatureOperation::Pattern {

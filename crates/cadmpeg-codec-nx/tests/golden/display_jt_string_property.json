@@ -2,7 +2,7 @@
   "decode": {
     "ir": {
       "decode_depth": "full",
-      "ir_version": "9",
+      "ir_version": "10",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
