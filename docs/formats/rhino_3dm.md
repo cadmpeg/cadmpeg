@@ -1905,14 +1905,19 @@ present when their gates are met, and later bytes remain within the containing
 Unit system `none` retains native coordinates at scale 1.0 and supplies no
 millimetre binding. Unit system `unset` supplies no coordinate scale. When the
 source reader finds no units record, it keeps the default settings, whose unit
-system is millimeters.
+system is millimeters. This rule applies to every archive version.
 
-CADIR object geometry and the annotation, grid, and render settings records
-of a document with unit system `none` or `unset` use the model coordinates at
-scale 1.0. The document then carries one
-`geometry.document-length-unit-undeclared` loss, which states that these
-lengths are not physical millimetres. A V1 archive without a units record uses
-millimeters.
+A document with unit system `none` or `unset` uses the model coordinates at
+scale 1.0 for every length-dependent record: object geometry, annotations,
+instance placements, detail views, named and active views, named construction
+planes, lights, linetypes, hatch patterns, dimension styles, and the
+annotation, grid, and render settings. `ON::UnitScale` returns 1.0 for unit
+system `none` and has no value for `unset`. A document with unit system `none`
+carries one `geometry.document-length-unit-undeclared` warning, which states
+that the unitless model lengths are reported as millimetres. A document with
+unit system `unset` carries one `geometry.document-length-unit-unset` error,
+which states that the lengths have no source scale. No record is retained only
+because the document has no physical unit.
 
 Unit values 23, 24, and 25 scale one stored unit to
 `149597870000000`, `9460730472580800000`, and `30856775800000000000`
@@ -4222,7 +4227,11 @@ ON_BoundingBox bounds
 ```
 
 Definition membership comes from the ordered definition UUID array, not object
-attributes. The reference payload carries one transform and one bounding box.
+attributes. A member object record is the definition's template: its geometry
+enters CADIR only as the transformed copies that each placed occurrence
+expands, and the record itself remains a retained source record under
+`object.family-not-transferred`. The reference payload carries one transform
+and one bounding box.
 The known prefix ends at the enclosing instance-reference class-data boundary;
 later bytes remain bounded there.
 Each `ON_InstanceRef` record is one placed occurrence of the definition it
@@ -4239,6 +4248,23 @@ member emits more than one typed geometry carrier, the same transform is applied
 to every carrier emitted from that member, including a body carrier and any
 point, curve, surface, mesh, or subdivision carrier. The wire format has no
 per-carrier transform or carrier-selection field.
+
+A plane surface transforms as `ON_Plane::Transform`: the images of its x and
+y axes rebuild the frame, so every `(u, v)` keeps its point under an
+orientation-reversing transform; the face orientation flag does not change.
+A compound curve construction keeps its component carriers, which the same
+transform places. A sum surface `b + c0(u) + c1(v)` keeps its construction
+under every affine map `x -> Lx + t` with base point `Lb - t`. An extrusion
+keeps its construction with sweep vector `Ld`. A revolution keeps its
+construction under a similarity in the sense of `ON_Xform::IsSimilarity`; the
+axis origin and direction take their images, and an orientation-reversing
+map reverses the axis direction as `ON_RevSurface::Transform` does. CADIR
+reduces every other procedural construction under an instance transform to
+its transformed solved carrier.
+
+A general annotation or dimension member of a definition has no
+instance-placed neutral form. Each occurrence places the definition's other
+members and reports the annotation member with `annotation.record-dropped`.
 
 ### 18.1 Modern dimensions
 
@@ -4294,6 +4320,54 @@ emits `dimension.override-dropped`. The text-content body is a UTF-16 rich
 text string, obsolete plane, rectangle width `f64`, rotation `f64`, horizontal
 alignment `i32`, vertical alignment `i32`, obsolete text height `f64`, and
 wrap `bool`, in that order.
+
+A rich-text string that does not begin with `{\rtf` is its own plain text.
+Every other string yields the plain text of the `ON_TextContent` text runs,
+as follows:
+
+1. `%<` … `>%` becomes a `\field` group. `[[` starts a `\stack` group
+   whose optional first character `/` or `|` selects the delimiter; `]]`
+   ends the group. `[[[` advances by one character.
+2. The parser reads code points left to right. `{` and `}` begin and end
+   groups. A backslash followed by `\`, `{`, or `}` is that literal
+   character. `\~` is a space, `\_` is `-`, and `\-`, `\|`, and `\:`
+   select nothing. A backslash before a line feed, carriage return, U+2028,
+   or U+2029 ends the run and adds one paragraph run.
+3. A control word is ASCII letters followed by an optional value of digits,
+   `.`, and one leading `-`. The first other character ends it and is
+   consumed unless it is `\`, `{`, or `}`. A control word that the string
+   end interrupts is discarded. Names compare without case. Every control word
+   except `\u` first ends the pending text run.
+4. `\rtf` marks a header run. `\par` and `\line` set the current run to a
+   paragraph or newline run, and `\field` to a field run. Text that follows
+   such a tag in the same group resets the run, so the paragraph is lost
+   unless a group or tag boundary ends the run first. `\tab` appends eight
+   spaces. `\lquote`, `\rquote`, `\ldblquote`, `\rdblquote`, `\bullet`,
+   `\endash`, and `\emdash` append U+2018, U+2019, U+201C, U+201D, U+2022,
+   U+2013, and U+2014.
+5. `\uN` appends the UTF-16 unit `N` as a signed or unsigned 16-bit value,
+   or a code point above U+FFFF. A high surrogate waits for the next `\uN`;
+   an unpaired or invalid unit becomes U+FFFD. Only the one terminator
+   character after `N` is consumed; `\ucN` selects nothing.
+6. `\*` followed by an unknown control word skips to the end of its group.
+7. `\fonttbl` starts the font table. Inside it, `\fN` starts a font
+   definition whose text up to `;` is a font name, not run text.
+8. `\'hh` byte sequences decode through Windows code page 1252. An invalid
+   sequence appends U+FFFD.
+9. Unescaped carriage returns, tabs, and line feeds select nothing.
+   U+00A0, U+202F, and U+200B are spaces.
+
+The plain text concatenates the text and field runs. A run that contains
+`/` and is not the first run is preceded by one space. When a text run
+follows a paragraph or newline run, each paragraph or newline run adds
+CR LF.
+
+The dimension style's stack format splits a run at every digit `/` digit
+fraction, so the plain text of such a run depends on the style. A `\'hh`
+byte under a font character set other than 0 or a code page other than 1252
+uses that code page. A code point zero ends the source run string. CADIR
+transfers the plain text when none of these constructs occurs and keeps
+`annotation.rich-text-unflattened` otherwise.
 
 The text-content, annotation, common-dimension, and family chunks are
 independent boundaries. Each reader consumes its known prefix and ends its

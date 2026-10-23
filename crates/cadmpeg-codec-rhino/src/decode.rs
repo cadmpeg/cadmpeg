@@ -1684,28 +1684,25 @@ impl<'a> DecodeContext<'a> {
         }?;
         let view = &self.scan.data[detail.view_range.clone()];
         let mut view_losses = Vec::new();
-        let typed_view = match self.unit_binding().neutral_scale() {
-            Some(scale) => match crate::views::parse_view_body(
-                self.expand.ctx(),
-                self.scan.data,
-                detail.view_range.clone(),
-                self.archive(),
-                scale,
-                &mut view_losses,
-            ) {
-                Ok((value, _children)) => Some(crate::wire::json(&value)?),
-                Err(crate::chunks::FramingError::Resource(limit)) => {
-                    return Err(cadmpeg_core::CodecError::ResourceLimit(limit));
-                }
-                Err(error) => {
-                    self.scan_warning(
-                        source_order,
-                        format_args!("detail view state retained: {error}"),
-                    );
-                    None
-                }
-            },
-            None => None,
+        let typed_view = match crate::views::parse_view_body(
+            self.expand.ctx(),
+            self.scan.data,
+            detail.view_range.clone(),
+            self.archive(),
+            self.model_scale(),
+            &mut view_losses,
+        ) {
+            Ok((value, _children)) => Some(crate::wire::json(&value)?),
+            Err(crate::chunks::FramingError::Resource(limit)) => {
+                return Err(cadmpeg_core::CodecError::ResourceLimit(limit));
+            }
+            Err(error) => {
+                self.scan_warning(
+                    source_order,
+                    format_args!("detail view state retained: {error}"),
+                );
+                None
+            }
         };
         let mut source_properties = BTreeMap::new();
         if let Some(typed_view) = typed_view {
@@ -2511,6 +2508,19 @@ impl<'a> DecodeContext<'a> {
             decoded?;
             let after = ModelCheckpoint::capture(&self.session.document().model);
             if before.same_state(&after) {
+                if member.class_uuid().is_some_and(|class| {
+                    crate::annotations::is_annotation_class(class)
+                        || crate::dimensions::supported_class(class)
+                }) {
+                    self.report
+                        .typed_losses
+                        .push(RhinoLossCode::AnnotationRecordDropped.note(format_args!(
+                            "instance reference {} places definition-member annotation \
+                             {member_id} without a neutral instance-placed annotation",
+                            identity.object_id
+                        )));
+                    continue;
+                }
                 return Err(format!("definition member {member_id} did not decode").into());
             }
             let transformed = self.transform_new_entities(&before, transform)?;
@@ -2543,6 +2553,7 @@ impl<'a> DecodeContext<'a> {
             let id = body.id.as_str().to_string();
             derived_ids.push(id);
         }
+        let plane_pcurves = scaled_plane_pcurves(before, model, transform)?;
         for pcurve in before
             .added_mut::<Pcurve>(model)
             .ok_or_else(|| "instance decode removed existing pcurves".to_string())?
@@ -2551,6 +2562,14 @@ impl<'a> DecodeContext<'a> {
                 PcurveGeometry::Nurbs { nurbs } => nurbs.pole_rows().count(),
                 _ => 0,
             })?;
+            if let Some(scale) = plane_pcurves.scale {
+                if plane_pcurves.ids.contains(pcurve.id.as_str()) {
+                    pcurve
+                        .geometry
+                        .try_scale_coordinates([scale, scale])
+                        .map_err(|error| error.to_string())?;
+                }
+            }
         }
         let points = before
             .added_mut::<Point>(model)
@@ -2563,10 +2582,38 @@ impl<'a> DecodeContext<'a> {
             let id = point.id.as_str().to_string();
             derived_ids.push(id);
         }
+        let procedural_curve_start = before.arena_len::<ProceduralCurve>();
+        // A compound construction places exactly with its transformed
+        // component carriers, so it stays with its owner.
+        let compound_constructions = model.procedural_curves[procedural_curve_start..]
+            .iter()
+            .filter(|procedure| {
+                matches!(
+                    procedure.definition(),
+                    cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound(_)
+                )
+            })
+            .map(|procedure| procedure.id.as_str().to_owned())
+            .collect::<HashSet<_>>();
         for curve in before
             .added_mut::<Curve>(model)
             .ok_or_else(|| "instance decode removed existing curves".to_string())?
         {
+            let compound_owner = curve
+                .geometry
+                .procedural_construction()
+                .is_some_and(|construction| compound_constructions.contains(construction.as_str()));
+            if compound_owner
+                && matches!(
+                    curve.geometry.solved_cache(),
+                    None | Some(SolvedCurveGeometry::Unknown { .. })
+                )
+            {
+                let id = curve.id.as_str().to_string();
+                links.push(id.clone());
+                derived_ids.push(id);
+                continue;
+            }
             if let Some(cache) = curve.geometry.solved_cache() {
                 curve.geometry = CurveGeometry::Solved(cache.clone());
             }
@@ -2582,10 +2629,41 @@ impl<'a> DecodeContext<'a> {
             let id = curve.id.as_str().to_string();
             derived_ids.push(id);
         }
+        let procedural_surface_start = before.arena_len::<ProceduralSurface>();
+        let mut placed_surface_constructions = HashSet::new();
+        for procedure in &mut model.procedural_surfaces[procedural_surface_start..] {
+            if procedure
+                .edit_definition(|definition| place_surface_construction(definition, transform))?
+            {
+                placed_surface_constructions.insert(procedure.id.as_str().to_owned());
+            }
+        }
         for surface in before
             .added_mut::<Surface>(model)
             .ok_or_else(|| "instance decode removed existing surfaces".to_string())?
         {
+            if let SurfaceGeometry::Procedural {
+                construction,
+                cache,
+            } = &mut surface.geometry
+            {
+                if placed_surface_constructions.contains(construction.as_str()) {
+                    if let Some(solved) = cache.take() {
+                        budget.copy_entity(match &solved {
+                            SolvedSurfaceGeometry::Nurbs(nurbs) => nurbs
+                                .u_count()
+                                .checked_mul(nurbs.v_count())
+                                .ok_or_else(|| COPY_ELEMENT_BUDGET_EXCEEDED.to_owned())?,
+                            _ => 0,
+                        })?;
+                        *cache = Some(transform_solved_surface(solved, transform)?);
+                    }
+                    let id = surface.id.as_str().to_string();
+                    links.push(id.clone());
+                    derived_ids.push(id);
+                    continue;
+                }
+            }
             if let Some(cache) = surface.geometry.solved_cache() {
                 surface.geometry = SurfaceGeometry::Solved(cache.clone());
             }
@@ -2680,23 +2758,43 @@ impl<'a> DecodeContext<'a> {
             derived_ids.push(id);
         }
         let mut omitted = HashSet::new();
-        let procedural_curve_start = before.arena_len::<ProceduralCurve>();
-        let procedural_surface_start = before.arena_len::<ProceduralSurface>();
-        if model.procedural_curves.len() > procedural_curve_start
-            || model.procedural_surfaces.len() > procedural_surface_start
-        {
+        let omitted_surfaces = model.procedural_surfaces[procedural_surface_start..]
+            .iter()
+            .filter(|procedure| !placed_surface_constructions.contains(procedure.id.as_str()))
+            .count();
+        let omitted_curves = model.procedural_curves[procedural_curve_start..]
+            .iter()
+            .filter(|procedure| !compound_constructions.contains(procedure.id.as_str()))
+            .count();
+        if omitted_curves > 0 || omitted_surfaces > 0 {
             let mut annotations = AnnotationBuilder::resume(std::mem::take(&mut self.annotations));
             for procedure in &model.procedural_curves[procedural_curve_start..] {
-                annotations.remove_entity(procedure.id.as_str());
-                omitted.insert(procedure.id.as_str().to_owned());
+                if !compound_constructions.contains(procedure.id.as_str()) {
+                    annotations.remove_entity(procedure.id.as_str());
+                    omitted.insert(procedure.id.as_str().to_owned());
+                }
             }
             for procedure in &model.procedural_surfaces[procedural_surface_start..] {
-                annotations.remove_entity(procedure.id.as_str());
-                omitted.insert(procedure.id.as_str().to_owned());
+                if !placed_surface_constructions.contains(procedure.id.as_str()) {
+                    annotations.remove_entity(procedure.id.as_str());
+                    omitted.insert(procedure.id.as_str().to_owned());
+                }
             }
             self.annotations = annotations.build();
-            model.procedural_curves.truncate(procedural_curve_start);
-            model.procedural_surfaces.truncate(procedural_surface_start);
+            let mut position = 0;
+            model.procedural_curves.retain(|procedure| {
+                let keep = position < procedural_curve_start
+                    || compound_constructions.contains(procedure.id.as_str());
+                position += 1;
+                keep
+            });
+            let mut position = 0;
+            model.procedural_surfaces.retain(|procedure| {
+                let keep = position < procedural_surface_start
+                    || placed_surface_constructions.contains(procedure.id.as_str());
+                position += 1;
+                keep
+            });
             self.report.phase_warnings.push(format_args!("instance: transformed procedural definition omitted; exact solved carrier retained"));
         }
         for id in derived_ids {
@@ -5976,6 +6074,7 @@ fn c2_curve_to_nurbs_join(
         crate::curves::DecodedCurve::Compound {
             children,
             end_parameter,
+            gap_free,
             ..
         } => {
             let mut segments = Vec::new();
@@ -5998,7 +6097,12 @@ fn c2_curve_to_nurbs_join(
                     offset,
                 )?);
             }
-            let mut joined = crate::curves::join_nurbs_segments(ctx, segments, offset)?;
+            let mut joined = crate::curves::join_nurbs_segments(
+                ctx,
+                segments,
+                crate::curves::SegmentJoins::Source { gap_free },
+                offset,
+            )?;
             warnings.append(&mut joined.warnings);
             joined.warnings = warnings;
             Ok(joined)
@@ -6553,8 +6657,215 @@ fn transform_surface(surface: &mut Surface, transform: Transform) -> Result<(), 
         &mut surface.geometry,
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
     );
-    surface.geometry = match geometry {
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(mut nurbs)) => {
+    let SurfaceGeometry::Solved(solved) = geometry else {
+        surface.geometry = geometry;
+        return Err("procedural free surface cannot be transformed exactly"
+            .to_string()
+            .into());
+    };
+    surface.geometry = SurfaceGeometry::Solved(transform_solved_surface(solved, transform)?);
+    Ok(())
+}
+
+/// Pcurves whose plane face takes a uniform instance scale.
+struct PlanePcurves {
+    scale: Option<f64>,
+    ids: HashSet<String>,
+}
+
+/// A plane carrier keeps unit axes, and its pcurves state distances along
+/// them. `ON_PlaneSurface::Transform` keeps the evaluation domain and scales
+/// the extents, so under a similarity with scale `s` every pcurve on a plane
+/// face scales by `s`. A plane has no exact plane image under another affine
+/// map.
+fn scaled_plane_pcurves(
+    before: &ModelCheckpoint,
+    model: &mut cadmpeg_ir::document::Model,
+    transform: Transform,
+) -> Result<PlanePcurves, ReferenceFailure> {
+    let none = || PlanePcurves {
+        scale: None,
+        ids: HashSet::new(),
+    };
+    let planes = before
+        .added_mut::<Surface>(model)
+        .ok_or_else(|| "instance decode removed existing surfaces".to_string())?
+        .iter()
+        .filter(|surface| {
+            matches!(
+                surface.geometry,
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
+            )
+        })
+        .map(|surface| surface.id.as_str().to_owned())
+        .collect::<HashSet<_>>();
+    if planes.is_empty() {
+        return Ok(none());
+    }
+    let Some(scale) = similarity_scale(transform) else {
+        return Err(
+            "plane surface has no exact plane image under a non-similar instance transform"
+                .to_string()
+                .into(),
+        );
+    };
+    if scale == 1.0 {
+        return Ok(none());
+    }
+    let faces = before
+        .added_mut::<Face>(model)
+        .ok_or_else(|| "instance decode removed existing faces".to_string())?
+        .iter()
+        .filter(|face| planes.contains(face.surface.as_str()))
+        .map(|face| face.id.as_str().to_owned())
+        .collect::<HashSet<_>>();
+    let loops = before
+        .added_mut::<Loop>(model)
+        .ok_or_else(|| "instance decode removed existing loops".to_string())?
+        .iter()
+        .filter(|loop_| faces.contains(loop_.face.as_str()))
+        .map(|loop_| loop_.id.as_str().to_owned())
+        .collect::<HashSet<_>>();
+    let ids = before
+        .added_mut::<Coedge>(model)
+        .ok_or_else(|| "instance decode removed existing coedges".to_string())?
+        .iter()
+        .filter(|coedge| loops.contains(coedge.owner_loop.as_str()))
+        .flat_map(|coedge| {
+            coedge
+                .pcurves
+                .iter()
+                .map(|used| used.pcurve.as_str().to_owned())
+        })
+        .collect();
+    Ok(PlanePcurves {
+        scale: Some(scale),
+        ids,
+    })
+}
+
+/// The uniform scale of a similarity, the square root of the center of the
+/// `LᵀL` spectrum hull.
+fn similarity_scale(transform: Transform) -> Option<f64> {
+    let (center, half_length) = gram_spectrum_hull(transform);
+    (half_length < crate::coincidence::ON_ZERO_TOLERANCE && center.abs() > half_length)
+        .then(|| center.sqrt())
+}
+
+/// `ON_Xform::IsSimilarity` with `ON_ZERO_TOLERANCE`: the Gershgorin hull of
+/// the spectrum of `LᵀL` has a half-length below the tolerance and does not
+/// contain zero.
+fn transform_is_similarity(transform: Transform) -> bool {
+    similarity_scale(transform).is_some()
+}
+
+/// The center and half-length of the Gershgorin hull of the spectrum of
+/// `LᵀL`, as `ApproxSpectrumLTL` bounds it.
+fn gram_spectrum_hull(transform: Transform) -> (f64, f64) {
+    let rows = transform.affine_rows();
+    let column = |index: usize| [rows[0][index], rows[1][index], rows[2][index]];
+    let columns = [column(0), column(1), column(2)];
+    let dot = |left: [f64; 3], right: [f64; 3]| {
+        left[0] * right[0] + left[1] * right[1] + left[2] * right[2]
+    };
+    let mut low = f64::INFINITY;
+    let mut high = f64::NEG_INFINITY;
+    for row in 0..3 {
+        let diagonal = dot(columns[row], columns[row]);
+        let radius = (0..3)
+            .filter(|other| *other != row)
+            .map(|other| dot(columns[row], columns[other]).abs())
+            .sum::<f64>();
+        low = low.min(diagonal - radius);
+        high = high.max(diagonal + radius);
+    }
+    (f64::midpoint(low, high), (high - low) / 2.0)
+}
+
+/// Places a procedural surface construction whose instance image is the same
+/// construction family. A sum surface stays a sum under every affine map:
+/// its curves move with the translation once each, so the base point takes
+/// the linear image minus the translation. An extrusion stays an extrusion
+/// with the linear image of its sweep vector. A revolution stays a revolution
+/// under a similarity; `ON_RevSurface::Transform` reverses the axis under an
+/// orientation-reversing map.
+fn place_surface_construction(
+    definition: &mut cadmpeg_ir::geometry::ProceduralSurfaceDefinition,
+    transform: Transform,
+) -> Result<bool, ReferenceFailure> {
+    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+    let invalid = || "instance procedural surface transform is not finite".to_string();
+    match definition {
+        ProceduralSurfaceDefinition::Sum(sum) => {
+            let linear = transform
+                .apply_vector(sum.basepoint().get())
+                .ok_or_else(invalid)?
+                .get();
+            let rows = transform.affine_rows();
+            let placed = cadmpeg_ir::features::FiniteVector3::new(cadmpeg_ir::math::Vector3::new(
+                linear.x - rows[0][3],
+                linear.y - rows[1][3],
+                linear.z - rows[2][3],
+            ))
+            .ok_or_else(invalid)?;
+            sum.set_basepoint(placed);
+            Ok(true)
+        }
+        ProceduralSurfaceDefinition::Extrusion(extrusion) => {
+            let direction = transform
+                .apply_vector(extrusion.direction().get())
+                .ok_or_else(invalid)?;
+            extrusion.set_direction(direction);
+            if let Some(position) = extrusion.native_position() {
+                extrusion.set_native_position(Some(
+                    transform.apply_point(position.get()).ok_or_else(invalid)?,
+                ));
+            }
+            Ok(true)
+        }
+        ProceduralSurfaceDefinition::Revolution(revolution)
+            if revolution.revision_form().is_none() && transform_is_similarity(transform) =>
+        {
+            let origin = transform
+                .apply_point(revolution.axis_origin().get())
+                .ok_or_else(invalid)?;
+            let direction = transform
+                .apply_vector(*revolution.axis_direction().as_raw())
+                .ok_or_else(invalid)?
+                .get();
+            let sign = transform.orientation().ok_or_else(invalid)?;
+            let direction = cadmpeg_ir::math::Vector3::new(
+                sign * direction.x,
+                sign * direction.y,
+                sign * direction.z,
+            );
+            let length = PositiveReal::new(direction.norm()).ok_or_else(invalid)?;
+            let axis = UnitVector3::normalized_with_admitted_length(direction, length)
+                .ok_or_else(invalid)?;
+            *revolution =
+                cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::legacy(
+                    revolution.directrix().clone(),
+                    (origin, axis),
+                    revolution.angular_interval(),
+                    revolution.angular_parameter_interval(),
+                    revolution.parameter_interval(),
+                    *revolution.transposed(),
+                    revolution.legacy_cache(),
+                );
+            Ok(true)
+        }
+        _ => Ok(false),
+    }
+}
+
+/// The instance image of a solved surface, or the reason it has no exact
+/// image.
+fn transform_solved_surface(
+    geometry: SolvedSurfaceGeometry,
+    transform: Transform,
+) -> Result<SolvedSurfaceGeometry, ReferenceFailure> {
+    Ok(match geometry {
+        SolvedSurfaceGeometry::Nurbs(mut nurbs) => {
             if let Err(message) = nurbs.try_map_control_points(|_, pole| {
                 transform
                     .apply_point(pole.get())
@@ -6562,67 +6873,76 @@ fn transform_surface(surface: &mut Surface, transform: Transform) -> Result<(), 
             }) {
                 return Err(ReferenceFailure::Semantic(message.to_owned()));
             }
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))
+            SolvedSurfaceGeometry::Nurbs(nurbs)
         }
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
+        SolvedSurfaceGeometry::Plane(plane_surface) => {
+            // `ON_Plane::Transform`: the axes map as vectors and
+            // `CreateFromFrame` rebuilds the frame from their images, so the
+            // `(u, v)` parameterization follows the transform even when it
+            // reverses orientation.
             let source_origin = plane_surface.origin().get();
-            let u_axis = *plane_surface.frame().reference().as_raw();
+            let frame = plane_surface.frame();
+            let u_axis = *frame.reference().as_raw();
+            let v_axis = frame.axis().as_raw().cross(u_axis);
             let origin = placed_finite_point(transform, plane_surface.origin())?;
-            let unit_normal = transform
-                .apply_unit_normal(*plane_surface.frame().axis())
-                .ok_or_else(|| {
-                    "instance plane normal transform could not produce a finite unit normal"
-                        .to_string()
-                })?;
-            let normal = *unit_normal.as_raw();
-            let endpoint = placed_point(
-                transform,
-                Point3::new(
-                    source_origin.x + u_axis.x,
-                    source_origin.y + u_axis.y,
-                    source_origin.z + u_axis.z,
-                ),
-            )?;
-            let projected = cadmpeg_ir::math::Vector3::new(
-                endpoint.x - origin.x,
-                endpoint.y - origin.y,
-                endpoint.z - origin.z,
+            let image = |axis: cadmpeg_ir::math::Vector3| {
+                placed_point(
+                    transform,
+                    Point3::new(
+                        source_origin.x + axis.x,
+                        source_origin.y + axis.y,
+                        source_origin.z + axis.z,
+                    ),
+                )
+                .map(|endpoint| {
+                    cadmpeg_ir::math::Vector3::new(
+                        endpoint.x - origin.x,
+                        endpoint.y - origin.y,
+                        endpoint.z - origin.z,
+                    )
+                })
+            };
+            let x_image = image(u_axis)?;
+            let y_image = image(v_axis)?;
+            let collapsed = || "instance plane transform collapsed its frame".to_string();
+            let x_length = PositiveReal::new(x_image.norm()).ok_or_else(collapsed)?;
+            let x_axis = UnitVector3::normalized_with_admitted_length(x_image, x_length)
+                .ok_or_else(collapsed)?;
+            let x = *x_axis.as_raw();
+            let along = y_image.dot(x);
+            let y_value = cadmpeg_ir::math::Vector3::new(
+                y_image.x - along * x.x,
+                y_image.y - along * x.y,
+                y_image.z - along * x.z,
             );
-            let dot = projected.x * normal.x + projected.y * normal.y + projected.z * normal.z;
-            let value = cadmpeg_ir::math::Vector3::new(
-                projected.x - dot * normal.x,
-                projected.y - dot * normal.y,
-                projected.z - dot * normal.z,
-            );
-            let length = PositiveReal::new(value.norm())
-                .ok_or_else(|| "instance plane transform collapsed its frame".to_string())?;
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::analytic::PlaneSurface::new(
-                    origin,
-                    UnitVector3::normalized_with_admitted_length(value, length)
-                        .and_then(|u_axis| OrthonormalFrame3::from_units(unit_normal, u_axis))
-                        .ok_or_else(|| {
-                            "PlaneSurface.normal/u_axis must form an orthonormal frame".to_string()
-                        })?,
-                ),
+            let y_length = PositiveReal::new(y_value.norm()).ok_or_else(collapsed)?;
+            let y = *UnitVector3::normalized_with_admitted_length(y_value, y_length)
+                .ok_or_else(collapsed)?
+                .as_raw();
+            let normal = x.cross(y);
+            let normal_length = PositiveReal::new(normal.norm()).ok_or_else(collapsed)?;
+            let unit_normal = UnitVector3::normalized_with_admitted_length(normal, normal_length)
+                .ok_or_else(collapsed)?;
+            SolvedSurfaceGeometry::Plane(cadmpeg_ir::geometry::analytic::PlaneSurface::new(
+                origin,
+                OrthonormalFrame3::from_units(unit_normal, x_axis).ok_or_else(|| {
+                    "PlaneSurface.normal/u_axis must form an orthonormal frame".to_string()
+                })?,
             ))
         }
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record }) => {
-            surface.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record });
+        SolvedSurfaceGeometry::Unknown { .. } => {
             return Err("unknown free surface cannot be transformed exactly"
                 .to_string()
                 .into());
         }
-        other => {
-            surface.geometry = other;
+        _ => {
             return Err(
                 "analytic surface family has no exact general-affine instance conversion"
                     .to_string()
                     .into(),
             );
         }
-    };
-    Ok(())
+    })
 }
 
 fn source_association(

@@ -5,6 +5,7 @@ use cadmpeg_test_support::EditableDecodeResult;
 use cadmpeg_ir::subd;
 use cadmpeg_test_support::wire;
 
+mod expansion;
 mod occurrences;
 mod packed_minors;
 mod recovery;

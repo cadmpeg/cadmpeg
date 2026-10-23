@@ -57,7 +57,7 @@ struct OccurrenceRecord {
     links: Vec<String>,
 }
 
-/// A native placement retains source units when physical conversion is unavailable.
+/// A native placement retains source units when the scaled translation is not finite.
 #[derive(Debug, Serialize)]
 #[serde(tag = "transform_units", content = "transform")]
 enum OccurrenceTransform {
@@ -76,11 +76,8 @@ fn transform_rows<S: serde::Serializer>(
 
 impl OccurrenceTransform {
     fn from_source(source: Transform, binding: UnitBinding) -> Self {
-        match binding {
-            UnitBinding::Millimeters(scale) => crate::instances::scale_translation(source, scale)
-                .map_or(Self::Source(source), Self::Millimeters),
-            UnitBinding::Native | UnitBinding::Unavailable => Self::Source(source),
-        }
+        crate::instances::scale_translation(source, binding.model_scale())
+            .map_or(Self::Source(source), Self::Millimeters)
     }
 }
 
@@ -630,24 +627,9 @@ mod tests {
         for (unit, translation, expected_translation, expected_units) in [
             (Some(2), [3.0, -4.0, 5.0], [3.0, -4.0, 5.0], "millimeter"),
             (Some(3), [3.0, -4.0, 5.0], [30.0, -40.0, 50.0], "millimeter"),
-            (
-                Some(0),
-                [3.0, -4.0, 5.0],
-                [3.0, -4.0, 5.0],
-                "source_length_unit",
-            ),
-            (
-                Some(255),
-                [3.0, -4.0, 5.0],
-                [3.0, -4.0, 5.0],
-                "source_length_unit",
-            ),
-            (
-                None,
-                [3.0, -4.0, 5.0],
-                [3.0, -4.0, 5.0],
-                "source_length_unit",
-            ),
+            (Some(0), [3.0, -4.0, 5.0], [3.0, -4.0, 5.0], "millimeter"),
+            (Some(255), [3.0, -4.0, 5.0], [3.0, -4.0, 5.0], "millimeter"),
+            (None, [3.0, -4.0, 5.0], [3.0, -4.0, 5.0], "millimeter"),
             (
                 Some(3),
                 [f64::MAX, -4.0, 5.0],

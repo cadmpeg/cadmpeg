@@ -7,6 +7,33 @@
 pub(crate) mod test_archive;
 pub(crate) mod test_dump;
 
+/// Native records as JSON without the members that name a byte position, so
+/// documents that differ only in record layout compare equal.
+pub(crate) fn layout_independent_records(
+    records: &[cadmpeg_ir::native::NativeRecord],
+) -> Vec<serde_json::Value> {
+    fn strip(value: &mut serde_json::Value) {
+        match value {
+            serde_json::Value::Object(map) => {
+                for key in ["id", "source_offset", "offset"] {
+                    map.remove(key);
+                }
+                map.values_mut().for_each(strip);
+            }
+            serde_json::Value::Array(values) => values.iter_mut().for_each(strip),
+            _ => {}
+        }
+    }
+    records
+        .iter()
+        .map(|record| {
+            let mut value = serde_json::to_value(record).expect("native record JSON");
+            strip(&mut value);
+            value
+        })
+        .collect()
+}
+
 /// A finite fixture scalar.
 pub(crate) fn finite(value: f64) -> cadmpeg_ir::scalar::FiniteReal {
     cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite fixture scalar")

@@ -174,7 +174,7 @@ fn unit_binding_keeps_native_and_unavailable_distinct_from_physical_scale() {
     );
     assert_eq!(
         settings::UnitBinding::from_units(None),
-        settings::UnitBinding::Unavailable
+        settings::UnitBinding::Millimeters(settings::MillimeterScale::IDENTITY)
     );
     assert_eq!(
         settings::UnitBinding::from_units(Some(&physical)).neutral_scale(),
@@ -184,16 +184,19 @@ fn unit_binding_keeps_native_and_unavailable_distinct_from_physical_scale() {
     );
     assert_eq!(settings::UnitBinding::Native.neutral_scale(), None);
     assert_eq!(settings::UnitBinding::Unavailable.neutral_scale(), None);
-    for binding in [
-        settings::UnitBinding::Native,
-        settings::UnitBinding::Unavailable,
+    for (binding, code) in [
+        (
+            settings::UnitBinding::Native,
+            crate::loss::RhinoLossCode::DocumentLengthUnitUndeclared,
+        ),
+        (
+            settings::UnitBinding::Unavailable,
+            crate::loss::RhinoLossCode::DocumentLengthUnitUnset,
+        ),
     ] {
         assert_eq!(binding.model_scale(), settings::MillimeterScale::IDENTITY);
         let loss = binding.undeclared_unit_loss().expect("undeclared unit");
-        assert_eq!(
-            loss.code,
-            crate::loss::RhinoLossCode::DocumentLengthUnitUndeclared.kind()
-        );
+        assert_eq!(loss.code, code.kind());
     }
     assert!(settings::UnitBinding::from_units(Some(&physical))
         .undeclared_unit_loss()

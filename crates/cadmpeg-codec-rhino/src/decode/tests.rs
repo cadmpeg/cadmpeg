@@ -32,6 +32,7 @@ use cadmpeg_ir::{Exactness, SourceObjectAssociation};
 
 mod candidate_annotations;
 mod carrier_copy;
+mod instance_transforms;
 mod local_limits;
 
 fn line_nurbs(start: f64, end: f64, rational: bool) -> NurbsCurve {
@@ -868,6 +869,7 @@ fn c2_polycurve_merges_clamped_rational_segments_in_parent_domain() {
             ),
         ],
         end_parameter: finite_parameter(40.0),
+        gap_free: true,
         warnings: Diagnostics::new(),
     };
     let merged = with_expand_bytes(&[], |expand| {
@@ -898,11 +900,13 @@ fn recursive_c2_polycurve_preserves_nested_parent_parameterization() {
             ),
         ],
         end_parameter: finite_parameter(2.0),
+        gap_free: true,
         warnings: Diagnostics::new(),
     };
     let outer = crate::curves::DecodedCurve::Compound {
         children: vec![(finite_parameter(5.0), nested)],
         end_parameter: finite_parameter(9.0),
+        gap_free: true,
         warnings: Diagnostics::new(),
     };
     let merged = with_expand_bytes(&[], |expand| c2_curve_to_nurbs_join(expand.ctx(), outer, 0))
@@ -934,6 +938,7 @@ fn unequal_degree_c2_polycurve_elevates_lower_degree() {
             (finite_parameter(1.0), decoded_nurbs(quadratic)),
         ],
         end_parameter: finite_parameter(2.0),
+        gap_free: true,
         warnings: Diagnostics::new(),
     };
     let merged = with_expand_bytes(&[], |expand| {
@@ -1369,7 +1374,7 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
         assert!(context.unknown(0).is_some());
         assert_eq!(
             context.unit_binding(),
-            crate::settings::UnitBinding::Unavailable
+            crate::settings::UnitBinding::Millimeters(crate::settings::MillimeterScale::IDENTITY)
         );
         assert_eq!(context.archive(), archive);
         context

@@ -485,19 +485,6 @@ fn append_file_reference_diagnostics(
     }
 }
 
-fn located_presentation_loss(
-    offset: usize,
-    tag: impl Into<String>,
-    message: impl Into<String>,
-) -> LossNote {
-    crate::loss::RhinoLossCode::PresentationRecordDropped
-        .note(message.into())
-        .with_provenance(
-            SourceProvenance::root("rhino", cadmpeg_core::decode::u64_from_index(offset))
-                .with_tag(tag),
-        )
-}
-
 fn push_list_loss(
     losses: &mut Vec<LossNote>,
     offset: usize,
@@ -1601,27 +1588,6 @@ fn parse_named_cplanes(
     Ok(values)
 }
 
-fn retain_unbound_view_record(
-    losses: &mut Vec<LossNote>,
-    opaque_records: &mut Vec<OpaqueRecord>,
-    table_typecode: u32,
-    record: &Record,
-    binding: UnitBinding,
-    kind: &str,
-) {
-    let tag = format!("VIEW/{kind}");
-    let message = format!("{kind} record at offset {} was retained as complete source because the document has no physical millimetre binding ({})",
-    record.range.start,
-    binding.label());
-
-    losses.push(located_presentation_loss(record.range.start, tag, message));
-
-    opaque_records.push(OpaqueRecord {
-        table_typecode,
-        record: record.clone(),
-    });
-}
-
 /// Result of installing saved and active view records.
 /// Installs saved and active view records with complete child accounting.
 pub(crate) fn install(
@@ -1629,7 +1595,7 @@ pub(crate) fn install(
     scan: &Scan<'_>,
     ir: &mut CadIr,
 ) -> Result<NativeInstall, CodecError> {
-    let binding = UnitBinding::from_units(scan.metadata.settings.units.as_ref());
+    let scale = UnitBinding::from_units(scan.metadata.settings.units.as_ref()).model_scale();
     let mut views = Vec::new();
     let mut cplanes = Vec::new();
     let mut losses = Vec::new();
@@ -1640,17 +1606,6 @@ pub(crate) fn install(
         }
         for record in &table.records {
             if record.typecode == NAMED_CPLANES {
-                let Some(scale) = binding.neutral_scale() else {
-                    retain_unbound_view_record(
-                        &mut losses,
-                        &mut opaque_records,
-                        table.typecode,
-                        record,
-                        binding,
-                        "named construction-plane",
-                    );
-                    continue;
-                };
                 match parse_named_cplanes(ctx, scan.data, record, scan.archive, scale, &mut losses)
                 {
                     Ok(values) => {
@@ -1680,17 +1635,6 @@ pub(crate) fn install(
                 }
             }
             if record.typecode == NAMED_VIEWS {
-                let Some(scale) = binding.neutral_scale() else {
-                    retain_unbound_view_record(
-                        &mut losses,
-                        &mut opaque_records,
-                        table.typecode,
-                        record,
-                        binding,
-                        "named-view list",
-                    );
-                    continue;
-                };
                 let (parsed, mut parse_losses) = parse_list(
                     ctx,
                     scan.data,
@@ -1712,17 +1656,6 @@ pub(crate) fn install(
                 }
             }
             if record.typecode == ACTIVE_VIEWS {
-                let Some(scale) = binding.neutral_scale() else {
-                    retain_unbound_view_record(
-                        &mut losses,
-                        &mut opaque_records,
-                        table.typecode,
-                        record,
-                        binding,
-                        "active-view list",
-                    );
-                    continue;
-                };
                 let (parsed, mut parse_losses) = parse_list(
                     ctx,
                     scan.data,
@@ -1863,24 +1796,6 @@ mod tests {
                 .and_then(|value| value.tag.as_deref()),
             Some("VIEW/CPLANE")
         );
-    }
-
-    #[test]
-    fn unbound_view_record_reports_a_loss_and_retains_the_record() {
-        let record = Record::short(super::NAMED_VIEWS, 0..0, 0);
-        let binding = crate::settings::UnitBinding::from_units(None);
-        let mut losses = Vec::new();
-        let mut opaque = Vec::new();
-        super::retain_unbound_view_record(
-            &mut losses,
-            &mut opaque,
-            super::SETTINGS,
-            &record,
-            binding,
-            "named-view list",
-        );
-        assert_eq!(losses.len(), 1);
-        assert_eq!(opaque.len(), 1);
     }
 
     fn malformed_view_scan(typecode: u32) -> crate::container::Scan<'static> {

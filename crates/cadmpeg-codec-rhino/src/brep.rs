@@ -3395,9 +3395,10 @@ mod tests {
         }
     }
 
-    /// `opennurbs_brep_io.cpp` reads values 0 through 3 as `m_is_solid`
-    /// (`opennurbs_brep.cpp` `SolidOrientation`: 0 unset, 1 outward solid, 2
-    /// inward solid, 3 not solid) and resets any other value to unset.
+    /// `opennurbs_brep_io.cpp` keeps values 0 through 2 as `m_is_solid` and
+    /// resets every other value, including 3, to 0 (unset). The raw flag
+    /// still names 3, the `opennurbs_brep.cpp` `SolidOrientation` not-solid
+    /// value that the source writer stores, so that the decoder can report it.
     #[test]
     fn solid_cache_values_parse_to_the_source_states() {
         assert_eq!(
@@ -3583,6 +3584,7 @@ mod tests {
         let polycurve = crate::curves::DecodedCurve::Compound {
             children: vec![(finite(-1.5), point(1.0)), (finite(2.0), point(2.0))],
             end_parameter: finite(6.25),
+            gap_free: true,
             warnings: Diagnostics::new(),
         };
         let polycurve = crate::curves::DecodedGeometry::Curve { curve: polycurve };

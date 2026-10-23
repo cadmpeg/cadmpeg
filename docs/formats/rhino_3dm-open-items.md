@@ -125,38 +125,21 @@ boundary, plus a test that asserts the specification-owned result. Each test
 must fail under the current disputed rule before that rule is changed.
 
 
-### OF-01. Built-in object families remain opaque
+### OF-01. Placed Brep member whose trims miss under a similarity
 
-**Question.** Which current built-in Rhino object classes must have a typed
-geometry or annotation transfer?
+**Question.** Why does the instance image of the `ON_Brep`
+`5868a4f4-a9cb-41f8-8311-c499e64e3751` in `newlogoAC.3dm`, placed by a
+similarity with scale 2.5633, miss its vertices by 19.08 at the trims of
+NURBS faces 41 and 98?
 
-**Known.** `decode.rs` dispatches classes through the current family
-predicates and groups every object that remains in the retained state under
-`object.family-not-transferred`. Current built-in records that reach that
-state include `TL_Brep` alias records that are members of an unexpanded
-instance definition. In `v2_Camera.3dm` the 54 old-polycurve
-(`EF638317-154B-11d4-8000-0010830122F0`) records decode, but each curve
-candidate reaches `object.framing-undecodable`.
+**Known.** `ON_Brep::IsValid` accepts the member, and its source trim gaps
+are below the edge tolerances. The faces are NURBS surfaces, so the instance
+transform maps their control points and leaves their pcurves unchanged. The
+miss is the same with and without the plane-face pcurve scale. The failed
+candidate rejects the whole reference.
 
-**Need.** Add typed transfers for the listed annotation and instance classes,
-route the `TL_Brep` alias to the Brep decoder, and scope candidate admission
-so that findings on committed entities outside the candidate do not reject it.
-
-### AN-01. Annotation RTF text has no plain-text fragment
-
-**Question.** Which plain visible text does an `ON_Text` or `ON_Leader` RTF
-rich-text string carry?
-
-**Known.** `ON_TextContent::Read` stores one rich-text string. A string that
-does not begin with `{\rtf` is plain text. An RTF string is parsed by
-`ON_RtfParser` (`opennurbs_textiterator.cpp`) into text runs; the plain text is
-the concatenation of those runs. The decoder keeps the complete string as the
-annotation format and emits `annotation.rich-text-unflattened` with no plain
-text fragment.
-
-**Need.** The `ON_RtfParser` group, destination, control-word, `\uN`, and
-`\'hh` rules that produce the run text, so that the plain text comes from the
-same parse.
+**Need.** The neutral face, edge, and pcurve records of the placed member,
+compared with `ON_Brep::Transform` of the same Brep.
 
 ### CT-01. Hatch fill and detail views have no neutral carrier
 
@@ -216,28 +199,6 @@ incrementally, or batch refused candidates. Revalidate only the links a source
 record adds. Add a scaling benchmark that varies the refused-candidate count,
 with a regression ceiling.
 
-### UN-01. Unit-dependent records without a physical unit binding
-
-**Question.** Which CADIR length scale applies to a document without a
-physical unit binding, for every record family?
-
-**Known.** Object geometry and the annotation, grid, and render settings
-records use the model coordinates at scale 1.0 and the document carries one
-`geometry.document-length-unit-undeclared` loss. Named views, construction
-planes, viewport lists, lights, linetypes, hatch patterns, dimension styles,
-and annotation text still return their complete source records under
-`presentation.record-dropped` or `annotation.record-dropped` when the unit
-system is `none` or `unset`. A V2 or later archive without a units record is
-classified as `unset`.
-
-**Conflict.** `ON_3dmUnitsAndTolerances::Read` and the default
-`ON_3dmSettings` select millimeters when no units record is present. The
-codec reports such a document as having no usable unit system.
-
-**Need.** Apply the model-unit scale and the single document loss to the
-remaining presentation and annotation records, and bind a missing units
-record to the default millimetre system.
-
 ### AR-01. Non-canonical arc NURBS form misses its arc parameterization
 
 **Question.** Which neutral carrier reproduces `ON_ArcCurve` evaluation at an
@@ -245,15 +206,21 @@ arbitrary parameter when the arc is not a full circle whose angle and domain
 start on whole turns?
 
 **Known.** `ON_ArcCurve::Evaluate` maps its domain linearly onto the arc
-angle. `curves.rs` `read_arc` keeps a neutral circle for a full circle whose
-angle interval and domain each span `2π` and start on whole turns, and Brep
-edges on that carrier wrap their proxy interval into the first turn. Every
-other arc becomes a rational quadratic NURBS whose knots span the native
-domain. The rational quadratic form is not linear in angle, so a point at an
-interior parameter differs from the arc point at the same parameter. A Brep
-edge whose proxy domain is a proper sub-interval of such an arc then misses
-its vertex.
+angle: `θ = a0 + (t − t0)(a1 − a0)/(t1 − t0)`. When the domain length differs
+from the angle span, as for an arc-length domain, the map has a scale other
+than one. The neutral `CircleCurve` parameter is the angle
+itself, and `Curve`, `Edge`, and `PcurveUse` carry intervals but no parameter
+map. A circle carrier whose frame is rotated by `a0 − t0` reproduces the
+source parameter only when the scale is one. The rational quadratic NURBS
+form that `curves.rs` `read_arc` emits reproduces the arc point set and the
+domain ends, but not the linear angle map, so a Brep edge whose proxy domain
+is a proper sub-interval of such an arc misses its vertex. The neutral
+`RevolutionSurfaceConstruction` already carries the equivalent surface map as
+`angular_parameter_interval`.
 
-**Need.** A carrier or parameter map that reproduces `ON_ArcCurve`
-evaluation for partial arcs and for full circles with a phase offset, applied
-to object curves, Brep C3 curves, and Brep C2 curves.
+**Need.** An IR change: an optional affine parameter map on the circle and
+ellipse curve carriers (or on `Curve`), stated as a source interval that maps
+linearly onto the carrier angle interval, and the same map on the parameter
+space circle carrier. With it, object curves, Brep C3 curves, and Brep C2
+curves keep the source parameter exactly.
+

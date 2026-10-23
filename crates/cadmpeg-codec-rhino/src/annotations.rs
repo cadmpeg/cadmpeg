@@ -37,7 +37,7 @@ const LEGACY_TEXT: Uuid = Uuid::from_canonical([
 const LEGACY_LEADER: Uuid = Uuid::from_canonical([
     0x14, 0x92, 0x2b, 0x7a, 0x5b, 0x65, 0x4f, 0x11, 0x83, 0x45, 0xd4, 0x15, 0xa9, 0x63, 0x71, 0x29,
 ]);
-const TEXT_DOT: Uuid = Uuid::from_canonical([
+pub(crate) const TEXT_DOT: Uuid = Uuid::from_canonical([
     0x74, 0x19, 0x83, 0x02, 0xcd, 0xf4, 0x4f, 0x95, 0x96, 0x09, 0x6d, 0x68, 0x4f, 0x22, 0xab, 0x37,
 ]);
 const V2_TEXT_DOT: Uuid = Uuid::from_canonical([
@@ -75,6 +75,11 @@ impl AnnotationClass {
             _ => None,
         }
     }
+}
+
+/// Whether the class is one of the general annotation grammars.
+pub(crate) fn is_annotation_class(uuid: Uuid) -> bool {
+    AnnotationClass::from_uuid(uuid).is_some()
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -778,8 +783,14 @@ pub(crate) fn style_binding(
 }
 
 /// Plain text when `rich` is not RTF content.
-fn plain_text(rich: &str) -> Option<&str> {
-    (!rich.starts_with("{\\rtf")).then_some(rich)
+/// The visible text of a rich-text string: the string itself when it is not
+/// RTF, else the `ON_TextContent` run text when that is exact.
+fn plain_text(rich: &str) -> Option<String> {
+    if rich.starts_with("{\\rtf") {
+        crate::rich_text::plain_text(rich).ok()
+    } else {
+        Some(rich.to_owned())
+    }
 }
 
 fn finite_point(value: [f64; 3]) -> Option<cadmpeg_ir::units::FiniteVector<3>> {
@@ -818,7 +829,7 @@ fn annotation_projection(
     key: String,
     class: Uuid,
     record: &AnnotationRecord,
-    plain: Option<&str>,
+    plain: Option<String>,
     style: StyleReference,
 ) -> Result<Projection, CodecError> {
     let kind = match record.kind {
@@ -826,13 +837,14 @@ fn annotation_projection(
         AnnotationKind::Text => SemanticAnnotationKind::Text,
         AnnotationKind::Annotation => SemanticAnnotationKind::Other,
     };
-    let text = plain.filter(|text| !text.is_empty()).map(str::to_owned);
+    let rich_text_unflattened = plain.is_none();
+    let text = plain.filter(|text| !text.is_empty());
     Ok(Projection {
         source_order,
         key,
         kind,
         runtime_type: runtime_type(class),
-        rich_text_unflattened: text.is_none() && plain_text(&record.rich_text).is_none(),
+        rich_text_unflattened,
         text: text.into_iter().collect(),
         format: (!record.rich_text.is_empty()).then(|| record.rich_text.clone()),
         position: finite_point(record.plane_origin.get()),
@@ -861,16 +873,7 @@ pub(crate) fn collect(
             continue;
         };
         let identity = &object.identity;
-        let Some(scale) = binding.neutral_scale() else {
-            annotation_record_dropped(
-                &mut losses,
-                &identity.source_id,
-                object.range.start,
-                object.class_uuid,
-                format_args!("no physical millimetre binding ({})", binding.label()),
-            );
-            continue;
-        };
+        let scale = binding.model_scale();
         let mut v2_key = if matches!(&class, AnnotationClass::V2) {
             Some(source_key(identity, source_order))
         } else {
@@ -1182,7 +1185,7 @@ pub(crate) fn collect(
                     key,
                     object.class_uuid,
                     &record,
-                    Some(record.rich_text.as_str()),
+                    Some(record.rich_text.clone()),
                     StyleReference::Absent,
                 )?);
                 annotations.push(record);
@@ -1398,9 +1401,13 @@ mod tests {
     }
 
     #[test]
-    fn rtf_rich_text_has_no_plain_text_fragment() {
-        assert_eq!(super::plain_text("Hello"), Some("Hello"));
-        assert_eq!(super::plain_text("{\\rtf1\\ansi Hello}"), None);
+    fn rtf_rich_text_flattens_to_its_run_text() {
+        assert_eq!(super::plain_text("Hello"), Some("Hello".to_owned()));
+        assert_eq!(
+            super::plain_text("{\\rtf1\\ansi Hello}"),
+            Some("Hello".to_owned())
+        );
+        assert_eq!(super::plain_text("{\\rtf1 {a 1/2}}"), None);
     }
 
     fn with_decode_context<R>(
@@ -1510,7 +1517,7 @@ mod tests {
     }
 
     #[test]
-    fn complete_annotations_require_physical_units_and_keep_located_source_losses() {
+    fn complete_annotations_transfer_at_model_scale_without_a_physical_unit() {
         use crate::test_support::test_dump as support;
         use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
@@ -1585,12 +1592,12 @@ mod tests {
         ];
         let archive = ArchiveVersion::V8;
         for (class, payload, arena, position_field) in fixtures {
-            for (unit, expected_scale, binding_label) in [
-                (Some(2), Some(1.0), "millimeters"),
-                (Some(3), Some(10.0), "millimeters"),
-                (Some(0), None, "native"),
-                (Some(255), None, "unavailable"),
-                (None, None, "unavailable"),
+            for (unit, expected_scale, undeclared, unset) in [
+                (Some(2), 1.0, false, false),
+                (Some(3), 10.0, false, false),
+                (Some(0), 1.0, true, false),
+                (Some(255), 1.0, false, true),
+                (None, 1.0, false, false),
             ] {
                 let object = object_record_with_payload(archive, 0x20, class.to_wire(), &payload);
                 let point = object_record_with_payload(
@@ -1629,21 +1636,31 @@ mod tests {
                 let records = namespace.arenas().get(arena).map_or(&[][..], Vec::as_slice);
                 assert_eq!(
                     records.len(),
-                    usize::from(expected_scale.is_some()),
+                    1,
                     "class={class} unit={unit:?} losses={:?}",
                     decoded.report().losses
                 );
-                let losses = decoded
-                    .report()
-                    .losses
-                    .iter()
-                    .filter(|loss| {
-                        loss.code == super::RhinoLossCode::AnnotationRecordDropped.kind()
-                    })
-                    .collect::<Vec<_>>();
+                let count = |code: super::RhinoLossCode| {
+                    decoded
+                        .report()
+                        .losses
+                        .iter()
+                        .filter(|loss| loss.code == code.kind())
+                        .count()
+                };
                 assert_eq!(
-                    losses.len(),
-                    usize::from(expected_scale.is_none()),
+                    count(super::RhinoLossCode::AnnotationRecordDropped),
+                    0,
+                    "class={class} unit={unit:?}"
+                );
+                assert_eq!(
+                    count(super::RhinoLossCode::DocumentLengthUnitUndeclared),
+                    usize::from(undeclared),
+                    "class={class} unit={unit:?}"
+                );
+                assert_eq!(
+                    count(super::RhinoLossCode::DocumentLengthUnitUnset),
+                    usize::from(unset),
                     "class={class} unit={unit:?}"
                 );
                 assert_eq!(
@@ -1654,44 +1671,21 @@ mod tests {
                         .data(),
                     Some(object.as_slice())
                 );
-                if let Some(scale) = expected_scale {
-                    let record = serde_json::to_value(&records[0]).expect("annotation record JSON");
-                    assert_eq!(
-                        record[position_field][0], scale,
-                        "class={class} unit={unit:?}"
-                    );
-                    assert_eq!(
-                        record["source_offset"],
-                        cadmpeg_core::decode::u64_from_index(source.range.start)
-                    );
-                    assert_eq!(
-                        record["links"],
-                        serde_json::json!(["rhino:object:record#000000"])
-                    );
-                    assert!(record.get("data").is_none());
-                    assert!(record["id"].as_str().is_some_and(|id| !id.is_empty()));
-                } else {
-                    let loss = losses[0];
-                    assert!(loss.message.contains(&source.identity.source_id));
-                    assert!(loss
-                        .message
-                        .contains(&format!("no physical millimetre binding ({binding_label})")));
-                    let provenance = loss.provenance.as_ref().expect("located annotation loss");
-                    assert_eq!(
-                        provenance.offset,
-                        cadmpeg_core::decode::u64_from_index(source.range.start)
-                    );
-                    assert_eq!(
-                        provenance.tag.as_deref(),
-                        Some(
-                            format!(
-                                "ANNOTATION/source={}/class={class}",
-                                source.identity.source_id
-                            )
-                            .as_str()
-                        )
-                    );
-                }
+                let record = serde_json::to_value(&records[0]).expect("annotation record JSON");
+                assert_eq!(
+                    record[position_field][0], expected_scale,
+                    "class={class} unit={unit:?}"
+                );
+                assert_eq!(
+                    record["source_offset"],
+                    cadmpeg_core::decode::u64_from_index(source.range.start)
+                );
+                assert_eq!(
+                    record["links"],
+                    serde_json::json!(["rhino:object:record#000000"])
+                );
+                assert!(record.get("data").is_none());
+                assert!(record["id"].as_str().is_some_and(|id| !id.is_empty()));
             }
         }
     }

@@ -743,10 +743,14 @@ fn reference_settings<'a>(
 
 /// The unit system of a packed definition below minor 1.4: the minor-1.2 enum
 /// and, for custom units, the minor-1.3 scale. Custom units without a positive
-/// scale become meters.
+/// scale become meters. Every other unit records the `ON_UnitSystem`
+/// constructor scale: `ON::UnitScale(unit, Meters)`, 1.0 for `none`, and the
+/// openNURBS quiet NaN for `unset` and unknown values.
 fn legacy_unit_detail(unit: u32, meters_per_unit: f64) -> UnitDetail {
+    const NONE: u32 = 0;
     const METERS: u32 = 4;
     const CUSTOM: u32 = 11;
+    const ON_DBL_QNAN_BITS: u64 = 0x7ff8_0000_0000_0000;
     if unit == CUSTOM {
         if let Ok(custom) = UnitDetail::new(CUSTOM, meters_per_unit, String::new()) {
             return custom;
@@ -757,9 +761,17 @@ fn legacy_unit_detail(unit: u32, meters_per_unit: f64) -> UnitDetail {
             custom_name: String::new(),
         };
     }
+    let bits = if unit == NONE {
+        1.0_f64.to_bits()
+    } else {
+        i32::try_from(unit)
+            .ok()
+            .and_then(crate::settings::StandardUnit::from_value)
+            .map_or(ON_DBL_QNAN_BITS, |unit| unit.meters_per_unit().to_bits())
+    };
     UnitDetail {
         unit,
-        meters_per_unit: UnitScale::OtherBits(1.0_f64.to_bits()),
+        meters_per_unit: UnitScale::OtherBits(bits),
         custom_name: String::new(),
     }
 }

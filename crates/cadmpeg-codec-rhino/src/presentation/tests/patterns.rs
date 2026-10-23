@@ -10,7 +10,6 @@ use crate::presentation::parse_linetype;
 use crate::presentation::tests::anonymous;
 use crate::presentation::tests::anonymous_body;
 use crate::presentation::LinetypeRecord;
-use crate::presentation::PatternTransferError;
 use crate::presentation::ANONYMOUS;
 use crate::presentation::HATCH_PATTERN;
 use crate::presentation::HATCH_PATTERN_TABLE;
@@ -320,11 +319,16 @@ fn modern_linetype_scales_only_model_distance_segments() {
             UnitBinding::Unavailable,
             0,
         )
-    });
-    assert!(matches!(
-        unbound_model_distance,
-        Err(PatternTransferError::UnavailableDocumentUnits)
-    ));
+    })
+    .expect("unbound model-distance linetype");
+    assert_eq!(
+        unbound_model_distance.segments[0].length_millimeters,
+        crate::test_support::finite(2.5)
+    );
+    assert_eq!(
+        unbound_model_distance.segments[1].length_millimeters,
+        crate::test_support::finite(1.25)
+    );
 
     let print_distance_bytes = modern_linetype(false);
     let print_distance = with_test_context(&print_distance_bytes, |ctx| {
@@ -351,14 +355,14 @@ fn modern_linetype_scales_only_model_distance_segments() {
 }
 
 #[test]
-fn linetype_install_retains_model_distances_without_physical_units() {
-    for (unit, always_model_distance, typed) in [
-        (Some(2), true, true),
-        (Some(0), true, false),
-        (Some(255), true, false),
-        (None, true, false),
-        (Some(0), false, true),
-        (None, false, true),
+fn linetype_install_scales_model_distances_by_the_model_unit() {
+    for (unit, always_model_distance) in [
+        (Some(2), true),
+        (Some(0), true),
+        (Some(255), true),
+        (None, true),
+        (Some(0), false),
+        (None, false),
     ] {
         let archive = ArchiveVersion::V8;
         let record = modern_linetype_record(archive, always_model_distance);
@@ -378,7 +382,7 @@ fn linetype_install_retains_model_distances_without_physical_units() {
                 crate::test_support::test_dump::table(archive, 0x1000_0013, &[]),
             ],
         );
-        let scan = crate::container::scan_owned(bytes.clone()).expect("complete linetype document");
+        let scan = crate::container::scan_owned(bytes).expect("complete linetype document");
         let mut ir = CadIr::empty();
         let installed = install(
             &cadmpeg_test_support::service_decode_context(),
@@ -387,28 +391,13 @@ fn linetype_install_retains_model_distances_without_physical_units() {
         )
         .expect("linetype install");
         let linetypes = &ir.native.namespace("rhino").unwrap().arenas()["linetypes"];
-        assert_eq!(linetypes.len(), usize::from(typed), "unit={unit:?}");
-        assert_eq!(
-            installed.native.opaque_records.len(),
-            usize::from(!typed),
-            "unit={unit:?}"
-        );
-        if !typed {
-            assert!(installed
-                .native
-                .opaque_records
-                .iter()
-                .any(|source| { bytes[source.record.range.clone()] == record }));
-            assert!(installed.native.losses.iter().any(|loss| {
-                loss.code == RhinoLossCode::PresentationRecordDropped.kind()
-                    && loss.message.contains("no physical millimetre binding")
-            }));
-        }
+        assert_eq!(linetypes.len(), 1, "unit={unit:?}");
+        assert!(installed.native.opaque_records.is_empty(), "unit={unit:?}");
     }
 }
 
 #[test]
-fn hatch_install_retains_document_distances_without_physical_units() {
+fn hatch_install_scales_document_distances_by_the_model_unit() {
     for unit in [Some(2), Some(0), Some(255), None] {
         let archive = ArchiveVersion::V8;
         let record = legacy_hatch_pattern_record(archive);
@@ -429,7 +418,7 @@ fn hatch_install_retains_document_distances_without_physical_units() {
                 crate::test_support::test_dump::table(archive, 0x1000_0013, &[]),
             ],
         );
-        let scan = crate::container::scan_owned(bytes.clone()).expect("complete hatch document");
+        let scan = crate::container::scan_owned(bytes).expect("complete hatch document");
         let mut ir = CadIr::empty();
         let installed = install(
             &cadmpeg_test_support::service_decode_context(),
@@ -438,24 +427,8 @@ fn hatch_install_retains_document_distances_without_physical_units() {
         )
         .expect("hatch install");
         let hatch_patterns = &ir.native.namespace("rhino").unwrap().arenas()["hatch_patterns"];
-        let typed = unit == Some(2);
-        assert_eq!(hatch_patterns.len(), usize::from(typed), "unit={unit:?}");
-        assert_eq!(
-            installed.native.opaque_records.len(),
-            usize::from(!typed),
-            "unit={unit:?}"
-        );
-        if !typed {
-            assert!(installed
-                .native
-                .opaque_records
-                .iter()
-                .any(|source| { bytes[source.record.range.clone()] == record }));
-            assert!(installed.native.losses.iter().any(|loss| {
-                loss.code == RhinoLossCode::PresentationRecordDropped.kind()
-                    && loss.message.contains("no physical millimetre binding")
-            }));
-        }
+        assert_eq!(hatch_patterns.len(), 1, "unit={unit:?}");
+        assert!(installed.native.opaque_records.is_empty(), "unit={unit:?}");
     }
 }
 
@@ -466,12 +439,12 @@ fn modern_hatch_pattern_uses_its_explicit_unit_binding() {
     for (document_unit, pattern_unit, always_model_distances, typed, expected_base) in [
         (Some(2), 8, true, true, Some([25.4, 50.8])),
         (None, 8, true, true, Some([25.4, 50.8])),
-        (Some(0), 0, true, false, None),
+        (Some(0), 0, true, true, Some([1.0, 2.0])),
         (None, 255, true, false, None),
         (None, 8, false, true, Some([25.4, 50.8])),
         (Some(3), 8, false, true, Some([25.4, 50.8])),
         (Some(3), 0, false, true, Some([10.0, 20.0])),
-        (None, 0, false, false, None),
+        (None, 0, false, true, Some([1.0, 2.0])),
         (Some(2), 255, true, false, None),
         (Some(2), 255, false, false, None),
         (Some(2), 11, true, false, None),
@@ -550,11 +523,7 @@ fn modern_hatch_pattern_uses_its_explicit_unit_binding() {
                 .retained_records()
                 .values()
                 .any(|source| { source.data() == Some(record.as_slice()) }));
-            let reason = if matches!(pattern_unit, 11 | 26 | 255) {
-                format!("hatch pattern unit code {pattern_unit}")
-            } else {
-                "no physical millimetre binding".to_owned()
-            };
+            let reason = format!("hatch pattern unit code {pattern_unit}");
             assert!(decoded.report().losses.iter().any(|loss| {
                 loss.code == RhinoLossCode::PresentationRecordDropped.kind()
                     && loss.message.contains(&reason)
@@ -659,11 +628,20 @@ fn legacy_hatch_pattern_scales_line_offsets_and_dashes() {
             UnitBinding::Unavailable,
             0,
         )
-    });
-    assert!(matches!(
-        unbound,
-        Err(PatternTransferError::UnavailableDocumentUnits)
-    ));
+    })
+    .expect("unbound hatch pattern");
+    assert_eq!(
+        unbound.lines[0].base_millimeters,
+        crate::test_support::finite_array([1.0, 2.0])
+    );
+    assert_eq!(
+        unbound.lines[0].offset_millimeters,
+        crate::test_support::finite_array([3.0, 4.0])
+    );
+    assert_eq!(
+        unbound.lines[0].dashes_millimeters,
+        crate::test_support::finite_array([5.0, -2.0])
+    );
 }
 
 #[test]

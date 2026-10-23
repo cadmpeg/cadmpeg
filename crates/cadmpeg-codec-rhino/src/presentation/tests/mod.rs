@@ -1123,6 +1123,65 @@ fn archive_60_minor_0_dimension_style_stops_before_arrow_blocks_for_old_writers(
 }
 
 #[test]
+fn dimension_style_table_without_a_physical_unit_transfers_at_model_scale() {
+    let archive = ArchiveVersion::V8;
+    let class = crate::test_support::test_dump::class_wrapper(
+        archive,
+        crate::presentation::DIMSTYLE.to_wire(),
+        &current_dimension_style_chunk(),
+    );
+    let record = crate::test_support::test_dump::crc_chunk_excluding(
+        archive,
+        0x2000_8075,
+        &class,
+        std::slice::from_ref(&(0..class.len())),
+    );
+    let styles_for = |unit: Option<i32>| {
+        let unit_records = unit
+            .map(|value| vec![crate::test_support::test_dump::units_record(archive, value)])
+            .unwrap_or_default();
+        let bytes = crate::test_support::test_dump::minimal_document(
+            "80",
+            &[
+                crate::test_support::test_dump::table(archive, 0x1000_0014, &[]),
+                crate::test_support::test_dump::table(archive, 0x1000_0015, &unit_records),
+                crate::test_support::test_dump::table(
+                    archive,
+                    crate::presentation::DIMSTYLE_TABLE,
+                    std::slice::from_ref(&record),
+                ),
+                crate::test_support::test_dump::table(archive, 0x1000_0013, &[]),
+            ],
+        );
+        let scan = crate::container::scan_owned(bytes).expect("dimension-style document");
+        let mut ir = cadmpeg_ir::document::CadIr::empty();
+        let installed = crate::presentation::install(
+            &cadmpeg_test_support::service_decode_context(),
+            &scan,
+            &mut ir,
+        )
+        .expect("dimension-style install");
+        assert!(installed.native.opaque_records.is_empty(), "unit={unit:?}");
+        assert!(
+            !installed
+                .native
+                .losses
+                .iter()
+                .any(|loss| loss.code == RhinoLossCode::PresentationRecordDropped.kind()),
+            "unit={unit:?}"
+        );
+        crate::test_support::layout_independent_records(
+            &ir.native.namespace("rhino").unwrap().arenas()["dimension_styles"],
+        )
+    };
+    let millimeters = styles_for(Some(2));
+    assert_eq!(millimeters.len(), 1);
+    for unit in [Some(0), Some(255), None] {
+        assert_eq!(styles_for(unit), millimeters, "unit={unit:?}");
+    }
+}
+
+#[test]
 fn v5_dimension_style_and_extra_follow_source_gates_and_scaling() {
     let base = v5_dimension_style_chunk();
     let extra_bytes = v5_dimension_style_extra_chunk();

@@ -110,7 +110,17 @@ fn render_settings_userdata_future_payload_retains_complete_record() {
 #[test]
 fn document_length_render_settings_use_model_units_without_a_physical_binding() {
     let archive = ArchiveVersion::V8;
-    for (unit, undeclared) in [(Some(0), true), (Some(255), true), (None, true)] {
+    for (unit, code) in [
+        (
+            Some(0),
+            Some(crate::loss::RhinoLossCode::DocumentLengthUnitUndeclared),
+        ),
+        (
+            Some(255),
+            Some(crate::loss::RhinoLossCode::DocumentLengthUnitUnset),
+        ),
+        (None, None),
+    ] {
         let render = render_settings_record(archive);
         let settings = unit
             .map(|value| vec![crate::test_support::test_dump::units_record(archive, value)])
@@ -131,13 +141,16 @@ fn document_length_render_settings_use_model_units_without_a_physical_binding() 
             1,
             "unit {unit:?}"
         );
-        assert_eq!(
-            result.report().losses.iter().any(|loss| {
-                loss.code == crate::loss::RhinoLossCode::DocumentLengthUnitUndeclared.kind()
-            }),
-            undeclared,
-            "unit {unit:?}"
-        );
+        if let Some(code) = code {
+            assert!(
+                result
+                    .report()
+                    .losses
+                    .iter()
+                    .any(|loss| loss.code == code.kind()),
+                "unit {unit:?}"
+            );
+        }
         assert!(!result
             .report()
             .losses
