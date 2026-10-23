@@ -171,6 +171,8 @@ fn dump(input: &Path, output: &Path, extra: &[&str]) {
         .success();
 }
 
+#[cfg(any(feature = "step", feature = "iges", feature = "fcstd"))]
+mod check;
 #[cfg(feature = "fcstd")]
 mod freecad;
 #[cfg(feature = "iges")]

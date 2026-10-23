@@ -604,6 +604,29 @@ geometry. Only the `cadmpeg` CLI crate depends on `cadmpeg-measure` outside
 `[dev-dependencies]`; the source-policy rule `measurement_dependency`
 enforces this.
 
+## Check findings
+
+`cadmpeg check`, and the check that `convert` runs, add the defects that
+measurement finds as `warning` findings. A warning does not change the exit
+status or refuse a write. No decoder or export admission route reads these
+checks ([admissibility-routes.md](admissibility-routes.md)).
+
+| Check | Entity | Related | Defect |
+| --- | --- | --- | --- |
+| `ring_order` | the loop | the face | The ring's coedges, listed, do not run end to start by oriented vertex identity: they form one closed traversal in another order (`reversed` or `other`), several closed traversals, or none. |
+| `orientation` | the face | none | The face's sense disagrees with its loop winding, or its loops disagree with each other: a face of `inconsistent_faces` or `mixed_faces`. |
+| `orientation` | the body | the faces or the shell the conflict names | Every shell of the body is closed, and the volume is unavailable with `volume.orientation-conflict` or `volume.closure-flux`. |
+
+The findings pass resolves the boundary, region and orientation readings of
+every face and runs the witnesses. For a body whose shells use every edge
+twice with opposite senses, it also integrates the face areas and fluxes;
+its flux quadrature targets only the volume and closure components. It
+computes no carrier parameter, box, extent or edge box. The pass has one
+allowance, as a measurement pass has (see Pass
+allowance), under the `--limits` profile of the command. A face or an edge
+whose slice runs out gives no finding, and neither does a body that owns
+it. A session resource refusal refuses the check at the `check` stage.
+
 ## Pass allowance
 
 One measurement pass owns a work allowance of

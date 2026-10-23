@@ -125,6 +125,13 @@ cadmpeg check bracket.cadir.json
 cadmpeg check bracket.f3d --json
 ```
 
+`check` also measures the model and reports three defect classes as
+warnings: a face ring whose coedges are not listed in traversal order
+(`ring_order`), a face whose sense disagrees with its loop winding, and a
+closed body whose volume readings conflict (`orientation`). Warnings do not
+change the exit status. `--limits` bounds this work as it bounds `measure`
+([measurement contract][measurement]).
+
 `--container-only` stops native decoding before geometry and records container
 depth. It is useful for container diagnostics. `convert` writes such a document
 to CADIR only: every other output refuses it (`insufficient_depth`, exit 1),

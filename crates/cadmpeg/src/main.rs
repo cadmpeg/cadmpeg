@@ -270,7 +270,10 @@ enum Command {
     },
     /// Check a CAD file for errors.
     ///
-    /// Accepts a native CAD file or CADIR JSON.
+    /// Accepts a native CAD file or CADIR JSON. The check also measures the
+    /// model and warns about face rings listed out of traversal order, faces
+    /// whose sense disagrees with their loop winding, and closed bodies whose
+    /// volume readings conflict. Warnings do not change the exit status.
     #[command(
         mut_arg("output", |arg| arg.long("report").visible_alias("output").help("Write a JSON report to this file")),
         display_order = 4,

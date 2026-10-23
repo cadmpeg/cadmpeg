@@ -445,7 +445,12 @@ pub(crate) fn check_cmd(
         if let Some(report) = loaded.decode_report() {
             print_decode_report(&mut io::stderr(), report)?;
         }
-        let report = validate_loaded(inputs, &loaded, &args.options().policy)?;
+        let report = validate_loaded(
+            inputs,
+            &loaded,
+            &args.options().policy,
+            args.policy.limits.work_profile(),
+        )?;
         let check_refusal = (!report.is_ok()).then(|| ConversionRefusal::CheckFailed {
             operation: crate::application::refusal::CheckOperation::Check,
             decode_report: loaded.decode_report().cloned(),
@@ -508,6 +513,7 @@ pub(crate) fn convert(
             path,
             forced: conversion.forced_input,
             options: args.options_at(depth),
+            work: args.policy.limits.work_profile(),
         };
         let prepared = transcoder::prepare(inputs, &source, target, &policy)?;
         let planned = prepared.plan()?;

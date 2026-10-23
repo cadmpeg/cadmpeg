@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Native validation over a decoded document.
+//! Native validation and measurement findings over a decoded document.
 //!
-//! Codec-owned validators run over a decoded document's native namespaces.
-//! Unlike the codec registry, this is an application concern: it belongs to
-//! `cadmpeg check`, not to the four questions an embedder asks of a file.
+//! Codec-owned validators run over a decoded document's native namespaces,
+//! and measurement adds its ring-order and orientation warnings. Unlike the
+//! codec registry, this is an application concern: it belongs to `cadmpeg
+//! check`, not to the four questions an embedder asks of a file, and no
+//! decoder admission route reads it.
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
@@ -14,16 +16,19 @@ use cadmpeg_ir::{
     report::check::{Finding, ValidationReport},
     CadIr,
 };
+use cadmpeg_measure::{MeasureOptions, WorkProfile};
 use cadmpeg_registry::InputCatalog;
 
 use super::document::LoadedDocument;
 use super::refusal::{ApplicationError, RefusalStage};
 
-/// Validate a loaded document under one session and retain check-stage refusals.
+/// Validate a loaded document under one session and retain check-stage
+/// refusals. `work` sets the pass allowance of the measurement findings.
 pub(crate) fn validate_loaded(
     inputs: &InputCatalog,
     document: &LoadedDocument,
     policy: &DecodePolicy,
+    work: WorkProfile,
 ) -> Result<ValidationReport, ApplicationError> {
     let arena = DecodeArena::new();
     let result = (|| {
@@ -43,6 +48,11 @@ pub(crate) fn validate_loaded(
         report
             .findings
             .extend(validate_native(&ctx, inputs, &document.ir)?);
+        report.findings.extend(cadmpeg_measure::findings(
+            &ctx,
+            &document.ir,
+            MeasureOptions { work },
+        )?);
         ctx.finish_session()?;
         Ok::<_, CodecError>(report)
     })();
@@ -92,8 +102,13 @@ mod tests {
         let document = super::LoadedDocument::neutral(CadIr::empty(), 5);
         let mut policy = DecodePolicy::service();
         policy.limits.max_input_bytes = 4;
-        let error = super::validate_loaded(&InputCatalog::with_builtins(), &document, &policy)
-            .expect_err("validation must admit the loaded input length");
+        let error = super::validate_loaded(
+            &InputCatalog::with_builtins(),
+            &document,
+            &policy,
+            super::WorkProfile::Service,
+        )
+        .expect_err("validation must admit the loaded input length");
         assert_eq!(error.exit_code(), 2);
         let report =
             serde_json::to_value(error.refusal().expect("typed resource refusal").report())
