@@ -380,7 +380,7 @@ enum Command {
     },
 }
 
-/// Parse a relative comparison floor.
+/// Parse a material density in kilograms per cubic metre.
 fn parse_density(text: &str) -> Result<cadmpeg_measure::Density, String> {
     let value: f64 = text
         .parse()
@@ -389,6 +389,7 @@ fn parse_density(text: &str) -> Result<cadmpeg_measure::Density, String> {
         .ok_or_else(|| format!("{text} is not a finite positive density in kg/m³"))
 }
 
+/// Parse a relative comparison floor.
 fn parse_relative_floor(text: &str) -> Result<f64, String> {
     let value: f64 = text
         .parse()
