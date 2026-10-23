@@ -121,6 +121,8 @@ Without `--full`, nothing compiles. `--run-layout` regenerates changed layout ta
 
 The `open-prs` check lists the upstream open pull requests through the GitHub CLI, so it needs network access and an authenticated `gh` (`gh auth login`). Without them it is skipped. `--offline` skips it and the fetch.
 
+`spec-wording` warns on added format Markdown lines containing “not yet”, “do not yet”, “for now”, “currently”, or “TODO”, including open-items documents.
+
 The checks cover recurring review points, not all of them. A check is a `scripts/preflight_<name>.py` module with a `scripts/test_preflight_<name>.py` test.
 
 ---
