@@ -377,6 +377,54 @@ fn duplicate_parameter_index_keeps_the_first_serialized_frame() {
     assert_eq!(parameter.evaluated_value().get(), 1.0);
 }
 
+#[test]
+fn a_parameter_copy_inside_another_primary_record_is_payload() {
+    let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    let meta = "FusionAssetName[Active]/Design1/MetaStream.dat";
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    let mut bulk = Vec::new();
+    crate::test_support::indexed_header(&mut bulk, *b"256", 10);
+    bulk.extend_from_slice(b"pad!");
+    bulk.extend_from_slice(&parameter_record(
+        None,
+        "copy",
+        "User Parameter",
+        Some("mm"),
+        "Copy",
+        9.0,
+    ));
+    let live = bulk.len();
+    bulk.extend_from_slice(&parameter_record(
+        None,
+        "12 mm",
+        "User Parameter",
+        Some("mm"),
+        "Width",
+        1.2,
+    ));
+    let metastream = crate::test_support::streams_test::design_metastream_with_records(
+        &[],
+        &[(10, 0), (71, u64::try_from(live).unwrap())],
+    );
+
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    write_synthetic_manifests(&mut zip, stored);
+    zip.start_file(meta, stored).unwrap();
+    zip.write_all(&metastream).unwrap();
+    zip.start_file(stream, stored).unwrap();
+    zip.write_all(&bulk).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+
+    let decoded = with_context_scan(&archive, decode_parameters).unwrap();
+    let [parameter] = decoded.parameters.as_slice() else {
+        panic!("expected only the primary-index parameter record");
+    };
+    assert_eq!(parameter.byte_offset(), Some(u64::try_from(live).unwrap()));
+    assert_eq!(parameter.expression(), "12 mm");
+    assert!(decoded.unparsed.is_empty());
+    assert_eq!(decoded.pointers.len(), 1);
+}
+
 fn compact_parameter_owner_frame() -> Vec<u8> {
     let mut frame = vec![0; 103];
     frame[0..4].copy_from_slice(&3u32.to_le_bytes());

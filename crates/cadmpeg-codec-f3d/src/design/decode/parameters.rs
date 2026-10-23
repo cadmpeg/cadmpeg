@@ -165,11 +165,33 @@ pub(crate) fn decode_parameters(
             CodecError::malformed("Fusion Design parameter stream has no source View")
         })?;
         let bytes = source.window();
+        let primary = super::meta::metadata_for_bulk_stream(scan, &entry.name)?
+            .map(|meta| crate::metastream::primary_record_frames(&meta, bytes.len()))
+            .transpose()?;
         let mut position = 0usize;
         let mut emitted_record_indices = HashSet::new();
         let mut unparsed_count = 0usize;
         while let Some(at) = next_indexed_record_offset(bytes, position) {
-            let end = next_indexed_record_offset(bytes, at + 11).unwrap_or(bytes.len());
+            // An `f3d.bulk_record` ends at the next primary-index offset. The
+            // primary index covers every sibling record, so an
+            // indexed-record-shaped run at another offset is payload.
+            let (end, entity_id) = match &primary {
+                Some(frames) => match frames
+                    .binary_search_by_key(&at, |frame| frame.start)
+                    .ok()
+                    .and_then(|index| frames.get(index))
+                {
+                    Some(frame) => (frame.end, Some(frame.entity_id)),
+                    None => {
+                        position = at + 1;
+                        continue;
+                    }
+                },
+                None => (
+                    next_indexed_record_offset(bytes, at + 11).unwrap_or(bytes.len()),
+                    None,
+                ),
+            };
             let view = source
                 .child(
                     source.start().checked_add(at).ok_or_else(|| {
@@ -187,7 +209,10 @@ pub(crate) fn decode_parameters(
                 view,
                 &entry.name,
                 at,
-                &emitted_record_indices,
+                source_layout::Expected {
+                    entity_id,
+                    emitted: &emitted_record_indices,
+                },
                 &mut pointers,
             )? {
                 source_layout::Captured::Parameter {

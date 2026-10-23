@@ -344,7 +344,10 @@ fn captured(
         view,
         "Design1/BulkStream.dat",
         offset,
-        &std::collections::HashSet::new(),
+        super::super::parameters::source_layout::Expected {
+            entity_id: None,
+            emitted: &std::collections::HashSet::new(),
+        },
         pointers,
     )
     .expect("parameter record scope")
@@ -536,7 +539,10 @@ fn captured_parameter_byte_offset_moves_only_to_its_actual_layout_and_occurrence
         view,
         "Design1/BulkStream.dat",
         parameter_start,
-        &std::collections::HashSet::new(),
+        super::super::parameters::source_layout::Expected {
+            entity_id: None,
+            emitted: &std::collections::HashSet::new(),
+        },
         &mut wrong_offset,
     )
     .is_err());

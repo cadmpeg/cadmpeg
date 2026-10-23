@@ -23,6 +23,16 @@ pub(crate) enum Captured {
     Unmatched,
 }
 
+/// What the stream already states about one candidate frame.
+#[derive(Clone, Copy)]
+pub(crate) struct Expected<'a> {
+    /// Entity ID of the primary-index record that starts at the frame, when
+    /// the stream has a primary index.
+    pub(crate) entity_id: Option<u64>,
+    /// Record indices of the parameters already decoded from this stream.
+    pub(crate) emitted: &'a HashSet<u32>,
+}
+
 /// Parse one candidate frame once, inside the record scope of the parameter
 /// it would be. A frame that is not a new parameter discards its scope.
 pub(crate) fn capture_record(
@@ -30,7 +40,7 @@ pub(crate) fn capture_record(
     view: View<'_>,
     stream: &str,
     offset: usize,
-    emitted: &HashSet<u32>,
+    expected: Expected<'_>,
     pointers: &mut BTreeMap<String, BTreeMap<String, u64>>,
 ) -> Result<Captured, CodecError> {
     let id = crate::ids::native_design_parameter_id(stream, u64_from_index(offset));
@@ -45,7 +55,16 @@ pub(crate) fn capture_record(
             miss = Some(Captured::Unmatched);
             return Err(CodecError::malformed("frame matches no parameter grammar"));
         };
-        if emitted.contains(&parsed.record_index) {
+        if expected
+            .entity_id
+            .is_some_and(|entity_id| entity_id != u64::from(parsed.record_index))
+        {
+            miss = Some(Captured::Unmatched);
+            return Err(CodecError::malformed(
+                "frame header differs from its primary registration",
+            ));
+        }
+        if expected.emitted.contains(&parsed.record_index) {
             miss = Some(Captured::Repeated);
             return Err(CodecError::malformed(
                 "frame repeats a parameter record index",

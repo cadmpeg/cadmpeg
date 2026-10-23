@@ -54,7 +54,17 @@ fn capture(
     offset: usize,
     pointers: &mut BTreeMap<String, BTreeMap<String, u64>>,
 ) -> Result<DesignParameter, CodecError> {
-    match capture_record(ctx, view, STREAM, offset, &HashSet::new(), pointers)? {
+    match capture_record(
+        ctx,
+        view,
+        STREAM,
+        offset,
+        super::Expected {
+            entity_id: None,
+            emitted: &HashSet::new(),
+        },
+        pointers,
+    )? {
         Captured::Parameter { parameter, .. } => Ok(parameter),
         Captured::Repeated | Captured::Unmatched => {
             Err(CodecError::malformed("expected one parameter"))
