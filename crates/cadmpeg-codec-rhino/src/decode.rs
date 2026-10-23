@@ -6687,7 +6687,8 @@ fn transform_is_similarity(transform: Transform) -> bool {
 /// Places a procedural surface construction whose instance image is the same
 /// construction family. A sum surface stays a sum under every affine map:
 /// its curves move with the translation once each, so the base point takes
-/// the linear image minus the translation. A revolution stays a revolution
+/// the linear image minus the translation. An extrusion stays an extrusion
+/// with the linear image of its sweep vector. A revolution stays a revolution
 /// under a similarity; `ON_RevSurface::Transform` reverses the axis under an
 /// orientation-reversing map.
 fn place_surface_construction(
@@ -6710,6 +6711,18 @@ fn place_surface_construction(
             ))
             .ok_or_else(invalid)?;
             sum.set_basepoint(placed);
+            Ok(true)
+        }
+        ProceduralSurfaceDefinition::Extrusion(extrusion) => {
+            let direction = transform
+                .apply_vector(extrusion.direction().get())
+                .ok_or_else(invalid)?;
+            extrusion.set_direction(direction);
+            if let Some(position) = extrusion.native_position() {
+                extrusion.set_native_position(Some(
+                    transform.apply_point(position.get()).ok_or_else(invalid)?,
+                ));
+            }
             Ok(true)
         }
         ProceduralSurfaceDefinition::Revolution(revolution)

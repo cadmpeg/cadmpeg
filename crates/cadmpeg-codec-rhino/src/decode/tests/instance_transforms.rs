@@ -153,3 +153,35 @@ fn revolution_construction_follows_a_similarity_and_reverses_under_reflection() 
             .unwrap_or_else(|_| panic!("revolution placement"))
     );
 }
+
+/// An extrusion `c(u) + v d` under `x -> Lx + t` keeps its directrix image
+/// and sweeps along `L d`.
+#[test]
+fn extrusion_construction_sweeps_along_the_linear_image_of_its_vector() {
+    use cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction;
+    use cadmpeg_ir::geometry::{CacheContract, ProceduralSurfaceDefinition};
+    let mut definition = ProceduralSurfaceDefinition::Extrusion(
+        ExtrusionSurfaceConstruction::try_new(
+            curve_id("profile"),
+            None,
+            Vector3::new(0.0, 0.0, 3.0),
+            None,
+            CacheContract::from_form(None),
+        )
+        .expect("extrusion construction"),
+    );
+    let transform = Transform::affine([
+        [1.0, 0.0, 0.0, 7.0],
+        [0.0, 0.0, -1.0, 0.0],
+        [0.0, 2.0, 0.0, 0.0],
+    ])
+    .expect("affine map");
+    assert!(
+        super::super::place_surface_construction(&mut definition, transform)
+            .unwrap_or_else(|_| panic!("extrusion placement"))
+    );
+    let ProceduralSurfaceDefinition::Extrusion(extrusion) = definition else {
+        panic!("extrusion construction");
+    };
+    assert_eq!(extrusion.direction().get(), Vector3::new(0.0, -3.0, 0.0));
+}
