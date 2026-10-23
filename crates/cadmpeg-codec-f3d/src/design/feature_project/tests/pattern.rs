@@ -296,3 +296,96 @@ fn two_active_directions_without_direction_records_do_not_project() {
         project_rectangular_pattern_scalars(&two_direction_scope(Vec::new()), &[], &[]).is_none()
     );
 }
+
+fn single_direction_scope_with_run(
+    directions: Vec<crate::records::feature::patterns::DesignRectangularPatternDirection>,
+) -> DesignParameterScope {
+    use crate::records::feature::patterns::{
+        DesignPatternInstance, DesignRectangularPatternInstances,
+    };
+    use crate::records::sketch_placement::SketchPlacementMatrix;
+
+    let at = |x: f64| {
+        let mut matrix: [[f64; 4]; 4] = SketchPlacementMatrix::IDENTITY.into();
+        matrix[0][3] = x;
+        SketchPlacementMatrix::try_from(matrix).unwrap()
+    };
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:parameter-scope#10",
+        crate::records::feature::scope::DesignFeatureKind::RPattern,
+        10,
+    );
+    if let crate::records::feature::scope::DesignScopePayloadMut::RPattern(slot)
+    | crate::records::feature::scope::DesignScopePayloadMut::RectangularPattern(slot) =
+        scope.payload_mut()
+    {
+        *slot = Some(
+            DesignRectangularPatternConstruction::try_from(
+                crate::records::feature::patterns::DesignRectangularPatternConstructionWire {
+                    u_count: 3,
+                    v_count: 1,
+                    u_extent: 2.0,
+                    v_extent: 0.0,
+                    owner_record_indices: [11, 12, 13, 14],
+                    value_offsets: [101, 102, 103, 104],
+                    instances: Some(DesignRectangularPatternInstances::Bodies(
+                        [0.0, 1.0, 2.0]
+                            .into_iter()
+                            .enumerate()
+                            .map(|(index, x)| DesignPatternInstance {
+                                record_index: 40 + u32::try_from(index).unwrap(),
+                                transform: crate::records::identity::Located {
+                                    value: at(x),
+                                    offset: 1000 * u64::try_from(index).unwrap(),
+                                },
+                            })
+                            .collect(),
+                    )),
+                    instance_search_cap: None,
+                    directions,
+                },
+            )
+            .unwrap(),
+        );
+    }
+    scope
+}
+
+fn linear_direction(definition: FeatureDefinition) -> Option<cadmpeg_ir::math::Vector3> {
+    let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) = definition else {
+        panic!("rectangular pattern definition");
+    };
+    let PatternTransform::Linear { direction, .. } = pattern.definition().clone() else {
+        panic!("linear rectangular pattern");
+    };
+    direction.map(|direction| cadmpeg_ir::features::FiniteVector3::from(direction).get())
+}
+
+#[test]
+fn a_single_direction_record_must_agree_with_the_instance_run() {
+    let run = linear_direction(
+        project_rectangular_pattern_scalars(&single_direction_scope_with_run(Vec::new()), &[], &[])
+            .expect("instance-run pattern"),
+    )
+    .expect("instance-run direction");
+    assert!((run.x - 1.0).abs() < EPS_SPACING);
+
+    let agreeing = linear_direction(
+        project_rectangular_pattern_scalars(
+            &single_direction_scope_with_run(vec![direction_record(20, [1.5, 0.0, 0.0])]),
+            &[],
+            &[],
+        )
+        .expect("agreeing pattern"),
+    )
+    .expect("agreeing direction");
+    assert!((agreeing.x - 1.0).abs() < EPS_SPACING);
+
+    let disagreeing = project_rectangular_pattern_scalars(
+        &single_direction_scope_with_run(vec![direction_record(20, [0.0, 1.5, 0.0])]),
+        &[],
+        &[],
+    )
+    .expect("disagreeing pattern");
+    assert!(linear_direction(disagreeing).is_none());
+}

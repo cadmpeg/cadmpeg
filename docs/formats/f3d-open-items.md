@@ -438,11 +438,11 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Question.** Where does a rectangular-pattern scope store whether its extent owners hold the seed-to-final-instance extent or the adjacent spacing, what does the u32 at direction-record offset 89 select, and how does a direction with no stored displacement define its vector?
 
-**Known.** `f3d.md` §3.1 "A rectangular-pattern direction record is a 220-byte frame" gives the 220-byte form, which stores u32 `8` at offset 89. A 221-byte direction frame stores u32 `7` at offset 89 and one zero byte at offset 93; its later fields keep the 220-byte order one byte later. A class-261 frame in the scope reference table holds the selection-operand reference, the auxiliary reference, the role, and the closing references of a direction record, with no selection kind, origin, or displacement.
+**Known.** `f3d.md` §3.1 "A rectangular-pattern direction record is a 220-byte frame" gives the 220-byte form, which stores u32 `8` at offset 89. A 221-byte direction frame stores u32 `7` at offset 89 and one zero byte at offset 93; its later fields keep the 220-byte order one byte later. A frame in this form is not a 220-byte direction record, so a scope that stores one has no direction records. A class-261 frame in the scope reference table holds the selection-operand reference, the auxiliary reference, the role, and the closing references of a direction record, with no selection kind, origin, or displacement.
 
 **Need.** A reader must convert both extent owners to adjacent spacing and must define each active direction's vector, including the vector of a class-261 direction.
 
-**Conflict.** A Features-type rectangular pattern with 3 by 2 instances at 10 mm spacing stores an extent of 1.0 cm in both directions. Extent divided by count minus one gives 5 mm and 10 mm, not 10 mm and 10 mm.
+**Conflict.** A Features-type rectangular pattern with 3 by 2 instances at 10 mm spacing stores an extent of 1.0 cm in both directions. Extent divided by count minus one gives 5 mm and 10 mm, not 10 mm and 10 mm. That scope stores its direction in the 221-byte form. Scopes that store 220-byte direction records hold the seed-to-final-instance extent: a 4 by 2 pattern of 7.95 mm and 8 mm pitch stores 2.385 cm and 0.8 cm.
 
 ## 2. External references
 

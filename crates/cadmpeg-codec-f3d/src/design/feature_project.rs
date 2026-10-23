@@ -62,6 +62,9 @@ const EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E12: f64 = 1.0e-12;
 const EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E8: f64 = 1.0e-8;
 const EPS_FEATURE_PROJECT_PROJECT_EXTRUDE_E9: f64 = 1.0e-9;
 const EPS_FEATURE_PROJECT_PROJECT_EXTRUDE_E12: f64 = 1.0e-12;
+/// Largest `1 - cos` between a rectangular-pattern direction record and the
+/// instance-run direction that still names the same direction.
+const EPS_RECTANGULAR_PATTERN_DIRECTION_AGREEMENT: f64 = 1.0e-9;
 
 macro_rules! or_none {
     ($value:expr) => {
@@ -6144,7 +6147,8 @@ fn project_rectangular_pattern_scalars(
     use cadmpeg_ir::scalar::PositiveLength;
 
     let construction = scope.rectangular_pattern_construction()?;
-    // Direction records pair with the active directions in U-then-V order.
+    // A scope stores one direction record per active direction or none, so
+    // the records pair with the active directions in U-then-V order.
     let mut direction_records = construction.directions().iter();
     let mut active = Vec::new();
     for (count, extent) in [
@@ -6230,7 +6234,21 @@ fn project_rectangular_pattern_scalars(
         seeds.push(seed);
     }
     let (count, spacing, direction, second) = match active.as_slice() {
-        [(count, spacing, direction)] => (*count, *spacing, direction.or(instance_direction), None),
+        // The instance run is the established direction of a single-direction
+        // pattern; a direction record only fills it in when the run is absent
+        // and must agree with it otherwise.
+        [(count, spacing, direction)] => {
+            let direction = match (instance_direction, *direction) {
+                (Some(run), Some(record))
+                    if 1.0 - run.as_raw().dot(*record.as_raw())
+                        > EPS_RECTANGULAR_PATTERN_DIRECTION_AGREEMENT =>
+                {
+                    None
+                }
+                (run, record) => run.or(record),
+            };
+            (*count, *spacing, direction, None)
+        }
         [(count, spacing, direction), (second_count, second_spacing, Some(second_direction))] => (
             *count,
             *spacing,
