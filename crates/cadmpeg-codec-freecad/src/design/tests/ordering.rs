@@ -199,6 +199,7 @@ fn orderings(graph: &crate::persistence::Graph) -> (Ordering, Ordering) {
             &graph.objects,
             &properties_by_owner,
             &parent_by_member,
+            &std::collections::HashSet::new(),
         )),
         owned_ordering(pairwise_feature_ordinals(
             &graph.objects,
@@ -263,30 +264,17 @@ fn pairwise_feature_ordinals<'a>(
                     .get(id)
                     .into_iter()
                     .flatten()
-                    .flat_map(|property| {
-                        property
-                            .links()
-                            .iter()
-                            .map(move |link| (property.name.as_str(), link))
+                    .filter(|property| {
+                        super::super::dependency_link(
+                            object,
+                            property,
+                            &std::collections::HashSet::new(),
+                        )
                     })
-                    .filter_map(|(name, link)| Some((name, link.as_ref()?.object()?)))
-                    .filter(|(name, dependency)| {
-                        object_by_id.get(dependency).is_some_and(|dependency| {
-                            matches!(
-                                *name,
-                                "Base"
-                                    | "BaseFeature"
-                                    | "Originals"
-                                    | "Path"
-                                    | "Profile"
-                                    | "Sketch"
-                                    | "Sections"
-                                    | "Source"
-                                    | "Spine"
-                            ) || dependency.order < object.order
-                        })
-                    })
-                    .all(|(_, dependency)| emitted.contains(dependency));
+                    .flat_map(|property| property.links())
+                    .filter_map(|link| link.as_ref()?.object())
+                    .filter(|dependency| object_by_id.contains_key(dependency))
+                    .all(|dependency| emitted.contains(dependency));
             parent_ready && declared_ready && expressions_ready && links_ready
         };
         let unemitted = || {
@@ -384,9 +372,13 @@ fn design_object_ordering_is_linear_in_a_reverse_dependency_chain() {
             .or_default()
             .push(property);
     }
-    let (ordinals, cycle_affected) =
-        super::super::feature_ordinals(&graph.objects, &properties_by_owner, &HashMap::new())
-            .expect("acyclic chain");
+    let (ordinals, cycle_affected) = super::super::feature_ordinals(
+        &graph.objects,
+        &properties_by_owner,
+        &HashMap::new(),
+        &std::collections::HashSet::new(),
+    )
+    .expect("acyclic chain");
     let mut source_ordinals = graph
         .objects
         .iter()

@@ -81,16 +81,16 @@ fn located_surfaces_copy_only_their_own_construction_and_reuse_placements() {
 
     assert_eq!(
         builder
-            .located_surface(&mut ir, 1, Transform::identity())
+            .located_surface(&mut ir, 1, 0, Transform::identity())
             .unwrap(),
         base
     );
-    let located_solved = builder.located_surface(&mut ir, 2, transform).unwrap();
+    let located_solved = builder.located_surface(&mut ir, 2, 0, transform).unwrap();
     assert_eq!(ir.model.procedural_surfaces.len(), 1);
-    let located = builder.located_surface(&mut ir, 1, transform).unwrap();
+    let located = builder.located_surface(&mut ir, 1, 0, transform).unwrap();
     assert_eq!(ir.model.procedural_surfaces.len(), 2);
     assert_eq!(
-        builder.located_surface(&mut ir, 1, transform).unwrap(),
+        builder.located_surface(&mut ir, 1, 0, transform).unwrap(),
         located
     );
     assert_eq!(ir.model.surfaces.len(), 4);
