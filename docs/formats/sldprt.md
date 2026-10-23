@@ -1643,7 +1643,7 @@ Deltas streams re-encode records in prefixed/tripled forms (each ref stored as a
 
 | Tag                    | Deltas form | Magic    | Anchor                                                                            |
 | ---------------------- | ----------- | -------- | --------------------------------------------------------------------------------- |
-| `00 0e`                | tripled     | body +9  | owner triple before magic; five ref triples then marker after                     |
+| `00 0e`                | tripled     | body +9  | ATTRIBUTE-chain head triple before magic; five ref triples then marker after                     |
 | `00 0f`                | tripled     | none     | four ref triples at body +6                                                       |
 | `00 10`                | prefixed    | body +9  | post-magic cell 2 = curve carrier; direction from unique same-edge forward coedge |
 | `00 11`                | tripled     | none     | slot4 vuse, slot5 twin, slot6 edge-use                                            |
