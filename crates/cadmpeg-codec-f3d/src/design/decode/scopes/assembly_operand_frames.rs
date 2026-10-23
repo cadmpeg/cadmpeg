@@ -234,48 +234,58 @@ pub(super) fn exact_as_built_operand_frames(
     paths: &[DesignAssemblyOperandPath; 2],
     wide: bool,
 ) -> Option<[DesignAssemblyOperandFrame; 2]> {
-    let frames = paths.each_ref().map(|path| {
-        let locator_at = usize::try_from(path.link().locator_byte_offset).ok()?;
-        let (reference_at, transform_at, transform) = if wide {
-            let reference_at = locator_at.checked_add(wide_locator::NONZERO_RECORD_REFERENCE)?;
-            let flag_at = locator_at.checked_add(wide_locator::IDENTITY_FLAG)?;
-            match bytes.get(flag_at)? {
-                0 => {
-                    let transform_at = locator_at.checked_add(wide_locator::TRANSFORM)?;
-                    (
-                        reference_at,
-                        transform_at,
-                        rigid_transform_at(bytes, transform_at)?,
-                    )
-                }
-                1 => (
-                    reference_at,
-                    flag_at,
-                    cadmpeg_ir::transform::Transform::identity()
-                        .rows()
-                        .try_into()
-                        .ok()?,
-                ),
-                _ => return None,
-            }
-        } else {
-            let reference_at = locator_at.checked_add(path_locator::NONZERO_RECORD_REFERENCE)?;
-            let transform_at = locator_at.checked_add(path_locator::TRANSFORM)?;
-            (
-                reference_at,
-                transform_at,
-                rigid_transform_at(bytes, transform_at)?,
-            )
-        };
-        Some(DesignAssemblyOperandFrame {
-            reference_record_index: marked_record_reference(bytes, reference_at)?,
-            reference_offset: u64::try_from(reference_at.checked_add(1)?).ok()?,
-            transform,
-            transform_offset: u64::try_from(transform_at).ok()?,
-        })
-    });
+    let frames = paths
+        .each_ref()
+        .map(|path| exact_as_built_operand_frame(bytes, path, wide));
     let [Some(first), Some(second)] = frames else {
         return None;
     };
     (first.reference_record_index != second.reference_record_index).then_some([first, second])
+}
+
+/// The operand frame one as-built locator carries, as
+/// [`exact_as_built_operand_frames`] reads it.
+pub(super) fn exact_as_built_operand_frame(
+    bytes: &[u8],
+    path: &DesignAssemblyOperandPath,
+    wide: bool,
+) -> Option<DesignAssemblyOperandFrame> {
+    let locator_at = usize::try_from(path.link().locator_byte_offset).ok()?;
+    let (reference_at, transform_at, transform) = if wide {
+        let reference_at = locator_at.checked_add(wide_locator::NONZERO_RECORD_REFERENCE)?;
+        let flag_at = locator_at.checked_add(wide_locator::IDENTITY_FLAG)?;
+        match bytes.get(flag_at)? {
+            0 => {
+                let transform_at = locator_at.checked_add(wide_locator::TRANSFORM)?;
+                (
+                    reference_at,
+                    transform_at,
+                    rigid_transform_at(bytes, transform_at)?,
+                )
+            }
+            1 => (
+                reference_at,
+                flag_at,
+                cadmpeg_ir::transform::Transform::identity()
+                    .rows()
+                    .try_into()
+                    .ok()?,
+            ),
+            _ => return None,
+        }
+    } else {
+        let reference_at = locator_at.checked_add(path_locator::NONZERO_RECORD_REFERENCE)?;
+        let transform_at = locator_at.checked_add(path_locator::TRANSFORM)?;
+        (
+            reference_at,
+            transform_at,
+            rigid_transform_at(bytes, transform_at)?,
+        )
+    };
+    Some(DesignAssemblyOperandFrame {
+        reference_record_index: marked_record_reference(bytes, reference_at)?,
+        reference_offset: u64::try_from(reference_at.checked_add(1)?).ok()?,
+        transform,
+        transform_offset: u64::try_from(transform_at).ok()?,
+    })
 }

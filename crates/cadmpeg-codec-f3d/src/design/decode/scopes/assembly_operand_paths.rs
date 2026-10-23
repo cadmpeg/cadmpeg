@@ -47,7 +47,16 @@ pub(super) fn exact_assembly_operand_paths(
         let count_at = scope_at.checked_add(
             locator_offsets[0].checked_sub(path_locator_run::FIRST_LOCATOR_REFERENCE)?,
         )?;
-        if View::u32_le_at(bytes, count_at)? != 2 {
+        // A rigid group counts one locator per member; every other form has two.
+        let expected = if crate::design::assembly::rigid_as_built_scope(
+            scope.frame_length(),
+            scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
+        ) {
+            crate::design::assembly::rigid_group_member_count(scope.frame_length())?
+        } else {
+            2
+        };
+        if usize::try_from(View::u32_le_at(bytes, count_at)?).ok()? != expected {
             return None;
         }
         let mut paths = [None, None];
@@ -104,6 +113,79 @@ pub(super) fn exact_assembly_operand_paths(
             return None;
         }
         Some(Ok([first, second]))
+    })()
+    .transpose()
+}
+
+/// The operand paths of a rigid group's members after its first two, in
+/// locator order. Each member's locator reference follows the previous one;
+/// every locator is a distinct record whose envelope overlaps no other
+/// member's.
+pub(super) fn exact_rigid_group_member_paths(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    stream_types: &StreamTypes<'_>,
+    leading: &[DesignAssemblyOperandPath; 2],
+) -> Result<Option<Vec<DesignAssemblyOperandPath>>, CodecError> {
+    use crate::layout::assembly_rigid_as_built_scope as rigid;
+    (|| {
+        let members = crate::design::assembly::rigid_group_member_count(scope.frame_length())?;
+        let scope_at = usize::try_from(scope.byte_offset()).ok()?;
+        let search_start = usize::try_from(scope.paired_byte_offset())
+            .ok()?
+            .checked_add(11)?;
+        let mut paths = Vec::new();
+        for member in 2..members {
+            let locator_reference_at = scope_at
+                .checked_add(rigid::FIRST_LOCATOR_REFERENCE)?
+                .checked_add(member.checked_mul(11)?)?;
+            let (locator_record_index, locator_reference_offset) =
+                exact_same_segment_record_reference(bytes, locator_reference_at)?;
+            let mut candidate = None;
+            for locator_at in records
+                .offsets(locator_record_index)
+                .iter()
+                .copied()
+                .filter(|locator_at| *locator_at >= search_start)
+            {
+                let parsed = match exact_assembly_operand_path_envelope(
+                    bytes,
+                    scope,
+                    stream_types,
+                    locator_record_index,
+                    locator_reference_offset,
+                    locator_at,
+                ) {
+                    Ok(parsed) => parsed,
+                    Err(error) => return Some(Err(error)),
+                };
+                if let Some(parsed) = parsed {
+                    if candidate.replace(parsed).is_some() {
+                        return None;
+                    }
+                }
+            }
+            paths.push(candidate?);
+        }
+        let mut spans = Vec::new();
+        for path in leading.iter().chain(&paths) {
+            let start = usize::try_from(path.link().locator_byte_offset).ok()?;
+            let end = next_indexed_record_offset(
+                bytes,
+                usize::try_from(path.link().wrapper_byte_offset)
+                    .ok()?
+                    .checked_add(1)?,
+            )?;
+            if spans.iter().any(|(index, other_start, other_end)| {
+                *index == path.link().locator_record_index
+                    || (start < *other_end && *other_start < end)
+            }) {
+                return None;
+            }
+            spans.push((path.link().locator_record_index, start, end));
+        }
+        Some(Ok(paths))
     })()
     .transpose()
 }

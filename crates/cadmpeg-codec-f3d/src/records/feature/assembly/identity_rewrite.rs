@@ -10,7 +10,7 @@ use super::{
     DesignQualifiedAssemblyOperand,
 };
 
-rewrite_native_record!(DesignAssemblyAlignment, []; {angle, offset, owners, form, frame_sense}; native assembly_fields);
+rewrite_native_record!(DesignAssemblyAlignment, []; {angle, offset, owners, form, frame_sense, additional_members}; native assembly_fields);
 rewrite_native_scalar!(DesignJointFrameSense);
 rewrite_native_enum!(DesignAssemblyAlignmentForm, []; {
     DatumEnvelope {joint_origin_scope_record_index},
