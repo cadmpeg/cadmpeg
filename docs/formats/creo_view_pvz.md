@@ -2,7 +2,7 @@
 
 > **License:** This document is released under [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/). Attribute to the cadmpeg project.
 
-This specification covers the PTC Creo View and ProductView `.pvz` package, its `.pvs` product-structure member, and its `.ol` geometry members. openpvz-rs by Calum Knott, released under the MIT license, is prior open-source work on this format.
+This specification covers the PTC Creo View and ProductView `.pvz` package, its `.pvs` product-structure member, and its `.ol` geometry members.
 
 Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/creo_view_pvz.md`](../layouts/creo_view_pvz.md), generated from `docs/layouts/creo_view_pvz.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. Unknown parts are in [`creo_view_pvz-open-items.md`](creo_view_pvz-open-items.md).
 
@@ -12,7 +12,7 @@ Record offsets, field widths, and endianness are also maintained as a machine-ch
 
 A `.pvz` file is a ZIP archive with the framing in [`zip.md`](zip.md). Members use the stored (0) or deflate (8) compression method. The archive contains exactly one member whose name ends in `.pvs`. That member is the structure member. A PVS file and an OL file can also occur as loose files outside a package; their byte layout is the same as the member layout.
 
-A member name in the structure member refers to a ZIP member by exact byte equality of the UTF-8 name. Names can contain spaces, non-ASCII characters, and brackets. A reader resolves them byte for byte; it does not apply glob or case folding.
+A member name in the structure member refers to a ZIP member by exact byte equality of the UTF-8 name. Names can contain spaces, non-ASCII characters, and brackets. The comparison applies no glob expansion and no case folding.
 
 ### 1.2 Member roles
 
@@ -182,7 +182,7 @@ A placement maps the child definition coordinate system into the parent definiti
 | pz |   | xz yz zz |   | cz |   | tz |
 ```
 
-`c` is a point in child coordinates and `p` is the same point in parent coordinates. A reader that loads the nine values as rows of the matrix applies the inverse rotation. An encoding without a basis has the identity basis. An encoding without a translation has the zero translation. The three basis vectors are mutually perpendicular, have one common length `s`, and form a right-handed set. `s` = 1 gives a rigid placement; another `s` gives a rigid placement combined with the uniform scale `s`. Translations use the length unit of §8.21.
+`c` is a point in child coordinates and `p` is the same point in parent coordinates. An encoding without a basis has the identity basis. An encoding without a translation has the zero translation. The three basis vectors are mutually perpendicular, have one common length `s`, and form a right-handed set. `s` = 1 gives a rigid placement; another `s` gives a rigid placement combined with the uniform scale `s`. Translations use the length unit of §8.21.
 
 ### 3.11 Hierarchy and root
 
@@ -265,7 +265,7 @@ The first stream payload starts at offset `22 + 8 × entry_count`, or 19 bytes l
 | 10 | 1 | `byte_2` | `0x01` or `0x02`. |
 | 11 | 8 | `reserved` | Zero bytes. |
 
-The meaning of `word`, `byte_0`, `generation`, and `byte_2` is an open item. A reader locates the first stream through the directory; it does not need the preamble.
+The meaning of `word`, `byte_0`, `generation`, and `byte_2` is an open item. The directory gives the offset of every stream payload; no preamble field changes an offset or a payload.
 
 ### 4.4 TLV framing
 
@@ -398,10 +398,9 @@ A primitive record holds `u32` vertex indexes; its length is a multiple of 4. Ea
 | `0x01000017` | 10 or 22 | Contains an `f32` at offset 4. |
 | `0x01000018` | 11 | `u32`, `u32`, three bytes. |
 | `0x1c`, `0x1d` | variable | Line primitives (§7.2). |
-| `0x26`, `0x01000021`, `0x01000027` | variable | Unknown. |
 | 0 | 0 | Scope terminator. |
 
-These records are open items. A reader that needs only shaded geometry uses §6.2 to §6.4.
+These records, and the records with tags `0x26`, `0x01000021`, and `0x01000027`, are open items. The records of §6.2 to §6.4 define the shaded geometry.
 
 ## 7. Edge tessellation stream
 
@@ -419,7 +418,7 @@ Each edge group begins with an edge header (tag `0x01000012`, 12 bytes):
 | 4 | 4 | `word` | `u32`. |
 | 8 | 4 | `value` | `f32`. |
 
-The group continues with a vertex block (§6.3) with `layout` 0 and one line primitive that indexes into it. The group can also contain the records of §6.5. The vertex block holds sample points of exact edge `edge_index`, in the definition coordinate system; it contains the curve start point. Vertex order in the block need not be curve order; the line primitive gives the order.
+The group continues with a vertex block (§6.3) with `layout` 0 and one line primitive that indexes into it. The group can also contain the records of §6.5. The vertex block holds points on exact edge `edge_index`, in the definition coordinate system; it contains the curve start point. Vertex order in the block need not be curve order; the line primitive gives the order.
 
 | Tag | Primitive | Content |
 | --: | --------- | ------- |
@@ -678,11 +677,11 @@ The parameterisations are the 2D forms of §8.15. A type-2 pcurve lists other pc
 
 The model stores each coedge twice: once as the edge curve, once as the pcurve image on the face surface. Let `S` be the face surface (native pcurve) or its embedded B-spline (secondary pcurve), `p0` and `p1` the pcurve start and end points, and `e0` and `e1` the edge curve start and end points. Then either `S(p0) = e0` and `S(p1) = e1`, or `S(p0) = e1` and `S(p1) = e0`, within the tolerance of §8.21.
 
-The coedge sense is forward when the first condition holds and reversed when the second holds. A reader derives the sense from these endpoints. It does not take the sense from the `orientation` byte. For a closed edge curve both conditions hold; the sense is then forward when the pcurve image near the start of the pcurve interval lies on the edge curve near the start of the edge interval.
+The coedge sense is forward when the first condition holds and reversed when the second holds. These endpoint conditions alone define the sense; the `orientation` byte does not. For a closed edge curve both conditions hold; the sense is then forward when the pcurve image near the start of the pcurve interval lies on the edge curve near the start of the edge interval.
 
 ### 8.18 Loop traversal
 
-The coedges of a loop, in stored order, form a closed chain: each coedge shares one end with the coedge before it and its other end with the coedge after it, and the last coedge shares an end with the first. Each pcurve runs along the stored order or against it, independently of its neighbours; a reader takes the direction of a pcurve from the ends it shares with its neighbours. The edge curve of a coedge runs along the stored order when the pcurve does and the sense is forward, and when the pcurve runs against it and the sense is reversed. The ends of a loop of one or two coedges do not give a direction to the stored order.
+The coedges of a loop, in stored order, form a closed chain: each coedge shares one end with the coedge before it and its other end with the coedge after it, and the last coedge shares an end with the first. Each pcurve runs along the stored order or against it, independently of its neighbours; the ends it shares with its neighbours define its direction. The edge curve of a coedge runs along the stored order when the pcurve does and the sense is forward, and when the pcurve runs against it and the sense is reversed. The ends of a loop of one or two coedges do not give a direction to the stored order.
 
 ### 8.19 Face regions and nesting
 

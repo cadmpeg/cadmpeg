@@ -46,11 +46,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What do the bytes after the name atom of a typed definition (types `0x01`, `0x02`, `0x06`, `0x1e`) mean?
 
-**Known.** `creo_view_pvz.md` §3.7 gives the byte counts: one byte for types `0x01` and `0x02`, two bytes for type `0x06`, four bytes for type `0x1e`. Values include `07 07 03 03`, `07 07 04 04`, `06 06 05 05` (type `0x1e`) and `07 07`, `0d 0d` (type `0x06`).
+**Known.** `creo_view_pvz.md` §3.7 gives the byte counts: one byte for types `0x01` and `0x02`, two bytes for type `0x06`, four bytes for type `0x1e`. Each type-`0x1e` value is one of `07 07 03 03`, `07 07 04 04`, and `06 06 05 05`. Each type-`0x06` value is `07 07` or `0d 0d`. openpvz-rs describes a type `0x1f` with an optional `0x21` byte before four bytes from the set `07 07 03 03`, `07 07 04 04`, `0d 0d 08 08`. §3.7 does not define type `0x1f`.
 
 **Need.** We must know whether the bytes carry a model kind, a version, or a units choice.
-
-**Note.** The openpvz-rs notes also describe a type `0x1f` with an optional `0x21` byte before four bytes from the set `07 07 03 03`, `07 07 04 04`, `0d 0d 08 08`. No such definition is in the available files.
 
 ### PVZ-05. Placement flags and occurrence extension
 
@@ -130,17 +128,15 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What do `face_ref`, `flag`, and `refs` in the tessellation patch header mean?
 
-**Known.** `creo_view_pvz.md` §6.2. In members with an exact stream, `face_ref` is less than the face count. For most patches, the vertices lie on the surface of face `face_ref` within 10⁻⁵ m. `refs` is often the single value `face_ref`.
+**Known.** `creo_view_pvz.md` §6.2. In a member with an exact stream, `face_ref` is less than the face count. The distance of the patch vertices from the surface of face `face_ref` is in the range 0 to 1 m: within 10⁻⁵ m for some patches, and 10⁻⁴ m to 1 m for others. `refs` holds one or more values; it can be the single value `face_ref`.
 
 **Need.** We must know the link between tessellated patches and exact faces to give exact faces their appearance.
-
-**Conflict.** In six members, some patches lie off the surface of face `face_ref` by 10⁻⁴ m to 1 m. The specification therefore does not state the link as an invariant.
 
 ### PVZ-15. Other tessellation records
 
 **Question.** What do the tessellation records with tags `0x0100000b`, `0x0100000c`, `0x0a`, `0x01000017`, `0x01000018`, `0x26`, `0x01000021`, and `0x01000027` mean, and which records open a scope that a terminator closes?
 
-**Known.** `creo_view_pvz.md` §6.5 gives the payload lengths. §6.1 gives the line groups of a surface tessellation stream.
+**Known.** `creo_view_pvz.md` §6.5 gives the payload lengths of the first five tags. The payload length of tags `0x26`, `0x01000021`, and `0x01000027` is variable, and their content is not known. §6.1 gives the line groups of a surface tessellation stream.
 
 **Need.** We must know the scope structure to validate a tessellation stream.
 
@@ -148,7 +144,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What do the `0x0100000f` values and the `word` and `value` fields of the edge header mean?
 
-**Known.** `creo_view_pvz.md` §7. The `0x0100000f` values are often `0, 1, … n−1` with `n` equal to the exact edge count. `value` is often 1.0.
+**Known.** `creo_view_pvz.md` §7. The `0x0100000f` values can be the sequence `0, 1, … n−1`, with `n` equal to the exact edge count. `value` can be 1.0.
 
 **Need.** We must know them to validate edge tessellation against the exact edges.
 
@@ -166,7 +162,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What do `flags` bits other than `0x80`, `0x08`, and `0x10`, and `marker` bits other than bit 0, mean in a surface record?
 
-**Known.** `creo_view_pvz.md` §8.3 and §8.9. Bits `0x08` and `0x10` of a B-spline surface record mark the periodic directions. No other `flags` or `marker` bit is set in the available files.
+**Known.** `creo_view_pvz.md` §8.3 and §8.9. Bits `0x08` and `0x10` of a B-spline surface record mark the periodic directions. The other `flags` bits, and the `marker` bits other than bit 0, have the value 0.
 
 **Need.** We must know them to read a surface record that sets them.
 
@@ -182,7 +178,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does the `orientation` byte of a coedge record mean?
 
-**Known.** `creo_view_pvz.md` §8.12, §8.17, and §8.18. The byte does not equal the curve sense derived from the endpoints. In loops of three or more coedges, the byte is 1 for all but 11 of about 128 000 coedges whose edge curve runs along the stored coedge order (§8.18), and 0 for all but 250 of about 96 000 coedges whose edge curve runs against it. All exceptions are on B-spline faces.
+**Known.** `creo_view_pvz.md` §8.12, §8.17, and §8.18. The byte does not equal the curve sense derived from the endpoints. In a loop of three or more coedges on a face that is not a B-spline face, the byte is 1 when the edge curve runs along the stored coedge order (§8.18) and 0 when it runs against it. On a B-spline face the byte is 0 or 1 in both cases.
 
 **Need.** We must know whether it gives the loop direction or the face side.
 
@@ -190,11 +186,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What do negative loop markers other than −2 mean?
 
-**Known.** `creo_view_pvz.md` §8.11 defines −2 and values of 0 or more.
+**Known.** `creo_view_pvz.md` §8.11 defines −2 and values of 0 or more. openpvz-rs gives marker −1 to a planar two-edge loop with zero area, which bounds no face region.
 
 **Need.** We must know them to build face regions from every loop.
-
-**Note.** The openpvz-rs notes report one loop with marker −1: a planar two-edge loop with zero area, which bounds no face region. No such loop is in the available files.
 
 ### PVZ-22. Exact-stream tag `0x0a`
 
@@ -216,17 +210,17 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Why do some coedges on B-spline faces have endpoint residuals larger than the tolerance of `creo_view_pvz.md` §8.21?
 
-**Known.** About 6 % of native-pcurve coedges on B-spline faces have residuals above 2×10⁻⁵ m and up to 10⁻¹ m. The periodic directions of §8.9 do not explain them. In each such face the residuals of all coedges are of similar size, which indicates an offset or a transform of the whole face rather than a local error. The surface flags and range pairs do not separate these faces from the others.
+**Known.** The endpoint residuals of native-pcurve coedges on B-spline faces are in the range 0 to 10⁻¹ m. In a face with a residual above 2×10⁻⁵ m, the residuals of all coedges are of similar size. The periodic directions of §8.9, the surface flags, and the range pairs do not separate these faces from the others.
 
-**Need.** We must know the missing transform to evaluate these faces.
+**Need.** We must know whether a transform of the whole face is missing, to evaluate these faces.
 
-**Conflict.** `creo_view_pvz.md` §8.17 and §8.21 state the endpoint agreement as an invariant. The openpvz-rs notes report that all coedges of two sample sets pass at 2×10⁻⁵ m.
+**Conflict.** `creo_view_pvz.md` §8.17 and §8.21 state endpoint agreement within 2×10⁻⁵ m as an invariant. openpvz-rs states the same agreement for every coedge.
 
 ### PVZ-25. Cone-face residuals
 
 **Question.** Why do some coedges on cone faces fail the endpoint agreement of `creo_view_pvz.md` §8.17?
 
-**Known.** The openpvz-rs notes report coedges with residuals up to about 1.4×10⁻⁴ m, mostly on cone faces, in a few parts. In the available files, cone coedges agree within 2×10⁻⁵ m.
+**Known.** openpvz-rs gives endpoint residuals in the range 0 to 1.4×10⁻⁴ m for coedges on cone faces. With the cone evaluation of §8.6, the endpoint residuals of coedges on cone faces are in the range 0 to 2×10⁻⁵ m.
 
 **Need.** We must know the cause to decide whether the cone parameterisation of §8.6 is complete.
 
@@ -234,7 +228,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Does a PVS or OL member declare its length unit?
 
-**Known.** `creo_view_pvz.md` §8.21 states metres. Two placements carry a uniform scale (§3.10) of 100 and 0.03937. One member has geometry extents of more than 100 units.
+**Known.** `creo_view_pvz.md` §8.21 states metres. Uniform placement scales (§3.10) are in the range 0.03937 to 100; the values 100 and 0.03937 occur. The geometry extent of a member can be more than 100 units.
 
 **Need.** We must know whether a member can store another unit, so that an importer does not misscale it.
 
@@ -242,7 +236,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** When does the bounding box of a geometry element differ from the vertex bounds of the tessellation stream?
 
-**Known.** `creo_view_pvz.md` §3.8. For most definitions the two boxes agree within 10⁻⁶ m. For a few they differ by more than 10⁻⁴ m.
+**Known.** `creo_view_pvz.md` §3.8. The difference between the two boxes is in the range 0 to more than 10⁻⁴ m.
 
 **Need.** We must know which geometry the bounds cover before a decoder uses them as a check.
 
@@ -258,6 +252,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does a singular-use record mean when its edge curve does not collapse to one point?
 
-**Known.** `creo_view_pvz.md` §8.13. Most referenced curves stay within 2×10⁻⁵ m of one point. Some are circular arcs of radius 9×10⁻³ m, lines, B-splines, and polylines of model-space length. The referenced edge is also used by a coedge of the same face, and that coedge can have a second use on another face.
+**Known.** `creo_view_pvz.md` §8.13. The extent of a referenced curve is in the range 0 to model-space length: a curve can stay within 2×10⁻⁵ m of one point, or be a circular arc of radius 9×10⁻³ m, a line, a B-spline, or a polyline of model-space length. The referenced edge is also used by a coedge of the same face, and that coedge can have a second use on another face.
 
 **Need.** We must know the meaning to decide whether such an edge is degenerate in the neutral model.
