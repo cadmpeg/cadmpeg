@@ -1662,6 +1662,7 @@ fn resolved_feature_payload(
         }
     }
     let mut payload = lane.native_payload.clone();
+    let mut scanned = None;
     for (entity, expected_entity) in lane
         .sketch_entities
         .iter()
@@ -1701,7 +1702,34 @@ fn resolved_feature_payload(
         let field = payload.get_mut(field_start..field_end).ok_or_else(|| {
             CodecError::Malformed("feature-input type field exceeds retained payload".into())
         })?;
-        field.copy_from_slice(&entity.kind().native_code().to_le_bytes());
+        let code = entity.kind().native_code().to_le_bytes();
+        // The scanned kind of a marker is not always the kind whose code is
+        // stored (the scan's code-to-kind reading is not `native_code`'s
+        // inverse), and decode reclassifies some markers from their
+        // neighbourhood (`bindings.rs`), only ever into `Point` or
+        // `LineOrCircle`. Where the marker's kind is the scanned one or such a
+        // reclassification, the payload keeps its own code. A marker's kind is
+        // not edited by any writer path, so this reads no edit as unchanged.
+        if field != code {
+            let scanned = match &mut scanned {
+                Some(scanned) => scanned,
+                slot @ None => slot.insert(
+                    crate::resolved_features::markers::admit_sketch_input_entities(
+                        &lane.native_payload,
+                        &lane.id,
+                    )?,
+                ),
+            };
+            let code_retained = scanned.iter().any(|read| {
+                use crate::records::SketchInputKind::{LineOrCircle, Point};
+                read.offset() == entity.offset()
+                    && (read.kind() == entity.kind()
+                        || matches!(entity.kind(), Point | LineOrCircle))
+            });
+            if !code_retained {
+                field.copy_from_slice(&code);
+            }
+        }
         if let Some(value) = entity.state_value {
             let state_start = offset
                 .checked_add(48)
@@ -1715,12 +1743,29 @@ fn resolved_feature_payload(
             state.copy_from_slice(&value.get().to_le_bytes());
         }
         if let Some(coordinates) = entity.coordinates_m {
-            if crate::resolved_features::markers::marker_coordinates(&lane.native_payload, offset)
-                .is_none()
-            {
+            let Some(stored) =
+                crate::resolved_features::markers::marker_coordinates(&lane.native_payload, offset)
+            else {
                 return Err(CodecError::NotImplemented(
                     "feature-input marker does not carry editable coordinate fields".into(),
                 ));
+            };
+            // Unchanged coordinates stay as stored, wherever the layout keeps
+            // them. A change is written at +66 and +74, and only to a layout
+            // that keeps its pair there.
+            if stored == coordinates {
+                continue;
+            }
+            let at_66 = (
+                cadmpeg_core::decode::View::f64_le_at(&lane.native_payload, offset + 66),
+                cadmpeg_core::decode::View::f64_le_at(&lane.native_payload, offset + 74),
+            );
+            if at_66 != (Some(stored[0]), Some(stored[1])) {
+                return Err(CodecError::NotImplemented(format!(
+                    "feature-input lane {} edits the coordinates of sketch marker {}, whose layout keeps them elsewhere",
+                    lane.id,
+                    entity.id()
+                )));
             }
             for (relative, value) in [(66usize, coordinates[0]), (74, coordinates[1])] {
                 let start = offset.checked_add(relative).ok_or_else(|| {
