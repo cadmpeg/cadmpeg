@@ -1199,6 +1199,46 @@ discriminants = { magic = "none" }
 witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:43"
 
 # --------------------------------------------------------------------------
+# PTC Creo View / ProductView .pvz packages
+# --------------------------------------------------------------------------
+# A `.pvz` is a ZIP package holding one `.pvs` structure member and `.ol`
+# geometry members. The discriminant is the leading ten-byte signature of the
+# `.pvs` member (`pvs::generation`, crates/cadmpeg-codec-pvz/src/pvs.rs), read
+# after `package::Package::open` admits exactly one structure member.
+# `dialect::classify` (crates/cadmpeg-codec-pvz/src/dialect.rs) is the codec's
+# single construction path for a `DialectMatch`.
+#
+# The `.ol` signature (`DIV-OL08BL`, `DIV-OL09BL`) belongs to each geometry
+# member, not to the package. It is not an identity axis here: inspection
+# reports it as a member attribute.
+#
+# `complete = false`: PTC publishes no enumeration of structure signatures.
+[format.pvz]
+complete = false
+
+[[dialect]]
+id = "pvz:pvs-0301"
+title = "Creo View package, PV-PVS0301 structure member"
+discriminants = { pvs_signature = "PV-PVS0301" }
+witness = "code:crates/cadmpeg-codec-pvz/src/pvs.rs:24"
+
+[[dialect]]
+id = "pvz:pvs-0304"
+title = "Creo View package, PV-PVS0304 structure member"
+discriminants = { pvs_signature = "PV-PVS0304" }
+witness = "code:crates/cadmpeg-codec-pvz/src/pvs.rs:25"
+
+[[dialect]]
+# Mandatory `unknown` row (B4). A package whose one `.pvs` member opens with
+# no known signature is admitted on the residual path: decode charges
+# `pvz/source.dialect-unverified` and reads the package framing only.
+id = "pvz:unknown"
+unknown_kind = "recovered-residual"
+title = "Creo View package with an unrecognized structure-member signature"
+discriminants = { pvs_signature = "any other leading ten bytes" }
+witness = "code:crates/cadmpeg-codec-pvz/src/dialect.rs:54"
+
+# --------------------------------------------------------------------------
 # ACIS / ASM kernel namespace (embedded layer)
 # --------------------------------------------------------------------------
 # Owned by `cadmpeg-asm`, cited by `sat`, `f3d`, and `inventor`. These ids are

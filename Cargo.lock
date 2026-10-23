@@ -347,6 +347,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "cadmpeg-codec-pvz"
+version = "0.6.5"
+dependencies = [
+ "cadmpeg-container",
+ "cadmpeg-core",
+ "cadmpeg-ir",
+ "cadmpeg-test-support",
+]
+
+[[package]]
 name = "cadmpeg-codec-rhino"
 version = "0.6.5"
 dependencies = [

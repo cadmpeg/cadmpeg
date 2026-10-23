@@ -146,6 +146,10 @@ scored = ["nx:splmsstr", "nx:legacy-cfb"]
 level = 3
 scored = ["sat:text"]
 
+[format.pvz]
+level = 0
+scored = ["pvz:pvs-0301", "pvz:pvs-0304"]
+
 
 # --------------------------------------------------------------------------
 # iges
@@ -926,6 +930,36 @@ refusal = "no-framing-grammar"
 reason = """
 `sat:unknown` means no ASM, ACIS, or text stream framing matched. Detection
 returns Confidence::No and the forced codec path returns WrongFormat"""
+
+# --------------------------------------------------------------------------
+# pvz
+# --------------------------------------------------------------------------
+
+[[support]]
+dialect = "pvz:pvs-0301"
+read = "detected"
+write = "none"
+reason = """
+the package is classified from its structure-member signature; the structure
+and geometry members are located, not decoded, and no golden fixture pins the
+row"""
+
+[[support]]
+dialect = "pvz:pvs-0304"
+read = "detected"
+write = "none"
+reason = """
+the package is classified from its structure-member signature; the structure
+and geometry members are located, not decoded, and no golden fixture pins the
+row"""
+
+[[support]]
+dialect = "pvz:unknown"
+read = "unclassified-recovered"
+write = "none"
+reason = """
+no known structure-member signature; the package framing is read on the
+residual path and charges pvz/source.dialect-unverified"""
 
 # --------------------------------------------------------------------------
 # acis

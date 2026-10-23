@@ -57,6 +57,7 @@ edit without a re-render fails the gate.
 | Siemens NX `.prt`                                 | L1    |
 | CATIA V5 `.CATPart`                               | L3    |
 | Creo Parametric `.prt`                            | L1    |
+| Creo View `.pvz`                                  | L0    |
 | STEP Part 21                                      | L8    |
 
 <!-- /generated: ladder-table -->
@@ -490,6 +491,35 @@ Incomplete model-space coverage across analytic and spline carrier families bloc
 Remaining geometry work includes per-instance analytic parameter bindings, feature-generated carrier evaluation, dense curve and spline bodies, and complete face-instance placement.
 
 See [`formats/creo_prt.md`](formats/creo_prt.md) and [`formats/creo_prt-open-items.md`](formats/creo_prt-open-items.md).
+
+## Creo View `.pvz`
+
+**Container:** ZIP package with one `.pvs` structure member and `.ol` geometry members
+
+<!-- generated: dialects pvz -->
+
+**Ladder: L0.**
+
+| Dialect        | Read                   | Write |
+| -------------- | ---------------------- | ----- |
+| `pvz:pvs-0301` | detected               | none  |
+| `pvz:pvs-0304` | detected               | none  |
+| `pvz:unknown`  | unclassified-recovered | none  |
+
+<!-- /generated: dialects pvz -->
+
+The codec detects the package, opens the ZIP framing, and classifies the package from the `.pvs` signature. Document metadata, preview images, and tessellation are not extracted, so L0 does not pass on its extraction criterion. No real file exercises the level.
+
+### Read profile
+
+- **Container and versions: Partial.** The codec admits the ZIP package through the shared archive snapshot, requires exactly one `.pvs` structure member, classifies the `PV-PVS0301` and `PV-PVS0304` structure signatures, and reports the `DIV-OL08BL` and `DIV-OL09BL` signatures of each `.ol` member. A package with any other structure signature is read on the residual path and reports `pvz/source.dialect-unverified`.
+- **Structure: None.** Product structure in the `.pvs` member is not decoded.
+- **Geometry and tessellation: None.** The `.ol` members are not decoded. Decode reports the blocking loss `pvz/package.content-undecoded`.
+
+### Write and round trip
+
+- **Native write: None.**
+- **Round trip: None.**
 
 ## STEP Part 21
 
