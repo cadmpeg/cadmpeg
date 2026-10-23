@@ -24,9 +24,9 @@ fn occurrence_merge_keeps_parameter_state_links_local_without_rewriting_paramete
         id: state.companion.clone(),
         class_tag: "258".to_owned().try_into().expect("companion class"),
         record_index: 702,
+        state_record_index: 401,
         control: 1,
         control_word: 1,
-        state: state.id.clone(),
     };
     let header = DesignParameterDocumentHeader {
         id: state.document_root.clone(),
@@ -117,7 +117,14 @@ fn occurrence_merge_keeps_parameter_state_links_local_without_rewriting_paramete
             format!("f3d:xref/{occurrence}/Design1:design-parameter-state#21")
         );
         assert_eq!(states[index].companion, companions[index].id);
-        assert_eq!(companions[index].state, states[index].id);
+        assert_eq!(
+            companions[index].id,
+            format!("f3d:xref/{occurrence}/Design1:design-parameter-state-companion#82")
+        );
+        assert_eq!(companions[index].state_record_index, 401);
+        let companion_wire = serde_json::to_value(&companions[index]).expect("companion wire");
+        assert_eq!(companion_wire["state_record_index"], 401);
+        assert!(companion_wire.get("state").is_none());
         assert_eq!(states[index].document_root, headers[index].id);
         let wire = serde_json::to_value(&parameters[index]).expect("parameter wire");
         assert_eq!(wire["parameter_state"], states[index].id);

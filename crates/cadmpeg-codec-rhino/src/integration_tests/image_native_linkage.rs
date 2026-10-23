@@ -141,7 +141,7 @@ fn payload(asset: &cadmpeg_ir::assets::Asset) -> &[u8] {
 
 #[test]
 fn images_keep_native_headers_buffers_and_payloads_without_asset_backlinks() {
-    let (source, bitmap_buffer) = source();
+    let (source, _) = source();
     let decoded = RhinoCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
@@ -156,13 +156,6 @@ fn images_keep_native_headers_buffers_and_payloads_without_asset_backlinks() {
         ),
         ("name", serde_json::json!("preview")),
         ("file_path", serde_json::json!("image.png")),
-        ("buffer_byte_len", serde_json::json!(7)),
-        (
-            "buffer_sha256",
-            serde_json::json!(cadmpeg_ir::hash::sha256_hex(&[
-                3, 0, 0, 0, 0x11, 0x22, 0x33
-            ])),
-        ),
     ] {
         assert_eq!(image.field(key), Some(value));
     }
@@ -183,14 +176,6 @@ fn images_keep_native_headers_buffers_and_payloads_without_asset_backlinks() {
         ("pixels_per_meter", serde_json::json!([0, 0])),
         ("colors_used", serde_json::json!(0)),
         ("important_colors", serde_json::json!(0)),
-        (
-            "pixel_buffer_byte_len",
-            serde_json::json!(bitmap_buffer.len()),
-        ),
-        (
-            "pixel_buffer_sha256",
-            serde_json::json!(cadmpeg_ir::hash::sha256_hex(&bitmap_buffer)),
-        ),
     ] {
         assert_eq!(bitmap.field(key), Some(value));
     }

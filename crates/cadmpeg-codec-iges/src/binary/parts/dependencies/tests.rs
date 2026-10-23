@@ -31,9 +31,11 @@ fn format_five_point_reference_uses_an_actual_nonrecord_source_offset() {
     );
     let global = source_global(&sections);
     let plan = Dependencies::inspect(&sections, &global, &ctx).unwrap();
+    // #215 rule 1: the Parameter record needs its owner Directory record;
+    // the Directory record does not need its Parameter record.
     assert!(plan
         .require(Address::Directory(directory[0].offset))
-        .is_err());
+        .is_ok());
     assert!(plan.require(Address::Parameter(offset)).is_err());
     assert!(plan
         .require(Address::Directory(directory[1].offset))

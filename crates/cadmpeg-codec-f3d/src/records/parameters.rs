@@ -368,12 +368,8 @@ impl DesignParameter {
             evaluated_value_offset: None,
         })
     }
-    pub(crate) fn retain_source(
-        &self,
-        fidelity: &mut cadmpeg_ir::SourceFidelity,
-        layout_pointers: Option<&std::collections::BTreeMap<String, u64>>,
-    ) {
-        for (name, offset) in [
+    pub(crate) fn source_offsets(&self) -> [(&'static str, Option<u64>); 7] {
+        [
             ("byte_offset", self.byte_offset),
             ("expression_offset", self.expression_offset),
             ("source_kind_offset", self.source_kind_offset),
@@ -387,18 +383,11 @@ impl DesignParameter {
                 "family_discriminator_offset",
                 self.family_discriminator().and_then(|value| value.offset),
             ),
-        ] {
-            if let Some(offset) = offset {
-                if name == "byte_offset"
-                    && layout_pointers.and_then(|pointers| pointers.get(name)) == Some(&offset)
-                {
-                    continue;
-                }
-                fidelity
-                    .metadata
-                    .insert(format!("{}.{name}", self.id), offset.to_string());
-            }
-        }
+        ]
+    }
+
+    pub(crate) fn take_parameter_state(&mut self) -> Option<String> {
+        self.parameter_state.take()
     }
 
     #[cfg(test)]

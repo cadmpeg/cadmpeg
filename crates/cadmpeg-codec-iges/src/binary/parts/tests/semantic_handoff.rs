@@ -115,8 +115,7 @@ fn actual_binary_callbacks_return_the_same_records_that_the_renderer_binds_and_r
 }
 
 #[test]
-fn malformed_binary_macro_has_its_actual_parameter_and_required_directory_homes_and_an_exact_peer()
-{
+fn malformed_binary_macro_gives_up_only_its_parameter_record_and_keeps_an_exact_peer() {
     let original = macro_then_point(false);
     let bytes = macro_then_point(true);
     assert_eq!(original.len(), bytes.len());
@@ -156,20 +155,24 @@ fn malformed_binary_macro_has_its_actual_parameter_and_required_directory_homes_
         .values()
         .flatten()
         .any(|record| record.id() == "iges:native:macro-definition#D1"));
+    // #215 rule 1: the Macro's Directory record keeps its fields and its
+    // Directory-owned display attributes; only its Parameter Data record is
+    // given up.
+    assert_eq!(native.arenas()["entities"].len(), 2);
+    assert_eq!(
+        serde_json::to_value(&native.arenas()["entities"][0]).expect("damaged Macro entity"),
+        crate::test_support::binary_parts::entity_without_parameter_data(
+            &old.arenas()["entities"][0]
+        )
+    );
     let peer = old.arenas()["entities"]
         .iter()
         .find(|record| record.id() == "iges:entity:directory#3")
         .expect("original peer entity");
-    assert_eq!(native.arenas()["entities"], [peer.clone()]);
-    let expected: Vec<_> = old.arenas()["display_attributes"]
-        .iter()
-        .filter(|record| record.id().ends_with("#D3"))
-        .collect();
+    assert_eq!(&native.arenas()["entities"][1], peer);
     assert_eq!(
-        native.arenas()["display_attributes"]
-            .iter()
-            .collect::<Vec<_>>(),
-        expected
+        native.arenas()["display_attributes"],
+        old.arenas()["display_attributes"]
     );
     assert!(native.arenas()["quarantined_directory_records"].is_empty());
     assert!(native.arenas()["quarantined_parameter_records"].is_empty());
@@ -177,19 +180,18 @@ fn malformed_binary_macro_has_its_actual_parameter_and_required_directory_homes_
     let (_ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
         .expect("independent source window");
     let sections = crate::binary::parse_sections(root).expect("original source sections");
-    let (_, directory, _) = crate::binary::counted_record(sections.directory, 0, "Directory")
-        .expect("original Directory count");
     let (_, parameter, _) = crate::binary::counted_record(sections.parameter, 0, "Parameter")
         .expect("original Parameter count");
     let unknowns = native
         .arena_as::<NativeUnknownRecord>("unknowns")
         .expect("typed unknowns");
-    assert_eq!(unknowns.len(), 2);
+    assert_eq!(unknowns.len(), 1);
     let fidelity = decoded.source_fidelity();
-    for (level, extent) in [
-        ("iges.binary_directory_record", directory),
-        ("iges.binary_parameter_record", parameter),
-    ] {
+    assert!(!fidelity.parts().values().any(|part| {
+        part.level().as_str() == "iges.binary_directory_record"
+            && part.state() == &PartState::GivenUp {}
+    }));
+    for (level, extent) in [("iges.binary_parameter_record", parameter)] {
         let part = fidelity
             .parts()
             .values()
@@ -227,7 +229,7 @@ fn malformed_binary_macro_has_its_actual_parameter_and_required_directory_homes_
         .iter()
         .filter(|loss| loss.code.local_code() == "record.unreadable")
         .collect();
-    assert_eq!(unreadable.len(), 2);
+    assert_eq!(unreadable.len(), 1);
     assert!(unreadable
         .iter()
         .all(|loss| loss.severity == cadmpeg_ir::report::Severity::Error));
@@ -257,7 +259,7 @@ fn malformed_binary_macro_has_its_actual_parameter_and_required_directory_homes_
 }
 
 #[test]
-fn a_failed_encoded_group_member_drops_only_its_list_entry() {
+fn a_group_keeps_an_encoded_member_whose_parameter_record_is_given_up() {
     let original = crate::test_support::binary_parts::macro_group_then_point(false);
     let bytes = crate::test_support::binary_parts::macro_group_then_point(true);
     assert_eq!(original.len(), bytes.len());
@@ -301,6 +303,8 @@ fn a_failed_encoded_group_member_drops_only_its_list_entry() {
         .native
         .namespace("iges")
         .expect("current native");
+    // #215 rules 1-2: the Macro's Directory record stays, so the Group that
+    // lists it keeps that list entry and its declared count.
     assert_eq!(current.arenas()["groups"].len(), 1);
     let group = &current.arenas()["groups"][0];
     assert_eq!(group.id(), "iges:product:group#D3");
@@ -308,19 +312,7 @@ fn a_failed_encoded_group_member_drops_only_its_list_entry() {
         group.field("source_entity"),
         Some(serde_json::json!("iges:entity:directory#3"))
     );
-    assert_eq!(
-        group.field("declared_member_count"),
-        Some(serde_json::json!(0))
-    );
-    assert_eq!(group.field("members"), Some(serde_json::json!([])));
-    assert_eq!(
-        group.field("ordered"),
-        native.arenas()["groups"][0].field("ordered")
-    );
-    assert_eq!(
-        group.field("back_pointers_required"),
-        native.arenas()["groups"][0].field("back_pointers_required")
-    );
+    assert_eq!(group, &native.arenas()["groups"][0]);
     assert_eq!(
         current
             .arenas()
@@ -333,19 +325,25 @@ fn a_failed_encoded_group_member_drops_only_its_list_entry() {
         .values()
         .flatten()
         .any(|record| record.id() == "iges:native:macro-definition#D1"));
-    assert_eq!(current.arenas()["entities"].len(), 2);
+    assert_eq!(current.arenas()["entities"].len(), 3);
     assert_eq!(
-        current.arenas()["entities"][1],
-        native.arenas()["entities"][2]
+        serde_json::to_value(&current.arenas()["entities"][0]).expect("damaged Macro entity"),
+        crate::test_support::binary_parts::entity_without_parameter_data(
+            &native.arenas()["entities"][0]
+        )
+    );
+    assert_eq!(
+        current.arenas()["entities"][1..],
+        native.arenas()["entities"][1..]
     );
     let unknowns = current
         .arena_as::<NativeUnknownRecord>("unknowns")
         .expect("unknowns");
-    assert_eq!(unknowns.len(), 2);
+    assert_eq!(unknowns.len(), 1);
     let fidelity = decoded.source_fidelity();
-    for level in [
-        "iges.binary_directory_record",
-        "iges.binary_parameter_record",
+    for (level, given_up) in [
+        ("iges.binary_directory_record", 0),
+        ("iges.binary_parameter_record", 1),
     ] {
         assert_eq!(
             fidelity
@@ -355,7 +353,7 @@ fn a_failed_encoded_group_member_drops_only_its_list_entry() {
                     |part| part.level().as_str() == level && part.state() == &PartState::GivenUp {}
                 )
                 .count(),
-            1
+            given_up
         );
     }
     let unreadable: Vec<_> = decoded
@@ -364,7 +362,7 @@ fn a_failed_encoded_group_member_drops_only_its_list_entry() {
         .iter()
         .filter(|loss| loss.code.local_code() == "record.unreadable")
         .collect();
-    assert_eq!(unreadable.len(), 2);
+    assert_eq!(unreadable.len(), 1);
     assert!(unreadable
         .iter()
         .all(|loss| loss.severity == cadmpeg_ir::report::Severity::Error));
@@ -453,47 +451,47 @@ fn a_pointer_tagged_discriminator_cannot_change_the_actual_parameter_entity_type
 }
 
 #[test]
-fn a_non_null_binary_owner_without_parameter_data_fails_only_its_actual_directory() {
+fn a_non_null_binary_owner_without_parameter_data_keeps_its_directory_entry() {
     let bytes = crate::test_support::binary_parts::non_null_without_parameter_record();
-    let decoded = crate::test_support::decode(bytes.clone());
+    let decoded = crate::test_support::decode(bytes);
+    // A zero Parameter Data pointer states no Parameter Data record. No byte
+    // is unreadable, so no part is given up; the Directory record keeps its
+    // fields with no parameters (#215 §4.5, rule 1).
     assert!(decoded.ir().model.points.is_empty());
     let native = decoded.ir().native.namespace("iges").expect("native");
-    assert!(native.arenas()["entities"].is_empty());
-    assert!(native.arenas()["quarantined_parameter_records"].is_empty());
-    let unknowns = native
-        .arena_as::<NativeUnknownRecord>("unknowns")
-        .expect("unknowns");
-    assert_eq!(unknowns.len(), 1);
-    let part = &decoded.source_fidelity().parts()[&unknowns[0].id];
-    assert_eq!(part.level().as_str(), "iges.binary_directory_record");
-    assert_eq!(part.state(), &PartState::GivenUp {});
-    let start = usize::try_from(part.offset()).expect("source start");
-    let end = start + usize::try_from(part.byte_len()).expect("source length");
+    let entities = &native.arenas()["entities"];
+    assert_eq!(entities.len(), 1);
+    assert_eq!(entities[0].id(), "iges:entity:directory#1");
     assert_eq!(
-        decoded
-            .source_fidelity()
-            .retained_record(unknowns[0].id.as_str())
-            .expect("actual source image")
-            .data(),
-        Some(&bytes[start..end])
+        entities[0].field("entity_type"),
+        Some(serde_json::json!(116))
     );
+    assert_eq!(entities[0].field("parameters"), Some(serde_json::json!([])));
+    assert_eq!(
+        entities[0].field("parameter_line_count"),
+        Some(serde_json::json!(0))
+    );
+    assert!(native.arenas()["quarantined_parameter_records"].is_empty());
+    assert!(native.arenas().get("unknowns").is_none_or(Vec::is_empty));
+    assert!(!decoded
+        .source_fidelity()
+        .parts()
+        .values()
+        .any(|part| part.state() == &PartState::GivenUp {}));
     assert!(!decoded
         .source_fidelity()
         .parts()
         .values()
         .any(|part| part.level().as_str() == "iges.binary_parameter_record"));
-    let unreadable: Vec<_> = decoded
+    assert!(!decoded
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code.local_code() == "record.unreadable")
-        .collect();
-    assert_eq!(unreadable.len(), 1);
-    assert_eq!(unreadable[0].severity, cadmpeg_ir::report::Severity::Error);
+        .any(|loss| loss.code.local_code() == "record.unreadable"));
 }
 
 #[test]
-fn a_group_keeps_its_readable_member_and_renderer_count_after_a_macro_member_fails() {
+fn a_group_keeps_every_member_and_its_count_after_a_macro_parameter_record_fails() {
     for encoded_members in [true, false] {
         let original = crate::test_support::binary_parts::macro_and_point_group_then_point(
             false,
@@ -551,13 +549,18 @@ fn a_group_keeps_its_readable_member_and_renderer_count_after_a_macro_member_fai
             group.field("source_entity"),
             Some(serde_json::json!("iges:entity:directory#3"))
         );
+        // #215 rules 1-2: the Macro's Directory record stays, so the Group
+        // keeps both list entries and its declared count.
         assert_eq!(
             group.field("declared_member_count"),
-            Some(serde_json::json!(1))
+            Some(serde_json::json!(2))
         );
         assert_eq!(
             group.field("members"),
-            Some(serde_json::json!(["iges:entity:directory#5"]))
+            Some(serde_json::json!([
+                "iges:entity:directory#1",
+                "iges:entity:directory#5"
+            ]))
         );
         assert_eq!(group.field("ordered"), Some(serde_json::json!(false)));
         assert_eq!(
@@ -574,31 +577,22 @@ fn a_group_keeps_its_readable_member_and_renderer_count_after_a_macro_member_fai
             .flatten()
             .any(|record| record.id() == "iges:native:macro-definition#D1"));
         let entities = &native.arenas()["entities"];
-        assert_eq!(entities.len(), 2);
-        assert_eq!(entities[1], original_native.arenas()["entities"][2]);
-        assert_eq!(entities[0].id(), "iges:entity:directory#3");
+        assert_eq!(entities.len(), 3);
         assert_eq!(
-            entities[0].field("parameter_line_count"),
-            Some(serde_json::json!(1))
+            serde_json::to_value(&entities[0]).expect("damaged Macro entity"),
+            crate::test_support::binary_parts::entity_without_parameter_data(
+                &original_native.arenas()["entities"][0]
+            )
         );
-        assert_eq!(
-            entities[0].field("parameters"),
-            Some(serde_json::json!([
-                {"value": {"kind": "integer", "value": 402}},
-                {"value": {"kind": "integer", "value": 1}},
-                {"value": {"kind": "integer", "value": 5}},
-            ]))
-        );
+        assert_eq!(entities[1..], original_native.arenas()["entities"][1..]);
         let unknowns = native
             .arena_as::<NativeUnknownRecord>("unknowns")
             .expect("unknowns");
-        assert_eq!(unknowns.len(), 2);
+        assert_eq!(unknowns.len(), 1);
         let fidelity = decoded.source_fidelity();
         assert_eq!(
-            fidelity.record_layout()["iges:entity:directory#3"]
-                .reads()
-                .len(),
-            0
+            fidelity.record_layout()["iges:entity:directory#3"],
+            baseline.source_fidelity().record_layout()["iges:entity:directory#3"],
         );
         assert_eq!(
             fidelity.record_layout()["iges:entity:directory#5"],
@@ -610,7 +604,7 @@ fn a_group_keeps_its_readable_member_and_renderer_count_after_a_macro_member_fai
             .iter()
             .filter(|loss| loss.code.local_code() == "record.unreadable")
             .collect();
-        assert_eq!(errors.len(), 2);
+        assert_eq!(errors.len(), 1);
         assert!(errors
             .iter()
             .all(|loss| loss.severity == cadmpeg_ir::report::Severity::Error));

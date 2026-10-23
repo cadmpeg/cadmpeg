@@ -22,10 +22,9 @@ pub(super) fn project(
     ufrx: &UfrxRecord,
     properties: &[PropertyRecord],
     losses: &mut Vec<LossNote>,
-    untyped: &mut cadmpeg_ir::ArenaClasses,
 ) -> Result<(), CodecError> {
     let before = ir.model.entity_count();
-    project_properties(ir, properties, losses, untyped)?;
+    project_properties(ir, properties, losses)?;
     for reference in ufrx.embedded_references() {
         if reference.path.is_empty() {
             losses.push(InventorLossCode::NeutralRecordUnprojected.note(format!(
@@ -164,14 +163,13 @@ pub(super) fn project_source_properties(
     ir: &mut CadIr,
     native: &cadmpeg_ir::native::Native,
     losses: &mut Vec<LossNote>,
-    untyped: &mut cadmpeg_ir::ArenaClasses,
 ) -> Result<(), CodecError> {
     let Some(namespace) = native.namespace("inventor") else {
         return Ok(());
     };
     let before = ir.model.entity_count();
     for property in namespace.arena_iter_as_for_decode::<PropertyRecord>(ctx, "properties") {
-        project_properties(ir, std::slice::from_ref(&property?), losses, untyped)?;
+        project_properties(ir, std::slice::from_ref(&property?), losses)?;
     }
     ctx.charge_entities(
         cadmpeg_core::decode::u64_from_index(ir.model.entity_count() - before),
@@ -184,22 +182,10 @@ fn project_properties(
     ir: &mut CadIr,
     properties: &[PropertyRecord],
     losses: &mut Vec<LossNote>,
-    untyped: &mut cadmpeg_ir::ArenaClasses,
 ) -> Result<(), CodecError> {
     for property in properties {
         let Some(value) = property.scalar_value.as_deref() else {
             if !matches!(property.value_kind, PropertyValueKind::Empty { .. }) {
-                if !ir
-                    .model
-                    .assets
-                    .iter()
-                    .any(|asset| asset.native_ref.as_deref() == Some(property.id.as_str()))
-                {
-                    untyped.insert(cadmpeg_ir::ArenaClass::Model);
-                    losses.push(InventorLossCode::PropertyRecordUntyped.note(format!(
-                        "Property {} has only source-byte evidence; its non-scalar payload has no typed value or decoded asset.", property.id
-                    )));
-                }
                 losses.push(InventorLossCode::NeutralRecordUnprojected.note(format!(
                     "Property {} has no typed scalar neutral projection; its native inventory remains held.",
                     property.id

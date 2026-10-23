@@ -5,7 +5,10 @@ use cadmpeg_ir::source_fidelity::parts::PartState;
 use cadmpeg_ir::NativeUnknownRecord;
 
 #[test]
-fn an_unported_line_coordinate_reference_keeps_the_original_normalization_result() {
+fn an_unresolved_line_coordinate_reference_gives_up_only_its_parameter_record() {
+    let baseline = crate::test_support::decode(
+        crate::test_support::binary_parts::line_with_encoded_coordinate_then_point(false),
+    );
     for broken in [false, true] {
         let bytes =
             crate::test_support::binary_parts::line_with_encoded_coordinate_then_point(broken);
@@ -20,18 +23,81 @@ fn an_unported_line_coordinate_reference_keeps_the_original_normalization_result
                 .expect("independent unchanged legacy grammar oracle");
         let original = crate::binary::normalize(original_source, &original_ctx);
         if broken {
-            let actual_error = actual
-                .err()
-                .expect("same unresolved source reference refusal");
-            let original_error = original.expect_err("the pre-handoff normalizer refuses it too");
-            assert_eq!(actual_error.to_string(), original_error.to_string());
-            assert!(actual_error
+            // #215 §4.5 and #222: an unresolved reference is not a whole-file
+            // refusal. It gives up the nearest part the decoder runs that
+            // holds the value: the Line's Parameter Data record.
+            let (actual, _) = actual.expect("an unresolved reference gives up one part");
+            assert!(actual.admission.parameters.is_some());
+            assert!(original
+                .expect_err("the pre-handoff normalizer has no part to give up")
                 .to_string()
                 .contains("Binary Directory reference has no surviving source target"));
-            let public_error = crate::IgesCodec.decode(
-                &mut std::io::Cursor::new(bytes.clone()), &cadmpeg_ir::codec::DecodeOptions::default(),
-            ).expect_err("the library must not publish a decoded Directory with its source silently removed");
-            assert_eq!(public_error.to_string(), original_error.to_string());
+            let decoded = crate::IgesCodec
+                .decode(
+                    &mut std::io::Cursor::new(bytes.clone()),
+                    &cadmpeg_ir::codec::DecodeOptions::default(),
+                )
+                .expect("the decode succeeds");
+            let sections = crate::binary::parse_sections(source).expect("original sections");
+            let (_, line, _) = crate::binary::counted_record(sections.parameter, 0, "Line")
+                .expect("original Line Parameter record");
+            let fidelity = decoded.source_fidelity();
+            let given_up: Vec<_> = fidelity
+                .parts()
+                .values()
+                .filter(|part| part.state() == &PartState::GivenUp {})
+                .collect();
+            assert_eq!(given_up.len(), 1);
+            assert_eq!(given_up[0].level().as_str(), "iges.binary_parameter_record");
+            assert_eq!(
+                given_up[0].offset(),
+                u64::try_from(line.start()).expect("source offset")
+            );
+            assert_eq!(
+                given_up[0].byte_len(),
+                u64::try_from(line.window().len()).expect("source length")
+            );
+            let unreadable: Vec<_> = decoded
+                .report()
+                .losses
+                .iter()
+                .filter(|loss| loss.code.local_code() == "record.unreadable")
+                .collect();
+            assert_eq!(unreadable.len(), 1);
+            assert_eq!(unreadable[0].severity, cadmpeg_ir::report::Severity::Error);
+            assert!(unreadable[0]
+                .message
+                .contains("iges.binary_parameter_record"));
+            assert!(unreadable[0]
+                .message
+                .contains(&format!("offset={}", line.start())));
+            // The Point peer is unchanged; the Line keeps its Directory record.
+            assert!(decoded.ir().model.curves.is_empty());
+            let peer = crate::ids::point(&crate::ids::Stem::directory(3_u32));
+            assert_eq!(decoded.ir().model.points.len(), 1);
+            assert_eq!(
+                serde_json::to_value(&decoded.ir().model.points[0]).expect("peer point"),
+                serde_json::to_value(
+                    baseline
+                        .ir()
+                        .model
+                        .points
+                        .iter()
+                        .find(|point| point.id == peer)
+                        .expect("baseline peer")
+                )
+                .expect("baseline peer point")
+            );
+            let native = decoded.ir().native.namespace("iges").expect("native");
+            let old = baseline.ir().native.namespace("iges").expect("baseline");
+            assert_eq!(native.arenas()["entities"].len(), 2);
+            assert_eq!(
+                serde_json::to_value(&native.arenas()["entities"][0]).expect("Line entity"),
+                crate::test_support::binary_parts::entity_without_parameter_data(
+                    &old.arenas()["entities"][0]
+                )
+            );
+            assert_eq!(native.arenas()["entities"][1], old.arenas()["entities"][1]);
         } else {
             let (actual, _) = actual.expect("valid source reference keeps the legacy route");
             assert!(actual.admission.parameters.is_none());
@@ -54,7 +120,7 @@ fn an_unported_line_coordinate_reference_keeps_the_original_normalization_result
 }
 
 #[test]
-fn a_required_point_symbol_failure_has_both_actual_source_homes_and_an_exact_peer() {
+fn a_required_point_symbol_failure_gives_up_only_its_parameter_record_and_keeps_an_exact_peer() {
     let original = crate::test_support::binary_parts::broken_parameter_reference(false);
     let bytes = crate::test_support::binary_parts::broken_parameter_reference(true);
     assert_eq!(original.len(), bytes.len());
@@ -76,31 +142,37 @@ fn a_required_point_symbol_failure_has_both_actual_source_homes_and_an_exact_pee
         serde_json::to_value(expected_point).expect("expected point")
     );
     let native = decoded.ir().native.namespace("iges").expect("native");
-    assert_eq!(native.arenas()["entities"].len(), 1);
+    let old = baseline
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("original native");
+    // #215 rule 1: the Point's Directory record keeps its fields; only the
+    // Parameter Data record that holds the unresolved symbol is given up.
+    assert_eq!(native.arenas()["entities"].len(), 2);
     assert_eq!(
-        native.arenas()["entities"][0],
-        baseline
-            .ir()
-            .native
-            .namespace("iges")
-            .expect("original native")
-            .arenas()["entities"][1]
+        serde_json::to_value(&native.arenas()["entities"][0]).expect("damaged Point entity"),
+        crate::test_support::binary_parts::entity_without_parameter_data(
+            &old.arenas()["entities"][0]
+        )
     );
+    assert_eq!(native.arenas()["entities"][1], old.arenas()["entities"][1]);
     assert!(native.arenas()["quarantined_parameter_records"].is_empty());
     assert!(native.arenas()["quarantined_directory_records"].is_empty());
     let unknowns = native
         .arena_as::<NativeUnknownRecord>("unknowns")
         .expect("unknowns");
-    assert_eq!(unknowns.len(), 2);
+    assert_eq!(unknowns.len(), 1);
     let fidelity = decoded.source_fidelity();
     let arena = DecodeArena::new();
     let (_ctx, source) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
         .expect("independent physical source envelope");
     let sections = crate::binary::parse_sections(source).expect("original section boundaries");
-    for (level, section) in [
-        ("iges.binary_directory_record", sections.directory),
-        ("iges.binary_parameter_record", sections.parameter),
-    ] {
+    assert!(!fidelity.parts().values().any(|part| {
+        part.level().as_str() == "iges.binary_directory_record"
+            && part.state() == &PartState::GivenUp {}
+    }));
+    for (level, section) in [("iges.binary_parameter_record", sections.parameter)] {
         let (_, extent, _) = crate::binary::counted_record(section, 0, "source")
             .expect("original actual counted source record");
         let failed: Vec<_> = fidelity
@@ -136,7 +208,7 @@ fn a_required_point_symbol_failure_has_both_actual_source_homes_and_an_exact_pee
         .iter()
         .filter(|loss| loss.code.local_code() == "record.unreadable")
         .collect();
-    assert_eq!(errors.len(), 2);
+    assert_eq!(errors.len(), 1);
     assert!(errors
         .iter()
         .all(|loss| loss.severity == cadmpeg_ir::report::Severity::Error));

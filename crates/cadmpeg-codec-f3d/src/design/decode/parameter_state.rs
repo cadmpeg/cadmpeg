@@ -376,7 +376,7 @@ fn decode_stream(
                         },
                     )?;
                 } else {
-                    let (class_tag, record_index, control, control_word, other) =
+                    let (class_tag, record_index, control, control_word, state_record_index) =
                         companion(view, frame)?;
                     stage.insert_native(
                         ctx,
@@ -387,7 +387,7 @@ fn decode_stream(
                             record_index,
                             control,
                             control_word,
-                            state: identity(stream, target(frames, other, STATE_GUID, 4)?),
+                            state_record_index,
                         },
                     )?;
                 }
@@ -550,7 +550,6 @@ pub(crate) fn install_unknowns(
                             "parameter state unknown composition storage overflows",
                         )
                     })?;
-                ctx.retain_bytes(u64_from_index(bytes), "parameter state unknown composition")?;
                 destination.try_reserve_exact(records.len()).map_err(|_| {
                     cadmpeg_core::decode::ResourceLimit::allocation_failed(
                         cadmpeg_core::decode::ResourceDimension::RetainedBytes,

@@ -411,7 +411,7 @@ fn transition_and_history_serde_preserve_data_and_clear_cache() {
         asm_histories: vec![history.clone()],
         ..Default::default()
     }
-    .retained_fidelity(&Default::default())
+    .retained_fidelity()
     .unwrap();
     assert_eq!(fidelity.metadata["history.byte_offset"], "0");
     let mut expected = history.clone();

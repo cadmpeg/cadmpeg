@@ -224,7 +224,7 @@ fn indexed_record_header_keeps_identity_and_class_without_source_position() {
         design_record_headers: vec![source],
         ..Default::default()
     };
-    let fidelity = native.retained_fidelity(&Default::default()).unwrap();
+    let fidelity = native.retained_fidelity().unwrap();
     assert_eq!(
         fidelity.metadata["f3d:Design:record#0000000042.byte_offset"],
         "987"

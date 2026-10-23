@@ -181,8 +181,15 @@ fn authored_parameter_has_semantic_content_without_source_layout() {
         .all(|key| !key.ends_with("_offset")));
     let restored: DesignParameter = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(restored).unwrap(), wire);
-    let mut fidelity = cadmpeg_ir::SourceFidelity::default();
-    parameter.retain_source(&mut fidelity, None);
+    assert!(parameter
+        .source_offsets()
+        .iter()
+        .all(|(_, offset)| offset.is_none()));
+    let native = crate::native::F3dNative {
+        design_parameters: vec![parameter],
+        ..Default::default()
+    };
+    let fidelity = native.retained_fidelity().unwrap();
     assert!(fidelity.metadata.is_empty());
     assert!(fidelity.retained_records().is_empty());
 }

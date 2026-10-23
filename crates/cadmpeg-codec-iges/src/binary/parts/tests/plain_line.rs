@@ -127,7 +127,8 @@ fn plain_line_values_are_returned_by_the_actual_binary_callback_and_source_flip(
 }
 
 #[test]
-fn an_invalid_line_coordinate_control_keeps_the_actual_paired_homes_and_point_peer() {
+fn an_invalid_line_coordinate_control_gives_up_only_its_parameter_record_and_keeps_the_point_peer()
+{
     let original = crate::test_support::binary_parts::plain_line_then_point(1, false);
     let bytes = crate::test_support::binary_parts::plain_line_then_point(1, true);
     assert_eq!(original.len(), bytes.len());
@@ -153,31 +154,37 @@ fn an_invalid_line_coordinate_control_keeps_the_actual_paired_homes_and_point_pe
         serde_json::to_value(expected).expect("baseline peer")
     );
     let native = decoded.ir().native.namespace("iges").expect("native");
-    assert_eq!(native.arenas()["entities"].len(), 1);
+    let old = baseline
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("baseline native");
+    // #215 rule 1: the Line's Directory record keeps its fields; only its
+    // Parameter Data record is given up.
+    assert_eq!(native.arenas()["entities"].len(), 2);
     assert_eq!(
-        native.arenas()["entities"][0],
-        baseline
-            .ir()
-            .native
-            .namespace("iges")
-            .expect("baseline native")
-            .arenas()["entities"][1]
+        serde_json::to_value(&native.arenas()["entities"][0]).expect("damaged Line entity"),
+        crate::test_support::binary_parts::entity_without_parameter_data(
+            &old.arenas()["entities"][0]
+        )
     );
+    assert_eq!(native.arenas()["entities"][1], old.arenas()["entities"][1]);
     assert!(native.arenas()["quarantined_directory_records"].is_empty());
     assert!(native.arenas()["quarantined_parameter_records"].is_empty());
     let unknowns = native
         .arena_as::<NativeUnknownRecord>("unknowns")
         .expect("unknowns");
-    assert_eq!(unknowns.len(), 2);
+    assert_eq!(unknowns.len(), 1);
     let fidelity = decoded.source_fidelity();
+    assert!(!fidelity.parts().values().any(|part| {
+        part.level().as_str() == "iges.binary_directory_record"
+            && part.state() == &PartState::GivenUp {}
+    }));
     let arena = DecodeArena::new();
     let (_ctx, source) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
         .expect("original source boundaries");
     let sections = crate::binary::parse_sections(source).expect("actual source sections");
-    for (level, section) in [
-        ("iges.binary_directory_record", sections.directory),
-        ("iges.binary_parameter_record", sections.parameter),
-    ] {
+    for (level, section) in [("iges.binary_parameter_record", sections.parameter)] {
         let (_, extent, _) =
             crate::binary::counted_record(section, 0, "source").expect("actual counted record");
         let part = fidelity
@@ -211,7 +218,7 @@ fn an_invalid_line_coordinate_control_keeps_the_actual_paired_homes_and_point_pe
         .iter()
         .filter(|loss| loss.code.local_code() == "record.unreadable")
         .collect();
-    assert_eq!(errors.len(), 2);
+    assert_eq!(errors.len(), 1);
     assert!(errors
         .iter()
         .all(|loss| loss.severity == cadmpeg_ir::report::Severity::Error));

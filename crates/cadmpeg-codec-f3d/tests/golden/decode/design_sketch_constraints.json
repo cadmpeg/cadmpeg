@@ -1002,6 +1002,7 @@
             "timestamp_micros": 1700000000000000
           }
         ],
+        "design_parameter_document_headers": [],
         "design_parameter_owners": [
           {
             "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-owner#3806",
@@ -1059,6 +1060,8 @@
             ]
           }
         ],
+        "design_parameter_state_companions": [],
+        "design_parameter_states": [],
         "design_parameters": [
           {
             "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter#3921",
@@ -2604,7 +2607,7 @@
     "metadata": {
       "active_brep": "FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
       "active_brep_sha256": "38630ab6494f356459e0ee34e122e2a86685f44db32f30456c5b4fbb02a7cf6c",
-      "document_local_sha256": "cc39f86e5c215a55a41642cfdedb03c63c107730fa6aff596bc246d2a2577182",
+      "document_local_sha256": "b32047ee682a787ca96f38d8a001bf8518bff1cafeecbc3c5e8cf06458f8c7e4",
       "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh:body-visibility#42.asm_body_key_offset": "25",
       "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh:body-visibility#42.byte_offset": "719",
       "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:construction-recipe#2866.byte_offset": "2866",
@@ -2639,20 +2642,6 @@
       "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-entity-header#730.reference_offsets.1": "794",
       "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-entity-header#95.byte_offset": "95",
       "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-entity-header#95.optional_slot_present": "false",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter#3921.byte_offset": "3921",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter#3921.evaluated_value_offset": "4050",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter#3921.expression_offset": "3971",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter#3921.family_discriminator_offset": "3943",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter#3921.name_offset": "4046",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter#3921.source_kind_offset": "3994",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter#3921.unit_offset": "4038",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter#4382.byte_offset": "4382",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter#4382.evaluated_value_offset": "4511",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter#4382.expression_offset": "4432",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter#4382.family_discriminator_offset": "4404",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter#4382.name_offset": "4507",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter#4382.source_kind_offset": "4455",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter#4382.unit_offset": "4499",
       "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-companion#4070.byte_offset": "4070",
       "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-companion#4070.payload_byte_length": "139",
       "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-companion#4070.payload_byte_offset": "4128",
@@ -2907,6 +2896,40 @@
       "f3d:FusionAssetName[Active]/FusionACTSegmentType1/MetaStream.dat:design-type#898.entity_id_offsets.0": "957",
       "f3d:FusionAssetName[Active]/FusionACTSegmentType1/MetaStream.dat:design-type#898.type_guid_offset": "902",
       "f3d:FusionAssetName[Active]/FusionACTSegmentType1/MetaStream.dat:design-type#898.version_offset": "942"
+    },
+    "record_layout": {
+      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter#3921": {
+        "stream": "zip:4:file:0:14000:FusionAssetName[Active]/Design1/BulkStream.dat",
+        "offset": 3921,
+        "byte_len": 149,
+        "reads": {},
+        "pointers": {
+          "byte_offset": 3921,
+          "evaluated_value_offset": 4050,
+          "expression_offset": 3971,
+          "family_discriminator_offset": 3943,
+          "name_offset": 4046,
+          "source_kind_offset": 3994,
+          "unit_offset": 4038
+        },
+        "payloads": {}
+      },
+      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter#4382": {
+        "stream": "zip:4:file:0:14000:FusionAssetName[Active]/Design1/BulkStream.dat",
+        "offset": 4382,
+        "byte_len": 149,
+        "reads": {},
+        "pointers": {
+          "byte_offset": 4382,
+          "evaluated_value_offset": 4511,
+          "expression_offset": 4432,
+          "family_discriminator_offset": 4404,
+          "name_offset": 4507,
+          "source_kind_offset": 4455,
+          "unit_offset": 4499
+        },
+        "payloads": {}
+      }
     },
     "retained_records": {
       "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-dimension-recipe-record#4243:prefix": {

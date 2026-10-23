@@ -32,8 +32,6 @@ use cadmpeg_ir::report::{
 pub(crate) enum InventorLossCode {
     /// A typed native record has no constructible neutral counterpart.
     NeutralRecordUnprojected,
-    /// A non-scalar property payload has no typed content or decoded asset.
-    PropertyRecordUntyped,
     /// The active kernel carrier was not transferred into neutral geometry.
     GeometryKernelCarrierNotTransferred,
     /// Faces use procedural surfaces without a decoded carrier.
@@ -115,7 +113,6 @@ impl InventorLossCode {
     #[cfg(test)]
     const ALL: &'static [InventorLossCode] = &[
         Self::NeutralRecordUnprojected,
-        Self::PropertyRecordUntyped,
         Self::GeometryKernelCarrierNotTransferred,
         Self::GeometryProceduralSurfaceNotTransferred,
         Self::RseSegmentPairUntyped,
@@ -160,7 +157,6 @@ impl InventorLossCode {
     pub(crate) const fn code(self) -> &'static str {
         match self {
             Self::NeutralRecordUnprojected => "projection.record-unprojected",
-            Self::PropertyRecordUntyped => "metadata.property-record-untyped",
             Self::GeometryKernelCarrierNotTransferred => "geometry.kernel-carrier-not-transferred",
             Self::GeometryProceduralSurfaceNotTransferred => {
                 "geometry.procedural-surface-not-transferred"
@@ -217,9 +213,9 @@ impl InventorLossCode {
         match self {
             Self::GeometryKernelCarrierNotTransferred
             | Self::GeometryProceduralSurfaceNotTransferred => LossTaxonomy::GeometryNotTransferred,
-            Self::RseSegmentPairUntyped
-            | Self::UfrxSchemaUnsupported
-            | Self::PropertyRecordUntyped => LossTaxonomy::RecordNotTyped,
+            Self::RseSegmentPairUntyped | Self::UfrxSchemaUnsupported => {
+                LossTaxonomy::RecordNotTyped
+            }
             Self::RseMetadataStreamMalformed
             | Self::RseBulkStreamMalformed
             | Self::DesignRecordMalformed
@@ -291,10 +287,6 @@ impl InventorLossCode {
 /// loss. Native retention below is checked separately from neutral projection.
 #[cfg(test)]
 const UNREPRESENTED: &[(InventorLossCode, cadmpeg_ir::ArenaClass)] = &[
-    (
-        InventorLossCode::PropertyRecordUntyped,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
     (
         InventorLossCode::AppearanceDefaultUnresolved,
         cadmpeg_ir::ArenaClass::Model,
@@ -471,7 +463,6 @@ mod tests {
             codes,
             [
                 "projection.record-unprojected",
-                "metadata.property-record-untyped",
                 "geometry.kernel-carrier-not-transferred",
                 "geometry.procedural-surface-not-transferred",
                 "rse.segment-pair-untyped",

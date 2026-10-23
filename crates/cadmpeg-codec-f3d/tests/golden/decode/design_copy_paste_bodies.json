@@ -621,6 +621,7 @@
         ],
         "design_mesh_features": [],
         "design_parameter_companions": [],
+        "design_parameter_document_headers": [],
         "design_parameter_owners": [],
         "design_parameter_scopes": [
           {
@@ -674,6 +675,8 @@
             ]
           }
         ],
+        "design_parameter_state_companions": [],
+        "design_parameter_states": [],
         "design_parameters": [],
         "design_record_headers": [
           {
@@ -1845,7 +1848,7 @@
     "metadata": {
       "active_brep": "FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
       "active_brep_sha256": "38630ab6494f356459e0ee34e122e2a86685f44db32f30456c5b4fbb02a7cf6c",
-      "document_local_sha256": "205edb21af890292a40207214a41b14ed05acde1eeb08338111fb4a8b9fb8d0e",
+      "document_local_sha256": "f70b60f3c2d77e904f7a2de382a9a7269b791d89501e462ec90bd7d0f63ec6b1",
       "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh:body-visibility#42.asm_body_key_offset": "25",
       "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh:body-visibility#42.byte_offset": "735",
       "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:construction-recipe#2882.byte_offset": "2882",

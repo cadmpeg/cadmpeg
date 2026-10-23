@@ -57,6 +57,11 @@ fn registration(tag: &str, guid: &str, version: u32, entities: Vec<u64>) -> Segm
     }
 }
 fn fixture(second: bool) -> (Vec<u8>, crate::metastream::MetaStream) {
+    let pairs = [(401, 702), (503, 804)];
+    fixture_with_indices(&pairs[..if second { 2 } else { 1 }])
+}
+
+fn fixture_with_indices(pairs: &[(u64, u64)]) -> (Vec<u8>, crate::metastream::MetaStream) {
     let mut bytes = indexed("256", 93);
     bytes.extend_from_slice(b"root-body!");
     assert_eq!(bytes.len(), 21);
@@ -66,7 +71,7 @@ fn fixture(second: bool) -> (Vec<u8>, crate::metastream::MetaStream) {
     }];
     let mut states = vec![];
     let mut companions = vec![];
-    for (state, companion) in [(401, 702)].into_iter().chain(second.then_some((503, 804))) {
+    for &(state, companion) in pairs {
         records.push(crate::metastream::RecordIndexEntry {
             entity_id: state,
             bulk_offset: u64_from_index(bytes.len()),
@@ -127,8 +132,8 @@ fn state_records_keep_actual_nonconstant_links_and_only_owned_reads() {
         .expect("companions");
     assert_eq!(states[0].record_index, 401);
     assert_eq!(companions[0].record_index, 702);
+    assert_eq!(companions[0].state_record_index, 401);
     assert_eq!(states[0].companion, companions[0].id);
-    assert_eq!(companions[0].state, states[0].id);
     assert_eq!((companions[0].control, companions[0].control_word), (1, 1));
     let captures = ctx.take_record_captures().expect("capture drain");
     let ranges = |id: &str| {
@@ -241,7 +246,11 @@ fn invalid_linked_companion_gives_up_only_its_pair_and_keeps_the_independent_pee
             .as_ptr(),
         original_buffer
     );
+    // The part helper already charged these records; moving them charges
+    // no retained bytes again (#215 §4.5, `max_retained_bytes`).
+    let available = ctx.retained_bytes_available();
     install_unknowns(&ctx, &mut document, records).expect("compose owned peer");
+    assert_eq!(ctx.retained_bytes_available(), available);
     assert_eq!(
         document
             .native
@@ -476,42 +485,68 @@ fn captured_parameter_byte_offset_moves_only_to_its_actual_layout_and_occurrence
         design_parameters: vec![parsed.clone()],
         ..Default::default()
     };
-    let key = format!("{}.byte_offset", parsed.id);
-    let uncaptured = native
-        .retained_fidelity(&BTreeMap::new())
-        .expect("uncaptured fallback");
-    assert_eq!(uncaptured.metadata[&key], parameter_start.to_string());
-    let unrelated = BTreeMap::from([("f3d:other:design-parameter#0".to_owned(), pointers.clone())]);
-    assert_eq!(
-        native
-            .retained_fidelity(&unrelated)
-            .expect("different owner")
-            .metadata,
-        uncaptured.metadata
-    );
-    let wrong_offset = BTreeMap::from([(
+    assert_eq!(tail_start, 112);
+    assert_eq!(parameter.len(), 164);
+    let expected_pointers = BTreeMap::from([
+        ("byte_offset".to_owned(), u64_from_index(parameter_start)),
+        (
+            "expression_offset".to_owned(),
+            u64_from_index(parameter_start + 35),
+        ),
+        (
+            "source_kind_offset".to_owned(),
+            u64_from_index(parameter_start + 54),
+        ),
+        (
+            "unit_offset".to_owned(),
+            u64_from_index(parameter_start + 86),
+        ),
+        (
+            "name_offset".to_owned(),
+            u64_from_index(parameter_start + 94),
+        ),
+        (
+            "evaluated_value_offset".to_owned(),
+            u64_from_index(parameter_start + 104),
+        ),
+    ]);
+    let mut wrong_offset = BTreeMap::from([(
         parsed.id.clone(),
         BTreeMap::from([(
             "byte_offset".to_owned(),
             u64_from_index(parameter_start + 1),
         )]),
     )]);
+    let original_wrong_offset = wrong_offset.clone();
+    assert!(super::super::parameters::source_layout::capture_record(
+        &ctx,
+        view,
+        "Design1/BulkStream.dat",
+        u64_from_index(parameter_start),
+        &mut parsed,
+        &mut wrong_offset,
+    )
+    .is_err());
+    assert_eq!(wrong_offset, original_wrong_offset);
     assert_eq!(
-        native
-            .retained_fidelity(&wrong_offset)
-            .expect("different coordinate")
-            .metadata,
-        uncaptured.metadata
+        serde_json::to_value(&parsed).expect("unchanged linked owner"),
+        wire
     );
-    let drafts = BTreeMap::from([(parsed.id.clone(), pointers)]);
+    let mut drafts = BTreeMap::from([(parsed.id.clone(), pointers)]);
+    super::super::parameters::source_layout::capture_record(
+        &ctx,
+        view,
+        "Design1/BulkStream.dat",
+        u64_from_index(parameter_start),
+        &mut parsed,
+        &mut drafts,
+    )
+    .expect("all source pointers join the existing actual owner capture");
+    assert_eq!(drafts[&parsed.id], expected_pointers);
     let mut fidelity = native
-        .retained_fidelity(&drafts)
-        .expect("matching source draft");
-    let mut expected_metadata = uncaptured.metadata.clone();
-    expected_metadata
-        .remove(&key)
-        .expect("only superseded fact");
-    assert_eq!(fidelity.metadata, expected_metadata);
+        .retained_fidelity()
+        .expect("layout-only source fields");
+    assert!(fidelity.metadata.is_empty());
     let mut pending = crate::decode::source_layout::PendingLayouts::new(batch, drafts);
     pending
         .rescope(&ctx, "one")
@@ -530,10 +565,7 @@ fn captured_parameter_byte_offset_moves_only_to_its_actual_layout_and_occurrence
             u64_from_index(parameter.len())
         )
     );
-    assert_eq!(
-        layout.pointers(),
-        &BTreeMap::from([("byte_offset".to_owned(), u64_from_index(parameter_start))])
-    );
+    assert_eq!(layout.pointers(), &expected_pointers);
     let target = u64_from_index(parameter_start + tail_start + 2);
     assert_eq!(
         layout.reads(),
@@ -551,5 +583,48 @@ fn captured_parameter_byte_offset_moves_only_to_its_actual_layout_and_occurrence
     assert_eq!(
         serde_json::to_value(parsed).expect("unchanged native scalar content"),
         wire
+    );
+}
+
+#[test]
+fn companion_state_record_index_follows_the_physical_reference_counterfactual() {
+    let pairs = [(0x1122_3344_u64, 702), (0x5566_7788, 804)];
+    let (bytes, meta) = fixture_with_indices(&pairs);
+    let arena = DecodeArena::new();
+    let (ctx, source) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).expect("context");
+    let frames = supported_frames(&ctx, source, &meta).expect("frames");
+    let mut output = PartOutput::new(CodecFormat::F3d);
+    decode_stream(&ctx, source, "Design1/BulkStream.dat", &frames, &mut output).expect("decode");
+    let (_, native, _, losses) = output.into_parts(&ctx).expect("closure").into_parts();
+    assert!(losses.is_empty());
+    let namespace = native.namespace("f3d").expect("native");
+    let states = namespace
+        .arena_as::<DesignParameterState>("design_parameter_states")
+        .expect("states");
+    let companions = namespace
+        .arena_as::<DesignParameterStateCompanion>("design_parameter_state_companions")
+        .expect("companions");
+    assert_eq!(states.len(), 2);
+    assert_eq!(companions.len(), 2);
+    for ((state, companion), (state_index, companion_index)) in
+        states.iter().zip(&companions).zip(pairs)
+    {
+        assert_eq!(u64::from(state.record_index), state_index);
+        assert_eq!(u64::from(companion.record_index), companion_index);
+        assert_eq!(companion.state_record_index, state_index);
+        assert_eq!(state.companion, companion.id);
+        let wire = serde_json::to_value(companion).expect("companion wire");
+        assert_eq!(wire["state_record_index"], state_index);
+        assert!(wire.get("state").is_none());
+        assert_eq!(
+            serde_json::from_value::<DesignParameterStateCompanion>(wire)
+                .expect("hydrate companion"),
+            *companion
+        );
+    }
+    assert_ne!(
+        companions[0].state_record_index,
+        companions[1].state_record_index
     );
 }

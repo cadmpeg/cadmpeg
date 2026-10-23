@@ -1427,5 +1427,7 @@ fn companion_payload<S: std::hash::BuildHasher>(
     ))
 }
 
+pub(crate) mod source_layout;
+
 #[cfg(test)]
 mod tests;

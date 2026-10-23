@@ -372,14 +372,12 @@ impl Dependencies {
         self.source_points.binary_search(&offset).is_ok()
     }
 
+    /// A Directory record needs only its transformation. Its Parameter Data
+    /// record needs the Directory record, not the reverse: a given-up
+    /// Parameter record leaves the Directory record with no parameters
+    /// (#215 rule 1).
     pub(super) fn directory(&self, record: &BinaryDirectory) -> Result<(), CodecError> {
         self.require(Address::Directory(record.offset))?;
-        if record.parameter_pointer() != 0 {
-            self.require(Address::Parameter(positive_pointer(
-                record.parameter_pointer(),
-                "Directory Parameter Data",
-            )?))?;
-        }
         let transform = pointer_value(
             &record.values[DirectoryFieldSlot::Transform.slot()],
             "Directory transformation",
@@ -452,16 +450,6 @@ fn collect_directory(
     ctx: &DecodeContext<'_>,
     targets: &mut Vec<Address>,
 ) -> Result<(), CodecError> {
-    if record.parameter_pointer() != 0 {
-        append(
-            ctx,
-            targets,
-            Address::Parameter(positive_pointer(
-                record.parameter_pointer(),
-                "Directory Parameter Data",
-            )?),
-        )?;
-    }
     let transform = pointer_value(
         &record.values[DirectoryFieldSlot::Transform.slot()],
         "Directory transformation",

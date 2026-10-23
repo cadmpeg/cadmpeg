@@ -328,8 +328,11 @@
         "design_material_assignments": [],
         "design_mesh_features": [],
         "design_parameter_companions": [],
+        "design_parameter_document_headers": [],
         "design_parameter_owners": [],
         "design_parameter_scopes": [],
+        "design_parameter_state_companions": [],
+        "design_parameter_states": [],
         "design_parameters": [],
         "design_record_headers": [],
         "design_sheet_metal_settings": [],
@@ -599,7 +602,7 @@
     "metadata": {
       "active_brep": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
       "active_brep_sha256": "e5f2e01a717adf958e80f3afb83d9ec5ae663d63c774ebb1475aceb7f0cb3bf1",
-      "document_local_sha256": "7cda0a314227cb0cfbc3629b71cca5b753254dc6342a6700e31ae5f1449f5176"
+      "document_local_sha256": "51bbe85bb5ac0fc3d6e3fb7babd09f732820c799768f379f027c273fa0cfd431"
     },
     "retained_records": {
       "f3d:file:source-image#0": {

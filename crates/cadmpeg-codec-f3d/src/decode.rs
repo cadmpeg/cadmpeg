@@ -3011,7 +3011,7 @@ impl<'a> F3dDecodeSession<'a> {
                     self.ir,
                     self.report,
                     RetainedArtifacts {
-                        native_fidelity: self.native.retained_fidelity(&source_layout_pointers)?,
+                        native_fidelity: self.native.retained_fidelity()?,
                         source_layout_pointers,
                         annotations,
                         parameter_state_fidelity,
@@ -3057,7 +3057,7 @@ impl<'a> F3dDecodeSession<'a> {
             self.ir,
             self.report,
             RetainedArtifacts {
-                native_fidelity: self.native.retained_fidelity(&source_layout_pointers)?,
+                native_fidelity: self.native.retained_fidelity()?,
                 source_layout_pointers,
                 annotations,
                 parameter_state_fidelity,
