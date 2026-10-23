@@ -17,7 +17,9 @@ use cadmpeg_ir::features::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::pmdc::{inventor_id, reference_list, Cursor, PmDcReference, PmDcReferenceList};
+use crate::pmdc::{
+    flags_extension, inventor_id, reference_list, Cursor, PmDcReference, PmDcReferenceList,
+};
 use crate::record_identity::{Located, RecordPayload};
 
 /// Type identifier of a `PmDc` model root.
@@ -43,6 +45,13 @@ pub(crate) struct PmDcModelRootPayload {
     pub(crate) header_id: u16,
     pub(crate) next: PmDcReference,
     pub(crate) flags: u32,
+    /// The u32 that segment major versions from 28 store after `flags`.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_flags_extension"
+    )]
+    pub(crate) flags_extension: Option<u32>,
     pub(crate) identifier: String,
     pub(crate) name: String,
     pub(crate) members: PmDcReferenceList,
@@ -54,6 +63,8 @@ pub(crate) struct PmDcModelRootPayload {
 }
 
 pub(crate) type PmDcModelRoot = Located<PmDcModelRootPayload>;
+
+cadmpeg_core::named_optional_field!(deserialize_flags_extension, u32, "flags_extension");
 
 impl RecordPayload for PmDcModelRootPayload {
     const KIND: &'static str = "model-root";
@@ -72,6 +83,13 @@ pub(crate) struct PmDcParameterTablePayload {
     pub(crate) header_id: u16,
     pub(crate) next: PmDcReference,
     pub(crate) flags: u32,
+    /// The u32 that segment major versions from 28 store after `flags`.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_flags_extension"
+    )]
+    pub(crate) flags_extension: Option<u32>,
     pub(crate) context: PmDcReference,
     pub(crate) members: PmDcReferenceList,
     pub(crate) names_metadata: Option<[u32; 2]>,
@@ -187,6 +205,7 @@ pub(crate) fn parse_model_root(
     let header_id = cursor.u16("model root header id")?;
     let next = cursor.reference("model root next reference")?;
     let flags = cursor.u32("model root flags")?;
+    let flags_extension = flags_extension(&mut cursor, version)?;
     let identifier = cursor.take_array::<16>("model root identifier")?;
     let name = cursor.utf16(ctx, "model root name")?;
     let members = reference_list(&mut cursor, 2, "model root member list")?;
@@ -208,6 +227,7 @@ pub(crate) fn parse_model_root(
         header_id,
         next,
         flags,
+        flags_extension,
         identifier: crate::pmdc::type_id_string(identifier),
         name,
         members,
@@ -229,6 +249,7 @@ pub(crate) fn parse_parameter_table(
     let header_id = cursor.u16("parameter table header id")?;
     let next = cursor.reference("parameter table next reference")?;
     let flags = cursor.u32("parameter table flags")?;
+    let flags_extension = flags_extension(&mut cursor, version)?;
     let context = cursor.reference("parameter table context reference")?;
     let members = reference_list(&mut cursor, 2, "parameter table member list")?;
     let marker = [
@@ -267,6 +288,7 @@ pub(crate) fn parse_parameter_table(
         header_id,
         next,
         flags,
+        flags_extension,
         context,
         members,
         names_metadata,

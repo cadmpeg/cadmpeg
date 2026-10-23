@@ -21,8 +21,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::compact_matrix::CompactMatrix;
 use crate::pmdc::{
-    content_header, inventor_id, reference_list, Cursor, PmDcContentHeader, PmDcReference,
-    PmDcReferenceList,
+    content_header, inventor_id, reference_list, state_content_header, Cursor, PmDcContentHeader,
+    PmDcReference, PmDcReferenceList,
 };
 use crate::record_identity::{push_record, Located, RecordPayload};
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
@@ -303,6 +303,13 @@ pub(crate) enum PmDcSketchEntityKind {
         center_of: PmDcReferenceList,
         #[serde(flatten)]
         tail: PointTail,
+        /// The type-2 list that ends a point from segment major version 25.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_point_links"
+        )]
+        links: Option<PmDcReferenceList>,
     },
     Line {
         points: PmDcReferenceList,
@@ -331,6 +338,8 @@ pub(crate) enum PmDcSketchEntityKind {
         value: u32,
     },
 }
+
+cadmpeg_core::named_optional_field!(deserialize_point_links, PmDcReferenceList, "links");
 
 /// The absent or complete state and association tail of a sketch point.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -499,7 +508,7 @@ pub(crate) fn inventory(
         let Some(version) = segment.registry.map(|join| join.version_major) else {
             continue;
         };
-        if !(15..=22).contains(&version) {
+        if !crate::pmdc::record_version_supported(version) {
             continue;
         }
         let SegmentBulkState::Framed(bulk) = &segment.bulk else {
@@ -599,7 +608,7 @@ pub(crate) fn inventory(
 
 fn parse_sketch(source: View<'_>, version: u8) -> Result<PmDcSketchPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = state_content_header(&mut cursor, version)?;
     let state = cursor.u32("sketch state")?.cast_signed();
     let count_value = cursor.u32("sketch count value")?;
     let entities = reference_list(&mut cursor, 8, "sketch entity array")?;
@@ -729,11 +738,11 @@ fn parse_entity(
     version: u8,
 ) -> Result<PmDcSketchEntityPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, version)?;
     let entity_flags = cursor.u32("sketch entity flags")?;
     let sketch = cursor.reference("sketch entity sketch reference")?;
     let kind = match tag {
-        SketchEntityTag::Point => parse_point(&mut cursor)?,
+        SketchEntityTag::Point => parse_point(&mut cursor, version)?,
         SketchEntityTag::Line => parse_line(&mut cursor)?,
         SketchEntityTag::Circle => parse_circle(&mut cursor)?,
         SketchEntityTag::Ellipse => parse_ellipse(&mut cursor)?,
@@ -767,7 +776,7 @@ fn point3(cursor: &mut Cursor<'_>, field: &str) -> Result<[FiniteReal; 3], Codec
     ])
 }
 
-fn parse_point(cursor: &mut Cursor<'_>) -> Result<PmDcSketchEntityKind, CodecError> {
+fn parse_point(cursor: &mut Cursor<'_>, version: u8) -> Result<PmDcSketchEntityKind, CodecError> {
     let position = point2(cursor, "sketch point")?;
     let endpoint_of = reference_list(cursor, 2, "point endpoint-of list")?;
     let center_of = reference_list(cursor, 2, "point center-of list")?;
@@ -779,11 +788,17 @@ fn parse_point(cursor: &mut Cursor<'_>) -> Result<PmDcSketchEntityKind, CodecErr
             associations: reference_list(cursor, 2, "point association list")?,
         }
     };
+    let links = if version >= 25 && matches!(tail, PointTail::Present { .. }) {
+        Some(reference_list(cursor, 2, "point link list")?)
+    } else {
+        None
+    };
     Ok(PmDcSketchEntityKind::Point {
         position,
         endpoint_of,
         center_of,
         tail,
+        links,
     })
 }
 
@@ -797,9 +812,6 @@ fn edge_prefix(
     let tail8 = fixed_tail
         .checked_add(8)
         .ok_or_else(|| CodecError::malformed("Inventor edge tail size overflow"))?;
-    let tail16 = fixed_tail
-        .checked_add(16)
-        .ok_or_else(|| CodecError::malformed("Inventor edge tail size overflow"))?;
     if cursor.remaining() >= tail8 && cursor.peek_u32("edge auxiliary-list marker")? == 0x3000_0002
     {
         auxiliary.push(reference_list(
@@ -807,15 +819,20 @@ fn edge_prefix(
             2,
             &format!("{field} auxiliary list 0"),
         )?);
-    } else if cursor.remaining() >= tail16 {
+    } else if cursor.remaining() >= tail8 {
         let gate = [
             cursor.u32("edge list gate 0")?,
             cursor.u32("edge list gate 1")?,
         ];
-        if gate != [1, 0] {
-            return Err(CodecError::malformed(format_args!(
-                "Inventor PmDc {field} list gate is {gate:?}"
-            )));
+        match gate {
+            // A closed gate stores no auxiliary list.
+            [0, 0] => return close_edge_prefix(cursor, fixed_tail, field, points, auxiliary),
+            [1, 0] => {}
+            _ => {
+                return Err(CodecError::malformed(format_args!(
+                    "Inventor PmDc {field} list gate is {gate:?}"
+                )))
+            }
         }
         auxiliary.push(reference_list(
             cursor,
@@ -832,6 +849,16 @@ fn edge_prefix(
             )?);
         }
     }
+    close_edge_prefix(cursor, fixed_tail, field, points, auxiliary)
+}
+
+fn close_edge_prefix(
+    cursor: &Cursor<'_>,
+    fixed_tail: usize,
+    field: &str,
+    points: PmDcReferenceList,
+    auxiliary: Vec<PmDcReferenceList>,
+) -> Result<(PmDcReferenceList, Vec<PmDcReferenceList>), CodecError> {
     if cursor.remaining() != fixed_tail {
         return Err(CodecError::malformed(format_args!(
             "Inventor PmDc {field} has {} bytes before its fixed tail, expected {fixed_tail}",
@@ -896,7 +923,7 @@ fn parse_ellipse(cursor: &mut Cursor<'_>) -> Result<PmDcSketchEntityKind, CodecE
 
 fn parse_transform(source: View<'_>, version: u8) -> Result<PmDcTransformPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, version)?;
     let prefix_present = cursor.peek_u32("transform prefix")? == TRANSFORM_PREFIX;
     if prefix_present {
         cursor.u32("transform prefix")?;
@@ -917,7 +944,7 @@ fn parse_transform(source: View<'_>, version: u8) -> Result<PmDcTransformPayload
 
 fn parse_direction(source: View<'_>, version: u8) -> Result<PmDcDirectionPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, version)?;
     let entity_flags = cursor.u32("direction entity flags")?;
     let parameter = cursor.f64("direction parameter")?;
     let extension = match cursor.remaining() {
@@ -999,7 +1026,7 @@ fn parse_constraint_header(
     cursor: &mut Cursor<'_>,
     version: u8,
 ) -> Result<PmDcConstraintHeader, CodecError> {
-    let content = content_header(cursor)?;
+    let content = state_content_header(cursor, version)?;
     let state = cursor.u32("constraint state")?.cast_signed();
     let group = cursor.reference("constraint group reference")?;
     let (scalar_map, reference_map) = if version <= 16 {
@@ -2588,7 +2615,9 @@ mod tests {
     use crate::pmdc::{PmDcReference, PmDcReferenceList};
     use crate::record_identity::Located;
     use crate::rse::{RecordFrameState, SegmentBulkState, SegmentKind};
-    use crate::test_support::test_fixtures::{content, parse, primary_envelope_fixture};
+    use crate::test_support::test_fixtures::{
+        content, content_at, parse, primary_envelope_fixture,
+    };
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, View};
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::scalar::FiniteReal;
@@ -3089,6 +3118,111 @@ mod tests {
         bytes.extend_from_slice(&0x8000_000cu32.to_le_bytes());
         bytes.extend_from_slice(&parameter.to_le_bytes());
         bytes
+    }
+
+    #[test]
+    fn parses_newer_segment_version_entity_forms() {
+        // A version 29 point: a u32 after the flags, two stamps, and a link
+        // list after the association list.
+        let mut point = content_at(4, 29, &[-1, 2908]);
+        point.extend_from_slice(&0u32.to_le_bytes());
+        point.extend_from_slice(&0x8000_0003u32.to_le_bytes());
+        for value in [1.0f64, 2.0] {
+            point.extend_from_slice(&value.to_le_bytes());
+        }
+        point.extend(list(2, &[0x8000_0005]));
+        point.extend(list(2, &[]));
+        point.extend_from_slice(&0u32.to_le_bytes());
+        point.extend(list(2, &[]));
+        point.extend(list(2, &[0x8000_0006]));
+        let parsed = parse(&point, |_, source| {
+            parse_entity(SketchEntityTag::Point, source, 29).expect("point")
+        });
+        assert_eq!(parsed.header.flags_extension, Some(0));
+        assert_eq!(parsed.header.stamps, [-1, 2908]);
+        assert!(matches!(
+            parsed.kind,
+            PmDcSketchEntityKind::Point { links: Some(ref links), .. }
+                if links.references().iter().map(|value| value.index()).collect::<Vec<_>>() == [6]
+        ));
+
+        // A version 25 line whose closed gate stores no auxiliary list.
+        let line = |gate: [u32; 2]| {
+            let mut bytes = content_at(7, 25, &[-1, 2502]);
+            bytes.extend_from_slice(&0u32.to_le_bytes());
+            bytes.extend_from_slice(&0x8000_0003u32.to_le_bytes());
+            bytes.extend(list(2, &[0x8000_0004, 0x8000_0005]));
+            for value in gate {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+            for value in [0.0f64, 0.0, 1.0, 0.0] {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+            bytes
+        };
+        let parsed = parse(&line([0, 0]), |_, source| {
+            parse_entity(SketchEntityTag::Line, source, 25).expect("line")
+        });
+        assert!(matches!(
+            parsed.kind,
+            PmDcSketchEntityKind::Line { ref points, ref auxiliary, .. }
+                if points.references().len() == 2 && auxiliary.is_empty()
+        ));
+        parse(&line([2, 0]), |_, source| {
+            assert!(parse_entity(SketchEntityTag::Line, source, 25).is_err());
+        });
+
+        // A version 25 circle whose closed gate stores no auxiliary list.
+        let mut circle = content_at(8, 25, &[-1, 2502]);
+        circle.extend_from_slice(&0u32.to_le_bytes());
+        circle.extend_from_slice(&0x8000_0003u32.to_le_bytes());
+        circle.extend(list(2, &[]));
+        circle.extend_from_slice(&[0; 8]);
+        circle.extend_from_slice(&4u32.to_le_bytes());
+        circle.extend_from_slice(&2.5f64.to_le_bytes());
+        circle.push(1);
+        let parsed = parse(&circle, |_, source| {
+            parse_entity(SketchEntityTag::Circle, source, 25).expect("gated circle")
+        });
+        assert!(matches!(
+            parsed.kind,
+            PmDcSketchEntityKind::Circle { ref auxiliary, radius, .. }
+                if auxiliary.is_empty() && radius.get() == 2.5
+        ));
+
+        // A version 23 entity stores one stamp; a stamp below -1 is refused.
+        let one_stamp = |stamp: i32| {
+            let mut bytes = content_at(7, 23, &[stamp]);
+            bytes.extend_from_slice(&0u32.to_le_bytes());
+            bytes.extend_from_slice(&0x8000_0003u32.to_le_bytes());
+            bytes.extend(list(2, &[0x8000_0004, 0x8000_0005]));
+            for value in [0.0f64, 0.0, 1.0, 0.0] {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+            bytes
+        };
+        let parsed = parse(&one_stamp(2301), |_, source| {
+            parse_entity(SketchEntityTag::Line, source, 23).expect("one-stamp line")
+        });
+        assert_eq!(parsed.header.flags_extension, None);
+        assert_eq!(parsed.header.stamps, [2301]);
+        parse(&one_stamp(-2), |_, source| {
+            assert!(parse_entity(SketchEntityTag::Line, source, 23).is_err());
+        });
+
+        // From version 28 the u32 after the flags is 0.
+        let mut extended = content_at(4, 29, &[-1, 2908]);
+        extended[14..18].copy_from_slice(&1u32.to_le_bytes());
+        extended.extend_from_slice(&0u32.to_le_bytes());
+        extended.extend_from_slice(&0x8000_0003u32.to_le_bytes());
+        for value in [1.0f64, 2.0] {
+            extended.extend_from_slice(&value.to_le_bytes());
+        }
+        extended.extend(list(2, &[]));
+        extended.extend(list(2, &[]));
+        parse(&extended, |_, source| {
+            assert!(parse_entity(SketchEntityTag::Point, source, 29).is_err());
+        });
     }
 
     #[test]

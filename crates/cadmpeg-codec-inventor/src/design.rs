@@ -15,7 +15,9 @@ use cadmpeg_ir::{
 use serde::{Deserialize, Serialize};
 
 use crate::loss::InventorLossCode;
-use crate::pmdc::{inventor_id, Cursor, PmDcContentHeader, PmDcPairedReferenceList, PmDcReference};
+use crate::pmdc::{
+    content_header, inventor_id, Cursor, PmDcContentHeader, PmDcPairedReferenceList, PmDcReference,
+};
 use crate::record_identity::{push_record, Located, RecordPayload};
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind, SegmentMetaState};
@@ -365,7 +367,7 @@ pub(crate) fn inventory(
         let Some(version) = segment.registry.map(|join| join.version_major) else {
             continue;
         };
-        if !(15..=22).contains(&version) {
+        if !crate::pmdc::record_version_supported(version) {
             continue;
         }
         let SegmentBulkState::Framed(bulk) = &segment.bulk else {
@@ -1127,12 +1129,7 @@ fn parse_parameter(
     version: u8,
 ) -> Result<PmDcParameterPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header_value = cursor.u32("parameter header value")?;
-    let header_id = cursor.u16("parameter header id")?;
-    let next = cursor.reference("parameter next reference")?;
-    let flags = cursor.u32("parameter flags")?;
-    let context = cursor.reference("parameter context reference")?;
-    let source_index = cursor.u32("parameter source index")?;
+    let header = content_header(&mut cursor, version)?;
     let name = cursor.utf16(ctx, "parameter name")?;
     let name_value = cursor.u32("parameter name value")?;
     let unit = cursor.reference("parameter unit reference")?;
@@ -1144,14 +1141,7 @@ fn parse_parameter(
     cursor.finish("parameter")?;
     Ok(PmDcParameterPayload {
         save_version_major: version,
-        header: PmDcContentHeader {
-            header_value,
-            header_id,
-            next,
-            flags,
-            context,
-            source_index,
-        },
+        header,
         name,
         name_value,
         unit,
@@ -2010,8 +2000,10 @@ mod tests {
                     header_id: 0,
                     next: reference(0, false),
                     flags: 0,
+                    flags_extension: None,
                     context: reference(DOCUMENT_TABLE_INDEX, true),
                     source_index: 0,
+                    stamps: Vec::new(),
                 },
                 name: "width".into(),
                 name_value: 0,
@@ -2048,8 +2040,10 @@ mod tests {
                     header_id: 0,
                     next: reference(0, false),
                     flags: 0,
+                    flags_extension: None,
                     context: reference(DOCUMENT_TABLE_INDEX, true),
                     source_index: 1,
+                    stamps: Vec::new(),
                 },
                 name: "height".into(),
                 name_value: 0,
@@ -2167,8 +2161,10 @@ mod tests {
                     header_id: 0,
                     next: reference(0, false),
                     flags: 0,
+                    flags_extension: None,
                     context: reference(DOCUMENT_TABLE_INDEX, true),
                     source_index: 0,
+                    stamps: Vec::new(),
                 },
                 name: "ratio".into(),
                 name_value: 0,
@@ -2405,8 +2401,10 @@ mod tests {
                     header_id: 0,
                     next: reference(0, false),
                     flags: 0,
+                    flags_extension: None,
                     context: reference(0, false),
                     source_index: 0,
+                    stamps: Vec::new(),
                 },
                 name: "x".into(),
                 name_value: 0,
@@ -2728,8 +2726,10 @@ mod tests {
                             header_id: 0,
                             next: reference(0, false),
                             flags: 0,
+                            flags_extension: None,
                             context: reference(DOCUMENT_TABLE_INDEX, true),
                             source_index: index,
+                            stamps: Vec::new(),
                         },
                         name: format!("p{index}"),
                         name_value: 0,

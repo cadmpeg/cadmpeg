@@ -576,12 +576,16 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
                 endpoint_of,
                 center_of,
                 tail,
+                links,
                 ..
             } => {
                 add_list(endpoint_of);
                 add_list(center_of);
                 if let PointTail::Present { associations, .. } = tail {
                     add_list(associations);
+                }
+                if let Some(links) = links {
+                    add_list(links);
                 }
             }
             PmDcSketchEntityKind::Line {
@@ -895,12 +899,17 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
                 radius,
                 selection,
                 continuity,
-            } => references.extend([
-                edges.index(),
-                radius.index(),
-                selection.index(),
-                continuity.index(),
-            ]),
+                option,
+            } => references.extend(
+                [
+                    edges.index(),
+                    radius.index(),
+                    selection.index(),
+                    continuity.index(),
+                ]
+                .into_iter()
+                .chain(option.map(crate::pmdc::PmDcReference::index)),
+            ),
             PmDcFeaturePropertyKind::Enumeration { .. }
             | PmDcFeaturePropertyKind::WideEnumeration { .. }
             | PmDcFeaturePropertyKind::Boolean { .. }
@@ -925,6 +934,16 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor PmDc feature-property record or reference does not resolve".into(),
+                Some(property.id()),
+            ));
+        }
+        if !fillet_option_is_admitted(&property.kind, |ordinal| {
+            raw.get(&(property.identity.segment_token.as_str(), ordinal))
+                .copied()
+        }) {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor PmDc fillet edge-set option is not a Boolean record".into(),
                 Some(property.id()),
             ));
         }
@@ -2383,4 +2402,25 @@ pub(crate) fn sketch_constraint_references(constraint: &PmDcSketchConstraint) ->
         ]),
     }
     references
+}
+
+/// Whether a fillet edge set's fifth reference is null or selects a Boolean
+/// record. `type_at` gives the type identifier of the record at an ordinal. A
+/// reference that selects no record is reported by the reference check, so it
+/// is admitted here.
+pub(crate) fn fillet_option_is_admitted<'a>(
+    kind: &PmDcFeaturePropertyKind,
+    type_at: impl Fn(u32) -> Option<&'a str>,
+) -> bool {
+    let PmDcFeaturePropertyKind::FilletEdgeSet {
+        option: Some(option),
+        ..
+    } = kind
+    else {
+        return true;
+    };
+    option.index() == 0
+        || type_at(option.index() - 1).is_none_or(|type_id| {
+            type_id == crate::pmdc::type_id_string(crate::feature::BOOLEAN_TYPE)
+        })
 }
