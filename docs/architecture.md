@@ -21,7 +21,7 @@ native CAD or CADIR ── load + decode/parse ──> CadIr
 - `dump` runs the selected codec and serializes `CadIr` as CADIR JSON.
 - `measure` reads or decodes an input at `geometry` depth and measures its bodies, faces, and edges in model space: carrier parameters, areas, lengths, boxes, volumes, and orientation readings. Each value is measured within its reported error or unavailable with a pinned reason. [measurement.md](measurement.md) states the contract. `diff --geometry` measures both inputs and compares their bodies without entity IDs.
 
-CADIR input parses directly into `CadIr`. The parser accepts exactly IR version 10, including its required `subds` arena. Source annotations and retained records stay in the source-fidelity sidecar. `--allow-empty` permits geometry export when a source decode transferred no geometry.
+CADIR input parses directly into `CadIr`. The parser accepts exactly IR version 11, including its required `subds` arena. Source annotations and retained records stay in the source-fidelity sidecar. `--allow-empty` permits geometry export when a source decode transferred no geometry.
 
 `convert` decodes native input at the depth the selected encoder needs, `DepthNeed::request`: `geometry` for STEP, IGES, and Rhino, and `full` otherwise. `--full-decode` decodes at `full` whatever the output needs, and so does every `--reject-lossy` scope, since a geometry decode reports no loss for the design records it skips. `--container-only` decodes at `container` for every command and conflicts with `--full-decode`. `dump`, `check`, and `diff` decode at `full`; `measure` decodes at `geometry` and refuses a document that records only `container` depth. The decode report line on stderr prints the depth the codec delivered.
 
