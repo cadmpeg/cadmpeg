@@ -26,7 +26,7 @@ pub(crate) fn extobject(r: &mut Reader<'_>) -> Res<V> {
     };
     let x = j - q;
     r.p = j;
-    let v = super::feat::ver_or(r, 0);
+    let v = super::feature::ver_or(r, 0);
     let cfg = r.cstring()?;
     r.skip(if v >= 17000 { 16 } else { 12 });
     Ok(V::map([

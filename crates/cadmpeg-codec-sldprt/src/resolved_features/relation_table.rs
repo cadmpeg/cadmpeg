@@ -730,8 +730,8 @@ fn typed_definition(
     code: u32,
     operands: &[Resolved<'_>],
 ) -> Option<SketchConstraintDefinitionInput> {
-    use SketchConstraintDefinitionInput as Def;
     use ArrayKind::{Arc, Line, Point};
+    use SketchConstraintDefinitionInput as Def;
     if !TYPED_CODES.contains(&code) {
         return None;
     }
@@ -1003,10 +1003,7 @@ fn holds(definition: &SketchConstraintDefinitionInput, geometry: &Geometry<'_>) 
         } => {
             let at = point(middle)?;
             let (start, end) = line(entity)?;
-            let half = [
-                start[0].midpoint(end[0]),
-                start[1].midpoint(end[1]),
-            ];
+            let half = [start[0].midpoint(end[0]), start[1].midpoint(end[1])];
             distance(at, half) <= tolerance(span(&[at, start, end]))
         }
         Def::AtIntersection {

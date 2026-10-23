@@ -41,7 +41,7 @@ pub(crate) fn ref_(r: &mut Reader<'_>) -> Res<V> {
         if r.st.face && r.zeros(r.p, 4) {
             r.skip(4);
         }
-    } else if r.st.face && super::feat::ver_or(r, 99999) < 13000 && r.zeros(r.p, 4) {
+    } else if r.st.face && super::feature::ver_or(r, 99999) < 13000 && r.zeros(r.p, 4) {
         r.skip(4);
     }
     Ok(V::map([("cnt", V::from(cnt))]))

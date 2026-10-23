@@ -2,7 +2,7 @@
 //! and the chain it names, and the backed-up sketch geometry records.
 
 use super::super::reader::{bad, Reader, Res, V};
-use super::feat::isver;
+use super::feature::isver;
 
 /// `xform(r)`: u8 1, u8 0, a flag, 12 or 3 f64, f64 1, u8 0.
 pub(crate) fn xform(r: &mut Reader<'_>) -> Res<V> {
@@ -19,7 +19,7 @@ pub(crate) fn xform(r: &mut Reader<'_>) -> Res<V> {
     if r.f64()? != 1.0 {
         return Err(bad("context transform scale"));
     }
-    r.expect(&[0], "context transform u8 0")?;
+    r.expect_bytes(&[0], "context transform u8 0")?;
     Ok(V::List(m))
 }
 
@@ -41,7 +41,7 @@ pub(crate) fn contextcomp(r: &mut Reader<'_>) -> Res<V> {
         r.u32()?;
         r.u32()?;
         r.skip(24);
-        r.expect(&[0xff; 16], "context ff")?;
+        r.expect_bytes(&[0xff; 16], "context ff")?;
         r.skip(20);
         form = "A";
     } else {
@@ -119,7 +119,7 @@ pub(crate) fn extfeature(r: &mut Reader<'_>) -> Res<V> {
     r.u8()?;
     r.u32()?;
     let inst = r.ptr(None)?;
-    r.expect(&[0, 0], "ext feature u16 0")?;
+    r.expect_bytes(&[0, 0], "ext feature u16 0")?;
     let b0 = r.u32()?;
     Ok(V::map([
         ("path", V::from(path)),

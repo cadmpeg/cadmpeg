@@ -403,8 +403,13 @@ mod projection {
         ];
         for (slot, &offset) in table.points.iter().enumerate() {
             let kind = SketchInputKind::Point;
-            let mut marker =
-                SketchInputEntity::new(marker_id(offset), LANE, 0, u64::try_from(offset).expect("offset fits u64"), kind);
+            let mut marker = SketchInputEntity::new(
+                marker_id(offset),
+                LANE,
+                0,
+                u64::try_from(offset).expect("offset fits u64"),
+                kind,
+            );
             marker.feature_ref = Some(FEATURE.into());
             markers.push(marker);
             let [u, v] = points[slot];

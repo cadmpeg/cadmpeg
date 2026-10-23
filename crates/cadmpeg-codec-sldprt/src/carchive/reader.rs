@@ -395,8 +395,8 @@ impl<'b> Reader<'b> {
         self.p = self.p.saturating_add(n);
     }
 
-    /// `r.expect(bs, what)`.
-    pub(crate) fn expect(&mut self, bytes: &[u8], what: &str) -> Res<()> {
+    /// `r.expect_bytes(bs, what)`.
+    pub(crate) fn expect_bytes(&mut self, bytes: &[u8], what: &str) -> Res<()> {
         if !self.eq(self.p, bytes) {
             return Err(bad(format!(
                 "expected {} {what} at +{}",
@@ -408,7 +408,7 @@ impl<'b> Reader<'b> {
         Ok(())
     }
 
-    /// `r.expect(bytes(n), what)`.
+    /// `r.expect_zeros(n, what)`.
     pub(crate) fn expect_zeros(&mut self, n: usize, what: &str) -> Res<()> {
         if !self.zeros(self.p, n) {
             return Err(bad(format!(
