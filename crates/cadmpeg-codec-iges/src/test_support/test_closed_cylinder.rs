@@ -62,8 +62,18 @@ pub(crate) fn closed_edge(edge: &str, curve: &str, vertex: &str) -> Edge {
 /// A right circular solid cylinder about `+z` from `z = 0` to
 /// [`CYLINDER_HEIGHT`] with radius [`CYLINDER_RADIUS`]. Its seam line runs
 /// from `(r, 0, 0)` to `(r, 0, h)`. The bottom and top circles are closed
-/// edges at those vertices with no stored parameter range.
+/// edges at those vertices with no stored parameter range. Each curve states
+/// the support role.
 pub(crate) fn solid_cylinder() -> CadIr {
+    cylinder(|key| Some(support(key)))
+}
+
+/// [`solid_cylinder`] with no source association on its curves.
+pub(crate) fn solid_cylinder_without_curve_roles() -> CadIr {
+    cylinder(|_| None)
+}
+
+fn cylinder(curve_source: fn(&str) -> Option<SourceObjectAssociation>) -> CadIr {
     let (r, h) = (CYLINDER_RADIUS, CYLINDER_HEIGHT);
     let axis = Vector3::new(0.0, 0.0, 1.0);
     let reference = Vector3::new(1.0, 0.0, 0.0);
@@ -85,7 +95,7 @@ pub(crate) fn solid_cylinder() -> CadIr {
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 CircleCurve::try_new(Point3::new(0.0, 0.0, z), axis, reference, r).expect("circle"),
             )),
-            source_object: Some(support(key)),
+            source_object: curve_source(key),
         });
         ir.model.edges.push(closed_edge(key, key, key));
         ir.model.surfaces.push(Surface {
@@ -102,7 +112,7 @@ pub(crate) fn solid_cylinder() -> CadIr {
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             LineCurve::try_new(Point3::new(r, 0.0, 0.0), axis).expect("line"),
         )),
-        source_object: Some(support("seam")),
+        source_object: curve_source("seam"),
     });
     ir.model.edges.push(Edge {
         id: id(EdgeId::mint, "edge", "seam"),

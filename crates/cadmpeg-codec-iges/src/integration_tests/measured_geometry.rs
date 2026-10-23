@@ -14,7 +14,9 @@ use cadmpeg_measure::value::Quantity;
 use cadmpeg_measure::{MeasureInput, MeasureOptions, Measurer, Selection};
 
 use crate::test_support::plan_at;
-use crate::test_support::test_closed_cylinder::{solid_cylinder, CYLINDER_HEIGHT, CYLINDER_RADIUS};
+use crate::test_support::test_closed_cylinder::{
+    solid_cylinder, solid_cylinder_without_curve_roles, CYLINDER_HEIGHT, CYLINDER_RADIUS,
+};
 use crate::test_support::test_drawing_and_trimming::trimmed_plane_with_inner_loop_file;
 use crate::test_support::test_owned::explicit_void_solid_file;
 use crate::{IgesCodec, IgesVersion};
@@ -155,6 +157,20 @@ fn trimmed_inner_loop_write_round_trip_keeps_measured_geometry() {
     let after = measured(&written);
     assert_one_orientation_reading(&before);
     assert_one_orientation_reading(&after);
+    let comparison = compare(&ir, &before, &written, &after, &CompareOptions::default())
+        .expect("one body pair fits the pair allowance");
+    assert_eq!(comparison.verdict(), Verdict::Agree);
+}
+
+/// The cylinder's curves carry no source association, so only the edges
+/// that use them state their ownership.
+#[test]
+fn topology_owned_curves_without_a_role_round_trip_as_one_solid() {
+    let ir = solid_cylinder_without_curve_roles();
+    let written = round_tripped(&ir);
+    assert_eq!(written.model.bodies.len(), ir.model.bodies.len());
+    let before = measured(&ir);
+    let after = measured(&written);
     let comparison = compare(&ir, &before, &written, &after, &CompareOptions::default())
         .expect("one body pair fits the pair allowance");
     assert_eq!(comparison.verdict(), Verdict::Agree);
