@@ -4,6 +4,8 @@
 //! The mapped subset is the one §3.14 tabulates. Every other element is
 //! counted in the residue and reported, not interpreted.
 
+use std::rc::Rc;
+
 use cadmpeg_core::CodecError;
 use roxmltree::Node;
 
@@ -20,6 +22,52 @@ const PROPERTY_COMPONENT_REF: &str = "property_component_ref";
 const PROPERTY: &str = "property";
 /// The general property stream has the empty name (§3.3).
 const GENERAL_STREAM: &str = "";
+/// Root attribute that names the structure form.
+const ATTRIBUTE_TYPE: &[u8] = b"type";
+/// Value of [`ATTRIBUTE_TYPE`] on a structure member.
+const TYPE_PVS: &[u8] = b"PVS";
+/// Root attribute that holds the generation digits.
+const ATTRIBUTE_VERSION: &[u8] = b"version";
+
+/// The `version` attribute value of the `<PV_FILE type="PVS">` start tag
+/// that opens `bytes`. Reads the start tag only, so a prefix of the member
+/// suffices.
+pub(super) fn declared_version(bytes: &[u8]) -> Option<&[u8]> {
+    let mut rest = bytes.strip_prefix(super::XML_PREFIX)?;
+    let mut kind = None;
+    let mut version = None;
+    loop {
+        let trimmed = rest.trim_ascii_start();
+        let separated = trimmed.len() < rest.len();
+        rest = trimmed;
+        match rest {
+            [b'>', ..] | [b'/', b'>', ..] => break,
+            _ if !separated => return None,
+            _ => {}
+        }
+        let name_len = rest
+            .iter()
+            .position(|&byte| byte == b'=' || byte.is_ascii_whitespace())?;
+        let (name, after) = rest.split_at(name_len);
+        let after = after
+            .trim_ascii_start()
+            .strip_prefix(b"=")?
+            .trim_ascii_start();
+        let (&quote, after) = after.split_first()?;
+        if quote != b'"' && quote != b'\'' {
+            return None;
+        }
+        let value_len = after.iter().position(|&byte| byte == quote)?;
+        let (value, after) = after.split_at(value_len);
+        rest = after.get(1..)?;
+        match name {
+            ATTRIBUTE_TYPE => kind = Some(value),
+            ATTRIBUTE_VERSION => version = Some(value),
+            _ => {}
+        }
+    }
+    (kind == Some(TYPE_PVS)).then_some(version).flatten()
+}
 
 /// Decodes an XML structure member.
 pub(super) fn read(bytes: &[u8]) -> Result<Structure, CodecError> {
@@ -35,6 +83,7 @@ pub(super) fn read(bytes: &[u8]) -> Result<Structure, CodecError> {
         ));
     }
     let mut residue = Residue::default();
+    let general: Rc<str> = Rc::from(GENERAL_STREAM);
     let mut definitions = Vec::new();
     let mut property_sets = Vec::new();
     for section in root.children().filter(Node::is_element) {
@@ -91,9 +140,9 @@ pub(super) fn read(bytes: &[u8]) -> Result<Structure, CodecError> {
             }
             if let Some(definition) = definitions.get_mut(cursor - 1) {
                 definition.properties.push(Property {
-                    stream: GENERAL_STREAM.to_owned(),
-                    name: required(property, "name")?.to_owned(),
-                    value: required(property, "value")?.to_owned(),
+                    stream: Rc::clone(&general),
+                    name: required(property, "name")?.into(),
+                    value: required(property, "value")?.into(),
                 });
             }
         }
@@ -109,7 +158,7 @@ fn component_definition(
     residue: &mut Residue,
 ) -> Result<Definition, CodecError> {
     let mut definition = Definition {
-        name: component.attribute("name").unwrap_or_default().to_owned(),
+        name: component.attribute("name").unwrap_or_default().into(),
         role: DefinitionRole::Component,
         geometry: None,
         occurrences: Vec::new(),
@@ -118,7 +167,7 @@ fn component_definition(
     for child in component.children().filter(Node::is_element) {
         match child.tag_name().name() {
             SHAPE_SOURCE => {
-                let member = required(child, "file_name")?.to_owned();
+                let member: Rc<str> = required(child, "file_name")?.into();
                 if child.attribute("bbox").is_some() {
                     residue.bounds += 1;
                 }
@@ -141,7 +190,7 @@ fn component_definition(
                 definition.occurrences.push(ChildOccurrence {
                     definition: index(required(child, "index")?, "index")?,
                     placement: Placement { translation, basis },
-                    feature_id: child.attribute("id").unwrap_or_default().to_owned(),
+                    feature_id: child.attribute("id").unwrap_or_default().into(),
                 });
             }
             other => residue.xml_element(other),

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Content detection for `.pvz` packages.
 //!
-//! A ZIP prefix whose first local member is a structure member with a known
-//! signature is [`Confidence::High`]. A ZIP that names a structure member
+//! A ZIP prefix whose first local member is a structure member that declares
+//! a known generation, in the binary or the XML form, is [`Confidence::High`]. A ZIP that names a structure member
 //! elsewhere is [`Confidence::Medium`], and any other ZIP is
 //! [`Confidence::Low`], as for every ZIP-based format.
 
@@ -59,7 +59,7 @@ pub(crate) fn confidence(ctx: &DecodeContext<'_>, prefix: &[u8]) -> Result<Confi
 }
 
 /// Whether the first local member is a structure member whose expanded
-/// bytes open with a known structure signature.
+/// bytes declare a known generation.
 fn leading_member_is_signed_structure(
     ctx: &DecodeContext<'_>,
     prefix: &[u8],
@@ -95,8 +95,8 @@ fn leading_member_is_signed_structure(
         0 => rest,
         _ => rest.get(..declared).unwrap_or(rest),
     };
-    let generation = match method {
-        METHOD_STORED => crate::pvs::generation(View::over_retained(payload)),
+    let declared = match method {
+        METHOD_STORED => crate::pvs::declared(View::over_retained(payload)),
         METHOD_DEFLATE => {
             let Some(expanded) = ctx.inflate_probe(
                 View::over_retained(payload),
@@ -106,11 +106,11 @@ fn leading_member_is_signed_structure(
             else {
                 return Ok(false);
             };
-            crate::pvs::generation(View::over_retained(&expanded))
+            crate::pvs::declared(View::over_retained(&expanded))
         }
         _ => None,
     };
-    Ok(generation.is_some())
+    Ok(declared.is_some())
 }
 
 #[cfg(test)]
@@ -146,6 +146,17 @@ mod tests {
             RawEntry::stored("model.ol", OL_09),
         ]);
         assert_eq!(detect(&deflated), Confidence::High);
+    }
+
+    #[test]
+    fn a_leading_xml_structure_member_with_a_known_version_is_high() {
+        let xml: &[u8] = br#"<PV_FILE type="PVS" version="0302"><section_structure/></PV_FILE>"#;
+        let bytes = package(&[("model.pvs", xml), ("model.ol", OL_09)]);
+        assert_eq!(detect(&bytes), Confidence::High);
+
+        let unknown: &[u8] = br#"<PV_FILE type="PVS" version="0399"></PV_FILE>"#;
+        let bytes = package(&[("model.pvs", unknown), ("model.ol", OL_09)]);
+        assert_eq!(detect(&bytes), Confidence::Medium);
     }
 
     #[test]

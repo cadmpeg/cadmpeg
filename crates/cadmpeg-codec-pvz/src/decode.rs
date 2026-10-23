@@ -99,7 +99,7 @@ fn decode_model(
     losses: &mut Vec<LossNote>,
 ) -> Result<bool, CodecError> {
     losses.extend(structure.residue.losses());
-    crate::model::definitions(structure, ir, losses);
+    crate::model::definitions(ctx, structure, ir, losses)?;
     crate::model::occurrences(ctx, structure, ir, losses)?;
 
     let mut owners: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
@@ -121,7 +121,17 @@ fn decode_model(
             missing.push(name);
             continue;
         }
-        let member = package.member(ctx, name)?;
+        let member = match package.member(ctx, name) {
+            Ok(member) => member,
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+            Err(error) => {
+                losses.push(
+                    PvzLossCode::GeometryMemberMalformed
+                        .note(format!("geometry member {name:?} did not open: {error}")),
+                );
+                continue;
+            }
+        };
         let geometry = match crate::ol::decode(ctx, member) {
             Ok(geometry) => geometry,
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
@@ -218,6 +228,7 @@ fn exact_geometry(
                     annotations: &mut builder,
                     losses: &mut notes,
                     stream: &stream,
+                    member: name,
                 },
             )
         });
@@ -225,10 +236,7 @@ fn exact_geometry(
         Ok(body) => {
             ir.model.extend_rewritten(model, &mut Unchanged)?;
             annotations.append(builder.build())?;
-            losses.extend(notes.into_iter().map(|mut note| {
-                note.message = format!("geometry member {name:?}: {}", note.message);
-                note
-            }));
+            losses.extend(notes);
             Ok(body)
         }
         Err(error @ CodecError::ResourceLimit(_)) => Err(error),

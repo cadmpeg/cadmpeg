@@ -35,6 +35,7 @@ fn emit_stream(stream: Stream) -> (CadIr, Vec<LossNote>, Option<BodyId>) {
             annotations: &mut annotations,
             losses: &mut losses,
             stream: &stream,
+            member: "plate.ol",
         },
     )
     .unwrap();

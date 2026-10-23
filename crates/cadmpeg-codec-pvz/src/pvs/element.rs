@@ -8,6 +8,8 @@ use crate::layout::token;
 
 /// Bit 7 of a descriptor: a child list follows the payload.
 const CHILD_LIST: u8 = 0x80;
+/// Operation that charges one element of the element tree.
+const ADMIT_ELEMENT: &str = "pvz_pvs_element";
 
 /// One element: its family, descriptor, optional type, payload, and child
 /// list.
@@ -89,6 +91,7 @@ fn read_element<'a>(
     if family == 0 && descriptor_byte == 0 {
         return Ok(None);
     }
+    ctx.charge_entities(1, ADMIT_ELEMENT)?;
     let parts = descriptor(descriptor_byte).ok_or_else(|| {
         CodecError::malformed(format_args!(
             "PVS element at offset {start} has undefined descriptor {descriptor_byte:#04x}"
@@ -198,6 +201,30 @@ mod tests {
         let families: Vec<_> = definition.children().iter().map(|c| c.family).collect();
         assert_eq!(families, [0x23, 0x21]);
         assert!(definition.children()[0].children.is_none());
+    }
+
+    #[test]
+    fn every_element_is_charged_as_an_entity() {
+        let tree = Node::list(0x02, (0..3).map(|_| Node::leaf(0x20, vec![0])).collect()).encode();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_entities = 3;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root fits the service input limit");
+        let error = Element::read_stream(&ctx, View::over_retained(&tree))
+            .expect_err("four elements exceed three entities");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
+                && limit.operation == super::ADMIT_ELEMENT));
+
+        let ctx = cadmpeg_test_support::service_decode_context();
+        assert_eq!(
+            Element::read_stream(&ctx, View::over_retained(&tree))
+                .unwrap()
+                .children()
+                .len(),
+            3
+        );
     }
 
     #[test]

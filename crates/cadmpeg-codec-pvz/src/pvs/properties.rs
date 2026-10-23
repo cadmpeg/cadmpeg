@@ -2,6 +2,8 @@
 //! Property streams (§3.13): property sets applied to definitions by a
 //! cursor over definition indexes.
 
+use std::rc::Rc;
+
 use cadmpeg_core::CodecError;
 
 use super::atom::{uleb_index, StringPool};
@@ -33,6 +35,7 @@ pub(super) fn apply(
             root.family, root.descriptor
         )));
     }
+    let stream_name: Rc<str> = Rc::from(stream);
     let mut assigned: Vec<(usize, Property)> = Vec::new();
     let mut local = Residue::default();
     // The cursor is one more than the definition index it selects, so the
@@ -98,7 +101,7 @@ pub(super) fn apply(
             assigned.push((
                 index,
                 Property {
-                    stream: stream.to_owned(),
+                    stream: Rc::clone(&stream_name),
                     name,
                     value,
                 },

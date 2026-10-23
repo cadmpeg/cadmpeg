@@ -13,6 +13,8 @@
 use cadmpeg_ir::report::loss::{LossKind, LossNamespace, LossNote, LossTaxonomy};
 use cadmpeg_ir::report::Severity;
 
+use crate::brep::resolve::ENDPOINT_TOLERANCE;
+
 const NAMESPACE: LossNamespace<'static> = cadmpeg_ir::loss_namespace!("pvz");
 
 /// A stable, machine-readable identifier for one `.pvz` transfer loss.
@@ -311,64 +313,40 @@ impl PvzLossCode {
         }
     }
 
-    /// The message of a note that counts `count` instances of this code.
-    pub(crate) fn tally_message(self, count: usize) -> String {
+    /// The message of a note that counts `count` instances of this code in
+    /// the exact-geometry stream of geometry member `member`.
+    pub(crate) fn tally_message(self, member: &str, count: usize) -> String {
         let what = match self {
-            Self::SourceDialectUnverified => "unverified dialect declarations",
-            Self::ContainerDirectoryRecovered => "recovered ZIP directories",
-            Self::StructureMemberMalformed => "structure members that did not decode",
-            Self::StructureStreamUndecoded => "structure streams of an undefined type",
-            Self::StructurePropertyStreamMalformed => "property streams that did not decode",
-            Self::StructureElementUndecoded => "structure elements outside the model",
-            Self::StructureDefinitionAttributes => "typed definitions with trailing bytes",
-            Self::StructureOccurrenceAttributes => "occurrences with flags or extensions",
-            Self::StructureOccurrenceUndecoded => "occurrences with an undefined placement",
-            Self::StructureBoundsNotTransferred => "geometry-element bounds",
-            Self::StructurePropertyAttributes => "typed properties with trailing bytes",
-            Self::StructurePropertyKeyDropped => "properties with a dropped name",
-            Self::StructureRootAmbiguous => "structures without exactly one root",
-            Self::StructureOccurrenceCycle => "occurrences that close a cycle",
-            Self::StructureOccurrenceTruncated => "truncated occurrence expansions",
-            Self::StructurePlacementNotSimilarity => "placements that are not similarities",
-            Self::StructurePlacementInvalid => "placements with non-finite values",
-            Self::GeometryMemberMissing => "geometry members missing from the package",
-            Self::GeometryMemberMalformed => "geometry members that did not decode",
-            Self::GeometryMemberUnreferenced => "geometry members that no definition names",
-            Self::GeometryStreamUndecoded => "geometry streams not decoded",
-            Self::GeometryPreambleUndecoded => "OL preamble blocks",
-            Self::GeometryExactUndecoded => "exact-geometry streams not decoded",
-            Self::AttributeRecordsUndecoded => "attribute records outside the appearances",
-            Self::AttributeAppearanceUnresolved => "appearances that did not resolve",
-            Self::AttributeAppearanceTail => "appearance-reference tails",
-            Self::AttributeAppearanceColorRejected => "appearance values out of range",
-            Self::TessellationPatchFields => "patch-header field sets",
-            Self::TessellationRecordsUndecoded => "tessellation records not decoded",
-            Self::TessellationTextureCoordinates => "vertices with texture coordinates",
-            Self::TessellationEdgesNotTransferred => "edge tessellation groups",
-            Self::TessellationMeshRejected => "meshes rejected by admission",
             Self::ExactRecordUninterpreted => {
                 "exact-stream records kept by tag and offset only (tag 0x0a and undefined tags)"
+                    .to_owned()
             }
-            Self::ExactSurfaceUntyped => "faces whose carrier has no neutral surface form",
+            Self::ExactSurfaceUntyped => {
+                "faces whose carrier has no neutral surface form".to_owned()
+            }
             Self::ExactSurfaceAsBspline => {
-                "analytic faces written as their embedded B-spline carrier"
+                "analytic faces written as their embedded B-spline carrier".to_owned()
             }
             Self::ExactCurveUntyped => {
-                "edges without a neutral curve (composite or undefined curve types)"
+                "edges without a neutral curve (composite or undefined curve types)".to_owned()
             }
-            Self::ExactPcurveUntransferred => "coedge pcurves not transferred",
+            Self::ExactPcurveUntransferred => "coedge pcurves not transferred".to_owned(),
             Self::ExactSecondaryPcurveOmitted => {
-                "secondary pcurves in the embedded B-spline domain not written onto analytic faces"
+                "secondary pcurves in the embedded B-spline domain not written onto analytic \
+                 faces"
+                    .to_owned()
             }
-            Self::ExactEndpointMismatch => {
-                "faces whose pcurve images miss the edge ends by more than 2e-5 m"
-            }
-            Self::ExactLoopOpen => "open loops or loop junctions that join no vertex",
+            Self::ExactEndpointMismatch => format!(
+                "faces whose pcurve images miss the edge ends by more than {ENDPOINT_TOLERANCE:e} m"
+            ),
+            Self::ExactLoopOpen => "open loops or loop junctions that join no vertex".to_owned(),
             Self::ExactFaceSideGauge => {
                 "faces whose side is a propagation gauge, or side conflicts between faces"
+                    .to_owned()
             }
+            other => format!("instances of {}", other.code()),
         };
-        format!("{count} {what}")
+        format!("geometry member {member:?}: {count} {what}")
     }
 
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.

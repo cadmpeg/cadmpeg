@@ -2,7 +2,8 @@
 //! Identities of the IR entities a package decodes to.
 //!
 //! Every identity is `pvz:model:<kind>#<key>`. Definition keys are
-//! definition indexes, occurrence keys are occurrence paths, and the keys of
+//! definition indexes, occurrence keys are occurrence indexes in expansion
+//! order, and the keys of
 //! geometry-member entities start with the encoded member name, so one member
 //! names the same entities in every decode.
 
@@ -30,11 +31,11 @@ pub(crate) fn definition(index: usize) -> ProductDefinitionId {
     )
 }
 
-/// The occurrence at occurrence path `path`.
-pub(crate) fn occurrence(path: &str) -> OccurrenceId {
+/// The occurrence at `index` in expansion order.
+pub(crate) fn occurrence(index: usize) -> OccurrenceId {
     OccurrenceId::compose(
         &cadmpeg_ir::identity_namespace!("pvz", "model", "occurrence"),
-        IdentityKey::encode_segment(path),
+        index,
     )
 }
 

@@ -9,6 +9,7 @@ mod structure;
 mod xml;
 
 use std::collections::BTreeMap;
+use std::rc::Rc;
 
 use cadmpeg_core::decode::{index_from_u32, DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -57,18 +58,19 @@ mod stream_type {
     pub(super) const PROPERTIES: u8 = 3;
 }
 
-/// Structure-member generation named by the member's leading signature.
+/// Structure-member generation: the four digits of the binary signature
+/// (§3.1) or of the XML `version` attribute (§3.14).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Generation {
-    /// Signature `PV-PVS0301`.
+    /// Digits `0301`.
     Pvs0301,
-    /// Signature `PV-PVS0302`.
+    /// Digits `0302`.
     Pvs0302,
-    /// Signature `PV-PVS0303`.
+    /// Digits `0303`.
     Pvs0303,
-    /// Signature `PV-PVS0304`.
+    /// Digits `0304`.
     Pvs0304,
-    /// Signature `PV-PVS0305`.
+    /// Digits `0305`.
     Pvs0305,
 }
 
@@ -81,7 +83,7 @@ impl Generation {
         Self::Pvs0305,
     ];
 
-    /// The ASCII signature at the start of the member.
+    /// The ASCII signature at the start of a binary member.
     pub(crate) const fn signature(self) -> &'static str {
         match self {
             Self::Pvs0301 => "PV-PVS0301",
@@ -91,15 +93,70 @@ impl Generation {
             Self::Pvs0305 => "PV-PVS0305",
         }
     }
+
+    /// The four digits of the generation.
+    pub(crate) const fn digits(self) -> &'static str {
+        match self {
+            Self::Pvs0301 => "0301",
+            Self::Pvs0302 => "0302",
+            Self::Pvs0303 => "0303",
+            Self::Pvs0304 => "0304",
+            Self::Pvs0305 => "0305",
+        }
+    }
 }
 
-/// The generation whose signature opens `member`, if any.
-pub(crate) fn generation(member: View<'_>) -> Option<Generation> {
-    let mut cursor = member;
-    let leading = cursor.array::<SIGNATURE_LEN>()?;
+/// The form of a structure member.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Form {
+    /// The binary form (§3.1).
+    Binary,
+    /// The XML form (§3.14).
+    Xml,
+}
+
+/// A known generation and the form of the member that declares it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Declared {
+    pub(crate) generation: Generation,
+    pub(crate) form: Form,
+}
+
+impl Declared {
+    /// The declaration as the member stores it: the binary signature, or the
+    /// digits of the XML `version` attribute.
+    pub(crate) fn text(self) -> &'static str {
+        match self.form {
+            Form::Binary => self.generation.signature(),
+            Form::Xml => self.generation.digits(),
+        }
+    }
+}
+
+/// The known generation that `member` declares, if any: by its leading
+/// binary signature, or by the `version` attribute of a leading
+/// `<PV_FILE type="PVS">` start tag.
+pub(crate) fn declared(member: View<'_>) -> Option<Declared> {
+    let window = member.window();
+    if let Some(leading) = window.get(..SIGNATURE_LEN) {
+        if let Some(generation) = Generation::ALL
+            .into_iter()
+            .find(|generation| generation.signature().as_bytes() == leading)
+        {
+            return Some(Declared {
+                generation,
+                form: Form::Binary,
+            });
+        }
+    }
+    let version = xml::declared_version(window)?;
     Generation::ALL
         .into_iter()
-        .find(|generation| generation.signature().as_bytes() == leading)
+        .find(|generation| generation.digits().as_bytes() == version)
+        .map(|generation| Declared {
+            generation,
+            form: Form::Xml,
+        })
 }
 
 /// The role a definition plays in the product tree (§3.7).
@@ -111,13 +168,14 @@ pub(crate) enum DefinitionRole {
     IllustrationRoot,
 }
 
-/// One component definition (§3.6, §3.7).
+/// One component definition (§3.6, §3.7). Text fields share string-pool
+/// entries.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Definition {
-    pub(crate) name: String,
+    pub(crate) name: Rc<str>,
     pub(crate) role: DefinitionRole,
     /// The geometry member the definition's geometry element names.
-    pub(crate) geometry: Option<String>,
+    pub(crate) geometry: Option<Rc<str>>,
     /// Child occurrences, in stored order.
     pub(crate) occurrences: Vec<ChildOccurrence>,
     /// Properties from every property stream, in stream then stored order.
@@ -130,7 +188,7 @@ pub(crate) struct ChildOccurrence {
     /// Definition index of the placed definition.
     pub(crate) definition: usize,
     pub(crate) placement: Placement,
-    pub(crate) feature_id: String,
+    pub(crate) feature_id: Rc<str>,
 }
 
 /// A placement (§3.10), in stored metres.
@@ -147,9 +205,9 @@ pub(crate) struct Placement {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Property {
     /// Name of the property stream; empty for the general stream.
-    pub(crate) stream: String,
-    pub(crate) name: String,
-    pub(crate) value: String,
+    pub(crate) stream: Rc<str>,
+    pub(crate) name: Rc<str>,
+    pub(crate) value: Rc<str>,
 }
 
 /// The decoded model of one structure member.

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! ULEB128 values (§2.2), string atoms (§2.3), and the string pool (§3.5).
 
+use std::rc::Rc;
+
 use cadmpeg_core::decode::{index_from_u64, View};
 use cadmpeg_core::CodecError;
 
@@ -53,18 +55,19 @@ pub(super) fn uleb_index(view: &mut View<'_>) -> Result<usize, CodecError> {
 }
 
 /// Reads `len` bytes of UTF-8 text.
-fn utf8(view: &mut View<'_>, len: usize) -> Result<String, CodecError> {
+fn utf8(view: &mut View<'_>, len: usize) -> Result<Rc<str>, CodecError> {
     let start = view.position();
     let bytes = view.req_take(len)?;
-    String::from_utf8(bytes.to_vec()).map_err(|_| {
+    std::str::from_utf8(bytes).map(Rc::from).map_err(|_| {
         CodecError::malformed(format_args!("string at offset {start} is not valid UTF-8"))
     })
 }
 
-/// The shared strings of one PVS member, in stored order.
+/// The shared strings of one PVS member, in stored order. A reference to an
+/// entry shares the entry; it does not copy it.
 #[derive(Debug, Default)]
 pub(crate) struct StringPool {
-    entries: Vec<String>,
+    entries: Vec<Rc<str>>,
 }
 
 impl StringPool {
@@ -95,7 +98,7 @@ impl StringPool {
     }
 
     /// Reads one string atom, resolving a reference against this pool.
-    pub(crate) fn atom(&self, view: &mut View<'_>) -> Result<String, CodecError> {
+    pub(crate) fn atom(&self, view: &mut View<'_>) -> Result<Rc<str>, CodecError> {
         let start = view.position();
         let code = uleb128(view)?;
         if code % 2 == 0 {
@@ -121,6 +124,8 @@ impl StringPool {
 
 #[cfg(test)]
 mod tests {
+    use std::rc::Rc;
+
     use cadmpeg_core::decode::View;
 
     use super::{uleb128, StringPool};
@@ -171,7 +176,9 @@ mod tests {
         bytes.extend(pool_atom(2));
         bytes.extend(pool_atom(0));
         let mut view = View::over_retained(&bytes);
-        let atoms: Vec<_> = (0..4).map(|_| pool.atom(&mut view).unwrap()).collect();
+        let atoms: Vec<String> = (0..4)
+            .map(|_| pool.atom(&mut view).unwrap().to_string())
+            .collect();
         assert_eq!(atoms, ["wing", "", "BRACKET.PRT", "TOP.ASM"]);
         assert!(view.is_empty());
 
@@ -182,6 +189,22 @@ mod tests {
         assert!(pool
             .atom(&mut View::over_retained(&[0x04, 0xff, 0xfe]))
             .is_err());
+    }
+
+    #[test]
+    fn every_reference_to_a_pool_entry_shares_the_entry() {
+        let long = "x".repeat(60_000);
+        let pool =
+            StringPool::read(View::over_retained(&string_pool_payload(&[long.as_str()]))).unwrap();
+        let references = 1000;
+        let bytes: Vec<u8> = (0..references).flat_map(|_| pool_atom(0)).collect();
+        let mut view = View::over_retained(&bytes);
+        let first = pool.atom(&mut view).unwrap();
+        assert_eq!(&*first, long);
+        for _ in 1..references {
+            assert!(Rc::ptr_eq(&first, &pool.atom(&mut view).unwrap()));
+        }
+        assert!(view.is_empty());
     }
 
     #[test]

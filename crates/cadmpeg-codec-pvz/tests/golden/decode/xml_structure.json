@@ -61,7 +61,7 @@
       "loops": [],
       "occurrences": [
         {
-          "id": "pvz:model:occurrence#r0",
+          "id": "pvz:model:occurrence#0",
           "native_ref": "definition 0",
           "ordinal": 0,
           "parent": {
@@ -98,13 +98,13 @@
           ]
         },
         {
-          "id": "pvz:model:occurrence#r0/0",
+          "id": "pvz:model:occurrence#1",
           "name": "1",
           "native_ref": "definition 0 occurrence 0",
           "ordinal": 0,
           "parent": {
             "kind": "occurrence",
-            "occurrence": "pvz:model:occurrence#r0"
+            "occurrence": "pvz:model:occurrence#0"
           },
           "prototype": {
             "definition": "pvz:model:definition#1",
@@ -255,8 +255,11 @@
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": "residual",
-            "dialect": "pvz:unknown"
+            "admission": "admitted",
+            "declared": {
+              "pvs_xml_version": "0302"
+            },
+            "dialect": "pvz:pvs-0302"
           }
         }
       }
@@ -275,23 +278,15 @@
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": "residual",
-          "dialect": "pvz:unknown"
+          "admission": "admitted",
+          "declared": {
+            "pvs_xml_version": "0302"
+          },
+          "dialect": "pvz:pvs-0302"
         }
       }
     },
     "losses": [
-      {
-        "code": {
-          "code": "source.dialect-unverified",
-          "kind": "source_dialect_unverified",
-          "namespace": "pvz",
-          "scope": "namespaced",
-          "strict_floor": "warning"
-        },
-        "message": "the .pvs structure member opens with no known signature; the package was read without a declared structure grammar",
-        "severity": "warning"
-      },
       {
         "code": {
           "code": "structure.bounds-not-transferred",

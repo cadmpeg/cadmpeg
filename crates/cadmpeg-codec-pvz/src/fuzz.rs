@@ -36,7 +36,7 @@ pub fn geometry(ctx: &DecodeContext<'_>, member: View<'_>) -> Result<(), CodecEr
 /// Exercise the structure and geometry member signature readers.
 pub fn signatures(data: &[u8]) {
     let member = View::over_retained(data);
-    let _probe = crate::pvs::generation(member);
+    let _probe = crate::pvs::declared(member);
     let _probe = crate::ol::generation(member);
 }
 
@@ -44,9 +44,11 @@ pub fn signatures(data: &[u8]) {
 /// exact-stream payload. The stream identity follows the version stored in
 /// the payload's first record.
 pub fn exact_geometry<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<(), CodecError> {
-    let stream_id = match View::u32_le_at(root.window(), 8) {
-        Some(4) => crate::brep::EXACT_STREAM_F64,
-        _ => crate::brep::EXACT_STREAM_F32,
+    let version = View::u32_le_at(root.window(), crate::layout::tlv_header::LEN);
+    let stream_id = if version == Some(crate::brep::model::Precision::Double.version()) {
+        crate::brep::EXACT_STREAM_F64
+    } else {
+        crate::brep::EXACT_STREAM_F32
     };
     let exact = crate::brep::parse(ctx, stream_id, root)?;
     let mut ir = cadmpeg_ir::document::CadIr::empty();
@@ -62,6 +64,7 @@ pub fn exact_geometry<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<(),
             annotations: &mut annotations,
             losses: &mut losses,
             stream: &stream,
+            member: "fuzz.ol",
         },
     )?;
     Ok(())

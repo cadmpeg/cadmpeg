@@ -199,7 +199,7 @@ fn the_assembly_maps_to_products_placements_meshes_and_appearances() {
     let turned = model
         .occurrences
         .iter()
-        .find(|occurrence| occurrence.id.as_str() == "pvz:model:occurrence#r0/1")
+        .find(|occurrence| occurrence.id.as_str() == "pvz:model:occurrence#2")
         .unwrap();
     assert_eq!(turned.name.as_deref(), Some("42"));
     assert_eq!(
@@ -274,6 +274,31 @@ fn a_malformed_geometry_member_is_reported_and_the_rest_decodes() {
     ]);
     let result = decode(&bytes);
     assert!(loss_codes(&result).contains(&PvzLossCode::GeometryMemberMalformed.kind()));
+    assert_eq!(result.ir().model.tessellations.len(), 1);
+    assert_eq!(result.ir().model.occurrences.len(), 4);
+}
+
+#[test]
+fn a_geometry_member_that_does_not_open_is_reported_and_the_rest_decodes() {
+    use cadmpeg_test_support::zip_fixture::{archive, RawEntry};
+
+    let bracket = bracket_member();
+    let bytes = archive(&[
+        RawEntry::stored("model.pvs", &assembly_structure("PV-PVS0301")),
+        RawEntry::compressed("bracket.ol", 12, b"not a bzip2 stream", &bracket),
+        RawEntry::stored("plate.ol", &plate_member()),
+    ]);
+    let result = decode(&bytes);
+    let malformed: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == PvzLossCode::GeometryMemberMalformed.kind())
+        .collect();
+    assert_eq!(malformed.len(), 1);
+    assert!(malformed[0]
+        .message
+        .starts_with("geometry member \"bracket.ol\" did not open"));
     assert_eq!(result.ir().model.tessellations.len(), 1);
     assert_eq!(result.ir().model.occurrences.len(), 4);
 }

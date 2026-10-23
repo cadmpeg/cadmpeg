@@ -26,7 +26,7 @@ pub(crate) fn inspect<'a>(
     for entry in &mut entries {
         let signature = match MemberRole::of(&entry.name) {
             MemberRole::Structure => {
-                crate::pvs::generation(structure).map(crate::pvs::Generation::signature)
+                crate::pvs::declared(structure).map(crate::pvs::Declared::text)
             }
             MemberRole::Geometry => match package.member(ctx, &entry.name) {
                 Ok(member) => crate::ol::generation(member).map(crate::ol::Generation::signature),

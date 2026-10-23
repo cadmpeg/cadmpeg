@@ -1,12 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use std::rc::Rc;
+
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
-use super::{generation, read, ChildOccurrence, DefinitionRole, Generation, Placement, Structure};
+use super::{
+    declared, read, ChildOccurrence, Declared, DefinitionRole, Form, Generation, Placement,
+    Structure,
+};
 use crate::loss::PvzLossCode;
 use crate::test_support::pvs::{
-    definition, geometry, inline_atom, member, occurrence, property_set, uleb, Node, Place,
+    definition, geometry, inline_atom, member, occurrence, pool_atom, property_set,
+    string_pool_payload, uleb, Node, Place,
 };
 use crate::test_support::{assembly_structure, SCALED_TURN};
 
@@ -35,11 +41,52 @@ fn each_signature_selects_its_generation() {
         let mut member = expected.signature().as_bytes().to_vec();
         member.extend_from_slice(b"\0\x01 body");
         assert_eq!(
-            generation(View::over_retained(&member)),
-            Some(expected),
+            declared(View::over_retained(&member)),
+            Some(Declared {
+                generation: expected,
+                form: Form::Binary
+            }),
             "{}",
             expected.signature()
         );
+    }
+}
+
+#[test]
+fn each_xml_version_selects_its_generation() {
+    for expected in Generation::ALL {
+        let digits = expected.digits();
+        for member in [
+            format!("<PV_FILE type=\"PVS\" version=\"{digits}\">"),
+            format!("<PV_FILE version='{digits}' type='PVS'><section_index/>"),
+            format!("<PV_FILE\n  type = \"PVS\"\n  other=\"x\"\n  version=\"{digits}\"/>"),
+        ] {
+            assert_eq!(
+                declared(View::over_retained(member.as_bytes())),
+                Some(Declared {
+                    generation: expected,
+                    form: Form::Xml
+                }),
+                "{member}"
+            );
+        }
+    }
+}
+
+#[test]
+fn xml_start_tags_without_a_known_pvs_version_select_no_generation() {
+    for member in [
+        &br#"<PV_FILE type="PVS" version="0306">"#[..],
+        br#"<PV_FILE type="PVS">"#,
+        br#"<PV_FILE type="PVI" version="0304">"#,
+        br#"<PV_FILE version="0304">"#,
+        br#"<PV_FILEtype="PVS" version="0304">"#,
+        br#"<PV_FILE type="PVS"version="0304">"#,
+        br#"<PV_FILE type="PVS" version=0304>"#,
+        br#"<PV_FILE type="PVS" version="0304"#,
+        br#"<?xml version="1.0"?><PV_FILE type="PVS" version="0304">"#,
+    ] {
+        assert_eq!(declared(View::over_retained(member)), None, "{member:?}");
     }
 }
 
@@ -52,8 +99,24 @@ fn other_or_short_leading_bytes_select_no_generation() {
         b"DIV-OL09BL body",
         b"",
     ] {
-        assert_eq!(generation(View::over_retained(member)), None, "{member:?}");
+        assert_eq!(declared(View::over_retained(member)), None, "{member:?}");
     }
+}
+
+#[test]
+fn definitions_that_name_one_pool_entry_share_it() {
+    let long = "N".repeat(60_000);
+    let pool = Node::leaf(0x01, string_pool_payload(&[long.as_str()])).encode();
+    let count = 16_000;
+    let stream = structure_stream((0..count).map(|_| Node::leaf(0x20, pool_atom(0))).collect());
+    let structure = decode(&member("PV-PVS0304", &[(1, "", pool), (2, "", stream)])).unwrap();
+    assert_eq!(structure.definitions.len(), count);
+    let first = &structure.definitions[0].name;
+    assert_eq!(&**first, long);
+    assert!(structure
+        .definitions
+        .iter()
+        .all(|definition| Rc::ptr_eq(first, &definition.name)));
 }
 
 #[test]
@@ -62,7 +125,7 @@ fn the_assembly_decodes_to_its_definitions_occurrences_and_properties() {
     let names: Vec<_> = structure
         .definitions
         .iter()
-        .map(|definition| (definition.name.as_str(), definition.geometry.as_deref()))
+        .map(|definition| (definition.name.as_ref(), definition.geometry.as_deref()))
         .collect();
     assert_eq!(
         names,
@@ -81,7 +144,7 @@ fn the_assembly_decodes_to_its_definitions_occurrences_and_properties() {
                     translation: Some([0.1, 0.0, 0.0]),
                     basis: None,
                 },
-                feature_id: "41".to_owned(),
+                feature_id: "41".into(),
             },
             ChildOccurrence {
                 definition: 1,
@@ -89,12 +152,12 @@ fn the_assembly_decodes_to_its_definitions_occurrences_and_properties() {
                     translation: Some([0.0, 0.2, 0.0]),
                     basis: Some(SCALED_TURN),
                 },
-                feature_id: "42".to_owned(),
+                feature_id: "42".into(),
             },
             ChildOccurrence {
                 definition: 2,
                 placement: Placement::default(),
-                feature_id: "43".to_owned(),
+                feature_id: "43".into(),
             },
         ]
     );
@@ -105,7 +168,7 @@ fn the_assembly_decodes_to_its_definitions_occurrences_and_properties() {
             definition
                 .properties
                 .iter()
-                .map(|property| (property.name.as_str(), property.value.as_str()))
+                .map(|property| (property.name.as_ref(), property.value.as_ref()))
                 .collect::<Vec<_>>()
         })
         .collect();
@@ -193,8 +256,8 @@ fn unsettled_occurrence_and_definition_bytes_are_counted() {
     let root = &structure.definitions[0];
     assert_eq!(root.occurrences.len(), 2);
     assert_eq!(root.occurrences[0].placement, Placement::default());
-    assert_eq!(root.occurrences[1].feature_id, "g");
-    assert_eq!(structure.definitions[1].name, "TYPED");
+    assert_eq!(&*root.occurrences[1].feature_id, "g");
+    assert_eq!(&*structure.definitions[1].name, "TYPED");
     assert_eq!(structure.definitions[1].role, DefinitionRole::Component);
     assert_eq!(
         loss_codes(&structure),
@@ -270,7 +333,13 @@ fn the_property_cursor_steps_over_definitions() {
             definition
                 .properties
                 .iter()
-                .map(|p| (p.stream.clone(), p.name.clone(), p.value.clone()))
+                .map(|p| {
+                    (
+                        p.stream.to_string(),
+                        p.name.to_string(),
+                        p.value.to_string(),
+                    )
+                })
                 .collect()
         })
         .collect();
@@ -383,10 +452,10 @@ fn the_xml_form_maps_to_the_same_model() {
                 translation: Some([0.0, 0.2, 0.0]),
                 basis: Some(SCALED_TURN),
             },
-            feature_id: "42".to_owned(),
+            feature_id: "42".into(),
         }
     );
-    assert_eq!(structure.definitions[1].properties[0].value, "STEEL");
+    assert_eq!(&*structure.definitions[1].properties[0].value, "STEEL");
     assert_eq!(
         loss_codes(&structure),
         [

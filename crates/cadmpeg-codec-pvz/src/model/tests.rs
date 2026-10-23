@@ -1,9 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use std::rc::Rc;
+use std::time::{Duration, Instant};
+
+use cadmpeg_core::decode::ResourceDimension;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::products::OccurrenceParent;
 use cadmpeg_ir::CadIr;
 
-use super::{definitions, display_geometry, occurrences, placement, Placed};
+use super::{definitions, display_geometry, occurrences, placement, Placed, MAX_OCCURRENCES};
 use crate::loss::PvzLossCode;
 use crate::ol::{MemberGeometry, Mesh};
 use crate::pvs::{ChildOccurrence, Definition, DefinitionRole, Placement, Property, Structure};
@@ -11,7 +16,7 @@ use crate::test_support::SCALED_TURN;
 
 fn definition(name: &str, children: &[usize]) -> Definition {
     Definition {
-        name: name.to_owned(),
+        name: name.into(),
         role: DefinitionRole::Component,
         geometry: None,
         occurrences: children
@@ -19,7 +24,7 @@ fn definition(name: &str, children: &[usize]) -> Definition {
             .map(|&definition| ChildOccurrence {
                 definition,
                 placement: Placement::default(),
-                feature_id: String::new(),
+                feature_id: "".into(),
             })
             .collect(),
         properties: Vec::new(),
@@ -37,7 +42,7 @@ fn expand(structure: &Structure) -> (CadIr, Vec<cadmpeg_ir::report::loss::LossKi
     let ctx = cadmpeg_test_support::service_decode_context();
     let mut ir = CadIr::empty();
     let mut losses = Vec::new();
-    definitions(structure, &mut ir, &mut losses);
+    definitions(&ctx, structure, &mut ir, &mut losses).unwrap();
     occurrences(&ctx, structure, &mut ir, &mut losses).unwrap();
     (ir, losses.into_iter().map(|loss| loss.code).collect())
 }
@@ -140,16 +145,16 @@ fn shared_definitions_expand_to_one_occurrence_per_path() {
             (occurrence.id.to_string(), parent, occurrence.ordinal)
         })
         .collect();
-    let id = |path: &str| format!("pvz:model:occurrence#{path}");
+    let id = |index: usize| format!("pvz:model:occurrence#{index}");
     assert_eq!(
         tree,
         [
-            (id("r0"), String::new(), 0),
-            (id("r0/0"), id("r0"), 0),
-            (id("r0/1"), id("r0"), 1),
-            (id("r0/2"), id("r0"), 2),
-            (id("r0/0/0"), id("r0/0"), 0),
-            (id("r0/1/0"), id("r0/1"), 0),
+            (id(0), String::new(), 0),
+            (id(1), id(0), 0),
+            (id(2), id(0), 1),
+            (id(3), id(0), 2),
+            (id(4), id(1), 0),
+            (id(5), id(2), 0),
         ]
     );
     assert!(losses.is_empty());
@@ -177,6 +182,112 @@ fn cycles_and_extra_roots_are_reported() {
     );
 }
 
+/// A definition that places `count` occurrences of definition `child`.
+fn repeated(name: &str, child: usize, count: usize) -> Definition {
+    let mut definition = definition(name, &[]);
+    definition.occurrences = vec![
+        ChildOccurrence {
+            definition: child,
+            placement: Placement::default(),
+            feature_id: "".into(),
+        };
+        count
+    ];
+    definition
+}
+
+/// Expansion work that finishes well inside this bound is linear in the
+/// occurrence limit.
+const EXPANSION_DEADLINE: Duration = Duration::from_secs(20);
+
+#[test]
+fn exponential_instancing_stops_at_the_occurrence_limit() {
+    let fan_out = 100_000;
+    let started = Instant::now();
+    let (ir, losses) = expand(&structure(vec![
+        repeated("A", 1, fan_out),
+        repeated("B", 2, fan_out),
+        definition("C", &[]),
+    ]));
+    assert!(started.elapsed() < EXPANSION_DEADLINE);
+    assert_eq!(ir.model.occurrences.len(), MAX_OCCURRENCES);
+    assert_eq!(losses, [PvzLossCode::StructureOccurrenceTruncated.kind()]);
+}
+
+#[test]
+fn cycle_closing_children_count_toward_the_occurrence_limit() {
+    let started = Instant::now();
+    let (ir, losses) = expand(&structure(vec![
+        repeated("ROOT", 1, MAX_OCCURRENCES / 2),
+        repeated("LOOP", 1, MAX_OCCURRENCES),
+    ]));
+    assert!(started.elapsed() < EXPANSION_DEADLINE);
+    assert_eq!(ir.model.occurrences.len(), MAX_OCCURRENCES / 2 + 1);
+    assert_eq!(
+        losses,
+        [
+            PvzLossCode::StructureOccurrenceCycle.kind(),
+            PvzLossCode::StructureOccurrenceTruncated.kind(),
+        ]
+    );
+}
+
+#[test]
+fn roots_count_toward_the_occurrence_limit() {
+    let roots: Vec<_> = (0..=MAX_OCCURRENCES)
+        .map(|_| definition("ROOT", &[]))
+        .collect();
+    let (ir, losses) = expand(&structure(roots));
+    assert_eq!(ir.model.occurrences.len(), MAX_OCCURRENCES);
+    assert_eq!(
+        losses,
+        [
+            PvzLossCode::StructureRootAmbiguous.kind(),
+            PvzLossCode::StructureOccurrenceTruncated.kind(),
+        ]
+    );
+}
+
+fn retained_refusal(result: &Result<(), CodecError>) -> bool {
+    matches!(
+        result,
+        Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes
+    )
+}
+
+#[test]
+fn a_shared_name_is_charged_each_time_it_enters_the_model() {
+    let name: Rc<str> = "N".repeat(60_000).into();
+    let shared: Vec<_> = (0..100_000)
+        .map(|_| Definition {
+            name: Rc::clone(&name),
+            ..definition("", &[])
+        })
+        .collect();
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut ir = CadIr::empty();
+    let mut losses = Vec::new();
+    assert!(retained_refusal(&definitions(
+        &ctx,
+        &structure(shared),
+        &mut ir,
+        &mut losses
+    )));
+
+    let mut root = repeated("ROOT", 1, 100_000);
+    for child in &mut root.occurrences {
+        child.feature_id = Rc::clone(&name);
+    }
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut ir = CadIr::empty();
+    assert!(retained_refusal(&occurrences(
+        &ctx,
+        &structure(vec![root, definition("LEAF", &[])]),
+        &mut ir,
+        &mut losses
+    )));
+}
+
 #[test]
 fn properties_become_bom_properties_keyed_by_stream() {
     let mut root = definition("TOP", &[]);
@@ -188,9 +299,9 @@ fn properties_become_bom_properties_keyed_by_stream() {
         ("", " ", "blank"),
     ] {
         root.properties.push(Property {
-            stream: stream.to_owned(),
-            name: name.to_owned(),
-            value: value.to_owned(),
+            stream: stream.into(),
+            name: name.into(),
+            value: value.into(),
         });
     }
     let (ir, losses) = expand(&structure(vec![root]));
@@ -273,7 +384,7 @@ fn placement_defects_and_deep_chains_are_reported() {
             translation: None,
             basis: Some([-1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]),
         },
-        feature_id: String::new(),
+        feature_id: "".into(),
     };
     let unbounded = ChildOccurrence {
         definition: 1,
@@ -281,7 +392,7 @@ fn placement_defects_and_deep_chains_are_reported() {
             translation: Some([f64::INFINITY, 0.0, 0.0]),
             basis: None,
         },
-        feature_id: String::new(),
+        feature_id: "".into(),
     };
     let mut root = definition("ROOT", &[]);
     root.occurrences = vec![mirrored, unbounded];

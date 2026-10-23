@@ -2,6 +2,8 @@
 //! The structure stream: definitions (§3.6, §3.7), geometry elements (§3.8),
 //! and child occurrences with their placements (§3.9, §3.10).
 
+use std::rc::Rc;
+
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
@@ -141,7 +143,7 @@ fn read_geometry(
     element: &Element<'_>,
     pool: &StringPool,
     residue: &mut Residue,
-) -> Result<String, CodecError> {
+) -> Result<Rc<str>, CodecError> {
     let mut payload = element.payload;
     let member = pool.atom(&mut payload)?;
     if element.is(

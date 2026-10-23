@@ -67,7 +67,7 @@
       "loops": [],
       "occurrences": [
         {
-          "id": "pvz:model:occurrence#r0",
+          "id": "pvz:model:occurrence#0",
           "native_ref": "definition 0",
           "ordinal": 0,
           "parent": {
@@ -104,13 +104,13 @@
           ]
         },
         {
-          "id": "pvz:model:occurrence#r0/0",
+          "id": "pvz:model:occurrence#1",
           "name": "41",
           "native_ref": "definition 0 occurrence 0",
           "ordinal": 0,
           "parent": {
             "kind": "occurrence",
-            "occurrence": "pvz:model:occurrence#r0"
+            "occurrence": "pvz:model:occurrence#0"
           },
           "prototype": {
             "definition": "pvz:model:definition#1",
@@ -143,13 +143,13 @@
           ]
         },
         {
-          "id": "pvz:model:occurrence#r0/1",
+          "id": "pvz:model:occurrence#2",
           "name": "42",
           "native_ref": "definition 0 occurrence 1",
           "ordinal": 1,
           "parent": {
             "kind": "occurrence",
-            "occurrence": "pvz:model:occurrence#r0"
+            "occurrence": "pvz:model:occurrence#0"
           },
           "prototype": {
             "definition": "pvz:model:definition#1",
@@ -182,13 +182,13 @@
           ]
         },
         {
-          "id": "pvz:model:occurrence#r0/2",
+          "id": "pvz:model:occurrence#3",
           "name": "43",
           "native_ref": "definition 0 occurrence 2",
           "ordinal": 2,
           "parent": {
             "kind": "occurrence",
-            "occurrence": "pvz:model:occurrence#r0"
+            "occurrence": "pvz:model:occurrence#0"
           },
           "prototype": {
             "definition": "pvz:model:definition#2",

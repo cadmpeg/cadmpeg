@@ -56,6 +56,8 @@ pub(crate) struct Sink<'s> {
     pub(crate) losses: &'s mut Vec<LossNote>,
     /// Source stream that provenance offsets refer to.
     pub(crate) stream: &'s StreamHandle,
+    /// Name of the geometry member that holds the stream.
+    pub(crate) member: &'s str,
 }
 
 /// Identities of the records of one exact stream, keyed under `scope`.
@@ -137,9 +139,10 @@ impl LossTally {
         }
     }
 
-    fn notes(self, losses: &mut Vec<LossNote>) {
+    fn notes(self, sink: &mut Sink<'_>) {
         for (code, count) in self.counts {
-            losses.push(code.note(code.tally_message(count)));
+            sink.losses
+                .push(code.note(code.tally_message(sink.member, count)));
         }
     }
 }
@@ -166,7 +169,7 @@ pub(crate) fn emit(
     let mut tally = LossTally::default();
     tally.add(PvzLossCode::ExactRecordUninterpreted, exact.opaque.len());
     if exact.faces.is_empty() {
-        tally.notes(sink.losses);
+        tally.notes(sink);
         return Ok(None);
     }
     let topology = topology::resolve(exact)?;
@@ -181,7 +184,7 @@ pub(crate) fn emit(
     };
     let body = writer.write()?;
     let Writer { tally, sink, .. } = writer;
-    tally.notes(sink.losses);
+    tally.notes(sink);
     Ok(Some(body))
 }
 

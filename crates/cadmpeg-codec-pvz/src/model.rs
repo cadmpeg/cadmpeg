@@ -13,7 +13,7 @@ use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
-use cadmpeg_ir::ids::{BodyId, OccurrenceId};
+use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::products::{
     Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
@@ -25,55 +25,79 @@ use cadmpeg_ir::topology::{Body, BodyKind, Color};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
+use crate::brep::frames::MILLIMETRES_PER_METRE;
 use crate::loss::PvzLossCode;
 use crate::ol::{MemberGeometry, Mesh};
 use crate::pvs::{DefinitionRole, Placement, Structure};
 
-/// Model length units per stored length unit.
-const MILLIMETRES_PER_METRE: f64 = 1000.0;
-/// Most occurrences one package expands to.
+/// Most occurrences one package expands to. Child occurrences that close a
+/// definition cycle count toward the limit.
 const MAX_OCCURRENCES: usize = 100_000;
 /// Relative tolerance on the perpendicularity and the common length of the
 /// three placement basis vectors (§3.10).
 const EPS_BASIS_SIMILARITY: f64 = 1e-5;
 /// Distance of a basis length from 1 below which the placement is rigid.
 const EPS_UNIT_SCALE: f64 = 1e-6;
+/// Operation that charges the text a definition carries into the model.
+const RETAIN_DEFINITION_TEXT: &str = "pvz_definition_text";
+/// Operation that charges the name an occurrence carries into the model.
+const RETAIN_OCCURRENCE_NAME: &str = "pvz_occurrence_name";
 
 /// Adds one product definition per structure definition.
-pub(crate) fn definitions(structure: &Structure, ir: &mut CadIr, losses: &mut Vec<LossNote>) {
+pub(crate) fn definitions(
+    ctx: &DecodeContext<'_>,
+    structure: &Structure,
+    ir: &mut CadIr,
+    losses: &mut Vec<LossNote>,
+) -> Result<(), CodecError> {
+    let mut admitted = u64_from_index(ir.model.entity_count());
     let mut dropped = Vec::new();
     for (index, definition) in structure.definitions.iter().enumerate() {
         let mut bom_properties = BTreeMap::new();
         for property in &definition.properties {
             let key = if property.stream.is_empty() {
-                property.name.clone()
+                property.name.to_string()
             } else {
                 format!("{}/{}", property.stream, property.name)
             };
             let Some(key) = NonBlankString::new(key.clone()) else {
-                dropped.push(format!("{key:?} on definition {index}"));
+                let note = format!("{key:?} on definition {index}");
+                ctx.retain_bytes(u64_from_index(note.len()), RETAIN_DEFINITION_TEXT)?;
+                dropped.push(note);
                 continue;
             };
             match bom_properties.entry(key) {
                 Entry::Vacant(slot) => {
-                    slot.insert(property.value.clone());
+                    ctx.retain_bytes(
+                        u64_from_index(slot.key().as_str().len() + property.value.len()),
+                        RETAIN_DEFINITION_TEXT,
+                    )?;
+                    slot.insert(property.value.to_string());
                 }
-                Entry::Occupied(kept) if *kept.get() == property.value => {}
-                Entry::Occupied(kept) => dropped.push(format!(
-                    "{:?} = {:?} on definition {index}, which keeps {:?}",
-                    kept.key().as_str(),
-                    property.value,
-                    kept.get()
-                )),
+                Entry::Occupied(kept) if *kept.get() == *property.value => {}
+                Entry::Occupied(kept) => {
+                    let note = format!(
+                        "{:?} = {:?} on definition {index}, which keeps {:?}",
+                        kept.key().as_str(),
+                        property.value,
+                        kept.get()
+                    );
+                    ctx.retain_bytes(u64_from_index(note.len()), RETAIN_DEFINITION_TEXT)?;
+                    dropped.push(note);
+                }
             }
         }
+        ctx.retain_bytes(
+            u64_from_index(definition.name.len()),
+            RETAIN_DEFINITION_TEXT,
+        )?;
         ir.model.product_definitions.push(ProductDefinition {
             id: crate::ids::definition(index),
             kind: match definition.role {
                 DefinitionRole::Component => ProductDefinitionKind::Part,
                 DefinitionRole::IllustrationRoot => ProductDefinitionKind::Group,
             },
-            source_name: (!definition.name.is_empty()).then(|| definition.name.clone()),
+            source_name: (!definition.name.is_empty()).then(|| definition.name.to_string()),
             label: None,
             description: None,
             part_number: None,
@@ -81,6 +105,11 @@ pub(crate) fn definitions(structure: &Structure, ir: &mut CadIr, losses: &mut Ve
             bodies: Vec::new(),
             native_ref: Some(format!("definition {index}")),
         });
+        ctx.admit_entities(
+            u64_from_index(ir.model.entity_count()),
+            &mut admitted,
+            "pvz_definition",
+        )?;
     }
     if !dropped.is_empty() {
         losses.push(PvzLossCode::StructurePropertyKeyDropped.note(format!(
@@ -90,15 +119,32 @@ pub(crate) fn definitions(structure: &Structure, ir: &mut CadIr, losses: &mut Ve
             dropped.join(", ")
         )));
     }
+    Ok(())
 }
 
-/// One occurrence awaiting expansion of its children.
-struct Pending {
-    id: OccurrenceId,
-    path: String,
+/// One expanded occurrence. `parent` is the index of the parent occurrence,
+/// and the index of an occurrence is the key of its identity.
+#[derive(Clone, Copy)]
+struct Expanded {
+    parent: Option<usize>,
     definition: usize,
-    /// Definitions from the root to this occurrence.
-    ancestors: Vec<usize>,
+    /// Definitions on the path from the root to this occurrence.
+    depth: usize,
+}
+
+/// Whether `definition` lies on the path from the root to occurrence `at`.
+fn on_path(expanded: &[Expanded], at: usize, definition: usize) -> bool {
+    let mut cursor = Some(at);
+    while let Some(index) = cursor {
+        let Some(node) = expanded.get(index) else {
+            return false;
+        };
+        if node.definition == definition {
+            return true;
+        }
+        cursor = node.parent;
+    }
+    false
 }
 
 /// Expands the definition graph from its root into the occurrence tree
@@ -124,14 +170,22 @@ pub(crate) fn occurrences(
             roots.len()
         )));
     }
-    let depth_limit = usize::try_from(ctx.policy().limits.max_recursion_depth).ok();
+    let max_depth = ctx.policy().limits.max_recursion_depth;
+    let depth_limit = usize::try_from(max_depth).ok();
     let mut admitted = u64_from_index(ir.model.entity_count());
-    let mut pending = Vec::new();
+    let mut expanded: Vec<Expanded> = Vec::new();
+    let mut cycles = 0_usize;
+    let mut stopped = false;
+    let mut past_depth = 0_usize;
+    let mut not_similar = 0_usize;
+    let mut invalid = 0_usize;
     for (ordinal, root) in roots.iter().copied().enumerate() {
-        let path = format!("r{root}");
-        let id = crate::ids::occurrence(&path);
+        if expanded.len() >= MAX_OCCURRENCES {
+            stopped = true;
+            break;
+        }
         ir.model.occurrences.push(Occurrence {
-            id: id.clone(),
+            id: crate::ids::occurrence(expanded.len()),
             prototype: PrototypeReference::Local {
                 definition: crate::ids::definition(root),
             },
@@ -146,36 +200,44 @@ pub(crate) fn occurrences(
             link: None,
             native_ref: Some(format!("definition {root}")),
         });
-        pending.push(Pending {
-            id,
-            path,
+        expanded.push(Expanded {
+            parent: None,
             definition: root,
-            ancestors: vec![root],
+            depth: 1,
         });
+        ctx.admit_entities(
+            u64_from_index(ir.model.entity_count()),
+            &mut admitted,
+            "pvz_occurrence",
+        )?;
     }
-    pending.reverse();
-    let mut cycles = 0_usize;
-    let mut truncated = 0_usize;
-    let mut not_similar = 0_usize;
-    let mut invalid = 0_usize;
-    while let Some(parent) = pending.pop() {
-        let Some(definition) = definitions.get(parent.definition) else {
+    let mut pending: Vec<usize> = (0..expanded.len()).rev().collect();
+    'expand: while let Some(parent) = pending.pop() {
+        let Some(&Expanded {
+            definition: parent_definition,
+            depth,
+            ..
+        }) = expanded.get(parent)
+        else {
             continue;
         };
-        let mut children = Vec::new();
+        let Some(definition) = definitions.get(parent_definition) else {
+            continue;
+        };
+        if depth_limit.is_some_and(|limit| depth >= limit) {
+            past_depth += definition.occurrences.len();
+            continue;
+        }
+        let first_child = expanded.len();
         for (ordinal, child) in definition.occurrences.iter().enumerate() {
-            if parent.ancestors.contains(&child.definition) {
+            if expanded.len() + cycles >= MAX_OCCURRENCES {
+                stopped = true;
+                break 'expand;
+            }
+            if on_path(&expanded, parent, child.definition) {
                 cycles += 1;
                 continue;
             }
-            if ir.model.occurrences.len() >= MAX_OCCURRENCES
-                || depth_limit.is_some_and(|limit| parent.ancestors.len() >= limit)
-            {
-                truncated += 1;
-                continue;
-            }
-            let path = format!("{}/{ordinal}", parent.path);
-            let id = crate::ids::occurrence(&path);
             let (transform, scale) = match placement(&child.placement) {
                 Placed::Similarity(transform, scale) => (transform, scale),
                 Placed::Affine(transform) => {
@@ -187,54 +249,63 @@ pub(crate) fn occurrences(
                     (Transform::identity(), FiniteReal::ONE)
                 }
             };
+            ctx.retain_bytes(
+                u64_from_index(child.feature_id.len()),
+                RETAIN_OCCURRENCE_NAME,
+            )?;
             ir.model.occurrences.push(Occurrence {
-                id: id.clone(),
+                id: crate::ids::occurrence(expanded.len()),
                 prototype: PrototypeReference::Local {
                     definition: crate::ids::definition(child.definition),
                 },
                 parent: OccurrenceParent::Occurrence {
-                    occurrence: parent.id.clone(),
+                    occurrence: crate::ids::occurrence(parent),
                 },
                 ordinal: u32::try_from(ordinal)
                     .map_err(|_| CodecError::malformed("child occurrence ordinal exceeds u32"))?,
                 transform,
                 linked_prototype: None,
                 scale: [scale; 3],
-                name: (!child.feature_id.is_empty()).then(|| child.feature_id.clone()),
+                name: (!child.feature_id.is_empty()).then(|| child.feature_id.to_string()),
                 visible: None,
                 link: None,
                 native_ref: Some(format!(
-                    "definition {} occurrence {ordinal}",
-                    parent.definition
+                    "definition {parent_definition} occurrence {ordinal}"
                 )),
             });
-            let mut ancestors = parent.ancestors.clone();
-            ancestors.push(child.definition);
-            children.push(Pending {
-                id,
-                path,
+            expanded.push(Expanded {
+                parent: Some(parent),
                 definition: child.definition,
-                ancestors,
+                depth: depth + 1,
             });
+            ctx.admit_entities(
+                u64_from_index(ir.model.entity_count()),
+                &mut admitted,
+                "pvz_occurrence",
+            )?;
         }
-        ctx.admit_entities(
-            u64_from_index(ir.model.entity_count()),
-            &mut admitted,
-            "pvz_occurrence",
-        )?;
-        children.reverse();
-        pending.extend(children);
+        pending.extend((first_child..expanded.len()).rev());
     }
     if cycles > 0 {
         losses.push(PvzLossCode::StructureOccurrenceCycle.note(format!(
             "{cycles} child occurrences close a definition cycle and were not expanded"
         )));
     }
-    if truncated > 0 {
-        losses.push(PvzLossCode::StructureOccurrenceTruncated.note(format!(
-            "{truncated} child occurrences lie past the expansion limit of {MAX_OCCURRENCES} \
-             occurrences or the recursion depth limit and were not expanded"
-        )));
+    let mut truncation = Vec::new();
+    if stopped {
+        truncation.push(format!(
+            "expansion stopped at the limit of {MAX_OCCURRENCES} occurrences and \
+             cycle-closing child occurrences"
+        ));
+    }
+    if past_depth > 0 {
+        truncation.push(format!(
+            "{past_depth} child occurrences lie past the recursion depth limit of \
+             {max_depth} definitions and were not expanded"
+        ));
+    }
+    if !truncation.is_empty() {
+        losses.push(PvzLossCode::StructureOccurrenceTruncated.note(truncation.join("; ")));
     }
     if not_similar > 0 {
         losses.push(PvzLossCode::StructurePlacementNotSimilarity.note(format!(

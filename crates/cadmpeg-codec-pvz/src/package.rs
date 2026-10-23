@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The `.pvz` ZIP package: member roles and the one structure member.
 
+use std::collections::BTreeSet;
+
 use cadmpeg_container::ArchiveSnapshot;
 use cadmpeg_core::container::ContainerRole;
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -64,6 +66,8 @@ fn has_extension(name: &str, extension: &str) -> bool {
 /// An admitted package: the archive and its member partition.
 pub(crate) struct Package<'a> {
     archive: ArchiveSnapshot<'a>,
+    /// Names of every member.
+    names: BTreeSet<String>,
     structure: String,
     geometry: Vec<String>,
 }
@@ -74,7 +78,9 @@ impl<'a> Package<'a> {
         let archive = ArchiveSnapshot::new(ctx, root)?;
         let mut structures = Vec::new();
         let mut geometry = Vec::new();
+        let mut names = BTreeSet::new();
         for entry in archive.entries() {
+            names.insert(entry.name.clone());
             match MemberRole::of(&entry.name) {
                 MemberRole::Structure => structures.push(entry.name.clone()),
                 MemberRole::Geometry => geometry.push(entry.name.clone()),
@@ -94,6 +100,7 @@ impl<'a> Package<'a> {
         }
         Ok(Self {
             archive,
+            names,
             structure,
             geometry,
         })
@@ -116,10 +123,7 @@ impl<'a> Package<'a> {
 
     /// Whether the archive holds a member named exactly `name`.
     pub(crate) fn contains(&self, name: &str) -> bool {
-        self.archive
-            .entries()
-            .iter()
-            .any(|entry| entry.name == name)
+        self.names.contains(name)
     }
 
     /// Opens one member by its exact archive name.
