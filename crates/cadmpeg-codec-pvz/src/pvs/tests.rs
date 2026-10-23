@@ -242,7 +242,22 @@ fn the_property_cursor_steps_over_definitions() {
         ],
     )
     .encode();
-    let named = Node::list(0x03, vec![property_set(1, &[("k", "a")])]).encode();
+    let mut typed = inline_atom("t");
+    typed.extend(inline_atom("u"));
+    typed.extend([1, 2, 3]);
+    let named = Node::list(
+        0x03,
+        vec![Node::typed_parent(
+            0x2a,
+            0x01,
+            uleb(1),
+            vec![
+                Node::leaf(0x2b, [inline_atom("k"), inline_atom("a")].concat()),
+                Node::typed(0x2b, 0x05, typed),
+            ],
+        )],
+    )
+    .encode();
     let structure = decode(&member(
         "PV-PVS0305",
         &[(2, "", stream), (3, "", general), (3, "sbom", named)],
@@ -265,10 +280,14 @@ fn the_property_cursor_steps_over_definitions() {
     assert_eq!(
         found,
         [
-            vec![row("sbom", "k", "a")],
+            vec![row("sbom", "k", "a"), row("sbom", "t", "u")],
             vec![row("", "k", "b")],
             vec![row("", "k", "c"), row("", "m", "n")],
         ]
+    );
+    assert_eq!(
+        loss_codes(&structure),
+        [PvzLossCode::StructurePropertyAttributes.kind()]
     );
 }
 

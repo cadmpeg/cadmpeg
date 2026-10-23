@@ -264,3 +264,92 @@ fn a_mesh_with_a_non_finite_vertex_is_rejected() {
             .is_none()
     );
 }
+
+#[test]
+fn placement_defects_and_deep_chains_are_reported() {
+    let mirrored = ChildOccurrence {
+        definition: 1,
+        placement: Placement {
+            translation: None,
+            basis: Some([-1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]),
+        },
+        feature_id: String::new(),
+    };
+    let unbounded = ChildOccurrence {
+        definition: 1,
+        placement: Placement {
+            translation: Some([f64::INFINITY, 0.0, 0.0]),
+            basis: None,
+        },
+        feature_id: String::new(),
+    };
+    let mut root = definition("ROOT", &[]);
+    root.occurrences = vec![mirrored, unbounded];
+    let (ir, losses) = expand(&structure(vec![root, definition("LEAF", &[])]));
+    assert_eq!(ir.model.occurrences.len(), 3);
+    assert_eq!(
+        losses,
+        [
+            PvzLossCode::StructurePlacementNotSimilarity.kind(),
+            PvzLossCode::StructurePlacementInvalid.kind(),
+        ]
+    );
+
+    let depth = usize::try_from(
+        cadmpeg_test_support::service_decode_context()
+            .policy()
+            .limits
+            .max_recursion_depth,
+    )
+    .unwrap();
+    let chain: Vec<_> = (0..depth + 2)
+        .map(|index| {
+            let children = if index + 1 < depth + 2 {
+                vec![index + 1]
+            } else {
+                Vec::new()
+            };
+            definition("LINK", &children)
+        })
+        .collect();
+    let (ir, losses) = expand(&structure(chain));
+    assert_eq!(ir.model.occurrences.len(), depth);
+    assert_eq!(losses, [PvzLossCode::StructureOccurrenceTruncated.kind()]);
+}
+
+#[test]
+fn an_appearance_colour_outside_the_unit_range_is_rejected() {
+    use crate::test_support::ol::{
+        appearance_reference, appearance_values, member, patch_header, primitive, stream_index,
+        vertex_block, ATTRIBUTES, SURFACE,
+    };
+    let mut attributes = stream_index(ATTRIBUTES);
+    attributes.extend(appearance_values([
+        2.0, 0.0, 0.0, 0.8, 0.0, 0.0, 0.5, 0.5, 0.5, 32.0, 0.0, 0.0, 0.0, 1.0,
+    ]));
+    attributes.extend(appearance_reference("hot", 1));
+    let mut surface = stream_index(SURFACE);
+    surface.extend(patch_header(0, 0));
+    surface.extend(vertex_block(
+        &[[0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+        None,
+    ));
+    surface.extend(primitive(0x1b, &[0, 1, 2]));
+    let bytes = member(
+        "DIV-OL09BL",
+        false,
+        &[(ATTRIBUTES, attributes), (SURFACE, surface)],
+    );
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let geometry =
+        crate::ol::decode(&ctx, cadmpeg_core::decode::View::over_retained(&bytes)).unwrap();
+    let mut ir = CadIr::empty();
+    let mut losses = Vec::new();
+    display_geometry(&ctx, "hot.ol", &geometry, &mut ir, &mut losses).unwrap();
+    assert!(ir.model.appearances[0].base_color.is_none());
+    assert_eq!(ir.model.appearance_bindings.len(), 1);
+    assert_eq!(
+        losses.into_iter().map(|loss| loss.code).collect::<Vec<_>>(),
+        [PvzLossCode::AttributeAppearanceColorRejected.kind()]
+    );
+}
