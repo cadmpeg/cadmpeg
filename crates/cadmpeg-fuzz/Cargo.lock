@@ -177,6 +177,8 @@ dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
  "cadmpeg-ir",
+ "crc32fast",
+ "roxmltree",
 ]
 
 [[package]]

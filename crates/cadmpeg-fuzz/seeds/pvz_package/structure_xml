@@ -1,0 +1,9 @@
+<PV_FILE type="PVS" version="0302">
+<section_structure>
+<component name="TOP.ASM"><component_instance index="1" translation="0.1,0,0" id="7"/></component>
+<component name="BRACKET.PRT"><shape_source file_name="bracket.ol"/></component>
+</section_structure>
+<section_properties>
+<property_component_ref><property name="PART_NUMBER" value="TOP-001"/></property_component_ref>
+</section_properties>
+</PV_FILE>
