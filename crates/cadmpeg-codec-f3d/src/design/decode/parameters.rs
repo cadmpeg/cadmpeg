@@ -31,6 +31,7 @@ use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
 macro_rules! parameter_text {
@@ -749,18 +750,45 @@ fn valid_design_parameter_family(
     }
 }
 
+/// Decoded owner bindings and parameters with an unsupported owner frame.
+#[derive(Debug, Default)]
+pub(crate) struct DecodedParameterOwners {
+    /// Owner frames that satisfy an admitted grammar.
+    pub(crate) owners: Vec<DesignParameterOwner>,
+    /// Native identities of parameters with an unsupported owner frame.
+    pub(crate) unparsed: Vec<String>,
+}
+
+/// Keep parameters with unsupported owner frames in native storage only.
+pub(crate) fn parameters_for_projection<'a>(
+    parameters: &'a [DesignParameter],
+    unparsed_owners: &[String],
+) -> Cow<'a, [DesignParameter]> {
+    if unparsed_owners.is_empty() {
+        return Cow::Borrowed(parameters);
+    }
+    let unparsed: HashSet<&str> = unparsed_owners.iter().map(String::as_str).collect();
+    Cow::Owned(
+        parameters
+            .iter()
+            .filter(|parameter| !unparsed.contains(parameter.id.as_str()))
+            .cloned()
+            .collect(),
+    )
+}
+
 /// Decode the exact same-index-delimited owner frame for every owned Design
-/// parameter.
+/// parameter. Retain an unsupported binding without an interpreted owner.
 pub(crate) fn decode_parameter_owners(
     scan: &ContainerScan,
     parameters: &[DesignParameter],
     headers: &[DesignRecordHeader],
-) -> Result<Vec<DesignParameterOwner>, CodecError> {
+) -> Result<DecodedParameterOwners, CodecError> {
     if parameters
         .iter()
         .all(|parameter| parameter.owner_record_index().is_none())
     {
-        return Ok(Vec::new());
+        return Ok(DecodedParameterOwners::default());
     }
     let mut headers_by_stream = HashMap::<&str, HashMap<u32, &DesignRecordHeader>>::new();
     for header in headers {
@@ -814,6 +842,7 @@ pub(crate) fn decode_parameter_owners(
             .or_insert((entry, IndexedRecordOffsets::build(bytes), owner_typed));
     }
     let mut out = Vec::new();
+    let mut unparsed = Vec::new();
     for parameter in parameters {
         let Some(owner_index) = parameter.owner_record_index() else {
             continue;
@@ -857,7 +886,7 @@ pub(crate) fn decode_parameter_owners(
             value: parameter.evaluated_value().get(),
             offset: parameter.evaluated_value_offset(),
         };
-        let owner = parse_parameter_owner(frame)
+        let parsed = parse_parameter_owner(frame)
             .or_else(|| {
                 parse_admitted_legacy_parameter_owner_68(
                     frame,
@@ -873,8 +902,12 @@ pub(crate) fn decode_parameter_owners(
                     header.byte_offset,
                     owner_typed.contains(&at),
                 )
-            })
-            .ok_or_else(|| malformed("does not match the parameter-owner grammar"))?
+            });
+        let Some(parsed) = parsed else {
+            unparsed.push(parameter.id.clone());
+            continue;
+        };
+        let owner = parsed
             .into_record(&entry.name, header.byte_offset)
             .ok_or_else(|| malformed("has invalid owner fields or evaluated-value offset"))?;
         if owner.record_index() != owner_index
@@ -886,7 +919,10 @@ pub(crate) fn decode_parameter_owners(
         out.push(owner);
     }
     out.sort_by(|a, b| a.id().cmp(b.id()));
-    Ok(out)
+    Ok(DecodedParameterOwners {
+        owners: out,
+        unparsed,
+    })
 }
 
 /// Byte offset measured from an indexed frame start.

@@ -1849,6 +1849,18 @@ fn report_unparsed_parameter_records(
     }
 }
 
+fn report_unparsed_parameter_owners(report: &mut DecodeBody, count: usize) {
+    if count != 0 {
+        push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::ParameterOwnerUnparsed,
+            format_args!(
+                "{count} Design parameter owner binding(s) match no owner grammar; their parameters remain native without interpreted owner bindings."
+            ),
+        );
+    }
+}
+
 fn report_design_projection_gaps(
     report: &mut DecodeBody,
     ctx: &DecodeContext<'_>,
@@ -2504,6 +2516,10 @@ impl<'a> F3dDecodeSession<'a> {
         self.admit_model_entities("admit F3D geometry entities")?;
         let prereqs = self.decode_product_prereqs(&path)?;
         report_unparsed_parameter_records(&mut self.report, &prereqs.design_parameter_unparsed);
+        report_unparsed_parameter_owners(
+            &mut self.report,
+            prereqs.design_parameter_owner_unparsed.len(),
+        );
         if prereqs.design_superseded_scope_envelopes != 0 {
             push_loss_vec(
                 &mut self.report.losses,

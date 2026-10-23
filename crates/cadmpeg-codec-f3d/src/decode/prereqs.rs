@@ -29,6 +29,8 @@ pub(super) struct ProductPrereqs {
     /// Per-stream counts of typed parameter frames that match no parameter
     /// grammar; the session reports them as losses.
     pub(super) design_parameter_unparsed: Vec<UnparsedParameterRecords>,
+    /// Native parameter identities retained without an interpreted owner frame.
+    pub(super) design_parameter_owner_unparsed: Vec<String>,
     /// Non-equivalent duplicate scope envelopes superseded by the
     /// primary-indexed envelope; the session reports them as a loss.
     pub(super) design_superseded_scope_envelopes: usize,
@@ -88,6 +90,7 @@ impl ProductPrereqs {
             design_types,
             design_parameters,
             design_parameter_unparsed: _,
+            design_parameter_owner_unparsed: _,
             design_superseded_scope_envelopes: _,
             design_entity_headers,
             design_record_headers,
@@ -158,7 +161,10 @@ pub(super) fn decode(
         &design_record_headers,
         &parameter_owner_indices(&design_parameters),
     )?;
-    let design_parameter_owners = crate::design::decode::parameters::decode_parameter_owners(
+    let crate::design::decode::parameters::DecodedParameterOwners {
+        owners: design_parameter_owners,
+        unparsed: design_parameter_owner_unparsed,
+    } = crate::design::decode::parameters::decode_parameter_owners(
         scan,
         &design_parameters,
         &merged_record_headers(&design_record_headers, &design_owner_record_headers),
@@ -209,6 +215,7 @@ pub(super) fn decode(
         design_types,
         design_parameters,
         design_parameter_unparsed,
+        design_parameter_owner_unparsed,
         design_superseded_scope_envelopes,
         design_entity_headers,
         design_record_headers,
