@@ -27,7 +27,7 @@
             }
           ],
           "radial_next": "sldprt:brep:coedge#30",
-          "sense": "forward"
+          "sense": "reversed"
         },
         {
           "edge": "sldprt:brep:edge#41",
@@ -39,7 +39,7 @@
             }
           ],
           "radial_next": "sldprt:brep:coedge#31",
-          "sense": "forward"
+          "sense": "reversed"
         },
         {
           "edge": "sldprt:brep:edge#42",
@@ -51,7 +51,7 @@
             }
           ],
           "radial_next": "sldprt:brep:coedge#32",
-          "sense": "forward"
+          "sense": "reversed"
         },
         {
           "edge": "sldprt:brep:edge#sphere-seam-face:0",
@@ -168,25 +168,25 @@
           "carrier": {
             "curve": "sldprt:brep:curve#70"
           },
-          "end": "sldprt:brep:vertex#51",
+          "end": "sldprt:brep:vertex#50",
           "id": "sldprt:brep:edge#40",
-          "start": "sldprt:brep:vertex#50"
+          "start": "sldprt:brep:vertex#51"
         },
         {
           "carrier": {
             "curve": "sldprt:brep:curve#71"
           },
-          "end": "sldprt:brep:vertex#52",
+          "end": "sldprt:brep:vertex#51",
           "id": "sldprt:brep:edge#41",
-          "start": "sldprt:brep:vertex#51"
+          "start": "sldprt:brep:vertex#52"
         },
         {
           "carrier": {
             "curve": "sldprt:brep:curve#72"
           },
-          "end": "sldprt:brep:vertex#50",
+          "end": "sldprt:brep:vertex#52",
           "id": "sldprt:brep:edge#42",
-          "start": "sldprt:brep:vertex#52"
+          "start": "sldprt:brep:vertex#50"
         },
         {
           "carrier": {

@@ -84,6 +84,14 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must define the native family discriminator or ownership relation that selects one exact face support when several carrier families are structurally valid.
 
+### GC-11. Compact curve marker exceptions
+
+**Question.** Which field sets the edge direction when a compact circle with marker `0x2b` carries an edge whose stored direction runs along the curve parameter?
+
+**Known.** `sldprt.md` §7.1 "The marker of a compact line, circle, or ellipse gives the direction" defines the marker rule. A circle edge between a cylinder face and a planar face can have marker `0x2b` while its display tessellation runs along the curve parameter. The specification defines no second field that overrides the marker.
+
+**Need.** We must find the overriding field, or the defect in the marker rule, so that this edge does not trim the circle through the complementary arc.
+
 ## 3. Container metadata
 
 ### CM-01. Cache-cell prefix

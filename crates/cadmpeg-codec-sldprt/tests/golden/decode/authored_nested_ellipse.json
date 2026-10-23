@@ -214,7 +214,7 @@
             [
               {
                 "entity": "sldprt:model:sketch-entity#348:0:0:0",
-                "reversed": false
+                "reversed": true
               }
             ]
           ]
