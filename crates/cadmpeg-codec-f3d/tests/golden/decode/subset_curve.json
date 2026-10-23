@@ -134,8 +134,8 @@
           "carrier": {
             "curve": "f3d:brep:entity#19",
             "param_range": [
-              0.0,
-              1.0
+              1.5,
+              2.5
             ]
           },
           "start": "f3d:brep:entity#13",
@@ -234,12 +234,12 @@
             "kind": "nurbs",
             "degree": 2,
             "knots": [
-              0.0,
-              0.0,
-              0.0,
-              1.0,
-              1.0,
-              1.0
+              1.5,
+              1.5,
+              1.5,
+              2.5,
+              2.5,
+              2.5
             ],
             "poles": {
               "form": "polynomial",

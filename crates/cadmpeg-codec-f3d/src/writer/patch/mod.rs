@@ -143,6 +143,12 @@ pub(crate) fn write_semantic(
                 let Some(SolvedCurveGeometry::Nurbs(before)) = before.geometry.solved() else {
                     return None;
                 };
+                let mut nurbs = nurbs.clone();
+                if let Some(shift) = native_subset_shift(target, &curve.id) {
+                    nurbs
+                        .edit_knots(|knots| knots.iter_mut().for_each(|knot| *knot += shift))
+                        .ok()?;
+                }
                 Some((
                     curve.id.as_str().to_owned(),
                     NurbsCurveEdit {
@@ -262,6 +268,17 @@ pub(crate) fn write_semantic(
         if is_line {
             range[0] /= LEN_TO_MM;
             range[1] /= LEN_TO_MM;
+        }
+        if let Some(shift) = target
+            .model
+            .edges
+            .iter()
+            .find(|edge| edge.id.as_str() == edge_id)
+            .and_then(|edge| edge.curve())
+            .and_then(|curve| native_subset_shift(target, curve))
+        {
+            range[0] += shift;
+            range[1] += shift;
         }
     }
     let face_sense_edits = validate_face_sense_edits(natives, baseline.ir(), target)?;
@@ -782,6 +799,26 @@ pub(crate) fn write_semantic(
         .into_inner();
     writer.write_all(&output)?;
     Ok(())
+}
+
+/// The shift from a subset curve's local parameter onto its ACIS parameter,
+/// which is the parameter of the curve it trims, negated on a reversed carrier.
+fn native_subset_shift(ir: &CadIr, curve: &cadmpeg_ir::ids::CurveId) -> Option<f64> {
+    ir.model.procedural_curves.iter().find_map(|procedural| {
+        let cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(subset) =
+            procedural.definition()
+        else {
+            return None;
+        };
+        (ir.model.procedural_curve_owner(&procedural.id) == Some(curve)).then(|| {
+            let [first, last] = subset.parameter_range().endpoints();
+            if *subset.sense() {
+                first
+            } else {
+                -last
+            }
+        })
+    })
 }
 
 #[cfg(test)]

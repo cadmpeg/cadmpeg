@@ -1343,3 +1343,123 @@ fn a_reversed_intcurve_cache_reverses_its_support_pcurves() {
         );
     }
 }
+
+/// A `subset_int_cur` runs against its parent once for a reversed record and
+/// once for an edge use that reverses it. The subset sense is the net
+/// direction, so localization moves the cache and the edge range onto the
+/// local parameter for all four combinations.
+#[test]
+fn a_reversed_subset_record_localizes_its_cache_and_edge_ranges() {
+    use crate::brep::ProceduralCurveSource;
+    use cadmpeg_ir::eval::admission::EvaluationAdmission;
+    use cadmpeg_ir::eval::decode::curve_point;
+    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+    use cadmpeg_ir::ids::{EdgeId, VertexId};
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::topology::{Edge, EdgeCarrier};
+
+    let line = |knots: [f64; 2], start: Point3, end: Point3| {
+        NurbsCurve::from_lanes(
+            1,
+            vec![knots[0], knots[0], knots[1], knots[1]],
+            vec![start, end],
+            None,
+            false,
+        )
+        .expect("line spline")
+    };
+    let at = |geometry: &CurveGeometry, parameter: f64| {
+        curve_point(EvaluationAdmission::Standard, geometry, parameter)
+            .expect("finite point")
+            .get()
+    };
+    let parent = line(
+        [0.0, 2.0],
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(2.0, 4.0, 0.0),
+    );
+    let parent_geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(parent.clone()));
+    for record_reversed in [false, true] {
+        for edge_reversed in [false, true] {
+            let mut cache = line(
+                [0.5, 1.5],
+                Point3::new(0.5, 1.0, 0.0),
+                Point3::new(1.5, 3.0, 0.0),
+            );
+            if record_reversed {
+                cache.reverse_parameterization();
+            }
+            let mut out = AsmBrep::default();
+            let mut carriers = Carriers::default();
+            carriers
+                .curve_geo
+                .insert(4, CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(cache)));
+            carriers.procedural_curve_defs.insert(
+                4,
+                ProceduralCurveSource::Cached {
+                    construction: Box::new(ProceduralCurveConstruction::Subset((
+                        parent.clone(),
+                        [0.5, 1.5],
+                    ))),
+                    cache_fit_tolerance: None,
+                    parsed_domain: None,
+                    reversed: record_reversed,
+                },
+            );
+            let edge_reversed_refs = if edge_reversed {
+                HashSet::from([4])
+            } else {
+                HashSet::new()
+            };
+            emit_carrier_curve(
+                &mut out,
+                4,
+                &mut carriers,
+                &edge_reversed_refs,
+                &HashSet::new(),
+                crate::asm_format!("f3d"),
+            )
+            .expect("carrier emission succeeds");
+            let label = format!("record {record_reversed}, edge {edge_reversed}");
+            let [(owner, procedural)] = out.procedural_curves.as_slice() else {
+                panic!("one procedural curve")
+            };
+            let ProceduralCurveDefinition::Subset(subset) = procedural.definition() else {
+                panic!("subset definition")
+            };
+            let forward = record_reversed == edge_reversed;
+            assert_eq!(*subset.sense(), forward, "{label}");
+            let native = if forward { [0.6, 1.0] } else { [-1.0, -0.6] };
+            let mut edges = vec![Edge {
+                id: EdgeId::mint("test:asm:edge#0").unwrap(),
+                carrier: EdgeCarrier::new(Some(owner.clone()), Some(native)).unwrap(),
+                start: VertexId::mint("test:asm:vertex#0").unwrap(),
+                end: VertexId::mint("test:asm:vertex#1").unwrap(),
+                tolerance: None,
+            }];
+            let owner = owner.clone();
+            let procedurals = out.procedural_curves.clone();
+            crate::brep::subsets::localize_subsets(
+                &mut out.curves,
+                &mut edges,
+                &mut [],
+                &procedurals,
+            )
+            .expect("localization succeeds");
+            let expected = if forward { [0.1, 0.5] } else { [0.5, 0.9] };
+            let local = edges[0].param_range().unwrap().get();
+            for (actual, expected) in local.iter().zip(expected) {
+                assert!((actual - expected).abs() < 1.0e-12, "{label}: {local:?}");
+            }
+            let curve = out.curves.iter().find(|curve| curve.id == owner).unwrap();
+            for local in [0.0, 0.25, 1.0] {
+                let parent_parameter = if forward { 0.5 + local } else { 1.5 - local };
+                let distance = Point3::distance(
+                    at(&curve.geometry, local),
+                    at(&parent_geometry, parent_parameter),
+                );
+                assert!(distance < 1.0e-12, "{label} at {local}: {distance}");
+            }
+        }
+    }
+}

@@ -1244,6 +1244,9 @@ pub(super) fn decode(
                 continue;
             };
             let parameter_range = trimmed_curve_parameter_range(geometry, start, end, sense);
+            let construction_id =
+                ProceduralCurveId::from(ids::construction(kind!("trimmed_curve"), id));
+            let mut local_cache = None;
             let procedural =
                 match cadmpeg_ir::geometry::curve_payloads::SubsetCurveConstruction::try_new(
                     basis,
@@ -1252,14 +1255,14 @@ pub(super) fn decode(
                     None,
                 )
                 .and_then(|admitted_payload| {
+                    local_cache = admitted_payload.local_cache(solved_geometry);
                     let mut definition = ProceduralCurveDefinition::Subset(admitted_payload);
-                    definition.set_legacy_cache(cadmpeg_ir::geometry::LegacyCache::new(
-                        cadmpeg_ir::geometry::FitTolerance::ZERO,
-                    ))?;
-                    Ok(ProceduralCurve::new(
-                        ProceduralCurveId::from(ids::construction(kind!("trimmed_curve"), id)),
-                        definition,
-                    ))
+                    if local_cache.is_some() {
+                        definition.set_legacy_cache(cadmpeg_ir::geometry::LegacyCache::new(
+                            cadmpeg_ir::geometry::FitTolerance::ZERO,
+                        ))?;
+                    }
+                    Ok(ProceduralCurve::new(construction_id.clone(), definition))
                 }) {
                     Ok(procedural) => procedural,
                     Err(error) => {
@@ -1271,20 +1274,23 @@ pub(super) fn decode(
                     }
                 };
             let curve_index = CurveIndex(ir.model.curves.len());
-            let copied_geometry = solved_geometry.clone();
+            let geometry = match local_cache {
+                Some(cache) => CurveGeometry::Solved(cache),
+                None => CurveGeometry::Procedural {
+                    construction: construction_id,
+                    cache: None,
+                },
+            };
             ir.model.curves.push(Curve {
                 parameter_range: None,
                 id: curve.clone(),
-                geometry: CurveGeometry::Solved(copied_geometry),
+                geometry,
                 source_object: None,
             });
 
             let _attached = procedural_admission.add_curve(&mut ir.model, &curve, procedural)?;
 
             carrier_index.curves.insert(id, curve_index);
-            if parameter_offset != 0.0 {
-                curve_parameter_offsets.insert(id, parameter_offset);
-            }
             typed.insert(id);
             wake_deferred_dependents(id, &mut waiting_on, &mut deferred_queue);
             continue;
