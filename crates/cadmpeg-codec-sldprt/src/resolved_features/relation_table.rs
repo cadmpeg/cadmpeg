@@ -30,7 +30,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_core::decode::View;
-use cadmpeg_core::{nonblank_literal, CodecError};
+use cadmpeg_core::nonblank_literal;
 use cadmpeg_ir::sketches::{
     SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId, SketchCoordinateAxis,
     SketchEntity, SketchEntityId, SketchGeometryDefinition, SketchId, SketchLocus,
@@ -44,7 +44,7 @@ const ROW_HEADER_TAIL: [u8; 10] = [0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0xfe, 0xf
 const ARC_TAIL: [u8; 16] = [
     0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff,
 ];
-const MAX_ARRAY: u32 = 100_000;
+const MAX_ARRAY: usize = 100_000;
 const MAX_OPERANDS: usize = 16;
 
 /// The kind of a sketch block array, and of a handle cell's operand.
@@ -285,7 +285,7 @@ pub(crate) fn lane_tables(payload: &[u8]) -> Vec<SketchTable> {
             let Ok(count) = usize::try_from(count) else {
                 break;
             };
-            if count == 0 || count > MAX_ARRAY as usize || cursor + count > markers.len() {
+            if count == 0 || count > MAX_ARRAY || cursor + count > markers.len() {
                 break;
             }
             let records = &markers[cursor..cursor + count];
@@ -724,13 +724,14 @@ fn geometry_kind(entity: &SketchEntity) -> Option<ArrayKind> {
 /// `None` when its code or operand kinds have no typed form here.
 ///
 /// Not typed although the code is: tangency between two lines, which has no
-/// neutral meaning, and symmetry of two lines, which SolidWorks holds on the
+/// neutral meaning, and symmetry of two lines, which `SolidWorks` holds on the
 /// lines' carriers where `SketchLocus::Entity` would mirror their end points.
 fn typed_definition(
     code: u32,
     operands: &[Resolved<'_>],
 ) -> Option<SketchConstraintDefinitionInput> {
     use SketchConstraintDefinitionInput as Def;
+    use ArrayKind::{Arc, Line, Point};
     if !TYPED_CODES.contains(&code) {
         return None;
     }
@@ -757,7 +758,6 @@ fn typed_definition(
             .map(|(index, _)| index)
             .collect::<Vec<_>>()
     };
-    use ArrayKind::{Arc, Line, Point};
     let same_coordinate = |axis| {
         SketchSameCoordinate::try_new(locus(0)?, locus(1)?, axis)
             .ok()
@@ -768,7 +768,7 @@ fn typed_definition(
         (5, [Line]) => Some(Def::Vertical { entity: entity(0)? }),
         (4 | 25, [Point, Point]) => same_coordinate(SketchCoordinateAxis::V),
         (5 | 26, [Point, Point]) => same_coordinate(SketchCoordinateAxis::U),
-        (6, [Line, Arc] | [Arc, Line] | [Arc, Arc]) => Some(Def::Tangent {
+        (6, [Line | Arc, Arc] | [Arc, Line]) => Some(Def::Tangent {
             first: entity(0)?,
             second: entity(1)?,
         }),
@@ -1003,7 +1003,10 @@ fn holds(definition: &SketchConstraintDefinitionInput, geometry: &Geometry<'_>) 
         } => {
             let at = point(middle)?;
             let (start, end) = line(entity)?;
-            let half = [(start[0] + end[0]) / 2.0, (start[1] + end[1]) / 2.0];
+            let half = [
+                start[0].midpoint(end[0]),
+                start[1].midpoint(end[1]),
+            ];
             distance(at, half) <= tolerance(span(&[at, start, end]))
         }
         Def::AtIntersection {
@@ -1082,7 +1085,7 @@ pub(super) fn project_relation_tables(
     sketches_by_feature: &HashMap<&str, &SketchId>,
     sketch_entities: &[SketchEntity],
     lanes: &[FeatureInputLane],
-) -> Result<(), CodecError> {
+) {
     let tables = lanes
         .iter()
         .map(|lane| lane_tables(&lane.native_payload))
@@ -1091,7 +1094,7 @@ pub(super) fn project_relation_tables(
         .iter()
         .all(|sketches| sketches.iter().all(|sketch| sketch.rows.is_empty()))
     {
-        return Ok(());
+        return;
     }
     let kinds = tag_kinds(
         lanes
@@ -1266,7 +1269,6 @@ pub(super) fn project_relation_tables(
             }
         }
     }
-    Ok(())
 }
 
 /// The feature most of a block's records belong to, by their markers.

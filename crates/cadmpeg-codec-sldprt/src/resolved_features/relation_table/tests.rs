@@ -404,7 +404,7 @@ mod projection {
         for (slot, &offset) in table.points.iter().enumerate() {
             let kind = SketchInputKind::Point;
             let mut marker =
-                SketchInputEntity::new(marker_id(offset), LANE, 0, offset as u64, kind);
+                SketchInputEntity::new(marker_id(offset), LANE, 0, u64::try_from(offset).expect("offset fits u64"), kind);
             marker.feature_ref = Some(FEATURE.into());
             markers.push(marker);
             let [u, v] = points[slot];
@@ -422,7 +422,7 @@ mod projection {
                 marker_id(offset),
                 LANE,
                 0,
-                offset as u64,
+                u64::try_from(offset).expect("offset fits u64"),
                 SketchInputKind::LineOrCircle,
             );
             marker.feature_ref = Some(FEATURE.into());
@@ -443,7 +443,7 @@ mod projection {
                 marker_id(offset),
                 LANE,
                 0,
-                offset as u64,
+                u64::try_from(offset).expect("offset fits u64"),
                 SketchInputKind::Arc,
             );
             marker.feature_ref = Some(FEATURE.into());
@@ -491,8 +491,7 @@ mod projection {
             &sketches_by_feature,
             &fixture.entities,
             std::slice::from_ref(&fixture.lane),
-        )
-        .expect("projection");
+        );
     }
 
     fn by_row(constraints: &[SketchConstraint], offset: usize) -> &SketchConstraint {
