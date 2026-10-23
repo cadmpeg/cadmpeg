@@ -21,6 +21,7 @@ use std::f64::consts::{FRAC_PI_2, PI, TAU};
 
 use cadmpeg_ir::topology::Face;
 
+use super::lifts;
 use super::membership::{Indicator, Oriented};
 use super::{
     degenerate, invalid, ring_loops, ClosedRegion, LoopRegion, LoopShape, Membership, Region,
@@ -164,7 +165,7 @@ pub(super) fn classify(
         let top = cut_intervals(crossings, &indicator, level)?;
         (level, top, Some(wrap))
     } else {
-        let top = if indicator.beyond(1.0) == 1 {
+        let top = if indicator.beyond(1.0)? == 1 {
             vec![[0.0, TAU]]
         } else {
             Vec::new()
@@ -201,7 +202,8 @@ fn size(points: &[[f64; 2]]) -> f64 {
 
 /// The region indicator, referenced at a point just left of one of the
 /// longest loop segments. A reference whose indicator does not read 0 or 1
-/// beyond the loops is rejected and the next segment is tried.
+/// beyond the loops is rejected and the next segment is tried. A segment
+/// whose lifts are refused refuses every reference.
 fn reference(chart: &Chart<'_>, oriented: &[Oriented], torus: bool) -> Measure<Indicator> {
     let mut segments: Vec<([f64; 2], [f64; 2], f64, f64)> = Vec::new();
     for polyline in oriented {
@@ -230,9 +232,9 @@ fn reference(chart: &Chart<'_>, oriented: &[Oriented], torus: bool) -> Measure<I
         };
         let readable = |value: i64| value == 0 || value == 1;
         let accepted = if torus {
-            readable(indicator.at([point[0], point[1] + PI]))
+            readable(indicator.at([point[0], point[1] + PI])?)
         } else {
-            readable(indicator.beyond(1.0)) && readable(indicator.beyond(-1.0))
+            readable(indicator.beyond(1.0)?) && readable(indicator.beyond(-1.0)?)
         };
         if accepted {
             return Ok(indicator);
@@ -309,8 +311,10 @@ fn cut_crossings(
                 if first == last {
                     continue;
                 }
+                lifts::resolved(&[from_uv[1], to_uv[1], level], TAU)?;
+                let sheets = lifts::bounded((last - first).abs())?;
                 let mut cut_sheet = first.min(last) + 1.0;
-                while cut_sheet <= first.max(last) {
+                for _ in 0..sheets {
                     let height = level + cut_sheet * TAU;
                     let mut charge = |units| eval.charge(units);
                     let mut offset = |parameter: f64| -> Measure<f64> {
@@ -359,7 +363,7 @@ fn cut_intervals(
 ) -> Measure<Vec<[f64; 2]>> {
     if crossings.is_empty() {
         let probe = [indicator.reference[0], level];
-        return Ok(match indicator.at(probe) {
+        return Ok(match indicator.at(probe)? {
             1 => vec![[0.0, TAU]],
             0 => Vec::new(),
             _ => return Err(invalid("the loops' declared sides contradict each other")),

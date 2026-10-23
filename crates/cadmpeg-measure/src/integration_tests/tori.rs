@@ -7,12 +7,15 @@ use std::f64::consts::{FRAC_1_SQRT_2, FRAC_PI_2, PI, TAU};
 use cadmpeg_ir::topology::{BodyKind, Sense};
 use cadmpeg_ir::CadIr;
 
+use crate::reason::UnavailableReason;
 use crate::report::{FaceMeasures, MeasureReport, RegionRule};
 use crate::select::Selection;
+use crate::session::{findings, MeasureOptions};
 use crate::test_support::{
-    assert_measured, assert_tight_box, measure, Builder, Frame, TEST_ABSOLUTE_FLOOR,
+    assert_measured, assert_tight_box, measure, service_context, Builder, Frame,
+    TEST_ABSOLUTE_FLOOR,
 };
-use crate::value::{Quantity, Reading};
+use crate::value::{Quantity, Reading, Unavailable};
 
 const MAJOR: f64 = 10.0;
 const MINOR: f64 = 2.0;
@@ -241,5 +244,85 @@ fn an_elbow_area_does_not_depend_on_its_start_points() {
                 <= TEST_ABSOLUTE_FLOOR * whole,
             "{starts:?}"
         );
+    }
+}
+
+/// The strip `u ∈ [low, low + span]` by `v ∈ [−½, ½]` of the torus,
+/// bounded by four edges with no 3D curve whose line pcurves run along two
+/// parallels and two meridians.
+fn strip(low: f64, span: f64) -> CadIr {
+    let (v0, v1) = (-0.5, 0.5);
+    let high = low + span;
+    let position = |u: f64, v: f64| {
+        let ring = MAJOR + MINOR * v.cos();
+        [ring * u.cos(), ring * u.sin(), MINOR * v.sin()]
+    };
+    let mut builder = Builder::new();
+    let corners = [
+        builder.vertex(position(low, v0)),
+        builder.vertex(position(high, v0)),
+        builder.vertex(position(high, v1)),
+        builder.vertex(position(low, v1)),
+    ];
+    let sides: Vec<_> = (0..4)
+        .map(|index| {
+            let edge = builder.bare_edge(&corners[index], &corners[(index + 1) % 4]);
+            (edge, Sense::Forward)
+        })
+        .collect();
+    let torus = builder.torus(Frame::z_up([0.0; 3]), MAJOR, MINOR);
+    let face = builder.face(&torus, Sense::Forward, &[sides], false);
+    builder.line_pcurve(&face, [0, 0], [low, v0], [1.0, 0.0], [0.0, span]);
+    builder.line_pcurve(&face, [0, 1], [high, v0], [0.0, 1.0], [0.0, v1 - v0]);
+    builder.line_pcurve(&face, [0, 2], [high, v1], [-1.0, 0.0], [0.0, span]);
+    builder.line_pcurve(&face, [0, 3], [low, v1], [0.0, -1.0], [0.0, v1 - v0]);
+    builder.finish(BodyKind::Sheet)
+}
+
+#[test]
+fn a_strip_shorter_than_a_period_has_its_area() {
+    let report = measure(&strip(0.0, 1.0), &faces());
+    let measures = only_face(&report).measures();
+    assert_eq!(*measures.region(), Some(RegionRule::DeclaredOrientation));
+    assert_measured(measures.area(), band_area(-0.5, 0.5) / TAU, MAJOR * MAJOR);
+}
+
+/// A strip whose pcurves cover more whole periods than one span may hold,
+/// or lie where a shift by one period is lost, has no region indicator.
+/// Its bounded quantities are unavailable within the pass allowance, and
+/// the check pass gives no finding: the ring is listed in traversal order,
+/// the face has no orientation reading, the sheet has no closed shell, and
+/// no slice runs out.
+#[test]
+fn a_strip_beyond_the_lift_bounds_is_unavailable_and_checks_without_findings() {
+    for (low, span, reason) in [
+        (0.0, 1.0e12, UnavailableReason::EvaluationWorkExhausted),
+        (
+            2.0_f64.powi(57),
+            1024.0,
+            UnavailableReason::BoundaryPeriodUnresolved,
+        ),
+    ] {
+        let ir = strip(low, span);
+        let report = measure(&ir, &faces());
+        let row = only_face(&report);
+        assert_eq!(
+            [
+                row.measures().area().unavailable().map(Unavailable::reason),
+                row.measures().bbox().unavailable().map(Unavailable::reason),
+            ],
+            [Some(reason); 2],
+            "{}",
+            reason.code()
+        );
+        let Quantity::Unavailable(area) = row.measures().area() else {
+            panic!("an unavailable area");
+        };
+        assert_eq!(area.entity(), Some(row.face().as_str()));
+        assert!(!report.document().work().exhausted());
+        let ctx = service_context();
+        let found = findings(&ctx, &ir, MeasureOptions::default()).expect("findings");
+        ctx.finish_session().expect("session stays unrefused");
+        assert_eq!(found, Vec::new(), "{}", reason.code());
     }
 }

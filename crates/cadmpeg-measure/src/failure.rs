@@ -131,6 +131,21 @@ impl Missing {
     }
 }
 
+impl From<Missing> for MeasureFailure {
+    fn from(missing: Missing) -> Self {
+        let Missing {
+            reason,
+            entity,
+            message,
+        } = missing;
+        Self::Unavailable {
+            reason,
+            entity,
+            message,
+        }
+    }
+}
+
 /// Separate a step's unavailability from a session refusal.
 pub(crate) fn settle<T>(result: Measure<T>) -> Result<Outcome<T>, ResourceLimit> {
     match result {

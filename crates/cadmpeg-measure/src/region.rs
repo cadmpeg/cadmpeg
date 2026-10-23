@@ -11,6 +11,7 @@
 
 mod closed;
 mod finite;
+mod lifts;
 mod membership;
 mod periodic;
 
@@ -25,7 +26,7 @@ use cadmpeg_ir::topology::{Face, FaceLoops};
 use crate::boundary::{LoopKind, LoopResolution, ResolvedFace, ResolvedLoop};
 use crate::canonical::surface::Chart;
 use crate::context::Eval;
-use crate::failure::{Measure, MeasureFailure};
+use crate::failure::{Measure, MeasureFailure, Outcome};
 use crate::geom::Aabb;
 use crate::reason::UnavailableReason;
 use crate::report::{Classification, LoopRole, RegionRule, Winding};
@@ -203,20 +204,20 @@ pub(crate) enum Membership {
 
 impl Membership {
     /// Whether the parameter point `uv`, off the boundary, is a member.
-    pub(crate) fn member(&self, uv: [f64; 2]) -> bool {
+    pub(crate) fn member(&self, uv: [f64; 2]) -> Outcome<bool> {
         match self {
-            Self::Whole => true,
-            Self::Loops(indicator) => indicator.at(uv) == 1,
+            Self::Whole => Ok(true),
+            Self::Loops(indicator) => Ok(indicator.at(uv)? == 1),
         }
     }
 
     /// Whether the region reaches the lower (`toward = −1`) or upper
     /// (`toward = 1`) end of a domain whose `v` is not periodic, beyond
     /// every boundary point.
-    pub(crate) fn end(&self, toward: f64) -> bool {
+    pub(crate) fn end(&self, toward: f64) -> Outcome<bool> {
         match self {
-            Self::Whole => true,
-            Self::Loops(indicator) => indicator.beyond(toward) == 1,
+            Self::Whole => Ok(true),
+            Self::Loops(indicator) => Ok(indicator.beyond(toward)? == 1),
         }
     }
 }

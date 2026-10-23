@@ -8,7 +8,12 @@
 //! path enters the left side of the segment and subtracts 1 when it leaves
 //! it. Segments are half-open in the crossing coordinate, so a path through
 //! a polyline vertex counts it once. Periodic coordinates are taken modulo
-//! their period.
+//! their period: a leg crosses a segment at every lift of the leg by whole
+//! periods in the segment's span, and a segment whose lifts
+//! [`Lifts::periodic`] refuses gives the region no indicator.
+
+use super::lifts::Lifts;
+use crate::failure::Outcome;
 
 /// A loop polyline in the parameter plane, oriented with the region on its
 /// left.
@@ -35,24 +40,12 @@ impl Oriented {
 }
 
 /// The lifts `x0 + k·period` (every `k`, or `k = 0` without a period) that
-/// lie in `[low, high)`.
-fn lifts(x0: f64, [low, high]: [f64; 2], period: Option<f64>) -> Vec<f64> {
-    let Some(period) = period else {
-        return if x0 >= low && x0 < high {
-            vec![x0]
-        } else {
-            Vec::new()
-        };
-    };
-    let mut found = Vec::new();
-    let mut x = x0 + ((low - x0) / period).ceil() * period;
-    while x < high {
-        if x >= low {
-            found.push(x);
-        }
-        x += period;
+/// lie in `span`, half-open at its upper end.
+fn lifts(x0: f64, span: [f64; 2], period: Option<f64>) -> Outcome<Lifts> {
+    match period {
+        Some(period) => Lifts::periodic(x0, span, period),
+        None => Ok(Lifts::fixed(x0, span)),
     }
-    found
 }
 
 /// Whether `value` lies strictly between `from` and `to` along the leg from
@@ -81,7 +74,7 @@ pub(crate) struct Indicator {
 
 impl Indicator {
     /// Signed crossings of the leg `u = u0` from `v = from` to `v = to`.
-    fn along_v(&self, u0: f64, from: f64, to: f64) -> i64 {
+    fn along_v(&self, u0: f64, from: f64, to: f64) -> Outcome<i64> {
         let direction: i64 = if to >= from { 1 } else { -1 };
         let mut count = 0;
         for polyline in &self.loops {
@@ -90,7 +83,7 @@ impl Indicator {
                     continue;
                 }
                 let side: i64 = if b[0] > a[0] { 1 } else { -1 };
-                for x in lifts(u0, [a[0].min(b[0]), a[0].max(b[0])], self.periods[0]) {
+                for x in lifts(u0, [a[0].min(b[0]), a[0].max(b[0])], self.periods[0])? {
                     let height = a[1] + (x - a[0]) / (b[0] - a[0]) * (b[1] - a[1]);
                     if on_leg(height, from, to, self.periods[1]) {
                         count += side * direction;
@@ -98,11 +91,11 @@ impl Indicator {
                 }
             }
         }
-        count
+        Ok(count)
     }
 
     /// Signed crossings of the leg `v = v0` from `u = from` to `u = to`.
-    fn along_u(&self, v0: f64, from: f64, to: f64) -> i64 {
+    fn along_u(&self, v0: f64, from: f64, to: f64) -> Outcome<i64> {
         let direction: i64 = if to >= from { 1 } else { -1 };
         let mut count = 0;
         for polyline in &self.loops {
@@ -111,7 +104,7 @@ impl Indicator {
                     continue;
                 }
                 let side: i64 = if b[1] > a[1] { -1 } else { 1 };
-                for y in lifts(v0, [a[1].min(b[1]), a[1].max(b[1])], self.periods[1]) {
+                for y in lifts(v0, [a[1].min(b[1]), a[1].max(b[1])], self.periods[1])? {
                     let across = a[0] + (y - a[1]) / (b[1] - a[1]) * (b[0] - a[0]);
                     if on_leg(across, from, to, self.periods[0]) {
                         count += side * direction;
@@ -119,7 +112,7 @@ impl Indicator {
                 }
             }
         }
-        count
+        Ok(count)
     }
 
     /// The nearest lift of `value` to `from` in a periodic direction.
@@ -131,26 +124,32 @@ impl Indicator {
     }
 
     /// The region indicator at `target`.
-    pub(crate) fn at(&self, target: [f64; 2]) -> i64 {
+    pub(crate) fn at(&self, target: [f64; 2]) -> Outcome<i64> {
         let [u, v] = self.reference;
         let v_target = self.nearest(1, v, target[1]);
         let u_target = self.nearest(0, u, target[0]);
-        1 + self.along_v(u, v, v_target) + self.along_u(v_target, u, u_target)
+        Ok(1 + self.along_v(u, v, v_target)? + self.along_u(v_target, u, u_target)?)
     }
 
     /// The indicator above every loop point (`toward = 1`) or below every
     /// loop point (`toward = −1`) on a domain whose `v` is not periodic.
-    pub(crate) fn beyond(&self, toward: f64) -> i64 {
+    pub(crate) fn beyond(&self, toward: f64) -> Outcome<i64> {
         let [u, v] = self.reference;
-        1 + self.along_v(u, v, toward * f64::INFINITY)
+        Ok(1 + self.along_v(u, v, toward * f64::INFINITY)?)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use std::f64::consts::TAU;
+    use std::time::{Duration, Instant};
 
-    use super::{Indicator, Oriented};
+    use super::{lifts, Indicator, Oriented};
+    use crate::reason::UnavailableReason;
+
+    /// The upper bound on the time of one refusal; a walk over the span
+    /// would take hours or never end.
+    const PROMPT: Duration = Duration::from_secs(1);
 
     /// The unit square `[1, 2]²` counterclockwise on a `u`-periodic strip.
     fn square() -> Indicator {
@@ -167,12 +166,12 @@ mod tests {
     #[test]
     fn points_inside_and_outside_a_square_read_one_and_zero() {
         let square = square();
-        assert_eq!(square.at([1.5, 1.5]), 1);
-        assert_eq!(square.at([1.5 + TAU, 1.5]), 1);
-        assert_eq!(square.at([3.0, 1.5]), 0);
-        assert_eq!(square.at([1.5, 3.0]), 0);
-        assert_eq!(square.beyond(1.0), 0);
-        assert_eq!(square.beyond(-1.0), 0);
+        assert_eq!(square.at([1.5, 1.5]), Ok(1));
+        assert_eq!(square.at([1.5 + TAU, 1.5]), Ok(1));
+        assert_eq!(square.at([3.0, 1.5]), Ok(0));
+        assert_eq!(square.at([1.5, 3.0]), Ok(0));
+        assert_eq!(square.beyond(1.0), Ok(0));
+        assert_eq!(square.beyond(-1.0), Ok(0));
     }
 
     #[test]
@@ -185,10 +184,10 @@ mod tests {
             periods: [Some(TAU), None],
             reference: [1.0, 0.5 + 1.0e-6],
         };
-        assert_eq!(cap.beyond(1.0), 1);
-        assert_eq!(cap.beyond(-1.0), 0);
-        assert_eq!(cap.at([4.0, 1.0]), 1);
-        assert_eq!(cap.at([4.0, 0.0]), 0);
+        assert_eq!(cap.beyond(1.0), Ok(1));
+        assert_eq!(cap.beyond(-1.0), Ok(0));
+        assert_eq!(cap.at([4.0, 1.0]), Ok(1));
+        assert_eq!(cap.at([4.0, 0.0]), Ok(0));
     }
 
     #[test]
@@ -207,10 +206,79 @@ mod tests {
             periods: [Some(TAU), Some(TAU)],
             reference: [1.0, -1.0 + 1.0e-6],
         };
-        assert_eq!(band.at([2.0, 0.0]), 1);
-        assert_eq!(band.at([2.0, 0.0 + TAU]), 1);
-        assert_eq!(band.at([2.0, 2.0]), 0);
-        assert_eq!(band.at([2.0, -2.0]), 0);
-        assert_eq!(band.at([2.0, 3.0]), 0);
+        assert_eq!(band.at([2.0, 0.0]), Ok(1));
+        assert_eq!(band.at([2.0, 0.0 + TAU]), Ok(1));
+        assert_eq!(band.at([2.0, 2.0]), Ok(0));
+        assert_eq!(band.at([2.0, -2.0]), Ok(0));
+        assert_eq!(band.at([2.0, 3.0]), Ok(0));
+    }
+
+    /// The strip `[low, low + span] × [−½, ½]` counterclockwise on the
+    /// doubly periodic domain, referenced just inside its left side.
+    fn strip(low: f64, span: f64) -> Indicator {
+        Indicator {
+            loops: vec![Oriented {
+                points: vec![
+                    [low, -0.5],
+                    [low + span, -0.5],
+                    [low + span, 0.5],
+                    [low, 0.5],
+                ],
+                closed: true,
+            }],
+            periods: [Some(TAU), Some(TAU)],
+            reference: [low + 1.0, -0.5 + 1.0e-3],
+        }
+    }
+
+    fn refusal<T: std::fmt::Debug>(result: crate::failure::Outcome<T>) -> UnavailableReason {
+        match result {
+            Ok(value) => panic!("expected a refusal, got {value:?}"),
+            Err(missing) => missing.reason,
+        }
+    }
+
+    #[test]
+    fn a_segment_of_a_trillion_periods_is_refused_promptly() {
+        let started = Instant::now();
+        assert_eq!(
+            refusal(lifts(1.0, [0.0, 1.0e12], Some(TAU))),
+            UnavailableReason::EvaluationWorkExhausted
+        );
+        let strip = strip(0.0, 1.0e12);
+        assert_eq!(
+            refusal(strip.at([2.0, 0.0])),
+            UnavailableReason::EvaluationWorkExhausted
+        );
+        assert_eq!(
+            refusal(strip.beyond(1.0)),
+            UnavailableReason::EvaluationWorkExhausted
+        );
+        assert!(started.elapsed() < PROMPT);
+    }
+
+    #[test]
+    fn a_segment_where_one_period_is_lost_is_refused_promptly() {
+        let low = 2.0_f64.powi(57);
+        assert_eq!(low + TAU, low);
+        let started = Instant::now();
+        assert_eq!(
+            refusal(lifts(low + 32.0, [low, low + 1024.0], Some(TAU))),
+            UnavailableReason::BoundaryPeriodUnresolved
+        );
+        assert_eq!(
+            refusal(strip(low, 1024.0).at([low + 64.0, 0.0])),
+            UnavailableReason::BoundaryPeriodUnresolved
+        );
+        assert!(started.elapsed() < PROMPT);
+    }
+
+    #[test]
+    fn a_strip_shorter_than_a_period_reads_inside_and_outside() {
+        let strip = strip(0.0, 3.0);
+        assert_eq!(strip.at([2.0, 0.0]), Ok(1));
+        assert_eq!(strip.at([2.0 + TAU, 0.0]), Ok(1));
+        assert_eq!(strip.at([2.0, 2.0]), Ok(0));
+        assert_eq!(strip.at([4.0, 0.0]), Ok(0));
     }
 }

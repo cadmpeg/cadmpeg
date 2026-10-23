@@ -836,6 +836,15 @@ impl<'ir> FaceInput<'_, 'ir> {
                 Some(_) => closed.membership.end(1.0),
                 None => closed.membership.member(uv),
             };
+            let member = match member {
+                Ok(member) => member,
+                Err(missing) => {
+                    return (
+                        Readings::single(unavailable(missing.reason, id, &missing.message)),
+                        [None, None],
+                    )
+                }
+            };
             let slot = &mut boxes[usize::from(!member)];
             *slot = Some(slot.map_or(Aabb::of_point(point), |aabb| {
                 aabb.union(Aabb::of_point(point))

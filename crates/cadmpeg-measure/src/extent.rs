@@ -256,7 +256,7 @@ pub(crate) fn sphere_extent(
 ) -> Measure<SphereExtent> {
     let half = std::f64::consts::FRAC_PI_2;
     let period = std::f64::consts::TAU;
-    let member = |uv: [f64; 2]| membership.member(uv) != complement;
+    let member = |uv: [f64; 2]| -> Measure<bool> { Ok(membership.member(uv)? != complement) };
     let mut low = f64::INFINITY;
     let mut high = f64::NEG_INFINITY;
     let mut latitude_error: f64 = 0.0;
@@ -287,7 +287,7 @@ pub(crate) fn sphere_extent(
         }
     }
     let latitude = if low > high {
-        if !member([0.0, 0.0]) {
+        if !member([0.0, 0.0])? {
             return Err(crate::failure::MeasureFailure::unavailable(
                 crate::reason::UnavailableReason::BoundaryUnboundedFace,
                 None,
@@ -301,12 +301,12 @@ pub(crate) fn sphere_extent(
         }
     } else {
         AxialRange {
-            min: if low > -half && member([0.0, low.midpoint(-half)]) {
+            min: if low > -half && member([0.0, low.midpoint(-half)])? {
                 -half
             } else {
                 low
             },
-            max: if high < half && member([0.0, high.midpoint(half)]) {
+            max: if high < half && member([0.0, high.midpoint(half)])? {
                 half
             } else {
                 high
@@ -321,7 +321,7 @@ pub(crate) fn sphere_extent(
         if boundary.full {
             boundary
         } else if boundary.intervals.is_empty() {
-            if member([0.0, 0.0]) {
+            if member([0.0, 0.0])? {
                 full_sweep(period)
             } else {
                 boundary
@@ -335,7 +335,7 @@ pub(crate) fn sphere_extent(
                 } else {
                     boundary.intervals[index + 1][0]
                 };
-                if next > interval[1] && member([interval[1].midpoint(next), 0.0]) {
+                if next > interval[1] && member([interval[1].midpoint(next), 0.0])? {
                     covered.push([interval[1], next]);
                 }
             }

@@ -160,11 +160,14 @@ pub enum UnavailableReason {
     /// Neither the occurrence's prototype nor a prototype of its subtree
     /// lists a body.
     PlacementOccurrenceEmpty,
+    /// A loop's parameter values are so large that a shift by one period
+    /// does not change them.
+    BoundaryPeriodUnresolved,
 }
 
 impl UnavailableReason {
     /// Every reason, in declaration order.
-    pub const ALL: [Self; 46] = [
+    pub const ALL: [Self; 47] = [
         Self::CarrierUnknown,
         Self::CarrierUnresolved,
         Self::CarrierProceduralUnevaluated,
@@ -211,6 +214,7 @@ impl UnavailableReason {
         Self::PlacementOccurrenceChainBroken,
         Self::PlacementOccurrenceBodyRepeated,
         Self::PlacementOccurrenceEmpty,
+        Self::BoundaryPeriodUnresolved,
     ];
 
     /// The pinned `family.detail` string.
@@ -263,6 +267,7 @@ impl UnavailableReason {
             Self::PlacementOccurrenceChainBroken => "placement.occurrence-chain-broken",
             Self::PlacementOccurrenceBodyRepeated => "placement.occurrence-body-repeated",
             Self::PlacementOccurrenceEmpty => "placement.occurrence-empty",
+            Self::BoundaryPeriodUnresolved => "boundary.period-unresolved",
         }
     }
 
@@ -293,7 +298,8 @@ impl UnavailableReason {
             | Self::EvaluationNonFinite
             | Self::VolumeOrientationConflict
             | Self::VolumeClosureFlux
-            | Self::PlacementOccurrenceChainBroken => Category::Input,
+            | Self::PlacementOccurrenceChainBroken
+            | Self::BoundaryPeriodUnresolved => Category::Input,
             Self::BoundaryUnboundedFace
             | Self::VolumeShellOpen
             | Self::MassPrincipalAxesDegenerate
@@ -437,7 +443,7 @@ impl Serialize for CompareCause {
 mod tests {
     use super::{Category, CaveatCode, CompareCause, UnavailableReason};
 
-    const REASONS: [(&str, Option<&str>); 46] = [
+    const REASONS: [(&str, Option<&str>); 47] = [
         ("carrier.unknown", Some("input")),
         ("carrier.unresolved", Some("input")),
         ("carrier.procedural-unevaluated", Some("unsupported")),
@@ -484,6 +490,7 @@ mod tests {
         ("placement.occurrence-chain-broken", Some("input")),
         ("placement.occurrence-body-repeated", Some("placement")),
         ("placement.occurrence-empty", Some("undefined")),
+        ("boundary.period-unresolved", Some("input")),
     ];
 
     #[test]

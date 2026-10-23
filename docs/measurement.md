@@ -137,6 +137,7 @@ cites.
 | `placement.occurrence-chain-broken` | input | The `--occurrence` parent chain does not reach a root occurrence: a parent is missing or the chain repeats. |
 | `placement.occurrence-body-repeated` | placement | Two occurrences of the `--occurrence` subtree place the same body; a pass has one row per body. |
 | `placement.occurrence-empty` | undefined | Neither the `--occurrence` prototype nor a prototype of its subtree lists a body. |
+| `boundary.period-unresolved` | input | A loop's parameter values are so large that a shift by one period does not change them. |
 
 ## Caveats
 
@@ -294,6 +295,16 @@ starts at each crossing in `−v` and ends at the next crossing in `+v`.
 Crossings of seam pieces do not count, and crossings that do not alternate
 make the face `boundary.nesting-invalid`. Without crossings, the indicator
 at one point of the cut decides the whole circle.
+
+The parameter values of a loop are not reduced to the carrier's domain, so
+one polyline segment can cover many periods. A membership path, a crossing
+count on a cylinder or a cone, and the cut of a torus visit each lift of a
+segment by whole periods. A segment that covers more than `MAX_SPAN_LIFTS`
+periods ([decode-resource-caps.md](decode-resource-caps.md)) makes the
+face's bounded quantities `evaluation.work-exhausted`. A segment whose
+parameter values do not change by a shift of one period makes them
+`boundary.period-unresolved`. A non-finite parameter value makes them
+`evaluation.non-finite`.
 
 ### Readings
 

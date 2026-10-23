@@ -15,12 +15,13 @@
 
 use cadmpeg_ir::topology::{Face, FaceLoops};
 
+use super::lifts::Lifts;
 use super::{
     classification, degenerate, invalid, ring_loops, winding_number, LoopRegion, LoopShape, Region,
 };
 use crate::boundary::ResolvedFace;
 use crate::canonical::surface::Chart;
-use crate::failure::{Measure, MeasureFailure};
+use crate::failure::{Measure, MeasureFailure, Outcome};
 use crate::reason::UnavailableReason;
 use crate::report::{Classification, LoopRole, RegionRule};
 
@@ -57,21 +58,23 @@ impl Ring<'_> {
 }
 
 /// The number of times the downward vertical ray from `point` crosses the
-/// polyline, with `u` taken modulo `period`. A non-contractible polyline is
-/// an open chain whose last point repeats its first one period on; a
-/// contractible polyline is closed.
+/// polyline, with `u` taken modulo `period`: once per lift of the ray in a
+/// segment's `u` span below the segment. A non-contractible polyline is an
+/// open chain whose last point repeats its first one period on; a
+/// contractible polyline is closed. A segment whose lifts
+/// [`Lifts::periodic`] refuses refuses the count.
 pub(super) fn crossings_below(
     points: &[[f64; 2]],
     closed: bool,
     point: [f64; 2],
     period: f64,
-) -> usize {
+) -> Outcome<usize> {
     let segments = if closed {
         points.len()
     } else {
         match points.len().checked_sub(1) {
             Some(segments) => segments,
-            None => return 0,
+            None => return Ok(0),
         }
     };
     let mut crossings = 0;
@@ -86,19 +89,15 @@ pub(super) fn crossings_below(
         } else {
             (to[0], from[0])
         };
-        let mut lifted = point[0] + ((low - point[0]) / period).ceil() * period;
-        while lifted < high {
-            if lifted >= low {
-                let fraction = (lifted - from[0]) / (to[0] - from[0]);
-                let height = from[1] + fraction * (to[1] - from[1]);
-                if height < point[1] {
-                    crossings += 1;
-                }
+        for lifted in Lifts::periodic(point[0], [low, high], period)? {
+            let fraction = (lifted - from[0]) / (to[0] - from[0]);
+            let height = from[1] + fraction * (to[1] - from[1]);
+            if height < point[1] {
+                crossings += 1;
             }
-            lifted += period;
         }
     }
-    crossings
+    Ok(crossings)
 }
 
 /// Whether a contractible loop winds around `point` at some lift.
@@ -109,8 +108,8 @@ fn encloses(shape: &LoopShape, point: [f64; 2], period: f64) -> bool {
 }
 
 /// Whether `point` lies above a non-contractible loop.
-fn above(ring: &Ring<'_>, point: [f64; 2], period: f64) -> bool {
-    crossings_below(&ring.shape.points, false, point, period) % 2 == 1
+fn above(ring: &Ring<'_>, point: [f64; 2], period: f64) -> Outcome<bool> {
+    Ok(crossings_below(&ring.shape.points, false, point, period)? % 2 == 1)
 }
 
 /// The face-left factor of a loop: `+1` when its traversal already runs in
@@ -224,9 +223,9 @@ pub(super) fn classify(
                     return Err(invalid("a loop has no sample point"));
                 };
                 let inside = if direction < 0 {
-                    point[1] > apex_v && !above(ring, point, period)
+                    point[1] > apex_v && !above(ring, point, period)?
                 } else {
-                    point[1] < apex_v && above(ring, point, period)
+                    point[1] < apex_v && above(ring, point, period)?
                 };
                 if !inside {
                     return Err(invalid("a hole lies outside the region"));
@@ -239,8 +238,8 @@ pub(super) fn classify(
                 return Err(invalid("a loop has no sample point"));
             };
             let (lower, upper) = match (
-                above(first, second_point, period),
-                above(second, first_point, period),
+                above(first, second_point, period)?,
+                above(second, first_point, period)?,
             ) {
                 (true, false) => (first, second),
                 (false, true) => (second, first),
@@ -258,7 +257,7 @@ pub(super) fn classify(
                 let Some(point) = hole.sample() else {
                     return Err(invalid("a loop has no sample point"));
                 };
-                if !above(lower, point, period) || above(upper, point, period) {
+                if !above(lower, point, period)? || above(upper, point, period)? {
                     return Err(invalid("a hole lies outside the band"));
                 }
             }
@@ -364,27 +363,67 @@ fn strip_outer(rings: &[Ring<'_>], period: f64) -> Measure<usize> {
 
 #[cfg(test)]
 mod tests {
+    use std::time::{Duration, Instant};
+
     use super::crossings_below;
+    use crate::reason::UnavailableReason;
+
+    /// The upper bound on the time of one refusal; a walk over the span
+    /// would take hours or never end.
+    const PROMPT: Duration = Duration::from_secs(1);
+
+    fn refusal(result: crate::failure::Outcome<usize>) -> UnavailableReason {
+        match result {
+            Ok(count) => panic!("expected a refusal, got {count} crossings"),
+            Err(missing) => missing.reason,
+        }
+    }
 
     #[test]
     fn a_wrapping_polyline_is_crossed_once_from_above() {
         let tau = std::f64::consts::TAU;
         let circle = [[0.0, 1.0], [tau / 2.0, 1.0], [tau, 1.0]];
-        assert_eq!(crossings_below(&circle, false, [1.0, 2.0], tau), 1);
-        assert_eq!(crossings_below(&circle, false, [1.0, 0.0], tau), 0);
+        assert_eq!(crossings_below(&circle, false, [1.0, 2.0], tau), Ok(1));
+        assert_eq!(crossings_below(&circle, false, [1.0, 0.0], tau), Ok(0));
         assert_eq!(
             crossings_below(&circle, false, [1.0 + 3.0 * tau, 2.0], tau),
-            1
+            Ok(1)
         );
-        assert_eq!(crossings_below(&circle, false, [-1.0, 2.0], tau), 1);
+        assert_eq!(crossings_below(&circle, false, [-1.0, 2.0], tau), Ok(1));
     }
 
     #[test]
     fn a_closed_polyline_is_crossed_twice_from_above() {
         let tau = std::f64::consts::TAU;
         let square = [[1.0, 1.0], [2.0, 1.0], [2.0, 2.0], [1.0, 2.0]];
-        assert_eq!(crossings_below(&square, true, [1.5, 3.0], tau), 2);
-        assert_eq!(crossings_below(&square, true, [1.5, 1.5], tau), 1);
-        assert_eq!(crossings_below(&square, true, [1.5 + tau, 1.5], tau), 1);
+        assert_eq!(crossings_below(&square, true, [1.5, 3.0], tau), Ok(2));
+        assert_eq!(crossings_below(&square, true, [1.5, 1.5], tau), Ok(1));
+        assert_eq!(crossings_below(&square, true, [1.5 + tau, 1.5], tau), Ok(1));
+    }
+
+    #[test]
+    fn a_segment_of_a_trillion_periods_is_refused_promptly() {
+        let tau = std::f64::consts::TAU;
+        let segment = [[0.0, 0.0], [1.0e12, 1.0]];
+        let started = Instant::now();
+        assert_eq!(
+            refusal(crossings_below(&segment, false, [1.0, 2.0], tau)),
+            UnavailableReason::EvaluationWorkExhausted
+        );
+        assert!(started.elapsed() < PROMPT);
+    }
+
+    #[test]
+    fn a_segment_where_one_period_is_lost_is_refused_promptly() {
+        let tau = std::f64::consts::TAU;
+        let start = 2.0_f64.powi(57);
+        assert_eq!(start + tau, start);
+        let segment = [[start, 0.0], [start + 1024.0, 1.0]];
+        let started = Instant::now();
+        assert_eq!(
+            refusal(crossings_below(&segment, false, [start + 32.0, 2.0], tau)),
+            UnavailableReason::BoundaryPeriodUnresolved
+        );
+        assert!(started.elapsed() < PROMPT);
     }
 }
