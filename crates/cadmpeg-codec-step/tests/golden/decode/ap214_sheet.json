@@ -69,21 +69,21 @@
             }
           ],
           "radial_next": "step:data:coedge#22-face-29",
-          "sense": "forward"
+          "sense": "reversed"
         },
         {
           "edge": "step:data:edge#20",
           "id": "step:data:coedge#23-face-29",
           "owner_loop": "step:data:loop#25-face-29",
           "radial_next": "step:data:coedge#23-face-29",
-          "sense": "forward"
+          "sense": "reversed"
         },
         {
           "edge": "step:data:edge#21",
           "id": "step:data:coedge#24-face-29",
           "owner_loop": "step:data:loop#25-face-29",
           "radial_next": "step:data:coedge#24-face-29",
-          "sense": "forward"
+          "sense": "reversed"
         }
       ],
       "configurations": [],
@@ -215,9 +215,9 @@
         {
           "boundary": {
             "coedges": [
-              "step:data:coedge#22-face-29",
+              "step:data:coedge#24-face-29",
               "step:data:coedge#23-face-29",
-              "step:data:coedge#24-face-29"
+              "step:data:coedge#22-face-29"
             ],
             "kind": "ring"
           },
