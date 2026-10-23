@@ -223,3 +223,36 @@ fn source_less_payload_names_and_missing_requests_are_rejected() {
         .to_string()
         .contains("missing side entry Missing.bin"));
 }
+
+#[test]
+fn source_less_gui_external_links_do_not_register_archive_requests() {
+    let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Model"><Properties Count="1"><Property name="Remote" type="App::PropertyXLink"><XLink file="External.FCStd" name="Body"/></Property></Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#;
+    let mut builder = super::FcstdDocumentBuilder::new("external GUI link");
+    builder
+        .add_object("Model", "Part::Feature")
+        .expect("object");
+    builder
+        .add_side_entry("GuiDocument.xml", gui.to_vec())
+        .expect("GUI");
+    builder
+        .clone()
+        .build()
+        .expect("external link needs no archive payload");
+    builder
+        .add_side_entry("Opaque.bin", b"opaque".to_vec())
+        .expect("opaque");
+    builder
+        .add_side_entry("External.FCStd", b"unrelated".to_vec())
+        .expect("unrelated payload");
+    let document = builder.document_xml();
+    let entries = builder
+        .restoration_entries(&document)
+        .expect("request schedule");
+    assert_eq!(
+        entries
+            .iter()
+            .map(|entry| entry.0.as_str())
+            .collect::<Vec<_>>(),
+        ["GuiDocument.xml", "Opaque.bin", "External.FCStd"]
+    );
+}

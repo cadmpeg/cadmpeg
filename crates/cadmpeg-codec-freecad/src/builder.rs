@@ -225,6 +225,14 @@ impl FcstdDocumentBuilder {
         if let Some(gui_xml) = &gui_xml {
             requests.push("GuiDocument.xml");
             for node in gui_xml.descendants().filter(roxmltree::Node::is_element) {
+                if node
+                    .ancestors()
+                    .find(|ancestor| ancestor.has_tag_name("Property"))
+                    .and_then(|property| property.attribute("type"))
+                    .is_some_and(crate::persistence::is_xlink_type)
+                {
+                    continue;
+                }
                 for attribute in node.attributes() {
                     if matches!(attribute.name(), "file" | "File") && !attribute.value().is_empty()
                     {
