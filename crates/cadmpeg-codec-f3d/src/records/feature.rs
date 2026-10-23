@@ -13,6 +13,7 @@ pub(crate) mod fixed_parameters;
 pub(crate) mod hole;
 pub(crate) mod joint_motion;
 pub(crate) mod mirror;
+pub(crate) mod occurrence_transfer;
 pub(crate) mod path_features;
 pub(crate) mod patterns;
 pub(crate) mod primitives;

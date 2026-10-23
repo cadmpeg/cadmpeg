@@ -5898,6 +5898,100 @@ Parsed by:
 | 208 | 1 | `scope_separator` | `u8` | little | spec | One zero byte and the marked scope reference at offset 209 close the frame. |
 | 209 | 11 | `scope_reference` | `bytes[11]` | little | spec | One zero byte and the marked scope reference at offset 209 close the frame. |
 
+## `cut_paste_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 72 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/occurrence_transfer.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The compact CutPaste prefix |
+| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | The compact CutPaste prefix |
+| 21 | 11 | `removal_reference` | `bytes[11]` | little | spec | The compact CutPaste prefix |
+| 32 | 11 | `companion_reference` | `bytes[11]` | little | spec | The compact CutPaste prefix |
+| 43 | 1 | `companion_flag` | `u8` | little | spec | The compact CutPaste prefix |
+| 44 | 11 | `second_companion_reference` | `bytes[11]` | little | spec | The compact CutPaste prefix |
+| 55 | 4 | `zero_run_4` | `bytes[4]` | little | spec | The compact CutPaste prefix |
+| 59 | 11 | `relation_reference` | `bytes[11]` | little | spec | The compact CutPaste prefix |
+| 70 | 1 | `placement_flag` | `u8` | little | spec | The compact CutPaste prefix |
+| 71 | 1 | `identity_flag` | `u8` | little | spec | The compact CutPaste prefix |
+
+## `copy_paste_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 190 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/occurrence_transfer.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The compact CopyPaste prefix |
+| 11 | 11 | `zero_run` | `bytes[11]` | little | spec | The compact CopyPaste prefix |
+| 22 | 11 | `companion_reference` | `bytes[11]` | little | spec | The compact CopyPaste prefix |
+| 33 | 1 | `zero_separator` | `u8` | little | spec | The compact CopyPaste prefix |
+| 34 | 128 | `source_transform` | `f64[16]` | little | spec | The compact CopyPaste prefix |
+| 162 | 11 | `second_companion_reference` | `bytes[11]` | little | spec | The compact CopyPaste prefix |
+| 173 | 4 | `zero_run_4` | `bytes[4]` | little | spec | The compact CopyPaste prefix |
+| 177 | 11 | `relation_reference` | `bytes[11]` | little | spec | The compact CopyPaste prefix |
+| 188 | 1 | `placement_flag` | `u8` | little | spec | The compact CopyPaste prefix |
+| 189 | 1 | `identity_flag` | `u8` | little | spec | The compact CopyPaste prefix |
+
+## `paste_occurrence_relation`
+
+Spec §3.1 · layout: byte offsets · size: 87 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/occurrence_transfer.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The relation has a 57-byte primary record |
+| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | The relation has a 57-byte primary record |
+| 21 | 11 | `occurrence_reference` | `bytes[11]` | little | spec | The relation has a 57-byte primary record |
+| 32 | 2 | `zero_run_2` | `bytes[2]` | little | spec | The relation has a 57-byte primary record |
+| 34 | 11 | `companion_reference` | `bytes[11]` | little | spec | The relation has a 57-byte primary record |
+| 45 | 1 | `zero_separator` | `u8` | little | spec | The relation has a 57-byte primary record |
+| 46 | 11 | `scope_reference` | `bytes[11]` | little | spec | The relation has a 57-byte primary record |
+| 57 | 11 | `paired_header` | `bytes[11]` | little | spec | The relation has a 57-byte primary record |
+| 68 | 8 | `zero_run_8` | `bytes[8]` | little | spec | The relation has a 57-byte primary record |
+| 76 | 1 | `owner_marker` | `u8` | little | spec | The relation has a 57-byte primary record |
+| 77 | 8 | `owner_collection` | `u64` | little | spec | The relation has a 57-byte primary record |
+| 85 | 2 | `owner_zero_run` | `bytes[2]` | little | spec | The relation has a 57-byte primary record |
+
+## `remove_instance_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 135 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/occurrence_transfer.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The RemoveInstance prefix |
+| 11 | 22 | `zero_run` | `bytes[22]` | little | spec | The RemoveInstance prefix |
+| 33 | 11 | `source_relation_reference` | `bytes[11]` | little | spec | The RemoveInstance prefix |
+| 44 | 76 | `occurrence_key` | `bytes[76]` | little | spec | The RemoveInstance prefix |
+| 120 | 7 | `zero_run_7` | `bytes[7]` | little | spec | The RemoveInstance prefix |
+| 127 | 4 | `history_state` | `u32` | little | spec | The RemoveInstance prefix |
+| 131 | 4 | `kind_length` | `u32` | little | spec | The RemoveInstance prefix |
+
+## `paste_context_owner_tail`
+
+Spec §3.1 · layout: byte offsets · size: 52 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/occurrence_transfer.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `collection_reference` | `bytes[11]` | little | spec | The context owner tail is 52 bytes |
+| 11 | 11 | `companion_reference` | `bytes[11]` | little | spec | The context owner tail is 52 bytes |
+| 22 | 11 | `paired_header` | `bytes[11]` | little | spec | The context owner tail is 52 bytes |
+| 33 | 8 | `zero_run_8` | `bytes[8]` | little | spec | The context owner tail is 52 bytes |
+| 41 | 11 | `component_reference` | `bytes[11]` | little | spec | The context owner tail is 52 bytes |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

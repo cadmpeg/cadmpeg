@@ -21,6 +21,7 @@ pub(crate) mod legacy_class_397;
 pub(crate) mod legacy_class_415;
 mod legacy_operand_paths;
 pub(crate) mod mirror;
+mod occurrence_transfer;
 pub(crate) mod parameter_scope;
 mod path_feature;
 mod pattern;

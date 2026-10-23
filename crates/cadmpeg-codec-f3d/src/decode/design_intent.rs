@@ -1011,6 +1011,13 @@ pub(super) fn scope_related_indices(
             .values()
             .copied()
             .chain(thread_trailer)
+            .chain(
+                scope
+                    .occurrence_transfer
+                    .as_ref()
+                    .into_iter()
+                    .flat_map(crate::records::feature::occurrence_transfer::DesignOccurrenceTransfer::record_indices),
+            )
             .map(move |record_index| (stream, record_index))
     }))
 }

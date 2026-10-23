@@ -1958,7 +1958,7 @@ fn report_design_projection_gaps(
     )?;
     let mut uninterpreted_scopes = 0;
     for scope in &native.design_parameter_scopes {
-        if scope.payload().is_uninterpreted() {
+        if scope.occurrence_transfer.is_none() && scope.payload().is_uninterpreted() {
             uninterpreted_scopes += 1;
         }
     }
