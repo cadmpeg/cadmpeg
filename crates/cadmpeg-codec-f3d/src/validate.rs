@@ -764,6 +764,7 @@ fn validate_loaded(
     validate_sketch_placements(&ctx, &mut findings);
     validate_parameter_owners(&ctx, &mut findings);
     validate_parameter_companions(&ctx, &mut findings);
+    validate_parameter_state_companions(&ctx, &mut findings);
     let dimension_recipe_ids = validate_dimension_recipe_records(&ctx, &mut findings);
     validate_dimension_companion_recipes(&ctx, &mut findings, &dimension_recipe_ids);
     let locus_pair_companions = validate_dimension_locus_pairs(&ctx, &mut findings);
@@ -7545,6 +7546,29 @@ fn validate_parameter_owners(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
 }
 
 /// Validate parameter companion prefixes and owned recipe runs.
+/// A kept parameter state and its kept companion name each other: the
+/// companion's local reference to the state stores the state's entity index.
+fn validate_parameter_state_companions(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
+    let native = ctx.native;
+    for state in &native.design_parameter_states {
+        let Some(companion) = native
+            .design_parameter_state_companions
+            .iter()
+            .find(|companion| companion.id == state.companion)
+        else {
+            continue;
+        };
+        if companion.state_record_index != u64::from(state.record_index) {
+            push_constant_finding(
+                findings,
+                Check::NativeLinks,
+                "Fusion parameter state companion does not reference its state's entity index",
+                Some(companion.id.clone()),
+            );
+        }
+    }
+}
+
 fn validate_parameter_companions(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
     let native = ctx.native;
     let records_by_index = &ctx.records_by_index;
