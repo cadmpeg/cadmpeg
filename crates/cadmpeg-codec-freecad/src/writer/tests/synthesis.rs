@@ -303,6 +303,119 @@ fn solved_profile_directions_and_parameter_attribution_survive_synthesis() {
 }
 
 #[test]
+fn native_feature_dependency_edits_replace_stored_object_dependencies() {
+    let document = r#"<Document SchemaVersion="4"><Objects Count="3" Dependencies="1">
+<ObjectDeps Name="A" Count="0"/>
+<ObjectDeps Name="B" Count="1"><Dep Name="A"/></ObjectDeps>
+<ObjectDeps Name="C" Count="0"/>
+<Object type="Vendor::Node" name="A"/>
+<Object type="Vendor::Node" name="B"/>
+<Object type="Vendor::Node" name="C"/>
+</Objects><ObjectData Count="3">
+<Object name="A"><Properties Count="0"/></Object>
+<Object name="B"><Properties Count="0"/></Object>
+<Object name="C"><Properties Count="0"/></Object>
+</ObjectData></Document>"#;
+    let input = crate::test_support::test_archive::archive(document);
+    let decoded = FcstdCodec
+        .decode(&mut Cursor::new(input), &DecodeOptions::default())
+        .unwrap();
+    let feature_id = |name: &str| {
+        decoded
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap()
+            .id
+            .clone()
+    };
+    let original = decoded
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.id == feature_id("B"))
+        .unwrap();
+    assert_eq!(original.dependencies.as_slice(), &[feature_id("A")]);
+    for (owner, dependencies) in [("B", vec![]), ("B", vec!["C"]), ("A", vec!["C"])] {
+        let mut current = decoded.ir().clone();
+        let feature = current
+            .model
+            .features
+            .iter_mut()
+            .find(|feature| feature.id == feature_id(owner))
+            .unwrap();
+        assert!(
+            matches!(feature.definition().operation(), cadmpeg_ir::features::FeatureOperation::Native { kind, .. } if kind.as_str() == "Vendor::Node")
+        );
+        feature.dependencies = dependencies
+            .iter()
+            .map(|name| feature_id(name))
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+        let native_before = current.native.clone();
+        let plan = FcstdCodec
+            .plan(EncodeInput::new(&current, None), TargetRequest::Inherit)
+            .unwrap();
+        assert!(matches!(
+            plan.report().write_path(),
+            cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+        ));
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes).unwrap();
+        let output = FcstdCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        let objects = output
+            .ir()
+            .native
+            .namespace("fcstd")
+            .unwrap()
+            .arena_as::<crate::native::ObjectRecord>("objects")
+            .unwrap();
+        let object = objects
+            .iter()
+            .find(|object| object.name() == owner)
+            .unwrap();
+        assert_eq!(
+            object.dependencies,
+            dependencies
+                .iter()
+                .map(|name| crate::native::native_id("object", name))
+                .collect::<Vec<_>>()
+        );
+        let feature = output
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(owner))
+            .unwrap();
+        let expected = dependencies
+            .iter()
+            .map(|name| {
+                output
+                    .ir()
+                    .model
+                    .features
+                    .iter()
+                    .find(|feature| feature.name.as_deref() == Some(name))
+                    .unwrap()
+                    .id
+                    .clone()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(feature.dependencies.as_slice(), expected);
+        assert_eq!(current.native, native_before);
+        assert!(crate::test_support::validate_native(output.ir()).is_empty());
+        crate::test_support::test_archive::assert_valid_document(output.ir());
+    }
+}
+
+#[test]
 fn omitted_unreadable_feature_cannot_leave_a_dangling_dependency() {
     let document = r#"<Document SchemaVersion="4"><Objects Count="2" Dependencies="1"><ObjectDeps Name="Bad" Count="0"/><ObjectDeps Name="Pocket" Count="1"><Dep Name="Bad"/></ObjectDeps><Object type="Part::Box" name="Bad"/><Object type="PartDesign::Pocket" name="Pocket"/></Objects><ObjectData Count="2"><Object name="Bad"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="NaN"/></Property><Property name="Width" type="App::PropertyLength"><Float value="1"/></Property><Property name="Height" type="App::PropertyLength"><Float value="1"/></Property></Properties></Object><Object name="Pocket"><Properties Count="0"/></Object></ObjectData></Document>"#;
     let input = crate::test_support::test_archive::archive_entries(&[(

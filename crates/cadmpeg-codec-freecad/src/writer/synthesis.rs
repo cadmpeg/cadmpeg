@@ -99,16 +99,15 @@ pub(super) fn write(ir: &CadIr, schema: &str) -> Result<ExportBody, CodecError> 
             .filter_map(|id| names.get(id).cloned())
             .collect();
         if let Some(feature) = neutral_feature {
+            object.dependencies = feature
+                .dependencies
+                .iter()
+                .filter_map(|dependency| names.get(dependency.as_str()).cloned())
+                .collect();
             if let FeatureOperation::Native { kind, .. } =
                 feature.evaluation.definition().operation()
             {
                 kind.as_str().clone_into(&mut object.kind);
-            } else {
-                object.dependencies = feature
-                    .dependencies
-                    .iter()
-                    .filter_map(|dependency| names.get(dependency.as_str()).cloned())
-                    .collect();
             }
         }
         objects.push(object);
