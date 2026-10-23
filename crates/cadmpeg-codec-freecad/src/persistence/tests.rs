@@ -178,16 +178,133 @@ fn rejects_duplicate_root_property_containers() {
 <Properties Count="1"><Property name="First" type="App::PropertyString"><String value="one"/></Property></Properties>
 <Properties Count="1"><Property name="Second" type="App::PropertyString"><String value="two"/></Property></Properties>
 <Objects Count="0"/><ObjectData Count="0"/></Document>"#;
-    let error = FcstdCodec
-        .decode(
-            &mut Cursor::new(archive(document)),
-            &DecodeOptions::default(),
-        )
-        .expect_err("duplicate root Properties containers");
-    assert!(matches!(
-        error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
-    ));
+    // #215 §4.5: the ambiguous root gives up, while its ZIP declaration survives.
+    let bytes = archive(document);
+    let decoded = FcstdCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .expect("the duplicate root containers have a bounded document recovery home");
+    assert_eq!(decoded.ir().scope, cadmpeg_ir::ContentScope::full());
+    assert_eq!(decoded.ir().model.entity_count(), 0);
+    assert!(!decoded
+        .ir()
+        .model
+        .attributes
+        .iter()
+        .any(|attribute| matches!(attribute.name.as_str(), "First" | "Second")));
+    let native = decoded.ir().native.namespace("fcstd").unwrap();
+    assert!(native
+        .arena_as::<crate::native::DocumentFacts>("document")
+        .unwrap()
+        .is_empty());
+    assert!(native
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap()
+        .is_empty());
+    let entries = native
+        .arena_as::<crate::native::EntryRecord>("entries")
+        .unwrap();
+    let [entry] = entries.as_slice() else {
+        panic!("the independently admitted Document.xml entry survives: {entries:?}")
+    };
+    assert_eq!(entry.name(), "Document.xml");
+    assert_eq!(
+        entry.id(),
+        crate::native::native_id("entry", "Document.xml")
+    );
+    assert!(entry.referenced_by().is_empty());
+
+    let unknowns = decoded.ir().native_unknowns("fcstd").unwrap();
+    let [unknown] = unknowns.as_slice() else {
+        panic!("one failed document root: {unknowns:?}")
+    };
+    assert!(unknown.links.is_empty());
+    assert_eq!(decoded.report().scope(), cadmpeg_ir::ContentScope::full());
+    let fidelity = decoded.source_fidelity();
+    assert_eq!(
+        fidelity.unrepresented(),
+        cadmpeg_ir::ArenaClasses::from([
+            cadmpeg_ir::ArenaClass::Model,
+            cadmpeg_ir::ArenaClass::Design
+        ])
+    );
+    let part = &fidelity.parts()[&unknown.id];
+    assert_eq!(part.level().as_str(), "freecad.document");
+    assert_eq!(
+        part.state(),
+        &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}
+    );
+    assert_eq!(part.offset(), 0);
+    assert_eq!(part.byte_len(), u64::try_from(document.len()).unwrap());
+    let xml = &fidelity.parts()[part.parent().unwrap()];
+    assert_eq!(xml.level().as_str(), "freecad.document_xml");
+    let member = &fidelity.parts()[xml.parent().unwrap()];
+    assert_eq!(member.level().as_str(), "zip.entry");
+    let archive = &fidelity.parts()[member.parent().unwrap()];
+    assert_eq!(archive.level().as_str(), "zip.archive");
+    assert!(archive.parent().is_none());
+    for parent in [xml, member, archive] {
+        assert_eq!(
+            parent.state(),
+            &cadmpeg_ir::source_fidelity::parts::PartState::Decoded {}
+        );
+    }
+    assert_eq!(
+        fidelity
+            .parts()
+            .values()
+            .filter(|candidate| candidate.state()
+                == &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {})
+            .count(),
+        1
+    );
+    assert!(!fidelity.parts().values().any(|candidate| matches!(
+        candidate.level().as_str(),
+        "freecad.properties" | "freecad.property" | "freecad.property_value"
+    )));
+    let retained = fidelity.retained_record(unknown.id.as_str()).unwrap();
+    assert_eq!(retained.data(), Some(document.as_bytes()));
+    assert_eq!(retained.stream(), part.stream());
+    assert_eq!(retained.offset(), part.offset());
+    assert_eq!(retained.byte_len(), part.byte_len());
+    assert_eq!(
+        retained.sha256(),
+        cadmpeg_ir::hash::sha256_hex(document.as_bytes())
+    );
+    assert!(fidelity.record_layout()[unknown.id.as_str()]
+        .reads()
+        .is_empty());
+    for layout in fidelity.record_layout().values() {
+        if let Some(reads) = layout.reads().get(part.stream()) {
+            assert!(reads.iter().all(|range| range.end <= part.offset()
+                || range.start >= part.offset() + part.byte_len()));
+        }
+    }
+    assert!(!fidelity
+        .record_layout()
+        .contains_key(&crate::native::native_id("document", "0")));
+    assert!(fidelity.record_layout().contains_key(entry.id()));
+    let failures = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "record.unreadable")
+        .collect::<Vec<_>>();
+    let [failure] = failures.as_slice() else {
+        panic!("one duplicate-root diagnostic: {failures:?}")
+    };
+    assert_eq!(failure.severity, cadmpeg_ir::report::Severity::Error);
+    assert!(failure
+        .message
+        .contains("Document.xml has multiple root Properties containers"));
+    let location = failure.provenance.as_ref().unwrap();
+    assert_eq!(location.stream_name(), Some(part.stream()));
+    assert_eq!(location.offset, part.offset());
+    assert_eq!(location.byte_len(), Some(part.byte_len()));
+    assert_eq!(crate::source_archive::image(fidelity).unwrap(), bytes);
+    assert!(crate::test_support::validate_native(decoded.ir()).is_empty());
+    assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
+        .unwrap()
+        .is_ok());
 }
 
 #[test]

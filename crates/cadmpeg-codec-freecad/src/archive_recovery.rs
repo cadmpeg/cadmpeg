@@ -25,8 +25,20 @@ pub(crate) fn decoded(
     let mut ir = CadIr::decoded(source);
     ir.model = model;
     ir.native = native;
-    ir.set_scope(cadmpeg_ir::ContentScope::container())
-        .map_err(CodecError::malformed)?;
+    // A located document class remains held even when its part, or an
+    // enclosing archive, gave up. Covered descendants still prove it was found.
+    let document_found = fidelity.parts().values().any(|part| {
+        matches!(
+            part.level().as_str(),
+            "freecad.document_xml" | "freecad.document"
+        )
+    });
+    let scope = if document_found {
+        ctx.depth().required_scope()
+    } else {
+        cadmpeg_ir::ContentScope::container()
+    };
+    ir.set_scope(scope).map_err(CodecError::malformed)?;
     losses.extend(summary.losses);
     if !fidelity.parts().values().any(|part| {
         part.parent().is_none()

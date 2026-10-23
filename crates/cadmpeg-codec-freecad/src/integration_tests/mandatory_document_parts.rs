@@ -51,7 +51,8 @@ fn bounded_xml_utf8_and_schema_failures_preserve_the_same_successful_peer() {
         let decoded = crate::FcstdCodec
             .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
             .unwrap();
-        assert_eq!(decoded.ir().scope, cadmpeg_ir::ContentScope::container());
+        assert_eq!(decoded.ir().scope, cadmpeg_ir::ContentScope::full());
+        assert_eq!(decoded.report().scope(), cadmpeg_ir::ContentScope::full());
         assert_eq!(decoded.ir().model.entity_count(), 0);
         let identity = decoded.ir().source.as_ref().unwrap();
         assert_eq!(identity.format(), "fcstd");
@@ -81,6 +82,13 @@ fn bounded_xml_utf8_and_schema_failures_preserve_the_same_successful_peer() {
             panic!("one failed document")
         };
         let fidelity = decoded.source_fidelity();
+        assert_eq!(
+            fidelity.unrepresented(),
+            cadmpeg_ir::ArenaClasses::from([
+                cadmpeg_ir::ArenaClass::Model,
+                cadmpeg_ir::ArenaClass::Design
+            ])
+        );
         let part = &fidelity.parts()[&unknown.id];
         let root_framed = case >= 2;
         assert_eq!(
@@ -136,6 +144,29 @@ fn bounded_xml_utf8_and_schema_failures_preserve_the_same_successful_peer() {
             Some(part.byte_len())
         );
         assert!(crate::test_support::validate_native(decoded.ir()).is_empty());
+        let geometry = crate::FcstdCodec
+            .decode(
+                &mut Cursor::new(&bytes),
+                &DecodeOptions {
+                    depth: cadmpeg_core::decode::DecodeDepth::Geometry,
+                    ..DecodeOptions::default()
+                },
+            )
+            .unwrap();
+        assert_eq!(geometry.ir().scope, cadmpeg_ir::ContentScope::geometry());
+        assert_eq!(
+            geometry.report().scope(),
+            cadmpeg_ir::ContentScope::geometry()
+        );
+        assert_eq!(geometry.ir().model.entity_count(), 0);
+        assert_eq!(
+            geometry.source_fidelity().unrepresented(),
+            fidelity.unrepresented()
+        );
+        assert_eq!(
+            crate::source_archive::image(geometry.source_fidelity()).unwrap(),
+            bytes
+        );
         let inspection = crate::FcstdCodec
             .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
             .unwrap();
@@ -282,12 +313,23 @@ fn an_unframeable_mandatory_header_gives_up_only_the_real_archive_parent() {
         .unwrap();
     assert_eq!(decoded.ir().model.entity_count(), 0);
     assert_eq!(decoded.ir().scope, cadmpeg_ir::ContentScope::container());
+    assert_eq!(
+        decoded.report().scope(),
+        cadmpeg_ir::ContentScope::container()
+    );
     assert!(decoded.ir().source.as_ref().unwrap().dialects().is_none());
     let unknowns = decoded.ir().native_unknowns("fcstd").unwrap();
     let [unknown] = unknowns.as_slice() else {
         panic!("one real archive failure")
     };
     let fidelity = decoded.source_fidelity();
+    assert_eq!(
+        fidelity.unrepresented(),
+        cadmpeg_ir::ArenaClasses::from([
+            cadmpeg_ir::ArenaClass::Model,
+            cadmpeg_ir::ArenaClass::Design
+        ])
+    );
     assert_eq!(fidelity.parts().len(), 1);
     let part = &fidelity.parts()[&unknown.id];
     assert_eq!(part.level().as_str(), "zip.archive");

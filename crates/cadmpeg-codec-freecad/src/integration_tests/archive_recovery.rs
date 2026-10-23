@@ -51,7 +51,8 @@ fn an_unframeable_optional_header_gives_up_its_archive_and_no_document_records_e
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
         .unwrap();
     assert_eq!(decoded.ir().model.entity_count(), 0);
-    assert_eq!(decoded.ir().scope, cadmpeg_ir::ContentScope::container());
+    assert_eq!(decoded.ir().scope, cadmpeg_ir::ContentScope::full());
+    assert_eq!(decoded.report().scope(), cadmpeg_ir::ContentScope::full());
     assert_eq!(
         decoded.ir().source.as_ref().unwrap().dialects(),
         baseline.ir().source.as_ref().unwrap().dialects()
