@@ -272,11 +272,39 @@ pub(super) fn exact_assembly_alignment_with_types(
             }
             (angle, offset, owners)
         };
+        let mut additional_members = Vec::new();
         let form = if scope.kind() == scope::DesignFeatureKind::AsBuilt {
             let paths = match exact_assembly_operand_paths(bytes, records, scope, stream_types) {
                 Ok(paths) => paths,
                 Err(error) => return Some(Err(error)),
             };
+            // A rigid group's members after its first two tie to its first.
+            if let Some(leading) = paths.as_ref().filter(|_| {
+                crate::design::assembly::rigid_as_built_scope(
+                    scope.frame_length(),
+                    scope.kind() == scope::DesignFeatureKind::AsBuilt,
+                )
+            }) {
+                let member_paths = match super::assembly_operand_paths::exact_rigid_group_member_paths(
+                    bytes,
+                    records,
+                    scope,
+                    stream_types,
+                    leading,
+                ) {
+                    Ok(member_paths) => member_paths?,
+                    Err(error) => return Some(Err(error)),
+                };
+                for path in member_paths {
+                    let frame = super::assembly_operand_frames::exact_as_built_operand_frame(
+                        bytes, &path, true,
+                    )?;
+                    additional_members.push(assembly::DesignQualifiedAssemblyOperand {
+                        frame,
+                        qualifier: DesignAssemblyOperandQualifier::OccurrencePath { path },
+                    });
+                }
+            }
             paths
                 .map(|paths| {
                     DesignAssemblyAlignmentForm::try_from(AsBuiltAlignmentDraft {
@@ -362,8 +390,13 @@ pub(super) fn exact_assembly_alignment_with_types(
                 _ => None,
             });
         DesignAssemblyAlignment::try_new(angle, offset, owners, form)
+            .and_then(|alignment| {
+                alignment
+                    .with_frame_sense(frame_sense)
+                    .with_additional_members(additional_members)
+            })
             .ok()
-            .map(|alignment| Ok(alignment.with_frame_sense(frame_sense)))
+            .map(Ok)
     })()
     .transpose()
 }

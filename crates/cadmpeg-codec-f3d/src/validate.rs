@@ -83,6 +83,73 @@ fn body_recipe_reference_table_is_admitted(
         })
 }
 
+/// A rigid `As-built` alignment has no parameter owners, so its angle and
+/// offset are zero.
+fn rigid_alignment_scalars_hold(
+    alignment: &records::feature::assembly::DesignAssemblyAlignment,
+    rigid_as_built: bool,
+) -> bool {
+    !rigid_as_built
+        || !alignment.owners.is_empty()
+        || (alignment.angle() == 0.0 && alignment.offset() == [0.0; 3])
+}
+
+/// A rigid group whose operands were read keeps one member after its first
+/// two for each locator its frame stores, each taking the locator reference
+/// that follows the previous one, with the frame its wide locator carries. A
+/// group whose operands were not read, and every other scope, has no further
+/// members.
+fn rigid_group_members_link(
+    scope: &records::feature::scope::DesignParameterScope,
+    alignment: &records::feature::assembly::DesignAssemblyAlignment,
+    rigid_as_built: bool,
+) -> bool {
+    if rigid_as_built && alignment.form.is_some() {
+        design::assembly::rigid_group_member_count(scope.frame_length())
+            == alignment.additional_members.len().checked_add(2)
+            && alignment.additional_members.iter().enumerate().all(
+                |(ordinal, member)| {
+                    use crate::layout::assembly_wide_operand_path_locator as wide;
+                    let records::feature::assembly::DesignAssemblyOperandQualifier::OccurrencePath { path } =
+                        &member.qualifier
+                    else {
+                        return false;
+                    };
+                    let Some(locator_offset) = ordinal
+                        .checked_add(2)
+                        .and_then(|member| member.checked_mul(11))
+                        .and_then(|offset| {
+                            offset.checked_add(
+                                crate::layout::assembly_rigid_as_built_scope::FIRST_LOCATOR_REFERENCE,
+                            )
+                        })
+                    else {
+                        return false;
+                    };
+                    let locator = path.link().locator_byte_offset;
+                    let identity = member.frame.transform.rows()
+                        == cadmpeg_ir::transform::Transform::identity().rows();
+                    let transform_at: &[usize] = if identity {
+                        &[wide::IDENTITY_FLAG, wide::TRANSFORM]
+                    } else {
+                        &[wide::TRANSFORM]
+                    };
+                    valid_assembly_operand_path_link(scope, path, locator_offset)
+                        && locator.checked_add(u64_from_index(
+                            wide::NONZERO_RECORD_REFERENCE + 1,
+                        )) == Some(member.frame.reference_offset)
+                        && transform_at.iter().any(|at| {
+                            locator.checked_add(u64_from_index(*at))
+                                == Some(member.frame.transform_offset)
+                        })
+                        && member.frame.reference_record_index != 0
+                },
+            )
+    } else {
+        alignment.additional_members.is_empty()
+    }
+}
+
 fn valid_assembly_operand_path_link(
     scope: &records::feature::scope::DesignParameterScope,
     path: &records::feature::assembly::DesignAssemblyOperandPath,
@@ -2541,13 +2608,11 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         _ => false,
                     }
                 } else {
-                    alignment_lane_bounds.is_some_and(|(alignment_start, alignment_end)| {
-                        alignment_end
-                            .checked_sub(alignment_start)
-                            .is_some_and(|expected_offset| {
-                                alignment.owners.len() == expected_offset
-                            })
-                            && alignment.owners.iter().zip(&values).enumerate().all(
+                    rigid_alignment_scalars_hold(alignment, rigid_as_built)
+                        && alignment_lane_bounds.is_some_and(|(alignment_start, alignment_end)| {
+                            alignment_end.checked_sub(alignment_start).is_some_and(
+                                |expected_offset| alignment.owners.len() == expected_offset,
+                            ) && alignment.owners.iter().zip(&values).enumerate().all(
                                 |(ordinal, (lane, value))| {
                                     native.design_parameter_owners.iter().any(|owner| {
                                         design_stream(owner.id()) == native_stream
@@ -2560,7 +2625,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                     })
                                 },
                             )
-                    })
+                        })
                 };
                 let alignment_reference_link = if let Some(generation) = as_built_421_generation {
                     alignment.limits().is_some_and(|limits| {
@@ -2622,9 +2687,12 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         .take(alignment.owners.len())
                         .eq(alignment.owners.iter().map(|owner| &owner.value).rev())
                 };
+                let additional_members_link =
+                    rigid_group_members_link(scope, alignment, rigid_as_built);
                 operand_frames_link
                     && solved_frame_link
                     && operand_qualifiers_link
+                    && additional_members_link
                     && joint_origin_envelope_link
                     && alignment_reference_link
                     && alignment_scalars_link

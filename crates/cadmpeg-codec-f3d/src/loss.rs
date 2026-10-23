@@ -43,6 +43,9 @@ pub(crate) enum F3dLossCode {
     /// Unresolved `Component Insert` occurrences dropped because no authored timeline order tells
     /// top-level inserts from internal operands.
     ComponentInsertOrderUnknown,
+    /// Component definitions stored as revised records that each bind a context
+    /// UUID; the earliest record defines the component.
+    ComponentDefinitionRevised,
     /// Design assembly joint scopes whose operands, frames, limits, or alignment values do not
     /// project.
     AssemblyJointUnprojected,
@@ -248,6 +251,7 @@ impl F3dLossCode {
         Self::LocalOccurrenceUnplaced,
         Self::ComponentInsertUnplaced,
         Self::ComponentInsertOrderUnknown,
+        Self::ComponentDefinitionRevised,
         Self::AssemblyJointUnprojected,
         Self::AssemblyJointMotionUndecoded,
         Self::AssemblyOperandPathPairsNative,
@@ -359,6 +363,7 @@ impl F3dLossCode {
             Self::LocalOccurrenceUnplaced => "assembly.local-occurrence-unplaced",
             Self::ComponentInsertUnplaced => "assembly.component-insert-unplaced",
             Self::ComponentInsertOrderUnknown => "assembly.component-insert-order-unknown",
+            Self::ComponentDefinitionRevised => "assembly.component-definition-revised",
             Self::AssemblyJointUnprojected => "assembly.joint-unprojected",
             Self::AssemblyJointMotionUndecoded => "assembly.joint-motion-undecoded",
             Self::AssemblyOperandPathPairsNative => "assembly.operand-path-pairs-native",
@@ -490,6 +495,7 @@ impl F3dLossCode {
             | Self::LocalOccurrenceUnplaced
             | Self::ComponentInsertUnplaced
             | Self::ComponentInsertOrderUnknown
+            | Self::ComponentDefinitionRevised
             | Self::AssemblyJointUnprojected
             | Self::AssemblyJointMotionUndecoded
             | Self::AssemblyOperandPathPairsNative
@@ -632,7 +638,8 @@ impl F3dLossCode {
             Self::MaterialDistanceUnitUntyped => LossTaxonomy::MaterialNotTransferred,
             Self::LocalOccurrenceUnplaced
             | Self::ComponentInsertUnplaced
-            | Self::ComponentInsertOrderUnknown => LossTaxonomy::AssemblyPlacementsNotTransferred,
+            | Self::ComponentInsertOrderUnknown
+            | Self::ComponentDefinitionRevised => LossTaxonomy::AssemblyPlacementsNotTransferred,
             Self::DesignBodyBindingUnresolved
             | Self::FaceSurfaceReferenceDangling
             | Self::PcurveUndecoded => LossTaxonomy::ReferenceGraphNotClosed,
@@ -729,6 +736,7 @@ mod tests {
                 "assembly.local-occurrence-unplaced",
                 "assembly.component-insert-unplaced",
                 "assembly.component-insert-order-unknown",
+                "assembly.component-definition-revised",
                 "assembly.joint-unprojected",
                 "assembly.joint-motion-undecoded",
                 "assembly.operand-path-pairs-native",

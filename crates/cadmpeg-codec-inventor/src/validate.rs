@@ -691,6 +691,7 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
                 references.extend([entity.index(), center.index()]);
             }
             PmDcSketchConstraintKind::EqualRadius { first, second }
+            | PmDcSketchConstraintKind::EqualLength { first, second }
             | PmDcSketchConstraintKind::Distance { first, second, .. }
             | PmDcSketchConstraintKind::Angle { first, second, .. }
             | PmDcSketchConstraintKind::HorizontalAlignment { first, second }

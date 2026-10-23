@@ -76,6 +76,9 @@ const CIRCLE_CENTER_TYPE: [u8; 16] = [
 const EQUAL_RADIUS_TYPE: [u8; 16] = [
     0xd0, 0x7d, 0x2c, 0x44, 0xd1, 0x11, 0x89, 0xe6, 0x80, 0x00, 0x6f, 0xb1, 0xe1, 0x35, 0x54, 0xc7,
 ];
+const EQUAL_LENGTH_TYPE: [u8; 16] = [
+    0xe0, 0xc2, 0x81, 0xc6, 0xd1, 0x11, 0x10, 0xe6, 0x80, 0x00, 0x6e, 0xb1, 0xe1, 0x35, 0x54, 0xc7,
+];
 const POLYGON_TYPE: [u8; 16] = [
     0x38, 0x48, 0x53, 0x52, 0x9f, 0x44, 0x52, 0x55, 0xe1, 0xe1, 0xda, 0xb4, 0x10, 0xeb, 0x06, 0xc4,
 ];
@@ -200,6 +203,10 @@ pub(crate) enum PmDcSketchConstraintKind {
         center: PmDcReference,
     },
     EqualRadius {
+        first: PmDcReference,
+        second: PmDcReference,
+    },
+    EqualLength {
         first: PmDcReference,
         second: PmDcReference,
     },
@@ -652,6 +659,7 @@ enum SketchConstraintTag {
     Diameter,
     CircleCenter,
     EqualRadius,
+    EqualLength,
     Distance,
     Angle,
     Midpoint,
@@ -678,6 +686,7 @@ impl SketchConstraintTag {
             DIAMETER_TYPE => Some(Self::Diameter),
             CIRCLE_CENTER_TYPE => Some(Self::CircleCenter),
             EQUAL_RADIUS_TYPE => Some(Self::EqualRadius),
+            EQUAL_LENGTH_TYPE => Some(Self::EqualLength),
             DISTANCE_TYPE => Some(Self::Distance),
             ANGLE_TYPE => Some(Self::Angle),
             MIDPOINT_TYPE => Some(Self::Midpoint),
@@ -1083,6 +1092,10 @@ fn parse_constraint(
         SketchConstraintTag::EqualRadius => PmDcSketchConstraintKind::EqualRadius {
             first: cursor.reference("equal-radius constraint first reference")?,
             second: cursor.reference("equal-radius constraint second reference")?,
+        },
+        SketchConstraintTag::EqualLength => PmDcSketchConstraintKind::EqualLength {
+            first: cursor.reference("equal-length constraint first reference")?,
+            second: cursor.reference("equal-length constraint second reference")?,
         },
         SketchConstraintTag::Distance => PmDcSketchConstraintKind::Distance {
             value: cursor.u32("distance dimension value")?,
@@ -1538,7 +1551,7 @@ fn project_constraint(
         && constraint.header.scalar_map.entries().is_empty()
         && constraint.header.reference_map.metadata().is_none()
         && constraint.header.reference_map.entries().is_empty();
-    if !maps_are_empty && !coincident_solver_hint(constraint) {
+    if !maps_are_empty && !solver_hint(constraint) {
         return None;
     }
     let resolve = |reference: PmDcReference| {
@@ -1714,7 +1727,8 @@ fn project_constraint(
                 members,
             )
         }
-        PmDcSketchConstraintKind::EqualRadius { first, second } => {
+        PmDcSketchConstraintKind::EqualRadius { first, second }
+        | PmDcSketchConstraintKind::EqualLength { first, second } => {
             let members = [resolve(first)?, resolve(second)?];
             (
                 SketchConstraintDefinitionInput::Equal {
@@ -1907,25 +1921,37 @@ fn project_constraint(
     }))
 }
 
-/// Whether the constraint maps hold only a coincident relation's solver
-/// hint: in each map, at most one entry for each of its two operands, with
-/// null reference values.
-fn coincident_solver_hint(constraint: &PmDcSketchConstraint) -> bool {
-    let PmDcSketchConstraintKind::Coincident { first, second } = constraint.kind else {
-        return false;
+/// Largest unqualified reference-map value of a tangent relation's solver
+/// hint: 0, 1, or 2.
+const TANGENT_HINT_MAX_CODE: u32 = 2;
+
+/// Whether the constraint maps hold only the relation's solver hint: in each
+/// map, at most one entry for each of its two operands. Reference-map values
+/// are null; a tangent relation's values can also be the unqualified codes 1
+/// and 2.
+fn solver_hint(constraint: &PmDcSketchConstraint) -> bool {
+    let (operands, max_code) = match constraint.kind {
+        PmDcSketchConstraintKind::Coincident { first, second }
+        | PmDcSketchConstraintKind::Distance { first, second, .. } => ([first, second], 0),
+        PmDcSketchConstraintKind::Tangent { first, second, .. } => {
+            ([first, second], TANGENT_HINT_MAX_CODE)
+        }
+        PmDcSketchConstraintKind::CircleCenter { entity, center } => ([entity, center], 0),
+        PmDcSketchConstraintKind::Midpoint { entity, point, .. } => ([entity, point], 0),
+        _ => return false,
     };
     let header = &constraint.header;
     distinct_operand_keys(
         header.scalar_map.entries().iter().map(|(key, _)| *key),
-        [first, second],
+        operands,
     ) && header
         .reference_map
         .entries()
         .iter()
-        .all(|(_, value)| value.index() == 0 && !value.qualified())
+        .all(|(_, value)| !value.qualified() && value.index() <= max_code)
         && distinct_operand_keys(
             header.reference_map.entries().iter().map(|(key, _)| *key),
-            [first, second],
+            operands,
         )
 }
 
@@ -2503,10 +2529,11 @@ impl RecordPayload for PmDcSketchConstraintPayload {
 mod tests {
     use super::{
         distinct_operand_keys, inventory, parse_constraint, parse_direction, parse_entity,
-        parse_sketch, parse_transform, project, PmDcSketchConstraintKind, PmDcSketchEntityKind,
-        PmDcSketchEntityPayload, PmDcSketchPayload, PmDcTransformPayload, SketchConstraintTag,
-        SketchEntityTag, SketchInventory, CIRCLE_TYPE, COINCIDENT_TYPE, DIRECTION_TYPE,
-        HORIZONTAL_TYPE, LINE_TYPE, MIDPOINT_TYPE, POINT_TYPE, SKETCH_TYPE, TRANSFORM_TYPE,
+        parse_sketch, parse_transform, project, solver_hint, PmDcSketchConstraint,
+        PmDcSketchConstraintKind, PmDcSketchEntityKind, PmDcSketchEntityPayload, PmDcSketchPayload,
+        PmDcTransformPayload, SketchConstraintTag, SketchEntityTag, SketchInventory, CIRCLE_TYPE,
+        COINCIDENT_TYPE, DIRECTION_TYPE, HORIZONTAL_TYPE, LINE_TYPE, MIDPOINT_TYPE, POINT_TYPE,
+        SKETCH_TYPE, TRANSFORM_TYPE,
     };
     use crate::container::InventorContainer;
     use crate::pmdc::{PmDcReference, PmDcReferenceList};
@@ -3287,6 +3314,7 @@ mod tests {
         for type_id in [
             SketchConstraintTag::CircleCenter,
             SketchConstraintTag::EqualRadius,
+            SketchConstraintTag::EqualLength,
         ] {
             let mut bytes = constraint_header(14, 0);
             bytes.extend_from_slice(&4u32.to_le_bytes());
@@ -3628,6 +3656,58 @@ mod tests {
             [PmDcReference::new(0, false).expect("null reference")],
             operands
         ));
+    }
+
+    /// A relation keyed by line 8 and point 4 whose maps hold one hint entry
+    /// for the line, with reference-map value `code`.
+    fn hinted_relation(code: u32) -> PmDcSketchConstraint {
+        let mut bytes = content(11);
+        bytes.extend_from_slice(&(-1i32).to_le_bytes());
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        let map_prefix = |bytes: &mut Vec<u8>| {
+            bytes.extend_from_slice(&6u16.to_le_bytes());
+            bytes.extend_from_slice(&0x3000u16.to_le_bytes());
+            bytes.extend_from_slice(&1u32.to_le_bytes());
+            bytes.extend_from_slice(&[0; 8]);
+            bytes.extend_from_slice(&8u32.to_le_bytes());
+        };
+        map_prefix(&mut bytes);
+        bytes.extend_from_slice(&1.0f64.to_le_bytes());
+        map_prefix(&mut bytes);
+        bytes.extend_from_slice(&code.to_le_bytes());
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes.extend_from_slice(&8u32.to_le_bytes());
+        bytes.extend_from_slice(&4u32.to_le_bytes());
+        let parsed = parse(&bytes, |_, source| {
+            parse_constraint(SketchConstraintTag::Coincident, source, 22).expect("relation")
+        });
+        Located::new(
+            parsed,
+            crate::record_identity::RecordTypeId::from_bytes(COINCIDENT_TYPE),
+            cadmpeg_ir::identity_key!("segment"),
+            11,
+        )
+    }
+
+    /// The same record read as a tangent relation.
+    fn as_tangent(relation: &PmDcSketchConstraint) -> PmDcSketchConstraint {
+        let mut wire = serde_json::to_value(relation).expect("relation wire");
+        wire["kind"] = serde_json::json!({
+            "form": "tangent",
+            "first": wire["kind"]["first"].clone(),
+            "second": wire["kind"]["second"].clone(),
+        });
+        serde_json::from_value(wire).expect("tangent wire")
+    }
+
+    #[test]
+    fn a_tangent_hint_can_name_a_curve_end() {
+        assert!(solver_hint(&hinted_relation(0)));
+        // Only a tangent hint names a curve end.
+        assert!(!solver_hint(&hinted_relation(2)));
+        assert!(solver_hint(&as_tangent(&hinted_relation(2))));
+        assert!(solver_hint(&as_tangent(&hinted_relation(1))));
+        assert!(!solver_hint(&as_tangent(&hinted_relation(3))));
     }
 
     #[test]

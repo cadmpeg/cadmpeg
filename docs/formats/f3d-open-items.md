@@ -409,6 +409,16 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Conflict.** Assuming a 180° turn about either in-plane axis, or applying the angle with the aligned sign, states a relation no sample shows.
 
+### DR-92. Current revision of a component definition
+
+**Question.** When a component definition is stored as revisions, each binding its own context UUID, which revision is current?
+
+**Known.** Two real assemblies store a component definition as two record pairs that repeat one record index. Both pairs carry the component's name and each binds its own context UUID, and neither UUID occurs elsewhere in the design. The later pair is longer and carries typed references.
+
+**Need.** A design whose persistent identities use one of the two UUIDs, or whose component properties differ between the revisions, must show which revision Fusion treats as current.
+
+**Conflict.** Treating either revision as the only binding discards a naming space a persistent identity could select.
+
 ## 2. External references
 
 ### DR-82. Other joint freedom codes and the limit flags
