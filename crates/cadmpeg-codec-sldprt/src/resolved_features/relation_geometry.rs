@@ -2789,7 +2789,8 @@ pub(crate) fn project_relation_bindings(
         &sketches_by_feature,
         sketch_entities,
         lanes,
-    )
+    );
+    Ok(())
 }
 
 pub(crate) fn owned_relation_parameters<'a>(
