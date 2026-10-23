@@ -512,12 +512,31 @@ enum SolverRoles {
     Extended,
 }
 
+pub(in super::super) fn section_entity_has_conic_owner(
+    definition: &crate::feature::definitions::FeatureDefinition,
+    entity_id: u32,
+) -> bool {
+    definition.segments.as_ref().is_some_and(|segments| {
+        segments
+            .rows
+            .conics()
+            .any(|row| row.external_id == entity_id)
+            || segments
+                .rows
+                .opaque()
+                .any(|row| row.external_id == entity_id && row.kind == 58)
+    })
+}
+
 fn section_incidence_curve_family_evidence_with_solver_roles(
     definition: &crate::feature::definitions::FeatureDefinition,
     entity_id: u32,
     solver_roles: SolverRoles,
 ) -> IncidenceEvidence {
     let mut evidence = IncidenceEvidence::default();
+    if section_entity_has_conic_owner(definition, entity_id) {
+        return evidence;
+    }
     if complete_section_skamps(definition).any(|skamp| {
         matches!(
             (skamp.kind, skamp.items.as_slice()),
@@ -1169,6 +1188,31 @@ mod tests {
 
         assert_eq!(
             solver_only_section_entity_family(&definition, 21),
+            Some(SectionEntityIncidenceFamily::Arc)
+        );
+    }
+    #[test]
+    fn conic_owner_prevents_sense_based_circular_narrowing() {
+        for selector in [0, 2, 3, 4] {
+            let mut conic = with_target_role(101, true, 0, 4);
+            conic
+                .segments
+                .as_mut()
+                .expect("segments")
+                .rows
+                .edit_opaque(|rows| {
+                    rows[0].kind = 58;
+                    rows[0].vertical_horizontal = Some(selector);
+                });
+            assert!(super::section_entity_has_conic_owner(&conic, 101));
+            assert_eq!(unique_section_incidence_curve_family(&conic, 101), None);
+            conic.segments.as_mut().expect("segments").declared_count += 1;
+            assert_eq!(unique_section_incidence_curve_family(&conic, 101), None);
+        }
+        let unknown = with_target_role(101, true, 0, 4);
+        assert!(!super::section_entity_has_conic_owner(&unknown, 101));
+        assert_eq!(
+            unique_section_incidence_curve_family(&unknown, 101),
             Some(SectionEntityIncidenceFamily::Arc)
         );
     }

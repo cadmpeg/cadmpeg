@@ -474,11 +474,13 @@ Entity-orientation and point-alignment constraint families are distinct.
 
 ### SP-16. Other `skamp_ptr` geometry families
 
-**Question.** What geometry family does each `skamp_ptr` entity code outside the defined point, endpoint-bearing curve, line, arc, and circle roles identify?
+**Question.** Which complete owner or incidence join establishes the family of an unresolved projected or solver-only section identity?
 
-**Known.** The defined roles use incidence structure and section entities to prove their geometry family.
+**Known.** Entity identifiers are sketch-local. A type-58 owner identifies conic family independently of its stored selector and locus sense. The defined point, endpoint-bearing curve, line, arc, and circle roles require their independent owner or incidence evidence.
 
-**Need.** We must know the mapping to create the correct neutral constraint operands.
+**Need.** Establish complete copied-result ownership for projected identities and complete, compatible incidence roles for ownerless identities. A saved result with the same integer in another definition does not establish a join.
+
+**Note.** A missing or ambiguous owner and an unproved locus sense retain native geometry. Family does not follow from the numeric entity identifier or a single center-like sense.
 
 ### SP-17. Solver-only external references
 

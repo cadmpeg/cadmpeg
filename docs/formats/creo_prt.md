@@ -4961,11 +4961,15 @@ The `segtab` positional replay stores `type`, three direction fields, two endpoi
 For line rows, `verhor = 0` constrains the line vertical in section coordinates and `verhor = 1` constrains it horizontal. Other `verhor` values are not direction selectors.
 
 A type-58 `segtab` row identifies a saved conic. Its direction triple is
-zero, its point fields are absent and one, its center field is present,
-`arcorient = 0`, and `verhor = 2`. The two radius fields are references to
-the saved conic's first and second coefficients, not a circle radius and a
-secondary radius. `ext_id` joins the row through `order_table` to the
-type-58 `entity(conic)` record.
+zero, its point fields are absent and one, its center field is present, and
+`arcorient = 0`. The stored `verhor` field is a separate selector; it does
+not change the conic family. The two radius fields are references to the
+saved conic's first and second coefficients, not a circle radius and a
+secondary radius. An `order_table` match identifies a saved `entity(conic)`
+record only within its proved section ownership. The entity identifier is
+sketch-local and does not encode the geometry family. A conic owner takes
+precedence over sense-based circular inference. An unresolved conic locus
+remains native.
 
 ### 8.3 DEPDB profiles and operations
 
