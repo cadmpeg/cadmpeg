@@ -1118,6 +1118,8 @@ packed-color records. An empty color list supplies no override. A count of one a
 to the corresponding subelements. Larger lists use the saved shape's indexed Face, Edge, or Vertex
 order. `ShapeAppearance` uses the same Face order for multiple material records, with one material
 as the uniform object appearance. Persistent names are independent of these positional lists.
+Multiple shape materials address faces, including when the shape contains several solids. A list
+length equal to the number of solids does not change the material index domain.
 
 Application data without a neutral representation retains its owning object and property,
 declared application type, links, source order, XML bytes, referenced side-entry bytes, byte spans,

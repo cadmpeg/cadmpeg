@@ -136,6 +136,12 @@ An indexed list whose length differs from the transferred topology count remains
 lists remain count mismatches when a shape has faces. Duplicate `Shape` properties or payloads are
 malformed; no source-order choice associates a view provider with one of them.
 
+Multi-material lists whose length equals the solid count still require the face count to match.
+The decoder does not infer per-solid materials from that equality, expand identical entries into a
+uniform material, or assign a prefix of an unmatched list. Such lists remain native and keep the
+count-mismatch warning. The warning identifies the absent face association; it does not determine
+why the saved list and shape have different counts.
+
 An admitted edge or vertex color array replaces the corresponding default color bindings on its
 indexed targets. The effective array appearances retain the default line width or point size.
 An empty or mismatched array leaves those default bindings in place.
