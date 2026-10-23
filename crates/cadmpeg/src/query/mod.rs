@@ -240,7 +240,7 @@ struct MeasureProbe {
     edges: Vec<serde::de::IgnoredAny>,
     #[serde(default)]
     surfaces: Vec<serde::de::IgnoredAny>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_measure_document")]
     document: Option<MeasureDocumentProbe>,
 }
 
@@ -248,19 +248,31 @@ struct MeasureProbe {
 struct MeasureDocumentProbe {
     #[serde(default)]
     unavailable: BTreeMap<String, BTreeMap<String, u64>>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_measure_work")]
     work: Option<MeasureWorkProbe>,
 }
 
 #[derive(Deserialize)]
 struct MeasureWorkProbe {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_work_allowance")]
     allowance: Option<u64>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_work_used")]
     used: Option<u64>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_work_exhausted")]
     exhausted: Option<bool>,
 }
+
+// The measure report writes each of these keys with a value; a probe of a
+// report that leaves one out reads it as absent.
+cadmpeg_core::named_optional_field!(
+    deserialize_measure_document,
+    MeasureDocumentProbe,
+    "document"
+);
+cadmpeg_core::named_optional_field!(deserialize_measure_work, MeasureWorkProbe, "work");
+cadmpeg_core::named_optional_field!(deserialize_work_allowance, u64, "allowance");
+cadmpeg_core::named_optional_field!(deserialize_work_used, u64, "used");
+cadmpeg_core::named_optional_field!(deserialize_work_exhausted, bool, "exhausted");
 
 #[derive(Deserialize)]
 struct RefusalProbe {

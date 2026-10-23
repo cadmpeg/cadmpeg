@@ -695,6 +695,40 @@ fn summary_names_a_measure_report_and_counts_its_rows_and_unavailable_values() {
         ));
 }
 
+/// A measure report that leaves out its document's `work` reads it as
+/// absent; one that states `work: null` is refused with the key named.
+#[test]
+fn a_measure_report_states_its_work_or_leaves_it_out() {
+    let dir = tempdir().unwrap();
+    let report = |work: &str| {
+        format!(
+            r#"{{"ir_version": "10", "command": "measure", "status": "ok", "refusal": null,
+               "decode_report": null, "measure": {{"bodies": [{{}}], "faces": [],
+               "edges": [], "surfaces": [], "document": {{"unavailable": {{}}{work}}}}}}}"#
+        )
+    };
+    let left_out = write(dir.path(), "left_out.json", &report(""));
+    cadmpeg()
+        .args(["query", "summary"])
+        .arg(&left_out)
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("measure_bodies\t1")
+                .and(predicate::str::contains("measure_unavailable\t0"))
+                .and(predicate::str::contains("measure_work").not()),
+        );
+    let null = write(dir.path(), "null.json", &report(r#", "work": null"#));
+    cadmpeg()
+        .args(["query", "summary"])
+        .arg(&null)
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "work: this key states a value or is left out",
+        ));
+}
+
 // --- query item -------------------------------------------------------------
 
 const ITEM_DOC: &str = r#"{
