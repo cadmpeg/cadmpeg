@@ -85,6 +85,8 @@ pub(crate) enum SldprtLossCode {
     FeatureInputObjectUnbound,
     /// Typed feature retains native or unresolved required operation operands.
     FeatureTypedOperandIncomplete,
+    /// Thin extrusion retains an ambiguous inline Boolean operation.
+    FeatureThinOperationAmbiguous,
     /// Body delete/keep feature retains native selection without a decoded mode.
     FeatureBodyRetentionUnresolved,
     /// Face or procedural construction references an untyped support surface.
@@ -207,6 +209,7 @@ impl SldprtLossCode {
         Self::FeatureNativeKindRetained,
         Self::FeatureInputObjectUnbound,
         Self::FeatureTypedOperandIncomplete,
+        Self::FeatureThinOperationAmbiguous,
         Self::FeatureBodyRetentionUnresolved,
         Self::GeometryFaceSupportSurfaceUntyped,
         Self::GeometryEdgeSupportCurveUntyped,
@@ -280,6 +283,7 @@ impl SldprtLossCode {
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
             Self::FeatureInputObjectUnbound => "feature.input-object-unbound",
             Self::FeatureTypedOperandIncomplete => "feature.typed-operand-incomplete",
+            Self::FeatureThinOperationAmbiguous => "feature.thin-operation-ambiguous",
             Self::FeatureBodyRetentionUnresolved => "feature.body-retention-unresolved",
             Self::GeometryFaceSupportSurfaceUntyped => "geometry.face-support-surface-untyped",
             Self::GeometryEdgeSupportCurveUntyped => "geometry.edge-support-curve-untyped",
@@ -368,6 +372,7 @@ impl SldprtLossCode {
             | Self::FeatureNativeKindRetained
             | Self::FeatureInputObjectUnbound
             | Self::FeatureTypedOperandIncomplete
+            | Self::FeatureThinOperationAmbiguous
             | Self::FeatureBodyRetentionUnresolved
             | Self::GeometryFaceSupportSurfaceUntyped
             | Self::GeometryEdgeSupportCurveUntyped
@@ -469,6 +474,7 @@ impl SldprtLossCode {
             | Self::FeatureNativeKindRetained
             | Self::FeatureInputObjectUnbound
             | Self::FeatureTypedOperandIncomplete
+            | Self::FeatureThinOperationAmbiguous
             | Self::FeatureBodyRetentionUnresolved => LossTaxonomy::FeatureHistoryRetained,
         }
     }
@@ -640,6 +646,7 @@ mod tests {
                 "feature.native-kind-retained",
                 "feature.input-object-unbound",
                 "feature.typed-operand-incomplete",
+                "feature.thin-operation-ambiguous",
                 "feature.body-retention-unresolved",
                 "geometry.face-support-surface-untyped",
                 "geometry.edge-support-curve-untyped",

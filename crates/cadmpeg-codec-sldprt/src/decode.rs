@@ -1684,6 +1684,47 @@ fn append_design_losses(
         )));
     }
 
+    let ambiguous_thin_operations = native.as_ref().map_or(0, |native| {
+        let histories = crate::records::HistoryFeatures::new(&native.feature_histories);
+        let lane_names = native
+            .feature_input_lanes
+            .iter()
+            .map(|lane| {
+                (
+                    lane,
+                    crate::resolved_features::scalars::FeatureObjectNames::new(&lane.names),
+                )
+            })
+            .collect::<Vec<_>>();
+        evaluated_feature_states
+            .iter()
+            .filter(|state| {
+                matches!(
+                    state.definition,
+                    FeatureDefinition::Operation(FeatureOperation::Extrude {
+                        op: BooleanOp::Unresolved,
+                        ..
+                    })
+                ) && state
+                    .feature
+                    .native_ref
+                    .as_deref()
+                    .and_then(|reference| histories.get(reference))
+                    .is_some_and(|feature| {
+                        crate::resolved_features::operations::ambiguous_thin_join_operation(
+                            feature,
+                            &lane_names,
+                        )
+                    })
+            })
+            .count()
+    });
+    if ambiguous_thin_operations > 0 {
+        report.losses.push(SldprtLossCode::FeatureThinOperationAmbiguous.note(format!(
+            "{ambiguous_thin_operations} thin extrusion state(s) retain an ambiguous inline Boolean operation."
+        )));
+    }
+
     let unresolved_body_modes = evaluated_feature_states
         .iter()
         .filter(|state| {
