@@ -1,6 +1,8 @@
 //! Sketch rules (`g_sketch.py`): the inline entity record, handle objects,
 //! `sgSketch`, its tail and the objects a sketch refers to.
 
+use std::sync::Arc;
+
 use super::super::reader::{bad, Ptr, Reader, Res, V};
 use super::feat::{isclass, isver, objat, refblock, ver_or, M12345, UCS};
 
@@ -89,7 +91,11 @@ fn rhead(r: &mut Reader<'_>) -> Res<V> {
     let sel = r.u16()?;
     r.skip(9);
     r.f64()?;
-    r.expect_zeros(8, "record zeros 2")?;
+    let w = r.pu16(r.p)?;
+    if r.eq(r.p, &[0, 0]) || w >= 0x100 {
+        // Before 11000 the next word is the tag (KiCad exports).
+        r.expect_zeros(8, "record zeros 2")?;
+    }
     Ok(V::map([
         ("kind", V::from(kind)),
         ("la", V::from(la)),
@@ -171,7 +177,11 @@ fn line(r: &mut Reader<'_>) -> Res<V> {
         r.expect(&[0, 0], "spline u16 0")?;
         let order = r.u16()?;
         r.ptr(Some(&["cptsSplineList_c", "modifSplineList_c"]))?;
-        if !r.eq(r.p, &[1, 0, 0, 0, 0, 0, 0, 0]) && !r.zeros(r.p, 8) {
+        if !r.eq(r.p, &[1, 0, 0, 0, 0, 0, 0, 0])
+            && !r.zeros(r.p, 8)
+            && !r.eq(r.p, &[1, 0, 1, 0, 0, 0, 0, 0])
+        {
+            // u32 1 (or 0) and u32 0; a u16 1 and u32 1 in one part.
             return Err(bad("spline 1 0"));
         }
         r.skip(8);
@@ -196,6 +206,50 @@ fn line(r: &mut Reader<'_>) -> Res<V> {
             r.f64()?;
             r.f64()?;
             r.f64()?;
+        }
+        if r.zeros(r.p, 4) && r.pu32(r.p + 4)? == 0 && r.pu32(r.p + 8)? == 2 {
+            // A spline whose geometry may be a compressed Parasolid body: u32 0, u32 0, u32 2, the parameter
+            // range, u32 0, u32 1. When a body follows, a zero run (24 or 56 bytes), u16 1 and a blob
+            // (00 A 00 B, B = A - 5) stand before it; when none does, the record's tail follows the two u32.
+            r.skip(12);
+            r.f64()?;
+            r.f64()?;
+            r.expect_zeros(4, "spline body u32 0")?;
+            r.u32()?;
+            let q = r.p;
+            let mut j = r.p;
+            while j < r.p + 64 && j < r.len() && r.byte(j)? == 0 {
+                j += 1;
+            }
+            let mut hasbody = false;
+            if j + 12 <= r.len() && r.eq(j, &[1, 0]) && r.eq(j + 2, &[0]) {
+                let a = r.pu32(j + 3)?;
+                let b = r.pu32(j + 8)?;
+                hasbody = r.eq(j + 7, &[0]) && a.checked_sub(5) == Some(b);
+            }
+            if hasbody {
+                r.skip(j - r.p);
+                r.u16()?;
+                let data = blob(r)?;
+                let len = match &data {
+                    V::Bytes(bytes) => bytes.len(),
+                    _ => 0,
+                };
+                v.set(
+                    "spline",
+                    V::List(vec![V::from("body"), V::from(len as i64)]),
+                );
+            } else {
+                r.p = q;
+                v.set("spline", V::List(vec![V::from("bodyless")]));
+            }
+            let c = r.u16()?;
+            let d = r.u32()?;
+            let id = r.u32()?;
+            v.set("c", V::from(c));
+            v.set("d", V::from(d));
+            v.set("id", V::from(id));
+            return Ok(v);
         }
         r.expect(
             &[0, 0, 0, 0, 0xff, 0xff, 0xff, 0xff, 1, 0, 0, 0, 1, 0, 0, 0],
@@ -279,8 +333,15 @@ fn record(r: &mut Reader<'_>) -> Res<V> {
     r.u16()?;
     r.skip(9);
     r.f64()?;
-    r.expect_zeros(8, "record zeros 2")?;
-    let tag = r.u16()?;
+    let w = r.pu16(r.p)?;
+    let tag = if !r.eq(r.p, &[0, 0]) && w < 0x100 {
+        // Before 11000 the tag word is here (KiCad exports).
+        r.skip(2);
+        w
+    } else {
+        r.expect_zeros(8, "record zeros 2")?;
+        r.u16()?
+    };
     r.f64()?;
     r.f64()?;
     if tag & 0x10 == 0 {
@@ -382,6 +443,12 @@ fn core(r: &mut Reader<'_>, gi: usize) -> Res<(usize, Rel)> {
     while ishandle(r)? {
         r.ptr(None)?;
         ops += 1;
+    }
+    if r.zeros(r.p, 4) && isclass(r, r.p + 4, &["suObArray"])? {
+        // Helper data after the operands (a spline's dimension): u32 0 and a
+        // suObArray (a sgDimEntityHelpData_c and a null).
+        r.skip(4);
+        r.ptr(None)?;
     }
     if r.zeros(r.p, 6) && r.ffs(r.p + 8, 8) && r.zeros(r.p + 16, 24) {
         r.skip(40);
@@ -535,12 +602,11 @@ fn ispoly(r: &Reader<'_>, q: usize) -> Res<bool> {
     if r.ffs(q, 4) && n == 1 {
         n = u32::from(r.pu16(q + 18)?);
     }
-    if !(0 < n && n < 1000) {
-        return Ok(false);
-    }
+    // The u16 pair repeats a count, not always n (a circular pattern's: 3
+    // with 8 instances, 15 with 30).
     let a = r.pu16(q + 18)?;
     let b = r.pu16(q + 20)?;
-    if (u32::from(a), u32::from(b)) != (n, n) {
+    if !(0 < n && n < 1000) || a != b || !(0 < a && a < 1000) {
         return Ok(false);
     }
     let w = r.pu16(q + 46)?;
@@ -708,6 +774,15 @@ pub(crate) fn sketch(r: &mut Reader<'_>) -> Res<V> {
             if ok && (a == 0 || a == 1 || a == c) {
                 r.skip(2);
             }
+        }
+    }
+    if r.p + 12 <= r.len() && r.zeros(r.p, 4) && r.pu16(r.p + 4)? == 0 {
+        let n0 = r.pu16(r.p + 6)?;
+        let c = r.pu32(r.p + 8)?;
+        if 0 < n0 && n0 <= 256 && c > 0xffff {
+            // The same 52-byte tail before a group header: n0 is the shifted n, and the group data's class
+            // tag read as a chain count is not a count (2025 Margie).
+            r.skip(2);
         }
     }
     r.expect_zeros(4, "settings u32 0")?;
@@ -1204,9 +1279,14 @@ pub(crate) fn sketchextref(r: &mut Reader<'_>) -> Res<V> {
         r.p = q + z + 2;
         r.ptr(None)?;
         r.expect_zeros(12, "end point 12 zero")?;
+        if r.eq(r.p, &[0xff, 0xff, 0xff, 0xff]) {
+            r.skip(4); // an i32 -1 before the point (1 part)
+        }
         let pt = f64s(r, 3)?;
-        if r.f64()? != 1.0 {
-            return Err(bad("end point f64 1"));
+        let fr = r.f64()?;
+        if !(0.0..=1.0).contains(&fr) {
+            // The fraction along the edge (1.0 in one sample, 0.5 in another).
+            return Err(bad("end point fraction"));
         }
         r.expect(&[0, 0], "end point u16 0")?;
         return Ok(V::List(vec![V::from(e), pt]));
@@ -1987,8 +2067,16 @@ pub(crate) fn wirecontact(r: &mut Reader<'_>) -> Res<V> {
         "wire contact 0 1 -1 2",
     )?;
     let b = f64s(r, 3)?;
-    let w = r.u16()?;
-    Ok(V::List(vec![a, b, V::from(w)]))
+    // The word after it is the cross-section reference's class tag.
+    Ok(V::List(vec![a, b]))
+}
+
+/// `sgDimEntityHelpData_c` (`dimentityhelp`): a dimension's helper data on a
+/// spline operand: f64 (a curve parameter), u32 0.
+pub(crate) fn dimentityhelp(r: &mut Reader<'_>) -> Res<V> {
+    let t = r.f64()?;
+    r.expect_zeros(4, "dim entity help u32 0")?;
+    Ok(V::from(t))
 }
 
 /// `moDimText_c` (`dimtext`).
@@ -2076,7 +2164,7 @@ pub(crate) fn charformat(r: &mut Reader<'_>) -> Res<V> {
 /// `outlines(r)`: a character format's flag and four f64, then the glyph
 /// outlines.
 fn outlines(r: &mut Reader<'_>) -> Res<V> {
-    if r.u32()? > 1 {
+    if r.u32()? > 1 && r.u32()? != 1 {
         return Err(bad("char format flag"));
     }
     for _ in 0..4 {
@@ -2112,22 +2200,135 @@ fn outlines(r: &mut Reader<'_>) -> Res<V> {
     ]))
 }
 
-/// `sgBlock` (`sgblock`): a probe that reads the block's records and stops.
-pub(crate) fn sgblock(r: &mut Reader<'_>) -> Res<V> {
-    r.u32()?;
-    r.u32()?;
-    while isattr(r, r.p) {
-        let q = r.p;
-        if record(r).is_ok() {
-            continue;
-        }
-        r.p = q;
-        if line(r).is_ok() {
-            continue;
-        }
-        break;
+/// `sgEntHandleData_c` (`enthandledata`): a block's entity-handle table. u32 `0`, a u32, 22-byte entries (a
+/// handle class token and 20 bytes of data) until a null token, then a zero run, u32 `3` and either a
+/// compressed body or u32 `1`, seven bytes and a u64 (100000 in the sample).
+fn enthandledata(r: &mut Reader<'_>) -> Res<()> {
+    if r.u32()? != 0 {
+        return Err(bad("entity handle data u32 0"));
     }
-    Err(bad("sgBlock (probe)"))
+    r.u32()?;
+    loop {
+        let w = r.pu16(r.p)?;
+        if w == 0 {
+            break;
+        }
+        let handle = r
+            .known
+            .get(&u32::from(w & 0x7fff))
+            .is_some_and(|name| name.ends_with("Handle"));
+        if w & 0x8000 == 0 || !handle {
+            return Err(bad(format!("entity handle token {w:#x}")));
+        }
+        r.skip(22);
+    }
+    let limit = (r.p + 80).min(r.len());
+    let mut j = r.p;
+    while j + 4 <= limit && !r.eq(j, &[3, 0, 0, 0]) {
+        j += 1;
+    }
+    if j + 4 > limit {
+        return Err(bad("entity handle tail 3"));
+    }
+    if !r.zeros(r.p, j - r.p) {
+        return Err(bad("entity handle tail zeros"));
+    }
+    r.p = j + 4;
+    if r.byte(r.p)? == 0 {
+        let a = r.pu32(r.p + 1)?;
+        let b = r.pu32(r.p + 6)?;
+        if i64::from(b) == i64::from(a) - 5 {
+            blob(r)?;
+            return Ok(());
+        }
+    }
+    if r.u32()? != 1 {
+        return Err(bad("entity handle tail 1"));
+    }
+    r.expect_zeros(7, "entity handle 7 zero")?;
+    r.u64()?;
+    Ok(())
+}
+
+/// `sgBlock` (`sgblock`): a block's geometry in a sketch. u32 `0` and the instance identifier, the sketch-block
+/// instance record (marker prefix, f64 `1` at +48, eight zero bytes, nine f64 at +64, the flags at +136, the origin
+/// at +144, the scale at +168, the mirror word at +176 and the box triples at +184, +208 and +232), one f64, u32 `0`,
+/// a count and that many (block, entity, sketch entity) triples, u32 `1`, a point handle, the entity-handle table,
+/// then the block's plane and its profile feature.
+pub(crate) fn sgblock(r: &mut Reader<'_>) -> Res<V> {
+    if r.u32()? != 0 {
+        return Err(bad("sgBlock u32 0"));
+    }
+    let iid = r.u32()?;
+    if !isattr(r, r.p) {
+        return Err(bad("sgBlock instance marker"));
+    }
+    r.skip(17);
+    r.u32()?;
+    r.expect(&[0, 0], "sgBlock head zeros")?;
+    for _ in 0..4 {
+        r.u16()?;
+    }
+    if !r.eq(r.p, &[0x00, 0x00, 0x80, 0xbf]) {
+        return Err(bad("sgBlock instance f32"));
+    }
+    r.skip(4);
+    r.ptr(None)?;
+    r.u16()?;
+    r.skip(9);
+    r.f64()?;
+    r.expect_zeros(8, "sgBlock instance 8 zero")?;
+    for _ in 0..9 {
+        r.f64()?;
+    }
+    r.u32()?;
+    r.u32()?;
+    for _ in 0..3 {
+        r.f64()?;
+    }
+    r.f64()?;
+    r.skip(8);
+    for _ in 0..9 {
+        r.f64()?;
+    }
+    r.f64()?;
+    if r.u32()? != 0 {
+        return Err(bad("sgBlock list u32 0"));
+    }
+    let n = r.u32()?;
+    if n > 4096 {
+        return Err(bad("sgBlock triples"));
+    }
+    for _ in 0..n {
+        r.u32()?;
+        r.u32()?;
+        r.u32()?;
+    }
+    r.u32()?;
+    r.ptr(Some(&["sgPointHandle"]))?;
+    if !r.eq(r.p, &[0xff, 0xff]) {
+        return Err(bad("sgBlock handle data declaration"));
+    }
+    r.skip(2);
+    r.u16()?;
+    let len = usize::from(r.u16()?);
+    let name = r.slice(r.p, len).to_vec();
+    r.skip(len);
+    if name.as_slice() != b"sgEntHandleData_c" {
+        return Err(bad("sgBlock handle data class"));
+    }
+    let class = Arc::<str>::from("sgEntHandleData_c");
+    r.known.insert(r.counter, class.clone());
+    r.counter += 1;
+    r.objs.insert(r.counter, class);
+    r.counter += 1;
+    enthandledata(r)?;
+    r.ptr(None)?;
+    r.ptr(Some(&["moProfileFeature_c"]))?;
+    Ok(V::map([
+        ("id", V::from(i64::from(iid))),
+        ("n", V::from(i64::from(n))),
+    ]))
 }
 
 /// `moCompRefAxis_c`, `moCompRefPoint_c` (`comprefaxis`).
