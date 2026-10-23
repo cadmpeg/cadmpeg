@@ -10,7 +10,7 @@
       "bodies": [
         {
           "id": "fcstd:model:body#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:17%40location1",
-          "kind": "general",
+          "kind": "solid",
           "regions": [
             "fcstd:model:region#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:16%40location1"
           ]

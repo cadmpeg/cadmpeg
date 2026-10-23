@@ -10,7 +10,7 @@
       "bodies": [
         {
           "id": "fcstd:model:body#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:33%40location1",
-          "kind": "general",
+          "kind": "wire",
           "regions": [
             "fcstd:model:region#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:4%40location1",
             "fcstd:model:region#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:8%40location1",
@@ -24,7 +24,7 @@
         },
         {
           "id": "fcstd:model:body#GeometricRelations:Shape:GeometricRelations.Shape.brp:55%40location1",
-          "kind": "general",
+          "kind": "wire",
           "regions": [
             "fcstd:model:region#GeometricRelations:Shape:GeometricRelations.Shape.brp:4%40location1",
             "fcstd:model:region#GeometricRelations:Shape:GeometricRelations.Shape.brp:8%40location1",
@@ -57,7 +57,7 @@
         },
         {
           "id": "fcstd:model:body#OpticalRelation:Shape:OpticalRelation.Shape.brp:13%40location1",
-          "kind": "general",
+          "kind": "wire",
           "regions": [
             "fcstd:model:region#OpticalRelation:Shape:OpticalRelation.Shape.brp:4%40location1",
             "fcstd:model:region#OpticalRelation:Shape:OpticalRelation.Shape.brp:8%40location1",
@@ -73,7 +73,7 @@
         },
         {
           "id": "fcstd:model:body#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:13%40location1",
-          "kind": "general",
+          "kind": "wire",
           "regions": [
             "fcstd:model:region#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:4%40location1",
             "fcstd:model:region#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:8%40location1",

@@ -1577,9 +1577,23 @@ Co 1001000 +2 1 +2 3 *
     assert_eq!(result.ir().model.bodies.len(), 1);
     assert_eq!(
         result.ir().model.bodies[0].kind,
-        cadmpeg_ir::topology::BodyKind::General
+        // Two uses of a solid whose one shell is open: a sheet.
+        cadmpeg_ir::topology::BodyKind::Sheet
     );
     assert_eq!(result.ir().model.bodies[0].regions.len(), 2);
+    // OCCT's closed flag does not close a shell whose edges are used once.
+    let flagged = String::from_utf8_lossy(brep).replacen("Sh 1001000", "Sh 1001100", 1);
+    let flagged = archive_entries(&[
+        ("Document.xml", document.as_bytes()),
+        ("Shape.brp", flagged.as_bytes()),
+    ]);
+    let flagged = FcstdCodec
+        .decode(&mut Cursor::new(flagged), &DecodeOptions::default())
+        .expect("flagged compound");
+    assert_eq!(
+        flagged.ir().model.bodies[0].kind,
+        cadmpeg_ir::topology::BodyKind::Sheet
+    );
     assert!(result.ir().model.bodies[0].transform.is_none());
     assert_eq!(result.ir().model.edges.len(), 4);
     assert_eq!(result.ir().model.vertices.len(), 4);
@@ -1813,4 +1827,90 @@ fn numerical_seventh_pcurve_snapping_preserves_distinct_endpoints() {
             Some(reversed)
         );
     }
+}
+
+#[test]
+fn a_shell_whose_edges_are_each_used_twice_is_closed_without_the_closed_flag() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData>
+</Document>"#;
+    let brep = b"CASCADE Topology V1, (c) Matra-Datavision
+Locations 3
+1 1 0 0 10 0 1 0 0 0 0 1 0
+1 -2 0 0 0 0 2 0 5 0 0 2 0
+1 1 0 0 20 0 1 0 0 0 0 1 0
+Curve2ds 2
+1 0 0 1 0
+1 1 0 -1 0
+Curves 2
+1 0 0 0 1 0 0
+1 1 0 0 -1 0 0
+Polygon3D 0
+PolygonOnTriangulations 0
+Surfaces 1
+1 0 0 0 0 0 1 1 0 0 0 1 0
+Triangulations 0
+TShapes 10
+Ve 0.001 0 0 0 0 0 1001000 *
+Ve 0.001 1 0 0 0 0 1001000 *
+Ed 0.001 1 1 0 1 1 0 0 1 2 1 1 0 0 1 0 1001000 +10 0 -9 0 *
+Ed 0.001 1 1 0 1 2 0 0 1 2 2 1 0 0 1 0 1001000 +9 0 -10 0 *
+Wi 1001000 +8 0 +7 0 *
+Fa 0 0.001 1 0 1001000 +6 0 *
+Fa 0 0.001 1 0 1001000 -6 0 *
+Sh 1001000 +5 2 +4 2 *
+So 1001000 +3 0 *
+Co 1001000 +2 1 +2 3 *
++1 0 *";
+    let bytes = archive_entries(&[("Document.xml", document.as_bytes()), ("Shape.brp", brep)]);
+    let result = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("closed topology");
+    assert_eq!(
+        result.ir().model.bodies[0].kind,
+        cadmpeg_ir::topology::BodyKind::Solid
+    );
+}
+
+#[test]
+fn a_solid_with_a_non_shell_child_is_a_general_body() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData>
+</Document>"#;
+    let brep = b"CASCADE Topology V1, (c) Matra-Datavision
+Locations 3
+1 1 0 0 10 0 1 0 0 0 0 1 0
+1 -2 0 0 0 0 2 0 5 0 0 2 0
+1 1 0 0 20 0 1 0 0 0 0 1 0
+Curve2ds 2
+1 0 0 1 0
+1 1 0 -1 0
+Curves 2
+1 0 0 0 1 0 0
+1 1 0 0 -1 0 0
+Polygon3D 0
+PolygonOnTriangulations 0
+Surfaces 1
+1 0 0 0 0 0 1 1 0 0 0 1 0
+Triangulations 0
+TShapes 8
+Ve 0.001 0 0 0 0 0 1001000 *
+Ve 0.001 1 0 0 0 0 1001000 *
+Ed 0.001 1 1 0 1 1 0 0 1 2 1 1 0 0 1 0 1001000 +8 0 -7 0 *
+Ed 0.001 1 1 0 1 2 0 0 1 2 2 1 0 0 1 0 1001000 +7 0 -8 0 *
+Wi 1001000 +6 0 +5 0 *
+Fa 0 0.001 1 0 1001000 +4 0 *
+Sh 1001000 +3 2 *
+So 1001000 +2 0 +6 0 *
++1 0 *";
+    let bytes = archive_entries(&[("Document.xml", document.as_bytes()), ("Shape.brp", brep)]);
+    let result = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("solid with an edge child");
+    assert_eq!(
+        result.ir().model.bodies[0].kind,
+        cadmpeg_ir::topology::BodyKind::General
+    );
 }

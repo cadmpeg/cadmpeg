@@ -10,7 +10,7 @@
       "bodies": [
         {
           "id": "fcstd:model:body#ConicWitness:Shape:ConicWitness.Shape.brp:23%40location1",
-          "kind": "general",
+          "kind": "wire",
           "regions": [
             "fcstd:model:region#ConicWitness:Shape:ConicWitness.Shape.brp:7%40location1",
             "fcstd:model:region#ConicWitness:Shape:ConicWitness.Shape.brp:11%40location1",

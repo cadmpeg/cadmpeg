@@ -498,12 +498,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         let body_id = BodyId::mint(crate::native::model_id("body", &self.payload.id, &body_key))
             .map_err(CodecError::malformed)?;
         self.current_body = Some(body_id.clone());
-        let kind = match root_kind {
-            TextShapeKind::Solid => BodyKind::Solid,
-            TextShapeKind::Wire | TextShapeKind::Edge => BodyKind::Wire,
-            TextShapeKind::Shell | TextShapeKind::Face => BodyKind::Sheet,
-            _ => BodyKind::General,
-        };
+        let kind = self.body_kind(root.shape)?.unwrap_or(BodyKind::General);
         let tessellation_start = ir.model.tessellations.len();
         let mut regions = Vec::new();
         self.append_shape_regions(
@@ -1548,6 +1543,95 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             self.pcurve_id(edge_use.shape, index, secondary)?,
             bounded_pcurve_range(*degenerated, parameter_range),
         )))
+    }
+
+    /// The kind of the topology under `index`: a solid whose shells are all
+    /// closed is `Solid`, a solid with an open shell is `Sheet`, and a solid
+    /// with no shell or a non-shell child is `General`. A compound or compsolid
+    /// has the kind its member shapes share, or `General` when they differ.
+    /// `None` for a container with no members. Each distinct shape is visited
+    /// once.
+    fn body_kind(&self, index: usize) -> Result<Option<BodyKind>, CodecError> {
+        let mut shared = None;
+        let mut pending = vec![(index, Located::identity())];
+        let mut visited = std::collections::HashSet::new();
+        while let Some((index, local)) = pending.pop() {
+            if !visited.insert(index) {
+                continue;
+            }
+            let shape = self.shape(index)?;
+            let kind = match shape.kind() {
+                // A solid bounds a volume only when every shell it owns is
+                // closed; an open one leaves a sheet.
+                TextShapeKind::Solid => {
+                    let mut kind = (!shape.children.is_empty()).then_some(BodyKind::Solid);
+                    for child in &shape.children {
+                        if self.shape(child.shape)?.kind() != TextShapeKind::Shell {
+                            kind = None;
+                            break;
+                        }
+                        let shell = self.compose(local, self.location(child.location)?)?;
+                        if !self.shell_closed(child.shape, shell)? {
+                            kind = Some(BodyKind::Sheet);
+                        }
+                    }
+                    kind.unwrap_or(BodyKind::General)
+                }
+                TextShapeKind::Wire | TextShapeKind::Edge => BodyKind::Wire,
+                TextShapeKind::Shell | TextShapeKind::Face => BodyKind::Sheet,
+                TextShapeKind::Vertex => BodyKind::General,
+                TextShapeKind::Compound | TextShapeKind::CompSolid => {
+                    for child in &shape.children {
+                        pending.push((
+                            child.shape,
+                            self.compose(local, self.location(child.location)?)?,
+                        ));
+                    }
+                    continue;
+                }
+            };
+            match shared {
+                None => shared = Some(kind),
+                Some(existing) if existing == kind => {}
+                Some(_) => return Ok(Some(BodyKind::General)),
+            }
+        }
+        Ok(shared)
+    }
+
+    /// Whether the shell under `index` is closed: every non-degenerate edge
+    /// occurrence of its faces' wires is used exactly twice within the shell.
+    /// An occurrence is an edge shape at its composed face, wire, and edge
+    /// location, so one shape placed at two locations is two edges.
+    fn shell_closed(&self, index: usize, shell: Located) -> Result<bool, CodecError> {
+        let mut uses = HashMap::<OccurrenceKey, u32>::new();
+        for face_use in &self.shape(index)?.children {
+            let face_transform = self.compose(shell, self.location(face_use.location)?)?;
+            for wire_use in &self.shape(face_use.shape)?.children {
+                let wire = self.shape(wire_use.shape)?;
+                if wire.kind() != TextShapeKind::Wire {
+                    continue;
+                }
+                let wire_transform =
+                    self.compose(face_transform, self.location(wire_use.location)?)?;
+                for edge_use in &wire.children {
+                    if let TextTShapeGeometry::Edge {
+                        degenerated: false, ..
+                    } = self.shape(edge_use.shape)?.geometry
+                    {
+                        let edge_transform =
+                            self.compose(wire_transform, self.location(edge_use.location)?)?;
+                        let count = uses
+                            .entry(OccurrenceKey::new(edge_use.shape, edge_transform))
+                            .or_default();
+                        *count = count.checked_add(1).ok_or_else(|| {
+                            CodecError::malformed("shell edge use count overflows u32")
+                        })?;
+                    }
+                }
+            }
+        }
+        Ok(!uses.is_empty() && uses.values().all(|&count| count == 2))
     }
 
     fn shape(&self, index: usize) -> Result<&TextTShape, CodecError> {

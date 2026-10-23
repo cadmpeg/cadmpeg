@@ -135,7 +135,7 @@
         },
         {
           "id": "fcstd:model:body#Hole:AddSubShape:Hole.AddSubShape.brp:22",
-          "kind": "general",
+          "kind": "solid",
           "regions": [
             "fcstd:model:region#Hole:AddSubShape:Hole.AddSubShape.brp:21%40location1"
           ],
@@ -143,7 +143,7 @@
         },
         {
           "id": "fcstd:model:body#Hole:Shape:Hole.Shape.brp:53%40location1",
-          "kind": "general",
+          "kind": "solid",
           "regions": [
             "fcstd:model:region#Hole:Shape:Hole.Shape.brp:52%40location1"
           ],
@@ -159,7 +159,7 @@
         },
         {
           "id": "fcstd:model:body#HoleBody:Shape:HoleBody.Shape.brp:53%40location1",
-          "kind": "general",
+          "kind": "solid",
           "regions": [
             "fcstd:model:region#HoleBody:Shape:HoleBody.Shape.brp:52%40location1"
           ]
@@ -194,7 +194,7 @@
         },
         {
           "id": "fcstd:model:body#LinearPattern:Shape:LinearPattern.Shape.brp:35%40location1",
-          "kind": "general",
+          "kind": "solid",
           "regions": [
             "fcstd:model:region#LinearPattern:Shape:LinearPattern.Shape.brp:34%40location1"
           ],
@@ -237,14 +237,14 @@
         },
         {
           "id": "fcstd:model:body#PartChamfer:Shape:PartChamfer.Shape.brp:42%40location1",
-          "kind": "general",
+          "kind": "solid",
           "regions": [
             "fcstd:model:region#PartChamfer:Shape:PartChamfer.Shape.brp:41%40location1"
           ]
         },
         {
           "id": "fcstd:model:body#PartFillet:Shape:PartFillet.Shape.brp:42%40location1",
-          "kind": "general",
+          "kind": "solid",
           "regions": [
             "fcstd:model:region#PartFillet:Shape:PartFillet.Shape.brp:41%40location1"
           ]
@@ -316,7 +316,7 @@
         },
         {
           "id": "fcstd:model:body#Thickness:Shape:Thickness.Shape.brp:66",
-          "kind": "general",
+          "kind": "solid",
           "regions": [
             "fcstd:model:region#Thickness:Shape:Thickness.Shape.brp:65"
           ]

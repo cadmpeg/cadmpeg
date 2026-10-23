@@ -10,7 +10,7 @@
       "bodies": [
         {
           "id": "fcstd:model:body#Compound:Shape:Compound.Shape.brp:17%40location1",
-          "kind": "general",
+          "kind": "solid",
           "regions": [
             "fcstd:model:region#Compound:Shape:Compound.Shape.brp:9%40location1",
             "fcstd:model:region#Compound:Shape:Compound.Shape.brp:16%40location1"
@@ -18,7 +18,7 @@
         },
         {
           "id": "fcstd:model:body#CurveCarriers:Shape:CurveCarriers.Shape.brp:14%40location1",
-          "kind": "general",
+          "kind": "wire",
           "regions": [
             "fcstd:model:region#CurveCarriers:Shape:CurveCarriers.Shape.brp:3%40location1",
             "fcstd:model:region#CurveCarriers:Shape:CurveCarriers.Shape.brp:5%40location1",
@@ -43,7 +43,7 @@
         },
         {
           "id": "fcstd:model:body#MultiShell:Shape:MultiShell.Shape.brp:67%40location1",
-          "kind": "general",
+          "kind": "sheet",
           "regions": [
             "fcstd:model:region#MultiShell:Shape:MultiShell.Shape.brp:33%40location1",
             "fcstd:model:region#MultiShell:Shape:MultiShell.Shape.brp:66%40location1"
@@ -86,7 +86,7 @@
         },
         {
           "id": "fcstd:model:body#Void:Shape:Void.Shape.brp:68%40location1",
-          "kind": "general",
+          "kind": "solid",
           "regions": [
             "fcstd:model:region#Void:Shape:Void.Shape.brp:67%40location1"
           ]
