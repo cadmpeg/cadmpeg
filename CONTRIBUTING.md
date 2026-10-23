@@ -115,7 +115,7 @@ python3 scripts/preflight.py --list   # what each check looks for
 
 The preflight finds the remote that points at `cadmpeg/cadmpeg`, or `origin`. It fetches that remote's default branch and checks the working tree against the merge base.
 
-Each check prints `PASS`, `FAIL`, `WARN`, or `SKIP`, with the fix. Any `FAIL` exits 1. A `FAIL` is something review or CI rejects. Examples are a CADIR wire change without an `IR_VERSION` bump, an open-item ID that upstream already uses, and a branch that conflicts with upstream. A `WARN` needs your judgement.
+Each check prints `PASS`, `FAIL`, `WARN`, or `SKIP`, with the fix. Any `FAIL` exits 1. A `FAIL` is something review or CI rejects. Examples are an `IR_VERSION` change with stale fixtures, an open-item ID that upstream already uses, and a branch that conflicts with upstream. A `WARN` needs your judgement.
 
 Without `--full`, nothing compiles. `--run-layout` regenerates changed layout tables; a layout page or `layout.rs` that changed without its table fails unless regeneration reproduces it byte for byte. `--rev REV` checks a commit instead of the working tree.
 
