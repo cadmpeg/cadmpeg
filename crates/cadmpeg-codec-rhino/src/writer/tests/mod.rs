@@ -79,6 +79,7 @@ fn assert_planar_sheet_round_trip(ir: &CadIr, loop_count: usize, edge_count: usi
         for (actual, expected) in decoded.ir().model.edges.iter().zip(&ir.model.edges) {
             assert_eq!(actual.param_range(), expected.param_range(), "{version:?}");
         }
+        cadmpeg_test_support::measured::assert_measures_agree("planar sheet", ir, decoded.ir());
         assert!(
             cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
                 .expect("validate the neutral model")
