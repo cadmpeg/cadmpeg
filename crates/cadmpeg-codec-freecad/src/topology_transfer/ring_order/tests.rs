@@ -95,7 +95,7 @@ fn a_face_ring_runs_in_traversal_order_whatever_the_wire_serialization() {
     assert_eq!(model.faces.len(), 1);
     assert_eq!(model.faces[0].sense, Sense::Forward);
     let [face_loop] = model.loops.as_slice() else {
-        panic!("one loop expected, found {}", model.loops.len());
+        panic!("one loop expected");
     };
     let LoopBoundary::Ring(ring) = &face_loop.boundary else {
         panic!("edge loop expected");
