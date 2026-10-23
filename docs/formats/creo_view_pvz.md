@@ -447,8 +447,9 @@ The stream is, in order:
 version-record
 face-section     = { surface-record { loop | singular-use }* }*
 loop             = loop-record coedge-record* terminator
-edge-section     = edge-record*
-pcurve-section   = pcurve-record*
+singular-use     = singular-use-record [ 0x0a-record ] terminator
+curve-section    = { edge-record | pcurve-record }*
+terminator
 ```
 
 | Tag | Record | Defined in |
@@ -457,12 +458,12 @@ pcurve-section   = pcurve-record*
 | `0x01000010` | Loop | §8.11 |
 | `0x11` | Coedge | §8.12 |
 | `0x01000012` | Singular edge use | §8.13 |
-| 0 | Loop terminator | §8.14 |
+| 0 | Terminator | §8.14 |
 | `0x14` | Edge curve | §8.15 |
 | `0x15` | Pcurve | §8.16 |
-| `0x0a` | 12-byte record in the face section | open item |
+| `0x0a` | 12-byte record in a singular use | open item |
 
-A face is one surface record and the loop, coedge, singular-use, and terminator records that follow it up to the next surface record or the first edge record. A face index, an edge index, and a pcurve index are zero-based ordinals of their records within their section. All coedge, singular-use, and edge-tessellation references to these indexes are less than the record count of the target section.
+A face is one surface record and the loop, coedge, singular-use, and terminator records that follow it up to the next surface record or the first curve record. Edge records and pcurve records can alternate in the curve section. A face index is the zero-based ordinal of its surface record. An edge index is the zero-based ordinal of its record among the edge records, and a pcurve index the zero-based ordinal of its record among the pcurve records. The stream ends with one terminator that closes no loop and no singular use. All coedge, singular-use, and edge-tessellation references to these indexes are less than the record count of the target section.
 
 ### 8.3 Surface record head
 
@@ -483,7 +484,7 @@ Every surface record begins with three bytes:
 | 8 | Sphere | §8.7 |
 | 9 | Torus | §8.8 |
 
-Bit 7 of `flags` (`0x80`) adds a u-range pair `u_min, u_max`. Bit 0 of `marker` adds a v-range pair `v_min, v_max`. The pairs are scalars; the u-range pair comes first. A pair that is absent leaves that direction unbounded by the record. The other `flags` bits are open items.
+Bit 7 of `flags` (`0x80`) adds a u-range pair `u_min, u_max`. Bit 0 of `marker` adds a v-range pair `v_min, v_max`. The pairs are scalars; the u-range pair comes first. A pair that is absent leaves that direction unbounded by the record. Bits 3 and 4 of `flags` of a B-spline surface record are defined in §8.9. The other `flags` bits are open items.
 
 An analytic surface record (types 1, 2, 5, 8, 9) is:
 
@@ -573,6 +574,8 @@ poles:scalar[u_pole_count × v_pole_count × 4]
 
 The range pairs follow the rule of §8.3 and give the trimmed parameter domain of the face. The record ends with one `0x00` byte.
 
+Bit 3 (`0x08`) of `flags` makes the surface periodic in u, and bit 4 (`0x10`) makes it periodic in v. The period is the length of the knot domain `[knots[order − 1], knots[pole_count]]` of that direction, and the first and last pole rows of that direction are equal. A pcurve on a periodic surface can leave the knot domain in the periodic direction; its point is the surface point at the parameter moved by whole periods into the domain.
+
 ```text
 P(u, v) = Σ_i Σ_j N_i(u) · N_j(v) · w_ij · p_ij  /  Σ_i Σ_j N_i(u) · N_j(v) · w_ij
 ```
@@ -621,15 +624,15 @@ Tag `0x01000012` belongs to the current face:
 | 4 | `w` | `t_start` (`scalar`) |
 | 4 + `w` | `w` | `t_end` (`scalar`) |
 
-The record marks a topologically singular use of edge `edge` on the face: the use has zero length in model space, and both ends of the edge are one vertex. The referenced curve can be a point, a line, a circle, a B-spline, or a polyline; a non-point curve collapses within model tolerance.
+The record names edge `edge`, which a coedge of a loop of the same face also references. `t_start` and `t_end` are the natural interval of the edge curve (§8.15). The referenced curve can be a point, a line, a circle, a B-spline, or a polyline. When the curve stays within the tolerance of §8.21 of its start point, the use has zero length in model space and both ends of the edge are one vertex. The record opens a scope that one terminator closes (§8.14); a `0x0a` record can stand between the record and its terminator.
 
-### 8.14 Loop terminator
+### 8.14 Terminator
 
-A tag-0 record with length 0 closes the current loop. A coedge record belongs to the loop opened by the most recent loop record that no terminator has closed.
+A tag-0 record with length 0 closes the open loop or the open singular use. A coedge record belongs to the loop opened by the most recent loop record that no terminator has closed. The terminator that follows the curve section closes neither and ends the stream.
 
 ### 8.15 Edge curve records
 
-Tag `0x14` holds one 3D curve. Every edge curve record begins with `curve_type` (`u8`) and `flags` (`u8`), and every record except type 2 ends with one `0x00` byte. Bit 3 of `flags` (`0x08`) adds a parameter-range pair `t_start, t_end` to a conic. The other `flags` bits are open items.
+Tag `0x14` holds one 3D curve. Every edge curve record begins with `curve_type` (`u8`) and `flags` (`u8`), and every record ends with one `0x00` byte. Bit 3 of `flags` (`0x08`) adds a parameter-range pair `t_start, t_end` to a conic. The other `flags` bits are open items.
 
 | `curve_type` | Curve | Layout after the two head bytes |
 | -----------: | ----- | ------------------------------- |
@@ -673,11 +676,11 @@ The parameterisations are the 2D forms of §8.15. A type-2 pcurve lists other pc
 
 The model stores each coedge twice: once as the edge curve, once as the pcurve image on the face surface. Let `S` be the face surface (native pcurve) or its embedded B-spline (secondary pcurve), `p0` and `p1` the pcurve start and end points, and `e0` and `e1` the edge curve start and end points. Then either `S(p0) = e0` and `S(p1) = e1`, or `S(p0) = e1` and `S(p1) = e0`, within the tolerance of §8.21.
 
-The coedge sense is forward when the first condition holds and reversed when the second holds. A reader derives the sense from these endpoints. It does not take the sense from the `orientation` byte. For a closed edge curve both conditions hold; the sense then follows from the neighbouring coedges of the loop.
+The coedge sense is forward when the first condition holds and reversed when the second holds. A reader derives the sense from these endpoints. It does not take the sense from the `orientation` byte. For a closed edge curve both conditions hold; the sense is then forward when the pcurve image near the start of the pcurve interval lies on the edge curve near the start of the edge interval.
 
 ### 8.18 Loop traversal
 
-The coedges of a loop form a closed chain: the end of each coedge, after its sense, meets the start of another coedge. The chain order is either the stored coedge order or its reverse. A reader selects the order whose consecutive pcurve images meet within tolerance.
+The coedges of a loop, in stored order, form a closed chain: each coedge shares one end with the coedge before it and its other end with the coedge after it, and the last coedge shares an end with the first. Each pcurve runs along the stored order or against it, independently of its neighbours; a reader takes the direction of a pcurve from the ends it shares with its neighbours. The edge curve of a coedge runs along the stored order when the pcurve does and the sense is forward, and when the pcurve runs against it and the sense is reversed. The ends of a loop of one or two coedges do not give a direction to the stored order.
 
 ### 8.19 Face regions and nesting
 
@@ -689,7 +692,9 @@ On a periodic surface (cylinder, cone, sphere in u; torus in u and v) containmen
 
 The stream has no vertex records and no shell records. A vertex is the common point of the coedge ends that meet in a loop chain (§8.18), and of both ends of a singular edge (§8.13). An edge is shared when coedges of two faces reference it.
 
-A shell is a set of face regions connected through shared edges. A shell is closed when each non-singular edge in it has exactly two coedge uses; otherwise it is open.
+A shell is a set of face regions connected through shared edges. A shell is closed when each non-singular edge in it has exactly two coedge uses; otherwise it is open. Two faces can also meet along two distinct edge records with coincident curves. Such edge records are not shared edges.
+
+The stream stores no face side. In an oriented shell the two coedges of a shared edge traverse it in opposite directions, so the stored loop directions give the side of each face relative to its neighbours.
 
 ### 8.21 Units and tolerances
 
