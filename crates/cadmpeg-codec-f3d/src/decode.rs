@@ -2709,6 +2709,11 @@ impl<'a> F3dDecodeSession<'a> {
             scan,
             &prereqs.design_component_naming_spaces,
         )?;
+        self.report
+            .losses
+            .extend(crate::design::decode::components::revised_definitions_loss(
+                &local_components,
+            ));
         let bodies = self
             .ir
             .model
