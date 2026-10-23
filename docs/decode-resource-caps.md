@@ -467,7 +467,7 @@ The six `ResourceLimits` fields are the session ceilings and are not
 By crate: `cadmpeg-core` 3, `cadmpeg-ir` 12, `cadmpeg-asm` 4,
 `cadmpeg-protein` 3, `cadmpeg` 2, `cadmpeg-codec-step` 12,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 3,
-`cadmpeg-codec-freecad` 13, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 18,
+`cadmpeg-codec-freecad` 14, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 18,
 `cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 13,
 and `cadmpeg-codec-catia` 57.
 
