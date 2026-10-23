@@ -576,22 +576,21 @@ findings. If an integrity loss is recoverable enough for a successful check,
 its severity and strict consequence must say so instead of placing an ignored
 error in a successful report.
 
-### OF-01. Built-in object families remain opaque
+### OF-01. Placed Brep member whose trims miss under a similarity
 
-**Question.** Which current built-in Rhino object classes must have a typed
-geometry or annotation transfer?
+**Question.** Why does the instance image of the `ON_Brep`
+`5868a4f4-a9cb-41f8-8311-c499e64e3751` in `newlogoAC.3dm`, placed by a
+similarity with scale 2.5633, miss its vertices by 19.08 at the trims of
+NURBS faces 41 and 98?
 
-**Known.** `decode.rs` dispatches classes through the current family
-predicates and groups every object that remains in the retained state under
-`object.family-not-transferred`. Current built-in records that reach that
-state include `TL_Brep` alias records that are members of an unexpanded
-instance definition. In `v2_Camera.3dm` the 54 old-polycurve
-(`EF638317-154B-11d4-8000-0010830122F0`) records decode, but each curve
-candidate reaches `object.framing-undecodable`.
+**Known.** `ON_Brep::IsValid` accepts the member, and its source trim gaps
+are below the edge tolerances. The faces are NURBS surfaces, so the instance
+transform maps their control points and leaves their pcurves unchanged. The
+miss is the same with and without the plane-face pcurve scale. The failed
+candidate rejects the whole reference.
 
-**Need.** Add typed transfers for the listed annotation and instance classes,
-route the `TL_Brep` alias to the Brep decoder, and scope candidate admission
-so that findings on committed entities outside the candidate do not reject it.
+**Need.** The neutral face, edge, and pcurve records of the placed member,
+compared with `ON_Brep::Transform` of the same Brep.
 
 ### CT-01. Hatch fill and detail views have no neutral carrier
 
