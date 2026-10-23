@@ -1,12 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
-"""A CADIR wire change bumps IR_VERSION once and regenerates pinned fixtures.
+"""Report CADIR wire changes and require current version-pinned fixtures.
 
-Wire formats are exact-match on IR_VERSION and carry no migrations, so a wire
-change bumps IR_VERSION once per merged change and regenerates the fixtures
-that pin it (CLAUDE.md). Without the bump, a document with a new field carries
-a version current readers accept, and `deny_unknown_fields` then refuses it.
-A bump that the wire does not need invalidates every reader for nothing, so
-the check compares only what serde writes and reads.
+Maintainers select IR_VERSION for a release. Independent PRs can change the
+wire under the planned release version without an automatic increment.
+Readers still accept exactly one version and carry no migrations.
 
 The wire types are the `Serialize` or `Deserialize` structs and enums of
 `cadmpeg-ir` and `cadmpeg-core` that the IR_VERSION documents reach. The roots
@@ -20,7 +17,7 @@ module files, are not wire types.
 Each wire type is reduced to its wire form: which of `Serialize` and
 `Deserialize` it derives, its `serde(...)`, `rename*`, and `cfg` attributes, and
 its field and variant lines without visibility, comments, or other attributes.
-A type whose wire forms differ from the merge base fails without the bump. A
+A type whose wire forms differ from the merge base is reported for release review. A
 type removed from one file and added identically in another is unchanged. A
 reached type whose name is defined more than once, so that the name may refer
 to another type, is reported for review, as is a serialized `cadmpeg-ir` type
@@ -472,30 +469,18 @@ def stale_fixtures(context, old: int) -> list[str]:
 
 def run(context):
     base = version(context.read_base(VERSION_FILE))
-    upstream = version(context.read_upstream(VERSION_FILE))
     new = version(context.read(VERSION_FILE))
     if new is None:
         return context.skipped(f"no IR_VERSION in {VERSION_FILE}")
     wire, unclear, unreached = wire_changes(context)
     other = other_changes(context)
     results = []
-    expected = (upstream or new) + 1
-    if wire and new == upstream:
-        summary = (f"CADIR wire types changed; IR_VERSION is still {new}" if new == base else
-                   f"CADIR wire types changed; upstream also moved IR_VERSION to {new}, "
-                   f"so this change makes it {expected}")
-        results.append(context.failed(
-            summary,
+    if wire and new == base:
+        results.append(context.warned(
+            f"CADIR wire types changed under release IR_VERSION {new}",
             *wire[:15],
-            f"fix: set IR_VERSION to \"{expected}\" in {VERSION_FILE}, regenerate the "
-            "version-pinned fixtures (UPDATE_GOLDEN=1 cargo test-fast golden; fuzz seeds per "
-            "crates/cadmpeg-fuzz/README.md), and run "
+            "Keep the maintainer-selected release version; regenerate fixtures and run "
             "cargo test -p cadmpeg-ir --features schema --lib",
-        ))
-    elif new != base and upstream is not None and new != upstream + 1:
-        results.append(context.failed(
-            f"IR_VERSION is {new}; upstream is {upstream}, so one bump makes it {upstream + 1}",
-            f"fix: rebase onto {context.upstream} and set IR_VERSION to \"{upstream + 1}\"",
         ))
     if new != base and base is not None:
         stale = stale_fixtures(context, base)

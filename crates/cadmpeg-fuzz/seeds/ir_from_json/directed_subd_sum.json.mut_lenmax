@@ -1,5 +1,5 @@
 {
-  "ir_version": "12",
+  "ir_version": "8",
   "decode_depth": "full",
   "units": {
     "length": "millimeter"
@@ -61,7 +61,7 @@
       {
         "id": "synthetic:v2:curve#v",
         "geometry": {
-         ÿÿÿÿnd": "line",
+          ÿÿÿÿd": "line",
           "origin": {
             "x": 0.0,
             "y": 0.0,
