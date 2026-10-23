@@ -1772,7 +1772,7 @@ impl<'a> Builder<'a> {
             if closed {
                 self.split_non_manifold_edges(&region.shells);
             }
-            let Some(outer) = self.emit_shell(outer_id.as_str(), closed) else {
+            let Some(outer) = self.emit_shell(outer_id.as_str(), closed, false) else {
                 self.topology_relation_loss(
                     format!("region:{}:outer-shell:{}", region.id, outer_id),
                     StepLossCode::RegionNoWritableOuterShell,
@@ -1781,8 +1781,12 @@ impl<'a> Builder<'a> {
                 continue;
             };
             let mut voids = Vec::new();
+            // A solid void is the base shell of an `ORIENTED_CLOSED_SHELL`
+            // with orientation false, so its base faces carry the reverse of
+            // the CADIR face use.
+            let void_reversed = closed;
             for sid in void_ids {
-                if let Some(void) = self.emit_shell(sid.as_str(), closed) {
+                if let Some(void) = self.emit_shell(sid.as_str(), closed, void_reversed) {
                     voids.push(void);
                 } else {
                     self.topology_relation_loss(
@@ -2515,7 +2519,7 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn emit_shell(&mut self, shell_id: &str, closed: bool) -> Option<Ref> {
+    fn emit_shell(&mut self, shell_id: &str, closed: bool, reversed: bool) -> Option<Ref> {
         let shell = self.shells.get(shell_id).copied()?;
         let face_ids: Vec<String> = shell
             .faces()
@@ -2524,7 +2528,7 @@ impl<'a> Builder<'a> {
             .collect();
         let mut face_refs = Vec::new();
         for fid in &face_ids {
-            if let Some(r) = self.emit_face(fid) {
+            if let Some(r) = self.emit_face(fid, reversed) {
                 face_refs.push(r);
             } else {
                 let code = match self.faces.get(fid.as_str()).map(|face| &face.loops) {
@@ -2551,10 +2555,13 @@ impl<'a> Builder<'a> {
         ))
     }
 
-    fn emit_face(&mut self, face_id: &str) -> Option<Ref> {
+    /// Writes the face use, or its reverse when `reversed` is set: the
+    /// reverse flips the face `same_sense` and the orientation of every bound.
+    fn emit_face(&mut self, face_id: &str, reversed: bool) -> Option<Ref> {
         let face = self.faces.get(face_id).copied()?;
         let surface_id = face.surface.as_str();
-        let same_sense = matches!(face.sense, Sense::Forward);
+        let same_sense = matches!(face.sense, Sense::Forward) != reversed;
+        let bound_flag = if reversed { ".F." } else { ".T." };
 
         // Surface emission admits either a writable construction or a solved
         // carrier. An absent or opaque solved cache cannot veto a construction.
@@ -2572,7 +2579,9 @@ impl<'a> Builder<'a> {
                 } else {
                     "FACE_BOUND"
                 };
-                let b = self.emitter.emit(kind, &format!("'',{loop_ref},.T."));
+                let b = self
+                    .emitter
+                    .emit(kind, &format!("'',{loop_ref},{bound_flag}"));
                 bound_refs.push(b);
             } else {
                 let code = match face.loop_role(loop_id) {
