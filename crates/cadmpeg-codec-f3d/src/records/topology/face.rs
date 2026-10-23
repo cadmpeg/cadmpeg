@@ -812,6 +812,24 @@ pub(crate) struct DesignFaceRecipeStructure {
     pub(crate) postlude_value: Option<i32>,
 }
 
+impl DesignFaceRecipeStructure {
+    pub(crate) fn has_valid_operand_ordinals(&self, references: &[DesignRecipeReference]) -> bool {
+        let operand_count = references
+            .iter()
+            .map(|reference| (reference.selector_offset, reference.token_offset))
+            .collect::<std::collections::HashSet<_>>()
+            .len();
+        let in_range =
+            |value: i32| usize::try_from(value).is_ok_and(|ordinal| ordinal < operand_count);
+        self.prelude[1] == 2
+            && in_range(self.root)
+            && in_range(self.prelude[0])
+            && self.sides.iter().all(|side| {
+                in_range(side.header_value) && side.scalars.iter().copied().all(in_range)
+            })
+    }
+}
+
 impl Serialize for DesignFaceRecipeStructure {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;

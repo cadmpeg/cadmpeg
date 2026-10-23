@@ -737,7 +737,9 @@ mod tests {
     fn a_neutral_feature_rename_reaches_the_written_object_name_and_survives_a_round_trip() {
         let decoded = SldprtCodec
             .decode(
-                &mut Cursor::new(document_with_one_linked_object_name()),
+                &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                    &(document_with_one_linked_object_name()),
+                )),
                 &DecodeOptions::default(),
             )
             .expect("the fixture decodes");

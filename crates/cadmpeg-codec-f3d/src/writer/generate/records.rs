@@ -317,6 +317,9 @@ pub(super) fn encode_design_bulkstream(
         out.extend_from_slice(&header.record_index.to_le_bytes());
     }
     for point in &native.sketch_points {
+        point
+            .validate_for_write(&native.sketch_curve_identities)
+            .map_err(CodecError::Malformed)?;
         let expected = crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE;
         let mut companion_types = registry
             .types

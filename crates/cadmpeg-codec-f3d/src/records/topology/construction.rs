@@ -830,6 +830,7 @@ pub(crate) struct DesignConstructionOperandFlag {
 #[serde(try_from = "DesignConstructionOperandTransformDraft")]
 pub(crate) struct DesignConstructionOperandTransform {
     frame: crate::records::frame_chain::RecordFrameChain,
+    following_record_index: u32,
     /// Per-file dynamic transform-record class tag.
     pub(crate) class_tag: DesignClassTag,
     /// Row-major local-to-model affine transform.
@@ -849,6 +850,7 @@ impl Clone for DesignConstructionOperandTransform {
         CONSTRUCTION_TRANSFORM_CLONE_COUNT.with(|count| count.set(count.get() + 1));
         Self {
             frame: self.frame,
+            following_record_index: self.following_record_index,
             class_tag: self.class_tag.clone(),
             transform: self.transform,
             following_class_tag: self.following_class_tag.clone(),
@@ -885,21 +887,22 @@ impl Serialize for DesignConstructionOperandTransform {
 
 impl DesignConstructionOperandTransform {
     pub(crate) fn try_new(draft: DesignConstructionOperandTransformDraft) -> Result<Self, String> {
+        if draft.following_record_index <= draft.record_index {
+            return Err("following_record_index must exceed record_index".into());
+        }
         let frame = crate::records::frame_chain::RecordFrameChain::try_new(
             draft.record_index,
             draft.byte_offset,
-            1,
+            0,
             152,
         )?;
         let value = Self {
             frame,
+            following_record_index: draft.following_record_index,
             class_tag: draft.class_tag,
             transform: draft.transform,
             following_class_tag: draft.following_class_tag,
         };
-        if value.following_record_index() != draft.following_record_index {
-            return Err("following_record_index disagrees with frame layout".into());
-        }
         if value.transform_offset() != draft.transform_offset {
             return Err("transform_offset disagrees with frame layout".into());
         }
@@ -936,7 +939,7 @@ impl DesignConstructionOperandTransform {
         self.frame.offset(22)
     }
     pub(crate) fn following_record_index(&self) -> u32 {
-        self.frame.index(1)
+        self.following_record_index
     }
     pub(crate) fn following_byte_offset(&self) -> u64 {
         self.frame.offset(152)
@@ -1641,9 +1644,9 @@ pub(crate) struct DesignConstructionTrackingPath {
     pub(crate) carrier_class_tag: DesignClassTag,
     /// Primary persistent identity stored by the carrier.
     pub(crate) primary_identity: u64,
-    /// Signed carrier selector.
+    /// One-based fragment ordinal in the serialized primary curve direction.
     pub(crate) selector: i32,
-    /// Carrier-kind discriminator.
+    /// Positive fragment count defined by the serialized tracking graph.
     pub(crate) kind: u32,
     /// First optional related persistent identity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1735,6 +1738,14 @@ impl Serialize for DesignConstructionTrackingPath {
 
 impl DesignConstructionTrackingPath {
     pub(crate) fn try_new(draft: DesignConstructionTrackingPathDraft) -> Result<Self, String> {
+        if draft.kind == 0 {
+            return Err("tracking kind must be a positive fragment count".into());
+        }
+        if !u32::try_from(draft.selector).is_ok_and(|ordinal| (1..=draft.kind).contains(&ordinal)) {
+            return Err(
+                "tracking selector must be a fragment ordinal from one through kind".into(),
+            );
+        }
         if draft.first_related_identity.is_some_and(|identity| {
             draft.wrapper_byte_offset.checked_add(110) != Some(identity.offset)
         }) || draft.second_related_identity.is_some_and(|identity| {
@@ -1884,11 +1895,11 @@ pub(crate) struct DesignConstructionTrackingPathDraft {
     pub(crate) primary_identity: u64,
     /// Byte offset of `primary_identity`.
     pub(crate) primary_identity_offset: u64,
-    /// Signed carrier selector.
+    /// One-based fragment ordinal in the serialized primary curve direction.
     pub(crate) selector: i32,
     /// Byte offset of `selector`.
     pub(crate) selector_offset: u64,
-    /// Carrier-kind discriminator.
+    /// Positive fragment count defined by the serialized tracking graph.
     pub(crate) kind: u32,
     /// Byte offset of `kind`.
     pub(crate) kind_offset: u64,

@@ -7,6 +7,6 @@ use super::{
 };
 
 rewrite_native_record!(DesignLoftConstruction, []; {operation, operation_offset});
-rewrite_native_record!(DesignPipeConstruction, []; {operation, operation_offset, section_shape, section_shape_offset, filled, filled_offset, values, record_indexes, value_offsets});
+rewrite_native_record!(DesignPipeConstruction, []; {operation, operation_offset, is_hollow, is_hollow_offset, opaque_post_operation, opaque_post_operation_offset, values, record_indexes, value_offsets});
 rewrite_native_scalar!(DesignRevolveConstruction);
 rewrite_native_record!(DesignSweepConstruction, []; {operation, operation_offset, values, record_indexes, value_offsets});

@@ -336,6 +336,18 @@ fn feature_inline_operation(lane: &FeatureInputLane, name: &FeatureInputName) ->
     }
 }
 
+pub(crate) fn ambiguous_thin_join_operation(
+    feature: &Feature,
+    lane_names: &[(&FeatureInputLane, FeatureObjectNames<'_>)],
+) -> bool {
+    feature.input_class.as_deref() == Some("moCutThin_c")
+        && lane_names.iter().any(|(lane, names)| {
+            names.of(feature).is_some_and(|name| {
+                feature_inline_operation_fields(lane, name) == Some((0x0140, 0))
+            })
+        })
+}
+
 /// Project the feature-input operation discriminator onto typed extrusions.
 pub(crate) fn bind_extrusion_operations(
     features: &mut [cadmpeg_ir::features::Feature],
@@ -361,6 +373,9 @@ pub(crate) fn bind_extrusion_operations(
             let Some(history) = native_ref.and_then(|native| history_by_id.get(native)) else {
                 break 'feature_edit;
             };
+            if ambiguous_thin_join_operation(history, &lane_names) {
+                break 'feature_edit;
+            }
             let mut operations = lane_names.iter().filter_map(|(lane, names)| {
                 let name = names.of(history)?;
                 if let Some(operation) = feature_inline_operation(lane, name) {

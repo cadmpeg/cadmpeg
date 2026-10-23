@@ -1257,8 +1257,8 @@ fn sketch_relation_definition_preserves_masks_and_rejects_mismatched_payloads() 
         (
             0x1000_0000,
             Some(Kind::Circular {
-                angle_parameter: 2,
-                count_parameter: 3,
+                angle_parameter: Some(2),
+                count_parameter: Some(3),
                 evaluated_angle: cadmpeg_ir::scalar::FiniteReal::new(1.5).unwrap(),
                 evaluated_count: crate::records::sketch_relations::SketchPatternCount::try_from(2)
                     .unwrap(),
@@ -1269,8 +1269,8 @@ fn sketch_relation_definition_preserves_masks_and_rejects_mismatched_payloads() 
             Some(Kind::Rectangular {
                 directions: std::array::from_fn(|_| {
                     crate::records::sketch_relations::SketchPatternDirection {
-                        count_parameter: 2,
-                        distance_parameter: 3,
+                        count_parameter: Some(2),
+                        distance_parameter: Some(3),
                         evaluated_count:
                             crate::records::sketch_relations::SketchPatternCount::try_from(2)
                                 .unwrap(),

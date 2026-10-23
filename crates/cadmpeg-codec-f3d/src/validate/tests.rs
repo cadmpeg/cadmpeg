@@ -842,7 +842,7 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
 
     f3d_native_mut(&mut ir).design_construction_operand_groups[1].operand_role =
         crate::records::topology::construction::DesignConstructionOperandRole::Other(
-            DesignOperandRole::ROLE_0X21,
+            DesignOperandRole::PROFILE,
         );
     assert!(crate::test_support::with_decode_context(|ctx| {
         crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
@@ -882,6 +882,53 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
 }
 
 #[test]
+fn pipe_result_operations_keep_path_and_body_groups_separate() {
+    use crate::records::feature::extrude::DesignExtrudeOperation as Operation;
+    use crate::records::topology::extrude_selection::DesignOperandRole as Role;
+    let path = (Role::ROLE_0X5, 1);
+    let body = (Role::BODIES_A, 1);
+    let alternate_body = (Role::BODIES_B, 1);
+    assert!(super::pipe_operand_roles_are_valid(
+        Operation::Join,
+        &[alternate_body, path]
+    ));
+    assert!(super::pipe_operand_roles_are_valid(
+        Operation::Cut,
+        &[alternate_body, path]
+    ));
+    assert!(!super::pipe_operand_roles_are_valid(
+        Operation::Join,
+        &[body, alternate_body, path]
+    ));
+    assert!(super::pipe_operand_roles_are_valid(
+        Operation::NewBody,
+        &[path]
+    ));
+    assert!(super::pipe_operand_roles_are_valid(
+        Operation::Join,
+        &[body, path]
+    ));
+    for operation in [Operation::Join, Operation::Cut, Operation::Intersect] {
+        assert!(super::pipe_operand_roles_are_valid(
+            operation,
+            &[body, path]
+        ));
+        for groups in [
+            &[path][..],
+            &[body][..],
+            &[body, path, path][..],
+            &[body, (Role::ROLE_0X5, 0)][..],
+        ] {
+            assert!(!super::pipe_operand_roles_are_valid(operation, groups));
+        }
+    }
+    assert!(!super::pipe_operand_roles_are_valid(
+        Operation::NewBody,
+        &[body, path]
+    ));
+}
+
+#[test]
 fn validation_checks_pipe_path_group_roles() {
     use crate::records::{
         decal::DesignRecordHeader,
@@ -908,11 +955,10 @@ fn validation_checks_pipe_path_group_roles() {
             crate::records::feature::path_features::DesignPipeConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: 0,
-                section_shape:
-                    crate::records::feature::surface_ops::DesignPipeSectionShape::Circular,
-                section_shape_offset: 0,
-                filled: true,
-                filled_offset: 0,
+                is_hollow: false,
+                is_hollow_offset: 0,
+                opaque_post_operation: [1, 1].into(),
+                opaque_post_operation_offset: 0,
                 values: crate::test_support::reals([1.0, 1.0, 0.6, 0.15]),
                 record_indexes: [11, 12, 13, 14],
                 value_offsets: [0; 4],
@@ -1931,60 +1977,4 @@ fn validation_accepts_class_338_sketch_curve_entity_selection_frame() {
 
 mod face_recipe_lengths;
 
-/// An owner-less rigid alignment holds only a zero angle and offset.
-#[test]
-fn rigid_alignment_without_owners_requires_zero_scalars() {
-    use crate::records::feature::assembly::DesignAssemblyAlignment;
-    let zero = DesignAssemblyAlignment::try_new(0.0, [0.0; 3], Vec::new(), None).unwrap();
-    let turned = DesignAssemblyAlignment::try_new(0.5, [0.0; 3], Vec::new(), None).unwrap();
-    let moved = DesignAssemblyAlignment::try_new(0.0, [0.0, 1.0, 0.0], Vec::new(), None).unwrap();
-    assert!(super::rigid_alignment_scalars_hold(&zero, true));
-    assert!(!super::rigid_alignment_scalars_hold(&turned, true));
-    assert!(!super::rigid_alignment_scalars_hold(&moved, true));
-    assert!(super::rigid_alignment_scalars_hold(&turned, false));
-}
-
-/// A rigid group's frame fixes its member count, so a group whose operands
-/// were read needs the members after its first two. A group whose operands
-/// were not read has no members to keep.
-#[test]
-fn rigid_group_frame_requires_its_further_members() {
-    use crate::records::feature::assembly::{
-        DesignAssemblyAlignment, DesignAssemblyAlignmentForm, DesignAssemblyOperandFrame,
-    };
-    use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
-    let scope = |frame_length: u64| {
-        let mut scope = DesignParameterScope::empty(
-            "f3d:Design/BulkStream.dat:design-parameter-scope#3",
-            DesignFeatureKind::AsBuilt,
-            3,
-        );
-        scope
-            .try_edit(|draft| {
-                crate::design::test_support::lengthen_scope_frame(draft, frame_length);
-            })
-            .unwrap();
-        scope
-    };
-    let frames = [10, 20].map(|index| DesignAssemblyOperandFrame {
-        reference_record_index: index,
-        reference_offset: 0,
-        transform: cadmpeg_ir::transform::Transform::identity()
-            .rows()
-            .try_into()
-            .unwrap(),
-        transform_offset: 0,
-    });
-    let read = DesignAssemblyAlignment::try_new(
-        0.0,
-        [0.0; 3],
-        Vec::new(),
-        Some(DesignAssemblyAlignmentForm::Frames { frames }),
-    )
-    .unwrap();
-    let unread = DesignAssemblyAlignment::try_new(0.0, [0.0; 3], Vec::new(), None).unwrap();
-    assert!(super::rigid_group_members_link(&scope(269), &read, true));
-    assert!(!super::rigid_group_members_link(&scope(280), &read, true));
-    assert!(super::rigid_group_members_link(&scope(280), &unread, true));
-    assert!(super::rigid_group_members_link(&scope(280), &read, false));
-}
+mod rigid_alignment;

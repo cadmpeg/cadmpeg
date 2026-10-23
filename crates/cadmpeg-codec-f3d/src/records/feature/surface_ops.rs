@@ -422,42 +422,21 @@ impl DesignPatchContinuity {
     }
 }
 
-/// Pipe generated-section shape selector.
+/// Versioned whole-surface normal state, independent of boundary-side ordinals.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(from = "u8", into = "u8")]
-pub(crate) enum DesignPipeSectionShape {
-    Circular,
-    Unknown(u8),
+#[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
+pub(crate) enum DesignSurfacePatchNormalState {
+    Explicit {
+        reversed: crate::records::identity::Located<bool>,
+    },
+    Unsupported,
 }
 
-impl DesignPipeSectionShape {
-    #[must_use]
-    pub(crate) fn from_code(code: u8) -> Self {
-        match code {
-            1 => Self::Circular,
-            code => Self::Unknown(code),
-        }
-    }
-
-    #[must_use]
-    fn code(self) -> u8 {
-        match self {
-            Self::Circular => 1,
-            Self::Unknown(code) => code,
-        }
-    }
-}
-
-impl From<u8> for DesignPipeSectionShape {
-    fn from(code: u8) -> Self {
-        Self::from_code(code)
-    }
-}
-
-impl From<DesignPipeSectionShape> for u8 {
-    fn from(shape: DesignPipeSectionShape) -> Self {
-        shape.code()
-    }
+/// Boundary settings and whole-surface normal state of one `SurfacePatch`.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct DesignSurfacePatchScope {
+    pub(crate) boundaries: Vec<DesignSurfacePatchBoundary>,
+    pub(crate) normal: Option<DesignSurfacePatchNormalState>,
 }
 
 /// Settings a `SurfacePatch` scope carries for one boundary component.

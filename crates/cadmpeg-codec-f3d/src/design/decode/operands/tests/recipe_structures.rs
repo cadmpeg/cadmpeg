@@ -8,8 +8,8 @@ use cadmpeg_core::decode::{
 };
 use cadmpeg_core::CodecError;
 
-const EDGE_RECIPE: [i32; 24] = [
-    0, 0, 0, 0, 0, 0, 0, 1, -1, 2, 0, -1, 1, -1, 0, 1, 1, 4, 1, 1, 1, 4, 4, 4,
+const EDGE_RECIPE: [i32; 25] = [
+    -1, -1, 2, 0, -1, 1, -1, 1, -1, 2, 0, -1, 1, -1, 0, 1, 1, 4, 1, 1, 1, 4, 4, 4, -1,
 ];
 
 #[test]
@@ -49,7 +49,7 @@ fn face_recipe_nodes_split_at_each_node_marker() {
 /// An edge-recipe program whose one counted side has 3,000 payload-prefix
 /// splits, so the side search needs more work than its cap allows.
 fn exhausting_edge_recipe_program() -> Vec<i32> {
-    let mut program = vec![0; 7];
+    let mut program = vec![-1, -1, 2, 0, -1, 1, -1];
     program.extend_from_slice(&[1, -1, 2, 5, -1, 7, -1]);
     program.extend_from_slice(&[0; 3000]);
     program
@@ -81,4 +81,87 @@ fn edge_recipe_side_search_skips_the_structure_past_its_work_cap() {
         None
     );
     assert!(budget.exhausted());
+}
+
+#[test]
+fn edge_recipe_admits_variable_preludes_single_headers_and_empty_extended_payloads() {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    for prelude in [
+        vec![-1, -1, 2, 0, 1, 1, 0],
+        vec![0, 1, 1, 1, -1],
+        vec![0, 0, 2, 1, 1, 2, 0],
+    ] {
+        for field in [
+            vec![0],
+            vec![0, -1, 0, 0, -1],
+            vec![0, 0, 0, 0, -1],
+            vec![2, 0, 0, 0, -1, 0, -1, 0, 0, -1],
+        ] {
+            for tag in [-1, 0, 1] {
+                let mut program = prelude.clone();
+                program.extend_from_slice(&[1, 1, 1, 0, 1]);
+                program.extend_from_slice(&field);
+                program.extend_from_slice(&[0, tag]);
+                let parsed = edge_recipe_structure(&ctx, &program)
+                    .unwrap()
+                    .expect("one complete side");
+                assert_eq!(parsed.root, 1);
+                assert_eq!(parsed.sides.len(), 1);
+                assert_eq!(parsed.sides[0].header_value, 0);
+                assert!(parsed.sides[0].scalars.is_empty());
+                assert_eq!(parsed.sides[0].payload_prefix, field);
+                assert!(parsed.sides[0].entries.is_empty());
+                program.pop();
+                assert!(edge_recipe_structure(&ctx, &program).unwrap().is_none());
+                program.push(2);
+                assert!(edge_recipe_structure(&ctx, &program).unwrap().is_none());
+            }
+        }
+    }
+}
+
+#[test]
+fn edge_recipe_requires_valid_prelude_ordinals_tags_and_complete_terminal() {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let program = [-1, -1, 2, 0, -1, 1, -1, 1, -1, 1, 0, -1, 0, 0, -1];
+    assert!(edge_recipe_structure(&ctx, &program).unwrap().is_some());
+    for offset in [0, 1, 2, 3, 4, 5, 6, 8, 11, 14] {
+        let mut invalid = program;
+        invalid[offset] = 9;
+        assert!(
+            edge_recipe_structure(&ctx, &invalid).unwrap().is_none(),
+            "offset {offset}"
+        );
+    }
+    for invalid in [
+        vec![0, -1, 0],
+        vec![0, -1, 1, 2, -1, 1, -1, 1, 0, -1, 0, 0, -1],
+        vec![0, 2, 1, 1, -1, 1, -1, 1, 0, -1, 0, 0, -1],
+    ] {
+        assert!(edge_recipe_structure(&ctx, &invalid).unwrap().is_none());
+    }
+}
+
+#[test]
+fn face_recipe_retains_its_delimiter_and_header_count_domain() {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let program = [
+        0, -1, 2, -1, 3, -1, 2, 0, -1, 1, -1, 0, 0, -1, 2, 0, -1, 1, -1, 0, 0, -1,
+    ];
+    assert!(super::super::face_recipe_structure(&ctx, &program)
+        .unwrap()
+        .is_some());
+    for offset in [8, 10, 13, 16, 18] {
+        let mut invalid = program;
+        invalid[offset] = 1;
+        assert!(super::super::face_recipe_structure(&ctx, &invalid)
+            .unwrap()
+            .is_none());
+    }
+    let mut single_header = program.to_vec();
+    single_header[6] = 1;
+    single_header.drain(9..11);
+    assert!(super::super::face_recipe_structure(&ctx, &single_header)
+        .unwrap()
+        .is_none());
 }

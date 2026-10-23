@@ -194,7 +194,7 @@ fn decode_resolves_feature_topology_selections() {
             }
         });
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -333,7 +333,7 @@ fn decode_dispatches_typed_features_by_xml_family() {
         );
     }
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -362,7 +362,7 @@ fn decode_dispatches_typed_features_by_xml_family() {
     dependencies.pop();
     regenerated.ir_mut().model.features[2].dependencies =
         cadmpeg_ir::features::DistinctMembers::try_from(dependencies).unwrap();
-    let error = crate::test_support::plan_inherited_write(
+    let error = crate::test_support::plan_fixture_write_with_native_envelope(
         regenerated.ir(),
         regenerated.source_fidelity(),
         &mut Vec::new(),
@@ -392,7 +392,12 @@ fn decode_retains_compact_combine_with_unresolved_semantics_as_native() {
         &resolved_feature_classes_with_ids(&[("moCombineBodies_c", "Compact", 119)]),
     ));
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &(source),
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
@@ -402,7 +407,7 @@ fn decode_retains_compact_combine_with_unresolved_semantics_as_native() {
 
     decoded.ir_mut().model.features[0].name = Some("Renamed compact combine".into());
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -787,7 +792,12 @@ fn decode_projects_surface_sweep_reference_curve_profile() {
     ));
 
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &(source),
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     let helix = decoded
@@ -830,7 +840,7 @@ fn decode_projects_surface_sweep_reference_curve_profile() {
         "other".into(),
     ));
     updated_changed_profile_evaluation.set_definition(updated_changed_profile_definition);
-    let error = crate::test_support::plan_inherited_write(
+    let error = crate::test_support::plan_fixture_write_with_native_envelope(
         &changed_profile,
         decoded.source_fidelity(),
         &mut Vec::new(),
@@ -849,7 +859,7 @@ fn decode_projects_surface_sweep_reference_curve_profile() {
         .unwrap()
         .name = Some("Renamed surface sweep".into());
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,

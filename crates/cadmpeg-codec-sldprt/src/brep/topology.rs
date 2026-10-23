@@ -14,8 +14,8 @@
 //!
 //! Every record opens with `00 TT`, an optional `0xff`, then a big-endian `attr`
 //! (u16) and, for most families, an `ordinal`/`seq` (u32). The magic
-//! `c2 bc 92 8f 99 6e 00 00` anchors the bridge, edge-use, and vertex-use
-//! parses. Records are keyed by `attr` within each stream. Same-site merges
+//! `c2 bc 92 8f 99 6e 00 00` anchors the bridge and edge-use parses.
+//! VERTEX frames retain their complete tolerance and owning BODY or SHELL. Records are keyed by `attr` within each stream. Same-site merges
 //! preserve partition records and add missing subordinate deltas records and
 //! typed-FACE-selected bridges. The decoder
 //! merges all admitted sites. It keeps the active site's primary identities
@@ -27,10 +27,25 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::topology::Sense;
 
+use crate::layout::edge_bare as edge_body;
+use crate::layout::edge_tripled as edge_delta;
+use crate::layout::entity_common_header as entity_hdr;
+use crate::layout::face_bare as face_body;
+use crate::layout::face_tripled as face_delta;
+use crate::layout::fin_bare as fin_body;
+use crate::layout::fin_tripled as fin_delta;
+use crate::layout::integer_values_header as int_values;
+use crate::layout::loop_bare as loop_body;
+use crate::layout::loop_tripled as loop_delta;
+use crate::layout::vertex_bare as vertex_body;
+use crate::layout::vertex_tripled as vertex_delta;
 use crate::layout::world_point as world_pt;
+use crate::layout::world_point_tripled as world_pt_delta;
 
 /// The magic anchoring magic-bearing topology records ([spec §5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#4-typed-topology-records)).
 const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
+
+const MAX_SHORT_POINTER_INDEX: u16 = 0x7ffe;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct Bridge {
@@ -38,7 +53,7 @@ pub(super) struct Bridge {
     pub(super) refs: [u16; 5],
     pub(super) sequence: u32,
     pub(super) sense: Sense,
-    pub(super) owner: Option<u16>,
+    pub(super) attributes_head: Option<u16>,
     pub(super) offset: usize,
 }
 
@@ -107,7 +122,14 @@ pub(in crate::brep) struct VertexUse {
     pub(super) attr: u16,
     pub(super) refs: [u16; 5],
     pub(super) sequence: u32,
+    pub(super) owner: u16,
+    pub(super) tolerance_m: Option<f64>,
     pub(super) offset: usize,
+}
+
+struct VertexReading {
+    record: VertexUse,
+    end: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -171,14 +193,14 @@ fn attr_at(buf: &[u8], p: usize) -> Option<u16> {
 
 /// Bridge `00 0e`: 37-byte body, magic at body+8, `refs[5]` at body+16,
 /// marker at body+26. `refs[4]` = surface carrier, `refs[2]` = loop head.
-/// The deltas form stores the owner as a `[hi][lo][01]` triple, so the magic
+/// The deltas form stores the attribute-chain head as a `[hi][lo][01]` triple, so the magic
 /// sits at body+9 and the five refs follow as triples with the marker after.
 fn parse_bridge(buf: &[u8], off: usize) -> Option<Bridge> {
     let p = body_start(buf, off, 0x0e)?;
     if buf.get(p + 8) == Some(&1) && buf.get(p + 9..p + 17) == Some(MAGIC.as_slice()) {
         let attr = attr_at(buf, p)?;
         let sequence = View::u32_be_at(buf, p + 2)?;
-        let owner = View::u16_be_at(buf, p + 6)?;
+        let attributes_head = View::u16_be_at(buf, p + 6)?;
         let refs = refs_tripled::<5>(buf, p + 17)?;
         let marker = *buf.get(p + 32)?;
         return Some(Bridge {
@@ -186,7 +208,7 @@ fn parse_bridge(buf: &[u8], off: usize) -> Option<Bridge> {
             sequence,
             refs,
             sense: parse_sense(marker)?,
-            owner: (owner > 1).then_some(owner),
+            attributes_head: (attributes_head > 1).then_some(attributes_head),
             offset: off,
         });
     }
@@ -195,7 +217,7 @@ fn parse_bridge(buf: &[u8], off: usize) -> Option<Bridge> {
     }
     let attr = attr_at(buf, p)?;
     let sequence = View::u32_be_at(buf, p + 2)?;
-    let owner = View::u16_be_at(buf, p + 6)?;
+    let attributes_head = View::u16_be_at(buf, p + 6)?;
     let tripled = (0..5).all(|index| buf.get(p + 18 + index * 3) == Some(&1));
     let (refs, marker) = if tripled {
         (refs_tripled::<5>(buf, p + 16)?, *buf.get(p + 31)?)
@@ -207,33 +229,46 @@ fn parse_bridge(buf: &[u8], off: usize) -> Option<Bridge> {
         sequence,
         refs,
         sense: parse_sense(marker)?,
-        owner: (owner > 1).then_some(owner),
+        attributes_head: (attributes_head > 1).then_some(attributes_head),
         offset: off,
     })
 }
 
-/// Loop head `00 0f`: minimal 14-byte body, no magic, `refs[4]` at body+6.
-/// `refs[1]` = first coedge, `refs[2]` = owning bridge, `refs[3]` = next sibling.
-fn parse_loop(buf: &[u8], off: usize) -> Option<Loop> {
-    let p = body_start(buf, off, 0x0f)?;
-    if p + 14 > buf.len() {
-        return None;
+fn parse_loop_candidates(buf: &[u8], off: usize) -> Vec<(Loop, usize)> {
+    let Some(p) = body_start(buf, off, 0x0f) else {
+        return Vec::new();
+    };
+    let Some(attr) = attr_at(buf, p) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for (len, refs) in [
+        (
+            loop_body::LEN,
+            buf.get(p..p + loop_body::LEN)
+                .and_then(|_| refs_be::<4>(buf, p + loop_body::REFS)),
+        ),
+        (
+            loop_delta::LEN,
+            buf.get(p..p + loop_delta::LEN)
+                .and_then(|_| refs_tripled::<4>(buf, p + loop_delta::REFS)),
+        ),
+    ] {
+        if let Some(refs) = refs {
+            out.push((
+                Loop {
+                    attr,
+                    refs,
+                    offset: off,
+                },
+                p + len,
+            ));
+        }
     }
-    let attr = attr_at(buf, p)?;
-    let refs = refs_tripled::<4>(buf, p + 6).or_else(|| refs_be::<4>(buf, p + 6))?;
-    Some(Loop {
-        attr,
-        refs,
-        offset: off,
-    })
+    out
 }
 
-/// Return all syntactically valid edge-use readings at one offset.
-///
-/// A prefixed edge-use does not carry the complete six-cell array in the
-/// compact form. The third post-magic cell is the support-curve carrier, so
-/// preserve that field in the compact variant. The missing
-/// canonical-coedge slot is resolved from the coedge table by the graph walk.
+/// Return complete or compact edge-use readings at one offset.
 fn parse_edge_use_candidates(buf: &[u8], off: usize) -> Vec<EdgeUse> {
     let Some(p) = body_start(buf, off, 0x10) else {
         return Vec::new();
@@ -247,6 +282,25 @@ fn parse_edge_use_candidates(buf: &[u8], off: usize) -> Vec<EdgeUse> {
     let Some(sequence) = View::u32_be_at(buf, p + 2) else {
         return Vec::new();
     };
+    if buf.get(p + edge_delta::TOLERANCE - 1) == Some(&1)
+        && buf.get(p + edge_delta::TOLERANCE..p + edge_delta::REFS) == Some(MAGIC.as_slice())
+    {
+        if let Some(refs) = refs_tripled::<7>(buf, p + edge_delta::REFS).filter(|refs| {
+            refs.iter()
+                .all(|reference| *reference <= MAX_SHORT_POINTER_INDEX)
+                && View::u16_be_at(buf, p + edge_delta::ATTRIBUTES_HEAD)
+                    .is_some_and(|head| head <= MAX_SHORT_POINTER_INDEX)
+        }) {
+            return vec![EdgeUse {
+                attr,
+                sequence,
+                references: EdgeReferences::Bare([
+                    refs[0], refs[1], refs[2], refs[3], refs[4], refs[5],
+                ]),
+                offset: off,
+            }];
+        }
+    }
     let mut out = Vec::new();
     if buf.get(p + 8..p + 16) == Some(MAGIC.as_slice()) {
         if let Some(refs) = refs_be::<6>(buf, p + 16) {
@@ -299,127 +353,479 @@ fn parse_edge_use_candidates(buf: &[u8], off: usize) -> Vec<EdgeUse> {
     out
 }
 
-/// Edge-use `00 10`: 28-byte body, magic at body+8, `refs[6]` at body+16.
+/// Edge-use `00 10`: six-cell projection at body+16, magic at body+8.
 /// `refs[0]` = canonical forward coedge when the bare record stores one;
 /// `refs[3]` = support curve carrier. The compact layout has no canonical-coedge slot.
 ///
 /// Coedge `00 11`: 21-byte body, no magic, `refs[9]` at body+2, marker at
 /// body+20. `refs[1]` = owning loop, `refs[3]` = next coedge, `refs[4]` = start
 /// vertex-use, `refs[5]` = twin coedge, `refs[6]` = edge-use.
-fn parse_coedge_candidates(buf: &[u8], off: usize) -> Vec<Coedge> {
+fn parse_coedge_candidates(buf: &[u8], off: usize) -> Vec<(Coedge, usize)> {
     let Some(p) = body_start(buf, off, 0x11) else {
         return Vec::new();
     };
-    if p + 21 > buf.len() {
+    if p + fin_body::LEN > buf.len() {
         return Vec::new();
     }
     let Some(attr) = attr_at(buf, p) else {
         return Vec::new();
     };
     let mut out = Vec::new();
-    if let (Some(refs), Some(marker)) = (refs_be::<9>(buf, p + 2), buf.get(p + 20).copied()) {
+    if let (Some(refs), Some(marker)) = (
+        refs_be::<9>(buf, p + fin_body::REFS),
+        buf.get(p + fin_body::SENSE).copied(),
+    ) {
         if let Some(sense) = parse_sense(marker) {
-            out.push(Coedge {
-                attr,
-                refs,
-                sense,
-                offset: off,
-            });
+            out.push((
+                Coedge {
+                    attr,
+                    refs,
+                    sense,
+                    offset: off,
+                },
+                p + fin_body::LEN,
+            ));
         }
     }
-    if let (Some(refs), Some(marker)) = (refs_tripled::<9>(buf, p + 2), buf.get(p + 29).copied()) {
+    if let (Some(refs), Some(marker)) = (
+        refs_tripled::<9>(buf, p + fin_delta::REFS),
+        buf.get(p + fin_delta::SENSE).copied(),
+    ) {
         if let Some(sense) = parse_sense(marker) {
-            out.push(Coedge {
-                attr,
-                refs,
-                sense,
-                offset: off,
-            });
+            out.push((
+                Coedge {
+                    attr,
+                    refs,
+                    sense,
+                    offset: off,
+                },
+                p + fin_delta::LEN,
+            ));
         }
     }
     out.dedup();
     out
 }
 
-/// Vertex-use `00 12`: 24-byte body, magic at body+16, `refs[5]` at body+6.
-/// `refs[4]` = world-point attr.
-fn parse_vertex_use(buf: &[u8], off: usize) -> Option<VertexUse> {
+fn parse_vertex_candidates(buf: &[u8], off: usize) -> Vec<VertexReading> {
+    let Some(p) = body_start(buf, off, 0x12) else {
+        return Vec::new();
+    };
+    let Some(attr) = attr_at(buf, p).filter(|attr| *attr > 1 && *attr <= MAX_SHORT_POINTER_INDEX)
+    else {
+        return Vec::new();
+    };
+    let Some(sequence) = View::u32_be_at(buf, p + vertex_body::NODE_ID) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for (len, tolerance_at, references, owner) in [
+        (
+            vertex_body::LEN,
+            vertex_body::TOLERANCE,
+            refs_be::<5>(buf, p + vertex_body::REFS),
+            View::u16_be_at(buf, p + vertex_body::OWNER),
+        ),
+        (
+            vertex_delta::LEN,
+            vertex_delta::TOLERANCE,
+            refs_tripled::<5>(buf, p + vertex_delta::REFS),
+            refs_tripled::<1>(buf, p + vertex_delta::OWNER).map(|refs| refs[0]),
+        ),
+    ] {
+        let Some(refs) = references else { continue };
+        let Some(owner) = owner else { continue };
+        let Some(tolerance) = View::f64_be_at(buf, p + tolerance_at) else {
+            continue;
+        };
+        if buf.get(p..p + len).is_none()
+            || refs
+                .iter()
+                .any(|reference| *reference > MAX_SHORT_POINTER_INDEX)
+            || owner > MAX_SHORT_POINTER_INDEX
+            || !tolerance.is_finite()
+        {
+            continue;
+        }
+        let accurate =
+            buf.get(p + tolerance_at..p + tolerance_at + MAGIC.len()) == Some(MAGIC.as_slice());
+        out.push(VertexReading {
+            record: VertexUse {
+                attr,
+                refs,
+                sequence,
+                owner,
+                tolerance_m: (!accurate).then_some(tolerance),
+                offset: off,
+            },
+            end: p + len,
+        });
+    }
+    out
+}
+
+fn unsupported_vertex_prefix(buf: &[u8], off: usize) -> Option<VertexUse> {
     let p = body_start(buf, off, 0x12)?;
-    if p + 24 > buf.len() {
+    let attr = attr_at(buf, p).filter(|attr| *attr > 1 && *attr <= MAX_SHORT_POINTER_INDEX)?;
+    let sequence = View::u32_be_at(buf, p + vertex_delta::NODE_ID)?;
+    for count in 6..=8 {
+        let tolerance = p.checked_add(vertex_delta::REFS + count * 3)?;
+        if buf.get(tolerance..tolerance + MAGIC.len()) != Some(MAGIC.as_slice()) {
+            continue;
+        }
+        let mut refs = [0; 5];
+        for index in 0..count {
+            let at = p + vertex_delta::REFS + index * 3;
+            if buf.get(at + 2) != Some(&1) {
+                return None;
+            }
+            let reference = View::u16_be_at(buf, at)?;
+            if reference > MAX_SHORT_POINTER_INDEX {
+                return None;
+            }
+            if index < refs.len() {
+                refs[index] = reference;
+            }
+        }
+        return Some(VertexUse {
+            attr,
+            refs,
+            sequence,
+            owner: 0,
+            tolerance_m: None,
+            offset: off,
+        });
+    }
+    None
+}
+
+fn topology_header_prefix_end(buf: &[u8], off: usize, tag: u8) -> Option<usize> {
+    if let Some(end) = super::typed::schema_prefix_end(buf, off) {
+        return Some(end);
+    }
+    if let Some(end) = super::spline::surface_descriptor_prefix_end(buf, off) {
+        return Some(end);
+    }
+    if let Some(end) = super::typed::tagged_owner_prefix_end(buf, off) {
+        return Some(end);
+    }
+    let p = body_start(buf, off, tag)?;
+    let attr = attr_at(buf, p)?;
+    if !(2..=MAX_SHORT_POINTER_INDEX).contains(&attr) {
         return None;
     }
-    let attr = attr_at(buf, p)?;
-    let sequence = View::u32_be_at(buf, p + 2)?;
-    let refs = if buf.get(p + 16..p + 24) == Some(MAGIC.as_slice()) {
-        refs_be::<5>(buf, p + 6)?
-    } else {
-        // A window past the end of `buf` reads as no magic.
-        let magic = (p + 21..=p + 32)
-            .find(|at| buf.get(*at..*at + MAGIC.len()) == Some(MAGIC.as_slice()))?;
-        let count = (magic.checked_sub(p + 6)?) / 3;
-        if count < 5 || p + 6 + count * 3 != magic {
-            return None;
+    let mut ends = Vec::new();
+    match tag {
+        0x0e | 0x10 => {
+            let count = if tag == 0x0e { 5 } else { 7 };
+            for tripled in [false, true] {
+                let (head, tolerance, references) = match (tag, tripled) {
+                    (0x0e, true) => (
+                        face_delta::ATTRIBUTES_HEAD,
+                        face_delta::TOLERANCE,
+                        face_delta::REFS,
+                    ),
+                    (0x0e, false) => (
+                        face_body::ATTRIBUTES_HEAD,
+                        face_body::TOLERANCE,
+                        face_body::REFS,
+                    ),
+                    (_, true) => (
+                        edge_delta::ATTRIBUTES_HEAD,
+                        edge_delta::TOLERANCE,
+                        edge_delta::REFS,
+                    ),
+                    (_, false) => (
+                        edge_body::ATTRIBUTES_HEAD,
+                        edge_body::TOLERANCE,
+                        edge_body::REFS,
+                    ),
+                };
+                let head = if tripled {
+                    refs_tripled::<1>(buf, p + head).map(|refs| refs[0])
+                } else {
+                    View::u16_be_at(buf, p + head)
+                };
+                if head.is_none_or(|head| head > MAX_SHORT_POINTER_INDEX)
+                    || View::f64_be_at(buf, p + tolerance).is_none_or(|value| !value.is_finite())
+                {
+                    continue;
+                }
+                let mut at = p + references;
+                let mut valid = true;
+                for _ in 0..count {
+                    let reference = if tripled {
+                        refs_tripled::<1>(buf, at).map(|refs| refs[0])
+                    } else {
+                        View::u16_be_at(buf, at)
+                    };
+                    if reference.is_none_or(|reference| reference > MAX_SHORT_POINTER_INDEX) {
+                        valid = false;
+                        break;
+                    }
+                    at += if tripled { 3 } else { 2 };
+                }
+                if !valid {
+                    continue;
+                }
+                if tag == 0x0e {
+                    let sense = if tripled {
+                        face_delta::SENSE
+                    } else {
+                        face_body::SENSE
+                    };
+                    if at != p + sense
+                        || buf.get(at).and_then(|value| parse_sense(*value)).is_none()
+                    {
+                        continue;
+                    }
+                    at += 1;
+                }
+                if tag == 0x10 {
+                    let length = if tripled {
+                        edge_delta::LEN
+                    } else {
+                        edge_body::LEN
+                    };
+                    if at != p + length {
+                        continue;
+                    }
+                }
+                ends.push(at);
+            }
         }
-        if !(0..count).all(|index| buf.get(p + 8 + index * 3) == Some(&1)) {
-            return None;
+        0x0f => ends.extend(
+            parse_loop_candidates(buf, off)
+                .into_iter()
+                .filter(|(record, _)| record.refs.iter().all(|r| *r <= MAX_SHORT_POINTER_INDEX))
+                .map(|(_, end)| end),
+        ),
+        0x11 => ends.extend(
+            parse_coedge_candidates(buf, off)
+                .into_iter()
+                .filter(|(record, _)| record.refs.iter().all(|r| *r <= MAX_SHORT_POINTER_INDEX))
+                .map(|(_, end)| end),
+        ),
+        0x12 => ends.extend(
+            parse_vertex_candidates(buf, off)
+                .into_iter()
+                .map(|reading| reading.end),
+        ),
+        0x1d => {
+            for prefixed in [false, true] {
+                if let Some(point) = parse_point(buf, off, prefixed) {
+                    ends.push(point.xyz_offset + std::mem::size_of::<[f64; 3]>());
+                }
+            }
         }
-        refs_tripled::<5>(buf, p + 6)?
+        _ => {}
+    }
+    ends.into_iter().min()
+}
+
+pub(super) struct TopologyScopes {
+    pub(super) payloads: Vec<std::ops::Range<usize>>,
+    pub(super) excluded_starts: Vec<std::ops::Range<usize>>,
+}
+
+pub(super) fn topology_scopes(buf: &[u8], prefixed: bool) -> TopologyScopes {
+    let mut scopes = TopologyScopes {
+        payloads: Vec::new(),
+        excluded_starts: Vec::new(),
     };
-    Some(VertexUse {
-        attr,
-        sequence,
-        refs,
-        offset: off,
-    })
+    let mut off = 0;
+    while off + 2 < buf.len() {
+        let tag = buf[off + 1];
+        let Some(p) = body_start(buf, off, tag).filter(|_| buf[off] == 0) else {
+            off += 1;
+            continue;
+        };
+        let end = match tag {
+            0x52 => View::u32_be_at(buf, p + int_values::COUNT).and_then(|count| {
+                let node = View::u16_be_at(buf, p + int_values::NODE_INDEX)?;
+                if !(2..=MAX_SHORT_POINTER_INDEX).contains(&node) {
+                    return None;
+                }
+                let start = p.checked_add(int_values::LEN)?;
+                let available = buf.len().checked_sub(start)?;
+                let count = cadmpeg_core::decode::bounded_len(u64::from(count), 4, available)?;
+                start.checked_add(count.checked_mul(4)?)
+            }),
+            0x51 => (|| {
+                let flags = View::u32_be_at(buf, p + entity_hdr::FLAGS)?;
+                let node = View::u16_be_at(buf, p + entity_hdr::ATTR)?;
+                let sequence = View::u32_be_at(buf, p + entity_hdr::SEQ)?;
+                let definition = View::u16_be_at(buf, p + entity_hdr::DISC)?;
+                let count = usize::from(flags.to_be_bytes()[3]);
+                if !(1..=0x20).contains(&count)
+                    || !(2..=MAX_SHORT_POINTER_INDEX).contains(&node)
+                    || !(2..=MAX_SHORT_POINTER_INDEX).contains(&definition)
+                    || sequence == 0
+                {
+                    return None;
+                }
+                let count = count.checked_add(5)?;
+                let mut at = p.checked_add(entity_hdr::LEN)?;
+                if prefixed {
+                    for _ in 0..count {
+                        if buf.get(at) != Some(&1) {
+                            return None;
+                        }
+                        if View::u16_be_at(buf, at + 1)? > MAX_SHORT_POINTER_INDEX {
+                            return None;
+                        }
+                        at = at.checked_add(3)?;
+                    }
+                    (buf.get(at) == Some(&0)).then_some(at + 1)
+                } else {
+                    for _ in 0..count {
+                        if View::u16_be_at(buf, at)? > MAX_SHORT_POINTER_INDEX {
+                            return None;
+                        }
+                        at = at.checked_add(2)?;
+                    }
+                    Some(at)
+                }
+            })(),
+            _ => None,
+        };
+        if let Some(end) = end.filter(|end| *end <= buf.len()) {
+            scopes.payloads.push(off..end);
+            scopes.excluded_starts.push(off..end);
+            off = end;
+        } else if let Some(end) = topology_header_prefix_end(buf, off, tag) {
+            scopes.excluded_starts.push(off + 1..end);
+            off = end;
+        } else {
+            off += 1;
+        }
+    }
+    scopes
+}
+
+#[cfg(test)]
+pub(super) fn topology_payload_ranges(buf: &[u8], prefixed: bool) -> Vec<std::ops::Range<usize>> {
+    topology_scopes(buf, prefixed).payloads
+}
+
+pub(super) fn point_class_attrs(body: &[u8], prefixed: bool) -> HashSet<u16> {
+    let scopes = topology_scopes(body, prefixed);
+    let ranges = &scopes.excluded_starts;
+    let mut payload_index = 0;
+    let mut out = HashSet::new();
+    let mut at = 0;
+    while at + 2 <= body.len() {
+        while ranges
+            .get(payload_index)
+            .is_some_and(|range| range.end <= at)
+        {
+            payload_index += 1;
+        }
+        if let Some(range) = ranges
+            .get(payload_index)
+            .filter(|range| range.contains(&at))
+        {
+            at = range.end;
+            continue;
+        }
+        if body.get(at..at + 2) == Some(&[0, 0x1d]) {
+            if let Some(point) = parse_point(body, at, prefixed) {
+                let end = point.xyz_offset + std::mem::size_of::<[f64; 3]>();
+                let index = scopes.payloads.partition_point(|range| range.end <= at);
+                if scopes
+                    .payloads
+                    .get(index)
+                    .is_none_or(|range| range.start >= end)
+                {
+                    out.insert(point.attr);
+                }
+            }
+        }
+        at += 1;
+    }
+    out
 }
 
 /// World point `00 1d`: 38-byte body, no magic, `refs[4]` at body+6, xyz as
 /// three big-endian f64 (metres) at body+14.
 fn parse_point(buf: &[u8], off: usize, prefixed: bool) -> Option<Point> {
     let p = body_start(buf, off, 0x1d)?;
-    if p + world_pt::LEN > buf.len() {
-        return None;
-    }
-    let attr = attr_at(buf, p)?;
-    let (references, reference_count, xyz_at) = if prefixed {
-        let mut refs = [0_u16; 16];
-        let mut len = 0;
-        let mut cursor = p + world_pt::REFS;
-        while buf.get(cursor + 2) == Some(&1) && len < refs.len() {
-            refs[len] = View::u16_be_at(buf, cursor)?;
-            len += 1;
-            cursor += 3;
-        }
-        if len == 0 {
-            return None;
-        }
-        (refs, len, cursor)
+    let attr = attr_at(buf, p).filter(|attr| *attr > 1)?;
+    let (references, xyz_at) = if prefixed {
+        buf.get(p..p + world_pt_delta::LEN)?;
+        (
+            refs_tripled::<4>(buf, p + world_pt_delta::REFS)?,
+            p + world_pt_delta::XYZ,
+        )
     } else {
-        let references = refs_be::<4>(buf, p + world_pt::REFS)?;
-        let mut refs = [0_u16; 16];
-        refs[..4].copy_from_slice(&references);
-        (refs, 4, p + world_pt::XYZ)
+        buf.get(p..p + world_pt::LEN)?;
+        (refs_be::<4>(buf, p + world_pt::REFS)?, p + world_pt::XYZ)
     };
-    if references[0] > 1 {
+    if references[0] > 1
+        || references
+            .iter()
+            .any(|reference| *reference > MAX_SHORT_POINTER_INDEX)
+    {
         return None;
     }
     let x = View::f64_be_at(buf, xyz_at)?;
     let y = View::f64_be_at(buf, xyz_at + 8)?;
     let z = View::f64_be_at(buf, xyz_at + 16)?;
-    for v in [x, y, z] {
-        // Reject exponent-poisoned reads from a misaligned candidate: real part
-        // coordinates in metres sit well under this cap.
-        if !v.is_finite() || v.abs() > 1e4 {
-            return None;
-        }
+    if [x, y, z].iter().any(|value| !value.is_finite()) {
+        return None;
     }
     Some(Point {
         attr,
-        refs: references[..reference_count].to_vec(),
+        refs: references.to_vec(),
         xyz_m: [x, y, z],
         xyz_offset: xyz_at,
         offset: off,
     })
+}
+
+struct RecordFrame {
+    partition: bool,
+    bytes: Option<Vec<u8>>,
+}
+
+fn merge_record_frame<T>(
+    records: &mut HashMap<u16, T>,
+    frames: &mut HashMap<u16, RecordFrame>,
+    attr: u16,
+    frame: RecordFrame,
+    record: Option<T>,
+) {
+    if let Some(current) = frames.get_mut(&attr) {
+        if current.partition && !frame.partition {
+            return;
+        }
+        if current.partition == frame.partition {
+            if current.bytes.is_none() || current.bytes != frame.bytes {
+                current.bytes = None;
+                records.remove(&attr);
+            }
+            return;
+        }
+    }
+    frames.insert(attr, frame);
+    records.remove(&attr);
+    if let Some(record) = record {
+        records.insert(attr, record);
+    }
+}
+
+fn merge_framed_records<T>(
+    target: &mut HashMap<u16, T>,
+    frames: &mut HashMap<u16, RecordFrame>,
+    mut source: HashMap<u16, T>,
+    source_frames: HashMap<u16, RecordFrame>,
+) {
+    for (attr, frame) in source_frames {
+        let record = source.remove(&attr);
+        merge_record_frame(target, frames, attr, frame, record);
+    }
+    source.retain(|attr, _| !frames.contains_key(attr));
+    merge_missing(target, source);
 }
 
 /// The topology record tables of one stream, each keyed by `attr`.
@@ -427,10 +833,17 @@ fn parse_point(buf: &[u8], off: usize, prefixed: bool) -> Option<Point> {
 pub(crate) struct Tables {
     bridges: HashMap<u16, Bridge>,
     loops: HashMap<u16, Loop>,
+    loop_frames: HashMap<u16, RecordFrame>,
     edge_uses: HashMap<u16, EdgeUse>,
     coedges: HashMap<u16, Coedge>,
+    coedge_frames: HashMap<u16, RecordFrame>,
+    coedge_owners: HashMap<u16, HashSet<u16>>,
     vertex_uses: HashMap<u16, VertexUse>,
+    vertex_frames: HashMap<u16, RecordFrame>,
+    vertex_classes: HashMap<u16, bool>,
+    owner_classes: HashSet<u16>,
     points: HashMap<u16, Point>,
+    point_frames: HashMap<u16, RecordFrame>,
 }
 
 impl Tables {
@@ -447,6 +860,12 @@ impl Tables {
         &self.loops
     }
 
+    pub(super) fn loop_is_ambiguous(&self, attr: u16) -> bool {
+        self.loop_frames
+            .get(&attr)
+            .is_some_and(|frame| frame.bytes.is_none())
+    }
+
     #[cfg(test)]
     pub(super) fn insert_loop(&mut self, record: Loop) {
         self.loops.insert(record.attr, record);
@@ -460,6 +879,40 @@ impl Tables {
         &self.coedges
     }
 
+    pub(super) fn coedge_is_ambiguous(&self, attr: u16) -> bool {
+        self.coedge_frames
+            .get(&attr)
+            .is_some_and(|frame| frame.bytes.is_none())
+    }
+
+    fn merge_coedge_frame(
+        &mut self,
+        attr: u16,
+        frame: RecordFrame,
+        record: Option<Coedge>,
+        owners: HashSet<u16>,
+    ) {
+        if let Some(current) = self.coedge_frames.get(&attr) {
+            if current.partition && !frame.partition {
+                return;
+            }
+            if current.partition == frame.partition {
+                self.coedge_owners.entry(attr).or_default().extend(owners);
+            } else {
+                self.coedge_owners.insert(attr, owners);
+            }
+        } else {
+            self.coedge_owners.insert(attr, owners);
+        }
+        merge_record_frame(
+            &mut self.coedges,
+            &mut self.coedge_frames,
+            attr,
+            frame,
+            record,
+        );
+    }
+
     #[cfg(test)]
     pub(super) fn insert_coedge(&mut self, record: Coedge) {
         self.coedges.insert(record.attr, record);
@@ -469,8 +922,36 @@ impl Tables {
         &self.vertex_uses
     }
 
+    pub(super) fn vertex_is_unresolved(&self, attr: u16) -> bool {
+        attr > 1 && !self.vertex_uses.contains_key(&attr)
+    }
+
+    fn merge_vertex_frame(&mut self, attr: u16, frame: RecordFrame, record: Option<VertexUse>) {
+        self.vertex_classes
+            .entry(attr)
+            .and_modify(|partition| *partition |= frame.partition)
+            .or_insert(frame.partition);
+        merge_record_frame(
+            &mut self.vertex_uses,
+            &mut self.vertex_frames,
+            attr,
+            frame,
+            record,
+        );
+    }
+
     pub(crate) fn points(&self) -> &HashMap<u16, Point> {
         &self.points
+    }
+
+    pub(super) fn point_is_ambiguous(&self, attr: u16) -> bool {
+        self.point_frames
+            .get(&attr)
+            .is_some_and(|frame| frame.bytes.is_none())
+    }
+
+    fn merge_point_frame(&mut self, attr: u16, frame: RecordFrame, point: Option<Point>) {
+        merge_record_frame(&mut self.points, &mut self.point_frames, attr, frame, point);
     }
 
     /// Merge deltas without replacing partition topology membership.
@@ -491,11 +972,42 @@ impl Tables {
             retain_selected_bridges(&mut deltas.bridges, selected_bridge_attrs);
             merge_missing(&mut self.bridges, deltas.bridges);
         }
-        merge_missing(&mut self.loops, deltas.loops);
+        merge_framed_records(
+            &mut self.loops,
+            &mut self.loop_frames,
+            deltas.loops,
+            deltas.loop_frames,
+        );
         merge_missing(&mut self.edge_uses, deltas.edge_uses);
+        for (attr, frame) in deltas.coedge_frames {
+            let record = deltas.coedges.remove(&attr);
+            let owners = deltas.coedge_owners.remove(&attr).unwrap_or_default();
+            self.merge_coedge_frame(attr, frame, record, owners);
+        }
+        deltas
+            .coedges
+            .retain(|attr, _| !self.coedge_frames.contains_key(attr));
         merge_missing(&mut self.coedges, deltas.coedges);
-        merge_missing(&mut self.vertex_uses, deltas.vertex_uses);
-        merge_missing(&mut self.points, deltas.points);
+        self.owner_classes
+            .extend(deltas.owner_classes.iter().copied());
+        for (attr, partition) in deltas.vertex_classes {
+            self.vertex_classes
+                .entry(attr)
+                .and_modify(|current| *current |= partition)
+                .or_insert(partition);
+        }
+        merge_framed_records(
+            &mut self.vertex_uses,
+            &mut self.vertex_frames,
+            deltas.vertex_uses,
+            deltas.vertex_frames,
+        );
+        merge_framed_records(
+            &mut self.points,
+            &mut self.point_frames,
+            deltas.points,
+            deltas.point_frames,
+        );
     }
 }
 
@@ -503,12 +1015,7 @@ fn retain_selected_bridges(
     bridges: &mut HashMap<u16, Bridge>,
     selected_bridge_attrs: &HashSet<u16>,
 ) {
-    bridges.retain(|attr, record| {
-        selected_bridge_attrs.contains(attr)
-            || record
-                .owner
-                .is_some_and(|owner| selected_bridge_attrs.contains(&owner))
-    });
+    bridges.retain(|attr, _| selected_bridge_attrs.contains(attr));
 }
 
 fn merge_missing<T>(target: &mut HashMap<u16, T>, source: HashMap<u16, T>) {
@@ -544,7 +1051,7 @@ impl Candidate for Coedge {
 #[derive(Clone, Copy)]
 struct CoedgeEvidence<'a> {
     owner: Option<&'a Loop>,
-    start: Option<&'a VertexUse>,
+    start: bool,
     edge: Option<&'a [EdgeUse]>,
     next_owner: Option<bool>,
     previous: bool,
@@ -555,7 +1062,7 @@ impl CoedgeEvidence<'_> {
     fn flags(self) -> [bool; 7] {
         [
             self.owner.is_some(),
-            self.start.is_some(),
+            self.start,
             self.edge.is_some(),
             self.next_owner == Some(true),
             self.next_owner.is_some(),
@@ -609,18 +1116,16 @@ fn coedge_evidence<'a>(
     candidate: &Coedge,
     loops: &'a [Loop],
     bridges: &HashMap<u16, Bridge>,
-    vertex_uses: &'a HashMap<u16, VertexUse>,
+    vertex_uses: &HashSet<u16>,
     edge_candidates: &'a CandidateMap<EdgeUse>,
     coedge_candidates: &CandidateMap<Coedge>,
 ) -> CoedgeEvidence<'a> {
     let owner = candidate.refs[1];
     let owner_evidence = loops
         .iter()
-        .rev()
-        .find(|loop_| loop_.attr == owner)
-        .filter(|loop_| owner != 0 && loop_is_owned(loop_, bridges));
+        .find(|loop_| loop_.attr == owner && owner != 0 && loop_is_owned(loop_, bridges));
     let start = candidate.refs[4];
-    let start_evidence = vertex_uses.get(&start).filter(|_| start != 0);
+    let start_evidence = start > 1 && vertex_uses.contains(&start);
     let edge = candidate.refs[6];
     let edge_evidence = edge_candidates
         .get(&edge)
@@ -636,7 +1141,7 @@ fn coedge_evidence<'a>(
                 .any(|next_candidate| next_candidate.refs[1] == owner)
         });
     let previous = candidate.refs[2];
-    let previous_valid = previous == 0
+    let previous_valid = previous <= 1
         || coedge_candidates.get(&previous).is_some_and(|candidates| {
             candidates.iter().any(|previous_candidate| {
                 previous_candidate.refs[3] == candidate.attr && previous_candidate.refs[1] == owner
@@ -667,7 +1172,7 @@ fn select_coedge(
     candidates: &[Coedge],
     loops: &[Loop],
     bridges: &HashMap<u16, Bridge>,
-    vertex_uses: &HashMap<u16, VertexUse>,
+    vertex_uses: &HashSet<u16>,
     edge_candidates: &CandidateMap<EdgeUse>,
     coedge_candidates: &CandidateMap<Coedge>,
 ) -> Option<Coedge> {
@@ -763,20 +1268,25 @@ pub(crate) fn patch_point_values(
 
 /// Replace one world-point record while preserving its framing.
 pub(crate) fn patch_point(buf: &mut [u8], attr: u16, xyz_m: [f64; 3]) -> bool {
-    let mut tables = scan_with_point_framing(buf, false, None, None);
+    let mut tables = scan_records(buf, false, None, None, None, None);
     let Some(record) = tables.points.remove(&attr) else {
         return false;
     };
     patch_point_values(buf, record.xyz_offset, record.xyz_m, xyz_m)
 }
 
-/// Scan the stream body for every typed topology record. Successful records do
-/// not advance the scan past their extent because valid records can overlap an
-/// enclosing payload. Family-specific framing gates reject payload coincidences.
-/// Later full records replace earlier records with the same `attr`, matching
-/// partition-base plus deltas-override merge order.
+/// Scan stream-local topology records.
 pub(crate) fn scan(body: &[u8]) -> Tables {
-    scan_with_point_framing(body, false, None, None)
+    let owner_facts = super::typed::scan(body);
+    let owners = super::typed::topology_owner_attrs_for_streams([(&owner_facts, body, false)]);
+    scan_records(
+        body,
+        false,
+        None,
+        None,
+        None,
+        (!owners.is_empty()).then_some(&owners),
+    )
 }
 
 /// Scan a partition stream while admitting typed FACE offsets that carry a
@@ -784,40 +1294,99 @@ pub(crate) fn scan(body: &[u8]) -> Tables {
 /// An ownership-only typed FACE has a null loop field and must not replace a
 /// separate compact bridge for the same attribute; a shared FACE/bridge record
 /// has a non-null loop field and is the topology record as well.
-pub(super) fn scan_with_curve_attrs_excluding(
+pub(super) fn scan_with_owner_attrs(
     body: &[u8],
     curve_attrs: &HashSet<u16>,
     excluded_bridge_offsets: &HashSet<usize>,
+    owner_attrs: &HashSet<u16>,
 ) -> Tables {
-    scan_with_point_framing(
+    scan_records(
         body,
         false,
         Some(curve_attrs),
         Some(excluded_bridge_offsets),
+        None,
+        (!owner_attrs.is_empty()).then_some(owner_attrs),
     )
 }
 
 /// Scan a deltas stream with the typed FACE/compact-bridge overlap rule.
-pub(super) fn scan_deltas_with_curve_attrs_excluding(
+pub(super) fn scan_deltas_with_owner_attrs(
     body: &[u8],
     curve_attrs: &HashSet<u16>,
     excluded_bridge_offsets: &HashSet<usize>,
+    base: &Tables,
+    owner_attrs: &HashSet<u16>,
 ) -> Tables {
-    scan_with_point_framing(body, true, Some(curve_attrs), Some(excluded_bridge_offsets))
+    scan_records(
+        body,
+        true,
+        Some(curve_attrs),
+        Some(excluded_bridge_offsets),
+        Some(base),
+        (!owner_attrs.is_empty()).then_some(owner_attrs),
+    )
 }
 
-fn scan_with_point_framing(
+#[cfg(test)]
+fn scan_with_curve_attrs_excluding(
     body: &[u8],
-    prefixed_points: bool,
+    curves: &HashSet<u16>,
+    excluded: &HashSet<usize>,
+) -> Tables {
+    let owner_facts = super::typed::scan(body);
+    let owners = super::typed::topology_owner_attrs_for_streams([(&owner_facts, body, false)]);
+    scan_with_owner_attrs(body, curves, excluded, &owners)
+}
+
+#[cfg(test)]
+fn scan_deltas_with_curve_attrs_excluding(
+    body: &[u8],
+    curves: &HashSet<u16>,
+    excluded: &HashSet<usize>,
+    base: &Tables,
+) -> Tables {
+    let owner_facts = super::typed::scan_with_payload_exclusions(body, true);
+    let mut owners = super::typed::topology_owner_attrs_for_streams([(&owner_facts, body, true)]);
+    owners.extend(base.owner_classes.iter().copied());
+    scan_deltas_with_owner_attrs(body, curves, excluded, base, &owners)
+}
+
+fn scan_records(
+    body: &[u8],
+    deltas: bool,
     curve_attrs: Option<&HashSet<u16>>,
     excluded_bridge_offsets: Option<&HashSet<usize>>,
+    base: Option<&Tables>,
+    owner_attrs: Option<&HashSet<u16>>,
 ) -> Tables {
     let mut t = Tables::default();
+    t.owner_classes
+        .extend(owner_attrs.into_iter().flatten().copied());
     let mut loop_candidates = Vec::new();
+    let mut loop_frames = Vec::new();
     let mut edge_candidates = CandidateMap::new();
     let mut coedge_candidates = CandidateMap::new();
+    let mut coedge_occurrences = Vec::new();
+    let mut vertex_occurrences = Vec::new();
+    let scopes = topology_scopes(body, deltas);
+    let payload_ranges = &scopes.excluded_starts;
+    let mut payload_index = 0;
     let mut i = 0usize;
     while i + 14 <= body.len() {
+        while payload_ranges
+            .get(payload_index)
+            .is_some_and(|range| range.end <= i)
+        {
+            payload_index += 1;
+        }
+        if let Some(range) = payload_ranges
+            .get(payload_index)
+            .filter(|range| range.contains(&i))
+        {
+            i = range.end;
+            continue;
+        }
         if body[i] != 0x00 {
             i += 1;
             continue;
@@ -834,25 +1403,39 @@ fn scan_with_point_framing(
                 }
             }
             0x0f => {
-                if let Some(record) = parse_loop(body, i) {
-                    loop_candidates.push(record);
+                for (record, end) in parse_loop_candidates(body, i) {
+                    loop_candidates.push(record.clone());
+                    loop_frames.push((record, end));
                 }
             }
             0x10 => insert_candidates(&mut edge_candidates, parse_edge_use_candidates(body, i)),
-            0x11 => insert_candidates(&mut coedge_candidates, parse_coedge_candidates(body, i)),
-            0x12 => {
-                if let Some(record) = parse_vertex_use(body, i) {
-                    t.vertex_uses.insert(record.attr, record);
+            0x11 => {
+                let frames = parse_coedge_candidates(body, i);
+                for (record, _) in &frames {
+                    coedge_candidates
+                        .entry(record.attr)
+                        .or_default()
+                        .push(record.clone());
+                }
+                if !frames.is_empty() {
+                    coedge_occurrences.push(frames);
                 }
             }
+            0x12 => {
+                vertex_occurrences.push((
+                    parse_vertex_candidates(body, i),
+                    unsupported_vertex_prefix(body, i),
+                ));
+            }
             0x1d => {
-                let record = if prefixed_points {
-                    parse_point(body, i, true).or_else(|| parse_point(body, i, false))
-                } else {
-                    parse_point(body, i, false)
-                };
+                let record = parse_point(body, i, deltas);
                 if let Some(record) = record {
-                    t.points.insert(record.attr, record);
+                    let end = record.xyz_offset + std::mem::size_of::<[f64; 3]>();
+                    let frame = RecordFrame {
+                        partition: !deltas,
+                        bytes: Some(body[record.offset..end].to_vec()),
+                    };
+                    t.merge_point_frame(record.attr, frame, Some(record));
                 }
             }
             _ => {}
@@ -860,32 +1443,233 @@ fn scan_with_point_framing(
         i += 1;
     }
 
-    for candidates in coedge_candidates.values() {
-        if let Some(record) = select_coedge(
-            candidates,
-            &loop_candidates,
-            &t.bridges,
-            &t.vertex_uses,
-            &edge_candidates,
-            &coedge_candidates,
-        ) {
-            t.coedges.insert(record.attr, record);
+    for (readings, unsupported) in vertex_occurrences {
+        let point_known = |record: &VertexUse| {
+            t.point_frames.contains_key(&record.refs[4])
+                || base.is_some_and(|base| base.point_frames.contains_key(&record.refs[4]))
+        };
+        let current_reference = |record: &VertexUse| {
+            coedge_candidates.values().flatten().any(|fin| {
+                fin.refs[4] == record.attr
+                    && (loop_frames.iter().any(|(loop_, _)| {
+                        loop_.attr == fin.refs[1]
+                            && (t.bridges.contains_key(&loop_.refs[2])
+                                || base
+                                    .is_some_and(|base| base.bridges.contains_key(&loop_.refs[2])))
+                    }) || base.is_some_and(|base| base.loops.contains_key(&fin.refs[1])))
+            }) || base
+                .is_some_and(|base| base.coedges.values().any(|fin| fin.refs[4] == record.attr))
+        };
+        let class_closed = |record: &VertexUse| {
+            record.refs[4] > 1
+                && record.owner > 1
+                && record.owner != record.attr
+                && owner_attrs.is_some_and(|owners| owners.contains(&record.owner))
+                && (point_known(record) || current_reference(record))
+        };
+        let admitted: Vec<_> = readings
+            .iter()
+            .filter(|reading| class_closed(&reading.record))
+            .collect();
+        if let [reading] = admitted.as_slice() {
+            let bytes = body[reading.record.offset..reading.end].to_vec();
+            let supported = reading
+                .record
+                .tolerance_m
+                .is_none_or(|value| value > 0.0 && (value * super::LEN_TO_MM).is_finite());
+            t.merge_vertex_frame(
+                reading.record.attr,
+                RecordFrame {
+                    partition: !deltas,
+                    bytes: Some(bytes),
+                },
+                supported.then(|| reading.record.clone()),
+            );
+        } else if let Some(reading) = admitted.first() {
+            t.merge_vertex_frame(
+                reading.record.attr,
+                RecordFrame {
+                    partition: !deltas,
+                    bytes: None,
+                },
+                None,
+            );
+        } else {
+            let identified: Vec<_> = readings
+                .iter()
+                .filter(|reading| {
+                    reading.record.refs[4] > 1
+                        && point_known(&reading.record)
+                        && current_reference(&reading.record)
+                })
+                .collect();
+            if let [reading] = identified.as_slice() {
+                t.merge_vertex_frame(
+                    reading.record.attr,
+                    RecordFrame {
+                        partition: !deltas,
+                        bytes: Some(body[reading.record.offset..reading.end].to_vec()),
+                    },
+                    None,
+                );
+            } else if let Some(reading) = identified.first() {
+                t.merge_vertex_frame(
+                    reading.record.attr,
+                    RecordFrame {
+                        partition: !deltas,
+                        bytes: None,
+                    },
+                    None,
+                );
+            } else if let Some(record) =
+                unsupported.filter(|record| point_known(record) && current_reference(record))
+            {
+                t.merge_vertex_frame(
+                    record.attr,
+                    RecordFrame {
+                        partition: !deltas,
+                        bytes: None,
+                    },
+                    None,
+                );
+            }
         }
+    }
+
+    let (evidence_loops, evidence_bridges, evidence_vertices, evidence_edges, evidence_coedges) =
+        if deltas {
+            let mut loops = Vec::new();
+            let mut bridges = HashMap::new();
+            let mut vertices = HashSet::new();
+            let mut edges = CandidateMap::new();
+            let mut coedges = CandidateMap::new();
+            if let Some(base) = base {
+                loops.extend(
+                    base.loops
+                        .iter()
+                        .filter(|&(attr, _record)| {
+                            base.loop_frames
+                                .get(attr)
+                                .is_some_and(|frame| frame.partition)
+                        })
+                        .map(|(_attr, record)| record.clone()),
+                );
+                let owners: HashSet<_> = loops.iter().map(|record| record.refs[2]).collect();
+                bridges.extend(
+                    base.bridges
+                        .iter()
+                        .filter(|&(attr, _record)| owners.contains(attr))
+                        .map(|(attr, record)| (*attr, record.clone())),
+                );
+                coedges.extend(
+                    base.coedges
+                        .iter()
+                        .filter(|&(attr, _record)| {
+                            base.coedge_frames
+                                .get(attr)
+                                .is_some_and(|frame| frame.partition)
+                        })
+                        .map(|(attr, record)| (*attr, vec![record.clone()])),
+                );
+                let starts: HashSet<_> = coedges
+                    .values()
+                    .flatten()
+                    .map(|record| record.refs[4])
+                    .collect();
+                let carriers: HashSet<_> = coedges
+                    .values()
+                    .flatten()
+                    .map(|record| record.refs[6])
+                    .collect();
+                vertices.extend(base.vertex_classes.iter().filter_map(|(attr, partition)| {
+                    (*partition && starts.contains(attr)).then_some(*attr)
+                }));
+                edges.extend(
+                    base.edge_uses
+                        .iter()
+                        .filter(|&(attr, _record)| carriers.contains(attr))
+                        .map(|(attr, record)| (*attr, vec![record.clone()])),
+                );
+            }
+            (loops, bridges, vertices, edges, coedges)
+        } else {
+            (
+                loop_candidates,
+                t.bridges.clone(),
+                t.vertex_classes.keys().copied().collect(),
+                edge_candidates.clone(),
+                coedge_candidates,
+            )
+        };
+    for frames in coedge_occurrences {
+        let candidates: Vec<_> = frames.iter().map(|(record, _)| record.clone()).collect();
+        let attr = candidates[0].attr;
+        let record = select_coedge(
+            &candidates,
+            &evidence_loops,
+            &evidence_bridges,
+            &evidence_vertices,
+            &evidence_edges,
+            &evidence_coedges,
+        );
+        let bytes = record.as_ref().and_then(|selected| {
+            frames
+                .iter()
+                .find(|(record, _)| record == selected)
+                .map(|(_, end)| body[selected.offset..*end].to_vec())
+        });
+        let owners = if let Some(record) = &record {
+            HashSet::from([record.refs[1]])
+        } else {
+            candidates.iter().map(|record| record.refs[1]).collect()
+        };
+        t.merge_coedge_frame(
+            attr,
+            RecordFrame {
+                partition: !deltas,
+                bytes,
+            },
+            record,
+            owners,
+        );
     }
     for candidates in edge_candidates.into_values() {
         if let Some(record) = select_edge_use(&candidates, &t.coedges, curve_attrs) {
             t.edge_uses.insert(record.attr, record);
         }
     }
-    for record in loop_candidates {
+    for (record, end) in loop_frames {
         let owner = record.refs[2];
         let first = record.refs[1];
-        if t.bridges.contains_key(&owner)
-            && t.coedges
-                .get(&first)
-                .is_some_and(|coedge| coedge.refs[1] == record.attr)
-        {
-            t.loops.insert(record.attr, record);
+        let owner_exists = t.bridges.contains_key(&owner)
+            || base.is_some_and(|base| base.bridges.contains_key(&owner));
+        let partition_head = !deltas
+            && t.bridges
+                .get(&owner)
+                .is_some_and(|bridge| bridge.refs[2] == record.attr);
+        let first_owners = base
+            .and_then(|base| base.coedge_owners.get(&first))
+            .or_else(|| t.coedge_owners.get(&first));
+        let first_is_owned = first_owners.map_or_else(
+            || {
+                base.and_then(|base| base.coedges.get(&first))
+                    .or_else(|| t.coedges.get(&first))
+                    .is_some_and(|coedge| coedge.refs[1] == record.attr)
+            },
+            |owners| owners.contains(&record.attr),
+        );
+        if owner_exists && (first_is_owned || partition_head) {
+            let frame = RecordFrame {
+                partition: !deltas,
+                bytes: Some(body[record.offset..end].to_vec()),
+            };
+            merge_record_frame(
+                &mut t.loops,
+                &mut t.loop_frames,
+                record.attr,
+                frame,
+                Some(record),
+            );
         }
     }
     t
@@ -894,12 +1678,118 @@ fn scan_with_point_framing(
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_bridge, parse_point, parse_vertex_use, patch_point, patch_point_values, scan,
+        parse_bridge, parse_point, parse_vertex_candidates, patch_point, patch_point_values, scan,
         scan_deltas_with_curve_attrs_excluding, scan_with_curve_attrs_excluding, EdgeReferences,
         MAGIC,
     };
+    use crate::test_support::parasolid::framed_topology_fin;
+    use crate::test_support::parasolid::framed_topology_loop;
     use cadmpeg_ir::topology::Sense;
+    use std::collections::HashMap;
     use std::collections::HashSet;
+
+    fn merge_bridge(attr: u16, attributes_head: u16) -> super::Bridge {
+        super::Bridge {
+            attr,
+            refs: [201, 202, 203, 204, 205],
+            sequence: 947,
+            sense: Sense::Forward,
+            attributes_head: Some(attributes_head),
+            offset: 0,
+        }
+    }
+
+    #[test]
+    fn bridge_membership_uses_partition_presence_and_typed_face_identity() {
+        for partition_present in [false, true] {
+            for typed_selection in [false, true] {
+                let original = merge_bridge(71, 101);
+                let mut partition = super::Tables::default();
+                if partition_present {
+                    partition.insert_bridge(original.clone());
+                }
+                let mut deltas = super::Tables::default();
+                let mut competing = merge_bridge(71, 141);
+                competing.refs[2] = 307;
+                competing.sequence = 948;
+                competing.sense = Sense::Reversed;
+                competing.offset = 80;
+                for record in [
+                    competing.clone(),
+                    merge_bridge(73, 103),
+                    merge_bridge(79, 109),
+                    merge_bridge(83, 113),
+                ] {
+                    deltas.insert_bridge(record);
+                }
+                let selected = HashSet::from([71, 73, 109]);
+                partition.merge_deltas(deltas, typed_selection.then_some(&selected));
+                let expected = match (partition_present, typed_selection) {
+                    (false, false) => HashSet::from([71, 73, 79, 83]),
+                    (_, true) => HashSet::from([71, 73]),
+                    (true, false) => HashSet::from([71]),
+                };
+                assert_eq!(
+                    partition.bridges.keys().copied().collect::<HashSet<_>>(),
+                    expected
+                );
+                assert_eq!(
+                    partition.bridges[&71],
+                    if partition_present {
+                        original
+                    } else {
+                        competing
+                    }
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn deltas_fill_missing_subordinates_and_preserve_partition_point_coordinates() {
+        let point = |attr, xyz_m| super::Point {
+            attr,
+            refs: vec![0, 501, 502, 503],
+            xyz_m,
+            xyz_offset: 16,
+            offset: 0,
+        };
+        let mut partition = super::Tables::default();
+        partition.points.insert(501, point(501, [1.0, 2.0, 3.0]));
+        partition.loops.insert(
+            401,
+            super::Loop {
+                attr: 401,
+                refs: [0, 411, 71, 0],
+                offset: 0,
+            },
+        );
+        let mut deltas = super::Tables::default();
+        deltas.points.insert(501, point(501, [4.0, 5.0, 6.0]));
+        deltas.points.insert(502, point(502, [7.0, 8.0, 9.0]));
+        deltas.loops.insert(
+            401,
+            super::Loop {
+                attr: 401,
+                refs: [0, 421, 73, 0],
+                offset: 20,
+            },
+        );
+        deltas.loops.insert(
+            402,
+            super::Loop {
+                attr: 402,
+                refs: [0, 431, 79, 0],
+                offset: 40,
+            },
+        );
+        partition.merge_deltas(deltas, None);
+        assert_eq!(partition.points[&501].xyz_m, [1.0, 2.0, 3.0]);
+        assert_eq!(partition.points[&501].refs, vec![0, 501, 502, 503]);
+        assert_eq!(partition.points[&502].xyz_m, [7.0, 8.0, 9.0]);
+        assert_eq!(partition.loops[&401].refs, [0, 411, 71, 0]);
+        assert_eq!(partition.loops[&402].refs, [0, 431, 79, 0]);
+    }
 
     #[test]
     fn bare_parasolid_point_copies_four_references() {
@@ -935,7 +1825,34 @@ mod tests {
     }
 
     #[test]
-    fn vertex_use_validates_extra_tripled_cells_before_the_magic() {
+    fn vertex_use_requires_all_five_tripled_cells_and_its_owner() {
+        let bytes = crate::test_support::parasolid::framed_topology_vertex(
+            50,
+            7,
+            [0, 0, 0, 0, 60],
+            None,
+            3,
+            true,
+            false,
+        );
+        let readings = parse_vertex_candidates(&bytes, 0);
+        assert_eq!(readings.len(), 1);
+        assert_eq!(readings[0].record.refs, [0, 0, 0, 0, 60]);
+        assert_eq!(readings[0].record.sequence, 7);
+        assert_eq!(readings[0].record.owner, 3);
+        assert_eq!(readings[0].end, bytes.len());
+        for cell in (0..5)
+            .map(|index| 2 + super::vertex_delta::REFS + 3 * index + 2)
+            .chain([2 + super::vertex_delta::OWNER + 2])
+        {
+            let mut malformed = bytes.clone();
+            malformed[cell] = 0;
+            assert!(parse_vertex_candidates(&malformed, 0).is_empty());
+        }
+    }
+
+    #[test]
+    fn extra_tripled_vertex_prefix_does_not_establish_a_complete_frame() {
         let mut bytes = vec![0, 0x12];
         bytes.extend(50_u16.to_be_bytes());
         bytes.extend(7_u32.to_be_bytes());
@@ -944,11 +1861,10 @@ mod tests {
             bytes.push(1);
         }
         bytes.extend(MAGIC);
-        let vertex = parse_vertex_use(&bytes, 0).unwrap();
+        assert!(parse_vertex_candidates(&bytes, 0).is_empty());
+        let vertex = super::unsupported_vertex_prefix(&bytes, 0).unwrap();
         assert_eq!(vertex.refs, [0, 0, 0, 0, 60]);
         assert_eq!(vertex.sequence, 7);
-        bytes[25] = 0;
-        assert!(parse_vertex_use(&bytes, 0).is_none());
     }
 
     fn bridge_with_refs(refs: &[u16], tripled: bool) -> Vec<u8> {
@@ -987,7 +1903,7 @@ mod tests {
         let bridge = parse_bridge(&bytes, 0).expect("deltas-form bridge");
         assert_eq!(bridge.attr, 0x1234);
         assert_eq!(bridge.sequence, 7);
-        assert_eq!(bridge.owner, Some(0x4321));
+        assert_eq!(bridge.attributes_head, Some(0x4321));
         assert_eq!(bridge.refs.as_slice(), expected);
         assert_eq!(bridge.sense, Sense::Forward);
     }
@@ -1001,7 +1917,7 @@ mod tests {
                 .unwrap_or_else(|| panic!("bridge tripled={tripled} bytes={bytes:02x?}"));
             assert_eq!(bridge.attr, 0x1234);
             assert_eq!(bridge.sequence, 7);
-            assert_eq!(bridge.owner, Some(0x4321));
+            assert_eq!(bridge.attributes_head, Some(0x4321));
             assert_eq!(bridge.refs.as_slice(), expected);
             assert_eq!(bridge.sense, Sense::Reversed);
         }
@@ -1072,7 +1988,7 @@ mod tests {
         bytes.extend(0_u16.to_be_bytes());
         bytes.extend(MAGIC);
         bytes.extend(
-            [0_u16, 0, 0, 0, 0, 0]
+            [0_u16, 0, 0, 0, 0, 0, 900]
                 .into_iter()
                 .flat_map(u16::to_be_bytes),
         );
@@ -1085,6 +2001,7 @@ mod tests {
         bytes.extend(sequence.to_be_bytes());
         bytes.extend([0_u16, 0, 0, 0, 60].into_iter().flat_map(u16::to_be_bytes));
         bytes.extend(MAGIC);
+        bytes.extend(900_u16.to_be_bytes());
         bytes
     }
 
@@ -1099,6 +2016,10 @@ mod tests {
         ));
         body.extend(topology_edge_use(0x2b40, 0));
         body.extend(topology_vertex_use(50, 0));
+        body.extend(crate::test_support::parasolid::fixture_vertex_owner_class(
+            900,
+        ));
+        body.extend(crate::test_support::parasolid::world_point(60, [0.0; 3]));
 
         let tables = scan(&body);
         let coedge = tables.coedges.get(&30).expect("tripled coedge");
@@ -1113,6 +2034,10 @@ mod tests {
         let mut body = Vec::new();
         body.extend(topology_edge_use(40, 0x0102_0304));
         body.extend(topology_vertex_use(50, 0x0506_0708));
+        body.extend(crate::test_support::parasolid::fixture_vertex_owner_class(
+            900,
+        ));
+        body.extend(crate::test_support::parasolid::world_point(60, [0.0; 3]));
 
         let tables = scan(&body);
         assert_eq!(tables.edge_uses[&40].sequence, 0x0102_0304);
@@ -1137,8 +2062,508 @@ mod tests {
             "ambiguous without a carrier set"
         );
         let curve_attrs = HashSet::from([0x0103]);
-        let tables = scan_deltas_with_curve_attrs_excluding(&bytes, &curve_attrs, &HashSet::new());
+        let tables = scan_deltas_with_curve_attrs_excluding(
+            &bytes,
+            &curve_attrs,
+            &HashSet::new(),
+            &super::Tables::default(),
+        );
         assert_eq!(tables.edge_uses[&40].references.curve(), 0x0103);
+    }
+
+    fn tripled_point(attr: u16, xyz: [f64; 3], first_of_type: bool) -> Vec<u8> {
+        let mut bytes = vec![0, 0x1d];
+        if first_of_type {
+            bytes.push(0xff);
+        }
+        bytes.extend(attr.to_be_bytes());
+        bytes.extend(947u32.to_be_bytes());
+        for reference in [1u16, 101, 102, 103] {
+            bytes.extend(reference.to_be_bytes());
+            bytes.push(1);
+        }
+        for coordinate in xyz {
+            bytes.extend(coordinate.to_be_bytes());
+        }
+        bytes
+    }
+
+    #[test]
+    fn point_coordinates_do_not_extend_the_four_reference_fields() {
+        let x = f64::from_bits(0x3ff0_0100_0001_0000);
+        for first_of_type in [false, true] {
+            let bytes = tripled_point(211, [x, 2.0, 3.0], first_of_type);
+            let point = parse_point(&bytes, 0, true).expect("complete POINT");
+            assert_eq!(point.refs, [1, 101, 102, 103]);
+            assert_eq!(point.xyz_m, [x, 2.0, 3.0]);
+            assert_eq!(point.xyz_offset, 20 + usize::from(first_of_type));
+        }
+    }
+
+    #[test]
+    fn point_coordinates_have_no_format_magnitude_cap() {
+        let xyz = [20_000.0, -20_000.0, 0.0];
+        let bare = crate::test_support::parasolid::world_point(211, xyz);
+        assert_eq!(parse_point(&bare, 0, false).unwrap().xyz_m, xyz);
+        let tripled = tripled_point(211, xyz, false);
+        assert_eq!(parse_point(&tripled, 0, true).unwrap().xyz_m, xyz);
+    }
+
+    #[test]
+    fn point_admission_requires_finite_complete_coordinates_and_real_identity() {
+        for xyz in [[f64::INFINITY, 2.0, 3.0], [1.0, f64::NAN, 3.0]] {
+            assert!(parse_point(&tripled_point(211, xyz, false), 0, true).is_none());
+        }
+        let mut extended = tripled_point(211, [1.0, 2.0, 3.0], false);
+        let owner = 2 + crate::layout::world_point_tripled::REFS + 3;
+        extended[owner..owner + 2].copy_from_slice(&0x7ffeu16.to_be_bytes());
+        assert!(parse_point(&extended, 0, true).is_some());
+        extended[owner..owner + 2].copy_from_slice(&0x7fffu16.to_be_bytes());
+        assert!(parse_point(&extended, 0, true).is_none());
+        let mut bytes = tripled_point(211, [1.0, 2.0, 3.0], false);
+        bytes.pop();
+        assert!(parse_point(&bytes, 0, true).is_none());
+        for attr in [0, 1] {
+            assert!(parse_point(&tripled_point(attr, [1.0, 2.0, 3.0], false), 0, true).is_none());
+        }
+    }
+
+    #[test]
+    fn deltas_point_admission_has_no_bare_pointer_fallback() {
+        let bytes = crate::test_support::parasolid::world_point(211, [1.0, 2.0, 3.0]);
+        assert!(parse_point(&bytes, 0, false).is_some());
+        let tables = scan_deltas_with_curve_attrs_excluding(
+            &bytes,
+            &HashSet::new(),
+            &HashSet::new(),
+            &super::Tables::default(),
+        );
+        assert!(!tables.points.contains_key(&211));
+    }
+
+    fn delta_points(bytes: &[u8]) -> super::Tables {
+        scan_deltas_with_curve_attrs_excluding(
+            bytes,
+            &HashSet::new(),
+            &HashSet::new(),
+            &super::Tables::default(),
+        )
+    }
+
+    fn partition_without_loop() -> Vec<u8> {
+        let mut bytes = crate::test_support::parasolid::triangle_body();
+        let original = crate::test_support::parasolid::loop_head(20, 30, 10);
+        let at = bytes
+            .windows(original.len())
+            .position(|window| window == original)
+            .unwrap();
+        drop(bytes.drain(at..at + original.len()));
+        bytes
+    }
+
+    fn delta_topology(bytes: &[u8], base: &super::Tables) -> super::Tables {
+        scan_deltas_with_curve_attrs_excluding(bytes, &HashSet::new(), &HashSet::new(), base)
+    }
+
+    fn partition_without_middle_fin() -> Vec<u8> {
+        let mut bytes = crate::test_support::parasolid::triangle_body();
+        let original = crate::test_support::parasolid::coedge(31, 20, 32, 51, 0, 41, false);
+        let at = bytes
+            .windows(original.len())
+            .position(|window| window == original)
+            .unwrap();
+        drop(bytes.drain(at..at + original.len()));
+        bytes
+    }
+
+    #[test]
+    fn partition_face_head_retains_its_loop_before_first_fin_is_available() {
+        let loop_frame = framed_topology_loop(20, 811, [0, 30, 10, 0], false, true);
+        let body = [topology_bridge(10, 20), loop_frame.clone()].concat();
+        let tables = scan(&body);
+        assert_eq!(tables.loops()[&20].refs, [0, 30, 10, 0]);
+        assert!(tables.loop_frames[&20].partition);
+        assert_eq!(
+            tables.loop_frames[&20].bytes.as_deref(),
+            Some(loop_frame.as_slice())
+        );
+        let history = delta_topology(&body, &super::Tables::default());
+        assert!(!history.loops().contains_key(&20));
+        let non_head = [topology_bridge(10, 21), loop_frame].concat();
+        assert!(!scan(&non_head).loops().contains_key(&20));
+    }
+
+    #[test]
+    fn fin_frame_selection_does_not_promote_history_to_current_evidence() {
+        let fin = framed_topology_fin(31, [0, 20, 30, 32, 51, 0, 0x2b40, 0, 0], true, false, false);
+        let support = [
+            framed_topology_loop(20, 811, [0, 31, 10, 0], true, false),
+            topology_edge_use(0x2b40, 0),
+            topology_vertex_use(51, 0),
+        ]
+        .concat();
+        for streams in [
+            vec![[fin.as_slice(), support.as_slice()].concat()],
+            vec![fin.clone(), support.clone()],
+            vec![support.clone(), fin.clone()],
+        ] {
+            let mut tables = scan(&topology_bridge(10, 20));
+            for stream in streams {
+                let delta = delta_topology(&stream, &tables);
+                tables.merge_deltas(delta, None);
+            }
+            assert!(!tables.coedges().contains_key(&31));
+            assert!(tables.coedge_is_ambiguous(31));
+        }
+    }
+
+    #[test]
+    fn fin_frame_evidence_accepts_both_null_previous_sentinels() {
+        let mut candidate = super::Coedge {
+            attr: 31,
+            refs: [0; 9],
+            sense: Sense::Forward,
+            offset: 0,
+        };
+        let bridges = HashMap::new();
+        let vertices = HashSet::new();
+        let edges = HashMap::new();
+        let coedges = HashMap::new();
+        for null in [0, 1] {
+            candidate.refs[2] = null;
+            let evidence =
+                super::coedge_evidence(&candidate, &[], &bridges, &vertices, &edges, &coedges);
+            assert!(evidence.previous);
+        }
+    }
+
+    #[test]
+    fn fin_conflicts_compare_every_pointer_sense_and_frame_across_stream_groupings() {
+        let refs = [0, 20, 0, 32, 51, 0, 41, 0, 0];
+        let first = framed_topology_fin(31, refs, true, false, false);
+        let mut variants = vec![
+            framed_topology_fin(31, refs, true, true, false),
+            framed_topology_fin(31, refs, false, false, false),
+            framed_topology_fin(31, refs, true, false, true),
+        ];
+        for slot in 0..refs.len() {
+            let mut changed = refs;
+            changed[slot] += 1;
+            variants.push(framed_topology_fin(31, changed, true, false, false));
+        }
+        for variant in variants {
+            let records = [&first, &variant, &first];
+            for order in [
+                [0, 1, 2],
+                [0, 2, 1],
+                [1, 0, 2],
+                [1, 2, 0],
+                [2, 0, 1],
+                [2, 1, 0],
+            ] {
+                for cuts in [0u8, 1, 2, 3] {
+                    let mut tables = scan(&partition_without_middle_fin());
+                    let mut stream = Vec::new();
+                    for (index, record) in order.into_iter().enumerate() {
+                        stream.extend(records[record]);
+                        if index == 2 || cuts & (1 << index) != 0 {
+                            let deltas = delta_topology(&stream, &tables);
+                            tables.merge_deltas(deltas, None);
+                            stream.clear();
+                        }
+                    }
+                    assert!(!tables.coedges().contains_key(&31));
+                    assert!(tables.coedge_is_ambiguous(31));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn identical_fin_frames_coalesce_with_partition_context() {
+        let bytes = framed_topology_fin(31, [0, 20, 0, 32, 51, 0, 41, 0, 0], true, true, false);
+        let mut tables = scan(&partition_without_middle_fin());
+        for stream in [&bytes, &[bytes.as_slice(), bytes.as_slice()].concat()] {
+            let deltas = delta_topology(stream, &tables);
+            tables.merge_deltas(deltas, None);
+        }
+        assert_eq!(tables.coedges()[&31].refs, [0, 20, 0, 32, 51, 0, 41, 0, 0]);
+        assert!(!tables.coedge_is_ambiguous(31));
+    }
+
+    #[test]
+    fn partition_fin_presence_and_conflicts_block_history() {
+        let partition = crate::test_support::parasolid::triangle_body();
+        let extra = framed_topology_fin(31, [1, 20, 0, 32, 51, 0, 41, 0, 0], false, false, false);
+        let mut current = scan(&partition);
+        let before = current.coedges()[&31].clone();
+        let history = delta_topology(&extra, &current);
+        current.merge_deltas(history, None);
+        assert_eq!(current.coedges()[&31], before);
+        for bytes in [
+            [partition.as_slice(), extra.as_slice()].concat(),
+            [extra.as_slice(), partition.as_slice()].concat(),
+        ] {
+            let mut tables = scan(&bytes);
+            assert!(tables.coedge_is_ambiguous(31));
+            let history = delta_topology(
+                &framed_topology_fin(31, [0, 20, 0, 32, 51, 0, 41, 0, 0], true, false, false),
+                &tables,
+            );
+            tables.merge_deltas(history, None);
+            assert!(!tables.coedges().contains_key(&31));
+            assert!(tables.coedge_is_ambiguous(31));
+        }
+    }
+
+    #[test]
+    fn bare_loop_closure_survives_an_unowned_tripled_reading_at_the_same_offset() {
+        for first_of_type in [false, true] {
+            let frame = framed_topology_loop(20, 811, [0, 258, 769, 0], false, first_of_type);
+            let mut padded = frame.clone();
+            padded.extend([1, 0, 0, 1]);
+            let readings = super::parse_loop_candidates(&padded, 0);
+            assert_eq!(readings.len(), 2);
+            assert_eq!(readings[0].0.refs, [0, 258, 769, 0]);
+            assert_eq!(readings[1].0.refs, [0, 515, 0, 0]);
+            let mut body = topology_bridge(769, 20);
+            body.extend(padded);
+            body.extend(topology_tripled_coedge(
+                258,
+                [0, 20, 0, 258, 50, 0, 40, 0, 0],
+            ));
+            let tables = scan(&body);
+            assert_eq!(tables.loops()[&20].refs, [0, 258, 769, 0]);
+            assert!(!tables.loop_is_ambiguous(20));
+            assert_eq!(
+                tables.loop_frames[&20].bytes.as_deref(),
+                Some(frame.as_slice())
+            );
+        }
+    }
+
+    #[test]
+    fn loop_full_frame_conflicts_are_sticky_in_every_order_and_stream_grouping() {
+        let refs = [0, 30, 10, 0];
+        let base = framed_topology_loop(20, 811, refs, true, false);
+        let variants = [
+            framed_topology_loop(20, 812, refs, true, false),
+            framed_topology_loop(20, 811, refs, true, true),
+            framed_topology_loop(20, 811, [1, 30, 10, 0], true, false),
+            framed_topology_loop(20, 811, [0, 31, 10, 0], true, false),
+            framed_topology_loop(20, 811, [0, 30, 10, 1], true, false),
+        ];
+        for variant in variants {
+            let records = [&base, &variant, &base];
+            for order in [
+                [0, 1, 2],
+                [0, 2, 1],
+                [1, 0, 2],
+                [1, 2, 0],
+                [2, 0, 1],
+                [2, 1, 0],
+            ] {
+                for cuts in [0u8, 1, 2, 3] {
+                    let mut tables = scan(&partition_without_loop());
+                    let mut stream = Vec::new();
+                    for (index, record) in order.into_iter().enumerate() {
+                        stream.extend(records[record]);
+                        if index == 2 || cuts & (1 << index) != 0 {
+                            let deltas = delta_topology(&stream, &tables);
+                            tables.merge_deltas(deltas, None);
+                            stream.clear();
+                        }
+                    }
+                    assert!(!tables.loops().contains_key(&20));
+                    assert!(tables.loop_is_ambiguous(20));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn identical_loop_frames_coalesce_using_partition_closure() {
+        let bytes = framed_topology_loop(20, 811, [0, 30, 10, 0], true, true);
+        let mut tables = scan(&partition_without_loop());
+        for stream in [&bytes, &[bytes.as_slice(), bytes.as_slice()].concat()] {
+            let deltas = delta_topology(stream, &tables);
+            assert_eq!(deltas.loops().len(), 1);
+            tables.merge_deltas(deltas, None);
+        }
+        assert_eq!(tables.loops()[&20].refs, [0, 30, 10, 0]);
+        assert!(!tables.loop_is_ambiguous(20));
+    }
+
+    #[test]
+    fn partition_loop_conflict_blocks_deltas_and_unowned_matches_do_not_poison_identity() {
+        let partition = crate::test_support::parasolid::triangle_body();
+        let conflict = framed_topology_loop(20, 812, [0, 30, 10, 0], false, false);
+        let mut tables = scan(&[partition.as_slice(), conflict.as_slice()].concat());
+        assert!(tables.loop_is_ambiguous(20));
+        let delta = delta_topology(
+            &framed_topology_loop(20, 811, [0, 30, 10, 0], true, false),
+            &tables,
+        );
+        tables.merge_deltas(delta, None);
+        assert!(!tables.loops().contains_key(&20));
+        assert!(tables.loop_is_ambiguous(20));
+
+        let unowned = framed_topology_loop(20, 812, [0, 30, 255, 0], false, false);
+        for bytes in [
+            [partition.as_slice(), unowned.as_slice()].concat(),
+            [unowned.as_slice(), partition.as_slice()].concat(),
+        ] {
+            let tables = scan(&bytes);
+            assert!(tables.loops().contains_key(&20));
+            assert!(!tables.loop_is_ambiguous(20));
+        }
+    }
+
+    #[test]
+    fn partition_loop_presence_ignores_conflicting_history() {
+        let mut tables = scan(&crate::test_support::parasolid::triangle_body());
+        let before = tables.loops()[&20].clone();
+        let bytes = [
+            framed_topology_loop(20, 811, [0, 30, 10, 0], true, false),
+            framed_topology_loop(20, 812, [0, 30, 10, 0], true, false),
+        ]
+        .concat();
+        let deltas = delta_topology(&bytes, &tables);
+        assert!(deltas.loop_is_ambiguous(20));
+        tables.merge_deltas(deltas, None);
+        assert_eq!(tables.loops()[&20], before);
+        assert!(!tables.loop_is_ambiguous(20));
+    }
+
+    #[test]
+    fn point_duplicates_compare_complete_frames_in_every_order_and_stream_grouping() {
+        let base = tripled_point(211, [0.0, 2.0, 3.0], false);
+        let mut variants = vec![tripled_point(211, [0.0, 2.0, 3.0], true)];
+        let mut node = base.clone();
+        node[4..8].copy_from_slice(&948u32.to_be_bytes());
+        variants.push(node);
+        for index in 0..4 {
+            let mut reference = base.clone();
+            let at = 2 + crate::layout::world_point_tripled::REFS + index * 3;
+            reference[at..at + 2]
+                .copy_from_slice(&(if index == 0 { 0u16 } else { 151 }).to_be_bytes());
+            variants.push(reference);
+        }
+        variants.push(tripled_point(211, [-0.0, 2.0, 3.0], false));
+        variants.push(tripled_point(211, [1.0, 2.0, 3.0], false));
+        for variant in variants {
+            assert!(parse_point(&variant, 0, true).is_some());
+            let records = [&base, &variant, &base];
+            for order in [
+                [0, 1, 2],
+                [0, 2, 1],
+                [1, 0, 2],
+                [1, 2, 0],
+                [2, 0, 1],
+                [2, 1, 0],
+            ] {
+                for cuts in [0u8, 1, 2, 3] {
+                    let mut tables = super::Tables::default();
+                    let mut stream = Vec::new();
+                    for (index, record) in order.into_iter().enumerate() {
+                        stream.extend(records[record]);
+                        if index == 2 || cuts & (1 << index) != 0 {
+                            tables.merge_deltas(delta_points(&stream), None);
+                            stream.clear();
+                        }
+                    }
+                    assert!(tables.points().is_empty());
+                    assert!(tables.point_is_ambiguous(211));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn byte_identical_point_frames_coalesce_within_and_across_streams() {
+        for partition in [false, true] {
+            let point = if partition {
+                crate::test_support::parasolid::world_point(211, [1.0, 2.0, 3.0])
+            } else {
+                tripled_point(211, [1.0, 2.0, 3.0], true)
+            };
+            let bytes = [point.as_slice(), point.as_slice()].concat();
+            let scan_points = |bytes: &[u8]| {
+                if partition {
+                    scan(bytes)
+                } else {
+                    delta_points(bytes)
+                }
+            };
+            let mut tables = scan_points(&bytes);
+            tables.merge_deltas(scan_points(&point), None);
+            assert_eq!(tables.points().len(), 1);
+            assert_eq!(tables.points()[&211].xyz_m, [1.0, 2.0, 3.0]);
+            assert!(!tables.point_is_ambiguous(211));
+        }
+    }
+
+    #[test]
+    fn partition_point_presence_and_conflicts_survive_competing_deltas() {
+        let first = crate::test_support::parasolid::world_point(211, [1.0, 2.0, 3.0]);
+        let second = crate::test_support::parasolid::world_point(211, [4.0, 5.0, 6.0]);
+        let delta_first = tripled_point(211, [7.0, 8.0, 9.0], false);
+        let delta_second = tripled_point(211, [10.0, 11.0, 12.0], false);
+        for split_partition in [false, true] {
+            let mut conflict = if split_partition {
+                let mut tables = scan(&first);
+                tables.merge_deltas(scan(&second), None);
+                tables
+            } else {
+                scan(&[first.as_slice(), second.as_slice()].concat())
+            };
+            assert!(conflict.points().is_empty());
+            conflict.merge_deltas(delta_points(&delta_first), None);
+            assert!(conflict.points().is_empty());
+            assert!(conflict.point_is_ambiguous(211));
+        }
+        for partition_first in [false, true] {
+            let mut tables = super::Tables::default();
+            if partition_first {
+                tables.merge_deltas(scan(&first), None);
+            }
+            tables.merge_deltas(
+                delta_points(&[delta_first.as_slice(), delta_second.as_slice()].concat()),
+                None,
+            );
+            if !partition_first {
+                tables.merge_deltas(scan(&first), None);
+            }
+            assert_eq!(tables.points()[&211].xyz_m, [1.0, 2.0, 3.0]);
+            assert!(!tables.point_is_ambiguous(211));
+        }
+    }
+
+    #[test]
+    fn complete_tripled_edge_retains_canonical_fin_and_fourth_pointer_curve() {
+        for first_of_type in [false, true] {
+            let mut bytes = vec![0, 0x10];
+            if first_of_type {
+                bytes.push(0xff);
+            }
+            bytes.extend(211u16.to_be_bytes());
+            bytes.extend(947u32.to_be_bytes());
+            bytes.extend([0, 1, 1]);
+            bytes.extend(MAGIC);
+            for reference in [171u16, 172, 173, 174, 175, 176, 177] {
+                bytes.extend(reference.to_be_bytes());
+                bytes.push(1);
+            }
+            let records = super::parse_edge_use_candidates(&bytes, 0);
+            assert_eq!(records.len(), 1);
+            assert_eq!(
+                records[0].references,
+                EdgeReferences::Bare([171, 172, 173, 174, 175, 176])
+            );
+            assert_eq!(records[0].references.canonical(), Some(171));
+            assert_eq!(records[0].references.curve(), 174);
+            assert_eq!(records[0].sequence, 947);
+        }
     }
 
     #[test]
@@ -1165,5 +2590,834 @@ mod tests {
         assert_eq!(point.refs, vec![0, 0x0102, 0, 0]);
         assert_eq!(point.xyz_m, [4.0, 5.0, 6.0]);
         assert_eq!(point.xyz_offset, 16);
+    }
+    fn vertex_frame(attr: u16, refs: [u16; 5], owner: u16, delta: bool) -> Vec<u8> {
+        crate::test_support::parasolid::framed_topology_vertex(
+            attr, 149, refs, None, owner, delta, false,
+        )
+    }
+
+    fn vertex_partition() -> super::Tables {
+        scan(&crate::test_support::parasolid::triangle_body())
+    }
+
+    #[test]
+    fn vertex_conflicts_compare_every_complete_field_across_stream_groupings() {
+        let refs = [0, 0, 0, 0, 60];
+        let first = vertex_frame(211, refs, 900, true);
+        let mut variants = Vec::new();
+        for (node, tolerance, owner, ff) in [
+            (150, None, 900, false),
+            (149, Some(0.0001), 900, false),
+            (149, None, 901, false),
+            (149, None, 900, true),
+        ] {
+            variants.push(crate::test_support::parasolid::framed_topology_vertex(
+                211, node, refs, tolerance, owner, true, ff,
+            ));
+        }
+        for slot in 0..refs.len() {
+            let mut changed = refs;
+            changed[slot] += 1;
+            variants.push(vertex_frame(211, changed, 900, true));
+        }
+        for variant in variants {
+            let frames = [&first, &variant, &first];
+            for order in [
+                [0, 1, 2],
+                [0, 2, 1],
+                [1, 0, 2],
+                [1, 2, 0],
+                [2, 0, 1],
+                [2, 1, 0],
+            ] {
+                for group_mask in 0..4 {
+                    let mut tables = vertex_partition();
+                    let mut stream = Vec::new();
+                    for (index, choice) in order.into_iter().enumerate() {
+                        stream.extend(frames[choice]);
+                        if index == 2 || group_mask & (1 << index) != 0 {
+                            let delta = delta_topology(&stream, &tables);
+                            tables.merge_deltas(delta, None);
+                            stream.clear();
+                        }
+                    }
+                    assert!(tables.vertex_is_unresolved(211));
+                    assert!(tables.vertex_frames[&211].bytes.is_none());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn partition_vertex_presence_and_partition_conflicts_block_history() {
+        let extra = vertex_frame(50, [0, 0, 0, 0, 60], 900, true);
+        let mut tables = vertex_partition();
+        let current = tables.vertex_uses[&50].clone();
+        let history = delta_topology(&extra, &tables);
+        tables.merge_deltas(history, None);
+        assert_eq!(tables.vertex_uses[&50], current);
+        for ff in [false, true] {
+            let conflicting = crate::test_support::parasolid::framed_topology_vertex(
+                50,
+                1,
+                [0, 0, 0, 0, 60],
+                None,
+                900,
+                false,
+                ff,
+            );
+            let bytes = [crate::test_support::parasolid::triangle_body(), conflicting].concat();
+            let mut tables = scan(&bytes);
+            assert!(tables.vertex_is_unresolved(50));
+            let history = delta_topology(&extra, &tables);
+            tables.merge_deltas(history, None);
+            assert!(tables.vertex_is_unresolved(50));
+            assert!(tables.vertex_frames[&50].partition);
+        }
+    }
+
+    #[test]
+    fn vertex_owner_inventory_admits_both_union_classes_and_rejects_other_ids() {
+        for owner in [900, 901] {
+            let bytes = [
+                crate::test_support::parasolid::world_point(60, [0.0; 3]),
+                vertex_frame(211, [0, 0, 0, 0, 60], owner, false),
+            ]
+            .concat();
+            let tables = super::scan_with_owner_attrs(
+                &bytes,
+                &HashSet::new(),
+                &HashSet::new(),
+                &HashSet::from([900, 901]),
+            );
+            assert_eq!(tables.vertex_uses[&211].owner, owner);
+            let rejected = super::scan_with_owner_attrs(
+                &bytes,
+                &HashSet::new(),
+                &HashSet::new(),
+                &HashSet::from([902]),
+            );
+            assert!(!rejected.vertex_frames.contains_key(&211));
+        }
+    }
+
+    #[test]
+    fn complete_vertex_tolerances_reject_nonfinite_and_withhold_nonpositive_geometry() {
+        for (tolerance, admitted, projected) in [
+            (None, true, true),
+            (Some(0.0001), true, true),
+            (Some(0.0), true, false),
+            (Some(-1.0), true, false),
+            (Some(f64::MAX), true, false),
+            (Some(f64::NAN), false, false),
+            (Some(f64::INFINITY), false, false),
+        ] {
+            for tripled in [false, true] {
+                let frame = crate::test_support::parasolid::framed_topology_vertex(
+                    211,
+                    149,
+                    [0, 0, 0, 0, 60],
+                    tolerance,
+                    900,
+                    tripled,
+                    true,
+                );
+                let bytes = [
+                    crate::test_support::parasolid::world_point(60, [0.0; 3]),
+                    frame,
+                ]
+                .concat();
+                let tables = super::scan_with_owner_attrs(
+                    &bytes,
+                    &HashSet::new(),
+                    &HashSet::new(),
+                    &HashSet::from([900]),
+                );
+                assert_eq!(tables.vertex_frames.contains_key(&211), admitted);
+                assert_eq!(tables.vertex_uses.contains_key(&211), projected);
+                if projected {
+                    assert_eq!(tables.vertex_uses[&211].tolerance_m, tolerance);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn int_values_payload_vertex_bytes_never_enter_identity_merge() {
+        let real = vertex_frame(211, [0, 0, 0, 0, 60], 900, false);
+        let mut fake = real.clone();
+        fake[7] ^= 1;
+        while !fake.len().is_multiple_of(4) {
+            fake.push(0);
+        }
+        let mut integers = vec![0, 0x52];
+        integers.extend(u32::try_from(fake.len() / 4).unwrap().to_be_bytes());
+        integers.extend(710u16.to_be_bytes());
+        integers.extend(fake);
+        for records in [
+            [real.clone(), integers.clone()],
+            [integers.clone(), real.clone()],
+        ] {
+            let bytes = [
+                crate::test_support::parasolid::world_point(60, [0.0; 3]),
+                records.concat(),
+            ]
+            .concat();
+            let tables = super::scan_with_owner_attrs(
+                &bytes,
+                &HashSet::new(),
+                &HashSet::new(),
+                &HashSet::from([900]),
+            );
+            assert_eq!(tables.vertex_uses[&211].sequence, 149);
+            assert_eq!(
+                tables.vertex_frames[&211].bytes.as_deref(),
+                Some(real.as_slice())
+            );
+        }
+    }
+
+    #[test]
+    fn attribute_payload_vertex_bytes_do_not_poison_a_real_identity() {
+        let fake = crate::test_support::parasolid::framed_topology_vertex(
+            211,
+            150,
+            [0, 0, 0, 0, 60],
+            Some(0.0),
+            900,
+            false,
+            false,
+        );
+        let slots: Vec<_> = fake
+            .chunks_exact(2)
+            .map(|bytes| u16::from_be_bytes([bytes[0], bytes[1]]))
+            .collect();
+        let enclosing = crate::test_support::parasolid::entity51(9, 710, 711, &slots);
+        let real = vertex_frame(211, [0, 0, 0, 0, 60], 900, false);
+        for records in [
+            [real.clone(), enclosing.clone()],
+            [enclosing.clone(), real.clone()],
+        ] {
+            let bytes = [
+                crate::test_support::parasolid::world_point(60, [0.0; 3]),
+                records.concat(),
+            ]
+            .concat();
+            let tables = super::scan_with_owner_attrs(
+                &bytes,
+                &HashSet::new(),
+                &HashSet::new(),
+                &HashSet::from([900]),
+            );
+            assert_eq!(tables.vertex_uses[&211].sequence, 149);
+            assert_eq!(
+                tables.vertex_frames[&211].bytes.as_deref(),
+                Some(real.as_slice())
+            );
+        }
+    }
+
+    #[test]
+    fn complete_vertex_frame_requires_owner_and_tripled_owner_flag() {
+        for tripled in [false, true] {
+            for first in [false, true] {
+                let frame = crate::test_support::parasolid::framed_topology_vertex(
+                    211,
+                    149,
+                    [0, 0, 0, 0, 60],
+                    None,
+                    900,
+                    tripled,
+                    first,
+                );
+                let readings = parse_vertex_candidates(&frame, 0);
+                assert_eq!(readings.len(), 1);
+                assert_eq!(readings[0].end, frame.len());
+                assert_eq!(readings[0].record.owner, 900);
+                for missing in 1..=if tripled { 3 } else { 2 } {
+                    assert!(parse_vertex_candidates(&frame[..frame.len() - missing], 0).is_empty());
+                }
+                if tripled {
+                    let mut invalid = frame.clone();
+                    *invalid.last_mut().unwrap() = 0;
+                    assert!(parse_vertex_candidates(&invalid, 0).is_empty());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn identical_complete_vertex_frames_coalesce_and_later_partition_wins() {
+        let history = vertex_frame(211, [0, 0, 0, 0, 60], 900, true);
+        let mut tables = vertex_partition();
+        for _ in 0..3 {
+            let delta = delta_topology(&history, &tables);
+            tables.merge_deltas(delta, None);
+        }
+        assert_eq!(tables.vertex_uses[&211].sequence, 149);
+        let current = vertex_frame(211, [0, 0, 0, 0, 60], 900, false);
+        let bytes = [
+            crate::test_support::parasolid::world_point(60, [0.0; 3]),
+            current.clone(),
+            crate::test_support::parasolid::fixture_vertex_owner_class(900),
+        ]
+        .concat();
+        tables.merge_deltas(scan(&bytes), None);
+        assert!(tables.vertex_frames[&211].partition);
+        assert_eq!(
+            tables.vertex_frames[&211].bytes.as_deref(),
+            Some(current.as_slice())
+        );
+    }
+    #[test]
+    fn unsupported_vertex_prefix_blocks_history_without_guessing_its_owner() {
+        let mut bytes = crate::test_support::parasolid::triangle_body();
+        let original = crate::test_support::parasolid::framed_topology_vertex(
+            51,
+            0,
+            [0, 0, 0, 0, 61],
+            None,
+            900,
+            false,
+            false,
+        );
+        let at = bytes
+            .windows(original.len())
+            .position(|window| window == original)
+            .unwrap();
+        drop(bytes.drain(at..at + original.len()));
+        let mut unsupported = vertex_frame(51, [0, 0, 0, 0, 61], 900, true);
+        drop(unsupported.splice(23..23, [0, 0, 1]));
+        assert!(parse_vertex_candidates(&unsupported, 0).is_empty());
+        bytes.extend(unsupported);
+        let mut tables = scan(&bytes);
+        assert!(tables.vertex_is_unresolved(51));
+        assert!(tables.vertex_frames[&51].partition);
+        assert!(tables.vertex_frames[&51].bytes.is_none());
+        let history = delta_topology(&vertex_frame(51, [0, 0, 0, 0, 61], 900, true), &tables);
+        tables.merge_deltas(history, None);
+        assert!(tables.vertex_is_unresolved(51));
+    }
+
+    #[test]
+    fn int_values_count_is_a_bounded_u32_not_a_short_pointer() {
+        let count = 0x8000u32;
+        let mut bytes = vec![0, 0x52];
+        bytes.extend(count.to_be_bytes());
+        bytes.extend(710u16.to_be_bytes());
+        bytes.resize(8 + usize::try_from(count).unwrap() * 4, 0);
+        let fake = vertex_frame(211, [0, 0, 0, 0, 60], 900, false);
+        bytes[8..8 + fake.len()].copy_from_slice(&fake);
+        assert_eq!(
+            super::topology_payload_ranges(&bytes, false),
+            std::iter::once(0..bytes.len()).collect::<Vec<_>>()
+        );
+        assert!(scan(&bytes).vertex_frames.is_empty());
+    }
+    #[test]
+    fn unproved_vertex_owner_retains_framing_but_cannot_emit_geometry() {
+        let mut bytes = crate::test_support::parasolid::triangle_body();
+        let frame = crate::test_support::parasolid::framed_topology_vertex(
+            211,
+            149,
+            [0, 0, 0, 0, 60],
+            None,
+            900,
+            false,
+            false,
+        );
+        bytes.extend(frame.clone());
+        bytes.extend(framed_topology_fin(
+            212,
+            [0, 20, 0, 30, 211, 0, 40, 0, 0],
+            true,
+            false,
+            false,
+        ));
+        let tables = super::scan_records(&bytes, false, None, None, None, None);
+        assert!(tables.vertex_is_unresolved(211));
+        assert!(tables.vertex_classes.contains_key(&211));
+        assert_eq!(
+            tables.vertex_frames[&211].bytes.as_deref(),
+            Some(frame.as_slice())
+        );
+        let known = super::scan_with_owner_attrs(
+            &bytes,
+            &HashSet::new(),
+            &HashSet::new(),
+            &HashSet::from([900]),
+        );
+        assert_eq!(known.vertex_uses[&211].owner, 900);
+        let wrong = super::scan_with_owner_attrs(
+            &bytes,
+            &HashSet::new(),
+            &HashSet::new(),
+            &HashSet::from([901]),
+        );
+        assert!(wrong.vertex_is_unresolved(211));
+        assert!(wrong.vertex_classes.contains_key(&211));
+    }
+
+    #[test]
+    fn free_vertex_without_a_fin_uses_a_proved_shell_owner_class() {
+        let mut shell = vec![0, 0x0d, 0xff];
+        shell.extend(901u16.to_be_bytes());
+        shell.extend(200_901u32.to_be_bytes());
+        for reference in [0u16, 0, 0, 0, 0, 211, 902, 0] {
+            shell.extend(reference.to_be_bytes());
+        }
+        let bytes = [
+            shell,
+            crate::test_support::parasolid::world_point(60, [0.0; 3]),
+            vertex_frame(211, [0, 0, 0, 0, 60], 901, false),
+        ]
+        .concat();
+        let tables = scan(&bytes);
+        assert_eq!(tables.vertex_uses[&211].owner, 901);
+        assert_eq!(tables.vertex_uses[&211].refs[1], 0);
+        assert!(tables.coedges.is_empty());
+    }
+
+    #[test]
+    fn null_owner_and_unproved_nonzero_owner_never_project_a_vertex() {
+        for owner in [0, 1, 902] {
+            let mut bytes = crate::test_support::parasolid::triangle_body();
+            let frame = vertex_frame(211, [0, 0, 0, 0, 60], owner, false);
+            bytes.extend(&frame);
+            bytes.extend(framed_topology_fin(
+                212,
+                [0, 20, 0, 30, 211, 0, 40, 0, 0],
+                true,
+                false,
+                false,
+            ));
+            let mut tables = scan(&bytes);
+            assert!(tables.vertex_is_unresolved(211));
+            assert!(tables.vertex_classes.contains_key(&211));
+            assert_eq!(
+                tables.vertex_frames[&211].bytes.as_deref(),
+                Some(frame.as_slice())
+            );
+            let history = delta_topology(&vertex_frame(211, [0, 0, 0, 0, 60], 900, true), &tables);
+            tables.merge_deltas(history, None);
+            assert!(tables.vertex_is_unresolved(211));
+            assert!(tables.vertex_frames[&211].partition);
+        }
+    }
+    #[test]
+    fn encoded_null_or_point_owner_never_becomes_vertex_geometry() {
+        for owner in [0, 1, 60] {
+            let mut bytes = [
+                crate::test_support::parasolid::world_point(60, [0.0; 3]),
+                vertex_frame(211, [0, 0, 0, 0, 60], owner, false),
+            ]
+            .concat();
+            bytes.extend(crate::test_support::parasolid::fixture_vertex_owner_class(
+                owner,
+            ));
+            let tables = scan(&bytes);
+            assert!(!tables.vertex_uses.contains_key(&211));
+        }
+    }
+    fn owner_shell_frame() -> Vec<u8> {
+        let mut shell = vec![0, 0x0d];
+        shell.extend(1901u16.to_be_bytes());
+        shell.extend(200_901u32.to_be_bytes());
+        for reference in [0u16, 0, 0, 0, 0, 211, 902, 0] {
+            shell.extend(reference.to_be_bytes());
+        }
+        shell
+    }
+
+    #[test]
+    fn counted_payload_shell_owner_cannot_authorize_a_referenced_vertex() {
+        let shell = owner_shell_frame();
+        let mut integers = vec![0, 0x52];
+        integers.extend(u32::try_from(shell.len() / 4).unwrap().to_be_bytes());
+        integers.extend(710u16.to_be_bytes());
+        integers.extend(&shell);
+        let slots: Vec<_> = shell
+            .chunks_exact(2)
+            .map(|s| u16::from_be_bytes([s[0], s[1]]))
+            .collect();
+        let attribute = crate::test_support::parasolid::entity51(7, 710, 711, &slots);
+        for enclosing in [integers, attribute] {
+            let mut bytes = crate::test_support::parasolid::triangle_body();
+            bytes.extend(enclosing);
+            bytes.extend(vertex_frame(211, [0, 0, 0, 0, 60], 1901, false));
+            bytes.extend(framed_topology_fin(
+                212,
+                [0, 20, 0, 30, 211, 0, 40, 0, 0],
+                true,
+                false,
+                false,
+            ));
+            let tables = scan(&bytes);
+            assert!(!tables.owner_classes.contains(&1901));
+            assert!(!tables.vertex_uses.contains_key(&211));
+            assert!(tables.vertex_is_unresolved(211));
+        }
+    }
+
+    #[test]
+    fn identical_shell_bytes_outside_counted_payload_keep_free_vertex_admission() {
+        let bytes = [
+            owner_shell_frame(),
+            crate::test_support::parasolid::world_point(60, [0.0; 3]),
+            vertex_frame(211, [0, 0, 0, 0, 60], 1901, false),
+        ]
+        .concat();
+        let tables = scan(&bytes);
+        assert_eq!(tables.vertex_uses[&211].owner, 1901);
+        assert!(tables.coedges.is_empty());
+    }
+    #[test]
+    fn face_transmit_index_does_not_create_an_integer_values_enclosure() {
+        let bytes = crate::test_support::parasolid::bridge_owned(82, 20, 100, 88);
+        assert!(super::topology_payload_ranges(&bytes, false).is_empty());
+        assert_eq!(parse_bridge(&bytes, 0).unwrap().attr, 82);
+    }
+
+    #[test]
+    fn proven_face_prefix_does_not_consume_the_following_record_as_a_tail() {
+        let mut bytes = crate::test_support::parasolid::bridge_owned(82, 20, 100, 88);
+        bytes.truncate(2 + crate::layout::face_bare::SENSE + 1);
+        let start = bytes.len();
+        bytes.extend([0, 0x52]);
+        bytes.extend(0u32.to_be_bytes());
+        bytes.extend(710u16.to_be_bytes());
+        assert_eq!(
+            super::topology_payload_ranges(&bytes, false),
+            std::iter::once(start..bytes.len()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn finite_point_coordinate_bytes_cannot_start_a_data_enclosure() {
+        let value = f64::from_bits(0x0052_0000_0000_0066);
+        let bytes = crate::test_support::parasolid::world_point(120, [value, 0.0, 0.0]);
+        assert!(super::parse_point(&bytes, 0, false).is_some());
+        assert!(super::topology_payload_ranges(&bytes, false).is_empty());
+    }
+
+    #[test]
+    fn earlier_integer_values_frame_owns_nested_complete_topology() {
+        let face = crate::test_support::parasolid::bridge_owned(82, 20, 100, 88);
+        let point = crate::test_support::parasolid::world_point(120, [0.0, 0.0, 0.0]);
+        let mut payload = face;
+        payload.extend(point);
+        payload.resize(payload.len().next_multiple_of(4), 0);
+        let mut bytes = vec![0, 0x52];
+        bytes.extend(u32::try_from(payload.len() / 4).unwrap().to_be_bytes());
+        bytes.extend(710u16.to_be_bytes());
+        bytes.extend(payload);
+        assert_eq!(
+            super::topology_payload_ranges(&bytes, false),
+            std::iter::once(0..bytes.len()).collect::<Vec<_>>()
+        );
+        let tables = scan(&bytes);
+        assert!(!tables.bridges.contains_key(&82));
+        assert!(!tables.points.contains_key(&120));
+    }
+    #[test]
+    fn point_coordinate_shell_bytes_cannot_establish_a_vertex_owner_class() {
+        let shell = owner_shell_frame();
+        assert_eq!(shell.len(), 24);
+        let xyz: Vec<_> = shell
+            .chunks_exact(8)
+            .map(|bytes| f64::from_be_bytes(bytes.try_into().unwrap()))
+            .collect();
+        assert!(xyz.iter().all(|value| value.is_finite()));
+        let point = crate::test_support::parasolid::world_point(60, [xyz[0], xyz[1], xyz[2]]);
+        let vertex = vertex_frame(211, [0, 0, 0, 0, 60], 1901, false);
+        let bytes = [point, vertex].concat();
+        let facts = super::super::typed::scan(&bytes);
+        assert!(!facts.shells.iter().any(|shell| shell.attr == 1901));
+        let tables = scan(&bytes);
+        assert!(!tables.owner_classes.contains(&1901));
+        assert!(!tables.vertex_uses.contains_key(&211));
+        assert!(tables.vertex_is_unresolved(211));
+        assert!(tables.points.contains_key(&60));
+
+        let outside = [bytes, shell].concat();
+        let tables = scan(&outside);
+        assert!(tables.owner_classes.contains(&1901));
+        assert_eq!(tables.vertex_uses[&211].owner, 1901);
+        assert!(tables.coedges.is_empty());
+    }
+    #[test]
+    fn supported_shell_fields_do_not_create_a_false_data_enclosure() {
+        let mut shell = owner_shell_frame();
+        shell[2..4].copy_from_slice(&82u16.to_be_bytes());
+        shell[4..8].copy_from_slice(&1u32.to_be_bytes());
+        shell[8..10].copy_from_slice(&88u16.to_be_bytes());
+        assert_eq!(
+            super::super::typed::tagged_owner_prefix_end(&shell, 0),
+            Some(shell.len())
+        );
+        assert!(super::topology_payload_ranges(&shell, false).is_empty());
+        let facts = super::super::typed::scan(&shell);
+        assert!(facts
+            .shells
+            .iter()
+            .any(|node| node.attr == 82 && node.node_id == 1 && node.offset == 0));
+
+        let point = crate::test_support::parasolid::world_point(60, [0.0; 3]);
+        let vertex = vertex_frame(211, [0, 0, 0, 0, 60], 82, false);
+        let outside = [shell.clone(), point.clone(), vertex.clone()].concat();
+        assert_eq!(scan(&outside).vertex_uses[&211].owner, 82);
+
+        let mut integers = vec![0, 0x52];
+        integers.extend(u32::try_from(shell.len() / 4).unwrap().to_be_bytes());
+        integers.extend(710u16.to_be_bytes());
+        integers.extend(&shell);
+        let slots: Vec<_> = shell
+            .chunks_exact(2)
+            .map(|bytes| u16::from_be_bytes(bytes.try_into().unwrap()))
+            .collect();
+        let attribute = crate::test_support::parasolid::entity51(7, 710, 711, &slots);
+        for enclosure in [integers, attribute] {
+            assert_eq!(
+                super::topology_payload_ranges(&enclosure, false),
+                std::iter::once(0..enclosure.len()).collect::<Vec<_>>()
+            );
+            let inside = [enclosure, point.clone(), vertex.clone()].concat();
+            let tables = scan(&inside);
+            assert!(!tables.owner_classes.contains(&82));
+            assert!(!tables.vertex_uses.contains_key(&211));
+            assert!(tables.vertex_is_unresolved(211));
+        }
+
+        shell[4..8].copy_from_slice(&0u32.to_be_bytes());
+        assert!(super::super::typed::tagged_owner_prefix_end(&shell, 0).is_none());
+        assert!(!super::super::typed::scan(&shell)
+            .shells
+            .iter()
+            .any(|node| node.attr == 82));
+    }
+
+    #[test]
+    fn point_payload_fin_cannot_poison_a_current_closed_ring_identity() {
+        let body = crate::test_support::parasolid::triangle_body();
+        let baseline = scan(&body);
+        let original = baseline.coedges.get(&30).expect("current triangle FIN");
+        let fin = framed_topology_fin(
+            30,
+            original.refs,
+            false,
+            false,
+            original.sense == Sense::Forward,
+        );
+        assert_eq!(fin.len(), 23);
+        let readings = super::parse_coedge_candidates(&fin, 0);
+        assert_eq!(readings.len(), 1);
+        assert_eq!(readings[0].0.attr, original.attr);
+        assert_eq!(readings[0].0.refs, original.refs);
+        assert_ne!(readings[0].0.sense, original.sense);
+
+        let outside = [body.clone(), fin.clone()].concat();
+        let conflict = scan(&outside);
+        assert!(conflict.coedge_is_ambiguous(30));
+        assert!(!conflict.coedges.contains_key(&30));
+
+        let mut payload = fin;
+        payload.push(0);
+        assert_eq!(payload.len(), 24);
+        let xyz: Vec<_> = payload
+            .chunks_exact(8)
+            .map(|bytes| f64::from_be_bytes(bytes.try_into().unwrap()))
+            .collect();
+        assert!(xyz.iter().all(|value| value.is_finite()));
+        let point = crate::test_support::parasolid::world_point(600, [xyz[0], xyz[1], xyz[2]]);
+        let position = super::parse_point(&point, 0, false).unwrap().xyz_offset;
+        assert_eq!(super::parse_coedge_candidates(&point, position).len(), 1);
+        let inside = [body, point].concat();
+        let protected = scan(&inside);
+        assert!(protected.points.contains_key(&600));
+        assert!(!protected.coedge_is_ambiguous(30));
+        assert_eq!(protected.coedges, baseline.coedges);
+    }
+
+    #[test]
+    fn supported_surface_descriptor_fields_do_not_create_data_enclosures() {
+        use crate::layout::bspline_surface_descriptor as descriptor;
+        let mut fields = vec![0; descriptor::LEN];
+        fields[descriptor::ATTR..descriptor::ATTR + 2].copy_from_slice(&82u16.to_be_bytes());
+        for (offset, value) in [
+            (descriptor::U_DEGREE, 2u16),
+            (descriptor::V_DEGREE, 3),
+            (descriptor::VERTEX_DIM, 3),
+        ] {
+            fields[offset..offset + 2].copy_from_slice(&value.to_be_bytes());
+        }
+        for (offset, value) in [
+            (descriptor::U_POLE_COUNT, 3u32),
+            (descriptor::V_POLE_COUNT, 4),
+            (descriptor::U_DISTINCT_KNOT_COUNT, 2),
+            (descriptor::V_DISTINCT_KNOT_COUNT, 2),
+        ] {
+            fields[offset..offset + 4].copy_from_slice(&value.to_be_bytes());
+        }
+        for (index, value) in (200u16..205).enumerate() {
+            let offset = descriptor::ARRAY_REFS + 2 * index;
+            fields[offset..offset + 2].copy_from_slice(&value.to_be_bytes());
+        }
+        for marker in [false, true] {
+            let mut frame = vec![0, 0x7e];
+            if marker {
+                frame.push(0xff);
+            }
+            frame.extend(&fields);
+            assert_eq!(
+                super::super::spline::surface_descriptor_prefix_end(&frame, 0),
+                Some(frame.len())
+            );
+            assert!(super::topology_payload_ranges(&frame, false).is_empty());
+            let point = crate::test_support::parasolid::world_point(60, [0.0; 3]);
+            let outside = [frame.clone(), point].concat();
+            assert!(scan(&outside).points.contains_key(&60));
+            if !marker {
+                let mut enclosure = vec![0, 0x52];
+                enclosure.extend(u32::try_from(frame.len() / 4).unwrap().to_be_bytes());
+                enclosure.extend(710u16.to_be_bytes());
+                enclosure.extend(&frame);
+                assert_eq!(
+                    super::topology_payload_ranges(&enclosure, false),
+                    std::iter::once(0..enclosure.len()).collect::<Vec<_>>()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn complete_edge_owner_vertex_tag_cannot_swallow_the_following_fin() {
+        use cadmpeg_ir::codec::{Codec, DecodeOptions};
+        let source = crate::test_support::container::sldprt_with_body(
+            &crate::test_support::parasolid::nurbs_triangle_body(),
+        );
+        let decoded = crate::SldprtCodec
+            .decode(&mut std::io::Cursor::new(source), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(decoded.ir().model.faces.len(), 1);
+        assert_eq!(decoded.ir().model.loops.len(), 1);
+        assert_eq!(decoded.ir().model.coedges.len(), 3);
+        let body = crate::writer::brep_body(decoded.ir(), 0.001, false).unwrap();
+        let original = scan(&body);
+        assert_eq!(original.edge_uses.len(), 3);
+        let edge = original
+            .edge_uses
+            .values()
+            .max_by_key(|edge| edge.offset)
+            .unwrap();
+        let offset = edge.offset;
+        let p = super::body_start(&body, offset, 0x10).unwrap();
+        let end = p + crate::layout::edge_bare::LEN;
+        let owner_at = end - std::mem::size_of::<u16>();
+        assert_eq!(
+            cadmpeg_core::decode::View::u16_be_at(&body, owner_at),
+            Some(18)
+        );
+        assert!(!super::parse_vertex_candidates(&body, owner_at).is_empty());
+        assert!(!super::parse_coedge_candidates(&body, end).is_empty());
+        assert_eq!(
+            super::topology_header_prefix_end(&body, offset, 0x10),
+            Some(end)
+        );
+        let tables = scan(&body);
+        assert_eq!(tables.coedges.len(), 3);
+        assert_eq!(tables.loops.len(), 1);
+        let frame = &body[offset..end];
+        assert_eq!(frame.len() % 4, 0);
+        let mut enclosed = body[..offset].to_vec();
+        enclosed.extend([0, 0x52]);
+        enclosed.extend(u32::try_from(frame.len() / 4).unwrap().to_be_bytes());
+        enclosed.extend(710u16.to_be_bytes());
+        enclosed.extend(frame);
+        enclosed.extend(&body[end..]);
+        let scoped = scan(&enclosed);
+        assert!(!scoped.edge_uses.contains_key(&edge.attr));
+        assert_eq!(scoped.coedges.len(), 3);
+    }
+    #[test]
+    fn world_schema_pointer_fields_cannot_create_an_integer_values_enclosure() {
+        let mut bytes = vec![0, 101, 13];
+        bytes.extend([b'C'; 11]);
+        bytes.extend([b'A', 7]);
+        bytes.extend(b"indices");
+        let false_integer = bytes.len();
+        bytes.extend([0, 82, 0, 1]);
+        bytes.extend([b'A', 1, b'b', 0, 82, 0, 1, b'Z']);
+        let program_end = bytes.len();
+        assert_eq!(
+            super::super::typed::schema_prefix_end(&bytes, 0),
+            Some(program_end)
+        );
+        // Authored WORLD index, seven pointer fields, alive, attribute
+        // definition pointer, highest/current IDs, and the two appended
+        // nullable INT_VALUES pointers. WORLD has no visible-node ID.
+        bytes.extend(2u16.to_be_bytes());
+        for reference in [1u16, 1, 900, 1, 1, 1, 1] {
+            bytes.extend(reference.to_be_bytes());
+        }
+        bytes.push(1);
+        bytes.extend(1u16.to_be_bytes());
+        bytes.extend(100u32.to_be_bytes());
+        bytes.extend(100u32.to_be_bytes());
+        bytes.extend(1u16.to_be_bytes());
+        bytes.extend(1u16.to_be_bytes());
+        let world_end = bytes.len();
+        let triangle = crate::test_support::parasolid::triangle_body();
+        let baseline = scan(&triangle);
+        assert_eq!(baseline.vertex_uses.len(), 3);
+        assert_eq!(baseline.coedges.len(), 3);
+        assert_eq!(baseline.loops.len(), 1);
+        bytes.extend(&triangle);
+        // If interpreted as an INT_VALUES start, the pointer class and
+        // following field descriptor would claim this entire later graph.
+        let count = u32::from_be_bytes(
+            bytes[false_integer + 2..false_integer + 6]
+                .try_into()
+                .unwrap(),
+        );
+        let node = u16::from_be_bytes(
+            bytes[false_integer + 6..false_integer + 8]
+                .try_into()
+                .unwrap(),
+        );
+        assert_eq!(count, 82_177);
+        assert_eq!(node, 25_088);
+        let false_end = false_integer + 8 + usize::try_from(count).unwrap() * 4;
+        assert!(false_end > bytes.len());
+        bytes.resize(false_end, 0);
+        assert!(super::topology_payload_ranges(&bytes, false).is_empty());
+        let tables = scan(&bytes);
+        assert_eq!(tables.vertex_uses.len(), 3);
+        assert_eq!(tables.coedges.len(), 3);
+        assert_eq!(tables.loops.len(), 1);
+        let facts = super::super::typed::scan(&bytes);
+        assert!(facts.bodies.iter().any(|body| body.attr == 900));
+        // Only the schema program is protected by this new class grammar;
+        // the supported framer does not claim a WORLD instance extent.
+        let scopes = super::topology_scopes(&bytes, false);
+        assert!(scopes.excluded_starts.contains(&(1..program_end)));
+        assert!(!scopes
+            .excluded_starts
+            .iter()
+            .any(|range| { range.start <= program_end && range.end >= world_end }));
+
+        let mut enclosed = vec![0, 82];
+        bytes.resize(bytes.len().next_multiple_of(4), 0);
+        enclosed.extend(u32::try_from(bytes.len() / 4).unwrap().to_be_bytes());
+        enclosed.extend(710u16.to_be_bytes());
+        enclosed.extend(bytes);
+        assert_eq!(
+            super::topology_payload_ranges(&enclosed, false),
+            std::iter::once(0..enclosed.len()).collect::<Vec<_>>()
+        );
+        let tables = scan(&enclosed);
+        assert!(tables.vertex_uses.is_empty());
+        assert!(tables.coedges.is_empty());
+        assert!(super::super::typed::scan(&enclosed).bodies.is_empty());
     }
 }

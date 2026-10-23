@@ -26,6 +26,12 @@ use cadmpeg_ir::report::{
 pub(crate) enum F3dLossCode {
     /// Payload-bearing Design dimension companions have no typed locus frame.
     DimensionCompanionUntyped,
+    /// A whole-body reference tail has no admitted standard reference-run frame.
+    BodyReferenceTailUntyped,
+    /// A placement construction has no unambiguous registered member layout.
+    PlacementConstructionUntyped,
+    /// A construction tracking path has no matching indexed type registration.
+    ConstructionTrackingPathUntyped,
     /// Design configuration JSON members have no assigned neutral semantics.
     ConfigurationMemberUnassigned,
     /// Design configuration rules have no unambiguous activation target.
@@ -122,8 +128,12 @@ pub(crate) enum F3dLossCode {
     SketchSurfaceUnprojected,
     /// Decoded sketch text records have no neutral sketch entity.
     SketchTextUnprojected,
+    /// Sketch text retains style or orientation state absent from neutral text.
+    SketchTextStyleUnprojected,
     /// Decoded sketch relations have no neutral constraint.
     SketchRelationUnprojected,
+    /// Sketch patterns retain unrepresented symmetry, suppression or flag state.
+    SketchPatternStateUnprojected,
     /// A spatial sketch's closed-profile search stopped at a local cap.
     SketchProfileSearchCapped,
     /// Design dimension parameters have no parameter-backed sketch constraint.
@@ -166,6 +176,8 @@ pub(crate) enum F3dLossCode {
     XrefTableUndecoded,
     /// A typed occurrence placement named a role but failed its payload grammar.
     XrefPlacementUndecoded,
+    /// A Design stream has no type and record index for placement admission.
+    XrefPlacementMetadataMissing,
     /// Structured placement records were superseded by scope-bound carriers.
     XrefPlacementSuperseded,
     /// Inserted-design occurrences that store the identity and are placed by
@@ -211,6 +223,8 @@ pub(crate) enum F3dLossCode {
     XrefMemberUndecoded,
     /// T-spline records were retained without typed semantics.
     TsplineRecordUntyped,
+    /// Radial symmetry pairs have no unambiguous neutral topology correspondence.
+    TsplineRadialMapUnresolved,
     /// A T-spline control cage was not decoded.
     TsplineCageUndecoded,
     /// Preserved source image required for a byte-exact write was unavailable.
@@ -246,6 +260,9 @@ impl F3dLossCode {
     #[cfg(test)]
     const ALL: &'static [F3dLossCode] = &[
         Self::DimensionCompanionUntyped,
+        Self::BodyReferenceTailUntyped,
+        Self::PlacementConstructionUntyped,
+        Self::ConstructionTrackingPathUntyped,
         Self::ConfigurationMemberUnassigned,
         Self::ConfigurationRuleUnbound,
         Self::ConfigurationParameterOverrideUnbound,
@@ -290,7 +307,9 @@ impl F3dLossCode {
         Self::SketchCurveUnprojected,
         Self::SketchSurfaceUnprojected,
         Self::SketchTextUnprojected,
+        Self::SketchTextStyleUnprojected,
         Self::SketchRelationUnprojected,
+        Self::SketchPatternStateUnprojected,
         Self::SketchProfileSearchCapped,
         Self::DimensionUnprojected,
         Self::FeatureProfileSelectionNative,
@@ -312,6 +331,7 @@ impl F3dLossCode {
         Self::MeshAttributeNotTransferred,
         Self::XrefTableUndecoded,
         Self::XrefPlacementUndecoded,
+        Self::XrefPlacementMetadataMissing,
         Self::XrefPlacementSuperseded,
         Self::JointPlacedOccurrenceUnsolved,
         Self::MeshVertexPrecisionReduced,
@@ -334,6 +354,7 @@ impl F3dLossCode {
         Self::XrefMemberMissing,
         Self::XrefMemberUndecoded,
         Self::TsplineRecordUntyped,
+        Self::TsplineRadialMapUnresolved,
         Self::TsplineCageUndecoded,
         Self::SourcePreservedImageUnavailable,
         Self::SourceDialectUnverified,
@@ -355,6 +376,9 @@ impl F3dLossCode {
     const fn code(self) -> &'static str {
         match self {
             Self::DimensionCompanionUntyped => "dimension.companion-untyped",
+            Self::BodyReferenceTailUntyped => "body-reference.tail-untyped",
+            Self::PlacementConstructionUntyped => "placement.construction-untyped",
+            Self::ConstructionTrackingPathUntyped => "feature.tracking-path-untyped",
             Self::ConfigurationMemberUnassigned => "configuration.member-unassigned",
             Self::ConfigurationRuleUnbound => "configuration.rule-unbound",
             Self::ConfigurationParameterOverrideUnbound => {
@@ -403,7 +427,9 @@ impl F3dLossCode {
             Self::SketchCurveUnprojected => "sketch.curve-unprojected",
             Self::SketchSurfaceUnprojected => "sketch.surface-unprojected",
             Self::SketchTextUnprojected => "sketch.text-unprojected",
+            Self::SketchTextStyleUnprojected => "sketch.text-style-unprojected",
             Self::SketchRelationUnprojected => "sketch.relation-unprojected",
+            Self::SketchPatternStateUnprojected => "sketch.pattern-state-unprojected",
             Self::SketchProfileSearchCapped => "sketch.profile-search-capped",
             Self::DimensionUnprojected => "dimension.unprojected",
             Self::FeatureProfileSelectionNative => "feature.profile-selection-native",
@@ -427,6 +453,7 @@ impl F3dLossCode {
             Self::MeshAttributeNotTransferred => "mesh.attribute-not-transferred",
             Self::XrefTableUndecoded => "xref.table-undecoded",
             Self::XrefPlacementUndecoded => "xref.placement-undecoded",
+            Self::XrefPlacementMetadataMissing => "xref.placement-metadata-missing",
             Self::XrefPlacementSuperseded => "xref.placement-superseded",
             Self::JointPlacedOccurrenceUnsolved => "assembly.joint-placed-occurrence-unsolved",
             Self::MeshVertexPrecisionReduced => "mesh.vertex-precision-reduced",
@@ -449,6 +476,7 @@ impl F3dLossCode {
             Self::XrefMemberMissing => "xref.member-missing",
             Self::XrefMemberUndecoded => "xref.member-undecoded",
             Self::TsplineRecordUntyped => "tspline.record-untyped",
+            Self::TsplineRadialMapUnresolved => "tspline.radial-map-unresolved",
             Self::TsplineCageUndecoded => "tspline.cage-undecoded",
             Self::SourcePreservedImageUnavailable => "source.preserved-image-unavailable",
             Self::SourceDialectUnverified => "source.dialect-unverified",
@@ -492,6 +520,9 @@ impl F3dLossCode {
             | Self::TopologyNotTransferred
             | Self::SourcePreservedImageUnavailable => Severity::Blocking,
             Self::DimensionCompanionUntyped
+            | Self::BodyReferenceTailUntyped
+            | Self::PlacementConstructionUntyped
+            | Self::ConstructionTrackingPathUntyped
             | Self::ConfigurationMemberUnassigned
             | Self::ConfigurationRuleUnbound
             | Self::ConfigurationParameterOverrideUnbound
@@ -531,7 +562,9 @@ impl F3dLossCode {
             | Self::SketchCurveUnprojected
             | Self::SketchSurfaceUnprojected
             | Self::SketchTextUnprojected
+            | Self::SketchTextStyleUnprojected
             | Self::SketchRelationUnprojected
+            | Self::SketchPatternStateUnprojected
             | Self::SketchProfileSearchCapped
             | Self::DimensionUnprojected
             | Self::FeatureProfileSelectionNative
@@ -552,6 +585,7 @@ impl F3dLossCode {
             | Self::MeshAttributeNotTransferred
             | Self::XrefTableUndecoded
             | Self::XrefPlacementUndecoded
+            | Self::XrefPlacementMetadataMissing
             | Self::XrefPlacementSuperseded
             | Self::JointPlacedOccurrenceUnsolved
             | Self::MeshVertexPrecisionReduced
@@ -563,6 +597,7 @@ impl F3dLossCode {
             | Self::SolvedRecordUntyped
             | Self::MaterialNotTransferred
             | Self::TsplineRecordUntyped
+            | Self::TsplineRadialMapUnresolved
             | Self::SourceDialectUnverified
             | Self::SourceDialectDisplaced
             | Self::KernelDialectUnverified
@@ -581,6 +616,9 @@ impl F3dLossCode {
         match self {
             Self::WriterAppearancePropertiesOmitted => LossTaxonomy::AppearanceReduced,
             Self::DimensionCompanionUntyped
+            | Self::BodyReferenceTailUntyped
+            | Self::PlacementConstructionUntyped
+            | Self::ConstructionTrackingPathUntyped
             | Self::ParameterRecordUnparsed
             | Self::HistoryRecordFramingFailed
             | Self::SolvedRecordUntyped
@@ -598,6 +636,7 @@ impl F3dLossCode {
             | Self::XrefMemberMissing
             | Self::XrefMemberUndecoded
             | Self::XrefPlacementUndecoded
+            | Self::XrefPlacementMetadataMissing
             | Self::XrefPlacementSuperseded
             | Self::JointPlacedOccurrenceUnsolved => LossTaxonomy::AssemblyComponentsExternal,
             Self::HistoryBindingBudgetExceeded
@@ -623,7 +662,9 @@ impl F3dLossCode {
             | Self::SketchCurveUnprojected
             | Self::SketchSurfaceUnprojected
             | Self::SketchTextUnprojected
+            | Self::SketchTextStyleUnprojected
             | Self::SketchRelationUnprojected
+            | Self::SketchPatternStateUnprojected
             | Self::SketchProfileSearchCapped
             | Self::DimensionUnprojected
             | Self::FeatureProfileSelectionNative
@@ -653,7 +694,8 @@ impl F3dLossCode {
             Self::ReferenceImageNativeRetained
             | Self::DecalNativeRetained
             | Self::EdgeReferenceLostUnrepaired
-            | Self::MeshAttributeNotTransferred => LossTaxonomy::AttributesNotTransferred,
+            | Self::MeshAttributeNotTransferred
+            | Self::TsplineRadialMapUnresolved => LossTaxonomy::AttributesNotTransferred,
             Self::BrepBlobUndecoded
             | Self::SurfaceShapeNotDecoded
             | Self::GeometryNotTransferred
@@ -735,6 +777,9 @@ mod tests {
             codes,
             [
                 "dimension.companion-untyped",
+                "body-reference.tail-untyped",
+                "placement.construction-untyped",
+                "feature.tracking-path-untyped",
                 "configuration.member-unassigned",
                 "configuration.rule-unbound",
                 "configuration.parameter-override-unbound",
@@ -779,7 +824,9 @@ mod tests {
                 "sketch.curve-unprojected",
                 "sketch.surface-unprojected",
                 "sketch.text-unprojected",
+                "sketch.text-style-unprojected",
                 "sketch.relation-unprojected",
+                "sketch.pattern-state-unprojected",
                 "sketch.profile-search-capped",
                 "dimension.unprojected",
                 "feature.profile-selection-native",
@@ -801,6 +848,7 @@ mod tests {
                 "mesh.attribute-not-transferred",
                 "xref.table-undecoded",
                 "xref.placement-undecoded",
+                "xref.placement-metadata-missing",
                 "xref.placement-superseded",
                 "assembly.joint-placed-occurrence-unsolved",
                 "mesh.vertex-precision-reduced",
@@ -823,6 +871,7 @@ mod tests {
                 "xref.member-missing",
                 "xref.member-undecoded",
                 "tspline.record-untyped",
+                "tspline.radial-map-unresolved",
                 "tspline.cage-undecoded",
                 "source.preserved-image-unavailable",
                 "source.dialect-unverified",

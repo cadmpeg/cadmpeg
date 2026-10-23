@@ -89,6 +89,54 @@ fn curve_expression_record_with_local_system_parses() {
 }
 
 #[test]
+fn rank_two_curve_frame_is_atomic_and_stops_before_the_next_named_field() {
+    let body = [0x18, 0xe4, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x18, 0xe6];
+    let expected = [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+    for label in ["entity(crv_fr_eqn)", "backup_ents(crv_fr_eqn)"] {
+        let mut payload = b"\xe0\x00".to_vec();
+        payload.extend(label.as_bytes());
+        payload.extend(b"\0\xe3\xe0\x01id\0\x07\xe0\x02local_sys\0\xf9\x04\x03");
+        payload.extend(body);
+        payload.extend(b"\xe0\x01csys_type\0\x02\xe0\x0aexpression\0\xf8\x01/*x*/\0");
+        let records = super::super::expression_records(&payload);
+        assert_eq!(records.len(), 1);
+        let frame = records[0].local_system.as_ref().expect("owned frame");
+        assert_eq!((frame.dimensions, frame.count), (4, 3));
+        assert_eq!(frame.body, body);
+        assert_eq!(
+            frame.explicit_slots.as_ref().map(|slots| slots.get()),
+            Some(expected)
+        );
+    }
+}
+
+#[test]
+fn incomplete_or_wrong_extent_curve_frames_preserve_the_owned_body() {
+    let body = [0x18, 0xe4, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x18, 0xe6];
+    let mut extended = body.to_vec();
+    extended.push(0x18);
+    for (dimensions, count, candidate) in [
+        (4, 3, body[..8].to_vec()),
+        (4, 3, extended),
+        (3, 4, body.to_vec()),
+    ] {
+        let mut payload =
+            b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\xe0\x02local_sys\0\xf9".to_vec();
+        payload.extend([dimensions, count]);
+        payload.extend(&candidate);
+        payload.extend(b"\xe0\x01csys_type\0\x02\xe0\x0aexpression\0\xf8\x01/*x*/\0");
+        let records = super::super::expression_records(&payload);
+        let frame = records[0].local_system.as_ref().expect("preserved frame");
+        assert_eq!(
+            (frame.dimensions, frame.count),
+            (u32::from(dimensions), u32::from(count))
+        );
+        assert_eq!(frame.body, candidate);
+        assert!(frame.explicit_slots.is_none());
+    }
+}
+
+#[test]
 fn curve_parameter_scalar_cache_alone_yields_no_records() {
     let payload = [0x46, 0x08, 0, 0, 0, 0, 0, 0];
     assert!(crate::decode::with_service_context(|ctx| {

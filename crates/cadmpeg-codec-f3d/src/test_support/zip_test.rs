@@ -318,7 +318,7 @@ pub(crate) fn f3d_with_smbh_and_protein_with_generated_form(smbh: &[u8]) -> Vec<
     )
 }
 
-fn generated_form_tsm() -> Vec<u8> {
+pub(crate) fn generated_form_tsm() -> Vec<u8> {
     br"#TS0200
 degree 3
 cap-type G1CAPS

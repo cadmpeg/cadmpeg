@@ -62,7 +62,7 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -94,7 +94,12 @@ fn semantic_writer_retains_partial_native_hole_construction() {
     ));
 
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &(source),
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
@@ -134,7 +139,7 @@ fn semantic_writer_retains_partial_native_hole_construction() {
     ] {
         let mut detached = decoded.ir().clone();
         detached.model.features[index].native_ref = None;
-        let error = crate::test_support::plan_inherited_write(
+        let error = crate::test_support::plan_fixture_write_with_native_envelope(
             &detached,
             decoded.source_fidelity(),
             &mut Vec::new(),
@@ -165,7 +170,7 @@ fn semantic_writer_retains_partial_native_hole_construction() {
     )
     .unwrap();
     updated_detached_evaluation.set_definition(updated_detached_definition);
-    let error = crate::test_support::plan_inherited_write(
+    let error = crate::test_support::plan_fixture_write_with_native_envelope(
         &detached,
         decoded.source_fidelity(),
         &mut Vec::new(),
@@ -177,7 +182,7 @@ fn semantic_writer_retains_partial_native_hole_construction() {
         feature.name = Some(format!("Renamed hole {}", index + 1));
     }
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -252,7 +257,7 @@ fn semantic_writer_round_trips_hole_placement() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -385,7 +390,7 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,

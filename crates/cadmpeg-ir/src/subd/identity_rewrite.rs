@@ -4,13 +4,14 @@
 use super::{
     SubdCage, SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdGripDirection, SubdGripWedge,
     SubdPlaneFrame, SubdRadialMapSelector, SubdRadialSymmetry, SubdRadialSymmetryMap, SubdScheme,
-    SubdSecondaryGrip, SubdSurface, SubdSymmetry, SubdSymmetryKind, SubdVertex,
+    SubdSecondaryGrip, SubdSurface, SubdSymmetry, SubdSymmetryKind, SubdUserKnot, SubdVertex,
     SubdVertexGripLayout, SubdVertexTag,
 };
 
 rewrite_record!(SubdCage, []; {vertices, edges, faces, symmetries});
-rewrite_record!(SubdEdge, []; {vertices, sharpness, tag, knot_interval, sector_coefficients});
+rewrite_record!(SubdEdge, []; {vertices, sharpness, tag, knot_interval, user_knot, sector_coefficients});
 rewrite_scalar!(SubdEdgeTag);
+rewrite_scalar!(SubdUserKnot);
 rewrite_scalar!(SubdEdgeUse);
 rewrite_record!(SubdFace, []; {edges});
 rewrite_scalar!(SubdGripDirection);

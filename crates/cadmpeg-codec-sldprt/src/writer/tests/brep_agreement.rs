@@ -39,7 +39,7 @@ fn extrusion_depth_edit_without_brep_edit_is_refused() {
                 },
             };
         });
-    let error = crate::test_support::plan_inherited_write(
+    let error = crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut Vec::new(),
@@ -70,7 +70,7 @@ fn feature_output_scope_edit_is_refused() {
     decoded.ir_mut().model.features[0]
         .evaluation
         .set_outputs(cadmpeg_ir::features::DistinctMembers::try_from(replacement).unwrap());
-    let error = crate::test_support::plan_inherited_write(
+    let error = crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut Vec::new(),
@@ -123,7 +123,7 @@ fn feature_output_edit_with_nongeometric_history_edit_is_refused() {
         .set_outputs(cadmpeg_ir::features::DistinctMembers::try_from(replacement).unwrap());
     edit.model.features[nongeometric].source_text = Some("changed".into());
     drop(edit);
-    let error = crate::test_support::plan_inherited_write(
+    let error = crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut Vec::new(),
@@ -153,7 +153,7 @@ fn extrusion_parameter_value_edit_without_brep_edit_is_refused() {
         cadmpeg_ir::scalar::Length::new(50.0).unwrap(),
     ));
     drop(edit);
-    let error = crate::test_support::plan_inherited_write(
+    let error = crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut Vec::new(),
@@ -200,7 +200,7 @@ fn native_extrusion_depth_edit_is_refused() {
             .parameters
             .insert(cadmpeg_core::nonblank_literal!("Depth"), "50mm".into());
     });
-    let error = crate::test_support::plan_inherited_write(
+    let error = crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut Vec::new(),
@@ -233,7 +233,19 @@ fn native_extrusion_edit_without_source_image_is_refused() {
     )
     .unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
-    assert!(error.to_string().contains(&native_id), "{error}");
+    assert!(decoded
+        .source_fidelity()
+        .retained_record(crate::SOURCE_IMAGE_ID)
+        .unwrap()
+        .data()
+        .is_none());
+    assert!(!native_id.is_empty());
+    assert!(
+        error
+            .to_string()
+            .contains("validated retained local, central and EOCD signature tokens"),
+        "{error}"
+    );
 }
 
 #[test]
@@ -246,13 +258,22 @@ fn parameter_name_edit_keeps_retained_brep() {
             .payload()
             .to_vec();
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &(source),
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.parameters[0].name = "RenamedDepth".into();
     let mut output = Vec::new();
-    crate::test_support::plan_inherited_write(decoded.ir(), decoded.source_fidelity(), &mut output)
-        .unwrap();
+    crate::test_support::plan_fixture_write_with_native_envelope(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut output,
+    )
+    .unwrap();
     let output_scan = crate::test_support::container::scan(&output);
     let output_partition = container::select_active_parasolid_site(&output_scan)
         .unwrap()
@@ -271,13 +292,22 @@ fn feature_name_edit_keeps_retained_brep() {
             .payload()
             .to_vec();
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &(source),
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.features[0].name = Some("RenamedBoss".into());
     let mut output = Vec::new();
-    crate::test_support::plan_inherited_write(decoded.ir(), decoded.source_fidelity(), &mut output)
-        .unwrap();
+    crate::test_support::plan_fixture_write_with_native_envelope(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut output,
+    )
+    .unwrap();
     let output_scan = crate::test_support::container::scan(&output);
     let output_partition = container::select_active_parasolid_site(&output_scan)
         .unwrap()
@@ -296,15 +326,24 @@ fn native_feature_name_edit_keeps_retained_brep() {
             .payload()
             .to_vec();
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &(source),
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_histories[0].features[0].name = "RenamedBoss".into();
     });
     let mut output = Vec::new();
-    crate::test_support::plan_inherited_write(decoded.ir(), decoded.source_fidelity(), &mut output)
-        .unwrap();
+    crate::test_support::plan_fixture_write_with_native_envelope(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut output,
+    )
+    .unwrap();
     let output_scan = crate::test_support::container::scan(&output);
     let output_partition = container::select_active_parasolid_site(&output_scan)
         .unwrap()

@@ -334,7 +334,7 @@ fn act_channels_reject_unpaired_keys_and_preserve_split_wire_maps() {
 }
 
 #[test]
-fn act_class_tail_requires_nonpadding_bytes_and_a_bounded_offset() {
+fn act_stream_residue_requires_nonpadding_bytes_and_a_bounded_offset() {
     let wire = serde_json::json!({
         "id": "stream:act-entity#7", "record_index": 7, "entity_id": "0_1",
         "in_table": false, "channel_class_tag": "261", "channel_record_index_offset": 100,

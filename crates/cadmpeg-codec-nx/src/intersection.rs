@@ -363,8 +363,8 @@ struct Chart {
     ext_support_uv: SupportUv,
 }
 
-/// Decode type-38 and single-byte `0x5a` records whose referenced chart and
-/// endpoint witnesses form a complete solved cache.
+/// Decode type-38 constructions whose referenced chart and endpoint witnesses
+/// form a complete solved cache.
 pub(crate) fn curves(
     stream: &[u8],
     point_layout: ChartPointLayout,

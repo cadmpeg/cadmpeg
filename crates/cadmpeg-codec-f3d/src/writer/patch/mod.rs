@@ -21,6 +21,7 @@ use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 pub(crate) mod edits;
 mod geometry;
 pub(crate) mod records;
+mod user_knots;
 use edits::{
     validate_act_appearance_bindings, validate_act_entity_edits, validate_act_guid_edits,
     validate_act_registry_channel_edits, validate_act_root_edits, validate_body_color_edits,
@@ -294,7 +295,9 @@ pub(crate) fn write_semantic(
     let tolerant_vertex_edits = validate_tolerant_vertex_edits(natives, baseline.ir(), target)?;
     let tolerant_coedge_edits = validate_tolerant_coedge_edits(natives, baseline.ir(), target)?;
     let wire_topology_edits = validate_wire_topology_edits(natives)?;
+    let mut user_knot_edits = user_knots::edits(baseline.ir(), target)?;
     let mut supported_target = baseline.ir().clone();
+    supported_target.model.subds.clone_from(&target.model.subds);
     supported_target
         .model
         .points
@@ -674,6 +677,9 @@ pub(crate) fn write_semantic(
             (name, options, bytes)
         };
         let expanded = zstd.then(|| bytes.clone());
+        if let Some(cage) = user_knot_edits.remove(&name) {
+            bytes = crate::tsm::user_knots::rewrite(&encode_ctx, &name, &bytes, &cage)?;
+        }
         if let Some(configuration) = configuration_edits.get(&name) {
             bytes.clone_from(configuration);
         }
@@ -787,6 +793,11 @@ pub(crate) fn write_semantic(
             CodecError::malformed(format_args!("cannot write F3D entry: {error}"))
         })?;
         zip.write_all(&bytes)?;
+    }
+    if !user_knot_edits.is_empty() {
+        return Err(CodecError::NotImplemented(
+            "one or more edited T-spline surfaces have no writable TSM member".into(),
+        ));
     }
     if patched_protein_appearances.len() != protein_appearance_edits.len() {
         return Err(CodecError::NotImplemented(

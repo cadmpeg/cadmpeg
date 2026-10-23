@@ -527,7 +527,7 @@ pub(crate) fn decode_tabulated_cylinder_first_coordinate(
     if matches!(head, 0xa5..=0xa6) {
         return ieee7_dict(data, offset, 0xbf2b + u16::from(head));
     }
-    if matches!(head, 0xa7..=0xae) {
+    if matches!(head, 0xa7..=0xb1) {
         return ieee7_dict(data, offset, 0xbf2c + u16::from(head));
     }
     if matches!(head, 0xb2..=0xcf) {
@@ -3577,6 +3577,101 @@ mod tests {
             decode_in_surface_row_lane(&data, 0, &cache),
             Some((-7.0, 7))
         );
+    }
+
+    #[test]
+    fn signed_directrix_lanes_keep_their_distinct_lower_boundary_and_generic_alias() {
+        let cache = ScalarCache::default();
+        let lower = [0xa4, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc];
+        assert!(decode_tabulated_cylinder_first_coordinate(&lower, 0, &cache).is_none());
+        assert_eq!(
+            decode_tabulated_cylinder_second_coordinate(&lower, 0, &cache),
+            Some((
+                f64::from_be_bytes([0xbf, 0xcf, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc]),
+                7
+            ))
+        );
+        let aliased = [0xb0, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc];
+        assert_eq!(
+            super::decode(&aliased, 0),
+            Some((
+                f64::from_be_bytes([0xbf, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0]),
+                7
+            ))
+        );
+        assert_eq!(
+            decode_tabulated_cylinder_first_coordinate(&aliased, 0, &cache),
+            Some((
+                f64::from_be_bytes([0xbf, 0xdc, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc]),
+                7
+            ))
+        );
+        for length in 1..7 {
+            assert!(
+                decode_tabulated_cylinder_second_coordinate(&lower[..length], 0, &cache).is_none()
+            );
+            assert!(
+                decode_tabulated_cylinder_first_coordinate(&aliased[..length], 0, &cache).is_none()
+            );
+        }
+    }
+
+    #[test]
+    fn tabulated_first_coordinate_preserves_the_negative_subunit_boundary() {
+        let cache = ScalarCache::default();
+        for (head, ieee_head) in [
+            (0xae, 0xbfda_u16),
+            (0xaf, 0xbfdb),
+            (0xb0, 0xbfdc),
+            (0xb1, 0xbfdd),
+            (0xb2, 0xbfdf),
+        ] {
+            let token = [head, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc];
+            let [hi, lo] = ieee_head.to_be_bytes();
+            let expected = f64::from_be_bytes([hi, lo, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc]);
+            assert_eq!(
+                decode_tabulated_cylinder_first_coordinate(&token, 0, &cache),
+                Some((expected, 7))
+            );
+            assert_eq!(
+                decode_tabulated_cylinder_first_frame_coordinate(&token, 0, &cache),
+                Some((expected, 7))
+            );
+        }
+    }
+
+    #[test]
+    fn tabulated_directrix_control_polygon_matches_its_independent_boundary() {
+        let cache = ScalarCache::default();
+        let bodies = [
+            [
+                0xb0, 0xdf, 0x28, 0x30, 0, 0, 0, 0x7d, 0x11, 0x39, 0x79, 0x13, 0x66, 0x08,
+            ],
+            [
+                0xb0, 0xdf, 0x28, 0x30, 0, 0, 0, 0x7b, 0xe4, 0xe8, 0x23, 0x13, 0x66, 0x08,
+            ],
+            [
+                0xb0, 0x7b, 0x0c, 0x30, 0, 0, 0, 0x7b, 0x1c, 0xb1, 0xeb, 0x13, 0x66, 0x08,
+            ],
+            [
+                0xaf, 0x9e, 0xf9, 0x4c, 0x0e, 0xbd, 0xf0, 0x7a, 0x76, 0x12, 0xf2, 0xe4, 0x6b, 0xbf,
+            ],
+        ];
+        let boundary = [
+            [-0.451_120_421_290_4, 1.129_205_201_103],
+            [-0.451_120_421_290_4, 1.055_885_445_609],
+            [-0.445_010_229_945_2, 1.007_005_613_58],
+            [-0.431_577_991_747_8, 0.983_163_332_366],
+        ];
+        for (body, expected) in bodies.iter().zip(boundary) {
+            let (x, next) = decode_tabulated_cylinder_first_coordinate(body, 0, &cache)
+                .expect("first pole coordinate");
+            let (z, end) = decode_tabulated_cylinder_second_coordinate(body, next, &cache)
+                .expect("second pole coordinate");
+            assert_eq!(end, body.len());
+            assert!((x - expected[0]).abs() < 1e-12);
+            assert!((z - expected[1]).abs() < 1e-12);
+        }
     }
 
     #[test]
