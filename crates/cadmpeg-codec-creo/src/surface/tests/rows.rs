@@ -1322,3 +1322,66 @@ fn a_spline_scalar_body_that_is_not_exactly_its_declared_slots_is_refused() {
         None
     );
 }
+
+#[test]
+fn terminal_six_scalar_frame_does_not_select_a_plane_production() {
+    let coordinates = [2.0_f64, 3.0, 4.0, 2.0, 5.0, 6.0];
+    let mut payload = vec![7, 0x22, 4, 0x01, 0, 0];
+    for coordinate in coordinates {
+        let image = coordinate.to_be_bytes();
+        assert_eq!(image[0], 0x40);
+        payload.push(0x46);
+        payload.extend_from_slice(&image[1..]);
+    }
+    payload.push(0xe3);
+    let record = parameter_records(&payload).remove(0);
+    let frame = record
+        .terminal_scalar_frame()
+        .expect("lexical terminal run");
+    assert_eq!(frame.slots.len(), coordinates.len());
+    assert_eq!(
+        frame
+            .slots
+            .iter()
+            .map(|slot| slot.value)
+            .collect::<Vec<_>>(),
+        coordinates.map(Some)
+    );
+    let row = SurfaceRow {
+        id: record.surface_id,
+        kind: SurfaceKind::Plane,
+        feature_id: 4,
+        reversed: false,
+        boundary_type: crate::surface::BoundaryType::Code00,
+        next_surface: 0,
+        offset: 0,
+    };
+    assert!(crate::surface::positional_frame_planes(&[record], &[row]).is_empty());
+}
+
+#[test]
+fn terminal_scalar_frame_keeps_gaps_and_opaque_end_distinct() {
+    let mut payload = vec![7, 0x22, 4, 0x01, 0, 0];
+    payload.extend_from_slice(&[0xe4, 0xe4, 0xe4, 0x5f, 0xe4, 0xe4, 0xe4]);
+    payload.push(0xe3);
+    let record = parameter_records(&payload).remove(0);
+    assert_eq!(
+        record
+            .scalar_frames
+            .iter()
+            .map(|frame| frame.slots.len())
+            .collect::<Vec<_>>(),
+        [3, 3]
+    );
+    assert_eq!(
+        record
+            .terminal_scalar_frame()
+            .expect("last contiguous run")
+            .slots
+            .len(),
+        3
+    );
+    let mut with_opaque_end = record;
+    with_opaque_end.body.push(0x5f);
+    assert!(with_opaque_end.terminal_scalar_frame().is_none());
+}

@@ -11,7 +11,7 @@ use cadmpeg_core::decode::index_from_u32;
 use super::{
     distinct_form_cage_ids, form_cage_objects, form_cage_serializers, form_cage_surface,
     form_cage_surfaces, form_class_325_cage_objects, form_class_325_cage_surface,
-    form_class_328_envelope, legacy_form_cage_count, FormCageSerializers,
+    form_class_328_envelope, FormCageSerializers,
 };
 
 fn parsed_serializers(
@@ -538,83 +538,6 @@ fn resolves_class_325_cage_surface_from_unique_class_310_reference() {
             1_000,
         ),
         Some(700)
-    );
-}
-
-#[test]
-fn reads_compact_form_one_cage_envelope() {
-    let mut list = indexed_frame(b"355", 205, 100);
-    list[21] = 1;
-    list[22..30].copy_from_slice(&201u64.to_le_bytes());
-    list[32..36].copy_from_slice(&1u32.to_le_bytes());
-    list[36] = 1;
-    list[37..45].copy_from_slice(&971u64.to_le_bytes());
-    list[47..49].copy_from_slice(&[0xfc, 0]);
-    let paired = indexed_frame(b"262", 205, 15);
-    let object = indexed_frame(b"325", 971, 15);
-    let bytes = [list, paired, object].concat();
-    assert_eq!(
-        legacy_form_cage_count(
-            &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-            205,
-            201,
-        ),
-        Some(1)
-    );
-}
-
-#[test]
-fn reads_legacy_form_one_cage_owner_envelopes() {
-    for (owner_class, paired_class, nested_class) in [
-        (b"335", b"262", b"328"),
-        (b"395", b"264", b"329"),
-        (b"448", b"258", b"276"),
-        (b"295", b"258", b"274"),
-    ] {
-        let mut owner = indexed_frame(owner_class, 205, 81);
-        owner[25] = 1;
-        owner[26..34].copy_from_slice(&201u64.to_le_bytes());
-        owner[58] = 1;
-        owner[59..67].copy_from_slice(&211u64.to_le_bytes());
-        owner[70] = 1;
-        owner[71..79].copy_from_slice(&201u64.to_le_bytes());
-        let paired = indexed_frame(paired_class, 205, 15);
-        let nested = indexed_frame(nested_class, 211, 15);
-        let bytes = [owner, paired, nested].concat();
-        assert_eq!(
-            legacy_form_cage_count(
-                &bytes,
-                &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-                205,
-                201,
-            ),
-            Some(1),
-            "owner class {owner_class:?}"
-        );
-    }
-}
-
-#[test]
-fn rejects_legacy_form_owner_with_wrong_nested_class() {
-    let mut owner = indexed_frame(b"335", 205, 81);
-    owner[25] = 1;
-    owner[26..34].copy_from_slice(&201u64.to_le_bytes());
-    owner[58] = 1;
-    owner[59..67].copy_from_slice(&211u64.to_le_bytes());
-    owner[70] = 1;
-    owner[71..79].copy_from_slice(&201u64.to_le_bytes());
-    let paired = indexed_frame(b"262", 205, 15);
-    let nested = indexed_frame(b"329", 211, 15);
-    let bytes = [owner, paired, nested].concat();
-    assert_eq!(
-        legacy_form_cage_count(
-            &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-            205,
-            201,
-        ),
-        None
     );
 }
 

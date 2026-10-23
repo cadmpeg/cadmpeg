@@ -145,10 +145,13 @@ pub(super) struct DesignNative {
     design_profile_curve_selections:
         Vec<crate::records::topology::entity_selection::DesignProfileCurveSelection>,
     design_body_recipe_operands: Vec<DesignBodyRecipeOperand>,
+    design_body_reference_tails: Vec<crate::records::body_reference_tail::DesignBodyReferenceTail>,
     design_edge_operands: Vec<DesignEdgeOperand>,
     design_edge_treatment_vertex_operands: Vec<DesignEdgeTreatmentVertexOperand>,
     design_face_operands: Vec<DesignFaceOperand>,
     design_sketch_placements: Vec<DesignSketchPlacement>,
+    design_placement_constructions:
+        Vec<crate::records::placement_construction::DesignPlacementConstruction>,
     pub(super) design_dimension_recipe_records: Vec<DesignDimensionRecipeRecord>,
     pub(super) design_dimension_locus_pairs: DesignDimensionLocusPairs,
     pub(super) design_dimension_annotation_frames: Vec<DesignDimensionAnnotationFrame>,
@@ -197,10 +200,12 @@ impl DesignNative {
             design_entity_selection_operands,
             design_profile_curve_selections,
             design_body_recipe_operands,
+            design_body_reference_tails,
             design_edge_operands,
             design_edge_treatment_vertex_operands,
             design_face_operands,
             design_sketch_placements,
+            design_placement_constructions,
             design_dimension_recipe_records,
             design_dimension_locus_pairs,
             design_dimension_annotation_frames,
@@ -237,10 +242,12 @@ impl DesignNative {
         native.design_entity_selection_operands = design_entity_selection_operands;
         native.design_profile_curve_selections = design_profile_curve_selections;
         native.design_body_recipe_operands = design_body_recipe_operands;
+        native.design_body_reference_tails = design_body_reference_tails;
         native.design_edge_operands = design_edge_operands;
         native.design_edge_treatment_vertex_operands = design_edge_treatment_vertex_operands;
         native.design_face_operands = design_face_operands;
         native.design_sketch_placements = design_sketch_placements;
+        native.design_placement_constructions = design_placement_constructions;
         native.design_dimension_recipe_records = design_dimension_recipe_records;
         native.design_dimension_locus_pairs = design_dimension_locus_pairs;
         native.design_dimension_annotation_frames = design_dimension_annotation_frames;
@@ -424,7 +431,12 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         scan,
         &prereqs.design_record_headers,
     )?;
-    extend_related_design_records(ctx, scan, prereqs, timelines, geometry, &mut design)?;
+    let untyped_tracking_paths =
+        extend_related_design_records(ctx, scan, prereqs, timelines, geometry, &mut design)?;
+    if untyped_tracking_paths != 0 {
+        push_loss_vec(&mut losses, F3dLossCode::ConstructionTrackingPathUntyped,
+            format_args!("{untyped_tracking_paths} construction tracking path reference(s) remain source-only because no matching indexed registration was admitted."));
+    }
     for history in &mut design.asm_histories {
         history.release_topologies();
     }
@@ -561,6 +573,26 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             ),
         );
     }
+    let tails = crate::design::decode::body_reference_tails::decode(ctx, scan)?;
+    design.design_body_reference_tails = tails.records;
+    if tails.unparsed != 0 {
+        push_loss_vec(
+            &mut losses,
+            F3dLossCode::BodyReferenceTailUntyped,
+            format_args!("{} whole-body reference tail(s) remain source-only because no complete standard reference-run frame was admitted.", tails.unparsed),
+        );
+    }
+
+    let placements = crate::design::decode::placement_construction::decode(ctx, scan)?;
+    design.design_placement_constructions = placements.records;
+    if placements.unparsed != 0 {
+        push_loss_vec(
+            &mut losses,
+            F3dLossCode::PlacementConstructionUntyped,
+            format_args!("{} placement construction record(s) remain source-only because their registration or bounded member layout is unsupported or ambiguous.", placements.unparsed),
+        );
+    }
+
     let indices = crate::design::decode::sheet_metal_settings::linked_record_indices(
         &design.design_sheet_metal_settings,
     );
@@ -609,11 +641,29 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &mut model.configurations,
         &model.parameters,
     );
-    let scope_histories = crate::history::bind_scope_histories(
+    let mut scope_histories = crate::history::bind_scope_histories(
         &design.design_parameter_scopes,
         &prereqs.design_body_bindings,
         &design.design_body_recipe_operands,
         &design.asm_histories,
+    );
+    let owner_sources = crate::design::decode::operands::compact_owner::source_selectors(
+        scan,
+        &design.design_construction_operand_groups,
+        &design.design_construction_operand_identities,
+        &prereqs.design_body_bindings,
+    )?;
+    let _lineage_scopes = crate::history::compact_lineage::bind(
+        crate::history::compact_lineage::Inputs {
+            scopes: &design.design_parameter_scopes,
+            groups: &design.design_construction_operand_groups,
+            identities: &design.design_construction_operand_identities,
+            operands: &design.design_edge_identity_operands,
+            recipes: &design.design_body_recipe_operands,
+            owners: &owner_sources,
+            histories: &design.asm_histories,
+        },
+        &mut scope_histories,
     );
     model.feature_input_topologies = crate::history::project_feature_input_topologies(
         &model.features,
@@ -972,7 +1022,7 @@ fn extend_related_design_records(
     timelines: &[DesignFeatureTimeline],
     geometry: &DesignGeometry<'_>,
     design: &mut DesignNative,
-) -> Result<(), CodecError> {
+) -> Result<usize, CodecError> {
     let indices = collect_related_indices(design.sketch_relations.iter().flat_map(|relation| {
         let scope = crate::ids::native_stream(&relation.id).unwrap_or(crate::ids::DEFAULT_STREAM);
         relation
@@ -998,7 +1048,9 @@ fn extend_related_design_records(
             &design.design_record_headers,
         )?;
     design.design_face_source_groups = crate::design::decode::operands::decode_face_source_groups(
+        ctx,
         scan,
+        &prereqs.design_types,
         &design.design_parameter_scopes,
     )?;
     design.design_canvas_images =
@@ -1145,12 +1197,13 @@ fn extend_related_design_records(
         &mut design.design_construction_operand_groups,
         &design.design_record_headers,
     )?;
-    design.design_construction_operand_identities =
+    let (identities, untyped_tracking_paths) =
         crate::design::decode::operands::decode_construction_operand_identities(
             scan,
             &design.design_construction_operand_groups,
             &design.design_record_headers,
         )?;
+    design.design_construction_operand_identities = identities;
     let scopes = design
         .design_parameter_scopes
         .iter()
@@ -1300,11 +1353,29 @@ fn extend_related_design_records(
         &prereqs.design_body_bindings,
         &design.asm_histories,
     );
-    let scope_histories = crate::history::bind_scope_histories(
+    let mut scope_histories = crate::history::bind_scope_histories(
         &design.design_parameter_scopes,
         &prereqs.design_body_bindings,
         &design.design_body_recipe_operands,
         &design.asm_histories,
+    );
+    let owner_sources = crate::design::decode::operands::compact_owner::source_selectors(
+        scan,
+        &design.design_construction_operand_groups,
+        &design.design_construction_operand_identities,
+        &prereqs.design_body_bindings,
+    )?;
+    let lineage_scopes = crate::history::compact_lineage::bind(
+        crate::history::compact_lineage::Inputs {
+            scopes: &design.design_parameter_scopes,
+            groups: &design.design_construction_operand_groups,
+            identities: &design.design_construction_operand_identities,
+            operands: &design.design_edge_identity_operands,
+            recipes: &design.design_body_recipe_operands,
+            owners: &owner_sources,
+            histories: &design.asm_histories,
+        },
+        &mut scope_histories,
     );
     crate::history::selection::bind_circular_pattern_axes(
         &mut design.design_parameter_scopes,
@@ -1317,6 +1388,7 @@ fn extend_related_design_records(
         &design.design_parameter_scopes,
         crate::history::BindingHistories::Release(&mut design.asm_histories),
         &scope_histories,
+        &lineage_scopes,
     );
     design.design_edge_operands = crate::design::decode::operands::decode_edge_operands(
         ctx,
@@ -1451,5 +1523,5 @@ fn extend_related_design_records(
         &mut design.design_dimension_recipe_records,
         &design.design_edge_operands,
     );
-    Ok(())
+    Ok(untyped_tracking_paths)
 }

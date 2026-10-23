@@ -420,7 +420,7 @@ fn parasolid_does_not_split_at_an_unframed_interior_signature() {
 }
 
 #[test]
-fn parasolid_mesh_polyline_decodes_counted_xyz_array() {
+fn unframed_finite_xyz_pattern_does_not_supply_construction_controls() {
     let description = b"boundary_polyline mesh";
     let schema = b"SCH_3201255_32001_13006";
     let mut stream = b"PS\0\0".to_vec();
@@ -435,12 +435,17 @@ fn parasolid_mesh_polyline_decodes_counted_xyz_array() {
         stream.extend(value.to_be_bytes());
     }
     let header = crate::parasolid::stream_header(&stream).unwrap().unwrap();
-    assert_eq!(
-        crate::parasolid::mesh_polyline_from_header(&stream, &header),
-        Some(vec![
-            cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
-            cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0),
-        ])
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &stream,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    assert!(
+        crate::parasolid::control_vertices::control_vertices(&ctx, &stream, &header)
+            .unwrap()
+            .is_none()
     );
 }
 

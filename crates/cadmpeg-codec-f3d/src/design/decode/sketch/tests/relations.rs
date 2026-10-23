@@ -112,11 +112,9 @@ fn indexed_record_search_requires_the_expected_identity() {
 
 #[test]
 fn genesis_relation_parses_u64_text_frame_mask_and_relation_ordinals() {
-    let mut auxiliary = Vec::new();
+    let mut auxiliary = vec![0];
     push_reference(&mut auxiliary, 2394);
     auxiliary.extend_from_slice(&[0u8; 6]);
-    // The second text-frame reference is absent.
-    auxiliary.push(0);
     let record = genesis_relation_record(
         &[(2394, 0), (2403, 0), (2404, 0)],
         2,
@@ -328,8 +326,8 @@ fn genesis_relation_parses_circular_pattern_auxiliary_run() {
         decode_pattern_definition(&record, &mut parsed),
         Some(
             crate::records::sketch_relations::SketchPatternDefinition::Circular {
-                angle_parameter: 336,
-                count_parameter: 333,
+                angle_parameter: Some(336),
+                count_parameter: Some(333),
                 evaluated_angle: cadmpeg_ir::scalar::FiniteReal::new(std::f64::consts::TAU)
                     .unwrap(),
                 evaluated_count: crate::records::sketch_relations::SketchPatternCount::try_from(3)
@@ -401,15 +399,15 @@ fn genesis_relation_parses_rectangular_pattern_auxiliary_run() {
         panic!("expected rectangular pattern definition");
     };
     assert_eq!(directions[0].evaluated_count.get(), 3);
-    assert_eq!(directions[0].count_parameter, 464);
+    assert_eq!(directions[0].count_parameter, Some(464));
     assert_eq!(directions[0].direction.get(), [1.0, 0.0, 0.0]);
     assert_eq!(directions[0].evaluated_distance.get(), 3.0);
-    assert_eq!(directions[0].distance_parameter, 470);
+    assert_eq!(directions[0].distance_parameter, Some(470));
     assert_eq!(directions[1].evaluated_count.get(), 1);
-    assert_eq!(directions[1].count_parameter, 467);
+    assert_eq!(directions[1].count_parameter, Some(467));
     assert_eq!(directions[1].direction.get(), [0.0, 1.0, 0.0]);
     assert_eq!(directions[1].evaluated_distance.get(), 0.5);
-    assert_eq!(directions[1].distance_parameter, 473);
+    assert_eq!(directions[1].distance_parameter, Some(473));
 }
 
 #[test]

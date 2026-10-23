@@ -341,7 +341,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     snapshot_bytes[19] = 1;
     snapshot_bytes[20..24].copy_from_slice(&2u32.to_le_bytes());
     let mut cursor = 24;
-    for (value, field) in [(101u64, [1u8, 2, 3, 4, 5, 6]), (202, [6u8, 5, 4, 3, 2, 1])] {
+    for (value, field) in [(101u64, [0u8, 0, 3, 4, 5, 6]), (202, [0u8, 0, 4, 3, 2, 1])] {
         snapshot_bytes[cursor] = 1;
         snapshot_bytes[cursor + 1..cursor + 9].copy_from_slice(&value.to_le_bytes());
         snapshot_bytes[cursor + 9..cursor + 15].copy_from_slice(&field);
@@ -454,7 +454,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
         bodies.iter().map(|body| body.value).collect::<Vec<_>>(),
         [101, 202]
     );
-    assert_eq!(bodies[0].field, [1, 2, 3, 4, 5, 6]);
+    assert_eq!(bodies[0].field, [0, 0, 3, 4, 5, 6]);
     assert_eq!(
         decoded_guids.map(String::from),
         [
@@ -1322,6 +1322,7 @@ fn surface_patch_boundary_settings_decode_the_fixed_payload() {
     bytes[38] = 1;
     bytes[39..43].copy_from_slice(&100_u32.to_le_bytes());
 
+    crate::test_support::indexed_header(&mut bytes, *b"998", 42);
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let mut expected = DesignSurfacePatchBoundary {
         scope_reference_ordinal: 0,
@@ -1359,6 +1360,7 @@ fn surface_patch_boundary_settings_reject_invalid_fixed_fields() {
     bytes[38] = 1;
     bytes[39..43].copy_from_slice(&100_u32.to_le_bytes());
 
+    crate::test_support::indexed_header(&mut bytes, *b"998", 42);
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     bytes[21] = 2;
     assert!(surface_patch_boundaries(&bytes, &records, &[42]).is_empty());

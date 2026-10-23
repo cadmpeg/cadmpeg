@@ -343,7 +343,9 @@ struct DesignProjectionGaps {
     unprojected_sketch_curves: usize,
     unprojected_sketch_surfaces: usize,
     unprojected_sketch_texts: usize,
+    unprojected_sketch_text_styles: usize,
     unprojected_sketch_relations: usize,
+    unprojected_sketch_pattern_states: usize,
     unprojected_dimensions: usize,
     profile_selections: usize,
     path_selections: usize,
@@ -1389,13 +1391,31 @@ fn design_projection_gaps(
         unprojected_sketch_texts: native
             .sketch_texts
             .iter()
-            .filter(|text| !projected_sketch_entity_refs.contains(text.id.as_str()))
+            .filter(|text| {
+                !projected_sketch_entity_refs.contains(text.id.as_str())
+                    && crate::design::decode::sketch::sketch_text_neutral_state(text) != Some(false)
+            })
+            .count(),
+        unprojected_sketch_text_styles: native
+            .sketch_texts
+            .iter()
+            .filter(|text| {
+                !projected_sketch_entity_refs.contains(text.id.as_str())
+                    && crate::design::decode::sketch::sketch_text_neutral_state(text) == Some(false)
+            })
             .count(),
         unprojected_sketch_relations: native
             .sketch_relations
             .iter()
-            .filter(|relation| !projected_constraint_refs.contains(relation.id.as_str()))
+            .filter(|relation| {
+                !projected_constraint_refs.contains(relation.id.as_str())
+                    && crate::design::decode::sketch::sketch_pattern_neutral_state(relation) != Some(false)
+            })
             .count(),
+        unprojected_sketch_pattern_states: native.sketch_relations.iter().filter(|relation| {
+            !projected_constraint_refs.contains(relation.id.as_str())
+                && crate::design::decode::sketch::sketch_pattern_neutral_state(relation) == Some(false)
+        }).count(),
         unprojected_dimensions: {
             let container_only = container_only_dimension_parameters(native);
             let relation_bearing_companions = native.design_parameter_companions
@@ -2054,6 +2074,22 @@ fn report_design_projection_gaps(
         format_args!(
             "{} decoded sketch text record(s) have no neutral sketch entity.",
             gaps.unprojected_sketch_texts
+        ),
+    )?;
+    push(
+        F3dLossCode::SketchTextStyleUnprojected,
+        gaps.unprojected_sketch_text_styles,
+        format_args!(
+            "{} decoded sketch text record(s) retain unsupported style or orientation state.",
+            gaps.unprojected_sketch_text_styles
+        ),
+    )?;
+    push(
+        F3dLossCode::SketchPatternStateUnprojected,
+        gaps.unprojected_sketch_pattern_states,
+        format_args!(
+            "{} sketch pattern(s) retain unsupported symmetry, suppression or flag state.",
+            gaps.unprojected_sketch_pattern_states
         ),
     )?;
     push(
@@ -3702,6 +3738,13 @@ fn report_xref_parse_loss(report: &mut DecodeBody, error: &CodecError) {
 /// Report typed occurrence placements whose role path was readable but whose
 /// generation-specific payload did not close and had no valid carrier.
 fn report_xref_placement_failures(report: &mut DecodeBody, table: &crate::xref::XrefTable) {
+    if table.placement_metadata_missing && !table.references.is_empty() {
+        push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::XrefPlacementMetadataMissing,
+            format_args!("external-reference placements were not inferred from Design streams without a paired MetaStream type table and record index"),
+        );
+    }
     for ordinal in &table.placement_failures {
         let Some(reference) = table
             .references

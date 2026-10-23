@@ -1251,10 +1251,11 @@ fn is_split_face_context_member(operand: &DesignFaceOperand) -> bool {
                 )
             })
         && !operand.recipe_nodes.is_empty()
-        && operand
-            .recipe_nodes
-            .iter()
-            .all(|node| node.recipe_structure.is_some())
+        && operand.recipe_nodes.iter().all(|node| {
+            node.recipe_structure.as_ref().is_some_and(|structure| {
+                structure.has_valid_operand_ordinals(&operand.recipe_references)
+            })
+        })
         && face_operand_candidates(operand).is_empty()
         && operand.alternate_selector_candidate_faces.is_empty()
         && operand.preceding_candidate_faces.is_empty()
@@ -1383,10 +1384,11 @@ fn complete_counted_face_recipe(operand: &DesignFaceOperand) -> Option<usize> {
         return None;
     };
     if operand.recipe_nodes.is_empty()
-        || !operand
-            .recipe_nodes
-            .iter()
-            .all(|node| node.recipe_structure.is_some())
+        || !operand.recipe_nodes.iter().all(|node| {
+            node.recipe_structure.as_ref().is_some_and(|structure| {
+                structure.has_valid_operand_ordinals(&operand.recipe_references)
+            })
+        })
     {
         return None;
     }
@@ -2585,7 +2587,7 @@ mod tests {
                 "program": [0, -1, 1],
                 "recipe_structure": {
                     "root": 0,
-                    "prelude": [0, 0],
+                    "prelude": [0, 2],
                     "sides": [
                         {"field_count": 1, "header_value": 0, "payload_entry_count": 0, "payload_prefix": [], "scalars": [], "entries": []},
                         {"field_count": 1, "header_value": 0, "payload_entry_count": 0, "payload_prefix": [], "scalars": [], "entries": []}
@@ -2599,6 +2601,36 @@ mod tests {
         })).unwrap();
         operand.recipe_references = vec![reference(10, "selected", 201)];
         operand
+    }
+
+    #[test]
+    fn complete_face_recipe_requires_grouped_zero_based_ordinals() {
+        let mut operand = legacy_face_candidate_limit_fixture();
+        let structure = operand.recipe_nodes[0].recipe_structure.as_mut().unwrap();
+        structure.prelude[1] = 2;
+        structure.sides[0].scalars = vec![0, 0];
+        structure.sides[1].scalars = vec![0, 0];
+        assert_eq!(super::complete_counted_face_recipe(&operand), Some(1));
+        let source_program = operand.recipe_program.clone();
+        let mut same_operand = operand.recipe_references[0].clone();
+        same_operand.design_reference += 1;
+        operand.recipe_references.push(same_operand);
+        operand.recipe_nodes[0]
+            .recipe_structure
+            .as_mut()
+            .unwrap()
+            .root = 1;
+        assert_eq!(super::complete_counted_face_recipe(&operand), None);
+        assert_eq!(operand.recipe_program, source_program);
+        operand.recipe_references[1].selector_offset += 25;
+        operand.recipe_references[1].token_offset += 25;
+        assert_eq!(super::complete_counted_face_recipe(&operand), Some(1));
+        operand.recipe_nodes[0]
+            .recipe_structure
+            .as_mut()
+            .unwrap()
+            .prelude[1] = 0;
+        assert_eq!(super::complete_counted_face_recipe(&operand), None);
     }
 
     #[test]
@@ -3227,7 +3259,7 @@ mod tests {
         operand.recipe_nodes[0].recipe_structure =
             Some(crate::records::topology::face::DesignFaceRecipeStructure {
                 root: 0,
-                prelude: [0, 0],
+                prelude: [0, 2],
                 sides: [side.clone(), side],
                 postlude_value: None,
             });
@@ -3398,7 +3430,7 @@ mod tests {
                 "program": [0, -1, 1],
                 "recipe_structure": {
                     "root": 0,
-                    "prelude": [0, 0],
+                    "prelude": [0, 2],
                     "sides": [
                         {"field_count": 1, "header_value": 0, "scalars": [], "payload_prefix": [], "payload_entry_count": 0, "entries": []},
                         {"field_count": 1, "header_value": 0, "scalars": [], "payload_prefix": [], "payload_entry_count": 0, "entries": []}

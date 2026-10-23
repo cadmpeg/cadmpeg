@@ -40,6 +40,8 @@ pub(crate) struct Facts {
     pub(super) face_colors: Vec<FaceColor>,
     /// Per-face producing-feature identities carried by Parasolid attributes.
     pub(super) face_atoms: Vec<super::attrib::RawFaceAtom>,
+    pub(super) face_payloads: Vec<(u16, Vec<u32>)>,
+    pub(super) body_payloads: Vec<(u16, Vec<u32>)>,
     /// Body-to-history ordinals carried by Parasolid attributes.
     pub(super) body_modifiers: Vec<super::attrib::BodyModifier>,
 }
@@ -283,6 +285,8 @@ pub(crate) fn scan_metadata(body: &[u8], prefixed: bool) -> Facts {
         face_color_versions,
         face_colors,
         face_atoms: super::attrib::scan(body),
+        face_payloads: super::attrib::scan_face_payloads(body),
+        body_payloads: super::attrib::scan_body_payloads(body),
         body_modifiers: super::attrib::scan_body_modifiers(body),
     }
 }
@@ -349,8 +353,15 @@ mod tests {
         bytes.extend_from_slice(&15_u16.to_be_bytes());
         bytes.extend_from_slice(name);
         bytes.extend_from_slice(&[0, 0x50]);
-        bytes.extend_from_slice(&2_u32.to_be_bytes());
+        bytes.extend_from_slice(&1_u32.to_be_bytes());
         bytes.extend_from_slice(&definition.to_be_bytes());
+        bytes.extend_from_slice(&1_u16.to_be_bytes());
+        bytes.extend_from_slice(&15_u16.to_be_bytes());
+        bytes.extend_from_slice(&8001_u32.to_be_bytes());
+        bytes.extend([0; 8]);
+        bytes.extend_from_slice(&1_u16.to_be_bytes());
+        bytes.extend([0; 14]);
+        bytes.push(2);
         bytes
     }
 
@@ -422,6 +433,20 @@ mod tests {
     fn named_non_face_definition_does_not_select_a_face_color_family() {
         let mut bytes = attribute_definition("OTHER_FAMILY", 0x15);
         bytes.extend(bare_entity(700, 1, 0x15, &[0, 0, 0, 0, 0, 900]));
+        bytes.extend(color(900, [0.25, 0.5, 0.75], false));
+
+        let facts = scan_metadata(&bytes, false);
+
+        assert!(facts.face_colors.is_empty());
+        assert!(facts.face_color_versions.is_empty());
+    }
+
+    #[test]
+    fn unsupported_definition_framing_does_not_use_structural_color_fallback() {
+        let mut bytes = face_color_definition(16);
+        let field_names = 8 + FACE_COLOR_FAMILY.len() + 24;
+        bytes.splice(field_names..field_names + 2, [0xff, 0xff, 0, 1]);
+        bytes.extend(bare_entity(700, 1, 16, &[0, 0, 0, 0, 0, 1]));
         bytes.extend(color(900, [0.25, 0.5, 0.75], false));
 
         let facts = scan_metadata(&bytes, false);

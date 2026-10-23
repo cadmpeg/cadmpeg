@@ -67,6 +67,13 @@ pub enum PropertyValue {
     Integer(u32),
     /// Unitless floating-point scalar.
     Float(FiniteReal),
+    /// Floating-point scalar with its serialized unit code.
+    UnitFloat {
+        /// Serialized Protein unit code.
+        unit: u32,
+        /// Scalar value in the serialized unit.
+        value: FiniteReal,
+    },
     /// Floating-point distance with its serialized unit code.
     Distance {
         /// Serialized Protein unit code.
@@ -83,6 +90,18 @@ pub enum PropertyValue {
     /// A member declared `allowmultiplevalues="true"` on a carrier other than
     /// `TextureURI`: a `u32` count followed by that many carrier values.
     Multiple(RepeatedValues),
+}
+
+impl PropertyValue {
+    /// Stored floating-point value, with any serialized unit available on
+    /// `UnitFloat`. This accessor does not convert units.
+    #[must_use]
+    pub fn float_value(&self) -> Option<FiniteReal> {
+        match self {
+            Self::Float(value) | Self::UnitFloat { value, .. } => Some(*value),
+            _ => None,
+        }
+    }
 }
 
 /// A homogeneous sequence of non-recursive scalar carriers.
@@ -158,6 +177,13 @@ enum PropertyValueWire {
     Integer(u32),
     /// Unitless floating-point scalar.
     Float(f64),
+    /// Floating-point scalar with its serialized unit code.
+    UnitFloat {
+        /// Serialized Protein unit code.
+        unit: u32,
+        /// Scalar value in the serialized unit.
+        value: f64,
+    },
     /// Floating-point distance with its serialized unit code.
     Distance {
         /// Serialized Protein unit code.
@@ -256,6 +282,10 @@ impl From<PropertyValue> for PropertyValueWire {
             PropertyValue::String(value) => Self::String(value),
             PropertyValue::Color(value) => Self::Color(value.map(FiniteReal::get)),
             PropertyValue::TextureUri(value) => Self::TextureUri(value),
+            PropertyValue::UnitFloat { unit, value } => Self::UnitFloat {
+                unit,
+                value: value.get(),
+            },
             PropertyValue::Distance { unit, value } => Self::Distance {
                 unit,
                 value: value.get(),
@@ -288,6 +318,10 @@ impl TryFrom<PropertyValueWire> for PropertyValue {
                 ])
             }
             PropertyValueWire::TextureUri(value) => Self::TextureUri(value),
+            PropertyValueWire::UnitFloat { unit, value } => Self::UnitFloat {
+                unit,
+                value: FiniteReal::new(value).ok_or("unit float must be finite")?,
+            },
             PropertyValueWire::Distance { unit, value } => Self::Distance {
                 unit,
                 value: FiniteReal::new(value).ok_or("distance must be finite")?,
@@ -363,6 +397,16 @@ mod tests {
             ),
             (
                 PropertyContent::Value {
+                    value: PropertyValue::UnitFloat {
+                        unit: 0x11001,
+                        value: cadmpeg_ir::scalar::FiniteReal::new(7850.0).expect("finite"),
+                    },
+                    connections: Vec::new(),
+                },
+                r#"{"value_offset":4,"value":{"kind":"unit_float","value":{"unit":69633,"value":7850.0}},"connections":[]}"#,
+            ),
+            (
+                PropertyContent::Value {
                     value: PropertyValue::Float(
                         cadmpeg_ir::scalar::FiniteReal::new(1.5).expect("finite"),
                     ),
@@ -396,6 +440,10 @@ mod tests {
         for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
             for wire in [
                 super::PropertyValueWire::Float(value),
+                super::PropertyValueWire::UnitFloat {
+                    unit: 0x1001,
+                    value,
+                },
                 super::PropertyValueWire::Distance {
                     unit: 0x200e,
                     value,
@@ -407,6 +455,7 @@ mod tests {
         }
         for wire in [
             r#"{"kind":"float","value":1e400}"#,
+            r#"{"kind":"unit_float","value":{"unit":4097,"value":1e400}}"#,
             r#"{"kind":"distance","value":{"unit":8206,"value":1e400}}"#,
             r#"{"kind":"color","value":[1e400,0.25,1.0,1.0]}"#,
         ] {

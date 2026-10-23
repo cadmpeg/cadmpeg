@@ -1243,3 +1243,32 @@ fn scan_decodes_featdefs_saved_circular_and_dummy_entities() {
         assert_eq!(&body, expected);
     }
 }
+
+#[test]
+fn parameter_transform_in_an_unrelated_section_has_no_definition_owner() {
+    let definition =
+        b"feat_defs_40\0local_sys\0\xf9\x04\x03\x0f\x18\xe5\x0f\x18\xe5\x0f\x18\xe5\xe0\x01owned_end\0\xf6".to_vec();
+    let mut unrelated = b"\xe0\x02transf\0\xf9\x04\x03".to_vec();
+    unrelated.extend([0xe4; 12]);
+    let data = build_prt("c", &[("FeatDefs", definition), ("Opaque", unrelated)]);
+    let scan = container::scan_bytes_ok(data);
+
+    let [definition] = scan.features.definitions.as_slice() else {
+        panic!("one bounded feature definition");
+    };
+    assert_eq!(definition.parameter_frames.len(), 1);
+    assert_eq!(
+        definition.parameter_frames[0].kind,
+        crate::feature::definitions::FeatureParameterFrameKind::LocalSystem
+    );
+    assert_eq!(
+        definition.parameter_frames[0].body,
+        [0x0f, 0x18, 0xe5, 0x0f, 0x18, 0xe5, 0x0f, 0x18, 0xe5]
+    );
+    assert_eq!(
+        definition.parameter_frames[0]
+            .decoded_values
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0])
+    );
+}

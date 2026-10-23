@@ -36,7 +36,7 @@ fn metadata_from_nameless_block_keeps_annotation_owner() {
 }
 
 #[test]
-fn transformed_reference_plane_requires_fixed_prefix() {
+fn transformed_reference_enclosure_requires_complete_direct_declaration() {
     let mut source = sldprt_with_body(&triangle_body());
     let mut payload = b"moTransRefPlaneData_c".to_vec();
     payload.extend_from_slice(&[0; 8]);
@@ -54,11 +54,11 @@ fn transformed_reference_plane_requires_fixed_prefix() {
         .model
         .attributes
         .iter()
-        .any(|attribute| attribute.name == "transformed_reference_plane"));
+        .any(|attribute| attribute.name == "transformed_reference_enclosure"));
 }
 
 #[test]
-fn semantic_writer_preserves_transformed_reference_plane_prefix() {
+fn semantic_writer_preserves_transformed_reference_enclosure_prefix() {
     use cadmpeg_ir::attributes::AttributeValue;
 
     let decoded = SldprtCodec
@@ -74,7 +74,7 @@ fn semantic_writer_preserves_transformed_reference_plane_prefix() {
             .model
             .attributes
             .iter_mut()
-            .find(|attribute| attribute.name == "transformed_reference_plane")
+            .find(|attribute| attribute.name == "transformed_reference_enclosure")
             .unwrap();
         let AttributeValue::Vector(center) = &mut transformed.values[0] else {
             panic!("transformed plane center");
@@ -108,7 +108,10 @@ fn semantic_writer_preserves_transformed_reference_plane_prefix() {
         .position(|bytes| bytes == token)
         .unwrap()
         + token.len();
-    assert_eq!(&payload[offset..offset + 8], &[0xff; 8]);
+    assert_eq!(
+        &payload[offset..offset + 25],
+        &[1, 0, 0, 0, 1, 0, 0, 0, 0xff, 0x80, 0, 0, 0x80, 0x40, 0, 0, 95, 0, 0, 0, 0, 0, 0, 0, 1]
+    );
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
@@ -117,9 +120,9 @@ fn semantic_writer_preserves_transformed_reference_plane_prefix() {
         .model
         .attributes
         .iter()
-        .find(|attribute| attribute.name == "transformed_reference_plane")
+        .find(|attribute| attribute.name == "transformed_reference_enclosure")
         .unwrap();
-    assert!(transformed.id.as_str().ends_with(":147"));
+    assert!(transformed.id.as_str().ends_with(":153"));
 }
 
 #[test]
@@ -232,15 +235,15 @@ fn decode_extracts_document_envelope() {
         .model
         .attributes
         .iter()
-        .find(|attribute| attribute.name == "transformed_reference_plane")
+        .find(|attribute| attribute.name == "transformed_reference_enclosure")
         .expect("transformed reference plane");
-    assert!(transformed.id.as_str().ends_with(":147"));
+    assert!(transformed.id.as_str().ends_with(":153"));
     assert_eq!(
         transformed.values,
         vec![
             AttributeValue::vector([10.0, 20.0, 30.0]).unwrap(),
-            AttributeValue::vector([100.0, 200.0]).unwrap(),
-            AttributeValue::vector([1.0, 0.0, -1.0]).unwrap(),
+            AttributeValue::vector([100.0, 200.0, 300.0]).unwrap(),
+            AttributeValue::vector([-100.0, -200.0, -300.0]).unwrap(),
             AttributeValue::float(500.0).unwrap(),
         ]
     );
@@ -356,4 +359,128 @@ fn unit_name_replacement_decodes_replacement_character() {
         attributes[0].values,
         vec![cadmpeg_ir::attributes::AttributeValue::String("�".into())]
     );
+}
+
+fn authored_enclosure(flag: u8, opaque: u8, values: [f64; 10]) -> Vec<u8> {
+    let mut bytes = vec![0xff, 0xff, 1, 0, 21, 0];
+    bytes.extend(b"moTransRefPlaneData_c");
+    bytes.extend([opaque; 24]);
+    bytes.push(flag);
+    if flag == 1 {
+        for value in values {
+            bytes.extend(value.to_le_bytes());
+        }
+    }
+    bytes
+}
+
+#[test]
+fn transformed_enclosure_preserves_asymmetric_center_and_radius() {
+    let values = [0.01, 0.02, 0.03, 0.2, 0.3, 0.4, -0.1, -0.2, -0.3, 0.6];
+    for opaque in [0, 0xff, 0x53] {
+        let bytes = authored_enclosure(1, opaque, values);
+        assert_eq!(super::transformed_enclosure(&bytes, 6), Some(values));
+    }
+}
+
+#[test]
+fn absent_enclosure_never_backfills_from_a_later_extent() {
+    let values = [0., 0., 0., 1., 1., 1., -1., -1., -1., 2.];
+    let mut bytes = authored_enclosure(0, 0xff, values);
+    let boundary = bytes.len();
+    bytes.extend(authored_enclosure(1, 0, values));
+    assert_eq!(super::transformed_enclosure(&bytes, 6), None);
+    assert_eq!(
+        super::transformed_enclosure(&bytes, boundary + 6),
+        Some(values)
+    );
+}
+
+#[test]
+fn transformed_enclosure_requires_the_complete_optional_extent() {
+    let values = [0., 0., 0., 1., 1., 1., -1., -1., -1., 2.];
+    let bytes = authored_enclosure(1, 0, values);
+    for end in 27..bytes.len() {
+        assert_eq!(super::transformed_enclosure(&bytes[..end], 6), None);
+    }
+    assert_eq!(super::transformed_enclosure(&bytes, 6), Some(values));
+}
+
+#[test]
+fn transformed_enclosure_rejects_wrong_declaration_and_presence_domain() {
+    let values = [0., 0., 0., 1., 1., 1., -1., -1., -1., 2.];
+    for at in [0, 2, 4, 6 + b"moTransRefPlaneData_c".len() + 24] {
+        let mut bytes = authored_enclosure(1, 0, values);
+        bytes[at] ^= 2;
+        assert_eq!(super::transformed_enclosure(&bytes, 6), None);
+    }
+}
+
+#[test]
+fn transformed_enclosure_requires_finite_ordered_stored_values() {
+    let values = [0., 0., 0., 1., 1., 1., -1., -1., -1., 2.];
+    for (at, value) in [(0, f64::NAN), (3, -2.), (6, 2.), (9, -1.)] {
+        let mut changed = values;
+        changed[at] = value;
+        assert_eq!(
+            super::transformed_enclosure(&authored_enclosure(1, 0, changed), 6),
+            None
+        );
+    }
+}
+
+#[test]
+fn enclosure_metadata_edit_preserves_config_owner_and_opaque_prologue() {
+    use cadmpeg_ir::attributes::AttributeValue;
+    let values = [
+        0.01,
+        0.02,
+        0.03,
+        0.2,
+        0.3,
+        0.4,
+        -0.1,
+        -0.2,
+        -0.3,
+        0.473_913_743_529_674_7,
+    ];
+    let payload = authored_enclosure(1, 0x53, values);
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(0x43, "Contents/Config-7", &payload));
+    let source = crate::test_support::container::native_envelope_fixture(&source);
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    {
+        let mut ir = decoded.ir_mut();
+        let attribute = ir
+            .model
+            .attributes
+            .iter_mut()
+            .find(|a| a.name == "transformed_reference_enclosure")
+            .unwrap();
+        let AttributeValue::Vector(center) = &mut attribute.values[0] else {
+            panic!("center");
+        };
+        center[0] = cadmpeg_ir::scalar::FiniteReal::new(25.).unwrap();
+    }
+    let mut written = Vec::new();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut written,
+    )
+    .unwrap();
+    let scan = crate::test_support::container::scan(&written);
+    let members: Vec<_> = scan
+        .blocks
+        .iter()
+        .filter(|b| b.section.name() == Some("Contents/Config-7"))
+        .collect();
+    assert_eq!(members.len(), 1);
+    let bytes = &members[0].payload;
+    assert_eq!(&bytes[..52], &payload[..52]);
+    assert_eq!(super::transformed_enclosure(bytes, 6).unwrap()[0], 0.025);
+    assert_eq!(&bytes[60..], &payload[60..]);
 }

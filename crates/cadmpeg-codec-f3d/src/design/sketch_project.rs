@@ -424,6 +424,9 @@ pub(crate) fn project_sketch_design(
         );
     }
     for text in texts {
+        if crate::design::decode::sketch::sketch_text_neutral_state(text) != Some(true) {
+            continue;
+        }
         let Some(scope) = native_stream(&text.id) else {
             continue;
         };

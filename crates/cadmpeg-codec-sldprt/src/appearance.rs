@@ -13,6 +13,8 @@ use crate::layout::display_lists_inline_visual_properties_prefix as inline_visua
 use crate::layout::visual_states_feature_appearance_prefix as feature_visual;
 use crate::tessellation::DisplayFace;
 
+pub(crate) mod visual_states;
+
 const VISUAL_PROPERTIES_CLASS: &[u8] = b"moVisualProperties_c";
 
 /// One decoded visual-property definition. Ownership is stored separately.
@@ -46,8 +48,13 @@ pub(crate) struct FeatureAppearanceAssignment {
     record_offset: usize,
 }
 
+pub(crate) struct ResolvedDisplayDefinition {
+    pub(crate) definition: AppearanceDefinition,
+    pub(crate) rank: u8,
+}
+
 pub(crate) struct ResolvedDisplayAppearances {
-    pub(crate) by_face: BTreeMap<usize, AppearanceDefinition>,
+    pub(crate) by_face: BTreeMap<usize, ResolvedDisplayDefinition>,
     pub(crate) matched_feature_sources: BTreeSet<FeatureSourceId>,
 }
 
@@ -108,10 +115,11 @@ fn definition_at(
         Err(error) => return Err(error),
     };
     let trimmed = decoded.trim();
-    if trimmed.is_empty() {
-        return Ok(None);
-    }
-    let name = trimmed.to_owned();
+    let name = if trimmed.is_empty() {
+        "SolidWorks appearance".to_owned()
+    } else {
+        trimmed.to_owned()
+    };
     let source_name = section.source_stream().clone();
     Ok(Some(AppearanceDefinition {
         name,
@@ -131,8 +139,12 @@ fn inline_definitions(
         return Ok(Vec::new());
     };
     let mut definitions = Vec::new();
-    for (relative, marker) in bytes.windows(inline_visual::MARKER_VALUE.len()).enumerate() {
-        if marker != inline_visual::MARKER_VALUE {
+    for relative in 0..bytes.len().saturating_sub(1) {
+        let Some(tag) = View::u16_le_at(bytes, relative) else {
+            break;
+        };
+        let index = tag & 0x00ff;
+        if tag & 0xff00 != 0x8000 || index == 0 || index == 0xff {
             continue;
         }
         let offset = start + relative;
@@ -213,10 +225,12 @@ fn display_assignments(
 /// Decode feature-source assignments from `ThirdPtyStore/VisualStates`.
 pub(crate) fn feature_assignments(scan: &ContainerScan) -> Vec<FeatureAppearanceAssignment> {
     let mut assignments = Vec::new();
-    for section in scan
-        .sections()
-        .filter(|section| section.name() == Some("ThirdPtyStore/VisualStates"))
-    {
+    for section in scan.sections().filter(|section| {
+        matches!(
+            section.name(),
+            Some("ThirdPtyStore/VisualStates" | "ThirdPtyStore/VisualStates__ZLB")
+        )
+    }) {
         let bytes = section.payload();
         let classes = crate::tessellation::class_intervals(bytes);
         for marker_offset in bytes
@@ -236,10 +250,8 @@ pub(crate) fn feature_assignments(scan: &ContainerScan) -> Vec<FeatureAppearance
                 class.name == "moCompFeature_c"
                     && class.content.start() <= record_offset
                     && record_offset + feature_visual::LEN <= class.content.end()
-            }) || View::u32_le_at(record, feature_visual::VERSION)
-                != Some(feature_visual::VERSION_VALUE)
-                || View::u32_le_at(record, feature_visual::SELECTOR_ONE_A)
-                    != Some(feature_visual::SELECTOR_ONE_A_VALUE)
+            }) || View::u32_le_at(record, feature_visual::SELECTOR_ONE_A)
+                != Some(feature_visual::SELECTOR_ONE_A_VALUE)
                 || View::u32_le_at(record, feature_visual::SELECTOR_ONE_B)
                     != Some(feature_visual::SELECTOR_ONE_B_VALUE)
                 || View::u32_le_at(record, feature_visual::SELECTOR_TWO)
@@ -264,7 +276,9 @@ pub(crate) fn feature_assignments(scan: &ContainerScan) -> Vec<FeatureAppearance
             else {
                 continue;
             };
-            let Some(packed_color) = View::u32_le_at(record, feature_visual::PACKED_COLOR) else {
+            let Some(packed_color) = View::u32_le_at(record, feature_visual::PACKED_COLOR)
+                .filter(|value| value >> 24 == 0)
+            else {
                 continue;
             };
             let source_name = section.source_stream().clone();
@@ -287,20 +301,30 @@ pub(crate) fn resolve_display_appearances(
     scan: &ContainerScan,
     section: Section<'_>,
     faces: &[DisplayFace],
+    eligible_features: &BTreeSet<FeatureSourceId>,
 ) -> Result<ResolvedDisplayAppearances, cadmpeg_core::CodecError> {
     let native_assignments = display_assignments(ctx, section, faces)?;
     let mut by_face = BTreeMap::new();
     for assignment in &native_assignments {
         if let DisplayAppearanceTarget::Body(face_indexes) = &assignment.target {
             for face_index in face_indexes {
-                by_face.insert(*face_index, assignment.definition.clone());
+                by_face.insert(
+                    *face_index,
+                    ResolvedDisplayDefinition {
+                        definition: assignment.definition.clone(),
+                        rank: 2,
+                    },
+                );
             }
         }
     }
 
     let mut feature_by_source =
         HashMap::<FeatureSourceId, Option<FeatureAppearanceAssignment>>::new();
-    for assignment in feature_assignments(scan) {
+    for assignment in feature_assignments(scan)
+        .into_iter()
+        .filter(|assignment| eligible_features.contains(&assignment.feature_source_id))
+    {
         feature_by_source
             .entry(assignment.feature_source_id)
             .and_modify(|existing| {
@@ -338,12 +362,24 @@ pub(crate) fn resolve_display_appearances(
             record_offset: assignment.record_offset,
         };
         for face_index in face_indexes {
-            by_face.insert(face_index, definition.clone());
+            by_face.insert(
+                face_index,
+                ResolvedDisplayDefinition {
+                    definition: definition.clone(),
+                    rank: 3,
+                },
+            );
         }
     }
     for assignment in native_assignments {
         if let DisplayAppearanceTarget::Face(face_index) = assignment.target {
-            by_face.insert(face_index, assignment.definition);
+            by_face.insert(
+                face_index,
+                ResolvedDisplayDefinition {
+                    definition: assignment.definition,
+                    rank: 4,
+                },
+            );
         }
     }
     Ok(ResolvedDisplayAppearances {

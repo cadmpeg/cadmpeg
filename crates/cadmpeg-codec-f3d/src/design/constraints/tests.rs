@@ -140,10 +140,27 @@ fn rectangular_point_relation(
     evaluated_distance: f64,
     distance_form: RectangularPatternDistanceForm,
 ) -> SketchRelation {
-    let (rectangular_counted_reference_count, mut auxiliary_references) = match distance_form {
-        RectangularPatternDistanceForm::AdjacentSpacing => (2, vec![100, 101]),
-        RectangularPatternDistanceForm::SeedToFinalSpan => (0, Vec::new()),
-    };
+    rectangular_point_relation_with_direction_slots(
+        evaluated_count,
+        evaluated_distance,
+        distance_form,
+        0,
+    )
+}
+
+fn rectangular_point_relation_with_direction_slots(
+    evaluated_count: u32,
+    evaluated_distance: f64,
+    distance_form: RectangularPatternDistanceForm,
+    rectangular_counted_reference_count: u32,
+) -> SketchRelation {
+    let mut auxiliary_references = (0..rectangular_counted_reference_count)
+        .map(|index| 100 + index)
+        .collect::<Vec<_>>();
+    let uses_extent = u8::from(matches!(
+        distance_form,
+        RectangularPatternDistanceForm::SeedToFinalSpan
+    ));
     auxiliary_references.extend([20, 21, 22, 23]);
     let members = (1..=evaluated_count).collect::<Vec<_>>();
     SketchRelation::try_new(crate::records::sketch_relations::SketchRelationDraft {
@@ -175,8 +192,8 @@ fn rectangular_point_relation(
                 crate::records::sketch_relations::SketchPatternDefinition::Rectangular {
                     directions: [
                         crate::records::sketch_relations::SketchPatternDirection {
-                            count_parameter: 20,
-                            distance_parameter: 21,
+                            count_parameter: Some(20),
+                            distance_parameter: Some(21),
                             evaluated_count:
                                 crate::records::sketch_relations::SketchPatternCount::try_from(
                                     evaluated_count,
@@ -189,8 +206,8 @@ fn rectangular_point_relation(
                             .unwrap(),
                         },
                         crate::records::sketch_relations::SketchPatternDirection {
-                            count_parameter: 22,
-                            distance_parameter: 23,
+                            count_parameter: Some(22),
+                            distance_parameter: Some(23),
                             evaluated_count:
                                 crate::records::sketch_relations::SketchPatternCount::try_from(1)
                                     .unwrap(),
@@ -210,7 +227,12 @@ fn rectangular_point_relation(
             .collect::<Vec<_>>())
         .try_into()
         .expect("uniform member resolution"),
-        raw_bytes: vec![0; 160],
+        raw_bytes: crate::test_support::sketch_relations::rectangular_pattern_record(
+            evaluated_count,
+            evaluated_distance,
+            [uses_extent, 0, 0],
+            rectangular_counted_reference_count,
+        ),
     })
     .unwrap()
 }
@@ -327,7 +349,7 @@ fn rectangular_pattern_does_not_change_distance_form_to_match_geometry() {
 }
 
 #[test]
-fn rectangular_pattern_requires_the_retained_counted_reference_count() {
+fn rectangular_pattern_reads_source_mode_without_the_cached_reference_count() {
     let seed = point_entity("generated:test:point#seed", 2.0);
     let second = point_entity("generated:test:point#second", 17.0);
     let mut relation =
@@ -335,9 +357,10 @@ fn rectangular_pattern_requires_the_retained_counted_reference_count() {
     relation.rectangular_counted_reference_count = None;
     let parameters = rectangular_parameters(2, 1.5);
 
-    assert_eq!(
-        exact_rectangular_pattern(&relation, "native", &parameters, &[&seed, &second]).unwrap(),
-        None
+    assert!(
+        exact_rectangular_pattern(&relation, "native", &parameters, &[&seed, &second])
+            .unwrap()
+            .is_some()
     );
 }
 
@@ -434,8 +457,8 @@ fn circular_pattern_resolves_full_and_partial_instance_distributions() {
                 0x1000_0000,
                 Some(
                     crate::records::sketch_relations::SketchPatternDefinition::Circular {
-                        angle_parameter: 20,
-                        count_parameter: 21,
+                        angle_parameter: Some(20),
+                        count_parameter: Some(21),
                         evaluated_angle: cadmpeg_ir::scalar::FiniteReal::new(angle).unwrap(),
                         evaluated_count:
                             crate::records::sketch_relations::SketchPatternCount::try_from(3)
@@ -453,7 +476,11 @@ fn circular_pattern_resolves_full_and_partial_instance_distributions() {
             ])
             .try_into()
             .expect("uniform member resolution"),
-            raw_bytes: vec![0; 160],
+            raw_bytes: crate::test_support::sketch_relations::circular_pattern_record(
+                angle,
+                3,
+                &[],
+            ),
         })
         .unwrap()
     };
@@ -567,8 +594,8 @@ fn circular_pattern_resolves_independently_of_relation_ordinals() {
             0x1000_0000,
             Some(
                 crate::records::sketch_relations::SketchPatternDefinition::Circular {
-                    angle_parameter: 20,
-                    count_parameter: 21,
+                    angle_parameter: Some(20),
+                    count_parameter: Some(21),
                     evaluated_angle: cadmpeg_ir::scalar::FiniteReal::new(std::f64::consts::TAU)
                         .unwrap(),
                     evaluated_count:
@@ -586,7 +613,11 @@ fn circular_pattern_resolves_independently_of_relation_ordinals() {
         ])
         .try_into()
         .expect("uniform member resolution"),
-        raw_bytes: vec![0; 160],
+        raw_bytes: crate::test_support::sketch_relations::circular_pattern_record(
+            std::f64::consts::TAU,
+            3,
+            &[],
+        ),
     })
     .unwrap();
     let members = [&center, &seed, &middle, &last];
@@ -716,5 +747,56 @@ fn text_path_relation_projects_typed_entities_and_scaled_glyph_placements() {
         assert!(exact_text_relation(&relation, "scope", &projected)
             .unwrap()
             .is_none());
+    }
+}
+
+#[test]
+fn rectangular_pattern_distance_mode_is_independent_of_direction_reference_slots() {
+    let seed = point_entity("generated:test:point#seed", 2.0);
+    let second = point_entity("generated:test:point#second", 17.0);
+    let third = point_entity("generated:test:point#third", 32.0);
+    for slots in 0..=2 {
+        for (mode, distance) in [
+            (RectangularPatternDistanceForm::AdjacentSpacing, 1.5),
+            (RectangularPatternDistanceForm::SeedToFinalSpan, 3.0),
+        ] {
+            let relation =
+                rectangular_point_relation_with_direction_slots(3, distance, mode, slots);
+            let parameters = rectangular_parameters(3, distance);
+            let Some(SketchConstraintDefinitionInput::RectangularPattern { pattern }) =
+                exact_rectangular_pattern(
+                    &relation,
+                    "native",
+                    &parameters,
+                    &[&seed, &second, &third],
+                )
+                .unwrap()
+            else {
+                panic!("serialized mode did not resolve");
+            };
+            assert_eq!(pattern.directions()[0].spacing().get(), 15.0);
+            assert_eq!(pattern.rows().len(), 3);
+        }
+    }
+}
+
+#[test]
+fn rectangular_pattern_preserves_signed_spacing_and_extent() {
+    let seed = point_entity("generated:test:point#seed", 2.0);
+    let second = point_entity("generated:test:point#second", -13.0);
+    let third = point_entity("generated:test:point#third", -28.0);
+    for (mode, distance) in [
+        (RectangularPatternDistanceForm::AdjacentSpacing, -1.5),
+        (RectangularPatternDistanceForm::SeedToFinalSpan, -3.0),
+    ] {
+        let relation = rectangular_point_relation(3, distance, mode);
+        let parameters = rectangular_parameters(3, distance);
+        let Some(SketchConstraintDefinitionInput::RectangularPattern { pattern }) =
+            exact_rectangular_pattern(&relation, "native", &parameters, &[&seed, &second, &third])
+                .unwrap()
+        else {
+            panic!("signed source distance did not resolve");
+        };
+        assert_eq!(pattern.directions()[0].spacing().get(), -15.0);
     }
 }

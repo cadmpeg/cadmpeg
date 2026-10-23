@@ -1,18 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The write-target request reaching this encoder's `plan`.
 
-use cadmpeg_test_support::wire;
-
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
-use cadmpeg_ir::{report::export::FidelityResolution, RetainedSourceRecord, SourceFidelity};
+use cadmpeg_ir::{RetainedSourceRecord, SourceFidelity};
 use std::io::Cursor;
 
 use crate::test_support::container::make_block;
 use crate::test_support::history::sldprt_with_body_and_history;
 use crate::test_support::parasolid::triangle_body;
-use crate::{dialect::SldprtDialect, loss::SldprtLossCode, SldprtCodec};
+use crate::{dialect::SldprtDialect, SldprtCodec};
 
 #[test]
 fn semantic_writer_reclassifies_the_final_retained_envelope() {
@@ -23,7 +21,12 @@ fn semantic_writer_reclassifies_the_final_retained_envelope() {
         br#"<?xml version="1.0"?><swSolidWorks swVersion="13100"><swModel swName="part" swConfigurationName="Default"/></swSolidWorks>"#,
     ));
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &source,
+            )),
+            &DecodeOptions::default(),
+        )
         .expect("versioned part decodes");
     let (mut ir, _, fidelity) = decoded.into_parts();
     let attributes = ir
@@ -82,7 +85,7 @@ fn sourced_ir(dialect: &'static str) -> CadIr {
 }
 
 #[test]
-fn explicit_transcode_declines_present_image_without_claiming_it_is_unavailable() {
+fn explicit_cross_dialect_transcode_refuses_without_consuming_present_image() {
     let ir = sourced_ir("sldprt:sw-version-12000-plus");
     let data = b"present retained image".to_vec();
     let mut fidelity = SourceFidelity::default();
@@ -99,70 +102,36 @@ fn explicit_transcode_declines_present_image_without_claiming_it_is_unavailable(
     fidelity
         .insert_retained_record(source_image_id, record)
         .expect("source image identity is unique");
-    let plan = Encoder::plan(
+    assert!(fidelity
+        .retained_record(crate::SOURCE_IMAGE_ID)
+        .unwrap()
+        .data()
+        .is_some());
+    let error = Encoder::plan(
         &SldprtCodec,
         EncodeInput::new(&ir, Some(&fidelity)),
         TargetRequest::Explicit("sldprt:unknown"),
     )
-    .expect("explicit transcode plans");
-
-    assert_eq!(
-        &wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
-            plan.report().write_path(),
-            "fidelity"
-        ),
-        &FidelityResolution::NotConsumed {}
+    .expect_err("cross-dialect nonconsuming route has no admitted Native framing");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::NotImplemented(ref detail)
+        if detail.contains("validated retained local, central and EOCD signature tokens")),
+        "{error}"
     );
-    assert!(matches!(
-        plan.report().write_path(),
-        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
-    ));
-    let displacement = plan
-        .report()
-        .losses
-        .iter()
-        .find(|loss| loss.code == SldprtLossCode::SourceDialectDisplaced.kind())
-        .expect("the source dialect displacement is charged");
-    assert!(displacement
-        .message
-        .contains("sldprt:sw-version-12000-plus"));
-    assert!(displacement.message.contains("sldprt:unknown"));
-    assert!(plan
-        .report()
-        .losses
-        .iter()
-        .all(|loss| loss.code.local_code() != "source.preserved-image-unavailable"));
-    assert!(plan
-        .report()
-        .notes
-        .iter()
-        .any(|note| note == "source container regenerated from IR"));
 }
 
 #[test]
-fn inherit_with_missing_image_charges_preserved_image_unavailable() {
+fn inherit_without_native_image_refuses_unproved_envelope_generation() {
     let ir = sourced_ir("sldprt:unknown");
-    let plan = Encoder::plan(
+    let error = Encoder::plan(
         &SldprtCodec,
         EncodeInput::new(&ir, None),
         TargetRequest::Inherit,
     )
-    .expect("inherit synthesizes the catalog source dialect");
-
-    // No fidelity was provided, so the sealed wrapper resolves the report to
-    // `NotProvided`; the image-missing reason survives as the typed loss below.
-    assert_eq!(
-        &wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
-            plan.report().write_path(),
-            "fidelity"
-        ),
-        &FidelityResolution::NotProvided {}
+    .expect_err("missing source image cannot supply Native framing");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::NotImplemented(ref detail)
+        if detail.contains("validated retained local, central and EOCD signature tokens")),
+        "{error}"
     );
-    let unavailable = plan
-        .report()
-        .losses
-        .iter()
-        .find(|loss| loss.code.local_code() == "source.preserved-image-unavailable")
-        .expect("missing sidecar charges image unavailability");
-    assert!(unavailable.message.contains("regenerated from IR"));
 }

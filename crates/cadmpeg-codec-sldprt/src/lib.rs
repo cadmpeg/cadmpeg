@@ -165,7 +165,6 @@ pub struct SldprtCodec;
 /// source-fidelity sidecar throughout export.
 struct SourceRecord<'a> {
     id: UnknownId,
-    sha256: String,
     data: Option<&'a [u8]>,
 }
 
@@ -247,8 +246,11 @@ impl SldprtCodec {
         fidelity: SemanticFidelity,
         writer: &mut dyn Write,
     ) -> Result<Written, CodecError> {
-        let writer::SemanticOutput { dialect, coverage } =
-            writer::write_semantic_with_records(ir, annotations, records, writer)?;
+        let writer::SemanticOutput {
+            dialect,
+            coverage,
+            omitted_envelope_bytes,
+        } = writer::write_semantic_with_records(ir, annotations, records, writer)?;
         let native = ir
             .native
             .namespace("sldprt")
@@ -281,6 +283,7 @@ impl SldprtCodec {
             dialect,
             fidelity,
             coverage,
+            omitted_envelope_bytes,
         })
     }
 }
@@ -358,6 +361,7 @@ enum Written {
         dialect: DialectId,
         fidelity: SemanticFidelity,
         coverage: ArenaDispositions,
+        omitted_envelope_bytes: usize,
     },
 }
 
@@ -464,7 +468,6 @@ fn source_records<'a>(
                 })?;
             Ok(SourceRecord {
                 id: reference.id,
-                sha256: retained.sha256(),
                 data: retained.data(),
             })
         })
@@ -472,7 +475,6 @@ fn source_records<'a>(
     if let Some(source) = source_fidelity.retained_record(SOURCE_IMAGE_ID) {
         records.push(SourceRecord {
             id: source_image_id(),
-            sha256: source.sha256(),
             data: source.data(),
         });
     }

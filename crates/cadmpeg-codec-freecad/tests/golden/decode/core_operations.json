@@ -1,7 +1,7 @@
 {
   "ir": {
     "decode_depth": "full",
-    "ir_version": "10",
+    "ir_version": "11",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -16720,7 +16720,7 @@
           "carrier": {
             "curve": "fcstd:model:curve#PartChamfer:Shape:PartChamfer.Shape.brp:5",
             "param_range": [
-              -4.440892098500626e-16,
+              0.0,
               2.9154759474226504
             ]
           },
@@ -16772,7 +16772,7 @@
           "carrier": {
             "curve": "fcstd:model:curve#PartChamfer:Shape:PartChamfer.Shape.brp:9",
             "param_range": [
-              -4.440892098500626e-16,
+              0.0,
               2.9154759474226504
             ]
           },

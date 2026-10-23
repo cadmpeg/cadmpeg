@@ -57,6 +57,7 @@ use cadmpeg_ir::geometry::{
 use super::NxCodec;
 
 mod assembly_placement;
+mod blend_history;
 mod body_write;
 
 mod attachment_containment;

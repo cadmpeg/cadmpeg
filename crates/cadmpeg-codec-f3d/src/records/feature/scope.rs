@@ -42,7 +42,8 @@ use super::sheet_metal::{
 };
 use super::surface_ops::{
     DesignRuledSurfaceOperation, DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation,
-    DesignSurfacePatchBoundary, DesignSurfaceStitchOperation,
+    DesignSurfacePatchBoundary, DesignSurfacePatchNormalState, DesignSurfacePatchScope,
+    DesignSurfaceStitchOperation,
 };
 use super::thread::DesignThreadConstruction;
 use super::work_geometry::{
@@ -335,6 +336,21 @@ impl<T> ScopePayloadCompleteness for Vec<T> {
     }
 }
 
+impl ScopePayloadCompleteness for DesignSurfacePatchScope {
+    fn is_uninterpreted(&self) -> bool {
+        matches!(
+            self.normal,
+            Some(DesignSurfacePatchNormalState::Unsupported)
+        )
+    }
+}
+
+cadmpeg_core::named_optional_field!(
+    deserialize_surface_patch_normal,
+    DesignSurfacePatchNormalState,
+    "surface_patch_normal"
+);
+
 macro_rules! design_feature_kinds {
     (data { $($variant:ident => $lit:literal : $payload:ty),+ $(,)? }
      fixed { $($fixed:ident => $fixed_lit:literal : $fixed_payload:ty),+ $(,)? }
@@ -535,7 +551,7 @@ design_feature_kinds! {
         SpirePrimitive => "SpirePrimitive": Option<DesignCoilScope>,
         CoilPrimitive => "CoilPrimitive": Option<DesignCoilScope>,
         Sweep => "Sweep": Option<DesignSweepScope>,
-        SurfacePatch => "SurfacePatch": Vec<DesignSurfacePatchBoundary>,
+        SurfacePatch => "SurfacePatch": DesignSurfacePatchScope,
         SurfaceExtend => "SurfaceExtend": Option<DesignSurfaceExtendOperation>,
         SurfaceOffset => "SurfaceOffset": Option<DesignSurfaceOffsetOperation>,
         Hole => "Hole": Option<DesignHoleConstruction>,
@@ -833,6 +849,13 @@ struct DesignParameterScopeSerde {
     /// scope reference order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     surface_patch_boundaries: Vec<DesignSurfacePatchBoundary>,
+    /// Versioned whole-surface normal state.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_surface_patch_normal"
+    )]
+    surface_patch_normal: Option<DesignSurfacePatchNormalState>,
     /// Exact edge, parameter, and settings records carried by an `EdgeFlange` scope.
     #[serde(
         default,
@@ -1494,8 +1517,8 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         if wire.ruled_surface_operation.is_some() {
             present.push("ruled_surface_operation");
         }
-        if !wire.surface_patch_boundaries.is_empty() {
-            present.push("surface_patch_boundaries");
+        if !wire.surface_patch_boundaries.is_empty() || wire.surface_patch_normal.is_some() {
+            present.push("surface_patch");
         }
         if wire.edge_flange_operation.is_some() {
             present.push("edge_flange_operation");
@@ -1740,7 +1763,10 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 }
             }),
             DesignFeatureKind::SurfacePatch => {
-                DesignScopePayload::SurfacePatch(std::mem::take(&mut wire.surface_patch_boundaries))
+                DesignScopePayload::SurfacePatch(DesignSurfacePatchScope {
+                    boundaries: std::mem::take(&mut wire.surface_patch_boundaries),
+                    normal: wire.surface_patch_normal.take(),
+                })
             }
             DesignFeatureKind::SurfaceExtend => {
                 DesignScopePayload::SurfaceExtend(wire.surface_extend_operation.take())
@@ -1875,6 +1901,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             || wire.surface_offset_operation.is_some()
             || wire.ruled_surface_operation.is_some()
             || !wire.surface_patch_boundaries.is_empty()
+            || wire.surface_patch_normal.is_some()
             || wire.edge_flange_operation.is_some()
             || wire.hem_operation.is_some()
             || wire.fixed_fillet_parameters.is_some()
@@ -1977,6 +2004,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             ruled_surface_operation: None,
             base_flange: None,
             surface_patch_boundaries: Vec::new(),
+            surface_patch_normal: None,
             edge_flange_operation: None,
             hem_operation: None,
             fixed_fillet_parameters: None,
@@ -2073,7 +2101,10 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             DesignScopePayload::SurfaceExtend(value) => wire.surface_extend_operation = value,
             DesignScopePayload::SurfaceOffset(value) => wire.surface_offset_operation = value,
             DesignScopePayload::SurfaceRuled(value) => wire.ruled_surface_operation = Some(value),
-            DesignScopePayload::SurfacePatch(value) => wire.surface_patch_boundaries = value,
+            DesignScopePayload::SurfacePatch(value) => {
+                wire.surface_patch_boundaries = value.boundaries;
+                wire.surface_patch_normal = value.normal;
+            }
             DesignScopePayload::EdgeFlange(value) => wire.edge_flange_operation = value,
             DesignScopePayload::Hem(value) => wire.hem_operation = value,
             DesignScopePayload::Fillet(value)
@@ -2169,6 +2200,19 @@ impl DesignParameterScope {
             DesignParameterScopePayloadError(format!("invalid parameter scope {field}"))
         };
         let kind = draft.payload.kind_name();
+        if let DesignScopePayload::SurfacePatch(DesignSurfacePatchScope {
+            normal: Some(DesignSurfacePatchNormalState::Explicit { reversed }),
+            ..
+        }) = &draft.payload
+        {
+            let relative =
+                u64_from_index(crate::layout::surface_patch_v7_normal_flip_prefix::NORMAL_FLIP);
+            if draft.byte_offset.checked_add(relative) != Some(reversed.offset)
+                || reversed.offset >= draft.paired_byte_offset
+            {
+                return Err(fail("surface_patch_normal"));
+            }
+        }
         if draft.frame_length <= 89
             || draft.byte_offset.checked_add(draft.frame_length) != Some(draft.paired_byte_offset)
         {
@@ -2193,7 +2237,11 @@ impl DesignParameterScope {
         // A table that fits neither width falls through to the plain checks.
         let stride = reference_table_stride(&draft).unwrap_or(11);
         let typed = stride == crate::bytes::TYPED_LOCAL_REFERENCE_LEN;
-        let tail_valid = if typed {
+        let typed_canvas =
+            typed && kind == "Canvas" && tail == crate::layout::canvas_scope_typed_tail::LEN;
+        let tail_valid = if typed_canvas {
+            true
+        } else if typed {
             tail == crate::layout::typed_reference_parameter_scope_tail::LEN
         } else {
             crate::design::decode::scopes::parameter_scope::parameter_scope_tail_length_is_valid(
@@ -2206,7 +2254,9 @@ impl DesignParameterScope {
         match draft.previous_history_state_id_offset {
             None if draft.previous_history_state_id.is_none() => {}
             Some(offset) => {
-                let relative = if typed {
+                let relative = if typed_canvas {
+                    None
+                } else if typed {
                     Some(crate::layout::typed_reference_parameter_scope_tail::PREVIOUS_HISTORY_STATE_ID)
                 } else {
                     crate::design::decode::scopes::parameter_scope::parameter_scope_previous_history_offset(
@@ -2725,9 +2775,16 @@ impl DesignParameterScope {
         }
     }
 
+    pub(crate) fn surface_patch_normal(&self) -> Option<DesignSurfacePatchNormalState> {
+        match &self.payload {
+            DesignScopePayload::SurfacePatch(value) => value.normal,
+            _ => None,
+        }
+    }
+
     pub(crate) fn surface_patch_boundaries(&self) -> &[DesignSurfacePatchBoundary] {
         match &self.payload {
-            DesignScopePayload::SurfacePatch(value) => value,
+            DesignScopePayload::SurfacePatch(value) => &value.boundaries,
             _ => &[],
         }
     }

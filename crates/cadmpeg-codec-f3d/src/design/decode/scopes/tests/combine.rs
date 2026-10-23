@@ -481,6 +481,36 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
         identity.tail_value_offsets()[0] + 12
     );
 
+    let stamp_at = usize::try_from(identity.tail_value_offsets()[0]).unwrap();
+    let scalar_at = usize::try_from(identity.tail_value_offsets()[1]).unwrap();
+    let tail_at = stamp_at - crate::layout::combine_external_selector_tail::SELECTION_PAYLOAD_STAMP;
+    let epoch_at = tail_at + crate::layout::combine_external_selector_tail::EVALUATION_EPOCH;
+    for (epoch, scalar) in [(0_u32, 0.0_f64), (7, 0.375), (u32::MAX, f64::MAX)] {
+        let mut changed = bytes.clone();
+        changed[epoch_at..epoch_at + 4].copy_from_slice(&epoch.to_le_bytes());
+        changed[scalar_at..scalar_at + 8].copy_from_slice(&scalar.to_le_bytes());
+        let operation = exact_combine_operation(&changed, &records, &scope)
+            .unwrap()
+            .expect("complete external selector");
+        let identity = operation.tools.first.external_identity.as_ref().unwrap();
+        assert_eq!(identity.tail_values(), [11, scalar.to_bits()]);
+        assert_eq!(
+            identity.tail_value_offsets(),
+            [
+                u64::try_from(stamp_at).unwrap(),
+                u64::try_from(scalar_at).unwrap()
+            ]
+        );
+    }
+    for scalar in [-0.375_f64, f64::INFINITY, f64::NAN] {
+        let mut changed = bytes.clone();
+        changed[scalar_at..scalar_at + 8].copy_from_slice(&scalar.to_le_bytes());
+        let operation = exact_combine_operation(&changed, &records, &scope)
+            .unwrap()
+            .expect("operation retains its native selector");
+        assert!(operation.tools.first.external_identity.is_none());
+    }
+
     let mut malformed_scope = scope.clone();
     malformed_scope
         .try_edit(|draft| {

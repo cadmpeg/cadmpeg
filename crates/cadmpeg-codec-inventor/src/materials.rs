@@ -88,10 +88,11 @@ pub(crate) fn project_catalog(
             let mut properties = BTreeMap::new();
             let mut connected = Vec::new();
             for (id, property) in &record.properties {
-                if let Some(cadmpeg_protein::property::PropertyValue::Float(value)) =
-                    property.value()
+                if let Some(value) = property
+                    .value()
+                    .and_then(cadmpeg_protein::property::PropertyValue::float_value)
                 {
-                    properties.insert(neutral_property_name(id).to_owned(), *value);
+                    properties.insert(neutral_property_name(id).to_owned(), value);
                 }
                 for guid in property.connections() {
                     if let Some(texture) = textures.get(guid) {

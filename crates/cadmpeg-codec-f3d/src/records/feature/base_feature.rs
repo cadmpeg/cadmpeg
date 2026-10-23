@@ -3,9 +3,29 @@
 
 use cadmpeg_ir::native::bytes::NativeBytes;
 
+use crate::layout::base_feature_local_reference_field as local_field;
 use crate::records::serde_column::SliceColumn;
 use crate::records::{identity::Located, mesh::DesignRelaxedGuidText};
 use serde::{Deserialize, Serialize};
+
+pub(crate) fn local_reference_field(bytes: &[u8]) -> Option<[u8; 6]> {
+    let field: [u8; 6] = bytes.try_into().ok()?;
+    (field[local_field::CROSS_DOCUMENT] == local_field::CROSS_DOCUMENT_VALUE
+        && field[local_field::DIFFERENT_SEGMENT] == local_field::DIFFERENT_SEGMENT_VALUE)
+        .then_some(field)
+}
+
+fn require_local_fields(fields: &[NativeBytes<[u8; 6]>]) -> Result<(), String> {
+    if fields
+        .iter()
+        .all(|field| local_reference_field(&**field).is_some())
+    {
+        Ok(())
+    } else {
+        Err("15-byte Base Feature elements require ordinary same-segment references".into())
+    }
+}
+
 /// Encoded compact Base Feature mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -678,6 +698,8 @@ impl TryFrom<DesignBaseFeatureConstructionWire> for DesignBaseFeatureConstructio
                 {
                     return Err("repeated_reference_fields must be empty or have the same length as body_entity_suffixes".into());
                 }
+                require_local_fields(&body_entity_fields)?;
+                require_local_fields(&body_reference_fields)?;
                 let bodies = (0..count).map(|index| DesignBaseFeatureResultBody {
                     entity: DesignBaseFeatureEntry {
                         value: body_entity_suffixes[index],
@@ -810,6 +832,7 @@ impl TryFrom<DesignBaseFeatureConstructionWire> for DesignBaseFeatureConstructio
                         ));
                     }
                 }
+                require_local_fields(&body_entity_fields)?;
                 if !tag_body_based_on_faces {
                     return Err(
                         "tag_body_based_on_faces must be true for LegacyBodyBasedOnFaces".into(),
@@ -872,6 +895,7 @@ impl TryFrom<DesignBaseFeatureConstructionWire> for DesignBaseFeatureConstructio
                 {
                     return Err("body_entity_suffixes, body_entity_suffix_offsets, and body_entity_fields must have equal lengths".into());
                 }
+                require_local_fields(&body_entity_fields)?;
                 let bodies = body_entity_suffixes
                     .into_iter()
                     .zip(body_entity_suffix_offsets)

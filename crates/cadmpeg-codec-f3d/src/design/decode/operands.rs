@@ -30,11 +30,15 @@ use crate::layout::class_338_sketch_curve_identity as class_338_curve;
 use crate::layout::coil_compact_face_selection_prefix as coil_face_sel;
 use crate::layout::coil_compact_persistent_selection_prefix as coil_persist_sel;
 use crate::layout::coil_modern_selection_prefix as coil_modern_sel;
+use crate::layout::construction_operand_affine_transform_frame as trailing_affine;
 use crate::layout::extrude_selection_member_fixed_frame as extrude_member;
 use crate::layout::indexed_design_record_header as indexed_header;
 use crate::layout::legacy_loft_body_carrier_class_322 as legacy_loft_322;
 use crate::layout::legacy_loft_body_carrier_class_322_tail as legacy_loft_322_tail;
 use crate::layout::legacy_loft_body_carrier_class_411 as legacy_loft_411;
+use crate::layout::sheet_metal_region_carrier_prefix as region_carrier;
+use crate::layout::sheet_metal_region_carrier_scalar_lane as region_scalar;
+use crate::layout::sheet_metal_region_identity_reference as region_reference;
 use crate::layout::sketch_profile_region_member as region_member;
 use crate::layout::sketch_profile_region_selection_prefix as region_selection;
 use crate::layout::typed_reference_extrude_selection_group_prefix as typed_group;
@@ -44,7 +48,7 @@ use crate::layout::typed_reference_profile_selection_prefix as typed_selection;
 use crate::layout::work_point_sketch_point_identity as sketch_point_identity;
 use crate::records::{
     decal::DesignRecordHeader,
-    entity_header::DesignEntityHeader,
+    entity_header::{DesignEntityHeader, SegmentType},
     feature::{
         extrude::{DesignExtrudeExtent, DesignExtrudePrologue, DesignExtrudeStart},
         scope::DesignParameterScope,
@@ -82,7 +86,7 @@ use crate::records::{
         sketch_profile::DesignSketchProfileRegionSelection,
     },
 };
-use cadmpeg_core::decode::{index_from_u32, DecodeContext, View, WorkBudget};
+use cadmpeg_core::decode::{bounded_len, index_from_u32, DecodeContext, View, WorkBudget};
 use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
 
@@ -1002,11 +1006,11 @@ pub(crate) fn decode_face_operands(
     Ok(out)
 }
 
-/// Decode the ordered persistent source identities carried by admitted `Face`
-/// source envelopes. The source envelope is distinct from a face-regeneration
-/// recipe: its members can name curves and vertices in one operation.
+/// Decode ordered sheet-metal source-region identities.
 pub(crate) fn decode_face_source_groups(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
+    types: &[SegmentType],
     scopes: &[DesignParameterScope],
 ) -> Result<Vec<DesignFaceSourceGroup>, CodecError> {
     let mut out = Vec::new();
@@ -1018,6 +1022,15 @@ pub(crate) fn decode_face_source_groups(
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
+        if !face_source_record_is_registered(
+            types,
+            &scope.id,
+            scope.record_index,
+            scope.class_tag.as_str(),
+            FaceSourceType::Scope,
+        ) {
+            continue;
+        }
         let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
         else {
             continue;
@@ -1042,9 +1055,15 @@ pub(crate) fn decode_face_source_groups(
             else {
                 continue;
             };
-            let Some(layout) = face_source_carrier_layout(carrier_class_tag) else {
+            if !face_source_record_is_registered(
+                types,
+                &scope.id,
+                *carrier_record_index,
+                carrier_class_tag,
+                FaceSourceType::Carrier,
+            ) {
                 continue;
-            };
+            }
             let Some(FaceSourceReferenceHeader {
                 record_index: paired_record_index,
                 byte_offset: paired_byte_offset,
@@ -1055,22 +1074,42 @@ pub(crate) fn decode_face_source_groups(
             else {
                 continue;
             };
-            if *paired_class_tag != layout.paired_class_tag {
+            if !face_source_record_is_registered(
+                types,
+                &scope.id,
+                *paired_record_index,
+                paired_class_tag,
+                FaceSourceType::Settings,
+            ) {
                 continue;
             }
             let Some(source_reference_offsets) = parse_face_source_carrier_prefix(
+                ctx,
                 bytes,
                 *carrier_byte_offset,
+                *paired_byte_offset,
                 scope.record_index,
-                layout,
-            ) else {
+            )?
+            else {
                 continue;
             };
+            let pair_count = face_source_profile_pair_count(types, scope, |record| {
+                reference_headers
+                    .iter()
+                    .flatten()
+                    .find(|header| header.record_index == record)
+                    .map(|header| header.class_tag)
+            });
+            if pair_count != Some(source_reference_offsets.len()) {
+                continue;
+            }
             let parsed_source_members = source_reference_offsets.into_iter()
                 .map(|(offset, source_record_index)| -> Result<Option<_>, CodecError> {
                     let Some(source_byte_offset) = carrier_byte_offset.checked_add(indexed_header::LEN).and_then(|at| records.first_at_or_after(at, source_record_index)) else { return Ok(None); };
                     let Some((source_class_tag, _)) =
                         lp_ascii_filtered_view(bytes, source_byte_offset, 3..=3, u8::is_ascii_digit) else { return Ok(None); };
+                    let source_class = source_class_tag;
+                    if !face_source_record_is_registered(types, &scope.id, source_record_index, source_class, FaceSourceType::Identity) { return Ok(None); }
                     let Some(member) = parse_extrude_identity_member(bytes, source_byte_offset) else { return Ok(None); };
                     let Ok(source_byte_offset_u64) = u64::try_from(source_byte_offset) else { return Ok(None); };
                     let Ok(offset) = u64::try_from(offset) else { return Ok(None); };
@@ -1176,88 +1215,193 @@ fn face_source_reference_headers<'a, 'r>(
         .collect()
 }
 
-/// Fixed source-reference and scalar layout for one face carrier class.
+/// Counted source-reference run followed by an opaque scalar lane.
 #[derive(Clone, Copy)]
 pub(crate) struct FaceSourceCarrierLayout {
     pub(crate) source_count: usize,
     pub(crate) source_reference_offset: usize,
-    scalar_offset: usize,
-    scalar_discriminator: u32,
-    paired_class_tag: &'static str,
+    pub(crate) scalar_offset: usize,
 }
 
-fn face_source_carrier_layout(class_tag: &str) -> Option<FaceSourceCarrierLayout> {
-    match class_tag {
-        "398" => Some(FaceSourceCarrierLayout {
-            source_count: 4,
-            source_reference_offset: 36,
-            scalar_offset: 80,
-            scalar_discriminator: 100,
-            paired_class_tag: "462",
-        }),
-        "394" => Some(FaceSourceCarrierLayout {
-            source_count: 2,
-            source_reference_offset: 36,
-            scalar_offset: 58,
-            scalar_discriminator: 109,
-            paired_class_tag: "311",
-        }),
-        "356" => Some(FaceSourceCarrierLayout {
-            source_count: 2,
-            source_reference_offset: 36,
-            scalar_offset: 58,
-            scalar_discriminator: 109,
-            paired_class_tag: "309",
-        }),
-        _ => None,
+#[derive(Clone, Copy)]
+pub(crate) enum FaceSourceType {
+    Scope,
+    Carrier,
+    Settings,
+    Identity,
+    SourceGroup,
+    Profile,
+}
+
+impl FaceSourceType {
+    fn matches(self, registration: &crate::records::entity_header::SegmentTypeData) -> bool {
+        let (guid, module, versions): (&str, &str, &[u32]) = match self {
+            Self::Scope => ("7AFA0A65-B53C-472C-ACA4-5C7C0A65001C", "Fusion", &[3]),
+            Self::Carrier => ("CAA55628-037B-4D01-9C74-26118F70B63E", "Fusion", &[0]),
+            Self::Settings => ("E75C86D6-76D8-4F1F-BC16-AB8CB74958B0", "Fusion", &[2, 3]),
+            Self::Identity => (
+                "C46D3EEB-40E1-43FA-83DC-9CB204335417",
+                "EntityTracking",
+                &[1],
+            ),
+            Self::SourceGroup => ("2CA5A1CD-C99B-4C9B-91AF-57989148E841", "Fusion", &[1]),
+            Self::Profile => ("4BD53E5A-0B3E-45E5-AE8B-02044306485A", "Fusion", &[0]),
+        };
+        registration.type_guid.as_str().eq_ignore_ascii_case(guid)
+            && registration.module == module
+            && versions.contains(&registration.version)
     }
 }
 
-pub(crate) fn face_source_carrier_spec(
+pub(crate) fn face_source_record_is_registered(
+    types: &[SegmentType],
+    source_id: &str,
+    record_index: u32,
     class_tag: &str,
-    paired_class_tag: &str,
-) -> Option<FaceSourceCarrierLayout> {
-    let layout = face_source_carrier_layout(class_tag)?;
-    (layout.paired_class_tag == paired_class_tag).then_some(layout)
+    role: FaceSourceType,
+) -> bool {
+    let Some(segment) = crate::ids::design_segment(source_id) else {
+        return false;
+    };
+    let mut matches = types.iter().filter(|row| {
+        crate::ids::design_segment(row.id()) == Some(segment)
+            && role.matches(row)
+            && row
+                .entities
+                .values()
+                .any(|entity| *entity == u64::from(record_index))
+    });
+    let Some(row) = matches.next() else {
+        return false;
+    };
+    if matches.next().is_some() {
+        return false;
+    }
+    let ordinal = types
+        .iter()
+        .filter(|other| {
+            crate::ids::design_segment(other.id()) == Some(segment)
+                && other.byte_offset < row.byte_offset
+        })
+        .count();
+    ordinal
+        .checked_add(256)
+        .is_some_and(|value| value.to_string() == class_tag)
+}
+
+pub(crate) fn face_source_profile_pair_count<'a>(
+    types: &[SegmentType],
+    scope: &DesignParameterScope,
+    mut class_for: impl FnMut(u32) -> Option<&'a str>,
+) -> Option<usize> {
+    let mut count = 0usize;
+    let mut references = scope.reference_members().values().peekable();
+    while let Some(group) = references.next() {
+        let Some(class) = class_for(*group) else {
+            continue;
+        };
+        if !face_source_record_is_registered(
+            types,
+            &scope.id,
+            *group,
+            class,
+            FaceSourceType::SourceGroup,
+        ) {
+            continue;
+        }
+        let member = **references.peek()?;
+        if !face_source_record_is_registered(
+            types,
+            &scope.id,
+            member,
+            class_for(member)?,
+            FaceSourceType::Profile,
+        ) {
+            return None;
+        }
+        count = count.checked_add(1)?;
+    }
+    (count != 0).then_some(count)
+}
+
+pub(crate) fn face_source_carrier_spec(source_count: usize) -> Option<FaceSourceCarrierLayout> {
+    (source_count != 0).then_some(())?;
+    Some(FaceSourceCarrierLayout {
+        source_count,
+        source_reference_offset: region_carrier::LEN,
+        scalar_offset: region_carrier::LEN
+            .checked_add(source_count.checked_mul(region_reference::LEN)?)?,
+    })
 }
 
 fn parse_face_source_carrier_prefix(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
+    end: usize,
     scope_record_index: u32,
-    layout: FaceSourceCarrierLayout,
-) -> Option<Vec<(usize, u32)>> {
-    if bytes
-        .get(start + indexed_header::LEN..start + indexed_header::LEN + 10)
-        .is_none_or(|lane| lane != [0; 10])
-        || marked_face_source_reference(bytes, start + 21)? != scope_record_index
-        || View::u32_le_at(bytes, start + 32)? != u32::try_from(layout.source_count).ok()?
-        || View::u32_le_at(bytes, start + layout.scalar_offset)? != layout.scalar_discriminator
-        || !View::f64_le_at(bytes, start + layout.scalar_offset + 4)?.is_finite()
-        || View::u32_le_at(bytes, start + layout.scalar_offset + 12)? != layout.scalar_discriminator
-    {
-        return None;
+) -> Result<Option<Vec<(usize, u32)>>, CodecError> {
+    let layout = (|| {
+        if end > bytes.len() {
+            return None;
+        }
+        let remaining = end.checked_sub(
+            start
+                .checked_add(region_carrier::LEN)?
+                .checked_add(region_scalar::LEN)?,
+        )?;
+        let count = View::u32_le_at(bytes, start.checked_add(region_carrier::IDENTITY_COUNT)?)?;
+        let count = bounded_len(u64::from(count), region_reference::LEN, remaining)?;
+        let layout = face_source_carrier_spec(count)?;
+        let scalar = start.checked_add(layout.scalar_offset)?;
+        if bytes.get(
+            start.checked_add(region_carrier::ZERO_RUN_10)?
+                ..start.checked_add(region_carrier::OWNER_MARKER)?,
+        )? != [0; 10]
+            || marked_face_source_reference(
+                bytes,
+                start.checked_add(region_carrier::OWNER_MARKER)?,
+            )? != scope_record_index
+            || !View::f64_le_at(bytes, scalar.checked_add(region_scalar::SCALAR)?)?.is_finite()
+            || View::u32_le_at(bytes, scalar.checked_add(region_scalar::DISCRIMINATOR)?)?
+                != View::u32_le_at(
+                    bytes,
+                    scalar.checked_add(region_scalar::REPEATED_DISCRIMINATOR)?,
+                )?
+        {
+            return None;
+        }
+        Some(layout)
+    })();
+    let Some(layout) = layout else {
+        return Ok(None);
+    };
+    let mut references = ctx.alloc_filled(
+        layout.source_count,
+        (0, 0),
+        "F3D sheet-metal source-region references",
+    )?;
+    for (ordinal, slot) in references.iter_mut().enumerate() {
+        let offset = start + layout.source_reference_offset + ordinal * region_reference::LEN;
+        let Some(record) = marked_face_source_reference(bytes, offset) else {
+            return Ok(None);
+        };
+        *slot = (offset, record);
     }
-    let mut references = Vec::new();
-    for ordinal in 0..layout.source_count {
-        let offset = start
-            .checked_add(layout.source_reference_offset)?
-            .checked_add(ordinal.checked_mul(11)?)?;
-        references.push((offset, marked_face_source_reference(bytes, offset)?));
-    }
-    Some(references)
+    Ok(Some(references))
 }
 
 fn marked_face_source_reference(bytes: &[u8], offset: usize) -> Option<u32> {
-    (bytes.get(offset) == Some(&1))
-        .then(|| {
-            bytes
-                .get(offset + 5..offset + 11)
-                .is_some_and(|tail| tail == [0; 6])
-                .then(|| View::u32_le_at(bytes, offset + 1))
-                .flatten()
-        })
-        .flatten()
+    if bytes.get(offset.checked_add(region_reference::MARKER)?) != Some(&1)
+        || bytes.get(
+            offset.checked_add(region_reference::ZERO_TRAILER)?
+                ..offset.checked_add(region_reference::LEN)?,
+        )? != [0; 6]
+    {
+        return None;
+    }
+    View::u32_le_at(bytes, offset.checked_add(region_reference::RECORD_INDEX)?)
+        .filter(|record| *record != 0)
 }
 
 /// Index recipes by their final record for each native recipe identity.
@@ -2564,6 +2708,21 @@ fn legacy_body_group_tail(
     Some((variant, tail, paired_class_tag.to_owned()))
 }
 
+fn construction_tracking_registry<'cache>(
+    scan: &ContainerScan,
+    bulk_name: &str,
+    registries: &'cache mut HashMap<String, Option<tracking_registration::Registry>>,
+) -> Result<Option<&'cache tracking_registration::Registry>, CodecError> {
+    let registry = match registries.entry(bulk_name.to_owned()) {
+        std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+        std::collections::hash_map::Entry::Vacant(slot) => slot.insert(
+            super::meta::metadata_for_bulk_stream(scan, bulk_name)?
+                .map(tracking_registration::Registry::new),
+        ),
+    };
+    Ok(registry.as_ref())
+}
+
 /// Bind exact typed records selected by construction-group trailing runs.
 pub(crate) fn bind_construction_operand_trailing_records(
     scan: &ContainerScan,
@@ -2571,6 +2730,7 @@ pub(crate) fn bind_construction_operand_trailing_records(
     headers: &[DesignRecordHeader],
 ) -> Result<(), CodecError> {
     let headers = indexed_operand_headers(headers);
+    let mut registries = HashMap::new();
     for group in groups {
         group
             .frame
@@ -2600,6 +2760,13 @@ pub(crate) fn bind_construction_operand_trailing_records(
                 continue;
             };
             if let Some(transform) = parse_construction_operand_transform(bytes, header) {
+                if transform.record_index().checked_add(1)
+                    != Some(transform.following_record_index())
+                    && !construction_tracking_registry(scan, &entry.name, &mut registries)?
+                        .is_some_and(|registry| registry.supports_transform(&transform))
+                {
+                    continue;
+                }
                 trailing_transforms.push(transform);
             } else if let Some(transform) = parse_construction_operand_dual_transform(bytes, header)
             {
@@ -2771,18 +2938,19 @@ fn parse_construction_operand_transform(
     header: &DesignRecordHeader,
 ) -> Option<crate::records::topology::construction::DesignConstructionOperandTransform> {
     let start = usize::try_from(header.byte_offset).ok()?;
-    if bytes.get(start + 11..start + 22)? != [0; 11]
-        || bytes.get(start + 150..start + 152)? != [1, 0]
+    if bytes.get(start + indexed_header::LEN..start + trailing_affine::MATRIX)?
+        != [0; trailing_affine::MATRIX - indexed_header::LEN]
+        || bytes.get(start + trailing_affine::TRAILER..start + trailing_affine::LEN)? != [1, 0]
     {
         return None;
     }
-    let transform_at = start.checked_add(22)?;
+    let transform_at = start.checked_add(trailing_affine::MATRIX)?;
     let transform = rigid_transform_at(bytes, transform_at)?;
-    let following_at = start.checked_add(152)?;
+    let following_at = start.checked_add(trailing_affine::LEN)?;
     let (following_class_tag, after_tag) =
         lp_ascii_filtered_view(bytes, following_at, 3..=3, u8::is_ascii_digit)?;
     let following_record_index = View::u32_le_at(bytes, after_tag)?;
-    if following_record_index != header.record_index.checked_add(1)? {
+    if following_record_index <= header.record_index {
         return None;
     }
     crate::records::topology::construction::DesignConstructionOperandTransform::try_new(
@@ -2851,13 +3019,18 @@ fn take_record_reference(bytes: &[u8], at: &mut usize) -> Option<(u32, u64)> {
     Some((u32::try_from(target).ok()?, u64::try_from(target_at).ok()?))
 }
 
+pub(crate) mod compact_owner;
+mod tracking_registration;
+
 /// Decode the persistent identity frame named by each construction-operand group.
 pub(crate) fn decode_construction_operand_identities(
     scan: &ContainerScan,
     groups: &[DesignConstructionOperandGroup],
     headers: &[DesignRecordHeader],
-) -> Result<Vec<DesignConstructionOperandIdentity>, CodecError> {
+) -> Result<(Vec<DesignConstructionOperandIdentity>, usize), CodecError> {
     let headers = indexed_operand_headers(headers);
+    let mut registries = HashMap::new();
+    let mut untyped = 0;
     let mut out = Vec::new();
     for group in groups {
         let Some(stream) = native_stream(&group.id) else {
@@ -2879,9 +3052,17 @@ pub(crate) fn decode_construction_operand_identities(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
+        let registry = construction_tracking_registry(scan, &entry.name, &mut registries)?;
         if let Some(mut identity) =
-            parse_construction_operand_identity(bytes, group, wrapper_header)
+            parse_construction_operand_identity(bytes, group, wrapper_header, registry)
         {
+            if identity
+                .tracking_path()
+                .is_some_and(|path| !registry.is_some_and(|registry| registry.supports(path)))
+            {
+                untyped += 1;
+                continue;
+            }
             identity.id = design_record_id(
                 &entry.name,
                 ":design-construction-operand-identity#",
@@ -2893,7 +3074,7 @@ pub(crate) fn decode_construction_operand_identities(
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     out.dedup_by(|left, right| left.id == right.id);
-    Ok(out)
+    Ok((out, untyped))
 }
 
 /// Collect one Design stream's lost-edge records in source byte order.
@@ -2984,12 +3165,18 @@ fn parse_construction_operand_identity(
     bytes: &[u8],
     group: &DesignConstructionOperandGroup,
     wrapper_header: &DesignRecordHeader,
+    registry: Option<&tracking_registration::Registry>,
 ) -> Option<DesignConstructionOperandIdentity> {
     let mut current_at = usize::try_from(wrapper_header.byte_offset).ok()?;
     let mut current_record_index = wrapper_header.record_index;
     let mut current_class_tag = wrapper_header.class_tag.clone();
     let mut chain_started = false;
     if let Some(transform) = parse_construction_operand_transform(bytes, wrapper_header) {
+        if transform.record_index().checked_add(1) != Some(transform.following_record_index())
+            && !registry.is_some_and(|registry| registry.supports_transform(&transform))
+        {
+            return None;
+        }
         current_at = usize::try_from(transform.following_byte_offset()).ok()?;
         current_record_index = transform.following_record_index();
         current_class_tag = transform.following_class_tag;
@@ -5110,11 +5297,38 @@ pub(crate) fn edge_recipe_structure_within(
     budget: &WorkBudget,
     program: &[i32],
 ) -> Result<Option<crate::records::topology::edge_recipe::DesignEdgeRecipeStructure>, CodecError> {
-    let Some(tail) = program.get(7..) else {
+    let Some(prelude_length) = edge_recipe_prelude_length(program, budget) else {
+        return Ok(None);
+    };
+    let Some(tail) = program.get(prelude_length..) else {
         return Ok(None);
     };
     let structure = edge_recipe_structure_tail(ctx, budget, tail)?;
     Ok(structure.filter(|_| !budget.exhausted()))
+}
+
+pub(in crate::design::decode) fn edge_recipe_prelude_length(
+    program: &[i32],
+    budget: &WorkBudget,
+) -> Option<usize> {
+    let tag = |word: i32| matches!(word, -1..=1);
+    if let Some([-1, -1, 2, 0, first, 1, second]) = program.get(..7) {
+        return (budget.charge_by(7) && tag(*first) && tag(*second)).then_some(7);
+    }
+    let [0, first_tag, count] = program.get(..3)? else {
+        return None;
+    };
+    let count = usize::try_from(*count).ok().filter(|count| *count != 0)?;
+    let length = count.checked_mul(2)?.checked_add(3)?;
+    if !tag(*first_tag) || length > program.len() || !budget.charge_by(length) {
+        return None;
+    }
+    for (ordinal, pair) in program[3..length].chunks_exact(2).enumerate() {
+        if pair[0] != i32::try_from(ordinal.checked_add(1)?).ok()? || !tag(pair[1]) {
+            return None;
+        }
+    }
+    Some(length)
 }
 
 /// Decode the alternate two-clause edge-recipe grammar owned by `SurfacePatch`.
@@ -5238,7 +5452,7 @@ fn edge_recipe_structure_tail(
     if side_count == 0 {
         return Ok(None);
     }
-    let Some(delimited) = recipe_delimiter(remaining) else {
+    let Some(delimited) = edge_recipe_delimiter(remaining) else {
         return Ok(None);
     };
     remaining = delimited;
@@ -5246,9 +5460,10 @@ fn edge_recipe_structure_tail(
     for RecipeSideSequence {
         sides,
         remaining: tail,
-    } in edge_recipe_side_sequences(ctx, budget, remaining, side_count)?
+    } in
+        edge_recipe_side_sequences(ctx, budget, remaining, side_count, RecipeSideGrammar::Edge)?
     {
-        if !matches!(tail, [] | [-1 | 0]) {
+        if !matches!(tail, [-1..=1]) {
             continue;
         }
         if structure.is_some() {
@@ -5270,6 +5485,7 @@ fn edge_recipe_side_sequences<'w>(
     budget: &WorkBudget,
     words: &'w [i32],
     side_count: usize,
+    grammar: RecipeSideGrammar,
 ) -> Result<Vec<RecipeSideSequence<'w>>, CodecError> {
     let _depth = ctx.enter_nested("f3d recipe side recursion")?;
     if !budget.charge() {
@@ -5282,10 +5498,10 @@ fn edge_recipe_side_sequences<'w>(
         }]);
     }
     let mut out = Vec::new();
-    for (side, tail) in edge_recipe_counted_side_candidates(budget, words) {
+    for (side, tail) in edge_recipe_counted_side_candidates(budget, words, grammar) {
         let remaining = if side_count == 1 {
             tail
-        } else if let Some(remaining) = recipe_delimiter(tail) {
+        } else if let Some(remaining) = grammar.delimiter(tail) {
             remaining
         } else {
             continue;
@@ -5293,7 +5509,7 @@ fn edge_recipe_side_sequences<'w>(
         for RecipeSideSequence {
             sides: mut following,
             remaining: tail,
-        } in edge_recipe_side_sequences(ctx, budget, remaining, side_count - 1)?
+        } in edge_recipe_side_sequences(ctx, budget, remaining, side_count - 1, grammar)?
         {
             if !budget.charge() {
                 return Ok(Vec::new());
@@ -5308,11 +5524,61 @@ fn edge_recipe_side_sequences<'w>(
     Ok(out)
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RecipeSideGrammar {
+    Edge,
+    Face,
+}
+
+impl RecipeSideGrammar {
+    fn delimiter(self, words: &[i32]) -> Option<&[i32]> {
+        match self {
+            Self::Edge => edge_recipe_delimiter(words),
+            Self::Face => recipe_delimiter(words),
+        }
+    }
+}
+
+fn edge_recipe_delimiter(words: &[i32]) -> Option<&[i32]> {
+    matches!(words.first(), Some(-1..=1)).then(|| &words[1..])
+}
+
 fn recipe_delimiter(words: &[i32]) -> Option<&[i32]> {
     matches!(words.first(), Some(-1 | 0)).then(|| &words[1..])
 }
 
-fn complete_recipe_payload_prefix(prefix: &[i32]) -> bool {
+fn complete_recipe_payload_prefix(budget: &WorkBudget, prefix: &[i32]) -> bool {
+    if prefix == [0] {
+        return true;
+    }
+    if prefix.is_empty() {
+        return false;
+    }
+    let mut pending = vec![prefix];
+    while let Some(remaining) = pending.pop() {
+        if remaining.is_empty() {
+            return true;
+        }
+        if !budget.charge_by(remaining.len()) {
+            return false;
+        }
+        let Some(at) = remaining.iter().position(|word| *word < 0) else {
+            continue;
+        };
+        if remaining[at] != -1 {
+            continue;
+        }
+        if at >= 1 && remaining.get(at + 1..at + 4) == Some(&[0, 0, -1]) {
+            pending.push(&remaining[at + 4..]);
+        }
+        if at >= 4 && remaining.get(at - 3..at) == Some(&[0, 0, 0]) {
+            pending.push(&remaining[at + 1..]);
+        }
+    }
+    false
+}
+
+fn complete_face_recipe_payload_prefix(prefix: &[i32]) -> bool {
     if prefix == [0] {
         return true;
     }
@@ -5339,6 +5605,7 @@ fn complete_recipe_payload_prefix(prefix: &[i32]) -> bool {
 fn edge_recipe_counted_side_candidates<'w>(
     budget: &WorkBudget,
     words: &'w [i32],
+    grammar: RecipeSideGrammar,
 ) -> Vec<(DesignTopologyRecipeSide, &'w [i32])> {
     let Some(field_count) = words
         .first()
@@ -5347,7 +5614,7 @@ fn edge_recipe_counted_side_candidates<'w>(
     else {
         return Vec::new();
     };
-    if field_count.get() < 2 {
+    if grammar == RecipeSideGrammar::Face && field_count.get() < 2 {
         return Vec::new();
     }
     let Some(scalar_count) = usize::try_from(field_count.get())
@@ -5359,7 +5626,7 @@ fn edge_recipe_counted_side_candidates<'w>(
     let Some(&header_value) = words.get(1) else {
         return Vec::new();
     };
-    let Some(mut remaining) = words.get(2..).and_then(recipe_delimiter) else {
+    let Some(mut remaining) = words.get(2..).and_then(|tail| grammar.delimiter(tail)) else {
         return Vec::new();
     };
     // Each scalar consumes at least one remaining word; a larger count is
@@ -5373,7 +5640,7 @@ fn edge_recipe_counted_side_candidates<'w>(
             return Vec::new();
         };
         scalars.push(scalar);
-        let Some(tail) = recipe_delimiter(tail) else {
+        let Some(tail) = grammar.delimiter(tail) else {
             return Vec::new();
         };
         remaining = tail;
@@ -5384,12 +5651,18 @@ fn edge_recipe_counted_side_candidates<'w>(
         if !budget.charge_by(entry_count_at + 1) {
             return Vec::new();
         }
-        if !complete_recipe_payload_prefix(&remaining[..entry_count_at]) {
+        let prefix = &remaining[..entry_count_at];
+        let complete_prefix = match grammar {
+            RecipeSideGrammar::Edge => complete_recipe_payload_prefix(budget, prefix),
+            RecipeSideGrammar::Face => complete_face_recipe_payload_prefix(prefix),
+        };
+        if !complete_prefix {
             continue;
         }
         let candidate = (|| {
             let payload_entry_count = u32::try_from(*remaining.get(entry_count_at)?).ok()?;
-            if entry_count_at != 1 && payload_entry_count == 0 {
+            if grammar == RecipeSideGrammar::Face && entry_count_at != 1 && payload_entry_count == 0
+            {
                 return None;
             }
             let payload_len = usize::try_from(payload_entry_count).ok()?.checked_mul(8)?;
@@ -5450,7 +5723,7 @@ pub(crate) fn face_recipe_structure_within(
     for RecipeSideSequence {
         sides,
         remaining: tail,
-    } in edge_recipe_side_sequences(ctx, budget, remaining, 2)?
+    } in edge_recipe_side_sequences(ctx, budget, remaining, 2, RecipeSideGrammar::Face)?
     {
         let postlude = match tail {
             [] | [-1 | 0] => None,

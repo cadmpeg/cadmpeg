@@ -21,7 +21,7 @@ cadmpeg_core::named_optional_field!(
 pub(crate) enum DesignThreadForm {
     /// Standard prefix, construction marker, and trailer layout.
     Standard,
-    /// Compact prefix, construction marker, and trailer layout.
+    /// Compact construction with an optional reference to its owning Hole scope.
     Compact(Option<Located<NonZeroU32>>),
     /// Direct standard prefix with the legacy compact scalar and trailer lanes.
     StandardLegacy,

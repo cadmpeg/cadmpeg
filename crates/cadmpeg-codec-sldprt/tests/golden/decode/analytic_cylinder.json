@@ -1,169 +1,34 @@
 {
   "ir": {
     "decode_depth": "full",
-    "ir_version": "10",
+    "ir_version": "11",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
       "assembly_joints": [],
       "attributes": [],
-      "bodies": [
-        {
-          "id": "sldprt:brep:body#0",
-          "kind": "solid",
-          "regions": [
-            "sldprt:brep:region#0"
-          ]
-        }
-      ],
-      "coedges": [
-        {
-          "edge": "sldprt:brep:edge#40",
-          "id": "sldprt:brep:coedge#30",
-          "owner_loop": "sldprt:brep:loop#20",
-          "pcurves": [
-            {
-              "pcurve": "sldprt:brep:pcurve#cylinder:30"
-            }
-          ],
-          "radial_next": "sldprt:brep:coedge#30",
-          "sense": "forward"
-        }
-      ],
-      "configurations": [
-        {
-          "active": true,
-          "bodies": [
-            "sldprt:brep:body#0"
-          ],
-          "id": "sldprt:model:configuration#partition:0",
-          "name": "Config-0",
-          "ordinal": 0,
-          "source_index": 0
-        }
-      ],
-      "curves": [
-        {
-          "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "center": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "circle",
-            "radius": 1000.0,
-            "ref_direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            }
-          },
-          "id": "sldprt:brep:curve#70"
-        }
-      ],
+      "bodies": [],
+      "coedges": [],
+      "configurations": [],
+      "curves": [],
       "drawings": [],
-      "edges": [
-        {
-          "carrier": {
-            "curve": "sldprt:brep:curve#70"
-          },
-          "end": "sldprt:brep:vertex#50",
-          "id": "sldprt:brep:edge#40",
-          "start": "sldprt:brep:vertex#50"
-        }
-      ],
-      "faces": [
-        {
-          "id": "sldprt:brep:face#10",
-          "loops": {
-            "classification": "unspecified",
-            "loops": [
-              "sldprt:brep:loop#20"
-            ]
-          },
-          "sense": "forward",
-          "shell": "sldprt:brep:shell#0",
-          "surface": "sldprt:brep:surf#10"
-        }
-      ],
+      "edges": [],
+      "faces": [],
       "features": [],
-      "loops": [
-        {
-          "boundary": {
-            "coedges": [
-              "sldprt:brep:coedge#30"
-            ],
-            "kind": "ring"
-          },
-          "face": "sldprt:brep:face#10",
-          "id": "sldprt:brep:loop#20"
-        }
-      ],
+      "loops": [],
       "occurrences": [],
       "parameters": [],
-      "pcurves": [
-        {
-          "geometry": {
-            "direction": {
-              "u": 1.0,
-              "v": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "u": 0.0,
-              "v": 0.0
-            }
-          },
-          "id": "sldprt:brep:pcurve#cylinder:30",
-          "metadata": {
-            "form": {},
-            "source": "general"
-          }
-        }
-      ],
+      "pcurves": [],
       "pmi": [],
-      "points": [
-        {
-          "id": "sldprt:brep:point#60",
-          "position": {
-            "x": -1000.0,
-            "y": 0.0,
-            "z": 0.0
-          }
-        }
-      ],
+      "points": [],
       "presentation_documents": [],
       "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
       "product_definitions": [],
-      "regions": [
-        {
-          "body": "sldprt:brep:body#0",
-          "id": "sldprt:brep:region#0",
-          "shells": [
-            "sldprt:brep:shell#0"
-          ]
-        }
-      ],
+      "regions": [],
       "semantic_annotations": [],
-      "shells": [
-        {
-          "id": "sldprt:brep:shell#0",
-          "members": [
-            {
-              "id": "sldprt:brep:face#10",
-              "kind": "face"
-            }
-          ],
-          "region": "sldprt:brep:region#0"
-        }
-      ],
+      "shells": [],
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
@@ -171,37 +36,9 @@
       "spatial_sketches": [],
       "spreadsheets": [],
       "subds": [],
-      "surfaces": [
-        {
-          "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "cylinder",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "radius": 1000.0,
-            "ref_direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            }
-          },
-          "id": "sldprt:brep:surf#10"
-        }
-      ],
+      "surfaces": [],
       "tessellations": [],
-      "vertices": [
-        {
-          "id": "sldprt:brep:vertex#50",
-          "point": "sldprt:brep:point#60"
-        }
-      ],
+      "vertices": [],
       "view_presentations": []
     },
     "native": {
@@ -233,17 +70,12 @@
       "attributes": {
         "active_parasolid_block": "Contents/Config-0-Partition",
         "block_count": "1",
-        "bmp_thumbnail_count": "0",
         "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "compound_stream_count": "0",
         "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "outer_version": "0x00000004",
-        "parasolid_description": "partition body",
         "parasolid_schema": "SCH_SW_33103_11000",
-        "png_preview_count": "0",
         "sldprt_configuration_feature_states_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_configuration_parameter_values_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_configuration_snapshot_synthesized": "sldprt:model:configuration#partition:0",
         "sldprt_native_configuration_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
         "sldprt_native_history_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
         "sldprt_native_parameter_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
@@ -305,12 +137,34 @@
     "losses": [
       {
         "code": {
-          "code": "topology.body-hierarchy-derived",
-          "kind": "topology_gauge_substituted",
+          "code": "geometry.parasolid-not-transferred",
+          "kind": "geometry_not_transferred",
+          "namespace": "sldprt",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "Parasolid B-rep geometry was not transferred: no partition/deltas stream resolved into a topology graph. 1 payload source(s) were enumerated, 1 carrying Parasolid streams.",
+        "severity": "blocking"
+      },
+      {
+        "code": {
+          "code": "topology.graph-not-transferred",
+          "kind": "topology_not_transferred",
+          "namespace": "sldprt",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built for this file.",
+        "severity": "blocking"
+      },
+      {
+        "code": {
+          "code": "material.metadata-not-transferred",
+          "kind": "material_not_transferred",
           "namespace": "sldprt",
           "scope": "namespaced"
         },
-        "message": "No body record was available; one body/region/shell hierarchy was derived.",
+        "message": "Body-bound appearances and tessellation were not transferred because no body graph exists.",
         "severity": "warning"
       },
       {
@@ -326,12 +180,13 @@
       },
       {
         "code": {
-          "code": "config.inferred-without-native",
-          "kind": "feature_history_retained",
+          "code": "topology.vertex-record-unresolved",
+          "kind": "topology_not_transferred",
           "namespace": "sldprt",
-          "scope": "namespaced"
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
-        "message": "1 configuration state(s) are inferred from geometry partitions without native configuration definitions.",
+        "message": "2 referenced VERTEX record(s) lack a uniquely framed record with a verified owner class and IR-supported tolerance.",
         "severity": "warning"
       }
     ],
@@ -341,101 +196,23 @@
       "Parasolid body streams supply the typed topology and analytic carriers used by decode"
     ],
     "transfer": {
-      "geometry_transferred": true,
+      "geometry_transferred": false,
       "transfer": "full"
     }
   },
   "source_fidelity": {
     "annotations": {
       "exactness": {
-        "sldprt:brep:body#0": {
-          "entity": "derived",
+        "sldprt:file:block#8": {
+          "entity": "unknown",
           "scope": "entity"
-        },
-        "sldprt:brep:pcurve#cylinder:30": {
-          "entity": "derived",
-          "scope": "entity"
-        },
-        "sldprt:brep:region#0": {
-          "entity": "derived",
-          "scope": "entity"
-        },
-        "sldprt:brep:shell#0": {
-          "entity": "derived",
-          "scope": "entity"
-        },
-        "sldprt:brep:surf#10": {
-          "fields": {
-            "geometry.ref_direction": "derived"
-          },
-          "scope": "fields"
         }
       },
       "provenance": {
-        "sldprt:brep:body#0": {
-          "offset": 0,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "synthetic_grouping"
-        },
-        "sldprt:brep:coedge#30": {
-          "offset": 368,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_11"
-        },
-        "sldprt:brep:curve#70": {
-          "offset": 99,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "compact_curve"
-        },
-        "sldprt:brep:edge#40": {
-          "offset": 414,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_10"
-        },
-        "sldprt:brep:face#10": {
-          "offset": 297,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_0e"
-        },
-        "sldprt:brep:loop#20": {
-          "offset": 336,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_0f"
-        },
-        "sldprt:brep:pcurve#cylinder:30": {
-          "offset": 0,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "derived_cylindrical_pcurve"
-        },
-        "sldprt:brep:point#60": {
-          "offset": 526,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_1d"
-        },
-        "sldprt:brep:region#0": {
-          "offset": 0,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "synthetic_grouping"
-        },
-        "sldprt:brep:shell#0": {
-          "offset": 0,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "synthetic_grouping"
-        },
-        "sldprt:brep:surf#10": {
-          "offset": 0,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "compact_surface"
-        },
-        "sldprt:brep:vertex#50": {
-          "offset": 474,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_12"
-        },
         "sldprt:file:block#8": {
-          "offset": 8,
+          "offset": 0,
           "stream": "Contents/Config-0-Partition",
-          "tag": "parasolid"
+          "tag": "parasolid_stream"
         },
         "sldprt:file:source-image#0": {
           "offset": 0,
@@ -450,7 +227,7 @@
           "data": "UFMAAAAOcGFydGl0aW9uIGJvZHkAABJTQ0hfU1dfMzMxMDNfMTEwMDAAMwBkAAAAAAAAAAAAAAAAAAArAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAP/AAAAAAAAA/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHwBGAAAAAAAAAAAAAAAAAAArAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAAAHwBHAAAAAAAAAAAAAAAAAAArAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAAADgAKAAAAAAAAwrySj5luAAAAAAAAABQAAABkKwAAAAAAAAAAAAAADwAUAAAAAAAAAB4ACgAVAA8AFQAAAAAAAAAfAAoAAAARAB4AAAAUAAAAHgAyAAAAKAAAAAArABEAHwAAABUAAAAfADMAAAApAAAAAC0AEAAoAAAAAAAAwrySj5luAAAAAAAAAAAARgAAAAAAEAApAAAAAAAAwrySj5luAAAAAAAAAAAARwAAAAAAEgAyAAAAAAAAAAAAAAAAADzCvJKPmW4AAAASADMAAAAAAAAAAAAAAAAAPcK8ko+ZbgAAAB0APAAAAAAAAAAAAAAAAL/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAdAD0AAAAAAAAAAAAAAAC/8AAAAAAAAAAAAAAAAAAAP/AAAAAAAAA=",
           "retention": "inline"
         },
-        "offset": 0,
+        "offset": 8,
         "stream": "Contents/Config-0-Partition"
       },
       "sldprt:file:source-image#0": {

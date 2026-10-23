@@ -17,7 +17,6 @@ use crate::records::sketch_geometry::SketchCurveGeometry;
 use crate::records::sketch_geometry::SketchCurveIdentity;
 use crate::records::sketch_geometry::SketchPoint;
 use crate::records::sketch_geometry::SketchSurface;
-use crate::records::sketch_geometry::SketchText;
 use crate::records::sketch_placement::DesignSketchPlacement;
 use crate::records::sketch_placement::DesignSketchVisibility;
 use crate::records::sketch_relations::SketchConstraintKind;
@@ -36,6 +35,47 @@ use cadmpeg_ir::sketches::SketchTextHorizontalAlignment as Horizontal;
 use cadmpeg_ir::sketches::SketchTextVerticalAlignment as Vertical;
 
 const EPS_POINT_PROJECTION: f64 = 1.0e-6;
+
+#[test]
+fn fixture_text_styles_project_only_representable_states() {
+    for case in crate::test_support::sketch_text::text_fixture_records() {
+        let text = case.decode();
+        let placement = DesignSketchPlacement {
+            frame: crate::records::sketch_placement::DesignSketchFrame::new(
+                0,
+                crate::records::sketch_placement::DesignSketchFrameForm::ScopeCompact,
+            )
+            .unwrap(),
+            id: "f3d:Design/BulkStream.dat:placement#0".into(),
+            scope_record_index: None,
+            entity_id: format!("Sketch_{}", text.owner_reference)
+                .try_into()
+                .unwrap(),
+            visibility: None,
+            class_tag: "256".to_owned().try_into().unwrap(),
+            record_index: 1,
+            paired_class_tag: "257".to_owned().try_into().unwrap(),
+        };
+        let (_, entities) = crate::test_support::with_decode_context(|ctx| {
+            project_sketch_design(
+                ctx,
+                &[placement],
+                &[],
+                &[],
+                &[],
+                &[text],
+                EPS_POINT_PROJECTION,
+            )
+        })
+        .unwrap();
+        assert_eq!(
+            entities.len(),
+            usize::from(case.neutral_state),
+            "{}",
+            case.label
+        );
+    }
+}
 
 #[test]
 fn sketch_text_alignment_ordinals_project_to_named_positions() {
@@ -179,36 +219,7 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
         coordinates: Point2::new(0.0, 0.0),
     })
     .unwrap();
-    let text = SketchText {
-        id: "f3d:BulkStream.dat:text#20".into(),
-        record_index: 20,
-        owner_reference: 42,
-        class_tag: crate::records::references::DesignClassTag::try_from("376".to_owned()).unwrap(),
-        class_version: 0,
-        byte_offset: 20,
-        entity_genesis: Some(0),
-        persistent_id: Some(20),
-        base_id: None,
-        text: "A".into(),
-        font_family: "Arial".into(),
-        font_weight: 400,
-        height: cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap(),
-        color: cadmpeg_ir::topology::Color::new(0.0, 0.0, 0.0, 1.0).expect("valid color"),
-        layout: crate::records::sketch_geometry::SketchTextLayout::TextexTag {
-            width_factor: cadmpeg_ir::scalar::NonNegativeReal::new(1.0).unwrap(),
-            alignment: Some(crate::records::sketch_geometry::SketchTextAlignment {
-                horizontal: 1,
-                vertical: 1,
-            }),
-            first_reference: None,
-            second_reference: None,
-            placement: Some(cadmpeg_ir::sketches::TextPlacement {
-                anchor: cadmpeg_ir::units::FinitePoint2::new(Point2::new(0.0, 0.0)).unwrap(),
-                rotation: cadmpeg_ir::scalar::Angle::new(0.0).unwrap(),
-            }),
-        },
-        raw_bytes: Vec::new().into(),
-    };
+    let text = crate::test_support::sketch_text::neutral_text_record();
     let relation = SketchRelation::try_new(crate::records::sketch_relations::SketchRelationDraft {
         id: "f3d:BulkStream.dat:relation#30".into(),
         record_index: 30,

@@ -60,6 +60,7 @@ use cadmpeg_ir::topology::{
 
 mod display_references;
 mod display_tables;
+mod extended_forms;
 mod nurbs_display;
 
 macro_rules! assign_unique_surface_owners {
@@ -748,6 +749,39 @@ fn persistent_surface_identity_rejects_ambiguous_face_or_mesh_keys() {
     ];
     assert!(assign_persistent_owners(&mut model, &face_identities, &bindings).is_empty());
     assert!(model.tessellations[0].faces.is_empty());
+}
+
+#[test]
+fn persistent_surface_identity_preserves_empty_zero_length_and_tail_order() {
+    let mut model = model_with_body();
+    let tails: [&[u32]; 5] = [&[], &[0], &[10], &[10, 8], &[8, 10]];
+    let mut identities = Vec::new();
+    let mut bindings = Vec::new();
+    let mut faces = Vec::new();
+    for (index, tail) in tails.into_iter().enumerate() {
+        let face = add_square_face(
+            &mut model,
+            &format!("tail-{index}"),
+            f64::from(u32::try_from(index).unwrap()) * 3.0,
+        );
+        let mesh = format!("synthetic:test:tessellation#tail-{index}");
+        model.tessellations.push(persistent_mesh(&mesh));
+        let identity = persistent_identity(7, 11, tail);
+        identities.push((face.clone(), identity.clone()));
+        bindings.push(PersistentFaceBinding {
+            tessellation: mesh,
+            identity,
+        });
+        faces.push(face);
+    }
+    set_shell_faces(&mut model, faces.clone());
+    assert_eq!(
+        assign_persistent_owners(&mut model, &identities, &bindings).len(),
+        5
+    );
+    for (mesh, expected) in model.tessellations.iter().zip(&faces) {
+        assert_eq!(mesh.faces.as_slice(), std::slice::from_ref(expected));
+    }
 }
 
 #[test]

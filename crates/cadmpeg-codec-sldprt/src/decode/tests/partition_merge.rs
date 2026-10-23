@@ -18,13 +18,18 @@ use crate::test_support::parasolid::bridge_owned;
 use crate::test_support::parasolid::entity51;
 use crate::test_support::parasolid::entity53_color;
 use crate::test_support::parasolid::face_color_definition;
+use crate::test_support::parasolid::framed_topology_fin;
+use crate::test_support::parasolid::framed_topology_loop;
+use crate::test_support::parasolid::framed_topology_vertex;
 use crate::test_support::parasolid::owned_triangle;
 use crate::test_support::parasolid::parasolid_with_body;
 use crate::test_support::parasolid::prefixed_edge_triangle_body;
 use crate::test_support::parasolid::suffix_prefixed_edge_triangle_body;
 use crate::test_support::parasolid::triangle_body;
 use crate::test_support::parasolid::triangle_body_with_overlapping_point;
+use crate::test_support::parasolid::tripled_coedge;
 use crate::test_support::parasolid::tripled_triangle_body;
+use crate::test_support::parasolid::tripled_world_point;
 use crate::test_support::parasolid::untyped_triangle;
 use crate::test_support::parasolid::world_point;
 use crate::test_support::parasolid::FACE_COLOR_DEFINITION_ID;
@@ -39,7 +44,7 @@ fn decode_merges_partition_and_deltas_records() {
         .position(|window| window == missing_point.as_slice())
         .expect("partition point record");
     drop(partition.drain(point_start..point_start + missing_point.len()));
-    let deltas = world_point(60, [2.0, 0.0, 0.0]);
+    let deltas = tripled_world_point(60, [2.0, 0.0, 0.0]);
     let f = sldprt_with_partition_and_deltas(&partition, &deltas);
     let mut cur = Cursor::new(f);
 
@@ -56,6 +61,362 @@ fn decode_merges_partition_and_deltas_records() {
         .points
         .iter()
         .any(|point| point.position().get().x == 2000.0));
+}
+
+#[test]
+fn conflicting_missing_partition_point_has_one_counted_loss() {
+    let mut partition = triangle_body();
+    let missing = world_point(60, [0.0, 0.0, 0.0]);
+    let at = partition
+        .windows(missing.len())
+        .position(|window| window == missing)
+        .unwrap();
+    drop(partition.drain(at..at + missing.len()));
+    let first = tripled_world_point(60, [2.0, 0.0, 0.0]);
+    let second = tripled_world_point(60, [3.0, 0.0, 0.0]);
+    for metadata_fallback in [false, true] {
+        let mut partition = partition.clone();
+        if metadata_fallback {
+            partition.extend(entity51(1, 711, 712, &[10, 1, 1, 1, 1, 1]));
+        }
+        for records in [[&first, &second, &first], [&second, &first, &second]] {
+            let deltas: Vec<u8> = records.into_iter().flatten().copied().collect();
+            let result = SldprtCodec
+                .decode(
+                    &mut Cursor::new(sldprt_with_partition_and_deltas(&partition, &deltas)),
+                    &DecodeOptions::default(),
+                )
+                .unwrap();
+            assert!(!result.ir().model.points.iter().any(|point| {
+                let x = point.position().get().x;
+                x == 2000.0 || x == 3000.0
+            }));
+            let losses: Vec<_> = result
+                .report()
+                .losses
+                .iter()
+                .filter(|loss| loss.code.local_code() == "geometry.point-record-ambiguous")
+                .collect();
+            assert_eq!(losses.len(), 1);
+            assert!(losses[0].message.starts_with("1 referenced POINT"));
+            if metadata_fallback {
+                assert!(result
+                    .report()
+                    .losses
+                    .iter()
+                    .any(|loss| loss.code.local_code() == "topology.graph-not-transferred"));
+            }
+        }
+    }
+}
+
+#[test]
+fn unused_history_point_conflict_has_no_geometry_loss() {
+    let deltas = [
+        tripled_world_point(211, [2.0, 0.0, 0.0]),
+        tripled_world_point(211, [3.0, 0.0, 0.0]),
+    ]
+    .concat();
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_partition_and_deltas(&triangle_body(), &deltas)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(result.ir().model.points.len(), 3);
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "geometry.point-record-ambiguous"));
+}
+
+fn partition_missing_loop() -> Vec<u8> {
+    let mut partition = triangle_body();
+    let original = crate::test_support::parasolid::loop_head(20, 30, 10);
+    let at = partition
+        .windows(original.len())
+        .position(|window| window == original)
+        .unwrap();
+    drop(partition.drain(at..at + original.len()));
+    partition
+}
+
+fn partition_missing_middle_fin() -> Vec<u8> {
+    let mut partition = triangle_body();
+    let original = crate::test_support::parasolid::coedge(31, 20, 32, 51, 0, 41, false);
+    let at = partition
+        .windows(original.len())
+        .position(|window| window == original)
+        .unwrap();
+    drop(partition.drain(at..at + original.len()));
+    partition
+}
+
+fn partition_missing_first_fin() -> Vec<u8> {
+    let mut partition = triangle_body();
+    let original = crate::test_support::parasolid::coedge(30, 20, 31, 50, 0, 40, false);
+    let at = partition
+        .windows(original.len())
+        .position(|window| window == original)
+        .unwrap();
+    drop(partition.drain(at..at + original.len()));
+    partition
+}
+
+#[test]
+fn first_delta_fin_recovers_the_partition_face_head_loop() {
+    let fin = framed_topology_fin(30, [0, 20, 0, 31, 50, 0, 40, 0, 0], true, true, false);
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_partition_and_deltas(
+                &partition_missing_first_fin(),
+                &fin,
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().model.loops.len(), 1);
+    assert_eq!(result.ir().model.coedges.len(), 3);
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "topology.fin-record-ambiguous"));
+}
+
+#[test]
+fn conflicting_first_delta_fin_remains_referenced_on_both_decode_paths() {
+    let refs = [0, 20, 0, 31, 50, 0, 40, 0, 0];
+    let first = framed_topology_fin(30, refs, true, false, false);
+    let second = framed_topology_fin(30, refs, true, true, false);
+    for metadata_fallback in [false, true] {
+        let mut partition = partition_missing_first_fin();
+        if metadata_fallback {
+            partition.extend(entity51(1, 711, 712, &[10, 1, 1, 1, 1, 1]));
+        }
+        for records in [[&first, &second, &first], [&second, &first, &second]] {
+            let deltas: Vec<u8> = records.into_iter().flatten().copied().collect();
+            let result = SldprtCodec
+                .decode(
+                    &mut Cursor::new(sldprt_with_partition_and_deltas(&partition, &deltas)),
+                    &DecodeOptions::default(),
+                )
+                .unwrap();
+            assert!(result.ir().model.faces.is_empty());
+            let losses: Vec<_> = result
+                .report()
+                .losses
+                .iter()
+                .filter(|loss| loss.code.local_code() == "topology.fin-record-ambiguous")
+                .collect();
+            assert_eq!(losses.len(), 1);
+            assert!(losses[0].message.starts_with("1 referenced FIN"));
+            if metadata_fallback {
+                assert!(result
+                    .report()
+                    .losses
+                    .iter()
+                    .any(|loss| loss.code.local_code() == "topology.graph-not-transferred"));
+            }
+        }
+    }
+}
+
+#[test]
+fn missing_fin_closes_through_partition_loop_and_ring_context() {
+    let fin = framed_topology_fin(31, [0, 20, 0, 32, 51, 0, 41, 0, 0], true, true, false);
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_partition_and_deltas(
+                &partition_missing_middle_fin(),
+                &fin,
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().model.loops.len(), 1);
+    assert_eq!(result.ir().model.coedges.len(), 3);
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "topology.fin-record-ambiguous"));
+}
+
+#[test]
+fn conflicting_fin_framing_keeps_one_loss_through_empty_and_metadata_paths() {
+    let refs = [0, 20, 0, 32, 51, 0, 41, 0, 0];
+    let first = framed_topology_fin(31, refs, true, false, false);
+    let second = framed_topology_fin(31, refs, true, true, false);
+    for metadata_fallback in [false, true] {
+        let mut partition = partition_missing_middle_fin();
+        if metadata_fallback {
+            partition.extend(entity51(1, 711, 712, &[10, 1, 1, 1, 1, 1]));
+        }
+        for records in [[&first, &second, &first], [&second, &first, &second]] {
+            let deltas: Vec<u8> = records.into_iter().flatten().copied().collect();
+            let result = SldprtCodec
+                .decode(
+                    &mut Cursor::new(sldprt_with_partition_and_deltas(&partition, &deltas)),
+                    &DecodeOptions::default(),
+                )
+                .unwrap();
+            assert!(result.ir().model.faces.is_empty());
+            let losses: Vec<_> = result
+                .report()
+                .losses
+                .iter()
+                .filter(|loss| loss.code.local_code() == "topology.fin-record-ambiguous")
+                .collect();
+            assert_eq!(losses.len(), 1);
+            assert!(losses[0].message.starts_with("1 referenced FIN"));
+            if metadata_fallback {
+                assert!(result
+                    .report()
+                    .losses
+                    .iter()
+                    .any(|loss| loss.code.local_code() == "topology.graph-not-transferred"));
+            }
+        }
+    }
+}
+
+#[test]
+fn conflicting_first_partition_fin_retains_loop_reference_for_loss() {
+    let mut partition = triangle_body();
+    partition.extend(framed_topology_fin(
+        30,
+        [0, 20, 0, 31, 50, 0, 40, 0, 0],
+        false,
+        true,
+        false,
+    ));
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_partition_and_deltas(&partition, &[])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(result.ir().model.faces.is_empty());
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code.local_code() == "topology.fin-record-ambiguous")
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn unused_history_fin_conflict_has_no_topology_loss() {
+    let refs = [0, 21, 0, 33, 50, 0, 43, 0, 0];
+    let deltas = [
+        framed_topology_fin(33, refs, true, false, false),
+        framed_topology_fin(33, refs, true, true, false),
+    ]
+    .concat();
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_partition_and_deltas(&triangle_body(), &deltas)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().model.loops.len(), 1);
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "topology.fin-record-ambiguous"));
+}
+
+#[test]
+fn missing_loop_closes_against_partition_face_and_fin_before_history() {
+    let mut deltas = framed_topology_loop(20, 811, [0, 30, 10, 0], true, false);
+    deltas.extend(tripled_coedge(30, 77, 31, 50, 40));
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_partition_and_deltas(
+                &partition_missing_loop(),
+                &deltas,
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(result.report().geometry_transferred());
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().model.loops.len(), 1);
+    assert_eq!(result.ir().model.points.len(), 3);
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "topology.loop-record-ambiguous"));
+}
+
+#[test]
+fn conflicting_loop_node_ids_keep_one_loss_through_empty_and_metadata_paths() {
+    let first = framed_topology_loop(20, 811, [0, 30, 10, 0], true, false);
+    let second = framed_topology_loop(20, 812, [0, 30, 10, 0], true, false);
+    for metadata_fallback in [false, true] {
+        let mut partition = partition_missing_loop();
+        if metadata_fallback {
+            partition.extend(entity51(1, 711, 712, &[10, 1, 1, 1, 1, 1]));
+        }
+        for records in [[&first, &second, &first], [&second, &first, &second]] {
+            let deltas: Vec<u8> = records.into_iter().flatten().copied().collect();
+            let result = SldprtCodec
+                .decode(
+                    &mut Cursor::new(sldprt_with_partition_and_deltas(&partition, &deltas)),
+                    &DecodeOptions::default(),
+                )
+                .unwrap();
+            assert!(result.ir().model.loops.is_empty());
+            let losses: Vec<_> = result
+                .report()
+                .losses
+                .iter()
+                .filter(|loss| loss.code.local_code() == "topology.loop-record-ambiguous")
+                .collect();
+            assert_eq!(losses.len(), 1);
+            assert!(losses[0].message.starts_with("1 referenced LOOP"));
+            if metadata_fallback {
+                assert!(result
+                    .report()
+                    .losses
+                    .iter()
+                    .any(|loss| loss.code.local_code() == "topology.graph-not-transferred"));
+            }
+        }
+    }
+}
+
+#[test]
+fn unused_history_loop_conflict_has_no_topology_loss() {
+    let mut deltas = [
+        framed_topology_loop(21, 811, [0, 33, 10, 0], true, false),
+        framed_topology_loop(21, 812, [0, 33, 10, 0], true, false),
+    ]
+    .concat();
+    deltas.extend(tripled_coedge(33, 21, 33, 50, 43));
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_partition_and_deltas(&triangle_body(), &deltas)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().model.loops.len(), 1);
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "topology.loop-record-ambiguous"));
 }
 
 #[test]
@@ -579,4 +940,186 @@ fn decode_resolves_suffix_prefixed_edge_curve_with_high_byte_one() {
         curve.geometry,
         CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
     )));
+}
+
+fn partition_missing_vertex() -> Vec<u8> {
+    let mut bytes = triangle_body();
+    let original = framed_topology_vertex(51, 0, [0, 0, 0, 0, 61], None, 900, false, false);
+    let at = bytes
+        .windows(original.len())
+        .position(|window| window == original)
+        .unwrap();
+    drop(bytes.drain(at..at + original.len()));
+    bytes
+}
+
+#[test]
+fn unique_delta_vertex_fills_missing_current_identity() {
+    let history = framed_topology_vertex(51, 149, [0, 0, 0, 0, 61], None, 900, true, false);
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_partition_and_deltas(
+                &partition_missing_vertex(),
+                &history,
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().model.vertices.len(), 3);
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "topology.vertex-record-unresolved"));
+}
+
+#[test]
+fn conflicting_current_start_vertex_has_one_loss_on_both_decode_paths() {
+    let first = framed_topology_vertex(51, 149, [0, 0, 0, 0, 61], None, 900, true, false);
+    let second = framed_topology_vertex(51, 149, [0, 0, 0, 0, 61], None, 900, true, true);
+    for fallback in [false, true] {
+        let mut partition = partition_missing_vertex();
+        if fallback {
+            partition.extend(entity51(1, 711, 712, &[10, 1, 1, 1, 1, 1]));
+        }
+        for records in [[&first, &second, &first], [&second, &first, &second]] {
+            let history: Vec<u8> = records.into_iter().flatten().copied().collect();
+            let result = SldprtCodec
+                .decode(
+                    &mut Cursor::new(sldprt_with_partition_and_deltas(&partition, &history)),
+                    &DecodeOptions::default(),
+                )
+                .unwrap();
+            assert!(result.ir().model.faces.is_empty());
+            let losses: Vec<_> = result
+                .report()
+                .losses
+                .iter()
+                .filter(|loss| loss.code.local_code() == "topology.vertex-record-unresolved")
+                .collect();
+            assert_eq!(losses.len(), 1);
+            assert!(losses[0].message.starts_with("1 referenced VERTEX"));
+            if fallback {
+                assert!(result
+                    .report()
+                    .losses
+                    .iter()
+                    .any(|loss| loss.code.local_code() == "topology.graph-not-transferred"));
+            }
+        }
+    }
+}
+
+#[test]
+fn partition_vertex_precedence_ignores_ff_only_history_conflict() {
+    let history = [false, true, false]
+        .into_iter()
+        .flat_map(|ff| framed_topology_vertex(51, 149, [0, 0, 0, 0, 61], None, 900, true, ff))
+        .collect::<Vec<_>>();
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_partition_and_deltas(&triangle_body(), &history)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().model.vertices.len(), 3);
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "topology.vertex-record-unresolved"));
+}
+
+#[test]
+fn finite_vertex_tolerance_transfers_in_millimetres_and_nonpositive_is_counted() {
+    for tolerance in [0.0001, 0.0, -1.0, f64::MAX] {
+        let history =
+            framed_topology_vertex(51, 149, [0, 0, 0, 0, 61], Some(tolerance), 900, true, false);
+        let result = SldprtCodec
+            .decode(
+                &mut Cursor::new(sldprt_with_partition_and_deltas(
+                    &partition_missing_vertex(),
+                    &history,
+                )),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        if tolerance > 0.0 && tolerance.is_finite() && (tolerance * 1000.0).is_finite() {
+            assert_eq!(result.ir().model.faces.len(), 1);
+            let values: Vec<_> = result
+                .ir()
+                .model
+                .vertices
+                .iter()
+                .filter_map(|vertex| vertex.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get))
+                .collect();
+            assert_eq!(values.len(), 1);
+            assert!((values[0] - 0.1).abs() < f64::EPSILON);
+        } else {
+            assert!(result.ir().model.faces.is_empty());
+            assert!(result
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code.local_code() == "topology.vertex-record-unresolved"));
+        }
+    }
+}
+
+#[test]
+fn unused_history_vertex_conflict_has_no_topology_loss() {
+    let history = [false, true]
+        .into_iter()
+        .flat_map(|ff| framed_topology_vertex(211, 149, [0, 0, 0, 0, 61], None, 900, true, ff))
+        .collect::<Vec<_>>();
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_partition_and_deltas(&triangle_body(), &history)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "topology.vertex-record-unresolved"));
+}
+
+#[test]
+fn partition_vertex_survives_missing_point_until_delta_fill() {
+    let mut partition = triangle_body();
+    let missing = world_point(60, [0.0; 3]);
+    let at = partition
+        .windows(missing.len())
+        .position(|window| window == missing)
+        .unwrap();
+    drop(partition.drain(at..at + missing.len()));
+    let history = [
+        framed_topology_vertex(50, 149, [0, 0, 0, 0, 60], None, 900, true, false),
+        framed_topology_vertex(50, 149, [0, 0, 0, 0, 60], None, 900, true, true),
+        tripled_world_point(60, [2.0, 0.0, 0.0]),
+    ]
+    .concat();
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_partition_and_deltas(&partition, &history)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().model.vertices.len(), 3);
+    assert!(result
+        .ir()
+        .model
+        .points
+        .iter()
+        .any(|point| point.position().get().x == 2000.0));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "topology.vertex-record-unresolved"));
 }

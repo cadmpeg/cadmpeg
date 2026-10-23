@@ -188,10 +188,11 @@ impl Serialize for DesignParameterScope {
                 base_flange.base_flange_profile.as_ref()
             );
         }
-        if let DesignScopePayload::SurfacePatch(boundaries) = &self.payload {
-            if !boundaries.is_empty() {
-                emit!("surface_patch_boundaries", boundaries);
+        if let DesignScopePayload::SurfacePatch(patch) = &self.payload {
+            if !patch.boundaries.is_empty() {
+                emit!("surface_patch_boundaries", &patch.boundaries);
             }
+            emit_opt!("surface_patch_normal", patch.normal.as_ref());
         }
         emit_opt!("edge_flange_operation", self.edge_flange_operation());
         emit_opt!("hem_operation", self.hem_operation());

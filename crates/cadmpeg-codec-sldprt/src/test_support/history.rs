@@ -357,6 +357,7 @@ pub(crate) fn sldprt_with_nested_elliptical_sketch(body: &[u8]) -> Vec<u8> {
     sketch.extend(edge_use(40, 70));
     sketch.extend(vertex_use(50, 60));
     sketch.extend(world_point(60, [0.0, 2.0, 0.0]));
+    super::parasolid::complete_fixture_vertex_owners(&mut sketch);
 
     let mut file = sldprt_with_body(body);
     let mut payload = resolved_features_payload(&[2]);

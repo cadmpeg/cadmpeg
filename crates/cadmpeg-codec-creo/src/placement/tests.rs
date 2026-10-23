@@ -478,6 +478,92 @@ fn resolves_section_from_complete_local_frame_when_references_are_unresolved() {
 }
 
 #[test]
+fn parallel_reference_uses_only_a_unique_valid_owned_local_frame() {
+    let mut definition = blank_definition();
+    definition.identity = crate::feature::definitions::DefinitionIdentity::Parsed {
+        schema_id: std::num::NonZeroU32::new(7301),
+        owner_feature_id: Some(7301),
+    };
+    definition.parameter_frames = vec![FeatureParameterFrame {
+        kind: FeatureParameterFrameKind::LocalSystem,
+        body: Vec::new(),
+        decoded_values: Some(finite_frame([
+            0.0, 0.6, 0.8, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 7.0, -11.0, 13.0,
+        ])),
+        offset: 1,
+    }];
+    definition.section_3d = Some(FeatureSection3d {
+        sketch_plane_entity_id: Some(20001),
+        sketch_plane_flip: Some(BinaryFlag::Clear),
+        reference_planes: ReferencePlanes::Named(vec![20002]),
+        reference_plane_datum_geometry_id: Some(20002),
+        orientation: FeatureSectionOrientation::default(),
+        dimension_ids: Vec::new(),
+        offset: 100,
+    });
+    let datums = [
+        datum(20001, crate::axis::Axis::X, 0.0),
+        datum(20002, crate::axis::Axis::X, 1.0),
+    ];
+    let sources = PlacementSources {
+        datums: &datums,
+        surface_rows: &[],
+        model_planes: &[],
+        outline_planes: &[],
+        plane_envelopes: &[],
+        surface_parameters: &[],
+        geometry_tables: &[],
+        affected_ids: &[],
+    };
+    let expected = FeatureSectionTransform::new(
+        7301,
+        Some(7301),
+        [7.0, -11.0, 13.0],
+        [0.0, 0.6, 0.8],
+        [0.0, -0.8, 0.6],
+        100,
+    )
+    .expect("local fixture frame");
+    assert_eq!(
+        resolve(&[definition.clone()], &sources, &[]),
+        vec![expected]
+    );
+
+    let mut missing_owner = definition.clone();
+    missing_owner.identity = crate::feature::definitions::DefinitionIdentity::Parsed {
+        schema_id: std::num::NonZeroU32::new(7301),
+        owner_feature_id: None,
+    };
+    assert!(resolve(&[missing_owner], &sources, &[]).is_empty());
+
+    let mut missing_frame = definition.clone();
+    missing_frame.parameter_frames.clear();
+    assert!(resolve(&[missing_frame], &sources, &[]).is_empty());
+
+    let mut duplicate_frame = definition.clone();
+    duplicate_frame
+        .parameter_frames
+        .push(definition.parameter_frames[0].clone());
+    assert!(resolve(&[duplicate_frame], &sources, &[]).is_empty());
+
+    let mut incomplete = definition.clone();
+    incomplete.parameter_frames[0].decoded_values = None;
+    assert!(resolve(&[incomplete], &sources, &[]).is_empty());
+
+    for (x, z) in [
+        ([0.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+        ([0.0, 0.0, 1.0], [0.0, 0.0, 0.0]),
+        ([1.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
+    ] {
+        let mut invalid = definition.clone();
+        invalid.parameter_frames[0].decoded_values = Some(finite_frame([
+            x[0], x[1], x[2], 0.0, 0.0, 0.0, z[0], z[1], z[2], 7.0, -11.0, 13.0,
+        ]));
+        assert!(resolve(&[invalid], &sources, &[]).is_empty());
+    }
+}
+
+#[test]
 fn resolves_generated_section_from_declared_cap_pair() {
     let definition = FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {

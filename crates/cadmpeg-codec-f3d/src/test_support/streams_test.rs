@@ -1605,7 +1605,7 @@ pub(crate) fn generated_design_copy_paste_bodies_bulkstream() -> (Vec<u8>, Vec<(
     (out, records)
 }
 
-/// Add a compact one-cage `Form` scope and its cage-list carrier.
+/// Add a `Form` scope and its retained compact selection-group carrier.
 pub(super) fn generated_design_form_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     let (mut out, mut records) = generated_design_bulkstream();
     let scope_record = 1_400_u32;
@@ -1626,7 +1626,7 @@ pub(super) fn generated_design_form_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     out.extend_from_slice(&scope);
     records.push((u64::from(scope_record), scope_offset));
 
-    let cage_offset = u64::try_from(out.len()).expect("synthetic compact Form cage offset");
+    let cage_offset = u64::try_from(out.len()).expect("synthetic Form selection-group offset");
     let mut cage = vec![0_u8; 100];
     cage[0..4].copy_from_slice(&3_u32.to_le_bytes());
     cage[4..7].copy_from_slice(b"264");
@@ -1636,7 +1636,16 @@ pub(super) fn generated_design_form_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     cage[32..36].copy_from_slice(&1_u32.to_le_bytes());
     cage[36] = 1;
     cage[37..45].copy_from_slice(&u64::from(cage_object_record).to_le_bytes());
-    cage[45..49].copy_from_slice(&[0, 0, 0xfc, 0]);
+    cage[47..51].copy_from_slice(&252_u32.to_le_bytes());
+    cage[51..59].copy_from_slice(&0.25_f64.to_le_bytes());
+    cage[59..63].copy_from_slice(&252_u32.to_le_bytes());
+    cage[63] = 1;
+    cage[64..72].copy_from_slice(&u64::from(cage_record + 2).to_le_bytes());
+    cage[74] = 1;
+    cage[77] = 1;
+    cage[78..86].copy_from_slice(&u64::from(cage_record + 1).to_le_bytes());
+    cage[89] = 1;
+    cage[90..98].copy_from_slice(&u64::from(scope_record).to_le_bytes());
     out.extend_from_slice(&cage);
     indexed_header(&mut out, *b"261", cage_record);
     records.push((u64::from(cage_record), cage_offset));
