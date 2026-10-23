@@ -191,6 +191,34 @@ pub(crate) fn walk(payload: &[u8], resolved_count: Option<u32>) -> Result<ClassM
     })
 }
 
+/// The class-index map one configuration object stream ends with, when its
+/// walk reconciles with `resolved_count` (the leading u32 of the stream's
+/// `ResolvedFeatures`). That stream continues the map from this one, so its
+/// class tags name these indices. `None` when the walk does not reconcile:
+/// a map wrong from its first wrong decision on names wrong classes.
+pub(crate) fn class_index_map(
+    payload: &[u8],
+    resolved_count: u32,
+) -> Result<Option<std::collections::BTreeMap<u32, String>>, CodecError> {
+    let mut walker = Walker::new(payload, Some(i64::from(resolved_count)));
+    walker.run()?;
+    if walker.next != i64::from(resolved_count) {
+        return Ok(None);
+    }
+    Ok(Some(
+        walker
+            .known
+            .iter()
+            .filter_map(|(&index, &name)| Some((u32::try_from(index).ok()?, name.to_owned())))
+            .collect(),
+    ))
+}
+
+/// The map count a `ResolvedFeatures` stream opens with (see [`resolved_count`]).
+pub(crate) fn resolved_features_count(resolved: &[u8]) -> Option<u32> {
+    resolved_count(resolved)
+}
+
 /// One class declaration.
 #[derive(Debug, Clone, Copy)]
 struct Declaration<'a> {
