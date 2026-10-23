@@ -240,7 +240,11 @@ fn invalid_linked_companion_gives_up_only_its_pair_and_keeps_the_independent_pee
             .as_ptr(),
         original_buffer
     );
+    // The part helper already charged these records; moving them charges
+    // no retained bytes again (#215 §4.5, `max_retained_bytes`).
+    let available = ctx.retained_bytes_available();
     install_unknowns(&ctx, &mut document, records).expect("compose owned peer");
+    assert_eq!(ctx.retained_bytes_available(), available);
     assert_eq!(
         document
             .native

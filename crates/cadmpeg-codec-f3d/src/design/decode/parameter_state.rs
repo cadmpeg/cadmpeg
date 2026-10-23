@@ -551,7 +551,6 @@ pub(crate) fn install_unknowns(
                             "parameter state unknown composition storage overflows",
                         )
                     })?;
-                ctx.retain_bytes(u64_from_index(bytes), "parameter state unknown composition")?;
                 destination.try_reserve_exact(records.len()).map_err(|_| {
                     cadmpeg_core::decode::ResourceLimit::allocation_failed(
                         cadmpeg_core::decode::ResourceDimension::RetainedBytes,
