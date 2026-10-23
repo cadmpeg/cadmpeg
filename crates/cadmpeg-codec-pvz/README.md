@@ -12,7 +12,8 @@ Support: L2 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-s
 
 The codec is read-only. It detects a package by its `.pvs` member, lists every
 member with its role and leading signature, and classifies the package dialect
-from the `.pvs` signature. Decode reads the `.pvs` member, in its binary or XML
+from the generation the `.pvs` member declares: its binary signature or the
+`version` attribute of its XML root. Decode reads the `.pvs` member, in its binary or XML
 form, into product definitions and the expanded occurrence tree, and reads each
 `.ol` member a definition names into one body. The body holds the neutral
 B-rep of the member's exact-geometry stream, and the member's tessellations and
@@ -55,7 +56,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 | Evidence | Confidence |
 | --- | --- |
-| The first ZIP member is a `.pvs` member that opens with a known structure signature | High |
+| The first ZIP member is a `.pvs` member that declares a known generation, in the binary or the XML form | High |
 | The ZIP names a `.pvs` member elsewhere | Medium |
 | Any other ZIP | Low |
 
@@ -68,6 +69,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 - [Repository][repo]
 
 Requires Rust 1.88 or later. Licensed under Apache-2.0.
+
+Format knowledge draws on openpvz-rs by Calum Knott (MIT).
 
 PTC, Creo, Creo View, and other product names are trademarks of their
 respective owners. cadmpeg uses them only to identify the file formats this
