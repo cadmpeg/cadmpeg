@@ -346,7 +346,7 @@ fn parse_edge_use_candidates(buf: &[u8], off: usize) -> Vec<EdgeUse> {
 /// Coedge `00 11`: 21-byte body, no magic, `refs[9]` at body+2, marker at
 /// body+20. `refs[1]` = owning loop, `refs[3]` = next coedge, `refs[4]` = start
 /// vertex-use, `refs[5]` = twin coedge, `refs[6]` = edge-use.
-fn parse_coedge_candidates(buf: &[u8], off: usize) -> Vec<Coedge> {
+fn parse_coedge_candidates(buf: &[u8], off: usize) -> Vec<(Coedge, usize)> {
     let Some(p) = body_start(buf, off, 0x11) else {
         return Vec::new();
     };
@@ -362,12 +362,15 @@ fn parse_coedge_candidates(buf: &[u8], off: usize) -> Vec<Coedge> {
         buf.get(p + fin_body::SENSE).copied(),
     ) {
         if let Some(sense) = parse_sense(marker) {
-            out.push(Coedge {
-                attr,
-                refs,
-                sense,
-                offset: off,
-            });
+            out.push((
+                Coedge {
+                    attr,
+                    refs,
+                    sense,
+                    offset: off,
+                },
+                p + fin_body::LEN,
+            ));
         }
     }
     if let (Some(refs), Some(marker)) = (
@@ -375,12 +378,15 @@ fn parse_coedge_candidates(buf: &[u8], off: usize) -> Vec<Coedge> {
         buf.get(p + fin_delta::SENSE).copied(),
     ) {
         if let Some(sense) = parse_sense(marker) {
-            out.push(Coedge {
-                attr,
-                refs,
-                sense,
-                offset: off,
-            });
+            out.push((
+                Coedge {
+                    attr,
+                    refs,
+                    sense,
+                    offset: off,
+                },
+                p + fin_delta::LEN,
+            ));
         }
     }
     out.dedup();
@@ -509,6 +515,8 @@ pub(crate) struct Tables {
     loop_frames: HashMap<u16, RecordFrame>,
     edge_uses: HashMap<u16, EdgeUse>,
     coedges: HashMap<u16, Coedge>,
+    coedge_frames: HashMap<u16, RecordFrame>,
+    coedge_owners: HashMap<u16, HashSet<u16>>,
     vertex_uses: HashMap<u16, VertexUse>,
     points: HashMap<u16, Point>,
     point_frames: HashMap<u16, RecordFrame>,
@@ -545,6 +553,40 @@ impl Tables {
 
     pub(super) fn coedges(&self) -> &HashMap<u16, Coedge> {
         &self.coedges
+    }
+
+    pub(super) fn coedge_is_ambiguous(&self, attr: u16) -> bool {
+        self.coedge_frames
+            .get(&attr)
+            .is_some_and(|frame| frame.bytes.is_none())
+    }
+
+    fn merge_coedge_frame(
+        &mut self,
+        attr: u16,
+        frame: RecordFrame,
+        record: Option<Coedge>,
+        owners: HashSet<u16>,
+    ) {
+        if let Some(current) = self.coedge_frames.get(&attr) {
+            if current.partition && !frame.partition {
+                return;
+            }
+            if current.partition == frame.partition {
+                self.coedge_owners.entry(attr).or_default().extend(owners);
+            } else {
+                self.coedge_owners.insert(attr, owners);
+            }
+        } else {
+            self.coedge_owners.insert(attr, owners);
+        }
+        merge_record_frame(
+            &mut self.coedges,
+            &mut self.coedge_frames,
+            attr,
+            frame,
+            record,
+        );
     }
 
     #[cfg(test)]
@@ -595,6 +637,14 @@ impl Tables {
             deltas.loop_frames,
         );
         merge_missing(&mut self.edge_uses, deltas.edge_uses);
+        for (attr, frame) in deltas.coedge_frames {
+            let record = deltas.coedges.remove(&attr);
+            let owners = deltas.coedge_owners.remove(&attr).unwrap_or_default();
+            self.merge_coedge_frame(attr, frame, record, owners);
+        }
+        deltas
+            .coedges
+            .retain(|attr, _| !self.coedge_frames.contains_key(attr));
         merge_missing(&mut self.coedges, deltas.coedges);
         merge_missing(&mut self.vertex_uses, deltas.vertex_uses);
         merge_framed_records(
@@ -736,7 +786,7 @@ fn coedge_evidence<'a>(
                 .any(|next_candidate| next_candidate.refs[1] == owner)
         });
     let previous = candidate.refs[2];
-    let previous_valid = previous == 0
+    let previous_valid = previous <= 1
         || coedge_candidates.get(&previous).is_some_and(|candidates| {
             candidates.iter().any(|previous_candidate| {
                 previous_candidate.refs[3] == candidate.attr && previous_candidate.refs[1] == owner
@@ -922,6 +972,7 @@ fn scan_records(
     let mut loop_frames = Vec::new();
     let mut edge_candidates = CandidateMap::new();
     let mut coedge_candidates = CandidateMap::new();
+    let mut coedge_occurrences = Vec::new();
     let mut i = 0usize;
     while i + 14 <= body.len() {
         if body[i] != 0x00 {
@@ -946,7 +997,18 @@ fn scan_records(
                 }
             }
             0x10 => insert_candidates(&mut edge_candidates, parse_edge_use_candidates(body, i)),
-            0x11 => insert_candidates(&mut coedge_candidates, parse_coedge_candidates(body, i)),
+            0x11 => {
+                let frames = parse_coedge_candidates(body, i);
+                for (record, _) in &frames {
+                    coedge_candidates
+                        .entry(record.attr)
+                        .or_default()
+                        .push(record.clone());
+                }
+                if !frames.is_empty() {
+                    coedge_occurrences.push(frames);
+                }
+            }
             0x12 => {
                 if let Some(record) = parse_vertex_use(body, i) {
                     t.vertex_uses.insert(record.attr, record);
@@ -968,17 +1030,90 @@ fn scan_records(
         i += 1;
     }
 
-    for candidates in coedge_candidates.values() {
-        if let Some(record) = select_coedge(
-            candidates,
-            &loop_candidates,
-            &t.bridges,
-            &t.vertex_uses,
-            &edge_candidates,
-            &coedge_candidates,
-        ) {
-            t.coedges.insert(record.attr, record);
-        }
+    let (evidence_loops, evidence_bridges, evidence_vertices, evidence_edges, evidence_coedges) =
+        if deltas {
+            let mut loops = Vec::new();
+            let mut bridges = HashMap::new();
+            let mut vertices = HashMap::new();
+            let mut edges = CandidateMap::new();
+            let mut coedges = CandidateMap::new();
+            if let Some(base) = base {
+                loops.extend(base.loops.iter().filter_map(|(attr, record)| {
+                    base.loop_frames
+                        .get(attr)
+                        .is_some_and(|frame| frame.partition)
+                        .then(|| record.clone())
+                }));
+                let owners: HashSet<_> = loops.iter().map(|record| record.refs[2]).collect();
+                bridges.extend(base.bridges.iter().filter_map(|(attr, record)| {
+                    owners.contains(attr).then(|| (*attr, record.clone()))
+                }));
+                coedges.extend(base.coedges.iter().filter_map(|(attr, record)| {
+                    base.coedge_frames
+                        .get(attr)
+                        .is_some_and(|frame| frame.partition)
+                        .then(|| (*attr, vec![record.clone()]))
+                }));
+                let starts: HashSet<_> = coedges
+                    .values()
+                    .flatten()
+                    .map(|record| record.refs[4])
+                    .collect();
+                let carriers: HashSet<_> = coedges
+                    .values()
+                    .flatten()
+                    .map(|record| record.refs[6])
+                    .collect();
+                vertices.extend(base.vertex_uses.iter().filter_map(|(attr, record)| {
+                    starts.contains(attr).then(|| (*attr, record.clone()))
+                }));
+                edges.extend(base.edge_uses.iter().filter_map(|(attr, record)| {
+                    carriers
+                        .contains(attr)
+                        .then(|| (*attr, vec![record.clone()]))
+                }));
+            }
+            (loops, bridges, vertices, edges, coedges)
+        } else {
+            (
+                loop_candidates,
+                t.bridges.clone(),
+                t.vertex_uses.clone(),
+                edge_candidates.clone(),
+                coedge_candidates,
+            )
+        };
+    for frames in coedge_occurrences {
+        let candidates: Vec<_> = frames.iter().map(|(record, _)| record.clone()).collect();
+        let attr = candidates[0].attr;
+        let record = select_coedge(
+            &candidates,
+            &evidence_loops,
+            &evidence_bridges,
+            &evidence_vertices,
+            &evidence_edges,
+            &evidence_coedges,
+        );
+        let bytes = record.as_ref().and_then(|selected| {
+            frames
+                .iter()
+                .find(|(record, _)| record == selected)
+                .map(|(_, end)| body[selected.offset..*end].to_vec())
+        });
+        let owners = if let Some(record) = &record {
+            HashSet::from([record.refs[1]])
+        } else {
+            candidates.iter().map(|record| record.refs[1]).collect()
+        };
+        t.merge_coedge_frame(
+            attr,
+            RecordFrame {
+                partition: !deltas,
+                bytes,
+            },
+            record,
+            owners,
+        );
     }
     for candidates in edge_candidates.into_values() {
         if let Some(record) = select_edge_use(&candidates, &t.coedges, curve_attrs) {
@@ -990,10 +1125,18 @@ fn scan_records(
         let first = record.refs[1];
         let owner_exists = t.bridges.contains_key(&owner)
             || base.is_some_and(|base| base.bridges.contains_key(&owner));
-        let first_coedge = base
-            .and_then(|base| base.coedges.get(&first))
-            .or_else(|| t.coedges.get(&first));
-        if owner_exists && first_coedge.is_some_and(|coedge| coedge.refs[1] == record.attr) {
+        let first_owners = base
+            .and_then(|base| base.coedge_owners.get(&first))
+            .or_else(|| t.coedge_owners.get(&first));
+        let first_is_owned = first_owners.map_or_else(
+            || {
+                base.and_then(|base| base.coedges.get(&first))
+                    .or_else(|| t.coedges.get(&first))
+                    .is_some_and(|coedge| coedge.refs[1] == record.attr)
+            },
+            |owners| owners.contains(&record.attr),
+        );
+        if owner_exists && first_is_owned {
             let frame = RecordFrame {
                 partition: !deltas,
                 bytes: Some(body[record.offset..end].to_vec()),
@@ -1017,8 +1160,10 @@ mod tests {
         scan_deltas_with_curve_attrs_excluding, scan_with_curve_attrs_excluding, EdgeReferences,
         MAGIC,
     };
+    use crate::test_support::parasolid::framed_topology_fin;
     use crate::test_support::parasolid::framed_topology_loop;
     use cadmpeg_ir::topology::Sense;
+    use std::collections::HashMap;
     use std::collections::HashSet;
 
     fn merge_bridge(attr: u16, attributes_head: u16) -> super::Bridge {
@@ -1459,8 +1604,142 @@ mod tests {
         bytes
     }
 
-    fn delta_loops(bytes: &[u8], base: &super::Tables) -> super::Tables {
+    fn delta_topology(bytes: &[u8], base: &super::Tables) -> super::Tables {
         scan_deltas_with_curve_attrs_excluding(bytes, &HashSet::new(), &HashSet::new(), base)
+    }
+
+    fn partition_without_middle_fin() -> Vec<u8> {
+        let mut bytes = crate::test_support::parasolid::triangle_body();
+        let original = crate::test_support::parasolid::coedge(31, 20, 32, 51, 0, 41, false);
+        let at = bytes
+            .windows(original.len())
+            .position(|window| window == original)
+            .unwrap();
+        drop(bytes.drain(at..at + original.len()));
+        bytes
+    }
+
+    #[test]
+    fn fin_frame_selection_does_not_promote_history_to_current_evidence() {
+        let fin = framed_topology_fin(31, [0, 20, 30, 32, 51, 0, 0x2b40, 0, 0], true, false, false);
+        let support = [
+            framed_topology_loop(20, 811, [0, 31, 10, 0], true, false),
+            topology_edge_use(0x2b40, 0),
+            topology_vertex_use(51, 0),
+        ]
+        .concat();
+        for streams in [
+            vec![[fin.as_slice(), support.as_slice()].concat()],
+            vec![fin.clone(), support.clone()],
+            vec![support.clone(), fin.clone()],
+        ] {
+            let mut tables = scan(&topology_bridge(10, 20));
+            for stream in streams {
+                let delta = delta_topology(&stream, &tables);
+                tables.merge_deltas(delta, None);
+            }
+            assert!(!tables.coedges().contains_key(&31));
+            assert!(tables.coedge_is_ambiguous(31));
+        }
+    }
+
+    #[test]
+    fn fin_frame_evidence_accepts_both_null_previous_sentinels() {
+        let mut candidate = super::Coedge {
+            attr: 31,
+            refs: [0; 9],
+            sense: Sense::Forward,
+            offset: 0,
+        };
+        let bridges = HashMap::new();
+        let vertices = HashMap::new();
+        let edges = HashMap::new();
+        let coedges = HashMap::new();
+        for null in [0, 1] {
+            candidate.refs[2] = null;
+            let evidence =
+                super::coedge_evidence(&candidate, &[], &bridges, &vertices, &edges, &coedges);
+            assert!(evidence.previous);
+        }
+    }
+
+    #[test]
+    fn fin_conflicts_compare_every_pointer_sense_and_frame_across_stream_groupings() {
+        let refs = [0, 20, 0, 32, 51, 0, 41, 0, 0];
+        let first = framed_topology_fin(31, refs, true, false, false);
+        let mut variants = vec![
+            framed_topology_fin(31, refs, true, true, false),
+            framed_topology_fin(31, refs, false, false, false),
+            framed_topology_fin(31, refs, true, false, true),
+        ];
+        for slot in 0..refs.len() {
+            let mut changed = refs;
+            changed[slot] += 1;
+            variants.push(framed_topology_fin(31, changed, true, false, false));
+        }
+        for variant in variants {
+            let records = [&first, &variant, &first];
+            for order in [
+                [0, 1, 2],
+                [0, 2, 1],
+                [1, 0, 2],
+                [1, 2, 0],
+                [2, 0, 1],
+                [2, 1, 0],
+            ] {
+                for cuts in [0u8, 1, 2, 3] {
+                    let mut tables = scan(&partition_without_middle_fin());
+                    let mut stream = Vec::new();
+                    for (index, record) in order.into_iter().enumerate() {
+                        stream.extend(records[record]);
+                        if index == 2 || cuts & (1 << index) != 0 {
+                            let deltas = delta_topology(&stream, &tables);
+                            tables.merge_deltas(deltas, None);
+                            stream.clear();
+                        }
+                    }
+                    assert!(!tables.coedges().contains_key(&31));
+                    assert!(tables.coedge_is_ambiguous(31));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn identical_fin_frames_coalesce_with_partition_context() {
+        let bytes = framed_topology_fin(31, [0, 20, 0, 32, 51, 0, 41, 0, 0], true, true, false);
+        let mut tables = scan(&partition_without_middle_fin());
+        for stream in [&bytes, &[bytes.as_slice(), bytes.as_slice()].concat()] {
+            let deltas = delta_topology(stream, &tables);
+            tables.merge_deltas(deltas, None);
+        }
+        assert_eq!(tables.coedges()[&31].refs, [0, 20, 0, 32, 51, 0, 41, 0, 0]);
+        assert!(!tables.coedge_is_ambiguous(31));
+    }
+
+    #[test]
+    fn partition_fin_presence_and_conflicts_block_history() {
+        let partition = crate::test_support::parasolid::triangle_body();
+        let extra = framed_topology_fin(31, [1, 20, 0, 32, 51, 0, 41, 0, 0], false, false, false);
+        let mut current = scan(&partition);
+        let before = current.coedges()[&31].clone();
+        let history = delta_topology(&extra, &current);
+        current.merge_deltas(history, None);
+        assert_eq!(current.coedges()[&31], before);
+        for bytes in [
+            [partition.as_slice(), extra.as_slice()].concat(),
+            [extra.as_slice(), partition.as_slice()].concat(),
+        ] {
+            let mut tables = scan(&bytes);
+            assert!(tables.coedge_is_ambiguous(31));
+            let history = delta_topology(
+                &framed_topology_fin(31, [0, 20, 0, 32, 51, 0, 41, 0, 0], true, false, false),
+                &tables,
+            );
+            tables.merge_deltas(history, None);
+            assert!(!tables.coedges().contains_key(&31));
+            assert!(tables.coedge_is_ambiguous(31));
+        }
     }
 
     #[test]
@@ -1516,7 +1795,7 @@ mod tests {
                     for (index, record) in order.into_iter().enumerate() {
                         stream.extend(records[record]);
                         if index == 2 || cuts & (1 << index) != 0 {
-                            let deltas = delta_loops(&stream, &tables);
+                            let deltas = delta_topology(&stream, &tables);
                             tables.merge_deltas(deltas, None);
                             stream.clear();
                         }
@@ -1533,7 +1812,7 @@ mod tests {
         let bytes = framed_topology_loop(20, 811, [0, 30, 10, 0], true, true);
         let mut tables = scan(&partition_without_loop());
         for stream in [&bytes, &[bytes.as_slice(), bytes.as_slice()].concat()] {
-            let deltas = delta_loops(stream, &tables);
+            let deltas = delta_topology(stream, &tables);
             assert_eq!(deltas.loops().len(), 1);
             tables.merge_deltas(deltas, None);
         }
@@ -1547,7 +1826,7 @@ mod tests {
         let conflict = framed_topology_loop(20, 812, [0, 30, 10, 0], false, false);
         let mut tables = scan(&[partition.as_slice(), conflict.as_slice()].concat());
         assert!(tables.loop_is_ambiguous(20));
-        let delta = delta_loops(
+        let delta = delta_topology(
             &framed_topology_loop(20, 811, [0, 30, 10, 0], true, false),
             &tables,
         );
@@ -1575,7 +1854,7 @@ mod tests {
             framed_topology_loop(20, 812, [0, 30, 10, 0], true, false),
         ]
         .concat();
-        let deltas = delta_loops(&bytes, &tables);
+        let deltas = delta_topology(&bytes, &tables);
         assert!(deltas.loop_is_ambiguous(20));
         tables.merge_deltas(deltas, None);
         assert_eq!(tables.loops()[&20], before);

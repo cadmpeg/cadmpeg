@@ -475,6 +475,7 @@ pub(crate) struct Stats {
     pub(crate) unresolved_topology_points: usize,
     /// Referenced LOOP identities withheld because complete records conflict.
     pub(crate) unresolved_topology_loops: usize,
+    pub(crate) unresolved_topology_fins: usize,
     /// Canonical faces that no explicit body record claims.
     pub(crate) unclaimed_faces: usize,
     /// Faces on a support surface this codec does not type; emitted with an
@@ -643,6 +644,7 @@ struct WalkedFace {
     /// `(loop_attr, ordered_coedge_attrs)` in sibling order.
     loops: Vec<(u16, Vec<u16>)>,
     unresolved_loop: Option<u16>,
+    unresolved_fins: Vec<u16>,
 }
 
 /// Follow the sibling loop-head chain of a bridge and each loop's coedge ring,
@@ -998,6 +1000,7 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
     let mut loops = Vec::new();
     let mut loop_ref = bridge.refs[2];
     let mut unresolved_loop = None;
+    let mut unresolved_fins = Vec::new();
     let mut loop_guard = HashSet::new();
     while loop_ref != 0 {
         if !loop_guard.insert(loop_ref) {
@@ -1023,6 +1026,9 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
                 break;
             }
             let Some(ce) = t.coedges().get(&ce_ref) else {
+                if t.coedge_is_ambiguous(ce_ref) {
+                    unresolved_fins.push(ce_ref);
+                }
                 break;
             };
             if ce.refs[1] != loop_ref {
@@ -1046,6 +1052,7 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
         sense: bridge.sense,
         loops,
         unresolved_loop,
+        unresolved_fins,
     }
 }
 
@@ -1601,6 +1608,11 @@ fn decode_graph(
     out.stats.unresolved_topology_loops = faces
         .iter()
         .filter_map(|face| face.unresolved_loop)
+        .collect::<HashSet<_>>()
+        .len();
+    out.stats.unresolved_topology_fins = faces
+        .iter()
+        .flat_map(|face| face.unresolved_fins.iter().copied())
         .collect::<HashSet<_>>()
         .len();
 

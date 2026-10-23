@@ -2267,6 +2267,7 @@ fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
     target.stats.unresolved_face_colors += source.stats.unresolved_face_colors;
     target.stats.unresolved_topology_points += source.stats.unresolved_topology_points;
     target.stats.unresolved_topology_loops += source.stats.unresolved_topology_loops;
+    target.stats.unresolved_topology_fins += source.stats.unresolved_topology_fins;
     target.stats.unclaimed_faces += source.stats.unclaimed_faces;
     target.stats.synthetic_body_grouping |= source.stats.synthetic_body_grouping;
     Ok(())
@@ -3499,6 +3500,11 @@ fn append_topology_record_losses(
             stats.unresolved_topology_loops,
             SldprtLossCode::TopologyLoopRecordAmbiguous,
             "LOOP",
+        ),
+        (
+            stats.unresolved_topology_fins,
+            SldprtLossCode::TopologyFinRecordAmbiguous,
+            "FIN",
         ),
     ] {
         if count > 0 {

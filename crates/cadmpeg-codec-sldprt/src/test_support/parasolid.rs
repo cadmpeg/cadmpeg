@@ -907,6 +907,28 @@ pub(crate) fn tripled_coedge(
     b
 }
 
+pub(crate) fn framed_topology_fin(
+    attr: u16,
+    refs: [u16; 9],
+    tripled: bool,
+    first_of_type: bool,
+    reversed: bool,
+) -> Vec<u8> {
+    let mut bytes = vec![0, 0x11];
+    if first_of_type {
+        bytes.push(0xff);
+    }
+    be16(&mut bytes, attr);
+    for reference in refs {
+        be16(&mut bytes, reference);
+        if tripled {
+            bytes.push(1);
+        }
+    }
+    bytes.push(if reversed { 0x2d } else { 0x2b });
+    bytes
+}
+
 /// Edge-use `00 10`: `refs[3]` = support curve carrier (0 = none).
 pub(crate) fn edge_use(attr: u16, curve_attr: u16) -> Vec<u8> {
     edge_use_with_canonical(attr, 0, curve_attr)

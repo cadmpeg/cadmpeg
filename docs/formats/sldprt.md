@@ -1314,6 +1314,10 @@ cells. Equal owning-FACE and first-FIN pointers do not establish equal LOOP
 frames. A partition LOOP supplies the current record for its transmit index;
 companion deltas retain historical versions. A FIN has no node ID. Its nine pointers are attributes_groups, loop, forward, backward,
 vertex, other, edge, curve, and next_at_vx, followed by its sense.
+Complete FIN frames include the optional `ff`, transmit index, all nine pointer
+cells, and sense. Equal loop, vertex, and edge pointers do not establish equal
+FIN frames. A partition FIN supplies the current record for its transmit index;
+companion deltas retain historical versions.
 
 `loop_bare` has a 14-byte body: `loop_bare.attr at +0` (u16), `loop_bare.node_id at +2` (u32), `loop_bare.refs at +6` (u16[4]).
 

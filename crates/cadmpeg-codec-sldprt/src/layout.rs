@@ -279,6 +279,8 @@ pub(crate) mod fin_bare {
 /// Complete short-reference body; the type tag and optional first-of-type ff precede this body.
 /// ```
 pub(crate) mod fin_tripled {
+    /// Record length in bytes. Spec §4.
+    pub(crate) const LEN: usize = 30;
     /// Offset of `refs` (`bytes[27]`). Spec §4.
     pub(crate) const REFS: usize = 2;
     /// Offset of `sense` (`u8`). Spec §4.
