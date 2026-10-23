@@ -1411,6 +1411,24 @@ direction. The edge occurrence carries the wireframe use. A committed body
 graph has complete ownership and valid referenced indices. Recoverable
 non-manifold incidence remains attached and is reported.
 
+ISO 10303-42 derives the `cfs_faces` of an `ORIENTED_OPEN_SHELL` or an
+`ORIENTED_CLOSED_SHELL` as `conditional_reverse(orientation,
+shell_element.cfs_faces)`. With `orientation = FALSE`, each face of the base
+shell is used through `face_reversed`, the `ORIENTED_FACE` of that face with
+the opposite orientation. An `ORIENTED_FACE` derives its
+`bounds` as `conditional_reverse(orientation, face_element.bounds)`, so a
+reversed face also reverses every face bound, and a reversed face bound
+reverses the loop traversal. A reversed face use therefore reverses the
+oriented normal and the traversal of every bound together. Oriented-shell and
+oriented-face orientations compose by exclusive or over the chain from the
+shell occurrence to the base face.
+
+CADIR decision: the decoder applies the composed face reversal to the face
+`sense` and to the traversal of every loop of the face. The loop winding and
+the face `sense` then state the same oriented normal. A void of a
+`BREP_WITH_VOIDS` is an `ORIENTED_CLOSED_SHELL` with `orientation = FALSE`, so
+the CADIR void faces are the reverse of the base closed-shell faces.
+
 Connected face sets join through common edges or common vertices. Edge-based
 and shell-based wireframe models preserve their connected edge and vertex
 ownership. Each independent connected edge set or wire shell receives
