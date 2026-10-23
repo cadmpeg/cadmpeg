@@ -7,8 +7,13 @@ use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind};
 /// A lane holding one point marker at 150.
 fn lane(key: u64) -> FeatureInputLane {
     let id = format!("sldprt:feature-input:config-objects#{key}");
-    let mut marker =
-        SketchInputEntity::new(format!("marker-{key}"), &id, 0, 150, SketchInputKind::Point);
+    let mut marker = SketchInputEntity::new(
+        format!("sldprt:feature-input:sketch-entity#{key}:150"),
+        &id,
+        0,
+        150,
+        SketchInputKind::Point,
+    );
     marker.feature_ref = None;
     // The marker's bytes, as `SketchInputEntity::new` lays them out.
     let mut payload = vec![0; 512];
@@ -64,18 +69,11 @@ fn a_reemitted_lane_keeps_unchanged_coordinates_in_their_layout() {
     let coordinates =
         crate::resolved_features::markers::marker_coordinates(&payload, 150).expect("coordinates");
     assert_eq!(&payload[150 + 58..150 + 66], &coordinates[0].to_le_bytes());
-    let mut marker = SketchInputEntity::try_new(
-        "marker-4364".into(),
-        lane.id.clone(),
-        0,
-        150,
-        SketchInputKind::Point,
-        &payload,
-    )
-    .unwrap();
-    marker.feature_ref = None;
-    marker.coordinates_m = Some(coordinates);
-    lane.sketch_entities = vec![marker];
+    let mut markers =
+        crate::resolved_features::markers::admit_sketch_input_entities(&payload, &lane.id).unwrap();
+    markers[0].feature_ref = None;
+    markers[0].coordinates_m = Some(coordinates);
+    lane.sketch_entities = markers;
     lane.classes = crate::resolved_features::names::class_declarations(&payload, &lane.id).unwrap();
     lane.native_payload = payload.clone().into();
     let written = crate::writer::resolved_feature_payload(&lane, &[], &[]).unwrap();

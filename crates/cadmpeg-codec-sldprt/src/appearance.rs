@@ -139,7 +139,7 @@ fn inline_definitions(
         return Ok(Vec::new());
     };
     let mut definitions = Vec::new();
-    for relative in 0..bytes.len().saturating_sub(1) {
+    for relative in 0..bytes.len() {
         let Some(tag) = View::u16_le_at(bytes, relative) else {
             break;
         };
