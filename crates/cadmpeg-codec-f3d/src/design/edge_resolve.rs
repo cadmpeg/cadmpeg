@@ -973,12 +973,27 @@ fn resolved_edge_group_with_transition_chain(
         }
         Ok(slots)
     };
-    let resolved_slots =
-        if exact_slots.is_some() || has_standard_recipe_operands || transition_state_id.is_none() {
-            exact_slots
-        } else {
-            transition_slots()?
-        };
+    let transition_complete_slots = match (
+        allow_edge_treatment_transition_chain,
+        treatment_radius,
+        identity_matches.as_deref(),
+    ) {
+        (true, Some(radius), Some(identities))
+            if exact_slots.is_none() && transition_state_id.is_some() =>
+        {
+            transition_complete_edge_group_candidates(&matched_operands, identities, radius)
+        }
+        _ => None,
+    };
+    let resolved_slots = exact_slots.or(transition_complete_slots);
+    let resolved_slots = if resolved_slots.is_some()
+        || has_standard_recipe_operands
+        || transition_state_id.is_none()
+    {
+        resolved_slots
+    } else {
+        transition_slots()?
+    };
     let Some(resolved_slots) = resolved_slots else {
         if !group.lost_edge_references.is_empty() {
             return lost_selection();
@@ -1503,6 +1518,67 @@ pub(super) fn radius_edge_group_candidates(
         }
     }
     Some(chain)
+}
+
+/// Resolve a treatment group whose identity members have no exact slot. The
+/// operation transition is the proof: every member identity carries the same
+/// transition edge set, every edge in that set blends at the group radius,
+/// every member's deleted predecessor edges are a nonempty subset of it, and
+/// the members' union is the whole set.
+fn transition_complete_edge_group_candidates(
+    operands: &[&DesignEdgeOperand],
+    identities: &[&DesignEdgeIdentityOperand],
+    radius: f64,
+) -> Option<Vec<i64>> {
+    if operands.is_empty()
+        || operands.len() != identities.len()
+        || !radius.is_finite()
+        || radius <= 0.0
+        || identities.iter().any(|identity| {
+            identity.resolved_edge_slot.is_some() || !identity.resolved_edge_slots.is_empty()
+        })
+    {
+        return None;
+    }
+    let tolerance = EPS_EDGE_RESOLVE_RADIUS_EDGE_GROUP_CANDIDATES_E9 * (1.0 + radius.abs());
+    let [first, rest @ ..] = identities else {
+        return None;
+    };
+    let transition = sorted_transition_slots(&first.transition_edge_candidates);
+    if transition.is_empty()
+        || rest.iter().any(|identity| {
+            sorted_transition_slots(&identity.transition_edge_candidates) != transition
+                || identity.treatment_radius_candidates != first.treatment_radius_candidates
+        })
+    {
+        return None;
+    }
+    let mut blended = first
+        .treatment_radius_candidates
+        .iter()
+        .filter(|candidate| (candidate.radius.get() - radius).abs() <= tolerance)
+        .map(|candidate| candidate.edge_slot)
+        .collect::<Vec<_>>();
+    blended.sort_unstable_by(Ord::cmp);
+    blended.dedup();
+    if blended != transition {
+        return None;
+    }
+    let mut union = Vec::new();
+    for operand in operands {
+        if operand.deleted_boundary_edge_slots.is_empty()
+            || operand
+                .deleted_boundary_edge_slots
+                .iter()
+                .any(|edge| transition.binary_search(edge).is_err())
+        {
+            return None;
+        }
+        union.extend(operand.deleted_boundary_edge_slots.iter().copied());
+    }
+    union.sort_unstable_by(Ord::cmp);
+    union.dedup();
+    (union == transition).then_some(union)
 }
 
 fn radius_edge_identity_group_candidates(

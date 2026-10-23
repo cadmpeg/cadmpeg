@@ -1,15 +1,130 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Edge-group candidate derivations over complete operand groups.
 
-use super::{group, recipe_edge_operand};
+use super::{group, identity, recipe_edge_operand};
 use crate::design::edge_resolve::{
     changed_reference_edge_group_candidates, deleted_reference_edge_group_candidates,
     partition_unique_incomplete_edge_group, resolved_hem_edge_group,
-    scope_partition_edge_group_candidates, unique_deleted_reference_assignment,
-    unique_edge_group_assignment, EdgeGroupMember,
+    scope_partition_edge_group_candidates, transition_complete_edge_group_candidates,
+    unique_deleted_reference_assignment, unique_edge_group_assignment, EdgeGroupMember,
 };
 use crate::records::topology::historical_context::DesignEdgeRecipeReferenceContext;
 use cadmpeg_ir::features::{EdgeSelection, FeatureId};
+
+fn transition_complete_group() -> (
+    [crate::records::topology::edge_identity::DesignEdgeOperand; 3],
+    [crate::records::topology::edge_identity::DesignEdgeIdentityOperand; 3],
+) {
+    let operands = [
+        recipe_edge_operand(10, &[], &[101, 102]),
+        recipe_edge_operand(11, &[], &[102, 103, 104]),
+        recipe_edge_operand(12, &[], &[104, 105]),
+    ];
+    let identities = [10, 11, 12].map(|index| {
+        identity(
+            index,
+            &[
+                (101, 0.35),
+                (102, 0.35),
+                (103, 0.35),
+                (104, 0.35),
+                (105, 0.35),
+            ],
+        )
+    });
+    (operands, identities)
+}
+
+#[test]
+fn transition_complete_group_selects_five_edges_covered_by_three_members() {
+    let (operands, mut identities) = transition_complete_group();
+    identities[1].transition_edge_candidates.reverse();
+    assert_eq!(
+        transition_complete_edge_group_candidates(
+            &operands.each_ref(),
+            &identities.each_ref(),
+            0.35
+        ),
+        Some(vec![101, 102, 103, 104, 105])
+    );
+}
+
+#[test]
+fn transition_complete_group_refuses_an_uncovered_edge() {
+    let (mut operands, identities) = transition_complete_group();
+    operands[2].deleted_boundary_edge_slots = vec![104];
+    assert_eq!(
+        transition_complete_edge_group_candidates(
+            &operands.each_ref(),
+            &identities.each_ref(),
+            0.35
+        ),
+        None
+    );
+}
+
+#[test]
+fn transition_complete_group_refuses_different_identity_transition_sets() {
+    let (operands, mut identities) = transition_complete_group();
+    identities[1].transition_edge_candidates = vec![101, 102, 103, 104];
+    assert_eq!(
+        transition_complete_edge_group_candidates(
+            &operands.each_ref(),
+            &identities.each_ref(),
+            0.35
+        ),
+        None
+    );
+}
+
+#[test]
+fn transition_complete_group_refuses_a_blend_radius_mismatch() {
+    let (operands, _) = transition_complete_group();
+    let identities = [10, 11, 12].map(|index| {
+        identity(
+            index,
+            &[
+                (101, 0.35),
+                (102, 0.35),
+                (103, 0.35),
+                (104, 0.35),
+                (105, 0.4),
+            ],
+        )
+    });
+    assert_eq!(
+        transition_complete_edge_group_candidates(
+            &operands.each_ref(),
+            &identities.each_ref(),
+            0.35
+        ),
+        None
+    );
+}
+
+#[test]
+fn transition_complete_group_refuses_exact_identity_slots() {
+    let (operands, mut identities) = transition_complete_group();
+    identities[1].resolved_edge_slot = Some(103);
+    assert_eq!(
+        transition_complete_edge_group_candidates(
+            &operands.each_ref(),
+            &identities.each_ref(),
+            0.35
+        ),
+        None
+    );
+    identities[1].resolved_edge_slot = None;
+    identities[1].resolved_edge_slots = vec![103, 104];
+    assert_eq!(
+        transition_complete_edge_group_candidates(
+            &operands.each_ref(),
+            &identities.each_ref(),
+            0.35
+        ),
+        None
+    );
+}
 
 fn changed_reference_context(edge: i64) -> DesignEdgeRecipeReferenceContext {
     serde_json::from_value(serde_json::json!({
