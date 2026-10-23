@@ -650,7 +650,7 @@ fn decode_with_table(
         &mut reach,
     )?;
 
-    let (reversed_curve_refs, forward_curve_refs) = classify_edge_curve_senses(records, &reach)?;
+    let (reversed_curve_refs, forward_curve_refs) = classify_edge_curve_senses(records, &reach);
 
     emit_carrier_records(
         &mut out,

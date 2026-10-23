@@ -828,7 +828,7 @@ fn keep_wire_edge(
 pub(super) fn classify_edge_curve_senses(
     records: &[Record],
     reach: &Reachable,
-) -> Result<(HashSet<i64>, HashSet<i64>), cadmpeg_core::CodecError> {
+) -> (HashSet<i64>, HashSet<i64>) {
     let mut reversed_curve_refs: HashSet<i64> = HashSet::new();
     let mut forward_curve_refs: HashSet<i64> = HashSet::new();
     for (curve, sense) in records
@@ -841,7 +841,7 @@ pub(super) fn classify_edge_curve_senses(
             Sense::Forward => forward_curve_refs.insert(curve),
         };
     }
-    Ok((reversed_curve_refs, forward_curve_refs))
+    (reversed_curve_refs, forward_curve_refs)
 }
 
 pub(super) fn ring_coedges(

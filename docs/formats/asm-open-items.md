@@ -271,9 +271,17 @@ the record grammar does not identify one construction.
 
 **Question.** How do the shift and scale of an `off_surf_int_cur` relate the curve parameter to the parameter of its base curve, and how does a reversed record sense change that relation?
 
-**Known.** `asm.md` §6.3 "**`off_surf_int_cur`**" stores base-surface U and V intervals, a base curve with its interval, and distance, shift, and scale doubles; it does not state the map that shift and scale define. `asm.md` §6.6 "An `intcurve` or `spline` record" states that a reversed intcurve parameterizes as the negation of its cache and keeps its support pcurves on the subtype parameter. The decoder restates the support context of a reversed record on `-t` and keeps the base ranges, shift, and scale as stored.
+**Known.** `asm.md` §6.3 "**`off_surf_int_cur`**" stores base-surface U and V intervals, a base curve with its interval, and distance, shift, and scale doubles; it does not state the map that shift and scale define. `asm.md` §6.6 "An `intcurve` or `spline` record" states that a reversed intcurve parameterizes as the negation of its cache and keeps its support pcurves on the subtype parameter. The decoder restates the support context of a reversed record on `-t`, swaps the two base endpoints so that each stays paired with its context endpoint, and keeps the base ranges, shift, and scale as stored.
 
 **Need.** A reversed and a forward `off_surf_int_cur` on the same base curve, with the base-curve parameter of known points on the cache, give the map and whether reversal negates scale or moves shift.
+
+### GC-46. Selector of a reversed `sss_int_cur`
+
+**Question.** Does the integer selector of an `sss_int_cur` choose an intersection branch by the direction of the curve, so that a reversed record selects another branch?
+
+**Known.** `asm.md` §6.3 "**`sss_int_cur`**" stores the surface-related prefix, an integer selector, and a third support surface with its BS2 parameter curve. It does not state what the selector chooses. The decoder restates the support context and the third side of a reversed record on `-t` and keeps the selector as stored.
+
+**Need.** A reversed and a forward `sss_int_cur` through the same three supports, with their selectors, show whether the selector depends on the curve direction.
 
 ## 2. Topology
 

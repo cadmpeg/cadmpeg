@@ -33,8 +33,12 @@ impl SilhouetteCurveConstruction {
 }
 
 impl SurfaceOffsetCurveConstruction {
+    /// The base endpoints pair with the context endpoints by position, so
+    /// they swap with them. They are base-curve parameters and keep their
+    /// values.
     pub(crate) fn reverse_about_zero(&mut self) -> Option<()> {
         self.context = self.context.reversed_about_zero()?;
+        self.base_endpoints.reverse();
         if let CacheContract::Revision { form } = &mut self.cache {
             reverse_cache_first_form(form);
         }
