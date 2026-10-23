@@ -3,18 +3,21 @@
 
 use super::pcurve::{LinePcurve, PcurveGeometry};
 use super::{
-    CacheFirstCurveParameterization, DirectedParameterRange, IntcurveSupportContext,
-    IntcurveSupportSide, ProceduralCurveDefinition, RevisionCacheForm, SupportPcurve,
-    SurfaceCurveFamily, SurfaceCurveTail,
+    CacheFirstCurveForm, CacheFirstCurveParameterization, DirectedParameterRange,
+    IntcurveSupportContext, IntcurveSupportSide, ProceduralCurveDefinition, RevisionCacheForm,
+    SupportPcurve, SurfaceCurveFamily, SurfaceCurveTail,
 };
 use crate::math::Point2;
 use crate::scalar::FiniteReal;
 use crate::topology::ParameterInterval;
 
 impl ProceduralCurveDefinition {
-    /// Restate the support context of an intersection or surface-curve
-    /// definition on the reversed solved parameter `-t`, as its reversed
-    /// solved cache is. Other definitions are unchanged.
+    /// Restate the support context of an intersection, three-surface
+    /// intersection, two-sided offset, silhouette, surface-offset, or
+    /// surface-curve definition on the reversed solved parameter `-t`, as its
+    /// reversed solved cache is, together with the solved-curve bounds of a
+    /// cache-first form. The base ranges, shift, and scale of a surface offset
+    /// stay as stored. Other definitions are unchanged.
     ///
     /// `None` when the context holds a pcurve that has no reversed form; the
     /// definition is then unchanged.
@@ -22,6 +25,10 @@ impl ProceduralCurveDefinition {
         match self {
             Self::Intersection { context, .. } => *context = context.reversed_about_zero()?,
             Self::SurfaceCurve { family } => family.reverse_about_zero()?,
+            Self::ThreeSurfaceIntersection(payload) => payload.reverse_about_zero()?,
+            Self::TwoSidedOffset(payload) => payload.reverse_about_zero()?,
+            Self::Silhouette(payload) => payload.reverse_about_zero()?,
+            Self::SurfaceOffset(payload) => payload.reverse_about_zero()?,
             _ => {}
         }
         Some(())
@@ -50,6 +57,17 @@ impl SurfaceCurveFamily {
             }
         }
         Some(())
+    }
+}
+
+/// The solved-curve bounds of a cache-first form on the reversed parameter.
+pub(super) fn reverse_cache_first_form(form: &mut CacheFirstCurveForm<FiniteReal>) {
+    form.solved_range = reversed_bounds(form.solved_range);
+    if let RevisionCacheForm::Parameterization(CacheFirstCurveParameterization {
+        interval, ..
+    }) = &mut form.cache
+    {
+        *interval = reversed_bounds(*interval);
     }
 }
 
@@ -94,7 +112,7 @@ impl IntcurveSupportContext {
     }
 }
 
-fn reversed_side(side: &IntcurveSupportSide) -> Option<IntcurveSupportSide> {
+pub(super) fn reversed_side(side: &IntcurveSupportSide) -> Option<IntcurveSupportSide> {
     let pcurve = match &side.pcurve {
         None => None,
         Some(pcurve) => Some(SupportPcurve {
@@ -144,7 +162,7 @@ fn reversed_pcurve(geometry: &PcurveGeometry) -> Option<PcurveGeometry> {
     })
 }
 
-fn reversed_bounds(bounds: [Option<FiniteReal>; 2]) -> [Option<FiniteReal>; 2] {
+pub(super) fn reversed_bounds(bounds: [Option<FiniteReal>; 2]) -> [Option<FiniteReal>; 2] {
     let [start, end] = bounds;
     [end.map(FiniteReal::negated), start.map(FiniteReal::negated)]
 }

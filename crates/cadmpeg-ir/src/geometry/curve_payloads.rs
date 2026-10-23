@@ -1325,6 +1325,8 @@ fn ordered(range: &[FiniteReal; 2]) -> bool {
 
 mod subset_cache;
 
+mod support_reversal;
+
 #[cfg(test)]
 mod tests;
 

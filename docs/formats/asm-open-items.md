@@ -267,6 +267,14 @@ the record grammar does not identify one construction.
 
 **Need.** The approximation-current values and cache fit tolerances of the failing supports, together with the exact blend surface evaluated at the support pcurve endpoints, show whether the cache or the pcurve departs from the construction. That evidence fixes the endpoint contract of such a support.
 
+### GC-45. Shift and scale of a reversed `off_surf_int_cur`
+
+**Question.** How do the shift and scale of an `off_surf_int_cur` relate the curve parameter to the parameter of its base curve, and how does a reversed record sense change that relation?
+
+**Known.** `asm.md` §6.3 "**`off_surf_int_cur`**" stores base-surface U and V intervals, a base curve with its interval, and distance, shift, and scale doubles; it does not state the map that shift and scale define. `asm.md` §6.6 "An `intcurve` or `spline` record" states that a reversed intcurve parameterizes as the negation of its cache and keeps its support pcurves on the subtype parameter. The decoder restates the support context of a reversed record on `-t` and keeps the base ranges, shift, and scale as stored.
+
+**Need.** A reversed and a forward `off_surf_int_cur` on the same base curve, with the base-curve parameter of known points on the cache, give the map and whether reversal negates scale or moves shift.
+
 ## 2. Topology
 
 ### TG-01. Missing partner coedge substitution
