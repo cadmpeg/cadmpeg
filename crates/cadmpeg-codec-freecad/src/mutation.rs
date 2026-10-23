@@ -3,9 +3,11 @@
 
 #[cfg(test)]
 use crate::native::EntryRecord;
-use crate::native::{native_id, PropertyFamily, PropertyRecord};
+use crate::native::{native_id, ObjectRecord, PropertyFamily, PropertyRecord};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
+
+const RECOMPUTE_EXEMPT_PROPERTY_STATUS: u64 = (1 << 7) | (1 << 11) | (1 << 23) | (1 << 27);
 
 /// Selects the owner of a persisted property.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,8 +73,11 @@ pub(crate) fn set_value_attribute(
                 "adding FCStd value attribute {attribute} requires a typed serializer"
             )));
         }
+        if value_record.attributes.get(attribute) == Some(&value) {
+            return Ok(false);
+        }
         value_record.attributes.insert(attribute.to_owned(), value);
-        Ok(())
+        Ok(true)
     })
 }
 
@@ -107,7 +112,7 @@ fn mutate_property(
     ir: &mut CadIr,
     owner: FcstdPropertyOwner<'_>,
     property_name: &str,
-    mutation: impl FnOnce(&mut PropertyRecord) -> Result<(), CodecError>,
+    mutation: impl FnOnce(&mut PropertyRecord) -> Result<bool, CodecError>,
 ) -> Result<(), CodecError> {
     let owner_id = match owner {
         FcstdPropertyOwner::Document => native_id("document", "0"),
@@ -128,9 +133,35 @@ fn mutate_property(
             "missing FCStd property {owner_id}.{property_name}"
         ))
     })?;
-    mutation(property)?;
+    let changed = mutation(property)?;
+    let recompute =
+        changed && matches!(owner, FcstdPropertyOwner::Object(_)) && requires_recompute(property);
+    let mut objects = if recompute {
+        namespace.arena_as::<ObjectRecord>("objects")?
+    } else {
+        Vec::new()
+    };
+    if recompute {
+        let object = objects
+            .iter_mut()
+            .find(|object| object.id().as_str() == owner_id)
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!("missing FCStd property owner {owner_id}"))
+            })?;
+        object
+            .attributes
+            .insert("Touched".to_owned(), "1".to_owned());
+    }
     namespace.set_arena(ctx, "properties", &properties)?;
+    if recompute {
+        namespace.set_arena(ctx, "objects", &objects)?;
+    }
     Ok(())
+}
+
+pub(crate) fn requires_recompute(property: &PropertyRecord) -> bool {
+    !matches!(property.name.as_str(), "Label" | "Label2")
+        && property.status.unwrap_or(0) & RECOMPUTE_EXEMPT_PROPERTY_STATUS == 0
 }
 
 fn valid_xml_name(value: &str, role: &str) -> Result<(), CodecError> {

@@ -20,7 +20,9 @@ declares, so a preserving write reproduces schemas 2 and 3 as well. An edit to a
 without a typed serializer is refused rather than flattening or discarding children.
 Retained-document transcoding across bands is explicitly refused: the writer regenerates no
 `Document.xml`, so an explicit `fcstd:schema-4` target on a schema-2 or schema-3 source is refused
-by name rather than emitted. A preserving write of a source whose retained document graph is
+by name rather than emitted. A schema-2 object-input edit that requires recomputation is refused because its `Feature`
+declaration has no persisted pending-recompute flag. Document and cosmetic label edits remain
+available. A preserving write of a source whose retained document graph is
 unusable is refused with the source's own dialect and the catalog, never silently rewritten to
 schema 4.
 
@@ -112,6 +114,14 @@ In schemas 3 and 4, `Objects.Count` equals the number of `Object` declarations. 
 has a unique `name` and a `type`. `ObjectData.Count` equals the number of `Object` value records.
 Each value record has a unique `name`. Declaration and value-record name sets are equal.
 Declaration order is object order. Redundant declaration, value-record, dependency, extension, property, and transient counts do not delimit XML elements. Element boundaries and unique names own their populations.
+
+In schemas 3 and 4, an object declaration's nonzero integer `Touched` attribute retains pending
+recomputation across document restoration. A changed input property with a retained cached shape
+requires this declaration state so ordinary recomputation updates the shape and its dependents.
+A property-value edit with no value change leaves the state unchanged. Document properties and
+object labels do not request object recomputation. Output and no-recompute property status flags
+exempt the property from requesting recomputation. Schema-2 feature declarations have no restored
+`Touched` state.
 
 The presence of the `Objects` section's `Dependencies` attribute enables dependency records. An
 enabled section contains exactly `Objects.Count` `ObjectDeps` elements before the object

@@ -53,7 +53,7 @@ fn write_seekable(
     }
     let mut entries = namespace.arena_as::<EntryRecord>("entries")?;
     let physical_ledger = namespace.arena_as::<ArchiveSpan>("physical_ledger")?;
-    let objects = namespace.arena_as::<ObjectRecord>("objects")?;
+    let mut objects = namespace.arena_as::<ObjectRecord>("objects")?;
     let extensions = namespace.arena_as::<ExtensionRecord>("extensions")?;
     let properties = namespace.arena_as::<PropertyRecord>("properties")?;
     validate_entry_names(&entries)?;
@@ -63,7 +63,20 @@ fn write_seekable(
         .ok_or_else(|| {
             CodecError::Malformed("FCStd native graph has no Document.xml entry".into())
         })?;
-    let document_xml = patch_document(source_document.data(), &properties)?;
+    let (property_xml, changed_inputs) = patch_document(source_document.data(), &properties)?;
+    for object in &mut objects {
+        if changed_inputs.contains(object.id()) {
+            if schema_version.parse::<u32>() == Ok(2) {
+                return Err(CodecError::NotImplemented(
+                    "schema-2 FCStd input edits require regeneration; feature declarations have no pending-recompute marker".into(),
+                ));
+            }
+            object
+                .attributes
+                .insert("Touched".to_owned(), "1".to_owned());
+        }
+    }
+    let document_xml = patch_object_touches(&property_xml, &objects)?;
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
     let (ctx, _) =
@@ -322,7 +335,52 @@ fn same_property_semantics(left: &PropertyRecord, right: &PropertyRecord) -> boo
     }
 }
 
-fn patch_document(source: &[u8], properties: &[PropertyRecord]) -> Result<Vec<u8>, CodecError> {
+fn patch_object_touches(source: &[u8], objects: &[ObjectRecord]) -> Result<Vec<u8>, CodecError> {
+    let text = std::str::from_utf8(source)
+        .map_err(|_| CodecError::Malformed("retained Document.xml is not UTF-8".into()))?;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(source, &arena, &policy)?;
+    let xml = ctx.parse_xml(text, "FreeCAD object declarations")?;
+    let by_name = objects
+        .iter()
+        .map(|object| (object.name().as_str(), object))
+        .collect::<HashMap<_, _>>();
+    let mut edits = Vec::new();
+    for section in xml
+        .root_element()
+        .children()
+        .filter(|node| node.has_tag_name("Objects") || node.has_tag_name("Features"))
+    {
+        for node in section.children().filter(roxmltree::Node::is_element) {
+            let Some(object) = node.attribute("name").and_then(|name| by_name.get(name)) else {
+                continue;
+            };
+            if object.attributes.get("Touched").map(String::as_str) != Some("1")
+                || node.attribute("Touched") == Some("1")
+            {
+                continue;
+            }
+            if let Some(attribute) = node.attribute_node("Touched") {
+                let range = attribute.range_value();
+                edits.push((range.start, range.end, "1"));
+            } else {
+                let insert = node.range().start + 1 + node.tag_name().name().len();
+                edits.push((insert, insert, " Touched=\"1\""));
+            }
+        }
+    }
+    let mut output = text.to_owned();
+    for (start, end, replacement) in edits.into_iter().rev() {
+        output.replace_range(start..end, replacement);
+    }
+    Ok(output.into_bytes())
+}
+
+fn patch_document(
+    source: &[u8],
+    properties: &[PropertyRecord],
+) -> Result<(Vec<u8>, HashSet<String>), CodecError> {
     let source_text = std::str::from_utf8(source)
         .map_err(|_| CodecError::Malformed("retained Document.xml is not UTF-8".into()))?;
     let mut ordered = properties.iter().collect::<Vec<_>>();
@@ -336,6 +394,7 @@ fn patch_document(source: &[u8], properties: &[PropertyRecord]) -> Result<Vec<u8
         ));
     }
     let mut result = Vec::new();
+    let mut changed_inputs = HashSet::new();
     let mut cursor = 0usize;
     for property in ordered {
         let start = usize::try_from(property.xml.start())
@@ -360,12 +419,18 @@ fn patch_document(source: &[u8], properties: &[PropertyRecord]) -> Result<Vec<u8
                 property.id
             )));
         }
+        let serialized = serialize_property(property)?;
+        if serialized != property.xml.text().as_bytes()
+            && crate::mutation::requires_recompute(property)
+        {
+            changed_inputs.insert(property.owner.clone());
+        }
         result.extend_from_slice(&source[cursor..start]);
-        result.extend_from_slice(&serialize_property(property)?);
+        result.extend_from_slice(&serialized);
         cursor = end;
     }
     result.extend_from_slice(&source[cursor..]);
-    Ok(result)
+    Ok((result, changed_inputs))
 }
 
 fn serialize_property(property: &PropertyRecord) -> Result<Vec<u8>, CodecError> {
