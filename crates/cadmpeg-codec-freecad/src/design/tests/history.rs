@@ -227,21 +227,49 @@ fn keeps_extension_types_out_of_exact_design_dispatch() {
         .collect::<Vec<_>>();
     assert!(feature_names.contains(&"PartFillet"));
     assert!(feature_names.contains(&"DesignFillet"));
-    assert!(!feature_names.contains(&"VendorFillet"));
-    assert!(!feature_names.contains(&"PadLike"));
-    assert!(!feature_names.contains(&"RevolutionLike"));
-    assert!(!feature_names.contains(&"BodyLike"));
-    assert!(!feature_names.contains(&"SheetLike"));
-    let unprojected: Vec<_> = result
+    assert_eq!(feature_names.len(), 7);
+    for (name, expected_kind) in [
+        ("VendorFillet", "Vendor::Fillet"),
+        ("PadLike", "Vendor::PartDesign::PadLike"),
+        ("RevolutionLike", "Vendor::PartDesign::RevolutionLike"),
+        ("BodyLike", "Vendor::PartDesign::BodyLike"),
+        ("SheetLike", "Vendor::Spreadsheet::SheetLike"),
+    ] {
+        let feature = result
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .expect("each vendor object has a neutral Native feature");
+        let cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Native { kind, parameters },
+        ) = feature.evaluation.definition()
+        else {
+            panic!("vendor-qualified types must not select built-in operation semantics")
+        };
+        assert_eq!(kind.as_str(), expected_kind);
+        assert!(parameters.is_empty());
+        let object_id = crate::native::native_id("object", name);
+        assert_eq!(feature.native_ref.as_deref(), Some(object_id.as_str()));
+        assert_eq!(feature.source_tag.as_deref(), Some(expected_kind));
+        let retained = result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| {
+                loss.code.local_code() == "feature.native-kind-retained"
+                    && loss.message.contains(expected_kind)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(retained.len(), 1);
+        assert_eq!(retained[0].severity, cadmpeg_ir::report::Severity::Blocking);
+    }
+    assert!(result
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code.local_code() == "feature.object-unprojected")
-        .collect();
-    assert_eq!(unprojected.len(), 5);
-    assert!(unprojected
-        .iter()
-        .all(|loss| loss.severity == cadmpeg_ir::report::Severity::Blocking));
+        .all(|loss| { loss.code.local_code() != "feature.object-unprojected" }));
     assert!(result.clone().into_parts().2.unrepresented().is_empty());
     assert_valid_document(result.ir());
 }
