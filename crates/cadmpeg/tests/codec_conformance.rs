@@ -1083,8 +1083,7 @@ mod subset_carriers {
                     let [start, end] = edge.param_range().unwrap().get();
                     assert!(
                         start >= -EPS_SUBSET_RANGE && end <= span + EPS_SUBSET_RANGE,
-                        "{label}: edge range {:?} outside the local subset domain [0, {span}]",
-                        [start, end]
+                        "{label}: edge range outside the local subset domain"
                     );
                     subset_edges += 1;
                 }
