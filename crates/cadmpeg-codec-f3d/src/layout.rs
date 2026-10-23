@@ -5746,3 +5746,69 @@ pub(crate) mod rectangular_pattern_direction_record {
     /// Offset of `scope_reference` (`bytes[11]`). Spec §Assembly operands.
     pub(crate) const SCOPE_REFERENCE: usize = 209;
 }
+
+/// Byte offsets for the `rectangular_pattern_spacing_direction_record` record.
+///
+/// Spec §Assembly operands. Record length 221 B.
+///
+/// ```text
+/// Offsets are relative to the direction record's primary indexed header. The paired header starts at offset 221.
+/// ```
+pub(crate) mod rectangular_pattern_spacing_direction_record {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 221;
+    /// Offset of `spacing_flag` (`u8`). Spec §Assembly operands.
+    pub(crate) const SPACING_FLAG: usize = 93;
+}
+
+/// Byte offsets for the `rectangular_pattern_payload_prefix` record.
+///
+/// Spec §Assembly operands. Record length 133 B.
+pub(crate) mod rectangular_pattern_payload_prefix {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 133;
+    /// Offset of `zero_head` (`bytes[8]`). Spec §Assembly operands.
+    pub(crate) const ZERO_HEAD: usize = 11;
+    /// Offset of `flag` (`u8`). Spec §Assembly operands.
+    pub(crate) const FLAG: usize = 19;
+    /// Offset of `count` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const COUNT: usize = 20;
+    /// Offset of `u_count` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const U_COUNT: usize = 24;
+    /// Offset of `zero_middle` (`bytes[4]`). Spec §Assembly operands.
+    pub(crate) const ZERO_MIDDLE: usize = 35;
+    /// Offset of `v_count` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const V_COUNT: usize = 39;
+    /// Offset of `zero_tail` (`bytes[9]`). Spec §Assembly operands.
+    pub(crate) const ZERO_TAIL: usize = 50;
+    /// Offset of `sentinel` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const SENTINEL: usize = 59;
+    /// Offset of `v_direction` (`f64[3]`, little-endian). Spec §Assembly operands.
+    pub(crate) const V_DIRECTION: usize = 63;
+    /// Offset of `u_distance` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const U_DISTANCE: usize = 87;
+    /// Offset of `v_distance` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const V_DISTANCE: usize = 98;
+    /// Offset of `zero_distance` (`bytes[2]`). Spec §Assembly operands.
+    pub(crate) const ZERO_DISTANCE: usize = 109;
+    /// Offset of `v_count_repeat` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const V_COUNT_REPEAT: usize = 111;
+    /// Offset of `u_direction` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const U_DIRECTION: usize = 122;
+}
+
+/// Byte offsets for the `rectangular_pattern_payload_suffix` record.
+///
+/// Spec §Assembly operands. Record length 37 B.
+pub(crate) mod rectangular_pattern_payload_suffix {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 37;
+    /// Offset of `u_count` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const U_COUNT: usize = 0;
+    /// Offset of `scope` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const SCOPE: usize = 11;
+    /// Offset of `seed_group` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const SEED_GROUP: usize = 22;
+    /// Offset of `zero_tail` (`bytes[4]`). Spec §Assembly operands.
+    pub(crate) const ZERO_TAIL: usize = 33;
+}

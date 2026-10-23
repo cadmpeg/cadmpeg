@@ -5898,6 +5898,82 @@ Parsed by:
 | 208 | 1 | `scope_separator` | `u8` | little | spec | One zero byte and the marked scope reference at offset 209 close the frame. |
 | 209 | 11 | `scope_reference` | `bytes[11]` | little | spec | One zero byte and the marked scope reference at offset 209 close the frame. |
 
+## `rectangular_pattern_spacing_direction_record`
+
+Spec §Assembly operands · layout: byte offsets · size: 221 B
+
+Offsets are relative to the direction record's primary indexed header. The paired header starts at offset 221.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The 221-byte spacing direction form |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | The 221-byte spacing direction form |
+| 21 | 4 | `selection_kind` | `u32` | little | spec | The 221-byte spacing direction form |
+| 25 | 24 | `origin` | `f64[3]` | little | spec | The 221-byte spacing direction form |
+| 49 | 24 | `displacement` | `f64[3]` | little | spec | The 221-byte spacing direction form |
+| 73 | 16 | `zero_run_16` | `bytes[16]` | little | spec | The 221-byte spacing direction form |
+| 89 | 4 | `distance_type` | `u32` | little | spec | The 221-byte spacing direction form · value `7` |
+| 93 | 1 | `spacing_flag` | `u8` | little | spec | The 221-byte spacing direction form · value `0` |
+| 94 | 24 | `negative_ones` | `f64[3]` | little | spec | The 221-byte spacing direction form |
+| 118 | 4 | `selection_count` | `u32` | little | spec | The 221-byte spacing direction form |
+| 122 | 11 | `selection_reference` | `bytes[11]` | little | spec | The 221-byte spacing direction form |
+| 133 | 2 | `zero_run_2` | `bytes[2]` | little | spec | The 221-byte spacing direction form |
+| 135 | 4 | `auxiliary_count` | `u32` | little | spec | The 221-byte spacing direction form |
+| 139 | 11 | `auxiliary_reference` | `bytes[11]` | little | spec | The 221-byte spacing direction form |
+| 150 | 8 | `role` | `u64` | little | spec | The 221-byte spacing direction form |
+| 158 | 10 | `zero_run_after_role` | `bytes[10]` | little | spec | The 221-byte spacing direction form |
+| 168 | 4 | `opaque_index` | `u32` | little | spec | The 221-byte spacing direction form |
+| 172 | 8 | `opaque_scalar` | `f64` | little | spec | The 221-byte spacing direction form |
+| 180 | 4 | `opaque_index_repeat` | `u32` | little | spec | The 221-byte spacing direction form |
+| 184 | 11 | `index_plus_two_reference` | `bytes[11]` | little | spec | The 221-byte spacing direction form |
+| 195 | 1 | `separator_flag` | `u8` | little | spec | The 221-byte spacing direction form |
+| 196 | 2 | `separator_zero_run` | `bytes[2]` | little | spec | The 221-byte spacing direction form |
+| 198 | 11 | `index_plus_one_reference` | `bytes[11]` | little | spec | The 221-byte spacing direction form |
+| 209 | 1 | `scope_separator` | `u8` | little | spec | The 221-byte spacing direction form |
+| 210 | 11 | `scope_reference` | `bytes[11]` | little | spec | The 221-byte spacing direction form |
+
+## `rectangular_pattern_payload_prefix`
+
+Spec §Assembly operands · layout: byte offsets · size: 133 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
+| 11 | 8 | `zero_head` | `bytes[8]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
+| 19 | 1 | `flag` | `u8` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
+| 20 | 4 | `count` | `u32` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
+| 24 | 11 | `u_count` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
+| 35 | 4 | `zero_middle` | `bytes[4]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
+| 39 | 11 | `v_count` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
+| 50 | 9 | `zero_tail` | `bytes[9]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
+| 59 | 4 | `sentinel` | `u32` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
+| 63 | 24 | `v_direction` | `f64[3]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
+| 87 | 11 | `u_distance` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
+| 98 | 11 | `v_distance` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
+| 109 | 2 | `zero_distance` | `bytes[2]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
+| 111 | 11 | `v_count_repeat` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
+| 122 | 11 | `u_direction` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
+
+## `rectangular_pattern_payload_suffix`
+
+Spec §Assembly operands · layout: byte offsets · size: 37 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `u_count` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
+| 11 | 11 | `scope` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
+| 22 | 11 | `seed_group` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
+| 33 | 4 | `zero_tail` | `bytes[4]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
+
 ## Not tabulated
 
 | Area | Spec | Reason |
