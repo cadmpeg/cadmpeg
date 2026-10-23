@@ -224,7 +224,7 @@ pub(crate) mod parasolid_chain_frame_header {
 /// Spec §4. Record length 38 B.
 ///
 /// ```text
-/// Offsets are body-relative, i.e. after the two-byte `00 1d` tag. Attrs `0` and `1` are sentinels, not world points. The offsets are the narrow-pointer form: `attr` and every reference is a §4 pointer that takes four bytes past `0x7ffe`, moving each later field by two, so the decoder reads the fields after the first pointer in sequence instead of at these offsets.
+/// Offsets are body-relative, i.e. after the two-byte `00 1d` tag. Attrs `0` and `1` are sentinels, not world points. The offsets are the narrow-pointer form: `attr` and every reference is a §4 pointer that takes four bytes past `0x7ffe`, moving each later field by two.
 /// ```
 pub(crate) mod world_point {
     /// Record length in bytes. Spec §4.
@@ -448,7 +448,7 @@ pub(crate) mod entity_common_header {
 /// Spec §5. Record length 14 B.
 ///
 /// ```text
-/// Body-relative prefix. `definition_node_id` selects the same-stream ATTRIB_DEF; ATTRIBUTE slots begin at body +14. Bare framing uses `5 + flo` u16 slots; prefixed framing uses terminated `[01][hi][lo]` triples. The +0..+6 region is the common-header `flags` and `attr` of the same record. The offsets are the narrow-pointer form: `attr` and every reference is a §4 pointer that takes four bytes past `0x7ffe`, moving each later field by two, so the decoder reads the fields after the first pointer in sequence instead of at these offsets.
+/// Body-relative prefix. `definition_node_id` selects the same-stream ATTRIB_DEF; ATTRIBUTE slots begin at body +14. Bare framing uses `5 + flo` u16 slots; prefixed framing uses terminated `[01][hi][lo]` triples. The +0..+6 region is the common-header `flags` and `attr` of the same record. The offsets are the narrow-pointer form: `attr` and every reference is a §4 pointer that takes four bytes past `0x7ffe`, moving each later field by two.
 /// ```
 pub(crate) mod attribute_instance_00_51 {
     /// Offset of `zero_selector` (`u16`, big-endian). Spec §5.
@@ -540,7 +540,7 @@ pub(crate) mod bspline_array_header {
 /// Spec §7.2. Record length 4 B.
 ///
 /// ```text
-/// Complete compact-array header including its leading zero byte. Element data follows at +4. The referencing descriptor role selects f64 control/knot values or u16 multiplicities. The offsets are the narrow-pointer form: `attr` and every reference is a §4 pointer that takes four bytes past `0x7ffe`, moving each later field by two, so the decoder reads the fields after the first pointer in sequence instead of at these offsets.
+/// Complete compact-array header including its leading zero byte. Element data follows at +4. The referencing descriptor role selects f64 control/knot values or u16 multiplicities. The offsets are the narrow-pointer form: `attr` and every reference is a §4 pointer that takes four bytes past `0x7ffe`, moving each later field by two.
 /// ```
 pub(crate) mod bspline_compact_array_header {
     /// Record length in bytes. Spec §7.2.
@@ -556,7 +556,7 @@ pub(crate) mod bspline_compact_array_header {
 /// Spec §7.3. Record length 29 B.
 ///
 /// ```text
-/// Body-relative, after the two-byte `00 26` tag. The intersection-data form replaces the tag with `00 01 5a` and keeps this layout unchanged. The offsets are the narrow-pointer form: `attr` and every reference is a §4 pointer that takes four bytes past `0x7ffe`, moving each later field by two, so the decoder reads the fields after the first pointer in sequence instead of at these offsets.
+/// Body-relative, after the two-byte `00 26` tag. The intersection-data form replaces the tag with `00 01 5a` and keeps this layout unchanged. The offsets are the narrow-pointer form: `attr` and every reference is a §4 pointer that takes four bytes past `0x7ffe`, moving each later field by two.
 /// ```
 pub(crate) mod intersection_composite {
     /// Record length in bytes. Spec §7.3.
@@ -574,7 +574,7 @@ pub(crate) mod intersection_composite {
 /// Spec §7.3. Record length 7 B.
 ///
 /// ```text
-/// Body-relative fixed prefix; f64 BE values follow at +7, `width` per chart point. The offsets are the narrow-pointer form: `attr` and every reference is a §4 pointer that takes four bytes past `0x7ffe`, moving each later field by two, so the decoder reads the fields after the first pointer in sequence instead of at these offsets.
+/// Body-relative fixed prefix; f64 BE values follow at +7, `width` per chart point. The offsets are the narrow-pointer form: `attr` and every reference is a §4 pointer that takes four bytes past `0x7ffe`, moving each later field by two.
 /// ```
 pub(crate) mod support_uv_00_cc {
     /// Record length in bytes. Spec §7.3.
@@ -592,7 +592,7 @@ pub(crate) mod support_uv_00_cc {
 /// Spec §7.4. Record length 56 B.
 ///
 /// ```text
-/// Body-relative, after the two-byte tag and the optional `ff`. `abs(offset0) == abs(offset1) > 0`; their common magnitude is the constant rolling-ball radius. Each `side` value is exactly `+1` or `-1`. The offsets are the narrow-pointer form: `attr` and every reference is a §4 pointer that takes four bytes past `0x7ffe`, moving each later field by two, so the decoder reads the fields after the first pointer in sequence instead of at these offsets.
+/// Body-relative, after the two-byte tag and the optional `ff`. `abs(offset0) == abs(offset1) > 0`; their common magnitude is the constant rolling-ball radius. Each `side` value is exactly `+1` or `-1`. The offsets are the narrow-pointer form: `attr` and every reference is a §4 pointer that takes four bytes past `0x7ffe`, moving each later field by two.
 /// ```
 pub(crate) mod rolling_ball_blend_00_38 {
     /// Offset of `attr` (`u16`, big-endian). Spec §7.4.
@@ -622,7 +622,7 @@ pub(crate) mod rolling_ball_blend_00_38 {
 /// Spec §7.5. Record length 29 B.
 ///
 /// ```text
-/// Partition body relative to the byte after the `00 3c` tag and optional `ff`. With the two-byte tag, the compact record is 31 bytes. The deltas form expands each reference, including `support`, to `[hi][lo][01]`. The offsets are the narrow-pointer form: `attr` and every reference is a §4 pointer that takes four bytes past `0x7ffe`, moving each later field by two, so the decoder reads the fields after the first pointer in sequence instead of at these offsets.
+/// Partition body relative to the byte after the `00 3c` tag and optional `ff`. With the two-byte tag, the compact record is 31 bytes. The deltas form expands each reference, including `support`, to `[hi][lo][01]`. The offsets are the narrow-pointer form: `attr` and every reference is a §4 pointer that takes four bytes past `0x7ffe`, moving each later field by two.
 /// ```
 pub(crate) mod offset_surface_00_3c {
     /// Offset of `attr` (`u16`, big-endian). Spec §7.5.
