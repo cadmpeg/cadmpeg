@@ -1635,30 +1635,8 @@ fn project_constraint(
             second,
             extension,
         } => {
+            // The solver hint locates the tangency; it does not change the relation.
             let members = [resolve(first)?, resolve(second)?];
-            // Hint codes 1 and 2 state an end of a line operand only.
-            let end_codes_on_lines =
-                constraint
-                    .header
-                    .reference_map
-                    .entries()
-                    .iter()
-                    .all(|(key, value)| {
-                        value.index() == 0
-                            || [first, second]
-                                .iter()
-                                .zip(members)
-                                .any(|(operand, member)| {
-                                    operand == key
-                                        && matches!(
-                                            *member.geometry.definition(),
-                                            SketchGeometryDefinition::Line { .. }
-                                        )
-                                })
-                    });
-            if !end_codes_on_lines {
-                return None;
-            }
             (
                 SketchConstraintDefinitionInput::Tangent {
                     first: members[0].id().clone(),
@@ -3955,17 +3933,12 @@ mod tests {
     }
 
     #[test]
-    fn a_tangent_end_code_requires_a_line_key() {
-        let point = || cadmpeg_ir::sketches::SketchGeometryDefinition::Point {
-            position: cadmpeg_ir::math::Point2::new(1.0, 0.0),
-        };
-        for code in [1, 2] {
+    fn a_tangent_hint_code_does_not_gate_the_relation() {
+        for code in [0, 1, 2] {
             let tangent = as_tangent(&hinted_relation(code));
-            assert!(projects_with(&tangent, test_line(), point()));
-            assert!(!projects_with(&tangent, test_arc(), point()));
+            assert!(projects_with(&tangent, test_line(), test_arc()));
+            assert!(projects_with(&tangent, test_arc(), test_line()));
         }
-        let between = as_tangent(&hinted_relation(0));
-        assert!(projects_with(&between, test_arc(), point()));
     }
 
     #[test]
