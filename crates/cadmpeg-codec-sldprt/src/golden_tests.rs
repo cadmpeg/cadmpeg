@@ -275,6 +275,9 @@ fn golden_output_is_deterministic() {
 #[test]
 fn fixtures_replay_verbatim() {
     for (name, bytes) in harness().fixture_inputs() {
+        if frozen_invalid_cache_fixture(&name, &bytes) {
+            continue;
+        }
         verbatim_replay_holds(&SldprtCodec, &name, &bytes);
     }
 }
@@ -285,6 +288,22 @@ fn fixtures_replay_verbatim() {
 fn fixtures_survive_the_semantic_write_path() {
     let mut written_count = 0usize;
     for (name, bytes) in harness().fixture_inputs() {
+        if frozen_invalid_cache_fixture(&name, &bytes) {
+            continue;
+        }
+        if name == "body_history" {
+            assert_legacy_history_preconditions(&bytes);
+            semantic_roundtrip(&SldprtCodec, &name, &bytes, |outcome| {
+                match outcome {
+                SemanticOutcome::Refused { error } => assert!(
+                    matches!(error, CodecError::Malformed(detail) if detail == "SLDPRT writing requires exactly one active configuration"),
+                    "legacy history must refuse exactly the unresolved active-configuration contract"
+                ),
+                SemanticOutcome::Written { .. } => panic!("legacy history lacks a supported active configuration"),
+            }
+            });
+            continue;
+        }
         let expected = neutral_document(&bytes);
         semantic_roundtrip(&SldprtCodec, &name, &bytes, |outcome| match outcome {
             SemanticOutcome::Written { report, bytes, .. } => {
@@ -362,6 +381,13 @@ fn visit_blind_extrude_lengths(
 fn edited_blind_depth_without_regenerated_brep_is_refused() {
     let mut edited_count = 0usize;
     for (name, bytes) in harness().fixture_inputs() {
+        if frozen_invalid_cache_fixture(&name, &bytes) {
+            continue;
+        }
+        if name == "body_history" {
+            assert_legacy_history_preconditions(&bytes);
+            continue;
+        }
         let ran = mutation_roundtrip(
             &SldprtCodec,
             &name,
@@ -449,6 +475,10 @@ fn arena_sizes(ir: &cadmpeg_ir::CadIr) -> [usize; 8] {
 /// How many committed fixtures carry a one-sided blind extrusion.
 const FIXTURES_WITH_A_BLIND_DEPTH: usize = 1;
 
+/// The old history input still carries a depth; only the authored replacement
+/// has the active configuration and B-rep required to exercise the edit guard.
+const LEGACY_FIXTURES_WITH_A_BLIND_DEPTH: usize = 1;
+
 /// A geometry-depth decode agrees with the full decode outside the design
 /// arenas. This codec has no geometry-depth cut, so every input delivers full.
 #[test]
@@ -458,4 +488,192 @@ fn geometry_depth_agrees_with_full_depth() {
         &harness().fixture_inputs(),
     );
     assert_eq!(summary.cut, 0, "{summary:?}");
+}
+
+/// One frozen historical container intentionally has a cache header at the
+/// preceding block's end, instead of at a positive anchored-grid displacement.
+/// This proves the malformed layout independently of the decoder's error.
+fn frozen_invalid_cache_fixture(name: &str, bytes: &[u8]) -> bool {
+    if name != "container_metadata" {
+        return false;
+    }
+    let u32_at = |at| u32::from_le_bytes(bytes[at..at + 4].try_into().expect("frozen u32"));
+    assert_eq!(bytes.len(), 264);
+    assert_eq!(&bytes[54..60], &crate::container::MARKER);
+    assert_eq!(u32_at(54 + 6), 0x20);
+    assert_eq!(u32_at(54 + 14), 45);
+    assert_eq!(u32_at(54 + 22), 27);
+    let preceding_block_end = 54 + 26 + 27 + 45;
+    assert_eq!(preceding_block_end, 152);
+    assert_eq!(&bytes[152..158], &crate::container::MARKER);
+    assert_eq!(u32_at(152 + 6), 0);
+    assert_eq!(u32_at(152 + 10), 180);
+    assert_eq!(u32_at(152 + 14), 45);
+    assert_eq!(u32_at(152 + 18), 90);
+    // L/stride must be positive for every admitted stride; the actual
+    // displacement here is zero, independent of the chosen stride.
+    assert_eq!(152 - preceding_block_end, 0);
+    let error = SldprtCodec
+        .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
+        .expect_err("zero-displacement cache grid must be malformed");
+    assert!(
+        matches!(error, cadmpeg_ir::DecodeFailure::Codec(CodecError::Malformed(detail))
+        if detail == "native ZIP directory or anchored cache-cell geometry is inconsistent")
+    );
+    true
+}
+
+/// The original history bytes lack both an active configuration source index
+/// and a complete typed BODY ownership class. Keep the bytes and their raw
+/// replay coverage; do not turn their unsupported semantic write into a pass.
+fn assert_legacy_history_preconditions(bytes: &[u8]) {
+    let scan = crate::test_support::container::scan(bytes);
+    assert_eq!(crate::container::active_configuration_index(&scan), None);
+    let keywords = scan
+        .blocks
+        .iter()
+        .find(|block| block.section.name() == Some("Contents/Keywords"))
+        .expect("frozen Keywords block");
+    assert_eq!(keywords.payload.as_slice(), br#"<Keywords Name="Bracket"><Configuration Name="Default" Material="Steel" DisplayState="Shaded"/><Extrusion Name="Boss" Type="BossExtrude" id="7" Scope="Body1"><Dimension Name="Depth">12.5mm</Dimension><EquationDrivenCurve Name="Profile" id="8"/></Extrusion></Keywords>"#);
+    let partition = scan
+        .blocks
+        .iter()
+        .find(|block| block.section.name() == Some("Contents/Config-0-Partition"))
+        .expect("frozen partition block");
+    assert_eq!(partition.payload.len(), 544);
+    for class in [0x0c, 0x0d, 0x13] {
+        assert!(!partition
+            .payload
+            .windows(3)
+            .any(|bytes| bytes == [0, class, 0xff]));
+    }
+    // The three legacy VERTEX records are only 26 bytes including their tag.
+    // The would-be trailing owner is the next VERTEX/POINT class tag, not a
+    // verified entity reference. These offsets were checked from retained raw
+    // partition bytes independently of topology projection.
+    for at in [0x15a, 0x174, 0x18e] {
+        assert_eq!(&partition.payload[at..at + 2], &[0, 0x12]);
+    }
+    assert_eq!(&partition.payload[0x1a8..0x1aa], &[0, 0x1d]);
+    let result = SldprtCodec
+        .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
+        .expect("historical history fixture retains its source");
+    assert!(!result.ir().model.configurations.is_empty());
+    assert_eq!(
+        result
+            .ir()
+            .model
+            .configurations
+            .iter()
+            .filter(|c| c.active)
+            .count(),
+        0
+    );
+    assert_eq!(arena_sizes(result.ir()), [0; 8]);
+    assert!(result.ir().source.is_some());
+    let mut ir = result.ir().clone();
+    assert!(
+        !depths(&mut ir).is_empty(),
+        "legacy blind-depth coverage remains explicit"
+    );
+    verbatim_replay_holds(&SldprtCodec, "body_history", bytes);
+}
+
+/// Independently authored, complete sources retain positive geometry coverage
+/// as the older incomplete ownership examples correctly abstain.
+#[test]
+fn complete_authored_golden_inputs_have_typed_geometry_and_active_configuration() {
+    use cadmpeg_ir::geometry::{
+        CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    };
+    let fixtures = harness().fixture_inputs();
+    let cases = [
+        ("authored_complete_planar", [1, 1, 1, 1, 1, 3, 3, 3]),
+        ("authored_complete_history", [1, 1, 1, 1, 1, 3, 3, 3]),
+        ("authored_complete_cylinder", [1, 1, 1, 1, 1, 4, 3, 2]),
+        ("authored_complete_sphere", [1, 1, 1, 1, 1, 4, 4, 3]),
+        ("authored_complete_nurbs", [1, 1, 1, 1, 1, 3, 3, 3]),
+    ];
+    for (name, expected) in cases {
+        let (_, bytes) = fixtures
+            .iter()
+            .find(|(fixture, _)| fixture == name)
+            .expect("emit and commit the complete authored fixture");
+        let result = SldprtCodec
+            .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
+            .expect("complete authored fixture decodes");
+        let ir = result.ir();
+        assert_eq!(
+            arena_sizes(ir),
+            expected,
+            "{name}: exact topological arenas"
+        );
+        assert_eq!(
+            ir.model.configurations.iter().filter(|c| c.active).count(),
+            1,
+            "{name}"
+        );
+        assert_eq!(ir.model.surfaces.len(), 1, "{name}: one face carrier");
+        let expected_curves = match name {
+            "authored_complete_planar" | "authored_complete_history" => 0,
+            "authored_complete_cylinder" => 3,
+            "authored_complete_sphere" => 4,
+            "authored_complete_nurbs" => 1,
+            _ => unreachable!(),
+        };
+        assert_eq!(
+            ir.model.curves.len(),
+            expected_curves,
+            "{name}: exact curve carriers"
+        );
+        let surface = &ir.model.surfaces[0].geometry;
+        match name {
+            "authored_complete_planar" | "authored_complete_history" => assert!(matches!(
+                surface,
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
+            )),
+            "authored_complete_cylinder" => assert!(matches!(
+                surface,
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_))
+            )),
+            "authored_complete_sphere" => assert!(matches!(
+                surface,
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_))
+            )),
+            "authored_complete_nurbs" => {
+                let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) = surface else {
+                    panic!("complete NURBS fixture lost its surface carrier");
+                };
+                assert_eq!((nurbs.u_degree(), nurbs.v_degree()), (1, 1));
+                assert_eq!((nurbs.u_count(), nurbs.v_count()), (2, 2));
+                assert_eq!(nurbs.poles().len(), 4);
+                assert_eq!(
+                    ir.model
+                        .curves
+                        .iter()
+                        .filter(|curve| matches!(
+                            curve.geometry,
+                            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_))
+                        ))
+                        .count(),
+                    1
+                );
+            }
+            _ => unreachable!(),
+        }
+        if name == "authored_complete_history" {
+            assert_eq!(ir.model.features.len(), 2);
+            let mut ir = ir.clone();
+            let lengths = depths(&mut ir);
+            assert!(!lengths.is_empty());
+            assert!(lengths.iter().all(|length| *length == 12.5));
+        }
+    }
+    assert_eq!(
+        fixtures
+            .iter()
+            .filter(|(name, _)| name == "body_history")
+            .count(),
+        LEGACY_FIXTURES_WITH_A_BLIND_DEPTH
+    );
 }

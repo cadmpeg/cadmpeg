@@ -7,362 +7,38 @@
       "appearances": [],
       "assembly_joints": [],
       "attributes": [],
-      "bodies": [
-        {
-          "id": "sldprt:brep:body#0",
-          "kind": "solid",
-          "regions": [
-            "sldprt:brep:region#0"
-          ]
-        }
-      ],
-      "coedges": [
-        {
-          "edge": "sldprt:brep:edge#40",
-          "id": "sldprt:brep:coedge#30",
-          "owner_loop": "sldprt:brep:loop#20",
-          "radial_next": "sldprt:brep:coedge#30",
-          "sense": "forward"
-        },
-        {
-          "edge": "sldprt:brep:edge#41",
-          "id": "sldprt:brep:coedge#31",
-          "owner_loop": "sldprt:brep:loop#20",
-          "radial_next": "sldprt:brep:coedge#31",
-          "sense": "forward"
-        },
-        {
-          "edge": "sldprt:brep:edge#42",
-          "id": "sldprt:brep:coedge#32",
-          "owner_loop": "sldprt:brep:loop#20",
-          "radial_next": "sldprt:brep:coedge#32",
-          "sense": "forward"
-        }
-      ],
-      "configurations": [
-        {
-          "active": true,
-          "bodies": [
-            "sldprt:brep:body#0"
-          ],
-          "id": "sldprt:model:configuration#partition:0",
-          "name": "Config-0",
-          "ordinal": 0,
-          "source_index": 0
-        }
-      ],
+      "bodies": [],
+      "coedges": [],
+      "configurations": [],
       "curves": [],
       "drawings": [],
-      "edges": [
-        {
-          "carrier": {},
-          "end": "sldprt:brep:vertex#51",
-          "id": "sldprt:brep:edge#40",
-          "start": "sldprt:brep:vertex#50"
-        },
-        {
-          "carrier": {},
-          "end": "sldprt:brep:vertex#52",
-          "id": "sldprt:brep:edge#41",
-          "start": "sldprt:brep:vertex#51"
-        },
-        {
-          "carrier": {},
-          "end": "sldprt:brep:vertex#50",
-          "id": "sldprt:brep:edge#42",
-          "start": "sldprt:brep:vertex#52"
-        }
-      ],
-      "faces": [
-        {
-          "id": "sldprt:brep:face#10",
-          "loops": {
-            "classification": "unspecified",
-            "loops": [
-              "sldprt:brep:loop#20"
-            ]
-          },
-          "sense": "forward",
-          "shell": "sldprt:brep:shell#0",
-          "surface": "sldprt:brep:surf#10"
-        }
-      ],
+      "edges": [],
+      "faces": [],
       "features": [],
-      "loops": [
-        {
-          "boundary": {
-            "coedges": [
-              "sldprt:brep:coedge#30",
-              "sldprt:brep:coedge#31",
-              "sldprt:brep:coedge#32"
-            ],
-            "kind": "ring"
-          },
-          "face": "sldprt:brep:face#10",
-          "id": "sldprt:brep:loop#20"
-        }
-      ],
+      "loops": [],
       "occurrences": [],
       "parameters": [],
       "pcurves": [],
       "pmi": [],
-      "points": [
-        {
-          "id": "sldprt:brep:point#60",
-          "position": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 0.0
-          }
-        },
-        {
-          "id": "sldprt:brep:point#61",
-          "position": {
-            "x": 1000.0,
-            "y": 0.0,
-            "z": 0.0
-          }
-        },
-        {
-          "id": "sldprt:brep:point#62",
-          "position": {
-            "x": 0.0,
-            "y": 1000.0,
-            "z": 0.0
-          }
-        }
-      ],
+      "points": [],
       "presentation_documents": [],
       "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
       "product_definitions": [],
-      "regions": [
-        {
-          "body": "sldprt:brep:body#0",
-          "id": "sldprt:brep:region#0",
-          "shells": [
-            "sldprt:brep:shell#0"
-          ]
-        }
-      ],
+      "regions": [],
       "semantic_annotations": [],
-      "shells": [
-        {
-          "id": "sldprt:brep:shell#0",
-          "members": [
-            {
-              "id": "sldprt:brep:face#10",
-              "kind": "face"
-            }
-          ],
-          "region": "sldprt:brep:region#0"
-        }
-      ],
-      "sketch_constraints": [
-        {
-          "definition": {
-            "kind": "coincident_loci",
-            "loci": [
-              {
-                "entity": "sldprt:model:sketch-entity#247:0:0:0",
-                "kind": "start"
-              },
-              {
-                "entity": "sldprt:model:sketch-entity#247:0:0:2",
-                "kind": "end"
-              }
-            ]
-          },
-          "id": "sldprt:model:sketch-constraint#247:0:0:0",
-          "sketch": "sldprt:model:sketch#247:0:0"
-        },
-        {
-          "definition": {
-            "kind": "coincident_loci",
-            "loci": [
-              {
-                "entity": "sldprt:model:sketch-entity#247:0:0:0",
-                "kind": "end"
-              },
-              {
-                "entity": "sldprt:model:sketch-entity#247:0:0:1",
-                "kind": "start"
-              }
-            ]
-          },
-          "id": "sldprt:model:sketch-constraint#247:0:0:1",
-          "sketch": "sldprt:model:sketch#247:0:0"
-        },
-        {
-          "definition": {
-            "kind": "coincident_loci",
-            "loci": [
-              {
-                "entity": "sldprt:model:sketch-entity#247:0:0:1",
-                "kind": "end"
-              },
-              {
-                "entity": "sldprt:model:sketch-entity#247:0:0:2",
-                "kind": "start"
-              }
-            ]
-          },
-          "id": "sldprt:model:sketch-constraint#247:0:0:2",
-          "sketch": "sldprt:model:sketch#247:0:0"
-        }
-      ],
-      "sketch_entities": [
-        {
-          "construction": false,
-          "endpoint_refs": [
-            "0:sldprt:brep:point#60",
-            "0:sldprt:brep:point#61"
-          ],
-          "geometry": {
-            "end": {
-              "u": 1000.0,
-              "v": 0.0
-            },
-            "kind": "line",
-            "start": {
-              "u": 0.0,
-              "v": 0.0
-            }
-          },
-          "id": "sldprt:model:sketch-entity#247:0:0:0",
-          "native_ref": "0:sldprt:brep:edge#40",
-          "sketch": "sldprt:model:sketch#247:0:0"
-        },
-        {
-          "construction": false,
-          "endpoint_refs": [
-            "0:sldprt:brep:point#61",
-            "0:sldprt:brep:point#62"
-          ],
-          "geometry": {
-            "end": {
-              "u": 0.0,
-              "v": 1000.0
-            },
-            "kind": "line",
-            "start": {
-              "u": 1000.0,
-              "v": 0.0
-            }
-          },
-          "id": "sldprt:model:sketch-entity#247:0:0:1",
-          "native_ref": "0:sldprt:brep:edge#41",
-          "sketch": "sldprt:model:sketch#247:0:0"
-        },
-        {
-          "construction": false,
-          "endpoint_refs": [
-            "0:sldprt:brep:point#62",
-            "0:sldprt:brep:point#60"
-          ],
-          "geometry": {
-            "end": {
-              "u": 0.0,
-              "v": 0.0
-            },
-            "kind": "line",
-            "start": {
-              "u": 0.0,
-              "v": 1000.0
-            }
-          },
-          "id": "sldprt:model:sketch-entity#247:0:0:2",
-          "native_ref": "0:sldprt:brep:edge#42",
-          "sketch": "sldprt:model:sketch#247:0:0"
-        }
-      ],
-      "sketches": [
-        {
-          "configuration": "0",
-          "id": "sldprt:model:sketch#247:0:0",
-          "name": "feature input compressed sketch",
-          "native_ref": "sldprt:feature-input:resolved-features#247",
-          "placement": {
-            "frame": {
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "kind": "resolved"
-          },
-          "profiles": [
-            [
-              {
-                "entity": "sldprt:model:sketch-entity#247:0:0:0",
-                "reversed": false
-              },
-              {
-                "entity": "sldprt:model:sketch-entity#247:0:0:1",
-                "reversed": false
-              },
-              {
-                "entity": "sldprt:model:sketch-entity#247:0:0:2",
-                "reversed": false
-              }
-            ]
-          ]
-        }
-      ],
+      "shells": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
       "spreadsheets": [],
       "subds": [],
-      "surfaces": [
-        {
-          "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            }
-          },
-          "id": "sldprt:brep:surf#10"
-        }
-      ],
+      "surfaces": [],
       "tessellations": [],
-      "vertices": [
-        {
-          "id": "sldprt:brep:vertex#50",
-          "point": "sldprt:brep:point#60"
-        },
-        {
-          "id": "sldprt:brep:vertex#51",
-          "point": "sldprt:brep:point#61"
-        },
-        {
-          "id": "sldprt:brep:vertex#52",
-          "point": "sldprt:brep:point#62"
-        }
-      ],
+      "vertices": [],
       "view_presentations": []
     },
     "native": {
@@ -563,9 +239,6 @@
         ],
         "unknowns": [
           {
-            "id": "sldprt:file:block#247"
-          },
-          {
             "id": "sldprt:file:block#8"
           }
         ]
@@ -575,17 +248,12 @@
       "attributes": {
         "active_parasolid_block": "Contents/Config-0-Partition",
         "block_count": "2",
-        "bmp_thumbnail_count": "0",
         "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "compound_stream_count": "0",
         "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "outer_version": "0x00000004",
-        "parasolid_description": "partition body",
         "parasolid_schema": "SCH_SW_33103_11000",
-        "png_preview_count": "0",
         "sldprt_configuration_feature_states_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_configuration_parameter_values_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_configuration_snapshot_synthesized": "sldprt:model:configuration#partition:0",
         "sldprt_native_configuration_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
         "sldprt_native_history_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
         "sldprt_native_parameter_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
@@ -667,12 +335,34 @@
     "losses": [
       {
         "code": {
-          "code": "topology.body-hierarchy-derived",
-          "kind": "topology_gauge_substituted",
+          "code": "geometry.parasolid-not-transferred",
+          "kind": "geometry_not_transferred",
+          "namespace": "sldprt",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "Parasolid B-rep geometry was not transferred: no partition/deltas stream resolved into a topology graph. 2 payload source(s) were enumerated, 2 carrying Parasolid streams.",
+        "severity": "blocking"
+      },
+      {
+        "code": {
+          "code": "topology.graph-not-transferred",
+          "kind": "topology_not_transferred",
+          "namespace": "sldprt",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built for this file.",
+        "severity": "blocking"
+      },
+      {
+        "code": {
+          "code": "material.metadata-not-transferred",
+          "kind": "material_not_transferred",
           "namespace": "sldprt",
           "scope": "namespaced"
         },
-        "message": "No body record was available; one body/region/shell hierarchy was derived.",
+        "message": "Body-bound appearances and tessellation were not transferred because no body graph exists.",
         "severity": "warning"
       },
       {
@@ -688,12 +378,23 @@
       },
       {
         "code": {
-          "code": "config.inferred-without-native",
+          "code": "topology.vertex-record-unresolved",
+          "kind": "topology_not_transferred",
+          "namespace": "sldprt",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "3 referenced VERTEX record(s) lack a uniquely framed record with a verified owner class and IR-supported tolerance.",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "config.lane-identity-unresolved",
           "kind": "feature_history_retained",
           "namespace": "sldprt",
           "scope": "namespaced"
         },
-        "message": "1 configuration state(s) are inferred from geometry partitions without native configuration definitions.",
+        "message": "1 configuration-scoped feature-input lane(s) have duplicate or unresolved configuration identity.",
         "severity": "warning"
       }
     ],
@@ -703,151 +404,19 @@
       "Parasolid body streams supply the typed topology and analytic carriers used by decode"
     ],
     "transfer": {
-      "geometry_transferred": true,
+      "geometry_transferred": false,
       "transfer": "full"
     }
   },
   "source_fidelity": {
     "annotations": {
       "exactness": {
-        "sldprt:brep:body#0": {
-          "entity": "derived",
-          "scope": "entity"
-        },
-        "sldprt:brep:region#0": {
-          "entity": "derived",
-          "scope": "entity"
-        },
-        "sldprt:brep:shell#0": {
-          "entity": "derived",
-          "scope": "entity"
-        },
-        "sldprt:brep:surf#10": {
-          "fields": {
-            "geometry.u_axis": "derived"
-          },
-          "scope": "fields"
-        },
-        "sldprt:model:sketch#247:0:0": {
-          "entity": "derived",
-          "scope": "entity"
-        },
-        "sldprt:model:sketch-constraint#247:0:0:0": {
-          "entity": "derived",
-          "scope": "entity"
-        },
-        "sldprt:model:sketch-constraint#247:0:0:1": {
-          "entity": "derived",
-          "scope": "entity"
-        },
-        "sldprt:model:sketch-constraint#247:0:0:2": {
-          "entity": "derived",
-          "scope": "entity"
-        },
-        "sldprt:model:sketch-entity#247:0:0:0": {
-          "entity": "derived",
-          "scope": "entity"
-        },
-        "sldprt:model:sketch-entity#247:0:0:1": {
-          "entity": "derived",
-          "scope": "entity"
-        },
-        "sldprt:model:sketch-entity#247:0:0:2": {
-          "entity": "derived",
+        "sldprt:file:block#8": {
+          "entity": "unknown",
           "scope": "entity"
         }
       },
       "provenance": {
-        "sldprt:brep:body#0": {
-          "offset": 0,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "synthetic_grouping"
-        },
-        "sldprt:brep:coedge#30": {
-          "offset": 146,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_11"
-        },
-        "sldprt:brep:coedge#31": {
-          "offset": 169,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_11"
-        },
-        "sldprt:brep:coedge#32": {
-          "offset": 192,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_11"
-        },
-        "sldprt:brep:edge#40": {
-          "offset": 215,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_10"
-        },
-        "sldprt:brep:edge#41": {
-          "offset": 245,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_10"
-        },
-        "sldprt:brep:edge#42": {
-          "offset": 275,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_10"
-        },
-        "sldprt:brep:face#10": {
-          "offset": 91,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_0e"
-        },
-        "sldprt:brep:loop#20": {
-          "offset": 130,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_0f"
-        },
-        "sldprt:brep:point#60": {
-          "offset": 383,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_1d"
-        },
-        "sldprt:brep:point#61": {
-          "offset": 423,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_1d"
-        },
-        "sldprt:brep:point#62": {
-          "offset": 463,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_1d"
-        },
-        "sldprt:brep:region#0": {
-          "offset": 0,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "synthetic_grouping"
-        },
-        "sldprt:brep:shell#0": {
-          "offset": 0,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "synthetic_grouping"
-        },
-        "sldprt:brep:surf#10": {
-          "offset": 0,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "compact_surface"
-        },
-        "sldprt:brep:vertex#50": {
-          "offset": 305,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_12"
-        },
-        "sldprt:brep:vertex#51": {
-          "offset": 331,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_12"
-        },
-        "sldprt:brep:vertex#52": {
-          "offset": 357,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_12"
-        },
         "sldprt:feature-input:resolved-features#247": {
           "offset": 0,
           "stream": "Contents/Config-0-ResolvedFeatures",
@@ -873,73 +442,25 @@
           "stream": "Contents/Config-0-ResolvedFeatures",
           "tag": "ff_ff_1f_00_03"
         },
-        "sldprt:file:block#247": {
-          "offset": 247,
-          "stream": "Contents/Config-0-ResolvedFeatures",
-          "tag": "parasolid"
-        },
         "sldprt:file:block#8": {
-          "offset": 8,
+          "offset": 0,
           "stream": "Contents/Config-0-Partition",
-          "tag": "parasolid"
+          "tag": "parasolid_stream"
         },
         "sldprt:file:source-image#0": {
           "offset": 0,
           "stream": "source",
           "tag": "source_image"
-        },
-        "sldprt:model:sketch#247:0:0": {
-          "offset": 611,
-          "stream": "Contents/Config-0-ResolvedFeatures",
-          "tag": "feature_input_profile"
-        },
-        "sldprt:model:sketch-constraint#247:0:0:0": {
-          "offset": 0,
-          "stream": "Contents/Config-0-ResolvedFeatures",
-          "tag": "feature_input_shared_endpoint"
-        },
-        "sldprt:model:sketch-constraint#247:0:0:1": {
-          "offset": 0,
-          "stream": "Contents/Config-0-ResolvedFeatures",
-          "tag": "feature_input_shared_endpoint"
-        },
-        "sldprt:model:sketch-constraint#247:0:0:2": {
-          "offset": 0,
-          "stream": "Contents/Config-0-ResolvedFeatures",
-          "tag": "feature_input_shared_endpoint"
-        },
-        "sldprt:model:sketch-entity#247:0:0:0": {
-          "offset": 0,
-          "stream": "Contents/Config-0-ResolvedFeatures",
-          "tag": "feature_input_profile_edge"
-        },
-        "sldprt:model:sketch-entity#247:0:0:1": {
-          "offset": 0,
-          "stream": "Contents/Config-0-ResolvedFeatures",
-          "tag": "feature_input_profile_edge"
-        },
-        "sldprt:model:sketch-entity#247:0:0:2": {
-          "offset": 0,
-          "stream": "Contents/Config-0-ResolvedFeatures",
-          "tag": "feature_input_profile_edge"
         }
       }
     },
     "retained_records": {
-      "sldprt:file:block#247": {
-        "bytes": {
-          "data": "//8BAA0Ac2dQb2ludEhhbmRsZf//AQAMAHNnTGluZUhhbmRsZf//AQALAHNnQXJjSGFuZGxlBID//v8HUwBrAGUAdABjAGgAMQAEgP/+/w1CAG8AcwBzAC0ARQB4AHQAcgB1AGQAZQAxAP//AQAMAHNnUG50UG50RGlzdASA//7/AkQAMQAAAAAAAAAAQP////8AAAAA//7/AAAAmpmZmZmZmT8AAAABAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAACAAAAAAAAANaAAAD/////AAAAANaAAgD/////AAAAAP//HwAD//////////8AAIC/AAAAAAAABAACAAEAAAAAAIC/AAAEAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAPC/AAAAAAAAAAABAAAA//8fAAP//////////wAAgL8BAAAAAAAEAAIAAQAAAAAAgL8AAAQAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8L8AAAAAAAAAAAIAAAD//x8AA///////////AACAvwEAAAAAAAQAAgABAAAAAACAvwAABAAAAAAAAAAAAAAAAAAAAAAIQAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwvwAAAAAAAAAAAwAAAP//HwAD//////////8AAIC/AQAAAAAABAACAAEAAAAAAIC/AAAEAAAAAAAAAAAAAAAAAAAAABBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPC/AAAAAAAAAAAEAAAAIx3VcdqBSKKoWJiyG4nvmQAAAAB4nAsIZmBgkE9LTSwpLUpVyMwrKC1RSM7PLShKLS5OTVEozk4tSc5gYBAKdvaIDw6PNzY2NDCONzQ0MDBgMGJIYUAB2gxEAvsPqDQG4GPggjAO7ZnUPzMPKirCwMCQgmwJP1gIBOTAGgQZ5KDK5BmMGBgYNCCuEmSQhworMBgzMDBowoQVoMJyDCYMDAxaEGEBiDY0u2FAAKIbpyzYEByyQmBHIYANXJUQ2F0IYIskA3IaAtjBZWQZbHCEHiqQZbBF5uIMc1kGO2zC6OoBOLc3ow==",
-          "retention": "inline"
-        },
-        "offset": 0,
-        "stream": "Contents/Config-0-ResolvedFeatures"
-      },
       "sldprt:file:block#8": {
         "bytes": {
           "data": "UFMAAAAOcGFydGl0aW9uIGJvZHkAABJTQ0hfU1dfMzMxMDNfMTEwMDAAMgBkAAAAAAAAAAAAAAAAAAArAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA4ACgAAAAAAAMK8ko+ZbgAAAAAAAAAUAAAAZCsAAAAAAAAAAAAAAA8AFAAAAAAAAAAeAAoAAAARAB4AAAAUAAAAHwAyAAAAKAAAAAArABEAHwAAABQAAAAgADMAAAApAAAAACsAEQAgAAAAFAAAAB4ANAAAACoAAAAAKwAQACgAAAAAAADCvJKPmW4AAAAAAAAAAAAAAAAAAAAQACkAAAAAAADCvJKPmW4AAAAAAAAAAAAAAAAAAAAQACoAAAAAAADCvJKPmW4AAAAAAAAAAAAAAAAAAAASADIAAAAAAAAAAAAAAAAAPMK8ko+ZbgAAABIAMwAAAAAAAAAAAAAAAAA9wrySj5luAAAAEgA0AAAAAAAAAAAAAAAAAD7CvJKPmW4AAAAdADwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHQA9AAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB0APgAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAA==",
           "retention": "inline"
         },
-        "offset": 0,
+        "offset": 8,
         "stream": "Contents/Config-0-Partition"
       },
       "sldprt:file:source-image#0": {

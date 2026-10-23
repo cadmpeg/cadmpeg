@@ -1562,8 +1562,24 @@ A support surface belongs to a face through `face -> bridge -> bridge.refs[4] ->
 
 The first node of an XT type carries its schema-reconciliation data between
 the type tag and its fields. A matching base-schema type uses one `ff` byte.
-An edited type uses `C`, `D`, `I`, and `A` field-edit instructions ending in
-`Z`. Later nodes use the type tag followed by the fields. The first BODY's
+An edited first-of-type schema header has three bytes: u16 BE node type at `+0`
+and u8 current effective-field count at `+2`. The field count precedes the
+`C`, `D`, `I`, and `A` field-edit instructions ending in `Z`. Effective fields
+are transmittable or variable-length fields. The base schema-13006 effective
+field counts are BODY 23, SHELL 9, REGION 7, and FACE 14. `C` consumes one base
+field and produces one current field; `D` consumes one base field; `I` produces
+one current field before the base fields are exhausted; `A` produces one
+current field after the base fields are exhausted. `Z` ends a complete edit
+program when all base fields are consumed and the stated current field count
+is produced.
+
+An inserted or appended field contains a byte-length-prefixed field name,
+u16 BE pointer class, and XT positive-integer element count. A zero pointer
+class adds a byte-length-prefixed field type. An element count of one adds a
+logical transmission flag. These field descriptors are part of the schema
+program. Their bytes do not start topology or data nodes. The node type that
+starts the program determines the class of the following value payload.
+Later nodes use the type tag followed by the fields. The first BODY's
 fields follow the `Z` terminator of its first-of-type edit sequence; later
 BODY nodes start with `00 0c`.
 

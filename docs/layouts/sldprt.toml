@@ -11752,6 +11752,29 @@ source = "spec"
 anchor = "knot pointer at `+23`"
 
 [[record]]
+name = "parasolid_edited_type_header"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/brep/typed/schema.rs"
+kind = "byte"
+section = "4.1"
+anchor = "An edited first-of-type schema header has three bytes"
+size = 3
+endianness = "big"
+
+[[record.field]]
+name = "node_type"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "u16 BE node type at `+0`"
+
+[[record.field]]
+name = "field_count"
+offset = 2
+type = "u8"
+source = "spec"
+anchor = "u8 current effective-field count at `+2`"
+
+[[record]]
 name = "parasolid_construction_prefix"
 parsed_by = "crates/cadmpeg-codec-sldprt/src/parasolid/control_vertices.rs"
 kind = "byte"

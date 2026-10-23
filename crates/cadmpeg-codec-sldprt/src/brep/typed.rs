@@ -13,6 +13,8 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::topology::{BodyKind, Sense};
 
+mod schema;
+
 const BODY_TAG: [u8; 2] = [0x00, 0x0c];
 const SHELL_TAG: [u8; 2] = [0x00, 0x0d];
 const FACE_TAG: [u8; 2] = [0x00, 0x0e];
@@ -805,6 +807,10 @@ fn push_record<T>(offsets: &mut HashSet<usize>, records: &mut Vec<T>, offset: us
     records.push(record);
 }
 
+pub(super) fn schema_prefix_end(bytes: &[u8], offset: usize) -> Option<usize> {
+    schema::edited_payload(bytes, offset).map(|(_, end)| end)
+}
+
 pub(super) fn tagged_owner_prefix_end(bytes: &[u8], offset: usize) -> Option<usize> {
     let tag = bytes.get(offset..offset.checked_add(2)?)?;
     if tag == BODY_TAG {
@@ -831,25 +837,32 @@ pub(super) fn scan_with_payload_exclusions(bytes: &[u8], prefixed: bool) -> Fact
     let mut shell_offsets = HashSet::new();
     let mut region_offsets = HashSet::new();
     let mut face_offsets = HashSet::new();
-    let mut has_edit = false;
-    for (z, &byte) in bytes.iter().enumerate().skip(2) {
+    let mut schema_ranges = Vec::new();
+    let mut offset = 0;
+    let schema_scan_end = bytes.len().checked_sub(2).unwrap_or(0);
+    while offset < schema_scan_end {
         while payload_ranges
             .get(payload_index)
-            .is_some_and(|range| range.end <= z)
+            .is_some_and(|range| range.end <= offset)
         {
             payload_index += 1;
         }
         if payload_ranges
             .get(payload_index)
-            .is_some_and(|range| range.contains(&z))
+            .is_some_and(|range| range.contains(&offset))
         {
+            offset += 1;
             continue;
         }
-        has_edit |= matches!(byte, b'C' | b'D' | b'I' | b'A');
-        if byte != b'Z' || !has_edit {
+        let Some((class, payload)) = schema::edited_payload(bytes, offset) else {
+            offset += 1;
             continue;
-        }
-        if let Some(body) = parse_body_layout(bytes, z + 1, z + 1) {
+        };
+        schema_ranges.push(offset..payload);
+        if let Some(body) = (class == schema::Class::Body)
+            .then(|| parse_body_layout(bytes, payload, payload))
+            .flatten()
+        {
             push_record(
                 &mut body_offsets,
                 &mut facts.bodies,
@@ -857,12 +870,18 @@ pub(super) fn scan_with_payload_exclusions(bytes: &[u8], prefixed: bool) -> Fact
                 body.into_node(),
             );
         }
-        if let Some(shell) = parse_shell_fields(bytes, z + 1, z + 1) {
+        if let Some(shell) = (class == schema::Class::Shell)
+            .then(|| parse_shell_fields(bytes, payload, payload))
+            .flatten()
+        {
             if !shell_offsets.contains(&shell.offset) {
                 push_record(&mut shell_offsets, &mut facts.shells, shell.offset, shell);
             }
         }
-        if let Some(region) = parse_region_fields(bytes, z + 1, z + 1) {
+        if let Some(region) = (class == schema::Class::Region)
+            .then(|| parse_region_fields(bytes, payload, payload))
+            .flatten()
+        {
             if !region_offsets.contains(&region.offset) {
                 push_record(
                     &mut region_offsets,
@@ -872,15 +891,20 @@ pub(super) fn scan_with_payload_exclusions(bytes: &[u8], prefixed: bool) -> Fact
                 );
             }
         }
-        if let Some(face) = parse_face_fields(bytes, z + 1, z + 1) {
+        if let Some(face) = (class == schema::Class::Face)
+            .then(|| parse_face_fields(bytes, payload, payload))
+            .flatten()
+        {
             if !face_offsets.contains(&face.offset) {
                 push_record(&mut face_offsets, &mut facts.faces, face.offset, face);
             }
         }
+        offset = payload;
     }
     // A buffer shorter than the two-byte tag holds no tagged record.
     if let Some(scan_end) = bytes.len().checked_sub(2) {
         payload_index = 0;
+        let mut schema_index = 0;
         for offset in 0..scan_end {
             while payload_ranges
                 .get(payload_index)
@@ -890,6 +914,18 @@ pub(super) fn scan_with_payload_exclusions(bytes: &[u8], prefixed: bool) -> Fact
             }
             if payload_ranges
                 .get(payload_index)
+                .is_some_and(|range| range.contains(&offset))
+            {
+                continue;
+            }
+            while schema_ranges
+                .get(schema_index)
+                .is_some_and(|range| range.end <= offset)
+            {
+                schema_index += 1;
+            }
+            if schema_ranges
+                .get(schema_index)
                 .is_some_and(|range| range.contains(&offset))
             {
                 continue;
@@ -985,6 +1021,32 @@ mod tests {
     use std::collections::HashMap;
     use std::collections::HashSet;
     use std::io::Cursor;
+
+    fn copied_schema(tag: [u8; 2], fields: u8) -> Vec<u8> {
+        let mut bytes = tag.to_vec();
+        bytes.push(fields);
+        bytes.extend(std::iter::repeat_n(b'C', usize::from(fields)));
+        bytes.push(b'Z');
+        bytes
+    }
+
+    fn schema_pointer(bytes: &mut Vec<u8>, name: &[u8], class: u16) {
+        bytes.push(u8::try_from(name.len()).unwrap());
+        bytes.extend(name);
+        bytes.extend(class.to_be_bytes());
+        bytes.extend(1u16.to_be_bytes());
+    }
+
+    fn inserted_pointer_schema(tag: [u8; 2], base: u8, before: u8) -> Vec<u8> {
+        let mut bytes = tag.to_vec();
+        bytes.push(base + 1);
+        bytes.extend(std::iter::repeat_n(b'C', usize::from(before)));
+        bytes.push(b'I');
+        schema_pointer(&mut bytes, b"extra", 12);
+        bytes.extend(std::iter::repeat_n(b'C', usize::from(base - before)));
+        bytes.push(b'Z');
+        bytes
+    }
 
     #[test]
     fn semantic_writer_emits_typed_body_ownership_nodes() {
@@ -1207,9 +1269,7 @@ mod tests {
 
     #[test]
     fn first_body_follows_schema_terminator() {
-        let mut bytes = vec![0, 0x0c, 0x1b];
-        bytes.extend_from_slice(b"CCCCA");
-        bytes.push(b'Z');
+        let mut bytes = copied_schema(BODY_TAG, 23);
         bytes.extend(body_node(3, 0x18b9, 1));
         let facts = scan(&bytes);
         assert_eq!(facts.bodies.len(), 1);
@@ -1218,8 +1278,141 @@ mod tests {
     }
 
     #[test]
+    fn edited_body_schema_does_not_reinterpret_its_payload_as_shell() {
+        let mut bytes = BODY_TAG.to_vec();
+        bytes.push(27);
+        bytes.extend([b'C'; 23]);
+        bytes.push(b'A');
+        bytes.push(16);
+        bytes.extend(b"index_map_offset");
+        bytes.extend([0, 0, 0, 1, 1, b'd']);
+        for name in [
+            b"index_map".as_slice(),
+            b"node_id_index_map".as_slice(),
+            b"schema_embedding_map".as_slice(),
+        ] {
+            bytes.push(b'A');
+            schema_pointer(&mut bytes, name, 82);
+        }
+        bytes.push(b'Z');
+        let payload = bytes.len();
+        bytes.extend(body_node_with_topology(
+            3,
+            1006,
+            1,
+            [7, 8, 9, 10, 11, 12, 13],
+        ));
+        bytes.extend([0, 0, 0, 0, 0, 1, 0, 1, 0, 1]);
+        assert!(super::parse_body_layout(&bytes, payload, payload).is_some());
+        assert!(super::parse_shell_fields(&bytes, payload, payload).is_some());
+
+        let facts = scan(&bytes);
+        assert_eq!(facts.bodies.len(), 1);
+        assert_eq!(facts.bodies[0].attr, 3);
+        assert_eq!(facts.bodies[0].offset, payload);
+        assert!(!facts.shells.iter().any(|node| node.offset == payload));
+        assert_eq!(facts.topology_class_masks().get(&3), Some(&1));
+        assert!(facts.topology_owner_attrs().contains(&3));
+    }
+
+    #[test]
+    fn edited_shell_schema_selects_shell_for_a_shared_valid_prefix() {
+        let mut bytes = copied_schema(SHELL_TAG, 9);
+        let payload = bytes.len();
+        bytes.extend(body_node(3, 1006, 1));
+        assert!(super::parse_body_layout(&bytes, payload, payload).is_some());
+        assert!(super::parse_shell_fields(&bytes, payload, payload).is_some());
+        let facts = scan(&bytes);
+        assert_eq!(facts.shells.len(), 1);
+        assert_eq!(facts.shells[0].attr, 3);
+        assert!(!facts.bodies.iter().any(|node| node.offset == payload));
+        assert_eq!(facts.topology_class_masks().get(&3), Some(&2));
+    }
+
+    #[test]
+    fn distinct_body_and_shell_records_keep_the_owner_class_conflict() {
+        let mut bytes = copied_schema(BODY_TAG, 23);
+        bytes.extend(body_node(3, 1006, 1));
+        bytes.extend(typed_shell(3, 814, 39));
+        let facts = scan(&bytes);
+        assert_eq!(facts.topology_class_masks().get(&3), Some(&3));
+        assert!(!facts.topology_owner_attrs().contains(&3));
+    }
+
+    #[test]
+    fn incomplete_schema_edits_do_not_authorize_an_owner() {
+        for mut bytes in [
+            vec![0, 12, 27, b'C', b'Z'],
+            vec![0, 12, 23, b'C', b'Z'],
+            vec![b'C', b'Z'],
+        ] {
+            bytes.extend(body_node(3, 1006, 1));
+            let facts = scan(&bytes);
+            assert!(!facts.bodies.iter().any(|node| node.attr == 3));
+            assert!(!facts.topology_owner_attrs().contains(&3));
+        }
+    }
+
+    #[test]
+    fn complete_schema_inside_counted_payload_does_not_authorize_an_owner() {
+        let mut payload = copied_schema(BODY_TAG, 23);
+        payload.extend(body_node(3, 1006, 1));
+        while payload.len() % 4 != 0 {
+            payload.push(0);
+        }
+        let mut bytes = vec![0, 82];
+        bytes.extend(u32::try_from(payload.len() / 4).unwrap().to_be_bytes());
+        bytes.extend(500u16.to_be_bytes());
+        bytes.extend(&payload);
+        for prefixed in [false, true] {
+            let facts = super::scan_with_payload_exclusions(&bytes, prefixed);
+            assert!(!facts.topology_owner_attrs().contains(&3));
+            assert!(!facts.bodies.iter().any(|node| node.attr == 3));
+        }
+        bytes.extend(copied_schema(BODY_TAG, 23));
+        bytes.extend(body_node(3, 1006, 1));
+        assert!(scan(&bytes).topology_owner_attrs().contains(&3));
+    }
+
+    #[test]
+    fn schema_named_field_cannot_create_a_point_class_or_enclosure() {
+        let mut bytes = copied_schema(BODY_TAG, 23);
+        bytes[2] = 26;
+        bytes.pop();
+        bytes.push(b'A');
+        bytes.push(5);
+        bytes.extend(b"array");
+        let fake_point = bytes.len();
+        bytes.extend([0, 29, 0, 3]);
+        bytes.push(b'A');
+        bytes.push(2);
+        bytes.extend(b"aa");
+        bytes.extend([0, 0, 0, 1, 1, b'd']);
+        bytes.push(b'A');
+        schema_pointer(&mut bytes, &[b'a'; 40], 82);
+        bytes.push(b'Z');
+        let payload = bytes.len();
+        assert!(
+            super::super::topology::point_class_attrs(&bytes[fake_point..], false).contains(&3)
+        );
+        bytes.extend(body_node(3, 1006, 1));
+        bytes.extend([0, 1, 0, 1, 0, 0, 0, 0, 0, 1]);
+        let scopes = super::super::topology::topology_scopes(&bytes, false);
+        assert!(scopes.payloads.is_empty());
+        assert!(!super::super::topology::point_class_attrs(&bytes, false).contains(&3));
+        let facts = scan(&bytes);
+        assert!(facts
+            .bodies
+            .iter()
+            .any(|node| node.offset == payload && node.attr == 3));
+        assert!(facts.topology_owner_attrs().contains(&3));
+        bytes.extend(crate::test_support::parasolid::world_point(3, [0.0; 3]));
+        assert!(super::super::topology::point_class_attrs(&bytes, false).contains(&3));
+    }
+
+    #[test]
     fn body_kind_is_stored_not_inferred() {
-        let mut bytes = vec![0, 0x0c, 0x1b, b'C', b'Z'];
+        let mut bytes = copied_schema(BODY_TAG, 23);
         bytes.extend(body_node(3, 7, 3));
         let facts = scan(&bytes);
         assert_eq!(facts.bodies[0].kind, BodyKind::Sheet);
@@ -1236,7 +1429,7 @@ mod tests {
 
     #[test]
     fn extended_body_references_are_decoded() {
-        let mut bytes = vec![0, 0x0c, 0x1b, b'C', b'Z'];
+        let mut bytes = copied_schema(BODY_TAG, 23);
         bytes.extend(body_node_with_topology(
             3,
             7,
@@ -1261,7 +1454,7 @@ mod tests {
         const REGION_ATTR: u16 = 40_002;
         const FACE: u16 = 40_003;
 
-        let mut bytes = vec![0, 0x0c, 0x1b, b'C', b'Z'];
+        let mut bytes = copied_schema(BODY_TAG, 23);
         bytes.extend(body_node_with_topology(
             BODY_ATTR,
             7,
@@ -1292,7 +1485,7 @@ mod tests {
 
     #[test]
     fn seven_reference_body_and_extended_region_fields_are_decoded() {
-        let mut bytes = vec![0, 0x0c, 0x1b, b'C', b'Z'];
+        let mut bytes = inserted_pointer_schema(BODY_TAG, 23, 7);
         bytes.extend(body_node_with_header::<7>(
             3,
             7,
@@ -1317,7 +1510,7 @@ mod tests {
 
     #[test]
     fn first_region_follows_schema_terminator() {
-        let mut bytes = vec![0, 0x13, 0x1b, b'C', b'Z'];
+        let mut bytes = inserted_pointer_schema(REGION_TAG, 7, 6);
         bytes.extend_from_slice(&11u16.to_be_bytes());
         bytes.extend_from_slice(&9u32.to_be_bytes());
         for value in [1, 3, 45, 1, 51, 1] {
@@ -1332,7 +1525,7 @@ mod tests {
     }
 
     #[test]
-    fn tagged_face_replaces_a_schema_prepass_collision() {
+    fn tagged_face_survives_an_incomplete_schema_marker() {
         let mut bytes = vec![0, 0x0e, b'C', b'Z'];
         bytes.extend(typed_face(100, 900, [1, 1, 1, 8, 12]));
 
@@ -1345,7 +1538,7 @@ mod tests {
 
     #[test]
     fn typed_hierarchy_uses_previous_region_and_shell_owner() {
-        let mut bytes = vec![0, 0x0c, 0x1b, b'C', b'Z'];
+        let mut bytes = copied_schema(BODY_TAG, 23);
         bytes.extend(body_node(3, 7, 1));
         bytes.extend(typed_shell(7, 814, 39));
         bytes.extend(typed_region(11, 244, [1, 3, 39, 1, 44], b'V'));
@@ -1640,7 +1833,7 @@ mod tests {
 
     #[test]
     fn malformed_body_kind_is_withheld() {
-        let mut bytes = vec![0, 0x0c, 0x1b, b'C', b'Z'];
+        let mut bytes = copied_schema(BODY_TAG, 23);
         bytes.extend(body_node(3, 7, 4));
         assert!(scan(&bytes).bodies.is_empty());
     }

@@ -500,6 +500,9 @@ fn unsupported_vertex_prefix(buf: &[u8], off: usize) -> Option<VertexUse> {
 }
 
 fn topology_header_prefix_end(buf: &[u8], off: usize, tag: u8) -> Option<usize> {
+    if let Some(end) = super::typed::schema_prefix_end(buf, off) {
+        return Some(end);
+    }
     if let Some(end) = super::spline::surface_descriptor_prefix_end(buf, off) {
         return Some(end);
     }

@@ -2764,6 +2764,16 @@ pub(crate) mod parasolid_nurbs_curve_short {
     pub(crate) const LEN: usize = 25;
 }
 
+/// Byte offsets for the `parasolid_edited_type_header` record.
+///
+/// Spec §4.1. Record length 3 B.
+pub(crate) mod parasolid_edited_type_header {
+    /// Offset of `node_type` (`u16`, big-endian). Spec §4.1.
+    pub(crate) const NODE_TYPE: usize = 0;
+    /// Offset of `field_count` (`u8`). Spec §4.1.
+    pub(crate) const FIELD_COUNT: usize = 2;
+}
+
 /// Byte offsets for the `parasolid_construction_prefix` record.
 ///
 /// Spec §2. Record length 8 B.

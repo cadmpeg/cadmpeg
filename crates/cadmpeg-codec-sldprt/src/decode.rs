@@ -2595,7 +2595,6 @@ fn build_geometry_ir(
     ir.model.sketches = sketches;
     ir.model.sketch_entities = sketch_entities;
     ir.model.sketch_constraints = sketch_constraints;
-    stamp_sketch_baseline(ctx, &mut ir, &all_lanes)?;
 
     let brep_entities = brep.neutral_entity_count()?;
     ir.model.bodies = brep.bodies;
@@ -3262,6 +3261,7 @@ fn build_geometry_ir(
     // digests are stamped once, in `decode_result`, after native unknown
     // records are attached.
     ir.finalize();
+    stamp_sketch_baseline(ctx, &mut ir, &native.feature_input_lanes)?;
     Ok((ir, annotations, unknowns, pmi_losses))
 }
 
@@ -4013,7 +4013,6 @@ fn build_metadata_ir(
         "admit SLDPRT entities",
     )?;
     native.store(ctx, ir.native.namespace_mut("sldprt"))?;
-    stamp_sketch_baseline(ctx, &mut ir, &native.feature_input_lanes)?;
     bind_active_configuration_partition(&mut ir);
     mark_active_configuration(&mut ir);
     stamp_configuration_baseline(ctx, &mut ir)?;
@@ -4023,6 +4022,7 @@ fn build_metadata_ir(
     // digests are stamped once, in `decode_result`, after native unknown
     // records are attached.
     ir.finalize();
+    stamp_sketch_baseline(ctx, &mut ir, &native.feature_input_lanes)?;
     Ok((ir, annotations, unknowns, pmi_losses))
 }
 

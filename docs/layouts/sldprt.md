@@ -3043,6 +3043,18 @@ Parsed by:
 | 21 | 2 | `multiplicities` | `u16` | big | spec | multiplicity pointer at `+21` |
 | 23 | 2 | `knots` | `u16` | big | spec | knot pointer at `+23` |
 
+## `parasolid_edited_type_header`
+
+Spec §4.1 · layout: byte offsets · size: 3 B
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/brep/typed/schema.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `node_type` | `u16` | big | spec | u16 BE node type at `+0` |
+| 2 | 1 | `field_count` | `u8` | big | spec | u8 current effective-field count at `+2` |
+
 ## `parasolid_construction_prefix`
 
 Spec §2 · layout: byte offsets · size: 8 B

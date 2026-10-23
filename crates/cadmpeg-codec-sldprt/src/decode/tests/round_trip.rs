@@ -256,3 +256,29 @@ fn source_less_cube_without_native_envelope_is_refused() {
         "{error}"
     );
 }
+
+#[test]
+fn sketch_baselines_cover_final_relation_binding_and_arena_order() {
+    for body in [triangle_body(), Vec::new()] {
+        let source = crate::test_support::history::sldprt_with_tagged_compact_relation_names(
+            &body,
+            "sgPntPntDist",
+            [[0xd6, 0x80]; 2],
+            &["Sketch1", "D2", "D1"],
+        );
+        let decoded = SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap();
+        assert!(!decoded.ir().model.sketch_constraints.is_empty());
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let baselines = &decoded.ir().source.as_ref().unwrap().attributes;
+        assert_eq!(
+            baselines["sldprt_neutral_sketch_local_sha256"],
+            crate::resolved_features::hashes::sketch_hash(&ctx, decoded.ir()).unwrap()
+        );
+        assert_eq!(
+            baselines["sldprt_neutral_sketch_constraint_local_sha256"],
+            crate::resolved_features::hashes::constraint_hash(&ctx, decoded.ir()).unwrap()
+        );
+    }
+}

@@ -1,0 +1,122 @@
+{
+  "container_kind": "sldprt-blocks",
+  "entries": [
+    {
+      "attributes": {
+        "family": "parasolid",
+        "offset": "12",
+        "parasolid_description": "partition body",
+        "parasolid_schema": "SCH_SW_33103_11000",
+        "sha256": "819255cf670381be33a1fbc58dfcd9267999592bc642e71f5d9dec715e3fc5e3",
+        "type_id": "0x00000020"
+      },
+      "compression": "deflate",
+      "expanded": 800,
+      "name": "Contents/Config-0-Partition",
+      "role": "block",
+      "stored": 295
+    },
+    {
+      "attributes": {
+        "family": "unknown",
+        "offset": "364",
+        "sha256": "a43790da2e3406f2bae4d13a1da4fc2358d0cba873bc096aed123d9ec60b1e64",
+        "type_id": "0x00000042"
+      },
+      "compression": "deflate",
+      "expanded": 68,
+      "name": "Contents/Keywords",
+      "role": "block",
+      "stored": 73
+    },
+    {
+      "attributes": {
+        "family": "unknown",
+        "offset": "484",
+        "sha256": "a607e8d2c83c2f7280e62dfab609d47a3f5b4b72f22062db57ce0dcbbfc6f870",
+        "type_id": "0x00000043"
+      },
+      "compression": "deflate",
+      "expanded": 253,
+      "name": "Contents/Features",
+      "role": "block",
+      "stored": 153
+    },
+    {
+      "attributes": {
+        "offset": "686",
+        "type_id": "0x00000020"
+      },
+      "compression": "none",
+      "name": "Contents/Config-0-Partition",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 295
+      }
+    },
+    {
+      "attributes": {
+        "offset": "759",
+        "type_id": "0x00000042"
+      },
+      "compression": "none",
+      "name": "Contents/Keywords",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 73
+      }
+    },
+    {
+      "attributes": {
+        "offset": "822",
+        "type_id": "0x00000043"
+      },
+      "compression": "none",
+      "name": "Contents/Features",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 153
+      }
+    }
+  ],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [
+        {
+          "admission": "admitted",
+          "declared": {
+            "carrier": "block@12:Contents/Config-0-Partition+0",
+            "schema": "SCH_SW_33103_11000"
+          },
+          "dialect": "parasolid:sch-sw-33103"
+        }
+      ],
+      "primary": {
+        "admission": "residual",
+        "dialect": "sldprt:unknown"
+      }
+    }
+  },
+  "losses": [
+    {
+      "code": {
+        "code": "source.dialect-unverified",
+        "kind": "source_dialect_unverified",
+        "namespace": "sldprt",
+        "scope": "namespaced",
+        "strict_floor": "warning"
+      },
+      "message": "the document carries no swSolidWorks swVersion declaration, so no declared identity was verified. The document is read on the `sldprt:unknown` residual path without substituting a declared dialect grammar: the feature-operation form-code padding filter is not applied, and an operation code binds only where the four- and eight-byte candidates agree. Agreement is consistency, not a declaration.",
+      "severity": "warning"
+    }
+  ],
+  "notes": [
+    "outer version word: 0x00000004; 3 CRC-validated block(s), 3 tail-directory entry/entries, 0 cache-cell(s), 0 compound stream(s)",
+    "active Parasolid B-rep candidate: Contents/Config-0-Partition (800 bytes, schema SCH_SW_33103_11000)",
+    "Parasolid body streams supply the typed topology and analytic carriers used by decode"
+  ]
+}
