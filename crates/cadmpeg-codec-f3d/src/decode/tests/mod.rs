@@ -8,6 +8,7 @@ mod completeness;
 mod container;
 mod curves;
 mod depth;
+mod face_materials;
 mod header_recovery;
 mod pcurves;
 mod procedural;
