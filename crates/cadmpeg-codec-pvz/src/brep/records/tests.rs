@@ -568,3 +568,49 @@ fn bspline_degree_is_at_most_the_admitted_degree() {
         }
     }
 }
+
+#[test]
+fn coedge_edge_index_skips_composite_members() {
+    let mut stream = plane_stream(false);
+    stream.loop_record(-2).coedge(1, 1, NONE, NONE).terminator();
+    let singular = stream.payload().u32(0).scalar(0.0).scalar(1.0).bytes();
+    stream.record(SINGULAR_USE, &singular).terminator();
+    stream.line_edge([0.0; 3], [1.0, 0.0, 0.0]);
+    stream.line_edge([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
+    let composite = stream
+        .payload()
+        .u8(2)
+        .u8(0)
+        .u32(2)
+        .u32(0)
+        .u32(1)
+        .u8(0)
+        .bytes();
+    stream.record(EDGE_CURVE, &composite);
+    stream.line_edge([0.0; 3], [0.0, 0.0, 1.0]);
+    let model = parse(stream).unwrap();
+    assert_eq!(model.loops[0].coedges[0].edge, Some(3));
+    assert_eq!(model.faces[0].singular_uses[0].edge, 2);
+    assert!(
+        matches!(&model.edges[2].geometry, CurveGeometry::Composite(members) if members == &[0, 1])
+    );
+}
+
+#[test]
+fn coedge_edge_index_counts_only_unlisted_edges() {
+    let mut stream = plane_stream(false);
+    stream.loop_record(-2).coedge(2, 1, NONE, NONE).terminator();
+    stream.line_edge([0.0; 3], [1.0, 0.0, 0.0]);
+    stream.line_edge([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
+    let composite = stream
+        .payload()
+        .u8(2)
+        .u8(0)
+        .u32(2)
+        .u32(0)
+        .u32(1)
+        .u8(0)
+        .bytes();
+    stream.record(EDGE_CURVE, &composite);
+    assert!(parse(stream).is_err());
+}

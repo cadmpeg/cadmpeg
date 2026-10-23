@@ -261,3 +261,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `creo_view_pvz.md` §8.13. Most referenced curves stay within 2×10⁻⁵ m of one point. Some are circular arcs of radius 9×10⁻³ m, lines, B-splines, and polylines of model-space length. The referenced edge is also used by a coedge of the same face, and that coedge can have a second use on another face.
 
 **Need.** We must know the meaning to decide whether such an edge is degenerate in the neutral model.
+
+### PVZ-40. Singular-use edge index with composite edges
+
+**Question.** Which edge index space does the `edge` field of a singular-use record (`creo_view_pvz.md` §8.13) use in a stream that has composite edge records?
+
+**Known.** `creo_view_pvz.md` §8.2. A coedge edge index is an ordinal among the edge records that no composite lists, and a composite member index is an ordinal among all edge records. Without composite edge records the two spaces are equal. No available stream has both a composite edge record and a singular-use record.
+
+**Need.** We must know the space to find the edge of a singular use in a stream with composite edges.

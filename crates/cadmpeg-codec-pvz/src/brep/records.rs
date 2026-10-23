@@ -321,8 +321,10 @@ impl StreamBuilder {
                 "exact stream does not end with its stream terminator",
             ));
         }
-        check_indexes(&self.model)?;
-        Ok(self.model)
+        let mut model = self.model;
+        check_indexes(&model)?;
+        resolve_edge_indexes(&mut model)?;
+        Ok(model)
     }
 }
 
@@ -336,7 +338,50 @@ fn record_length(tag: u32, offset: usize) -> CodecError {
     ))
 }
 
-/// Checks every cross-section index against the target section count.
+/// Replaces the edge index of every coedge and singular use, an ordinal
+/// among the edge records that no composite lists (§8.2), with the ordinal
+/// of its record among all edge records.
+fn resolve_edge_indexes(model: &mut ExactModel) -> Result<(), CodecError> {
+    let members: std::collections::BTreeSet<usize> = model
+        .edges
+        .iter()
+        .filter_map(|curve| match &curve.geometry {
+            CurveGeometry::Composite(members) => Some(members.iter().copied()),
+            _ => None,
+        })
+        .flatten()
+        .collect();
+    let listed: Vec<usize> = (0..model.edges.len())
+        .filter(|index| !members.contains(index))
+        .collect();
+    let resolve = |what: &str, index: usize, offset: usize| {
+        listed.get(index).copied().ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "{what} index {index} at offset {offset} is outside the {} edges that no \
+                 composite lists",
+                listed.len()
+            ))
+        })
+    };
+    for record in &mut model.loops {
+        for coedge in &mut record.coedges {
+            if let Some(edge) = coedge.edge {
+                coedge.edge = Some(resolve("coedge edge", edge, coedge.offset)?);
+            }
+        }
+    }
+    // PVZ-40: a singular use names an edge that a coedge of its face also
+    // names, so its index is read in the coedge space.
+    for face in &mut model.faces {
+        for singular in &mut face.singular_uses {
+            singular.edge = resolve("singular-use edge", singular.edge, singular.offset)?;
+        }
+    }
+    Ok(())
+}
+
+/// Checks every pcurve index and composite member index against the target
+/// section count.
 fn check_indexes(model: &ExactModel) -> Result<(), CodecError> {
     let edges = model.edges.len();
     let pcurves = model.pcurves.len();
@@ -347,24 +392,10 @@ fn check_indexes(model: &ExactModel) -> Result<(), CodecError> {
     };
     for record in &model.loops {
         for coedge in &record.coedges {
-            if let Some(edge) = coedge.edge.filter(|edge| *edge >= edges) {
-                return Err(out_of_range("coedge edge", edge, coedge.offset));
-            }
             for pcurve in [coedge.pcurve, coedge.secondary].into_iter().flatten() {
                 if pcurve >= pcurves {
                     return Err(out_of_range("coedge pcurve", pcurve, coedge.offset));
                 }
-            }
-        }
-    }
-    for face in &model.faces {
-        for singular in &face.singular_uses {
-            if singular.edge >= edges {
-                return Err(out_of_range(
-                    "singular-use edge",
-                    singular.edge,
-                    singular.offset,
-                ));
             }
         }
     }

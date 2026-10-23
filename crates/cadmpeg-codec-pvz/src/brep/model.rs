@@ -203,7 +203,7 @@ pub(crate) struct Loop {
 /// One coedge record (§8.12).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Coedge {
-    /// Edge index.
+    /// Edge index among all edge records.
     pub(crate) edge: Option<usize>,
     /// `orientation` byte.
     pub(crate) orientation: u8,
@@ -218,7 +218,7 @@ pub(crate) struct Coedge {
 /// One singular edge use (§8.13).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct SingularUse {
-    /// Edge index.
+    /// Edge index among all edge records.
     pub(crate) edge: usize,
     /// Payload offset of the record.
     pub(crate) offset: usize,

@@ -465,7 +465,7 @@ terminator
 | `0x15` | Pcurve | §8.16 |
 | `0x0a` | 12-byte record in a singular use | open item |
 
-A face is one surface record and the loop, coedge, singular-use, and terminator records that follow it up to the next surface record or the first curve record. Edge records and pcurve records can alternate in the curve section. A face index is the zero-based ordinal of its surface record. An edge index is the zero-based ordinal of its record among the edge records, and a pcurve index the zero-based ordinal of its record among the pcurve records. The stream ends with one terminator that closes no loop and no singular use. All coedge, singular-use, and edge-tessellation references to these indexes are less than the record count of the target section.
+A face is one surface record and the loop, coedge, singular-use, and terminator records that follow it up to the next surface record or the first curve record. Edge records and pcurve records can alternate in the curve section. A face index is the zero-based ordinal of its surface record. A pcurve index is the zero-based ordinal of its record among all pcurve records. Edge indexes use two spaces. A composite edge record (§8.15) and the `edge_index` of an edge-tessellation header (§7.2) give the zero-based ordinal of the edge record among all edge records. A coedge record gives the zero-based ordinal of the edge record among the edge records that no composite edge record lists; a composite edge record itself counts in this space. In a stream without composite edge records the two spaces are equal. The stream ends with one terminator that closes no loop and no singular use. Every pcurve index and composite member index is less than the record count of its section, and every coedge edge index is less than the number of edge records that no composite lists.
 
 ### 8.3 Surface record head
 
@@ -658,7 +658,7 @@ Parameterisations and natural parameter intervals:
 
 A circle has `|X| = |Y|` with `X ⊥ Y`. An ellipse has `X ⊥ Y` and unequal lengths. For type 6, `pole_count = knot_count − order`, the knots are finite and do not decrease, and `rational` 0 means every weight is 1. The interval start is the curve start point; the interval end is the curve end point.
 
-A type-2 record lists other edge records of the same section by index; each listed index is less than the edge count. The parameterisation of a composite curve is an open item.
+A type-2 record lists other edge records by their ordinal among all edge records (§8.2); each listed index is less than the edge count. The parameterisation of a composite curve is an open item.
 
 ### 8.16 Pcurve records
 
