@@ -7,6 +7,10 @@
 //! edge draws a capped slice that charges the pass as it works. An item whose
 //! slice runs out reports its remaining quantities as
 //! `evaluation.work-exhausted`; the measurement continues.
+//!
+//! The check findings pass owns a smaller allowance of the same shape,
+//! `max(FINDINGS_PASS_WORK_FLOOR, k × (faces + edges))`, with smaller
+//! slices. An item whose slice runs out is not checked.
 
 use std::cell::Cell;
 
@@ -47,6 +51,27 @@ const MAX_FACE_MEASURE_WORK: usize = 1 << 26;
 /// One edge slice: length and box of one edge.
 const MAX_EDGE_MEASURE_WORK: usize = 1 << 22;
 
+/// The smallest findings pass allowance under the desktop profile.
+const FINDINGS_PASS_WORK_FLOOR: usize = 1 << 16;
+
+/// The smallest findings pass allowance under the service profile.
+const FINDINGS_PASS_WORK_FLOOR_SERVICE: usize = 1 << 14;
+
+/// Findings pass allowance per face and edge of the document under the
+/// desktop profile.
+const MAX_FINDINGS_PASS_WORK_PER_ITEM: usize = 1 << 9;
+
+/// Findings pass allowance per face and edge of the document under the
+/// service profile.
+const MAX_FINDINGS_PASS_WORK_PER_ITEM_SERVICE: usize = 1 << 7;
+
+/// One face slice of the findings pass: ring traversal, resolver, region,
+/// orientation readings, and the area and flux of a face of a closed body.
+const MAX_FINDINGS_FACE_WORK: usize = 1 << 14;
+
+/// One edge slice of the findings pass: the length of one edge.
+const MAX_FINDINGS_EDGE_WORK: usize = 1 << 12;
+
 /// The work profile of a measurement pass.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum WorkProfile {
@@ -71,6 +96,20 @@ impl WorkProfile {
             .map(|scaled| scaled.max(MEASURE_PASS_WORK_FLOOR))
     }
 
+    /// The check findings pass allowance for a document of `items` faces
+    /// and edges, absent when it does not fit a `usize`.
+    #[must_use]
+    pub fn findings_allowance(self, items: usize) -> Option<usize> {
+        let (floor, per_item) = match self {
+            Self::Desktop => (FINDINGS_PASS_WORK_FLOOR, MAX_FINDINGS_PASS_WORK_PER_ITEM),
+            Self::Service => (
+                FINDINGS_PASS_WORK_FLOOR_SERVICE,
+                MAX_FINDINGS_PASS_WORK_PER_ITEM_SERVICE,
+            ),
+        };
+        items.checked_mul(per_item).map(|scaled| scaled.max(floor))
+    }
+
     /// The pair allowance of an ID-free comparison of `bodies` bodies of
     /// both documents, absent when it does not fit a `usize`.
     #[must_use]
@@ -90,15 +129,28 @@ pub(crate) struct PassAllowance {
     allowance: usize,
     work: WorkBudget,
     starved: Cell<bool>,
+    face_limit: usize,
+    edge_limit: usize,
 }
 
 impl PassAllowance {
-    /// The pass allowance of `allowance` work units.
+    /// The measurement pass allowance of `allowance` work units.
     pub(crate) fn new(allowance: usize) -> Self {
+        Self::sliced(allowance, MAX_FACE_MEASURE_WORK, MAX_EDGE_MEASURE_WORK)
+    }
+
+    /// The findings pass allowance of `allowance` work units.
+    pub(crate) fn findings(allowance: usize) -> Self {
+        Self::sliced(allowance, MAX_FINDINGS_FACE_WORK, MAX_FINDINGS_EDGE_WORK)
+    }
+
+    fn sliced(allowance: usize, face_limit: usize, edge_limit: usize) -> Self {
         Self {
             allowance,
             work: WorkBudget::new(allowance),
             starved: Cell::new(false),
+            face_limit,
+            edge_limit,
         }
     }
 
@@ -118,11 +170,11 @@ impl PassAllowance {
     }
 
     pub(crate) fn face_slice(&self) -> ItemBudget<'_> {
-        self.slice(MAX_FACE_MEASURE_WORK)
+        self.slice(self.face_limit)
     }
 
     pub(crate) fn edge_slice(&self) -> ItemBudget<'_> {
-        self.slice(MAX_EDGE_MEASURE_WORK)
+        self.slice(self.edge_limit)
     }
 
     fn slice(&self, limit: usize) -> ItemBudget<'_> {
@@ -236,6 +288,52 @@ mod tests {
             assert_eq!(profile.pair_allowance(1 << 16), Some((1 << 16) * per_body));
             assert_eq!(profile.pair_allowance(usize::MAX), None);
         }
+    }
+
+    #[test]
+    fn findings_allowance_scales_with_items_above_a_smaller_floor() {
+        use super::{
+            FINDINGS_PASS_WORK_FLOOR, FINDINGS_PASS_WORK_FLOOR_SERVICE,
+            MAX_FINDINGS_PASS_WORK_PER_ITEM, MAX_FINDINGS_PASS_WORK_PER_ITEM_SERVICE,
+        };
+        for (profile, floor, per_item) in [
+            (
+                WorkProfile::Desktop,
+                FINDINGS_PASS_WORK_FLOOR,
+                MAX_FINDINGS_PASS_WORK_PER_ITEM,
+            ),
+            (
+                WorkProfile::Service,
+                FINDINGS_PASS_WORK_FLOOR_SERVICE,
+                MAX_FINDINGS_PASS_WORK_PER_ITEM_SERVICE,
+            ),
+        ] {
+            assert_eq!(profile.findings_allowance(0), Some(floor));
+            assert_eq!(
+                profile.findings_allowance(1 << 20),
+                Some((1 << 20) * per_item)
+            );
+            assert_eq!(profile.findings_allowance(usize::MAX), None);
+            let items = 1 << 12;
+            assert!(
+                profile.findings_allowance(items).unwrap() < profile.pass_allowance(items).unwrap()
+            );
+        }
+        assert!(
+            WorkProfile::Service.findings_allowance(1 << 12)
+                < WorkProfile::Desktop.findings_allowance(1 << 12)
+        );
+    }
+
+    #[test]
+    fn a_findings_face_slice_is_smaller_than_a_measurement_face_slice() {
+        use super::MAX_FINDINGS_FACE_WORK;
+        let pass = PassAllowance::findings(1 << 30);
+        let face = pass.face_slice();
+        assert_eq!(face.remaining(), MAX_FINDINGS_FACE_WORK);
+        assert!(face.charge(MAX_FINDINGS_FACE_WORK + 1).is_err());
+        let measurement = PassAllowance::new(1 << 30);
+        assert!(measurement.face_slice().remaining() > MAX_FINDINGS_FACE_WORK);
     }
 
     #[test]

@@ -203,6 +203,10 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-measure`        | `src/budget.rs`                                   | `MAX_COMPARE_PAIR_WORK_PER_BODY_SERVICE` | `1 << 8`                                               | N    | The same per-body pair allowance under `--limits service`. |
 | `cadmpeg-measure`        | `src/budget.rs`                                   | `MAX_FACE_MEASURE_WORK`                  | `1 << 26`                                              | 4    | One face's slice of the pass allowance. Exhaustion makes the face's remaining quantities `evaluation.work-exhausted`; measurement continues. |
 | `cadmpeg-measure`        | `src/budget.rs`                                   | `MAX_EDGE_MEASURE_WORK`                  | `1 << 22`                                              | 4    | One edge's slice of the pass allowance. Exhaustion makes the edge's remaining quantities `evaluation.work-exhausted`; measurement continues. |
+| `cadmpeg-measure`        | `src/budget.rs`                                   | `MAX_FINDINGS_PASS_WORK_PER_ITEM`        | `1 << 9`                                               | 4    | Allowance of the `check` measurement findings pass per face and edge of the document under `--limits desktop`. The allowance is `max(FINDINGS_PASS_WORK_FLOOR, k × (faces + edges))`, `FINDINGS_PASS_WORK_FLOOR = 1 << 16`. An item that finds the allowance empty is not checked, and the pass adds one `measurement_incomplete` info finding with the number of faces and bodies not checked; the check continues. |
+| `cadmpeg-measure`        | `src/budget.rs`                                   | `MAX_FINDINGS_PASS_WORK_PER_ITEM_SERVICE` | `1 << 7`                                              | 4    | The same per-item findings allowance under `--limits service`, with `FINDINGS_PASS_WORK_FLOOR_SERVICE = 1 << 14`. |
+| `cadmpeg-measure`        | `src/budget.rs`                                   | `MAX_FINDINGS_FACE_WORK`                 | `1 << 14`                                              | 4    | One face's slice of the findings allowance. Exhaustion leaves the face, and the body that owns it, not checked, and the pass adds the `measurement_incomplete` info finding; the check continues. |
+| `cadmpeg-measure`        | `src/budget.rs`                                   | `MAX_FINDINGS_EDGE_WORK`                 | `1 << 12`                                              | 4    | One edge's slice of the findings allowance. Exhaustion leaves the faces that use the edge, and the body that owns it, not checked, and the pass adds the `measurement_incomplete` info finding; the check continues. |
 | `cadmpeg-measure`        | `src/quadrature/gauss_kronrod.rs`                 | `MAX_QUADRATURE_INTERVALS`               | `1 << 12`                                              | 4    | Panels of one adaptive integral. At the cap the subdivision stops; an estimate above the acceptance limit makes the quantity `quadrature.not-converged`; measurement continues. |
 | `cadmpeg-measure`        | `src/quadrature/extremum.rs`                      | `MAX_EXTREMUM_REFINEMENT_STEPS`          | `64`                                                   | 4    | Bisection steps of one extremum root. Exhaustion keeps the last bracket, whose width enters the numeric error; measurement continues. |
 | `cadmpeg-measure`        | `src/traversal.rs`                                | `MAX_RING_CHAIN_STEPS`                   | `1 << 16`                                              | 4    | Steps of one ring traversal search. Exhaustion makes the face's bounded quantities `evaluation.work-exhausted`; measurement continues. |
@@ -465,21 +469,21 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 250.
+Production `MAX_*` constants: 254.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 30    |
 | 2    | Per-input bound            | 69    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 123   |
+| 4    | Local work cap             | 127   |
 | N    | Not a decode bound         | 28    |
-|      | Total                      | 250   |
+|      | Total                      | 254   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
 
-By crate: `cadmpeg-core` 3, `cadmpeg-ir` 12, `cadmpeg-measure` 15, `cadmpeg-asm` 4,
+By crate: `cadmpeg-core` 3, `cadmpeg-ir` 12, `cadmpeg-measure` 19, `cadmpeg-asm` 4,
 `cadmpeg-protein` 3, `cadmpeg` 2, `cadmpeg-codec-step` 12,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 3,
 `cadmpeg-codec-freecad` 14, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 18,

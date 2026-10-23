@@ -706,7 +706,8 @@ enforces this.
 ## Check findings
 
 `cadmpeg check`, and the check that `convert` runs, add the defects that
-measurement finds as `warning` findings. A warning does not change the exit
+measurement finds as `warning` findings, and one `info` finding when the
+pass does not check every item. These findings do not change the exit
 status or refuse a write. No decoder or export admission route reads these
 checks ([admissibility-routes.md](admissibility-routes.md)).
 
@@ -715,16 +716,27 @@ checks ([admissibility-routes.md](admissibility-routes.md)).
 | `ring_order` | the loop | the face | The ring's coedges, listed, do not run end to start by oriented vertex identity: they form one closed traversal in another order (`reversed` or `other`), several closed traversals, or none. |
 | `orientation` | the face | none | The face's sense disagrees with its loop winding, or its loops disagree with each other: a face of `inconsistent_faces` or `mixed_faces`. |
 | `orientation` | the body | the faces or the shell the conflict names | Every shell of the body is closed, and the volume is unavailable with `volume.orientation-conflict` or `volume.closure-flux`. |
+| `measurement_incomplete` | none | none | Severity `info`. The findings allowance ran out before the pass checked every face, edge and closed body. The message states the number of faces and bodies not checked. |
 
 The findings pass resolves the boundary, region and orientation readings of
 every face and runs the witnesses. For a body whose shells use every edge
-twice with opposite senses, it also integrates the face areas and fluxes;
-its flux quadrature targets only the volume and closure components. It
-computes no carrier parameter, box, extent or edge box. The pass has one
-allowance, as a measurement pass has (see Pass
-allowance), under the `--limits` profile of the command. A face or an edge
-whose slice runs out gives no finding, and neither does a body that owns
-it. A session resource refusal refuses the check at the `check` stage.
+twice with opposite senses, it also integrates the face areas and the
+volume and closure fluxes; its flux quadrature targets only those
+components. On a plane `d·N` is `h |N|` with `h = (o − P_ref)·n̂`
+constant, so the volume flux is `h A / 3` and the closure flux `n̂ A` for
+the face area `A`, with the area's numeric error scaled into each. The
+pass computes no carrier parameter, box, extent or edge box.
+
+The pass has its own allowance,
+`max(FINDINGS_PASS_WORK_FLOOR, k × (faces + edges of the document))` units,
+with the floor and `k` set by the `--limits` profile of the command
+([decode-resource-caps.md](decode-resource-caps.md)). It is much smaller
+than the allowance of a measurement pass. Each face draws a slice of at
+most `MAX_FINDINGS_FACE_WORK` units and each edge a slice of at most
+`MAX_FINDINGS_EDGE_WORK`. A face or an edge whose slice runs out is not
+checked, and neither is a body that owns it; the pass then adds the
+`measurement_incomplete` finding. A session resource refusal refuses the
+check at the `check` stage.
 
 ## Pass allowance
 

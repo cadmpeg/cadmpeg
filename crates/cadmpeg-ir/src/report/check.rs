@@ -105,6 +105,10 @@ pub enum Check {
     /// or the flux of the unit field through the shells exceeds its
     /// tolerance.
     Orientation,
+    /// The measurement findings pass ran out of its allowance before it
+    /// checked every face, edge and closed body for [`Self::RingOrder`] and
+    /// [`Self::Orientation`].
+    MeasurementIncomplete,
 }
 
 impl fmt::Display for Check {
@@ -129,6 +133,7 @@ impl fmt::Display for Check {
             Self::Counts => "counts",
             Self::RingOrder => "ring_order",
             Self::Orientation => "orientation",
+            Self::MeasurementIncomplete => "measurement_incomplete",
         })
     }
 }
@@ -222,6 +227,7 @@ mod tests {
         for (check, name) in [
             (Check::RingOrder, "ring_order"),
             (Check::Orientation, "orientation"),
+            (Check::MeasurementIncomplete, "measurement_incomplete"),
         ] {
             assert_eq!(serde_json::to_value(check)?, name);
             assert_eq!(check.to_string(), name);

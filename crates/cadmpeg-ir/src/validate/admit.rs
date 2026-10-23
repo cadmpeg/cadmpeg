@@ -363,7 +363,11 @@ mod tests {
             CATIA_ADMISSION_CHECKS,
             SLDPRT_EXPORT_PRECONDITION_CHECKS,
         ] {
-            for check in [Check::RingOrder, Check::Orientation] {
+            for check in [
+                Check::RingOrder,
+                Check::Orientation,
+                Check::MeasurementIncomplete,
+            ] {
                 assert!(!allowed.contains(&check), "{check}");
             }
         }

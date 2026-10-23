@@ -16,8 +16,10 @@
 //! The pass resolves boundaries, regions, orientation readings and
 //! witnesses for every face, and areas and fluxes for the faces of bodies
 //! whose shells use every edge twice with opposite senses. It computes no
-//! carrier parameter, box or extent. Every item draws a slice of one pass
-//! allowance; an item whose slice runs out gives no finding.
+//! carrier parameter, box or extent. Every item draws a slice of one
+//! findings allowance; an item whose slice runs out gives no finding, and
+//! one [`Check::MeasurementIncomplete`] info finding states how many faces
+//! and bodies the pass did not check.
 
 use std::collections::{BTreeSet, HashMap};
 
@@ -67,28 +69,29 @@ impl<'ir> Measurer<'ir> {
     ) -> Result<Vec<Finding>, ResourceLimit> {
         let model = &self.input.ir.model;
         let items = model.faces.len() + model.edges.len();
-        let Some(allowance) = self.options.work.pass_allowance(items) else {
+        let Some(allowance) = self.options.work.findings_allowance(items) else {
             return Err(ResourceLimit {
                 dimension: ResourceDimension::Entities,
                 reason: ResourceFailure::BudgetExceeded,
                 limit: 0,
                 used: cadmpeg_core::decode::u64_from_index(items),
                 additional: 0,
-                operation: "measurement pass allowance",
+                operation: "measurement findings allowance",
             });
         };
-        self.findings_under(ctx, &PassAllowance::new(allowance))
+        self.findings_under(ctx, &PassAllowance::findings(allowance))
     }
 
     /// The findings under `pass`. A face or edge whose slice refused a
-    /// charge is starved: no finding names it or the body that owns it.
+    /// charge is starved: no finding names it or the body that owns it, and
+    /// the info finding counts the faces and bodies left unchecked.
     fn findings_under(
         &self,
         ctx: &DecodeContext<'_>,
         pass: &PassAllowance,
     ) -> Result<Vec<Finding>, ResourceLimit> {
         let model = &self.input.ir.model;
-        let mut findings = self.ring_findings(pass);
+        let (mut findings, mut unchecked) = self.ring_findings(pass);
         let mut starved: BTreeSet<&'ir str> = BTreeSet::new();
 
         let placements: HashMap<&'ir str, Outcome<Placement>> = model
@@ -214,6 +217,7 @@ impl<'ir> Measurer<'ir> {
 
         for face in &model.faces {
             if starved.contains(face.id.as_str()) {
+                unchecked.insert(face.id.as_str());
                 continue;
             }
             let Some(result) = faces.get(face.id.as_str()) else {
@@ -231,6 +235,7 @@ impl<'ir> Measurer<'ir> {
             placements: &placements,
             density: None,
         };
+        let mut unchecked_bodies = 0_usize;
         for body in &model.bodies {
             let id = body.id.as_str();
             let starved_member = witness_slice.exhausted()
@@ -242,7 +247,11 @@ impl<'ir> Measurer<'ir> {
                     .owners
                     .body_edges(id)
                     .any(|edge| starved.contains(edge));
-            if !flux_bodies.contains(id) || starved_member {
+            if !flux_bodies.contains(id) {
+                continue;
+            }
+            if starved_member {
+                unchecked_bodies += 1;
                 continue;
             }
             if let Some(conflict) = bodies.volume_conflict(body) {
@@ -258,13 +267,29 @@ impl<'ir> Measurer<'ir> {
                 ));
             }
         }
+        if !unchecked.is_empty() || unchecked_bodies > 0 {
+            findings.push(Finding {
+                check: Check::MeasurementIncomplete,
+                severity: Severity::Info,
+                message: format!(
+                    "measurement checks were skipped: the findings allowance ran out before {} \
+                     and {} were checked",
+                    counted(unchecked.len(), "face", "faces"),
+                    counted(unchecked_bodies, "body", "bodies")
+                ),
+                entity: None,
+                related: Vec::new(),
+            });
+        }
         Ok(findings)
     }
 
     /// One finding per face ring whose listed coedges are not a closed
-    /// traversal by vertex identity.
-    fn ring_findings(&self, pass: &PassAllowance) -> Vec<Finding> {
+    /// traversal by vertex identity, and the faces with a ring left
+    /// unchecked when the face's slice ran out.
+    fn ring_findings(&self, pass: &PassAllowance) -> (Vec<Finding>, BTreeSet<&'ir str>) {
         let mut findings = Vec::new();
+        let mut unchecked = BTreeSet::new();
         for face in &self.input.ir.model.faces {
             let slice = pass.face_slice();
             for loop_id in &face.loops {
@@ -287,10 +312,12 @@ impl<'ir> Measurer<'ir> {
                     .map(|coedge| self.owners.oriented_ends(coedge))
                     .collect();
                 let Some(steps) = slice.remaining().checked_sub(ends.len()) else {
+                    unchecked.insert(face.id.as_str());
                     break;
                 };
                 let (result, work) = traverse_counted(&ends, steps);
                 if slice.charge(work).is_err() {
+                    unchecked.insert(face.id.as_str());
                     break;
                 }
                 let message = match result {
@@ -308,7 +335,10 @@ impl<'ir> Measurer<'ir> {
                         "the ring's coedges are not listed in traversal order and form several \
                          closed traversals"
                     }
-                    Err(TraversalError::Exhausted) => continue,
+                    Err(TraversalError::Exhausted) => {
+                        unchecked.insert(face.id.as_str());
+                        continue;
+                    }
                 };
                 findings.push(warning(
                     Check::RingOrder,
@@ -318,8 +348,13 @@ impl<'ir> Measurer<'ir> {
                 ));
             }
         }
-        findings
+        (findings, unchecked)
     }
+}
+
+/// `count` followed by the singular or plural noun.
+fn counted(count: usize, one: &str, many: &str) -> String {
+    format!("{count} {}", if count == 1 { one } else { many })
 }
 
 /// The finding of a face whose sense disagrees with its loop winding, or
@@ -353,11 +388,20 @@ fn face_finding(result: &FaceResult<'_>) -> Option<Finding> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
+    use cadmpeg_ir::report::check::{Check, Finding};
+    use cadmpeg_ir::report::Severity;
     use cadmpeg_ir::topology::Sense;
 
     use crate::budget::PassAllowance;
+    use crate::canonical::placement::Placement;
+    use crate::context::{Eval, Work};
+    use crate::edges::measure_edge;
+    use crate::face::FaceInput;
+    use crate::flux::Flux;
     use crate::session::{MeasureInput, MeasureOptions, Measurer};
-    use crate::test_support::service_context;
+    use crate::test_support::{rotated_cuboid, rotation, service_context, TEST_ABSOLUTE_FLOOR};
 
     /// The cube with its first face flipped and its first ring listed in
     /// reversed order: one ring-order and two orientation findings.
@@ -374,7 +418,7 @@ mod tests {
         cube
     }
 
-    fn findings_under(allowance: usize) -> usize {
+    fn findings_under(allowance: usize) -> Vec<Finding> {
         let cube = defective_cube();
         let ctx = service_context();
         let input = MeasureInput {
@@ -382,16 +426,46 @@ mod tests {
             fidelity: None,
             geometry_transferred: true,
         };
-        let found = Measurer::new(input, MeasureOptions::default())
-            .findings_under(&ctx, &PassAllowance::new(allowance))
-            .expect("findings");
-        found.len()
+        Measurer::new(input, MeasureOptions::default())
+            .findings_under(&ctx, &PassAllowance::findings(allowance))
+            .expect("findings")
+    }
+
+    fn checks(found: &[Finding]) -> Vec<Check> {
+        found.iter().map(|finding| finding.check).collect()
+    }
+
+    /// The one info finding of a pass that ran out, with the faces and
+    /// bodies it did not check.
+    fn incomplete(found: &[Finding]) -> &Finding {
+        let [finding] = found
+            .iter()
+            .filter(|finding| finding.check == Check::MeasurementIncomplete)
+            .collect::<Vec<_>>()[..]
+        else {
+            panic!("one measurement_incomplete finding: {found:#?}");
+        };
+        assert_eq!(finding.severity, Severity::Info);
+        assert!(finding.entity.is_none());
+        finding
     }
 
     #[test]
-    fn an_exhausted_pass_gives_no_finding() {
-        assert_eq!(findings_under(1 << 26), 3);
-        assert_eq!(findings_under(0), 0);
+    fn an_exhausted_pass_states_what_it_did_not_check() {
+        let full = findings_under(1 << 26);
+        assert_eq!(
+            checks(&full),
+            [Check::RingOrder, Check::Orientation, Check::Orientation]
+        );
+        let empty = findings_under(0);
+        assert_eq!(checks(&empty), [Check::MeasurementIncomplete]);
+        assert!(
+            incomplete(&empty)
+                .message
+                .ends_with("before 6 faces and 1 body were checked"),
+            "{}",
+            incomplete(&empty).message
+        );
     }
 
     #[test]
@@ -411,6 +485,135 @@ mod tests {
                 crate::traversal::traverse_counted(&ends, usize::MAX).1
             })
             .sum();
-        assert_eq!(findings_under(rings), 1);
+        let found = findings_under(rings);
+        assert_eq!(
+            checks(&found),
+            [Check::RingOrder, Check::MeasurementIncomplete]
+        );
+        assert!(incomplete(&found)
+            .message
+            .ends_with("before 6 faces and 1 body were checked"));
+    }
+
+    /// The volume and closure fluxes of every planar face of `ir`, from the
+    /// findings pass and from a measurement pass, about one flux origin.
+    fn planar_fluxes(ir: &cadmpeg_ir::CadIr) -> Vec<(Flux, Flux)> {
+        let ctx = service_context();
+        let input = MeasureInput {
+            ir,
+            fidelity: None,
+            geometry_transferred: true,
+        };
+        let measurer = Measurer::new(input, MeasureOptions::default());
+        let pass = PassAllowance::new(1 << 30);
+        let placement = Ok(Placement::identity());
+        let mut edges = HashMap::new();
+        for edge in &ir.model.edges {
+            let slice = pass.edge_slice();
+            let eval = Eval {
+                ctx: &ctx,
+                index: &measurer.index,
+                work: &slice,
+            };
+            let geometry = measure_edge(&eval, &measurer.owners, edge, &placement, Work::Row)
+                .expect("session stays unrefused");
+            edges.insert(edge.id.as_str(), geometry);
+        }
+        let body = ir.model.bodies[0].id.as_str();
+        let origin = measurer.flux_origin(body, &edges, &placement);
+        let mut fluxes = Vec::new();
+        for face in &ir.model.faces {
+            let [row, orientation] = [Work::Row, Work::Orientation].map(|work| {
+                let slice = pass.face_slice();
+                let eval = Eval {
+                    ctx: &ctx,
+                    index: &measurer.index,
+                    work: &slice,
+                };
+                let result = FaceInput {
+                    work,
+                    owners: &measurer.owners,
+                    edges: &edges,
+                    fidelity: None,
+                    body: Some(body),
+                    placement: placement.clone(),
+                    flux_origin: Some(origin),
+                }
+                .measure(&eval, face)
+                .expect("session stays unrefused");
+                result
+                    .flux
+                    .expect("a flux")
+                    .expect("a measured flux")
+                    .declared
+            });
+            fluxes.push((row, orientation));
+        }
+        ctx.finish_session().expect("session stays unrefused");
+        fluxes
+    }
+
+    /// On a plane `d·N` is constant over the face, so the findings pass
+    /// takes the volume and closure fluxes from the area: they agree with
+    /// the quadrature of a measurement pass within both error estimates.
+    #[test]
+    fn planar_findings_fluxes_agree_with_the_measured_fluxes() {
+        let half = [500.0, 0.5, 2.0];
+        for ir in [
+            rotated_cuboid(
+                &rotation([1.0, 2.0, 3.0], 0.7),
+                [5.0, 7.0, 9.0],
+                half.map(|h| -h),
+                half,
+            ),
+            crate::test_support::plate_with_hole(true),
+        ] {
+            let fluxes = planar_fluxes(&ir);
+            assert!(!fluxes.is_empty());
+            for (row, orientation) in fluxes {
+                let pairs = std::iter::once((
+                    row.volume(),
+                    orientation.volume(),
+                    row.volume_error() + orientation.volume_error(),
+                ))
+                .chain((0..3).map(|axis| {
+                    (
+                        row.closure()[axis],
+                        orientation.closure()[axis],
+                        row.closure_error() + orientation.closure_error(),
+                    )
+                }));
+                for (measured, closed, error) in pairs {
+                    let floor = TEST_ABSOLUTE_FLOOR * measured.abs().max(1.0);
+                    assert!(
+                        (measured - closed).abs() <= error + floor,
+                        "{measured} against {closed} within {error}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// A 100 000 × 1 × 1 bar turned about (1, 2, 3). Each end face lies far
+    /// from the body's flux origin relative to its own size; on a plane the
+    /// volume and closure fluxes follow from the area, so the whole bar is
+    /// checked within the findings allowance and has no finding.
+    #[test]
+    fn a_needle_bar_is_checked_within_the_findings_allowance() {
+        let length = 100_000.0;
+        let half = [length / 2.0, 0.5, 0.5];
+        for angle in [0.7, 1.3, 2.9] {
+            let ir = rotated_cuboid(
+                &rotation([1.0, 2.0, 3.0], angle),
+                [5.0, 7.0, 9.0],
+                half.map(|h| -h),
+                half,
+            );
+            let ctx = service_context();
+            let found =
+                crate::session::findings(&ctx, &ir, MeasureOptions::default()).expect("findings");
+            ctx.finish_session().expect("session stays unrefused");
+            assert_eq!(checks(&found), [], "{angle}: {found:#?}");
+        }
     }
 }

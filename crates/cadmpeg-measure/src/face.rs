@@ -18,7 +18,9 @@ use crate::context::{Eval, Work};
 use crate::edges::EdgeGeometry;
 use crate::extent::{angular_sweep, axial_range, parameter_ranges, sphere_extent};
 use crate::failure::{settle, Measure, Missing, Outcome};
-use crate::flux::{Flux, FluxFrame, MEASURE_COMPONENTS, ORIENTATION_COMPONENTS};
+use crate::flux::{
+    plane_orientation_flux, Flux, FluxFrame, MEASURE_COMPONENTS, ORIENTATION_COMPONENTS,
+};
 use crate::geom::Aabb;
 use crate::orientation::{declared_normal, face_orientation, opposite};
 use crate::owners::Owners;
@@ -525,9 +527,23 @@ impl<'ir> FaceInput<'_, 'ir> {
             caveats,
             status: crate::report::RowStatus::Measured,
         };
-        let flux = match (self.flux_origin, &chart, &boundary, &region) {
+        let plane_area = match (self.work, &chart, &region, &readings.area.declared) {
+            (Work::Orientation, Ok(Chart::Plane(plane)), Ok(region), Quantity::Measured(area))
+                if region.rule == RegionRule::Nesting
+                    && region.exterior == 0.0
+                    && region.closed.is_none() =>
+            {
+                Some((plane, area.value().value.get(), area.numeric_error().get()))
+            }
+            _ => None,
+        };
+        let flux = match (self.flux_origin, plane_area, &chart, &boundary, &region) {
             (None, ..) => None,
-            (Some(origin), Ok(chart), Ok(boundary), Ok(region)) => {
+            (Some(origin), Some((plane, area, error)), ..) => Some(Ok(FaceFlux {
+                declared: plane_orientation_flux(plane, origin, area, error),
+                complement: None,
+            })),
+            (Some(origin), None, Ok(chart), Ok(boundary), Ok(region)) => {
                 let resolved: Vec<Option<&ResolvedLoop<'_>>> = boundary
                     .resolved
                     .loops
@@ -547,9 +563,9 @@ impl<'ir> FaceInput<'_, 'ir> {
                     face_flux(eval, &frame, region, &resolved).map_err(|failure| failure.at(id)),
                 )?)
             }
-            (Some(_), Err(missing), _, _)
-            | (Some(_), _, Err(missing), _)
-            | (Some(_), _, _, Err(missing)) => Some(Err(missing.clone())),
+            (Some(_), None, Err(missing), _, _)
+            | (Some(_), None, _, Err(missing), _)
+            | (Some(_), None, _, _, Err(missing)) => Some(Err(missing.clone())),
         };
         let natural = region.as_ref().is_ok_and(|region| region.exterior != 0.0);
         let mut result = FaceResult {

@@ -128,8 +128,11 @@ cadmpeg check bracket.f3d --json
 `check` also measures the model and reports three defect classes as
 warnings: a face ring whose coedges are not listed in traversal order
 (`ring_order`), a face whose sense disagrees with its loop winding, and a
-closed body whose volume readings conflict (`orientation`). Warnings do not
-change the exit status. `--limits` bounds this work as it bounds `measure`
+closed body whose volume readings conflict (`orientation`). The pass has its
+own allowance, much smaller than that of `measure`, and `--limits service`
+makes it smaller still. When the allowance runs out, one `info` finding
+(`measurement_incomplete`) states how many faces and bodies were not
+checked. These findings do not change the exit status
 ([measurement contract][measurement]).
 
 `--container-only` stops native decoding before geometry and records container

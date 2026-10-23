@@ -223,6 +223,41 @@ fn conversion_carries_measurement_warnings_and_succeeds() {
 }
 
 #[cfg(feature = "step")]
+/// The freeform B-spline face of `geometry_topology.step` needs far more
+/// than one findings face slice. The check does not read it and states, in
+/// one info finding, how many faces and bodies it did not check, under each
+/// profile; the exit status stays 0.
+#[test]
+fn a_face_beyond_the_findings_slice_is_counted_in_one_info_finding() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../cadmpeg-codec-freecad/tests/golden/step/geometry_topology.step");
+    for args in [&[][..], &["--limits", "service"][..]] {
+        let report = check_json(&path, args);
+        let incomplete: Vec<&Value> = report["check_report"]["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|finding| finding["check"] == "measurement_incomplete")
+            .collect();
+        let [finding] = incomplete.as_slice() else {
+            panic!("one measurement_incomplete finding: {incomplete:#?}");
+        };
+        assert_eq!(finding["severity"], "info");
+        assert!(finding.get("entity").is_none());
+        let message = finding["message"].as_str().unwrap();
+        let counts = message
+            .strip_prefix("measurement checks were skipped: the findings allowance ran out before ")
+            .and_then(|rest| rest.strip_suffix(" were checked"))
+            .unwrap_or_else(|| panic!("{message}"));
+        let faces: usize = counts
+            .split_once(' ')
+            .and_then(|(count, _)| count.parse().ok())
+            .unwrap_or_else(|| panic!("{message}"));
+        assert!(faces >= 1, "{message}");
+    }
+}
+
+#[cfg(feature = "step")]
 fn measure_fixture(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/measure")

@@ -16,7 +16,7 @@ use cadmpeg_ir::math::Point3;
 
 use crate::area::LoopCut;
 use crate::boundary::ResolvedLoop;
-use crate::canonical::surface::{Chart, Partials};
+use crate::canonical::surface::{Chart, Partials, PlaneChart};
 use crate::context::Eval;
 use crate::failure::{Measure, MeasureFailure};
 use crate::quadrature::{integrate, Target};
@@ -195,6 +195,29 @@ pub(crate) const ORIENTATION_COMPONENTS: [bool; FLUX] = {
     }
     active
 };
+
+/// The volume and closure fluxes of a region of area `area` on a plane,
+/// with the area's error estimate scaled into each. On a plane `d·N` is
+/// `h |N|` with `h = (o − P_ref)·n̂` constant, so `Φ_V = h A / 3` and
+/// `Φ_N = n̂ A`. The other components are zero: only an orientation pass,
+/// which reads the volume and closure alone, takes this flux.
+pub(crate) fn plane_orientation_flux(
+    plane: &PlaneChart,
+    origin: Point3,
+    area: f64,
+    area_error: f64,
+) -> Flux {
+    let normal = plane.eu.cross(plane.ev);
+    let height = plane.origin.vector_from(origin).dot(normal);
+    let mut flux = Flux::ZERO;
+    flux.value[VOLUME] = height * area / 3.0;
+    flux.error[VOLUME] = height.abs() * area_error / 3.0;
+    for (axis, component) in [normal.x, normal.y, normal.z].into_iter().enumerate() {
+        flux.value[CLOSURE + axis] = component * area;
+        flux.error[CLOSURE + axis] = component.abs() * area_error;
+    }
+    flux
+}
 
 /// What one flux integral reads.
 pub(crate) struct FluxFrame<'a, 'ir> {

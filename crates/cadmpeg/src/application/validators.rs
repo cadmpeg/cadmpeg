@@ -2,10 +2,11 @@
 //! Native validation and measurement findings over a decoded document.
 //!
 //! Codec-owned validators run over a decoded document's native namespaces,
-//! and measurement adds its ring-order and orientation warnings. Unlike the
-//! codec registry, this is an application concern: it belongs to `cadmpeg
-//! check`, not to the four questions an embedder asks of a file, and no
-//! decoder admission route reads it.
+//! and measurement adds its ring-order and orientation warnings, and an info
+//! finding when its allowance runs out before every item is checked. Unlike
+//! the codec registry, this is an application concern: it belongs to
+//! `cadmpeg check`, not to the four questions an embedder asks of a file,
+//! and no decoder admission route reads it.
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
@@ -23,7 +24,7 @@ use super::document::LoadedDocument;
 use super::refusal::{ApplicationError, RefusalStage};
 
 /// Validate a loaded document under one session and retain check-stage
-/// refusals. `work` sets the pass allowance of the measurement findings.
+/// refusals. `work` sets the allowance of the measurement findings pass.
 pub(crate) fn validate_loaded(
     inputs: &InputCatalog,
     document: &LoadedDocument,
