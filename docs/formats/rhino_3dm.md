@@ -4178,7 +4178,11 @@ ON_BoundingBox bounds
 ```
 
 Definition membership comes from the ordered definition UUID array, not object
-attributes. The reference payload carries one transform and one bounding box.
+attributes. A member object record is the definition's template: its geometry
+enters CADIR only as the transformed copies that each placed occurrence
+expands, and the record itself remains a retained source record under
+`object.family-not-transferred`. The reference payload carries one transform
+and one bounding box.
 The known prefix ends at the enclosing instance-reference class-data boundary;
 later bytes remain bounded there.
 Each `ON_InstanceRef` record is one placed occurrence of the definition it

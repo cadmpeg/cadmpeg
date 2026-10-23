@@ -185,3 +185,23 @@ fn extrusion_construction_sweeps_along_the_linear_image_of_its_vector() {
     };
     assert_eq!(extrusion.direction().get(), Vector3::new(0.0, -3.0, 0.0));
 }
+
+/// `ON_Xform::IsSimilarity`: a uniform scale with a rotation or reflection is
+/// a similarity, a non-uniform scale is not.
+#[test]
+fn similarity_scale_reports_the_uniform_factor() {
+    let rotation_scale = Transform::affine([
+        [0.0, -2.0, 0.0, 1.0],
+        [2.0, 0.0, 0.0, 0.0],
+        [0.0, 0.0, -2.0, 0.0],
+    ])
+    .expect("similarity");
+    assert_eq!(super::super::similarity_scale(rotation_scale), Some(2.0));
+    let stretch = Transform::affine([
+        [2.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ])
+    .expect("stretch");
+    assert_eq!(super::super::similarity_scale(stretch), None);
+}
