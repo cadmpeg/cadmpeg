@@ -17,7 +17,9 @@ use predicates::prelude::predicate;
 use serde_json::Value;
 use tempfile::tempdir;
 
-/// Relative floor of the comparison of a measured value with its expression.
+/// Allowance of a measured value against its expression beyond the value's
+/// numeric error, per unit of the comparison scale: the expected magnitude,
+/// a model length, or 1 for a direction component or an angle.
 const TEST_ABSOLUTE_FLOOR: f64 = 1.0e-9;
 
 #[cfg(feature = "step")]

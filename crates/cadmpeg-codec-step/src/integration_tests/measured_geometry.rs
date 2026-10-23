@@ -17,8 +17,8 @@ use cadmpeg_measure::{MeasureInput, MeasureOptions, Measurer, Selection};
 use crate::export::write_step;
 use crate::{StepCodec, StepSchema, StepWriteOptions};
 
-/// Relative floor of the comparison of a measured value with its
-/// expression.
+/// Allowance of a measured value against its expression beyond the value's
+/// numeric error, per unit of the larger of the expected magnitude and 1.
 const TEST_ABSOLUTE_FLOOR: f64 = 1.0e-9;
 
 /// The body rows of `ir`, measured in model space.
