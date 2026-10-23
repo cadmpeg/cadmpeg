@@ -5137,6 +5137,23 @@ Unstated regions:
 
 - `4..30` (26 B): Edge count and the edge-wrapper and settings references occupy these bytes.
 
+## `sheet_metal_rule_prefix`
+
+Spec §3.1 · layout: byte offsets · size: not stated
+
+This size-less byte record describes a sheet-metal rule record whose first entry is `Thickness`. Offsets are relative to the rule record's primary indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/sheet_metal_settings.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | After its indexed header the rule record stores ten zero bytes |
+| 11 | 10 | `zero_run_11` | `bytes[10]` | little | spec | After its indexed header the rule record stores ten zero bytes |
+| 21 | 4 | `entry_word` | `u32` | little | spec | a u32 rule word |
+| 25 | 22 | `first_entry_name` | `bytes[22]` | little | spec | its 22-byte name starts at rule-record offset 25 |
+| 47 | 8 | `thickness` | `f64` | little | spec | its value at offset 47 |
+
 ## `sheet_metal_settings_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 14 B

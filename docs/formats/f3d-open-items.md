@@ -419,6 +419,16 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Conflict.** Treating either revision as the only binding discards a naming space a persistent identity could select.
 
+### DR-93. Sheet-metal rule word and entry run
+
+**Question.** What does the u32 word at rule-record offset 21 state, and how long is the rule's entry run?
+
+**Known.** In two CC0 sheet-metal parts the word is 3. It is followed by four LP-UTF16 expression and f64 value entries (`Thickness`, `1`, `Thickness * 0.5`, `Thickness * 2.0`), then a zero u32 and the `Thickness` entry again. So the word is not the entry count.
+
+**Need.** Rules with a different number of entries, or a controlled edit of one rule value, would fix the word's meaning and the bounds of the entry run.
+
+**Conflict.** Treating the word as an entry count reads one entry fewer than the record holds.
+
 ## 2. External references
 
 ### DR-82. Other joint freedom codes and the limit flags

@@ -5012,6 +5012,24 @@ pub(crate) mod hem_common_controls {
     pub(crate) const FLIP: usize = 40;
 }
 
+/// Byte offsets for the `sheet_metal_rule_prefix` record.
+///
+/// Spec §3.1.
+///
+/// ```text
+/// This size-less byte record describes a sheet-metal rule record whose first entry is `Thickness`. Offsets are relative to the rule record's primary indexed header.
+/// ```
+pub(crate) mod sheet_metal_rule_prefix {
+    /// Offset of `zero_run_11` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_11: usize = 11;
+    /// Offset of `entry_word` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ENTRY_WORD: usize = 21;
+    /// Offset of `first_entry_name` (`bytes[22]`). Spec §3.1.
+    pub(crate) const FIRST_ENTRY_NAME: usize = 25;
+    /// Offset of `thickness` (`f64`, little-endian). Spec §3.1.
+    pub(crate) const THICKNESS: usize = 47;
+}
+
 /// Byte offsets for the `sheet_metal_settings_prefix` record.
 ///
 /// Spec §3.1. Record length 14 B.

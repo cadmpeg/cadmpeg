@@ -214,3 +214,28 @@ fn settings_name_every_linked_record_for_header_retention() {
         [50, 55, 51, 52, 53, 54].map(|index| ("f3d:Design1/BulkStream.dat".to_owned(), index))
     );
 }
+
+#[test]
+fn rule_thickness_is_the_first_entry_named_thickness() {
+    let rule = |name: &str| {
+        let mut bytes = vec![0xaa; 7];
+        let start = bytes.len();
+        bytes.extend_from_slice(&3_u32.to_le_bytes());
+        bytes.extend_from_slice(b"285");
+        bytes.extend_from_slice(&273_u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 10]);
+        bytes.extend_from_slice(&3_u32.to_le_bytes());
+        bytes.extend_from_slice(&u32::try_from(name.len()).unwrap().to_le_bytes());
+        for unit in name.encode_utf16() {
+            bytes.extend_from_slice(&unit.to_le_bytes());
+        }
+        bytes.extend_from_slice(&0.25_f64.to_le_bytes());
+        (bytes, start)
+    };
+    let (bytes, start) = rule("Thickness");
+    let (thickness, offset) = super::rule_thickness(&bytes, start).expect("rule thickness");
+    assert_eq!(thickness.get(), 0.25);
+    assert_eq!(offset, u64::try_from(start + 47).unwrap());
+    let (other, start) = rule("KFactor00");
+    assert!(super::rule_thickness(&other, start).is_none());
+}

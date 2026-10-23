@@ -90,7 +90,11 @@ pub(crate) fn decode_settings(
         let frames = primary_record_frames(&meta, bytes.len())?;
         let primary =
             (frames.iter().map(|frame| frame.entity_id)).collect::<std::collections::HashSet<_>>();
-        for frame in frames {
+        let rule_starts = frames
+            .iter()
+            .map(|frame| (frame.entity_id, frame.start))
+            .collect::<HashMap<_, _>>();
+        for frame in &frames {
             let Some((guid, version)) = by_entity.get(&frame.entity_id) else {
                 continue;
             };
@@ -98,12 +102,15 @@ pub(crate) fn decode_settings(
                 continue;
             }
             let Some(fields) =
-                parse_settings(bytes, frame, *version, &primary, &by_entity, &meta.types)
+                parse_settings(bytes, *frame, *version, &primary, &by_entity, &meta.types)
             else {
                 return Err(CodecError::Malformed(
                     "F3D sheet-metal settings frame or typed link is invalid".into(),
                 ));
             };
+            let rule = rule_starts
+                .get(&fields.rule)
+                .and_then(|start| rule_thickness(bytes, *start));
             let id = super::text::design_record_id(
                 &entry.name,
                 ":design-sheet-metal-settings#",
@@ -120,12 +127,36 @@ pub(crate) fn decode_settings(
                 presentation_record_index: fields.presentation,
                 owner_record_index: fields.owner,
                 context_record_index: fields.context,
+                rule_thickness: rule.map(|(thickness, _)| thickness),
+                rule_thickness_offset: rule.map(|(_, offset)| offset),
             })
             .map_err(CodecError::Malformed)?;
             out.push(record);
         }
     }
     Ok(out)
+}
+
+/// The thickness a sheet-metal rule record states and its offset: after the
+/// indexed header and ten zero bytes, a u32 word, then the first entry, an
+/// LP-UTF16 `Thickness` followed by the f64 value in centimetres.
+pub(crate) fn rule_thickness(
+    bytes: &[u8],
+    start: usize,
+) -> Option<(cadmpeg_ir::scalar::PositiveReal, u64)> {
+    use crate::layout::sheet_metal_rule_prefix as rule;
+    if bytes.get(start.checked_add(rule::ZERO_RUN_11)?..start.checked_add(rule::ENTRY_WORD)?)?
+        != [0; 10]
+    {
+        return None;
+    }
+    let (name, name_end) =
+        crate::bytes::lp_utf16_bounded(bytes, start.checked_add(rule::FIRST_ENTRY_NAME)?, 1..=64)?;
+    if name != "Thickness" || Some(name_end) != start.checked_add(rule::THICKNESS) {
+        return None;
+    }
+    let thickness = cadmpeg_ir::scalar::PositiveReal::new(View::f64_le_at(bytes, name_end)?)?;
+    Some((thickness, u64_from_index(name_end)))
 }
 
 struct SettingsFields {
