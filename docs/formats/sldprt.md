@@ -1593,10 +1593,19 @@ the native object id of the history feature that produced the face and value
 4 is that producer's feature-local face identity. Values 5 through the end
 are optional signed path fields; a field with bit pattern `0xffffffff` is
 written as decimal `-1`. The complete persistent identity is value 1,
-value 4, and this ordered optional tail. A `moSingleFaceRef_w` path or a
-generated-surface component path selects the surviving face whose
-`FACE_ID_2001` carries the same complete identity. A feature whose produced
-faces survive is a producer of every body owning one of them.
+value 4, and this ordered optional tail. Equality includes the tail length
+and every field in order. An empty tail differs from a tail containing zero.
+A complete reference selects a face only when its complete identity has one
+distinct current target.
+
+A single-face component selection that supplies only the source and local
+identity selects a face only when that pair has one distinct current target.
+Document, configuration, and mirror-plane selections use this rule. Earlier
+component-path entries do not supply an implicit persistent-identity tail.
+A generated-hole surface reference instead names all current faces with its
+source and local identity. Cylinder type and bore radius restrict that set;
+coincident axes coalesce. A feature whose produced faces survive is a
+producer of every body owning one of them.
 
 `ATOM_ID_2001` has definition field codes `[9, 1]`. Its first integer field
 carries one nonzero body identity scalar. The scalar and its complete current

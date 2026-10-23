@@ -752,6 +752,35 @@ fn persistent_surface_identity_rejects_ambiguous_face_or_mesh_keys() {
 }
 
 #[test]
+fn persistent_surface_identity_preserves_empty_zero_length_and_tail_order() {
+    let mut model = model_with_body();
+    let tails: [&[u32]; 5] = [&[], &[0], &[10], &[10, 8], &[8, 10]];
+    let mut identities = Vec::new();
+    let mut bindings = Vec::new();
+    let mut faces = Vec::new();
+    for (index, tail) in tails.into_iter().enumerate() {
+        let face = add_square_face(&mut model, &format!("tail-{index}"), index as f64 * 3.0);
+        let mesh = format!("synthetic:test:tessellation#tail-{index}");
+        model.tessellations.push(persistent_mesh(&mesh));
+        let identity = persistent_identity(7, 11, tail);
+        identities.push((face.clone(), identity.clone()));
+        bindings.push(PersistentFaceBinding {
+            tessellation: mesh,
+            identity,
+        });
+        faces.push(face);
+    }
+    set_shell_faces(&mut model, faces.clone());
+    assert_eq!(
+        assign_persistent_owners(&mut model, &identities, &bindings).len(),
+        5
+    );
+    for (mesh, expected) in model.tessellations.iter().zip(&faces) {
+        assert_eq!(mesh.faces.as_slice(), std::slice::from_ref(expected));
+    }
+}
+
+#[test]
 fn persistent_surface_identity_distinguishes_trailing_path_fields() {
     let mut model = model_with_body();
     let first = add_square_face(&mut model, "first-tail", 0.0);

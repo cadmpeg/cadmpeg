@@ -26,15 +26,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must select the authoritative topology record to avoid silently changing body connectivity or vertex positions when a duplicate identity is present.
 
-### BC-08. Truncated persistent face identity
+### BC-08. Complete identity in single-face component selections
 
-**Question.** Which consumers must compare the optional path tail of a `FACE_ID_2001` persistent face identity, and when does that tail separate two faces of one producer?
+**Question.** Which single-face component-selection field, if any, supplies the complete ordered tail of a persistent face identity?
 
-**Known.** `sldprt.md` §5 "`FACE_ID_2001` instances hang on face bridge records" gives the complete persistent identity as value 1, value 4, and the ordered optional tail. `crates/cadmpeg-codec-sldprt/src/decode.rs:2417-2440` makes two projections of the same face atoms. The complete projection keeps the tail and goes to the tessellation owner assignment only. The truncated projection keeps value 1 and value 4 only and goes to four consumers: the topology selection binding, the mirror-plane binding, the generated hole-axis projection, and the configuration topology selection binding. The topology selection binding sets a face to unresolved when two faces share the truncated pair.
+**Known.** Complete `FACE_ID_2001` and DisplayFace identities include tail length and ordered values. A source/local pair can name several distinct complete identities. A single-face selector carrying only that pair requires one distinct target. Generated-hole surface references expand the pair to a set and do not select one persistent face. A component selection has an ordered path of type signatures and optional local identifiers; path length and earlier local identifiers do not establish a persistent-identity tail.
 
-**Need.** We must know whether the tail separates faces, because a truncated comparison binds no face where the complete identity binds one, and the hole-axis projection collects every face with the truncated pair.
-
-**Conflict.** The specification gives the tail as part of the identity. Four consumers compare identities without it, while a fifth consumer in the same function compares the complete identity.
+**Need.** An explicit native field relation must distinguish a complete selector from a prefix-only selector before a colliding source/local pair can select one face.
 
 ## 2. Geometry carriers
 
