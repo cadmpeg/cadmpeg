@@ -81,7 +81,12 @@ def check_step():
             if not math.isclose(getattr(expected, name), getattr(shape, name),
                                 rel_tol=GEOMETRY_RELATIVE_TOLERANCE):
                 raise ValueError(f"{path.name}: {name} changed")
+        for name in ("XMin", "YMin", "ZMin", "XMax", "YMax", "ZMax"):
+            if not math.isclose(getattr(expected.BoundBox, name), getattr(shape.BoundBox, name),
+                                abs_tol=COORDINATE_TOLERANCE, rel_tol=0):
+                raise ValueError(f"{path.name}: {name} changed")
         results.append({"filename": path.name, "faces": len(shape.Faces),
+                        "source_solids": len(expected.Solids),
                         "solids": len(shape.Solids), "volume": shape.Volume})
     if len(results) != 3:
         raise ValueError("expected AP203, AP214 and AP242 native imports")
@@ -120,12 +125,28 @@ def check_source_less_shapes():
         App.closeDocument(document.Name)
 
 
+def check_native_edit():
+    document = App.openDocument(str(WORK / "output" / "parametric_box_edit.FCStd"))
+    try:
+        if document.recompute() <= 0:
+            raise ValueError("edited input was not marked for native recompute")
+        box = document.getObject("Box")
+        if box.Length.Value != 15 or not math.isclose(
+            box.Shape.Volume, 15 * 20 * 30, rel_tol=GEOMETRY_RELATIVE_TOLERANCE
+        ):
+            raise ValueError("ordinary native recompute kept a stale edited shape")
+        return {"length": box.Length.Value, "volume": box.Shape.Volume}
+    finally:
+        App.closeDocument(document.Name)
+
+
 report = {"accepted": False}
 try:
     report["meshes"] = [check_mesh(name) for name in ("placed_mesh", "nested_mesh", "linked_mesh")]
     report["step"] = check_step()
     report["source_less"] = check_source_less()
     report["source_less_shapes"] = check_source_less_shapes()
+    report["ordinary_recompute_edit"] = check_native_edit()
     report["accepted"] = True
 except Exception as error:
     report["error"] = str(error)
