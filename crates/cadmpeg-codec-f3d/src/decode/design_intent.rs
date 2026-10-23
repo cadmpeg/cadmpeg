@@ -111,6 +111,9 @@ pub(super) enum DesignPath {
 /// Native Design records that phase 2 produces.
 #[derive(Debug, Default)]
 pub(super) struct DesignNative {
+    /// Source field offsets of the design-intent records, by record id.
+    pub(super) source_layout_pointers:
+        std::collections::BTreeMap<String, std::collections::BTreeMap<String, u64>>,
     asm_histories: Vec<AsmHistory>,
     asm_face_boundaries: Vec<AsmFaceBoundary>,
     persistent_references: Vec<PersistentReference>,
@@ -162,6 +165,7 @@ impl DesignNative {
     /// Record headers join the phase-1 headers.
     pub(super) fn store(self, native: &mut F3dNative) {
         let Self {
+            source_layout_pointers: _,
             asm_histories,
             asm_face_boundaries,
             persistent_references,
@@ -991,9 +995,11 @@ fn extend_related_design_records(
     append_related_record_headers(scan, &mut design.design_record_headers, &indices)?;
     design.design_parameter_companions =
         crate::design::decode::parameters::decode_parameter_companions(
+            ctx,
             scan,
             &prereqs.design_parameter_owners,
             &design.design_record_headers,
+            &mut design.source_layout_pointers,
         )?;
     design.design_face_source_groups = crate::design::decode::operands::decode_face_source_groups(
         scan,
@@ -1427,6 +1433,15 @@ fn extend_related_design_records(
                 stream_lengths: &stream_lengths,
             },
         )?;
+    for companion in &design.design_parameter_companions {
+        let fields = crate::design::decode::parameters::source_layout::pointer_fields(
+            ctx,
+            companion.payload_source_extent(),
+        )?;
+        if let Some(pointers) = design.source_layout_pointers.get_mut(companion.id()) {
+            pointers.extend(fields);
+        }
+    }
     design.design_dimension_recipe_records =
         crate::design::decode::dimension_frames::decode_dimension_recipe_records(
             scan,

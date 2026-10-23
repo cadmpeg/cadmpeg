@@ -1725,9 +1725,6 @@ impl F3dNative {
                 }
             }
         }
-        for owner in &self.design_parameter_owners {
-            owner.retain_source(&mut fidelity);
-        }
         for frame in &self.design_dimension_presentation_frames {
             frame.retain_source(&mut fidelity)?;
         }
@@ -1815,9 +1812,6 @@ impl F3dNative {
         }
         for record in self.act_types.iter().chain(&self.design_types) {
             record.retain_source(&mut fidelity);
-        }
-        for companion in &self.design_parameter_companions {
-            companion.retain_source(&mut fidelity);
         }
         for entity in &self.act_entities {
             entity.retain_source(&mut fidelity)?;

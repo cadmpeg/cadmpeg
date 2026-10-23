@@ -21,7 +21,7 @@ use crate::records::{
 };
 use crate::test_support::lp_utf16;
 use crate::test_support::manifest_test::write_synthetic_manifests;
-use crate::test_support::zip_test::{with_context_scan, with_scan};
+use crate::test_support::zip_test::with_context_scan;
 
 fn compact_owned_parameter_record(
     owner_record_index: u32,
@@ -705,7 +705,9 @@ fn legacy_counted_parameter_owner_uses_zero_typed_u32_scalar() {
 #[test]
 fn legacy_parameter_owner_68_uses_parameter_scalar_and_zero_scope() {
     let parsed = parse_legacy_parameter_owner_68(
-        &legacy_parameter_owner_68_frame("284"),
+        crate::design::decode::parameters::ParameterFrame::over_retained(
+            &legacy_parameter_owner_68_frame("284"),
+        ),
         crate::records::identity::Located {
             value: 0.0,
             offset: 700,
@@ -731,7 +733,9 @@ fn legacy_parameter_owner_68_uses_parameter_scalar_and_zero_scope() {
     for class_tag in ["268", "282", "289", "292", "297", "299", "325", "336"] {
         assert!(
             parse_legacy_parameter_owner_68(
-                &legacy_parameter_owner_68_frame(class_tag),
+                crate::design::decode::parameters::ParameterFrame::over_retained(
+                    &legacy_parameter_owner_68_frame(class_tag)
+                ),
                 crate::records::identity::Located {
                     value: 1.25,
                     offset: 700
@@ -748,7 +752,9 @@ fn legacy_parameter_owner_68_uses_parameter_scalar_and_zero_scope() {
 #[test]
 fn legacy_parameter_owner_68_requires_its_admitted_class_and_shape() {
     assert!(parse_legacy_parameter_owner_68(
-        &legacy_parameter_owner_68_frame("291"),
+        crate::design::decode::parameters::ParameterFrame::over_retained(
+            &legacy_parameter_owner_68_frame("291")
+        ),
         crate::records::identity::Located {
             value: 1.0,
             offset: 700
@@ -760,7 +766,7 @@ fn legacy_parameter_owner_68_requires_its_admitted_class_and_shape() {
     let mut malformed = legacy_parameter_owner_68_frame("284");
     malformed[55] = 0;
     assert!(parse_legacy_parameter_owner_68(
-        &malformed,
+        crate::design::decode::parameters::ParameterFrame::over_retained(&malformed),
         crate::records::identity::Located {
             value: 1.0,
             offset: 700
@@ -773,7 +779,9 @@ fn legacy_parameter_owner_68_requires_its_admitted_class_and_shape() {
 #[test]
 fn legacy_parameter_owner_88_repeats_a_nonzero_scope_without_a_scalar_lane() {
     let parsed = parse_legacy_parameter_owner_88(
-        &legacy_parameter_owner_88_frame("284"),
+        crate::design::decode::parameters::ParameterFrame::over_retained(
+            &legacy_parameter_owner_88_frame("284"),
+        ),
         crate::records::identity::Located {
             value: 2.5,
             offset: 700,
@@ -796,7 +804,9 @@ fn legacy_parameter_owner_88_repeats_a_nonzero_scope_without_a_scalar_lane() {
     for class_tag in ["282", "336", "325", "297"] {
         assert!(
             parse_legacy_parameter_owner_88(
-                &legacy_parameter_owner_88_frame(class_tag),
+                crate::design::decode::parameters::ParameterFrame::over_retained(
+                    &legacy_parameter_owner_88_frame(class_tag)
+                ),
                 crate::records::identity::Located {
                     value: 2.5,
                     offset: 700
@@ -808,7 +818,9 @@ fn legacy_parameter_owner_88_repeats_a_nonzero_scope_without_a_scalar_lane() {
         );
     }
     assert!(parse_legacy_parameter_owner_88(
-        &legacy_parameter_owner_88_frame("268"),
+        crate::design::decode::parameters::ParameterFrame::over_retained(
+            &legacy_parameter_owner_88_frame("268")
+        ),
         crate::records::identity::Located {
             value: 2.5,
             offset: 700
@@ -820,7 +832,7 @@ fn legacy_parameter_owner_88_repeats_a_nonzero_scope_without_a_scalar_lane() {
     let mut mismatched = legacy_parameter_owner_88_frame("284");
     mismatched[78..82].copy_from_slice(&78u32.to_le_bytes());
     assert!(parse_legacy_parameter_owner_88(
-        &mismatched,
+        crate::design::decode::parameters::ParameterFrame::over_retained(&mismatched),
         crate::records::identity::Located {
             value: 2.5,
             offset: 700
@@ -1006,9 +1018,16 @@ fn parameter_companion_decode_emits_one_identified_companion() {
     zip.start_file(STREAM, stored).unwrap();
     zip.write_all(&prefix).unwrap();
     let archive = zip.finish().unwrap().into_inner();
-    with_scan(&archive, |scan| {
-        let decoded =
-            super::decode_parameter_companions(scan, &[owner.clone()], &[header.clone()]).unwrap();
+    with_context_scan(&archive, |ctx, scan| {
+        let mut pointers = std::collections::BTreeMap::new();
+        let decoded = super::decode_parameter_companions(
+            ctx,
+            scan,
+            &[owner.clone()],
+            &[header.clone()],
+            &mut pointers,
+        )
+        .unwrap();
         assert_eq!(decoded.len(), 1);
         assert_eq!(
             decoded[0].id(),
@@ -1016,6 +1035,30 @@ fn parameter_companion_decode_emits_one_identified_companion() {
                 "{}:design-parameter-companion#0",
                 crate::ids::native_scope(STREAM)
             )
+        );
+        // The prefix offsets are `record_layout` pointers of the companion
+        // capture. The timestamp follows the 42 bytes of header, zero run,
+        // owner reference and second zero run.
+        assert_eq!(
+            pointers,
+            std::collections::BTreeMap::from([(
+                decoded[0].id().to_owned(),
+                std::collections::BTreeMap::from([
+                    ("byte_offset".to_owned(), 0),
+                    ("timestamp_micros_offset".to_owned(), 42),
+                ]),
+            )])
+        );
+        // The prefix grammar reads each of its 58 bytes.
+        let captures = ctx.take_record_captures().unwrap();
+        let capture = captures
+            .iter()
+            .find(|capture| capture.id() == decoded[0].id())
+            .expect("companion capture");
+        assert_eq!(capture.byte_len(), 58);
+        assert_eq!(
+            capture.reads()[capture.stream()],
+            [capture.offset()..capture.offset() + 58]
         );
     });
 }
@@ -1080,11 +1123,13 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
 
     let mut exact = parameter_owner_frame();
     exact.extend_from_slice(&paired_header());
-    let owners = with_scan(&archive(stream, &exact), |scan| {
+    let owners = with_context_scan(&archive(stream, &exact), |ctx, scan| {
         crate::design::decode::parameters::decode_parameter_owners(
+            ctx,
             scan,
             std::slice::from_ref(&parameter),
             std::slice::from_ref(&header),
+            &mut std::collections::BTreeMap::new(),
         )
     })
     .expect("exact owner frame");
@@ -1093,14 +1138,51 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
     };
     assert_eq!(owner.frame_length(), Some(104));
     assert_eq!(owner.evaluated_value_offset(), Some(40));
-
-    let mut compact = without_variant_padding(parameter_owner_frame());
-    compact.extend_from_slice(&paired_header());
-    let owners = with_scan(&archive(stream, &compact), |scan| {
+    let (pointers, reads) = with_context_scan(&archive(stream, &exact), |ctx, scan| {
+        let mut pointers = std::collections::BTreeMap::new();
         crate::design::decode::parameters::decode_parameter_owners(
+            ctx,
             scan,
             std::slice::from_ref(&parameter),
             std::slice::from_ref(&header),
+            &mut pointers,
+        )
+        .expect("exact owner frame");
+        let captures = ctx.take_record_captures().unwrap();
+        let [capture] = captures.as_slice() else {
+            panic!("expected one owner capture");
+        };
+        assert_eq!((capture.offset(), capture.byte_len()), (0, 104));
+        (pointers, capture.reads()[capture.stream()].clone())
+    });
+    // The frame length is the capture extent; the header and scalar offsets
+    // are its pointers.
+    assert_eq!(
+        pointers,
+        std::collections::BTreeMap::from([(
+            owner.id().clone(),
+            std::collections::BTreeMap::from([
+                ("byte_offset".to_owned(), 0),
+                ("evaluated_value_offset".to_owned(), 40),
+            ]),
+        )])
+    );
+    // The owner grammar reads the indexed header and the f64 scalar.
+    for field in [0..11, 40..48] {
+        assert!(reads
+            .iter()
+            .any(|read| read.start <= field.start && read.end >= field.end));
+    }
+
+    let mut compact = without_variant_padding(parameter_owner_frame());
+    compact.extend_from_slice(&paired_header());
+    let owners = with_context_scan(&archive(stream, &compact), |ctx, scan| {
+        crate::design::decode::parameters::decode_parameter_owners(
+            ctx,
+            scan,
+            std::slice::from_ref(&parameter),
+            std::slice::from_ref(&header),
+            &mut std::collections::BTreeMap::new(),
         )
     })
     .expect("owner frame whose variant ends its scope lane");
@@ -1110,11 +1192,13 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
     assert_eq!(owner.frame_length(), Some(103));
     assert_eq!(owner.evaluated_value_offset(), Some(40));
 
-    let unresolved = with_scan(&archive(stream, &[]), |scan| {
+    let unresolved = with_context_scan(&archive(stream, &[]), |ctx, scan| {
         crate::design::decode::parameters::decode_parameter_owners(
+            ctx,
             scan,
             std::slice::from_ref(&parameter),
             &[],
+            &mut std::collections::BTreeMap::new(),
         )
     })
     .expect("missing owner frame is retained as an unresolved binding");
@@ -1123,11 +1207,13 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
     let mut extended = parameter_owner_frame();
     extended.push(0);
     extended.extend_from_slice(&paired_header());
-    let error = with_scan(&archive(stream, &extended), |scan| {
+    let error = with_context_scan(&archive(stream, &extended), |ctx, scan| {
         crate::design::decode::parameters::decode_parameter_owners(
+            ctx,
             scan,
             std::slice::from_ref(&parameter),
             std::slice::from_ref(&header),
+            &mut std::collections::BTreeMap::new(),
         )
     })
     .expect_err("an owner-shaped prefix must not shorten the exact frame");
@@ -1290,7 +1376,9 @@ fn parameter_owner_value_offset_is_localized_once() {
         .is_none());
     for owner in [
         parse_legacy_parameter_owner_68(
-            &legacy_parameter_owner_68_frame("284"),
+            crate::design::decode::parameters::ParameterFrame::over_retained(
+                &legacy_parameter_owner_68_frame("284"),
+            ),
             crate::records::identity::Located {
                 value: 2.5,
                 offset: 700,
@@ -1299,7 +1387,9 @@ fn parameter_owner_value_offset_is_localized_once() {
         )
         .unwrap(),
         parse_legacy_parameter_owner_88(
-            &legacy_parameter_owner_88_frame("284"),
+            crate::design::decode::parameters::ParameterFrame::over_retained(
+                &legacy_parameter_owner_88_frame("284"),
+            ),
             crate::records::identity::Located {
                 value: 2.5,
                 offset: 700,
@@ -1322,13 +1412,17 @@ fn legacy_parameter_owner_preserves_external_scalar_offsets() {
         };
         for parsed in [
             parse_legacy_parameter_owner_68(
-                &legacy_parameter_owner_68_frame("284"),
+                crate::design::decode::parameters::ParameterFrame::over_retained(
+                    &legacy_parameter_owner_68_frame("284"),
+                ),
                 evaluated,
                 frame_start,
             )
             .unwrap(),
             parse_legacy_parameter_owner_88(
-                &legacy_parameter_owner_88_frame("284"),
+                crate::design::decode::parameters::ParameterFrame::over_retained(
+                    &legacy_parameter_owner_88_frame("284"),
+                ),
                 evaluated,
                 frame_start,
             )

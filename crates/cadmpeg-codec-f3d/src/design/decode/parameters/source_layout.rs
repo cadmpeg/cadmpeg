@@ -77,21 +77,7 @@ pub(crate) fn capture_record(
                 "parameter layout has a different actual source owner",
             ));
         }
-        let mut fields = BTreeMap::new();
-        for (name, offset) in parameter
-            .source_offsets()
-            .into_iter()
-            .filter_map(|(name, offset)| offset.map(|offset| (name, offset)))
-        {
-            let bytes = name
-                .len()
-                .checked_add(size_of::<(String, u64)>())
-                .ok_or_else(|| {
-                    CodecError::malformed("parameter layout pointer storage overflows")
-                })?;
-            ctx.retain_bytes(u64_from_index(bytes), "parameter layout pointer")?;
-            fields.insert(name.to_owned(), offset);
-        }
+        let fields = pointer_fields(ctx, parameter.source_offsets())?;
         Ok((parameter, state_target, fields))
     });
     match result {
@@ -105,6 +91,27 @@ pub(crate) fn capture_record(
         Err(error) if matches!(error, CodecError::ResourceLimit(_)) => Err(error),
         Err(error) => miss.map_or(Err(error), Ok),
     }
+}
+
+/// The present source field offsets of one record, as `record_layout`
+/// pointers. Each kept pointer is charged once.
+pub(crate) fn pointer_fields(
+    ctx: &DecodeContext<'_>,
+    fields: impl IntoIterator<Item = (&'static str, Option<u64>)>,
+) -> Result<BTreeMap<String, u64>, CodecError> {
+    let mut pointers = BTreeMap::new();
+    for (name, offset) in fields
+        .into_iter()
+        .filter_map(|(name, offset)| offset.map(|offset| (name, offset)))
+    {
+        let bytes = name
+            .len()
+            .checked_add(size_of::<(String, u64)>())
+            .ok_or_else(|| CodecError::malformed("record layout pointer storage overflows"))?;
+        ctx.retain_bytes(u64_from_index(bytes), "record layout pointer")?;
+        pointers.insert(name.to_owned(), offset);
+    }
+    Ok(pointers)
 }
 
 #[cfg(test)]

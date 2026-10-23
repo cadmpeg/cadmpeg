@@ -96,6 +96,7 @@ fn authored_legacy_owner_preserves_absent_scope_and_local_slots() {
             offset: 0,
         };
         let frame = &bytes[8..8 + length];
+        let frame = crate::design::decode::parameters::ParameterFrame::over_retained(frame);
         let actual = super::parse_legacy_parameter_owner_68(frame, cache, 8)
             .or_else(|| super::parse_legacy_parameter_owner_88(frame, cache, 8))
             .unwrap()

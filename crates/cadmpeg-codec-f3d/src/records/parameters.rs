@@ -1046,18 +1046,13 @@ impl TryFrom<DesignParameterOwnerContent> for DesignParameterOwner {
     }
 }
 impl DesignParameterOwner {
-    pub(crate) fn retain_source(&self, fidelity: &mut cadmpeg_ir::SourceFidelity) {
-        for (name, offset) in [
+    /// Source field offsets of this record, by `record_layout` pointer name.
+    /// The frame length is the record extent.
+    pub(crate) fn source_offsets(&self) -> [(&'static str, Option<u64>); 2] {
+        [
             ("byte_offset", self.byte_offset),
-            ("frame_length", self.frame_length),
             ("evaluated_value_offset", self.evaluated_value_offset),
-        ] {
-            if let Some(offset) = offset {
-                fidelity
-                    .metadata
-                    .insert(format!("{}.{name}", self.id), offset.to_string());
-            }
-        }
+        ]
     }
 }
 /// Owned payload bound to a Design parameter companion.
@@ -1293,10 +1288,18 @@ impl From<DesignParameterCompanion> for DesignParameterCompanionWire {
     }
 }
 impl DesignParameterCompanion {
-    pub(crate) fn retain_source(&self, fidelity: &mut cadmpeg_ir::SourceFidelity) {
-        for (name, value) in [
+    /// Source field offsets of the fixed prefix, by `record_layout` pointer
+    /// name.
+    pub(crate) fn source_offsets(&self) -> [(&'static str, Option<u64>); 2] {
+        [
             ("byte_offset", self.byte_offset),
             ("timestamp_micros_offset", self.timestamp_micros_offset),
+        ]
+    }
+
+    /// Source extent of the bound payload, by `record_layout` pointer name.
+    pub(crate) fn payload_source_extent(&self) -> [(&'static str, Option<u64>); 2] {
+        [
             (
                 "payload_byte_offset",
                 self.payload.as_ref().and_then(|p| p.byte_offset),
@@ -1305,13 +1308,7 @@ impl DesignParameterCompanion {
                 "payload_byte_length",
                 self.payload.as_ref().and_then(|p| p.byte_length),
             ),
-        ] {
-            if let Some(value) = value {
-                fidelity
-                    .metadata
-                    .insert(format!("{}.{name}", self.id), value.to_string());
-            }
-        }
+        ]
     }
 }
 cadmpeg_core::named_optional_field!(

@@ -2584,25 +2584,31 @@ impl<'a> F3dDecodeSession<'a> {
             }
             return Ok(DesignState::Absent);
         }
-        let failure = match &prereqs.design_feature_timelines {
-            Ok(timelines) => match self.decode_design_intent(path, prereqs, timelines) {
-                Ok(design) => {
-                    self.ir.scope.design = true;
-                    return Ok(DesignState::Projected(Box::new(self.merge_design(design))));
-                }
-                Err(error)
-                    if matches!(error, CodecError::ResourceLimit(_))
-                        || self.ctx.resource_refusal().is_some() =>
-                {
-                    return Err(error)
-                }
-                Err(error) => error.to_string(),
-            },
-            Err(error) => match self.ctx.resource_refusal() {
-                Some(limit) => return Err(CodecError::ResourceLimit(limit)),
-                None => error.to_string(),
-            },
-        };
+        let failure =
+            match &prereqs.design_feature_timelines {
+                // The design-intent record scopes commit with the design intent.
+                // A failed design intent keeps no capture.
+                Ok(timelines) => match self.ctx.read_transaction().and_then(|scope| {
+                    Ok((scope, self.decode_design_intent(path, prereqs, timelines)?))
+                }) {
+                    Ok((scope, design)) => {
+                        scope.commit()?;
+                        self.ir.scope.design = true;
+                        return Ok(DesignState::Projected(Box::new(self.merge_design(design))));
+                    }
+                    Err(error)
+                        if matches!(error, CodecError::ResourceLimit(_))
+                            || self.ctx.resource_refusal().is_some() =>
+                    {
+                        return Err(error)
+                    }
+                    Err(error) => error.to_string(),
+                },
+                Err(error) => match self.ctx.resource_refusal() {
+                    Some(limit) => return Err(CodecError::ResourceLimit(limit)),
+                    None => error.to_string(),
+                },
+            };
         push_loss_vec(
             &mut self.report.losses,
             F3dLossCode::DesignIntentUndecoded,
@@ -2906,9 +2912,16 @@ impl<'a> F3dDecodeSession<'a> {
         mut self,
         path: FinalizePath,
         mut prereqs: prereqs::ProductPrereqs,
-        design: DesignState,
+        mut design: DesignState,
     ) -> Result<AuthoredDecoded, CodecError> {
-        let source_layout_pointers = std::mem::take(&mut prereqs.source_layout_pointers);
+        let mut source_layout_pointers = std::mem::take(&mut prereqs.source_layout_pointers);
+        if let DesignState::Projected(design) = &mut design {
+            for (id, pointers) in std::mem::take(&mut design.source_layout_pointers) {
+                if source_layout_pointers.insert(id, pointers).is_some() {
+                    return Err(CodecError::malformed("source pointer owner is duplicated"));
+                }
+            }
+        }
         self.report
             .losses
             .extend(std::mem::take(&mut prereqs.parameter_state_parts.losses));

@@ -50,6 +50,11 @@ impl<'a> ParameterFrame<'a> {
     /// Frame over bytes that left the source session; its reads attribute nothing.
     #[cfg(test)]
     pub(in crate::design) fn over_retained(bytes: &'a [u8]) -> Self {
+        Self::retained(bytes)
+    }
+
+    /// Frame over a retained slice that left the source session.
+    pub(in crate::design) fn retained(bytes: &'a [u8]) -> Self {
         Self::new(View::over_retained(bytes))
     }
 
@@ -84,6 +89,18 @@ impl<'a> ParameterFrame<'a> {
     /// Read a counted UTF-16 field: its u32 count and its code units.
     fn utf16(self, at: usize, bounds: std::ops::RangeInclusive<usize>) -> Option<(String, usize)> {
         let (text, end) = lp_utf16_bounded(self.view.window(), at, bounds)?;
+        self.get(at..end)?;
+        Some((text, end))
+    }
+
+    /// Read a counted ASCII field whose bytes all pass `allowed`.
+    fn ascii(
+        self,
+        at: usize,
+        bounds: std::ops::RangeInclusive<usize>,
+        allowed: fn(&u8) -> bool,
+    ) -> Option<(&'a str, usize)> {
+        let (text, end) = lp_ascii_filtered_view(self.view.window(), at, bounds, allowed)?;
         self.get(at..end)?;
         Some((text, end))
     }
@@ -872,9 +889,11 @@ fn valid_design_parameter_family(
 /// Decode the exact same-index-delimited owner frame for every owned Design
 /// parameter.
 pub(crate) fn decode_parameter_owners(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     parameters: &[DesignParameter],
     headers: &[DesignRecordHeader],
+    pointers: &mut BTreeMap<String, BTreeMap<String, u64>>,
 ) -> Result<Vec<DesignParameterOwner>, CodecError> {
     if parameters
         .iter()
@@ -949,8 +968,17 @@ pub(crate) fn decode_parameter_owners(
             .frames(owner_index)
             .find_map(|(start, end)| (start == at).then_some(end))
             .ok_or_else(|| malformed("has no following same-index paired header"))?;
-        let frame = bytes
-            .get(at..end)
+        if end > bytes.len() {
+            return Err(malformed("frame lies outside its Design BulkStream"));
+        }
+        let source = scan
+            .entry_view(&entry.name)
+            .ok_or_else(|| malformed("has no source View"))?;
+        let view = source
+            .start()
+            .checked_add(at)
+            .zip(source.start().checked_add(end))
+            .and_then(|(start, end)| source.child(start, end))
             .ok_or_else(|| malformed("frame lies outside its Design BulkStream"))?;
         let evaluated = crate::records::identity::Located {
             value: parameter.evaluated_value().get(),
@@ -958,18 +986,39 @@ pub(crate) fn decode_parameter_owners(
                 .evaluated_value_offset()
                 .ok_or_else(|| malformed("has no source evaluated-value location"))?,
         };
-        let owner = parse_parameter_owner(frame)
-            .or_else(|| parse_legacy_parameter_owner_68(frame, evaluated, header_offset))
-            .or_else(|| parse_legacy_parameter_owner_88(frame, evaluated, header_offset))
-            .ok_or_else(|| malformed("does not match the parameter-owner grammar"))?
-            .into_record(&entry.name, header_offset)
-            .ok_or_else(|| malformed("has invalid owner fields or evaluated-value offset"))?;
-        if owner.record_index() != owner_index
-            || owner.parameter_record_index() != parameter.record_index
-        {
-            return Err(malformed("does not link back to its referencing parameter"));
+        let id = ids::native_design_parameter_owner_id(&entry.name, header_offset);
+        if pointers.contains_key(&id) {
+            return Err(malformed("has a duplicated source owner"));
         }
-
+        let (owner, fields) = ctx.record(&id, view, || {
+            let frame = ParameterFrame::new(view);
+            let owner = parse_parameter_owner_frame(frame)
+                .or_else(|| parse_legacy_parameter_owner_68(frame, evaluated, header_offset))
+                .or_else(|| parse_legacy_parameter_owner_88(frame, evaluated, header_offset))
+                .ok_or_else(|| malformed("does not match the parameter-owner grammar"))?
+                .into_record(&entry.name, header_offset)
+                .ok_or_else(|| malformed("has invalid owner fields or evaluated-value offset"))?;
+            if owner.record_index() != owner_index
+                || owner.parameter_record_index() != parameter.record_index
+            {
+                return Err(malformed("does not link back to its referencing parameter"));
+            }
+            // A legacy owner stores no scalar: its evaluated-value offset is
+            // a field of the parameter record, which holds that pointer.
+            let extent = header_offset
+                ..header_offset
+                    .checked_add(u64_from_index(view.window().len()))
+                    .ok_or_else(|| malformed("frame end overflows"))?;
+            let fields = source_layout::pointer_fields(
+                ctx,
+                owner
+                    .source_offsets()
+                    .into_iter()
+                    .filter(|(_, offset)| offset.is_some_and(|offset| extent.contains(&offset))),
+            )?;
+            Ok((owner, fields))
+        })?;
+        pointers.insert(id, fields);
         out.push(owner);
     }
     out.sort_by(|a, b| a.id().cmp(b.id()));
@@ -1034,7 +1083,14 @@ impl ParsedParameterOwner {
     }
 }
 
+/// Parse the ordinary parameter-owner grammar over a retained slice.
 pub(in crate::design) fn parse_parameter_owner(frame: &[u8]) -> Option<ParsedParameterOwner> {
+    parse_parameter_owner_frame(ParameterFrame::retained(frame))
+}
+
+/// Parse the ordinary parameter-owner grammar; every byte it consults is a
+/// read of `frame`.
+fn parse_parameter_owner_frame(frame: ParameterFrame<'_>) -> Option<ParsedParameterOwner> {
     parse_parameter_owner_with(frame, OwnerReferenceForm::Plain)
         .or_else(|| parse_parameter_owner_with(frame, OwnerReferenceForm::Typed))
 }
@@ -1059,9 +1115,9 @@ impl OwnerReferenceForm {
 
     /// The u32 target of the local reference that occupies exactly
     /// `frame[at..at + width]`.
-    fn target_at(self, frame: &[u8], at: usize) -> Option<u32> {
+    fn target_at(self, frame: ParameterFrame<'_>, at: usize) -> Option<u32> {
         let mut cursor = at;
-        let reference = crate::bytes::take_reference(frame, &mut cursor)?;
+        let reference = frame.reference(&mut cursor)?;
         let (target, guid) = reference.local()?;
         let typed = guid.is_some();
         (cursor == at.checked_add(self.width())? && typed == (self == Self::Typed))
@@ -1088,11 +1144,11 @@ const _: () = {
 /// Every reference field has the same width within one frame, so the fixed
 /// suffix is parsed backward from the exact paired-header boundary.
 fn parse_parameter_owner_with(
-    frame: &[u8],
+    frame: ParameterFrame<'_>,
     form: OwnerReferenceForm,
 ) -> Option<ParsedParameterOwner> {
     let width = form.width();
-    let (class_tag, after_tag) = lp_ascii_filtered_view(frame, 0, 0..=2000, u8::is_ascii_graphic)?;
+    let (class_tag, after_tag) = frame.ascii(0, 0..=2000, u8::is_ascii_graphic)?;
     let class_tag = crate::design::decode::text::class_tag_from_view(class_tag).ok()?;
     if after_tag != indexed_header::RECORD_INDEX
         || frame.get(owner_prefix::ZERO_RUN_8..owner_prefix::ONE_MARKER) != Some(&[0; 8])
@@ -1100,7 +1156,7 @@ fn parse_parameter_owner_with(
     {
         return None;
     }
-    let record_index = View::u32_le_at(frame, indexed_header::RECORD_INDEX)?;
+    let record_index = frame.u32_at(indexed_header::RECORD_INDEX)?;
     let scope_record_index = form.target_at(frame, owner_prefix::SCOPE_MARKER)?;
     let local_ordinal_offset = owner_prefix::SCOPE_MARKER + width;
     let scalar_start = local_ordinal_offset + 4;
@@ -1110,7 +1166,7 @@ fn parse_parameter_owner_with(
     let final_scope_marker = frame.len().checked_sub(width)?;
     let companion_marker = final_scope_marker.checked_sub(width + 1)?;
     if form.target_at(frame, final_scope_marker) != Some(scope_record_index)
-        || frame.get(companion_marker + width) != Some(&0)
+        || frame.byte(companion_marker + width) != Some(0)
     {
         return None;
     }
@@ -1122,16 +1178,16 @@ fn parse_parameter_owner_with(
             .then_some((at, None))
     });
     let with_variant = companion_marker.checked_sub(width + 3).and_then(|at| {
-        let variant = *frame.get(at + width + 1)?;
+        let variant = frame.byte(at + width + 1)?;
         (repeated_scope(at)
-            && frame.get(at + width) == Some(&1)
+            && frame.byte(at + width) == Some(1)
             && variant <= 1
-            && frame.get(at + width + 2) == Some(&0))
+            && frame.byte(at + width + 2) == Some(0))
         .then_some((at, Some(variant)))
     });
     let with_compact_variant = companion_marker.checked_sub(width + 2).and_then(|at| {
-        let variant = *frame.get(at + width + 1)?;
-        (repeated_scope(at) && frame.get(at + width) == Some(&1) && variant <= 1)
+        let variant = frame.byte(at + width + 1)?;
+        (repeated_scope(at) && frame.byte(at + width) == Some(1) && variant <= 1)
             .then_some((at, Some(variant)))
     });
     if [without_variant, with_variant, with_compact_variant]
@@ -1154,19 +1210,15 @@ fn parse_parameter_owner_with(
 
     let scalar = frame.get(scalar_start..parameter_marker)?;
     let (evaluated_value, evaluated_value_offset) = match scalar.len() {
-        9 if scalar.first() == Some(&0) => {
-            (View::f64_le_at(frame, scalar_start + 1)?, scalar_start + 1)
+        9 if scalar.first() == Some(&0) => (frame.f64_at(scalar_start + 1)?, scalar_start + 1),
+        6 if matches!(scalar.get(..2), Some([0, 0 | 1])) => {
+            (f64::from(frame.u32_at(scalar_start + 2)?), scalar_start + 2)
         }
-        6 if matches!(scalar.get(..2), Some([0, 0 | 1])) => (
-            f64::from(View::u32_le_at(frame, scalar_start + 2)?),
-            scalar_start + 2,
-        ),
-        5 if scalar.first() == Some(&0) && variant.is_none() => (
-            f64::from(View::u32_le_at(frame, scalar_start + 1)?),
-            scalar_start + 1,
-        ),
+        5 if scalar.first() == Some(&0) && variant.is_none() => {
+            (f64::from(frame.u32_at(scalar_start + 1)?), scalar_start + 1)
+        }
         13 if scalar.first() == Some(&1) && scalar.get(1..5) == Some(&[0; 4]) => {
-            (View::f64_le_at(frame, scalar_start + 5)?, scalar_start + 5)
+            (frame.f64_at(scalar_start + 5)?, scalar_start + 5)
         }
         _ => return None,
     };
@@ -1186,11 +1238,11 @@ fn parse_parameter_owner_with(
         class_tag,
         record_index,
         scope_record_index,
-        local_ordinal: View::u32_le_at(frame, local_ordinal_offset)?,
+        local_ordinal: frame.u32_at(local_ordinal_offset)?,
         evaluated_value,
         evaluated_value_offset: FrameRelative(i128::from(u64_from_index(evaluated_value_offset))),
         parameter_record_index,
-        owned_ordinal: View::u32_le_at(frame, owned_ordinal_offset)?,
+        owned_ordinal: frame.u32_at(owned_ordinal_offset)?,
         variant,
         companion_record_index,
     })
@@ -1201,30 +1253,30 @@ fn parse_parameter_owner_with(
 /// The class admission is intentional. A short frame is not enough to select
 /// this grammar because older class tags also occur on modern owner records.
 fn parse_legacy_parameter_owner_68(
-    frame: &[u8],
+    frame: ParameterFrame<'_>,
     evaluated: crate::records::identity::Located<f64>,
     frame_start: u64,
 ) -> Option<ParsedParameterOwner> {
-    let (class_tag, after_tag) = lp_ascii_filtered_view(frame, 0, 0..=2000, u8::is_ascii_graphic)?;
+    let (class_tag, after_tag) = frame.ascii(0, 0..=2000, u8::is_ascii_graphic)?;
     if !is_legacy_parameter_owner_68_class(class_tag)
         || frame.len() != legacy_owner_68::LEN
         || after_tag != indexed_header::RECORD_INDEX
         || frame.get(legacy_owner_68::ZERO_RUN_8..legacy_owner_68::FIRST_MARKER) != Some(&[0; 8])
-        || frame.get(legacy_owner_68::FIRST_MARKER) != Some(&1)
+        || frame.byte(legacy_owner_68::FIRST_MARKER) != Some(1)
         || frame.get(legacy_owner_68::ZERO_RUN_13..legacy_owner_68::PARAMETER_MARKER)
             != Some(&[0; 13])
-        || frame.get(legacy_owner_68::PARAMETER_MARKER) != Some(&1)
+        || frame.byte(legacy_owner_68::PARAMETER_MARKER) != Some(1)
         || frame.get(legacy_owner_68::ZERO_RUN_6..legacy_owner_68::OWNED_ORDINAL) != Some(&[0; 6])
         || frame.get(legacy_owner_68::ZERO_RUN_7..legacy_owner_68::COMPANION_MARKER)
             != Some(&[0; 7])
-        || frame.get(legacy_owner_68::COMPANION_MARKER) != Some(&1)
+        || frame.byte(legacy_owner_68::COMPANION_MARKER) != Some(1)
         || frame.get(legacy_owner_68::ZERO_RUN_8_TAIL..legacy_owner_68::LEN) != Some(&[0; 8])
     {
         return None;
     }
-    let record_index = View::u32_le_at(frame, indexed_header::RECORD_INDEX)?;
-    let parameter_record_index = View::u32_le_at(frame, legacy_owner_68::PARAMETER_RECORD_INDEX)?;
-    let companion_record_index = View::u32_le_at(frame, legacy_owner_68::COMPANION_RECORD_INDEX)?;
+    let record_index = frame.u32_at(indexed_header::RECORD_INDEX)?;
+    let parameter_record_index = frame.u32_at(legacy_owner_68::PARAMETER_RECORD_INDEX)?;
+    let companion_record_index = frame.u32_at(legacy_owner_68::COMPANION_RECORD_INDEX)?;
     let consecutive = |first: u32, second: u32, third: u32| {
         first.checked_add(1) == Some(second) && second.checked_add(1) == Some(third)
     };
@@ -1241,7 +1293,7 @@ fn parse_legacy_parameter_owner_68(
         evaluated_value,
         evaluated_value_offset: FrameRelative::between(evaluated.offset, frame_start),
         parameter_record_index,
-        owned_ordinal: View::u32_le_at(frame, legacy_owner_68::OWNED_ORDINAL)?,
+        owned_ordinal: frame.u32_at(legacy_owner_68::OWNED_ORDINAL)?,
         variant: None,
         companion_record_index,
     })
@@ -1250,42 +1302,41 @@ fn parse_legacy_parameter_owner_68(
 /// Parse the legacy owner envelope whose scope is repeated in the suffix but
 /// whose scalar and local-ordinal lanes are absent.
 fn parse_legacy_parameter_owner_88(
-    frame: &[u8],
+    frame: ParameterFrame<'_>,
     evaluated: crate::records::identity::Located<f64>,
     frame_start: u64,
 ) -> Option<ParsedParameterOwner> {
-    let (class_tag, after_tag) = lp_ascii_filtered_view(frame, 0, 0..=2000, u8::is_ascii_graphic)?;
+    let (class_tag, after_tag) = frame.ascii(0, 0..=2000, u8::is_ascii_graphic)?;
     if !is_legacy_parameter_owner_88_class(class_tag)
         || frame.len() != legacy_owner_88::LEN
         || after_tag != indexed_header::RECORD_INDEX
         || frame.get(legacy_owner_88::ZERO_RUN_8..legacy_owner_88::FIRST_MARKER) != Some(&[0; 8])
-        || frame.get(legacy_owner_88::FIRST_MARKER) != Some(&1)
+        || frame.byte(legacy_owner_88::FIRST_MARKER) != Some(1)
         || frame.get(legacy_owner_88::ZERO_RUN_13..legacy_owner_88::PARAMETER_MARKER)
             != Some(&[0; 13])
-        || frame.get(legacy_owner_88::PARAMETER_MARKER) != Some(&1)
+        || frame.byte(legacy_owner_88::PARAMETER_MARKER) != Some(1)
         || frame.get(legacy_owner_88::ZERO_RUN_6..legacy_owner_88::OWNED_ORDINAL) != Some(&[0; 6])
         || frame.get(legacy_owner_88::ZERO_RUN_4..legacy_owner_88::SCOPE_MARKER) != Some(&[0; 4])
-        || frame.get(legacy_owner_88::SCOPE_MARKER) != Some(&1)
+        || frame.byte(legacy_owner_88::SCOPE_MARKER) != Some(1)
         || frame.get(legacy_owner_88::ZERO_RUN_8_BETWEEN_SCOPES..legacy_owner_88::COMPANION_MARKER)
             != Some(&[0; 8])
-        || frame.get(legacy_owner_88::COMPANION_MARKER) != Some(&1)
+        || frame.byte(legacy_owner_88::COMPANION_MARKER) != Some(1)
         || frame.get(legacy_owner_88::ZERO_RUN_7..legacy_owner_88::REPEATED_SCOPE_MARKER)
             != Some(&[0; 7])
-        || frame.get(legacy_owner_88::REPEATED_SCOPE_MARKER) != Some(&1)
+        || frame.byte(legacy_owner_88::REPEATED_SCOPE_MARKER) != Some(1)
         || frame.get(legacy_owner_88::ZERO_RUN_6_TAIL..legacy_owner_88::LEN) != Some(&[0; 6])
     {
         return None;
     }
-    let record_index = View::u32_le_at(frame, indexed_header::RECORD_INDEX)?;
-    let parameter_record_index = View::u32_le_at(frame, legacy_owner_88::PARAMETER_RECORD_INDEX)?;
-    let scope_record_index = View::u32_le_at(frame, legacy_owner_88::SCOPE_RECORD_INDEX)?;
+    let record_index = frame.u32_at(indexed_header::RECORD_INDEX)?;
+    let parameter_record_index = frame.u32_at(legacy_owner_88::PARAMETER_RECORD_INDEX)?;
+    let scope_record_index = frame.u32_at(legacy_owner_88::SCOPE_RECORD_INDEX)?;
     if scope_record_index == 0
-        || View::u32_le_at(frame, legacy_owner_88::REPEATED_SCOPE_RECORD_INDEX)?
-            != scope_record_index
+        || frame.u32_at(legacy_owner_88::REPEATED_SCOPE_RECORD_INDEX)? != scope_record_index
     {
         return None;
     }
-    let companion_record_index = View::u32_le_at(frame, legacy_owner_88::COMPANION_RECORD_INDEX)?;
+    let companion_record_index = frame.u32_at(legacy_owner_88::COMPANION_RECORD_INDEX)?;
     let consecutive = |first: u32, second: u32, third: u32| {
         first.checked_add(1) == Some(second) && second.checked_add(1) == Some(third)
     };
@@ -1302,7 +1353,7 @@ fn parse_legacy_parameter_owner_88(
         evaluated_value,
         evaluated_value_offset: FrameRelative::between(evaluated.offset, frame_start),
         parameter_record_index,
-        owned_ordinal: View::u32_le_at(frame, legacy_owner_88::OWNED_ORDINAL)?,
+        owned_ordinal: frame.u32_at(legacy_owner_88::OWNED_ORDINAL)?,
         variant: None,
         companion_record_index,
     })
@@ -1311,9 +1362,11 @@ fn parse_legacy_parameter_owner_88(
 /// Decode the fixed prefix of every indexed record paired with a parameter
 /// owner. Record-specific payload after the prefix is decoded independently.
 pub(crate) fn decode_parameter_companions(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     owners: &[DesignParameterOwner],
     headers: &[DesignRecordHeader],
+    pointers: &mut BTreeMap<String, BTreeMap<String, u64>>,
 ) -> Result<Vec<DesignParameterCompanion>, CodecError> {
     let mut headers_by_record = HashMap::new();
     for header in headers {
@@ -1335,24 +1388,44 @@ pub(crate) fn decode_parameter_companions(
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let Some(source) = scan.entry_view(&entry.name) else {
+            continue;
+        };
         let Some(header_offset) = header.byte_offset else {
             continue;
         };
-        let at = usize::try_from(header_offset).ok();
-        let prefix = at.and_then(|at| at.checked_add(58).and_then(|end| bytes.get(at..end)));
-        let Some(parsed) = prefix.and_then(parse_parameter_companion) else {
+        let Some(view) = usize::try_from(header_offset)
+            .ok()
+            .and_then(|at| source.start().checked_add(at))
+            .and_then(|start| Some((start, start.checked_add(companion_prefix::LEN)?)))
+            .and_then(|(start, end)| source.child(start, end))
+        else {
             continue;
         };
-        if parsed.record_index != owner.companion_record_index()
-            || parsed.owner_record_index != owner.record_index()
-        {
+        let id = design_record_id(&entry.name, ":design-parameter-companion#", header_offset);
+        if pointers.contains_key(&id) {
             continue;
         }
-        let Some(companion) = parsed.into_record(&entry.name, header_offset) else {
-            continue;
+        // A prefix that is not this owner's companion discards its scope.
+        let captured = ctx.record(&id, view, || {
+            parse_parameter_companion_frame(ParameterFrame::new(view))
+                .filter(|parsed| {
+                    parsed.record_index == owner.companion_record_index()
+                        && parsed.owner_record_index == owner.record_index()
+                })
+                .and_then(|parsed| parsed.into_record(&entry.name, header_offset))
+                .ok_or_else(|| CodecError::malformed("prefix is not the owner's companion"))
+                .and_then(|companion| {
+                    let fields = source_layout::pointer_fields(ctx, companion.source_offsets())?;
+                    Ok((companion, fields))
+                })
+        });
+        let (companion, fields) = match captured {
+            Ok(captured) => captured,
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+            Err(_) => continue,
         };
-
+        pointers.insert(id, fields);
         out.push(companion);
     }
     out.sort_by(|a, b| a.id().cmp(b.id()));
@@ -1387,14 +1460,22 @@ impl ParsedParameterCompanion {
     }
 }
 
+/// Parse the fixed companion prefix over a retained slice.
+#[cfg(test)]
 fn parse_parameter_companion(prefix: &[u8]) -> Option<ParsedParameterCompanion> {
-    let (class_tag, after_tag) = lp_ascii_filtered_view(prefix, 0, 0..=2000, u8::is_ascii_graphic)?;
+    parse_parameter_companion_frame(ParameterFrame::retained(prefix))
+}
+
+/// Parse the fixed companion prefix; every byte it consults is a read of
+/// `prefix`.
+fn parse_parameter_companion_frame(prefix: ParameterFrame<'_>) -> Option<ParsedParameterCompanion> {
+    let (class_tag, after_tag) = prefix.ascii(0, 0..=2000, u8::is_ascii_graphic)?;
     let class_tag = crate::design::decode::text::class_tag_from_view(class_tag).ok()?;
     if prefix.len() != companion_prefix::LEN
         || after_tag != indexed_header::RECORD_INDEX
         || prefix.get(companion_prefix::ZERO_RUN_20..companion_prefix::OWNER_MARKER)
             != Some(&[0; 20])
-        || prefix.get(companion_prefix::OWNER_MARKER) != Some(&1)
+        || prefix.byte(companion_prefix::OWNER_MARKER) != Some(1)
         || prefix.get(companion_prefix::ZERO_RUN_6..companion_prefix::TIMESTAMP_MICROS)
             != Some(&[0; 6])
         || prefix.get(companion_prefix::ZERO_RUN_8..companion_prefix::LEN) != Some(&[0; 8])
@@ -1402,11 +1483,11 @@ fn parse_parameter_companion(prefix: &[u8]) -> Option<ParsedParameterCompanion> 
         return None;
     }
     let timestamp_micros =
-        std::num::NonZeroU64::new(View::u64_le_at(prefix, companion_prefix::TIMESTAMP_MICROS)?)?;
+        std::num::NonZeroU64::new(prefix.u64_at(companion_prefix::TIMESTAMP_MICROS)?)?;
     Some(ParsedParameterCompanion {
         class_tag,
-        record_index: View::u32_le_at(prefix, indexed_header::RECORD_INDEX)?,
-        owner_record_index: View::u32_le_at(prefix, companion_prefix::OWNER_RECORD_INDEX)?,
+        record_index: prefix.u32_at(indexed_header::RECORD_INDEX)?,
+        owner_record_index: prefix.u32_at(companion_prefix::OWNER_RECORD_INDEX)?,
         timestamp_micros,
         timestamp_micros_offset: FrameRelative(i128::from(u64_from_index(
             companion_prefix::TIMESTAMP_MICROS,

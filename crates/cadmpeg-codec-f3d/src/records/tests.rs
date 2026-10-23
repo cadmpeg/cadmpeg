@@ -690,16 +690,31 @@ fn companion_timestamp_preserves_wire_and_rejects_zero() {
     assert_eq!(serde_json::to_string(&source).unwrap(), wire);
     let companion: DesignParameterCompanion = serde_json::from_str(wire).unwrap();
     assert_eq!(serde_json::to_string(&companion).unwrap(), wire);
-    let mut fidelity = cadmpeg_ir::SourceFidelity::default();
-    source.retain_source(&mut fidelity);
-    for (field, value) in [
-        ("byte_offset", "0"),
-        ("timestamp_micros_offset", "42"),
-        ("payload_byte_offset", "58"),
-        ("payload_byte_length", "0"),
-    ] {
-        assert_eq!(fidelity.metadata[&format!("companion.{field}")], value);
-    }
+    // The source positions are `record_layout` pointers of the companion
+    // capture, not metadata.
+    assert_eq!(
+        source.source_offsets(),
+        [
+            ("byte_offset", Some(0)),
+            ("timestamp_micros_offset", Some(42))
+        ]
+    );
+    assert_eq!(
+        source.payload_source_extent(),
+        [
+            ("payload_byte_offset", Some(58)),
+            ("payload_byte_length", Some(0))
+        ]
+    );
+    let native = crate::native::F3dNative {
+        design_parameter_companions: vec![source.clone()],
+        ..Default::default()
+    };
+    assert!(native
+        .retained_fidelity()
+        .expect("source fidelity")
+        .metadata
+        .is_empty());
     let legacy = wire.replace("timestamp_micros", "opaque_value");
     assert!(serde_json::from_str::<DesignParameterCompanion>(&legacy).is_err());
     for (invalid, field) in [
