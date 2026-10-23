@@ -1194,8 +1194,11 @@ pub struct DocumentMeasures {
     pub(crate) faces: usize,
     pub(crate) edges: usize,
     pub(crate) surfaces: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) area: Option<Quantity<Scalar>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) closed_volume: Option<Quantity<Scalar>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) bbox: Option<Quantity<BoxValue>>,
     pub(crate) orientation: DocumentOrientation,
     pub(crate) unavailable: BTreeMap<Category, BTreeMap<String, usize>>,

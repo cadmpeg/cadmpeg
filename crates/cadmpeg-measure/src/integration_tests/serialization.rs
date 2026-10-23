@@ -122,3 +122,77 @@ fn a_face_report_serializes_members_in_contract_order() {
         "measure.provenance-not-recorded"
     );
 }
+
+/// A quantity that does not apply is absent, not `null`: a face report has
+/// no document totals, and an occurrence space that places nothing has no
+/// transform.
+#[test]
+fn quantities_that_do_not_apply_are_absent() {
+    let ir = plate_with_hole(true);
+    let faces = measure(
+        &ir,
+        &Selection {
+            all_faces: true,
+            ..Selection::default()
+        },
+    );
+    let value = serde_json::to_value(&faces).unwrap();
+    let document = value["document"].as_object().unwrap();
+    for member in ["area", "closed_volume", "bbox"] {
+        assert!(!document.contains_key(member), "{member}");
+    }
+    let bodies = serde_json::to_value(measure(&ir, &Selection::default())).unwrap();
+    for member in ["area", "bbox"] {
+        assert!(bodies["document"][member].is_object(), "{member}");
+    }
+
+    let mut assembly = ir.clone();
+    let definition =
+        cadmpeg_ir::ids::ProductDefinitionId::mint("test:model:product-definition#empty")
+            .expect("identity");
+    assembly
+        .model
+        .product_definitions
+        .push(cadmpeg_ir::products::ProductDefinition {
+            id: definition.clone(),
+            kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
+            source_name: None,
+            label: None,
+            description: None,
+            part_number: None,
+            bom_properties: std::collections::BTreeMap::default(),
+            bodies: Vec::new(),
+            native_ref: None,
+        });
+    let occurrence =
+        cadmpeg_ir::ids::OccurrenceId::mint("test:model:occurrence#empty").expect("identity");
+    assembly
+        .model
+        .occurrences
+        .push(cadmpeg_ir::products::Occurrence {
+            id: occurrence.clone(),
+            prototype: cadmpeg_ir::products::PrototypeReference::Local { definition },
+            parent: cadmpeg_ir::products::OccurrenceParent::Root {},
+            ordinal: 0,
+            transform: cadmpeg_ir::transform::Transform::identity(),
+            linked_prototype: None,
+            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
+            name: None,
+            visible: None,
+            link: None,
+            native_ref: None,
+        });
+    assembly.finalize();
+    let unplaced = serde_json::to_value(measure(
+        &assembly,
+        &Selection {
+            occurrence: Some(occurrence),
+            ..Selection::default()
+        },
+    ))
+    .unwrap();
+    let block = unplaced["occurrence"].as_object().unwrap();
+    assert!(!block.contains_key("transform"));
+    assert!(!block.contains_key("descendants"));
+    assert_eq!(block["unavailable"]["reason"], "placement.occurrence-empty");
+}
