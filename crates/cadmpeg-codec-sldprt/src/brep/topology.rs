@@ -3327,4 +3327,85 @@ mod tests {
         assert!(!scoped.edge_uses.contains_key(&edge.attr));
         assert_eq!(scoped.coedges.len(), 3);
     }
+    #[test]
+    fn world_schema_pointer_fields_cannot_create_an_integer_values_enclosure() {
+        let mut bytes = vec![0, 101, 13];
+        bytes.extend([b'C'; 11]);
+        bytes.extend([b'A', 7]);
+        bytes.extend(b"indices");
+        let false_integer = bytes.len();
+        bytes.extend([0, 82, 0, 1]);
+        bytes.extend([b'A', 1, b'b', 0, 82, 0, 1, b'Z']);
+        let program_end = bytes.len();
+        assert_eq!(
+            super::super::typed::schema_prefix_end(&bytes, 0),
+            Some(program_end)
+        );
+        // Authored WORLD index, seven pointer fields, alive, attribute
+        // definition pointer, highest/current IDs, and the two appended
+        // nullable INT_VALUES pointers. WORLD has no visible-node ID.
+        bytes.extend(2u16.to_be_bytes());
+        for reference in [1u16, 1, 900, 1, 1, 1, 1] {
+            bytes.extend(reference.to_be_bytes());
+        }
+        bytes.push(1);
+        bytes.extend(1u16.to_be_bytes());
+        bytes.extend(100u32.to_be_bytes());
+        bytes.extend(100u32.to_be_bytes());
+        bytes.extend(1u16.to_be_bytes());
+        bytes.extend(1u16.to_be_bytes());
+        let world_end = bytes.len();
+        let triangle = crate::test_support::parasolid::triangle_body();
+        let baseline = scan(&triangle);
+        assert_eq!(baseline.vertex_uses.len(), 3);
+        assert_eq!(baseline.coedges.len(), 3);
+        assert_eq!(baseline.loops.len(), 1);
+        bytes.extend(&triangle);
+        // If interpreted as an INT_VALUES start, the pointer class and
+        // following field descriptor would claim this entire later graph.
+        let count = u32::from_be_bytes(
+            bytes[false_integer + 2..false_integer + 6]
+                .try_into()
+                .unwrap(),
+        );
+        let node = u16::from_be_bytes(
+            bytes[false_integer + 6..false_integer + 8]
+                .try_into()
+                .unwrap(),
+        );
+        assert_eq!(count, 82_177);
+        assert_eq!(node, 25_088);
+        let false_end = false_integer + 8 + usize::try_from(count).unwrap() * 4;
+        assert!(false_end > bytes.len());
+        bytes.resize(false_end, 0);
+        assert!(super::topology_payload_ranges(&bytes, false).is_empty());
+        let tables = scan(&bytes);
+        assert_eq!(tables.vertex_uses.len(), 3);
+        assert_eq!(tables.coedges.len(), 3);
+        assert_eq!(tables.loops.len(), 1);
+        let facts = super::super::typed::scan(&bytes);
+        assert!(facts.bodies.iter().any(|body| body.attr == 900));
+        // Only the schema program is protected by this new class grammar;
+        // the supported framer does not claim a WORLD instance extent.
+        let scopes = super::topology_scopes(&bytes, false);
+        assert!(scopes.excluded_starts.contains(&(1..program_end)));
+        assert!(!scopes
+            .excluded_starts
+            .iter()
+            .any(|range| { range.start <= program_end && range.end >= world_end }));
+
+        let mut enclosed = vec![0, 82];
+        bytes.resize(bytes.len().next_multiple_of(4), 0);
+        enclosed.extend(u32::try_from(bytes.len() / 4).unwrap().to_be_bytes());
+        enclosed.extend(710u16.to_be_bytes());
+        enclosed.extend(bytes);
+        assert_eq!(
+            super::topology_payload_ranges(&enclosed, false),
+            [0..enclosed.len()]
+        );
+        let tables = scan(&enclosed);
+        assert!(tables.vertex_uses.is_empty());
+        assert!(tables.coedges.is_empty());
+        assert!(super::super::typed::scan(&enclosed).bodies.is_empty());
+    }
 }

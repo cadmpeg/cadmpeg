@@ -1566,7 +1566,10 @@ An edited first-of-type schema header has three bytes: u16 BE node type at `+0`
 and u8 current effective-field count at `+2`. The field count precedes the
 `C`, `D`, `I`, and `A` field-edit instructions ending in `Z`. Effective fields
 are transmittable or variable-length fields. The base schema-13006 effective
-field counts are BODY 23, SHELL 9, REGION 7, and FACE 14. `C` consumes one base
+field counts are BODY 23, SHELL 9, REGION 7, FACE 14, and WORLD 11. WORLD
+(type 101) uses the same complete schema-program grammar. The program extent
+ends at `Z`. Pointer-type words and field names inside that extent are field
+descriptors, not topology or data records. `C` consumes one base
 field and produces one current field; `D` consumes one base field; `I` produces
 one current field before the base fields are exhausted; `A` produces one
 current field after the base fields are exhausted. `Z` ends a complete edit

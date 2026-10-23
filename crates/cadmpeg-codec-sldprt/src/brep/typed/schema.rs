@@ -9,6 +9,7 @@ pub(super) enum Class {
     Shell,
     Region,
     Face,
+    World,
 }
 
 impl Class {
@@ -18,6 +19,7 @@ impl Class {
             Self::Shell => 9,
             Self::Region => 7,
             Self::Face => 14,
+            Self::World => 11,
         }
     }
 }
@@ -91,6 +93,7 @@ pub(super) fn edited_payload(bytes: &[u8], at: usize) -> Option<(Class, usize)> 
         13 => Class::Shell,
         14 => Class::Face,
         19 => Class::Region,
+        101 => Class::World,
         _ => return None,
     };
     let mut cursor = Cursor {
@@ -152,6 +155,7 @@ mod tests {
             (13, 9, Class::Shell),
             (14, 14, Class::Face),
             (19, 7, Class::Region),
+            (101, 11, Class::World),
         ] {
             let bytes = copied(tag, count);
             assert_eq!(edited_payload(&bytes, 0), Some((class, bytes.len())));
@@ -204,5 +208,24 @@ mod tests {
         late_insert.push(b'Z');
         assert_eq!(edited_payload(&late_insert, 0), None);
         assert_eq!(edited_payload(&[0, 12, 255], 0), None);
+    }
+    #[test]
+    fn world_program_extent_requires_all_fields_and_the_terminator() {
+        let mut bytes = copied(101, 11);
+        bytes[2] = 13;
+        bytes.pop();
+        bytes.push(b'A');
+        pointer(&mut bytes, b"indices", 1);
+        bytes.push(b'A');
+        pointer(&mut bytes, b"b", 1);
+        bytes.push(b'Z');
+        assert_eq!(edited_payload(&bytes, 0), Some((Class::World, bytes.len())));
+        for end in 0..bytes.len() {
+            assert_eq!(edited_payload(&bytes[..end], 0), None);
+        }
+        bytes[2] = 12;
+        assert_eq!(edited_payload(&bytes, 0), None);
+        bytes[2] = 14;
+        assert_eq!(edited_payload(&bytes, 0), None);
     }
 }
