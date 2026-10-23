@@ -1468,9 +1468,28 @@ fn encode_source_less_edges_vertices_points(
             })
             .transpose()?
             .unwrap_or(-1);
-        let mut range = edge
-            .param_range()
-            .map_or([0.0, 1.0], cadmpeg_ir::units::FiniteVector::get);
+        let carrier = edge
+            .curve()
+            .and_then(|curve_id| curve_ordinals.get(curve_id))
+            .and_then(|ordinal| model.curves.get(*ordinal));
+        let mut range = match edge.param_range() {
+            Some(range) => range.get(),
+            // A closed conic edge with no stored range is one revolution,
+            // which the IR anchors to `[0, 2π]`.
+            None if edge.start == edge.end
+                && carrier.is_some_and(|curve| {
+                    matches!(
+                        curve.geometry,
+                        CurveGeometry::Solved(
+                            SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_)
+                        )
+                    )
+                }) =>
+            {
+                [0.0, std::f64::consts::TAU]
+            }
+            None => [0.0, 1.0],
+        };
         // Conic edge parameters are angles in both the IR and the native
         // stream; line parameters are arc lengths, millimeters in the IR
         // and centimeters natively.

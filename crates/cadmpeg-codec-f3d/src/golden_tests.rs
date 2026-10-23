@@ -19,6 +19,7 @@ use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions, DecodeResult};
 use cadmpeg_ir::examples;
 use cadmpeg_ir::{report::export::WritePath, CadIr};
 use cadmpeg_test_support::golden::{elide_local_digests, snapshot_text, snapshots_agree};
+use cadmpeg_test_support::measured::{assert_measures_agree, measures_decide};
 use cadmpeg_test_support::roundtrip::{
     mutation_roundtrip, semantic_roundtrip, verbatim_replay_holds, ExpectedWritePath,
     MutationOutcome, SemanticOutcome,
@@ -876,6 +877,9 @@ fn an_edit_survives_the_patch_writer() {
                         panic!(
                             "fixture `{name}`: the patched container decodes to a different document: {mismatch}"
                         );
+                    }
+                    if measures_decide(name, edited) {
+                        assert_measures_agree(name, edited, round_trip.ir());
                     }
                 }
                 MutationOutcome::Refused { error } => {
