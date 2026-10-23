@@ -669,8 +669,9 @@ const NATIVE_TO_IR: f64 = 1000.0;
 /// coordinates it is measured among (at least 1 mm).
 const RELATIVE_TOLERANCE: f64 = 1e-6;
 
-/// Two unit directions are parallel or perpendicular within this sine or cosine.
-const ANGLE: f64 = 1e-7;
+/// Largest sine or cosine residual at which two unit directions are
+/// parallel, perpendicular, or collinear.
+const DIRECTION_TOLERANCE: f64 = 1e-7;
 
 /// Relation codes typed into the neutral IR from flag-0 rows. Concentric (`10`)
 /// is not among them: its operand roles are not settled.
@@ -920,7 +921,7 @@ fn holds(definition: &SketchConstraintDefinitionInput, geometry: &Geometry<'_>) 
                 du
             })
             .abs()
-                <= ANGLE
+                <= DIRECTION_TOLERANCE
         }
         Def::Parallel { first, second }
         | Def::Perpendicular { first, second }
@@ -930,10 +931,10 @@ fn holds(definition: &SketchConstraintDefinitionInput, geometry: &Geometry<'_>) 
             let ([au, av], [bu, bv]) = (direction(a0, a1)?, direction(b0, b1)?);
             let cross = au * bv - av * bu;
             match definition {
-                Def::Parallel { .. } => cross.abs() <= ANGLE,
-                Def::Perpendicular { .. } => (au * bu + av * bv).abs() <= ANGLE,
+                Def::Parallel { .. } => cross.abs() <= DIRECTION_TOLERANCE,
+                Def::Perpendicular { .. } => (au * bu + av * bv).abs() <= DIRECTION_TOLERANCE,
                 _ => {
-                    cross.abs() <= ANGLE
+                    cross.abs() <= DIRECTION_TOLERANCE
                         && line_distance(b0, a0, a1)? <= tolerance(span(&[a0, a1, b0, b1]))
                 }
             }

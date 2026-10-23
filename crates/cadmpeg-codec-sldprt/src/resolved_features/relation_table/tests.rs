@@ -90,6 +90,30 @@ impl Lane {
             .extend_from_slice(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]);
     }
 
+    /// A cell whose class reference is `ff 7f` and a u32 index.
+    fn wide_cell(&mut self, index: u32, slot: u16) {
+        self.payload.extend_from_slice(&[0xff, 0x7f]);
+        self.payload.extend_from_slice(&index.to_le_bytes());
+        self.payload.extend_from_slice(&slot.to_le_bytes());
+        self.payload
+            .extend_from_slice(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]);
+    }
+
+    /// A cell whose class reference is an inline class declaration.
+    fn declared_cell(&mut self, name: &str, schema: u16, slot: u16) {
+        self.payload.extend_from_slice(&[0xff, 0xff]);
+        self.payload.extend_from_slice(&schema.to_le_bytes());
+        self.payload.extend_from_slice(
+            &u16::try_from(name.len())
+                .expect("class name fits u16")
+                .to_le_bytes(),
+        );
+        self.payload.extend_from_slice(name.as_bytes());
+        self.payload.extend_from_slice(&slot.to_le_bytes());
+        self.payload
+            .extend_from_slice(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]);
+    }
+
     fn row(&mut self, code: u32, flag: u16, cells: &[(u16, u16)]) -> usize {
         let at = self.payload.len();
         self.payload.extend_from_slice(&code.to_le_bytes());
@@ -575,4 +599,47 @@ mod projection {
             SketchConstraintDefinitionInput::Native { .. }
         ));
     }
+}
+
+#[test]
+fn handle_cells_read_the_wide_class_reference() {
+    let mut lane = Lane::default();
+    lane.wide_cell(0x1234_5678, 7);
+    let (cells, after) = handle_cells(&lane.payload, 0);
+    assert_eq!(cells.len(), 1);
+    assert_eq!(cells[0].tag, HandleTag::Wide(0x1234_5678));
+    assert_eq!(cells[0].slot, 7);
+    assert_eq!(after, 16);
+}
+
+#[test]
+fn handle_cells_read_the_declared_class_reference() {
+    let mut lane = Lane::default();
+    lane.declared_cell("sgLineHandle", 1, 9);
+    let (cells, after) = handle_cells(&lane.payload, 0);
+    assert_eq!(cells.len(), 1);
+    assert_eq!(cells[0].tag, HandleTag::Declared("sgLineHandle".to_owned()));
+    assert_eq!(cells[0].slot, 9);
+    assert_eq!(after, lane.payload.len());
+}
+
+#[test]
+fn a_truncated_cell_reads_as_no_cell() {
+    let mut lane = Lane::default();
+    lane.cell(LINE_TAG, 3);
+    lane.payload.truncate(lane.payload.len() - 1);
+    let (cells, after) = handle_cells(&lane.payload, 0);
+    assert_eq!(cells.len(), 0);
+    assert_eq!(after, 0);
+}
+
+#[test]
+fn handle_cells_stop_at_max_operands() {
+    let mut lane = Lane::default();
+    for slot in 0..20 {
+        lane.cell(LINE_TAG, slot);
+    }
+    let (cells, after) = handle_cells(&lane.payload, 0);
+    assert_eq!(cells.len(), MAX_OPERANDS);
+    assert_eq!(after, MAX_OPERANDS * 12);
 }

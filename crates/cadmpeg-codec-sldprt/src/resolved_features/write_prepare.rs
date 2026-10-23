@@ -429,6 +429,70 @@ fn validate_source_less_constraints(
     Ok(())
 }
 
+/// The name of a constraint input the synthesized writer does not emit.
+fn constraint_input_kind(input: &SketchConstraintDefinitionInput) -> &'static str {
+    use SketchConstraintDefinitionInput as Def;
+    match input {
+        Def::Disabled { .. } => "disabled",
+        Def::Coincident { .. } => "coincident",
+        Def::Polygon { .. } => "polygon",
+        Def::SplineGroup { .. } => "spline-group",
+        Def::RectangularPattern { .. } => "rectangular-pattern",
+        Def::CircularPattern { .. } => "circular-pattern",
+        Def::TextFrame { .. } => "text-frame",
+        Def::TextPath { .. } => "text-path",
+        Def::CoincidentLoci { .. } => "coincident-loci",
+        Def::SameCoordinate { .. } => "same-coordinate",
+        Def::PointOnObject { .. } => "point-on-object",
+        Def::Midpoint { .. } => "midpoint",
+        Def::PointCoordinateValues { .. } => "point-coordinate-values",
+        Def::MidpointCoordinate { .. } => "midpoint-coordinate",
+        Def::Offset { .. } => "offset",
+        Def::ProjectedCopy { .. } => "projected-copy",
+        Def::AtIntersection { .. } => "at-intersection",
+        Def::Concentric { .. } => "concentric",
+        Def::Coradial { .. } => "coradial",
+        Def::Collinear { .. } => "collinear",
+        Def::Symmetric { .. } => "symmetric",
+        Def::PointSymmetric { .. } => "point-symmetric",
+        Def::Horizontal { .. } => "horizontal",
+        Def::Vertical { .. } => "vertical",
+        Def::Parallel { .. } => "parallel",
+        Def::Perpendicular { .. } => "perpendicular",
+        Def::Tangent { .. } => "tangent",
+        Def::TangentLoci { .. } => "tangent-loci",
+        Def::Curvature { .. } => "curvature",
+        Def::Equal { .. } => "equal",
+        Def::Fixed { .. } => "fixed",
+        Def::ArcAngle { .. } => "arc-angle",
+        Def::EllipseAngle { .. } => "ellipse-angle",
+        Def::Distance { .. } => "distance",
+        Def::DistanceLoci { .. } => "distance-loci",
+        Def::DistanceLociValue { .. } => "distance-loci-value",
+        Def::PolarDistance { .. } => "polar-distance",
+        Def::AngleDifference { .. } => "angle-difference",
+        Def::ScalarEquality { .. } => "scalar-equality",
+        Def::EqualDistance { .. } => "equal-distance",
+        Def::HorizontalDistance { .. } => "horizontal-distance",
+        Def::VerticalDistance { .. } => "vertical-distance",
+        Def::RepeatedDistance { .. } => "repeated-distance",
+        Def::RepeatedLength { .. } => "repeated-length",
+        Def::ParallelLineSetDistance { .. } => "parallel-line-set-distance",
+        Def::Angle { .. } => "angle",
+        Def::AngleToAxis { .. } => "angle-to-axis",
+        Def::Radius { .. } => "radius",
+        Def::RepeatedRadius { .. } => "repeated-radius",
+        Def::Diameter { .. } => "diameter",
+        Def::RepeatedDiameter { .. } => "repeated-diameter",
+        Def::SnellsLaw { .. } => "snells-law",
+        Def::Weight { .. } => "weight",
+        Def::InternalAlignment { .. } => "internal-alignment",
+        Def::Group { .. } => "group",
+        Def::Text { .. } => "text",
+        Def::Native { .. } => "native",
+    }
+}
+
 fn validate_generated_marker_constraint(
     ir: &cadmpeg_ir::CadIr,
     constraint: &SketchConstraint,
@@ -623,14 +687,10 @@ fn validate_generated_marker_constraint(
             )));
         }
         other => {
-            let debug = format!("{other:?}");
-            let kind = debug
-                .split(|character: char| !character.is_ascii_alphanumeric())
-                .next()
-                .unwrap_or_default();
             return Err(cadmpeg_core::CodecError::NotImplemented(format!(
-                "source-less SLDPRT sketch constraint {} is {kind}; source-less SLDPRT sketch constraints support solved endpoint coincidences and horizontal, vertical, or fixed marker relations",
-                constraint.id.as_str()
+                "source-less SLDPRT sketch constraint {} is {}; source-less SLDPRT sketch constraints support solved endpoint coincidences and horizontal, vertical, or fixed marker relations",
+                constraint.id.as_str(),
+                constraint_input_kind(other)
             )));
         }
     };
