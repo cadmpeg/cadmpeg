@@ -198,17 +198,103 @@ fn rejects_duplicate_property_names_for_one_owner() {
  <Property name="Label" type="App::PropertyString"><String value="one"/></Property>
  <Property name="Label" type="App::PropertyString"><String value="two"/></Property>
 </Properties></Object></ObjectData></Document>"#;
-    let error = FcstdCodec
-        .decode(
-            &mut Cursor::new(archive(document)),
-            &DecodeOptions::default(),
-        )
-        .expect_err("duplicate object property names");
-    assert!(matches!(
-        error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message))
-            if message.contains("duplicate property name Label")
-    ));
+    let bytes = archive(document);
+    let decoded = FcstdCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .expect("the duplicate property container has its own bounded recovery home");
+    let native = decoded.ir().native.namespace("fcstd").unwrap();
+    let objects = native
+        .arena_as::<crate::native::ObjectRecord>("objects")
+        .unwrap();
+    let [object] = objects.as_slice() else {
+        panic!("the independently framed Part declaration survives")
+    };
+    assert_eq!(object.name(), "Part");
+    assert_eq!(object.type_name, "App::Part");
+    assert!(native
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap()
+        .is_empty());
+    assert!(!decoded
+        .ir()
+        .model
+        .attributes
+        .iter()
+        .any(|attribute| attribute.name == "Label"));
+
+    let unknowns = decoded.ir().native_unknowns("fcstd").unwrap();
+    let [unknown] = unknowns.as_slice() else {
+        panic!("one failed Properties container: {unknowns:?}")
+    };
+    let fidelity = decoded.source_fidelity();
+    let part = &fidelity.parts()[&unknown.id];
+    let start = document.find("<Properties Count=\"2\">").unwrap();
+    let end = document.find("</Properties>").unwrap() + "</Properties>".len();
+    assert_eq!(part.level().as_str(), "freecad.properties");
+    assert_eq!(
+        part.state(),
+        &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}
+    );
+    assert_eq!(part.offset(), u64::try_from(start).unwrap());
+    assert_eq!(part.byte_len(), u64::try_from(end - start).unwrap());
+    let parent = &fidelity.parts()[part.parent().unwrap()];
+    assert_eq!(parent.level().as_str(), "freecad.document");
+    assert_eq!(
+        parent.state(),
+        &cadmpeg_ir::source_fidelity::parts::PartState::Decoded {}
+    );
+    assert_eq!(
+        fidelity
+            .parts()
+            .values()
+            .filter(|candidate| candidate.state()
+                == &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {})
+            .count(),
+        1
+    );
+    assert!(!fidelity.parts().values().any(|candidate| matches!(
+        candidate.level().as_str(),
+        "freecad.property" | "freecad.property_value"
+    )));
+    let retained = fidelity.retained_record(unknown.id.as_str()).unwrap();
+    assert_eq!(retained.data(), Some(&document.as_bytes()[start..end]));
+    assert_eq!(retained.stream(), part.stream());
+    assert_eq!(retained.offset(), part.offset());
+    assert_eq!(retained.byte_len(), part.byte_len());
+    assert_eq!(
+        retained.sha256(),
+        cadmpeg_ir::hash::sha256_hex(&document.as_bytes()[start..end])
+    );
+    assert!(fidelity.record_layout()[unknown.id.as_str()]
+        .reads()
+        .is_empty());
+    for layout in fidelity.record_layout().values() {
+        if let Some(reads) = layout.reads().get(part.stream()) {
+            assert!(reads.iter().all(|range| range.end <= part.offset()
+                || range.start >= part.offset() + part.byte_len()));
+        }
+    }
+    assert!(fidelity.record_layout().contains_key(object.id()));
+    let failures = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "record.unreadable")
+        .collect::<Vec<_>>();
+    let [failure] = failures.as_slice() else {
+        panic!("one duplicate-name diagnostic: {failures:?}")
+    };
+    assert_eq!(failure.severity, cadmpeg_ir::report::Severity::Error);
+    assert!(failure.message.contains("duplicate document property name"));
+    let location = failure.provenance.as_ref().unwrap();
+    assert_eq!(location.stream_name(), Some(part.stream()));
+    assert_eq!(location.offset, part.offset());
+    assert_eq!(location.byte_len(), Some(part.byte_len()));
+    assert_eq!(crate::source_archive::image(fidelity).unwrap(), bytes);
+    assert!(crate::test_support::validate_native(decoded.ir()).is_empty());
+    assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
+        .unwrap()
+        .is_ok());
 }
 
 #[test]
