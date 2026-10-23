@@ -171,7 +171,7 @@ Parsed by:
 
 Spec §4 · layout: byte offsets · size: 38 B
 
-Offsets are body-relative, i.e. after the two-byte `00 1d` tag. Attrs `0` and `1` are sentinels, not world points.
+Offsets are body-relative, i.e. after the two-byte `00 1d` tag. Attrs `0` and `1` are sentinels, not world points. The offsets are the narrow-pointer form: `attr` and every reference is a §4 pointer that takes four bytes past `0x7ffe`, moving each later field by two, so the decoder reads the fields after the first pointer in sequence instead of at these offsets.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -199,13 +199,13 @@ Body-relative, after the two-byte family tag. An optional `ff` byte can occur be
 
 Spec §5 · layout: byte offsets · size: 14 B
 
-Body-relative prefix. `definition_node_id` selects the same-stream ATTRIB_DEF; ATTRIBUTE slots begin at body +14. Bare framing uses `5 + flo` u16 slots; prefixed framing uses terminated `[01][hi][lo]` triples. The +0..+6 region is the common-header `flags` and `attr` of the same record.
+Body-relative prefix. `definition_node_id` selects the same-stream ATTRIB_DEF; ATTRIBUTE slots begin at body +14. Bare framing uses `5 + flo` u16 slots; prefixed framing uses terminated `[01][hi][lo]` triples. The +0..+6 region is the common-header `flags` and `attr` of the same record. The offsets are the narrow-pointer form: `attr` and every reference is a §4 pointer that takes four bytes past `0x7ffe`, moving each later field by two, so the decoder reads the fields after the first pointer in sequence instead of at these offsets.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 6 | 2 | `zero_selector` | `u16` | big | spec | whose u16 at body +6 is zero |
-| 10 | 2 | `definition_node_id` | `u16` | big | spec | definition node id at body +10 |
-| 12 | 2 | `owner_attribute_id` | `u16` | big | spec | owner attribute at body +12 |
+| 6 | 2 | `zero_selector` | `u16` | big | spec | the zero u16 at body +6 with narrow pointers |
+| 10 | 2 | `definition_node_id` | `u16` | big | spec | carries its definition node id in `disc` |
+| 12 | 2 | `owner_attribute_id` | `u16` | big | spec | its owner attribute in its first slot |
 
 Unstated regions:
 
@@ -397,7 +397,7 @@ Shared header of `00 2d` (poles, f64 elements), `00 7f` (knot multiplicities, u1
 
 Spec §7.2 · layout: byte offsets · size: 4 B
 
-Complete compact-array header including its leading zero byte. Element data follows at +4. The referencing descriptor role selects f64 control/knot values or u16 multiplicities.
+Complete compact-array header including its leading zero byte. Element data follows at +4. The referencing descriptor role selects f64 control/knot values or u16 multiplicities. The offsets are the narrow-pointer form: `attr` and every reference is a §4 pointer that takes four bytes past `0x7ffe`, moving each later field by two, so the decoder reads the fields after the first pointer in sequence instead of at these offsets.
 
 Parsed by:
 - `crates/cadmpeg-codec-sldprt/src/brep/spline.rs`
@@ -412,7 +412,7 @@ Parsed by:
 
 Spec §7.3 · layout: byte offsets · size: 29 B
 
-Body-relative, after the two-byte `00 26` tag. The intersection-data form replaces the tag with `00 01 5a` and keeps this layout unchanged.
+Body-relative, after the two-byte `00 26` tag. The intersection-data form replaces the tag with `00 01 5a` and keeps this layout unchanged. The offsets are the narrow-pointer form: `attr` and every reference is a §4 pointer that takes four bytes past `0x7ffe`, moving each later field by two, so the decoder reads the fields after the first pointer in sequence instead of at these offsets.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -452,7 +452,7 @@ Cross-checked against code:
 
 Spec §7.3 · layout: byte offsets · size: 7 B
 
-Body-relative fixed prefix; f64 BE values follow at +7, `width` per chart point.
+Body-relative fixed prefix; f64 BE values follow at +7, `width` per chart point. The offsets are the narrow-pointer form: `attr` and every reference is a §4 pointer that takes four bytes past `0x7ffe`, moving each later field by two, so the decoder reads the fields after the first pointer in sequence instead of at these offsets.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -464,7 +464,7 @@ Body-relative fixed prefix; f64 BE values follow at +7, `width` per chart point.
 
 Spec §7.4 · layout: byte offsets · size: 56 B
 
-Body-relative, after the two-byte tag and the optional `ff`. `abs(offset0) == abs(offset1) > 0`; their common magnitude is the constant rolling-ball radius. Each `side` value is exactly `+1` or `-1`.
+Body-relative, after the two-byte tag and the optional `ff`. `abs(offset0) == abs(offset1) > 0`; their common magnitude is the constant rolling-ball radius. Each `side` value is exactly `+1` or `-1`. The offsets are the narrow-pointer form: `attr` and every reference is a §4 pointer that takes four bytes past `0x7ffe`, moving each later field by two, so the decoder reads the fields after the first pointer in sequence instead of at these offsets.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -489,7 +489,7 @@ Cross-checked against code:
 
 Spec §7.5 · layout: byte offsets · size: 29 B
 
-Partition body relative to the byte after the `00 3c` tag and optional `ff`. With the two-byte tag, the compact record is 31 bytes. The deltas form expands each reference, including `support`, to `[hi][lo][01]`.
+Partition body relative to the byte after the `00 3c` tag and optional `ff`. With the two-byte tag, the compact record is 31 bytes. The deltas form expands each reference, including `support`, to `[hi][lo][01]`. The offsets are the narrow-pointer form: `attr` and every reference is a §4 pointer that takes four bytes past `0x7ffe`, moving each later field by two, so the decoder reads the fields after the first pointer in sequence instead of at these offsets.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -2388,18 +2388,55 @@ Parsed by:
 
 Spec §8 · layout: byte offsets · size: 22 B
 
-The variable-length UTF-16LE material name begins at the end of this prefix.
+The variable-length UTF-16LE material name begins at the end of this prefix. The class tag's value is the stream's own.
 
 Parsed by:
 - `crates/cadmpeg-codec-sldprt/src/appearance.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 2 | `marker` | `bytes[2]` | little | spec | begins with `33 80` · value `[51, 128]` |
+| 0 | 2 | `class_tag` | `u16` | little | spec | class-reference tag, a u16 LE value with bit 15 set |
 | 2 | 4 | `packed_color` | `u32` | little | spec | packed `0x00BBGGRR` colour is u32 LE at `+2` |
 | 6 | 12 | `uninterpreted` | `bytes[12]` | little | derived | The bytes are retained without assigned semantics. |
 | 18 | 3 | `name_marker` | `bytes[3]` | little | spec | Bytes `ff fe ff` at `+18` · value `[255, 254, 255]` |
 | 21 | 1 | `name_length` | `u8` | little | spec | u8 UTF-16 code-unit count at `+21` |
+
+## `decal_properties_body`
+
+Spec §8 · layout: byte offsets · size: 84 B
+
+The framed decal preset path begins at the end of this body.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/texture.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 8 | 8 | `horizontal_location` | `f64` | little | spec | decal horizontal location as f64 LE at `+8` |
+| 16 | 8 | `vertical_location` | `f64` | little | spec | decal vertical location as f64 LE at `+16` |
+| 24 | 8 | `rotation` | `f64` | little | spec | decal rotation in degrees as f64 LE at `+24` |
+| 32 | 8 | `width` | `f64` | little | spec | decal width as f64 LE at `+32` |
+| 40 | 8 | `height` | `f64` | little | spec | decal height as f64 LE at `+40` |
+
+Unstated regions:
+
+- `0..8` (8 B): §8 states no field before the horizontal location.
+- `48..84` (36 B): §8 states no field between the height and the preset path.
+
+## `display_lists_decal_face_entry`
+
+Spec §8 · layout: byte offsets · size: 32 B
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/texture.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `face_id` | `u32` | little | spec | face identifier as u32 LE at `+0` |
+| 4 | 16 | `zero_prefix` | `bytes[16]` | little | spec | 16 zero bytes at `+4` |
+| 20 | 4 | `width` | `f32` | little | spec | extent pair as two f32 LE at `+20` and `+24` |
+| 24 | 4 | `height` | `f32` | little | spec | extent pair as two f32 LE at `+20` and `+24` |
+| 28 | 4 | `zero_tail` | `u32` | little | spec | a zero u32 LE at `+28` |
 
 ## `visual_states_feature_appearance_prefix`
 
@@ -2681,6 +2718,113 @@ Unstated regions:
 - `21..23` (2 B): Reserved bytes before the profile locus.
 - `29..48` (19 B): Marker state, selector, and reserved bytes precede the state value.
 - `56..64` (8 B): Zero bytes before the coordinate tag.
+
+## `named_object_header`
+
+Spec §2.3 · layout: byte offsets · size: 16 B
+
+Offsets from the end of the name object's string. A Unicode CString follows at +16.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `word_0` | `u32` | little | spec | \| +0 \| little-endian u32 \| |
+| 4 | 2 | `family_word` | `u16` | little | spec | little-endian u16 family word, one Boolean-operation byte and one schema byte |
+| 6 | 1 | `boolean_operation` | `u8` | little | spec | one Boolean-operation byte |
+| 7 | 1 | `schema` | `u8` | little | spec | one schema byte (§2) |
+| 8 | 4 | `object_id` | `u32` | little | spec | little-endian u32 object identifier; `ff ff ff ff` when the object has none |
+| 12 | 4 | `word_12` | `u32` | little | spec | \| +12 \| little-endian u32 \| |
+
+## `feature_object_block_head`
+
+Spec §2.3 · layout: byte offsets · size: 55 B
+
+Offsets from the end of the named-object header's string; an extrusion feature class writes two more bytes before +20. A Unicode CString follows at +55.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 20 | `reserved` | `bytes[20]` | little | spec | \| +0 \| five little-endian u32 \| |
+| 20 | 4 | `word_20` | `u32` | little | spec | \| +20 \| little-endian u32 \| |
+| 24 | 4 | `word_24` | `u32` | little | spec | \| +24 \| little-endian u32 \| |
+| 28 | 1 | `byte_28` | `u8` | little | spec | \| +28 \| one byte \| |
+| 29 | 4 | `version_a` | `u32` | little | spec | \| +29 \| little-endian u32 version number \| |
+| 33 | 4 | `date_a` | `u32` | little | spec | zero when +29 is zero |
+| 37 | 4 | `version_b` | `u32` | little | spec | \| +37 \| little-endian u32 version number \| |
+| 41 | 8 | `value_41` | `f64` | little | spec | \| +41 \| little-endian f64 \| |
+| 49 | 4 | `date_b` | `u32` | little | spec | \| +49 \| little-endian u32 date, year × 1000 + day of year \| |
+| 53 | 2 | `zero_53` | `u16` | little | spec | \| +53 \| little-endian u16 `0` \| |
+
+## `feature_object_block_tail`
+
+Spec §2.3 · layout: byte offsets · size: 64 B
+
+Offsets from the end of the head's +55 CString. A file whose swVersion is 11000 or above writes one more u32 at +64.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | \| +0 \| `00 ff ff 00 00` \| |
+| 5 | 1 | `slot` | `u8` | little | spec | \| +5 \| one byte, `01` or `03` \| |
+| 6 | 8 | `all_ones` | `bytes[8]` | little | spec | \| +6 \| eight `ff` bytes \| |
+| 14 | 4 | `minus_one` | `f32` | little | spec | \| +14 \| little-endian f32 `-1` \| |
+| 18 | 24 | `words_18` | `bytes[24]` | little | spec | \| +18 \| six little-endian u32 \| |
+| 42 | 4 | `word_42` | `u32` | little | spec | \| +42 \| little-endian u32 \| |
+| 46 | 4 | `filetime_high` | `u32` | little | spec | FILETIME, its high u32 first and then its low u32 |
+| 50 | 4 | `filetime_low` | `u32` | little | spec | FILETIME, its high u32 first and then its low u32 |
+| 54 | 2 | `two` | `u16` | little | spec | \| +54 \| little-endian u16 `2` \| |
+| 56 | 4 | `word_56` | `u32` | little | spec | \| +56 \| little-endian u32 \| |
+| 60 | 4 | `word_60` | `u32` | little | spec | \| +60 \| little-endian u32 \| |
+
+## `ref_plane_body`
+
+Spec §2.3 · layout: byte offsets · size: 140 B
+
+Offsets from the end of the feature-object block. Ten zero bytes follow at +140, or six below swVersion 13000.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 34 | `zero_0` | `bytes[34]` | little | spec | \| +0 \| 34 zero bytes \| |
+| 34 | 4 | `one_34` | `u32` | little | spec | \| +34 \| little-endian u32 `1` \| |
+| 38 | 16 | `zero_38` | `bytes[16]` | little | spec | \| +38 \| sixteen zero bytes \| |
+| 54 | 4 | `one_54` | `u32` | little | spec | \| +54 \| little-endian u32 `1` \| |
+| 58 | 6 | `zero_58` | `bytes[6]` | little | spec | \| +58 \| six zero bytes \| |
+| 64 | 4 | `word_64` | `u32` | little | spec | \| +64 \| little-endian u32 \| |
+| 68 | 44 | `zero_68` | `bytes[44]` | little | spec | \| +68 \| 44 zero bytes \| |
+| 112 | 8 | `value_112` | `f64` | little | spec | \| +112 \| little-endian f64 \| |
+| 120 | 8 | `value_120` | `f64` | little | spec | \| +120 \| little-endian f64 \| |
+| 128 | 8 | `value_128` | `f64` | little | spec | \| +128 \| little-endian f64 \| |
+| 136 | 4 | `word_136` | `u32` | little | spec | \| +136 \| little-endian u32 \| |
+
+## `ambient_light_head`
+
+Spec §2.3 · layout: byte offsets · size: 44 B
+
+Offsets from the end of the feature-object block. The light's name, a Unicode CString, follows at +44.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `value_0` | `f64` | little | spec | \| +0 \| little-endian f64 \| |
+| 8 | 8 | `value_8` | `f64` | little | spec | \| +8 \| little-endian f64 \| |
+| 16 | 8 | `value_16` | `f64` | little | spec | \| +16 \| little-endian f64 \| |
+| 24 | 4 | `word_24` | `u32` | little | spec | \| +24 \| little-endian u32 \| |
+| 28 | 4 | `word_28` | `u32` | little | spec | \| +28 \| little-endian u32 \| |
+| 32 | 4 | `word_32` | `u32` | little | spec | \| +32 \| little-endian u32 \| |
+| 36 | 4 | `word_36` | `u32` | little | spec | \| +36 \| little-endian u32 \| |
+| 40 | 4 | `word_40` | `u32` | little | spec | \| +40 \| little-endian u32 \| |
+
+## `ambient_light_tail`
+
+Spec §2.3 · layout: byte offsets · size: 36 B
+
+Offsets from the end of the ambient light's name string; the light's bytes end at +36.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `zero_0` | `u32` | little | spec | \| +0 \| little-endian u32 `0` \| |
+| 4 | 4 | `word_4` | `u32` | little | spec | \| +4 \| little-endian u32 \| |
+| 8 | 4 | `zero_8` | `u32` | little | spec | \| +8 \| little-endian u32 `0` \| |
+| 12 | 8 | `value_12` | `f64` | little | spec | \| +12 \| little-endian f64 \| |
+| 20 | 4 | `word_20` | `u32` | little | spec | \| +20 \| little-endian u32 \| |
+| 24 | 8 | `value_24` | `f64` | little | spec | \| +24 \| little-endian f64 \| |
+| 32 | 4 | `word_32` | `u32` | little | spec | \| +32 \| little-endian u32 \| |
 
 ## Not tabulated
 
