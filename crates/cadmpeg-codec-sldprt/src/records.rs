@@ -1079,6 +1079,12 @@ impl From<ObjectId> for u32 {
     }
 }
 
+cadmpeg_core::named_optional_field!(
+    deserialize_archive_class,
+    ArchiveParameterClass,
+    "archive_class"
+);
+
 /// One named scalar serialized in native SI units.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct FeatureInputScalar {
@@ -1110,7 +1116,11 @@ pub(crate) struct FeatureInputScalar {
     pub(crate) operands: Vec<FeatureInputOperand>,
     /// Class of the parameter object whose value this scalar is, as the exact
     /// archive walk read it; `None` where the walk did not reach the value.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_archive_class"
+    )]
     pub(crate) archive_class: Option<ArchiveParameterClass>,
 }
 
