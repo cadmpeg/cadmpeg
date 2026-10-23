@@ -228,6 +228,21 @@ fn bounded_location_expansion_withholds_only_its_payload_before_topology_mutatio
         ("Bounded", pcurve_brep(locations, "2 1 1 0 0 1", 0, 0)),
         ("Complete", pcurve_brep("Locations 0", "2 1 1 0 0 1", 0, 0)),
     ]);
+    let payloads = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<crate::brep::ShapePayloadRecord>("shape_payloads")
+        .unwrap();
+    assert_eq!(payloads.len(), 2);
+    let bounded = payloads
+        .iter()
+        .find(|payload| payload.id.contains("Bounded"))
+        .unwrap();
+    let tables = crate::brep::Tables::from_payload(bounded).unwrap();
+    assert_eq!(tables.locations.len(), 4);
+    assert_eq!(tables.tshapes.len(), 5);
     assert_eq!(result.ir().model.bodies.len(), 1);
     assert_eq!(result.ir().model.faces.len(), 1);
     assert_eq!(result.ir().model.edges.len(), 1);

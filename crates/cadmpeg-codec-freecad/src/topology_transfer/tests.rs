@@ -1615,28 +1615,32 @@ Co 1001000 +2 1 +2 3 *
     assert_eq!([positions[1].x, positions[1].y], [10.0, 5.0]);
     assert_eq!([positions[2].x, positions[2].y], [18.0, 5.0]);
     assert_eq!([positions[3].x, positions[3].y], [20.0, 5.0]);
-    let face = &result.ir().model.faces[0];
-    let surface = result
-        .ir()
-        .model
-        .surfaces
-        .iter()
-        .find(|surface| surface.id == face.surface)
+    let mut origins = Vec::new();
+    for face in &result.ir().model.faces {
+        let surface = result
+            .ir()
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == face.surface)
+            .expect("required invariant");
+        let Some(SolvedSurfaceGeometry::Transformed(placed)) = surface.geometry.solved() else {
+            panic!("located face must retain its exact transformed basis");
+        };
+        assert!(matches!(placed.basis(), SolvedSurfaceGeometry::Plane(_)));
+        assert_eq!(placed.transform().rows()[0][0], -2.0);
+        assert_eq!(placed.transform().rows()[1][1], 2.0);
+        let origin = cadmpeg_ir::eval::decode::surface_point(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &surface.geometry,
+            0.0,
+            0.0,
+        )
         .expect("required invariant");
-    let Some(SolvedSurfaceGeometry::Transformed(placed)) = surface.geometry.solved() else {
-        panic!("located face must retain its exact transformed basis");
-    };
-    assert!(matches!(placed.basis(), SolvedSurfaceGeometry::Plane(_)));
-    assert_eq!(placed.transform().rows()[0][0], -2.0);
-    assert_eq!(placed.transform().rows()[1][1], 2.0);
-    let origin = cadmpeg_ir::eval::decode::surface_point(
-        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-        &surface.geometry,
-        0.0,
-        0.0,
-    )
-    .expect("required invariant");
-    assert_eq!([origin.x, origin.y], [10.0, 5.0]);
+        origins.push([origin.x, origin.y]);
+    }
+    origins.sort_by(|left, right| left[0].total_cmp(&right[0]));
+    assert_eq!(origins, [[10.0, 5.0], [20.0, 5.0]]);
     for edge in &result.ir().model.edges {
         let curve = result
             .ir()
