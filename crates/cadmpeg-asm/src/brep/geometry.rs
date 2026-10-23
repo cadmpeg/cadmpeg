@@ -458,6 +458,15 @@ fn decode_curve_carrier(rec: &Record, carrier: &Carrier) -> Option<CurveGeometry
     }
 }
 
+/// The curve an edge record references and the sense in which it runs on
+/// that curve.
+pub(crate) fn edge_curve_sense(record: &Record) -> Option<(i64, Sense)> {
+    if !is_edge_record(record) {
+        return None;
+    }
+    Some((record.ref_at(8)?, sense_at(record, 9)))
+}
+
 /// Whether the decoder reversed the cache of curve record `curve` an odd
 /// number of times: once for its record sense, and once more when every edge
 /// that uses it runs against it.
@@ -466,11 +475,12 @@ pub(crate) fn carrier_cache_reversed(records: &[Record], curve: &Record) -> bool
         return record_reversed(curve);
     };
     let (mut forward, mut reversed) = (false, false);
-    for edge in records
+    for (_, sense) in records
         .iter()
-        .filter(|record| is_edge_record(record) && record.ref_at(8) == Some(index))
+        .filter_map(edge_curve_sense)
+        .filter(|(edge_curve, _)| *edge_curve == index)
     {
-        match sense_at(edge, 9) {
+        match sense {
             Sense::Forward => forward = true,
             Sense::Reversed => reversed = true,
         }
