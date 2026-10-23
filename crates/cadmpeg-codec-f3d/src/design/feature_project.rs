@@ -2137,7 +2137,15 @@ fn scope_properties(
             format!("{record_index}"),
         );
     }
-    if let Some(profile) = scope.extrude_profile().or(scope.base_flange_profile()) {
+    if let Some(profile) = scope
+        .extrude_profile()
+        .or(scope.base_flange_profile())
+        .or_else(|| {
+            scope
+                .emboss_construction()
+                .and_then(|construction| construction.sketch_profile.as_ref())
+        })
+    {
         if let Some(placement) = placements.iter().find(|placement| {
             native_stream(&placement.id) == Some(native_scope)
                 && placement.entity_id == profile.entity_id

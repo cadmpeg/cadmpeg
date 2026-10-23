@@ -9,6 +9,7 @@
 //! [`Finding`] values in a fixed emission order; callers append them to the
 //! generic IR validation report.
 
+mod emboss;
 mod sheet_metal_settings;
 
 use cadmpeg_core::convert::f64_from_index;
@@ -942,6 +943,7 @@ fn validate_loaded(
     validate_design_intent_failures(&ctx, &mut findings);
     validate_feature_timelines(&ctx, &mut findings)?;
     validate_parameter_scopes(&ctx, &mut findings)?;
+    emboss::validate(&ctx, &mut findings);
     sheet_metal_settings::validate(&ctx, &mut findings);
     validate_extrude_selection_groups(&ctx, &mut findings);
     validate_construction_operand_groups(&ctx, &mut findings);
@@ -1926,6 +1928,10 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
         let extrude_profile_link = scope.extrude_profile().is_none_or(valid_sketch_profile);
         let sweep_profile_link = scope.sweep_profile().is_none_or(valid_sketch_profile);
         let base_flange_profile_link = scope.base_flange_profile().is_none_or(valid_sketch_profile);
+        let emboss_profile_link = scope
+            .emboss_construction()
+            .and_then(|construction| construction.sketch_profile.as_ref())
+            .is_none_or(valid_sketch_profile);
         let base_flange_link = match scope.base_flange_operation() {
             None => true,
             Some(operation) => {
@@ -4002,6 +4008,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             && extrude_profile_link
             && sweep_profile_link
             && base_flange_profile_link
+            && emboss_profile_link
             && base_flange_link
             && edge_flange_link
             && hem_link
@@ -4377,7 +4384,7 @@ fn valid_component_pattern_occurrences(
         })
 }
 
-/// Validate Extrude selection groups and their counted member frames.
+/// Validate compact selection groups and their counted member frames.
 fn validate_extrude_selection_groups(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
     let native = ctx.native;
     let records_by_index = &ctx.records_by_index;
@@ -4388,8 +4395,13 @@ fn validate_extrude_selection_groups(ctx: &Ctx<'_, '_>, findings: &mut Vec<Findi
         let scope = scopes_by_index.get(&(native_stream, group.scope_record_index));
         let header = records_by_index.get(&(native_stream, group.record_index));
         let frame_valid = scope.is_some_and(|scope| {
-            design::design_feature_family(&scope.kind())
+            (design::design_feature_family(&scope.kind())
                 == Some(design::DesignFeatureFamily::Extrude)
+                || scope.emboss_construction().is_some_and(|construction| {
+                    group.record_index == construction.auxiliary_group.value
+                        && group.scope_reference_ordinal == 8
+                        && !group.typed_references
+                }))
                 && usize::try_from(group.scope_reference_ordinal)
                     .ok()
                     .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
@@ -4413,7 +4425,7 @@ fn validate_extrude_selection_groups(ctx: &Ctx<'_, '_>, findings: &mut Vec<Findi
             push_constant_finding(
                 findings,
                 Check::NativeLinks,
-                "Fusion Design Extrude selection group has an invalid counted frame",
+                "Fusion Design selection group has an invalid counted frame",
                 Some(group.id.clone()),
             );
         }
@@ -4770,6 +4782,16 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 }
                 Some(_) => false,
                 None if scope.kind()
+                    == crate::records::feature::scope::DesignFeatureKind::Emboss =>
+                {
+                    scope.emboss_construction().is_some_and(|construction| {
+                        (group.record_index == construction.profile_group.value
+                            && group.role() == DesignOperandRole::PROFILE)
+                            || (group.record_index == construction.face_group.value
+                                && group.role() == DesignOperandRole::ROLE_0X10)
+                    }) && group.extrude_role().is_none()
+                }
+                None if scope.kind()
                     == crate::records::feature::scope::DesignFeatureKind::RemoveBody =>
                 {
                     group.role() == DesignOperandRole::BODIES_A && group.extrude_role().is_none()
@@ -4824,7 +4846,8 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
             (design::design_feature_family(&scope.kind()).is_some()
                 || matches!(
                     scope.kind(),
-                    crate::records::feature::scope::DesignFeatureKind::RemoveBody
+                    crate::records::feature::scope::DesignFeatureKind::Emboss
+                        | crate::records::feature::scope::DesignFeatureKind::RemoveBody
                         | crate::records::feature::scope::DesignFeatureKind::SurfaceStitch
                         | crate::records::feature::scope::DesignFeatureKind::SplitFace
                         | crate::records::feature::scope::DesignFeatureKind::DeleteFace
@@ -6575,6 +6598,13 @@ fn validate_extrude_selection_group_members(ctx: &Ctx<'_, '_>, findings: &mut Ve
     let members_by_slot = &ctx.members_by_slot;
     for group in &native.design_extrude_selection_groups {
         let native_stream = design_stream(&group.id);
+        if ctx
+            .scopes_by_index
+            .get(&(native_stream, group.scope_record_index))
+            .is_some_and(|scope| scope.emboss_construction().is_some())
+        {
+            continue;
+        }
         let complete = (0..group.members().len()).all(|ordinal| {
             let Ok(ordinal) = u32::try_from(ordinal) else {
                 return false;
@@ -7324,6 +7354,17 @@ fn validate_face_operands<'a>(
                                             && identity.record_index() == operand.record_index()
                                             && identity.class_tag == operand.class_tag
                                     })
+                            }
+                            None if scope.kind()
+                                == crate::records::feature::scope::DesignFeatureKind::Emboss =>
+                            {
+                                group.is_some_and(|group| {
+                                    group.role() == DesignOperandRole::ROLE_0X10
+                                        && scope.emboss_construction().is_some_and(|construction| {
+                                            group.record_index == construction.face_group.value
+                                        })
+                                }) && operand.recipe_kind
+                                    == records::recipes::ConstructionRecipeKind::BoundedFace
                             }
                             None if scope.kind()
                                 == crate::records::feature::scope::DesignFeatureKind::SplitFace =>

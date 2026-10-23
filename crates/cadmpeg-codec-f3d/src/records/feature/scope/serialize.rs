@@ -230,6 +230,7 @@ impl Serialize for DesignParameterScope {
 
         emit_opt!("combine_operation", self.combine_operation());
         emit_opt!("thread_construction", self.thread_construction());
+        emit_opt!("emboss_construction", self.emboss_construction());
         emit_opt!("draft_operation", self.draft_operation());
         match &self.payload {
             DesignScopePayload::CPattern(value)

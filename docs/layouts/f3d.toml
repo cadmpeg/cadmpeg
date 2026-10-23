@@ -19535,3 +19535,216 @@ offset = 209
 type = "bytes[11]"
 source = "spec"
 anchor = "One zero byte and the marked scope reference at offset 209 close the frame."
+
+[[record]]
+name = "emboss_scope_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The `Emboss` fixed-prefix form has nine ordered references."
+size = 156
+parsed_by = ["crates/cadmpeg-codec-f3d/src/design/decode/scopes/emboss.rs", "crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs"]
+note = "Offsets are relative to the primary indexed header. The null GUID and common reference table follow this prefix."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The `Emboss` fixed-prefix form has nine ordered references."
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "The `Emboss` fixed-prefix form has nine ordered references."
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "control_words"
+offset = 20
+type = "u32[2]"
+source = "spec"
+anchor = "The `Emboss` fixed-prefix form has nine ordered references."
+
+[[record.field]]
+name = "depth_owner_reference"
+offset = 28
+type = "bytes[11]"
+source = "spec"
+anchor = "The `Emboss` fixed-prefix form has nine ordered references."
+
+[[record.field]]
+name = "auxiliary_group_reference"
+offset = 39
+type = "bytes[11]"
+source = "spec"
+anchor = "The `Emboss` fixed-prefix form has nine ordered references."
+
+[[record.field]]
+name = "horizontal_owner_reference"
+offset = 50
+type = "bytes[11]"
+source = "spec"
+anchor = "The `Emboss` fixed-prefix form has nine ordered references."
+
+[[record.field]]
+name = "native_pair_count"
+offset = 61
+type = "u32"
+source = "spec"
+anchor = "The `Emboss` fixed-prefix form has nine ordered references."
+value = 1
+
+[[record.field]]
+name = "native_pair"
+offset = 65
+type = "u64[2]"
+source = "spec"
+anchor = "The `Emboss` fixed-prefix form has nine ordered references."
+
+[[record.field]]
+name = "rotation_owner_reference"
+offset = 81
+type = "bytes[11]"
+source = "spec"
+anchor = "The `Emboss` fixed-prefix form has nine ordered references."
+
+[[record.field]]
+name = "face_group_reference"
+offset = 92
+type = "bytes[11]"
+source = "spec"
+anchor = "The `Emboss` fixed-prefix form has nine ordered references."
+
+[[record.field]]
+name = "vertical_owner_reference"
+offset = 103
+type = "bytes[11]"
+source = "spec"
+anchor = "The `Emboss` fixed-prefix form has nine ordered references."
+
+[[record.field]]
+name = "profile_group_count"
+offset = 114
+type = "u32"
+source = "spec"
+anchor = "The `Emboss` fixed-prefix form has nine ordered references."
+value = 1
+
+[[record.field]]
+name = "profile_group_reference"
+offset = 118
+type = "bytes[11]"
+source = "spec"
+anchor = "The `Emboss` fixed-prefix form has nine ordered references."
+
+[[record.field]]
+name = "zero_tail"
+offset = 129
+type = "bytes[12]"
+source = "spec"
+anchor = "The `Emboss` fixed-prefix form has nine ordered references."
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "face_group_count"
+offset = 141
+type = "u32"
+source = "spec"
+anchor = "The `Emboss` fixed-prefix form has nine ordered references."
+value = 1
+
+[[record.field]]
+name = "repeated_face_group_reference"
+offset = 145
+type = "bytes[11]"
+source = "spec"
+anchor = "The `Emboss` fixed-prefix form has nine ordered references."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs"
+contains = "(self.depth_owner, 4, 29)"
+note = "The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs"
+contains = "(self.auxiliary_group, 8, 40)"
+note = "The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs"
+contains = "(self.horizontal_owner, 5, 51)"
+note = "The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs"
+contains = "(self.rotation_owner, 7, 82)"
+note = "The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs"
+contains = "(self.face_group, 2, 93)"
+note = "The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs"
+contains = "(self.vertical_owner, 6, 104)"
+note = "The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs"
+contains = "(self.profile_group, 0, 119)"
+note = "The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal."
+
+[[record]]
+name = "emboss_scope_reference_table_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The `Emboss` fixed-prefix form has nine ordered references."
+size = 239
+parsed_by = ["crates/cadmpeg-codec-f3d/src/design/decode/scopes/emboss.rs", "crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs"]
+note = "The operation prefix, null GUID, and separator precede the common reference count."
+
+[[record.field]]
+name = "operation_prefix"
+offset = 0
+type = "bytes[156]"
+source = "spec"
+anchor = "Its operation prefix is the `emboss_scope_prefix` record"
+
+[[record.field]]
+name = "null_guid_count"
+offset = 156
+type = "u32"
+value = 36
+source = "spec"
+anchor = "A 36-code-unit LP-UTF16 null GUID and three zero bytes separate the prefix"
+
+[[record.field]]
+name = "null_guid"
+offset = 160
+type = "u16[36]"
+source = "spec"
+anchor = "A 36-code-unit LP-UTF16 null GUID and three zero bytes separate the prefix"
+
+[[record.field]]
+name = "zero_separator"
+offset = 232
+type = "bytes[3]"
+value = [0, 0, 0]
+source = "spec"
+anchor = "A 36-code-unit LP-UTF16 null GUID and three zero bytes separate the prefix"
+
+[[record.field]]
+name = "reference_count"
+offset = 235
+type = "u32"
+value = 9
+source = "spec"
+anchor = "The `Emboss` fixed-prefix form has nine ordered references."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs"
+contains = "scope.byte_offset().checked_add(235) != Some(scope.reference_count_offset())"
+note = "The common reference count follows the complete null-GUID separator."
