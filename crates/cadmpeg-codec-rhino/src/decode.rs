@@ -2553,6 +2553,7 @@ impl<'a> DecodeContext<'a> {
             let id = body.id.as_str().to_string();
             derived_ids.push(id);
         }
+        let plane_pcurves = scaled_plane_pcurves(before, model, transform)?;
         for pcurve in before
             .added_mut::<Pcurve>(model)
             .ok_or_else(|| "instance decode removed existing pcurves".to_string())?
@@ -2561,6 +2562,14 @@ impl<'a> DecodeContext<'a> {
                 PcurveGeometry::Nurbs { nurbs } => nurbs.pole_rows().count(),
                 _ => 0,
             })?;
+            if let Some(scale) = plane_pcurves.scale {
+                if plane_pcurves.ids.contains(pcurve.id.as_str()) {
+                    pcurve
+                        .geometry
+                        .try_scale_coordinates([scale, scale])
+                        .map_err(|error| error.to_string())?;
+                }
+            }
         }
         let points = before
             .added_mut::<Point>(model)
@@ -6658,10 +6667,101 @@ fn transform_surface(surface: &mut Surface, transform: Transform) -> Result<(), 
     Ok(())
 }
 
+/// Pcurves whose plane face takes a uniform instance scale.
+struct PlanePcurves {
+    scale: Option<f64>,
+    ids: HashSet<String>,
+}
+
+/// A plane carrier keeps unit axes, and its pcurves state distances along
+/// them. `ON_PlaneSurface::Transform` keeps the evaluation domain and scales
+/// the extents, so under a similarity with scale `s` every pcurve on a plane
+/// face scales by `s`. A plane has no exact plane image under another affine
+/// map.
+fn scaled_plane_pcurves(
+    before: &ModelCheckpoint,
+    model: &mut cadmpeg_ir::document::Model,
+    transform: Transform,
+) -> Result<PlanePcurves, ReferenceFailure> {
+    let none = || PlanePcurves {
+        scale: None,
+        ids: HashSet::new(),
+    };
+    let planes = before
+        .added_mut::<Surface>(model)
+        .ok_or_else(|| "instance decode removed existing surfaces".to_string())?
+        .iter()
+        .filter(|surface| {
+            matches!(
+                surface.geometry,
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
+            )
+        })
+        .map(|surface| surface.id.as_str().to_owned())
+        .collect::<HashSet<_>>();
+    if planes.is_empty() {
+        return Ok(none());
+    }
+    let Some(scale) = similarity_scale(transform) else {
+        return Err(
+            "plane surface has no exact plane image under a non-similar instance transform"
+                .to_string()
+                .into(),
+        );
+    };
+    if scale == 1.0 {
+        return Ok(none());
+    }
+    let faces = before
+        .added_mut::<Face>(model)
+        .ok_or_else(|| "instance decode removed existing faces".to_string())?
+        .iter()
+        .filter(|face| planes.contains(face.surface.as_str()))
+        .map(|face| face.id.as_str().to_owned())
+        .collect::<HashSet<_>>();
+    let loops = before
+        .added_mut::<Loop>(model)
+        .ok_or_else(|| "instance decode removed existing loops".to_string())?
+        .iter()
+        .filter(|loop_| faces.contains(loop_.face.as_str()))
+        .map(|loop_| loop_.id.as_str().to_owned())
+        .collect::<HashSet<_>>();
+    let ids = before
+        .added_mut::<Coedge>(model)
+        .ok_or_else(|| "instance decode removed existing coedges".to_string())?
+        .iter()
+        .filter(|coedge| loops.contains(coedge.owner_loop.as_str()))
+        .flat_map(|coedge| {
+            coedge
+                .pcurves
+                .iter()
+                .map(|used| used.pcurve.as_str().to_owned())
+        })
+        .collect();
+    Ok(PlanePcurves {
+        scale: Some(scale),
+        ids,
+    })
+}
+
+/// The uniform scale of a similarity, the square root of the center of the
+/// `LᵀL` spectrum hull.
+fn similarity_scale(transform: Transform) -> Option<f64> {
+    let (center, half_length) = gram_spectrum_hull(transform);
+    (half_length < crate::coincidence::ON_ZERO_TOLERANCE && center.abs() > half_length)
+        .then(|| center.sqrt())
+}
+
 /// `ON_Xform::IsSimilarity` with `ON_ZERO_TOLERANCE`: the Gershgorin hull of
 /// the spectrum of `LᵀL` has a half-length below the tolerance and does not
 /// contain zero.
 fn transform_is_similarity(transform: Transform) -> bool {
+    similarity_scale(transform).is_some()
+}
+
+/// The center and half-length of the Gershgorin hull of the spectrum of
+/// `LᵀL`, as `ApproxSpectrumLTL` bounds it.
+fn gram_spectrum_hull(transform: Transform) -> (f64, f64) {
     let rows = transform.affine_rows();
     let column = |index: usize| [rows[0][index], rows[1][index], rows[2][index]];
     let columns = [column(0), column(1), column(2)];
@@ -6679,9 +6779,7 @@ fn transform_is_similarity(transform: Transform) -> bool {
         low = low.min(diagonal - radius);
         high = high.max(diagonal + radius);
     }
-    let center = f64::midpoint(low, high);
-    let half_length = (high - low) / 2.0;
-    half_length < crate::coincidence::ON_ZERO_TOLERANCE && center.abs() > half_length
+    (f64::midpoint(low, high), (high - low) / 2.0)
 }
 
 /// Places a procedural surface construction whose instance image is the same
