@@ -604,14 +604,7 @@ fn decode_container<'a>(
     let mut losses = crate::container::deviation_losses(&container.snapshot);
     let mut untyped = cadmpeg_ir::ArenaClasses::default();
     if !ctx.container_only() {
-        document_native_projection::project(
-            ctx,
-            &mut ir,
-            &ufrx,
-            &properties,
-            &mut losses,
-            &mut untyped,
-        )?;
+        document_native_projection::project(ctx, &mut ir, &ufrx, &properties, &mut losses)?;
     }
     let mut geometry_failure = None;
     let kernel_brep = match &container.rse.active_carrier {
@@ -1071,7 +1064,6 @@ fn decode_container<'a>(
             &mut ir,
             &part_native,
             &mut losses,
-            &mut untyped,
         )?;
     }
     for (arena, mut records) in std::mem::take(part_native.namespace_mut("inventor").arenas_mut()) {
