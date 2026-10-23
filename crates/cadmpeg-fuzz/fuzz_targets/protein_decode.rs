@@ -18,5 +18,5 @@ fuzz_target!(|data: &[u8]| {
         {
             let _decode = cadmpeg_protein::decode_detailed(&ctx, protein, instance);
         }
-    }
+    };
 });

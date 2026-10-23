@@ -13,5 +13,5 @@ fuzz_target!(|data: &[u8]| {
         cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
     {
         let _result = cadmpeg_codec_creo::fuzz::curve_prototypes(&ctx, data);
-    }
+    };
 });
