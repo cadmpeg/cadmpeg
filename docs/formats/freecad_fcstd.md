@@ -235,6 +235,12 @@ one map owned by that property. Multiple exact-shape properties emit independent
 element-map carriers and independent side-entry requests; no carrier is shared across properties.
 An OCCT parabola edge parameter `u` maps to the STEP parabola parameter `t = u / (2f)`, where `f`
 is the focal distance. A two-dimensional parabola pcurve retains the OCCT parameter `u`.
+A STEP replica of a two-dimensional pcurve uses the seven-parameter
+`CARTESIAN_TRANSFORMATION_OPERATOR_2D` sequence defined in the [STEP specification](step.md).
+Its inherited representation-item name, transformation name, and transformation
+description precede the two axes, local origin, and scale. A 3D replica adds the
+third axis after scale. A chart reflection retains the curve parameter and reverses
+the chart handedness; it does not reverse the curve parameter.
 For a bounded circle or ellipse edge, the neutral start parameter is wrapped into `[0, 2π)` and
 the serialized sweep is preserved. A full-period edge retains its serialized phase.
 Transient table indices do not constitute persistent element identity. Persistent element names

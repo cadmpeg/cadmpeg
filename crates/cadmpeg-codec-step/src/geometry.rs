@@ -210,7 +210,7 @@ fn transformation_operator_2d(e: &mut Emitter, transform: Transform2) -> Option<
     }
     Some(e.emit(
         "CARTESIAN_TRANSFORMATION_OPERATOR_2D",
-        &format!("'',{x},{y},{origin},{}", e.real(scale)),
+        &format!("'','','',{x},{y},{origin},{}", e.real(scale)),
     ))
 }
 
@@ -427,7 +427,7 @@ pub(crate) fn transformation_operator(e: &mut Emitter, transform: Transform) -> 
     let z = direction(e, z);
     e.emit(
         "CARTESIAN_TRANSFORMATION_OPERATOR_3D",
-        &format!("'',{x},{y},{origin},{},{z}", e.real(scale)),
+        &format!("'','','',{x},{y},{origin},{},{z}", e.real(scale)),
     )
 }
 
@@ -818,5 +818,7 @@ fn nurbs_surface(e: &mut Emitter, n: &NurbsSurface) -> Option<Ref> {
 }
 
 mod bake;
+#[cfg(test)]
+mod replica_tests;
 #[cfg(test)]
 mod support_tests;

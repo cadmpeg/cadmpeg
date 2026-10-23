@@ -45,40 +45,6 @@ Check per-object shape nullness, topology counts, volume, and placement on nativ
 reopen after an unchanged write and a typed leaf edit. Entry name and digest
 equality does not supply those checks.
 
-## 7. Exact shapes
-
-### WR-02. STEP replica transformation attributes
-
-**Question.** Which inherited attributes and parameter order must a 2D replica
-transformation carry for FCStd-to-STEP output to satisfy its declared STEP schema
-and native import contract?
-
-**Known.** `crates/cadmpeg-codec-step/src/geometry.rs` emits five parameters for
-`CARTESIAN_TRANSFORMATION_OPERATOR_2D`. The reader's `transformation_parameter`
-in `crates/cadmpeg-codec-step/src/reader/geometry.rs` accepts five- and
-seven-parameter forms. A 10 by 20 by 30 mm box with a 1 mm fillet on all edges
-passes its FCStd check, STEP AP214 conversion, and cadmpeg's STEP check. Native
-STEP import in FreeCAD 1.0.0 with OCCT 7.8.1 crashes during 2D pcurve replica
-transformation construction. Adding two leading empty string attributes to each
-of the 16 affected operators avoids that crash and yields a valid 26-face shell.
-
-**Need.** State the schema-specific inherited attributes and emit the required
-record. Validate its arity independently of the reader's permissive dispatch.
-Exercise reflected conic pcurves that still require replica operators, and check
-native geometry after import.
-
-**Conflict.** Agreement between the emitter and cadmpeg's reader permits an
-output that the native importer cannot consume. Other export losses name
-degenerate-edge omission and native metadata, but do not identify this operator
-incompatibility.
-
-**Note.** This is a remaining interoperability case after
-[PR #284](https://github.com/cadmpeg/cadmpeg/pull/284). The seven-parameter control
-isolates the crash; it is not a complete production fix. Solid classification
-in [PR #319](https://github.com/cadmpeg/cadmpeg/pull/319) and trimmed-curve parameter
-transfer in [PR #323](https://github.com/cadmpeg/cadmpeg/pull/323) are separate
-defects. The analogous 3D emitter needs review; the case above confirms only 2D.
-
 ## 11. Presentation and application records
 
 ### AG-01. Mesh placement in neutral geometry

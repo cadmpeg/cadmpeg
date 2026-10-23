@@ -1237,6 +1237,15 @@ invalid surface carrier is omitted and reports
 the header. This is a CADIR export-admission rule for malformed neutral input;
 it does not assign a STEP meaning to a missing pole.
 
+The AP203, AP214, and AP242 simple-instance parameter sequence for
+`CARTESIAN_TRANSFORMATION_OPERATOR_2D` is `representation_item.name`,
+`functionally_defined_transformation.name`,
+`functionally_defined_transformation.description`, `axis1`, `axis2`,
+`local_origin`, and `scale`. The first two attributes are labels; description
+is optional text. `CARTESIAN_TRANSFORMATION_OPERATOR_3D` adds `axis3` after
+`scale`. The simple instances therefore have seven and eight parameters,
+respectively. The two inherited name attributes occupy separate positions.
+
 `CARTESIAN_TRANSFORMATION_OPERATOR_3D` stores a required local origin and
 optional axis1, axis2, axis3, and scale attributes. Its transformation matrix
 columns are normalized and orthogonal: axis3 defaults to +Z, axis1 is projected
