@@ -156,14 +156,6 @@ length unit.
 
 **Need.** We must know the override to construct the torus or sphere carrier.
 
-### GS-05. Prototype-adjacent `tab_cyl` points
-
-**Question.** What geometric role does each point in a prototype-adjacent `tab_cyl` instance row have?
-
-**Known.** `creo_prt.md` §3.2 "A `tab_cyl`" defines the prototype fields. `creo_prt.md` §3.2 "A repeated `tab_cyl` cubic-curve replay has this structure:" defines the separate repeated cubic replay.
-
-**Need.** We must know the point roles to construct the ruled surface.
-
 ### GS-06. Prototype-adjacent `tab_cyl` parameters
 
 **Question.** What does each parameter in a prototype-adjacent `tab_cyl` instance row control?

@@ -1384,13 +1384,14 @@ belongs to the nearest preceding `geom_type = 2c` surface row after the
 previous replay signature. Intervening rows from other surface families do not
 consume it.
 Ambiguous separators or a missing unique owner leave the bytes opaque.
+The four point entities form the ordered cubic control polygon `P0, P1, P2, P3`. The first and last poles are the curve endpoints; the two interior poles are control points.
 Each packed point body contains two directrix coordinates. A control point is
 numeric only when two defined scalar tokens consume its entire bounded body;
 partial scalar matches do not assign either coordinate.
 In the first-coordinate lane, prefixes `4b..a3` use the positive DICT mapping.
 Negative prefixes `b2..cf`, `d0..dc`, `dd`, and `de..df` derive their two
 leading IEEE bytes by adding the prefix to `BF2D`, `BF2E`, `BF2F`, and `BF32`,
-respectively. Negative prefixes `a5..a6` and `a7..ae` add to `BF2B` and `BF2C`.
+respectively. Negative prefixes `a5..a6` and `a7..b1` add to `BF2B` and `BF2C`.
 Prefixes `2c`, `4e..4f`, `52`, `54`, and `58..5a` reconstruct
 `3F <tail6> 00`; `45` reconstructs `BF <tail6> 00`.
 The fixed-width forms are `28 <tail7> → 3F <tail7>`,
