@@ -312,10 +312,31 @@ Planar sketch entities add `entity_flags:u32` and `sketch_reference:u32` after t
 
 The planar entity types are:
 
-- `35df52ced011d0d20008ccbc0663dc09`: point. It stores a two-f64 position, endpoint-of and center-of type-2 lists, and an optional u32 state plus type-2 association list. From segment major version 25, a point with a state stores a type-2 link list after the association list.
+- `35df52ced011d0d20008ccbc0663dc09`: point. It stores a two-f64 position, endpoint-of and center-of type-2 lists, and an optional association tail.
 - `3adf52ced011d0d20008ccbc0663dc09`: line. It stores a type-2 endpoint list, versioned auxiliary type-2 lists, and two-f64 origin and direction vectors.
 - `3bdf52ced011d0d20008ccbc0663dc09`: circle. It stores a type-2 point list, versioned auxiliary type-2 lists, a center-point reference, a positive f64 radius, and a u8 state.
 - `60d40745d111bee680006fb1e13554c7`: ellipse. It stores a type-2 point list, versioned auxiliary type-2 lists, a center-point reference, a two-f64 major-axis direction, positive f64 major and minor radii, and a u8 state.
+
+A point tail is absent or starts with `state:u32`. From segment major version 25, state 2 selects the paired association form. This form is:
+
+```text
+state u32 = 2
+scalar_marker u16[2] = [2, 0x3000]
+scalar_count u32 = 2
+scalar_metadata u32[2]
+scalar_values f64[2]
+operand_marker u16[2] = [2, 0x3000]
+operand_count u32 = 2
+operand_metadata u32[2]
+first_auxiliary_marker u16[2] = [2, 0x3000]
+first_auxiliary_count u32 = 0
+first_operand u32
+second_auxiliary_marker u16[2] = [2, 0x3000]
+second_auxiliary_count u32 = 0
+second_operand u32
+```
+
+The metadata words are opaque u32 values. The scalar values are finite and have no interval restriction. The two operands are packed PmDc entity references with the index and qualifier fields of section 11. The paired association tail ends the point record. Before segment major version 25, each state value precedes a type-2 association-reference list that ends the record. From version 25, state values other than 2 precede a type-2 association-reference list and a type-2 link-reference list. The stored position defines the solved point coordinates.
 
 The auxiliary lists of a line, circle, or ellipse are one type-2 list, or a u32 gate pair followed by its lists. Gate `1, 0` precedes one or two type-2 lists. Gate `0, 0` stores no list.
 

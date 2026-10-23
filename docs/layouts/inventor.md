@@ -452,3 +452,29 @@ Parsed by:
 | 47 | 4 | `map_count` | `u32` | little | spec | map_count u32 = 0 |
 | 51 | 4 | `source_value` | `u32` | little | spec | source_value u32 |
 | 55 | 4 | `option_reference` | `u32` | little | spec | option_reference u32 |
+
+## `pm_dc_point_paired_tail`
+
+Spec §12 · layout: byte offsets · size: 76 B
+
+Offsets are relative to the state word after the point's endpoint-of and center-of lists.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/sketch/point_tail.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `state` | `u32` | little | spec | state u32 · value `2` |
+| 4 | 4 | `scalar_marker` | `u16[2]` | little | spec | Marker words are 2 and 0x3000. |
+| 8 | 4 | `scalar_count` | `u32` | little | spec | scalar_count u32 · value `2` |
+| 12 | 8 | `scalar_metadata` | `u32[2]` | little | spec | scalar_metadata u32[2] |
+| 20 | 16 | `scalar_values` | `f64[2]` | little | spec | scalar_values f64[2] |
+| 36 | 4 | `operand_marker` | `u16[2]` | little | spec | Marker words are 2 and 0x3000. |
+| 40 | 4 | `operand_count` | `u32` | little | spec | operand_count u32 · value `2` |
+| 44 | 8 | `operand_metadata` | `u32[2]` | little | spec | operand_metadata u32[2] |
+| 52 | 4 | `first_auxiliary_marker` | `u16[2]` | little | spec | Marker words are 2 and 0x3000. |
+| 56 | 4 | `first_auxiliary_count` | `u32` | little | spec | first_auxiliary_count u32 · value `0` |
+| 60 | 4 | `first_operand` | `u32` | little | spec | first_operand u32 |
+| 64 | 4 | `second_auxiliary_marker` | `u16[2]` | little | spec | Marker words are 2 and 0x3000. |
+| 68 | 4 | `second_auxiliary_count` | `u32` | little | spec | second_auxiliary_count u32 · value `0` |
+| 72 | 4 | `second_operand` | `u32` | little | spec | second_operand u32 |

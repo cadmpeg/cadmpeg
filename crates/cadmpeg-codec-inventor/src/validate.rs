@@ -576,16 +576,24 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
                 endpoint_of,
                 center_of,
                 tail,
-                links,
                 ..
             } => {
                 add_list(endpoint_of);
                 add_list(center_of);
-                if let PointTail::Present { associations, .. } = tail {
-                    add_list(associations);
-                }
-                if let Some(links) = links {
-                    add_list(links);
+                match tail {
+                    PointTail::Absent => {}
+                    PointTail::Present {
+                        associations,
+                        links,
+                        ..
+                    } => {
+                        add_list(associations);
+                        if let Some(links) = links {
+                            add_list(links);
+                        }
+                    }
+                    PointTail::Paired(paired) => references
+                        .extend(paired.operands().iter().map(|reference| reference.index())),
                 }
             }
             PmDcSketchEntityKind::Line {
