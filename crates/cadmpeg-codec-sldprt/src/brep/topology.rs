@@ -428,6 +428,11 @@ fn parse_point(buf: &[u8], off: usize, prefixed: bool) -> Option<Point> {
     })
 }
 
+struct PointFrame {
+    partition: bool,
+    bytes: Option<Vec<u8>>,
+}
+
 /// The topology record tables of one stream, each keyed by `attr`.
 #[derive(Default)]
 pub(crate) struct Tables {
@@ -437,6 +442,7 @@ pub(crate) struct Tables {
     coedges: HashMap<u16, Coedge>,
     vertex_uses: HashMap<u16, VertexUse>,
     points: HashMap<u16, Point>,
+    point_frames: HashMap<u16, PointFrame>,
 }
 
 impl Tables {
@@ -479,6 +485,32 @@ impl Tables {
         &self.points
     }
 
+    pub(super) fn point_is_ambiguous(&self, attr: u16) -> bool {
+        self.point_frames
+            .get(&attr)
+            .is_some_and(|frame| frame.bytes.is_none())
+    }
+
+    fn merge_point_frame(&mut self, attr: u16, frame: PointFrame, point: Option<Point>) {
+        if let Some(current) = self.point_frames.get_mut(&attr) {
+            if current.partition && !frame.partition {
+                return;
+            }
+            if current.partition == frame.partition {
+                if current.bytes.is_none() || current.bytes != frame.bytes {
+                    current.bytes = None;
+                    self.points.remove(&attr);
+                }
+                return;
+            }
+        }
+        self.point_frames.insert(attr, frame);
+        self.points.remove(&attr);
+        if let Some(point) = point {
+            self.points.insert(attr, point);
+        }
+    }
+
     /// Merge deltas without replacing partition topology membership.
     ///
     /// Preserve partition topology for shared identities and add only deltas
@@ -501,6 +533,13 @@ impl Tables {
         merge_missing(&mut self.edge_uses, deltas.edge_uses);
         merge_missing(&mut self.coedges, deltas.coedges);
         merge_missing(&mut self.vertex_uses, deltas.vertex_uses);
+        for (attr, frame) in deltas.point_frames {
+            let point = deltas.points.remove(&attr);
+            self.merge_point_frame(attr, frame, point);
+        }
+        deltas
+            .points
+            .retain(|attr, _| !self.point_frames.contains_key(attr));
         merge_missing(&mut self.points, deltas.points);
     }
 }
@@ -849,7 +888,12 @@ fn scan_with_point_framing(
             0x1d => {
                 let record = parse_point(body, i, prefixed_points);
                 if let Some(record) = record {
-                    t.points.insert(record.attr, record);
+                    let end = record.xyz_offset + std::mem::size_of::<[f64; 3]>();
+                    let frame = PointFrame {
+                        partition: !prefixed_points,
+                        bytes: Some(body[record.offset..end].to_vec()),
+                    };
+                    t.merge_point_frame(record.attr, frame, Some(record));
                 }
             }
             _ => {}
@@ -1305,6 +1349,114 @@ mod tests {
         let tables =
             scan_deltas_with_curve_attrs_excluding(&bytes, &HashSet::new(), &HashSet::new());
         assert!(!tables.points.contains_key(&211));
+    }
+
+    fn delta_points(bytes: &[u8]) -> super::Tables {
+        scan_deltas_with_curve_attrs_excluding(bytes, &HashSet::new(), &HashSet::new())
+    }
+
+    #[test]
+    fn point_duplicates_compare_complete_frames_in_every_order_and_stream_grouping() {
+        let base = tripled_point(211, [0.0, 2.0, 3.0], false);
+        let mut variants = vec![tripled_point(211, [0.0, 2.0, 3.0], true)];
+        let mut node = base.clone();
+        node[4..8].copy_from_slice(&948u32.to_be_bytes());
+        variants.push(node);
+        for index in 0..4 {
+            let mut reference = base.clone();
+            let at = 2 + crate::layout::world_point_tripled::REFS + index * 3;
+            reference[at..at + 2]
+                .copy_from_slice(&(if index == 0 { 0u16 } else { 151 }).to_be_bytes());
+            variants.push(reference);
+        }
+        variants.push(tripled_point(211, [-0.0, 2.0, 3.0], false));
+        variants.push(tripled_point(211, [1.0, 2.0, 3.0], false));
+        for variant in variants {
+            assert!(parse_point(&variant, 0, true).is_some());
+            let records = [&base, &variant, &base];
+            for order in [
+                [0, 1, 2],
+                [0, 2, 1],
+                [1, 0, 2],
+                [1, 2, 0],
+                [2, 0, 1],
+                [2, 1, 0],
+            ] {
+                for cuts in [0u8, 1, 2, 3] {
+                    let mut tables = super::Tables::default();
+                    let mut stream = Vec::new();
+                    for (index, record) in order.into_iter().enumerate() {
+                        stream.extend(records[record]);
+                        if index == 2 || cuts & (1 << index) != 0 {
+                            tables.merge_deltas(delta_points(&stream), None);
+                            stream.clear();
+                        }
+                    }
+                    assert!(tables.points().is_empty());
+                    assert!(tables.point_is_ambiguous(211));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn byte_identical_point_frames_coalesce_within_and_across_streams() {
+        for partition in [false, true] {
+            let point = if partition {
+                crate::test_support::parasolid::world_point(211, [1.0, 2.0, 3.0])
+            } else {
+                tripled_point(211, [1.0, 2.0, 3.0], true)
+            };
+            let bytes = [point.as_slice(), point.as_slice()].concat();
+            let scan_points = |bytes: &[u8]| {
+                if partition {
+                    scan(bytes)
+                } else {
+                    delta_points(bytes)
+                }
+            };
+            let mut tables = scan_points(&bytes);
+            tables.merge_deltas(scan_points(&point), None);
+            assert_eq!(tables.points().len(), 1);
+            assert_eq!(tables.points()[&211].xyz_m, [1.0, 2.0, 3.0]);
+            assert!(!tables.point_is_ambiguous(211));
+        }
+    }
+
+    #[test]
+    fn partition_point_presence_and_conflicts_survive_competing_deltas() {
+        let first = crate::test_support::parasolid::world_point(211, [1.0, 2.0, 3.0]);
+        let second = crate::test_support::parasolid::world_point(211, [4.0, 5.0, 6.0]);
+        let delta_first = tripled_point(211, [7.0, 8.0, 9.0], false);
+        let delta_second = tripled_point(211, [10.0, 11.0, 12.0], false);
+        for split_partition in [false, true] {
+            let mut conflict = if split_partition {
+                let mut tables = scan(&first);
+                tables.merge_deltas(scan(&second), None);
+                tables
+            } else {
+                scan(&[first.as_slice(), second.as_slice()].concat())
+            };
+            assert!(conflict.points().is_empty());
+            conflict.merge_deltas(delta_points(&delta_first), None);
+            assert!(conflict.points().is_empty());
+            assert!(conflict.point_is_ambiguous(211));
+        }
+        for partition_first in [false, true] {
+            let mut tables = super::Tables::default();
+            if partition_first {
+                tables.merge_deltas(scan(&first), None);
+            }
+            tables.merge_deltas(
+                delta_points(&[delta_first.as_slice(), delta_second.as_slice()].concat()),
+                None,
+            );
+            if !partition_first {
+                tables.merge_deltas(scan(&first), None);
+            }
+            assert_eq!(tables.points()[&211].xyz_m, [1.0, 2.0, 3.0]);
+            assert!(!tables.point_is_ambiguous(211));
+        }
     }
 
     #[test]

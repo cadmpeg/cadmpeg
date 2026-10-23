@@ -60,6 +60,74 @@ fn decode_merges_partition_and_deltas_records() {
 }
 
 #[test]
+fn conflicting_missing_partition_point_has_one_counted_loss() {
+    let mut partition = triangle_body();
+    let missing = world_point(60, [0.0, 0.0, 0.0]);
+    let at = partition
+        .windows(missing.len())
+        .position(|window| window == missing)
+        .unwrap();
+    drop(partition.drain(at..at + missing.len()));
+    let first = tripled_world_point(60, [2.0, 0.0, 0.0]);
+    let second = tripled_world_point(60, [3.0, 0.0, 0.0]);
+    for metadata_fallback in [false, true] {
+        let mut partition = partition.clone();
+        if metadata_fallback {
+            partition.extend(entity51(1, 711, 712, &[10, 1, 1, 1, 1, 1]));
+        }
+        for records in [[&first, &second, &first], [&second, &first, &second]] {
+            let deltas: Vec<u8> = records.into_iter().flatten().copied().collect();
+            let result = SldprtCodec
+                .decode(
+                    &mut Cursor::new(sldprt_with_partition_and_deltas(&partition, &deltas)),
+                    &DecodeOptions::default(),
+                )
+                .unwrap();
+            assert!(!result.ir().model.points.iter().any(|point| {
+                let x = point.position().get().x;
+                x == 2000.0 || x == 3000.0
+            }));
+            let losses: Vec<_> = result
+                .report()
+                .losses
+                .iter()
+                .filter(|loss| loss.code.local_code() == "geometry.point-record-ambiguous")
+                .collect();
+            assert_eq!(losses.len(), 1);
+            assert!(losses[0].message.starts_with("1 referenced POINT"));
+            if metadata_fallback {
+                assert!(result
+                    .report()
+                    .losses
+                    .iter()
+                    .any(|loss| loss.code.local_code() == "topology.graph-not-transferred"));
+            }
+        }
+    }
+}
+
+#[test]
+fn unused_history_point_conflict_has_no_geometry_loss() {
+    let deltas = [
+        tripled_world_point(211, [2.0, 0.0, 0.0]),
+        tripled_world_point(211, [3.0, 0.0, 0.0]),
+    ]
+    .concat();
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_partition_and_deltas(&triangle_body(), &deltas)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(result.ir().model.points.len(), 3);
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "geometry.point-record-ambiguous"));
+}
+
+#[test]
 fn typed_ownership_can_close_across_partition_and_deltas() {
     let full = triangle_body();
     let typed_start = full

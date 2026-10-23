@@ -471,6 +471,8 @@ pub(crate) struct Stats {
     pub(crate) source_entity_records: usize,
     /// Face-color bindings withheld because current records conflict.
     pub(crate) unresolved_face_colors: usize,
+    /// Referenced POINT identities withheld because complete records conflict.
+    pub(crate) unresolved_topology_points: usize,
     /// Canonical faces that no explicit body record claims.
     pub(crate) unclaimed_faces: usize,
     /// Faces on a support surface this codec does not type; emitted with an
@@ -1620,6 +1622,7 @@ fn decode_graph(
     // Edge attr -> (canonical start vuse, canonical end vuse, curve carrier attr).
     let mut edge_ends: HashMap<u16, (u16, u16, u16)> = HashMap::new();
 
+    let mut unresolved_points = HashSet::new();
     for (edge_attr, incidences) in edge_incidence {
         let canonical =
             canonical_coedge_attr(edge_attr, t.edge_uses().get(&edge_attr), t.coedges());
@@ -1647,10 +1650,14 @@ fn decode_graph(
                 if t.points().contains_key(&point_attr) {
                     kept_vertices.insert(vuse);
                     kept_points.insert(point_attr);
+                } else if t.point_is_ambiguous(point_attr) {
+                    unresolved_points.insert(point_attr);
                 }
             }
         }
     }
+
+    out.stats.unresolved_topology_points = unresolved_points.len();
 
     // Points.
     let point_attrs = sorted_graph_attrs(kept_points.iter().copied());

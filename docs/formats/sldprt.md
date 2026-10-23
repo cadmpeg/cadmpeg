@@ -1299,6 +1299,10 @@ POINT has exactly four pointers before its coordinate vector.
 Coordinate bytes do not extend that pointer list. Coordinates are finite
 big-endian f64 values in metres, with no format magnitude limit. A deltas
 POINT in the tripled form has no bare-pointer fallback.
+Complete POINT frames include the optional `ff`, transmit index, node ID,
+four pointer cells, and all coordinate bytes. Equal coordinate values do not
+establish equal POINT frames. A partition POINT supplies the current value
+for its transmit index; companion deltas retain historical versions.
 
 `face_bare` has a 37-byte body: `face_bare.attr at +0` (u16), `face_bare.node_id at +2` (u32), `face_bare.attributes_head at +6` (u16), `face_bare.tolerance at +8` (bytes[8]), `face_bare.refs at +16` (u16[5]), `face_bare.sense at +26` (u8), `face_bare.surface_front_refs at +27` (u16[5]).
 

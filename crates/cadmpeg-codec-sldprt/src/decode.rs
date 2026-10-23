@@ -110,10 +110,16 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     }
 
     let streams = active_body_streams(&scan);
+    let mut brep_fallback_losses = Vec::new();
     if !streams.is_empty() {
         ctx.charge_entities(u64_from_index(streams.len()), "admit SLDPRT body streams")?;
-        if let Some((decoded, mut report)) = try_decode_brep(ctx, &scan, &streams, &classification)?
-        {
+        if let Some((decoded, mut report)) = try_decode_brep(
+            ctx,
+            &scan,
+            &streams,
+            &classification,
+            &mut brep_fallback_losses,
+        )? {
             let (ir, annotations, unknowns, mut pmi_losses) = build_geometry_ir(
                 ctx,
                 &mut scan,
@@ -137,6 +143,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         &mut admitted_entities,
     )?;
     let mut report = build_container_report(ctx, &scan, &classification, container::notes(&scan))?;
+    report.losses.append(&mut brep_fallback_losses);
     report.losses.append(&mut pmi_losses);
     append_design_losses(ctx, &ir, &mut report)?;
     decode_result(ctx, ir, report, annotations, unknowns)
@@ -2050,6 +2057,7 @@ fn try_decode_brep(
     scan: &ContainerScan,
     streams: &[ActiveParasolidSite<'_>],
     classification: &crate::dialect::LayerClassification,
+    fallback_losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<(DecodedBrep, DecodeBody)>, CodecError> {
     let mut sites: BTreeMap<String, Vec<usize>> = BTreeMap::new();
     for (index, stream) in streams.iter().enumerate() {
@@ -2087,6 +2095,13 @@ fn try_decode_brep(
         || !decoded_sites[selected_site].2.points.is_empty();
     if resolved_active_site.is_some() {
         if !selected_is_empty_model && !selected_has_geometry {
+            append_point_record_loss(
+                decoded_sites[selected_site]
+                    .2
+                    .stats
+                    .unresolved_topology_points,
+                fallback_losses,
+            );
             return Ok(None);
         }
     } else {
@@ -2106,6 +2121,9 @@ fn try_decode_brep(
                 })
         });
         if !any_site_has_geometry && !any_empty_model {
+            for (_, _, decoded) in &decoded_sites {
+                append_point_record_loss(decoded.stats.unresolved_topology_points, fallback_losses);
+            }
             return Ok(None);
         }
     }
@@ -2253,6 +2271,7 @@ fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
         .append(&mut source.stats.surface_solver_capped);
     target.stats.source_entity_records += source.stats.source_entity_records;
     target.stats.unresolved_face_colors += source.stats.unresolved_face_colors;
+    target.stats.unresolved_topology_points += source.stats.unresolved_topology_points;
     target.stats.unclaimed_faces += source.stats.unclaimed_faces;
     target.stats.synthetic_body_grouping |= source.stats.synthetic_body_grouping;
     Ok(())
@@ -3471,6 +3490,14 @@ fn add_solidworks_xml_metadata(
     Ok(())
 }
 
+fn append_point_record_loss(count: usize, losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>) {
+    if count > 0 {
+        losses.push(SldprtLossCode::GeometryPointRecordAmbiguous.note(format!(
+            "{count} referenced POINT record(s) were withheld because complete records conflict and no current occurrence is selected."
+        )));
+    }
+}
+
 fn build_geometry_report(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
@@ -3535,6 +3562,7 @@ fn build_geometry_report(
             s.off_surface_nurbs_pcurves
         )));
     }
+    append_point_record_loss(s.unresolved_topology_points, &mut losses);
     if s.unresolved_face_colors > 0 {
         losses.push(SldprtLossCode::AppearanceFaceColorUnresolved.note(format!(
             "{} face-color binding(s) were withheld because the current face and link records do not select one consistent framed color record.",

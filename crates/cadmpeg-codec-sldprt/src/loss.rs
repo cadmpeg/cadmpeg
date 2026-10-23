@@ -91,6 +91,8 @@ pub(crate) enum SldprtLossCode {
     GeometryFaceSupportSurfaceUntyped,
     /// Edge references an untyped support curve carried opaque.
     GeometryEdgeSupportCurveUntyped,
+    /// Referenced POINT records have conflicting complete frames.
+    GeometryPointRecordAmbiguous,
     /// A derived pcurve parameter has multiple geometric candidates.
     GeometryPcurveAmbiguous,
     /// A NURBS surface solver exhausted its local work cap; the derived pcurve is skipped.
@@ -200,6 +202,7 @@ impl SldprtLossCode {
         Self::FeatureBodyRetentionUnresolved,
         Self::GeometryFaceSupportSurfaceUntyped,
         Self::GeometryEdgeSupportCurveUntyped,
+        Self::GeometryPointRecordAmbiguous,
         Self::GeometryPcurveAmbiguous,
         Self::GeometrySurfaceSolverWorkCapped,
         Self::GeometrySplineLanesUnpaired,
@@ -268,6 +271,7 @@ impl SldprtLossCode {
             Self::FeatureBodyRetentionUnresolved => "feature.body-retention-unresolved",
             Self::GeometryFaceSupportSurfaceUntyped => "geometry.face-support-surface-untyped",
             Self::GeometryEdgeSupportCurveUntyped => "geometry.edge-support-curve-untyped",
+            Self::GeometryPointRecordAmbiguous => "geometry.point-record-ambiguous",
             Self::GeometryPcurveAmbiguous => "geometry.pcurve-ambiguous",
             Self::GeometrySurfaceSolverWorkCapped => "geometry.surface-solver-work-capped",
             Self::GeometrySplineLanesUnpaired => "geometry.spline-lanes-unpaired",
@@ -348,6 +352,7 @@ impl SldprtLossCode {
             | Self::FeatureBodyRetentionUnresolved
             | Self::GeometryFaceSupportSurfaceUntyped
             | Self::GeometryEdgeSupportCurveUntyped
+            | Self::GeometryPointRecordAmbiguous
             | Self::GeometryPcurveAmbiguous
             | Self::GeometrySurfaceSolverWorkCapped
             | Self::GeometrySplineLanesUnpaired
@@ -395,6 +400,7 @@ impl SldprtLossCode {
             Self::TopologyGraphNotTransferred => LossTaxonomy::TopologyNotTransferred,
             Self::GeometryFaceSupportSurfaceUntyped
             | Self::GeometryEdgeSupportCurveUntyped
+            | Self::GeometryPointRecordAmbiguous
             | Self::GeometrySplineLanesUnpaired
             | Self::GeometryParasolidNotTransferred
             | Self::ContainerParasolidProbeCapped => LossTaxonomy::GeometryNotTransferred,
@@ -608,6 +614,7 @@ mod tests {
                 "feature.body-retention-unresolved",
                 "geometry.face-support-surface-untyped",
                 "geometry.edge-support-curve-untyped",
+                "geometry.point-record-ambiguous",
                 "geometry.pcurve-ambiguous",
                 "geometry.surface-solver-work-capped",
                 "geometry.spline-lanes-unpaired",
