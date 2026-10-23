@@ -17567,3 +17567,180 @@ type = "f64[16]"
 source = "spec"
 anchor = "row-major transforms start at offsets 50 and 272"
 
+
+[[record]]
+name = "rectangular_pattern_direction_record"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "A rectangular-pattern direction record is a 220-byte frame, and its paired header starts at offset 220."
+size = 220
+note = "Offsets are relative to the direction record's primary indexed header. The paired header starts at offset 220."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "After the indexed header and ten zero bytes"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "After the indexed header and ten zero bytes"
+
+[[record.field]]
+name = "selection_kind"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "a u32 selection kind `8` or `16` at offset 21"
+
+[[record.field]]
+name = "origin"
+offset = 25
+type = "f64[3]"
+source = "spec"
+anchor = "a three-component origin in centimetres at offset 25"
+
+[[record.field]]
+name = "displacement"
+offset = 49
+type = "f64[3]"
+source = "spec"
+anchor = "a three-component displacement in centimetres at offset 49"
+
+[[record.field]]
+name = "zero_run_16"
+offset = 73
+type = "bytes[16]"
+source = "spec"
+anchor = "Sixteen zero bytes follow the displacement."
+
+[[record.field]]
+name = "fixed_eight"
+offset = 89
+type = "u32"
+source = "spec"
+anchor = "Offset 89 stores u32 `8`"
+
+[[record.field]]
+name = "negative_ones"
+offset = 93
+type = "f64[3]"
+source = "spec"
+anchor = "offsets 93, 101, and 109 store f64 `-1.0`"
+
+[[record.field]]
+name = "selection_count"
+offset = 117
+type = "u32"
+source = "spec"
+anchor = "Offset 117 stores u32 `1`"
+
+[[record.field]]
+name = "selection_reference"
+offset = 121
+type = "bytes[11]"
+source = "spec"
+anchor = "the marked selection-operand reference starts at offset 121, followed by two zero bytes"
+
+[[record.field]]
+name = "zero_run_2"
+offset = 132
+type = "bytes[2]"
+source = "spec"
+anchor = "the marked selection-operand reference starts at offset 121, followed by two zero bytes"
+
+[[record.field]]
+name = "auxiliary_count"
+offset = 134
+type = "u32"
+source = "spec"
+anchor = "Offset 134 stores u32 `1`"
+
+[[record.field]]
+name = "auxiliary_reference"
+offset = 138
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked reference starts at offset 138"
+
+[[record.field]]
+name = "role"
+offset = 149
+type = "u64"
+source = "spec"
+anchor = "Offset 149 stores u64 `0x0000000400000000`, followed by ten zero bytes."
+
+[[record.field]]
+name = "zero_run_after_role"
+offset = 157
+type = "bytes[10]"
+source = "spec"
+anchor = "Offset 149 stores u64 `0x0000000400000000`, followed by ten zero bytes."
+
+[[record.field]]
+name = "opaque_index"
+offset = 167
+type = "u32"
+source = "spec"
+anchor = "Offset 167 stores a nonzero u32"
+
+[[record.field]]
+name = "opaque_scalar"
+offset = 171
+type = "f64"
+source = "spec"
+anchor = "offset 171 a finite f64"
+
+[[record.field]]
+name = "opaque_index_repeat"
+offset = 179
+type = "u32"
+source = "spec"
+anchor = "offset 179 the same u32"
+
+[[record.field]]
+name = "index_plus_two_reference"
+offset = 183
+type = "bytes[11]"
+source = "spec"
+anchor = "Marked references to the direction record's index plus two and plus one start at offsets 183 and 197"
+
+[[record.field]]
+name = "separator_flag"
+offset = 194
+type = "u8"
+source = "spec"
+anchor = "`u8 1` and two zero bytes separate them"
+
+[[record.field]]
+name = "separator_zero_run"
+offset = 195
+type = "bytes[2]"
+source = "spec"
+anchor = "`u8 1` and two zero bytes separate them"
+
+[[record.field]]
+name = "index_plus_one_reference"
+offset = 197
+type = "bytes[11]"
+source = "spec"
+anchor = "Marked references to the direction record's index plus two and plus one start at offsets 183 and 197"
+
+[[record.field]]
+name = "scope_separator"
+offset = 208
+type = "u8"
+source = "spec"
+anchor = "One zero byte and the marked scope reference at offset 209 close the frame."
+
+[[record.field]]
+name = "scope_reference"
+offset = 209
+type = "bytes[11]"
+source = "spec"
+anchor = "One zero byte and the marked scope reference at offset 209 close the frame."

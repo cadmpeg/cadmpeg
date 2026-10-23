@@ -460,6 +460,34 @@ pub(crate) struct DesignRectangularPatternConstruction {
     instances: Option<DesignRectangularPatternInstances>,
     /// The local cap that stopped the instance search, so `instances` is absent.
     instance_search_cap: Option<RectangularPatternSearchCap>,
+    /// Direction records of the active directions, in U-then-V order.
+    directions: Vec<DesignRectangularPatternDirection>,
+}
+
+/// Direction record of one active rectangular-pattern direction.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignRectangularPatternDirection {
+    /// Referenced direction record.
+    pub(crate) record_index: u32,
+    /// Referenced selection operand that follows the direction record.
+    pub(crate) selection_record_index: u32,
+    /// Selection kind `8` or `16`.
+    pub(crate) selection_kind: u32,
+    /// Origin in source centimetres.
+    pub(crate) origin: [FiniteReal; 3],
+    /// Byte offset of the first origin coordinate.
+    pub(crate) origin_offset: u64,
+    /// Nonzero displacement in source centimetres.
+    pub(crate) displacement: [FiniteReal; 3],
+    /// Byte offset of the first displacement coordinate.
+    pub(crate) displacement_offset: u64,
+}
+
+impl DesignRectangularPatternDirection {
+    /// The unit direction of the displacement, before the extent sign applies.
+    pub(crate) fn direction(&self) -> Option<UnitVector3> {
+        UnitVector3::normalized(Vector3::from(self.displacement.map(FiniteReal::get)))
+    }
 }
 
 #[cfg(test)]
@@ -480,6 +508,7 @@ impl Clone for DesignRectangularPatternConstruction {
             value_offsets: self.value_offsets,
             instances: self.instances.clone(),
             instance_search_cap: self.instance_search_cap,
+            directions: self.directions.clone(),
         }
     }
 }
@@ -496,6 +525,8 @@ struct DesignRectangularPatternConstructionRef<'a> {
     instances: Option<&'a DesignRectangularPatternInstances>,
     #[serde(skip_serializing_if = "Option::is_none")]
     instance_search_cap: Option<RectangularPatternSearchCap>,
+    #[serde(skip_serializing_if = "<[_]>::is_empty")]
+    directions: &'a [DesignRectangularPatternDirection],
 }
 
 impl Serialize for DesignRectangularPatternConstruction {
@@ -509,6 +540,7 @@ impl Serialize for DesignRectangularPatternConstruction {
             value_offsets: self.value_offsets,
             instances: self.instances.as_ref(),
             instance_search_cap: self.instance_search_cap,
+            directions: &self.directions,
         }
         .serialize(serializer)
     }
@@ -542,6 +574,9 @@ pub(crate) struct DesignRectangularPatternConstructionWire {
         deserialize_with = "deserialize_instance_search_cap"
     )]
     pub(crate) instance_search_cap: Option<RectangularPatternSearchCap>,
+    /// Direction records of the active directions, in U-then-V order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) directions: Vec<DesignRectangularPatternDirection>,
 }
 
 impl TryFrom<DesignRectangularPatternConstructionWire> for DesignRectangularPatternConstruction {
@@ -567,11 +602,13 @@ impl TryFrom<DesignRectangularPatternConstructionWire> for DesignRectangularPatt
             value_offsets: wire.value_offsets,
             instances: None,
             instance_search_cap: None,
+            directions: Vec::new(),
         };
         record.try_set_instances(wire.instances)?;
         if let Some(cap) = wire.instance_search_cap {
             record.mark_instance_search_capped(cap)?;
         }
+        record.try_set_directions(wire.directions)?;
         Ok(record)
     }
 }
@@ -588,6 +625,7 @@ impl From<DesignRectangularPatternConstruction> for DesignRectangularPatternCons
             value_offsets: value.value_offsets,
             instances: value.instances,
             instance_search_cap: value.instance_search_cap,
+            directions: value.directions,
         }
     }
 }
@@ -628,6 +666,36 @@ impl DesignRectangularPatternConstruction {
             }
         }
         self.instances = instances;
+        Ok(())
+    }
+
+    /// The number of directions whose count exceeds one.
+    pub(crate) fn active_direction_count(&self) -> usize {
+        [self.u_count, self.v_count]
+            .iter()
+            .filter(|count| count.get() > 1)
+            .count()
+    }
+
+    /// Direction records of the active directions, in U-then-V order; empty
+    /// when the scope does not store one per active direction.
+    pub(crate) fn directions(&self) -> &[DesignRectangularPatternDirection] {
+        &self.directions
+    }
+
+    pub(crate) fn try_set_directions(
+        &mut self,
+        directions: Vec<DesignRectangularPatternDirection>,
+    ) -> Result<(), &'static str> {
+        if !directions.is_empty() {
+            if directions.len() != self.active_direction_count() {
+                return Err("directions must hold one record per active direction");
+            }
+            if directions.iter().any(|record| record.direction().is_none()) {
+                return Err("direction displacements must be nonzero");
+            }
+        }
+        self.directions = directions;
         Ok(())
     }
 
@@ -962,6 +1030,7 @@ mod tests {
             value_offsets: [10, 20, 30, 40],
             instances,
             instance_search_cap: None,
+            directions: Vec::new(),
         }
     }
 
@@ -1144,6 +1213,36 @@ mod tests {
         );
         wire.instances = Some(components());
         assert!(DesignRectangularPatternConstruction::try_from(wire).is_err());
+    }
+
+    #[test]
+    fn rectangular_pattern_directions_hold_one_record_per_active_direction() {
+        let record = |record_index, displacement| super::DesignRectangularPatternDirection {
+            record_index,
+            selection_record_index: record_index + 3,
+            selection_kind: 8,
+            origin: crate::test_support::reals([0.0, 0.0, 0.0]),
+            origin_offset: 0,
+            displacement: crate::test_support::reals(displacement),
+            displacement_offset: 24,
+        };
+        let wire = |directions| DesignRectangularPatternConstructionWire {
+            directions,
+            ..DesignRectangularPatternConstructionWire::from(construction(None))
+        };
+        assert!(
+            DesignRectangularPatternConstruction::try_from(wire(vec![record(20, [1.0, 0.0, 0.0])]))
+                .is_ok()
+        );
+        assert!(DesignRectangularPatternConstruction::try_from(wire(vec![
+            record(20, [1.0, 0.0, 0.0]),
+            record(30, [0.0, 1.0, 0.0]),
+        ]))
+        .is_err());
+        assert!(
+            DesignRectangularPatternConstruction::try_from(wire(vec![record(20, [0.0, 0.0, 0.0])]))
+                .is_err()
+        );
     }
 }
 

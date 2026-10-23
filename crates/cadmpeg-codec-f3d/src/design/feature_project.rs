@@ -6144,27 +6144,28 @@ fn project_rectangular_pattern_scalars(
     use cadmpeg_ir::scalar::PositiveLength;
 
     let construction = scope.rectangular_pattern_construction()?;
-    let mut active = [
-        (
-            construction.u_count(),
-            construction.u_extent(),
-            construction.v_count(),
-        ),
-        (
-            construction.v_count(),
-            construction.v_extent(),
-            construction.u_count(),
-        ),
-    ]
-    .into_iter()
-    .filter_map(|(count, extent, inactive_count)| {
-        Some((count, PatternIntervals::new(count)?, extent, inactive_count))
-    });
-    let (count, intervals, extent, inactive_count) = active.next()?;
-    if active.next().is_some() || inactive_count != 1 {
-        return None;
+    // Direction records pair with the active directions in U-then-V order.
+    let mut direction_records = construction.directions().iter();
+    let mut active = Vec::new();
+    for (count, extent) in [
+        (construction.u_count(), construction.u_extent()),
+        (construction.v_count(), construction.v_extent()),
+    ] {
+        let Some(intervals) = PatternIntervals::new(count) else {
+            continue;
+        };
+        let direction = direction_records.next().and_then(|record| {
+            let direction = record.direction()?;
+            Some(if extent < 0.0 {
+                direction.negated()
+            } else {
+                direction
+            })
+        });
+        let spacing = PositiveLength::new(extent.abs() * 10.0 / f64::from(intervals.get()))?;
+        active.push((count, spacing, direction));
     }
-    let direction = construction.instances().and_then(|instances| {
+    let instance_direction = construction.instances().and_then(|instances| {
         let first = &instances.frames().next()?.transform.value;
         let last = &instances.frames().next_back()?.transform.value;
         let delta = Vector3::new(
@@ -6228,13 +6229,25 @@ fn project_rectangular_pattern_scalars(
     if let Some(seed) = component_seed.or(group_seed) {
         seeds.push(seed);
     }
-    let direction = direction.map(cadmpeg_ir::features::FeatureDirection3::from);
-    let spacing = PositiveLength::new(extent.abs() * 10.0 / f64::from(intervals.get()))?;
+    let (count, spacing, direction, second) = match active.as_slice() {
+        [(count, spacing, direction)] => (*count, *spacing, direction.or(instance_direction), None),
+        [(count, spacing, direction), (second_count, second_spacing, Some(second_direction))] => (
+            *count,
+            *spacing,
+            *direction,
+            Some(cadmpeg_ir::features::patterns::LinearPatternDirection {
+                direction: cadmpeg_ir::features::FeatureDirection3::from(*second_direction),
+                spacing: *second_spacing,
+                count: *second_count,
+            }),
+        ),
+        _ => return None,
+    };
     let pattern = PatternKind::new(PatternTransform::Linear {
-        direction,
+        direction: direction.map(cadmpeg_ir::features::FeatureDirection3::from),
         spacing,
         count,
-        second: None,
+        second,
     })
     .ok()?;
     Some(FeatureDefinition::Operation(FeatureOperation::Pattern {
