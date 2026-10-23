@@ -69,6 +69,9 @@ const AUXILIARY_ENUM_TYPE: [u8; 16] = [
 const OBJECT_COLLECTION_TYPE: [u8; 16] = [
     0xae, 0x70, 0x68, 0x0e, 0xd1, 0x4a, 0x1e, 0x86, 0xd7, 0x62, 0x48, 0xb0, 0x3c, 0x2a, 0x96, 0xe1,
 ];
+pub(crate) const FACE_COLLECTION_TYPE: [u8; 16] = [
+    0xf1, 0xb2, 0xbc, 0x24, 0xd0, 0x11, 0x21, 0xdd, 0x00, 0x08, 0xd0, 0xbc, 0x06, 0x63, 0xdc, 0x09,
+];
 const HOLE_TYPE: [u8; 16] = [
     0x11, 0x7c, 0xcd, 0x43, 0xd2, 0x11, 0x96, 0x58, 0xa0, 0x00, 0x21, 0x80, 0x36, 0x03, 0xc8, 0xc9,
 ];
@@ -84,6 +87,9 @@ const FILLET_EDGE_SET_TYPE: [u8; 16] = [
 const EDGE_COLLECTION_TYPE: [u8; 16] = inventor_id(0x9087_4d51);
 const EDGE_ITEM_TYPE: [u8; 16] = [
     0x82, 0x69, 0x5c, 0x37, 0xd1, 0x11, 0x51, 0x6b, 0x00, 0x08, 0xa1, 0xba, 0x32, 0xa3, 0xdc, 0x09,
+];
+pub(crate) const FACE_ITEM_TYPE: [u8; 16] = [
+    0xcc, 0xb5, 0x9f, 0x50, 0xd1, 0x11, 0x4f, 0x6b, 0x00, 0x08, 0xa1, 0xba, 0x32, 0xa3, 0xdc, 0x09,
 ];
 const FILLET_TYPE: [u8; 16] = [
     0x27, 0x88, 0xf2, 0x78, 0xc5, 0x4d, 0xd7, 0xbe, 0x43, 0x13, 0xb3, 0x98, 0x60, 0x39, 0xb5, 0x2e,
@@ -212,6 +218,9 @@ pub(crate) enum PmDcFeaturePropertyKind {
         index_reference_value: i32,
         value: u32,
     },
+    FaceItem {
+        index_references: PmDcU32List,
+    },
     TerminationFlag {
         value: u8,
     },
@@ -267,6 +276,7 @@ pub(crate) enum PmDcFeatureReferenceFamily {
     ObjectCollection,
     FilletEdgeSets,
     EdgeCollection,
+    FaceCollection,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -814,7 +824,9 @@ fn feature_property_parser(type_id: [u8; 16]) -> Option<PropertyParser> {
         PLACEMENT_TYPE => Some(parse_placement),
         FILLET_EDGE_SET_TYPE => Some(parse_fillet_edge_set),
         EDGE_COLLECTION_TYPE => Some(parse_edge_collection),
+        FACE_COLLECTION_TYPE => Some(parse_face_collection),
         EDGE_ITEM_TYPE => Some(parse_edge_item),
+        FACE_ITEM_TYPE => Some(parse_face_item),
         TERMINATION_FLAG_TYPE => Some(parse_termination_flag),
         _ => None,
     }
@@ -975,6 +987,7 @@ reference_parser!(parse_feature_dimensions, FeatureDimensions);
 reference_parser!(parse_object_collection, ObjectCollection);
 reference_parser!(parse_fillet_edge_sets, FilletEdgeSets);
 reference_parser!(parse_edge_collection, EdgeCollection);
+reference_parser!(parse_face_collection, FaceCollection);
 
 fn parse_rdx_variable(
     ctx: &DecodeContext<'_>,
@@ -1248,6 +1261,27 @@ fn parse_edge_item(
     ))
 }
 
+fn parse_face_item(
+    _: &DecodeContext<'_>,
+    source: View<'_>,
+    version: u8,
+) -> Result<PmDcFeaturePropertyPayload, CodecError> {
+    let mut cursor = Cursor::new(source);
+    let header = content_header(&mut cursor, version)?;
+    let index_references = u32_list(&mut cursor, 2, "face-item index references")?;
+    if index_references.values().is_empty() || cursor.i32("face-item terminal value")? != -1 {
+        return Err(CodecError::malformed(
+            "Inventor PmDc face item has no indices or an invalid terminal value",
+        ));
+    }
+    cursor.finish("face item")?;
+    Ok(property(
+        version,
+        header,
+        PmDcFeaturePropertyKind::FaceItem { index_references },
+    ))
+}
+
 fn linked_header(cursor: &mut Cursor<'_>, version: u8) -> Result<PmDcLinkedHeader, CodecError> {
     Ok(PmDcLinkedHeader {
         header_value: cursor.u32("linked header value")?,
@@ -1299,6 +1333,9 @@ const CHAMFER_CLASS_ID: ClassId = ClassId(NativeBytes::new([
 ]));
 const HOLE_CLASS_ID: ClassId = ClassId(NativeBytes::new([
     0x1a, 0x7d, 0x75, 0x1f, 0xd2, 0x11, 0x9c, 0x54, 0xa0, 0x00, 0x20, 0x80, 0x36, 0x03, 0xc8, 0xc9,
+]));
+pub(crate) const THREAD_CLASS_ID: ClassId = ClassId(NativeBytes::new([
+    0x06, 0x19, 0xaa, 0x28, 0xd4, 0x11, 0xc7, 0x7a, 0x60, 0x00, 0xc4, 0xa4, 0xca, 0xe1, 0xfb, 0xb0,
 ]));
 
 /// Native family names of feature-label classes outside the neutral families.
@@ -1752,8 +1789,17 @@ pub(crate) fn project(
                 FeatureFamily::Chamfer => project_chamfer(ctx, feature, label, &index),
                 FeatureFamily::Hole => project_hole(ctx, feature, label, &index),
             }
+            .map(|result| result.map(|(feature, result)| (feature, Some(result))))
             .transpose()?,
             None => None,
+        };
+        let value = match value {
+            Some(value) => Some(value),
+            None => label
+                .filter(|label| label.class_id() == THREAD_CLASS_ID)
+                .and_then(|label| project_thread(ctx, feature, label, &index))
+                .transpose()?
+                .map(|feature| (feature, None)),
         };
         match value {
             Some((projected_feature, result)) => {
@@ -1764,7 +1810,8 @@ pub(crate) fn project(
                     flags: feature.header.flags,
                     label,
                     feature: projected_feature,
-                    result: Some(result),
+                    result,
+                    neutral: true,
                 });
             }
             None if history.placement(feature.identity.record_ordinal).is_some() => {
@@ -1775,6 +1822,7 @@ pub(crate) fn project(
                     label,
                     feature: native_feature(ctx, &feature.identity, label, feature.id())?,
                     result: None,
+                    neutral: false,
                 });
             }
             None => {}
@@ -1792,6 +1840,7 @@ pub(crate) fn project(
             label,
             feature: native_feature(ctx, &pattern.identity, label, pattern.id())?,
             result: None,
+            neutral: false,
         });
     }
     for record in &sketch.sketches {
@@ -1809,12 +1858,13 @@ pub(crate) fn project(
             label,
             feature: sketch_feature(ctx, record, label, &index)?,
             result: None,
+            neutral: false,
         });
     }
     apply_history(&mut projected, &history, inventory, token)?;
     let unresolved_states = projected
         .iter()
-        .filter(|item| item.result.is_some() && history.placement(item.record).is_none())
+        .filter(|item| item.neutral && history.placement(item.record).is_none())
         .count();
     let ordinal_counts = projected.iter().map(|item| item.feature.ordinal).fold(
         HashMap::<u64, usize>::new(),
@@ -1829,7 +1879,7 @@ pub(crate) fn project(
         .collect::<HashSet<_>>();
     projected.retain(|item| {
         let keep = !duplicate_ordinals.contains(&item.feature.ordinal);
-        if !keep && item.result.is_some() {
+        if !keep && item.neutral {
             neutral -= 1;
         }
         keep
@@ -1862,6 +1912,7 @@ struct HistoryItem<'a> {
     label: Option<&'a PmDcFeatureLabel>,
     feature: Feature,
     result: Option<FeatureResultTopology>,
+    neutral: bool,
 }
 
 /// Apply browser order, suppression, end-of-part state, and consumed-node
@@ -2061,6 +2112,121 @@ fn native_kind(class_id: Option<ClassId>) -> cadmpeg_ir::features::NativeFeature
             || NativeFeatureKind::Other(format!("InventorClass:{class_id}")),
             |(_, name)| NativeFeatureKind::Other((*name).to_owned()),
         )
+}
+
+/// Admit Thread annotations with nine typed slots and a closed, nonempty face selection.
+/// Edge members must resolve to edge items; both numeric parameters must be decoded.
+pub(crate) fn thread_face_collection<'a>(
+    source: &PmDcFeature,
+    property: impl Fn(u32) -> Option<&'a PmDcFeatureProperty>,
+    parameter: impl Fn(u32) -> bool,
+) -> Option<&'a PmDcFeatureProperty> {
+    let slots = source.properties.references();
+    if source.properties.marker() != 2 || slots.len() != 9 {
+        return None;
+    }
+    let faces = property(slots[0].index())?;
+    let PmDcFeaturePropertyKind::References {
+        family: PmDcFeatureReferenceFamily::FaceCollection,
+        items,
+    } = &faces.kind
+    else {
+        return None;
+    };
+    if items.marker() != 2
+        || items.references().is_empty()
+        || !items.references().iter().all(|reference| {
+            property(reference.index()).is_some_and(|item| {
+                matches!(
+                    &item.kind,
+                    PmDcFeaturePropertyKind::FaceItem { index_references }
+                        if index_references.marker() == 2 && !index_references.values().is_empty()
+                )
+            })
+        })
+        || [1, 2, 6].into_iter().any(|slot| {
+            !property(slots[slot].index())
+                .is_some_and(|value| matches!(value.kind, PmDcFeaturePropertyKind::Boolean { .. }))
+        })
+        || [3, 4]
+            .into_iter()
+            .any(|slot| !parameter(slots[slot].index()))
+    {
+        return None;
+    }
+    for (slot, family) in [
+        (5, PmDcFeatureReferenceFamily::EdgeCollection),
+        (8, PmDcFeatureReferenceFamily::FeatureDimensions),
+    ] {
+        let PmDcFeaturePropertyKind::References {
+            family: actual,
+            items,
+        } = &property(slots[slot].index())?.kind
+        else {
+            return None;
+        };
+        if *actual != family || items.marker() != 2 {
+            return None;
+        }
+        if family == PmDcFeatureReferenceFamily::EdgeCollection
+            && !items.references().iter().all(|reference| {
+                property(reference.index()).is_some_and(|item| {
+                    matches!(&item.kind, PmDcFeaturePropertyKind::EdgeItem { .. })
+                })
+            })
+        {
+            return None;
+        }
+    }
+    Some(faces)
+}
+
+fn project_thread(
+    ctx: &DecodeContext<'_>,
+    source: &PmDcFeature,
+    label: &PmDcFeatureLabel,
+    index: &ProjectionIndex<'_>,
+) -> Option<Result<Feature, CodecError>> {
+    let token = source.identity.segment_token.as_str();
+    let faces = thread_face_collection(
+        source,
+        |reference| resolve_property(token, reference, index),
+        |reference| {
+            reference
+                .checked_sub(1)
+                .and_then(|ordinal| index.parameters.get(&(token, ordinal)))
+                .is_some_and(Option::is_some)
+        },
+    )?;
+    if let Err(error) = ctx.charge_entities(1, "project Inventor thread annotation") {
+        return Some(Err(error));
+    }
+    let key = match source.identity.key() {
+        Ok(key) => key,
+        Err(error) => return Some(Err(error)),
+    };
+    Some(Ok(Feature {
+        id: FeatureId::compose(
+            &cadmpeg_ir::identity_namespace!("inventor", "design", "feature"),
+            key,
+        ),
+        ordinal: u64::from(label.index),
+        name: label.name().map(str::to_owned),
+        suppressed: None,
+        dependencies: DistinctMembers::default(),
+        source_properties: boolean_properties(source, &[1, 2, 6], index),
+        source_tag: Some("thread".into()),
+        source_text: None,
+        source_content: FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
+                face: cadmpeg_ir::features::FaceSelection::Native(faces.id()),
+                diameter: None,
+                extent: None,
+            }),
+        ),
+        native_ref: Some(source.id()),
+    }))
 }
 
 fn project_extrusion(
@@ -4643,4 +4809,5 @@ mod tests {
     }
 
     mod extents;
+    mod thread;
 }
