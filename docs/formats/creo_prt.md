@@ -2214,12 +2214,28 @@ An `fc` prefix is resolved by exact body grammar. A complete two-chart body
 uses the byte after `fc` as its sample count. Other complete forms use it as a
 body-family subtype. A partial token match does not select either meaning.
 
+For `fc 02`, the counted production is a two-row, two-chart array. Its eight
+scalar slots have this order:
+
+| Slots | Meaning |
+| ----- | ------- |
+| `0..1` | Endpoint A in face `F0`'s chart |
+| `2..3` | Endpoint A in face `F1`'s chart |
+| `4..5` | Endpoint B in face `F0`'s chart |
+| `6..7` | Endpoint B in face `F1`'s chart |
+
+The complete short production below supplies one face path. The complete
+counted production supplies two face paths. A zero face reference does not
+shift either chart's slots. A reference operand, undefined scalar, unread
+byte, truncated scalar, or nonunique complete parse prevents the counted
+production from supplying endpoints.
+
 | Subtype | Body family                              |
 | ------- | ---------------------------------------- |
 | `fc 02` | Short pcurve-style endpoint record       |
 | `fc 05` | Cap-circle arc record family             |
 | `fc 08` | World-coordinate control-polyline family |
-| `fc 13` | Held-cap-ordinate control polyline       |
+| `fc 13` | Four-role parameter and coordinate path  |
 
 The complete short `fc 02` endpoint body has the form
 `fc 02 | u0 | v0 | 0 | 1 | u1 | v1 | 2 | T`, where each `u`/`v` slot is a
@@ -2233,7 +2249,28 @@ parameter path. A decoder may transfer this path only after mapping both
 endpoints through the first face chart and applying the ordinary endpoint and
 carrier admission rules.
 
-`fc 05` records store cap-circle control points in the order `A`, `B`, `t`, `C`, where `A` and `C` use eight-byte world-coordinate tokens and `B` and `t` use DICT or standalone-zero scalar tokens. `C` is the owning cylinder's row-frame axial ordinate; the paired cap planes provide its model-space axial coordinate. `t` is the angular curve parameter in radians. The signed relation between successive polar angles and `t` determines curve sense and the parameter-zero radial direction; it does not select the cylinder's axial direction when the paired-cap span witness is complete. For a model-X axis, `(A, B, C)` maps to `(Z, Y, X)`; for a model-Y axis it maps to `(X, Z, Y)`; for a model-Z axis it maps to `(Y, X, Z)`. The row-frame radial vector `(A, B)` maps to `(0, B, A)`, `(A, 0, B)`, or `(B, A, 0)`, respectively. `fc 13` stores a control polyline rather than an analytic circle.
+`fc 05` records store cap-circle control points in the order `A`, `B`, `t`, `C`, where `A` and `C` use eight-byte world-coordinate tokens and `B` and `t` use DICT or standalone-zero scalar tokens. `C` is the owning cylinder's row-frame axial ordinate; the paired cap planes provide its model-space axial coordinate. `t` is the angular curve parameter in radians. The signed relation between successive polar angles and `t` determines curve sense and the parameter-zero radial direction; it does not select the cylinder's axial direction when the paired-cap span witness is complete. For a model-X axis, `(A, B, C)` maps to `(Z, Y, X)`; for a model-Y axis it maps to `(X, Z, Y)`; for a model-Z axis it maps to `(Y, X, Z)`. The row-frame radial vector `(A, B)` maps to `(0, B, A)`, `(A, 0, B)`, or `(B, A, 0)`, respectively.
+
+A complete four-role `fc 13` path associates a curve parameter `t` with
+three coordinate roles `A`, `B`, and `C`. In a circular chart, `A` and `B`
+are transverse ordinates, `C` is the held axial ordinate, and `t` is angular.
+The point-first phase stores `[A_i, B_i, t_i, C_i]`. The parameter-first
+phase stores `[t_i, C_i, A_i, B_i]`.
+
+If a retained scalar walk starts after `t_0`, its four-field physical groups
+are `[C_i, A_i, B_i, t_(i+1)]`. The final `[C_n, A_n, B_n]` completes the
+sample whose parameter precedes it. It is not a trailer. The sample count
+includes this terminal sample. Normalize the complete role cycle before
+pairing parameters with coordinate values.
+
+In a complete owned parameter position, `20 10 00` encodes zero and consumes
+one parameter slot. It does not separate a terminal point from its path.
+An undefined parameter or coordinate image retains its bounded role and raw
+bytes; it does not remove the terminal sample or supply an invented value.
+These role and terminal rules do not define a spatial control polyline,
+NURBS control poles, signed chart branches, or a model-space placement.
+A model-space carrier requires a complete native chart and independent
+endpoint and carrier invariants.
 
 In an `fc 14` body for a circle shared by an axis-aligned coaxial circular cone
 and cylinder, every `2d` world-coordinate token is the same exact token image.

@@ -172,17 +172,13 @@ length unit.
 
 **Need.** We must know the selection rule to place the surface in model space.
 
-### GS-08. Other `fc 02` slots
+### GS-08. Unresolved `fc 02` bodies
 
-**Question.** What role does each slot in an `fc 02` body have outside the defined short pcurve form?
+**Question.** Which scalar images or additional body productions resolve an `fc 02` body that does not satisfy the complete counted or complete short production?
 
-**Known.** `creo_prt.md` §4.2 defines the complete short `fc 02` body as a
-seven-scalar one-sided path in the first topology face's chart with a bounded
-three-byte terminal operand. Other `fc 02` bodies do not satisfy that
-production.
+**Known.** The complete counted production has eight endpoint slots in two face charts. The complete short production supplies one face path. The bounded microphone and heat-sink verification resolves 72 counted bodies and two short bodies; 68 other bodies remain opaque. An opaque body can contain an undefined scalar in a known production. Opacity alone does not prove another grammar.
 
-**Need.** We must know the roles of the other `fc 02` body variants to
-construct their curves and endpoints.
+**Need.** Resolve each remaining body through complete scalar ownership and chart roles before it supplies curve or endpoint geometry.
 
 ### GS-09. Other `fc 05` variants
 
@@ -200,21 +196,13 @@ construct their curves and endpoints.
 
 **Need.** We must know the grammar to construct the control polyline.
 
-### GS-11. `fc 13` full sample fields
+### GS-11. `fc 13` scalar signs and model-space charts
 
-**Question.** What role does each field in a full `fc 13` sample group have?
+**Question.** How do the remaining undefined scalar images, signed coordinate branches, and native chart transforms define complete placed paths?
 
-**Known.** `creo_prt.md` §4.2 "An `fc` prefix is resolved by exact body grammar." identifies `fc 13` as a held-cap-ordinate control polyline.
+**Known.** The complete point-first and parameter-first productions associate one parameter with three coordinate roles. Their shortened terminal group completes the preceding parameter's sample. These roles do not prove a spatial control polyline, NURBS control poles, or a native-to-model transform. A radius identity alone does not select a signed branch. The panel 687 path retains unresolved branch signs; the CTC02 and microphone role proofs do not establish their complete native model-space placements. No named nineteen-by-four array declaration establishes a universal interpretation of `13` as a sample count.
 
-**Need.** We must know the roles to construct the control polyline.
-
-### GS-12. `fc 13` terminal form
-
-**Question.** Is the shortened held-coordinate-plus-two-field form in `fc 13` a final sample or a trailer?
-
-**Known.** The decoder retains the repeated full groups and the shortened terminal form as separate bounded data.
-
-**Need.** We must know the form to determine the final control-point count.
+**Need.** Resolve the undefined images and derive each complete signed chart from native ownership before constructing placed geometry.
 
 ### GS-13. Other `fc` subtypes
 
