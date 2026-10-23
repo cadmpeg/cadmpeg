@@ -259,6 +259,8 @@ pub(crate) enum RefusalStage {
     Check,
     /// Export loss policy or artifact emission refused.
     Export,
+    /// Measurement of a loaded document refused.
+    Measure,
 }
 
 impl fmt::Display for RefusalStage {
@@ -268,6 +270,7 @@ impl fmt::Display for RefusalStage {
             Self::Decode => "decode",
             Self::Check => "check",
             Self::Export => "export",
+            Self::Measure => "measure",
         })
     }
 }
@@ -384,6 +387,13 @@ pub(crate) enum ConversionRefusal {
         /// Human-readable message.
         message: String,
     },
+    /// The document records less of its source than measurement needs.
+    InsufficientMeasureDepth {
+        /// The depth measurement needs and the depth the document records.
+        depth: DepthReport,
+        /// Decode report available for an optional `--report`.
+        decode_report: Option<DecodeReport>,
+    },
 }
 
 /// Stable typed contents of the command-report `refusal` object.
@@ -427,7 +437,7 @@ enum RefusalDetail<'a> {
 /// Depth evidence carried by an insufficient-depth refusal.
 #[derive(Debug, Clone, Copy, Serialize)]
 pub(crate) struct DepthReport {
-    /// The least depth the encoder plans from.
+    /// The least depth the consumer needs.
     pub(crate) needed: DecodeDepth,
     /// The depth the document records.
     pub(crate) recorded: DecodeDepth,
@@ -670,6 +680,22 @@ impl ConversionRefusal {
                 detail: None,
                 reports: RefusalReports::default(),
             },
+            Self::InsufficientMeasureDepth {
+                depth,
+                decode_report,
+            } => RefusalEvidence {
+                code: RefusalCode::InsufficientDepth,
+                message: Cow::Owned(format!(
+                    "measurement needs a {}-depth decode, but the document records {} depth",
+                    depth.needed, depth.recorded
+                )),
+                detail: Some(RefusalDetail::Depth(*depth)),
+                reports: RefusalReports {
+                    decode: decode_report.as_ref(),
+                    check: None,
+                    export: None,
+                },
+            },
         }
     }
 
@@ -824,6 +850,28 @@ mod tests {
         assert_eq!(report["stage"], "plan");
         assert_eq!(report["depth"]["needed"], "full");
         assert_eq!(report["depth"]["recorded"], "geometry");
+    }
+
+    #[test]
+    fn a_measure_depth_refusal_reports_both_depths_at_plan() {
+        let refusal = ConversionRefusal::InsufficientMeasureDepth {
+            depth: DepthReport {
+                needed: DecodeDepth::Geometry,
+                recorded: DecodeDepth::Container,
+            },
+            decode_report: None,
+        };
+        assert_eq!(refusal.code(), RefusalCode::InsufficientDepth);
+        assert_eq!(refusal.exit_code(), 1);
+        assert_eq!(
+            refusal.to_string(),
+            "measurement needs a geometry-depth decode, but the document records container depth"
+        );
+        let report = report_value(&refusal);
+        assert_eq!(report["code"], "insufficient_depth");
+        assert_eq!(report["stage"], "plan");
+        assert_eq!(report["depth"]["needed"], "geometry");
+        assert_eq!(report["depth"]["recorded"], "container");
     }
 
     #[test]
@@ -1029,6 +1077,7 @@ mod tests {
             (super::RefusalStage::Check, "check"),
             (super::RefusalStage::Plan, "plan"),
             (super::RefusalStage::Export, "export"),
+            (super::RefusalStage::Measure, "measure"),
         ] {
             let error = anyhow::Error::new(cadmpeg_core::CodecError::ResourceLimit(limit))
                 .context("writing an artifact");

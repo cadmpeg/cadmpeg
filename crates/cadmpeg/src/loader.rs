@@ -81,10 +81,17 @@ pub(crate) fn load_artifact(
         String::from_utf8(prefix).map_err(|error| anyhow!("invalid CADIR UTF-8: {error}"))?;
     ctx.finish_session()?;
     let ir = CadIr::from_json(&text).map_err(|e| {
-        anyhow!(
-            "{} is neither a recognized CAD file nor a valid .cadir.json document: {e}",
-            path.display()
-        )
+        if names_decode_sidecar(path) {
+            anyhow!(
+                "{} is a decode sidecar; pass the CADIR document beside it",
+                path.display()
+            )
+        } else {
+            anyhow!(
+                "{} is neither a recognized CAD file nor a valid .cadir.json document: {e}",
+                path.display()
+            )
+        }
     })?;
     let Some(sidecar) = artifact_store::load_matching_sidecar(path, text.as_bytes(), max_bytes)?
     else {
@@ -99,6 +106,14 @@ pub(crate) fn load_artifact(
         sidecar.fidelity,
         cadmpeg_core::decode::u64_from_index(text.len()),
     ))
+}
+
+/// Whether the file name has the decode-sidecar suffix that `dump` writes
+/// beside a CADIR document.
+fn names_decode_sidecar(path: &Path) -> bool {
+    path.file_name()
+        .and_then(std::ffi::OsStr::to_str)
+        .is_some_and(|name| name.ends_with(".fidelity.json"))
 }
 
 #[cfg(test)]

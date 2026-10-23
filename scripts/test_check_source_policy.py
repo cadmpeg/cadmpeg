@@ -54,6 +54,41 @@ class TempSourceCase(unittest.TestCase):
         return [item for item in policy.check_source() if item.rule == rule]
 
 
+class MeasurementDependencyTests(TempSourceCase):
+    def manifest(self, crate: str, tables: str) -> None:
+        self.write(f"crates/{crate}/Cargo.toml", f'[package]\nname = "{crate}"\n\n{tables}')
+
+    def test_codec_production_dependency_fails(self) -> None:
+        self.manifest("cadmpeg-codec-step", "[dependencies]\ncadmpeg-measure.workspace = true\n")
+        findings = self.findings("measurement_dependency")
+        self.assertEqual([(item.path, item.line) for item in findings],
+                         [("crates/cadmpeg-codec-step/Cargo.toml", 5)])
+
+    def test_codec_dev_dependency_passes(self) -> None:
+        self.manifest("cadmpeg-codec-step", "[dev-dependencies]\ncadmpeg-measure.workspace = true\n")
+        self.assertEqual(self.findings("measurement_dependency"), [])
+
+    def test_cli_production_dependency_passes(self) -> None:
+        self.manifest("cadmpeg", "[dependencies]\ncadmpeg-measure.workspace = true\n")
+        self.assertEqual(self.findings("measurement_dependency"), [])
+
+    def test_test_support_production_dependency_fails(self) -> None:
+        self.manifest("cadmpeg-test-support",
+                      '[dependencies]\ncadmpeg-measure = { path = "../cadmpeg-measure" }\n')
+        self.assertEqual(len(self.findings("measurement_dependency")), 1)
+
+    def test_target_dependency_fails(self) -> None:
+        self.manifest("cadmpeg-codec-iges",
+                      "[target.'cfg(unix)'.dependencies]\ncadmpeg-measure.workspace = true\n")
+        findings = self.findings("measurement_dependency")
+        self.assertEqual([item.line for item in findings], [5])
+
+    def test_renamed_dependency_fails(self) -> None:
+        self.manifest("cadmpeg-codec-nx",
+                      '[dependencies]\nmeasure = { package = "cadmpeg-measure", version = "0" }\n')
+        self.assertEqual(len(self.findings("measurement_dependency")), 1)
+
+
 class ForeignNativeNamespaceTests(TempSourceCase):
     def codec(self, name: str = "step", format_id: str = "step") -> str:
         root = f"crates/cadmpeg-codec-{name}/src"

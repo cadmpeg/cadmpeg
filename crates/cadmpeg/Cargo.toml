@@ -53,6 +53,7 @@ sat = ["cadmpeg-registry/sat"]
 cadmpeg-core.workspace = true
 cadmpeg-container.workspace = true
 cadmpeg-ir = { workspace = true, features = ["schema"] }
+cadmpeg-measure.workspace = true
 cadmpeg-registry.workspace = true
 cadmpeg-codec-freecad = { workspace = true, optional = true }
 cadmpeg-codec-sldprt = { workspace = true, optional = true }

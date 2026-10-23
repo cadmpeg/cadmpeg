@@ -129,6 +129,8 @@ pub(crate) enum AggregateView {
     /// Accepts every artifact kind. Each source, decode, inspect, or refusal
     /// identity is one `*_dialects` JSON value; export identity is
     /// `export_target`. Sidecar summaries state whether fidelity validation ran.
+    /// A `measure` report adds its rows per level and its unavailable values
+    /// per category.
     Summary(QueryArgs),
     /// Decode coverage counts.
     ///
@@ -222,7 +224,55 @@ struct ReportProbe {
     check_report: Option<CheckReportProbe>,
     #[serde(default)]
     export: Option<ExportReportProbe>,
+    #[serde(default)]
+    measure: Option<MeasureProbe>,
 }
+
+/// Lenient measure body: rows are counted, not parsed; unavailable counts
+/// keep unknown categories and codes.
+#[derive(Deserialize)]
+struct MeasureProbe {
+    #[serde(default)]
+    bodies: Vec<serde::de::IgnoredAny>,
+    #[serde(default)]
+    faces: Vec<serde::de::IgnoredAny>,
+    #[serde(default)]
+    edges: Vec<serde::de::IgnoredAny>,
+    #[serde(default)]
+    surfaces: Vec<serde::de::IgnoredAny>,
+    #[serde(default, deserialize_with = "deserialize_measure_document")]
+    document: Option<MeasureDocumentProbe>,
+}
+
+#[derive(Deserialize)]
+struct MeasureDocumentProbe {
+    #[serde(default)]
+    unavailable: BTreeMap<String, BTreeMap<String, u64>>,
+    #[serde(default, deserialize_with = "deserialize_measure_work")]
+    work: Option<MeasureWorkProbe>,
+}
+
+#[derive(Deserialize)]
+struct MeasureWorkProbe {
+    #[serde(default, deserialize_with = "deserialize_work_allowance")]
+    allowance: Option<u64>,
+    #[serde(default, deserialize_with = "deserialize_work_used")]
+    used: Option<u64>,
+    #[serde(default, deserialize_with = "deserialize_work_exhausted")]
+    exhausted: Option<bool>,
+}
+
+// The measure report writes each of these keys with a value; a probe of a
+// report that leaves one out reads it as absent.
+cadmpeg_core::named_optional_field!(
+    deserialize_measure_document,
+    MeasureDocumentProbe,
+    "document"
+);
+cadmpeg_core::named_optional_field!(deserialize_measure_work, MeasureWorkProbe, "work");
+cadmpeg_core::named_optional_field!(deserialize_work_allowance, u64, "allowance");
+cadmpeg_core::named_optional_field!(deserialize_work_used, u64, "used");
+cadmpeg_core::named_optional_field!(deserialize_work_exhausted, bool, "exhausted");
 
 #[derive(Deserialize)]
 struct RefusalProbe {
@@ -757,6 +807,9 @@ fn summary(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
                 }
                 None => rows.push(("check_report".to_owned(), "null".to_owned().into())),
             }
+            if let Some(measure) = &report.measure {
+                push_measure_summary(&mut rows, measure);
+            }
             if let Some(export) = &report.export {
                 let (payload, target) = match &export.identity {
                     Some(ExportIdentityProbe::Cadir {}) => (Some("cadir"), None),
@@ -851,6 +904,68 @@ fn summary(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// The category of values that do not exist for their entity; they count
+/// against no row status.
+const UNDEFINED_CATEGORY: &str = "undefined";
+
+/// Rows per level, unavailable values per category, and the pass work of
+/// a measure report. `measure_unavailable` counts the values that leave a
+/// row less than measured; values of the `undefined` category count in
+/// `measure_undefined`.
+fn push_measure_summary(rows: &mut Vec<(String, SummaryCell)>, measure: &MeasureProbe) {
+    for (level, count) in [
+        ("bodies", measure.bodies.len()),
+        ("faces", measure.faces.len()),
+        ("edges", measure.edges.len()),
+        ("surfaces", measure.surfaces.len()),
+    ] {
+        rows.push((format!("measure_{level}"), count.to_string().into()));
+    }
+    let Some(document) = &measure.document else {
+        return;
+    };
+    let mut undefined = 0_u64;
+    let mut per_category: Vec<(&String, u64)> = Vec::new();
+    for (category, codes) in &document.unavailable {
+        let count = codes.values().sum::<u64>();
+        if category.as_str() == UNDEFINED_CATEGORY {
+            undefined += count;
+        } else {
+            per_category.push((category, count));
+        }
+    }
+    rows.push((
+        "measure_unavailable".to_owned(),
+        per_category
+            .iter()
+            .map(|(_, count)| count)
+            .sum::<u64>()
+            .to_string()
+            .into(),
+    ));
+    for (category, count) in per_category {
+        rows.push((
+            format!("measure_unavailable.{}", cell(category)),
+            count.to_string().into(),
+        ));
+    }
+    rows.push(("measure_undefined".to_owned(), undefined.to_string().into()));
+    if let Some(work) = &document.work {
+        if let (Some(used), Some(allowance)) = (work.used, work.allowance) {
+            rows.push((
+                "measure_work".to_owned(),
+                format!("{used} of {allowance}").into(),
+            ));
+        }
+        if let Some(exhausted) = work.exhausted {
+            rows.push((
+                "measure_work_exhausted".to_owned(),
+                exhausted.to_string().into(),
+            ));
+        }
+    }
 }
 
 fn push_decode_dialect_summary(
@@ -1073,6 +1188,13 @@ fn losses(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
                     (Some(validation), _, _) => (&validation.losses, None),
                     (None, Some(decode), _) => (&decode.losses, None),
                     (None, None, Some(summary)) => (&summary.losses, None),
+                    (None, None, None) if report.measure.is_some() => (
+                        &[],
+                        Some(
+                            "(this measure report has no decode stage; `query summary` counts \
+                             its unavailable values)",
+                        ),
+                    ),
                     (None, None, None) => (
                         &[],
                         Some("(this report has no inspect, decode, check, or export stage)"),

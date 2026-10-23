@@ -298,6 +298,7 @@ fn admitted_pcurve_nurbs_parts_keep_the_raw_constructor_geometry() {
 }
 
 mod metadata;
+mod parameter_domain;
 
 #[test]
 fn pcurve_lift_rejects_non_finite_model_poles() {
@@ -788,3 +789,4 @@ fn a_conic_pcurve_reversed_about_zero_negates_only_its_second_axis() {
 }
 
 mod line_parameters;
+mod trim_range;

@@ -56,6 +56,26 @@ Type 406 Forms 5001 through 9999 are settled. Under [IGES 4.0 §4.3.7](https://w
 
 ## 5. Surfaces and topology
 
+### TP-01. Traversal direction of Type 144 inner boundaries
+
+**Question.** Does IGES 5.3 give a traversal direction to the inner boundaries of a Type 144 trimmed surface and to their Type 142 curves?
+
+**Known.** `iges.md` gives the Type 144 fields and the nesting rules of its boundaries, but no traversal direction. The fixture `trimmed_plane_inner_loop.igs` lists its inner boundary counterclockwise in model space and in parameter space. The decoder (`crates/cadmpeg-codec-iges/src/entities/trimming.rs`) keeps that direction: the decoded inner loop runs counterclockwise about the +z oriented normal of its face.
+
+**Need.** `cad-ir.md` requires an inner loop to run clockwise about the oriented normal. The decoder must reverse an inner boundary when IGES gives no direction or gives a direction that the neutral rule contradicts, and must keep it otherwise.
+
+**Conflict.** The decoded inner loop contradicts `cad-ir.md`. A decision is necessary.
+
+### TP-02. Loop and face orientation of a Type 514 void shell
+
+**Question.** How do the Type 186 void-shell logical, the face orientation logicals of a Type 514 shell, and the edge-use logicals of the Type 508 loops of its Type 510 faces combine into a face sense and a loop direction?
+
+**Known.** `iges.md` gives the Type 186 shell-use logicals (`SOF`, `VOF`), the Type 508 edge-use orientation logical, and the Type 510 and 514 fields. It does not give how these logicals combine into a face sense and a loop direction. In `explicit_void_solid.igs`, the decoder (`crates/cadmpeg-codec-iges/src/entities/brep.rs`) gives each void face the sense `reversed` and a loop that keeps the face on its right about that oriented normal. The face senses give the volume 511/48: the tetrahedron with legs 4 minus the tetrahedron with legs 0.5. The loops give 513/48.
+
+**Need.** The decoder must produce void-shell loops that agree with the face sense, so that measurement and validation read one orientation.
+
+**Conflict.** The decoded loop winding contradicts the decoded face sense. A decision is necessary.
+
 ## 6. Product structure, annotation, and presentation
 
 ## 7. Write path

@@ -119,5 +119,10 @@ source image, which holds every quarantined card.
 
 1. `validate_neutral` (or `validate_neutral_with_source_fidelity`)
 2. plus every registered native validator whose namespace is present
+3. plus the measurement findings `cadmpeg_measure::findings`: `RingOrder`
+   and `Orientation` warnings ([measurement.md](measurement.md#check-findings))
+
+No route above lists `RingOrder` or `Orientation`, and no decoder runs
+measurement, so decoding and export admission never refuse on them.
 
 Encoders count rows with `CadIr::census`, not validation.

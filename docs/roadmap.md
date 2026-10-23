@@ -84,7 +84,7 @@ New formats enter through byte specification, container decode, semantic decode,
 2. Inventory every decoded, opaque, and dropped `.sldprt` record family.
 3. Close remaining geometry, sheet classification, multi-shell, periodic NURBS, and feature-semantic gaps.
 4. Define semantic IR identity for round trips and file revisions.
-5. Add geometric validation and explicit tolerance-delta reporting.
+5. Add geometric validation on `cadmpeg measure`: face-orientation findings in `check`, and explicit tolerance-delta reporting.
 6. Expand semantic writing and re-decode tests across supported SolidWorks versions.
 7. Keep decode and export losses aligned with the implementation.
 
@@ -94,7 +94,7 @@ Parallel codec work closes bounded open items without displacing the `.sldprt` p
 
 - Donate focused CC0 `.sldprt` fixtures through the [corpus process](../corpus/README.md).
 - Publish and test the generated CAD IR JSON Schema.
-- Extend validators with face-loop orientation, bidirectional ownership, and geometric checks.
+- Extend validators with face-loop orientation findings from `cadmpeg measure`, bidirectional ownership, and geometric checks.
 - Build corpus manifest verification and coverage reporting.
 - Render byte provenance over a hex view for decode inspection.
 - Add a GLB exporter with explicit tessellation and presentation losses.

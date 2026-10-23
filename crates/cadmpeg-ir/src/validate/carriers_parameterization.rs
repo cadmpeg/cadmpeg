@@ -15,8 +15,6 @@ use crate::report::{
     Severity,
 };
 
-use super::pcurve_parameter_domain;
-
 const EPS_CARRIERS_PARAMETERIZATION_CHECK_PARAMETER_DOMAINS_E9: f64 = 1.0e-9;
 const EPS_CARRIERS_PARAMETERIZATION_PARAMETER_IN_DOMAIN_E12: f64 = 1.0e-12;
 
@@ -999,7 +997,8 @@ pub(super) fn check_parameter_domains(
             let geometry = pcurves.get(use_.pcurve.as_str()).copied();
             let mut valid = geometry.is_some();
             if let Some(geometry) = geometry {
-                let domain = pcurve_parameter_domain(ctx, geometry)?
+                let domain = geometry
+                    .parameter_domain(ctx)?
                     .map(crate::topology::IncreasingParameterInterval::endpoints);
                 match domain {
                     Some([lower, upper]) => {
@@ -1037,7 +1036,7 @@ fn parameter_in_domain(value: f64, domain: [f64; 2]) -> bool {
 
 /// Whether a carrier that states no parameter domain is defective.
 ///
-/// [`pcurve_parameter_domain`](super::pcurve_parameter_domain) answers `None`
+/// [`PcurveGeometry::parameter_domain`] answers `None`
 /// for two different reasons, and only one of them is a defect. An analytic
 /// carrier has no bounded domain because it has none to state. A NURBS carrier
 /// always has one, so a `None` there means the knot vector cannot yield an
@@ -1047,7 +1046,7 @@ fn parameter_in_domain(value: f64, domain: [f64; 2]) -> bool {
 /// offset keep the basis's parameterization outright. A trim reaches this
 /// question only with equal endpoints, where it states no interval of its own
 /// and the basis's parameterization governs — the same fallback
-/// `pcurve_parameter_domain` takes. So an unusable NURBS is reported under any
+/// `PcurveGeometry::parameter_domain` takes. So an unusable NURBS is reported under any
 /// mixture of wrappers exactly as it is reported bare.
 ///
 /// The match is exhaustive, so a new pcurve variant states its answer here.

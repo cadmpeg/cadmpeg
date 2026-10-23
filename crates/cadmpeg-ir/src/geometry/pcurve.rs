@@ -2206,6 +2206,93 @@ impl PcurveGeometry {
             Self::Offset(_) => None,
         })
     }
+
+    /// The parameter interval this carrier is defined on, when the carrier
+    /// states one.
+    ///
+    /// A nesting carrier states its own interval where it has one and
+    /// otherwise reports its basis's: a trim is the interval the trimmed
+    /// carrier exists on, and a placement and an offset both keep their
+    /// basis's parameterization. An analytic carrier has no bounded domain.
+    /// The match is exhaustive, so a new pcurve variant states its answer here
+    /// rather than inheriting one.
+    ///
+    /// Both the carrier-parameterization pass and the geometric-consistency
+    /// pass ask this question of the same carrier, so they ask it of one
+    /// function.
+    ///
+    /// Each nested carrier visit counts against the caller session's recursion depth.
+    pub fn parameter_domain(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Option<crate::topology::IncreasingParameterInterval>, ResourceLimit> {
+        let _depth = ctx.enter_nested_limit("pcurve parameter domain nesting")?;
+
+        Ok(match self {
+            Self::Nurbs { nurbs } => crate::eval::nurbs_pcurve_parameter_domain(
+                nurbs.degree(),
+                nurbs.knots(),
+                nurbs.pole_rows().count(),
+            ),
+            Self::PolarNurbs { nurbs } => crate::eval::nurbs_pcurve_parameter_domain(
+                nurbs.degree(),
+                nurbs.knots(),
+                nurbs.pole_rows().count(),
+            ),
+            Self::Trimmed(trimmed_pcurve) => {
+                let [start, end] = trimmed_pcurve.parameter_range().finite_endpoints();
+                match crate::topology::IncreasingParameterInterval::between(start, end) {
+                    Some(domain) => Some(domain),
+                    None => trimmed_pcurve.basis().parameter_domain(ctx)?,
+                }
+            }
+            Self::Offset(offset_pcurve) => offset_pcurve.basis().parameter_domain(ctx)?,
+            Self::Transformed(placed) => placed.basis().parameter_domain(ctx)?,
+            Self::Line(_)
+            | Self::Circle(_)
+            | Self::Ellipse(_)
+            | Self::Harmonic(_)
+            | Self::Parabola(_)
+            | Self::Hyperbola(_)
+            | Self::Hyperbolic(_)
+            | Self::PolarHarmonic(_)
+            | Self::SphericalGreatCircle(_) => None,
+        })
+    }
+
+    /// The explicit trim interval this carrier states, as stored.
+    ///
+    /// A trimmed carrier states its trim; an offset and a placement report
+    /// their basis's. A raw NURBS knot domain is not a trim: it bounds the
+    /// carrier, not the edge occurrence.
+    ///
+    /// Each nested carrier visit counts against the caller session's recursion depth.
+    pub fn trim_range(&self, ctx: &DecodeContext<'_>) -> Result<Option<[f64; 2]>, ResourceLimit> {
+        let _depth = ctx.enter_nested_limit("pcurve trim range nesting")?;
+
+        Ok(match self {
+            Self::Trimmed(trimmed_pcurve) => {
+                let parameter_range = trimmed_pcurve.parameter_range();
+                Some(parameter_range.endpoints())
+            }
+            Self::Offset(offset_pcurve) => {
+                let basis = offset_pcurve.basis();
+                basis.trim_range(ctx)?
+            }
+            Self::Transformed(placed) => placed.basis().trim_range(ctx)?,
+            Self::Line(_) => None,
+            Self::Circle(_) => None,
+            Self::Ellipse(_) => None,
+            Self::Harmonic(_) => None,
+            Self::Parabola(_) => None,
+            Self::Hyperbola(_) => None,
+            Self::Hyperbolic(_) => None,
+            Self::PolarHarmonic(_) => None,
+            Self::PolarNurbs { .. } => None,
+            Self::Nurbs { .. } => None,
+            Self::SphericalGreatCircle(_) => None,
+        })
+    }
 }
 
 /// A pcurve carrier: the 2D image of a coedge in its face's surface parameter

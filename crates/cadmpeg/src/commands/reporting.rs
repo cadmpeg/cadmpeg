@@ -296,6 +296,7 @@ pub(crate) trait ReportBody: Serialize {}
 impl ReportBody for Reports<'_> {}
 impl ReportBody for super::InspectPayload<'_> {}
 impl ReportBody for super::DiffReportPayload<'_> {}
+impl ReportBody for crate::measure::MeasurePayload<'_> {}
 impl ReportBody for serde_json::Value {}
 impl<T: ReportBody + ?Sized> ReportBody for &T {}
 
@@ -368,7 +369,7 @@ pub(crate) fn payload_report_json<P: ReportBody>(
     )?)
 }
 
-pub(super) fn write_json_report<P: ReportBody>(
+pub(crate) fn write_json_report<P: ReportBody>(
     input: &Path,
     output: Option<&FileDestination>,
     command: &'static str,
@@ -428,7 +429,7 @@ pub(super) fn print_id_delta(label: &str, ids: &[String]) {
     }
 }
 
-pub(super) fn print_decode_report(
+pub(crate) fn print_decode_report(
     writer: &mut impl Write,
     report: &DecodeReport,
 ) -> io::Result<()> {
