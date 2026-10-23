@@ -99,7 +99,17 @@ fn descriptors_keep_exact_source_values_reads_and_section_framing() {
     let member = &fidelity.parts()[body.parent().unwrap()];
     assert_eq!(member.level().as_str(), "cfb.stream");
     let captures = ctx.take_record_captures().unwrap();
-    assert_eq!(captures.len(), 3);
+    assert_eq!(captures.len(), 5);
+    let mut pairs = captures
+        .iter()
+        .map(|capture| capture.id())
+        .filter(|id| id.starts_with("inventor:rse:segment#"))
+        .collect::<Vec<_>>();
+    pairs.sort_unstable();
+    assert_eq!(
+        pairs,
+        ["inventor:rse:segment#dc", "inventor:rse:segment#seg"]
+    );
     let capture = captures
         .iter()
         .find(|capture| capture.id() == actual.id)
@@ -303,6 +313,14 @@ fn over_limit_type_section_is_given_up_before_guid_dispatch_and_keeps_the_exact_
         .arena_as::<cadmpeg_ir::NativeUnknownRecord>("unknowns")
         .unwrap();
     assert_eq!(unknowns.len(), 1);
+    assert_eq!(
+        unknowns[0]
+            .links
+            .iter()
+            .map(cadmpeg_ir::ids::Identity::as_str)
+            .collect::<Vec<_>>(),
+        ["inventor:rse:segment#dc"]
+    );
     let mut expected = 300_u32.to_le_bytes().to_vec();
     for _ in 0..300 {
         expected.extend([0x11; 16]);
@@ -343,8 +361,19 @@ fn over_limit_type_section_is_given_up_before_guid_dispatch_and_keeps_the_exact_
         assert!(dropped.contains(&format!("inventor:rse:record#dc-{ordinal}")));
     }
     let captures = ctx.take_record_captures().unwrap();
-    assert_eq!(captures.len(), 1);
-    assert_eq!(captures[0].id(), "inventor:rse:meta-type#seg-0");
+    let mut ids = captures
+        .iter()
+        .map(|capture| capture.id())
+        .collect::<Vec<_>>();
+    ids.sort_unstable();
+    assert_eq!(
+        ids,
+        [
+            "inventor:rse:meta-type#seg-0",
+            "inventor:rse:segment#dc",
+            "inventor:rse:segment#seg"
+        ]
+    );
 }
 
 #[test]

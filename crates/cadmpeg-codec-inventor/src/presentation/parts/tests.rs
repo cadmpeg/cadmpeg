@@ -121,12 +121,13 @@ fn all_presentation_grammars_form_native_records_and_actual_source_captures() {
     fidelity.install_mapped_record_captures(&ctx, Ok).unwrap();
     // Five presentation records (one per grammar) and their five `rse_records`
     // wrappers. The open's metadata type descriptors (Appendix C
-    // `inventor.type_descriptor`) are not asserted here.
+    // `inventor.type_descriptor`) and segment pair records are not asserted here.
     assert_eq!(
         fidelity
             .record_layout()
             .keys()
-            .filter(|id| !id.starts_with("inventor:rse:meta-type#"))
+            .filter(|id| !id.starts_with("inventor:rse:meta-type#")
+                && !id.starts_with("inventor:rse:segment#"))
             .count(),
         10
     );

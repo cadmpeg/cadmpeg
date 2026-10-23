@@ -1730,9 +1730,11 @@ fn validate_segments(data: &NativeData, findings: &mut Vec<Finding>) {
         .iter()
         .map(|record| record.token.as_str())
         .collect::<HashSet<_>>();
+    let given_up = stub_linked_pair_tokens(data);
     validate_segment_states(
         findings,
         &pair_tokens,
+        &given_up,
         data.metadata.iter().map(|record| record.token.as_str()),
         data.metadata_issues
             .iter()
@@ -1742,6 +1744,7 @@ fn validate_segments(data: &NativeData, findings: &mut Vec<Finding>) {
     validate_segment_states(
         findings,
         &pair_tokens,
+        &given_up,
         data.bulk.iter().map(|record| record.token.as_str()),
         data.bulk_issues.iter().map(|record| record.token.as_str()),
         "bulk",
@@ -1862,9 +1865,24 @@ fn validate_segments(data: &NativeData, findings: &mut Vec<Finding>) {
     }
 }
 
+/// Tokens of the segment pairs whose record a given-up part stub links.
+fn stub_linked_pair_tokens(data: &NativeData) -> HashSet<&str> {
+    let linked = data
+        .unknowns
+        .iter()
+        .flat_map(|stub| stub.links.iter().map(cadmpeg_ir::ids::Identity::as_str))
+        .collect::<HashSet<_>>();
+    data.pairs
+        .iter()
+        .filter(|pair| linked.contains(pair.id.as_str()))
+        .map(|pair| pair.token.as_str())
+        .collect()
+}
+
 fn validate_segment_states<'a>(
     findings: &mut Vec<Finding>,
     pairs: &HashSet<&'a str>,
+    given_up: &HashSet<&'a str>,
     parsed: impl IntoIterator<Item = &'a str>,
     issues: impl IntoIterator<Item = &'a str>,
     member: &str,
@@ -1875,10 +1893,21 @@ fn validate_segment_states<'a>(
         states.iter().copied(),
         &format!("segment {member} state"),
     );
-    if states.into_iter().any(|token| !pairs.contains(token)) {
+    let states = states.into_iter().collect::<HashSet<_>>();
+    if states.iter().any(|token| !pairs.contains(token)) {
         findings.push(finding(
             Check::NativeLinks,
             format!("Inventor segment {member} state has no paired segment"),
+            None,
+        ));
+    }
+    if pairs
+        .iter()
+        .any(|token| !states.contains(token) && !given_up.contains(token))
+    {
+        findings.push(finding(
+            Check::NativeLinks,
+            format!("Inventor segment {member} states do not cover paired segments exactly"),
             None,
         ));
     }

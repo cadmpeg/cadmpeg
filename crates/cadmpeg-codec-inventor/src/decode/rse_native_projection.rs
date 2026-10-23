@@ -56,7 +56,7 @@ pub(super) fn project(
         }
         admit_native_items(ctx, 1)?;
         projection.segment_pairs.push(SegmentPairRecord {
-            id: format!("inventor:rse:segment#{token}"),
+            id: crate::rse::segment_record_id(token),
             token: token.to_owned(),
             metadata_directory_id: segment.pair.metadata.directory_id(),
             bulk_directory_id: segment.pair.bulk.directory_id(),

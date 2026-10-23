@@ -185,12 +185,16 @@ fn detached_or_foreign_payload_cannot_be_admitted_as_a_source_body() {
         crate::records::source_admission::body(&ctx, bulk.expanded, &table.records[0]).is_err()
     );
     // The container open captures only its metadata type descriptors
-    // (Appendix C `inventor.type_descriptor`); no body attempt adds one.
+    // (Appendix C `inventor.type_descriptor`) and the segment pair records
+    // that enclose the member parts; no body attempt adds one.
     assert!(ctx
         .take_record_captures()
         .unwrap()
         .iter()
-        .all(|capture| capture.id().starts_with("inventor:rse:meta-type#")));
+        .all(
+            |capture| capture.id().starts_with("inventor:rse:meta-type#")
+                || capture.id().starts_with("inventor:rse:segment#")
+        ));
 }
 
 #[test]

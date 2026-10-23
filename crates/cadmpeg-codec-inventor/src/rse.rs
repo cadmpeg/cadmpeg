@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use cadmpeg_container::compound::{CompoundEntry, CompoundSnapshot, CompoundStreamId};
 use cadmpeg_container::compression::{inflate_zlib_member_tracked, inflate_zstd_exact_tracked};
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, RecordOwner, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::IdentityKey;
 use cadmpeg_ir::source_fidelity::parts::PartOutput;
@@ -237,6 +237,14 @@ pub(crate) struct SegmentMeta<'a> {
     pub(crate) body: View<'a>,
     pub(crate) tables: MetaTables<'a>,
     pub(crate) source_types: Option<Vec<Option<crate::records::TypeDescriptor>>>,
+    /// The segment pair record that encloses the metadata and bulk parts, so
+    /// that the stub of a given-up part links it.
+    pub(crate) segment_record: Option<RecordOwner<'a>>,
+}
+
+/// Native identity of the segment pair record for `token`.
+pub(crate) fn segment_record_id(token: &str) -> String {
+    format!("inventor:rse:segment#{token}")
 }
 
 #[derive(Debug)]
@@ -732,14 +740,19 @@ fn frame_segment_records<'a>(
                         _ => None,
                     };
                     let records = if let Some(meta) = rejected {
-                        match type_dependents::stage(
-                            ctx,
-                            source_parts,
-                            &bulk,
-                            meta,
-                            segment.pair.token.as_str(),
-                            segment.registry.map(|registry| registry.version_major),
-                        )? {
+                        let segment_record = meta.segment_record.as_ref().ok_or_else(|| {
+                            CodecError::malformed("rejected RSe metadata has no segment record")
+                        })?;
+                        match ctx.record_fragment(segment_record, bulk.source, || {
+                            type_dependents::stage(
+                                ctx,
+                                source_parts,
+                                &bulk,
+                                meta,
+                                segment.pair.token.as_str(),
+                                segment.registry.map(|registry| registry.version_major),
+                            )
+                        })? {
                             Some((table, source_record_count)) => RecordFrameState::Partial {
                                 table,
                                 source_record_count,
@@ -819,8 +832,12 @@ fn admit_meta_stream<'a>(
     let SegmentMetaState::Parsed(mut meta) = state else {
         return Ok((state, 0));
     };
-    let source_types =
-        crate::decode::meta_type_parts::stage(ctx, output, token, &meta)?.unwrap_or_default();
+    let (source_types, segment_record) =
+        ctx.record_owner(&segment_record_id(token), meta.source, || {
+            crate::decode::meta_type_parts::stage(ctx, output, token, &meta)
+        })?;
+    let source_types = source_types.unwrap_or_default();
+    meta.segment_record = Some(segment_record);
     let formed = source_types.iter().flatten().count();
     let complete = formed == meta.tables.types.len();
     meta.source_types = Some(source_types);
@@ -907,6 +924,7 @@ fn parse_meta_stream_v8<'a>(
         body,
         tables,
         source_types: None,
+        segment_record: None,
     })
 }
 
