@@ -45,8 +45,8 @@ pub fn signatures(data: &[u8]) {
 /// the payload's first record.
 pub fn exact_geometry<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<(), CodecError> {
     let stream_id = match View::u32_le_at(root.window(), 8) {
-        Some(4) => crate::brep::EXACT_STREAM_F64,
-        _ => crate::brep::EXACT_STREAM_F32,
+        Some(4) => crate::layout::token::STREAM_EXACT_F64,
+        _ => crate::layout::token::STREAM_EXACT_F32,
     };
     let exact = crate::brep::parse(ctx, stream_id, root)?;
     let mut ir = cadmpeg_ir::document::CadIr::empty();

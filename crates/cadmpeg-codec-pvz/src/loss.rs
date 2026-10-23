@@ -93,8 +93,8 @@ pub(crate) enum PvzLossCode {
     TessellationEdgesNotTransferred,
     /// A decoded mesh failed tessellation admission and was not transferred.
     TessellationMeshRejected,
-    /// Exact-stream records with a frame and no settled meaning were kept
-    /// by tag and offset only.
+    /// Exact-stream records with a frame and no settled meaning were not
+    /// transferred.
     ExactRecordUninterpreted,
     /// A face carrier has no neutral surface form.
     ExactSurfaceUntyped,
@@ -347,7 +347,8 @@ impl PvzLossCode {
             Self::TessellationEdgesNotTransferred => "edge tessellation groups",
             Self::TessellationMeshRejected => "meshes rejected by admission",
             Self::ExactRecordUninterpreted => {
-                "exact-stream records kept by tag and offset only (tag 0x0a and undefined tags)"
+                "exact-stream records with no settled meaning not transferred (tag 0x0a and \
+                 undefined tags)"
             }
             Self::ExactSurfaceUntyped => "faces whose carrier has no neutral surface form",
             Self::ExactSurfaceAsBspline => {

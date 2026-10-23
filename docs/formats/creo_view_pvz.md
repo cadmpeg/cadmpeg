@@ -572,7 +572,7 @@ poles:scalar[u_pole_count × v_pole_count × 4]
 00
 ```
 
-`u_pole_count = u_knot_count − u_order` and `v_pole_count = v_knot_count − v_order`. The order is the degree plus one. The knot vectors are full: each knot repeats once per multiplicity. Pole `(i, j)` is at position `i × v_pole_count + j` (u-major). Each pole is homogeneous `(w·x, w·y, w·z, w)`: the Euclidean pole is the first three values divided by the fourth, and the fourth is the weight. When `rational` is 0, every weight is 1.
+`u_pole_count = u_knot_count − u_order` and `v_pole_count = v_knot_count − v_order`. The order is the degree plus one. The knot vectors are full: each knot repeats once per multiplicity. Knot values are finite and do not decrease. Pole `(i, j)` is at position `i × v_pole_count + j` (u-major). Each pole is homogeneous `(w·x, w·y, w·z, w)`: the Euclidean pole is the first three values divided by the fourth, and the fourth is the weight. When `rational` is 0, every weight is 1.
 
 The range pairs follow the rule of §8.3 and give the trimmed parameter domain of the face. The record ends with one `0x00` byte.
 
@@ -656,7 +656,7 @@ Parameterisations and natural parameter intervals:
 | 6 | Rational B-spline, homogeneous poles as in §8.9 | `[knots[order − 1], knots[knot_count − order]]` |
 | 7 | Linear interpolation of `points` | from `points[0]` to `points[count − 1]` |
 
-A circle has `|X| = |Y|` with `X ⊥ Y`. An ellipse has `X ⊥ Y` and unequal lengths. For type 6, `pole_count = knot_count − order`, and `rational` 0 means every weight is 1. The interval start is the curve start point; the interval end is the curve end point.
+A circle has `|X| = |Y|` with `X ⊥ Y`. An ellipse has `X ⊥ Y` and unequal lengths. For type 6, `pole_count = knot_count − order`, the knots are finite and do not decrease, and `rational` 0 means every weight is 1. The interval start is the curve start point; the interval end is the curve end point.
 
 A type-2 record lists other edge records of the same section by index; each listed index is less than the edge count. The parameterisation of a composite curve is an open item.
 

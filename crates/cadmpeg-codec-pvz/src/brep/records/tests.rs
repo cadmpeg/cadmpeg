@@ -86,8 +86,6 @@ fn analytic_records_read_their_geometry_scalars_in_order() {
     }
     let model = parse(stream).unwrap();
     for face in &model.faces {
-        assert_eq!(face.surface.u_range, Some([10.0, 11.0]));
-        assert_eq!(face.surface.v_range, Some([12.0, 13.0]));
         assert!(face.surface.embedded.is_none());
     }
     let SurfaceGeometry::Cylinder { origin, x, y, axis } = model.faces[0].surface.geometry else {
@@ -142,8 +140,6 @@ fn bspline_surface_reads_body_ranges_and_periodic_bits() {
     stream.record(SURFACE, &payload);
     let model = parse(stream).unwrap();
     let face = &model.faces[0].surface;
-    assert_eq!(face.u_range, Some([0.0, 1.0]));
-    assert_eq!(face.v_range, Some([0.5, 1.5]));
     let SurfaceGeometry::Bspline(surface) = &face.geometry else {
         panic!("B-spline");
     };
@@ -268,9 +264,9 @@ fn singular_use_opens_a_scope_that_holds_a_tag_0a_record() {
     stream.line_edge([0.0; 3], [0.0; 3]);
     let model = parse(stream).unwrap();
     let singular = model.faces[0].singular_uses[0];
-    assert_eq!((singular.edge, singular.range), (0, [0.0, 1.0]));
+    assert_eq!(singular.edge, 0);
     assert_eq!(model.opaque.len(), 1);
-    assert_eq!((model.opaque[0].tag, model.opaque[0].length), (0x0a, 12));
+    assert_eq!(model.opaque[0].tag, 0x0a);
     assert_eq!(model.loops.len(), 1);
 }
 
@@ -471,7 +467,7 @@ fn single_precision_singular_use_is_twelve_bytes() {
     stream.record(SINGULAR_USE, &payload).terminator();
     stream.line_edge([0.0; 3], [0.0; 3]);
     let model = parse(stream).unwrap();
-    assert_eq!(model.faces[0].singular_uses[0].range, [0.25, 0.75]);
+    assert_eq!(model.faces[0].singular_uses[0].edge, 0);
 }
 
 #[test]
@@ -480,4 +476,95 @@ fn record_counts_cannot_exceed_their_payload() {
     let payload = stream.payload().u8(7).u8(0).u32(1_000_000).u8(0).bytes();
     stream.record(PCURVE, &payload);
     assert!(parse(stream).is_err());
+}
+
+/// A non-rational B-spline surface record of `u_order` in u with one pole
+/// row per u knot interval and order 2 in v, with the u knots `u_knots`.
+fn spline_surface_record(stream: &Stream, u_order: u32, u_knots: &[f64]) -> Vec<u8> {
+    let knot_count = u32::try_from(u_knots.len()).unwrap();
+    let u_count = knot_count - u_order;
+    let poles = vec![1.0; usize::try_from(u_count * 2 * 4).unwrap()];
+    stream
+        .payload()
+        .u8(4)
+        .u8(0)
+        .u8(0)
+        .u8(0)
+        .u32(u_order)
+        .u32(knot_count)
+        .scalars(u_knots)
+        .u32(2)
+        .u32(4)
+        .scalars(&[0.0, 0.0, 1.0, 1.0])
+        .u32(u_count)
+        .u32(2)
+        .scalars(&poles)
+        .u8(0)
+        .bytes()
+}
+
+/// A non-rational B-spline edge curve (`dimension` 3) or pcurve
+/// (`dimension` 2) record of `order` with the knots `knots`.
+fn spline_curve_record(stream: &Stream, dimension: usize, order: u32, knots: &[f64]) -> Vec<u8> {
+    let knot_count = u32::try_from(knots.len()).unwrap();
+    let pole_count = knot_count - order;
+    let poles = vec![1.0; usize::try_from(pole_count).unwrap() * (dimension + 1)];
+    stream
+        .payload()
+        .u8(6)
+        .u8(0)
+        .u8(0)
+        .u32(order)
+        .u32(knot_count)
+        .scalars(knots)
+        .u32(pole_count)
+        .scalars(&poles)
+        .u8(0)
+        .bytes()
+}
+
+/// `order` clamped knots `0` and `order` clamped knots `1`.
+fn clamped_knots(order: u32) -> Vec<f64> {
+    let order = usize::try_from(order).unwrap();
+    let mut knots = vec![0.0; order];
+    knots.extend(vec![1.0; order]);
+    knots
+}
+
+#[test]
+fn bspline_knots_are_finite_and_do_not_decrease() {
+    for knots in [
+        [0.0, 0.0, f64::NAN, 1.0],
+        [0.0, 0.0, f64::INFINITY, f64::INFINITY],
+        [0.0, 1.0, 0.5, 1.0],
+    ] {
+        let mut surface = plane_stream(true);
+        let record = spline_surface_record(&surface, 2, &knots);
+        surface.record(SURFACE, &record);
+        assert!(parse(surface).is_err(), "surface knots {knots:?}");
+        for (tag, dimension) in [(EDGE_CURVE, 3), (PCURVE, 2)] {
+            let mut curve = plane_stream(true);
+            let record = spline_curve_record(&curve, dimension, 2, &knots);
+            curve.record(tag, &record);
+            assert!(parse(curve).is_err(), "curve knots {knots:?}");
+        }
+    }
+}
+
+#[test]
+fn bspline_degree_is_at_most_the_admitted_degree() {
+    let admitted = u32::try_from(crate::brep::records::MAX_BSPLINE_DEGREE).unwrap() + 1;
+    for (order, accepted) in [(admitted, true), (admitted + 1, false)] {
+        let knots = clamped_knots(order);
+        let mut surface = plane_stream(true);
+        let record = spline_surface_record(&surface, order, &knots);
+        surface.record(SURFACE, &record);
+        assert_eq!(parse(surface).is_ok(), accepted, "surface order {order}");
+        for (tag, dimension) in [(EDGE_CURVE, 3), (PCURVE, 2)] {
+            let mut curve = plane_stream(true);
+            let record = spline_curve_record(&curve, dimension, order, &knots);
+            curve.record(tag, &record);
+            assert_eq!(parse(curve).is_ok(), accepted, "curve order {order}");
+        }
+    }
 }

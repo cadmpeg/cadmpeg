@@ -59,6 +59,9 @@ fn basis(knots: &[f64], order: usize, t: f64) -> Option<(usize, Vec<f64>)> {
     let pole_count = knots.len().checked_sub(order)?;
     let low = *knots.get(degree)?;
     let high = *knots.get(pole_count)?;
+    if !(low.is_finite() && high.is_finite()) {
+        return None;
+    }
     let t = t.clamp(low.min(high), high.max(low));
     let mut span = degree;
     while span + 1 < pole_count && knots.get(span + 1).is_some_and(|knot| *knot <= t) {

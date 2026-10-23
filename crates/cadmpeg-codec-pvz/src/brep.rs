@@ -20,11 +20,6 @@ use cadmpeg_core::CodecError;
 
 pub(crate) use emit::emit;
 
-/// Stream identity of the exact-geometry stream with `f32` scalars.
-pub(crate) const EXACT_STREAM_F32: u32 = 0x0100_0003;
-/// Stream identity of the exact-geometry stream with `f64` scalars.
-pub(crate) const EXACT_STREAM_F64: u32 = 0x0100_0004;
-
 /// Reads the expanded payload of the exact-geometry stream `stream_id`.
 pub(crate) fn parse(
     ctx: &DecodeContext<'_>,

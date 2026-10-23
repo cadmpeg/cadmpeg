@@ -235,6 +235,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-step`     | `src/reader/tessellation.rs`                       | `MAX_ITEM_PLACEMENTS`                     | `64`                                                    | 4    | Distinct inherited placements that one association walk follows into a tessellated item. Past it the item and the items it contains keep source coordinates, and `tessellation.placement-ambiguous` names the limit.                                                        |
 | `cadmpeg-codec-step`     | `src/reader/product.rs`                            | `MAX_OCCURRENCES`                         | `100_000`                                               | 4    | Occurrences expanded from the NAUO graph. At the limit expansion stops and `occurrence.expansion-output-truncated` is reported. A NAUO path of `max_recursion_depth` usages stops that branch with `occurrence.expansion-depth-truncated`.                                   |
 | `cadmpeg-codec-pvz`      | `src/model.rs`                                     | `MAX_OCCURRENCES`                         | `100_000`                                               | 4    | Occurrences expanded from the structure definition graph. At the limit, and at a path of `max_recursion_depth` definitions, expansion stops and `structure.occurrence-expansion-truncated` is reported.                                                                      |
+| `cadmpeg-codec-pvz`      | `src/brep/records.rs`                              | `MAX_BSPLINE_DEGREE`                      | `20`                                                    | 1    | Admitted degree of an exact-stream B-spline surface, edge curve or pcurve, as for ASM `MAX_NURBS_DEGREE`. A record of a higher order refuses the exact stream as malformed; the member keeps its tessellation and `geometry.exact-undecoded` is reported. |
 | `cadmpeg-codec-step`     | `src/export/approximation.rs`                      | `MAX_PATCHES`                             | `1024`                                                  | N    | STEP writer: sampled B-spline patches along one parameter axis. A fit that needs more keeps the face or curve omitted; not a decode path.                                                                                                                                    |
 | `cadmpeg-codec-step`     | `src/export/approximation.rs`                      | `MAX_POLES`                               | `1 << 20`                                               | N    | STEP writer: sampled approximation poles of one export. A carrier that does not fit keeps the face or curve omitted; not a decode path.                                                                                                                                      |
 | `cadmpeg-codec-step`     | `src/export/approximation.rs`                      | `MAX_SAMPLES`                             | `1 << 23`                                               | N    | STEP writer: procedural point evaluations of one export for sampling and residual probes. Exhaustion keeps the face or curve omitted; not a decode path.                                                                                                                     |
@@ -472,16 +473,16 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 257.
+Production `MAX_*` constants: 258.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
-| 1    | Format or reader invariant | 31    |
+| 1    | Format or reader invariant | 32    |
 | 2    | Per-input bound            | 69    |
 | 3    | Session ceiling            | 0     |
 | 4    | Local work cap             | 129   |
 | N    | Not a decode bound         | 28    |
-|      | Total                      | 257   |
+|      | Total                      | 258   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -491,7 +492,7 @@ By crate: `cadmpeg-core` 3, `cadmpeg-ir` 12, `cadmpeg-measure` 20, `cadmpeg-asm`
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 3,
 `cadmpeg-codec-freecad` 14, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 18,
 `cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 14,
-`cadmpeg-codec-catia` 57, and `cadmpeg-codec-pvz` 1.
+`cadmpeg-codec-catia` 57, and `cadmpeg-codec-pvz` 2.
 
 ## Routing
 

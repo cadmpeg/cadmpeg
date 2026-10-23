@@ -8,35 +8,23 @@ use super::model::{
     BsplineCurve, BsplineSurface, Coedge, Conic, CurveGeometry, EdgeCurve, ExactModel, Face, Loop,
     OpaqueRecord, Pcurve, Precision, SingularUse, SurfaceGeometry, SurfaceRecord, Torus, Vec2,
 };
-use super::{EXACT_STREAM_F32, EXACT_STREAM_F64};
+use crate::layout::token::{
+    EXACT_COEDGE, EXACT_EDGE_CURVE, EXACT_LOOP, EXACT_PCURVE, EXACT_SINGULAR_USE, EXACT_SURFACE,
+    STREAM_EDGE_TESSELLATION as TAG_STREAM_INDEX, STREAM_EXACT_F32, STREAM_EXACT_F64,
+};
+use crate::layout::{coedge_record, loop_record};
 
-/// First record of every OL stream: the stream index (§4.5).
-const TAG_STREAM_INDEX: u32 = 0x0100_0002;
-/// Supporting surface; starts a face.
-const TAG_SURFACE: u32 = 0x13;
-/// Loop.
-const TAG_LOOP: u32 = 0x0100_0010;
-/// Coedge.
-const TAG_COEDGE: u32 = 0x11;
-/// Singular edge use.
-const TAG_SINGULAR_USE: u32 = 0x0100_0012;
-/// Loop terminator.
+/// Loop and singular-use terminator (§8.14).
 const TAG_TERMINATOR: u32 = 0;
-/// Edge curve.
-const TAG_EDGE_CURVE: u32 = 0x14;
-/// Pcurve.
-const TAG_PCURVE: u32 = 0x15;
 
 /// Loop marker that starts a new loop group.
 const LOOP_GROUP_START: i32 = -2;
 /// Index value that names no record.
 const NO_INDEX: u32 = u32::MAX;
-/// Coedge record payload length.
-const COEDGE_LEN: usize = 13;
-/// Loop record payload length.
-const LOOP_LEN: usize = 4;
 /// Stream index record payload length.
 const STREAM_INDEX_LEN: usize = 4;
+/// Largest admitted B-spline degree of a surface, curve, or pcurve record.
+pub(crate) const MAX_BSPLINE_DEGREE: usize = 20;
 
 /// Surface `flags` bit that adds the u-range pair.
 const SURFACE_U_RANGE: u8 = 0x80;
@@ -82,8 +70,8 @@ pub(super) fn read_stream(
     payload: View<'_>,
 ) -> Result<ExactModel, CodecError> {
     let precision = match stream_id {
-        EXACT_STREAM_F32 => Precision::Single,
-        EXACT_STREAM_F64 => Precision::Double,
+        STREAM_EXACT_F32 => Precision::Single,
+        STREAM_EXACT_F64 => Precision::Double,
         other => {
             return Err(CodecError::malformed(format_args!(
                 "stream {other:#010x} is not an exact-geometry stream"
@@ -171,7 +159,7 @@ impl StreamBuilder {
             )));
         }
         match tag {
-            TAG_SURFACE => {
+            tag if tag == u32::from(EXACT_SURFACE) => {
                 self.require_face_section(tag, offset)?;
                 let surface = read_surface(ctx, self.precision(), body)?;
                 ctx.charge_entities(1, "pvz exact face")?;
@@ -182,33 +170,25 @@ impl StreamBuilder {
                     offset,
                 });
             }
-            TAG_LOOP => self.open_loop(ctx, body)?,
-            TAG_COEDGE => self.coedge(ctx, body)?,
-            TAG_SINGULAR_USE => self.singular_use(ctx, body)?,
+            EXACT_LOOP => self.open_loop(ctx, body)?,
+            tag if tag == u32::from(EXACT_COEDGE) => self.coedge(ctx, body)?,
+            EXACT_SINGULAR_USE => self.singular_use(ctx, body)?,
             TAG_TERMINATOR if body.is_empty() => {
                 if self.open.take().is_none() {
                     self.ended = true;
                 }
             }
-            TAG_EDGE_CURVE => {
+            tag if tag == u32::from(EXACT_EDGE_CURVE) => {
                 self.enter(Section::Curves, tag, offset)?;
                 let geometry = read_curve::<3>(ctx, self.precision(), body)?;
                 ctx.charge_entities(1, "pvz exact edge curve")?;
-                self.model.edges.push(EdgeCurve {
-                    flags: geometry.1,
-                    geometry: geometry.0,
-                    offset,
-                });
+                self.model.edges.push(EdgeCurve { geometry, offset });
             }
-            TAG_PCURVE => {
+            tag if tag == u32::from(EXACT_PCURVE) => {
                 self.enter(Section::Curves, tag, offset)?;
                 let geometry = read_curve::<2>(ctx, self.precision(), body)?;
                 ctx.charge_entities(1, "pvz exact pcurve")?;
-                self.model.pcurves.push(Pcurve {
-                    flags: geometry.1,
-                    geometry: geometry.0,
-                    offset,
-                });
+                self.model.pcurves.push(Pcurve { geometry, offset });
             }
             _ => {
                 if matches!(self.open, Some(Scope::Loop(_))) {
@@ -217,11 +197,7 @@ impl StreamBuilder {
                     )));
                 }
                 ctx.charge_entities(1, "pvz exact opaque record")?;
-                self.model.opaque.push(OpaqueRecord {
-                    tag,
-                    length: body.remaining(),
-                    offset,
-                });
+                self.model.opaque.push(OpaqueRecord { tag });
             }
         }
         Ok(())
@@ -257,10 +233,10 @@ impl StreamBuilder {
 
     fn open_loop(&mut self, ctx: &DecodeContext<'_>, mut body: View<'_>) -> Result<(), CodecError> {
         let offset = body.start();
-        self.require_face_section(TAG_LOOP, offset)?;
-        let face = self.current_face(TAG_LOOP, offset)?;
-        if body.remaining() != LOOP_LEN {
-            return Err(record_length(TAG_LOOP, offset));
+        self.require_face_section(EXACT_LOOP, offset)?;
+        let face = self.current_face(EXACT_LOOP, offset)?;
+        if body.remaining() != loop_record::LEN {
+            return Err(record_length(EXACT_LOOP, offset));
         }
         let marker = body.req_i32_le()?;
         let index = self.model.loops.len();
@@ -303,8 +279,8 @@ impl StreamBuilder {
                 "coedge record at offset {offset} is outside a loop"
             )));
         };
-        if body.remaining() != COEDGE_LEN {
-            return Err(record_length(TAG_COEDGE, offset));
+        if body.remaining() != coedge_record::LEN {
+            return Err(record_length(u32::from(EXACT_COEDGE), offset));
         }
         let edge = optional_index(body.req_u32_le()?);
         let orientation = body.req_u8()?;
@@ -325,19 +301,15 @@ impl StreamBuilder {
 
     fn singular_use(&mut self, ctx: &DecodeContext<'_>, body: View<'_>) -> Result<(), CodecError> {
         let offset = body.start();
-        self.require_face_section(TAG_SINGULAR_USE, offset)?;
-        let face = self.current_face(TAG_SINGULAR_USE, offset)?;
+        self.require_face_section(EXACT_SINGULAR_USE, offset)?;
+        let face = self.current_face(EXACT_SINGULAR_USE, offset)?;
         let mut fields = Fields::new(body, self.precision());
         let edge = index_from_u32(fields.view.req_u32_le()?);
-        let range = fields.pair()?;
-        fields.finish_bare(TAG_SINGULAR_USE, offset)?;
+        fields.pair()?;
+        fields.finish_bare(EXACT_SINGULAR_USE, offset)?;
         ctx.charge_entities(1, "pvz exact singular use")?;
         if let Some(record) = self.model.faces.get_mut(face) {
-            record.singular_uses.push(SingularUse {
-                edge,
-                range,
-                offset,
-            });
+            record.singular_uses.push(SingularUse { edge, offset });
         }
         self.open = Some(Scope::SingularUse);
         Ok(())
@@ -559,40 +531,25 @@ fn read_surface(
                 flags & SURFACE_U_PERIODIC != 0,
                 flags & SURFACE_V_PERIODIC != 0,
             ];
-            let u_range = fields.optional_pair(has_u)?;
-            let v_range = fields.optional_pair(has_v)?;
-            fields.finish(TAG_SURFACE, offset)?;
+            fields.optional_pair(has_u)?;
+            fields.optional_pair(has_v)?;
+            fields.finish(u32::from(EXACT_SURFACE), offset)?;
             return Ok(SurfaceRecord {
-                flags,
-                marker,
-                u_range,
-                v_range,
                 geometry: SurfaceGeometry::Bspline(surface),
                 embedded: None,
             });
         }
         surface_type => {
             return Ok(SurfaceRecord {
-                flags,
-                marker,
-                u_range: None,
-                v_range: None,
                 geometry: SurfaceGeometry::Undefined { surface_type },
                 embedded: None,
             });
         }
     };
-    let u_range = fields.optional_pair(has_u)?;
-    let v_range = fields.optional_pair(has_v)?;
+    fields.optional_pair(has_u)?;
+    fields.optional_pair(has_v)?;
     let embedded = read_analytic_tail(ctx, fields, offset)?;
-    Ok(SurfaceRecord {
-        flags,
-        marker,
-        u_range,
-        v_range,
-        geometry,
-        embedded,
-    })
+    Ok(SurfaceRecord { geometry, embedded })
 }
 
 /// Reads the tail of an analytic surface record: one end byte, or an
@@ -603,7 +560,7 @@ fn read_analytic_tail(
     offset: usize,
 ) -> Result<Option<BsplineSurface>, CodecError> {
     if fields.view.remaining() == 1 {
-        fields.finish(TAG_SURFACE, offset)?;
+        fields.finish(u32::from(EXACT_SURFACE), offset)?;
         return Ok(None);
     }
     let head = [
@@ -618,7 +575,7 @@ fn read_analytic_tail(
     }
     let rational = read_rational(&mut fields, offset)?;
     let surface = read_bspline_body(ctx, &mut fields, rational, offset)?;
-    fields.finish_bare(TAG_SURFACE, offset)?;
+    fields.finish_bare(u32::from(EXACT_SURFACE), offset)?;
     Ok(Some(surface))
 }
 
@@ -640,13 +597,40 @@ fn read_knot_axis(
 ) -> Result<(usize, Vec<f64>), CodecError> {
     let order = index_from_u32(fields.view.req_u32_le()?);
     let count = fields.count(1, "knot")?;
+    let knots = read_knots(ctx, fields, order, count, offset)?;
+    Ok((order, knots))
+}
+
+/// Reads `count` knots of a B-spline of `order` after checking the order
+/// against [`MAX_BSPLINE_DEGREE`] and the count against the order. The knots
+/// are finite and do not decrease.
+fn read_knots(
+    ctx: &DecodeContext<'_>,
+    fields: &mut Fields<'_>,
+    order: usize,
+    count: usize,
+    offset: usize,
+) -> Result<Vec<f64>, CodecError> {
     if order == 0 || count <= order {
         return Err(CodecError::malformed(format_args!(
             "B-spline record at offset {offset} has order {order} and {count} knots"
         )));
     }
+    if order - 1 > MAX_BSPLINE_DEGREE {
+        return Err(CodecError::malformed(format_args!(
+            "B-spline record at offset {offset} has degree {}, above {MAX_BSPLINE_DEGREE}",
+            order - 1
+        )));
+    }
     let knots = fields.scalars(ctx, count, "pvz exact knots")?;
-    Ok((order, knots))
+    let ordered = knots.iter().all(|knot| knot.is_finite())
+        && knots.windows(2).all(|pair| pair[0] <= pair[1]);
+    if !ordered {
+        return Err(CodecError::malformed(format_args!(
+            "B-spline record at offset {offset} has a non-finite or decreasing knot"
+        )));
+    }
+    Ok(knots)
 }
 
 fn read_bspline_body(
@@ -701,15 +685,18 @@ fn read_bspline_body(
     })
 }
 
-/// Reads one edge-curve (`N` = 3) or pcurve (`N` = 2) record and returns
-/// its geometry and `flags` byte.
+/// Reads one edge-curve (`N` = 3) or pcurve (`N` = 2) record.
 fn read_curve<const N: usize>(
     ctx: &DecodeContext<'_>,
     precision: Precision,
     body: View<'_>,
-) -> Result<(CurveGeometry<N>, u8), CodecError> {
+) -> Result<CurveGeometry<N>, CodecError> {
     let offset = body.start();
-    let tag = if N == 3 { TAG_EDGE_CURVE } else { TAG_PCURVE };
+    let tag = u32::from(if N == 3 {
+        EXACT_EDGE_CURVE
+    } else {
+        EXACT_PCURVE
+    });
     let edge_curve = N == 3;
     let mut fields = Fields::new(body, precision);
     let curve_type = fields.view.req_u8()?;
@@ -740,12 +727,7 @@ fn read_curve<const N: usize>(
             let rational = read_rational(&mut fields, offset)?;
             let order = index_from_u32(fields.view.req_u32_le()?);
             let knot_count = fields.count(1, "knot")?;
-            if order == 0 || knot_count <= order {
-                return Err(CodecError::malformed(format_args!(
-                    "B-spline curve at offset {offset} has order {order} and {knot_count} knots"
-                )));
-            }
-            let knots = fields.scalars(ctx, knot_count, "pvz exact knots")?;
+            let knots = read_knots(ctx, &mut fields, order, knot_count, offset)?;
             let pole_count = fields.count(N + 1, "pole")?;
             if knot_count.checked_sub(order) != Some(pole_count) {
                 return Err(CodecError::malformed(format_args!(
@@ -777,10 +759,10 @@ fn read_curve<const N: usize>(
             }
             CurveGeometry::Polyline(points)
         }
-        curve_type => return Ok((CurveGeometry::Undefined { curve_type }, flags)),
+        curve_type => return Ok(CurveGeometry::Undefined { curve_type }),
     };
     fields.finish(tag, offset)?;
-    Ok((geometry, flags))
+    Ok(geometry)
 }
 
 fn read_conic<const N: usize>(
