@@ -108,38 +108,6 @@ const SECTION_SCOPED_IDENTIFIERS: [&str; 6] = [
     "sldprt:model:",
 ];
 
-/// Walks a decoded document, applying `visit` to every identifier it carries,
-/// as an object key or as a value.
-fn walk_identifiers(value: &mut serde_json::Value, visit: &mut impl FnMut(&str) -> Option<String>) {
-    match value {
-        serde_json::Value::String(text) => {
-            if let Some(replacement) = visit(text) {
-                *text = replacement;
-            }
-        }
-        serde_json::Value::Array(items) => {
-            for item in items {
-                walk_identifiers(item, visit);
-            }
-        }
-        serde_json::Value::Object(fields) => {
-            let renames = fields
-                .keys()
-                .filter_map(|key| visit(key).map(|replacement| (key.clone(), replacement)))
-                .collect::<Vec<_>>();
-            for (from, to) in renames {
-                if let Some(field) = fields.remove(&from) {
-                    fields.insert(to, field);
-                }
-            }
-            for (_, field) in fields.iter_mut() {
-                walk_identifiers(field, visit);
-            }
-        }
-        _ => {}
-    }
-}
-
 /// Compare neutral semantics after mapping source section positions through
 /// their unique admitted member names. Native and source metadata are excluded.
 fn neutral_document(bytes: &[u8]) -> String {
@@ -650,12 +618,34 @@ fn normalized_document(
     ir: &cadmpeg_ir::CadIr,
     sections: &BTreeMap<u64, String>,
 ) -> serde_json::Value {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let original_model = serde_json::to_value(&ir.model).expect("serialize original model");
+    let mut opaque_references = BTreeMap::new();
+    let mut declared_replacements = BTreeMap::new();
+    let mut model = cadmpeg_ir::document::Model::default();
+    model
+        .extend_rewritten(
+            ir.model.clone(),
+            &mut DeclaredSectionIdentityRewrite {
+                ctx: &ctx,
+                sections,
+                opaque_references: &mut opaque_references,
+                declared_replacements: &mut declared_replacements,
+            },
+        )
+        .expect("rewrite only schema-declared source identities");
+    let mut normalized_model = serde_json::to_value(&model).expect("serialize model");
+    restore_typed_opaque_references(
+        &original_model,
+        &mut normalized_model,
+        &opaque_references,
+        &declared_replacements,
+    );
     let mut document = serde_json::json!({
-        "model": serde_json::to_value(&ir.model).expect("serialize model"),
+        "model": normalized_model,
         "units": { "length": "millimeter" },
         "tolerances": serde_json::to_value(ir.tolerances).expect("serialize tolerances"),
     });
-    walk_identifiers(&mut document, &mut |id| normalize_identifier(id, sections));
     canonicalize_model_arena_order(&mut document);
     document
 }
@@ -785,4 +775,197 @@ fn duplicate_source_member_names_are_not_conflated() {
         section_identities(&indexed),
         Err("duplicate source section name cannot be normalized")
     );
+}
+
+struct DeclaredSectionIdentityRewrite<'a, 'ctx> {
+    ctx: &'a cadmpeg_core::decode::DecodeContext<'ctx>,
+    sections: &'a BTreeMap<u64, String>,
+    opaque_references: &'a mut BTreeMap<String, String>,
+    declared_replacements: &'a mut BTreeMap<String, String>,
+}
+
+impl cadmpeg_ir::document::EntityRewrite for DeclaredSectionIdentityRewrite<'_, '_> {
+    type Error = CodecError;
+
+    fn rewrite<T: cadmpeg_ir::schema::rewrite::typed::RewriteIdentities>(
+        &mut self,
+        entity: T,
+    ) -> Result<T, Self::Error> {
+        cadmpeg_ir::schema::rewrite::identities(self.ctx, entity, |source| {
+            let target = if cadmpeg_ir::ids::Identity::new(source).is_ok() {
+                normalize_identifier(source, self.sections).unwrap_or_else(|| source.to_owned())
+            } else {
+                // Full-fidelity reference fields can carry codec-qualified native
+                // wire references which are not neutral Identity values. Admit a
+                // temporary injective identity only at this typed owner callback.
+                let key = source
+                    .as_bytes()
+                    .iter()
+                    .map(|byte| format!("{byte:02x}"))
+                    .collect::<String>();
+                let token = format!("sldprt:golden-opaque:reference#{key}");
+                self.opaque_references
+                    .insert(token.clone(), source.to_owned());
+                token
+            };
+            self.declared_replacements
+                .insert(source.to_owned(), target.clone());
+            Ok(target)
+        })
+    }
+}
+
+#[test]
+fn section_normalization_preserves_identity_shaped_labels_and_unowned_properties() {
+    let fixtures = harness().fixture_inputs();
+    let (_, bytes) = fixtures
+        .iter()
+        .find(|(name, _)| name == "authored_complete_history")
+        .expect("authored complete history fixture");
+    let indexed = crate::test_support::container::scan(bytes);
+    let sections = section_identities(&indexed).expect("unique authored source members");
+    let result = SldprtCodec
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
+        .expect("complete history source decode");
+    let mut labeled = result.ir().clone();
+    let source_id = labeled.model.features[0].id.as_str().to_owned();
+    let rewritten_id = normalize_identifier(&source_id, &sections)
+        .expect("physical source section in declared ID");
+    assert_ne!(source_id, rewritten_id);
+    labeled.model.features[0].name = Some(source_id.clone());
+    let normalized = normalized_document(&labeled, &sections);
+    let feature = normalized["model"]["features"]
+        .as_array()
+        .expect("feature arena")
+        .iter()
+        .find(|feature| feature["id"] == rewritten_id)
+        .expect("declared ID normalized");
+    assert_eq!(feature["name"], source_id);
+    let mut changed = labeled.clone();
+    changed.model.features[0].name = Some(rewritten_id.clone());
+    assert_ne!(normalized, normalized_document(&changed, &sections));
+
+    let key = cadmpeg_core::nonblank_literal!("unowned_identity_shaped_text");
+    labeled.model.features[0]
+        .source_properties
+        .insert(key.clone(), source_id.clone());
+    let normalized = normalized_document(&labeled, &sections);
+    let feature = normalized["model"]["features"]
+        .as_array()
+        .expect("feature arena")
+        .iter()
+        .find(|feature| feature["id"] == rewritten_id)
+        .expect("declared ID normalized");
+    assert_eq!(feature["source_properties"][key.as_str()], source_id);
+    let mut changed = labeled.clone();
+    changed.model.features[0]
+        .source_properties
+        .insert(key, rewritten_id);
+    assert_ne!(normalized, normalized_document(&changed, &sections));
+}
+
+/// Restore only a leaf changed by the preceding typed owner walk. This paired
+/// structural check never classifies an unchanged ordinary string as a reference.
+fn restore_typed_opaque_references(
+    original: &serde_json::Value,
+    rewritten: &mut serde_json::Value,
+    opaque: &BTreeMap<String, String>,
+    declared: &BTreeMap<String, String>,
+) {
+    match (original, rewritten) {
+        (serde_json::Value::String(source), serde_json::Value::String(target)) => {
+            if source != target && opaque.get(target) == Some(source) {
+                *target = source.clone();
+            }
+        }
+        (serde_json::Value::Array(before), serde_json::Value::Array(after)) => {
+            assert_eq!(
+                before.len(),
+                after.len(),
+                "typed rewrite preserves nested sequence length"
+            );
+            for (source, target) in before.iter().zip(after) {
+                restore_typed_opaque_references(source, target, opaque, declared);
+            }
+        }
+        (serde_json::Value::Object(before), serde_json::Value::Object(after)) => {
+            assert_eq!(
+                before.len(),
+                after.len(),
+                "typed rewrite preserves field roster"
+            );
+            for (key, source) in before {
+                // Typed identity-keyed maps can rename a key. Ordinary map keys
+                // are retained, even when their spelling also names an identity.
+                let target_key = if after.contains_key(key) {
+                    key
+                } else {
+                    declared
+                        .get(key)
+                        .expect("typed rewrite owns a changed map key")
+                };
+                let target = after.get_mut(target_key).expect("typed rewritten field");
+                restore_typed_opaque_references(source, target, opaque, declared);
+            }
+        }
+        _ => {}
+    }
+}
+
+#[test]
+fn section_normalization_preserves_qualified_native_reference_grammar() {
+    let fixtures = harness().fixture_inputs();
+    let (_, bytes) = fixtures
+        .iter()
+        .find(|(name, _)| name == "authored_complete_history")
+        .expect("authored complete history fixture");
+    let indexed = crate::test_support::container::scan(bytes);
+    let sections = section_identities(&indexed).expect("unique source members");
+    let result = SldprtCodec
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
+        .expect("complete history source decode");
+    let mut source = result.ir().clone();
+    let reference = "0:sldprt:brep:edge#40";
+    source.model.features[0].native_ref = Some(reference.to_owned());
+    source.model.features[0].name = Some(reference.to_owned());
+    let id = normalize_identifier(source.model.features[0].id.as_str(), &sections)
+        .expect("source-backed feature identity");
+    let normalized = normalized_document(&source, &sections);
+    let feature = normalized["model"]["features"]
+        .as_array()
+        .expect("feature arena")
+        .iter()
+        .find(|feature| feature["id"] == id)
+        .expect("normalized feature");
+    assert_eq!(feature["native_ref"], reference);
+    assert_eq!(feature["name"], reference);
+    for changed_reference in ["1:sldprt:brep:edge#40", "0:sldprt:brep:edge#41"] {
+        let mut changed = source.clone();
+        changed.model.features[0].native_ref = Some(changed_reference.to_owned());
+        assert_ne!(normalized, normalized_document(&changed, &sections));
+    }
+    let mut changed = source.clone();
+    changed.model.features[0].name = Some("1:sldprt:brep:edge#40".to_owned());
+    assert_ne!(normalized, normalized_document(&changed, &sections));
+    let token = format!(
+        "sldprt:golden-opaque:reference#{}",
+        reference
+            .as_bytes()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    );
+    source.model.features[0].name = Some(token.clone());
+    let normalized = normalized_document(&source, &sections);
+    let feature = normalized["model"]["features"]
+        .as_array()
+        .expect("feature arena")
+        .iter()
+        .find(|feature| feature["id"] == id)
+        .expect("normalized feature");
+    assert_eq!(
+        feature["name"], token,
+        "ordinary text equal to a temporary token stays exact"
+    );
+    assert_eq!(feature["native_ref"], reference);
 }
