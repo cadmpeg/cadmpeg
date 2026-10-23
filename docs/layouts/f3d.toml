@@ -16957,6 +16957,49 @@ source = "spec"
 anchor = "The Flip byte at `C+40`"
 
 [[record]]
+name = "sheet_metal_rule_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/sheet_metal_settings.rs"
+kind = "byte"
+section = "3.1"
+anchor = "After its indexed header the rule record stores ten zero bytes"
+note = "This size-less byte record describes a sheet-metal rule record whose first entry is `Thickness`. Offsets are relative to the rule record's primary indexed header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "After its indexed header the rule record stores ten zero bytes"
+
+[[record.field]]
+name = "zero_run_11"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "After its indexed header the rule record stores ten zero bytes"
+
+[[record.field]]
+name = "entry_word"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "a u32 rule word"
+
+[[record.field]]
+name = "first_entry_name"
+offset = 25
+type = "bytes[22]"
+source = "spec"
+anchor = "its 22-byte name starts at rule-record offset 25"
+
+[[record.field]]
+name = "thickness"
+offset = 47
+type = "f64"
+source = "spec"
+anchor = "its value at offset 47"
+
+[[record]]
 name = "sheet_metal_settings_prefix"
 kind = "byte"
 section = "3.1"
