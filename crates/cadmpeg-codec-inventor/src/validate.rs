@@ -2405,7 +2405,9 @@ pub(crate) fn sketch_constraint_references(constraint: &PmDcSketchConstraint) ->
 }
 
 /// Whether a fillet edge set's fifth reference is null or selects a Boolean
-/// record. `type_at` gives the type identifier of the record at an ordinal.
+/// record. `type_at` gives the type identifier of the record at an ordinal. A
+/// reference that selects no record is reported by the reference check, so it
+/// is admitted here.
 pub(crate) fn fillet_option_is_admitted<'a>(
     kind: &PmDcFeaturePropertyKind,
     type_at: impl Fn(u32) -> Option<&'a str>,
@@ -2418,7 +2420,7 @@ pub(crate) fn fillet_option_is_admitted<'a>(
         return true;
     };
     option.index() == 0
-        || type_at(option.index() - 1).is_some_and(|type_id| {
+        || type_at(option.index() - 1).is_none_or(|type_id| {
             type_id == crate::pmdc::type_id_string(crate::feature::BOOLEAN_TYPE)
         })
 }

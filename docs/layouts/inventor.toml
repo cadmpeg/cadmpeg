@@ -1275,6 +1275,7 @@ offset = 46
 type = "u32"
 source = "spec"
 anchor = "related_count u32"
+
 [[record]]
 name = "assembly_occurrence_prefix_v28"
 kind = "byte"
@@ -1372,4 +1373,3 @@ offset = 50
 type = "u32"
 source = "spec"
 anchor = "related_count u32"
-

@@ -3224,7 +3224,8 @@ mod tests {
         assert!(admitted(&edge_set(Some(reference(0))), types));
         assert!(admitted(&edge_set(Some(reference(9))), types));
         assert!(!admitted(&edge_set(Some(reference(10))), types));
-        assert!(!admitted(&edge_set(Some(reference(11))), types));
+        // An unresolved reference is the reference check's single finding.
+        assert!(admitted(&edge_set(Some(reference(11))), types));
     }
 
     fn test_property(ordinal: u32, kind: PmDcFeaturePropertyKind) -> PmDcFeatureProperty {
