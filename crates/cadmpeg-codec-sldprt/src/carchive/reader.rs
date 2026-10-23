@@ -280,6 +280,8 @@ pub(crate) struct ParameterRecord {
     pub(crate) value: f64,
     /// Where the object's tag or declaration starts.
     pub(crate) at: usize,
+    /// Where the value (an f64, or the integer's u32) starts.
+    pub(crate) value_at: usize,
 }
 
 /// A named object read by the named-object header rule.
@@ -312,6 +314,10 @@ pub(crate) struct Reader<'b> {
     pub(crate) parameters: Vec<ParameterRecord>,
     /// Named objects read.
     pub(crate) named: Vec<NamedRecord>,
+    /// The rule nesting depth (`r.depth`): 1 for a top-level object.
+    pub(crate) depth: usize,
+    /// The flag position of a favourite handle followed by a view block (`FAVFLAG`).
+    pub(crate) favflag: Option<usize>,
 }
 
 impl<'b> Reader<'b> {
@@ -335,6 +341,8 @@ impl<'b> Reader<'b> {
             st: super::rules::State::default(),
             parameters: Vec::new(),
             named: Vec::new(),
+            depth: 0,
+            favflag: None,
         }
     }
 
@@ -503,7 +511,10 @@ impl<'b> Reader<'b> {
             body: self.p,
             at,
         });
-        let value = rule(self)?;
+        self.depth += 1;
+        let value = rule(self);
+        self.depth -= 1;
+        let value = value?;
         Ok(Ptr::Obj { class, value })
     }
 

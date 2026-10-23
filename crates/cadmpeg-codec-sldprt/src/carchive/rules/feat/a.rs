@@ -63,7 +63,16 @@ fn item1(r: &Reader<'_>, p: &Ptr) -> Res<V> {
 
 /// `nonefolder(r, c)`.
 pub(crate) fn nonefolder(r: &mut Reader<'_>, c: &str) -> Res<V> {
-    let n = feature(r, c)?;
+    let mut n = feature(r, c)?;
+    if n.get("name")
+        .as_str()
+        .is_some_and(|name| name.ends_with("___EndTag___"))
+    {
+        // An end-tag folder's link is one pointer, back to its opening folder.
+        let open = r.ptr(None)?;
+        n.set("open", V::from(open));
+        return Ok(n);
+    }
     let mut z0 = 0;
     while c == "moDetailFolder_c" && z0 < 64 && r.p + z0 < r.len() && r.byte(r.p + z0)? == 0 {
         z0 += 1;
@@ -139,6 +148,27 @@ pub(crate) fn matfolder(r: &mut Reader<'_>) -> Res<V> {
 /// `moDetailCabinet_c`.
 pub(crate) fn detailcabinet(r: &mut Reader<'_>) -> Res<V> {
     let n = feature(r, "moDetailCabinet_c")?;
+    let q = r.p;
+    match cabinettail(r, n.clone()) {
+        Err(Stop::Bad(message)) => {
+            if !super::core::new(r) {
+                return Err(Stop::Bad(message));
+            }
+            // The block's tail without its u32 (`KiCad` exports declaring
+            // swVersion 17000): the cabinet's own fields start 4 bytes
+            // earlier, and the rest of the stream follows the layout before
+            // 11000.
+            r.p = q - 4;
+            let v = cabinettail(r, n)?;
+            r.ver = Some(10000);
+            Ok(v)
+        }
+        other => other,
+    }
+}
+
+/// `cabinettail(r, n)`: the detail cabinet's own fields after its block.
+fn cabinettail(r: &mut Reader<'_>, n: V) -> Res<V> {
     let k = r.u16()?;
     if k == 1 {
         r.u16()?;
@@ -315,6 +345,10 @@ pub(crate) fn unitcomponent(r: &mut Reader<'_>) -> Res<V> {
     }
     let flags = r.u16()?;
     r.skip(39);
+    if ver_or(r, 99999) < 11000 {
+        // Before 11000: no 16 ff bytes (KiCad exports).
+        return Ok(V::from(flags));
+    }
     r.expect(&[0xff; 16], "unit component ff")?;
     let v = ver_or(r, 99999);
     r.skip(if v < 12000 {
@@ -464,6 +498,7 @@ pub(crate) fn parameter(r: &mut Reader<'_>, integer: bool) -> Res<V> {
         .map_or_else(String::new, |t| t.class.to_string());
     let n = named(r)?;
     r.expect(&[0, 0], "")?;
+    let value_at = r.p;
     let val = if integer {
         V::from(r.u32()?)
     } else {
@@ -504,7 +539,7 @@ pub(crate) fn parameter(r: &mut Reader<'_>, integer: bool) -> Res<V> {
         r.cstring()?;
         r.skip(40);
         r.cstring()?;
-        record(r, entry.as_ref(), &name, &val);
+        record(r, entry.as_ref(), &name, &val, value_at);
         return Ok(V::map([("name", name), ("value", val), ("oid", oid)]));
     }
     let x = usize::from(ver_or(r, 0) >= 18000);
@@ -554,7 +589,7 @@ pub(crate) fn parameter(r: &mut Reader<'_>, integer: bool) -> Res<V> {
         }
         ops = ptrs.into_iter().map(V::from).collect();
     }
-    record(r, entry.as_ref(), &name, &val);
+    record(r, entry.as_ref(), &name, &val, value_at);
     Ok(V::map([
         ("name", name),
         ("value", val),
@@ -570,6 +605,7 @@ fn record(
     entry: Option<&super::super::super::reader::Trace>,
     name: &V,
     val: &V,
+    value_at: usize,
 ) {
     if let Some(t) = entry {
         r.parameters.push(ParameterRecord {
@@ -577,6 +613,7 @@ fn record(
             name: name.clone(),
             value: val.as_f64().unwrap_or(f64::NAN),
             at: t.at,
+            value_at,
         });
     }
 }
@@ -961,8 +998,16 @@ pub(crate) fn bbox(r: &mut Reader<'_>) -> Res<V> {
         r.u16()?;
     }
     let mut tail_last = None;
-    for l in [8_usize, 20, 10] {
+    for l in [6_usize, 8, 20, 10] {
         let w = r.pu16(r.p + l)?;
+        if l == 6 {
+            if r.pu32(r.p)? <= 1 && (w == 0xffff || w & 0x8000 != 0) {
+                r.skip(6);
+                tail_last = Some(0);
+                break;
+            }
+            continue;
+        }
         if l == 10 {
             if r.slice(r.p, 10).iter().all(|&x| x <= 1) && (w == 0xffff || w & 0x8000 != 0) {
                 r.skip(10);
@@ -977,6 +1022,12 @@ pub(crate) fn bbox(r: &mut Reader<'_>) -> Res<V> {
         }
         if l == 8 && vals.iter().all(|&x| x <= 1) && zrun_to(r, r.p + 8, "suObList")? >= 40 {
             r.skip(8);
+            tail_last = vals.last().copied();
+            break;
+        }
+        // Before an extrusion's zero block in place of its mark record.
+        if l == 20 && vals.iter().all(|&x| x <= 1) && zrun_to(r, r.p + 20, "moEndSpec_c")? >= 40 {
+            r.skip(20);
             tail_last = vals.last().copied();
             break;
         }
@@ -1036,6 +1087,10 @@ pub(crate) fn extrusion(r: &mut Reader<'_>, c: &str) -> Res<V> {
     if REVOLVES.contains(&cls) && zrun_to(r, r.p, "suObList")? >= 40 {
         let z = zrun_to(r, r.p, "suObList")?;
         r.skip(z - 9);
+    } else if !REVOLVES.contains(&cls) && zrun_to(r, r.p, "moEndSpec_c")? >= 40 {
+        // Zero bytes in place of the mark record (64; extruded cuts).
+        let z = zrun_to(r, r.p, "moEndSpec_c")?;
+        r.skip(z);
     } else {
         r.ptr(Some(&["moPMarkRecord_c"]))?;
     }
@@ -1080,7 +1135,7 @@ pub(crate) fn extrusion(r: &mut Reader<'_>, c: &str) -> Res<V> {
         let path = r.ptr(None)?;
         r.expect(&[1, 0], "sweep u16 1")?;
         r.ptr(Some(&["moWireContact_c"]))?;
-        r.ptr(Some(&["moCompReferenceCurve_c"]))?;
+        r.ptr(Some(&["moGeneralCurveRef_w"]))?;
         r.skip(105);
         let guide = r.ptr(None)?;
         r.skip(17);
@@ -1142,6 +1197,9 @@ pub(crate) fn extrusion(r: &mut Reader<'_>, c: &str) -> Res<V> {
         r.skip(5);
         r.ptr(None)?;
         refblock(r)?;
+        if r.zeros(r.p, 2) && r.pf64(r.p + 2)?.abs() == 1.0 {
+            r.skip(2); // u16 0 before the four gaps (1 sample)
+        }
         for _ in 0..4 {
             r.f64()?;
         }
@@ -1157,6 +1215,20 @@ pub(crate) fn extrusion(r: &mut Reader<'_>, c: &str) -> Res<V> {
             return Err(bad("up-to-face block tail"));
         }
         r.skip(71);
+    } else if r.eq(r.p, &[0]) && r.eq(r.p + 4, &[0, 1, 0, 0]) && objat(r, r.p + 40) {
+        // A drafted extrusion: the block's pointer slot at +40 holds the draft
+        // angle's display dimension, then the block's last 34 bytes.
+        r.skip(40);
+        r.ptr(None)?;
+        let t = r.slice(r.p, 34);
+        let sub = |a: usize, b: usize| t.get(a.min(t.len())..b.min(t.len())).unwrap_or(&[]);
+        if sub(0, 22) != [0; 22]
+            || !(sub(22, 26) == [1, 0, 0, 0] || sub(22, 26) == [0, 0, 0, 0])
+            || sub(26, 34) != [0; 8]
+        {
+            return Err(bad("drafted extrusion block tail"));
+        }
+        r.skip(34);
     } else if !is76(r, r.p) {
         let mut joined = r.slice(r.p, 4).to_vec();
         joined.extend_from_slice(r.slice(r.p + 6, 74));

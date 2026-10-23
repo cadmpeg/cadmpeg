@@ -110,3 +110,20 @@ pub(crate) fn walk_configuration(
     };
     Ok(walk(&map, resolved, ver))
 }
+
+/// The version the walk reads a configuration with: the declared `swVersion`
+/// when it is a number, else the u32 at offset 22 of the `Config-N` stream
+/// when it lies in 9000..=40000, else 17000. On the corpus this is the
+/// version the research grammar settled for every part (288 without a
+/// declaration: 274 by the offset-22 value, 14 by 17000).
+pub(crate) fn walk_version(declared: Option<&str>, config: &[u8]) -> u32 {
+    if let Some(version) = declared.and_then(|value| value.trim().parse::<u32>().ok()) {
+        return version;
+    }
+    config
+        .get(22..26)
+        .and_then(|bytes| bytes.try_into().ok())
+        .map(u32::from_le_bytes)
+        .filter(|value| (9000..=40000).contains(value))
+        .unwrap_or(17000)
+}

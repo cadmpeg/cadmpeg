@@ -114,3 +114,58 @@ fn dump_walks() {
         writeln!(out, "{row}").expect("write");
     }
 }
+
+/// Per file: the version the decoder would walk with against the research
+/// grammar's, and how many of the decoder's lane scalars sit at a parameter
+/// value the walk read (by class).
+#[test]
+#[ignore = "reads a local corpus"]
+fn dump_scalar_classes() {
+    let Some((rows, mut out)) = corpus() else {
+        return;
+    };
+    for (path, rest) in rows {
+        let (cfg, ver) = rest.split_once('\t').unwrap_or((rest.as_str(), ""));
+        let row = (|| {
+            let bytes = std::fs::read(&path).ok()?;
+            let arena = DecodeArena::new();
+            let (ctx, root) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::desktop()).ok()?;
+            let scan = crate::container::scan(&ctx, root).ok()?;
+            let (config, resolved) = streams(&path, cfg)?;
+            let declared = crate::container::declared_sw_version(&scan);
+            let version = super::walk_version(declared, &config);
+            let walk = super::walk_configuration(&config, &resolved, Some(version)).ok()??;
+            let at = walk
+                .parameters
+                .iter()
+                .map(|p| (p.value_at as u64, p.class.to_string()))
+                .collect::<std::collections::HashMap<_, _>>();
+            let mut annotations = cadmpeg_ir::annotations::Annotations::default();
+            let lanes =
+                crate::resolved_features::assembly::lanes(&ctx, &scan, &mut annotations).ok()?;
+            let mut counts = std::collections::BTreeMap::<String, usize>::new();
+            let mut scalars = 0;
+            for lane in &lanes {
+                // The lane of the walked configuration only.
+                if lane.native_payload != resolved {
+                    continue;
+                }
+                for scalar in &lane.scalars {
+                    scalars += 1;
+                    let class = at
+                        .get(&scalar.offset)
+                        .cloned()
+                        .unwrap_or_else(|| "-".into());
+                    *counts.entry(class).or_default() += 1;
+                }
+            }
+            Some(serde_json::json!({
+                "f": path, "ver": ver, "rver": version, "st": format!("{:?}", walk.status),
+                "scalars": scalars, "classes": counts,
+            }))
+        })()
+        .unwrap_or_else(|| serde_json::json!({"f": path, "err": true}));
+        writeln!(out, "{row}").expect("write");
+    }
+}

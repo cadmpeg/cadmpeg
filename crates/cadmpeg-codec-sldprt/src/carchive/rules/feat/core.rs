@@ -163,8 +163,15 @@ fn fixed(c: &str) -> usize {
     }
 }
 
-/// `block(r, c)`: the feature-object block; returns the children.
-pub(crate) fn block(r: &mut Reader<'_>, c: &str) -> Res<V> {
+/// `backlink(r, q)`: an end-tag folder's link starts at `q` at once: a
+/// back-reference (to its opening folder) and eight zero bytes, with no
+/// block-tail u32 or folder u32 0 before it (`KiCad` exports).
+pub(crate) fn backlink(r: &Reader<'_>, q: usize) -> bool {
+    q + 10 <= r.len() && r.pu16(q).is_ok_and(|w| 0 < w && w < 0x8000) && r.zeros(q + 2, 8)
+}
+
+/// `block(r, c, endtag)`: the feature-object block; returns the children.
+pub(crate) fn block(r: &mut Reader<'_>, c: &str, endtag: bool) -> Res<V> {
     r.expect_zeros(4, &format!("{c} head zeros"))?;
     let _w4 = r.u16()?;
     let n = r.u16()?;
@@ -192,6 +199,34 @@ pub(crate) fn block(r: &mut Reader<'_>, c: &str) -> Res<V> {
         )?
     {
         kids.push(r.ptr(None)?);
+    }
+    if c == "moEdgeFlange_c" {
+        // A sheet-metal flange's display object follows its counted children, then a block whose fields are open
+        // (EV-23); the block is framed by the next named object, as the bend's first form is.
+        while isclass(r, r.p, super::a::DISPLAY)? {
+            kids.push(r.ptr(None)?);
+        }
+        let mut i = r.p;
+        let end = loop {
+            if i >= r.p + 400 || i + 8 >= r.len() {
+                return Err(bad("flange tail: no next object"));
+            }
+            if r.eq(i, &[0xff, 0xfe, 0xff]) {
+                let a = r.pu16(i - 4)?;
+                let cc = r.pu16(i - 2)?;
+                if a & 0x8000 != 0
+                    && cc & 0x8000 != 0
+                    && r.known
+                        .get(&u32::from(cc & 0x7fff))
+                        .is_some_and(|s| &**s == "moNodeName_c")
+                {
+                    break i - 4;
+                }
+            }
+            i += 1;
+        };
+        r.p = end;
+        return Ok(V::from(kids));
     }
     while n != 0 && c == "moSketchBlockInst_c" && isclass(r, r.p, &["moDetailFolder_c"])? {
         kids.push(r.ptr(None)?);
@@ -257,7 +292,8 @@ pub(crate) fn block(r: &mut Reader<'_>, c: &str) -> Res<V> {
         return Err(bad(format!("{c}: block +55 string and tail")));
     };
     r.p = t + 64;
-    if new(r) && !objat(r, r.p) && !ownnext(r, c) {
+    let link = endtag && backlink(r, r.p);
+    if new(r) && !objat(r, r.p) && !ownnext(r, c) && !link {
         r.skip(4);
     }
     Ok(V::from(kids))
@@ -280,8 +316,15 @@ pub(crate) fn ownnext(r: &Reader<'_>, c: &str) -> bool {
 /// `feature(r, c)`: the named header and the block.
 pub(crate) fn feature(r: &mut Reader<'_>, c: &str) -> Res<V> {
     let mut n = named(r)?;
-    let kids = block(r, c)?;
+    let et = n
+        .get("name")
+        .as_str()
+        .is_some_and(|name| name.ends_with("___EndTag___"));
+    let kids = block(r, c, et)?;
     n.set("kids", kids);
+    if et && backlink(r, r.p) {
+        return Ok(n);
+    }
     if new(r) && c.ends_with("Folder_c") && !objat(r, r.p) && !ownnext(r, c) {
         if r.eq(r.p, &[1, 0, 0, 0]) && objat(r, r.p + 4) && c == "moFavoriteFolder_c" {
         } else if r.u32()? != 0 {
@@ -311,7 +354,7 @@ pub(crate) fn endtag_next(r: &Reader<'_>) -> Res<bool> {
         return Ok(false);
     };
     let window = r.slice(r.p, 120);
-    Ok(c == "moFtrFolder_c" && window.windows(ENDTAG.len()).any(|x| x == ENDTAG))
+    Ok(c.ends_with("FtrFolder_c") && window.windows(ENDTAG.len()).any(|x| x == ENDTAG))
 }
 
 /// `bodyhead(r, c)`: the feature body head.
@@ -491,8 +534,9 @@ pub(crate) fn refblock(r: &mut Reader<'_>) -> Res<()> {
     m.extend_from_slice(&[0; 4]);
     r.expect(&m, "ref block -12345")?;
     r.u32()?;
-    if ver_or(r, 99999) < 15000 && !r.ffs(r.p + 12, 4) {
-        r.expect_zeros(12, "ref block 12 zero (14000)")?;
+    if !r.ffs(r.p + 12, 4) {
+        // No i32 -1 (14000 and 15000 samples).
+        r.expect_zeros(12, "ref block 12 zero (no -1)")?;
     } else {
         let mut x = vec![0; 12];
         x.extend_from_slice(&[0xff; 4]);

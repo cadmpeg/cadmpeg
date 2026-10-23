@@ -181,6 +181,7 @@ pub(crate) fn fromendspec(r: &mut Reader<'_>) -> Res<V> {
 
 /// The display-dimension classes (`displaydim`).
 pub(crate) fn displaydim(r: &mut Reader<'_>) -> Res<V> {
+    r.favflag = None;
     r.skip(151);
     let k = r.u32()?;
     if k > 4096 {
@@ -196,6 +197,69 @@ pub(crate) fn displaydim(r: &mut Reader<'_>) -> Res<V> {
     r.skip(132);
     r.ptr(None)?;
     r.ptr(None)?;
+    if let Some(fp) = r.favflag.take() {
+        if r.depth == 1 {
+            // A top-level display dimension carries the view block after its handle.
+            if !(r.pu32(fp)? == 0 && r.pu32(fp + 4)? == 8) {
+                return Err(bad("display dim view prefix"));
+            }
+            let mut found = None;
+            let mut j = fp;
+            while j < fp + 600 && j + 4 < r.len() {
+                let w = r.pu16(j)?;
+                if w & 0x8000 != 0
+                    && r.known
+                        .get(&u32::from(w & 0x7fff))
+                        .is_some_and(|c| DISPLAY.contains(&&**c))
+                {
+                    found = Some(j);
+                    break;
+                }
+                j += 2;
+            }
+            let Some(j) = found else {
+                return Err(bad("display dim view: no next display"));
+            };
+            r.p = j;
+        }
+    } else if r.depth == 1 {
+        // A top-level display dimension's placement data before the next object: an empty CString, u32 values and
+        // zero bytes; the next object is the first class tag with a rule in the 64 bytes that follow. Numeric
+        // placement data (f64 and u32 values, no CString) ends at the next display object within 128 bytes.
+        let end = (r.p + 64).min(r.len());
+        let has_marker = r.b[r.p.min(end)..end]
+            .windows(3)
+            .any(|w| w == [0xff, 0xfe, 0xff]);
+        if has_marker {
+            let mut j = r.p;
+            while j < r.p + 64 && j + 4 < r.len() {
+                let w = r.pu16(j)?;
+                if w & 0x8000 != 0 {
+                    if let Some(c) = r.known.get(&u32::from(w & 0x7fff)) {
+                        if &**c != "moNodeName_c" && super::super::rule(c).is_some() {
+                            r.p = j;
+                            break;
+                        }
+                    }
+                }
+                j += 1;
+            }
+        } else {
+            let mut j = r.p;
+            while j < r.p + 128 && j + 4 < r.len() {
+                let w = r.pu16(j)?;
+                if w & 0x8000 != 0
+                    && r.known
+                        .get(&u32::from(w & 0x7fff))
+                        .is_some_and(|c| DISPLAY.contains(&&**c))
+                {
+                    r.p = j;
+                    break;
+                }
+                j += 1;
+            }
+        }
+    }
     Ok(list(ids))
 }
 
@@ -326,6 +390,10 @@ pub(crate) fn favhandle(r: &mut Reader<'_>) -> Res<V> {
         }
     }
     let fl = r.u32()?;
+    if fl == 0 && r.p + 8 <= r.len() && r.pu32(r.p)? == 8 && r.pu32(r.p + 4)? == 0x0100_0000 {
+        // A view block follows; a top-level display dimension consumes it (`displaydim`).
+        r.favflag = Some(r.p - 4);
+    }
     if (fl == 0 && objat(r, r.p)) || isclass(r, r.p, DISPLAY)? {
         return Ok(list(s));
     }
@@ -757,6 +825,10 @@ pub(crate) fn planegeom(r: &mut Reader<'_>) -> Res<V> {
     let rf = r.ptr(None);
     r.st.sk.mirror = false;
     let rf = rf?;
+    if !rf.is_null() && objat(r, r.p) {
+        // A line reference whose slot ends at once: the next geometry object follows.
+        return Ok(V::map([("ref", V::from(rf)), ("v", V::None)]));
+    }
     let one0 = [1, 0, 0, 0, 0, 0, 0, 0];
     let mut z0 = 0;
     while z0 < 8 && r.byte(r.p + z0)? == 0 {
@@ -951,10 +1023,9 @@ pub(crate) fn sheetmetal(r: &mut Reader<'_>) -> Res<V> {
     Ok(V::map([("n", n), ("table", V::from(table))]))
 }
 
-/// `moEdgeFlange_c` (probe).
+/// `moEdgeFlange_c`: the feature; its block's trailing block is framed by the next named object.
 pub(crate) fn edgeflange(r: &mut Reader<'_>) -> Res<V> {
-    feature(r, "moEdgeFlange_c")?;
-    Err(bad("edge flange tail (probe)"))
+    feature(r, "moEdgeFlange_c")
 }
 
 /// `moSurfaceAxisData_c`.
@@ -1105,8 +1176,14 @@ pub(crate) fn holewzd(r: &mut Reader<'_>) -> Res<V> {
     r.cstring()?;
     r.expect_zeros(4, "hole u32 0")?;
     r.f64()?;
-    r.expect_zeros(12, "hole end 12 zero")?;
-    r.u32()?;
+    if (r.eq(r.p, &[1, 0, 0, 0]) || r.zeros(r.p, 4)) && r.zeros(r.p + 4, 12) {
+        // 14000: the u32 before the zeros.
+        r.skip(4);
+        r.expect_zeros(12, "hole end 12 zero 14000")?;
+    } else {
+        r.expect_zeros(12, "hole end 12 zero")?;
+        r.u32()?;
+    }
     let mut z = 0;
     while r.p + z < r.len() && r.byte(r.p + z)? == 0 && z < 16 {
         z += 1;
@@ -1160,17 +1237,44 @@ pub(crate) fn refsurface(r: &mut Reader<'_>) -> Res<V> {
     ]))
 }
 
-/// `moOneBend_c` (probe).
+/// `moOneBend_c`: the feature, 122 bytes, its displays, a `moCompFeature_c`, 33 bytes, its `moCompEdge_c` and its
+/// displays, then a block whose fields are open (EV-23). A block that opens `00 00 80 00 08 00 00 00` is 608 bytes
+/// and ends at the next object; any other block is framed by the next named object: a class tag, the name object's
+/// class tag and a Unicode `CString`.
 pub(crate) fn onebend(r: &mut Reader<'_>) -> Res<V> {
-    feature(r, "moOneBend_c")?;
+    let n = feature(r, "moOneBend_c")?;
     r.skip(122);
     let mut dims = Vec::new();
     displays(r, &mut dims)?;
-    r.ptr(Some(&["moCompFeature_c"]))?;
+    let cf = r.ptr(Some(&["moCompFeature_c"]))?;
     r.skip(33);
     r.ptr(Some(&["moCompEdge_c"]))?;
     displays(r, &mut dims)?;
-    Err(bad("one bend (probe)"))
+    if r.p + 8 <= r.len() && r.eq(r.p, &[0x00, 0x00, 0x80, 0x00, 0x08, 0x00, 0x00, 0x00]) {
+        r.skip(608);
+        return Ok(V::map([("n", n), ("cf", V::from(cf))]));
+    }
+    let mut i = r.p;
+    let end = loop {
+        if i >= r.p + 400 || i + 8 >= r.len() {
+            return Err(bad("bend tail: no next object"));
+        }
+        if r.eq(i, &[0xff, 0xfe, 0xff]) {
+            let a = r.pu16(i - 4)?;
+            let c = r.pu16(i - 2)?;
+            if a & 0x8000 != 0
+                && c & 0x8000 != 0
+                && r.known
+                    .get(&u32::from(c & 0x7fff))
+                    .is_some_and(|s| &**s == "moNodeName_c")
+            {
+                break i - 4;
+            }
+        }
+        i += 1;
+    };
+    r.p = end;
+    Ok(V::map([("n", n), ("cf", V::from(cf))]))
 }
 
 /// `moTemplateFlatPattern_c`, `moFlatPattern_c`.
