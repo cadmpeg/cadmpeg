@@ -70,22 +70,67 @@ with one frame is the degenerate chained form.
 
 The file starts with an 8-byte header: `file_id` (u32), then `version` (u32 **big-endian**, value `0x00000004`). The rest is a sequence of compressed blocks.
 
-A block begins with the marker `14 00 06 00 08 00` and uses this frame:
+Native compressed members use ZIP local-file-header fields with a substituted
+four-byte signature token and nibble-swapped member names. The signature token
+is retained as opaque bytes. The archive coordinate zero is absolute file offset
+8. The field marker begins four bytes after the local signature. In the native
+DEFLATE profile, the marker is `14 00 06 00 08 00`: version needed 20,
+general-purpose flags 6, and compression method 8.
 
-```
-marker      bytes[6]   ; 14 00 06 00 08 00
-type_id     u32 LE
-crc32       u32 LE     ; CRC-32 of the DECOMPRESSED payload
-comp_sz     u32 LE
-uncomp_sz   u32 LE
-pre_sz      u32 LE
-preamble    bytes[pre_sz]
-payload     bytes[comp_sz]   ; raw DEFLATE, wbits = -15
+The layout follows [PKWARE ZIP APPNOTE §§4.3.7 and 4.4.6](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT).
+All fields below use little-endian order. `zip_local_header` fixed size is 30 bytes.
+Offsets start at the substituted local signature.
+
+| Offset | Type | Field |
+| ---: | --- | --- |
+| +0 | bytes[4] | signature |
+| +4 | u16 | version_needed |
+| +6 | u16 | flags |
+| +8 | u16 | method |
+| +10 | u16 | mod_time |
+| +12 | u16 | mod_date |
+| +14 | u32 | crc32 |
+| +18 | u32 | comp_sz |
+| +22 | u32 | uncomp_sz |
+| +26 | u16 | name_len |
+| +28 | u16 | extra_len |
+
+
+The encoded name follows the fixed header, then `extra_len` extra bytes, then
+`comp_sz` raw-DEFLATE bytes. The payload expands to exactly `uncomp_sz` bytes
+and has CRC-32 `crc32`. Swapping the high and low nibble of each name byte
+produces names such as `Contents/Config-0-Partition` and `PreviewPNG`.
+
+The zero-extra local-field projection has a 26-byte fixed prefix. It starts at
+the field marker and preserves the existing packed field names:
+
+```text
+marker bytes[6] ; version needed, flags, method
+type_id u32 LE ; packed ZIP modification time/date
+crc32 u32 LE ; CRC-32 of decompressed payload
+comp_sz u32 LE ; compressed size
+uncomp_sz u32 LE ; uncompressed size
+pre_sz u32 LE ; name length with zero extra length
 ```
 
-A valid block decompresses to exactly `uncomp_sz` bytes and has CRC-32 `crc32`. Its extent is `block_end = marker_offset + 26 + pre_sz + comp_sz`. Preamble bytes decode to OPC section names by swapping the high and low nibble of each byte, such as `Contents/Config-0-Partition`, `Contents/DisplayLists`, `PreviewPNG`, and `swXmlContents/Features`.
+In that projection, `pre_sz` packs the adjacent ZIP u16 name length and zero
+u16 extra length; `block_end = marker_offset + 26 + pre_sz + comp_sz`.
+With a nonzero extra length, the complete ZIP extent instead uses the sum of
+the two u16 lengths. The packed u32 is not that sum.
+
+`type_id` packs two ZIP u16 fields: MS-DOS modification time in the low half
+and modification date in the high half. It does not identify a payload type.
+The time encodes seconds divided by two in bits 0..4, minutes in bits 5..10,
+and hours in bits 11..15. The date encodes day in bits 0..4, month in bits
+5..8, and year minus 1980 in bits 9..15. Preserve the raw bits even when they
+do not form a valid calendar date or clock time. Local and central fields for
+one member carry the same raw time/date, CRC, sizes, name length, and name.
 
 ### 1.2 Cache-cell section-index grid
+
+The cache marker-relative fixed prefix is 26 bytes. `cache.marker at +0`
+is the six-byte marker; `cache.type_id at +6` is the packed ZIP time/date
+u32 LE. The size and name-length fields are u32 LE.
 
 The bytes before the first valid block and the long inter-block gaps hold a **fixed-cell section-index grid** reusing the outer marker. These cells are **not** compressed payloads. The three size-shaped header fields are redundant scalings of one logical value `L`:
 
@@ -118,25 +163,181 @@ The prefix and trailing ranges are opaque retained bytes. A retained cell
 preserves both ranges byte for byte. Bytes between the last complete cell and
 the following block are outside that cell.
 
+A physically attached run ends exactly four bytes before a validated local
+field marker; the four bytes are that member's substituted local signature.
+Each cell in that run carries the successor local member's complete raw
+modification time/date u32. The decoded cell name does not select that word.
+A cell without that physical-successor relation retains its raw word
+without a current-member association.
+
 ### 1.3 Tail section directory
 
-The file tail carries an **OPC package section directory**: a per-section index, not checksum blobs. Fixed-shape frames, each naming one OPC part:
+The tail directory consists of contiguous ZIP central-directory file headers
+with substituted four-byte signature tokens and nibble-swapped member names.
+Its field order follows [PKWARE ZIP APPNOTE §4.3.12 and §§4.4.12–4.4.16](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT).
+All multibyte fields are little-endian. `zip_central_header` fixed size is 46 bytes.
+Offsets start at the substituted central signature.
 
+| Offset | Type | Field |
+| ---: | --- | --- |
+| +0 | bytes[4] | signature |
+| +4 | u16 | version_made_by |
+| +6 | u16 | version_needed |
+| +8 | u16 | flags |
+| +10 | u16 | method |
+| +12 | u16 | mod_time |
+| +14 | u16 | mod_date |
+| +16 | u32 | crc32 |
+| +20 | u32 | comp_sz |
+| +24 | u32 | uncomp_sz |
+| +28 | u16 | name_len |
+| +30 | u16 | extra_len |
+| +32 | u16 | comment_len |
+| +34 | u16 | disk_start |
+| +36 | u16 | internal_attrs |
+| +38 | u32 | external_attrs |
+| +42 | u32 | local_offset |
+
+
+The encoded name follows the fixed header, then `extra_len` extra bytes, then
+`comment_len` comment bytes. The next central header begins at
+`central_start + 46 + name_len + extra_len + comment_len`. A marker-like
+pattern elsewhere in the file does not establish a directory entry.
+
+`zip_central_descriptor` fixed size is 14 bytes. It is the final fixed portion
+of a central header, beginning at central signature +32:
+
+| Descriptor offset | Type | Field |
+| ---: | --- | --- |
+| +0 | u16 | comment_len |
+| +2 | u16 | disk_start |
+| +4 | u16 | internal_attrs |
+| +6 | u32 | external_attrs |
+| +10 | u32 | local_offset |
+
+
+`comment_len` is the file-comment byte count. `disk_start` identifies the disk
+on which the local member begins. `internal_attrs` bit 0 is the ZIP producer's
+apparently-text hint; zero indicates apparently binary data. It does not
+identify XML or a SolidWorks payload family. `external_attrs` uses the host
+system interpretation selected by `version_made_by`. These are fields, even
+when their values are zero.
+
+`local_offset` is relative to archive coordinate zero at absolute file offset
+8. Thus the local signature is at `local_offset + 8` and its field marker is
+at `local_offset + 12`. The referenced local header carries the same member
+name, raw time/date, CRC, and compressed/uncompressed sizes. An empty member
+has its own local header with CRC zero, compressed size two, uncompressed size
+zero, and raw-DEFLATE payload `03 00`.
+
+The empty-member scan projection has a 40-byte marker-relative fixed prefix.
+It preserves these existing packed field names:
+
+```text
+tail.marker at +0       bytes[6] ; version needed, flags, method
+tail.type_id at +6      u32 LE ; packed modification time/date
+tail.zero_at_10 at +10  u32 LE ; CRC zero
+tail.size at +14        u32 LE ; compressed size
+tail.zero_at_18 at +18  u32 LE ; uncompressed size zero
+tail.name_len at +22    u32 LE ; name length plus zero extra length
+tail.descriptor at +26  bytes[14]
 ```
-+0   marker      bytes[6]   ; 14 00 06 00 08 00
-+6   type_id     u32 LE
-+10  zero        u32 LE
-+14  size        u32 LE     ; section's stored/uncompressed size
-+18  zero        u32 LE
-+22  name_len    u32 LE
-+26  descriptor  bytes[14]
-+40  name        bytes[name_len]   ; nibble-swapped section name
-     trailer     bytes[6]   ; [4-byte per-file separator][00 00]
+
+This projection describes the empty-member, zero-extra-length subset of the
+central header. It does not describe ordinary nonempty central entries. The
+six bytes after an encoded name in a contiguous zero-extra, zero-comment
+chain are the next central signature token and its u16 version-made-by field.
+They are not an entry-local trailer. The final entry has no implied next-header
+trailer. Existing container projections may retain those lookahead bytes
+without assigning them to the preceding entry.
+
+### 1.4 Tail padding grids and end-of-directory root
+
+The real central directory contains one record per validated local member,
+including each empty member. An EOCD root carries the real record count and
+the archive-relative central-directory offset. Its body follows
+[PKWARE ZIP APPNOTE §4.3.16](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT).
+The substituted signature is opaque retained bytes.
+
+Let `S` be the first real central signature, `M=S+6` its field marker, and `R`
+the real central-record count. A root with body start `h` has disk fields zero,
+both counts equal to `R`, zero comment length, and both locator equations:
+
+```text
+central_offset + 8 = S
+central_size = root_signature_start - S = (h+2)-M
 ```
 
-The descriptor is an entry-local 14-byte value. The 6-byte trailer has one value for all entries in a file, for example `e5 4b 57 5b 00 00`; its first four bytes form the directory separator. Decoded names are OPC parts such as `[Content_Types].xml`, `_rels/.rels`, `docProps/Config-0-Properties.xml`, and `ThirdPty/SWA_Schedules`.
+The declared size spans from the first real central signature to the root
+signature, including intervening padding. The count selects real central
+records; central-like padding headers do not increase it. Root selection uses
+both locators and the count, rather than a zero-valued field or position alone.
 
-A tail-directory entry with `size == 2` aliases a degenerate empty compressed block. Its payload is raw-DEFLATE `03 00`, its decompressed size and CRC-32 are zero, and its section name occupies the block preamble. This directory/block aliasing is valid.
+`named_padding_header` fixed size is 40 bytes. All multibyte fields are little-endian.
+
+| Offset | Type | Field |
+| ---: | --- | --- |
+| +0 | bytes[6] | marker |
+| +6 | u32 | time_date |
+| +10 | u32 | two_l |
+| +14 | u32 | half_l |
+| +18 | u32 | l |
+| +22 | u16 | name_len |
+| +24 | u16 | extra_len |
+| +26 | bytes[14] | descriptor |
+
+
+`footer_padding_body` fixed size is 18 bytes. All multibyte fields are little-endian.
+
+| Offset | Type | Field |
+| ---: | --- | --- |
+| +0 | u32 | disk_fields |
+| +4 | u16 | entries_disk |
+| +6 | u16 | entries_total |
+| +8 | u32 | named_stride |
+| +12 | u32 | five_l |
+| +16 | u16 | comment_len |
+
+
+`zip_eocd_header` fixed size is 22 bytes. All multibyte fields are little-endian.
+
+| Offset | Type | Field |
+| ---: | --- | --- |
+| +0 | bytes[4] | signature |
+| +4 | u16 | disk_number |
+| +6 | u16 | central_disk |
+| +8 | u16 | entries_disk |
+| +10 | u16 | entries_total |
+| +12 | u32 | central_size |
+| +16 | u32 | central_offset |
+| +20 | u16 | comment_len |
+
+
+The named padding grid, when present, starts two bytes after the final real
+central name. Its stride is `B`; each cell starts at `x` and its marker is at
+`x+N`. Its scalars obey `L=N*B`, `two_l=2L`, and `half_l=L//2`. The name uses
+the central-like prefix above and has zero extra length. The fixed prefix and
+name fit wholly inside `[x,x+B)`. Adjacent cells begin exactly one stride
+apart. Prefix and residual bytes remain opaque. These records are padding,
+not local members or additional central-directory entries.
+
+If `T` is the end of the final named cell, the anonymous footer starts at
+`T-2`. The two bytes lie in the named cell's opaque residual. Ordinary footer
+cells have stride `Q`, body displacement `N`, zero disk fields and comment
+length, both apparent counts equal to `R`, `named_stride=B`, and
+`five_l=5*N*Q`. The complete body fits within its physical cell.
+
+The real root is a 22-byte cell whose body begins four bytes after its
+substituted signature. Walk the footer by `Q` for each ordinary cell and 22
+for the root; the resulting ranges tile the footer through EOF. A root can
+occur between ordinary cells. In the root-only form, the final real name ends
+at the root signature and the 22-byte root ends at EOF; no named or ordinary
+footer stride is inferred.
+
+A valid grid has independently anchored cell starts, complete cell bounds,
+consistent scaling equations, and exact EOF closure. Opaque prefix, residual, and signature bytes are retained exactly;
+zero or `ff` bytes are valid opaque values. Their values do not select
+directory membership.
 
 ---
 

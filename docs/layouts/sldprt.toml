@@ -136,20 +136,21 @@ anchor = "`version` (u32 **big-endian**, value `0x00000004`)"
 
 [[record]]
 name = "block_frame_header"
-parsed_by = "crates/cadmpeg-codec-sldprt/src/container.rs"
 kind = "byte"
 section = "1.1"
-anchor = "A block begins with the marker `14 00 06 00 08 00` and uses this frame"
+anchor = "The zero-extra local-field projection has a 26-byte fixed prefix"
 size = 26
 endianness = "little"
-note = "Fixed prefix only. `preamble[pre_sz]` and `payload[comp_sz]` follow; the record extent is `block_end = marker_offset + 26 + pre_sz + comp_sz`."
+note = "Marker-relative zero-extra-length projection of the native ZIP local header; the marker starts four bytes after the substituted local signature. Names and compressed bytes follow this prefix. Existing constant names denote packed ZIP fields."
+parsed_by = "crates/cadmpeg-codec-sldprt/src/container.rs"
 
 [[record.field]]
 name = "marker"
 offset = 0
 type = "bytes[6]"
 source = "spec"
-anchor = "marker bytes[6] ; 14 00 06 00 08 00"
+anchor = "marker bytes[6] ; version needed, flags, method"
+note = "The bytes are 14 00 06 00 08 00 in the native DEFLATE profile."
 value = [0x14, 0x00, 0x06, 0x00, 0x08, 0x00]
 
 [[record.field]]
@@ -157,45 +158,61 @@ name = "type_id"
 offset = 6
 type = "u32"
 source = "spec"
-anchor = "type_id u32 LE"
+anchor = "type_id u32 LE ; packed ZIP modification time/date"
+note = "Low u16 is MS-DOS time; high u16 is MS-DOS date."
 
 [[record.field]]
 name = "crc32"
 offset = 10
 type = "u32"
 source = "spec"
-anchor = "crc32 u32 LE ; CRC-32 of the DECOMPRESSED payload"
+anchor = "crc32 u32 LE ; CRC-32 of decompressed payload"
 
 [[record.field]]
 name = "comp_sz"
 offset = 14
 type = "u32"
 source = "spec"
-anchor = "comp_sz u32 LE"
+anchor = "comp_sz u32 LE ; compressed size"
 
 [[record.field]]
 name = "uncomp_sz"
 offset = 18
 type = "u32"
 source = "spec"
-anchor = "uncomp_sz u32 LE"
+anchor = "uncomp_sz u32 LE ; uncompressed size"
 
 [[record.field]]
 name = "pre_sz"
 offset = 22
 type = "u32"
 source = "spec"
-anchor = "pre_sz u32 LE"
-
+anchor = "pre_sz u32 LE ; name length with zero extra length"
+note = "Compatibility projection of adjacent u16 name length and zero u16 extra length."
 
 [[record]]
 name = "cache_cell_header"
 kind = "byte"
 section = "1.2"
-anchor = "The three size-shaped header fields are redundant scalings of one logical value `L`"
+anchor = "The cache marker-relative fixed prefix is 26 bytes"
 size = 26
-endianness = "unstated"
-note = "Fixed prefix only; a nibble-swapped section name of `name_len` bytes follows at +26. The three size fields are redundant scalings of one logical value `L`."
+endianness = "little"
+note = "Marker-relative prefix. Its packed time/date word copies an attached physical successor local member; it is not selected through the decoded cell name."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[6]"
+source = "spec"
+anchor = "cache.marker at +0"
+
+[[record.field]]
+name = "type_id"
+offset = 6
+type = "u32"
+source = "spec"
+anchor = "cache.type_id at +6"
+note = "Packed ZIP modification time/date; no member-family or type discriminator."
 
 [[record.field]]
 name = "two_l"
@@ -203,7 +220,6 @@ offset = 10
 type = "u32"
 source = "spec"
 anchor = "field@+10 == 2*L"
-note = "§1.2 states the offset but not the byte order of this field."
 
 [[record.field]]
 name = "half_l"
@@ -211,7 +227,6 @@ offset = 14
 type = "u32"
 source = "spec"
 anchor = "field@+14 == L // 2"
-note = "§1.2 states the offset but not the byte order of this field."
 
 [[record.field]]
 name = "l"
@@ -219,7 +234,6 @@ offset = 18
 type = "u32"
 source = "spec"
 anchor = "field@+18 == L"
-note = "§1.2 states the offset but not the byte order of this field."
 
 [[record.field]]
 name = "name_len"
@@ -227,70 +241,328 @@ offset = 22
 type = "u32"
 source = "spec"
 anchor = "field@+22 == name_len"
-note = "§1.2 states the offset but not the byte order of this field. Valid when `0 < name_len < 500`."
-
-[[record.gap]]
-offset = 0
-size = 10
-note = "Marker and the field between it and +10. §1.2 states the cell reuses the outer marker but gives no offsets in this region."
 
 [[record]]
 name = "tail_directory_entry"
 kind = "byte"
 section = "1.3"
-anchor = "Fixed-shape frames, each naming one OPC part"
+anchor = "The empty-member scan projection has a 40-byte marker-relative fixed prefix"
 size = 40
 endianness = "little"
-note = "Fixed prefix only. `name[name_len]` follows at +40 and a 6-byte trailer follows the name."
+note = "Compatibility scan projection for an empty local member with zero extra length. It is a subset of central-directory fields, not a separate native record family. Bytes after the name belong to the following central record or other archive structure."
 
 [[record.field]]
 name = "marker"
 offset = 0
 type = "bytes[6]"
 source = "spec"
-anchor = "+0 marker bytes[6] ; 14 00 06 00 08 00"
+anchor = "tail.marker at +0"
 
 [[record.field]]
 name = "type_id"
 offset = 6
 type = "u32"
 source = "spec"
-anchor = "+6 type_id u32 LE"
+anchor = "tail.type_id at +6"
+note = "Packed ZIP modification time/date."
 
 [[record.field]]
 name = "zero_at_10"
 offset = 10
 type = "u32"
 source = "spec"
-anchor = "+10 zero u32 LE"
+anchor = "tail.zero_at_10 at +10"
+note = "ZIP CRC-32 is zero in this empty-member projection."
 
 [[record.field]]
 name = "size"
 offset = 14
 type = "u32"
 source = "spec"
-anchor = "+14 size u32 LE ; section's stored/uncompressed size"
+anchor = "tail.size at +14"
+note = "ZIP compressed size; the raw-DEFLATE empty payload occupies two bytes."
 
 [[record.field]]
 name = "zero_at_18"
 offset = 18
 type = "u32"
 source = "spec"
-anchor = "+18 zero u32 LE"
+anchor = "tail.zero_at_18 at +18"
+note = "ZIP uncompressed size is zero in this empty-member projection."
 
 [[record.field]]
 name = "name_len"
 offset = 22
 type = "u32"
 source = "spec"
-anchor = "+22 name_len u32 LE"
+anchor = "tail.name_len at +22"
+note = "Packed name length u16 plus zero extra length u16."
 
 [[record.field]]
 name = "descriptor"
 offset = 26
 type = "bytes[14]"
 source = "spec"
-anchor = "+26 descriptor bytes[14]"
+anchor = "tail.descriptor at +26"
+note = "Five ZIP fields, individually defined by zip_central_descriptor."
+
+[[record]]
+name = "zip_local_header"
+kind = "byte"
+section = "1.1"
+anchor = "`zip_local_header` fixed size is 30 bytes"
+size = 30
+endianness = "little"
+note = "Complete ZIP local header from its substituted signature. Name, extra bytes, then compressed data follow."
+
+[[record.field]]
+name = "signature"
+offset = 0
+type = "bytes[4]"
+source = "spec"
+anchor = "| +0 | bytes[4] | signature |"
+
+[[record.field]]
+name = "version_needed"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "| +4 | u16 | version_needed |"
+
+[[record.field]]
+name = "flags"
+offset = 6
+type = "u16"
+source = "spec"
+anchor = "| +6 | u16 | flags |"
+
+[[record.field]]
+name = "method"
+offset = 8
+type = "u16"
+source = "spec"
+anchor = "| +8 | u16 | method |"
+
+[[record.field]]
+name = "mod_time"
+offset = 10
+type = "u16"
+source = "spec"
+anchor = "| +10 | u16 | mod_time |"
+
+[[record.field]]
+name = "mod_date"
+offset = 12
+type = "u16"
+source = "spec"
+anchor = "| +12 | u16 | mod_date |"
+
+[[record.field]]
+name = "crc32"
+offset = 14
+type = "u32"
+source = "spec"
+anchor = "| +14 | u32 | crc32 |"
+
+[[record.field]]
+name = "comp_sz"
+offset = 18
+type = "u32"
+source = "spec"
+anchor = "| +18 | u32 | comp_sz |"
+
+[[record.field]]
+name = "uncomp_sz"
+offset = 22
+type = "u32"
+source = "spec"
+anchor = "| +22 | u32 | uncomp_sz |"
+
+[[record.field]]
+name = "name_len"
+offset = 26
+type = "u16"
+source = "spec"
+anchor = "| +26 | u16 | name_len |"
+
+[[record.field]]
+name = "extra_len"
+offset = 28
+type = "u16"
+source = "spec"
+anchor = "| +28 | u16 | extra_len |"
+
+[[record]]
+name = "zip_central_header"
+kind = "byte"
+section = "1.3"
+anchor = "`zip_central_header` fixed size is 46 bytes"
+size = 46
+endianness = "little"
+note = "Complete ZIP central header from its substituted signature. Name, extra bytes, then comment follow. Local offset is relative to archive base at absolute file offset 8."
+
+[[record.field]]
+name = "signature"
+offset = 0
+type = "bytes[4]"
+source = "spec"
+anchor = "| +0 | bytes[4] | signature |"
+
+[[record.field]]
+name = "version_made_by"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "| +4 | u16 | version_made_by |"
+
+[[record.field]]
+name = "version_needed"
+offset = 6
+type = "u16"
+source = "spec"
+anchor = "| +6 | u16 | version_needed |"
+
+[[record.field]]
+name = "flags"
+offset = 8
+type = "u16"
+source = "spec"
+anchor = "| +8 | u16 | flags |"
+
+[[record.field]]
+name = "method"
+offset = 10
+type = "u16"
+source = "spec"
+anchor = "| +10 | u16 | method |"
+
+[[record.field]]
+name = "mod_time"
+offset = 12
+type = "u16"
+source = "spec"
+anchor = "| +12 | u16 | mod_time |"
+
+[[record.field]]
+name = "mod_date"
+offset = 14
+type = "u16"
+source = "spec"
+anchor = "| +14 | u16 | mod_date |"
+
+[[record.field]]
+name = "crc32"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "| +16 | u32 | crc32 |"
+
+[[record.field]]
+name = "comp_sz"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "| +20 | u32 | comp_sz |"
+
+[[record.field]]
+name = "uncomp_sz"
+offset = 24
+type = "u32"
+source = "spec"
+anchor = "| +24 | u32 | uncomp_sz |"
+
+[[record.field]]
+name = "name_len"
+offset = 28
+type = "u16"
+source = "spec"
+anchor = "| +28 | u16 | name_len |"
+
+[[record.field]]
+name = "extra_len"
+offset = 30
+type = "u16"
+source = "spec"
+anchor = "| +30 | u16 | extra_len |"
+
+[[record.field]]
+name = "comment_len"
+offset = 32
+type = "u16"
+source = "spec"
+anchor = "| +32 | u16 | comment_len |"
+
+[[record.field]]
+name = "disk_start"
+offset = 34
+type = "u16"
+source = "spec"
+anchor = "| +34 | u16 | disk_start |"
+
+[[record.field]]
+name = "internal_attrs"
+offset = 36
+type = "u16"
+source = "spec"
+anchor = "| +36 | u16 | internal_attrs |"
+
+[[record.field]]
+name = "external_attrs"
+offset = 38
+type = "u32"
+source = "spec"
+anchor = "| +38 | u32 | external_attrs |"
+
+[[record.field]]
+name = "local_offset"
+offset = 42
+type = "u32"
+source = "spec"
+anchor = "| +42 | u32 | local_offset |"
+
+[[record]]
+name = "zip_central_descriptor"
+kind = "byte"
+section = "1.3"
+anchor = "`zip_central_descriptor` fixed size is 14 bytes"
+size = 14
+endianness = "little"
+note = "Final fourteen fixed bytes of a ZIP central header, beginning at central signature plus 32."
+
+[[record.field]]
+name = "comment_len"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "| +0 | u16 | comment_len |"
+
+[[record.field]]
+name = "disk_start"
+offset = 2
+type = "u16"
+source = "spec"
+anchor = "| +2 | u16 | disk_start |"
+
+[[record.field]]
+name = "internal_attrs"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "| +4 | u16 | internal_attrs |"
+
+[[record.field]]
+name = "external_attrs"
+offset = 6
+type = "u32"
+source = "spec"
+anchor = "| +6 | u32 | external_attrs |"
+
+[[record.field]]
+name = "local_offset"
+offset = 10
+type = "u32"
+source = "spec"
+anchor = "| +10 | u32 | local_offset |"
 
 [[record]]
 name = "zlb_wrapper_header"
@@ -11541,3 +11813,184 @@ offset = 13
 type = "u32"
 source = "spec"
 anchor = "at `+9` and `+13`"
+
+[[record]]
+name = "named_padding_header"
+kind = "byte"
+section = "1.4"
+anchor = "`named_padding_header` fixed size is 40 bytes"
+size = 40
+endianness = "little"
+note = "Marker-relative central-like padding prefix. The name follows at +40; the complete physical cell includes its opaque prefix and residual."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[6]"
+source = "spec"
+anchor = "| +0 | bytes[6] | marker |"
+
+[[record.field]]
+name = "time_date"
+offset = 6
+type = "u32"
+source = "spec"
+anchor = "| +6 | u32 | time_date |"
+
+[[record.field]]
+name = "two_l"
+offset = 10
+type = "u32"
+source = "spec"
+anchor = "| +10 | u32 | two_l |"
+
+[[record.field]]
+name = "half_l"
+offset = 14
+type = "u32"
+source = "spec"
+anchor = "| +14 | u32 | half_l |"
+
+[[record.field]]
+name = "l"
+offset = 18
+type = "u32"
+source = "spec"
+anchor = "| +18 | u32 | l |"
+
+[[record.field]]
+name = "name_len"
+offset = 22
+type = "u16"
+source = "spec"
+anchor = "| +22 | u16 | name_len |"
+
+[[record.field]]
+name = "extra_len"
+offset = 24
+type = "u16"
+source = "spec"
+anchor = "| +24 | u16 | extra_len |"
+
+[[record.field]]
+name = "descriptor"
+offset = 26
+type = "bytes[14]"
+source = "spec"
+anchor = "| +26 | bytes[14] | descriptor |"
+
+[[record]]
+name = "footer_padding_body"
+kind = "byte"
+section = "1.4"
+anchor = "`footer_padding_body` fixed size is 18 bytes"
+size = 18
+endianness = "little"
+note = "Body-relative ordinary footer fields. Complete cell stride and body displacement come from the five_l scaling and exact footer tiling."
+
+[[record.field]]
+name = "disk_fields"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "| +0 | u32 | disk_fields |"
+
+[[record.field]]
+name = "entries_disk"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "| +4 | u16 | entries_disk |"
+
+[[record.field]]
+name = "entries_total"
+offset = 6
+type = "u16"
+source = "spec"
+anchor = "| +6 | u16 | entries_total |"
+
+[[record.field]]
+name = "named_stride"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "| +8 | u32 | named_stride |"
+
+[[record.field]]
+name = "five_l"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "| +12 | u32 | five_l |"
+
+[[record.field]]
+name = "comment_len"
+offset = 16
+type = "u16"
+source = "spec"
+anchor = "| +16 | u16 | comment_len |"
+
+[[record]]
+name = "zip_eocd_header"
+kind = "byte"
+section = "1.4"
+anchor = "`zip_eocd_header` fixed size is 22 bytes"
+size = 22
+endianness = "little"
+note = "Native ZIP EOCD header, including substituted signature. Its count and both directory locators distinguish the real root from ordinary footer bodies."
+
+[[record.field]]
+name = "signature"
+offset = 0
+type = "bytes[4]"
+source = "spec"
+anchor = "| +0 | bytes[4] | signature |"
+
+[[record.field]]
+name = "disk_number"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "| +4 | u16 | disk_number |"
+
+[[record.field]]
+name = "central_disk"
+offset = 6
+type = "u16"
+source = "spec"
+anchor = "| +6 | u16 | central_disk |"
+
+[[record.field]]
+name = "entries_disk"
+offset = 8
+type = "u16"
+source = "spec"
+anchor = "| +8 | u16 | entries_disk |"
+
+[[record.field]]
+name = "entries_total"
+offset = 10
+type = "u16"
+source = "spec"
+anchor = "| +10 | u16 | entries_total |"
+
+[[record.field]]
+name = "central_size"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "| +12 | u32 | central_size |"
+
+[[record.field]]
+name = "central_offset"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "| +16 | u32 | central_offset |"
+
+[[record.field]]
+name = "comment_len"
+offset = 20
+type = "u16"
+source = "spec"
+anchor = "| +20 | u16 | comment_len |"

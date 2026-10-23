@@ -102,21 +102,17 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** A producer-side relation must establish a regeneration rule before a source-less writer can synthesize this field.
 
-### CM-03. Cache-cell `type_id` high half
+### CM-04. Opaque tail residual generation
 
-**Question.** What does the high half of a cache-cell `type_id` encode?
+**Question.** How does the producer generate the opaque prefix and residual bytes in the named tail-padding and anonymous footer cells?
 
-**Known.** `sldprt.md` §1.2 "The bytes before the first valid block and the long inter-block gaps hold a **fixed-cell" through `sldprt.md` §1.2 "A valid cache cell satisfies `two_L == 2L`, `half_L == L//2`, `0 < name_len < 500`, and has a" define the cell `type_id` field and its relation to the addressed block.
+**Known.** `sldprt.md` §1.4 defines the named-grid scales, footer scales, exact cell extents, EOCD count, and both central-directory locator equations. Bytes outside those fields remain opaque and are retained exactly; they do not select directory members.
 
-**Need.** We must know the high-half semantics to validate and write the type identifier.
+**Need.** An independent producer oracle that explains or generates those residual bytes for newly constructed cells.
 
-### CM-04. Tail-directory fill
+**Conflict.** None.
 
-**Question.** What index-state information does the variable-length fill after the final tail-directory entry encode?
-
-**Known.** `sldprt.md` §1.3 "The file tail carries an **OPC package section directory**" through `sldprt.md` §1.3 "The file tail carries an **OPC package section directory**" define tail-directory entry framing and section lookup.
-
-**Need.** We must know the fill semantics to validate and write the tail directory.
+**Note.** Parsed grid geometry and EOCD fields do not establish a regeneration rule for opaque residuals.
 
 ### CM-07. `moTransRefPlaneData_c` gap
 
@@ -501,11 +497,3 @@ unrelated preceding feature as the pattern seed.
 **Known.** Configuration-manager values occur at offsets `+66`, `+107`, and `+117`; `moPart_c` has two defined fields; and `moVisualProperties_c` defines colour and name fields. The remaining bytes, the complete record lengths, and the role of `0x00c0_c0c0` in material records are undefined.
 
 **Need.** We must know what the undecoded bytes hold before the writer can edit a retained record or claim that a generated record is complete.
-
-### EV-04. Tail-directory descriptor semantics
-
-**Question.** Which value does a tail-directory entry's 14-byte descriptor hold?
-
-**Known.** `sldprt.md` §1.3 defines a 14-byte descriptor and a 6-byte trailer for each tail-directory entry. The trailer has one value for all entries in a file, and its first four bytes are the directory separator.
-
-**Need.** We must know the descriptor semantics before a new entry can derive a nonzero descriptor without a same-name source entry.

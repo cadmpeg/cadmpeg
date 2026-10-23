@@ -77,52 +77,110 @@ Spec §1.1 · layout: byte offsets · size: 8 B
 
 Spec §1.1 · layout: byte offsets · size: 26 B
 
-Fixed prefix only. `preamble[pre_sz]` and `payload[comp_sz]` follow; the record extent is `block_end = marker_offset + 26 + pre_sz + comp_sz`.
+Marker-relative zero-extra-length projection of the native ZIP local header; the marker starts four bytes after the substituted local signature. Names and compressed bytes follow this prefix. Existing constant names denote packed ZIP fields.
 
 Parsed by:
 - `crates/cadmpeg-codec-sldprt/src/container.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 6 | `marker` | `bytes[6]` | little | spec | marker bytes[6] ; 14 00 06 00 08 00 · value `[20, 0, 6, 0, 8, 0]` |
-| 6 | 4 | `type_id` | `u32` | little | spec | type_id u32 LE |
-| 10 | 4 | `crc32` | `u32` | little | spec | crc32 u32 LE ; CRC-32 of the DECOMPRESSED payload |
-| 14 | 4 | `comp_sz` | `u32` | little | spec | comp_sz u32 LE |
-| 18 | 4 | `uncomp_sz` | `u32` | little | spec | uncomp_sz u32 LE |
-| 22 | 4 | `pre_sz` | `u32` | little | spec | pre_sz u32 LE |
+| 0 | 6 | `marker` | `bytes[6]` | little | spec | The bytes are 14 00 06 00 08 00 in the native DEFLATE profile. · value `[20, 0, 6, 0, 8, 0]` |
+| 6 | 4 | `type_id` | `u32` | little | spec | Low u16 is MS-DOS time; high u16 is MS-DOS date. |
+| 10 | 4 | `crc32` | `u32` | little | spec | crc32 u32 LE ; CRC-32 of decompressed payload |
+| 14 | 4 | `comp_sz` | `u32` | little | spec | comp_sz u32 LE ; compressed size |
+| 18 | 4 | `uncomp_sz` | `u32` | little | spec | uncomp_sz u32 LE ; uncompressed size |
+| 22 | 4 | `pre_sz` | `u32` | little | spec | Compatibility projection of adjacent u16 name length and zero u16 extra length. |
 
 ## `cache_cell_header`
 
 Spec §1.2 · layout: byte offsets · size: 26 B
 
-Fixed prefix only; a nibble-swapped section name of `name_len` bytes follows at +26. The three size fields are redundant scalings of one logical value `L`.
+Marker-relative prefix. Its packed time/date word copies an attached physical successor local member; it is not selected through the decoded cell name.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 10 | 4 | `two_l` | `u32` | unstated | spec | §1.2 states the offset but not the byte order of this field. |
-| 14 | 4 | `half_l` | `u32` | unstated | spec | §1.2 states the offset but not the byte order of this field. |
-| 18 | 4 | `l` | `u32` | unstated | spec | §1.2 states the offset but not the byte order of this field. |
-| 22 | 4 | `name_len` | `u32` | unstated | spec | §1.2 states the offset but not the byte order of this field. Valid when `0 < name_len < 500`. |
-
-Unstated regions:
-
-- `0..10` (10 B): Marker and the field between it and +10. §1.2 states the cell reuses the outer marker but gives no offsets in this region.
+| 0 | 6 | `marker` | `bytes[6]` | little | spec | cache.marker at +0 |
+| 6 | 4 | `type_id` | `u32` | little | spec | Packed ZIP modification time/date; no member-family or type discriminator. |
+| 10 | 4 | `two_l` | `u32` | little | spec | field@+10 == 2*L |
+| 14 | 4 | `half_l` | `u32` | little | spec | field@+14 == L // 2 |
+| 18 | 4 | `l` | `u32` | little | spec | field@+18 == L |
+| 22 | 4 | `name_len` | `u32` | little | spec | field@+22 == name_len |
 
 ## `tail_directory_entry`
 
 Spec §1.3 · layout: byte offsets · size: 40 B
 
-Fixed prefix only. `name[name_len]` follows at +40 and a 6-byte trailer follows the name.
+Compatibility scan projection for an empty local member with zero extra length. It is a subset of central-directory fields, not a separate native record family. Bytes after the name belong to the following central record or other archive structure.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 6 | `marker` | `bytes[6]` | little | spec | +0 marker bytes[6] ; 14 00 06 00 08 00 |
-| 6 | 4 | `type_id` | `u32` | little | spec | +6 type_id u32 LE |
-| 10 | 4 | `zero_at_10` | `u32` | little | spec | +10 zero u32 LE |
-| 14 | 4 | `size` | `u32` | little | spec | +14 size u32 LE ; section's stored/uncompressed size |
-| 18 | 4 | `zero_at_18` | `u32` | little | spec | +18 zero u32 LE |
-| 22 | 4 | `name_len` | `u32` | little | spec | +22 name_len u32 LE |
-| 26 | 14 | `descriptor` | `bytes[14]` | little | spec | +26 descriptor bytes[14] |
+| 0 | 6 | `marker` | `bytes[6]` | little | spec | tail.marker at +0 |
+| 6 | 4 | `type_id` | `u32` | little | spec | Packed ZIP modification time/date. |
+| 10 | 4 | `zero_at_10` | `u32` | little | spec | ZIP CRC-32 is zero in this empty-member projection. |
+| 14 | 4 | `size` | `u32` | little | spec | ZIP compressed size; the raw-DEFLATE empty payload occupies two bytes. |
+| 18 | 4 | `zero_at_18` | `u32` | little | spec | ZIP uncompressed size is zero in this empty-member projection. |
+| 22 | 4 | `name_len` | `u32` | little | spec | Packed name length u16 plus zero extra length u16. |
+| 26 | 14 | `descriptor` | `bytes[14]` | little | spec | Five ZIP fields, individually defined by zip_central_descriptor. |
+
+## `zip_local_header`
+
+Spec §1.1 · layout: byte offsets · size: 30 B
+
+Complete ZIP local header from its substituted signature. Name, extra bytes, then compressed data follow.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `signature` | `bytes[4]` | little | spec | \| +0 \| bytes[4] \| signature \| |
+| 4 | 2 | `version_needed` | `u16` | little | spec | \| +4 \| u16 \| version_needed \| |
+| 6 | 2 | `flags` | `u16` | little | spec | \| +6 \| u16 \| flags \| |
+| 8 | 2 | `method` | `u16` | little | spec | \| +8 \| u16 \| method \| |
+| 10 | 2 | `mod_time` | `u16` | little | spec | \| +10 \| u16 \| mod_time \| |
+| 12 | 2 | `mod_date` | `u16` | little | spec | \| +12 \| u16 \| mod_date \| |
+| 14 | 4 | `crc32` | `u32` | little | spec | \| +14 \| u32 \| crc32 \| |
+| 18 | 4 | `comp_sz` | `u32` | little | spec | \| +18 \| u32 \| comp_sz \| |
+| 22 | 4 | `uncomp_sz` | `u32` | little | spec | \| +22 \| u32 \| uncomp_sz \| |
+| 26 | 2 | `name_len` | `u16` | little | spec | \| +26 \| u16 \| name_len \| |
+| 28 | 2 | `extra_len` | `u16` | little | spec | \| +28 \| u16 \| extra_len \| |
+
+## `zip_central_header`
+
+Spec §1.3 · layout: byte offsets · size: 46 B
+
+Complete ZIP central header from its substituted signature. Name, extra bytes, then comment follow. Local offset is relative to archive base at absolute file offset 8.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `signature` | `bytes[4]` | little | spec | \| +0 \| bytes[4] \| signature \| |
+| 4 | 2 | `version_made_by` | `u16` | little | spec | \| +4 \| u16 \| version_made_by \| |
+| 6 | 2 | `version_needed` | `u16` | little | spec | \| +6 \| u16 \| version_needed \| |
+| 8 | 2 | `flags` | `u16` | little | spec | \| +8 \| u16 \| flags \| |
+| 10 | 2 | `method` | `u16` | little | spec | \| +10 \| u16 \| method \| |
+| 12 | 2 | `mod_time` | `u16` | little | spec | \| +12 \| u16 \| mod_time \| |
+| 14 | 2 | `mod_date` | `u16` | little | spec | \| +14 \| u16 \| mod_date \| |
+| 16 | 4 | `crc32` | `u32` | little | spec | \| +16 \| u32 \| crc32 \| |
+| 20 | 4 | `comp_sz` | `u32` | little | spec | \| +20 \| u32 \| comp_sz \| |
+| 24 | 4 | `uncomp_sz` | `u32` | little | spec | \| +24 \| u32 \| uncomp_sz \| |
+| 28 | 2 | `name_len` | `u16` | little | spec | \| +28 \| u16 \| name_len \| |
+| 30 | 2 | `extra_len` | `u16` | little | spec | \| +30 \| u16 \| extra_len \| |
+| 32 | 2 | `comment_len` | `u16` | little | spec | \| +32 \| u16 \| comment_len \| |
+| 34 | 2 | `disk_start` | `u16` | little | spec | \| +34 \| u16 \| disk_start \| |
+| 36 | 2 | `internal_attrs` | `u16` | little | spec | \| +36 \| u16 \| internal_attrs \| |
+| 38 | 4 | `external_attrs` | `u32` | little | spec | \| +38 \| u32 \| external_attrs \| |
+| 42 | 4 | `local_offset` | `u32` | little | spec | \| +42 \| u32 \| local_offset \| |
+
+## `zip_central_descriptor`
+
+Spec §1.3 · layout: byte offsets · size: 14 B
+
+Final fourteen fixed bytes of a ZIP central header, beginning at central signature plus 32.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `comment_len` | `u16` | little | spec | \| +0 \| u16 \| comment_len \| |
+| 2 | 2 | `disk_start` | `u16` | little | spec | \| +2 \| u16 \| disk_start \| |
+| 4 | 2 | `internal_attrs` | `u16` | little | spec | \| +4 \| u16 \| internal_attrs \| |
+| 6 | 4 | `external_attrs` | `u32` | little | spec | \| +6 \| u32 \| external_attrs \| |
+| 10 | 4 | `local_offset` | `u32` | little | spec | \| +10 \| u32 \| local_offset \| |
 
 ## `zlb_wrapper_header`
 
@@ -3002,6 +3060,55 @@ Parsed by:
 | 2 | 7 | `zero_padding` | `bytes[7]` | little | spec | seven zero bytes at `+2..+8` · value `[0, 0, 0, 0, 0, 0, 0]` |
 | 9 | 4 | `identity` | `u32` | little | spec | at `+9` and `+13` |
 | 13 | 4 | `identity_copy` | `u32` | little | spec | at `+9` and `+13` |
+
+## `named_padding_header`
+
+Spec §1.4 · layout: byte offsets · size: 40 B
+
+Marker-relative central-like padding prefix. The name follows at +40; the complete physical cell includes its opaque prefix and residual.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 6 | `marker` | `bytes[6]` | little | spec | \| +0 \| bytes[6] \| marker \| |
+| 6 | 4 | `time_date` | `u32` | little | spec | \| +6 \| u32 \| time_date \| |
+| 10 | 4 | `two_l` | `u32` | little | spec | \| +10 \| u32 \| two_l \| |
+| 14 | 4 | `half_l` | `u32` | little | spec | \| +14 \| u32 \| half_l \| |
+| 18 | 4 | `l` | `u32` | little | spec | \| +18 \| u32 \| l \| |
+| 22 | 2 | `name_len` | `u16` | little | spec | \| +22 \| u16 \| name_len \| |
+| 24 | 2 | `extra_len` | `u16` | little | spec | \| +24 \| u16 \| extra_len \| |
+| 26 | 14 | `descriptor` | `bytes[14]` | little | spec | \| +26 \| bytes[14] \| descriptor \| |
+
+## `footer_padding_body`
+
+Spec §1.4 · layout: byte offsets · size: 18 B
+
+Body-relative ordinary footer fields. Complete cell stride and body displacement come from the five_l scaling and exact footer tiling.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `disk_fields` | `u32` | little | spec | \| +0 \| u32 \| disk_fields \| |
+| 4 | 2 | `entries_disk` | `u16` | little | spec | \| +4 \| u16 \| entries_disk \| |
+| 6 | 2 | `entries_total` | `u16` | little | spec | \| +6 \| u16 \| entries_total \| |
+| 8 | 4 | `named_stride` | `u32` | little | spec | \| +8 \| u32 \| named_stride \| |
+| 12 | 4 | `five_l` | `u32` | little | spec | \| +12 \| u32 \| five_l \| |
+| 16 | 2 | `comment_len` | `u16` | little | spec | \| +16 \| u16 \| comment_len \| |
+
+## `zip_eocd_header`
+
+Spec §1.4 · layout: byte offsets · size: 22 B
+
+Native ZIP EOCD header, including substituted signature. Its count and both directory locators distinguish the real root from ordinary footer bodies.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `signature` | `bytes[4]` | little | spec | \| +0 \| bytes[4] \| signature \| |
+| 4 | 2 | `disk_number` | `u16` | little | spec | \| +4 \| u16 \| disk_number \| |
+| 6 | 2 | `central_disk` | `u16` | little | spec | \| +6 \| u16 \| central_disk \| |
+| 8 | 2 | `entries_disk` | `u16` | little | spec | \| +8 \| u16 \| entries_disk \| |
+| 10 | 2 | `entries_total` | `u16` | little | spec | \| +10 \| u16 \| entries_total \| |
+| 12 | 4 | `central_size` | `u32` | little | spec | \| +12 \| u32 \| central_size \| |
+| 16 | 4 | `central_offset` | `u32` | little | spec | \| +16 \| u32 \| central_offset \| |
+| 20 | 2 | `comment_len` | `u16` | little | spec | \| +20 \| u16 \| comment_len \| |
 
 ## Not tabulated
 

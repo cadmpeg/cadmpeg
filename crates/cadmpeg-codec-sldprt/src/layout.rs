@@ -67,7 +67,7 @@ pub(crate) mod outer_header {
 /// Spec §1.1. Record length 26 B.
 ///
 /// ```text
-/// Fixed prefix only. `preamble[pre_sz]` and `payload[comp_sz]` follow; the record extent is `block_end = marker_offset + 26 + pre_sz + comp_sz`.
+/// Marker-relative zero-extra-length projection of the native ZIP local header; the marker starts four bytes after the substituted local signature. Names and compressed bytes follow this prefix. Existing constant names denote packed ZIP fields.
 /// ```
 pub(crate) mod block_frame_header {
     /// Record length in bytes. Spec §1.1.
@@ -91,18 +91,18 @@ pub(crate) mod block_frame_header {
 /// Spec §1.2. Record length 26 B.
 ///
 /// ```text
-/// Fixed prefix only; a nibble-swapped section name of `name_len` bytes follows at +26. The three size fields are redundant scalings of one logical value `L`.
+/// Marker-relative prefix. Its packed time/date word copies an attached physical successor local member; it is not selected through the decoded cell name.
 /// ```
 pub(crate) mod cache_cell_header {
     /// Record length in bytes. Spec §1.2.
     pub(crate) const LEN: usize = 26;
-    /// Offset of `two_l` (`u32`, endianness unstated). Spec §1.2.
+    /// Offset of `two_l` (`u32`, little-endian). Spec §1.2.
     pub(crate) const TWO_L: usize = 10;
-    /// Offset of `half_l` (`u32`, endianness unstated). Spec §1.2.
+    /// Offset of `half_l` (`u32`, little-endian). Spec §1.2.
     pub(crate) const HALF_L: usize = 14;
-    /// Offset of `l` (`u32`, endianness unstated). Spec §1.2.
+    /// Offset of `l` (`u32`, little-endian). Spec §1.2.
     pub(crate) const L: usize = 18;
-    /// Offset of `name_len` (`u32`, endianness unstated). Spec §1.2.
+    /// Offset of `name_len` (`u32`, little-endian). Spec §1.2.
     pub(crate) const NAME_LEN: usize = 22;
 }
 
@@ -111,7 +111,7 @@ pub(crate) mod cache_cell_header {
 /// Spec §1.3. Record length 40 B.
 ///
 /// ```text
-/// Fixed prefix only. `name[name_len]` follows at +40 and a 6-byte trailer follows the name.
+/// Compatibility scan projection for an empty local member with zero extra length. It is a subset of central-directory fields, not a separate native record family. Bytes after the name belong to the following central record or other archive structure.
 /// ```
 pub(crate) mod tail_directory_entry {
     /// Record length in bytes. Spec §1.3.
