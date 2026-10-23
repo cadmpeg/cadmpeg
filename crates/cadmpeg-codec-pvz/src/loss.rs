@@ -93,6 +93,27 @@ pub(crate) enum PvzLossCode {
     TessellationEdgesNotTransferred,
     /// A decoded mesh failed tessellation admission and was not transferred.
     TessellationMeshRejected,
+    /// Exact-stream records with a frame and no settled meaning were kept
+    /// by tag and offset only.
+    ExactRecordUninterpreted,
+    /// A face carrier has no neutral surface form.
+    ExactSurfaceUntyped,
+    /// An analytic face carrier was written as its embedded B-spline.
+    ExactSurfaceAsBspline,
+    /// An edge curve has no neutral curve form; the edge has no carrier.
+    ExactCurveUntyped,
+    /// A coedge pcurve has no neutral pcurve form or domain.
+    ExactPcurveUntransferred,
+    /// Secondary pcurves of analytic faces lie in the embedded B-spline
+    /// domain and were not written onto the analytic carrier.
+    ExactSecondaryPcurveOmitted,
+    /// Coedge pcurve images miss their edge-curve ends by more than the
+    /// endpoint tolerance; the face tolerance admits the measured residual.
+    ExactEndpointMismatch,
+    /// A loop does not close, or a loop junction joins no vertex.
+    ExactLoopOpen,
+    /// A face side came from a gauge, not from an outward test.
+    ExactFaceSideGauge,
 }
 
 impl PvzLossCode {
@@ -131,6 +152,15 @@ impl PvzLossCode {
         Self::TessellationTextureCoordinates,
         Self::TessellationEdgesNotTransferred,
         Self::TessellationMeshRejected,
+        Self::ExactRecordUninterpreted,
+        Self::ExactSurfaceUntyped,
+        Self::ExactSurfaceAsBspline,
+        Self::ExactCurveUntyped,
+        Self::ExactPcurveUntransferred,
+        Self::ExactSecondaryPcurveOmitted,
+        Self::ExactEndpointMismatch,
+        Self::ExactLoopOpen,
+        Self::ExactFaceSideGauge,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -169,6 +199,15 @@ impl PvzLossCode {
             Self::TessellationTextureCoordinates => "tessellation.texture-coordinates-dropped",
             Self::TessellationEdgesNotTransferred => "tessellation.edges-not-transferred",
             Self::TessellationMeshRejected => "tessellation.mesh-rejected",
+            Self::ExactRecordUninterpreted => "exact.record-uninterpreted",
+            Self::ExactSurfaceUntyped => "exact.surface-untyped",
+            Self::ExactSurfaceAsBspline => "exact.surface-as-bspline",
+            Self::ExactCurveUntyped => "exact.curve-untyped",
+            Self::ExactPcurveUntransferred => "exact.pcurve-untransferred",
+            Self::ExactSecondaryPcurveOmitted => "exact.secondary-pcurve-omitted",
+            Self::ExactEndpointMismatch => "exact.endpoint-mismatch",
+            Self::ExactLoopOpen => "exact.loop-open",
+            Self::ExactFaceSideGauge => "exact.face-side-gauge",
         }
     }
 
@@ -206,7 +245,16 @@ impl PvzLossCode {
             | Self::AttributeAppearanceColorRejected
             | Self::TessellationTextureCoordinates
             | Self::TessellationEdgesNotTransferred
-            | Self::TessellationMeshRejected => Severity::Warning,
+            | Self::TessellationMeshRejected
+            | Self::ExactRecordUninterpreted
+            | Self::ExactSurfaceAsBspline
+            | Self::ExactCurveUntyped
+            | Self::ExactPcurveUntransferred
+            | Self::ExactSecondaryPcurveOmitted
+            | Self::ExactEndpointMismatch
+            | Self::ExactLoopOpen
+            | Self::ExactFaceSideGauge => Severity::Warning,
+            Self::ExactSurfaceUntyped => Severity::Error,
             Self::StructureMemberMalformed => Severity::Blocking,
         }
     }
@@ -248,7 +296,79 @@ impl PvzLossCode {
                 LossTaxonomy::MaterialNotTransferred
             }
             Self::AttributeAppearanceColorRejected => LossTaxonomy::AppearanceReduced,
+            Self::ExactRecordUninterpreted => LossTaxonomy::RecordNotTyped,
+            Self::ExactSurfaceUntyped | Self::ExactCurveUntyped => {
+                LossTaxonomy::GeometryNotTransferred
+            }
+            Self::ExactSurfaceAsBspline | Self::ExactEndpointMismatch => {
+                LossTaxonomy::DecodeDiagnostic
+            }
+            Self::ExactPcurveUntransferred | Self::ExactSecondaryPcurveOmitted => {
+                LossTaxonomy::PcurveOmitted
+            }
+            Self::ExactLoopOpen => LossTaxonomy::SourceTopologyInvalid,
+            Self::ExactFaceSideGauge => LossTaxonomy::TopologyGaugeSubstituted,
         }
+    }
+
+    /// The message of a note that counts `count` instances of this code.
+    pub(crate) fn tally_message(self, count: usize) -> String {
+        let what = match self {
+            Self::SourceDialectUnverified => "unverified dialect declarations",
+            Self::ContainerDirectoryRecovered => "recovered ZIP directories",
+            Self::StructureMemberMalformed => "structure members that did not decode",
+            Self::StructureStreamUndecoded => "structure streams of an undefined type",
+            Self::StructurePropertyStreamMalformed => "property streams that did not decode",
+            Self::StructureElementUndecoded => "structure elements outside the model",
+            Self::StructureDefinitionAttributes => "typed definitions with trailing bytes",
+            Self::StructureOccurrenceAttributes => "occurrences with flags or extensions",
+            Self::StructureOccurrenceUndecoded => "occurrences with an undefined placement",
+            Self::StructureBoundsNotTransferred => "geometry-element bounds",
+            Self::StructurePropertyAttributes => "typed properties with trailing bytes",
+            Self::StructurePropertyKeyDropped => "properties with a dropped name",
+            Self::StructureRootAmbiguous => "structures without exactly one root",
+            Self::StructureOccurrenceCycle => "occurrences that close a cycle",
+            Self::StructureOccurrenceTruncated => "truncated occurrence expansions",
+            Self::StructurePlacementNotSimilarity => "placements that are not similarities",
+            Self::StructurePlacementInvalid => "placements with non-finite values",
+            Self::GeometryMemberMissing => "geometry members missing from the package",
+            Self::GeometryMemberMalformed => "geometry members that did not decode",
+            Self::GeometryMemberUnreferenced => "geometry members that no definition names",
+            Self::GeometryStreamUndecoded => "geometry streams not decoded",
+            Self::GeometryPreambleUndecoded => "OL preamble blocks",
+            Self::GeometryExactUndecoded => "exact-geometry streams not decoded",
+            Self::AttributeRecordsUndecoded => "attribute records outside the appearances",
+            Self::AttributeAppearanceUnresolved => "appearances that did not resolve",
+            Self::AttributeAppearanceTail => "appearance-reference tails",
+            Self::AttributeAppearanceColorRejected => "appearance values out of range",
+            Self::TessellationPatchFields => "patch-header field sets",
+            Self::TessellationRecordsUndecoded => "tessellation records not decoded",
+            Self::TessellationTextureCoordinates => "vertices with texture coordinates",
+            Self::TessellationEdgesNotTransferred => "edge tessellation groups",
+            Self::TessellationMeshRejected => "meshes rejected by admission",
+            Self::ExactRecordUninterpreted => {
+                "exact-stream records kept by tag and offset only (tag 0x0a and undefined tags)"
+            }
+            Self::ExactSurfaceUntyped => "faces whose carrier has no neutral surface form",
+            Self::ExactSurfaceAsBspline => {
+                "analytic faces written as their embedded B-spline carrier"
+            }
+            Self::ExactCurveUntyped => {
+                "edges without a neutral curve (composite or undefined curve types)"
+            }
+            Self::ExactPcurveUntransferred => "coedge pcurves not transferred",
+            Self::ExactSecondaryPcurveOmitted => {
+                "secondary pcurves in the embedded B-spline domain not written onto analytic faces"
+            }
+            Self::ExactEndpointMismatch => {
+                "faces whose pcurve images miss the edge ends by more than 2e-5 m"
+            }
+            Self::ExactLoopOpen => "open loops or loop junctions that join no vertex",
+            Self::ExactFaceSideGauge => {
+                "faces whose side is a propagation gauge, or side conflicts between faces"
+            }
+        };
+        format!("{count} {what}")
     }
 
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
@@ -311,6 +431,15 @@ mod tests {
                 "tessellation.texture-coordinates-dropped",
                 "tessellation.edges-not-transferred",
                 "tessellation.mesh-rejected",
+                "exact.record-uninterpreted",
+                "exact.surface-untyped",
+                "exact.surface-as-bspline",
+                "exact.curve-untyped",
+                "exact.pcurve-untransferred",
+                "exact.secondary-pcurve-omitted",
+                "exact.endpoint-mismatch",
+                "exact.loop-open",
+                "exact.face-side-gauge",
             ]
         );
     }

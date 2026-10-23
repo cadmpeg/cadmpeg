@@ -164,11 +164,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### PVZ-18. Other surface flag bits
 
-**Question.** What do `flags` bits other than `0x80`, and `marker` bits other than bit 0, mean in a surface record?
+**Question.** What do `flags` bits other than `0x80`, `0x08`, and `0x10`, and `marker` bits other than bit 0, mean in a surface record?
 
-**Known.** `creo_view_pvz.md` §8.3. B-spline surfaces with `flags` `0x08`, `0x10`, and `0x90` occur; their range pairs follow the bit-7 and bit-0 rule.
+**Known.** `creo_view_pvz.md` §8.3 and §8.9. Bits `0x08` and `0x10` of a B-spline surface record mark the periodic directions. No other `flags` or `marker` bit is set in the available files.
 
-**Need.** We must know whether these bits mark periodic or closed directions.
+**Need.** We must know them to read a surface record that sets them.
 
 ### PVZ-19. Curve and pcurve flag bits
 
@@ -182,7 +182,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does the `orientation` byte of a coedge record mean?
 
-**Known.** `creo_view_pvz.md` §8.12 and §8.17. The byte does not equal the curve sense derived from the endpoints.
+**Known.** `creo_view_pvz.md` §8.12, §8.17, and §8.18. The byte does not equal the curve sense derived from the endpoints. In loops of three or more coedges, the byte is 1 for all but 11 of about 128 000 coedges whose edge curve runs along the stored coedge order (§8.18), and 0 for all but 250 of about 96 000 coedges whose edge curve runs against it. All exceptions are on B-spline faces.
 
 **Need.** We must know whether it gives the loop direction or the face side.
 
@@ -200,7 +200,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does the 12-byte tag-`0x0a` record in the face section of an exact stream mean?
 
-**Known.** The payload is three `u32` values `0, 1, n`, and `n` increases through the stream.
+**Known.** The payload is three `u32` values `0, 1, n`, and `n` increases through the stream. The record stands between a singular-use record and its terminator (`creo_view_pvz.md` §8.2).
 
 **Need.** We must know whether it attaches a face to a tessellation group or to an attribute.
 
@@ -208,7 +208,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How does a type-2 edge curve or pcurve parameterise the curves it lists, and which coedges use it?
 
-**Known.** `creo_view_pvz.md` §8.15 and §8.16. The listed indexes are less than the table count and refer to records stored before the composite.
+**Known.** `creo_view_pvz.md` §8.15 and §8.16. The listed indexes are less than the table count and refer to records stored before the composite. Coedges of B-spline faces reference composite edge curves and composite pcurves.
 
 **Need.** We must know the parameterisation to evaluate a composite curve.
 
@@ -216,7 +216,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Why do some coedges on B-spline faces have endpoint residuals larger than the tolerance of `creo_view_pvz.md` §8.21?
 
-**Known.** About 4 % of native-pcurve coedges on B-spline faces have residuals from 10⁻³ m to 10⁻¹ m. In each such face the residuals of all coedges are of similar size, which indicates an offset or a transform of the whole face rather than a local error. The surface flags and range pairs do not separate these faces from the others.
+**Known.** About 6 % of native-pcurve coedges on B-spline faces have residuals above 2×10⁻⁵ m and up to 10⁻¹ m. The periodic directions of §8.9 do not explain them. In each such face the residuals of all coedges are of similar size, which indicates an offset or a transform of the whole face rather than a local error. The surface flags and range pairs do not separate these faces from the others.
 
 **Need.** We must know the missing transform to evaluate these faces.
 
@@ -253,3 +253,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** §3.2, §4.5, §8.1, §8.3, §8.15, and §8.16 list the defined values. Pcurve type 1 (circle) is not in the defined set.
 
 **Need.** A decoder must reject or preserve an undefined value without loss.
+
+### PVZ-29. Singular use of an extended curve
+
+**Question.** What does a singular-use record mean when its edge curve does not collapse to one point?
+
+**Known.** `creo_view_pvz.md` §8.13. Most referenced curves stay within 2×10⁻⁵ m of one point. Some are circular arcs of radius 9×10⁻³ m, lines, B-splines, and polylines of model-space length. The referenced edge is also used by a coedge of the same face, and that coedge can have a second use on another face.
+
+**Need.** We must know the meaning to decide whether such an edge is degenerate in the neutral model.

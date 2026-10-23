@@ -39,3 +39,30 @@ pub fn signatures(data: &[u8]) {
     let _probe = crate::pvs::generation(member);
     let _probe = crate::ol::generation(member);
 }
+
+/// Exercise the exact-geometry reader and B-rep writer over an expanded
+/// exact-stream payload. The stream identity follows the version stored in
+/// the payload's first record.
+pub fn exact_geometry<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<(), CodecError> {
+    let stream_id = match View::u32_le_at(root.window(), 8) {
+        Some(4) => crate::brep::EXACT_STREAM_F64,
+        _ => crate::brep::EXACT_STREAM_F32,
+    };
+    let exact = crate::brep::parse(ctx, stream_id, root)?;
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+    let mut losses = Vec::new();
+    let stream = cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("exact"));
+    let _body = crate::brep::emit(
+        ctx,
+        &exact,
+        &cadmpeg_ir::identity_key!("fuzz"),
+        &mut crate::brep::emit::Sink {
+            model: &mut ir.model,
+            annotations: &mut annotations,
+            losses: &mut losses,
+            stream: &stream,
+        },
+    )?;
+    Ok(())
+}
