@@ -54,6 +54,36 @@ class LayoutCheck(harness.FixtureCase):
         self.assertEqual(harness.statuses(results), ["FAIL"])
         self.assertIn("never edited by hand", results[0].details[0])
 
+    def test_hand_edited_derived_file_points_to_run_layout(self) -> None:
+        self.repo.commit({CODE: "pub const A: usize = 3;\n"})
+        self.assertIn("--run-layout", " ".join(self.results()[0].details))
+
+    def test_run_layout_passes_an_identical_regeneration(self) -> None:
+        self.repo.commit({CODE: "pub const A: usize = 3;\n"})
+        context = self.repo.context(run_layout=True)
+        context.run = lambda command, env=None: (0, "")
+        self.assertEqual(harness.statuses(harness.run_check(check, context)), ["PASS"])
+
+    def test_run_layout_fails_a_hand_edit_regeneration_undoes(self) -> None:
+        self.repo.commit({CODE: "pub const A: usize = 3;\n"})
+        context = self.repo.context(run_layout=True)
+
+        def regenerate(command, env=None):
+            if env:
+                (self.repo.root / CODE).write_text("pub const A: usize = 1;\n")
+            return 0, ""
+
+        context.run = regenerate
+        results = harness.run_check(check, context)
+        self.assertEqual(harness.statuses(results), ["FAIL"])
+        self.assertIn(CODE, results[0].details)
+
+    def test_run_layout_with_rev_keeps_the_failure(self) -> None:
+        self.repo.commit({CODE: "pub const A: usize = 3;\n"})
+        results = self.results(rev="HEAD", run_layout=True)
+        self.assertEqual(harness.statuses(results), ["FAIL", "SKIP"])
+        self.assertIn("never edited by hand", results[0].details[0])
+
     def test_conflict_markers_fail(self) -> None:
         self.repo.commit({TOML: "<<<<<<< HEAD\na = 2\n=======\na = 3\n>>>>>>> main\n",
                           PAGE: "| b |\n"})
