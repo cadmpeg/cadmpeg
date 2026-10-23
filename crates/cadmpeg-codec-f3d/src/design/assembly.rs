@@ -95,6 +95,11 @@ impl AssemblyScopeGeneration {
         };
         let (operand_frame, lanes, locator_offsets) = match frame_length {
             378 | 399 => (None, Some((4, 0, 4)), Some([51, 62])),
+            // The placement-ordered `As-built` form with a run of limit
+            // owners: each owner adds an 11-byte reference before the
+            // locators and an 11-byte reference-table entry.
+            422 => (None, Some((6, 0, 4)), Some([73, 84])),
+            444 => (None, Some((7, 0, 4)), Some([84, 95])),
             604 => (None, Some((8, 4, 8)), None),
             627 | 637 | 692 => (Some(Standard), Some((4, 0, 4)), Some([366, 377])),
             633 => (Some(Compact), Some((4, 0, 4)), Some([362, 373])),
@@ -234,14 +239,27 @@ pub(crate) fn rigid_as_built_scope(frame_length: u64, as_built: bool) -> bool {
     as_built && rigid_group_member_count(frame_length).is_some()
 }
 
-/// The 378-byte `As-built` form, whose four owners are `OffsetX`, `OffsetY`,
-/// `OffsetZ`, and `AngleZ` in local order.
+/// The placement-ordered `As-built` form, whose first four owners are
+/// `OffsetX`, `OffsetY`, `OffsetZ`, and `AngleZ` in local order. Its limit
+/// owners follow them.
 pub(crate) fn placement_ordered_as_built_scope(frame_length: u64, as_built: bool) -> bool {
-    as_built && frame_length == 378
+    as_built && as_built_limit_owner_count(frame_length).is_some()
+}
+
+/// The limit-owner count a placement-ordered `As-built` frame length
+/// implies: 378 bytes with none, 422 bytes with a rotation's two, and 444
+/// bytes with a slide's three.
+pub(crate) fn as_built_limit_owner_count(frame_length: u64) -> Option<usize> {
+    match frame_length {
+        378 => Some(0),
+        422 => Some(2),
+        444 => Some(3),
+        _ => None,
+    }
 }
 
 /// An `As-built` scope whose operand-path locators are wide locators: a rigid
-/// group, or the 378-byte form with four alignment owners.
+/// group, or the placement-ordered form.
 pub(crate) fn wide_as_built_scope(frame_length: u64, as_built: bool) -> bool {
     rigid_as_built_scope(frame_length, as_built)
         || placement_ordered_as_built_scope(frame_length, as_built)
@@ -407,6 +425,7 @@ pub(crate) fn project_assembly_joints(
     let mut undecoded_motion_count = 0_usize;
     let mut paired_joints = 0_usize;
     let mut unprojected_members = 0_usize;
+    let mut resting_joints = 0_usize;
     for scope in scopes {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
@@ -443,6 +462,13 @@ pub(crate) fn project_assembly_joints(
                     undecoded_motion_count += 1;
                     undecoded_motions.insert(reason);
                 }
+                if motion
+                    .and_then(|motion| motion.limits.as_ref())
+                    .and_then(|lanes| lanes.rest)
+                    .is_some_and(|rest| rest.flag == 1)
+                {
+                    resting_joints += 1;
+                }
                 joints.entry(joint.id.as_str().to_owned()).or_insert(joint);
                 let members =
                     rigid_group_member_joints(scope, stream, &occurrences, scopes, inserts);
@@ -463,6 +489,11 @@ pub(crate) fn project_assembly_joints(
         let reasons = undecoded_motions.into_iter().collect::<Vec<_>>().join("; ");
         losses.push(F3dLossCode::AssemblyJointMotionUndecoded.note(format!(
             "{undecoded_motion_count} Design assembly joint(s) were projected as fixed: their motion does not map to a joint kind ({reasons})."
+        )));
+    }
+    if resting_joints != 0 {
+        losses.push(F3dLossCode::AssemblyJointRestUnprojected.note(format!(
+            "{resting_joints} projected Design assembly joint(s) enable a rest position; the neutral joint does not carry it, which is retained natively."
         )));
     }
     if paired_joints != 0 {
@@ -509,8 +540,9 @@ enum JointMotionKind {
         turn_y_to_z: bool,
         limits: Option<JointLimits>,
     },
-    /// Translation along the connector z axis.
-    Slider,
+    /// Translation along the connector z axis, with its limits in
+    /// millimetres.
+    Slider { limits: Option<JointLimits> },
 }
 
 /// The kind a motion's freedoms and limit lanes select, or the reason they
@@ -532,22 +564,21 @@ fn joint_motion_kind(
         Some((1, 1)) => true,
         Some((first, second)) => return Err(format!("limit flags {first} {second}")),
     };
+    // Rotation limits are in radians and translation limits in centimetres.
+    let limits = |scale: f64, what: &str| match motion.limits.as_ref().filter(|_| limited) {
+        Some(lanes) => JointLimits::new(Some(lanes.minimum * scale), Some(lanes.maximum * scale))
+            .map(Some)
+            .ok_or_else(|| format!("{what} limits are not ordered")),
+        None => Ok(None),
+    };
     match codes.as_slice() {
-        [code @ (1 | 2)] => {
-            let limits = match motion.limits.as_ref().filter(|_| limited) {
-                Some(lanes) => Some(
-                    JointLimits::new(Some(lanes.minimum), Some(lanes.maximum))
-                        .ok_or_else(|| "rotation limits are not ordered".to_owned())?,
-                ),
-                None => None,
-            };
-            Ok(JointMotionKind::Revolute {
-                turn_y_to_z: *code == 1,
-                limits,
-            })
-        }
-        [8] if !limited => Ok(JointMotionKind::Slider),
-        [8] => Err("translation limits".to_owned()),
+        [code @ (1 | 2)] => Ok(JointMotionKind::Revolute {
+            turn_y_to_z: *code == 1,
+            limits: limits(1.0, "rotation")?,
+        }),
+        [8] => Ok(JointMotionKind::Slider {
+            limits: limits(10.0, "translation")?,
+        }),
         codes => Err(format!("freedom codes {codes:?}")),
     }
 }
@@ -700,7 +731,7 @@ fn project_assembly_joint(
                 )
             }
         }
-        Some(Ok(JointMotionKind::Slider)) => {
+        Some(Ok(JointMotionKind::Slider { limits })) => {
             if alignment.angle().abs() > 0.0 {
                 (fixed, false, Some("slider with an angle offset".to_owned()))
             } else {
@@ -708,7 +739,7 @@ fn project_assembly_joint(
                     PairedJointKind::Slider {
                         distance: None,
                         translation_offset: Some(translation_offset),
-                        linear_limits: None,
+                        linear_limits: limits,
                     },
                     false,
                     None,
@@ -1550,6 +1581,7 @@ mod tests {
                 maximum: 0.5,
                 minimum: -0.25,
                 values_offset: 823,
+                rest: None,
             }),
         };
         let project = |motions: &[DesignJointMotion]| {
@@ -1587,6 +1619,36 @@ mod tests {
         assert_eq!(frame[2][1], -1.0);
 
         assert_eq!(kind(&project(&[motion(&[8], [0, 0])]))["kind"], "slider");
+        // Translation limits are in centimetres.
+        let limited = project(&[motion(&[8], [1, 1])]);
+        assert_eq!(kind(&limited)["kind"], "slider");
+        assert_eq!(kind(&limited)["linear_limits"]["minimum"], -2.5);
+        assert_eq!(kind(&limited)["linear_limits"]["maximum"], 5.0);
+        assert!(limited.losses.is_empty());
+
+        // An enabled rest position is retained natively with a loss; a rest
+        // value without the flag is not reported.
+        let resting = |flag: u8| {
+            let mut resting = motion(&[8], [1, 1]);
+            if let Some(lanes) = resting.limits.as_mut() {
+                lanes.rest = Some(crate::records::feature::joint_motion::DesignJointRest {
+                    flag,
+                    value: 0.25,
+                });
+            }
+            project(&[resting])
+        };
+        let rested = resting(1);
+        assert_eq!(kind(&rested)["kind"], "slider");
+        assert_eq!(
+            rested
+                .losses
+                .iter()
+                .map(|loss| loss.code.clone())
+                .collect::<Vec<_>>(),
+            [crate::loss::F3dLossCode::AssemblyJointRestUnprojected.kind()]
+        );
+        assert!(resting(0).losses.is_empty());
 
         // A rigid group is fixed: one whose joint record states a freedom is
         // left unprojected.
@@ -1627,12 +1689,12 @@ mod tests {
             [crate::loss::F3dLossCode::AssemblyJointUnprojected.kind()]
         );
 
-        // Unconfirmed codes, one-sided flags and translation limits stay fixed.
+        // Unconfirmed codes and one-sided flags stay fixed.
         for undecoded in [
             motion(&[0], [0, 0]),
             motion(&[2, 7], [0, 0]),
             motion(&[2], [1, 0]),
-            motion(&[8], [1, 1]),
+            motion(&[8], [0, 1]),
         ] {
             let projection = project(&[undecoded]);
             assert_eq!(kind(&projection)["kind"], "fixed");

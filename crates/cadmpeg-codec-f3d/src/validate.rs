@@ -2692,6 +2692,32 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         })
                         .count()
                         == 1
+                } else if design::assembly::placement_ordered_as_built_scope(
+                    scope.frame_length(),
+                    scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
+                ) {
+                    // The table has nine entries more than the limit owners,
+                    // the four alignment owners appear once and contiguously,
+                    // and every limit owner after them appears.
+                    let table = scope.reference_members();
+                    design::assembly::as_built_limit_owner_count(scope.frame_length())
+                        .is_some_and(|count| table.len() == 9 + count)
+                        && (0..table.len())
+                            .filter(|&start| {
+                                table
+                                    .values_in(start..start + alignment.owners.len())
+                                    .is_some_and(|values| {
+                                        values.eq(alignment.owners.iter().map(|owner| &owner.value))
+                                    })
+                            })
+                            .count()
+                            == 1
+                        && native.design_parameter_owners.iter().all(|owner| {
+                            design_stream(owner.id()) != native_stream
+                                || owner.scope_record_index() != scope.record_index
+                                || owner.local_ordinal() < 4
+                                || table.values().any(|value| *value == owner.record_index())
+                        })
                 } else {
                     scope
                         .reference_members()

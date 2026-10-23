@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use std::collections::HashMap;
 
-use super::{decode_stream, FREEDOM_ENTRY_PREFIX};
+use super::{decode_stream, FREEDOM_ENTRY_PREFIX, ZERO_LANE_FREEDOM_ENTRY_PREFIX};
 
 fn header(out: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
     out.extend_from_slice(&3u32.to_le_bytes());
@@ -137,6 +137,7 @@ fn a_word_one_freedom_entry_keeps_its_word_and_value() {
         [
             crate::records::feature::joint_motion::DesignJointFreedomWord {
                 word: 1,
+                zero_second_value: false,
                 value: Some(std::f64::consts::TAU),
             }
         ]
@@ -151,6 +152,72 @@ fn a_word_one_freedom_entry_keeps_its_word_and_value() {
         .try_into()
         .unwrap();
     assert!(read.entry_words.is_empty());
+}
+
+/// A word-`1` entry can store `0` where other entries store π; such an entry
+/// is read only in a record without π entries, and only with word `1`. The
+/// joint record's rest flag follows its limit flags and its rest value
+/// follows the minimum.
+#[test]
+fn a_zero_lane_entry_and_a_rest_position_are_read() {
+    let zero_lane = |out: &mut Vec<u8>, word: u32, code: u32| {
+        out.extend_from_slice(&ZERO_LANE_FREEDOM_ENTRY_PREFIX);
+        out.extend_from_slice(&word.to_le_bytes());
+        out.extend_from_slice(&code.to_le_bytes());
+        out.extend_from_slice(&0f64.to_le_bytes());
+    };
+    let mut bytes = Vec::new();
+    header(&mut bytes, *b"331", 10);
+    bytes.extend_from_slice(&[0; 20]);
+    reference(&mut bytes, 10);
+    bytes.extend_from_slice(&[1, 1, 1]);
+    bytes.extend_from_slice(&[0; 9]);
+    for value in [1.6_f64, -0.5, 0.25] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    scope(&mut bytes, 11, 10);
+    header(&mut bytes, *b"309", 20);
+    bytes.extend_from_slice(&[0; 13]);
+    reference(&mut bytes, 10);
+    bytes.extend_from_slice(&[0; 9]);
+    zero_lane(&mut bytes, 3, 8);
+    zero_lane(&mut bytes, 1, 2);
+    bytes.extend_from_slice(&[0; 8]);
+    let scopes = HashMap::from([(11, true)]);
+    let [read] = decode_stream(&bytes, "Design/BulkStream.dat", &scopes)
+        .try_into()
+        .unwrap();
+    assert_eq!(
+        read.freedoms
+            .iter()
+            .map(|freedom| freedom.value)
+            .collect::<Vec<_>>(),
+        [2]
+    );
+    assert!(read.entry_words[0].zero_second_value);
+    let limits = read.limits.expect("limit lanes");
+    assert_eq!((limits.maximum, limits.minimum), (1.6, -0.5));
+    assert_eq!(
+        limits.rest,
+        Some(crate::records::feature::joint_motion::DesignJointRest {
+            flag: 1,
+            value: 0.25
+        })
+    );
+
+    // Beside a π entry, a zero-lane match is not an entry.
+    let mut mixed = Vec::new();
+    joint(&mut mixed, 10, None);
+    scope(&mut mixed, 11, 10);
+    header(&mut mixed, *b"309", 20);
+    mixed.extend_from_slice(&[0; 13]);
+    reference(&mut mixed, 10);
+    mixed.extend_from_slice(&[0; 9]);
+    freedom(&mut mixed, 8);
+    mixed.extend_from_slice(&[0; 4]);
+    zero_lane(&mut mixed, 1, 2);
+    mixed.extend_from_slice(&[0; 8]);
+    assert_eq!(codes(&mixed, &scopes), [(10, 20, vec![8])]);
 }
 
 /// Older generation: the motion record follows its joint record and

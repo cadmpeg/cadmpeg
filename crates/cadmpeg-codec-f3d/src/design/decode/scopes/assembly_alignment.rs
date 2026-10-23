@@ -23,6 +23,7 @@ use crate::records::feature::assembly::DesignAssemblyOperandQualifier;
 use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::parameters::DesignParameterOwner;
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
 struct AsBuiltAlignmentDraft {
@@ -58,6 +59,54 @@ pub(super) fn exact_assembly_alignment(
         parameter_owners,
         &std::collections::HashMap::new(),
     )
+}
+
+/// Offset of the placement-ordered `As-built` scope's limit-owner count.
+const AS_BUILT_LIMIT_OWNER_COUNT: usize = 43;
+/// Offset of its first limit-owner reference; each further one follows 11
+/// bytes later.
+const AS_BUILT_LIMIT_OWNER_REFERENCES: usize = 47;
+
+/// Whether a placement-ordered `As-built` scope stores its owner run: the u32
+/// limit-owner count at offset 43 is the count its frame length implies, the
+/// marked references after it name the owners after the four alignment owners
+/// in local order, the reference table has nine entries more than that count,
+/// the four alignment owners appear once and contiguously in it, and every
+/// limit owner appears in it.
+fn placement_ordered_owner_run(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    lanes: &[&DesignParameterOwner],
+    owners: &[crate::records::identity::Located<u32>],
+) -> bool {
+    let Some(count) = crate::design::assembly::as_built_limit_owner_count(scope.frame_length())
+    else {
+        return false;
+    };
+    let Ok(start) = usize::try_from(scope.byte_offset()) else {
+        return false;
+    };
+    let stored = View::u32_le_at(bytes, start + AS_BUILT_LIMIT_OWNER_COUNT);
+    let limit_owners = lanes.get(4..).unwrap_or_default();
+    let table = scope.reference_members();
+    stored.and_then(|stored| usize::try_from(stored).ok()) == Some(count)
+        && table.len() == 9 + count
+        && limit_owners.len() == count
+        && limit_owners.iter().enumerate().all(|(ordinal, owner)| {
+            super::shared_frames::marked_record_reference(
+                bytes,
+                start + AS_BUILT_LIMIT_OWNER_REFERENCES + 11 * ordinal,
+            ) == Some(owner.record_index())
+                && table.values().any(|value| *value == owner.record_index())
+        })
+        && (0..table.len())
+            .filter(|&at| {
+                table
+                    .values_in(at..at + owners.len())
+                    .is_some_and(|values| values.eq(owners.iter().map(|owner| &owner.value)))
+            })
+            .count()
+            == 1
 }
 
 /// The alignment of an assembly scope. `stream_types` names the stream's
@@ -149,6 +198,12 @@ pub(super) fn exact_assembly_alignment_with_types(
         let (angle, offset, owners) = {
             if matches!(scope.frame_length(), 671 | 744 | 748)
                 && generation.operand_frame_variant().is_none()
+            {
+                return None;
+            }
+            // Only an `As-built` scope has the limit-owner run.
+            if matches!(scope.frame_length(), 422 | 444)
+                && scope.kind() != crate::records::feature::scope::DesignFeatureKind::AsBuilt
             {
                 return None;
             }
@@ -271,6 +326,10 @@ pub(super) fn exact_assembly_alignment_with_types(
                     .take(owners.len())
                     .eq(owners.iter().map(|owner| &owner.value))
                 {
+                    return None;
+                }
+            } else if placement_ordered {
+                if !placement_ordered_owner_run(bytes, scope, &lanes, &owners) {
                     return None;
                 }
             } else if !scope
