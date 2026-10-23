@@ -256,6 +256,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-rhino`    | `src/decode.rs`                                    | `MAX_INSTANCE_ENTITIES`                   | `1 << 20`                                               | 4    | `ExpansionBudget` count of entities emitted by expansion. At the limit the object is skipped with `document instance entity budget exceeded (MAX_INSTANCE_ENTITIES)`.                                                                                                        |
 | `cadmpeg-codec-rhino`    | `src/decode.rs`                                    | `MAX_INSTANCE_DEPTH`                      | `64`                                                    | 4    | Instance nesting; each level also charges `enter_nested`. At the limit the reference is retained unexpanded with a warning.                                                                                                                                                  |
 | `cadmpeg-codec-rhino`    | `src/decode.rs`                                    | `MAX_INSTANCE_COPY_ELEMENTS`              | `1 << 26`                                               | 4    | `ExpansionBudget` count of member visits, copied entities, points, control points, mesh vertices and triangles, and cage vertices across the document. Rejected expansions stay charged; at the limit the expansion is rolled back with a warning naming the constant, which becomes a loss. |
+| `cadmpeg-codec-rhino`    | `src/product.rs`                                   | `MAX_OCCURRENCE_DEPTH`                    | `64`                                                    | 4    | Neutral occurrence-tree nesting. At the limit the reference gets no occurrence and the omission is reported as a loss.                                                                                                                                                                       |
 | `cadmpeg-codec-rhino`    | `src/chunks.rs`                                    | `MAX_HEADER_SEARCH`                       | `33_554_432 + MAGIC.len()`                              | 1    | Window in which the 3DM file header must start.                                                                                                                                                                                                                              |
 | `cadmpeg-codec-rhino`    | `src/subd.rs`                                      | `MAX_LEVELS`                              | `64`                                                    | 2    | SubD level count (`capped_u32`). Excess is `Malformed`.                                                                                                                                                                                                                      |
 | `cadmpeg-codec-rhino`    | `src/subd.rs`                                      | `MAX_COMPONENTS_PER_LEVEL`                | `4_000_000`                                             | 2    | Vertex, edge and face count per level and per archive-ID partition. Excess is `Malformed`.                                                                                                                                                                                   |
@@ -441,16 +442,16 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 226.
+Production `MAX_*` constants: 227.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 30    |
 | 2    | Per-input bound            | 69    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 106   |
+| 4    | Local work cap             | 107   |
 | N    | Not a decode bound         | 21    |
-|      | Total                      | 226   |
+|      | Total                      | 227   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -458,7 +459,7 @@ The six `ResourceLimits` fields are the session ceilings and are not
 By crate: `cadmpeg-core` 3, `cadmpeg-ir` 10, `cadmpeg-asm` 4,
 `cadmpeg-protein` 3, `cadmpeg` 2, `cadmpeg-codec-step` 8,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 3,
-`cadmpeg-codec-freecad` 11, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 18,
+`cadmpeg-codec-freecad` 11, `cadmpeg-codec-rhino` 33, `cadmpeg-codec-f3d` 18,
 `cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 13,
 and `cadmpeg-codec-catia` 57.
 
