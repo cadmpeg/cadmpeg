@@ -181,6 +181,11 @@ cast_lossless = "deny"
 # Roundtrip tests compare decoded floats for byte-exact equality.
 float_cmp = "allow"
 
+# docs/source-policy.md §Checked arithmetic bans production `saturating_*`
+# calls, the only fix these two lints suggest. Checked arithmetic stays.
+manual_saturating_arithmetic = "allow"
+implicit_saturating_sub = "allow"
+
 # Decode functions are long and match-heavy, and format field names are
 # near-identical.
 too_many_lines = "allow"
