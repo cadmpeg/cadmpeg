@@ -116,6 +116,8 @@ pub(crate) enum SldprtLossCode {
     TopologyFaceSenseConflict,
     /// A canonical face has no explicit body relation.
     TopologyFaceUnclaimed,
+    /// Referenced LOOP records have conflicting complete frames.
+    TopologyLoopRecordAmbiguous,
     /// A NURBS edge's vertex range is off its bound surface; no pcurve is derived.
     TopologyPcurveCarrierOffSurface,
     /// Parasolid B-rep geometry was not transferred (no resolved stream).
@@ -214,6 +216,7 @@ impl SldprtLossCode {
         Self::TopologyBodyHierarchyDerived,
         Self::TopologyFaceSenseConflict,
         Self::TopologyFaceUnclaimed,
+        Self::TopologyLoopRecordAmbiguous,
         Self::TopologyPcurveCarrierOffSurface,
         Self::GeometryParasolidNotTransferred,
         Self::TopologyGraphNotTransferred,
@@ -283,6 +286,7 @@ impl SldprtLossCode {
             Self::TopologyBodyHierarchyDerived => "topology.body-hierarchy-derived",
             Self::TopologyFaceSenseConflict => "topology.face-sense-conflict",
             Self::TopologyFaceUnclaimed => "topology.face-unclaimed",
+            Self::TopologyLoopRecordAmbiguous => "topology.loop-record-ambiguous",
             Self::TopologyPcurveCarrierOffSurface => "topology.pcurve-carrier-off-surface",
             Self::GeometryParasolidNotTransferred => "geometry.parasolid-not-transferred",
             Self::TopologyGraphNotTransferred => "topology.graph-not-transferred",
@@ -364,6 +368,7 @@ impl SldprtLossCode {
             | Self::TopologyBodyHierarchyDerived
             | Self::TopologyFaceSenseConflict
             | Self::TopologyFaceUnclaimed
+            | Self::TopologyLoopRecordAmbiguous
             | Self::TopologyPcurveCarrierOffSurface
             | Self::MaterialMetadataNotTransferred
             | Self::ContainerParasolidProbeCapped
@@ -395,7 +400,9 @@ impl SldprtLossCode {
             Self::TopologyBodyHierarchyDerived | Self::TopologyFaceSenseConflict => {
                 LossTaxonomy::TopologyGaugeSubstituted
             }
-            Self::TopologyFaceUnclaimed => LossTaxonomy::TopologyNotTransferred,
+            Self::TopologyFaceUnclaimed | Self::TopologyLoopRecordAmbiguous => {
+                LossTaxonomy::TopologyNotTransferred
+            }
             Self::TopologyPcurveCarrierOffSurface => LossTaxonomy::PcurveOmitted,
             Self::TopologyGraphNotTransferred => LossTaxonomy::TopologyNotTransferred,
             Self::GeometryFaceSupportSurfaceUntyped
@@ -626,6 +633,7 @@ mod tests {
                 "topology.body-hierarchy-derived",
                 "topology.face-sense-conflict",
                 "topology.face-unclaimed",
+                "topology.loop-record-ambiguous",
                 "topology.pcurve-carrier-off-surface",
                 "geometry.parasolid-not-transferred",
                 "topology.graph-not-transferred",

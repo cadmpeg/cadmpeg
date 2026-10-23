@@ -2095,13 +2095,7 @@ fn try_decode_brep(
         || !decoded_sites[selected_site].2.points.is_empty();
     if resolved_active_site.is_some() {
         if !selected_is_empty_model && !selected_has_geometry {
-            append_point_record_loss(
-                decoded_sites[selected_site]
-                    .2
-                    .stats
-                    .unresolved_topology_points,
-                fallback_losses,
-            );
+            append_topology_record_losses(&decoded_sites[selected_site].2.stats, fallback_losses);
             return Ok(None);
         }
     } else {
@@ -2122,7 +2116,7 @@ fn try_decode_brep(
         });
         if !any_site_has_geometry && !any_empty_model {
             for (_, _, decoded) in &decoded_sites {
-                append_point_record_loss(decoded.stats.unresolved_topology_points, fallback_losses);
+                append_topology_record_losses(&decoded.stats, fallback_losses);
             }
             return Ok(None);
         }
@@ -2272,6 +2266,7 @@ fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
     target.stats.source_entity_records += source.stats.source_entity_records;
     target.stats.unresolved_face_colors += source.stats.unresolved_face_colors;
     target.stats.unresolved_topology_points += source.stats.unresolved_topology_points;
+    target.stats.unresolved_topology_loops += source.stats.unresolved_topology_loops;
     target.stats.unclaimed_faces += source.stats.unclaimed_faces;
     target.stats.synthetic_body_grouping |= source.stats.synthetic_body_grouping;
     Ok(())
@@ -3490,11 +3485,27 @@ fn add_solidworks_xml_metadata(
     Ok(())
 }
 
-fn append_point_record_loss(count: usize, losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>) {
-    if count > 0 {
-        losses.push(SldprtLossCode::GeometryPointRecordAmbiguous.note(format!(
-            "{count} referenced POINT record(s) were withheld because complete records conflict and no current occurrence is selected."
-        )));
+fn append_topology_record_losses(
+    stats: &crate::brep::graph::Stats,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    for (count, code, family) in [
+        (
+            stats.unresolved_topology_points,
+            SldprtLossCode::GeometryPointRecordAmbiguous,
+            "POINT",
+        ),
+        (
+            stats.unresolved_topology_loops,
+            SldprtLossCode::TopologyLoopRecordAmbiguous,
+            "LOOP",
+        ),
+    ] {
+        if count > 0 {
+            losses.push(code.note(format!(
+                "{count} referenced {family} record(s) were withheld because complete records conflict and no current occurrence is selected."
+            )));
+        }
     }
 }
 
@@ -3562,7 +3573,7 @@ fn build_geometry_report(
             s.off_surface_nurbs_pcurves
         )));
     }
-    append_point_record_loss(s.unresolved_topology_points, &mut losses);
+    append_topology_record_losses(s, &mut losses);
     if s.unresolved_face_colors > 0 {
         losses.push(SldprtLossCode::AppearanceFaceColorUnresolved.note(format!(
             "{} face-color binding(s) were withheld because the current face and link records do not select one consistent framed color record.",

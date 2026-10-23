@@ -846,6 +846,28 @@ pub(crate) fn loop_head(attr: u16, first_coedge: u16, bridge_attr: u16) -> Vec<u
     b
 }
 
+pub(crate) fn framed_topology_loop(
+    attr: u16,
+    node: u32,
+    refs: [u16; 4],
+    tripled: bool,
+    first_of_type: bool,
+) -> Vec<u8> {
+    let mut bytes = vec![0, 0x0f];
+    if first_of_type {
+        bytes.push(0xff);
+    }
+    be16(&mut bytes, attr);
+    be32(&mut bytes, node);
+    for reference in refs {
+        be16(&mut bytes, reference);
+        if tripled {
+            bytes.push(1);
+        }
+    }
+    bytes
+}
+
 /// Coedge `00 11`: `refs[1]` owner loop, `refs[3]` next, `refs[4]` start
 /// vertex-use, `refs[5]` twin, `refs[6]` edge-use; marker is the local sense.
 #[allow(clippy::too_many_arguments)]
@@ -868,7 +890,7 @@ pub(crate) fn coedge(
     b
 }
 
-fn tripled_coedge(
+pub(crate) fn tripled_coedge(
     attr: u16,
     owner_loop: u16,
     next: u16,

@@ -222,21 +222,28 @@ fn parse_bridge(buf: &[u8], off: usize) -> Option<Bridge> {
 
 /// Loop head `00 0f`: minimal 14-byte body, no magic, `refs[4]` at body+6.
 /// `refs[1]` = first coedge, `refs[2]` = owning bridge, `refs[3]` = next sibling.
-fn parse_loop(buf: &[u8], off: usize) -> Option<Loop> {
+fn parse_loop(buf: &[u8], off: usize) -> Option<(Loop, usize)> {
     let p = body_start(buf, off, 0x0f)?;
     if p + loop_body::LEN > buf.len() {
         return None;
     }
     let attr = attr_at(buf, p)?;
-    let refs = buf
+    let tripled = buf
         .get(p..p + loop_delta::LEN)
-        .and_then(|_| refs_tripled::<4>(buf, p + loop_delta::REFS))
-        .or_else(|| refs_be::<4>(buf, p + loop_body::REFS))?;
-    Some(Loop {
-        attr,
-        refs,
-        offset: off,
-    })
+        .and_then(|_| refs_tripled::<4>(buf, p + loop_delta::REFS));
+    let (refs, end) = if let Some(refs) = tripled {
+        (refs, p + loop_delta::LEN)
+    } else {
+        (refs_be::<4>(buf, p + loop_body::REFS)?, p + loop_body::LEN)
+    };
+    Some((
+        Loop {
+            attr,
+            refs,
+            offset: off,
+        },
+        end,
+    ))
 }
 
 /// Return complete or compact edge-use readings at one offset.
@@ -441,9 +448,49 @@ fn parse_point(buf: &[u8], off: usize, prefixed: bool) -> Option<Point> {
     })
 }
 
-struct PointFrame {
+struct RecordFrame {
     partition: bool,
     bytes: Option<Vec<u8>>,
+}
+
+fn merge_record_frame<T>(
+    records: &mut HashMap<u16, T>,
+    frames: &mut HashMap<u16, RecordFrame>,
+    attr: u16,
+    frame: RecordFrame,
+    record: Option<T>,
+) {
+    if let Some(current) = frames.get_mut(&attr) {
+        if current.partition && !frame.partition {
+            return;
+        }
+        if current.partition == frame.partition {
+            if current.bytes.is_none() || current.bytes != frame.bytes {
+                current.bytes = None;
+                records.remove(&attr);
+            }
+            return;
+        }
+    }
+    frames.insert(attr, frame);
+    records.remove(&attr);
+    if let Some(record) = record {
+        records.insert(attr, record);
+    }
+}
+
+fn merge_framed_records<T>(
+    target: &mut HashMap<u16, T>,
+    frames: &mut HashMap<u16, RecordFrame>,
+    mut source: HashMap<u16, T>,
+    source_frames: HashMap<u16, RecordFrame>,
+) {
+    for (attr, frame) in source_frames {
+        let record = source.remove(&attr);
+        merge_record_frame(target, frames, attr, frame, record);
+    }
+    source.retain(|attr, _| !frames.contains_key(attr));
+    merge_missing(target, source);
 }
 
 /// The topology record tables of one stream, each keyed by `attr`.
@@ -451,11 +498,12 @@ struct PointFrame {
 pub(crate) struct Tables {
     bridges: HashMap<u16, Bridge>,
     loops: HashMap<u16, Loop>,
+    loop_frames: HashMap<u16, RecordFrame>,
     edge_uses: HashMap<u16, EdgeUse>,
     coedges: HashMap<u16, Coedge>,
     vertex_uses: HashMap<u16, VertexUse>,
     points: HashMap<u16, Point>,
-    point_frames: HashMap<u16, PointFrame>,
+    point_frames: HashMap<u16, RecordFrame>,
 }
 
 impl Tables {
@@ -470,6 +518,12 @@ impl Tables {
 
     pub(super) fn loops(&self) -> &HashMap<u16, Loop> {
         &self.loops
+    }
+
+    pub(super) fn loop_is_ambiguous(&self, attr: u16) -> bool {
+        self.loop_frames
+            .get(&attr)
+            .is_some_and(|frame| frame.bytes.is_none())
     }
 
     #[cfg(test)]
@@ -504,24 +558,8 @@ impl Tables {
             .is_some_and(|frame| frame.bytes.is_none())
     }
 
-    fn merge_point_frame(&mut self, attr: u16, frame: PointFrame, point: Option<Point>) {
-        if let Some(current) = self.point_frames.get_mut(&attr) {
-            if current.partition && !frame.partition {
-                return;
-            }
-            if current.partition == frame.partition {
-                if current.bytes.is_none() || current.bytes != frame.bytes {
-                    current.bytes = None;
-                    self.points.remove(&attr);
-                }
-                return;
-            }
-        }
-        self.point_frames.insert(attr, frame);
-        self.points.remove(&attr);
-        if let Some(point) = point {
-            self.points.insert(attr, point);
-        }
+    fn merge_point_frame(&mut self, attr: u16, frame: RecordFrame, point: Option<Point>) {
+        merge_record_frame(&mut self.points, &mut self.point_frames, attr, frame, point);
     }
 
     /// Merge deltas without replacing partition topology membership.
@@ -542,18 +580,21 @@ impl Tables {
             retain_selected_bridges(&mut deltas.bridges, selected_bridge_attrs);
             merge_missing(&mut self.bridges, deltas.bridges);
         }
-        merge_missing(&mut self.loops, deltas.loops);
+        merge_framed_records(
+            &mut self.loops,
+            &mut self.loop_frames,
+            deltas.loops,
+            deltas.loop_frames,
+        );
         merge_missing(&mut self.edge_uses, deltas.edge_uses);
         merge_missing(&mut self.coedges, deltas.coedges);
         merge_missing(&mut self.vertex_uses, deltas.vertex_uses);
-        for (attr, frame) in deltas.point_frames {
-            let point = deltas.points.remove(&attr);
-            self.merge_point_frame(attr, frame, point);
-        }
-        deltas
-            .points
-            .retain(|attr, _| !self.point_frames.contains_key(attr));
-        merge_missing(&mut self.points, deltas.points);
+        merge_framed_records(
+            &mut self.points,
+            &mut self.point_frames,
+            deltas.points,
+            deltas.point_frames,
+        );
     }
 }
 
@@ -669,9 +710,7 @@ fn coedge_evidence<'a>(
     let owner = candidate.refs[1];
     let owner_evidence = loops
         .iter()
-        .rev()
-        .find(|loop_| loop_.attr == owner)
-        .filter(|loop_| owner != 0 && loop_is_owned(loop_, bridges));
+        .find(|loop_| loop_.attr == owner && owner != 0 && loop_is_owned(loop_, bridges));
     let start = candidate.refs[4];
     let start_evidence = vertex_uses.get(&start).filter(|_| start != 0);
     let edge = candidate.refs[6];
@@ -816,20 +855,16 @@ pub(crate) fn patch_point_values(
 
 /// Replace one world-point record while preserving its framing.
 pub(crate) fn patch_point(buf: &mut [u8], attr: u16, xyz_m: [f64; 3]) -> bool {
-    let mut tables = scan_with_point_framing(buf, false, None, None);
+    let mut tables = scan_records(buf, false, None, None, None);
     let Some(record) = tables.points.remove(&attr) else {
         return false;
     };
     patch_point_values(buf, record.xyz_offset, record.xyz_m, xyz_m)
 }
 
-/// Scan the stream body for every typed topology record. Successful records do
-/// not advance the scan past their extent because valid records can overlap an
-/// enclosing payload. Family-specific framing gates reject payload coincidences.
-/// Later full records replace earlier records with the same `attr`, matching
-/// partition-base plus deltas-override merge order.
+/// Scan stream-local topology records.
 pub(crate) fn scan(body: &[u8]) -> Tables {
-    scan_with_point_framing(body, false, None, None)
+    scan_records(body, false, None, None, None)
 }
 
 /// Scan a partition stream while admitting typed FACE offsets that carry a
@@ -842,11 +877,12 @@ pub(super) fn scan_with_curve_attrs_excluding(
     curve_attrs: &HashSet<u16>,
     excluded_bridge_offsets: &HashSet<usize>,
 ) -> Tables {
-    scan_with_point_framing(
+    scan_records(
         body,
         false,
         Some(curve_attrs),
         Some(excluded_bridge_offsets),
+        None,
     )
 }
 
@@ -855,18 +891,27 @@ pub(super) fn scan_deltas_with_curve_attrs_excluding(
     body: &[u8],
     curve_attrs: &HashSet<u16>,
     excluded_bridge_offsets: &HashSet<usize>,
+    base: &Tables,
 ) -> Tables {
-    scan_with_point_framing(body, true, Some(curve_attrs), Some(excluded_bridge_offsets))
+    scan_records(
+        body,
+        true,
+        Some(curve_attrs),
+        Some(excluded_bridge_offsets),
+        Some(base),
+    )
 }
 
-fn scan_with_point_framing(
+fn scan_records(
     body: &[u8],
-    prefixed_points: bool,
+    deltas: bool,
     curve_attrs: Option<&HashSet<u16>>,
     excluded_bridge_offsets: Option<&HashSet<usize>>,
+    base: Option<&Tables>,
 ) -> Tables {
     let mut t = Tables::default();
     let mut loop_candidates = Vec::new();
+    let mut loop_ends = HashMap::new();
     let mut edge_candidates = CandidateMap::new();
     let mut coedge_candidates = CandidateMap::new();
     let mut i = 0usize;
@@ -887,7 +932,8 @@ fn scan_with_point_framing(
                 }
             }
             0x0f => {
-                if let Some(record) = parse_loop(body, i) {
+                if let Some((record, end)) = parse_loop(body, i) {
+                    loop_ends.insert(record.offset, end);
                     loop_candidates.push(record);
                 }
             }
@@ -899,11 +945,11 @@ fn scan_with_point_framing(
                 }
             }
             0x1d => {
-                let record = parse_point(body, i, prefixed_points);
+                let record = parse_point(body, i, deltas);
                 if let Some(record) = record {
                     let end = record.xyz_offset + std::mem::size_of::<[f64; 3]>();
-                    let frame = PointFrame {
-                        partition: !prefixed_points,
+                    let frame = RecordFrame {
+                        partition: !deltas,
                         bytes: Some(body[record.offset..end].to_vec()),
                     };
                     t.merge_point_frame(record.attr, frame, Some(record));
@@ -934,12 +980,24 @@ fn scan_with_point_framing(
     for record in loop_candidates {
         let owner = record.refs[2];
         let first = record.refs[1];
-        if t.bridges.contains_key(&owner)
-            && t.coedges
-                .get(&first)
-                .is_some_and(|coedge| coedge.refs[1] == record.attr)
-        {
-            t.loops.insert(record.attr, record);
+        let owner_exists = t.bridges.contains_key(&owner)
+            || base.is_some_and(|base| base.bridges.contains_key(&owner));
+        let first_coedge = base
+            .and_then(|base| base.coedges.get(&first))
+            .or_else(|| t.coedges.get(&first));
+        if owner_exists && first_coedge.is_some_and(|coedge| coedge.refs[1] == record.attr) {
+            let end = loop_ends[&record.offset];
+            let frame = RecordFrame {
+                partition: !deltas,
+                bytes: Some(body[record.offset..end].to_vec()),
+            };
+            merge_record_frame(
+                &mut t.loops,
+                &mut t.loop_frames,
+                record.attr,
+                frame,
+                Some(record),
+            );
         }
     }
     t
@@ -952,6 +1010,7 @@ mod tests {
         scan_deltas_with_curve_attrs_excluding, scan_with_curve_attrs_excluding, EdgeReferences,
         MAGIC,
     };
+    use crate::test_support::parasolid::framed_topology_loop;
     use cadmpeg_ir::topology::Sense;
     use std::collections::HashSet;
 
@@ -1294,7 +1353,12 @@ mod tests {
             "ambiguous without a carrier set"
         );
         let curve_attrs = HashSet::from([0x0103]);
-        let tables = scan_deltas_with_curve_attrs_excluding(&bytes, &curve_attrs, &HashSet::new());
+        let tables = scan_deltas_with_curve_attrs_excluding(
+            &bytes,
+            &curve_attrs,
+            &HashSet::new(),
+            &super::Tables::default(),
+        );
         assert_eq!(tables.edge_uses[&40].references.curve(), 0x0103);
     }
 
@@ -1359,13 +1423,130 @@ mod tests {
     fn deltas_point_admission_has_no_bare_pointer_fallback() {
         let bytes = crate::test_support::parasolid::world_point(211, [1.0, 2.0, 3.0]);
         assert!(parse_point(&bytes, 0, false).is_some());
-        let tables =
-            scan_deltas_with_curve_attrs_excluding(&bytes, &HashSet::new(), &HashSet::new());
+        let tables = scan_deltas_with_curve_attrs_excluding(
+            &bytes,
+            &HashSet::new(),
+            &HashSet::new(),
+            &super::Tables::default(),
+        );
         assert!(!tables.points.contains_key(&211));
     }
 
     fn delta_points(bytes: &[u8]) -> super::Tables {
-        scan_deltas_with_curve_attrs_excluding(bytes, &HashSet::new(), &HashSet::new())
+        scan_deltas_with_curve_attrs_excluding(
+            bytes,
+            &HashSet::new(),
+            &HashSet::new(),
+            &super::Tables::default(),
+        )
+    }
+
+    fn partition_without_loop() -> Vec<u8> {
+        let mut bytes = crate::test_support::parasolid::triangle_body();
+        let original = crate::test_support::parasolid::loop_head(20, 30, 10);
+        let at = bytes
+            .windows(original.len())
+            .position(|window| window == original)
+            .unwrap();
+        drop(bytes.drain(at..at + original.len()));
+        bytes
+    }
+
+    fn delta_loops(bytes: &[u8], base: &super::Tables) -> super::Tables {
+        scan_deltas_with_curve_attrs_excluding(bytes, &HashSet::new(), &HashSet::new(), base)
+    }
+
+    #[test]
+    fn loop_full_frame_conflicts_are_sticky_in_every_order_and_stream_grouping() {
+        let refs = [0, 30, 10, 0];
+        let base = framed_topology_loop(20, 811, refs, true, false);
+        let variants = [
+            framed_topology_loop(20, 812, refs, true, false),
+            framed_topology_loop(20, 811, refs, true, true),
+            framed_topology_loop(20, 811, [1, 30, 10, 0], true, false),
+            framed_topology_loop(20, 811, [0, 31, 10, 0], true, false),
+            framed_topology_loop(20, 811, [0, 30, 10, 1], true, false),
+        ];
+        for variant in variants {
+            let records = [&base, &variant, &base];
+            for order in [
+                [0, 1, 2],
+                [0, 2, 1],
+                [1, 0, 2],
+                [1, 2, 0],
+                [2, 0, 1],
+                [2, 1, 0],
+            ] {
+                for cuts in [0u8, 1, 2, 3] {
+                    let mut tables = scan(&partition_without_loop());
+                    let mut stream = Vec::new();
+                    for (index, record) in order.into_iter().enumerate() {
+                        stream.extend(records[record]);
+                        if index == 2 || cuts & (1 << index) != 0 {
+                            let deltas = delta_loops(&stream, &tables);
+                            tables.merge_deltas(deltas, None);
+                            stream.clear();
+                        }
+                    }
+                    assert!(!tables.loops().contains_key(&20));
+                    assert!(tables.loop_is_ambiguous(20));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn identical_loop_frames_coalesce_using_partition_closure() {
+        let bytes = framed_topology_loop(20, 811, [0, 30, 10, 0], true, true);
+        let mut tables = scan(&partition_without_loop());
+        for stream in [&bytes, &[bytes.as_slice(), bytes.as_slice()].concat()] {
+            let deltas = delta_loops(stream, &tables);
+            assert_eq!(deltas.loops().len(), 1);
+            tables.merge_deltas(deltas, None);
+        }
+        assert_eq!(tables.loops()[&20].refs, [0, 30, 10, 0]);
+        assert!(!tables.loop_is_ambiguous(20));
+    }
+
+    #[test]
+    fn partition_loop_conflict_blocks_deltas_and_unowned_matches_do_not_poison_identity() {
+        let partition = crate::test_support::parasolid::triangle_body();
+        let conflict = framed_topology_loop(20, 812, [0, 30, 10, 0], false, false);
+        let mut tables = scan(&[partition.as_slice(), conflict.as_slice()].concat());
+        assert!(tables.loop_is_ambiguous(20));
+        let delta = delta_loops(
+            &framed_topology_loop(20, 811, [0, 30, 10, 0], true, false),
+            &tables,
+        );
+        tables.merge_deltas(delta, None);
+        assert!(!tables.loops().contains_key(&20));
+        assert!(tables.loop_is_ambiguous(20));
+
+        let unowned = framed_topology_loop(20, 812, [0, 30, 255, 0], false, false);
+        for bytes in [
+            [partition.as_slice(), unowned.as_slice()].concat(),
+            [unowned.as_slice(), partition.as_slice()].concat(),
+        ] {
+            let tables = scan(&bytes);
+            assert!(tables.loops().contains_key(&20));
+            assert!(!tables.loop_is_ambiguous(20));
+        }
+    }
+
+    #[test]
+    fn partition_loop_presence_ignores_conflicting_history() {
+        let mut tables = scan(&crate::test_support::parasolid::triangle_body());
+        let before = tables.loops()[&20].clone();
+        let bytes = [
+            framed_topology_loop(20, 811, [0, 30, 10, 0], true, false),
+            framed_topology_loop(20, 812, [0, 30, 10, 0], true, false),
+        ]
+        .concat();
+        let deltas = delta_loops(&bytes, &tables);
+        assert!(deltas.loop_is_ambiguous(20));
+        tables.merge_deltas(deltas, None);
+        assert_eq!(tables.loops()[&20], before);
+        assert!(!tables.loop_is_ambiguous(20));
     }
 
     #[test]

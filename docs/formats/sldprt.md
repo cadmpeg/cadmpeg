@@ -1308,8 +1308,11 @@ for its transmit index; companion deltas retain historical versions.
 
 `face_tripled` has a 48-byte body: `face_tripled.attr at +0` (u16), `face_tripled.node_id at +2` (u32), `face_tripled.attributes_head at +6` (bytes[3]), `face_tripled.tolerance at +9` (bytes[8]), `face_tripled.refs at +17` (bytes[15]), `face_tripled.sense at +32` (u8), `face_tripled.surface_front_refs at +33` (bytes[15]).
 
-A complete LOOP stores its node ID before its four pointers. A FIN has no
-node ID. Its nine pointers are attributes_groups, loop, forward, backward,
+A complete LOOP stores its node ID before its four pointers. Complete LOOP
+frames include the optional `ff`, transmit index, node ID, and all four pointer
+cells. Equal owning-FACE and first-FIN pointers do not establish equal LOOP
+frames. A partition LOOP supplies the current record for its transmit index;
+companion deltas retain historical versions. A FIN has no node ID. Its nine pointers are attributes_groups, loop, forward, backward,
 vertex, other, edge, curve, and next_at_vx, followed by its sense.
 
 `loop_bare` has a 14-byte body: `loop_bare.attr at +0` (u16), `loop_bare.node_id at +2` (u32), `loop_bare.refs at +6` (u16[4]).

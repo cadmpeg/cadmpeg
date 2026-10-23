@@ -473,6 +473,8 @@ pub(crate) struct Stats {
     pub(crate) unresolved_face_colors: usize,
     /// Referenced POINT identities withheld because complete records conflict.
     pub(crate) unresolved_topology_points: usize,
+    /// Referenced LOOP identities withheld because complete records conflict.
+    pub(crate) unresolved_topology_loops: usize,
     /// Canonical faces that no explicit body record claims.
     pub(crate) unclaimed_faces: usize,
     /// Faces on a support surface this codec does not type; emitted with an
@@ -640,6 +642,7 @@ struct WalkedFace {
     sense: Sense,
     /// `(loop_attr, ordered_coedge_attrs)` in sibling order.
     loops: Vec<(u16, Vec<u16>)>,
+    unresolved_loop: Option<u16>,
 }
 
 /// Follow the sibling loop-head chain of a bridge and each loop's coedge ring,
@@ -994,12 +997,16 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
     let surface_attr = bridge.refs[4];
     let mut loops = Vec::new();
     let mut loop_ref = bridge.refs[2];
+    let mut unresolved_loop = None;
     let mut loop_guard = HashSet::new();
     while loop_ref != 0 {
         if !loop_guard.insert(loop_ref) {
             break;
         }
         let Some(lp) = t.loops().get(&loop_ref) else {
+            if t.loop_is_ambiguous(loop_ref) {
+                unresolved_loop = Some(loop_ref);
+            }
             break;
         };
         let owner_bridge = lp.refs[2];
@@ -1038,6 +1045,7 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
         surface_attr,
         sense: bridge.sense,
         loops,
+        unresolved_loop,
     }
 }
 
@@ -1253,6 +1261,7 @@ pub(crate) fn decode_bodies(
                 body,
                 &curve_attrs,
                 &typed_face_offsets,
+                &tables,
             )
         } else {
             topology::scan_with_curve_attrs_excluding(body, &curve_attrs, &typed_face_offsets)
@@ -1589,6 +1598,11 @@ fn decode_graph(
         .map(|bridge| walk_face(bridge, t))
         .collect();
     faces.sort_by_key(|face| face.bridge_attr);
+    out.stats.unresolved_topology_loops = faces
+        .iter()
+        .filter_map(|face| face.unresolved_loop)
+        .collect::<HashSet<_>>()
+        .len();
 
     // Edge attr -> [(coedge attr, start vuse, next coedge's start vuse)] from
     // the ring walk. The ring order supplies a boundary edge's second endpoint;

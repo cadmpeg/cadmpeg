@@ -18,12 +18,14 @@ use crate::test_support::parasolid::bridge_owned;
 use crate::test_support::parasolid::entity51;
 use crate::test_support::parasolid::entity53_color;
 use crate::test_support::parasolid::face_color_definition;
+use crate::test_support::parasolid::framed_topology_loop;
 use crate::test_support::parasolid::owned_triangle;
 use crate::test_support::parasolid::parasolid_with_body;
 use crate::test_support::parasolid::prefixed_edge_triangle_body;
 use crate::test_support::parasolid::suffix_prefixed_edge_triangle_body;
 use crate::test_support::parasolid::triangle_body;
 use crate::test_support::parasolid::triangle_body_with_overlapping_point;
+use crate::test_support::parasolid::tripled_coedge;
 use crate::test_support::parasolid::tripled_triangle_body;
 use crate::test_support::parasolid::tripled_world_point;
 use crate::test_support::parasolid::untyped_triangle;
@@ -125,6 +127,101 @@ fn unused_history_point_conflict_has_no_geometry_loss() {
         .losses
         .iter()
         .any(|loss| loss.code.local_code() == "geometry.point-record-ambiguous"));
+}
+
+fn partition_missing_loop() -> Vec<u8> {
+    let mut partition = triangle_body();
+    let original = crate::test_support::parasolid::loop_head(20, 30, 10);
+    let at = partition
+        .windows(original.len())
+        .position(|window| window == original)
+        .unwrap();
+    drop(partition.drain(at..at + original.len()));
+    partition
+}
+
+#[test]
+fn missing_loop_closes_against_partition_face_and_fin_before_history() {
+    let mut deltas = framed_topology_loop(20, 811, [0, 30, 10, 0], true, false);
+    deltas.extend(tripled_coedge(30, 77, 31, 50, 40));
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_partition_and_deltas(
+                &partition_missing_loop(),
+                &deltas,
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(result.report().geometry_transferred());
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().model.loops.len(), 1);
+    assert_eq!(result.ir().model.points.len(), 3);
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "topology.loop-record-ambiguous"));
+}
+
+#[test]
+fn conflicting_loop_node_ids_keep_one_loss_through_empty_and_metadata_paths() {
+    let first = framed_topology_loop(20, 811, [0, 30, 10, 0], true, false);
+    let second = framed_topology_loop(20, 812, [0, 30, 10, 0], true, false);
+    for metadata_fallback in [false, true] {
+        let mut partition = partition_missing_loop();
+        if metadata_fallback {
+            partition.extend(entity51(1, 711, 712, &[10, 1, 1, 1, 1, 1]));
+        }
+        for records in [[&first, &second, &first], [&second, &first, &second]] {
+            let deltas: Vec<u8> = records.into_iter().flatten().copied().collect();
+            let result = SldprtCodec
+                .decode(
+                    &mut Cursor::new(sldprt_with_partition_and_deltas(&partition, &deltas)),
+                    &DecodeOptions::default(),
+                )
+                .unwrap();
+            assert!(result.ir().model.loops.is_empty());
+            let losses: Vec<_> = result
+                .report()
+                .losses
+                .iter()
+                .filter(|loss| loss.code.local_code() == "topology.loop-record-ambiguous")
+                .collect();
+            assert_eq!(losses.len(), 1);
+            assert!(losses[0].message.starts_with("1 referenced LOOP"));
+            if metadata_fallback {
+                assert!(result
+                    .report()
+                    .losses
+                    .iter()
+                    .any(|loss| loss.code.local_code() == "topology.graph-not-transferred"));
+            }
+        }
+    }
+}
+
+#[test]
+fn unused_history_loop_conflict_has_no_topology_loss() {
+    let mut deltas = [
+        framed_topology_loop(21, 811, [0, 33, 10, 0], true, false),
+        framed_topology_loop(21, 812, [0, 33, 10, 0], true, false),
+    ]
+    .concat();
+    deltas.extend(tripled_coedge(33, 21, 33, 50, 43));
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_partition_and_deltas(&triangle_body(), &deltas)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().model.loops.len(), 1);
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "topology.loop-record-ambiguous"));
 }
 
 #[test]
