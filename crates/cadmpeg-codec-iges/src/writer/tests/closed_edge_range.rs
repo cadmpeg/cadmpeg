@@ -50,6 +50,12 @@ fn circle() -> CurveGeometry {
 /// The unit square `(0,0) (1,0) (1,1) (0,1)` as a degree-1 curve that
 /// returns to its first pole at the end of its knot domain `[0, 4]`.
 fn square_loop(periodic: bool) -> CurveGeometry {
+    square_path(periodic, Point3::new(0.0, 0.0, 0.0))
+}
+
+/// The square path from `(0,0)` through `(1,0) (1,1) (0,1)` to `last` over
+/// the knot domain `[0, 4]`.
+fn square_path(periodic: bool, last: Point3) -> CurveGeometry {
     CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
         NurbsCurve::from_lanes(
             1,
@@ -59,19 +65,19 @@ fn square_loop(periodic: bool) -> CurveGeometry {
                 Point3::new(1.0, 0.0, 0.0),
                 Point3::new(1.0, 1.0, 0.0),
                 Point3::new(0.0, 1.0, 0.0),
-                Point3::new(0.0, 0.0, 0.0),
+                last,
             ],
             None,
             periodic,
         )
-        .expect("degree-1 loop"),
+        .expect("degree-1 path"),
     ))
 }
 
 fn refusal(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> String {
     match edge_span(ir, edge, geometry) {
         Err(CodecError::NotImplemented(message)) => message,
-        other => panic!("expected a not-implemented refusal, got {other:?}"),
+        _ => panic!("expected a not-implemented refusal"),
     }
 }
 
@@ -112,8 +118,24 @@ fn closed_periodic_nurbs_edge_without_range_spans_its_knot_domain() {
 }
 
 #[test]
-fn closed_edge_on_a_non_periodic_nurbs_without_range_is_refused() {
+fn closed_clamped_nurbs_edge_without_range_spans_its_knot_domain() {
     let ir = vertices_at(&[Point3::new(0.0, 0.0, 0.0)]);
+    let edge = closed_edge("loop", "loop", "v0");
+    let span = edge_span(&ir, &edge, &square_loop(false)).expect("a clamped loop has a span");
+    assert_eq!(span.range.get(), [0.0, 4.0]);
+}
+
+#[test]
+fn closed_edge_on_an_open_clamped_nurbs_without_range_is_refused() {
+    let ir = vertices_at(&[Point3::new(0.0, 0.0, 0.0)]);
+    let edge = closed_edge("path", "path", "v0");
+    let geometry = square_path(false, Point3::new(0.0, 0.5, 0.0));
+    assert!(refusal(&ir, &edge, &geometry).starts_with(MISSING_RANGE));
+}
+
+#[test]
+fn closed_nurbs_edge_off_the_domain_start_is_refused() {
+    let ir = vertices_at(&[Point3::new(1.0, 1.0, 0.0)]);
     let edge = closed_edge("loop", "loop", "v0");
     assert!(refusal(&ir, &edge, &square_loop(false)).starts_with(MISSING_RANGE));
 }

@@ -6683,8 +6683,9 @@ fn edge_span(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> Result<CurveS
     Ok(CurveSpan { range, start, end })
 }
 
-/// The canonical period of a closed edge whose carrier is closed, when the
-/// edge stores no parameter range. `None` means the period is not defined.
+/// The canonical closed-traversal interval of a closed edge that stores no
+/// parameter range. The caller requires the edge vertex at both interval ends.
+/// `None` means the carrier has no closed traversal.
 fn closed_edge_full_period(
     edge: &Edge,
     geometry: &CurveGeometry,
@@ -6692,15 +6693,15 @@ fn closed_edge_full_period(
     if edge.start != edge.end {
         return Ok(None);
     }
-    match geometry.solved() {
-        Some(solved @ (SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_))) => {
-            default_range(solved).map(Some)
-        }
-        Some(SolvedCurveGeometry::Nurbs(nurbs)) if nurbs.periodic() => {
-            nurbs_domain(nurbs).map(|domain| Some(FiniteVector::from(domain)))
-        }
-        _ => Ok(None),
-    }
+    geometry
+        .solved()
+        .and_then(SolvedCurveGeometry::closed_traversal_range)
+        .map(|range| {
+            FiniteVector::new(range.endpoints()).ok_or_else(|| {
+                CodecError::Malformed("IGES curve parameter range is invalid".into())
+            })
+        })
+        .transpose()
 }
 
 fn edge_topology_tolerance(ir: &CadIr, edge: &Edge) -> Result<f64, CodecError> {
