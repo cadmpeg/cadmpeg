@@ -517,3 +517,27 @@ unrelated preceding feature as the pattern seed.
 **Known.** Configuration-manager values occur at offsets `+66`, `+107`, and `+117`; `moPart_c` has two defined fields; and `moVisualProperties_c` defines colour and name fields. The remaining bytes, the complete record lengths, and the role of `0x00c0_c0c0` in material records are undefined.
 
 **Need.** We must know what the undecoded bytes hold before the writer can edit a retained record or claim that a generated record is complete.
+
+### EV-05. Leading word of a compound-file `ResolvedFeatures` stream
+
+**Question.** What does the u16 that opens `Contents/Config-N-ResolvedFeatures` in a compound-file part hold, and does that stream continue the class map of `Contents/Config-N`?
+
+**Known.** `sldprt.md` §2.2: in a block-container part the stream opens with the u32 map count at which `Config-N` ended; in a compound-file part it opens with a u16 and then a class declaration.
+
+**Need.** Without the map count, a reader cannot check its `Config-N` class map against the stream, and cannot resolve a `ResolvedFeatures` tag that names a `Config-N` class.
+
+### EV-19. Configuration object stream
+
+**Question.** What is the grammar of a `moRelMgr_c` object's detailing settings after its ten dimension styles, how are `moCThreadRefMgr_c` records and the untagged thread data laid out, how are `moRelation_c` objects and their equation sides read inside `Config-N`, and what are the `Config-N` layouts of files below `swVersion` 14000?
+
+**Known.** A per-version template of gap lengths and string positions reads the detailing settings in 892 streams. Thread data with records writes 17-byte entries (u32, u32, a byte, f64), then f64 geometry of varying length, two `CString` values and three matrix rows; 124 streams stop there. 34 stop at equations, and none of the 37 streams of 10000–12000 reaches its end, for want of templates for those versions.
+
+**Need.** A writer that creates a part has to write the configuration stream, and a reader that keeps detailing settings, threads and equations has to read it.
+
+### EV-24. Bytes after the last top-level object
+
+**Question.** What owns the four zero bytes some `ResolvedFeatures` streams write after their last top-level object, and the two zero bytes an in-context part writes after a top-level `moProfileFeature_c` whose sketch plane is written in place?
+
+**Known.** `sldprt.md` §2.2 gives the stream framing. The trailing bytes lie outside every top-level object. The specification gives no field that names them.
+
+**Need.** A writer that reemits the stream has to know whether to write them.
