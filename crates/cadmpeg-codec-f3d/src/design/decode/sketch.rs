@@ -686,9 +686,12 @@ fn parse_sketch_placement_candidates(
 /// Decode the persistent u64 point and curve identity references
 /// (`pt_tag`, `crv_primary_id`, `crv_secondary_id`, each typed
 /// `IntrinsicMetaTypeuint64`) from every design `BulkStream` entry in `scan`,
-/// sorted by stream offset.
+/// sorted by stream offset. Each reference is parsed inside its record scope,
+/// and its source offsets are `record_layout` pointers in `pointers`.
 pub(crate) fn decode_persistent_references(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
+    pointers: &mut SourcePointers,
 ) -> Result<Vec<PersistentReference>, CodecError> {
     let mut out = Vec::new();
     for (entry_ordinal, entry) in scan
@@ -697,8 +700,17 @@ pub(crate) fn decode_persistent_references(
         .enumerate()
         .filter(|(_, entry)| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        let bytes = scan.entry_bytes(&entry.name)?;
-        decode_persistent_references_from_stream(entry_ordinal, &entry.name, bytes, &mut out)?;
+        let source = scan
+            .entry_view(&entry.name)
+            .ok_or_else(|| CodecError::malformed(format_args!("entry {} not found", entry.name)))?;
+        decode_persistent_references_from_stream(
+            ctx,
+            entry_ordinal,
+            &entry.name,
+            source,
+            &mut out,
+            pointers,
+        )?;
     }
     Ok(finish_persistent_references(out))
 }
@@ -727,12 +739,64 @@ fn finish_persistent_references(
     references
 }
 
-fn decode_persistent_references_from_stream(
+/// The `IntrinsicMetaTypeuint64` type name of a persistent reference value.
+const PERSISTENT_REFERENCE_TYPE: &[u8] = b"IntrinsicMetaTypeuint64";
+
+/// The end of the persistent-reference property whose name ends at
+/// `after_name`: the type descriptor, the type name and the u64 value. The
+/// descriptor is the compact form (a u32 type-name length 23) or the long form
+/// (u32 2, u32 14, 14 bytes, then the u32 23). This locates the property
+/// (Appendix C `scan_recovery` of `f3d.bulk_property` for
+/// `persistent_references`); its scope parses it.
+fn persistent_property_end(bytes: &[u8], after_name: usize) -> Option<usize> {
+    let type_offset = if View::u32_le_at(bytes, after_name) == Some(23) {
+        after_name
+    } else if View::u32_le_at(bytes, after_name) == Some(2)
+        && View::u32_le_at(bytes, after_name + 4) == Some(14)
+        && View::u32_le_at(bytes, after_name + 22) == Some(23)
+    {
+        after_name + 22
+    } else {
+        return None;
+    };
+    type_offset
+        .checked_add(4 + PERSISTENT_REFERENCE_TYPE.len() + 8)
+        .filter(|end| *end <= bytes.len())
+}
+
+/// Parse one persistent-reference property, read whole from its record
+/// scope: the name, the type descriptor, the type name and the u64 value.
+/// Returns the value offset relative to the property start and the value.
+fn parse_persistent_property(property: &[u8], name: &[u8]) -> Option<(usize, u64)> {
+    if property.get(..name.len()) != Some(name) {
+        return None;
+    }
+    let after_name = name.len();
+    let type_offset = match View::u32_le_at(property, after_name)? {
+        23 => after_name,
+        2 if View::u32_le_at(property, after_name + 4) == Some(14) => after_name + 22,
+        _ => return None,
+    };
+    if View::u32_le_at(property, type_offset) != Some(23) {
+        return None;
+    }
+    let type_end = type_offset + 4 + PERSISTENT_REFERENCE_TYPE.len();
+    if property.get(type_offset + 4..type_end) != Some(PERSISTENT_REFERENCE_TYPE) {
+        return None;
+    }
+    let value = View::u64_le_at(property, type_end)?;
+    (type_end + 8 == property.len()).then_some((type_end, value))
+}
+
+pub(crate) fn decode_persistent_references_from_stream(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     entry_ordinal: usize,
     entry_name: &str,
-    bytes: &[u8],
+    source: View<'_>,
     out: &mut Vec<(usize, PersistentReference)>,
+    pointers: &mut SourcePointers,
 ) -> Result<(), CodecError> {
+    let bytes = source.window();
     for &(name, kind) in &[
         (b"pt_tag".as_slice(), PersistentReferenceKind::Point),
         (
@@ -747,59 +811,75 @@ fn decode_persistent_references_from_stream(
         let mut cursor = 0;
         while let Some(offset) = find_from(bytes, name, cursor) {
             cursor = offset + name.len();
-            let compact_type_offset = offset + name.len();
-            let type_offset = if View::u32_le_at(bytes, compact_type_offset) == Some(23) {
-                compact_type_offset
-            } else if View::u32_le_at(bytes, compact_type_offset) == Some(2)
-                && View::u32_le_at(bytes, compact_type_offset + 4) == Some(14)
-                && bytes
-                    .get(compact_type_offset + 8..compact_type_offset + 22)
-                    .is_some()
-                && View::u32_le_at(bytes, compact_type_offset + 22) == Some(23)
-            {
-                compact_type_offset + 22
-            } else {
+            let Some(end) = persistent_property_end(bytes, offset + name.len()) else {
                 continue;
             };
-            if View::u32_le_at(bytes, type_offset) != Some(23) {
-                continue;
+            let extent = source
+                .start()
+                .checked_add(offset)
+                .zip(source.start().checked_add(end))
+                .and_then(|(start, end)| source.child(start, end))
+                .ok_or_else(|| {
+                    CodecError::malformed("F3D persistent reference exceeds its stream")
+                })?;
+            let id = design_record_id(entry_name, ":persistent-reference#", u64_from_index(offset));
+            if pointers.contains_key(&id) {
+                return Err(CodecError::malformed(
+                    "F3D persistent-reference source owner is duplicated",
+                ));
             }
-            let type_name = b"IntrinsicMetaTypeuint64";
-            if bytes.get(type_offset + 4..type_offset + 4 + type_name.len()) != Some(type_name) {
-                continue;
-            }
-            let value_offset = type_offset + 4 + type_name.len();
-            let Some(value) = View::u64_le_at(bytes, value_offset) else {
-                continue;
-            };
-
-            out.push((
-                entry_ordinal,
-                PersistentReference {
-                    id: design_record_id(
-                        entry_name,
-                        ":persistent-reference#",
-                        u64_from_index(offset),
-                    ),
+            // The property grammar consumes every byte of its extent, so the
+            // scope reads the extent whole. A candidate that is not a property
+            // rolls its scope back and leaves no capture.
+            let parsed = ctx.record(&id, extent, || {
+                let property =
+                    extent
+                        .read_slice(extent.start()..extent.end())
+                        .ok_or_else(|| {
+                            CodecError::malformed("F3D persistent reference is unreadable")
+                        })?;
+                let (value_offset, value) =
+                    parse_persistent_property(property, name).ok_or_else(|| {
+                        CodecError::malformed(
+                            "F3D persistent-reference candidate is not a property",
+                        )
+                    })?;
+                let reference = PersistentReference {
+                    id: id.clone(),
                     byte_offset: Some(u64_from_index(offset)),
-                    value_offset: Some(u32::try_from(value_offset - offset).map_err(|_| {
+                    value_offset: Some(u32::try_from(value_offset).map_err(|_| {
                         CodecError::malformed(
                             "f3d persistent reference relative offset exceeds u32",
                         )
                     })?),
                     kind,
                     value,
-                },
-            ));
+                };
+                let fields = crate::design::decode::parameters::source_layout::pointer_fields(
+                    ctx,
+                    reference.source_offsets(),
+                )?;
+                Ok((reference, fields))
+            });
+            let (reference, fields) = match parsed {
+                Ok(parsed) => parsed,
+                Err(CodecError::Malformed(_)) => continue,
+                Err(error) => return Err(error),
+            };
+            pointers.insert(id, fields);
+            out.push((entry_ordinal, reference));
         }
     }
     Ok(())
 }
 
 /// Decode every indexed `EDGE_REFERENCE_LOST` record from each design
-/// `BulkStream` entry in `scan`.
+/// `BulkStream` entry in `scan`. Each record is parsed inside its record
+/// scope, and its source offsets are `record_layout` pointers in `pointers`.
 pub(crate) fn decode_lost_edge_references(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
+    pointers: &mut SourcePointers,
 ) -> Result<Vec<LostEdgeReference>, CodecError> {
     let mut out = Vec::new();
     for entry in scan
@@ -807,19 +887,82 @@ pub(crate) fn decode_lost_edge_references(
         .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        let bytes = scan.entry_bytes(&entry.name)?;
-        decode_lost_edge_references_from_stream(&entry.name, bytes, &mut out)?;
+        let source = scan
+            .entry_view(&entry.name)
+            .ok_or_else(|| CodecError::malformed(format_args!("entry {} not found", entry.name)))?;
+        let mut frame_ends = std::collections::BTreeMap::new();
+        if let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? {
+            for frame in crate::metastream::primary_record_frames(&meta, source.window().len())? {
+                frame_ends.insert(frame.start, frame.end);
+            }
+        }
+        decode_lost_edge_references_from_stream(
+            ctx,
+            &entry.name,
+            source,
+            &frame_ends,
+            &mut out,
+            pointers,
+        )?;
     }
     Ok(out)
 }
 
-fn decode_lost_edge_references_from_stream(
+/// The byte length of an `EDGE_REFERENCE_LOST` record from its header to the
+/// following indexed header: the 29-byte header and the 19-byte marker.
+const LOST_EDGE_RECORD_LENGTH: usize = 48;
+/// The byte length of the following indexed header that the record names: a
+/// u32 class-tag length 3, three ASCII digits and the u32 record index.
+const LOST_EDGE_NEXT_HEADER_LENGTH: usize = 11;
+
+/// Parse one lost-edge record and the following indexed header, each read
+/// whole from the record scope. Returns the class tag, the record index, the
+/// next class tag and the next record index.
+fn parse_lost_edge_record<'a>(
+    record: &'a [u8],
+    next: &'a [u8],
+    marker: &[u8],
+) -> Option<(&'a str, u32, &'a str, u32)> {
+    let (class_tag, after_tag) = lp_ascii_filtered_view(record, 0, 0..=2000, u8::is_ascii_graphic)?;
+    if after_tag != 7
+        || record.get(11..25) != Some(&[0; 14])
+        || View::u32_le_at(record, 25) != u32::try_from(marker.len()).ok()
+        || record.get(29..) != Some(marker)
+    {
+        return None;
+    }
+    let record_index = View::u32_le_at(record, after_tag)?;
+    let (next_class_tag, after_next_tag) =
+        lp_ascii_filtered_view(next, 0, 0..=2000, u8::is_ascii_graphic)?;
+    if after_next_tag != 7 {
+        return None;
+    }
+    let next_record_index = View::u32_le_at(next, after_next_tag)?;
+    (class_tag.bytes().all(|byte| byte.is_ascii_digit())
+        && next_class_tag.bytes().all(|byte| byte.is_ascii_digit()))
+    .then_some((class_tag, record_index, next_class_tag, next_record_index))
+}
+
+pub(crate) fn decode_lost_edge_references_from_stream(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     entry_name: &str,
-    bytes: &[u8],
+    source: View<'_>,
+    frame_ends: &std::collections::BTreeMap<usize, usize>,
     out: &mut Vec<LostEdgeReference>,
+    pointers: &mut SourcePointers,
 ) -> Result<(), CodecError> {
+    let bytes = source.window();
     let marker = b"EDGE_REFERENCE_LOST";
+    let child = |start: usize, end: usize| {
+        source
+            .start()
+            .checked_add(start)
+            .zip(source.start().checked_add(end))
+            .and_then(|(start, end)| source.child(start, end))
+    };
     let mut cursor = 0;
+    // The marker locates candidate records (Appendix C `scan_recovery` of
+    // `f3d.bulk_class_members` for `lost_edge_references`).
     while let Some(relative) = bytes[cursor..]
         .windows(marker.len())
         .position(|window| window == marker)
@@ -829,55 +972,63 @@ fn decode_lost_edge_references_from_stream(
         let Some(header_offset) = offset.checked_sub(29) else {
             continue;
         };
-        let Some((class_tag, after_tag)) =
-            lp_ascii_filtered_view(bytes, header_offset, 0..=2000, u8::is_ascii_graphic)
-        else {
-            continue;
-        };
-        if after_tag != header_offset + 7
-            || bytes.get(header_offset + 11..header_offset + 25) != Some(&[0; 14])
-            || View::u32_le_at(bytes, header_offset + 25)
-                != Some(u32::try_from(marker.len()).map_err(|_| {
-                    CodecError::malformed("f3d lost edge marker length exceeds u32")
-                })?)
-        {
-            continue;
-        }
-        let Some(record_index) = View::u32_le_at(bytes, after_tag) else {
-            continue;
-        };
-        let next_byte_offset = offset + marker.len();
-        let Some((next_class_tag, after_next_tag)) =
-            lp_ascii_filtered_view(bytes, next_byte_offset, 0..=2000, u8::is_ascii_graphic)
-        else {
-            continue;
-        };
-        if after_next_tag != next_byte_offset + 7 {
-            continue;
-        }
-        let Some(next_record_index) = View::u32_le_at(bytes, after_next_tag) else {
-            continue;
-        };
-        if !class_tag.bytes().all(|byte| byte.is_ascii_digit())
-            || !next_class_tag.bytes().all(|byte| byte.is_ascii_digit())
-        {
-            continue;
-        }
-
-        let Ok(reference) = LostEdgeReference::new(
-            design_record_id(
-                entry_name,
-                ":lost-edge-reference#",
-                u64_from_index(header_offset),
-            ),
-            u64_from_index(header_offset),
-            class_tag.to_owned(),
-            record_index,
-            next_class_tag.to_owned(),
-            next_record_index,
+        let record_end = header_offset + LOST_EDGE_RECORD_LENGTH;
+        let (Some(record), Some(next)) = (
+            child(header_offset, record_end),
+            child(record_end, record_end + LOST_EDGE_NEXT_HEADER_LENGTH),
         ) else {
             continue;
         };
+        // An indexed record's extent is its primary-index frame.
+        let extent = match frame_ends.get(&header_offset) {
+            Some(&end) if end >= record_end => child(header_offset, end).ok_or_else(|| {
+                CodecError::malformed("F3D lost edge reference frame exceeds its stream")
+            })?,
+            _ => record,
+        };
+        let id = design_record_id(
+            entry_name,
+            ":lost-edge-reference#",
+            u64_from_index(header_offset),
+        );
+        if pointers.contains_key(&id) {
+            return Err(CodecError::malformed(
+                "F3D lost-edge-reference source owner is duplicated",
+            ));
+        }
+        // The record grammar consumes the record and the class tag and index
+        // of the following header; the scope reads both whole. A candidate
+        // that is not a record rolls its scope back and leaves no capture.
+        let parsed = ctx.record(&id, extent, || {
+            fn read(view: View<'_>) -> Result<&[u8], CodecError> {
+                view.read_slice(view.start()..view.end())
+                    .ok_or_else(|| CodecError::malformed("F3D lost edge reference is unreadable"))
+            }
+            let (class_tag, record_index, next_class_tag, next_record_index) =
+                parse_lost_edge_record(read(record)?, read(next)?, marker).ok_or_else(|| {
+                    CodecError::malformed("F3D lost-edge candidate is not a record")
+                })?;
+            let reference = LostEdgeReference::new(
+                id.clone(),
+                u64_from_index(header_offset),
+                class_tag.to_owned(),
+                record_index,
+                next_class_tag.to_owned(),
+                next_record_index,
+            )
+            .map_err(CodecError::Malformed)?;
+            let fields = crate::design::decode::parameters::source_layout::pointer_fields(
+                ctx,
+                reference.source_offsets(),
+            )?;
+            Ok((reference, fields))
+        });
+        let (reference, fields) = match parsed {
+            Ok(parsed) => parsed,
+            Err(CodecError::Malformed(_)) => continue,
+            Err(error) => return Err(error),
+        };
+        pointers.insert(id, fields);
         out.push(reference);
     }
     Ok(())
