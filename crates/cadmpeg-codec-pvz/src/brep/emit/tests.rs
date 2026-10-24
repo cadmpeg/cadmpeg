@@ -11,7 +11,7 @@ use cadmpeg_ir::topology::{BodyKind, FaceLoops, Sense};
 use cadmpeg_ir::ids::BodyId;
 
 use super::{emit, emit_with_work, Sink};
-use crate::brep::model::ExactModel;
+use crate::brep::model::{CurveGeometry, ExactModel};
 use crate::loss::PvzLossCode;
 use crate::test_support::exact::{cube_stream, Stream, CUBE_SIZE};
 
@@ -423,4 +423,104 @@ fn spindle_torus_with_secondary_pcurves_is_written_as_its_bspline() {
     ));
     assert!(has(&losses, PvzLossCode::ExactSecondaryPcurveOmitted));
     assert!(ir.model.coedges[0].pcurves.is_empty());
+}
+
+/// Whether `losses` hold a note of `code`.
+fn reports(losses: &[LossNote], code: PvzLossCode) -> bool {
+    losses.iter().any(|note| note.code == code.kind())
+}
+
+/// One square plane face of side 0.01 m whose loop has the coedges of
+/// `positions` (0 to 3, counter-clockwise from the origin).
+fn square_face(positions: &[usize]) -> Stream {
+    let size = 0.01;
+    let corners = [[0.0, 0.0], [size, 0.0], [size, size], [0.0, size]];
+    let mut stream = Stream::new(true);
+    stream.plane([0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]);
+    stream.loop_record(-2);
+    for (slot, _) in (0_u32..).zip(positions) {
+        stream.coedge(slot, 1, slot, crate::test_support::exact::NONE);
+    }
+    stream.terminator();
+    for position in positions {
+        let (a, b) = (corners[*position], corners[(position + 1) % 4]);
+        stream.line_edge([a[0], a[1], 0.0], [b[0] - a[0], b[1] - a[1], 0.0]);
+    }
+    for position in positions {
+        let (a, b) = (corners[*position], corners[(position + 1) % 4]);
+        stream.line_pcurve(a, [b[0] - a[0], b[1] - a[1]]);
+    }
+    stream
+}
+
+#[test]
+fn undefined_surface_type_is_reported() {
+    let mut stream = Stream::new(true);
+    stream.record(crate::test_support::exact::SURFACE, &[3, 0, 0, 7, 7, 7]);
+    stream
+        .loop_record(-2)
+        .coedge(0, 1, 0, crate::test_support::exact::NONE)
+        .terminator();
+    stream.line_edge([0.0; 3], [0.01, 0.0, 0.0]);
+    stream.line_pcurve([0.0, 0.0], [0.01, 0.0]);
+    let (ir, losses, _) = emit_stream(stream);
+    assert!(reports(&losses, PvzLossCode::ExactSurfaceUntyped));
+    assert!(matches!(
+        ir.model.surfaces[0].geometry,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
+    ));
+}
+
+#[test]
+fn composite_edge_curve_is_reported() {
+    let (ir, losses, _) = emit_edited(square_face(&[0, 1, 2, 3]), None, |model| {
+        let last = model.edges.len() - 1;
+        let member = model.edges[last].clone();
+        model.edges.push(member);
+        model.edges[last].geometry = CurveGeometry::Composite(vec![last + 1]);
+    });
+    assert!(reports(&losses, PvzLossCode::ExactCurveUntyped));
+    assert_eq!(ir.model.curves.len(), 3);
+}
+
+#[test]
+fn coedges_without_pcurves_are_reported() {
+    let (ir, losses, _) = emit_edited(square_face(&[0, 1, 2, 3]), None, |model| {
+        for coedge in &mut model.loops[0].coedges {
+            coedge.pcurve = None;
+        }
+    });
+    assert!(reports(&losses, PvzLossCode::ExactPcurveUntransferred));
+    assert!(ir
+        .model
+        .coedges
+        .iter()
+        .all(|coedge| coedge.pcurves.is_empty()));
+}
+
+#[test]
+fn pcurve_ends_off_the_edge_are_admitted_by_the_face_tolerance() {
+    let (ir, losses, _) = emit_edited(square_face(&[0, 1, 2, 3]), None, |model| {
+        for pcurve in &mut model.pcurves {
+            if let CurveGeometry::Line { origin, .. } = &mut pcurve.geometry {
+                origin[1] += 5.0e-5;
+            }
+        }
+    });
+    assert!(reports(&losses, PvzLossCode::ExactEndpointMismatch));
+    let tolerance = ir.model.faces[0].tolerance.unwrap().get();
+    assert!(tolerance >= 5.0e-5 * 1000.0, "{tolerance}");
+}
+
+#[test]
+fn loop_that_does_not_close_is_reported() {
+    let (_, losses, _) = emit_stream(square_face(&[0, 1, 2]));
+    assert!(reports(&losses, PvzLossCode::ExactLoopOpen));
+}
+
+#[test]
+fn face_side_of_an_open_sheet_is_a_gauge() {
+    let (ir, losses, _) = emit_stream(square_face(&[0, 1, 2, 3]));
+    assert_eq!(ir.model.bodies[0].kind, BodyKind::Sheet);
+    assert!(reports(&losses, PvzLossCode::ExactFaceSideGauge));
 }
