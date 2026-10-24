@@ -58,9 +58,8 @@ pub(crate) fn value(quantity: &crate::value::Quantity<crate::value::Scalar>) -> 
     match quantity {
         crate::value::Quantity::Measured(measured) => measured.value().value.get(),
         crate::value::Quantity::Unavailable(unavailable) => panic!(
-            "expected a measured value, got {} ({})",
-            unavailable.reason().code(),
-            unavailable.message()
+            "expected a measured value, got the unavailable reason {}",
+            unavailable.reason().code()
         ),
     }
 }
@@ -82,7 +81,7 @@ pub(crate) fn assert_measured(
     let allowed = numeric + TEST_ABSOLUTE_FLOOR * expected.abs().max(scale);
     assert!(
         (computed - expected).abs() <= allowed,
-        "computed {computed}, expected {expected}, allowed {allowed}"
+        "the measured value lies within its allowance of the expected value"
     );
 }
 
@@ -139,7 +138,7 @@ pub(crate) fn assert_range(
 ) {
     let measured = quantity
         .and_then(crate::value::Quantity::measured)
-        .unwrap_or_else(|| panic!("expected a measured range, got {quantity:?}"));
+        .expect("expected a measured range");
     let numeric = measured.numeric_error().get();
     for (computed, expected) in [
         (measured.value().min.get(), min),
@@ -148,7 +147,7 @@ pub(crate) fn assert_range(
         let allowed = numeric + TEST_ABSOLUTE_FLOOR * expected.abs().max(scale);
         assert!(
             (computed - expected).abs() <= allowed,
-            "computed {computed}, expected {expected}, allowed {allowed}"
+            "the measured value lies within its allowance of the expected value"
         );
     }
 }
@@ -161,9 +160,7 @@ pub(crate) fn assert_tight_box(
     max: [f64; 3],
     scale: f64,
 ) {
-    let measured = quantity
-        .measured()
-        .unwrap_or_else(|| panic!("expected a measured box, got {quantity:?}"));
+    let measured = quantity.measured().expect("expected a measured box");
     assert_eq!(measured.value().kind, crate::value::BoxKind::Tight);
     let numeric = measured.numeric_error().get();
     let (low, high) = (measured.value().min.get(), measured.value().max.get());
@@ -178,7 +175,7 @@ pub(crate) fn assert_tight_box(
         let allowed = numeric + TEST_ABSOLUTE_FLOOR * expected.abs().max(scale);
         assert!(
             (computed - expected).abs() <= allowed,
-            "computed {computed}, expected {expected}, allowed {allowed}"
+            "the measured value lies within its allowance of the expected value"
         );
     }
 }
