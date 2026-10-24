@@ -144,6 +144,7 @@ mod tests {
             "sab",
             "acis",
             "parasolid",
+            "pvz",
         ] {
             assert!(
                 Format::is_known_name(name).expect("embedded registry loads"),

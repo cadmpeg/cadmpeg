@@ -534,10 +534,14 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         crate::design::configurations::project_configurations(&design.design_configurations)?;
     design.design_sheet_metal_settings =
         crate::design::decode::sheet_metal_settings::decode_settings(scan)?;
+    let projection_parameters = crate::design::decode::parameters::parameters_for_projection(
+        &prereqs.design_parameters,
+        &prereqs.design_parameter_owner_unparsed,
+    );
     let projected = crate::design::feature_project::project_parameter_design_with_edge_identities(
         ctx,
         &crate::design::feature_project::ProjectInputs {
-            native: &prereqs.design_parameters,
+            native: &projection_parameters,
             owners: &prereqs.design_parameter_owners,
             scopes: &design.design_parameter_scopes,
             timelines,

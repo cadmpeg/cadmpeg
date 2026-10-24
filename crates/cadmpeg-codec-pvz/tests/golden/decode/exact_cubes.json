@@ -1,0 +1,5945 @@
+{
+  "ir": {
+    "decode_depth": "full",
+    "ir_version": "8",
+    "model": {
+      "appearance_bindings": [
+        {
+          "appearance": "pvz:model:appearance#cube32.ol:7",
+          "id": "pvz:model:appearance-binding#cube32.ol:0",
+          "target": {
+            "id": "pvz:model:tessellation#cube32.ol:0",
+            "kind": "tessellation"
+          }
+        },
+        {
+          "appearance": "pvz:model:appearance#cube64.ol:7",
+          "id": "pvz:model:appearance-binding#cube64.ol:0",
+          "target": {
+            "id": "pvz:model:tessellation#cube64.ol:0",
+            "kind": "tessellation"
+          }
+        }
+      ],
+      "appearances": [
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.0,
+            "g": 0.0,
+            "r": 1.0
+          },
+          "id": "pvz:model:appearance#cube32.ol:7",
+          "name": "red",
+          "properties": {
+            "base.b": 0.0,
+            "base.g": 0.0,
+            "base.r": 1.0,
+            "diffuse.b": 0.0,
+            "diffuse.g": 0.0,
+            "diffuse.r": 0.800000011920929,
+            "emissive.b": 0.0,
+            "emissive.g": 0.0,
+            "emissive.r": 0.0,
+            "opacity": 1.0,
+            "shininess": 32.0,
+            "specular.b": 0.5,
+            "specular.g": 0.5,
+            "specular.r": 0.5
+          }
+        },
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.0,
+            "g": 0.0,
+            "r": 1.0
+          },
+          "id": "pvz:model:appearance#cube64.ol:7",
+          "name": "red",
+          "properties": {
+            "base.b": 0.0,
+            "base.g": 0.0,
+            "base.r": 1.0,
+            "diffuse.b": 0.0,
+            "diffuse.g": 0.0,
+            "diffuse.r": 0.800000011920929,
+            "emissive.b": 0.0,
+            "emissive.g": 0.0,
+            "emissive.r": 0.0,
+            "opacity": 1.0,
+            "shininess": 32.0,
+            "specular.b": 0.5,
+            "specular.g": 0.5,
+            "specular.r": 0.5
+          }
+        }
+      ],
+      "assembly_joints": [],
+      "attributes": [],
+      "bodies": [
+        {
+          "id": "pvz:model:body#cube32.ol",
+          "kind": "solid",
+          "name": "cube32.ol",
+          "regions": [
+            "pvz:model:region#cube32.ol:0"
+          ]
+        },
+        {
+          "id": "pvz:model:body#cube64.ol",
+          "kind": "solid",
+          "name": "cube64.ol",
+          "regions": [
+            "pvz:model:region#cube64.ol:0"
+          ]
+        },
+        {
+          "id": "pvz:model:body#plate.ol",
+          "kind": "general",
+          "name": "plate.ol",
+          "regions": []
+        }
+      ],
+      "coedges": [
+        {
+          "edge": "pvz:model:edge#cube32.ol:0",
+          "id": "pvz:model:coedge#cube32.ol:0:0",
+          "owner_loop": "pvz:model:loop#cube32.ol:0",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube32.ol:0:0"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube32.ol:4:3",
+          "sense": "forward"
+        },
+        {
+          "edge": "pvz:model:edge#cube32.ol:1",
+          "id": "pvz:model:coedge#cube32.ol:0:1",
+          "owner_loop": "pvz:model:loop#cube32.ol:0",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube32.ol:0:1"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube32.ol:3:3",
+          "sense": "forward"
+        },
+        {
+          "edge": "pvz:model:edge#cube32.ol:2",
+          "id": "pvz:model:coedge#cube32.ol:0:2",
+          "owner_loop": "pvz:model:loop#cube32.ol:0",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube32.ol:0:2"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube32.ol:5:0",
+          "sense": "reversed"
+        },
+        {
+          "edge": "pvz:model:edge#cube32.ol:3",
+          "id": "pvz:model:coedge#cube32.ol:0:3",
+          "owner_loop": "pvz:model:loop#cube32.ol:0",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube32.ol:0:3"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube32.ol:2:0",
+          "sense": "reversed"
+        },
+        {
+          "edge": "pvz:model:edge#cube32.ol:4",
+          "id": "pvz:model:coedge#cube32.ol:1:0",
+          "owner_loop": "pvz:model:loop#cube32.ol:1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube32.ol:1:0"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube32.ol:2:2",
+          "sense": "forward"
+        },
+        {
+          "edge": "pvz:model:edge#cube32.ol:5",
+          "id": "pvz:model:coedge#cube32.ol:1:1",
+          "owner_loop": "pvz:model:loop#cube32.ol:1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube32.ol:1:1"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube32.ol:5:2",
+          "sense": "forward"
+        },
+        {
+          "edge": "pvz:model:edge#cube32.ol:6",
+          "id": "pvz:model:coedge#cube32.ol:1:2",
+          "owner_loop": "pvz:model:loop#cube32.ol:1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube32.ol:1:2"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube32.ol:3:1",
+          "sense": "reversed"
+        },
+        {
+          "edge": "pvz:model:edge#cube32.ol:7",
+          "id": "pvz:model:coedge#cube32.ol:1:3",
+          "owner_loop": "pvz:model:loop#cube32.ol:1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube32.ol:1:3"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube32.ol:4:1",
+          "sense": "reversed"
+        },
+        {
+          "edge": "pvz:model:edge#cube32.ol:3",
+          "id": "pvz:model:coedge#cube32.ol:2:0",
+          "owner_loop": "pvz:model:loop#cube32.ol:2",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube32.ol:2:0"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube32.ol:0:3",
+          "sense": "forward"
+        },
+        {
+          "edge": "pvz:model:edge#cube32.ol:8",
+          "id": "pvz:model:coedge#cube32.ol:2:1",
+          "owner_loop": "pvz:model:loop#cube32.ol:2",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube32.ol:2:1"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube32.ol:5:3",
+          "sense": "forward"
+        },
+        {
+          "edge": "pvz:model:edge#cube32.ol:4",
+          "id": "pvz:model:coedge#cube32.ol:2:2",
+          "owner_loop": "pvz:model:loop#cube32.ol:2",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube32.ol:2:2"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube32.ol:1:0",
+          "sense": "reversed"
+        },
+        {
+          "edge": "pvz:model:edge#cube32.ol:9",
+          "id": "pvz:model:coedge#cube32.ol:2:3",
+          "owner_loop": "pvz:model:loop#cube32.ol:2",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube32.ol:2:3"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube32.ol:4:0",
+          "sense": "reversed"
+        },
+        {
+          "edge": "pvz:model:edge#cube32.ol:10",
+          "id": "pvz:model:coedge#cube32.ol:3:0",
+          "owner_loop": "pvz:model:loop#cube32.ol:3",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube32.ol:3:0"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube32.ol:4:2",
+          "sense": "forward"
+        },
+        {
+          "edge": "pvz:model:edge#cube32.ol:6",
+          "id": "pvz:model:coedge#cube32.ol:3:1",
+          "owner_loop": "pvz:model:loop#cube32.ol:3",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube32.ol:3:1"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube32.ol:1:2",
+          "sense": "forward"
+        },
+        {
+          "edge": "pvz:model:edge#cube32.ol:11",
+          "id": "pvz:model:coedge#cube32.ol:3:2",
+          "owner_loop": "pvz:model:loop#cube32.ol:3",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube32.ol:3:2"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube32.ol:5:1",
+          "sense": "reversed"
+        },
+        {
+          "edge": "pvz:model:edge#cube32.ol:1",
+          "id": "pvz:model:coedge#cube32.ol:3:3",
+          "owner_loop": "pvz:model:loop#cube32.ol:3",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube32.ol:3:3"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube32.ol:0:1",
+          "sense": "reversed"
+        },
+        {
+          "edge": "pvz:model:edge#cube32.ol:9",
+          "id": "pvz:model:coedge#cube32.ol:4:0",
+          "owner_loop": "pvz:model:loop#cube32.ol:4",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube32.ol:4:0"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube32.ol:2:3",
+          "sense": "forward"
+        },
+        {
+          "edge": "pvz:model:edge#cube32.ol:7",
+          "id": "pvz:model:coedge#cube32.ol:4:1",
+          "owner_loop": "pvz:model:loop#cube32.ol:4",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube32.ol:4:1"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube32.ol:1:3",
+          "sense": "forward"
+        },
+        {
+          "edge": "pvz:model:edge#cube32.ol:10",
+          "id": "pvz:model:coedge#cube32.ol:4:2",
+          "owner_loop": "pvz:model:loop#cube32.ol:4",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube32.ol:4:2"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube32.ol:3:0",
+          "sense": "reversed"
+        },
+        {
+          "edge": "pvz:model:edge#cube32.ol:0",
+          "id": "pvz:model:coedge#cube32.ol:4:3",
+          "owner_loop": "pvz:model:loop#cube32.ol:4",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube32.ol:4:3"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube32.ol:0:0",
+          "sense": "reversed"
+        },
+        {
+          "edge": "pvz:model:edge#cube32.ol:2",
+          "id": "pvz:model:coedge#cube32.ol:5:0",
+          "owner_loop": "pvz:model:loop#cube32.ol:5",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube32.ol:5:0"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube32.ol:0:2",
+          "sense": "forward"
+        },
+        {
+          "edge": "pvz:model:edge#cube32.ol:11",
+          "id": "pvz:model:coedge#cube32.ol:5:1",
+          "owner_loop": "pvz:model:loop#cube32.ol:5",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube32.ol:5:1"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube32.ol:3:2",
+          "sense": "forward"
+        },
+        {
+          "edge": "pvz:model:edge#cube32.ol:5",
+          "id": "pvz:model:coedge#cube32.ol:5:2",
+          "owner_loop": "pvz:model:loop#cube32.ol:5",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube32.ol:5:2"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube32.ol:1:1",
+          "sense": "reversed"
+        },
+        {
+          "edge": "pvz:model:edge#cube32.ol:8",
+          "id": "pvz:model:coedge#cube32.ol:5:3",
+          "owner_loop": "pvz:model:loop#cube32.ol:5",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube32.ol:5:3"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube32.ol:2:1",
+          "sense": "reversed"
+        },
+        {
+          "edge": "pvz:model:edge#cube64.ol:0",
+          "id": "pvz:model:coedge#cube64.ol:0:0",
+          "owner_loop": "pvz:model:loop#cube64.ol:0",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube64.ol:0:0"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube64.ol:4:3",
+          "sense": "forward"
+        },
+        {
+          "edge": "pvz:model:edge#cube64.ol:1",
+          "id": "pvz:model:coedge#cube64.ol:0:1",
+          "owner_loop": "pvz:model:loop#cube64.ol:0",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube64.ol:0:1"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube64.ol:3:3",
+          "sense": "forward"
+        },
+        {
+          "edge": "pvz:model:edge#cube64.ol:2",
+          "id": "pvz:model:coedge#cube64.ol:0:2",
+          "owner_loop": "pvz:model:loop#cube64.ol:0",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube64.ol:0:2"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube64.ol:5:0",
+          "sense": "reversed"
+        },
+        {
+          "edge": "pvz:model:edge#cube64.ol:3",
+          "id": "pvz:model:coedge#cube64.ol:0:3",
+          "owner_loop": "pvz:model:loop#cube64.ol:0",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube64.ol:0:3"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube64.ol:2:0",
+          "sense": "reversed"
+        },
+        {
+          "edge": "pvz:model:edge#cube64.ol:4",
+          "id": "pvz:model:coedge#cube64.ol:1:0",
+          "owner_loop": "pvz:model:loop#cube64.ol:1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube64.ol:1:0"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube64.ol:2:2",
+          "sense": "forward"
+        },
+        {
+          "edge": "pvz:model:edge#cube64.ol:5",
+          "id": "pvz:model:coedge#cube64.ol:1:1",
+          "owner_loop": "pvz:model:loop#cube64.ol:1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube64.ol:1:1"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube64.ol:5:2",
+          "sense": "forward"
+        },
+        {
+          "edge": "pvz:model:edge#cube64.ol:6",
+          "id": "pvz:model:coedge#cube64.ol:1:2",
+          "owner_loop": "pvz:model:loop#cube64.ol:1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube64.ol:1:2"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube64.ol:3:1",
+          "sense": "reversed"
+        },
+        {
+          "edge": "pvz:model:edge#cube64.ol:7",
+          "id": "pvz:model:coedge#cube64.ol:1:3",
+          "owner_loop": "pvz:model:loop#cube64.ol:1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube64.ol:1:3"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube64.ol:4:1",
+          "sense": "reversed"
+        },
+        {
+          "edge": "pvz:model:edge#cube64.ol:3",
+          "id": "pvz:model:coedge#cube64.ol:2:0",
+          "owner_loop": "pvz:model:loop#cube64.ol:2",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube64.ol:2:0"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube64.ol:0:3",
+          "sense": "forward"
+        },
+        {
+          "edge": "pvz:model:edge#cube64.ol:8",
+          "id": "pvz:model:coedge#cube64.ol:2:1",
+          "owner_loop": "pvz:model:loop#cube64.ol:2",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube64.ol:2:1"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube64.ol:5:3",
+          "sense": "forward"
+        },
+        {
+          "edge": "pvz:model:edge#cube64.ol:4",
+          "id": "pvz:model:coedge#cube64.ol:2:2",
+          "owner_loop": "pvz:model:loop#cube64.ol:2",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube64.ol:2:2"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube64.ol:1:0",
+          "sense": "reversed"
+        },
+        {
+          "edge": "pvz:model:edge#cube64.ol:9",
+          "id": "pvz:model:coedge#cube64.ol:2:3",
+          "owner_loop": "pvz:model:loop#cube64.ol:2",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube64.ol:2:3"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube64.ol:4:0",
+          "sense": "reversed"
+        },
+        {
+          "edge": "pvz:model:edge#cube64.ol:10",
+          "id": "pvz:model:coedge#cube64.ol:3:0",
+          "owner_loop": "pvz:model:loop#cube64.ol:3",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube64.ol:3:0"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube64.ol:4:2",
+          "sense": "forward"
+        },
+        {
+          "edge": "pvz:model:edge#cube64.ol:6",
+          "id": "pvz:model:coedge#cube64.ol:3:1",
+          "owner_loop": "pvz:model:loop#cube64.ol:3",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube64.ol:3:1"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube64.ol:1:2",
+          "sense": "forward"
+        },
+        {
+          "edge": "pvz:model:edge#cube64.ol:11",
+          "id": "pvz:model:coedge#cube64.ol:3:2",
+          "owner_loop": "pvz:model:loop#cube64.ol:3",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube64.ol:3:2"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube64.ol:5:1",
+          "sense": "reversed"
+        },
+        {
+          "edge": "pvz:model:edge#cube64.ol:1",
+          "id": "pvz:model:coedge#cube64.ol:3:3",
+          "owner_loop": "pvz:model:loop#cube64.ol:3",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube64.ol:3:3"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube64.ol:0:1",
+          "sense": "reversed"
+        },
+        {
+          "edge": "pvz:model:edge#cube64.ol:9",
+          "id": "pvz:model:coedge#cube64.ol:4:0",
+          "owner_loop": "pvz:model:loop#cube64.ol:4",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube64.ol:4:0"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube64.ol:2:3",
+          "sense": "forward"
+        },
+        {
+          "edge": "pvz:model:edge#cube64.ol:7",
+          "id": "pvz:model:coedge#cube64.ol:4:1",
+          "owner_loop": "pvz:model:loop#cube64.ol:4",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube64.ol:4:1"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube64.ol:1:3",
+          "sense": "forward"
+        },
+        {
+          "edge": "pvz:model:edge#cube64.ol:10",
+          "id": "pvz:model:coedge#cube64.ol:4:2",
+          "owner_loop": "pvz:model:loop#cube64.ol:4",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube64.ol:4:2"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube64.ol:3:0",
+          "sense": "reversed"
+        },
+        {
+          "edge": "pvz:model:edge#cube64.ol:0",
+          "id": "pvz:model:coedge#cube64.ol:4:3",
+          "owner_loop": "pvz:model:loop#cube64.ol:4",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube64.ol:4:3"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube64.ol:0:0",
+          "sense": "reversed"
+        },
+        {
+          "edge": "pvz:model:edge#cube64.ol:2",
+          "id": "pvz:model:coedge#cube64.ol:5:0",
+          "owner_loop": "pvz:model:loop#cube64.ol:5",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube64.ol:5:0"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube64.ol:0:2",
+          "sense": "forward"
+        },
+        {
+          "edge": "pvz:model:edge#cube64.ol:11",
+          "id": "pvz:model:coedge#cube64.ol:5:1",
+          "owner_loop": "pvz:model:loop#cube64.ol:5",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube64.ol:5:1"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube64.ol:3:2",
+          "sense": "forward"
+        },
+        {
+          "edge": "pvz:model:edge#cube64.ol:5",
+          "id": "pvz:model:coedge#cube64.ol:5:2",
+          "owner_loop": "pvz:model:loop#cube64.ol:5",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube64.ol:5:2"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube64.ol:1:1",
+          "sense": "reversed"
+        },
+        {
+          "edge": "pvz:model:edge#cube64.ol:8",
+          "id": "pvz:model:coedge#cube64.ol:5:3",
+          "owner_loop": "pvz:model:loop#cube64.ol:5",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "pvz:model:pcurve#cube64.ol:5:3"
+            }
+          ],
+          "radial_next": "pvz:model:coedge#cube64.ol:2:1",
+          "sense": "reversed"
+        }
+      ],
+      "configurations": [],
+      "curves": [
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "pvz:model:curve#cube32.ol:0"
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 9.999999776482582,
+              "z": 0.0
+            }
+          },
+          "id": "pvz:model:curve#cube32.ol:1"
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 9.999999776482582,
+              "z": 0.0
+            }
+          },
+          "id": "pvz:model:curve#cube32.ol:10"
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 9.999999776482582,
+              "y": 9.999999776482582,
+              "z": 0.0
+            }
+          },
+          "id": "pvz:model:curve#cube32.ol:11"
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 9.999999776482582,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "pvz:model:curve#cube32.ol:2"
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "pvz:model:curve#cube32.ol:3"
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 9.999999776482582
+            }
+          },
+          "id": "pvz:model:curve#cube32.ol:4"
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 9.999999776482582,
+              "y": 0.0,
+              "z": 9.999999776482582
+            }
+          },
+          "id": "pvz:model:curve#cube32.ol:5"
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 9.999999776482582,
+              "z": 9.999999776482582
+            }
+          },
+          "id": "pvz:model:curve#cube32.ol:6"
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 9.999999776482582
+            }
+          },
+          "id": "pvz:model:curve#cube32.ol:7"
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 9.999999776482582,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "pvz:model:curve#cube32.ol:8"
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "pvz:model:curve#cube32.ol:9"
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "pvz:model:curve#cube64.ol:0"
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 10.0,
+              "z": 0.0
+            }
+          },
+          "id": "pvz:model:curve#cube64.ol:1"
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 10.0,
+              "z": 0.0
+            }
+          },
+          "id": "pvz:model:curve#cube64.ol:10"
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 10.0,
+              "y": 10.0,
+              "z": 0.0
+            }
+          },
+          "id": "pvz:model:curve#cube64.ol:11"
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 10.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "pvz:model:curve#cube64.ol:2"
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "pvz:model:curve#cube64.ol:3"
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 10.0
+            }
+          },
+          "id": "pvz:model:curve#cube64.ol:4"
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 10.0,
+              "y": 0.0,
+              "z": 10.0
+            }
+          },
+          "id": "pvz:model:curve#cube64.ol:5"
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 10.0,
+              "z": 10.0
+            }
+          },
+          "id": "pvz:model:curve#cube64.ol:6"
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 10.0
+            }
+          },
+          "id": "pvz:model:curve#cube64.ol:7"
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 10.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "pvz:model:curve#cube64.ol:8"
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "pvz:model:curve#cube64.ol:9"
+        }
+      ],
+      "drawings": [],
+      "edges": [
+        {
+          "carrier": {
+            "curve": "pvz:model:curve#cube32.ol:0",
+            "param_range": [
+              0.0,
+              9.999999776482582
+            ]
+          },
+          "end": "pvz:model:vertex#cube32.ol:1",
+          "id": "pvz:model:edge#cube32.ol:0",
+          "start": "pvz:model:vertex#cube32.ol:0"
+        },
+        {
+          "carrier": {
+            "curve": "pvz:model:curve#cube32.ol:1",
+            "param_range": [
+              0.0,
+              9.999999776482582
+            ]
+          },
+          "end": "pvz:model:vertex#cube32.ol:2",
+          "id": "pvz:model:edge#cube32.ol:1",
+          "start": "pvz:model:vertex#cube32.ol:1"
+        },
+        {
+          "carrier": {
+            "curve": "pvz:model:curve#cube32.ol:10",
+            "param_range": [
+              0.0,
+              9.999999776482582
+            ]
+          },
+          "end": "pvz:model:vertex#cube32.ol:7",
+          "id": "pvz:model:edge#cube32.ol:10",
+          "start": "pvz:model:vertex#cube32.ol:1"
+        },
+        {
+          "carrier": {
+            "curve": "pvz:model:curve#cube32.ol:11",
+            "param_range": [
+              0.0,
+              9.999999776482582
+            ]
+          },
+          "end": "pvz:model:vertex#cube32.ol:6",
+          "id": "pvz:model:edge#cube32.ol:11",
+          "start": "pvz:model:vertex#cube32.ol:2"
+        },
+        {
+          "carrier": {
+            "curve": "pvz:model:curve#cube32.ol:2",
+            "param_range": [
+              0.0,
+              9.999999776482582
+            ]
+          },
+          "end": "pvz:model:vertex#cube32.ol:2",
+          "id": "pvz:model:edge#cube32.ol:2",
+          "start": "pvz:model:vertex#cube32.ol:3"
+        },
+        {
+          "carrier": {
+            "curve": "pvz:model:curve#cube32.ol:3",
+            "param_range": [
+              0.0,
+              9.999999776482582
+            ]
+          },
+          "end": "pvz:model:vertex#cube32.ol:3",
+          "id": "pvz:model:edge#cube32.ol:3",
+          "start": "pvz:model:vertex#cube32.ol:0"
+        },
+        {
+          "carrier": {
+            "curve": "pvz:model:curve#cube32.ol:4",
+            "param_range": [
+              0.0,
+              9.999999776482582
+            ]
+          },
+          "end": "pvz:model:vertex#cube32.ol:5",
+          "id": "pvz:model:edge#cube32.ol:4",
+          "start": "pvz:model:vertex#cube32.ol:4"
+        },
+        {
+          "carrier": {
+            "curve": "pvz:model:curve#cube32.ol:5",
+            "param_range": [
+              0.0,
+              9.999999776482582
+            ]
+          },
+          "end": "pvz:model:vertex#cube32.ol:6",
+          "id": "pvz:model:edge#cube32.ol:5",
+          "start": "pvz:model:vertex#cube32.ol:5"
+        },
+        {
+          "carrier": {
+            "curve": "pvz:model:curve#cube32.ol:6",
+            "param_range": [
+              0.0,
+              9.999999776482582
+            ]
+          },
+          "end": "pvz:model:vertex#cube32.ol:6",
+          "id": "pvz:model:edge#cube32.ol:6",
+          "start": "pvz:model:vertex#cube32.ol:7"
+        },
+        {
+          "carrier": {
+            "curve": "pvz:model:curve#cube32.ol:7",
+            "param_range": [
+              0.0,
+              9.999999776482582
+            ]
+          },
+          "end": "pvz:model:vertex#cube32.ol:7",
+          "id": "pvz:model:edge#cube32.ol:7",
+          "start": "pvz:model:vertex#cube32.ol:4"
+        },
+        {
+          "carrier": {
+            "curve": "pvz:model:curve#cube32.ol:8",
+            "param_range": [
+              0.0,
+              9.999999776482582
+            ]
+          },
+          "end": "pvz:model:vertex#cube32.ol:5",
+          "id": "pvz:model:edge#cube32.ol:8",
+          "start": "pvz:model:vertex#cube32.ol:3"
+        },
+        {
+          "carrier": {
+            "curve": "pvz:model:curve#cube32.ol:9",
+            "param_range": [
+              0.0,
+              9.999999776482582
+            ]
+          },
+          "end": "pvz:model:vertex#cube32.ol:4",
+          "id": "pvz:model:edge#cube32.ol:9",
+          "start": "pvz:model:vertex#cube32.ol:0"
+        },
+        {
+          "carrier": {
+            "curve": "pvz:model:curve#cube64.ol:0",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
+          "end": "pvz:model:vertex#cube64.ol:1",
+          "id": "pvz:model:edge#cube64.ol:0",
+          "start": "pvz:model:vertex#cube64.ol:0"
+        },
+        {
+          "carrier": {
+            "curve": "pvz:model:curve#cube64.ol:1",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
+          "end": "pvz:model:vertex#cube64.ol:2",
+          "id": "pvz:model:edge#cube64.ol:1",
+          "start": "pvz:model:vertex#cube64.ol:1"
+        },
+        {
+          "carrier": {
+            "curve": "pvz:model:curve#cube64.ol:10",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
+          "end": "pvz:model:vertex#cube64.ol:7",
+          "id": "pvz:model:edge#cube64.ol:10",
+          "start": "pvz:model:vertex#cube64.ol:1"
+        },
+        {
+          "carrier": {
+            "curve": "pvz:model:curve#cube64.ol:11",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
+          "end": "pvz:model:vertex#cube64.ol:6",
+          "id": "pvz:model:edge#cube64.ol:11",
+          "start": "pvz:model:vertex#cube64.ol:2"
+        },
+        {
+          "carrier": {
+            "curve": "pvz:model:curve#cube64.ol:2",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
+          "end": "pvz:model:vertex#cube64.ol:2",
+          "id": "pvz:model:edge#cube64.ol:2",
+          "start": "pvz:model:vertex#cube64.ol:3"
+        },
+        {
+          "carrier": {
+            "curve": "pvz:model:curve#cube64.ol:3",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
+          "end": "pvz:model:vertex#cube64.ol:3",
+          "id": "pvz:model:edge#cube64.ol:3",
+          "start": "pvz:model:vertex#cube64.ol:0"
+        },
+        {
+          "carrier": {
+            "curve": "pvz:model:curve#cube64.ol:4",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
+          "end": "pvz:model:vertex#cube64.ol:5",
+          "id": "pvz:model:edge#cube64.ol:4",
+          "start": "pvz:model:vertex#cube64.ol:4"
+        },
+        {
+          "carrier": {
+            "curve": "pvz:model:curve#cube64.ol:5",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
+          "end": "pvz:model:vertex#cube64.ol:6",
+          "id": "pvz:model:edge#cube64.ol:5",
+          "start": "pvz:model:vertex#cube64.ol:5"
+        },
+        {
+          "carrier": {
+            "curve": "pvz:model:curve#cube64.ol:6",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
+          "end": "pvz:model:vertex#cube64.ol:6",
+          "id": "pvz:model:edge#cube64.ol:6",
+          "start": "pvz:model:vertex#cube64.ol:7"
+        },
+        {
+          "carrier": {
+            "curve": "pvz:model:curve#cube64.ol:7",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
+          "end": "pvz:model:vertex#cube64.ol:7",
+          "id": "pvz:model:edge#cube64.ol:7",
+          "start": "pvz:model:vertex#cube64.ol:4"
+        },
+        {
+          "carrier": {
+            "curve": "pvz:model:curve#cube64.ol:8",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
+          "end": "pvz:model:vertex#cube64.ol:5",
+          "id": "pvz:model:edge#cube64.ol:8",
+          "start": "pvz:model:vertex#cube64.ol:3"
+        },
+        {
+          "carrier": {
+            "curve": "pvz:model:curve#cube64.ol:9",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
+          "end": "pvz:model:vertex#cube64.ol:4",
+          "id": "pvz:model:edge#cube64.ol:9",
+          "start": "pvz:model:vertex#cube64.ol:0"
+        }
+      ],
+      "faces": [
+        {
+          "id": "pvz:model:face#cube32.ol:0:0",
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "pvz:model:loop#cube32.ol:0"
+          },
+          "sense": "forward",
+          "shell": "pvz:model:shell#cube32.ol:0",
+          "surface": "pvz:model:surface#cube32.ol:0"
+        },
+        {
+          "id": "pvz:model:face#cube32.ol:1:0",
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "pvz:model:loop#cube32.ol:1"
+          },
+          "sense": "forward",
+          "shell": "pvz:model:shell#cube32.ol:0",
+          "surface": "pvz:model:surface#cube32.ol:1"
+        },
+        {
+          "id": "pvz:model:face#cube32.ol:2:0",
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "pvz:model:loop#cube32.ol:2"
+          },
+          "sense": "forward",
+          "shell": "pvz:model:shell#cube32.ol:0",
+          "surface": "pvz:model:surface#cube32.ol:2"
+        },
+        {
+          "id": "pvz:model:face#cube32.ol:3:0",
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "pvz:model:loop#cube32.ol:3"
+          },
+          "sense": "forward",
+          "shell": "pvz:model:shell#cube32.ol:0",
+          "surface": "pvz:model:surface#cube32.ol:3"
+        },
+        {
+          "id": "pvz:model:face#cube32.ol:4:0",
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "pvz:model:loop#cube32.ol:4"
+          },
+          "sense": "forward",
+          "shell": "pvz:model:shell#cube32.ol:0",
+          "surface": "pvz:model:surface#cube32.ol:4"
+        },
+        {
+          "id": "pvz:model:face#cube32.ol:5:0",
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "pvz:model:loop#cube32.ol:5"
+          },
+          "sense": "forward",
+          "shell": "pvz:model:shell#cube32.ol:0",
+          "surface": "pvz:model:surface#cube32.ol:5"
+        },
+        {
+          "id": "pvz:model:face#cube64.ol:0:0",
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "pvz:model:loop#cube64.ol:0"
+          },
+          "sense": "forward",
+          "shell": "pvz:model:shell#cube64.ol:0",
+          "surface": "pvz:model:surface#cube64.ol:0"
+        },
+        {
+          "id": "pvz:model:face#cube64.ol:1:0",
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "pvz:model:loop#cube64.ol:1"
+          },
+          "sense": "forward",
+          "shell": "pvz:model:shell#cube64.ol:0",
+          "surface": "pvz:model:surface#cube64.ol:1"
+        },
+        {
+          "id": "pvz:model:face#cube64.ol:2:0",
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "pvz:model:loop#cube64.ol:2"
+          },
+          "sense": "forward",
+          "shell": "pvz:model:shell#cube64.ol:0",
+          "surface": "pvz:model:surface#cube64.ol:2"
+        },
+        {
+          "id": "pvz:model:face#cube64.ol:3:0",
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "pvz:model:loop#cube64.ol:3"
+          },
+          "sense": "forward",
+          "shell": "pvz:model:shell#cube64.ol:0",
+          "surface": "pvz:model:surface#cube64.ol:3"
+        },
+        {
+          "id": "pvz:model:face#cube64.ol:4:0",
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "pvz:model:loop#cube64.ol:4"
+          },
+          "sense": "forward",
+          "shell": "pvz:model:shell#cube64.ol:0",
+          "surface": "pvz:model:surface#cube64.ol:4"
+        },
+        {
+          "id": "pvz:model:face#cube64.ol:5:0",
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "pvz:model:loop#cube64.ol:5"
+          },
+          "sense": "forward",
+          "shell": "pvz:model:shell#cube64.ol:0",
+          "surface": "pvz:model:surface#cube64.ol:5"
+        }
+      ],
+      "features": [],
+      "loops": [
+        {
+          "boundary": {
+            "coedges": [
+              "pvz:model:coedge#cube32.ol:0:0",
+              "pvz:model:coedge#cube32.ol:0:1",
+              "pvz:model:coedge#cube32.ol:0:2",
+              "pvz:model:coedge#cube32.ol:0:3"
+            ],
+            "kind": "ring"
+          },
+          "face": "pvz:model:face#cube32.ol:0:0",
+          "id": "pvz:model:loop#cube32.ol:0"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "pvz:model:coedge#cube32.ol:1:0",
+              "pvz:model:coedge#cube32.ol:1:1",
+              "pvz:model:coedge#cube32.ol:1:2",
+              "pvz:model:coedge#cube32.ol:1:3"
+            ],
+            "kind": "ring"
+          },
+          "face": "pvz:model:face#cube32.ol:1:0",
+          "id": "pvz:model:loop#cube32.ol:1"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "pvz:model:coedge#cube32.ol:2:0",
+              "pvz:model:coedge#cube32.ol:2:1",
+              "pvz:model:coedge#cube32.ol:2:2",
+              "pvz:model:coedge#cube32.ol:2:3"
+            ],
+            "kind": "ring"
+          },
+          "face": "pvz:model:face#cube32.ol:2:0",
+          "id": "pvz:model:loop#cube32.ol:2"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "pvz:model:coedge#cube32.ol:3:0",
+              "pvz:model:coedge#cube32.ol:3:1",
+              "pvz:model:coedge#cube32.ol:3:2",
+              "pvz:model:coedge#cube32.ol:3:3"
+            ],
+            "kind": "ring"
+          },
+          "face": "pvz:model:face#cube32.ol:3:0",
+          "id": "pvz:model:loop#cube32.ol:3"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "pvz:model:coedge#cube32.ol:4:0",
+              "pvz:model:coedge#cube32.ol:4:1",
+              "pvz:model:coedge#cube32.ol:4:2",
+              "pvz:model:coedge#cube32.ol:4:3"
+            ],
+            "kind": "ring"
+          },
+          "face": "pvz:model:face#cube32.ol:4:0",
+          "id": "pvz:model:loop#cube32.ol:4"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "pvz:model:coedge#cube32.ol:5:0",
+              "pvz:model:coedge#cube32.ol:5:1",
+              "pvz:model:coedge#cube32.ol:5:2",
+              "pvz:model:coedge#cube32.ol:5:3"
+            ],
+            "kind": "ring"
+          },
+          "face": "pvz:model:face#cube32.ol:5:0",
+          "id": "pvz:model:loop#cube32.ol:5"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "pvz:model:coedge#cube64.ol:0:0",
+              "pvz:model:coedge#cube64.ol:0:1",
+              "pvz:model:coedge#cube64.ol:0:2",
+              "pvz:model:coedge#cube64.ol:0:3"
+            ],
+            "kind": "ring"
+          },
+          "face": "pvz:model:face#cube64.ol:0:0",
+          "id": "pvz:model:loop#cube64.ol:0"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "pvz:model:coedge#cube64.ol:1:0",
+              "pvz:model:coedge#cube64.ol:1:1",
+              "pvz:model:coedge#cube64.ol:1:2",
+              "pvz:model:coedge#cube64.ol:1:3"
+            ],
+            "kind": "ring"
+          },
+          "face": "pvz:model:face#cube64.ol:1:0",
+          "id": "pvz:model:loop#cube64.ol:1"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "pvz:model:coedge#cube64.ol:2:0",
+              "pvz:model:coedge#cube64.ol:2:1",
+              "pvz:model:coedge#cube64.ol:2:2",
+              "pvz:model:coedge#cube64.ol:2:3"
+            ],
+            "kind": "ring"
+          },
+          "face": "pvz:model:face#cube64.ol:2:0",
+          "id": "pvz:model:loop#cube64.ol:2"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "pvz:model:coedge#cube64.ol:3:0",
+              "pvz:model:coedge#cube64.ol:3:1",
+              "pvz:model:coedge#cube64.ol:3:2",
+              "pvz:model:coedge#cube64.ol:3:3"
+            ],
+            "kind": "ring"
+          },
+          "face": "pvz:model:face#cube64.ol:3:0",
+          "id": "pvz:model:loop#cube64.ol:3"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "pvz:model:coedge#cube64.ol:4:0",
+              "pvz:model:coedge#cube64.ol:4:1",
+              "pvz:model:coedge#cube64.ol:4:2",
+              "pvz:model:coedge#cube64.ol:4:3"
+            ],
+            "kind": "ring"
+          },
+          "face": "pvz:model:face#cube64.ol:4:0",
+          "id": "pvz:model:loop#cube64.ol:4"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "pvz:model:coedge#cube64.ol:5:0",
+              "pvz:model:coedge#cube64.ol:5:1",
+              "pvz:model:coedge#cube64.ol:5:2",
+              "pvz:model:coedge#cube64.ol:5:3"
+            ],
+            "kind": "ring"
+          },
+          "face": "pvz:model:face#cube64.ol:5:0",
+          "id": "pvz:model:loop#cube64.ol:5"
+        }
+      ],
+      "occurrences": [
+        {
+          "id": "pvz:model:occurrence#0",
+          "native_ref": "definition 0",
+          "ordinal": 0,
+          "parent": {
+            "kind": "root"
+          },
+          "prototype": {
+            "definition": "pvz:model:definition#0",
+            "scope": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "pvz:model:occurrence#1",
+          "name": "41",
+          "native_ref": "definition 0 occurrence 0",
+          "ordinal": 0,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "pvz:model:occurrence#0"
+          },
+          "prototype": {
+            "definition": "pvz:model:definition#1",
+            "scope": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "pvz:model:occurrence#2",
+          "name": "42",
+          "native_ref": "definition 0 occurrence 1",
+          "ordinal": 1,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "pvz:model:occurrence#0"
+          },
+          "prototype": {
+            "definition": "pvz:model:definition#2",
+            "scope": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              20.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "pvz:model:occurrence#3",
+          "name": "43",
+          "native_ref": "definition 0 occurrence 2",
+          "ordinal": 2,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "pvz:model:occurrence#0"
+          },
+          "prototype": {
+            "definition": "pvz:model:definition#3",
+            "scope": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              20.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        }
+      ],
+      "parameters": [],
+      "pcurves": [
+        {
+          "geometry": {
+            "direction": {
+              "u": 9.999999776482582,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "pvz:model:pcurve#cube32.ol:0:0",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": 9.999999776482582
+            },
+            "kind": "line",
+            "origin": {
+              "u": 9.999999776482582,
+              "v": 0.0
+            }
+          },
+          "id": "pvz:model:pcurve#cube32.ol:0:1",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": -9.999999776482582,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 9.999999776482582,
+              "v": 9.999999776482582
+            }
+          },
+          "id": "pvz:model:pcurve#cube32.ol:0:2",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": -9.999999776482582
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 9.999999776482582
+            }
+          },
+          "id": "pvz:model:pcurve#cube32.ol:0:3",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 9.999999776482582,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "pvz:model:pcurve#cube32.ol:1:0",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": 9.999999776482582
+            },
+            "kind": "line",
+            "origin": {
+              "u": 9.999999776482582,
+              "v": 0.0
+            }
+          },
+          "id": "pvz:model:pcurve#cube32.ol:1:1",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": -9.999999776482582,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 9.999999776482582,
+              "v": 9.999999776482582
+            }
+          },
+          "id": "pvz:model:pcurve#cube32.ol:1:2",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": -9.999999776482582
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 9.999999776482582
+            }
+          },
+          "id": "pvz:model:pcurve#cube32.ol:1:3",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 9.999999776482582,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "pvz:model:pcurve#cube32.ol:2:0",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": 9.999999776482582
+            },
+            "kind": "line",
+            "origin": {
+              "u": 9.999999776482582,
+              "v": 0.0
+            }
+          },
+          "id": "pvz:model:pcurve#cube32.ol:2:1",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": -9.999999776482582,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 9.999999776482582,
+              "v": 9.999999776482582
+            }
+          },
+          "id": "pvz:model:pcurve#cube32.ol:2:2",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": -9.999999776482582
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 9.999999776482582
+            }
+          },
+          "id": "pvz:model:pcurve#cube32.ol:2:3",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 9.999999776482582,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "pvz:model:pcurve#cube32.ol:3:0",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": 9.999999776482582
+            },
+            "kind": "line",
+            "origin": {
+              "u": 9.999999776482582,
+              "v": 0.0
+            }
+          },
+          "id": "pvz:model:pcurve#cube32.ol:3:1",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": -9.999999776482582,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 9.999999776482582,
+              "v": 9.999999776482582
+            }
+          },
+          "id": "pvz:model:pcurve#cube32.ol:3:2",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": -9.999999776482582
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 9.999999776482582
+            }
+          },
+          "id": "pvz:model:pcurve#cube32.ol:3:3",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 9.999999776482582,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "pvz:model:pcurve#cube32.ol:4:0",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": 9.999999776482582
+            },
+            "kind": "line",
+            "origin": {
+              "u": 9.999999776482582,
+              "v": 0.0
+            }
+          },
+          "id": "pvz:model:pcurve#cube32.ol:4:1",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": -9.999999776482582,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 9.999999776482582,
+              "v": 9.999999776482582
+            }
+          },
+          "id": "pvz:model:pcurve#cube32.ol:4:2",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": -9.999999776482582
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 9.999999776482582
+            }
+          },
+          "id": "pvz:model:pcurve#cube32.ol:4:3",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 9.999999776482582,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "pvz:model:pcurve#cube32.ol:5:0",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": 9.999999776482582
+            },
+            "kind": "line",
+            "origin": {
+              "u": 9.999999776482582,
+              "v": 0.0
+            }
+          },
+          "id": "pvz:model:pcurve#cube32.ol:5:1",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": -9.999999776482582,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 9.999999776482582,
+              "v": 9.999999776482582
+            }
+          },
+          "id": "pvz:model:pcurve#cube32.ol:5:2",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": -9.999999776482582
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 9.999999776482582
+            }
+          },
+          "id": "pvz:model:pcurve#cube32.ol:5:3",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 10.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "pvz:model:pcurve#cube64.ol:0:0",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": 10.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 10.0,
+              "v": 0.0
+            }
+          },
+          "id": "pvz:model:pcurve#cube64.ol:0:1",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": -10.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 10.0,
+              "v": 10.0
+            }
+          },
+          "id": "pvz:model:pcurve#cube64.ol:0:2",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": -10.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 10.0
+            }
+          },
+          "id": "pvz:model:pcurve#cube64.ol:0:3",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 10.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "pvz:model:pcurve#cube64.ol:1:0",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": 10.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 10.0,
+              "v": 0.0
+            }
+          },
+          "id": "pvz:model:pcurve#cube64.ol:1:1",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": -10.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 10.0,
+              "v": 10.0
+            }
+          },
+          "id": "pvz:model:pcurve#cube64.ol:1:2",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": -10.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 10.0
+            }
+          },
+          "id": "pvz:model:pcurve#cube64.ol:1:3",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 10.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "pvz:model:pcurve#cube64.ol:2:0",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": 10.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 10.0,
+              "v": 0.0
+            }
+          },
+          "id": "pvz:model:pcurve#cube64.ol:2:1",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": -10.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 10.0,
+              "v": 10.0
+            }
+          },
+          "id": "pvz:model:pcurve#cube64.ol:2:2",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": -10.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 10.0
+            }
+          },
+          "id": "pvz:model:pcurve#cube64.ol:2:3",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 10.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "pvz:model:pcurve#cube64.ol:3:0",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": 10.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 10.0,
+              "v": 0.0
+            }
+          },
+          "id": "pvz:model:pcurve#cube64.ol:3:1",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": -10.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 10.0,
+              "v": 10.0
+            }
+          },
+          "id": "pvz:model:pcurve#cube64.ol:3:2",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": -10.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 10.0
+            }
+          },
+          "id": "pvz:model:pcurve#cube64.ol:3:3",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 10.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "pvz:model:pcurve#cube64.ol:4:0",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": 10.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 10.0,
+              "v": 0.0
+            }
+          },
+          "id": "pvz:model:pcurve#cube64.ol:4:1",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": -10.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 10.0,
+              "v": 10.0
+            }
+          },
+          "id": "pvz:model:pcurve#cube64.ol:4:2",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": -10.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 10.0
+            }
+          },
+          "id": "pvz:model:pcurve#cube64.ol:4:3",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 10.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "pvz:model:pcurve#cube64.ol:5:0",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": 10.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 10.0,
+              "v": 0.0
+            }
+          },
+          "id": "pvz:model:pcurve#cube64.ol:5:1",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": -10.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 10.0,
+              "v": 10.0
+            }
+          },
+          "id": "pvz:model:pcurve#cube64.ol:5:2",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": -10.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 10.0
+            }
+          },
+          "id": "pvz:model:pcurve#cube64.ol:5:3",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        }
+      ],
+      "pmi": [],
+      "points": [
+        {
+          "id": "pvz:model:point#cube32.ol:0",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "pvz:model:point#cube32.ol:1",
+          "position": {
+            "x": 0.0,
+            "y": 9.999999776482582,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "pvz:model:point#cube32.ol:2",
+          "position": {
+            "x": 9.999999776482582,
+            "y": 9.999999776482582,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "pvz:model:point#cube32.ol:3",
+          "position": {
+            "x": 9.999999776482582,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "pvz:model:point#cube32.ol:4",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 9.999999776482582
+          }
+        },
+        {
+          "id": "pvz:model:point#cube32.ol:5",
+          "position": {
+            "x": 9.999999776482582,
+            "y": 0.0,
+            "z": 9.999999776482582
+          }
+        },
+        {
+          "id": "pvz:model:point#cube32.ol:6",
+          "position": {
+            "x": 9.999999776482582,
+            "y": 9.999999776482582,
+            "z": 9.999999776482582
+          }
+        },
+        {
+          "id": "pvz:model:point#cube32.ol:7",
+          "position": {
+            "x": 0.0,
+            "y": 9.999999776482582,
+            "z": 9.999999776482582
+          }
+        },
+        {
+          "id": "pvz:model:point#cube64.ol:0",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "pvz:model:point#cube64.ol:1",
+          "position": {
+            "x": 0.0,
+            "y": 9.999999999999998,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "pvz:model:point#cube64.ol:2",
+          "position": {
+            "x": 9.999999999999998,
+            "y": 9.999999999999998,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "pvz:model:point#cube64.ol:3",
+          "position": {
+            "x": 9.999999999999998,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "pvz:model:point#cube64.ol:4",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 9.999999999999998
+          }
+        },
+        {
+          "id": "pvz:model:point#cube64.ol:5",
+          "position": {
+            "x": 9.999999999999998,
+            "y": 0.0,
+            "z": 9.999999999999998
+          }
+        },
+        {
+          "id": "pvz:model:point#cube64.ol:6",
+          "position": {
+            "x": 9.999999999999998,
+            "y": 9.999999999999998,
+            "z": 9.999999999999998
+          }
+        },
+        {
+          "id": "pvz:model:point#cube64.ol:7",
+          "position": {
+            "x": 0.0,
+            "y": 9.999999999999998,
+            "z": 9.999999999999998
+          }
+        }
+      ],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "product_definitions": [
+        {
+          "id": "pvz:model:definition#0",
+          "kind": "part",
+          "native_ref": "definition 0",
+          "source_name": "TOP.ASM"
+        },
+        {
+          "bodies": [
+            "pvz:model:body#cube64.ol"
+          ],
+          "id": "pvz:model:definition#1",
+          "kind": "part",
+          "native_ref": "definition 1",
+          "source_name": "CUBE64.PRT"
+        },
+        {
+          "bodies": [
+            "pvz:model:body#cube32.ol"
+          ],
+          "id": "pvz:model:definition#2",
+          "kind": "part",
+          "native_ref": "definition 2",
+          "source_name": "CUBE32.PRT"
+        },
+        {
+          "bodies": [
+            "pvz:model:body#plate.ol"
+          ],
+          "id": "pvz:model:definition#3",
+          "kind": "part",
+          "native_ref": "definition 3",
+          "source_name": "PLATE.PRT"
+        }
+      ],
+      "regions": [
+        {
+          "body": "pvz:model:body#cube32.ol",
+          "id": "pvz:model:region#cube32.ol:0",
+          "shells": [
+            "pvz:model:shell#cube32.ol:0"
+          ]
+        },
+        {
+          "body": "pvz:model:body#cube64.ol",
+          "id": "pvz:model:region#cube64.ol:0",
+          "shells": [
+            "pvz:model:shell#cube64.ol:0"
+          ]
+        }
+      ],
+      "semantic_annotations": [],
+      "shells": [
+        {
+          "id": "pvz:model:shell#cube32.ol:0",
+          "members": [
+            {
+              "id": "pvz:model:face#cube32.ol:0:0",
+              "kind": "face"
+            },
+            {
+              "id": "pvz:model:face#cube32.ol:1:0",
+              "kind": "face"
+            },
+            {
+              "id": "pvz:model:face#cube32.ol:2:0",
+              "kind": "face"
+            },
+            {
+              "id": "pvz:model:face#cube32.ol:3:0",
+              "kind": "face"
+            },
+            {
+              "id": "pvz:model:face#cube32.ol:4:0",
+              "kind": "face"
+            },
+            {
+              "id": "pvz:model:face#cube32.ol:5:0",
+              "kind": "face"
+            }
+          ],
+          "region": "pvz:model:region#cube32.ol:0"
+        },
+        {
+          "id": "pvz:model:shell#cube64.ol:0",
+          "members": [
+            {
+              "id": "pvz:model:face#cube64.ol:0:0",
+              "kind": "face"
+            },
+            {
+              "id": "pvz:model:face#cube64.ol:1:0",
+              "kind": "face"
+            },
+            {
+              "id": "pvz:model:face#cube64.ol:2:0",
+              "kind": "face"
+            },
+            {
+              "id": "pvz:model:face#cube64.ol:3:0",
+              "kind": "face"
+            },
+            {
+              "id": "pvz:model:face#cube64.ol:4:0",
+              "kind": "face"
+            },
+            {
+              "id": "pvz:model:face#cube64.ol:5:0",
+              "kind": "face"
+            }
+          ],
+          "region": "pvz:model:region#cube64.ol:0"
+        }
+      ],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": -1.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            }
+          },
+          "id": "pvz:model:surface#cube32.ol:0"
+        },
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 9.999999776482582
+            },
+            "u_axis": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "pvz:model:surface#cube32.ol:1"
+        },
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": 0.0,
+              "y": -1.0,
+              "z": 0.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "pvz:model:surface#cube32.ol:2"
+        },
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": 9.999999776482582,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            }
+          },
+          "id": "pvz:model:surface#cube32.ol:3"
+        },
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": -1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            }
+          },
+          "id": "pvz:model:surface#cube32.ol:4"
+        },
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "origin": {
+              "x": 9.999999776482582,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            }
+          },
+          "id": "pvz:model:surface#cube32.ol:5"
+        },
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": -1.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            }
+          },
+          "id": "pvz:model:surface#cube64.ol:0"
+        },
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 10.0
+            },
+            "u_axis": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "pvz:model:surface#cube64.ol:1"
+        },
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": 0.0,
+              "y": -1.0,
+              "z": 0.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "pvz:model:surface#cube64.ol:2"
+        },
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": 10.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            }
+          },
+          "id": "pvz:model:surface#cube64.ol:3"
+        },
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": -1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            }
+          },
+          "id": "pvz:model:surface#cube64.ol:4"
+        },
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "origin": {
+              "x": 10.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            }
+          },
+          "id": "pvz:model:surface#cube64.ol:5"
+        }
+      ],
+      "tessellations": [
+        {
+          "body": "pvz:model:body#cube32.ol",
+          "channels": [],
+          "id": "pvz:model:tessellation#cube32.ol:0",
+          "mesh": {
+            "kind": "list",
+            "triangles": [
+              [
+                0,
+                1,
+                2
+              ],
+              [
+                0,
+                2,
+                3
+              ],
+              [
+                4,
+                5,
+                6
+              ],
+              [
+                4,
+                6,
+                7
+              ],
+              [
+                8,
+                9,
+                10
+              ],
+              [
+                8,
+                10,
+                11
+              ],
+              [
+                12,
+                13,
+                14
+              ],
+              [
+                12,
+                14,
+                15
+              ],
+              [
+                16,
+                17,
+                18
+              ],
+              [
+                16,
+                18,
+                19
+              ],
+              [
+                20,
+                21,
+                22
+              ],
+              [
+                20,
+                22,
+                23
+              ]
+            ],
+            "vertices": [
+              {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              {
+                "x": 0.0,
+                "y": 9.999999776482582,
+                "z": 0.0
+              },
+              {
+                "x": 9.999999776482582,
+                "y": 9.999999776482582,
+                "z": 0.0
+              },
+              {
+                "x": 9.999999776482582,
+                "y": 0.0,
+                "z": 0.0
+              },
+              {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 9.999999776482582
+              },
+              {
+                "x": 9.999999776482582,
+                "y": 0.0,
+                "z": 9.999999776482582
+              },
+              {
+                "x": 9.999999776482582,
+                "y": 9.999999776482582,
+                "z": 9.999999776482582
+              },
+              {
+                "x": 0.0,
+                "y": 9.999999776482582,
+                "z": 9.999999776482582
+              },
+              {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              {
+                "x": 9.999999776482582,
+                "y": 0.0,
+                "z": 0.0
+              },
+              {
+                "x": 9.999999776482582,
+                "y": 0.0,
+                "z": 9.999999776482582
+              },
+              {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 9.999999776482582
+              },
+              {
+                "x": 0.0,
+                "y": 9.999999776482582,
+                "z": 0.0
+              },
+              {
+                "x": 0.0,
+                "y": 9.999999776482582,
+                "z": 9.999999776482582
+              },
+              {
+                "x": 9.999999776482582,
+                "y": 9.999999776482582,
+                "z": 9.999999776482582
+              },
+              {
+                "x": 9.999999776482582,
+                "y": 9.999999776482582,
+                "z": 0.0
+              },
+              {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 9.999999776482582
+              },
+              {
+                "x": 0.0,
+                "y": 9.999999776482582,
+                "z": 9.999999776482582
+              },
+              {
+                "x": 0.0,
+                "y": 9.999999776482582,
+                "z": 0.0
+              },
+              {
+                "x": 9.999999776482582,
+                "y": 0.0,
+                "z": 0.0
+              },
+              {
+                "x": 9.999999776482582,
+                "y": 9.999999776482582,
+                "z": 0.0
+              },
+              {
+                "x": 9.999999776482582,
+                "y": 9.999999776482582,
+                "z": 9.999999776482582
+              },
+              {
+                "x": 9.999999776482582,
+                "y": 0.0,
+                "z": 9.999999776482582
+              }
+            ]
+          },
+          "triangle_groups": [
+            {
+              "source_id": "patch 0",
+              "triangles": [
+                0,
+                1
+              ]
+            },
+            {
+              "source_id": "patch 1",
+              "triangles": [
+                2,
+                3
+              ]
+            },
+            {
+              "source_id": "patch 2",
+              "triangles": [
+                4,
+                5
+              ]
+            },
+            {
+              "source_id": "patch 3",
+              "triangles": [
+                6,
+                7
+              ]
+            },
+            {
+              "source_id": "patch 4",
+              "triangles": [
+                8,
+                9
+              ]
+            },
+            {
+              "source_id": "patch 5",
+              "triangles": [
+                10,
+                11
+              ]
+            }
+          ]
+        },
+        {
+          "body": "pvz:model:body#cube64.ol",
+          "channels": [],
+          "id": "pvz:model:tessellation#cube64.ol:0",
+          "mesh": {
+            "kind": "list",
+            "triangles": [
+              [
+                0,
+                1,
+                2
+              ],
+              [
+                0,
+                2,
+                3
+              ],
+              [
+                4,
+                5,
+                6
+              ],
+              [
+                4,
+                6,
+                7
+              ],
+              [
+                8,
+                9,
+                10
+              ],
+              [
+                8,
+                10,
+                11
+              ],
+              [
+                12,
+                13,
+                14
+              ],
+              [
+                12,
+                14,
+                15
+              ],
+              [
+                16,
+                17,
+                18
+              ],
+              [
+                16,
+                18,
+                19
+              ],
+              [
+                20,
+                21,
+                22
+              ],
+              [
+                20,
+                22,
+                23
+              ]
+            ],
+            "vertices": [
+              {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              {
+                "x": 0.0,
+                "y": 9.999999776482582,
+                "z": 0.0
+              },
+              {
+                "x": 9.999999776482582,
+                "y": 9.999999776482582,
+                "z": 0.0
+              },
+              {
+                "x": 9.999999776482582,
+                "y": 0.0,
+                "z": 0.0
+              },
+              {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 9.999999776482582
+              },
+              {
+                "x": 9.999999776482582,
+                "y": 0.0,
+                "z": 9.999999776482582
+              },
+              {
+                "x": 9.999999776482582,
+                "y": 9.999999776482582,
+                "z": 9.999999776482582
+              },
+              {
+                "x": 0.0,
+                "y": 9.999999776482582,
+                "z": 9.999999776482582
+              },
+              {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              {
+                "x": 9.999999776482582,
+                "y": 0.0,
+                "z": 0.0
+              },
+              {
+                "x": 9.999999776482582,
+                "y": 0.0,
+                "z": 9.999999776482582
+              },
+              {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 9.999999776482582
+              },
+              {
+                "x": 0.0,
+                "y": 9.999999776482582,
+                "z": 0.0
+              },
+              {
+                "x": 0.0,
+                "y": 9.999999776482582,
+                "z": 9.999999776482582
+              },
+              {
+                "x": 9.999999776482582,
+                "y": 9.999999776482582,
+                "z": 9.999999776482582
+              },
+              {
+                "x": 9.999999776482582,
+                "y": 9.999999776482582,
+                "z": 0.0
+              },
+              {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 9.999999776482582
+              },
+              {
+                "x": 0.0,
+                "y": 9.999999776482582,
+                "z": 9.999999776482582
+              },
+              {
+                "x": 0.0,
+                "y": 9.999999776482582,
+                "z": 0.0
+              },
+              {
+                "x": 9.999999776482582,
+                "y": 0.0,
+                "z": 0.0
+              },
+              {
+                "x": 9.999999776482582,
+                "y": 9.999999776482582,
+                "z": 0.0
+              },
+              {
+                "x": 9.999999776482582,
+                "y": 9.999999776482582,
+                "z": 9.999999776482582
+              },
+              {
+                "x": 9.999999776482582,
+                "y": 0.0,
+                "z": 9.999999776482582
+              }
+            ]
+          },
+          "triangle_groups": [
+            {
+              "source_id": "patch 0",
+              "triangles": [
+                0,
+                1
+              ]
+            },
+            {
+              "source_id": "patch 1",
+              "triangles": [
+                2,
+                3
+              ]
+            },
+            {
+              "source_id": "patch 2",
+              "triangles": [
+                4,
+                5
+              ]
+            },
+            {
+              "source_id": "patch 3",
+              "triangles": [
+                6,
+                7
+              ]
+            },
+            {
+              "source_id": "patch 4",
+              "triangles": [
+                8,
+                9
+              ]
+            },
+            {
+              "source_id": "patch 5",
+              "triangles": [
+                10,
+                11
+              ]
+            }
+          ]
+        },
+        {
+          "body": "pvz:model:body#plate.ol",
+          "channels": [],
+          "id": "pvz:model:tessellation#plate.ol:0",
+          "mesh": {
+            "kind": "shaded_list",
+            "triangles": [
+              [
+                0,
+                1,
+                2
+              ],
+              [
+                2,
+                1,
+                3
+              ]
+            ],
+            "vertices": [
+              {
+                "normal": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 1.0
+                },
+                "position": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              },
+              {
+                "normal": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 1.0
+                },
+                "position": {
+                  "x": 19.999999552965164,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              },
+              {
+                "normal": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 1.0
+                },
+                "position": {
+                  "x": 0.0,
+                  "y": 19.999999552965164,
+                  "z": 0.0
+                }
+              },
+              {
+                "normal": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 1.0
+                },
+                "position": {
+                  "x": 19.999999552965164,
+                  "y": 19.999999552965164,
+                  "z": 0.0
+                }
+              }
+            ]
+          },
+          "triangle_groups": [
+            {
+              "source_id": "patch 0",
+              "triangles": [
+                0,
+                1
+              ]
+            }
+          ]
+        }
+      ],
+      "vertices": [
+        {
+          "id": "pvz:model:vertex#cube32.ol:0",
+          "point": "pvz:model:point#cube32.ol:0",
+          "tolerance": 0.02
+        },
+        {
+          "id": "pvz:model:vertex#cube32.ol:1",
+          "point": "pvz:model:point#cube32.ol:1",
+          "tolerance": 0.02
+        },
+        {
+          "id": "pvz:model:vertex#cube32.ol:2",
+          "point": "pvz:model:point#cube32.ol:2",
+          "tolerance": 0.02
+        },
+        {
+          "id": "pvz:model:vertex#cube32.ol:3",
+          "point": "pvz:model:point#cube32.ol:3",
+          "tolerance": 0.02
+        },
+        {
+          "id": "pvz:model:vertex#cube32.ol:4",
+          "point": "pvz:model:point#cube32.ol:4",
+          "tolerance": 0.02
+        },
+        {
+          "id": "pvz:model:vertex#cube32.ol:5",
+          "point": "pvz:model:point#cube32.ol:5",
+          "tolerance": 0.02
+        },
+        {
+          "id": "pvz:model:vertex#cube32.ol:6",
+          "point": "pvz:model:point#cube32.ol:6",
+          "tolerance": 0.02
+        },
+        {
+          "id": "pvz:model:vertex#cube32.ol:7",
+          "point": "pvz:model:point#cube32.ol:7",
+          "tolerance": 0.02
+        },
+        {
+          "id": "pvz:model:vertex#cube64.ol:0",
+          "point": "pvz:model:point#cube64.ol:0",
+          "tolerance": 0.02
+        },
+        {
+          "id": "pvz:model:vertex#cube64.ol:1",
+          "point": "pvz:model:point#cube64.ol:1",
+          "tolerance": 0.02
+        },
+        {
+          "id": "pvz:model:vertex#cube64.ol:2",
+          "point": "pvz:model:point#cube64.ol:2",
+          "tolerance": 0.02
+        },
+        {
+          "id": "pvz:model:vertex#cube64.ol:3",
+          "point": "pvz:model:point#cube64.ol:3",
+          "tolerance": 0.02
+        },
+        {
+          "id": "pvz:model:vertex#cube64.ol:4",
+          "point": "pvz:model:point#cube64.ol:4",
+          "tolerance": 0.02
+        },
+        {
+          "id": "pvz:model:vertex#cube64.ol:5",
+          "point": "pvz:model:point#cube64.ol:5",
+          "tolerance": 0.02
+        },
+        {
+          "id": "pvz:model:vertex#cube64.ol:6",
+          "point": "pvz:model:point#cube64.ol:6",
+          "tolerance": 0.02
+        },
+        {
+          "id": "pvz:model:vertex#cube64.ol:7",
+          "point": "pvz:model:point#cube64.ol:7",
+          "tolerance": 0.02
+        }
+      ],
+      "view_presentations": []
+    },
+    "native": {},
+    "source": {
+      "attributes": {
+        "geometry_member_count": "3",
+        "structure_member": "model.pvs"
+      },
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "pvs_signature": "PV-PVS0304"
+            },
+            "dialect": "pvz:pvs-0304"
+          }
+        }
+      }
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "pvs_signature": "PV-PVS0304"
+          },
+          "dialect": "pvz:pvs-0304"
+        }
+      }
+    },
+    "losses": [
+      {
+        "code": {
+          "code": "structure.bounds-not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "pvz",
+          "scope": "namespaced"
+        },
+        "message": "3 geometry elements carry bounds; the model has no definition bounds field, so the bounds were not transferred (PVZ-27)",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "geometry.exact-undecoded",
+          "kind": "geometry_not_transferred",
+          "namespace": "pvz",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "geometry member \"plate.ol\": exact-geometry stream 0x01000004 did not decode into B-rep (malformed container: exact stream does not end with its stream terminator); the member keeps its tessellation",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attributes.appearance-tail-undecoded",
+          "kind": "material_not_transferred",
+          "namespace": "pvz",
+          "scope": "namespaced"
+        },
+        "message": "2 appearance references carry a 17-byte tail whose meaning is an open item (PVZ-12); the tails were not transferred",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "tessellation.patch-fields-undecoded",
+          "kind": "record_not_typed",
+          "namespace": "pvz",
+          "scope": "namespaced"
+        },
+        "message": "13 tessellation patch headers carry face_ref, flag, and refs fields whose meaning is an open item (PVZ-14); the fields were not transferred",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "tessellation.edges-not-transferred",
+          "kind": "geometry_not_transferred",
+          "namespace": "pvz",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "edge tessellation was decoded but not transferred: 1 edge polylines with 2 points and 1 segments, 1 edge index tables, and other records none; the model carries no edge display polylines (PVZ-16)",
+        "severity": "warning"
+      }
+    ],
+    "notes": [],
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
+  },
+  "source_fidelity": {
+    "annotations": {
+      "exactness": {
+        "pvz:model:body#cube32.ol": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:body#cube64.ol": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube32.ol:0:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube32.ol:0:1": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube32.ol:0:2": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube32.ol:0:3": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube32.ol:1:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube32.ol:1:1": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube32.ol:1:2": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube32.ol:1:3": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube32.ol:2:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube32.ol:2:1": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube32.ol:2:2": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube32.ol:2:3": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube32.ol:3:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube32.ol:3:1": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube32.ol:3:2": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube32.ol:3:3": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube32.ol:4:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube32.ol:4:1": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube32.ol:4:2": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube32.ol:4:3": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube32.ol:5:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube32.ol:5:1": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube32.ol:5:2": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube32.ol:5:3": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube64.ol:0:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube64.ol:0:1": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube64.ol:0:2": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube64.ol:0:3": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube64.ol:1:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube64.ol:1:1": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube64.ol:1:2": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube64.ol:1:3": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube64.ol:2:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube64.ol:2:1": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube64.ol:2:2": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube64.ol:2:3": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube64.ol:3:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube64.ol:3:1": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube64.ol:3:2": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube64.ol:3:3": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube64.ol:4:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube64.ol:4:1": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube64.ol:4:2": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube64.ol:4:3": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube64.ol:5:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube64.ol:5:1": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube64.ol:5:2": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:coedge#cube64.ol:5:3": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:curve#cube32.ol:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:curve#cube32.ol:1": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:curve#cube32.ol:10": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:curve#cube32.ol:11": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:curve#cube32.ol:2": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:curve#cube32.ol:3": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:curve#cube32.ol:4": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:curve#cube32.ol:5": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:curve#cube32.ol:6": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:curve#cube32.ol:7": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:curve#cube32.ol:8": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:curve#cube32.ol:9": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:curve#cube64.ol:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:curve#cube64.ol:1": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:curve#cube64.ol:10": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:curve#cube64.ol:11": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:curve#cube64.ol:2": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:curve#cube64.ol:3": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:curve#cube64.ol:4": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:curve#cube64.ol:5": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:curve#cube64.ol:6": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:curve#cube64.ol:7": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:curve#cube64.ol:8": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:curve#cube64.ol:9": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:edge#cube32.ol:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:edge#cube32.ol:1": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:edge#cube32.ol:10": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:edge#cube32.ol:11": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:edge#cube32.ol:2": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:edge#cube32.ol:3": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:edge#cube32.ol:4": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:edge#cube32.ol:5": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:edge#cube32.ol:6": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:edge#cube32.ol:7": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:edge#cube32.ol:8": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:edge#cube32.ol:9": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:edge#cube64.ol:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:edge#cube64.ol:1": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:edge#cube64.ol:10": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:edge#cube64.ol:11": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:edge#cube64.ol:2": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:edge#cube64.ol:3": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:edge#cube64.ol:4": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:edge#cube64.ol:5": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:edge#cube64.ol:6": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:edge#cube64.ol:7": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:edge#cube64.ol:8": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:edge#cube64.ol:9": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:face#cube32.ol:0:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:face#cube32.ol:1:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:face#cube32.ol:2:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:face#cube32.ol:3:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:face#cube32.ol:4:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:face#cube32.ol:5:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:face#cube64.ol:0:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:face#cube64.ol:1:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:face#cube64.ol:2:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:face#cube64.ol:3:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:face#cube64.ol:4:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:face#cube64.ol:5:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:loop#cube32.ol:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:loop#cube32.ol:1": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:loop#cube32.ol:2": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:loop#cube32.ol:3": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:loop#cube32.ol:4": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:loop#cube32.ol:5": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:loop#cube64.ol:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:loop#cube64.ol:1": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:loop#cube64.ol:2": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:loop#cube64.ol:3": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:loop#cube64.ol:4": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:loop#cube64.ol:5": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube32.ol:0:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube32.ol:0:1": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube32.ol:0:2": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube32.ol:0:3": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube32.ol:1:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube32.ol:1:1": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube32.ol:1:2": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube32.ol:1:3": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube32.ol:2:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube32.ol:2:1": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube32.ol:2:2": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube32.ol:2:3": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube32.ol:3:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube32.ol:3:1": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube32.ol:3:2": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube32.ol:3:3": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube32.ol:4:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube32.ol:4:1": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube32.ol:4:2": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube32.ol:4:3": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube32.ol:5:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube32.ol:5:1": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube32.ol:5:2": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube32.ol:5:3": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube64.ol:0:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube64.ol:0:1": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube64.ol:0:2": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube64.ol:0:3": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube64.ol:1:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube64.ol:1:1": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube64.ol:1:2": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube64.ol:1:3": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube64.ol:2:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube64.ol:2:1": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube64.ol:2:2": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube64.ol:2:3": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube64.ol:3:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube64.ol:3:1": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube64.ol:3:2": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube64.ol:3:3": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube64.ol:4:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube64.ol:4:1": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube64.ol:4:2": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube64.ol:4:3": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube64.ol:5:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube64.ol:5:1": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube64.ol:5:2": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:pcurve#cube64.ol:5:3": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:point#cube32.ol:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:point#cube32.ol:1": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:point#cube32.ol:2": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:point#cube32.ol:3": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:point#cube32.ol:4": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:point#cube32.ol:5": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:point#cube32.ol:6": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:point#cube32.ol:7": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:point#cube64.ol:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:point#cube64.ol:1": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:point#cube64.ol:2": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:point#cube64.ol:3": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:point#cube64.ol:4": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:point#cube64.ol:5": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:point#cube64.ol:6": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:point#cube64.ol:7": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:region#cube32.ol:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:region#cube64.ol:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:shell#cube32.ol:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:shell#cube64.ol:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:surface#cube32.ol:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:surface#cube32.ol:1": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:surface#cube32.ol:2": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:surface#cube32.ol:3": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:surface#cube32.ol:4": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:surface#cube32.ol:5": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:surface#cube64.ol:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:surface#cube64.ol:1": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:surface#cube64.ol:2": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:surface#cube64.ol:3": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:surface#cube64.ol:4": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:surface#cube64.ol:5": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "pvz:model:vertex#cube32.ol:0": {
+          "entity": "derived",
+          "fields": {
+            "tolerance": "inferred"
+          },
+          "scope": "entity"
+        },
+        "pvz:model:vertex#cube32.ol:1": {
+          "entity": "derived",
+          "fields": {
+            "tolerance": "inferred"
+          },
+          "scope": "entity"
+        },
+        "pvz:model:vertex#cube32.ol:2": {
+          "entity": "derived",
+          "fields": {
+            "tolerance": "inferred"
+          },
+          "scope": "entity"
+        },
+        "pvz:model:vertex#cube32.ol:3": {
+          "entity": "derived",
+          "fields": {
+            "tolerance": "inferred"
+          },
+          "scope": "entity"
+        },
+        "pvz:model:vertex#cube32.ol:4": {
+          "entity": "derived",
+          "fields": {
+            "tolerance": "inferred"
+          },
+          "scope": "entity"
+        },
+        "pvz:model:vertex#cube32.ol:5": {
+          "entity": "derived",
+          "fields": {
+            "tolerance": "inferred"
+          },
+          "scope": "entity"
+        },
+        "pvz:model:vertex#cube32.ol:6": {
+          "entity": "derived",
+          "fields": {
+            "tolerance": "inferred"
+          },
+          "scope": "entity"
+        },
+        "pvz:model:vertex#cube32.ol:7": {
+          "entity": "derived",
+          "fields": {
+            "tolerance": "inferred"
+          },
+          "scope": "entity"
+        },
+        "pvz:model:vertex#cube64.ol:0": {
+          "entity": "derived",
+          "fields": {
+            "tolerance": "inferred"
+          },
+          "scope": "entity"
+        },
+        "pvz:model:vertex#cube64.ol:1": {
+          "entity": "derived",
+          "fields": {
+            "tolerance": "inferred"
+          },
+          "scope": "entity"
+        },
+        "pvz:model:vertex#cube64.ol:2": {
+          "entity": "derived",
+          "fields": {
+            "tolerance": "inferred"
+          },
+          "scope": "entity"
+        },
+        "pvz:model:vertex#cube64.ol:3": {
+          "entity": "derived",
+          "fields": {
+            "tolerance": "inferred"
+          },
+          "scope": "entity"
+        },
+        "pvz:model:vertex#cube64.ol:4": {
+          "entity": "derived",
+          "fields": {
+            "tolerance": "inferred"
+          },
+          "scope": "entity"
+        },
+        "pvz:model:vertex#cube64.ol:5": {
+          "entity": "derived",
+          "fields": {
+            "tolerance": "inferred"
+          },
+          "scope": "entity"
+        },
+        "pvz:model:vertex#cube64.ol:6": {
+          "entity": "derived",
+          "fields": {
+            "tolerance": "inferred"
+          },
+          "scope": "entity"
+        },
+        "pvz:model:vertex#cube64.ol:7": {
+          "entity": "derived",
+          "fields": {
+            "tolerance": "inferred"
+          },
+          "scope": "entity"
+        }
+      },
+      "provenance": {
+        "pvz:model:coedge#cube32.ol:0:0": {
+          "offset": 92,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube32.ol:0:1": {
+          "offset": 113,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube32.ol:0:2": {
+          "offset": 134,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube32.ol:0:3": {
+          "offset": 155,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube32.ol:1:0": {
+          "offset": 256,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube32.ol:1:1": {
+          "offset": 277,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube32.ol:1:2": {
+          "offset": 298,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube32.ol:1:3": {
+          "offset": 319,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube32.ol:2:0": {
+          "offset": 420,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube32.ol:2:1": {
+          "offset": 441,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube32.ol:2:2": {
+          "offset": 462,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube32.ol:2:3": {
+          "offset": 483,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube32.ol:3:0": {
+          "offset": 584,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube32.ol:3:1": {
+          "offset": 605,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube32.ol:3:2": {
+          "offset": 626,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube32.ol:3:3": {
+          "offset": 647,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube32.ol:4:0": {
+          "offset": 748,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube32.ol:4:1": {
+          "offset": 769,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube32.ol:4:2": {
+          "offset": 790,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube32.ol:4:3": {
+          "offset": 811,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube32.ol:5:0": {
+          "offset": 912,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube32.ol:5:1": {
+          "offset": 933,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube32.ol:5:2": {
+          "offset": 954,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube32.ol:5:3": {
+          "offset": 975,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube64.ol:0:0": {
+          "offset": 140,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube64.ol:0:1": {
+          "offset": 161,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube64.ol:0:2": {
+          "offset": 182,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube64.ol:0:3": {
+          "offset": 203,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube64.ol:1:0": {
+          "offset": 352,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube64.ol:1:1": {
+          "offset": 373,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube64.ol:1:2": {
+          "offset": 394,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube64.ol:1:3": {
+          "offset": 415,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube64.ol:2:0": {
+          "offset": 564,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube64.ol:2:1": {
+          "offset": 585,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube64.ol:2:2": {
+          "offset": 606,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube64.ol:2:3": {
+          "offset": 627,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube64.ol:3:0": {
+          "offset": 776,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube64.ol:3:1": {
+          "offset": 797,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube64.ol:3:2": {
+          "offset": 818,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube64.ol:3:3": {
+          "offset": 839,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube64.ol:4:0": {
+          "offset": 988,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube64.ol:4:1": {
+          "offset": 1009,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube64.ol:4:2": {
+          "offset": 1030,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube64.ol:4:3": {
+          "offset": 1051,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube64.ol:5:0": {
+          "offset": 1200,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube64.ol:5:1": {
+          "offset": 1221,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube64.ol:5:2": {
+          "offset": 1242,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x11"
+        },
+        "pvz:model:coedge#cube64.ol:5:3": {
+          "offset": 1263,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x11"
+        },
+        "pvz:model:curve#cube32.ol:0": {
+          "offset": 1004,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x14"
+        },
+        "pvz:model:curve#cube32.ol:1": {
+          "offset": 1039,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x14"
+        },
+        "pvz:model:curve#cube32.ol:10": {
+          "offset": 1354,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x14"
+        },
+        "pvz:model:curve#cube32.ol:11": {
+          "offset": 1389,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x14"
+        },
+        "pvz:model:curve#cube32.ol:2": {
+          "offset": 1074,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x14"
+        },
+        "pvz:model:curve#cube32.ol:3": {
+          "offset": 1109,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x14"
+        },
+        "pvz:model:curve#cube32.ol:4": {
+          "offset": 1144,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x14"
+        },
+        "pvz:model:curve#cube32.ol:5": {
+          "offset": 1179,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x14"
+        },
+        "pvz:model:curve#cube32.ol:6": {
+          "offset": 1214,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x14"
+        },
+        "pvz:model:curve#cube32.ol:7": {
+          "offset": 1249,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x14"
+        },
+        "pvz:model:curve#cube32.ol:8": {
+          "offset": 1284,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x14"
+        },
+        "pvz:model:curve#cube32.ol:9": {
+          "offset": 1319,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x14"
+        },
+        "pvz:model:curve#cube64.ol:0": {
+          "offset": 1292,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x14"
+        },
+        "pvz:model:curve#cube64.ol:1": {
+          "offset": 1351,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x14"
+        },
+        "pvz:model:curve#cube64.ol:10": {
+          "offset": 1882,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x14"
+        },
+        "pvz:model:curve#cube64.ol:11": {
+          "offset": 1941,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x14"
+        },
+        "pvz:model:curve#cube64.ol:2": {
+          "offset": 1410,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x14"
+        },
+        "pvz:model:curve#cube64.ol:3": {
+          "offset": 1469,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x14"
+        },
+        "pvz:model:curve#cube64.ol:4": {
+          "offset": 1528,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x14"
+        },
+        "pvz:model:curve#cube64.ol:5": {
+          "offset": 1587,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x14"
+        },
+        "pvz:model:curve#cube64.ol:6": {
+          "offset": 1646,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x14"
+        },
+        "pvz:model:curve#cube64.ol:7": {
+          "offset": 1705,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x14"
+        },
+        "pvz:model:curve#cube64.ol:8": {
+          "offset": 1764,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x14"
+        },
+        "pvz:model:curve#cube64.ol:9": {
+          "offset": 1823,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x14"
+        },
+        "pvz:model:edge#cube32.ol:0": {
+          "offset": 1004,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x14"
+        },
+        "pvz:model:edge#cube32.ol:1": {
+          "offset": 1039,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x14"
+        },
+        "pvz:model:edge#cube32.ol:10": {
+          "offset": 1354,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x14"
+        },
+        "pvz:model:edge#cube32.ol:11": {
+          "offset": 1389,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x14"
+        },
+        "pvz:model:edge#cube32.ol:2": {
+          "offset": 1074,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x14"
+        },
+        "pvz:model:edge#cube32.ol:3": {
+          "offset": 1109,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x14"
+        },
+        "pvz:model:edge#cube32.ol:4": {
+          "offset": 1144,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x14"
+        },
+        "pvz:model:edge#cube32.ol:5": {
+          "offset": 1179,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x14"
+        },
+        "pvz:model:edge#cube32.ol:6": {
+          "offset": 1214,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x14"
+        },
+        "pvz:model:edge#cube32.ol:7": {
+          "offset": 1249,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x14"
+        },
+        "pvz:model:edge#cube32.ol:8": {
+          "offset": 1284,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x14"
+        },
+        "pvz:model:edge#cube32.ol:9": {
+          "offset": 1319,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x14"
+        },
+        "pvz:model:edge#cube64.ol:0": {
+          "offset": 1292,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x14"
+        },
+        "pvz:model:edge#cube64.ol:1": {
+          "offset": 1351,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x14"
+        },
+        "pvz:model:edge#cube64.ol:10": {
+          "offset": 1882,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x14"
+        },
+        "pvz:model:edge#cube64.ol:11": {
+          "offset": 1941,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x14"
+        },
+        "pvz:model:edge#cube64.ol:2": {
+          "offset": 1410,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x14"
+        },
+        "pvz:model:edge#cube64.ol:3": {
+          "offset": 1469,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x14"
+        },
+        "pvz:model:edge#cube64.ol:4": {
+          "offset": 1528,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x14"
+        },
+        "pvz:model:edge#cube64.ol:5": {
+          "offset": 1587,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x14"
+        },
+        "pvz:model:edge#cube64.ol:6": {
+          "offset": 1646,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x14"
+        },
+        "pvz:model:edge#cube64.ol:7": {
+          "offset": 1705,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x14"
+        },
+        "pvz:model:edge#cube64.ol:8": {
+          "offset": 1764,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x14"
+        },
+        "pvz:model:edge#cube64.ol:9": {
+          "offset": 1823,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x14"
+        },
+        "pvz:model:face#cube32.ol:0:0": {
+          "offset": 20,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x13"
+        },
+        "pvz:model:face#cube32.ol:1:0": {
+          "offset": 184,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x13"
+        },
+        "pvz:model:face#cube32.ol:2:0": {
+          "offset": 348,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x13"
+        },
+        "pvz:model:face#cube32.ol:3:0": {
+          "offset": 512,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x13"
+        },
+        "pvz:model:face#cube32.ol:4:0": {
+          "offset": 676,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x13"
+        },
+        "pvz:model:face#cube32.ol:5:0": {
+          "offset": 840,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x13"
+        },
+        "pvz:model:face#cube64.ol:0:0": {
+          "offset": 20,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x13"
+        },
+        "pvz:model:face#cube64.ol:1:0": {
+          "offset": 232,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x13"
+        },
+        "pvz:model:face#cube64.ol:2:0": {
+          "offset": 444,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x13"
+        },
+        "pvz:model:face#cube64.ol:3:0": {
+          "offset": 656,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x13"
+        },
+        "pvz:model:face#cube64.ol:4:0": {
+          "offset": 868,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x13"
+        },
+        "pvz:model:face#cube64.ol:5:0": {
+          "offset": 1080,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x13"
+        },
+        "pvz:model:loop#cube32.ol:0": {
+          "offset": 80,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x01000010"
+        },
+        "pvz:model:loop#cube32.ol:1": {
+          "offset": 244,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x01000010"
+        },
+        "pvz:model:loop#cube32.ol:2": {
+          "offset": 408,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x01000010"
+        },
+        "pvz:model:loop#cube32.ol:3": {
+          "offset": 572,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x01000010"
+        },
+        "pvz:model:loop#cube32.ol:4": {
+          "offset": 736,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x01000010"
+        },
+        "pvz:model:loop#cube32.ol:5": {
+          "offset": 900,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x01000010"
+        },
+        "pvz:model:loop#cube64.ol:0": {
+          "offset": 128,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x01000010"
+        },
+        "pvz:model:loop#cube64.ol:1": {
+          "offset": 340,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x01000010"
+        },
+        "pvz:model:loop#cube64.ol:2": {
+          "offset": 552,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x01000010"
+        },
+        "pvz:model:loop#cube64.ol:3": {
+          "offset": 764,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x01000010"
+        },
+        "pvz:model:loop#cube64.ol:4": {
+          "offset": 976,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x01000010"
+        },
+        "pvz:model:loop#cube64.ol:5": {
+          "offset": 1188,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x01000010"
+        },
+        "pvz:model:pcurve#cube32.ol:0:0": {
+          "offset": 1424,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube32.ol:0:1": {
+          "offset": 1451,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube32.ol:0:2": {
+          "offset": 1478,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube32.ol:0:3": {
+          "offset": 1505,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube32.ol:1:0": {
+          "offset": 1532,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube32.ol:1:1": {
+          "offset": 1559,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube32.ol:1:2": {
+          "offset": 1586,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube32.ol:1:3": {
+          "offset": 1613,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube32.ol:2:0": {
+          "offset": 1640,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube32.ol:2:1": {
+          "offset": 1667,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube32.ol:2:2": {
+          "offset": 1694,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube32.ol:2:3": {
+          "offset": 1721,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube32.ol:3:0": {
+          "offset": 1748,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube32.ol:3:1": {
+          "offset": 1775,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube32.ol:3:2": {
+          "offset": 1802,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube32.ol:3:3": {
+          "offset": 1829,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube32.ol:4:0": {
+          "offset": 1856,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube32.ol:4:1": {
+          "offset": 1883,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube32.ol:4:2": {
+          "offset": 1910,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube32.ol:4:3": {
+          "offset": 1937,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube32.ol:5:0": {
+          "offset": 1964,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube32.ol:5:1": {
+          "offset": 1991,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube32.ol:5:2": {
+          "offset": 2018,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube32.ol:5:3": {
+          "offset": 2045,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube64.ol:0:0": {
+          "offset": 2000,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube64.ol:0:1": {
+          "offset": 2043,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube64.ol:0:2": {
+          "offset": 2086,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube64.ol:0:3": {
+          "offset": 2129,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube64.ol:1:0": {
+          "offset": 2172,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube64.ol:1:1": {
+          "offset": 2215,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube64.ol:1:2": {
+          "offset": 2258,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube64.ol:1:3": {
+          "offset": 2301,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube64.ol:2:0": {
+          "offset": 2344,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube64.ol:2:1": {
+          "offset": 2387,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube64.ol:2:2": {
+          "offset": 2430,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube64.ol:2:3": {
+          "offset": 2473,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube64.ol:3:0": {
+          "offset": 2516,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube64.ol:3:1": {
+          "offset": 2559,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube64.ol:3:2": {
+          "offset": 2602,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube64.ol:3:3": {
+          "offset": 2645,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube64.ol:4:0": {
+          "offset": 2688,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube64.ol:4:1": {
+          "offset": 2731,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube64.ol:4:2": {
+          "offset": 2774,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube64.ol:4:3": {
+          "offset": 2817,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube64.ol:5:0": {
+          "offset": 2860,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube64.ol:5:1": {
+          "offset": 2903,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube64.ol:5:2": {
+          "offset": 2946,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x15"
+        },
+        "pvz:model:pcurve#cube64.ol:5:3": {
+          "offset": 2989,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x15"
+        },
+        "pvz:model:surface#cube32.ol:0": {
+          "offset": 20,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x13"
+        },
+        "pvz:model:surface#cube32.ol:1": {
+          "offset": 184,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x13"
+        },
+        "pvz:model:surface#cube32.ol:2": {
+          "offset": 348,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x13"
+        },
+        "pvz:model:surface#cube32.ol:3": {
+          "offset": 512,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x13"
+        },
+        "pvz:model:surface#cube32.ol:4": {
+          "offset": 676,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x13"
+        },
+        "pvz:model:surface#cube32.ol:5": {
+          "offset": 840,
+          "stream": "pvz:cube32.ol#0x01000003",
+          "tag": "0x13"
+        },
+        "pvz:model:surface#cube64.ol:0": {
+          "offset": 20,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x13"
+        },
+        "pvz:model:surface#cube64.ol:1": {
+          "offset": 232,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x13"
+        },
+        "pvz:model:surface#cube64.ol:2": {
+          "offset": 444,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x13"
+        },
+        "pvz:model:surface#cube64.ol:3": {
+          "offset": 656,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x13"
+        },
+        "pvz:model:surface#cube64.ol:4": {
+          "offset": 868,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x13"
+        },
+        "pvz:model:surface#cube64.ol:5": {
+          "offset": 1080,
+          "stream": "pvz:cube64.ol#0x01000004",
+          "tag": "0x13"
+        }
+      }
+    }
+  }
+}

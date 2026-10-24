@@ -1,0 +1,547 @@
+{
+  "ir": {
+    "decode_depth": "full",
+    "ir_version": "8",
+    "model": {
+      "appearance_bindings": [
+        {
+          "appearance": "pvz:model:appearance#bracket.ol:7",
+          "id": "pvz:model:appearance-binding#bracket.ol:0",
+          "target": {
+            "id": "pvz:model:tessellation#bracket.ol:0",
+            "kind": "tessellation"
+          }
+        }
+      ],
+      "appearances": [
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.0,
+            "g": 0.0,
+            "r": 1.0
+          },
+          "id": "pvz:model:appearance#bracket.ol:7",
+          "name": "red",
+          "properties": {
+            "base.b": 0.0,
+            "base.g": 0.0,
+            "base.r": 1.0,
+            "diffuse.b": 0.0,
+            "diffuse.g": 0.0,
+            "diffuse.r": 0.800000011920929,
+            "emissive.b": 0.0,
+            "emissive.g": 0.0,
+            "emissive.r": 0.0,
+            "opacity": 1.0,
+            "shininess": 32.0,
+            "specular.b": 0.5,
+            "specular.g": 0.5,
+            "specular.r": 0.5
+          }
+        }
+      ],
+      "assembly_joints": [],
+      "attributes": [],
+      "bodies": [
+        {
+          "id": "pvz:model:body#bracket.ol",
+          "kind": "general",
+          "name": "bracket.ol",
+          "regions": []
+        },
+        {
+          "id": "pvz:model:body#plate.ol",
+          "kind": "general",
+          "name": "plate.ol",
+          "regions": []
+        }
+      ],
+      "coedges": [],
+      "configurations": [],
+      "curves": [],
+      "drawings": [],
+      "edges": [],
+      "faces": [],
+      "features": [],
+      "loops": [],
+      "occurrences": [
+        {
+          "id": "pvz:model:occurrence#0",
+          "native_ref": "definition 0",
+          "ordinal": 0,
+          "parent": {
+            "kind": "root"
+          },
+          "prototype": {
+            "definition": "pvz:model:definition#0",
+            "scope": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "pvz:model:occurrence#1",
+          "name": "41",
+          "native_ref": "definition 0 occurrence 0",
+          "ordinal": 0,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "pvz:model:occurrence#0"
+          },
+          "prototype": {
+            "definition": "pvz:model:definition#1",
+            "scope": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              100.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "pvz:model:occurrence#2",
+          "name": "42",
+          "native_ref": "definition 0 occurrence 1",
+          "ordinal": 1,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "pvz:model:occurrence#0"
+          },
+          "prototype": {
+            "definition": "pvz:model:definition#1",
+            "scope": "local"
+          },
+          "scale": [
+            2.0,
+            2.0,
+            2.0
+          ],
+          "transform": [
+            [
+              0.0,
+              -1.0,
+              0.0,
+              0.0
+            ],
+            [
+              1.0,
+              0.0,
+              0.0,
+              200.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "pvz:model:occurrence#3",
+          "name": "43",
+          "native_ref": "definition 0 occurrence 2",
+          "ordinal": 2,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "pvz:model:occurrence#0"
+          },
+          "prototype": {
+            "definition": "pvz:model:definition#2",
+            "scope": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        }
+      ],
+      "parameters": [],
+      "pcurves": [],
+      "pmi": [],
+      "points": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "product_definitions": [
+        {
+          "bom_properties": {
+            "PART_NUMBER": "TOP-001"
+          },
+          "id": "pvz:model:definition#0",
+          "kind": "part",
+          "native_ref": "definition 0",
+          "source_name": "TOP.ASM"
+        },
+        {
+          "bodies": [
+            "pvz:model:body#bracket.ol"
+          ],
+          "id": "pvz:model:definition#1",
+          "kind": "part",
+          "native_ref": "definition 1",
+          "source_name": "BRACKET.PRT"
+        },
+        {
+          "bodies": [
+            "pvz:model:body#plate.ol"
+          ],
+          "bom_properties": {
+            "MATERIAL": "STEEL"
+          },
+          "id": "pvz:model:definition#2",
+          "kind": "part",
+          "native_ref": "definition 2",
+          "source_name": "PLATE.PRT"
+        }
+      ],
+      "regions": [],
+      "semantic_annotations": [],
+      "shells": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [],
+      "tessellations": [
+        {
+          "body": "pvz:model:body#bracket.ol",
+          "channels": [],
+          "id": "pvz:model:tessellation#bracket.ol:0",
+          "mesh": {
+            "kind": "list",
+            "triangles": [
+              [
+                0,
+                2,
+                1
+              ],
+              [
+                0,
+                1,
+                3
+              ],
+              [
+                1,
+                2,
+                3
+              ],
+              [
+                2,
+                0,
+                3
+              ]
+            ],
+            "vertices": [
+              {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              {
+                "x": 9.999999776482582,
+                "y": 0.0,
+                "z": 0.0
+              },
+              {
+                "x": 0.0,
+                "y": 9.999999776482582,
+                "z": 0.0
+              },
+              {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 9.999999776482582
+              }
+            ]
+          },
+          "triangle_groups": [
+            {
+              "source_id": "patch 0",
+              "triangles": [
+                0,
+                1,
+                2,
+                3
+              ]
+            }
+          ]
+        },
+        {
+          "body": "pvz:model:body#plate.ol",
+          "channels": [],
+          "id": "pvz:model:tessellation#plate.ol:0",
+          "mesh": {
+            "kind": "shaded_list",
+            "triangles": [
+              [
+                0,
+                1,
+                2
+              ],
+              [
+                2,
+                1,
+                3
+              ]
+            ],
+            "vertices": [
+              {
+                "normal": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 1.0
+                },
+                "position": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              },
+              {
+                "normal": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 1.0
+                },
+                "position": {
+                  "x": 19.999999552965164,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              },
+              {
+                "normal": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 1.0
+                },
+                "position": {
+                  "x": 0.0,
+                  "y": 19.999999552965164,
+                  "z": 0.0
+                }
+              },
+              {
+                "normal": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 1.0
+                },
+                "position": {
+                  "x": 19.999999552965164,
+                  "y": 19.999999552965164,
+                  "z": 0.0
+                }
+              }
+            ]
+          },
+          "triangle_groups": [
+            {
+              "source_id": "patch 0",
+              "triangles": [
+                0,
+                1
+              ]
+            }
+          ]
+        }
+      ],
+      "vertices": [],
+      "view_presentations": []
+    },
+    "native": {},
+    "source": {
+      "attributes": {
+        "geometry_member_count": "2",
+        "structure_member": "model.pvs"
+      },
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "pvs_signature": "PV-PVS0304"
+            },
+            "dialect": "pvz:pvs-0304"
+          }
+        }
+      }
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "pvs_signature": "PV-PVS0304"
+          },
+          "dialect": "pvz:pvs-0304"
+        }
+      }
+    },
+    "losses": [
+      {
+        "code": {
+          "code": "structure.bounds-not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "pvz",
+          "scope": "namespaced"
+        },
+        "message": "2 geometry elements carry bounds; the model has no definition bounds field, so the bounds were not transferred (PVZ-27)",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "geometry.exact-undecoded",
+          "kind": "geometry_not_transferred",
+          "namespace": "pvz",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "geometry member \"plate.ol\": exact-geometry stream 0x01000004 did not decode into B-rep (malformed container: exact stream does not end with its stream terminator); the member keeps its tessellation",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attributes.records-undecoded",
+          "kind": "attributes_not_transferred",
+          "namespace": "pvz",
+          "scope": "namespaced"
+        },
+        "message": "attribute-stream records outside the appearance records were not transferred: 0x3 x1 (feature identifiers, layers, and per-face attributes; PVZ-13)",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "attributes.appearance-tail-undecoded",
+          "kind": "material_not_transferred",
+          "namespace": "pvz",
+          "scope": "namespaced"
+        },
+        "message": "1 appearance references carry a 17-byte tail whose meaning is an open item (PVZ-12); the tails were not transferred",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "tessellation.patch-fields-undecoded",
+          "kind": "record_not_typed",
+          "namespace": "pvz",
+          "scope": "namespaced"
+        },
+        "message": "2 tessellation patch headers carry face_ref, flag, and refs fields whose meaning is an open item (PVZ-14); the fields were not transferred",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "tessellation.edges-not-transferred",
+          "kind": "geometry_not_transferred",
+          "namespace": "pvz",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "edge tessellation was decoded but not transferred: 1 edge polylines with 2 points and 1 segments, 1 edge index tables, and other records none; the model carries no edge display polylines (PVZ-16)",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "geometry.preamble-undecoded",
+          "kind": "record_not_typed",
+          "namespace": "pvz",
+          "scope": "namespaced"
+        },
+        "message": "1 of 2 geometry members carry the 19-byte preamble block whose fields are an open item (PVZ-11); the block was not transferred",
+        "severity": "info"
+      }
+    ],
+    "notes": [],
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
+  },
+  "source_fidelity": {
+    "annotations": {}
+  }
+}

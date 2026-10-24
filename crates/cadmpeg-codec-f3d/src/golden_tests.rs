@@ -18,6 +18,7 @@ use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions, DecodeResult};
 use cadmpeg_ir::examples;
 use cadmpeg_ir::{report::export::WritePath, CadIr};
+use cadmpeg_measure::test_support::round_trip::{measures_agree, measures_decide};
 use cadmpeg_test_support::golden::{elide_local_digests, snapshot_text, snapshots_agree};
 use cadmpeg_test_support::roundtrip::{
     mutation_roundtrip, semantic_roundtrip, verbatim_replay_holds, ExpectedWritePath,
@@ -818,6 +819,11 @@ fn fixtures_refuse_to_write_without_a_baseline() {
 /// How far the mutation lane moves a point, in millimetres.
 const MUTATION_MM: f64 = 1.0;
 
+/// Fixtures whose measures the mutation lane compares across the patch
+/// writer: every fixture with a point except `design_copy_paste`, whose
+/// occurrences place its bodies.
+const MEASURED_FIXTURE_FLOOR: usize = 59;
+
 /// Fixtures with no point for the mutation lane to move.
 const FIXTURES_WITHOUT_POINTS: [&str; 1] = ["container_metadata_only"];
 
@@ -834,6 +840,7 @@ fn neutral_document(ir: &CadIr) -> String {
 #[test]
 fn an_edit_survives_the_patch_writer() {
     let mut edited_count = 0usize;
+    let mut measured_count = 0usize;
     let mut skipped: Vec<&str> = Vec::new();
     for (name, _) in fixtures() {
         let input = read_fixture(name).expect("committed fixture");
@@ -877,6 +884,11 @@ fn an_edit_survives_the_patch_writer() {
                             "fixture `{name}`: the patched container decodes to a different document: {mismatch}"
                         );
                     }
+                    if measures_decide(name, edited).expect("the fixture is measured") {
+                        measures_agree(name, edited, round_trip.ir())
+                            .expect("the round trip keeps its measured geometry");
+                        measured_count += 1;
+                    }
                 }
                 MutationOutcome::Refused { error } => {
                     panic!("fixture `{name}`: the patch writer declined to move a point: {error}")
@@ -898,6 +910,10 @@ fn an_edit_survives_the_patch_writer() {
         edited_count,
         fixtures().len() - FIXTURES_WITHOUT_POINTS.len(),
         "every fixture that carries a point must reach the patch writer"
+    );
+    assert!(
+        measured_count >= MEASURED_FIXTURE_FLOOR,
+        "fewer fixtures than the floor measure a comparable body through the patch writer"
     );
 }
 

@@ -177,7 +177,7 @@ fn valid_assembly_operand_path_link(
     )
     .operand_frame_variant()
     .is_some_and(design::assembly::AssemblyOperandFrameVariant::is_wide_family)
-        || design::assembly::rigid_as_built_scope(
+        || design::assembly::wide_as_built_scope(
             scope.frame_length(),
             scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
         );
@@ -1014,12 +1014,10 @@ fn validate_loaded(
 /// stored document-root discriminator.
 fn validate_act(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
     let native = ctx.native;
-    let mut streams = std::collections::BTreeMap::<&str, &str>::new();
     let mut record_indices = HashSet::new();
     for entity in &native.act_entities {
         let stream = entity.stream();
 
-        streams.entry(stream).or_insert(entity.id().as_str());
         let unique_index = record_indices.insert((stream, entity.record_index()));
         if !unique_index {
             push_constant_finding(findings, Check::NativeLinks, "Fusion ACT entity has an invalid identity, table membership, or change-group frame", Some(entity.id().to_owned()));
@@ -1030,8 +1028,6 @@ fn validate_act(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result<(), Co
     let mut guid_offsets = HashSet::new();
     for guid in &native.act_guids {
         let stream = guid.stream();
-
-        streams.entry(stream).or_insert(guid.id().as_str());
 
         guid_ordinals
             .entry(stream)
@@ -1059,8 +1055,6 @@ fn validate_act(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result<(), Co
     for reference in &native.act_table_references {
         let stream = reference.stream();
 
-        streams.entry(stream).or_insert(reference.id().as_str());
-
         table_reference_ordinals
             .entry(stream)
             .or_insert((HashSet::new(), reference.id().as_str()));
@@ -1087,8 +1081,6 @@ fn validate_act(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result<(), Co
     for channel in &native.act_registry_channels {
         let stream = channel.stream();
 
-        streams.entry(stream).or_insert(channel.id().as_str());
-
         registry_ordinals
             .entry(stream)
             .or_insert((HashSet::new(), channel.id().as_str()));
@@ -1105,20 +1097,22 @@ fn validate_act(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result<(), Co
         }
     }
 
-    let mut root_counts = HashMap::<&str, usize>::new();
+    let mut root_counts = BTreeMap::<&str, (&str, usize)>::new();
     for root in &native.act_root_components {
         let stream = root.stream();
 
-        streams.entry(stream).or_insert(root.id().as_str());
-        *root_counts.entry(stream).or_default() += 1;
+        root_counts
+            .entry(stream)
+            .or_insert((root.id().as_str(), 0))
+            .1 += 1;
         let unique_record_index = record_indices.insert((stream, root.record_index));
         if !unique_record_index {
             push_constant_finding(findings, Check::NativeLinks, "Fusion ACT root component has an invalid identity, frame, or tracked-entity reference", Some(root.id().to_owned()));
         }
     }
 
-    for (stream, witness) in streams {
-        if root_counts.get(stream).copied() != Some(1) {
+    for (witness, count) in root_counts.into_values() {
+        if count != 1 {
             push_constant_finding(
                 findings,
                 Check::NativeLinks,
@@ -2232,6 +2226,16 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             Some(alignment) => {
                 let values = if alignment.owners.len() == 2 {
                     vec![alignment.angle(), alignment.offset()[2]]
+                } else if design::assembly::placement_ordered_as_built_scope(
+                    scope.frame_length(),
+                    scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
+                ) {
+                    vec![
+                        alignment.offset()[0],
+                        alignment.offset()[1],
+                        alignment.offset()[2],
+                        alignment.angle(),
+                    ]
                 } else {
                     vec![
                         alignment.angle(),
@@ -2266,13 +2270,17 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     operand_frame_variant,
                     Some(design::assembly::AssemblyOperandFrameVariant::CompactWide)
                 );
+                let wide_as_built = design::assembly::wide_as_built_scope(
+                    scope.frame_length(),
+                    scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
+                );
                 let rigid_as_built = design::assembly::rigid_as_built_scope(
                     scope.frame_length(),
                     scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
                 );
                 let as_built_frames = scope.kind()
                     == crate::records::feature::scope::DesignFeatureKind::AsBuilt
-                    && (scope.frame_length() == 399 || rigid_as_built);
+                    && (scope.frame_length() == 399 || wide_as_built);
                 let as_built_421_generation = design::assembly::legacy_as_built_421_generation(
                     scope.frame_length(),
                     scope.class_tag.as_str(),
@@ -2347,8 +2355,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                 use crate::layout::assembly_wide_operand_path_locator as wide;
                                 let identity = frame.transform.rows()
                                     == cadmpeg_ir::transform::Transform::identity().rows();
-                                let (reference_at, transform_at): (u64, &[u64]) = if rigid_as_built
-                                {
+                                let (reference_at, transform_at): (u64, &[u64]) = if wide_as_built {
                                     (
                                         u64_from_index(wide::NONZERO_RECORD_REFERENCE + 1),
                                         if identity {

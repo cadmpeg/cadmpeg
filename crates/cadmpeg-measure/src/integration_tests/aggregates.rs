@@ -11,7 +11,7 @@ use cadmpeg_ir::CadIr;
 use crate::reason::{Category, UnavailableReason};
 use crate::report::{BodyMeasures, MeasureReport};
 use crate::select::Selection;
-use crate::test_support::{
+use crate::test_support::builders::{
     assert_measured, measure, plate_with_hole, Builder, Frame, TEST_ABSOLUTE_FLOOR,
 };
 use crate::value::{BoxValue, Measured, Point, Quantity, Reading};

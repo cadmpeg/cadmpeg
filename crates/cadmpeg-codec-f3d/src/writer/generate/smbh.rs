@@ -8,11 +8,14 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use crate::native::F3dNative;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::eval::admission::EvaluationAdmission;
+use cadmpeg_ir::eval::EvaluationFailure;
 use cadmpeg_ir::geometry::{
     pcurve::{PcurveGeometry, PcurveMetadata},
     CurveGeometry, SolvedCurveGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{ShellId, VertexId};
+use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::Sense;
 
 use super::{
@@ -1398,6 +1401,62 @@ fn encode_face_topology_smbh(
     Ok(bytes)
 }
 
+/// Relative allowance of a closed edge vertex against its carrier's
+/// evaluated traversal ends, per unit of the larger coordinate magnitude
+/// and 1.
+const EPS_CLOSED_EDGE_VERTEX: f64 = 1.0e-8;
+
+/// The interval that a closed edge with no stored range traverses: the
+/// carrier's closed traversal, when the edge vertex lies at both of its
+/// ends. Any other edge states no traversal and is refused.
+fn closed_edge_traversal(
+    edge: &cadmpeg_ir::topology::Edge,
+    carrier: &CurveGeometry,
+    vertex: Point3,
+    tolerance: f64,
+) -> Result<[f64; 2], CodecError> {
+    let no_traversal = || {
+        CodecError::NotImplemented(format!(
+            "source-less F3D edge generation requires a parameter range for edge {}",
+            edge.id
+        ))
+    };
+    let geometry = carrier
+        .solved()
+        .filter(|_| edge.start == edge.end)
+        .ok_or_else(no_traversal)?;
+    let range = geometry
+        .closed_traversal_range()
+        .ok_or_else(no_traversal)?
+        .endpoints();
+    for parameter in range {
+        let end = match cadmpeg_ir::eval::decode::curve_point_solved(
+            EvaluationAdmission::Standard,
+            geometry,
+            parameter,
+        ) {
+            Ok(end) => end.get(),
+            Err(EvaluationFailure::ResourceLimit(limit)) => {
+                return Err(CodecError::ResourceLimit(limit))
+            }
+            Err(
+                EvaluationFailure::NoValue
+                | EvaluationFailure::NonFinite(_)
+                | EvaluationFailure::WorkExhausted,
+            ) => return Err(no_traversal()),
+        };
+        let pairs = [(vertex.x, end.x), (vertex.y, end.y), (vertex.z, end.z)];
+        let scale = pairs
+            .iter()
+            .fold(1.0_f64, |scale, (a, b)| scale.max(a.abs()).max(b.abs()));
+        let allowed = (scale * EPS_CLOSED_EDGE_VERTEX).max(tolerance);
+        if pairs.iter().any(|(a, b)| (a - b).abs() > allowed) {
+            return Err(no_traversal());
+        }
+    }
+    Ok(range)
+}
+
 /// Base record indices for the source-less stream sections that
 /// `encode_source_less_edges_vertices_points` cross-references.
 #[derive(Clone, Copy)]
@@ -1468,9 +1527,39 @@ fn encode_source_less_edges_vertices_points(
             })
             .transpose()?
             .unwrap_or(-1);
-        let mut range = edge
-            .param_range()
-            .map_or([0.0, 1.0], cadmpeg_ir::units::FiniteVector::get);
+        let mut range = match edge.param_range() {
+            Some(range) => range.get(),
+            None if edge.start == edge.end => {
+                let vertex = &model.vertices[start];
+                let position = point_ordinals
+                    .get(&vertex.point)
+                    .map(|ordinal| model.points[*ordinal].position().get())
+                    .ok_or_else(|| {
+                        CodecError::malformed(format_args!(
+                            "vertex {} has an unresolved carrier",
+                            vertex.id
+                        ))
+                    })?;
+                let tolerance = [edge.tolerance, vertex.tolerance]
+                    .into_iter()
+                    .flatten()
+                    .map(cadmpeg_ir::scalar::PositiveReal::get)
+                    .fold(0.0, f64::max);
+                edge.curve()
+                    .and_then(|curve_id| curve_ordinals.get(curve_id))
+                    .map(|ordinal| {
+                        closed_edge_traversal(
+                            edge,
+                            &model.curves[*ordinal].geometry,
+                            position,
+                            tolerance,
+                        )
+                    })
+                    .transpose()?
+                    .unwrap_or([0.0, 1.0])
+            }
+            None => [0.0, 1.0],
+        };
         // Conic edge parameters are angles in both the IR and the native
         // stream; line parameters are arc lengths, millimeters in the IR
         // and centimeters natively.
@@ -1845,6 +1934,8 @@ mod tests {
     };
     use crate::test_support::zip_test::f3d_with_smbh;
     use crate::writer::generate::write_new;
+
+    mod closed_edge_range;
 
     fn decoded_wire(bytes: &[u8]) -> cadmpeg_ir::CadIr {
         let decoded = crate::F3dCodec

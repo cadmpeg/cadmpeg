@@ -92,6 +92,27 @@ pub(crate) fn header_losses(
     for diagnostic in &scan.entry_diagnostics {
         losses.push(crate::loss::F3dLossCode::ArchiveEntryUnreadable.note(diagnostic.to_owned()));
     }
+    for (name, run, stored) in &scan.unindexed_record_runs {
+        let retained = stored.checked_sub(run.start).ok_or_else(|| {
+            cadmpeg_core::CodecError::malformed(
+                "F3D unindexed record run exceeds its stored stream",
+            )
+        })?;
+        losses.push(
+            crate::loss::F3dLossCode::UnindexedRecordsRetained
+                .note(format!(
+                    "{name} stores {} record header(s) in {} byte(s) after its last indexed record, restarting at record index {}; they are not decoded and are retained natively.",
+                    run.headers,
+                    retained,
+                    run.first_record_index
+                ))
+                .with_provenance(cadmpeg_ir::SourceProvenance::in_stream(
+                    "f3d",
+                    cadmpeg_ir::stream_name!("BulkStream.dat"),
+                    cadmpeg_core::decode::u64_from_index(run.start),
+                )),
+        );
+    }
     for diagnostic in &scan.manifest_diagnostics {
         let message = format!(
             "{} is unreadable; manifest selectors retained",

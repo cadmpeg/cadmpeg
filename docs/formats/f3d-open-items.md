@@ -298,6 +298,16 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Conflict.** Treating the word as an entry count reads one entry fewer than the record holds.
 
+### DR-94. Freedom entry word and trailing value
+
+**Question.** What does the u32 word before a freedom code state, and what does the f64 after the code of a word-`1` entry state?
+
+**Known.** Word-`3` entries occur in current-document joints. Word-`1` entries occur in the motion records of `As-built` joints in inserted designs. The trailing f64 of those entries is `0` or 2π. Their freedom codes select the same motion as word-`3` codes: each word-`1` code-`2` joint's two connector frames share an origin and a z axis.
+
+**Need.** Joints that differ only in their motion settings, saved once with each word, would fix what the word selects. Varying such a joint's angle would show whether the trailing value tracks it.
+
+**Conflict.** Treating the trailing value as an angle, a period, or a limit states a meaning no sample fixes.
+
 ### DR-95. Rectangular-pattern direction selection kind `16` and the reference at offset 138
 
 **Question.** What does selection kind `16` select in a rectangular-pattern direction record, what do its origin and displacement mean, and what record does the marked reference at offset 138 name?
@@ -315,6 +325,16 @@ the native feature when a fixed lane carries a symmetric distance.
 **Need.** A reader must convert both extent owners to adjacent spacing and must define each active direction's vector, including the vector of a class-261 direction.
 
 **Conflict.** A Features-type rectangular pattern with 3 by 2 instances at 10 mm spacing stores an extent of 1.0 cm in both directions. Extent divided by count minus one gives 5 mm and 10 mm, not 10 mm and 10 mm. That scope stores its direction in the 221-byte form. In scopes that store 220-byte direction records, the extent divided by count minus one reproduces the measured pitch in both directions.
+
+### DR-98. Persistent selection long-tail fields
+
+**Question.** What do the u32 and u64 fields in the fourteen-byte persistent selection tail select?
+
+**Known.** The 204-byte member retains the complete local, asset, and context identity and a present optional slot. Its extra bytes are `00`, u32 `2`, u64 `1`, and `00`. A following Design header or the stream-end boundary terminates the tail. The frame extent distinguishes this form from the 190-byte member without a new identity field.
+
+**Need.** Independently varied tail fields and an unchanged selected entity must establish each field's meaning before the grammar admits other values.
+
+**Conflict.** The tail values alone do not assign a new selected entity or an additional member.
 
 ## 2. External references
 

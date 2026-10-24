@@ -553,6 +553,12 @@ fn mixed_plane_and_nurbs_faces_round_trip_shared_edge() {
             4,
             "{version:?}"
         );
+        cadmpeg_measure::test_support::round_trip::measures_agree(
+            "mixed plane and NURBS sheet",
+            &ir,
+            decoded.ir(),
+        )
+        .expect("the round trip keeps its measured geometry");
         let planar_shared_pcurve = decoded
             .ir()
             .model

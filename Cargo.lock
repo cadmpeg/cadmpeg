@@ -270,6 +270,7 @@ dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
  "cadmpeg-ir",
+ "cadmpeg-measure",
  "cadmpeg-protein",
  "cadmpeg-test-support",
  "lzma-rs",
@@ -291,6 +292,7 @@ dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
  "cadmpeg-ir",
+ "cadmpeg-measure",
  "cadmpeg-test-support",
  "roxmltree",
  "serde",
@@ -305,6 +307,7 @@ version = "0.6.5"
 dependencies = [
  "cadmpeg-core",
  "cadmpeg-ir",
+ "cadmpeg-measure",
  "cadmpeg-test-support",
  "memchr",
  "serde",
@@ -347,12 +350,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "cadmpeg-codec-pvz"
+version = "0.6.5"
+dependencies = [
+ "cadmpeg-container",
+ "cadmpeg-core",
+ "cadmpeg-ir",
+ "cadmpeg-measure",
+ "cadmpeg-test-support",
+ "crc32fast",
+ "roxmltree",
+ "serde_json",
+]
+
+[[package]]
 name = "cadmpeg-codec-rhino"
 version = "0.6.5"
 dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
  "cadmpeg-ir",
+ "cadmpeg-measure",
  "cadmpeg-test-support",
  "crc32fast",
  "flate2",
@@ -382,6 +400,7 @@ dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
  "cadmpeg-ir",
+ "cadmpeg-measure",
  "cadmpeg-parasolid",
  "cadmpeg-test-support",
  "crc32fast",
@@ -501,6 +520,7 @@ dependencies = [
  "cadmpeg-codec-iges",
  "cadmpeg-codec-inventor",
  "cadmpeg-codec-nx",
+ "cadmpeg-codec-pvz",
  "cadmpeg-codec-rhino",
  "cadmpeg-codec-sat",
  "cadmpeg-codec-sldprt",

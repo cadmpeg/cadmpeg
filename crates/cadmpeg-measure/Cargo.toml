@@ -10,6 +10,11 @@ homepage.workspace = true
 rust-version.workspace = true
 readme = "README.md"
 
+[features]
+# `test_support::round_trip` for the tests of writer crates, which take this
+# feature in their dev-dependencies.
+test-support = []
+
 [dependencies]
 cadmpeg-core.workspace = true
 cadmpeg-ir.workspace = true

@@ -1199,6 +1199,68 @@ discriminants = { magic = "none" }
 witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:43"
 
 # --------------------------------------------------------------------------
+# PTC Creo View / ProductView .pvz packages
+# --------------------------------------------------------------------------
+# A `.pvz` is a ZIP package holding one `.pvs` structure member and `.ol`
+# geometry members. The discriminant is the generation the `.pvs` member
+# declares (`pvs::declared`, crates/cadmpeg-codec-pvz/src/pvs.rs), read after
+# `package::Package::open` admits exactly one structure member: the leading
+# ten-byte signature of the binary form, or the `version` attribute of the
+# `<PV_FILE type="PVS">` root of the XML form. Each row is selected by either
+# discriminant.
+# `dialect::classify` (crates/cadmpeg-codec-pvz/src/dialect.rs) is the codec's
+# single construction path for a `DialectMatch`.
+#
+# The `.ol` signature (`DIV-OL08BL`, `DIV-OL09BL`) belongs to each geometry
+# member, not to the package. It is not an identity axis here: inspection
+# reports it as a member attribute.
+#
+# `complete = false`: PTC publishes no enumeration of structure signatures.
+[format.pvz]
+complete = false
+
+[[dialect]]
+id = "pvz:pvs-0301"
+title = "Creo View package, PV-PVS0301 structure member"
+discriminants = { pvs_signature = "PV-PVS0301", pvs_xml_version = "0301" }
+witness = "spec:docs/formats/creo_view_pvz.md sections 3.1 and 3.14"
+
+[[dialect]]
+id = "pvz:pvs-0302"
+title = "Creo View package, PV-PVS0302 structure member"
+discriminants = { pvs_signature = "PV-PVS0302", pvs_xml_version = "0302" }
+witness = "spec:docs/formats/creo_view_pvz.md sections 3.1 and 3.14"
+
+[[dialect]]
+id = "pvz:pvs-0303"
+title = "Creo View package, PV-PVS0303 structure member"
+discriminants = { pvs_signature = "PV-PVS0303", pvs_xml_version = "0303" }
+witness = "spec:docs/formats/creo_view_pvz.md sections 3.1 and 3.14"
+
+[[dialect]]
+id = "pvz:pvs-0304"
+title = "Creo View package, PV-PVS0304 structure member"
+discriminants = { pvs_signature = "PV-PVS0304", pvs_xml_version = "0304" }
+witness = "spec:docs/formats/creo_view_pvz.md sections 3.1 and 3.14"
+
+[[dialect]]
+id = "pvz:pvs-0305"
+title = "Creo View package, PV-PVS0305 structure member"
+discriminants = { pvs_signature = "PV-PVS0305", pvs_xml_version = "0305" }
+witness = "spec:docs/formats/creo_view_pvz.md sections 3.1 and 3.14"
+
+[[dialect]]
+# Mandatory `unknown` row (B4). A package whose one `.pvs` member declares no
+# known signature or XML version is admitted on the residual path: decode charges
+# `pvz/source.dialect-unverified` and reads the member with the binary or XML
+# grammar that its leading bytes select.
+id = "pvz:unknown"
+unknown_kind = "recovered-residual"
+title = "Creo View package with an unrecognized structure-member signature"
+discriminants = { pvs_signature = "any other leading ten bytes", pvs_xml_version = "absent or any other value" }
+witness = "code:crates/cadmpeg-codec-pvz/src/dialect.rs:66"
+
+# --------------------------------------------------------------------------
 # ACIS / ASM kernel namespace (embedded layer)
 # --------------------------------------------------------------------------
 # Owned by `cadmpeg-asm`, cited by `sat`, `f3d`, and `inventor`. These ids are

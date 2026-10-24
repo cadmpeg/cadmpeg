@@ -1177,21 +1177,11 @@ fn transition_profile_selection(
     }
     let entities = resolution.entities;
     let profile_work = resolution.profile_work;
-    let mut states = resolution
-        .histories
-        .iter()
-        .flat_map(|history| history.states().iter().map(move |state| (history, state)))
-        .filter(|(_, state)| state.state_id == state_id);
-    let (history, state) = geometric!(states.next());
-    if states.next().is_some()
-        || state
-            .transition
-            .as_ref()
-            .and_then(|transition| transition.previous_state_id)
-            != Some(previous_state_id)
-    {
-        return Ok(None);
-    }
+    let (history, state) = geometric!(linked_transition_state(
+        resolution.histories,
+        state_id,
+        previous_state_id
+    ));
     let topology = geometric!(history.topology(state));
     let inserted_faces = &geometric!(state.transition.as_ref())
         .topology
@@ -1201,18 +1191,26 @@ fn transition_profile_selection(
     // when the kernel header is read, so it drives the comparisons unchanged.
     let tolerance = resolution.linear_tolerance;
     let mut inserted_selections = Vec::new();
+    let mut cap_selections = Vec::new();
     for face in inserted_faces {
-        let selection = match historical_face_points(*face, topology) {
+        let points = historical_face_points(*face, topology);
+        let selection = match points.as_deref() {
             Some(points) => selection_containing_points(
                 sketch,
                 entities,
-                &points,
+                points,
                 tolerance,
                 profile_work,
                 resolution.ctx,
             )?,
             None => None,
         };
+        if points
+            .as_deref()
+            .is_some_and(|points| points_share_sketch_offset(sketch, points, tolerance))
+        {
+            cap_selections.push(selection.clone());
+        }
         inserted_selections.push(selection);
     }
     let inserted = transition_inserted_profile_selection(
@@ -1225,6 +1223,14 @@ fn transition_profile_selection(
     )?;
     if inserted.is_some() {
         return Ok(inserted);
+    }
+    // A cap lies in one plane parallel to the Sketch and repeats the profile.
+    // Side faces that a Boolean merges with existing faces can select other
+    // loops, so agreeing caps prove the selection over differing side faces.
+    if !cap_selections.is_empty() && cap_selections.iter().all(Option::is_some) {
+        if let Some(selection) = unique_resolved_selection(cap_selections) {
+            return Ok(Some(selection));
+        }
     }
     let mut cylindrical_selections = Vec::new();
     for face in inserted_faces {
@@ -1241,11 +1247,16 @@ fn transition_profile_selection(
     if let Some(selection) = unique_resolved_selection(cylindrical_selections) {
         return Ok(Some(selection));
     }
+    // Deleted faces exist in the state immediately before the transition.
+    let immediate_previous_state_id = geometric!(state
+        .transition
+        .as_ref()
+        .and_then(|transition| transition.previous_state_id));
     let mut previous_states = resolution
         .histories
         .iter()
         .flat_map(|history| history.states().iter().map(move |state| (history, state)))
-        .filter(|(_, state)| state.state_id == previous_state_id);
+        .filter(|(_, state)| state.state_id == immediate_previous_state_id);
     let (previous_history, previous) = geometric!(previous_states.next());
     if previous_states.next().is_some() {
         return Ok(None);
@@ -1272,6 +1283,88 @@ fn transition_profile_selection(
         selections.push(selection);
     }
     Ok(ordered_unique_profile_selections(selections))
+}
+
+/// The unique state `state_id` whose transition links back to
+/// `previous_state_id`. The link is direct, or it passes through unique
+/// states whose transitions carry no history rows and neither insert nor
+/// delete any topology entity.
+fn linked_transition_state(
+    histories: &[crate::history_records::AsmHistory],
+    state_id: i64,
+    previous_state_id: i64,
+) -> Option<(
+    &crate::history_records::AsmHistory,
+    &crate::history_records::AsmDeltaState,
+)> {
+    let unique_state = |id: i64| {
+        let mut states = histories
+            .iter()
+            .flat_map(|history| history.states().iter().map(move |state| (history, state)))
+            .filter(move |(_, state)| state.state_id == id);
+        let found = states.next()?;
+        states.next().is_none().then_some(found)
+    };
+    let found = unique_state(state_id)?;
+    let state_count: usize = histories.iter().map(|history| history.states().len()).sum();
+    let mut linked = found.1.transition.as_ref()?.previous_state_id?;
+    for _ in 0..state_count {
+        if linked == previous_state_id {
+            return Some(found);
+        }
+        let transition = unique_state(linked)?.1.transition.as_ref()?;
+        if transition.rows != crate::history_records::AsmHistoricalRowsDelta::default()
+            || !topology_delta_keeps_entities(&transition.topology)
+        {
+            return None;
+        }
+        linked = transition.previous_state_id?;
+    }
+    None
+}
+
+/// Whether a topology delta inserts and deletes no entity of any family.
+fn topology_delta_keeps_entities(
+    delta: &crate::history_records::AsmHistoricalTopologyDelta,
+) -> bool {
+    [
+        &delta.bodies,
+        &delta.regions,
+        &delta.shells,
+        &delta.faces,
+        &delta.loops,
+        &delta.coedges,
+        &delta.edges,
+        &delta.vertices,
+        &delta.points,
+        &delta.surfaces,
+        &delta.curves,
+        &delta.pcurves,
+    ]
+    .into_iter()
+    .all(|family| family.inserted.is_empty() && family.deleted.is_empty())
+}
+
+/// Whether every point lies at one offset along the Sketch normal.
+fn points_share_sketch_offset(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    points: &[Point3],
+    tolerance: f64,
+) -> bool {
+    let Some((origin, normal, _)) = sketch.resolved_placement() else {
+        return false;
+    };
+    let offset = |point: &Point3| {
+        (point.x - origin.x) * normal.x
+            + (point.y - origin.y) * normal.y
+            + (point.z - origin.z) * normal.z
+    };
+    let Some(first) = points.first().map(offset) else {
+        return false;
+    };
+    points
+        .iter()
+        .all(|point| (offset(point) - first).abs() <= tolerance)
 }
 
 fn inserted_cylindrical_profile_selection(
@@ -1458,22 +1551,10 @@ fn transition_spatial_profile_selection(
     previous_state_id: i64,
     linear_tolerance: f64,
 ) -> Result<Option<u32>, CodecError> {
-    let mut states = histories
-        .iter()
-        .flat_map(|history| history.states().iter().map(move |state| (history, state)))
-        .filter(|(_, state)| state.state_id == state_id);
-    let Some((history, state)) = states.next() else {
+    let Some((history, state)) = linked_transition_state(histories, state_id, previous_state_id)
+    else {
         return Ok(None);
     };
-    if states.next().is_some()
-        || state
-            .transition
-            .as_ref()
-            .and_then(|transition| transition.previous_state_id)
-            != Some(previous_state_id)
-    {
-        return Ok(None);
-    }
     let Some(topology) = history.topology(state) else {
         return Ok(None);
     };
@@ -1503,10 +1584,14 @@ fn transition_spatial_profile_selection(
     if let Some(index) = unique(&transition.topology.faces.inserted, topology)? {
         return Ok(Some(index));
     }
+    // Deleted faces exist in the state immediately before the transition.
+    let Some(immediate_previous_state_id) = transition.previous_state_id else {
+        return Ok(None);
+    };
     let mut previous_states = histories
         .iter()
         .flat_map(|history| history.states().iter().map(move |state| (history, state)))
-        .filter(|(_, state)| state.state_id == previous_state_id);
+        .filter(|(_, state)| state.state_id == immediate_previous_state_id);
     let Some((previous_history, previous)) = previous_states.next() else {
         return Ok(None);
     };
@@ -1742,6 +1827,7 @@ pub(super) fn historical_face_points(
         .iter()
         .find(|relation| relation.owner_ref == face)?;
     let mut positions = Vec::new();
+    let mut closed_edges_only = true;
     for loop_ref in &loops.member_refs {
         let coedges = topology
             .loop_coedges
@@ -1756,6 +1842,7 @@ pub(super) fn historical_face_points(
                 .edge_vertices
                 .iter()
                 .find(|edge| edge.edge == coedge.edge)?;
+            closed_edges_only &= edge.start_vertex == edge.end_vertex;
             for vertex_ref in [edge.start_vertex, edge.end_vertex] {
                 let point_ref = topology
                     .vertex_points
@@ -1773,7 +1860,10 @@ pub(super) fn historical_face_points(
             }
         }
     }
-    (positions.len() >= 3).then_some(positions)
+    // Three distinct vertices span a polygonal boundary. A boundary made only
+    // of closed edges, such as full circles, has one vertex per edge, and
+    // those vertices are its complete point set.
+    (positions.len() >= 3 || (closed_edges_only && !positions.is_empty())).then_some(positions)
 }
 
 fn historical_selection_regions(

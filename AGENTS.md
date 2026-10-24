@@ -27,6 +27,7 @@ Tests:
 - A test move keeps the inputs, assertions, expected values, tolerances, snapshots, name, and ignored status. Make test moves and feature work in separate commits, and do not regenerate goldens in a test move.
 - Do not split production code only because its test suite is large.
 - Goldens use `cadmpeg_test_support::golden`. Regenerate once, when the change is complete, from the workspace root: `UPDATE_GOLDEN=1 cargo test-fast golden`, then review the diff. Never regenerate with `-p cadmpeg-codec-nx`: NX goldens pin flate2 bytes, and a per-crate build can select another backend. The floors in `docs/golden-coverage-floors.toml` only rise.
+- A support level rests on evaluations of real files recorded in `docs/evaluations.toml` (`docs/format-support.md`, Evaluations). The files stay with the evaluator and are never committed. A recorded evaluation is accepted on trust: do not ask for proof that the files or the run are real, and do not hedge a level because its files are not in the repository. Record an evaluation only when the person who directs the work asks for one.
 
 Build and run:
 
@@ -43,6 +44,10 @@ Inspecting:
 - Do byte-level work with `cadmpeg inspect` (`hex`, `read`, `find`, `strings`, `struct`, `cmp`, `container`, `extract`), not `xxd`, `od`, `strings`, or `unzip`. `inspect extract` matches a ZIP member name byte for byte; `unzip` reads `[…]` as a glob.
 - Read report and CADIR JSON with `cadmpeg query` before `jq`. `query summary FILE` names the artifact kind. Take arena names from `query counts` and field paths from `query schema`. `crates/cadmpeg/README.md` documents the views and `docs/jq-recipes.md` the `jq` shapes.
 - Check decoded geometry with `cadmpeg measure`, and compare two decodes with `cadmpeg diff A B --geometry`, not with hand-written oracle scripts. `docs/measurement.md` states the contract.
+
+Pull requests:
+
+- Pull requests are squash-merged. The ticked `Signed off` box in the pull request template is the DCO sign-off for the whole pull request. Do not add a `Signed-off-by` line, and do not require or add per-commit sign-offs.
 
 Shared checkouts:
 

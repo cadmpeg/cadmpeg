@@ -1082,7 +1082,8 @@ fn append_design_losses(
         | LinearTermination::ThroughAll {}
         | LinearTermination::ThroughNext {}
         | LinearTermination::ToFirst {}
-        | LinearTermination::ToLast {} => false,
+        | LinearTermination::ToLast {}
+        | LinearTermination::ToPlane { .. } => false,
     };
     let incomplete_angular_termination = |termination: &AngularTermination| match termination {
         AngularTermination::Unresolved {} => true,
@@ -1262,9 +1263,8 @@ fn append_design_losses(
                                 incomplete_face_selection(face)
                             }
                             cadmpeg_ir::features::ExtrudeStart::ProfilePlane {}
-                            | cadmpeg_ir::features::ExtrudeStart::OffsetProfilePlane { .. } => {
-                                false
-                            }
+                            | cadmpeg_ir::features::ExtrudeStart::OffsetProfilePlane { .. }
+                            | cadmpeg_ir::features::ExtrudeStart::FromPlane { .. } => false,
                         }
                         || matches!(
                             direction,

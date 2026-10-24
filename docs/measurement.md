@@ -725,6 +725,11 @@ geometry. Only the `cadmpeg` CLI crate depends on `cadmpeg-measure` outside
 `[dev-dependencies]`; the source-policy rule `measurement_dependency`
 enforces this.
 
+A writer test compares the measures of a document and of its written and
+decoded copy with `cadmpeg_measure::test_support::round_trip`. The writer
+crate takes that module through the `test-support` feature of its
+`cadmpeg-measure` dev-dependency.
+
 ## Check findings
 
 `cadmpeg check`, and the check that `convert` runs, add the defects that

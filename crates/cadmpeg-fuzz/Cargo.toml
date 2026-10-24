@@ -36,6 +36,7 @@ cadmpeg-codec-nx = { path = "../cadmpeg-codec-nx" }
 cadmpeg-codec-rhino = { path = "../cadmpeg-codec-rhino" }
 cadmpeg-codec-iges = { path = "../cadmpeg-codec-iges" }
 cadmpeg-codec-sat = { path = "../cadmpeg-codec-sat" }
+cadmpeg-codec-pvz = { path = "../cadmpeg-codec-pvz" }
 cadmpeg-ir = { path = "../cadmpeg-ir", features = ["examples"] }
 cadmpeg-codec-step = { path = "../cadmpeg-codec-step" }
 zip = { version = "9", default-features = false, features = ["deflate"] }
@@ -585,6 +586,27 @@ bench = false
 [[bin]]
 name = "sat_container"
 path = "fuzz_targets/sat_container.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pvz_container"
+path = "fuzz_targets/pvz_container.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pvz_package"
+path = "fuzz_targets/pvz_package.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pvz_exact"
+path = "fuzz_targets/pvz_exact.rs"
 test = false
 doc = false
 bench = false

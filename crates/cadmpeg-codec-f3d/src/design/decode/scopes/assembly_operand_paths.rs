@@ -212,7 +212,7 @@ fn exact_assembly_operand_path_envelope(
         )
         .operand_frame_variant()
         .is_some_and(crate::design::assembly::AssemblyOperandFrameVariant::is_wide_family)
-            || crate::design::assembly::rigid_as_built_scope(
+            || crate::design::assembly::wide_as_built_scope(
                 scope.frame_length(),
                 scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
             ))

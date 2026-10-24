@@ -279,6 +279,7 @@ pub(crate) const GENERATED_LAYOUT_RS: &[(&str, &str)] = &[
     ("asm", "crates/cadmpeg-asm/src/layout.rs"),
     ("catia", "crates/cadmpeg-codec-catia/src/layout.rs"),
     ("creo", "crates/cadmpeg-codec-creo/src/layout.rs"),
+    ("creo_view_pvz", "crates/cadmpeg-codec-pvz/src/layout.rs"),
     ("f3d", "crates/cadmpeg-codec-f3d/src/layout.rs"),
     ("freecad", "crates/cadmpeg-codec-freecad/src/layout.rs"),
     ("iges", "crates/cadmpeg-codec-iges/src/layout.rs"),

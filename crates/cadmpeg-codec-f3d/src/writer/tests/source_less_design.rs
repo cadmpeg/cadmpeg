@@ -476,6 +476,22 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
     assert!(error
         .to_string()
         .contains("module conflicts with MetaStream ownership"));
+    crate::test_support::zip_test::with_scan(&encoded, |scan| {
+        let bulk_name = "FusionAssetName[Active]/Design1/BulkStream.dat";
+        let bulk = scan.entry_bytes(bulk_name).unwrap();
+        let meta = scan
+            .parsed_metastream(&bulk_name.replace("BulkStream.dat", "MetaStream.dat"))
+            .unwrap();
+        assert!(scan.unindexed_record_runs.is_empty());
+        assert!(meta.secondary_records.is_empty());
+        assert_eq!(meta.records.len(), 1);
+        assert_eq!(meta.records[0].entity_id, 277);
+        assert_eq!(meta.records[0].bulk_offset, 79);
+        assert_eq!(&bulk[57..68], &[3, 0, 0, 0, b'3', b'5', b'0', 33, 0, 0, 0]);
+        assert_eq!(&bulk[68..79], &[3, 0, 0, 0, b'3', b'5', b'1', 44, 0, 0, 0]);
+        assert_eq!(&bulk[79..90], &[3, 0, 0, 0, b'2', b'5', b'6', 21, 1, 0, 0]);
+        assert_eq!(bulk.len(), 153);
+    });
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less Design ownership round trip");

@@ -382,6 +382,30 @@ impl SolvedCurveGeometry {
             | Self::Unknown { .. } => 0,
         }
     }
+
+    /// The canonical interval of one traversal of this carrier as a closed
+    /// curve: one revolution `[0, 2π]` of a circle or an ellipse, and the
+    /// effective knot domain of a clamped or periodic NURBS curve. A placement
+    /// keeps the interval of its basis. The carrier closes over the interval
+    /// only where both ends evaluate to one point, so a closed edge with no
+    /// stored range traverses this interval when its vertex lies at both ends.
+    #[must_use]
+    pub fn closed_traversal_range(&self) -> Option<crate::topology::IncreasingParameterInterval> {
+        match self {
+            Self::Circle(_) | Self::Ellipse(_) => {
+                crate::topology::IncreasingParameterInterval::new([0.0, std::f64::consts::TAU])
+            }
+            Self::Nurbs(nurbs) => crate::eval::nurbs_curve_parameter_domain(nurbs),
+            Self::Transformed(placed) => placed.basis().closed_traversal_range(),
+            Self::Line(_)
+            | Self::Parabola(_)
+            | Self::Hyperbola(_)
+            | Self::Degenerate(_)
+            | Self::Composite { .. }
+            | Self::Polyline(_)
+            | Self::Unknown { .. } => None,
+        }
+    }
 }
 
 /// Exact affine placement of an inline basis curve.

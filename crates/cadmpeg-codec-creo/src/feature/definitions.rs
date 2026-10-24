@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
-use cadmpeg_core::decode::{bounded_len, index_from_u32};
+use cadmpeg_core::decode::{bounded_len, index_from_u32, View};
 use cadmpeg_core::CodecError;
 
 use crate::psb;
@@ -3768,6 +3768,7 @@ fn entity_intersection(
 }
 
 fn order_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureOrderTable> {
+    let view = View::over_retained(payload).child(start, end)?;
     let table = find_bytes(payload, b"order_table\0", start, end)?;
     let mut cursor = table + b"order_table\0".len();
     if payload.get(cursor) != Some(&psb::token::ARRAY_OPEN) {
@@ -3793,7 +3794,11 @@ fn order_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureOrderT
             (next > offset + label.len() && next <= close).then_some(())?;
             field = next;
         }
-        Some(())
+        match view.child(field, close)?.window() {
+            [] => Some(false),
+            b"\xe0\x01rg_ref_id\0\xf6" => Some(true),
+            _ => None,
+        }
     })();
     let Ok((_, next)) = psb::reference_id(payload, close + 2) else {
         return None;
@@ -3833,6 +3838,11 @@ fn order_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureOrderT
         else {
             break;
         };
+        let mut tail = view.child(next, end)?;
+        if prototype == Some(true) && tail.u8() != Some(0xf6) {
+            break;
+        }
+        let next = tail.position();
         let row_separator = payload.get(next) == Some(&0xe2);
         let table_boundary = next == end
             || payload
@@ -3875,6 +3885,7 @@ fn positional_order_table(
     end: usize,
     table_class: u32,
 ) -> Option<FeatureOrderTable> {
+    let view = View::over_retained(payload).child(start, end)?;
     let (table, declared_count, cursor) = (start..end).find_map(|table| {
         (payload.get(table) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
         let (declared_count, after_count) = psb::compact_int(payload, table + 1);
@@ -3892,18 +3903,23 @@ fn positional_order_table(
             (next > prototype).then_some(())?;
             prototype = next;
         }
+        let mut tail = view.child(prototype, end)?;
+        let null_reference = tail.u8() == Some(0xf6);
+        if null_reference {
+            prototype = tail.position();
+        }
         (payload.get(prototype..prototype + 2) == Some(&[0xf1, psb::token::ENTITY_REF]))
             .then_some(())?;
         let (class, after_reference) = psb::reference_id(payload, prototype + 2).ok()?;
         (class == table_class && payload.get(after_reference) == Some(&0xe2)).then_some(())?;
-        Some(after_reference + 1)
+        Some((after_reference + 1, null_reference))
     })();
     // The declared count of a positional order table counts its prototype row.
     // A declared count of zero with the prototype row present states a body-row
     // count the table cannot hold, and refuses the table. Each row consumes at
     // least one byte before its 0xe2 separator, so the row count cannot exceed
     // the unread bytes in the table window.
-    let row_limit = match prototype.filter(|&rows_start| rows_start < end) {
+    let row_limit = match prototype.filter(|&(rows_start, _)| rows_start < end) {
         Some(_) => {
             let declared_body_rows = declared_count.checked_sub(1)?;
             let Ok(row_limit) = usize::try_from(declared_body_rows) else {
@@ -3914,7 +3930,7 @@ fn positional_order_table(
         None => 0,
     };
     let mut rows = Vec::new();
-    let mut cursor = prototype.unwrap_or(end);
+    let (mut cursor, null_reference) = prototype.unwrap_or((end, false));
     let mut external_ids = BTreeSet::new();
     let mut internal_ids = BTreeSet::new();
     while cursor < end && rows.len() < row_limit {
@@ -3927,6 +3943,11 @@ fn positional_order_table(
         else {
             break;
         };
+        let mut tail = view.child(next, end)?;
+        if null_reference && tail.u8() != Some(0xf6) {
+            break;
+        }
+        let next = tail.position();
         if external_ids.contains(&external_id) {
             break;
         }
@@ -3943,7 +3964,14 @@ fn positional_order_table(
         };
         cursor = next;
         if rows.len() + 1 == row_limit {
-            rows.push(row);
+            let at_boundary = cursor == end
+                || view
+                    .child(cursor, end)?
+                    .u8()
+                    .is_some_and(|byte| matches!(byte, 0xe0 | 0xe2 | 0xf1 | 0xf3));
+            if at_boundary {
+                rows.push(row);
+            }
             break;
         }
         if payload.get(cursor) != Some(&0xe2) {

@@ -139,6 +139,7 @@ rewrite_enum!(ExtrudeStart, []; {
     ProfilePlane {  },
     OffsetProfilePlane { offset },
     FromFace { face, offset },
+    FromPlane { plane, native },
 });
 
 rewrite_enum!(ExtrusionDirectionSource, []; {
@@ -316,6 +317,7 @@ rewrite_enum!(LinearTermination, []; {
     ToLast {  },
     ToFace { face, offset },
     ToVertex { vertex },
+    ToPlane { plane, native },
     OffsetFromFace { face, offset },
     ToShape { target },
 });

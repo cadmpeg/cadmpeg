@@ -275,6 +275,10 @@ pub(super) fn encode_design_bulkstream(
         }
         out.push(0);
     }
+    for header in &native.design_record_headers {
+        native_lp_ascii(&mut out, header.class_tag.as_str())?;
+        out.extend_from_slice(&header.record_index.to_le_bytes());
+    }
     for header in &native.design_entity_headers {
         primary_records.push(primary_record_u64(header.entity_id.suffix(), out.len())?);
         out.extend_from_slice(&3u32.to_le_bytes());
@@ -311,10 +315,6 @@ pub(super) fn encode_design_bulkstream(
                 out.extend_from_slice(&[0; 6]);
             }
         }
-    }
-    for header in &native.design_record_headers {
-        native_lp_ascii(&mut out, header.class_tag.as_str())?;
-        out.extend_from_slice(&header.record_index.to_le_bytes());
     }
     for point in &native.sketch_points {
         point

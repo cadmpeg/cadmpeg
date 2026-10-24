@@ -5,7 +5,7 @@
 ### Scoring rules
 
 1. **A score attaches to declared coverage.** A score states the highest level whose requirements pass for the coverage its profile declares, and the profile names that coverage — concretely, the format's `scored` list in `crates/cadmpeg-registry/docs/dialect-support.toml`. Surplus capability in a subset of versions, layouts, or files shows as extras. Refusing a band the codec recognizes is a stated, visible fact in the profile, never an exclusion that raises a score.
-2. **Mainstream pass.** A level passes when its capability works on mainstream files of the main dialects in the declared envelope, and its gaps produce machine-readable losses. A rare carrier family or a minority dialect that is missing is a named gap, not a failure. One fixture, an entity census, or an opaque record capture does not pass a level. A fixture-backed row read and a maintainer evaluation are floors for their rows, not ceilings for the format.
+2. **Mainstream pass.** A level passes when its capability works on mainstream files of the main dialects in the declared envelope, and its gaps produce machine-readable losses. A rare carrier family or a minority dialect that is missing is a named gap, not a failure. One fixture, an entity census, or an opaque record capture does not pass a level. A fixture-backed row read and a recorded evaluation are floors for their rows, not ceilings for the format.
 3. **Inapplicable levels.** A format definition may mark a level inapplicable when its document kind cannot contain that category. Inapplicable levels pass. Missing fixtures do not establish inapplicability.
 4. **Integer levels only.** Scores are whole levels such as L4. Do not use fractional levels, evidence-grade suffixes, or other score variants. A recorded level already means the proof criteria pass for the codec. The published headline for a format is the single integer level and nothing else.
 5. **Refusal is a visible mark.** Refusing a recognized band is a visible mark and can never improve any published number.
@@ -14,7 +14,7 @@
 
 The criteria below are the target for every scored level. A format profile names each criterion that does not yet hold:
 
-- Real files exercise the scored level. A maintainer evaluation recorded in `docs/evaluations.toml` satisfies this criterion.
+- Real files exercise the scored level. An evaluation recorded in `docs/evaluations.toml` satisfies this criterion. The files need not be in the repository.
 - Every source byte is typed, classified as structural, or preserved as a named opaque record.
 - Every unsupported semantic construct produces a machine-readable loss.
 - Decode, validation, write, and conversion results are deterministic.
@@ -27,6 +27,19 @@ written by hand. `scripts/render-format-support.py` renders every one of them
 from `crates/cadmpeg-registry/docs/dialects.toml` and `crates/cadmpeg-registry/docs/dialect-support.toml`, and its `--check`
 mode compares the committed file to a fresh render byte for byte. A registry
 edit without a re-render fails the gate.
+
+### Evaluations
+
+An evaluation runs the codec on real files and records the result in
+`docs/evaluations.toml`. The author or auditor who ran it records it. The
+files stay with the evaluator. They are not committed, and the record names
+no file and no path.
+
+The project accepts a recorded evaluation as stated. Do not ask for the
+files, digests, reproduction steps, or other proof that the files are real
+or that the run took place. Do not qualify a level because its files are
+not in the repository. To dispute an evaluation, run a new one and record
+its result.
 
 ### Levels
 
@@ -57,6 +70,7 @@ edit without a re-render fails the gate.
 | Siemens NX `.prt`                                 | L1    |
 | CATIA V5 `.CATPart`                               | L3    |
 | Creo Parametric `.prt`                            | L1    |
+| Creo View `.pvz`                                  | L0    |
 | STEP Part 21                                      | L8    |
 
 <!-- /generated: ladder-table -->
@@ -491,6 +505,38 @@ Remaining geometry work includes per-instance analytic parameter bindings, featu
 
 See [`formats/creo_prt.md`](formats/creo_prt.md) and [`formats/creo_prt-open-items.md`](formats/creo_prt-open-items.md).
 
+## Creo View `.pvz`
+
+**Container:** ZIP package with one `.pvs` structure member and `.ol` geometry members
+
+<!-- generated: dialects pvz -->
+
+**Ladder: L0.**
+
+| Dialect        | Read                   | Write |
+| -------------- | ---------------------- | ----- |
+| `pvz:pvs-0301` | detected               | none  |
+| `pvz:pvs-0302` | detected               | none  |
+| `pvz:pvs-0303` | detected               | none  |
+| `pvz:pvs-0304` | detected               | none  |
+| `pvz:pvs-0305` | detected               | none  |
+| `pvz:unknown`  | unclassified-recovered | none  |
+
+<!-- /generated: dialects pvz -->
+
+The codec opens the ZIP framing, the `.pvs` stream directory, and the `.ol` stream directory, expands each GZIP stream under the decode caps and checks its CRC-32, classifies the package from the generation the `.pvs` member declares, and decodes product structure, exact B-rep, and tessellation. Every undecoded record family is named by a loss. Each exact stream becomes connected B-rep from bodies through vertices, with face regions, coedge senses, face sides, shells, and placed analytic and B-spline carriers in millimetres. The code-built golden packages cover every structure generation, the XML structure form, both exact-stream scalar widths, and closed solids with plane, cylinder, cone, and rational B-spline faces, a periodic seam, a singular apex, secondary pcurves, and inner loops; the neutral structural validation passes on each. No real `.pvz` file is in the repository or in `docs/evaluations.toml`. The proof criterion that real files exercise the scored level therefore holds at no level, and code-built fixtures do not pass a level (scoring rule 2). The format is at L0, the lowest level the registry declares. Connected B-rep is an extra above that score.
+
+### Read profile
+
+- **Container and versions: Partial.** The codec admits the ZIP package through the shared archive snapshot, requires exactly one `.pvs` structure member, and classifies the `PV-PVS0301` to `PV-PVS0305` binary structure signatures and the matching `version` attribute of the XML structure form. A structure member that declares any other generation is read on the residual path and reports `pvz/source.dialect-unverified`. Loose `.pvs` and `.ol` files outside a package are not detected.
+- **Structure: Partial.** The binary and XML structure forms decode into product definitions with their names and properties, and into the expanded occurrence tree with placements as a rigid transform and a uniform scale. Appearance palettes, illustration and group elements, occurrence flags and extensions, typed definition bytes, and geometry-element bounds report `pvz/structure.*` losses.
+- **Geometry and tessellation: Partial.** Each geometry member a definition names becomes a body owned by every such definition. When the member's exact-geometry stream decodes, the body holds its neutral B-rep: analytic and B-spline face carriers, edge curves, coedge pcurves, loops, vertices, closed shells, and regions, in millimetres. The open shells of the stream form a second, sheet body that the same definitions own. Edge records that store one model edge once per coedge use join into one shared edge. Carriers with no neutral form, omitted pcurves, open loops, gauge face sides, faces without a loop, and merged or collapsed edges report `pvz/exact.*` losses. A stream that does not decode reports `pvz/geometry.exact-undecoded`, and the member keeps its tessellation alone. The body also holds one tessellation per appearance and vertex layout, with per-patch triangle groups and the member's appearances bound to the tessellations. Edge tessellation, texture coordinates, the patch-header face references that would bind appearances to exact faces, and the other attribute and tessellation records report losses.
+
+### Write and round trip
+
+- **Native write: None.**
+- **Round trip: None.**
+
 ## STEP Part 21
 
 **Model:** ISO 10303-21 clear-text exchange with AP203, AP214, or AP242 application data
@@ -541,4 +587,4 @@ Part 28 XML, Part 26 binary/HDF5, and AP242 BO-Model sidecars are outside the de
 
 Per-format specifications in [`formats/`](formats/) define byte semantics. Adjacent `*-open-items.md` files contain unresolved fields and structures. Every **Partial** domain names its remaining work here or in the linked open-items document.
 
-The generated cells and the profile prose answer different questions. A cell is the row's disposition after fixture gating: `detected` means the codec classifies the dialect but no fixture in the repository backs a score for it, so it can state capability the prose describes and the cell still reads `detected`. A level named in profile prose names the ladder rung that capability text describes. Edit a cell only through `crates/cadmpeg-registry/docs/dialect-support.toml`; edit prose only outside a generated region.
+The generated cells and the profile prose answer different questions. A cell is the row's disposition after fixture gating: `detected` means the codec classifies the dialect but no fixture in the repository backs a score for it, so it can state capability the prose describes and the cell still reads `detected`. A `detected` cell does not limit the headline level. A recorded evaluation backs the level without a committed file. A level named in profile prose names the ladder rung that capability text describes. Edit a cell only through `crates/cadmpeg-registry/docs/dialect-support.toml`; edit prose only outside a generated region.

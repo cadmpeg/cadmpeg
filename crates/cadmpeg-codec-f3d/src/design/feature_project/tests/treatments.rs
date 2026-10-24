@@ -1448,4 +1448,5 @@ fn fillet_unit_conversion_rejects_finite_overflow() {
 
 mod chamfer;
 
+mod tangency_weight;
 mod typed_treatments;
