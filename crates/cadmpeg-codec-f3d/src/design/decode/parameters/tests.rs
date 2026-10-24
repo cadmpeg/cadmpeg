@@ -1084,10 +1084,11 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
         )
     })
     .expect("exact owner frame");
-    let [owner] = owners.as_slice() else {
+    let [owner] = owners.owners.as_slice() else {
         panic!("expected one parameter owner");
     };
     assert_eq!(owner.frame_length(), 104);
+    assert!(owners.unparsed.is_empty());
     assert_eq!(owner.evaluated_value_offset(), 40);
 
     let mut compact = without_variant_padding(parameter_owner_frame());
@@ -1100,10 +1101,11 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
         )
     })
     .expect("owner frame whose variant ends its scope lane");
-    let [owner] = owners.as_slice() else {
+    let [owner] = owners.owners.as_slice() else {
         panic!("expected one compact parameter owner");
     };
     assert_eq!(owner.frame_length(), 103);
+    assert!(owners.unparsed.is_empty());
     assert_eq!(owner.evaluated_value_offset(), 40);
 
     let unresolved = with_scan(&archive(stream, &[]), |scan| {
@@ -1114,7 +1116,8 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
         )
     })
     .expect("missing owner frame is retained as an unresolved binding");
-    assert!(unresolved.is_empty());
+    assert!(unresolved.owners.is_empty());
+    assert!(unresolved.unparsed.is_empty());
 
     let mut lone = paired_header().to_vec();
     lone.extend_from_slice(&[0; 19]);
@@ -1126,20 +1129,71 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
         )
     })
     .expect("the lone paired record of an omitted owner frame is not an owner");
-    assert!(lone_owners.is_empty());
+    assert!(lone_owners.owners.is_empty());
+    assert!(lone_owners.unparsed.is_empty());
 
     let mut extended = parameter_owner_frame();
     extended.push(0);
     extended.extend_from_slice(&paired_header());
-    let error = with_scan(&archive(stream, &extended), |scan| {
+    let unsupported = with_scan(&archive(stream, &extended), |scan| {
         crate::design::decode::parameters::decode_parameter_owners(
             scan,
             std::slice::from_ref(&parameter),
             std::slice::from_ref(&header),
         )
     })
-    .expect_err("an owner-shaped prefix must not shorten the exact frame");
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    .expect("unsupported owner bindings do not prevent decoding");
+    assert!(unsupported.owners.is_empty());
+    assert_eq!(unsupported.unparsed, [parameter.id.clone()]);
+
+    let supported_at = u64::try_from(extended.len()).unwrap();
+    let mut supported_frame = parameter_owner_frame();
+    supported_frame[7..11].copy_from_slice(&54u32.to_le_bytes());
+    supported_frame[49..53].copy_from_slice(&55u32.to_le_bytes());
+    supported_frame[82..86].copy_from_slice(&56u32.to_le_bytes());
+    extended.extend_from_slice(&supported_frame);
+    let mut supported_pair = paired_header();
+    supported_pair[7..11].copy_from_slice(&54u32.to_le_bytes());
+    extended.extend_from_slice(&supported_pair);
+    let supported_parameter = parse_design_parameter_record(&compact_owned_parameter_record(
+        54,
+        1,
+        "6 cm",
+        "Distance",
+        Some("cm"),
+        "span",
+        6.0,
+    ))
+    .unwrap();
+    let supported_header = crate::records::decal::DesignRecordHeader {
+        id: crate::ids::native_design_record_header_id(stream, supported_at),
+        record_index: 54,
+        class_tag: header.class_tag.clone(),
+        byte_offset: supported_at,
+    };
+    let native_parameters = [parameter, supported_parameter];
+    let decoded = with_scan(&archive(stream, &extended), |scan| {
+        crate::design::decode::parameters::decode_parameter_owners(
+            scan,
+            &native_parameters,
+            &[header, supported_header],
+        )
+    })
+    .expect("a supported owner after an unsupported owner still decodes");
+    assert_eq!(decoded.unparsed, [native_parameters[0].id.clone()]);
+    let projected = super::parameters_for_projection(&native_parameters, &decoded.unparsed);
+    assert_eq!(native_parameters.len(), 2);
+    assert_eq!(projected.len(), 1);
+    assert_eq!(projected[0].record_index, 55);
+    assert_eq!(projected[0].id, native_parameters[1].id);
+    assert!(matches!(
+        super::parameters_for_projection(&native_parameters, &[]),
+        std::borrow::Cow::Borrowed(_)
+    ));
+    assert_eq!(decoded.owners.len(), 1);
+    assert_eq!(decoded.owners[0].record_index(), 54);
+    assert_eq!(decoded.owners[0].parameter_record_index(), 55);
+    assert_eq!(decoded.owners[0].evaluated_value().get(), 6.0);
 }
 
 #[test]

@@ -99,6 +99,8 @@ pub(crate) enum F3dLossCode {
     ParameterRecordUnparsed,
     /// Design parameter owner bindings have no recognized feature scope.
     ParameterOwnerUnrecognized,
+    /// Design parameters retain owner frames that match no admitted grammar.
+    ParameterOwnerUnparsed,
     /// Design parameters retain unit tokens without a settled quantity kind.
     ParameterUnitUntyped,
     /// Material Distance properties retain unit tags without a length conversion.
@@ -292,6 +294,7 @@ impl F3dLossCode {
         Self::ParameterUnprojected,
         Self::ParameterRecordUnparsed,
         Self::ParameterOwnerUnrecognized,
+        Self::ParameterOwnerUnparsed,
         Self::ParameterUnitUntyped,
         Self::MaterialDistanceUnitUntyped,
         Self::FaceAppearanceAmbiguous,
@@ -412,6 +415,7 @@ impl F3dLossCode {
             Self::ParameterUnprojected => "parameter.unprojected",
             Self::ParameterRecordUnparsed => "parameter.record-unparsed",
             Self::ParameterOwnerUnrecognized => "parameter.owner-unrecognized",
+            Self::ParameterOwnerUnparsed => "parameter.owner-unparsed",
             Self::ParameterUnitUntyped => "parameter.unit-untyped",
             Self::MaterialDistanceUnitUntyped => "material.distance-unit-untyped",
             Self::FaceAppearanceAmbiguous => "material.face-appearance-ambiguous",
@@ -545,6 +549,7 @@ impl F3dLossCode {
             | Self::FeatureScopePayloadUninterpreted
             | Self::FeatureScopeEnvelopeSuperseded
             | Self::ParameterUnprojected
+            | Self::ParameterOwnerUnparsed
             | Self::ParameterRecordUnparsed
             | Self::ParameterOwnerUnrecognized
             | Self::ParameterUnitUntyped
@@ -618,6 +623,7 @@ impl F3dLossCode {
             | Self::BodyReferenceTailUntyped
             | Self::PlacementConstructionUntyped
             | Self::ConstructionTrackingPathUntyped
+            | Self::ParameterOwnerUnparsed
             | Self::ParameterRecordUnparsed
             | Self::HistoryRecordFramingFailed
             | Self::SolvedRecordUntyped
@@ -809,6 +815,7 @@ mod tests {
                 "parameter.unprojected",
                 "parameter.record-unparsed",
                 "parameter.owner-unrecognized",
+                "parameter.owner-unparsed",
                 "parameter.unit-untyped",
                 "material.distance-unit-untyped",
                 "material.face-appearance-ambiguous",
