@@ -103,7 +103,7 @@ pub(crate) fn definitions(
             part_number: None,
             bom_properties,
             bodies: Vec::new(),
-            native_ref: Some(format!("definition {index}")),
+            native_ref: None,
         });
         ctx.admit_entities(
             u64_from_index(ir.model.entity_count()),
@@ -192,13 +192,12 @@ pub(crate) fn occurrences(
             parent: OccurrenceParent::Root {},
             ordinal: u32::try_from(ordinal)
                 .map_err(|_| CodecError::malformed("root occurrence ordinal exceeds u32"))?,
-            transform: Transform::identity(),
+            transform: Some(Transform::identity()),
             linked_prototype: None,
-            scale: [FiniteReal::ONE; 3],
             name: None,
             visible: None,
             link: None,
-            native_ref: Some(format!("definition {root}")),
+            native_ref: None,
         });
         expanded.push(Expanded {
             parent: None,
@@ -249,6 +248,20 @@ pub(crate) fn occurrences(
                     (Transform::identity(), FiniteReal::ONE)
                 }
             };
+            let s = scale.get();
+            let transform = match Transform::affine([
+                [s, 0.0, 0.0, 0.0],
+                [0.0, s, 0.0, 0.0],
+                [0.0, 0.0, s, 0.0],
+            ])
+            .and_then(|scale| transform.compose(scale).ok())
+            {
+                Some(transform) => transform,
+                None => {
+                    invalid += 1;
+                    Transform::identity()
+                }
+            };
             ctx.retain_bytes(
                 u64_from_index(child.feature_id.len()),
                 RETAIN_OCCURRENCE_NAME,
@@ -263,15 +276,12 @@ pub(crate) fn occurrences(
                 },
                 ordinal: u32::try_from(ordinal)
                     .map_err(|_| CodecError::malformed("child occurrence ordinal exceeds u32"))?,
-                transform,
+                transform: Some(transform),
                 linked_prototype: None,
-                scale: [scale; 3],
                 name: (!child.feature_id.is_empty()).then(|| child.feature_id.to_string()),
                 visible: None,
                 link: None,
-                native_ref: Some(format!(
-                    "definition {parent_definition} occurrence {ordinal}"
-                )),
+                native_ref: None,
             });
             expanded.push(Expanded {
                 parent: Some(parent),
@@ -421,6 +431,7 @@ pub(crate) fn display_geometry(
         None => {
             let body = crate::ids::body(member);
             ir.model.bodies.push(Body {
+                native_ref: None,
                 id: body.clone(),
                 kind: BodyKind::General,
                 regions: Vec::new(),
@@ -450,6 +461,7 @@ pub(crate) fn display_geometry(
                 if let Some(base) = mesh.appearance {
                     used.insert(base);
                     ir.model.appearance_bindings.push(AppearanceBinding {
+                        native_ref: None,
                         id: crate::ids::appearance_binding(member, index),
                         target: AppearanceTarget::Tessellation(id.to_string()),
                         appearance: crate::ids::appearance(member, base),
@@ -580,6 +592,7 @@ fn appearance(member: &str, base: u32, defined: &crate::ol::Appearance) -> (Appe
         }
     }
     let appearance = Appearance {
+        native_ref: None,
         id: crate::ids::appearance(member, base),
         name: (!defined.name.is_empty()).then(|| defined.name.clone()),
         asset_guid: None,

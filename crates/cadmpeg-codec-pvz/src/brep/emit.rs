@@ -289,6 +289,7 @@ impl Writer<'_, '_, '_, '_> {
             };
             self.ctx.charge_entities(1, "pvz exact surface")?;
             self.sink.model.surfaces.push(Surface {
+                native_ref: None,
                 id: id.clone(),
                 geometry: IrSurfaceGeometry::Solved(geometry),
                 source_object: None,
@@ -604,6 +605,7 @@ impl Writer<'_, '_, '_, '_> {
             let id = self.ids.curve(*edge);
             self.ctx.charge_entities(1, "pvz exact curve")?;
             self.sink.model.curves.push(Curve {
+                native_ref: None,
                 id: id.clone(),
                 geometry: IrCurveGeometry::Solved(chart.geometry.clone()),
                 parameter_range: None,
@@ -656,6 +658,7 @@ impl Writer<'_, '_, '_, '_> {
             let merged = merged.contains(edge);
             self.ctx.charge_entities(1, "pvz exact edge")?;
             self.sink.model.edges.push(Edge {
+                native_ref: None,
                 id: id.clone(),
                 carrier,
                 start: self.ids.vertex(start),
@@ -684,6 +687,7 @@ impl Writer<'_, '_, '_, '_> {
                 .edge(cadmpeg_ir::identity_key!("free").colon(Ids::pair(*loop_index, *position)));
             self.ctx.charge_entities(1, "pvz exact edge")?;
             self.sink.model.edges.push(Edge {
+                native_ref: None,
                 id: id.clone(),
                 carrier: EdgeCarrier::Free,
                 start: self.ids.vertex(start),
@@ -711,6 +715,7 @@ impl Writer<'_, '_, '_, '_> {
             self.derived(&point_id);
             let id = self.ids.vertex(*vertex);
             self.sink.model.vertices.push(Vertex {
+                native_ref: None,
                 id: id.clone(),
                 point: point_id,
                 tolerance: PositiveReal::new(tolerance),
@@ -839,6 +844,7 @@ impl Writer<'_, '_, '_, '_> {
                         self.ctx.charge_entities(1, "pvz exact coedge")?;
                         written.insert(coedge_id.clone(), self.sink.model.coedges.len());
                         self.sink.model.coedges.push(Coedge {
+                            native_ref: None,
                             id: coedge_id.clone(),
                             owner_loop: loop_id.clone(),
                             edge: edge_id.clone(),
@@ -860,6 +866,7 @@ impl Writer<'_, '_, '_, '_> {
                     })?;
                     self.ctx.charge_entities(1, "pvz exact loop")?;
                     self.sink.model.loops.push(Loop {
+                        native_ref: None,
                         id: loop_id.clone(),
                         face: face_id.clone(),
                         boundary: LoopBoundary::Ring(boundary),
@@ -886,6 +893,7 @@ impl Writer<'_, '_, '_, '_> {
                 };
                 self.ctx.charge_entities(1, "pvz exact face")?;
                 self.sink.model.faces.push(Face {
+                    native_ref: None,
                     id: face_id.clone(),
                     shell: self.ids.shell(0),
                     surface: self.ids.surface(index),
@@ -984,6 +992,7 @@ impl Writer<'_, '_, '_, '_> {
         self.ctx.charge_entities(1, "pvz exact pcurve")?;
         let fit = fit.and_then(|fit| FitTolerance::try_new(fit).ok());
         self.sink.model.pcurves.push(Pcurve {
+            native_ref: None,
             id: id.clone(),
             geometry,
             metadata: PcurveMetadata::general(None, None, fit),
@@ -1095,6 +1104,7 @@ impl Writer<'_, '_, '_, '_> {
             );
             self.derived(&shell_id);
             self.sink.model.regions.push(Region {
+                native_ref: None,
                 id: region_id.clone(),
                 body: body.clone(),
                 shells: vec![shell_id],
@@ -1123,6 +1133,7 @@ impl Writer<'_, '_, '_, '_> {
             }
             self.ctx.charge_entities(1, "pvz exact body")?;
             self.sink.model.bodies.push(Body {
+                native_ref: None,
                 id: id.clone(),
                 kind,
                 regions,
