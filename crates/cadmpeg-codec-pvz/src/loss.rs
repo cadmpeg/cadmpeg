@@ -95,8 +95,8 @@ pub(crate) enum PvzLossCode {
     TessellationEdgesNotTransferred,
     /// A decoded mesh failed tessellation admission and was not transferred.
     TessellationMeshRejected,
-    /// Exact-stream records with a frame and no settled meaning were kept
-    /// by tag and offset only.
+    /// Exact-stream records with a frame and no settled meaning were not
+    /// transferred.
     ExactRecordUninterpreted,
     /// A face carrier has no neutral surface form.
     ExactSurfaceUntyped,
@@ -116,6 +116,17 @@ pub(crate) enum PvzLossCode {
     ExactLoopOpen,
     /// A face side came from a gauge, not from an outward test.
     ExactFaceSideGauge,
+    /// A derived search ran out of work: a face kept one unclassified region,
+    /// or coincident edge records stayed unpaired.
+    ExactTopologyWorkExhausted,
+    /// Two edge records that one model edge stores once per use were written
+    /// as one neutral edge on the curve of the first record.
+    ExactEdgeUsesMerged,
+    /// A face record with no loop bounds no region and was not transferred.
+    ExactFaceUnboundedOmitted,
+    /// A coedge on a collapsed singular edge away from a chart singularity was
+    /// left out of its loop.
+    ExactCoedgeDegenerateOmitted,
 }
 
 impl PvzLossCode {
@@ -163,6 +174,10 @@ impl PvzLossCode {
         Self::ExactEndpointMismatch,
         Self::ExactLoopOpen,
         Self::ExactFaceSideGauge,
+        Self::ExactTopologyWorkExhausted,
+        Self::ExactEdgeUsesMerged,
+        Self::ExactFaceUnboundedOmitted,
+        Self::ExactCoedgeDegenerateOmitted,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -210,6 +225,10 @@ impl PvzLossCode {
             Self::ExactEndpointMismatch => "exact.endpoint-mismatch",
             Self::ExactLoopOpen => "exact.loop-open",
             Self::ExactFaceSideGauge => "exact.face-side-gauge",
+            Self::ExactTopologyWorkExhausted => "exact.topology-work-exhausted",
+            Self::ExactEdgeUsesMerged => "exact.edge-uses-merged",
+            Self::ExactFaceUnboundedOmitted => "exact.face-unbounded-omitted",
+            Self::ExactCoedgeDegenerateOmitted => "exact.coedge-degenerate-omitted",
         }
     }
 
@@ -255,7 +274,11 @@ impl PvzLossCode {
             | Self::ExactSecondaryPcurveOmitted
             | Self::ExactEndpointMismatch
             | Self::ExactLoopOpen
-            | Self::ExactFaceSideGauge => Severity::Warning,
+            | Self::ExactFaceSideGauge
+            | Self::ExactTopologyWorkExhausted
+            | Self::ExactEdgeUsesMerged
+            | Self::ExactFaceUnboundedOmitted
+            | Self::ExactCoedgeDegenerateOmitted => Severity::Warning,
             Self::ExactSurfaceUntyped => Severity::Error,
             Self::StructureMemberMalformed => Severity::Blocking,
         }
@@ -310,6 +333,10 @@ impl PvzLossCode {
             }
             Self::ExactLoopOpen => LossTaxonomy::SourceTopologyInvalid,
             Self::ExactFaceSideGauge => LossTaxonomy::TopologyGaugeSubstituted,
+            Self::ExactTopologyWorkExhausted => LossTaxonomy::TopologyNotTransferred,
+            Self::ExactEdgeUsesMerged => LossTaxonomy::DecodeDiagnostic,
+            Self::ExactFaceUnboundedOmitted => LossTaxonomy::GeometryNotTransferred,
+            Self::ExactCoedgeDegenerateOmitted => LossTaxonomy::TopologyNotTransferred,
         }
     }
 
@@ -318,7 +345,8 @@ impl PvzLossCode {
     pub(crate) fn tally_message(self, member: &str, count: usize) -> String {
         let what = match self {
             Self::ExactRecordUninterpreted => {
-                "exact-stream records kept by tag and offset only (tag 0x0a and undefined tags)"
+                "exact-stream records with no settled meaning not transferred (tag 0x0a and \
+                 undefined tags)"
                     .to_owned()
             }
             Self::ExactSurfaceUntyped => {
@@ -343,6 +371,18 @@ impl PvzLossCode {
             Self::ExactFaceSideGauge => {
                 "faces whose side is a propagation gauge, or side conflicts between faces"
                     .to_owned()
+            }
+            Self::ExactTopologyWorkExhausted => {
+                "derived topology searches stopped by the work limit".to_owned()
+            }
+            Self::ExactEdgeUsesMerged => {
+                "edge records written as the edge of a coincident record".to_owned()
+            }
+            Self::ExactFaceUnboundedOmitted => {
+                "face records without a loop not transferred".to_owned()
+            }
+            Self::ExactCoedgeDegenerateOmitted => {
+                "coedges on collapsed singular edges left out of their loops".to_owned()
             }
             other => format!("instances of {}", other.code()),
         };
@@ -418,6 +458,10 @@ mod tests {
                 "exact.endpoint-mismatch",
                 "exact.loop-open",
                 "exact.face-side-gauge",
+                "exact.topology-work-exhausted",
+                "exact.edge-uses-merged",
+                "exact.face-unbounded-omitted",
+                "exact.coedge-degenerate-omitted",
             ]
         );
     }

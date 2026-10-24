@@ -54,15 +54,11 @@ pub(crate) struct ExactModel {
     pub(crate) opaque: Vec<OpaqueRecord>,
 }
 
-/// A record kept by tag and position only.
+/// A record with a defined frame and no settled meaning.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct OpaqueRecord {
     /// TLV tag.
     pub(crate) tag: u32,
-    /// Payload length.
-    pub(crate) length: usize,
-    /// Payload offset in the expanded stream.
-    pub(crate) offset: usize,
 }
 
 /// One face: a supporting surface and the loops that follow it.
@@ -78,17 +74,9 @@ pub(crate) struct Face {
     pub(crate) offset: usize,
 }
 
-/// Head bytes and range pairs of a surface record (§8.3).
+/// Geometry of a surface record (§8.3).
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SurfaceRecord {
-    /// `flags` head byte.
-    pub(crate) flags: u8,
-    /// `marker` head byte.
-    pub(crate) marker: u8,
-    /// u-range pair, present when bit 7 of `flags` is set.
-    pub(crate) u_range: Option<Vec2>,
-    /// v-range pair, present when bit 0 of `marker` is set.
-    pub(crate) v_range: Option<Vec2>,
     /// Surface geometry.
     pub(crate) geometry: SurfaceGeometry,
     /// Embedded B-spline of an analytic surface (§8.10).
@@ -204,8 +192,8 @@ pub(crate) struct BsplineSurface {
 pub(crate) struct Loop {
     /// Owning face index.
     pub(crate) face: usize,
-    /// Loop group: the global index of the group's first loop.
-    pub(crate) group: usize,
+    /// The loop is an inner loop (a hole) of its face: its marker is not −2.
+    pub(crate) inner: bool,
     /// Coedges in record order.
     pub(crate) coedges: Vec<Coedge>,
     /// Payload offset of the loop record.
@@ -215,7 +203,7 @@ pub(crate) struct Loop {
 /// One coedge record (§8.12).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Coedge {
-    /// Edge index.
+    /// Edge index among all edge records.
     pub(crate) edge: Option<usize>,
     /// `orientation` byte.
     pub(crate) orientation: u8,
@@ -230,10 +218,8 @@ pub(crate) struct Coedge {
 /// One singular edge use (§8.13).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct SingularUse {
-    /// Edge index.
+    /// Edge index among all edge records.
     pub(crate) edge: usize,
-    /// `t_start`, `t_end`.
-    pub(crate) range: Vec2,
     /// Payload offset of the record.
     pub(crate) offset: usize,
 }
@@ -241,8 +227,6 @@ pub(crate) struct SingularUse {
 /// One edge curve record (§8.15).
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct EdgeCurve {
-    /// `flags` head byte.
-    pub(crate) flags: u8,
     /// Curve geometry.
     pub(crate) geometry: CurveGeometry<3>,
     /// Payload offset of the record.
@@ -252,8 +236,6 @@ pub(crate) struct EdgeCurve {
 /// One pcurve record (§8.16).
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Pcurve {
-    /// `flags` head byte.
-    pub(crate) flags: u8,
     /// Curve geometry in a surface parameter domain.
     pub(crate) geometry: CurveGeometry<2>,
     /// Payload offset of the record.

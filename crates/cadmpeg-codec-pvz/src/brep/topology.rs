@@ -5,16 +5,18 @@
 //! The stream stores no face side. [`resolve`] chooses, per face, whether
 //! the neutral loops run with or against the stored order, so that the two
 //! uses of every shared edge, and of every pair of coincident unshared
-//! edges, run opposite ways. It then turns each closed component outward by
-//! a vote of its extreme points along the six axis directions. The winding
+//! edges, run opposite ways. It then turns each component with few open
+//! edges outward by a vote of its extreme points along the six axis
+//! directions. The winding
 //! of a face's outer loop in its pcurve domain relates the loop direction to
 //! the domain normal.
 
 use std::collections::BTreeSet;
 
+use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_core::CodecError;
 
-use super::eval::{cross, distance, dot, norm, scale, sub};
+use super::eval::{cross, distance, dot, norm, scale, sub, NEAREST_POINT_WORK};
 use super::model::{CurveGeometry, ExactModel, Vec2, Vec3};
 use super::resolve::{
     closure_gap, coedge_geometry, domain_periods, domain_point, edges_along, encloses,
@@ -32,8 +34,23 @@ const NORMAL_STEP: f64 = 1.0e-6;
 const INTERIOR_SAMPLES: usize = 6;
 /// Samples that test whether a singular-use curve collapses.
 const COLLAPSE_SAMPLES: usize = 8;
+/// A component takes the outward test when at most one in this many of its
+/// edge classes is open: it then encloses a volume up to small gaps.
+const OPEN_CLASS_DIVISOR: usize = 4;
 /// Smallest `|n·x̂|` of a unit normal that decides the side of a component.
 const SIDE_DECISION: f64 = 0.1;
+/// Floor of the derived-search work of one stream: containment tests in
+/// face region nesting, charged per polygon sample, and coincident-edge
+/// candidate tests.
+pub(crate) const MAX_TOPOLOGY_WORK: usize = 1 << 24;
+/// Derived-search work allowed per face, loop, coedge, and edge record.
+const TOPOLOGY_WORK_PER_RECORD: usize = 1 << 10;
+/// Natural-interval fractions of the interior samples that a coincident
+/// edge must pass through.
+const PARTNER_FRACTIONS: [f64; 3] = [0.25, 0.5, 0.75];
+/// Work of one coincidence test of two curves: the nearest-point searches
+/// for both sample sets.
+const PARTNER_COINCIDENCE_WORK: usize = 2 * PARTNER_FRACTIONS.len() * NEAREST_POINT_WORK;
 
 /// One loop with its resolved coedges.
 #[derive(Debug, Clone, PartialEq)]
@@ -69,6 +86,9 @@ pub(crate) struct FaceTopology {
     pub(crate) reversed: bool,
     /// The side came from an outward test of a closed component.
     pub(crate) side_derived: bool,
+    /// [`MAX_TOPOLOGY_WORK`] ran out before the loops were nested; the
+    /// face has one unclassified region.
+    pub(crate) nesting_exhausted: bool,
 }
 
 /// Start and end slots of a coedge end in stored order.
@@ -100,9 +120,22 @@ pub(crate) struct Topology {
     pub(crate) split_junctions: usize,
     /// Two-use edges whose uses cannot run opposite ways.
     pub(crate) side_conflicts: usize,
+    /// Derived searches that [`MAX_TOPOLOGY_WORK`] stopped: face region
+    /// nesting and coincident-edge pairing.
+    pub(crate) work_exhausted: usize,
+    /// Coincident partner of each single-use edge that one model edge stores
+    /// once per use (§8.20): the edge with the smaller index that the class
+    /// is written as, and whether both edges run the same way.
+    pub(crate) partners: std::collections::BTreeMap<usize, (usize, bool)>,
 }
 
 impl Topology {
+    /// The edge that edge record `edge` is written as, and whether that edge
+    /// runs the same way as the record.
+    pub(crate) fn written_edge(&self, edge: usize) -> (usize, bool) {
+        self.partners.get(&edge).copied().unwrap_or((edge, true))
+    }
+
     /// End slots of a coedge in stored order.
     pub(crate) fn end_slots(
         &self,
@@ -133,11 +166,14 @@ impl Topology {
     }
 }
 
-/// Resolves loops, regions, vertices, and face sides.
-pub(crate) fn resolve(model: &ExactModel) -> Result<Topology, CodecError> {
+/// Resolves loops, regions, vertices, and face sides with the derived-search
+/// work limit `work`.
+pub(crate) fn resolve(model: &ExactModel, work: usize) -> Result<Topology, CodecError> {
+    let budget = WorkBudget::new(work);
     let mut faces: Vec<FaceTopology> = (0..model.faces.len())
-        .map(|face| face_topology(model, face))
+        .map(|face| face_topology(model, face, &budget))
         .collect();
+    let regions_exhausted = faces.iter().filter(|face| face.nesting_exhausted).count();
     let mut free_slots = std::collections::BTreeMap::new();
     let slot_overflow = || CodecError::malformed("exact stream has too many coedge ends");
     let mut next_slot = model.edges.len().checked_mul(2).ok_or_else(slot_overflow)?;
@@ -171,12 +207,26 @@ pub(crate) fn resolve(model: &ExactModel) -> Result<Topology, CodecError> {
         singular_edges,
         split_junctions: 0,
         side_conflicts: 0,
+        work_exhausted: regions_exhausted,
+        partners: std::collections::BTreeMap::new(),
     };
-    let side_conflicts = orient(model, &mut faces, &topology.singular_edges);
+    let (side_conflicts, partners) = orient(model, &mut faces, &topology.singular_edges, &budget);
     topology.side_conflicts = side_conflicts;
+    topology.work_exhausted += usize::from(budget.exhausted());
+    topology.partners = partners;
     topology.faces = faces;
     join_vertices(model, &mut topology, next_slot);
     Ok(topology)
+}
+
+/// Work limit of the derived searches of `model`: the larger of
+/// [`MAX_TOPOLOGY_WORK`] and [`TOPOLOGY_WORK_PER_RECORD`] per record.
+pub(crate) fn work_limit(model: &ExactModel) -> usize {
+    let coedges: usize = model.loops.iter().map(|record| record.coedges.len()).sum();
+    let records = model.faces.len() + model.loops.len() + coedges + model.edges.len();
+    records
+        .checked_mul(TOPOLOGY_WORK_PER_RECORD)
+        .map_or(MAX_TOPOLOGY_WORK, |work| work.max(MAX_TOPOLOGY_WORK))
 }
 
 /// Whether a curve stays within the endpoint tolerance of its start.
@@ -195,7 +245,7 @@ fn collapsed(curve: &CurveGeometry<3>) -> bool {
     })
 }
 
-fn face_topology(model: &ExactModel, face: usize) -> FaceTopology {
+fn face_topology(model: &ExactModel, face: usize, budget: &WorkBudget) -> FaceTopology {
     let record = &model.faces[face];
     let slot = face_slot(model, face);
     let periods = slot.map_or([None, None], |slot| {
@@ -225,16 +275,23 @@ fn face_topology(model: &ExactModel, face: usize) -> FaceTopology {
             }
         })
         .collect();
-    let groups: Vec<usize> = record
+    let inner: Vec<bool> = record
         .loops
         .iter()
-        .map(|index| model.loops[*index].group)
+        .map(|index| model.loops[*index].inner)
         .collect();
     let polygons: Vec<Option<LoopPolygon>> = loops
         .iter()
         .map(|topology| topology.polygon.clone())
         .collect();
-    let regions = face_regions(&groups, &polygons, periods);
+    let nested = face_regions(&inner, &polygons, periods, budget);
+    let nesting_exhausted = nested.is_none();
+    let regions = nested.unwrap_or_else(|| {
+        vec![RegionLoops {
+            loops: (0..inner.len()).collect(),
+            classified: false,
+        }]
+    });
     let winding = regions
         .iter()
         .find(|region| region.classified)
@@ -254,6 +311,7 @@ fn face_topology(model: &ExactModel, face: usize) -> FaceTopology {
         winding,
         reversed: false,
         side_derived: false,
+        nesting_exhausted,
     }
 }
 
@@ -336,78 +394,201 @@ fn propagate(
     (component_of, components, conflicts / 2)
 }
 
-/// Quantised end key of a coincident-edge search, in units of the endpoint
-/// tolerance.
-fn end_key(point: Vec3) -> Option<[i64; 3]> {
+/// Sample points of a single-use edge for the coincident-edge search: the
+/// ends, the interior samples at [`PARTNER_FRACTIONS`], and the natural
+/// interval.
+struct EdgeShape {
+    ends: [Vec3; 2],
+    interior: Vec<Vec3>,
+    interval: Vec2,
+}
+
+impl EdgeShape {
+    fn of(curve: &CurveGeometry<3>) -> Option<Self> {
+        let [low, high] = super::eval::curve_interval(curve)?;
+        let at = |fraction: f64| super::eval::curve_point(curve, low + (high - low) * fraction);
+        let interior = PARTNER_FRACTIONS
+            .iter()
+            .map(|fraction| at(*fraction))
+            .collect::<Option<Vec<Vec3>>>()?;
+        let ends = [at(0.0)?, at(1.0)?];
+        let finite = ends
+            .iter()
+            .chain(&interior)
+            .all(|point| point.iter().all(|value| value.is_finite()));
+        finite.then_some(Self {
+            ends,
+            interior,
+            interval: [low, high],
+        })
+    }
+}
+
+/// Cell of a point in the grid of [`ENDPOINT_TOLERANCE`] cells.
+fn end_cell(point: Vec3) -> Option<[i64; 3]> {
     let cell = |value: f64| {
-        cadmpeg_core::convert::truncate_f64_to_i64((value / ENDPOINT_TOLERANCE).round())
+        cadmpeg_core::convert::truncate_f64_to_i64((value / ENDPOINT_TOLERANCE).floor())
     };
     Some([cell(point[0])?, cell(point[1])?, cell(point[2])?])
 }
 
-/// Pairs each edge that has one coedge use with a coincident edge that has
-/// one coedge use: equal ends and equal midpoints within the endpoint
-/// tolerance. The value is the partner with the smaller index and whether
-/// both edges run the same way.
+/// Cells within one step of `cell` on every axis: every point within
+/// [`ENDPOINT_TOLERANCE`] of a point of `cell` lies in one of them.
+fn neighbour_cells(cell: [i64; 3]) -> impl Iterator<Item = [i64; 3]> {
+    let steps = [-1_i64, 0, 1];
+    steps.into_iter().flat_map(move |x| {
+        steps.into_iter().flat_map(move |y| {
+            steps.into_iter().filter_map(move |z| {
+                Some([
+                    cell[0].checked_add(x)?,
+                    cell[1].checked_add(y)?,
+                    cell[2].checked_add(z)?,
+                ])
+            })
+        })
+    })
+}
+
+/// Largest distance from an interior sample of either edge to the other
+/// curve, or `None` when it exceeds the endpoint tolerance.
+fn coincidence_gap(
+    model: &ExactModel,
+    (edge, shape): (usize, &EdgeShape),
+    (other, other_shape): (usize, &EdgeShape),
+) -> Option<f64> {
+    let gaps = |points: &[Vec3], curve: usize, interval: Vec2| {
+        points.iter().try_fold(0.0_f64, |worst, point| {
+            let gap =
+                super::eval::nearest_distance(&model.edges[curve].geometry, interval, *point)?;
+            (gap <= ENDPOINT_TOLERANCE).then_some(worst.max(gap))
+        })
+    };
+    Some(
+        gaps(&shape.interior, other, other_shape.interval)?.max(gaps(
+            &other_shape.interior,
+            edge,
+            shape.interval,
+        )?),
+    )
+}
+
+/// Pairs each edge that has one coedge use, is not a point, and is not a
+/// collapsed singular edge with a coincident edge of the same kind (§8.20):
+/// both ends meet within the endpoint tolerance and the interior samples of
+/// each lie on the other. Pairs are taken in order
+/// of their largest sample distance, so an edge pairs with the nearest of
+/// several coincident edges. The value is the partner with the smaller index
+/// and whether both edges run the same way. The candidate tests are charged
+/// to `budget`; the search stops when it runs out.
 fn coincident_partners(
     model: &ExactModel,
     uses: &[Vec<(usize, bool)>],
+    singular: &BTreeSet<usize>,
+    budget: &WorkBudget,
 ) -> std::collections::BTreeMap<usize, (usize, bool)> {
-    let mut buckets: std::collections::BTreeMap<([i64; 3], [i64; 3]), Vec<usize>> =
+    let mut shapes: std::collections::BTreeMap<usize, EdgeShape> =
         std::collections::BTreeMap::new();
-    let mut shape: std::collections::BTreeMap<usize, [Vec3; 3]> = std::collections::BTreeMap::new();
+    let mut cells: std::collections::BTreeMap<[i64; 3], Vec<usize>> =
+        std::collections::BTreeMap::new();
     for (edge, list) in uses.iter().enumerate() {
-        if list.len() != 1 {
+        let geometry = &model.edges[edge].geometry;
+        if list.len() != 1
+            || singular.contains(&edge)
+            || matches!(geometry, CurveGeometry::Point(_))
+        {
             continue;
         }
-        let geometry = &model.edges[edge].geometry;
-        let Some([low, high]) = super::eval::curve_interval(geometry) else {
+        let Some(shape) = EdgeShape::of(geometry) else {
             continue;
         };
-        let (Some(start), Some(middle), Some(end)) = (
-            super::eval::curve_point(geometry, low),
-            super::eval::curve_point(geometry, low.midpoint(high)),
-            super::eval::curve_point(geometry, high),
-        ) else {
+        let Some(cell) = end_cell(shape.ends[0]) else {
             continue;
         };
-        let (Some(a), Some(b)) = (end_key(start), end_key(end)) else {
-            continue;
-        };
-        buckets
-            .entry(if a <= b { (a, b) } else { (b, a) })
-            .or_default()
-            .push(edge);
-        shape.insert(edge, [start, middle, end]);
+        cells.entry(cell).or_default().push(edge);
+        shapes.insert(edge, shape);
     }
-    let mut partners = std::collections::BTreeMap::new();
-    for members in buckets.values() {
-        let mut free: Vec<usize> = members.clone();
-        while let Some(first) = free.first().copied() {
-            free.remove(0);
-            let [start, middle, end] = shape[&first];
-            let found = free.iter().position(|other| {
-                let [other_start, other_middle, other_end] = shape[other];
-                distance(middle, other_middle) <= ENDPOINT_TOLERANCE
-                    && ((distance(start, other_start) <= ENDPOINT_TOLERANCE
-                        && distance(end, other_end) <= ENDPOINT_TOLERANCE)
-                        || (distance(start, other_end) <= ENDPOINT_TOLERANCE
-                            && distance(end, other_start) <= ENDPOINT_TOLERANCE))
-            });
-            if let Some(position) = found {
-                let other = free.remove(position);
-                let same = distance(start, shape[&other][0]) <= ENDPOINT_TOLERANCE;
-                partners.insert(other, (first, same));
+    let mut candidates: Vec<(f64, usize, usize, bool)> = Vec::new();
+    'edges: for (edge, shape) in &shapes {
+        let [start, end] = shape.ends;
+        let mut near: BTreeSet<usize> = BTreeSet::new();
+        for point in [start, end] {
+            let Some(cell) = end_cell(point) else {
+                continue;
+            };
+            for neighbour in neighbour_cells(cell) {
+                near.extend(cells.get(&neighbour).into_iter().flatten().copied());
             }
         }
+        for other in near.range(edge + 1..) {
+            if !budget.charge() {
+                break 'edges;
+            }
+            let other_shape = &shapes[other];
+            let [other_start, other_end] = other_shape.ends;
+            let forward = distance(start, other_start).max(distance(end, other_end));
+            let backward = distance(start, other_end).max(distance(end, other_start));
+            if forward.min(backward) > ENDPOINT_TOLERANCE {
+                continue;
+            }
+            let same = if forward.max(backward) <= ENDPOINT_TOLERANCE {
+                let [early, .., late] = other_shape.interior.as_slice() else {
+                    continue;
+                };
+                let probe = shape.interior[0];
+                distance(probe, *early) <= distance(probe, *late)
+            } else {
+                forward <= backward
+            };
+            let matched = shape
+                .interior
+                .iter()
+                .zip(if same {
+                    other_shape.interior.clone()
+                } else {
+                    other_shape.interior.iter().rev().copied().collect()
+                })
+                .map(|(a, b)| distance(*a, b))
+                .fold(0.0_f64, f64::max);
+            let gap = if matched <= ENDPOINT_TOLERANCE {
+                matched
+            } else {
+                if !budget.charge_by(PARTNER_COINCIDENCE_WORK) {
+                    break 'edges;
+                }
+                let Some(gap) = coincidence_gap(model, (*edge, shape), (*other, other_shape))
+                else {
+                    continue;
+                };
+                gap
+            };
+            let ends = if same { forward } else { backward };
+            candidates.push((gap.max(ends), *edge, *other, same));
+        }
+    }
+    candidates.sort_by(|a, b| a.0.total_cmp(&b.0).then((a.1, a.2).cmp(&(b.1, b.2))));
+    let mut paired = BTreeSet::new();
+    let mut partners = std::collections::BTreeMap::new();
+    for (_, edge, other, same) in candidates {
+        if paired.contains(&edge) || paired.contains(&other) {
+            continue;
+        }
+        paired.insert(edge);
+        paired.insert(other);
+        partners.insert(other, (edge, same));
     }
     partners
 }
 
 /// Chooses `reversed` for every face so that the uses of each two-use edge
 /// run opposite ways, then turns closed components outward. Returns the
-/// number of two-use edges whose constraint cannot hold.
-fn orient(model: &ExactModel, faces: &mut [FaceTopology], singular: &BTreeSet<usize>) -> usize {
+/// number of two-use edges whose constraint cannot hold and the coincident
+/// partners of single-use edges.
+fn orient(
+    model: &ExactModel,
+    faces: &mut [FaceTopology],
+    singular: &BTreeSet<usize>,
+    budget: &WorkBudget,
+) -> (usize, std::collections::BTreeMap<usize, (usize, bool)>) {
     let uses = edge_uses(model, faces);
     let mut seam_conflicts = 0;
     let mut shared = Vec::new();
@@ -426,7 +607,7 @@ fn orient(model: &ExactModel, faces: &mut [FaceTopology], singular: &BTreeSet<us
     let mut reversed: Vec<bool> = faces.iter().map(|face| face.reversed).collect();
     let (component_of, components, shared_conflicts) =
         propagate(faces.len(), &shared, &mut reversed);
-    let partners = coincident_partners(model, &uses);
+    let partners = coincident_partners(model, &uses, singular, budget);
     let mut linked = Vec::new();
     for (edge, (class, same)) in &partners {
         let ([(a, along_a)], [(b, along_b)]) = (uses[*class].as_slice(), uses[*edge].as_slice())
@@ -448,8 +629,8 @@ fn orient(model: &ExactModel, faces: &mut [FaceTopology], singular: &BTreeSet<us
         face.reversed = *flag;
     }
     let classes = class_uses(&uses, &partners);
-    let mut closed = vec![true; groups.len()];
-    let mut bounded = vec![false; groups.len()];
+    let mut closed_classes: Vec<usize> = groups.iter().map(|_| 0).collect();
+    let mut open_classes = closed_classes.clone();
     for (edge, list) in classes.iter().enumerate() {
         if singular.contains(&edge) {
             continue;
@@ -459,14 +640,19 @@ fn orient(model: &ExactModel, faces: &mut [FaceTopology], singular: &BTreeSet<us
             .map(|(face, _)| group_of[component_of[*face]])
             .collect();
         for owner in &owners {
-            bounded[*owner] = true;
-            if list.len() != 2 || owners.len() != 1 {
-                closed[*owner] = false;
+            if list.len() == 2 && owners.len() == 1 {
+                closed_classes[*owner] += 1;
+            } else {
+                open_classes[*owner] += 1;
             }
         }
     }
     for (group, members) in groups.iter().enumerate() {
-        if !(closed[group] && bounded[group]) {
+        let encloses = closed_classes[group] > 0
+            && open_classes[group]
+                .checked_mul(OPEN_CLASS_DIVISOR)
+                .is_some_and(|open| open <= closed_classes[group] + open_classes[group]);
+        if !encloses {
             continue;
         }
         let group_faces: Vec<usize> = members
@@ -482,7 +668,7 @@ fn orient(model: &ExactModel, faces: &mut [FaceTopology], singular: &BTreeSet<us
             }
         }
     }
-    shared_conflicts + seam_conflicts
+    (shared_conflicts + seam_conflicts, partners)
 }
 
 /// Unit normal of the domain surface of `face` at `uv`, from central
@@ -648,14 +834,16 @@ fn join_vertices(model: &ExactModel, topology: &mut Topology, slots: usize) {
             points[2 * edge + 1] = Some(end);
         }
     }
+    let loops: std::collections::BTreeMap<usize, &LoopTopology> = topology
+        .faces
+        .iter()
+        .flat_map(|face| face.loops.iter())
+        .map(|loop_| (loop_.index, loop_))
+        .collect();
     for ((loop_index, position), base) in &topology.free_slots {
-        let ends = topology
-            .faces
-            .iter()
-            .flat_map(|face| face.loops.iter())
-            .find_map(|loop_| {
-                (loop_.index == *loop_index).then(|| loop_.coedges.get(*position)?.ends)?
-            });
+        let ends = loops
+            .get(loop_index)
+            .and_then(|loop_| loop_.coedges.get(*position)?.ends);
         if let Some([start, end]) = ends {
             points[*base] = Some(start);
             points[*base + 1] = Some(end);
@@ -663,6 +851,15 @@ fn join_vertices(model: &ExactModel, topology: &mut Topology, slots: usize) {
     }
     for edge in &topology.singular_edges {
         union(&mut parent, 2 * edge, 2 * edge + 1);
+    }
+    for (edge, (class, same)) in &topology.partners {
+        let (start, end) = if *same {
+            (2 * class, 2 * class + 1)
+        } else {
+            (2 * class + 1, 2 * class)
+        };
+        union(&mut parent, 2 * edge, start);
+        union(&mut parent, 2 * edge + 1, end);
     }
     let mut split = 0;
     for face in &topology.faces {

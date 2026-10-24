@@ -16,8 +16,8 @@ use cadmpeg_ir::document::Model;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::pcurve::{Pcurve, PcurveGeometry, PcurveMetadata};
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry as IrCurveGeometry, DirectedParameterRange, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, Surface, SurfaceGeometry as IrSurfaceGeometry,
+    Curve, CurveGeometry as IrCurveGeometry, DirectedParameterRange, FitTolerance,
+    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry as IrSurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, IdentityKey, LoopId, PcurveId, PointId, RegionId,
@@ -32,9 +32,9 @@ use cadmpeg_ir::topology::{
 };
 use cadmpeg_ir::Exactness;
 
-use super::eval::{cross, curve_interval, dot, scale};
+use super::eval::{cross, curve_interval, dot, nearest_distance, norm, scale};
 use super::frames::{self, CarrierRefusal, CurveChart, SurfaceChart, UvMap, MILLIMETRES_PER_METRE};
-use super::model::{ExactModel, SurfaceGeometry, Vec2, Vec3};
+use super::model::{CurveGeometry, ExactModel, SurfaceGeometry, Vec2, Vec3};
 use super::resolve::{domain_point, PcurveSlot, ENDPOINT_TOLERANCE};
 use super::topology::{self, Topology};
 use crate::loss::PvzLossCode;
@@ -45,6 +45,16 @@ const RESIDUAL_MARGIN: f64 = 1.5;
 /// Factor between the spread of the ends joined into a vertex and the
 /// vertex tolerance.
 const SPREAD_MARGIN: f64 = 1.5;
+/// Chord midpoints of one polyline pcurve that its fit tolerance is
+/// measured at.
+const CHORD_SAMPLES: usize = 64;
+/// Loop samples of a face that vote on the side of its embedded B-spline.
+const SIDE_SAMPLES: usize = 16;
+/// Smallest `|n·n'|` of two unit normals that votes on the side.
+const SIDE_AGREEMENT: f64 = 0.5;
+/// Pcurve-domain distance between the ends of a pcurve above which a coedge
+/// on a collapsed edge spans a chart singularity.
+const DOMAIN_EXTENT_TOLERANCE: f64 = 1.0e-9;
 
 /// Destination of the neutral records of one exact stream.
 pub(crate) struct Sink<'s> {
@@ -93,6 +103,14 @@ impl Ids<'_> {
         BodyId::compose(
             &cadmpeg_ir::identity_namespace!("pvz", "model", "body"),
             self.scope.clone(),
+        )
+    }
+
+    /// The body of the open shells of a stream that also has closed shells.
+    fn sheet_body(&self) -> BodyId {
+        BodyId::compose(
+            &cadmpeg_ir::identity_namespace!("pvz", "model", "body"),
+            self.scope.clone().colon(cadmpeg_ir::identity_key!("sheet")),
         )
     }
 
@@ -157,22 +175,39 @@ fn annotation_error(error: impl std::fmt::Display) -> CodecError {
     CodecError::malformed(format_args!("pvz exact annotation: {error}"))
 }
 
-/// Writes the neutral B-rep of `exact` and returns its body, or `None` when
-/// the stream has no face. The body is a solid when every shell is closed,
-/// a sheet when none is, and general otherwise.
+/// Writes the neutral B-rep of `exact` and returns its bodies: a solid body
+/// of the closed shells and a sheet body of the open shells, the solid
+/// first. A stream without a face that has a loop has no body.
 pub(crate) fn emit(
     ctx: &DecodeContext<'_>,
     exact: &ExactModel,
     scope: &IdentityKey,
     sink: &mut Sink<'_>,
-) -> Result<Option<BodyId>, CodecError> {
+) -> Result<Vec<BodyId>, CodecError> {
+    emit_with_work(ctx, exact, scope, sink, topology::work_limit(exact))
+}
+
+/// [`emit`] with the derived-search work limit `work`.
+fn emit_with_work(
+    ctx: &DecodeContext<'_>,
+    exact: &ExactModel,
+    scope: &IdentityKey,
+    sink: &mut Sink<'_>,
+    work: usize,
+) -> Result<Vec<BodyId>, CodecError> {
     let mut tally = LossTally::default();
     tally.add(PvzLossCode::ExactRecordUninterpreted, exact.opaque.len());
-    if exact.faces.is_empty() {
+    let unbounded = exact
+        .faces
+        .iter()
+        .filter(|face| face.loops.is_empty())
+        .count();
+    tally.add(PvzLossCode::ExactFaceUnboundedOmitted, unbounded);
+    if unbounded == exact.faces.len() {
         tally.notes(sink);
-        return Ok(None);
+        return Ok(Vec::new());
     }
-    let topology = topology::resolve(exact)?;
+    let topology = topology::resolve(exact, work)?;
     let ids = Ids { scope };
     let mut writer = Writer {
         ctx,
@@ -181,11 +216,12 @@ pub(crate) fn emit(
         ids,
         sink,
         tally,
+        dropped: BTreeSet::new(),
     };
-    let body = writer.write()?;
+    let bodies = writer.write()?;
     let Writer { tally, sink, .. } = writer;
     tally.notes(sink);
-    Ok(Some(body))
+    Ok(bodies)
 }
 
 struct Writer<'w, 's, 'c, 'k> {
@@ -195,6 +231,8 @@ struct Writer<'w, 's, 'c, 'k> {
     ids: Ids<'k>,
     sink: &'w mut Sink<'s>,
     tally: LossTally,
+    /// Coedges left out of their loops, keyed by loop and position.
+    dropped: BTreeSet<(usize, usize)>,
 }
 
 impl Writer<'_, '_, '_, '_> {
@@ -214,13 +252,18 @@ impl Writer<'_, '_, '_, '_> {
         self.derived(id);
     }
 
-    fn write(&mut self) -> Result<BodyId, CodecError> {
+    fn write(&mut self) -> Result<Vec<BodyId>, CodecError> {
         let first = Arenas {
             loops: self.sink.model.loops.len(),
             coedges: self.sink.model.coedges.len(),
             faces: self.sink.model.faces.len(),
         };
         let carriers = self.write_surfaces()?;
+        self.dropped = self.degenerate_coedges(&carriers);
+        self.tally.add(
+            PvzLossCode::ExactCoedgeDegenerateOmitted,
+            self.dropped.len(),
+        );
         let used_edges = self.used_edges();
         let charts = self.write_curves(&used_edges)?;
         let used_vertices = self.write_edges(&used_edges, &charts)?;
@@ -229,10 +272,15 @@ impl Writer<'_, '_, '_, '_> {
         self.write_shells(&faces, first)
     }
 
-    /// The neutral carrier of every face, written to the surface arena.
-    fn write_surfaces(&mut self) -> Result<Vec<FaceCarrier>, CodecError> {
+    /// The neutral carrier of every face with a loop, written to the surface
+    /// arena. A face without a loop bounds no region and has none.
+    fn write_surfaces(&mut self) -> Result<Vec<Option<FaceCarrier>>, CodecError> {
         let mut carriers = Vec::new();
         for (index, face) in self.exact.faces.iter().enumerate() {
+            if face.loops.is_empty() {
+                carriers.push(None);
+                continue;
+            }
             let carrier = self.face_carrier(index)?;
             let id = self.ids.surface(index);
             let geometry = match &carrier {
@@ -257,11 +305,11 @@ impl Writer<'_, '_, '_, '_> {
                 Exactness::Unknown
             };
             self.sink.annotations.exactness(id.to_string(), exactness);
-            carriers.push(carrier.unwrap_or(FaceCarrier {
+            carriers.push(Some(carrier.unwrap_or(FaceCarrier {
                 geometry: SolvedSurfaceGeometry::Unknown { record: None },
                 transfer: PcurveTransfer::Omitted,
                 side: 1.0,
-            }));
+            })));
         }
         Ok(carriers)
     }
@@ -325,6 +373,15 @@ impl Writer<'_, '_, '_, '_> {
             (geometry, Some(PcurveSlot::Secondary)) => {
                 if edgeless {
                     return Ok(self.embedded_fallback(index, CarrierRefusal::Untyped, embedded()));
+                }
+                if let SurfaceGeometry::Torus(torus) = geometry {
+                    if norm(torus.major_cos) <= norm(torus.minor_cos) {
+                        return Ok(self.embedded_fallback(
+                            index,
+                            CarrierRefusal::Frame("the torus is a horn or spindle torus"),
+                            embedded(),
+                        ));
+                    }
                 }
                 match frames::analytic_chart(geometry) {
                     Ok(chart) => {
@@ -400,57 +457,124 @@ impl Writer<'_, '_, '_, '_> {
     }
 
     /// Sign of the embedded B-spline normal against the neutral analytic
-    /// normal, at a loop sample of the face.
+    /// normal: the majority over up to [`SIDE_SAMPLES`] loop samples of the
+    /// face where both normals exist and agree or disagree by at least
+    /// [`SIDE_AGREEMENT`]. A sample where a normal vanishes, such as a cone
+    /// apex, does not vote.
     fn secondary_side(&self, index: usize, chart: &SurfaceChart) -> Result<f64, CodecError> {
         let face = &self.exact.faces[index];
-        let sample = self.topology.faces[index]
+        let points: Vec<Vec2> = self.topology.faces[index]
             .loops
             .iter()
-            .find_map(|loop_| loop_.polygon.as_ref()?.points.first().copied());
-        let Some(uv) = sample else {
-            return Ok(1.0);
-        };
-        let (Some(point), Some(normal)) = (
-            domain_point(face, PcurveSlot::Secondary, uv),
-            topology::domain_normal(self.exact, index, PcurveSlot::Secondary, uv),
-        ) else {
-            return Ok(1.0);
-        };
+            .filter_map(|loop_| loop_.polygon.as_ref())
+            .flat_map(|polygon| polygon.points.iter().copied())
+            .collect();
+        let step = points.len().div_ceil(SIDE_SAMPLES).max(1);
         let geometry = IrSurfaceGeometry::Solved(chart.geometry.clone());
-        let [x, y, z] = scale(point, MILLIMETRES_PER_METRE);
-        let Some(parameters) =
-            cadmpeg_ir::eval::analytic_surface_parameters(&geometry, Point3::new(x, y, z))
-        else {
-            return Ok(1.0);
-        };
-        let parameters = parameters.get();
-        let partials = match cadmpeg_ir::eval::surface_partials(
-            self.ctx,
-            &geometry,
-            parameters.u,
-            parameters.v,
-        ) {
-            Ok(partials) => partials.into_raw(),
-            Err(failure) => {
-                failure.non_finite().map_err(CodecError::ResourceLimit)?;
-                return Ok(1.0);
-            }
-        };
         let raw = |vector: cadmpeg_ir::math::Vector3| [vector.x, vector.y, vector.z];
-        let neutral = cross(raw(partials.du), raw(partials.dv));
-        Ok(if dot(normal, neutral) < 0.0 {
-            -1.0
-        } else {
-            1.0
-        })
+        let mut votes = 0_i64;
+        for uv in points.iter().step_by(step) {
+            let (Some(point), Some(normal)) = (
+                domain_point(face, PcurveSlot::Secondary, *uv),
+                topology::domain_normal(self.exact, index, PcurveSlot::Secondary, *uv),
+            ) else {
+                continue;
+            };
+            let [x, y, z] = scale(point, MILLIMETRES_PER_METRE);
+            let Some(parameters) =
+                cadmpeg_ir::eval::analytic_surface_parameters(&geometry, Point3::new(x, y, z))
+            else {
+                continue;
+            };
+            let parameters = parameters.get();
+            let partials = match cadmpeg_ir::eval::surface_partials(
+                self.ctx,
+                &geometry,
+                parameters.u,
+                parameters.v,
+            ) {
+                Ok(partials) => partials.into_raw(),
+                Err(failure) => {
+                    failure.non_finite().map_err(CodecError::ResourceLimit)?;
+                    continue;
+                }
+            };
+            let neutral = cross(raw(partials.du), raw(partials.dv));
+            let length = norm(neutral);
+            if !(length > 0.0 && length.is_finite()) {
+                continue;
+            }
+            let agreement = dot(normal, neutral) / length;
+            if agreement >= SIDE_AGREEMENT {
+                votes += 1;
+            } else if agreement <= -SIDE_AGREEMENT {
+                votes -= 1;
+            }
+        }
+        Ok(if votes < 0 { -1.0 } else { 1.0 })
     }
 
-    /// Edges referenced by coedges, in index order.
+    /// Coedges on a collapsed singular edge whose ends are one vertex, away
+    /// from a chart singularity: their face carrier takes no pcurve for them,
+    /// or their pcurve has no extent in the domain. A loop keeps at least one
+    /// coedge.
+    fn degenerate_coedges(&self, carriers: &[Option<FaceCarrier>]) -> BTreeSet<(usize, usize)> {
+        let mut dropped = BTreeSet::new();
+        for (face, carrier) in self.topology.faces.iter().zip(carriers) {
+            let Some(carrier) = carrier else {
+                continue;
+            };
+            for loop_topology in &face.loops {
+                let record = &self.exact.loops[loop_topology.index];
+                let collapsed: Vec<usize> = record
+                    .coedges
+                    .iter()
+                    .enumerate()
+                    .filter(|(position, coedge)| {
+                        let Some(edge) = coedge.edge else {
+                            return false;
+                        };
+                        let one_vertex = self.topology.slot_vertex.get(2 * edge)
+                            == self.topology.slot_vertex.get(2 * edge + 1);
+                        let extent = loop_topology.coedges[*position]
+                            .uv_ends
+                            .map_or(0.0, |[start, end]| super::eval::distance(start, end));
+                        let singular_chart = matches!(carrier.transfer, PcurveTransfer::Mapped(_))
+                            && extent > DOMAIN_EXTENT_TOLERANCE;
+                        self.topology.singular_edges.contains(&edge)
+                            && one_vertex
+                            && !singular_chart
+                    })
+                    .map(|(position, _)| position)
+                    .collect();
+                if collapsed.len() < record.coedges.len() {
+                    dropped.extend(
+                        collapsed
+                            .into_iter()
+                            .map(|position| (loop_topology.index, position)),
+                    );
+                }
+            }
+        }
+        dropped
+    }
+
+    /// Edges written for the coedges, in index order: each referenced edge
+    /// record, or the coincident partner it is written as.
     fn used_edges(&self) -> BTreeSet<usize> {
         self.exact
             .loops
             .iter()
-            .flat_map(|record| record.coedges.iter().filter_map(|coedge| coedge.edge))
+            .enumerate()
+            .flat_map(|(index, record)| {
+                record
+                    .coedges
+                    .iter()
+                    .enumerate()
+                    .filter(move |(position, _)| !self.dropped.contains(&(index, *position)))
+                    .filter_map(|(_, coedge)| coedge.edge)
+            })
+            .map(|edge| self.topology.written_edge(edge).0)
             .collect()
     }
 
@@ -498,6 +622,16 @@ impl Writer<'_, '_, '_, '_> {
         charts: &BTreeMap<usize, CurveChart>,
     ) -> Result<BTreeSet<usize>, CodecError> {
         let mut vertices = BTreeSet::new();
+        let merged: BTreeSet<usize> = self
+            .topology
+            .partners
+            .values()
+            .map(|(class, _)| *class)
+            .collect();
+        self.tally.add(
+            PvzLossCode::ExactEdgeUsesMerged,
+            self.topology.partners.len(),
+        );
         for edge in used {
             let record = &self.exact.edges[*edge];
             let start = self.topology.slot_vertex[2 * edge];
@@ -519,15 +653,27 @@ impl Writer<'_, '_, '_, '_> {
                 None => EdgeCarrier::Free,
             };
             let id = self.ids.edge(*edge);
+            let merged = merged.contains(edge);
             self.ctx.charge_entities(1, "pvz exact edge")?;
             self.sink.model.edges.push(Edge {
                 id: id.clone(),
                 carrier,
                 start: self.ids.vertex(start),
                 end: self.ids.vertex(end),
-                tolerance: None,
+                tolerance: merged
+                    .then(|| {
+                        PositiveReal::new(
+                            ENDPOINT_TOLERANCE * SPREAD_MARGIN * MILLIMETRES_PER_METRE,
+                        )
+                    })
+                    .flatten(),
             });
             self.located(&id, record.offset, "0x14");
+            if merged {
+                self.sink
+                    .annotations
+                    .exactness(id.to_string(), Exactness::Inferred);
+            }
             vertices.extend([start, end]);
         }
         for ((loop_index, position), base) in &self.topology.free_slots {
@@ -580,7 +726,10 @@ impl Writer<'_, '_, '_, '_> {
 
     /// Writes loops, coedges, pcurves, and faces. Returns, per face record,
     /// the neutral faces of its regions.
-    fn write_faces(&mut self, carriers: &[FaceCarrier]) -> Result<Vec<Vec<FaceId>>, CodecError> {
+    fn write_faces(
+        &mut self,
+        carriers: &[Option<FaceCarrier>],
+    ) -> Result<Vec<Vec<FaceId>>, CodecError> {
         let mut faces = Vec::new();
         let mut radial: BTreeMap<EdgeId, Vec<CoedgeId>> = BTreeMap::new();
         let mut written: BTreeMap<CoedgeId, usize> = BTreeMap::new();
@@ -588,6 +737,9 @@ impl Writer<'_, '_, '_, '_> {
         let mut mismatched = 0;
         let mut gauged = 0;
         for (index, carrier) in carriers.iter().enumerate() {
+            let Some(carrier) = carrier else {
+                continue;
+            };
             let face_topology = &self.topology.faces[index];
             let record = &self.exact.faces[index];
             let reversed = face_topology.reversed;
@@ -628,18 +780,29 @@ impl Writer<'_, '_, '_, '_> {
                     };
                     let mut ring = Vec::new();
                     for coedge_position in order {
+                        if self
+                            .dropped
+                            .contains(&(loop_topology.index, coedge_position))
+                        {
+                            continue;
+                        }
                         let geometry = &loop_topology.coedges[coedge_position];
                         let source =
                             &self.exact.loops[loop_topology.index].coedges[coedge_position];
                         let key = Ids::pair(loop_topology.index, coedge_position);
                         let coedge_id = self.ids.coedge(key.clone());
-                        let edge_id = match source.edge {
-                            Some(edge) => self.ids.edge(edge),
-                            None => self
-                                .ids
-                                .edge(cadmpeg_ir::identity_key!("free").colon(key.clone())),
+                        let (edge_id, same) = match source.edge {
+                            Some(edge) => {
+                                let (written, same) = self.topology.written_edge(edge);
+                                (self.ids.edge(written), same)
+                            }
+                            None => (
+                                self.ids
+                                    .edge(cadmpeg_ir::identity_key!("free").colon(key.clone())),
+                                true,
+                            ),
                         };
-                        let along = loop_topology.along[coedge_position] != reversed;
+                        let along = (loop_topology.along[coedge_position] != reversed) == same;
                         let mut pcurves = Vec::new();
                         if let (PcurveTransfer::Mapped(map), Some((pcurve, _))) =
                             (carrier.transfer, geometry.pcurve)
@@ -649,12 +812,22 @@ impl Writer<'_, '_, '_, '_> {
                                 Ok(pcurve_geometry) => {
                                     let runs =
                                         loop_topology.directions[coedge_position] != reversed;
+                                    let fit = match (&native.geometry, geometry.pcurve, source.edge)
+                                    {
+                                        (
+                                            CurveGeometry::Polyline(points),
+                                            Some((_, slot)),
+                                            Some(edge),
+                                        ) => self.chord_deviation(index, slot, points, edge),
+                                        _ => None,
+                                    };
                                     pcurves.push(self.write_pcurve(
                                         key.clone(),
                                         pcurve_geometry,
                                         native.offset,
                                         geometry.interval,
                                         runs,
+                                        fit,
                                     )?);
                                     if let Some(value) = geometry.residual {
                                         residual = residual.max(value);
@@ -761,7 +934,41 @@ impl Writer<'_, '_, '_, '_> {
             PvzLossCode::ExactFaceSideGauge,
             self.topology.side_conflicts,
         );
+        self.tally.add(
+            PvzLossCode::ExactTopologyWorkExhausted,
+            self.topology.work_exhausted,
+        );
         Ok(faces)
+    }
+
+    /// Largest distance, in millimetres and with [`RESIDUAL_MARGIN`], from
+    /// the image of a polyline pcurve on face `face` to the curve that edge
+    /// record `edge` is written on. The polyline points lie on the edge
+    /// image and its segments are chords (§8.16), so the distance is taken
+    /// at the chord midpoints, at most [`CHORD_SAMPLES`] of them.
+    fn chord_deviation(
+        &self,
+        face: usize,
+        slot: PcurveSlot,
+        points: &[Vec2],
+        edge: usize,
+    ) -> Option<f64> {
+        let record = self.exact.faces.get(face)?;
+        let curve = &self
+            .exact
+            .edges
+            .get(self.topology.written_edge(edge).0)?
+            .geometry;
+        let interval = curve_interval(curve)?;
+        let segments = points.len().checked_sub(1)?;
+        let step = segments.div_ceil(CHORD_SAMPLES).max(1);
+        let mut worst: f64 = 0.0;
+        for index in (0..segments).step_by(step) {
+            let [a, b] = [*points.get(index)?, *points.get(index + 1)?];
+            let image = domain_point(record, slot, [a[0].midpoint(b[0]), a[1].midpoint(b[1])])?;
+            worst = worst.max(nearest_distance(curve, interval, image)?);
+        }
+        Some(worst * RESIDUAL_MARGIN * MILLIMETRES_PER_METRE)
     }
 
     fn write_pcurve(
@@ -771,15 +978,23 @@ impl Writer<'_, '_, '_, '_> {
         offset: usize,
         interval: Option<Vec2>,
         runs: bool,
+        fit: Option<f64>,
     ) -> Result<PcurveUse, CodecError> {
         let id = self.ids.pcurve(key);
         self.ctx.charge_entities(1, "pvz exact pcurve")?;
+        let fit = fit.and_then(|fit| FitTolerance::try_new(fit).ok());
         self.sink.model.pcurves.push(Pcurve {
             id: id.clone(),
             geometry,
-            metadata: PcurveMetadata::default(),
+            metadata: PcurveMetadata::general(None, None, fit),
         });
         self.located(&id, offset, "0x15");
+        if fit.is_some() {
+            self.sink
+                .annotations
+                .field_exactness(id.to_string(), "metadata", Exactness::Derived)
+                .map_err(annotation_error)?;
+        }
         let parameter_range = interval.and_then(|[start, end]| {
             let ends = if runs { [start, end] } else { [end, start] };
             let ends = [FiniteReal::new(ends[0])?, FiniteReal::new(ends[1])?];
@@ -794,7 +1009,11 @@ impl Writer<'_, '_, '_, '_> {
 
     /// Groups neutral faces into shells by shared edges and writes shells,
     /// regions, and the body.
-    fn write_shells(&mut self, faces: &[Vec<FaceId>], first: Arenas) -> Result<BodyId, CodecError> {
+    fn write_shells(
+        &mut self,
+        faces: &[Vec<FaceId>],
+        first: Arenas,
+    ) -> Result<Vec<BodyId>, CodecError> {
         let flat: Vec<FaceId> = faces.iter().flatten().cloned().collect();
         let position: BTreeMap<&FaceId, usize> = flat
             .iter()
@@ -836,25 +1055,38 @@ impl Writer<'_, '_, '_, '_> {
             .iter()
             .map(|edge| self.ids.edge(*edge))
             .collect();
-        let mut closed_shells = 0;
-        let body = self.ids.body();
-        let mut regions = Vec::new();
-        let mut shell_of_face = vec![0; flat.len()];
+        let mut shell_of_face: Vec<usize> = flat.iter().map(|_| 0).collect();
         for (shell, list) in members.iter().enumerate() {
-            let set: BTreeSet<usize> = list.iter().copied().collect();
-            let closed = edge_faces.iter().all(|(edge, uses)| {
-                let inside = uses.iter().filter(|face| set.contains(face)).count();
-                inside == 0 || singular.contains(edge) || (inside == 2 && uses.len() == 2)
-            });
-            if closed {
-                closed_shells += 1;
-            }
-            let shell_id = self.ids.shell(shell);
-            let region_id = self.ids.region(shell);
-            let face_ids: Vec<FaceId> = list.iter().map(|face| flat[*face].clone()).collect();
             for face in list {
                 shell_of_face[*face] = shell;
             }
+        }
+        let mut edge_count: Vec<usize> = members.iter().map(|_| 0).collect();
+        let mut open: Vec<bool> = members.iter().map(|_| false).collect();
+        for (edge, uses) in &edge_faces {
+            let shells: BTreeSet<usize> = uses.iter().map(|face| shell_of_face[*face]).collect();
+            for shell in &shells {
+                edge_count[*shell] += 1;
+                if !singular.contains(edge) && (uses.len() != 2 || shells.len() != 1) {
+                    open[*shell] = true;
+                }
+            }
+        }
+        let closed: Vec<bool> = (0..members.len())
+            .map(|shell| edge_count[shell] > 0 && !open[shell])
+            .collect();
+        let solid = self.ids.body();
+        let sheet = if closed.contains(&true) {
+            self.ids.sheet_body()
+        } else {
+            self.ids.body()
+        };
+        let mut regions: [Vec<RegionId>; 2] = [Vec::new(), Vec::new()];
+        for (shell, list) in members.iter().enumerate() {
+            let body = if closed[shell] { &solid } else { &sheet };
+            let shell_id = self.ids.shell(shell);
+            let region_id = self.ids.region(shell);
+            let face_ids: Vec<FaceId> = list.iter().map(|face| flat[*face].clone()).collect();
             self.ctx.charge_entities(2, "pvz exact shell")?;
             self.sink.model.shells.push(
                 Shell::with_faces(shell_id.clone(), region_id.clone(), face_ids).map_err(
@@ -868,7 +1100,7 @@ impl Writer<'_, '_, '_, '_> {
                 shells: vec![shell_id],
             });
             self.derived(&region_id);
-            regions.push(region_id);
+            regions[usize::from(!closed[shell])].push(region_id);
         }
         let face_shell: BTreeMap<FaceId, ShellId> = flat
             .iter()
@@ -880,26 +1112,29 @@ impl Writer<'_, '_, '_, '_> {
                 face.shell = shell.clone();
             }
         }
-        let shells = members.len();
-        let kind = if closed_shells == shells {
-            BodyKind::Solid
-        } else if closed_shells == 0 {
-            BodyKind::Sheet
-        } else {
-            BodyKind::General
-        };
-        self.ctx.charge_entities(1, "pvz exact body")?;
-        self.sink.model.bodies.push(Body {
-            id: body.clone(),
-            kind,
-            regions,
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        });
-        self.derived(&body);
-        Ok(body)
+        let [solid_regions, sheet_regions] = regions;
+        let mut bodies = Vec::new();
+        for (id, kind, regions) in [
+            (solid, BodyKind::Solid, solid_regions),
+            (sheet, BodyKind::Sheet, sheet_regions),
+        ] {
+            if regions.is_empty() {
+                continue;
+            }
+            self.ctx.charge_entities(1, "pvz exact body")?;
+            self.sink.model.bodies.push(Body {
+                id: id.clone(),
+                kind,
+                regions,
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+            });
+            self.derived(&id);
+            bodies.push(id);
+        }
+        Ok(bodies)
     }
 }
 

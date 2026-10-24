@@ -52,6 +52,18 @@ pub(crate) mod token {
     pub(crate) const TESS_LINE_STRIP: u8 = 28;
     /// `TESS_LINE_SEGMENTS` (`0x1d`). Spec §7.2.
     pub(crate) const TESS_LINE_SEGMENTS: u8 = 29;
+    /// `EXACT_SURFACE` (`0x13`). Spec §8.2.
+    pub(crate) const EXACT_SURFACE: u8 = 19;
+    /// `EXACT_LOOP` (`0x01000010`). Spec §8.2.
+    pub(crate) const EXACT_LOOP: u32 = 0x0100_0010;
+    /// `EXACT_COEDGE` (`0x11`). Spec §8.2.
+    pub(crate) const EXACT_COEDGE: u8 = 17;
+    /// `EXACT_SINGULAR_USE` (`0x01000012`). Spec §8.2.
+    pub(crate) const EXACT_SINGULAR_USE: u32 = 0x0100_0012;
+    /// `EXACT_EDGE_CURVE` (`0x14`). Spec §8.2.
+    pub(crate) const EXACT_EDGE_CURVE: u8 = 20;
+    /// `EXACT_PCURVE` (`0x15`). Spec §8.2.
+    pub(crate) const EXACT_PCURVE: u8 = 21;
 }
 
 /// Byte offsets for the `pvs_header` record.
@@ -206,4 +218,20 @@ pub(crate) mod edge_tessellation_header {
     pub(crate) const LEN: usize = 12;
     /// Offset of `edge_index` (`u32`, little-endian). Spec §7.2.
     pub(crate) const EDGE_INDEX: usize = 0;
+}
+
+/// Byte offsets for the `loop_record` record.
+///
+/// Spec §8.11. Record length 4 B.
+pub(crate) mod loop_record {
+    /// Record length in bytes. Spec §8.11.
+    pub(crate) const LEN: usize = 4;
+}
+
+/// Byte offsets for the `coedge_record` record.
+///
+/// Spec §8.12. Record length 13 B.
+pub(crate) mod coedge_record {
+    /// Record length in bytes. Spec §8.12.
+    pub(crate) const LEN: usize = 13;
 }

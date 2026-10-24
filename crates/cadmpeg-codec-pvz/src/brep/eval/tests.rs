@@ -196,3 +196,18 @@ fn polyline_is_parameterised_by_point_index() {
     assert_eq!(curve_point(&polyline, 1.5), Some([1.0, 1.0]));
     assert_eq!(curve_point(&polyline, 2.0), Some([1.0, 2.0]));
 }
+
+#[test]
+fn non_finite_knot_domain_has_no_point() {
+    for bound in [f64::NAN, f64::INFINITY] {
+        let curve = BsplineCurve {
+            rational: false,
+            order: 2,
+            knots: vec![0.0, 0.0, bound, bound],
+            weighted: vec![[0.0; 3], [1.0, 0.0, 0.0]],
+            weights: vec![1.0, 1.0],
+            range: None,
+        };
+        assert_eq!(bspline_curve_point(&curve, 0.5), None);
+    }
+}

@@ -5,6 +5,8 @@ use super::{
     encloses, face_regions, pcurve_directions, sense_from_ends, signed_area, CoedgeGeometry,
     LoopPolygon, RegionLoops, Sense,
 };
+use cadmpeg_core::decode::WorkBudget;
+
 use crate::brep::model::CurveGeometry;
 
 fn coedge(ends: [[f64; 3]; 2], sense: Option<Sense>) -> CoedgeGeometry {
@@ -74,7 +76,7 @@ fn short_loops_take_the_direction_from_the_orientation_byte() {
     let ends = [[0.0; 3], [1.0, 0.0, 0.0]];
     let coedges = vec![
         coedge(ends, Some(Sense::Forward)),
-        coedge(ends, Some(Sense::Reversed)),
+        coedge([ends[1], ends[0]], Some(Sense::Reversed)),
     ];
     assert_eq!(pcurve_directions(&[1, 0], &coedges), [true, true]);
     assert_eq!(pcurve_directions(&[0, 1], &coedges), [false, false]);
@@ -96,52 +98,99 @@ fn square(low: [f64; 2], size: f64, clockwise: bool) -> LoopPolygon {
     }
 }
 
+fn regions(
+    inner: &[bool],
+    polygons: &[Option<LoopPolygon>],
+    periods: [Option<f64>; 2],
+) -> Vec<RegionLoops> {
+    face_regions(inner, polygons, periods, &WorkBudget::new(usize::MAX)).unwrap()
+}
+
+fn region(loops: &[usize], classified: bool) -> RegionLoops {
+    RegionLoops {
+        loops: loops.to_vec(),
+        classified,
+    }
+}
+
 #[test]
-fn nesting_parity_splits_holes_and_islands() {
+fn inner_loops_join_the_innermost_outer_loop_that_contains_them() {
     let polygons = vec![
         Some(square([0.0, 0.0], 10.0, false)),
-        Some(square([1.0, 1.0], 8.0, true)),
-        Some(square([2.0, 2.0], 2.0, false)),
-        Some(square([20.0, 0.0], 1.0, false)),
+        Some(square([21.0, 1.0], 2.0, true)),
+        Some(square([25.0, 5.0], 2.0, true)),
+        Some(square([20.0, 0.0], 10.0, false)),
+        Some(square([2.0, 2.0], 4.0, false)),
+        Some(square([3.0, 3.0], 1.0, true)),
     ];
     assert!(signed_area(&polygons[0].as_ref().unwrap().points) > 0.0);
-    let regions = face_regions(&[0, 0, 0, 3], &polygons, [None, None]);
+    let inner = [false, true, true, false, false, true];
     assert_eq!(
-        regions,
+        regions(&inner, &polygons, [None, None]),
         [
-            RegionLoops {
-                loops: vec![0, 1],
-                classified: true
-            },
-            RegionLoops {
-                loops: vec![2],
-                classified: true
-            },
-            RegionLoops {
-                loops: vec![3],
-                classified: true
-            },
+            region(&[0], true),
+            region(&[3, 1, 2], true),
+            region(&[4, 5], true)
         ]
     );
 }
 
 #[test]
-fn wrapping_loops_leave_their_group_unclassified() {
+fn one_outer_loop_owns_every_inner_loop() {
+    let polygons = vec![
+        Some(square([0.0, 0.0], 1.0, false)),
+        Some(square([5.0, 5.0], 1.0, true)),
+    ];
+    assert_eq!(
+        regions(&[false, true], &polygons, [None, None]),
+        [region(&[0, 1], true)]
+    );
+    assert_eq!(
+        regions(&[false, true], &[None, None], [None, None]),
+        [region(&[0, 1], false)]
+    );
+}
+
+#[test]
+fn uncontained_inner_loop_is_an_unclassified_region() {
+    let polygons = vec![
+        Some(square([0.0, 0.0], 1.0, false)),
+        Some(square([2.0, 0.0], 1.0, false)),
+        Some(square([5.0, 5.0], 1.0, true)),
+    ];
+    assert_eq!(
+        regions(&[false, false, true], &polygons, [None, None]),
+        [region(&[0], true), region(&[1], true), region(&[2], false)]
+    );
+}
+
+#[test]
+fn nesting_stops_when_the_work_budget_runs_out() {
+    let polygons = vec![
+        Some(square([0.0, 0.0], 1.0, false)),
+        Some(square([2.0, 0.0], 1.0, false)),
+        Some(square([2.25, 0.25], 0.5, true)),
+    ];
+    let budget = WorkBudget::new(1);
+    assert_eq!(
+        face_regions(&[false, false, true], &polygons, [None, None], &budget),
+        None
+    );
+}
+
+#[test]
+fn wrapping_loops_leave_their_region_unclassified() {
     let band = LoopPolygon {
         points: vec![[0.0, 0.0], [3.0, 0.0]],
         wrap: [TAU, 0.0],
     };
-    let regions = face_regions(
-        &[0, 0],
-        &[Some(band.clone()), Some(band)],
-        [Some(TAU), None],
-    );
     assert_eq!(
-        regions,
-        [RegionLoops {
-            loops: vec![0, 1],
-            classified: false
-        }]
+        regions(
+            &[false, true],
+            &[Some(band.clone()), Some(band)],
+            [Some(TAU), None],
+        ),
+        [region(&[0, 1], false)]
     );
 }
 
@@ -150,4 +199,26 @@ fn containment_is_tested_modulo_the_period() {
     let polygon = square([6.0, 0.0], 1.0, false).points;
     assert!(encloses(&polygon, [6.5 - TAU, 0.5], [Some(TAU), None]));
     assert!(!encloses(&polygon, [6.5 - TAU, 0.5], [None, None]));
+}
+
+fn coedge_on(ends: [[f64; 3]; 2], uv_ends: [[f64; 2]; 2]) -> CoedgeGeometry {
+    CoedgeGeometry {
+        uv_ends: Some(uv_ends),
+        ..coedge(ends, Some(Sense::Forward))
+    }
+}
+
+#[test]
+fn closed_edges_take_their_direction_from_the_domain_junctions() {
+    let (bottom, top) = ([1.0, 0.0, 0.0], [1.0, 0.0, 1.0]);
+    let coedges = vec![
+        coedge_on([bottom, bottom], [[0.0, 0.0], [TAU, 0.0]]),
+        coedge_on([bottom, top], [[TAU, 0.0], [TAU, 1.0]]),
+        coedge_on([top, top], [[TAU, 1.0], [0.0, 1.0]]),
+        coedge_on([top, bottom], [[0.0, 1.0], [0.0, 0.0]]),
+    ];
+    assert_eq!(
+        pcurve_directions(&[0, 1, 0, 1], &coedges),
+        [true, true, true, true]
+    );
 }

@@ -464,7 +464,7 @@ terminator
 | `0x15` | Pcurve | §8.16 |
 | `0x0a` | 12-byte record in a singular use | open item |
 
-A face is one surface record and the loop, coedge, singular-use, and terminator records that follow it up to the next surface record or the first curve record. Edge records and pcurve records can alternate in the curve section. A face index is the zero-based ordinal of its surface record. An edge index is the zero-based ordinal of its record among the edge records, and a pcurve index the zero-based ordinal of its record among the pcurve records. The stream ends with one terminator that closes no loop and no singular use. All coedge, singular-use, and edge-tessellation references to these indexes are less than the record count of the target section.
+A face is one surface record and the loop, coedge, singular-use, and terminator records that follow it up to the next surface record or the first curve record. Edge records and pcurve records can alternate in the curve section. A face index is the zero-based ordinal of its surface record. A pcurve index is the zero-based ordinal of its record among all pcurve records. Edge indexes use two spaces. A composite edge record (§8.15) and the `edge_index` of an edge-tessellation header (§7.2) give the zero-based ordinal of the edge record among all edge records. A coedge record gives the zero-based ordinal of the edge record among the edge records that no composite edge record lists; a composite edge record itself counts in this space. In a stream without composite edge records the two spaces are equal. The stream ends with one terminator that closes no loop and no singular use. Every pcurve index and composite member index is less than the record count of its section, and every coedge edge index is less than the number of edge records that no composite lists.
 
 ### 8.3 Surface record head
 
@@ -571,7 +571,7 @@ poles:scalar[u_pole_count × v_pole_count × 4]
 00
 ```
 
-`u_pole_count = u_knot_count − u_order` and `v_pole_count = v_knot_count − v_order`. The order is the degree plus one. The knot vectors are full: each knot repeats once per multiplicity. Pole `(i, j)` is at position `i × v_pole_count + j` (u-major). Each pole is homogeneous `(w·x, w·y, w·z, w)`: the Euclidean pole is the first three values divided by the fourth, and the fourth is the weight. When `rational` is 0, every weight is 1.
+`u_pole_count = u_knot_count − u_order` and `v_pole_count = v_knot_count − v_order`. The order is the degree plus one. The knot vectors are full: each knot repeats once per multiplicity. Knot values are finite and do not decrease. Pole `(i, j)` is at position `i × v_pole_count + j` (u-major). Each pole is homogeneous `(w·x, w·y, w·z, w)`: the Euclidean pole is the first three values divided by the fourth, and the fourth is the weight. When `rational` is 0, every weight is 1.
 
 The range pairs follow the rule of §8.3 and give the trimmed parameter domain of the face. The record ends with one `0x00` byte.
 
@@ -593,10 +593,10 @@ Tag `0x01000010` has a 4-byte payload `marker` (`i32`). It starts a loop on the 
 
 | `marker` | Meaning |
 | -------: | ------- |
-| −2 | The loop starts a new loop group on the current face. |
-| ≥ 0 | The loop joins the loop group whose first loop has global index `marker`. That loop has marker −2, precedes this loop, and belongs to the same face. |
+| −2 | The loop is an outer loop of the current face. |
+| ≥ 0 | The loop is an inner loop of the current face. `marker` is the global index of the first loop of the face, which has marker −2. |
 
-Other negative values are open items. A loop group need not be contiguous: loops of other groups of the same face can come between its members.
+The first loop of a face has marker −2. A face can have several outer loops, and inner loops can stand between them. The marker of an inner loop does not name the outer loop that contains it; §8.19 assigns each inner loop to an outer loop. Other negative values are open items.
 
 ### 8.12 Coedge record
 
@@ -655,9 +655,9 @@ Parameterisations and natural parameter intervals:
 | 6 | Rational B-spline, homogeneous poles as in §8.9 | `[knots[order − 1], knots[knot_count − order]]` |
 | 7 | Linear interpolation of `points` | from `points[0]` to `points[count − 1]` |
 
-A circle has `|X| = |Y|` with `X ⊥ Y`. An ellipse has `X ⊥ Y` and unequal lengths. For type 6, `pole_count = knot_count − order`, and `rational` 0 means every weight is 1. The interval start is the curve start point; the interval end is the curve end point.
+A circle has `|X| = |Y|` with `X ⊥ Y`. An ellipse has `X ⊥ Y` and unequal lengths. For type 6, `pole_count = knot_count − order`, the knots are finite and do not decrease, and `rational` 0 means every weight is 1. The interval start is the curve start point; the interval end is the curve end point.
 
-A type-2 record lists other edge records of the same section by index; each listed index is less than the edge count. The parameterisation of a composite curve is an open item.
+A type-2 record lists other edge records by their ordinal among all edge records (§8.2); each listed index is less than the edge count. The parameterisation of a composite curve is an open item.
 
 ### 8.16 Pcurve records
 
@@ -671,21 +671,21 @@ Tag `0x15` holds one 2D curve in a surface parameter domain. Every pcurve record
 | 6 | Rational B-spline | `rational:u8`, `order:u32`, `knot_count:u32`, `knots:scalar[knot_count]`, `pole_count:u32`, `poles:scalar[pole_count × 3]`, [`t_start`, `t_end`], `00` |
 | 7 | Polyline | `count:u32`, `points:scalar[count × 2]`, `00` |
 
-The parameterisations are the 2D forms of §8.15. A type-2 pcurve lists other pcurve records by index. A B-spline pcurve stores homogeneous poles `(w·u, w·v, w)`. A B-spline pcurve with flag `0x08` uses the range pair as its interval; otherwise its interval is the knot domain. The pcurve start point and end point are the images of the interval ends.
+The parameterisations are the 2D forms of §8.15. A type-2 pcurve lists other pcurve records by index. A B-spline pcurve stores homogeneous poles `(w·u, w·v, w)`. A B-spline pcurve with flag `0x08` uses the range pair as its interval; otherwise its interval is the knot domain. The pcurve start point and end point are the images of the interval ends. The points of a type-7 pcurve lie on the image of the edge curve on the surface; its segments are chords in the parameter domain, and between the points their images leave the edge curve by up to the chord sagitta.
 
 ### 8.17 Coedge geometry and sense
 
-The model stores each coedge twice: once as the edge curve, once as the pcurve image on the face surface. Let `S` be the face surface (native pcurve) or its embedded B-spline (secondary pcurve), `p0` and `p1` the pcurve start and end points, and `e0` and `e1` the edge curve start and end points. Then either `S(p0) = e0` and `S(p1) = e1`, or `S(p0) = e1` and `S(p1) = e0`, within the tolerance of §8.21.
+The model stores each coedge twice: once as the edge curve, once as the pcurve image on the face surface. The two agree at the ends within the tolerance of §8.21, and along the whole coedge except between the points of a polyline pcurve (§8.16). Let `S` be the face surface (native pcurve) or its embedded B-spline (secondary pcurve), `p0` and `p1` the pcurve start and end points, and `e0` and `e1` the edge curve start and end points. Then either `S(p0) = e0` and `S(p1) = e1`, or `S(p0) = e1` and `S(p1) = e0`, within the tolerance of §8.21.
 
 The coedge sense is forward when the first condition holds and reversed when the second holds. These endpoint conditions alone define the sense; the `orientation` byte does not. For a closed edge curve both conditions hold; the sense is then forward when the pcurve image near the start of the pcurve interval lies on the edge curve near the start of the edge interval.
 
 ### 8.18 Loop traversal
 
-The coedges of a loop, in stored order, form a closed chain: each coedge shares one end with the coedge before it and its other end with the coedge after it, and the last coedge shares an end with the first. Each pcurve runs along the stored order or against it, independently of its neighbours; the ends it shares with its neighbours define its direction. The edge curve of a coedge runs along the stored order when the pcurve does and the sense is forward, and when the pcurve runs against it and the sense is reversed. The ends of a loop of one or two coedges do not give a direction to the stored order.
+The coedges of a loop, in stored order, form a closed chain: each coedge shares one end with the coedge before it and its other end with the coedge after it, and the last coedge shares an end with the first. Each pcurve runs along the stored order or against it, independently of its neighbours. The directions of the pcurves of a loop are the choice that closes every junction of the chain, in model space and in the pcurve domain. The edge curve of a coedge runs along the stored order when the pcurve does and the sense is forward, and when the pcurve runs against it and the sense is reversed. The ends of a loop of one or two coedges do not give a direction to the stored order. A closed edge curve, whose ends are one point, gets its direction from the pcurve-domain junctions.
 
 ### 8.19 Face regions and nesting
 
-A loop group (§8.11) bounds one or more face regions on its face. Within a group, a loop is nested in another loop when it lies inside that loop in the parameter domain of the face. The nesting depth of a loop is the number of loops of the group that contain it. A loop of even depth is the outer boundary of a face region. A loop of odd depth is a hole of the region whose outer loop immediately contains it. A face with several loop groups, or with even-depth loops beyond depth 0, has several face regions.
+Each outer loop (§8.11) is the outer boundary of one face region. A face without a loop bounds no face region; the meaning of such a face record is an open item. Each inner loop is a hole of the face region whose outer loop contains it in the parameter domain of the face; when several outer loops contain it, the innermost one owns it. A face with several outer loops has several face regions.
 
 On a periodic surface (cylinder, cone, sphere in u; torus in u and v) containment is tested modulo the period of 2π.
 
@@ -693,9 +693,11 @@ On a periodic surface (cylinder, cone, sphere in u; torus in u and v) containmen
 
 The stream has no vertex records and no shell records. A vertex is the common point of the coedge ends that meet in a loop chain (§8.18), and of both ends of a singular edge (§8.13). An edge is shared when coedges of two faces reference it.
 
-A shell is a set of face regions connected through shared edges. A shell is closed when each non-singular edge in it has exactly two coedge uses; otherwise it is open. Two faces can also meet along two distinct edge records with coincident curves. Such edge records are not shared edges.
+A stream can also store a model edge as one edge record per coedge use. The two records of such an edge are not shared: each has one coedge use, and the two faces meet along their coincident curves. The ends of the two curves agree, and each curve passes within the tolerance of §8.21 of every point of the other. Such a pair joins the two faces as a shared edge does.
 
-The stream stores no face side. In an oriented shell the two coedges of a shared edge traverse it in opposite directions, so the stored loop directions give the side of each face relative to its neighbours.
+A shell is a set of face regions connected through shared edges and coincident edge pairs. A shell is closed when it has at least one edge and each non-singular edge in it has exactly two coedge uses, counting both records of a coincident pair as one edge; otherwise it is open.
+
+The stream stores no face side. In an oriented shell the two coedges of a shared edge, or of a coincident pair, traverse it in opposite directions, so the stored loop directions give the side of each face relative to its neighbours.
 
 ### 8.21 Units and tolerances
 

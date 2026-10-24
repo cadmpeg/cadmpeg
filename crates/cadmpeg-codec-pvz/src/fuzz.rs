@@ -46,16 +46,16 @@ pub fn signatures(data: &[u8]) {
 pub fn exact_geometry<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<(), CodecError> {
     let version = View::u32_le_at(root.window(), crate::layout::tlv_header::LEN);
     let stream_id = if version == Some(crate::brep::model::Precision::Double.version()) {
-        crate::brep::EXACT_STREAM_F64
+        crate::layout::token::STREAM_EXACT_F64
     } else {
-        crate::brep::EXACT_STREAM_F32
+        crate::layout::token::STREAM_EXACT_F32
     };
     let exact = crate::brep::parse(ctx, stream_id, root)?;
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
     let mut losses = Vec::new();
     let stream = cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("exact"));
-    let _body = crate::brep::emit(
+    let _bodies = crate::brep::emit(
         ctx,
         &exact,
         &cadmpeg_ir::identity_key!("fuzz"),

@@ -6,6 +6,13 @@ use std::f64::consts::TAU;
 
 use super::model::{BsplineCurve, BsplineSurface, CurveGeometry, SurfaceGeometry, Vec2, Vec3};
 
+/// Uniform samples of the nearest-point search of [`nearest_distance`].
+const NEAREST_SAMPLES: usize = 16;
+/// Golden-section steps that refine the nearest-point search.
+const NEAREST_REFINEMENT_STEPS: usize = 24;
+/// Curve evaluations of one [`nearest_distance`] search.
+pub(crate) const NEAREST_POINT_WORK: usize = NEAREST_SAMPLES + 1 + 2 * NEAREST_REFINEMENT_STEPS;
+
 /// `a + b`.
 pub(crate) fn add<const N: usize>(a: [f64; N], b: [f64; N]) -> [f64; N] {
     std::array::from_fn(|index| a[index] + b[index])
@@ -59,6 +66,9 @@ fn basis(knots: &[f64], order: usize, t: f64) -> Option<(usize, Vec<f64>)> {
     let pole_count = knots.len().checked_sub(order)?;
     let low = *knots.get(degree)?;
     let high = *knots.get(pole_count)?;
+    if !(low.is_finite() && high.is_finite()) {
+        return None;
+    }
     let t = t.clamp(low.min(high), high.max(low));
     let mut span = degree;
     while span + 1 < pole_count && knots.get(span + 1).is_some_and(|knot| *knot <= t) {
@@ -244,6 +254,45 @@ pub(crate) fn curve_point<const N: usize>(curve: &CurveGeometry<N>, t: f64) -> O
 pub(crate) fn curve_ends<const N: usize>(curve: &CurveGeometry<N>) -> Option<[[f64; N]; 2]> {
     let [start, end] = curve_interval(curve)?;
     Some([curve_point(curve, start)?, curve_point(curve, end)?])
+}
+
+/// Distance from `point` to `curve` over `interval`: the nearest of
+/// [`NEAREST_SAMPLES`] samples, refined by a golden-section search in
+/// the sample intervals next to it.
+pub(crate) fn nearest_distance<const N: usize>(
+    curve: &CurveGeometry<N>,
+    interval: Vec2,
+    point: [f64; N],
+) -> Option<f64> {
+    let [low, high] = interval;
+    let samples = cadmpeg_core::convert::f64_from_index(NEAREST_SAMPLES)?;
+    let parameter = |step: usize| {
+        Some(low + (high - low) * cadmpeg_core::convert::f64_from_index(step)? / samples)
+    };
+    let gap = |t: f64| Some(distance(curve_point(curve, t)?, point));
+    let mut nearest = (0, f64::INFINITY);
+    for step in 0..=NEAREST_SAMPLES {
+        let value = gap(parameter(step)?)?;
+        if value < nearest.1 {
+            nearest = (step, value);
+        }
+    }
+    let (step, mut best) = nearest;
+    let mut a = parameter(step.max(1) - 1)?;
+    let mut b = parameter((step + 1).min(NEAREST_SAMPLES))?;
+    let ratio = (5.0_f64.sqrt() - 1.0) / 2.0;
+    for _ in 0..NEAREST_REFINEMENT_STEPS {
+        let c = b - (b - a) * ratio;
+        let d = a + (b - a) * ratio;
+        let (gap_c, gap_d) = (gap(c)?, gap(d)?);
+        best = best.min(gap_c).min(gap_d);
+        if gap_c < gap_d {
+            b = d;
+        } else {
+            a = c;
+        }
+    }
+    Some(best)
 }
 
 #[cfg(test)]

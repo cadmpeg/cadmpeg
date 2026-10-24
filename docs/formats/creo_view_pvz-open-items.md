@@ -255,3 +255,19 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `creo_view_pvz.md` §8.13. The extent of a referenced curve is in the range 0 to model-space length: a curve can stay within 2×10⁻⁵ m of one point, or be a circular arc of radius 9×10⁻³ m, a line, a B-spline, or a polyline of model-space length. The referenced edge is also used by a coedge of the same face, and that coedge can have a second use on another face.
 
 **Need.** We must know the meaning to decide whether such an edge is degenerate in the neutral model.
+
+### PVZ-40. Singular-use edge index with composite edges
+
+**Question.** Which edge index space does the `edge` field of a singular-use record (`creo_view_pvz.md` §8.13) use in a stream that has composite edge records?
+
+**Known.** `creo_view_pvz.md` §8.2. A coedge edge index is an ordinal among the edge records that no composite lists, and a composite member index is an ordinal among all edge records. Without composite edge records the two spaces are equal. No available stream has both a composite edge record and a singular-use record.
+
+**Need.** We must know the space to find the edge of a singular use in a stream with composite edges.
+
+### PVZ-41. Face records without a loop
+
+**Question.** What does a surface record mean when no loop record and no singular-use record follow it (`creo_view_pvz.md` §8.19)?
+
+**Known.** Such faces are plane records with both range pairs (§8.3). They come after every face with a loop in the face section. A member has up to seven of them. They have no coedge, so they bound no face region and share no edge with another face.
+
+**Need.** We must know whether they are datum planes, construction geometry, or trimmed faces that another record bounds, to decide whether a decoder can transfer them.
