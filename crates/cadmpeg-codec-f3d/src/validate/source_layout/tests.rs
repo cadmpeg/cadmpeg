@@ -329,6 +329,7 @@ fn rectangular_pattern_namespace() -> F3dNative {
             value_offsets: [1_040, 2_040, 3_040, 4_040],
             instances: None,
             instance_search_cap: None,
+            directions: Vec::new(),
         })
         .unwrap();
     let mut scope = DesignParameterScope::empty(
