@@ -991,3 +991,53 @@ pub(crate) fn plate_with_hole(classified: bool) -> CadIr {
     );
     builder.finish(BodyKind::Sheet)
 }
+
+/// The unit square at `z = 0`, bounded counterclockwise by four line edges
+/// with line pcurves. The first coedge's two pcurve uses split its side at
+/// the midpoint. When `listed_backward`, they form their chain from the
+/// coedge's end to its start: the end half first, each on a decreasing
+/// range. Returns the document, that coedge and the face.
+pub(crate) fn square_with_split_side(listed_backward: bool) -> (CadIr, CoedgeId, FaceId) {
+    let mut builder = Builder::new();
+    let corners = [
+        builder.vertex([0.0, 0.0, 0.0]),
+        builder.vertex([1.0, 0.0, 0.0]),
+        builder.vertex([1.0, 1.0, 0.0]),
+        builder.vertex([0.0, 1.0, 0.0]),
+    ];
+    let sides: Vec<(EdgeId, Sense)> = (0..4)
+        .map(|index| {
+            (
+                builder.line(&corners[index], &corners[(index + 1) % 4]),
+                Sense::Forward,
+            )
+        })
+        .collect();
+    let surface = builder.plane([0.0; 3], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]);
+    let face = builder.face(&surface, Sense::Forward, &[sides], true);
+    let halves = if listed_backward {
+        [[1.0, 0.5], [0.5, 0.0]]
+    } else {
+        [[0.0, 0.5], [0.5, 1.0]]
+    };
+    for range in halves {
+        builder.line_pcurve(&face, [0, 0], [0.0, 0.0], [1.0, 0.0], range);
+    }
+    let rest = [
+        ([1.0, 0.0], [0.0, 1.0]),
+        ([1.0, 1.0], [-1.0, 0.0]),
+        ([0.0, 1.0], [0.0, -1.0]),
+    ];
+    for (position, (origin, direction)) in rest.into_iter().enumerate() {
+        builder.line_pcurve(&face, [0, position + 1], origin, direction, [0.0, 1.0]);
+    }
+    let ir = builder.finish(BodyKind::Sheet);
+    let split = ir
+        .model
+        .loops
+        .iter()
+        .find(|face_loop| face_loop.face == face)
+        .and_then(|face_loop| face_loop.coedges().first().cloned())
+        .expect("the face's first coedge");
+    (ir, split, face)
+}

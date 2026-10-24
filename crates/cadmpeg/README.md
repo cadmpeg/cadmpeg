@@ -125,10 +125,11 @@ cadmpeg check bracket.cadir.json
 cadmpeg check bracket.f3d --json
 ```
 
-`check` also measures the model and reports three defect classes as
+`check` also measures the model and reports four defect classes as
 warnings: a face ring whose coedges are not listed in traversal order
-(`ring_order`), a face whose sense disagrees with its loop winding, and a
-closed body whose volume readings conflict (`orientation`). The pass has its
+(`ring_order`), a coedge whose pcurve uses are listed from its end to its
+start (`pcurve_order`), a face whose sense disagrees with its loop winding,
+and a closed body whose volume readings conflict (`orientation`). The pass has its
 own allowance, much smaller than that of `measure`, and `--limits service`
 makes it smaller still. When the allowance runs out, one `info` finding
 (`measurement_incomplete`) states how many faces and bodies were not

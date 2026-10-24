@@ -8,7 +8,7 @@ use cadmpeg_ir::topology::Sense;
 use cadmpeg_ir::CadIr;
 
 use crate::session::{findings, MeasureOptions};
-use crate::test_support::builders::{plate_with_hole, service_context};
+use crate::test_support::builders::{plate_with_hole, service_context, square_with_split_side};
 
 fn run(ir: &CadIr) -> Vec<Finding> {
     let ctx = service_context();
@@ -99,6 +99,26 @@ fn a_ring_whose_coedges_do_not_chain_is_a_ring_order_warning() {
         finding.message.contains("no closed traversal"),
         "{}",
         finding.message
+    );
+}
+
+/// A coedge whose pcurve uses are listed from its end to its start is one
+/// `pcurve_order` warning on the coedge, related to its face; listed in
+/// traversal order, it gives no finding.
+#[test]
+fn a_pcurve_chain_listed_backward_is_a_pcurve_order_warning() {
+    let (ordered, _, _) = square_with_split_side(false);
+    assert_eq!(run(&ordered), Vec::new());
+    let (reversed, coedge, face) = square_with_split_side(true);
+    let found = run(&reversed);
+    let finding = only(&found, Check::PcurveOrder);
+    assert_eq!(finding.severity, Severity::Warning);
+    assert_eq!(finding.entity.as_deref(), Some(coedge.as_str()));
+    assert_eq!(finding.related, [face.as_str().to_owned()]);
+    assert_eq!(
+        found.len(),
+        1,
+        "the listing changes no traversal or winding"
     );
 }
 

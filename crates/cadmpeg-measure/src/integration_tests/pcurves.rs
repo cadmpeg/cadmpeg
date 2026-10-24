@@ -2,17 +2,20 @@
 //! Boundaries from pcurve uses: pcurve-only edges, pcurves witnessed by
 //! their 3D curves, a pcurve chain that leaves its curve, a closed coedge on
 //! a decreasing use interval, a closed coedge whose image starts at a corner,
-//! a seam-cut cylinder side and a cone tip closed by a pole edge.
+//! a pcurve chain listed from its end to its start, a seam-cut cylinder side
+//! and a cone tip closed by a pole edge.
 
 use std::f64::consts::{PI, TAU};
 
 use cadmpeg_ir::ids::{EdgeId, FaceId, VertexId};
 use cadmpeg_ir::topology::{BodyKind, Sense};
 
-use crate::reason::{Category, UnavailableReason};
+use crate::reason::{Category, CaveatCode, UnavailableReason};
 use crate::report::{FaceMeasures, MeasureReport, UvSource};
 use crate::select::Selection;
-use crate::test_support::builders::{assert_measured, assert_tight_box, measure, Builder, Frame};
+use crate::test_support::builders::{
+    assert_measured, assert_tight_box, measure, square_with_split_side, Builder, Frame,
+};
 use crate::value::Quantity;
 
 fn everything() -> Selection {
@@ -340,4 +343,36 @@ fn a_closed_coedge_starting_at_a_corner_reads_its_pcurve_backward() {
     assert!(uv_sources(face)
         .iter()
         .all(|source| *source == Some(UvSource::Pcurve)));
+}
+
+/// A coedge's pcurve uses form one chain from its start to its end in
+/// traversal order (`docs/cad-ir.md`). The chain listed from its end to its
+/// start measures the same face and adds the `boundary.pcurve-order` caveat
+/// on that coedge; the chain in traversal order adds none.
+#[test]
+fn a_pcurve_chain_listed_backward_is_a_face_caveat() {
+    for listed_backward in [false, true] {
+        let (ir, coedge, _) = square_with_split_side(listed_backward);
+        let report = measure(&ir, &everything());
+        let face = only_face(&report);
+        assert_measured(face.measures().area(), 1.0, 1.0);
+        assert_measured(face.measures().boundary_length(), 4.0, 4.0);
+        let caveats: Vec<_> = face
+            .caveats()
+            .iter()
+            .filter(|caveat| caveat.code() == CaveatCode::BoundaryPcurveOrder)
+            .collect();
+        if listed_backward {
+            let [caveat] = caveats.as_slice() else {
+                panic!("one pcurve-order caveat");
+            };
+            assert_eq!(caveat.entity(), Some(coedge.as_str()));
+            assert_eq!(caveat.category(), Category::Input);
+        } else {
+            assert!(
+                caveats.is_empty(),
+                "a chain in traversal order has no caveat"
+            );
+        }
+    }
 }
