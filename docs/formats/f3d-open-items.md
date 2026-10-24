@@ -326,6 +326,16 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Conflict.** A Features-type rectangular pattern with 3 by 2 instances at 10 mm spacing stores an extent of 1.0 cm in both directions. Extent divided by count minus one gives 5 mm and 10 mm, not 10 mm and 10 mm. That scope stores its direction in the 221-byte form. In scopes that store 220-byte direction records, the extent divided by count minus one reproduces the measured pitch in both directions.
 
+### DR-98. Persistent selection long-tail fields
+
+**Question.** What do the u32 and u64 fields in the fourteen-byte persistent selection tail select?
+
+**Known.** The 204-byte member retains the complete local, asset, and context identity and a present optional slot. Its extra bytes are `00`, u32 `2`, u64 `1`, and `00`. A following Design header or the stream-end boundary terminates the tail. The frame extent distinguishes this form from the 190-byte member without a new identity field.
+
+**Need.** Independently varied tail fields and an unchanged selected entity must establish each field's meaning before the grammar admits other values.
+
+**Conflict.** The tail values alone do not assign a new selected entity or an additional member.
+
 ## 2. External references
 
 ### DR-82. Other joint freedom codes and the limit flags

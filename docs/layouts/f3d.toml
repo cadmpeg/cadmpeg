@@ -19639,3 +19639,43 @@ offset = 209
 type = "bytes[11]"
 source = "spec"
 anchor = "One zero byte and the marked scope reference at offset 209 close the frame."
+
+[[record]]
+name = "extrude_selection_member_long_tail"
+kind = "byte"
+section = "3.1"
+anchor = "The 204-byte form appends a fourteen-byte tail"
+size = 14
+note = "Offsets are relative to the end of the 190-byte selection-member frame."
+
+[[record.field]]
+name = "leading_zero"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "byte `00`, u32 `2`, u64 `1`, and byte `00`"
+value = 0
+
+[[record.field]]
+name = "kind"
+offset = 1
+type = "u32"
+source = "spec"
+anchor = "byte `00`, u32 `2`, u64 `1`, and byte `00`"
+value = 2
+
+[[record.field]]
+name = "value"
+offset = 5
+type = "u64"
+source = "spec"
+anchor = "byte `00`, u32 `2`, u64 `1`, and byte `00`"
+value = 1
+
+[[record.field]]
+name = "trailing_zero"
+offset = 13
+type = "u8"
+source = "spec"
+anchor = "byte `00`, u32 `2`, u64 `1`, and byte `00`"
+value = 0
