@@ -44,9 +44,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### PVZ-04. Bytes after the definition name
 
-**Question.** What do the bytes after the name atom of a typed definition (types `0x01`, `0x02`, `0x06`, `0x1e`) mean?
+**Question.** What do the bytes after the name atom of a typed definition (types `0x01`, `0x02`, `0x06`, `0x1e`) mean? Does a typed definition of type `0x1f` exist, with an optional `0x21` byte before four bytes from the set `07 07 03 03`, `07 07 04 04`, `0d 0d 08 08`?
 
-**Known.** `creo_view_pvz.md` §3.7 gives the byte counts: one byte for types `0x01` and `0x02`, two bytes for type `0x06`, four bytes for type `0x1e`. Each type-`0x1e` value is one of `07 07 03 03`, `07 07 04 04`, and `06 06 05 05`. Each type-`0x06` value is `07 07` or `0d 0d`. openpvz-rs describes a type `0x1f` with an optional `0x21` byte before four bytes from the set `07 07 03 03`, `07 07 04 04`, `0d 0d 08 08`. §3.7 does not define type `0x1f`.
+**Known.** `creo_view_pvz.md` §3.7 gives the byte counts: one byte for types `0x01` and `0x02`, two bytes for type `0x06`, four bytes for type `0x1e`. Each type-`0x1e` value is one of `07 07 03 03`, `07 07 04 04`, and `06 06 05 05`. Each type-`0x06` value is `07 07` or `0d 0d`. §3.7 does not define type `0x1f`.
 
 **Need.** We must know whether the bytes carry a model kind, a version, or a units choice.
 
@@ -184,9 +184,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### PVZ-21. Other loop markers
 
-**Question.** What do negative loop markers other than −2 mean?
+**Question.** What do negative loop markers other than −2 mean? Does marker −1 mark a planar two-edge loop with zero area, which bounds no face region?
 
-**Known.** `creo_view_pvz.md` §8.11 defines −2 and values of 0 or more. openpvz-rs gives marker −1 to a planar two-edge loop with zero area, which bounds no face region.
+**Known.** `creo_view_pvz.md` §8.11 defines −2 and values of 0 or more.
 
 **Need.** We must know them to build face regions from every loop.
 
@@ -208,19 +208,17 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### PVZ-24. B-spline face endpoint residuals
 
-**Question.** Why do some coedges on B-spline faces have endpoint residuals larger than the tolerance of `creo_view_pvz.md` §8.21?
+**Question.** Why do some coedges on B-spline faces have endpoint residuals larger than the agreement band of PVZ-42?
 
 **Known.** The endpoint residuals of native-pcurve coedges on B-spline faces are in the range 0 to 10⁻¹ m. In a face with a residual above 2×10⁻⁵ m, the residuals of all coedges are of similar size. The periodic directions of §8.9, the surface flags, and the range pairs do not separate these faces from the others.
 
 **Need.** We must know whether a transform of the whole face is missing, to evaluate these faces.
 
-**Conflict.** `creo_view_pvz.md` §8.17 and §8.21 state endpoint agreement within 2×10⁻⁵ m as an invariant. openpvz-rs states the same agreement for every coedge.
-
 ### PVZ-25. Cone-face residuals
 
-**Question.** Why do some coedges on cone faces fail the endpoint agreement of `creo_view_pvz.md` §8.17?
+**Question.** Can a coedge on a cone face have an endpoint residual above the agreement band of PVZ-42, up to 1.4×10⁻⁴ m?
 
-**Known.** openpvz-rs gives endpoint residuals in the range 0 to 1.4×10⁻⁴ m for coedges on cone faces. With the cone evaluation of §8.6, the endpoint residuals of coedges on cone faces are in the range 0 to 2×10⁻⁵ m.
+**Known.** With the cone evaluation of `creo_view_pvz.md` §8.6, the endpoint residuals of coedges on cone faces are in the range 0 to 2×10⁻⁵ m.
 
 **Need.** We must know the cause to decide whether the cone parameterisation of §8.6 is complete.
 
@@ -271,3 +269,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** Such faces are plane records with both range pairs (§8.3). They come after every face with a loop in the face section. A member has up to seven of them. They have no coedge, so they bound no face region and share no edge with another face.
 
 **Need.** We must know whether they are datum planes, construction geometry, or trimmed faces that another record bounds, to decide whether a decoder can transfer them.
+
+### PVZ-42. Geometric agreement band
+
+**Question.** Within what distance do the equalities of `creo_view_pvz.md` §8.13, §8.17, and §8.20 hold: a collapsed singular-use curve and its start point, the pcurve image ends and the edge curve ends of a coedge, and the two curves of a coincident edge pair?
+
+**Known.** §8.21: the member stores no tolerance value. Outside the faces of PVZ-24, the endpoint residuals of coedges are in the range 0 to 2×10⁻⁵ m.
+
+**Need.** A decoder decides coedge sense, loop closure, vertex joins, coincident edge pairs, and singular-use collapse with a distance. We must know whether the format implies that distance or whether it varies per model.
+
+**Conflict.** An agreement band of 2×10⁻⁵ m for every coedge disagrees with the endpoint residuals of up to 10⁻¹ m on B-spline faces (PVZ-24), and with the cone-face residuals of up to 1.4×10⁻⁴ m that PVZ-25 asks about. The decoder applies the band to every face and admits a larger residual on a face with a face tolerance and the loss `pvz/exact.endpoint-mismatch`.

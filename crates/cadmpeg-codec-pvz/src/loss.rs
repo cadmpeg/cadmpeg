@@ -365,7 +365,8 @@ impl PvzLossCode {
                     .to_owned()
             }
             Self::ExactEndpointMismatch => format!(
-                "faces whose pcurve images miss the edge ends by more than {ENDPOINT_TOLERANCE:e} m"
+                "faces whose pcurve images miss the edge ends by more than {ENDPOINT_TOLERANCE:e} m \
+                 (PVZ-24, PVZ-42)"
             ),
             Self::ExactLoopOpen => "open loops or loop junctions that join no vertex".to_owned(),
             Self::ExactFaceSideGauge => {

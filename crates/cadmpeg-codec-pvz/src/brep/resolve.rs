@@ -9,7 +9,8 @@ use cadmpeg_core::decode::{work_units, WorkBudget};
 use super::eval::{bspline_surface_point, curve_ends, curve_interval, curve_point, distance};
 use super::model::{CurveGeometry, ExactModel, Face, SurfaceGeometry, Vec2, Vec3};
 
-/// Endpoint agreement of §8.21, in metres.
+/// Agreement band of PVZ-42 for the equalities of §8.13, §8.17, and §8.20,
+/// in metres. The stream states no tolerance (§8.21).
 pub(crate) const ENDPOINT_TOLERANCE: f64 = 2.0e-5;
 /// Interior fraction of a closed edge sampled to decide its sense.
 const CLOSED_EDGE_PROBE: f64 = 0.25;

@@ -625,7 +625,7 @@ Tag `0x01000012` belongs to the current face:
 | 4 | `w` | `t_start` (`scalar`) |
 | 4 + `w` | `w` | `t_end` (`scalar`) |
 
-The record names edge `edge`, which a coedge of a loop of the same face also references. `t_start` and `t_end` are the natural interval of the edge curve (§8.15). The referenced curve can be a point, a line, a circle, a B-spline, or a polyline. When the curve stays within the tolerance of §8.21 of its start point, the use has zero length in model space and both ends of the edge are one vertex. The record opens a scope that one terminator closes (§8.14); a `0x0a` record can stand between the record and its terminator.
+The record names edge `edge`, which a coedge of a loop of the same face also references. `t_start` and `t_end` are the natural interval of the edge curve (§8.15). The referenced curve can be a point, a line, a circle, a B-spline, or a polyline. When the curve collapses to its start point, the use has zero length in model space and both ends of the edge are one vertex. The record opens a scope that one terminator closes (§8.14); a `0x0a` record can stand between the record and its terminator.
 
 ### 8.14 Terminator
 
@@ -675,7 +675,7 @@ The parameterisations are the 2D forms of §8.15. A type-2 pcurve lists other pc
 
 ### 8.17 Coedge geometry and sense
 
-The model stores each coedge twice: once as the edge curve, once as the pcurve image on the face surface. The two agree at the ends within the tolerance of §8.21, and along the whole coedge except between the points of a polyline pcurve (§8.16). Let `S` be the face surface (native pcurve) or its embedded B-spline (secondary pcurve), `p0` and `p1` the pcurve start and end points, and `e0` and `e1` the edge curve start and end points. Then either `S(p0) = e0` and `S(p1) = e1`, or `S(p0) = e1` and `S(p1) = e0`, within the tolerance of §8.21.
+The model stores each coedge twice: once as the edge curve, once as the pcurve image on the face surface. The two describe the same boundary curve, except between the points of a polyline pcurve (§8.16). Let `S` be the face surface (native pcurve) or its embedded B-spline (secondary pcurve), `p0` and `p1` the pcurve start and end points, and `e0` and `e1` the edge curve start and end points. Then either `S(p0) = e0` and `S(p1) = e1`, or `S(p0) = e1` and `S(p1) = e0`.
 
 The coedge sense is forward when the first condition holds and reversed when the second holds. These endpoint conditions alone define the sense; the `orientation` byte does not. For a closed edge curve both conditions hold; the sense is then forward when the pcurve image near the start of the pcurve interval lies on the edge curve near the start of the edge interval.
 
@@ -693,7 +693,7 @@ On a periodic surface (cylinder, cone, sphere in u; torus in u and v) containmen
 
 The stream has no vertex records and no shell records. A vertex is the common point of the coedge ends that meet in a loop chain (§8.18), and of both ends of a singular edge (§8.13). An edge is shared when coedges of two faces reference it.
 
-A stream can also store a model edge as one edge record per coedge use. The two records of such an edge are not shared: each has one coedge use, and the two faces meet along their coincident curves. The ends of the two curves agree, and each curve passes within the tolerance of §8.21 of every point of the other. Such a pair joins the two faces as a shared edge does.
+A stream can also store a model edge as one edge record per coedge use. The two records of such an edge are not shared: each has one coedge use, and the two faces meet along their coincident curves. The two curves have the same ends and the same point set. Such a pair joins the two faces as a shared edge does.
 
 A shell is a set of face regions connected through shared edges and coincident edge pairs. A shell is closed when it has at least one edge and each non-singular edge in it has exactly two coedge uses, counting both records of a coincident pair as one edge; otherwise it is open.
 
@@ -701,4 +701,4 @@ The stream stores no face side. In an oriented shell the two coedges of a shared
 
 ### 8.21 Units and tolerances
 
-Lengths in OL members and in PVS placements and bounds are in metres. Angles are in radians. The member stores no tolerance value. The endpoint agreement of §8.17 holds within 2×10⁻⁵ m. Exact version 3 stores `f32` scalars, so its geometry carries `f32` rounding.
+Lengths in OL members and in PVS placements and bounds are in metres. Angles are in radians. The member stores no tolerance value, so the stream states no tolerance for the equalities of §8.13, §8.17, and §8.20. Exact version 3 stores `f32` scalars, so its geometry carries `f32` rounding.

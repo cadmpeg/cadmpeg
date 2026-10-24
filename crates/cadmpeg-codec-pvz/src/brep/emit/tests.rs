@@ -501,16 +501,17 @@ fn coedges_without_pcurves_are_reported() {
 
 #[test]
 fn pcurve_ends_off_the_edge_are_admitted_by_the_face_tolerance() {
+    let offset = 2.5 * crate::brep::resolve::ENDPOINT_TOLERANCE;
     let (ir, losses, _) = emit_edited(square_face(&[0, 1, 2, 3]), None, |model| {
         for pcurve in &mut model.pcurves {
             if let CurveGeometry::Line { origin, .. } = &mut pcurve.geometry {
-                origin[1] += 5.0e-5;
+                origin[1] += offset;
             }
         }
     });
     assert!(reports(&losses, PvzLossCode::ExactEndpointMismatch));
     let tolerance = ir.model.faces[0].tolerance.unwrap().get();
-    assert!(tolerance >= 5.0e-5 * 1000.0, "{tolerance}");
+    assert!(tolerance >= offset * 1000.0, "{tolerance}");
 }
 
 #[test]
