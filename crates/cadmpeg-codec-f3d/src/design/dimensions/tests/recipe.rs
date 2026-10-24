@@ -276,7 +276,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
             class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned())
                 .unwrap(),
             byte_offset: Some(0),
-            coordinate_offset: 0,
+            coordinate_offset: Some(0),
             companion: crate::records::sketch_geometry::SketchPointCompanion {
                 incident_curves: Vec::new(),
             },

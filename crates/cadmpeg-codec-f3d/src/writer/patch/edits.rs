@@ -2446,7 +2446,12 @@ pub(super) fn validate_sketch_point_edits(
             })?;
         edits.entry(stream).or_default().push(SketchPointEdit {
             offset: source_position(before.byte_offset, &point.id, "sketch point byte offset")?,
-            coordinate_offset: before.coordinate_offset,
+            coordinate_offset: before.coordinate_offset.ok_or_else(|| {
+                CodecError::UnsupportedContent(format!(
+                    "F3D patch requires an actual source sketch point coordinate offset for {}",
+                    point.id
+                ))
+            })?,
             coordinates: point.coordinates(),
         });
     }

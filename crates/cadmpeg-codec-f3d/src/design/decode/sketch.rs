@@ -1629,11 +1629,18 @@ fn trailing_sketch_owner_reference(record: &[u8]) -> Option<u32> {
     View::u32_le_at(record, tail + 1)
 }
 
-fn decode_sketch_points_from_stream(
-    bytes: &[u8],
+/// Source pointers of record captures, by record id.
+pub(crate) type SourcePointers =
+    std::collections::BTreeMap<String, std::collections::BTreeMap<String, u64>>;
+
+pub(crate) fn decode_sketch_points_from_stream(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    source: View<'_>,
     meta: &crate::metastream::MetaStream,
     stream: &str,
+    pointers: &mut SourcePointers,
 ) -> Result<Vec<SketchPoint>, CodecError> {
+    let bytes = source.window();
     let frames = design_primary_frames(bytes, meta)?;
     let mut frames_by_entity = HashMap::new();
     let mut types_by_entity = HashMap::new();
@@ -1651,6 +1658,19 @@ fn decode_sketch_points_from_stream(
             ),
         );
     }
+    // A frame-relative range of the stream, read through its source view.
+    let frame_view = |start: usize, end: usize| {
+        source
+            .start()
+            .checked_add(start)
+            .zip(source.start().checked_add(end))
+            .and_then(|(start, end)| source.child(start, end))
+            .ok_or_else(|| CodecError::malformed("F3D sketch-point frame exceeds its stream"))
+    };
+    fn read<'a>(view: View<'a>) -> Result<&'a [u8], CodecError> {
+        view.read_slice(view.start()..view.end())
+            .ok_or_else(|| CodecError::malformed("F3D sketch-point frame is unreadable"))
+    }
     let mut out = Vec::new();
     for frame in &frames {
         if !frame
@@ -1663,66 +1683,83 @@ fn decode_sketch_points_from_stream(
         {
             continue;
         }
-        let payload = &bytes[frame.start..frame.end];
         let record_index = u32::try_from(frame.entity_id)
             .map_err(|_| CodecError::Malformed("F3D sketch-point entity ID exceeds u32".into()))?;
-        let decoded =
-            decode_sketch_point_record(payload, frame.design_type.version).ok_or_else(|| {
-                crate::design::text::malformed_design(format_args!(
-                    "F3D sketch point {record_index} has an invalid version-{} member sequence",
-                    frame.design_type.version
-                ))
-            })?;
-        let (u, v) = (decoded.coordinates[0] * 10.0, decoded.coordinates[1] * 10.0);
-        if !point_target_has_guid(
-            &types_by_entity,
-            decoded.trailing_reference(),
-            SKETCH_CONTAINER_TYPE_GUID,
-        ) {
-            return Err(crate::design::text::malformed_design(format_args!(
-                "F3D sketch point {record_index} has an invalid trailing container reference"
-            )));
+        let id = design_record_id(stream, ":sketch-point#", u64_from_index(frame.start));
+        if pointers.contains_key(&id) {
+            return Err(CodecError::malformed(
+                "F3D sketch-point source owner is duplicated",
+            ));
         }
-        let (record_form, companion) = frames_by_entity
-            .get(&decoded.paired_reference)
-            .filter(|companion_frame| {
-                let design_type = companion_frame.design_type;
-                design_type
-                    .type_guid
-                    .as_str()
-                    .eq_ignore_ascii_case(SKETCH_POINT_COMPANION_TYPE.0)
-                    && design_type.version == SKETCH_POINT_COMPANION_TYPE.1
-                    && design_type.module == SKETCH_POINT_COMPANION_TYPE.2
-            })
-            .and_then(|companion_frame| {
-                decode_sketch_point_companion(
-                    &bytes[companion_frame.start..companion_frame.end],
+        let extent = frame_view(frame.start, frame.end)?;
+        // The point grammar and its companion grammar consume every byte of
+        // their frames, so each frame is read whole inside the point's scope.
+        let (point, fields) = ctx.record(&id, extent, || {
+            let payload = read(extent)?;
+            let decoded = decode_sketch_point_record(payload, frame.design_type.version)
+                .ok_or_else(|| {
+                    crate::design::text::malformed_design(format_args!(
+                        "F3D sketch point {record_index} has an invalid version-{} member sequence",
+                        frame.design_type.version
+                    ))
+                })?;
+            let (u, v) = (decoded.coordinates[0] * 10.0, decoded.coordinates[1] * 10.0);
+            if !point_target_has_guid(
+                &types_by_entity,
+                decoded.trailing_reference(),
+                SKETCH_CONTAINER_TYPE_GUID,
+            ) {
+                return Err(crate::design::text::malformed_design(format_args!(
+                    "F3D sketch point {record_index} has an invalid trailing container reference"
+                )));
+            }
+            let companion_frame =
+                frames_by_entity
+                    .get(&decoded.paired_reference)
+                    .filter(|companion_frame| {
+                        let design_type = companion_frame.design_type;
+                        design_type
+                            .type_guid
+                            .as_str()
+                            .eq_ignore_ascii_case(SKETCH_POINT_COMPANION_TYPE.0)
+                            && design_type.version == SKETCH_POINT_COMPANION_TYPE.1
+                            && design_type.module == SKETCH_POINT_COMPANION_TYPE.2
+                    });
+            let (record_form, companion) = match companion_frame {
+                Some(companion_frame) => decode_sketch_point_companion(
+                    read(frame_view(companion_frame.start, companion_frame.end)?)?,
                     record_index,
                     decoded.record_form.clone(),
                     &types_by_entity,
-                )
-            })
+                ),
+                None => None,
+            }
             .ok_or_else(|| {
                 crate::design::text::malformed_design(format_args!(
                     "F3D sketch point {record_index} has no valid inverse companion"
                 ))
             })?;
-
-        out.push(
-            SketchPoint::try_from(crate::records::sketch_geometry::SketchPointDraft {
-                id: design_record_id(stream, ":sketch-point#", u64_from_index(frame.start)),
+            let point = SketchPoint::try_from(crate::records::sketch_geometry::SketchPointDraft {
+                id: id.clone(),
                 record_index,
                 owner_reference: decoded.owner_reference,
                 class_tag: frame.class_tag.clone(),
                 byte_offset: Some(u64_from_index(frame.start)),
-                coordinate_offset: decoded.coordinate_offset,
+                coordinate_offset: Some(decoded.coordinate_offset),
                 record_form,
                 companion,
                 paired_reference: decoded.paired_reference,
                 coordinates: Point2::new(u, v),
             })
-            .map_err(CodecError::Malformed)?,
-        );
+            .map_err(CodecError::Malformed)?;
+            let fields = crate::design::decode::parameters::source_layout::pointer_fields(
+                ctx,
+                point.source_offsets(),
+            )?;
+            Ok((point, fields))
+        })?;
+        pointers.insert(id, fields);
+        out.push(point);
     }
     Ok(out)
 }
@@ -1733,9 +1770,34 @@ fn decode_sketch_points_from_stream(
 /// converted centimetre→millimetre. Class version 0 supplies `(u,v)` and no
 /// persistent identity; later forms supply `(u,v,w)` and `pt_tag`. A known
 /// point record with a malformed or non-finite member sequence makes the
-/// stream malformed.
-pub(crate) fn decode_sketch_points(scan: &ContainerScan) -> Result<Vec<SketchPoint>, CodecError> {
-    decode_sketch_streams(scan, decode_sketch_points_from_stream)
+/// stream malformed. Each point is parsed inside its record scope, and its
+/// source offsets are `record_layout` pointers in `pointers`.
+pub(crate) fn decode_sketch_points(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &ContainerScan,
+    pointers: &mut SourcePointers,
+) -> Result<Vec<SketchPoint>, CodecError> {
+    let mut out = Vec::new();
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
+    {
+        let source = scan
+            .entry_view(&entry.name)
+            .ok_or_else(|| CodecError::malformed(format_args!("entry {} not found", entry.name)))?;
+        let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
+            continue;
+        };
+        out.extend(decode_sketch_points_from_stream(
+            ctx,
+            source,
+            &meta,
+            &entry.name,
+            pointers,
+        )?);
+    }
+    Ok(out)
 }
 
 struct SketchProperty<'a> {
