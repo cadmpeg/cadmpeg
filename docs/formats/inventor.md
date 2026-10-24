@@ -382,7 +382,7 @@ Type `284d8790d011f8d10008cabc0663dc09` adds a counted UTF-16LE name, `name_valu
 
 Type `f1b2bc24d01121dd0008d0bc0663dc09` stores a face collection. After the content header it stores one type-2 reference list and ends. Each non-null member selects a record in the same PmDc segment.
 
-Type `ccb59f50d1114f6b0008a1ba32a3dc09` stores a face item. After the content header it stores a nonempty type-2 `u32` index-reference list and `terminal_value:i32 = -1`, then ends. The index values are native topology selectors, not one-based PmDc record references.
+Type `ccb59f50d1114f6b0008a1ba32a3dc09` stores a face item. After the content header it stores a type-2 `u32` index-reference list. An empty list selects no face and ends the record without a trailer. A nonempty list is followed by `terminal_value:i32 = -1`, then the record ends. The index values are native topology selectors, not one-based PmDc record references.
 
 Type `7a25f2efd11105af000847b00524dc09` stores a selection list. After the content header it stores one type-2 reference list and ends. Each non-null member selects a record in the same PmDc segment.
 

@@ -80,6 +80,47 @@ fn face_selection_records_require_indices_and_exact_termination() -> TestResult 
     Ok(())
 }
 
+#[test]
+fn face_item_admits_empty_indices_without_a_trailer() -> TestResult {
+    for version in [18, 19, 23, 28] {
+        let stamps: &[i32] = match version {
+            23 => &[-1],
+            28 => &[-1, -1],
+            _ => &[],
+        };
+        let mut item = content_at(2, version, stamps);
+        item.extend_from_slice(&references(&[]));
+        parse(&item, |ctx, source| -> TestResult {
+            let value = parse_face_item(ctx, source, version)?;
+            assert!(matches!(value.kind,
+                PmDcFeaturePropertyKind::FaceItem { index_references }
+                    if index_references.marker() == 2 && index_references.values().is_empty()
+            ));
+            Ok(())
+        })?;
+    }
+    Ok(())
+}
+
+#[test]
+fn face_item_rejects_empty_indices_with_a_trailer() {
+    let mut item = content_at(2, 19, &[]);
+    item.extend_from_slice(&references(&[]));
+    item.extend_from_slice(&(-1i32).to_le_bytes());
+    parse(&item, |ctx, source| {
+        assert!(parse_face_item(ctx, source, 19).is_err());
+    });
+}
+
+#[test]
+fn face_item_rejects_nonempty_indices_without_a_terminal_value() {
+    let mut item = content_at(2, 19, &[]);
+    item.extend_from_slice(&references(&[0x8000_0001]));
+    parse(&item, |ctx, source| {
+        assert!(parse_face_item(ctx, source, 19).is_err());
+    });
+}
+
 fn thread_property(ordinal: u32, kind: PmDcFeaturePropertyKind) -> TestResult<PmDcFeatureProperty> {
     let type_id = match &kind {
         PmDcFeaturePropertyKind::FaceItem { .. } => FACE_ITEM_TYPE,
@@ -265,6 +306,16 @@ fn thread_refuses_open_selections_and_propagates_entity_limits() -> TestResult {
             test_projection_index(&properties, &parameters[..1], &[], &[], &[], &[], &[], &[]);
         assert!(project_thread(&ctx, &source, &label, &index).is_none());
     }
+    let mut empty = properties.clone();
+    empty[1] = thread_property(
+        19,
+        PmDcFeaturePropertyKind::FaceItem {
+            index_references: PmDcU32List::new(2, None, Vec::new())
+                .ok_or("invalid empty face list")?,
+        },
+    )?;
+    let index = test_projection_index(&empty, &parameters, &[], &[], &[], &[], &[], &[]);
+    assert!(project_thread(&ctx, &source, &label, &index).is_none());
     let mut wrong_kind = properties.clone();
     wrong_kind[1] = thread_property(
         19,
