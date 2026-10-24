@@ -1,35 +1,52 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Document builders and the decode context the crate's tests measure with.
+//! Measured round-trip assertions for writer tests, and the document
+//! builders and decode context the crate's own tests measure with.
 
+pub mod round_trip;
+
+#[cfg(test)]
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+#[cfg(test)]
 use cadmpeg_ir::geometry::analytic::{
     CircleCurve, ConeSurface, CylinderSurface, LineCurve, PlaneSurface, SphereSurface, TorusSurface,
 };
+#[cfg(test)]
 use cadmpeg_ir::geometry::nurbs::{NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis, WeightedPole3};
+#[cfg(test)]
 use cadmpeg_ir::geometry::pcurve::{
     CirclePcurve, LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata,
 };
+#[cfg(test)]
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, DirectedParameterRange, SolvedCurveGeometry, SolvedSurfaceGeometry,
     Surface, SurfaceGeometry,
 };
+#[cfg(test)]
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
     SurfaceId, VertexId,
 };
+#[cfg(test)]
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+#[cfg(test)]
 use cadmpeg_ir::scalar::NonZeroReal;
+#[cfg(test)]
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, EdgeCarrier, Face, FaceLoops, Loop, LoopBoundary, LoopRing,
     PcurveUse, Point, Region, Sense, Shell, Vertex,
 };
+#[cfg(test)]
 use cadmpeg_ir::CadIr;
 
+#[cfg(test)]
 use crate::report::MeasureReport;
+#[cfg(test)]
 use crate::select::Selection;
+#[cfg(test)]
 use crate::session::{MeasureInput, MeasureOptions, Measurer};
 
 /// A service-policy decode context for tests that read no source file.
+#[cfg(test)]
 pub(crate) fn service_context() -> DecodeContext<'static> {
     let arena = Box::leak(Box::new(DecodeArena::new()));
     DecodeContext::from_root_bytes(&[], arena, &DecodePolicy::service())
@@ -38,6 +55,7 @@ pub(crate) fn service_context() -> DecodeContext<'static> {
 }
 
 /// Measure `ir` with `selection` under the desktop profile.
+#[cfg(test)]
 pub(crate) fn measure(ir: &CadIr, selection: &Selection) -> MeasureReport {
     let ctx = service_context();
     let input = MeasureInput {
@@ -53,6 +71,7 @@ pub(crate) fn measure(ir: &CadIr, selection: &Selection) -> MeasureReport {
 }
 
 /// The measured value of a scalar quantity.
+#[cfg(test)]
 pub(crate) fn value(quantity: &crate::value::Quantity<crate::value::Scalar>) -> f64 {
     match quantity {
         crate::value::Quantity::Measured(measured) => measured.value().value.get(),
@@ -65,10 +84,12 @@ pub(crate) fn value(quantity: &crate::value::Quantity<crate::value::Scalar>) -> 
 }
 
 /// `|computed − expected| ≤ numeric error + TEST_ABSOLUTE_FLOOR × max(|expected|, scale^d)`.
+#[cfg(test)]
 pub(crate) const TEST_ABSOLUTE_FLOOR: f64 = 1.0e-9;
 
 /// Assert a measured scalar equals `expected` within its numeric error and
 /// the test floor relative to `scale`.
+#[cfg(test)]
 pub(crate) fn assert_measured(
     quantity: &crate::value::Quantity<crate::value::Scalar>,
     expected: f64,
@@ -86,6 +107,7 @@ pub(crate) fn assert_measured(
 }
 
 /// An origin with an axis and a reference direction.
+#[cfg(test)]
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Frame {
     pub(crate) origin: [f64; 3],
@@ -93,6 +115,7 @@ pub(crate) struct Frame {
     pub(crate) reference: [f64; 3],
 }
 
+#[cfg(test)]
 impl Frame {
     /// The frame at `origin` with axis `+z` and reference `+x`.
     pub(crate) const fn z_up(origin: [f64; 3]) -> Self {
@@ -116,12 +139,14 @@ impl Frame {
 }
 
 /// A circle: its frame and radius.
+#[cfg(test)]
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Circle {
     pub(crate) frame: Frame,
     pub(crate) radius: f64,
 }
 
+#[cfg(test)]
 impl Circle {
     fn curve(self) -> CircleCurve {
         let (center, axis, reference) = self.frame.vectors();
@@ -131,6 +156,7 @@ impl Circle {
 
 /// Assert a measured range equals `[min, max]` within its numeric error
 /// and the test floor relative to `scale`.
+#[cfg(test)]
 pub(crate) fn assert_range(
     quantity: Option<&crate::value::Quantity<crate::value::Range>>,
     [min, max]: [f64; 2],
@@ -154,6 +180,7 @@ pub(crate) fn assert_range(
 
 /// Assert a measured tight box equals `min .. max` within its numeric error
 /// and the test floor relative to `scale`.
+#[cfg(test)]
 pub(crate) fn assert_tight_box(
     quantity: &crate::value::Quantity<crate::value::BoxValue>,
     min: [f64; 3],
@@ -183,16 +210,19 @@ pub(crate) fn assert_tight_box(
 }
 
 /// Builds a document from vertices, edges and faces.
+#[cfg(test)]
 pub(crate) struct Builder {
     ir: CadIr,
     next: usize,
     faces: Vec<FaceId>,
 }
 
+#[cfg(test)]
 fn id<T>(mint: impl Fn(String) -> Result<T, cadmpeg_ir::IdentityError>, kind: &str, n: usize) -> T {
     mint(format!("test:model:{kind}#{n:04}")).expect("test identity grammar")
 }
 
+#[cfg(test)]
 impl Builder {
     pub(crate) fn new() -> Self {
         Self {
@@ -700,16 +730,19 @@ impl Builder {
 
 /// A box face: outward normal, plane origin, `u` axis, and its ring of
 /// edge indices with their forward flags.
+#[cfg(test)]
 type BoxFace = ([f64; 3], [f64; 3], [f64; 3], [(usize, bool); 4]);
 
 /// The solid box from `min` to `max`: eight corners, twelve line edges and
 /// six plane faces whose carriers face outward and whose rings run
 /// counterclockwise about the outward normal.
+#[cfg(test)]
 pub(crate) fn cuboid(min: [f64; 3], max: [f64; 3]) -> CadIr {
     placed_cuboid(min, max, |point| point, |direction| direction)
 }
 
 /// The rotation by `angle` radians about `axis`, as three rows.
+#[cfg(test)]
 pub(crate) fn rotation(axis: [f64; 3], angle: f64) -> [[f64; 3]; 3] {
     let length = axis.iter().map(|c| c * c).sum::<f64>().sqrt();
     let [x, y, z] = axis.map(|c| c / length);
@@ -735,12 +768,14 @@ pub(crate) fn rotation(axis: [f64; 3], angle: f64) -> [[f64; 3]; 3] {
 }
 
 /// `rows · vector`.
+#[cfg(test)]
 fn rotate(rows: &[[f64; 3]; 3], vector: [f64; 3]) -> [f64; 3] {
     rows.map(|row| row[0] * vector[0] + row[1] * vector[1] + row[2] * vector[2])
 }
 
 /// The box from `min` to `max` in a frame turned by `rows` and then moved
 /// by `offset`: the model point of the frame point `p` is `rows · p + offset`.
+#[cfg(test)]
 pub(crate) fn rotated_cuboid(
     rows: &[[f64; 3]; 3],
     offset: [f64; 3],
@@ -760,6 +795,7 @@ pub(crate) fn rotated_cuboid(
 
 /// The box from `min` to `max` with each point mapped by `place` and each
 /// direction by `turn`, a rigid motion.
+#[cfg(test)]
 fn placed_cuboid(
     min: [f64; 3],
     max: [f64; 3],
@@ -859,6 +895,7 @@ fn placed_cuboid(
 
 /// The solid right circular cylinder of `radius` about `+z` through the
 /// origin, from `z = 0` to `z = height`: a seam-cut side and two discs.
+#[cfg(test)]
 pub(crate) fn cylinder_solid(radius: f64, height: f64) -> CadIr {
     let mut builder = Builder::new();
     let low = builder.vertex([radius, 0.0, 0.0]);
@@ -898,6 +935,7 @@ pub(crate) fn cylinder_solid(radius: f64, height: f64) -> CadIr {
 
 /// The plate of #188 case 3: the square `[0, 40]²` at `z = 0` with a hole of
 /// diameter 20 centred at `(20, 20)`.
+#[cfg(test)]
 pub(crate) fn plate_with_hole(classified: bool) -> CadIr {
     let mut builder = Builder::new();
     let corners = [

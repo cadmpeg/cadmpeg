@@ -35,6 +35,8 @@ roxmltree.workspace = true
 [dev-dependencies]
 # Test-only golden harness and round-trip helpers.
 cadmpeg-test-support = { workspace = true }
+# Measured round-trip assertions on written documents.
+cadmpeg-measure = { workspace = true, features = ["test-support"] }
 
 [lints]
 workspace = true

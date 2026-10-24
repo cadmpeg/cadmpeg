@@ -31,3 +31,8 @@ assert!((volume.expect("volume").value().value.get() - 1000.0).abs() < 1.0e-9);
 `cadmpeg_measure::compare::compare` compares two measured documents without
 entity IDs. The CLI exposes measurement as `cadmpeg measure` and the
 comparison as `cadmpeg diff A B --geometry`.
+
+Writer tests take `cadmpeg_measure::test_support::round_trip` through the
+`test-support` feature in `[dev-dependencies]`: `assert_measures_agree`
+compares a document with its written and decoded copy, and `measures_decide`
+selects the fixtures whose self-comparison agrees.

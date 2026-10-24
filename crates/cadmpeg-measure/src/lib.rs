@@ -71,5 +71,5 @@ pub use session::{findings, Density, MeasureError, MeasureInput, MeasureOptions,
 
 #[cfg(test)]
 mod integration_tests;
-#[cfg(test)]
-mod test_support;
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_support;
