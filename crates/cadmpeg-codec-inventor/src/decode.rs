@@ -1341,6 +1341,7 @@ fn project_root_product(
     let description = metadata.description.as_deref().map(str::to_owned);
     let part_number = metadata.part_number.as_deref().map(str::to_owned);
     Ok(ProductDefinition {
+        sketches: Vec::default(),
         id: ProductDefinitionId::compose(
             &cadmpeg_ir::identity_namespace!("inventor", "document", "product"),
             cadmpeg_ir::identity_key!("root"),

@@ -44,6 +44,8 @@ pub(crate) enum F3dLossCode {
     ActComponentLinkUnresolved,
     /// Local component occurrences whose container or definition the source does not settle.
     LocalOccurrenceUnplaced,
+    /// A sketch collection owner does not bind one component definition.
+    SketchOwnerUnresolved,
     /// Unresolved `Component Insert` occurrences whose placement has no finite millimetre transform.
     ComponentInsertUnplaced,
     /// Unresolved `Component Insert` occurrences dropped because no authored timeline order tells
@@ -279,6 +281,7 @@ impl F3dLossCode {
         Self::ConfigurationFeatureSuppressionUnbound,
         Self::ActComponentLinkUnresolved,
         Self::LocalOccurrenceUnplaced,
+        Self::SketchOwnerUnresolved,
         Self::ComponentInsertUnplaced,
         Self::ComponentInsertOrderUnknown,
         Self::ComponentDefinitionRevised,
@@ -403,6 +406,7 @@ impl F3dLossCode {
             }
             Self::ActComponentLinkUnresolved => "assembly.act-component-link-unresolved",
             Self::LocalOccurrenceUnplaced => "assembly.local-occurrence-unplaced",
+            Self::SketchOwnerUnresolved => "sketch.component-owner-unresolved",
             Self::ComponentInsertUnplaced => "assembly.component-insert-unplaced",
             Self::ComponentInsertOrderUnknown => "assembly.component-insert-order-unknown",
             Self::ComponentDefinitionRevised => "assembly.component-definition-revised",
@@ -547,6 +551,7 @@ impl F3dLossCode {
             | Self::ConfigurationFeatureSuppressionUnbound
             | Self::ActComponentLinkUnresolved
             | Self::LocalOccurrenceUnplaced
+            | Self::SketchOwnerUnresolved
             | Self::ComponentInsertUnplaced
             | Self::ComponentInsertOrderUnknown
             | Self::ComponentDefinitionRevised
@@ -713,7 +718,8 @@ impl F3dLossCode {
             | Self::ComponentInsertUnplaced
             | Self::ComponentInsertOrderUnknown
             | Self::ComponentDefinitionRevised => LossTaxonomy::AssemblyPlacementsNotTransferred,
-            Self::DesignBodyBindingUnresolved
+            Self::SketchOwnerUnresolved
+            | Self::DesignBodyBindingUnresolved
             | Self::FaceSurfaceReferenceDangling
             | Self::PcurveUndecoded => LossTaxonomy::ReferenceGraphNotClosed,
             Self::ReferenceImageNativeRetained
@@ -813,6 +819,7 @@ mod tests {
                 "configuration.feature-suppression-unbound",
                 "assembly.act-component-link-unresolved",
                 "assembly.local-occurrence-unplaced",
+                "sketch.component-owner-unresolved",
                 "assembly.component-insert-unplaced",
                 "assembly.component-insert-order-unknown",
                 "assembly.component-definition-revised",

@@ -6255,6 +6255,10 @@ The reference starts at offset 36 relative to the Geometry-member indexed header
 
 Spec §3.1 · layout: byte offsets · size: 20 B
 
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs`
+- `crates/cadmpeg-codec-f3d/src/design/decode/sketch_owners.rs`
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its indexed header is followed by nine zero bytes, a property block carrying `crv_tag_id_idx` |
@@ -6355,6 +6359,46 @@ Parsed by:
 Unstated regions:
 
 - `0..43` (43 B): Prefix before the common owner count.
+
+## `sketch_owner_collection_legacy_list_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 6 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs`
+- `crates/cadmpeg-codec-f3d/src/design/decode/sketch_owners.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 6 | `prefix` | `bytes[6]` | little | spec | Version `3` has six bytes after this property block and before the member list. |
+
+## `sketch_owner_reference`
+
+Spec §3.1 · layout: byte offsets · size: 11 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/sketch_owners.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | a one-byte marker |
+| 1 | 8 | `target` | `u64` | little | spec | a u64 target |
+| 9 | 2 | `flags` | `bytes[2]` | little | spec | two zero flag bytes |
+
+## `sketch_owner_typed_reference`
+
+Spec §3.1 · layout: byte offsets · size: 51 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/sketch_owners.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | a one-byte marker |
+| 1 | 8 | `target` | `u64` | little | spec | a u64 target |
+| 9 | 4 | `type_guid_length` | `u32` | little | spec | an additional u32 length `36` |
+| 13 | 36 | `type_guid` | `bytes[36]` | little | spec | 36 ASCII type-GUID bytes between the target and the flags |
+| 49 | 2 | `flags` | `bytes[2]` | little | spec | two zero flag bytes |
 
 ## Not tabulated
 
