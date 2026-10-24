@@ -3,7 +3,7 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, LimitScope}
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::source_fidelity::parts::ParserPartOutput;
 
-use super::admit;
+use super::{admit_field, FieldValue};
 use crate::global::GlobalTable;
 
 #[test]
@@ -15,16 +15,8 @@ fn optional_directory_scalar_uses_actual_nonzero_field_and_refuses_foreign_sourc
     let source = root.child(3, 11).expect("exact nonzero field");
     let mut output = ParserPartOutput::new(cadmpeg_ir::CodecFormat::Iges);
     assert_eq!(
-        admit(
-            &ctx,
-            source,
-            "line weight",
-            12,
-            GlobalTable::Legacy,
-            &mut output
-        )
-        .expect("actual scalar"),
-        Some(7)
+        admit_field(&ctx, source, 12, GlobalTable::Legacy, &mut output).expect("actual scalar"),
+        Some(FieldValue::Integer(7))
     );
     let (_, native, fidelity, losses) = output
         .into_parts(&ctx)
@@ -43,15 +35,7 @@ fn optional_directory_scalar_uses_actual_nonzero_field_and_refuses_foreign_sourc
         DecodeContext::from_root_bytes(b"       7", &foreign_arena, &DecodePolicy::service())
             .expect("foreign session");
     let mut rejected = ParserPartOutput::new(cadmpeg_ir::CodecFormat::Iges);
-    assert!(admit(
-        &foreign,
-        source,
-        "line weight",
-        12,
-        GlobalTable::Legacy,
-        &mut rejected
-    )
-    .is_err());
+    assert!(admit_field(&foreign, source, 12, GlobalTable::Legacy, &mut rejected).is_err());
     let (_, native, fidelity, losses) = rejected
         .into_parts(&foreign)
         .expect("unchanged foreign output")
@@ -72,15 +56,8 @@ fn optional_directory_field_session_limit_escapes_without_a_given_up_substitute(
     let (ctx, source) =
         DecodeContext::from_root_bytes(b"       x", &arena, &policy).expect("source session");
     let mut output = ParserPartOutput::new(cadmpeg_ir::CodecFormat::Iges);
-    let error = admit(
-        &ctx,
-        source,
-        "line weight",
-        12,
-        GlobalTable::Legacy,
-        &mut output,
-    )
-    .expect_err("session refusal escapes");
+    let error = admit_field(&ctx, source, 12, GlobalTable::Legacy, &mut output)
+        .expect_err("session refusal escapes");
     assert!(
         matches!(error, CodecError::ResourceLimit(limit) if limit.scope == LimitScope::Session)
     );

@@ -190,7 +190,8 @@ fn actual_optional_directory_scalar_source_flip_changes_only_its_current_native_
             .values()
             .filter(|part| part.level().as_str() == "iges.directory_field")
             .collect();
-        assert_eq!(fields.len(), 14);
+        // Appendix C: 18 `iges.directory_field` parts per entry.
+        assert_eq!(fields.len(), 2 * 18);
         assert!(fields
             .iter()
             .all(|part| part.state() == &PartState::Decoded {}));
