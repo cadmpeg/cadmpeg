@@ -57,7 +57,7 @@ edit without a re-render fails the gate.
 | Siemens NX `.prt`                                 | L1    |
 | CATIA V5 `.CATPart`                               | L3    |
 | Creo Parametric `.prt`                            | L1    |
-| Creo View `.pvz`                                  | L2    |
+| Creo View `.pvz`                                  | L3    |
 | STEP Part 21                                      | L8    |
 
 <!-- /generated: ladder-table -->
@@ -498,7 +498,7 @@ See [`formats/creo_prt.md`](formats/creo_prt.md) and [`formats/creo_prt-open-ite
 
 <!-- generated: dialects pvz -->
 
-**Ladder: L2.**
+**Ladder: L3.**
 
 | Dialect        | Read                   | Write |
 | -------------- | ---------------------- | ----- |
@@ -511,13 +511,13 @@ See [`formats/creo_prt.md`](formats/creo_prt.md) and [`formats/creo_prt-open-ite
 
 <!-- /generated: dialects pvz -->
 
-The codec opens the ZIP framing, the `.pvs` stream directory, and the `.ol` stream directory, expands each GZIP stream under the decode caps and checks its CRC-32, classifies the package from the generation the `.pvs` member declares, and decodes product structure, exact B-rep, and tessellation. Every undecoded record family is named by a loss. The format is at L2: exact faces carry placed analytic and B-spline carriers, and edges carry curves, in millimetres. The L3 connected-model criterion does not hold for every exact stream. The code-built golden packages cover every structure generation, the XML structure form, and both exact-stream scalar widths.
+The codec opens the ZIP framing, the `.pvs` stream directory, and the `.ol` stream directory, expands each GZIP stream under the decode caps and checks its CRC-32, classifies the package from the generation the `.pvs` member declares, and decodes product structure, exact B-rep, and tessellation. Every undecoded record family is named by a loss. The format is at L3: each exact stream becomes connected B-rep from bodies through vertices, with face regions, coedge senses, face sides, shells, and placed analytic and B-spline carriers in millimetres, and the neutral structural validation passes. The code-built golden packages cover every structure generation, the XML structure form, and both exact-stream scalar widths.
 
 ### Read profile
 
 - **Container and versions: Partial.** The codec admits the ZIP package through the shared archive snapshot, requires exactly one `.pvs` structure member, and classifies the `PV-PVS0301` to `PV-PVS0305` binary structure signatures and the matching `version` attribute of the XML structure form. A structure member that declares any other generation is read on the residual path and reports `pvz/source.dialect-unverified`. Loose `.pvs` and `.ol` files outside a package are not detected.
 - **Structure: Partial.** The binary and XML structure forms decode into product definitions with their names and properties, and into the expanded occurrence tree with placements as a rigid transform and a uniform scale. Appearance palettes, illustration and group elements, occurrence flags and extensions, typed definition bytes, and geometry-element bounds report `pvz/structure.*` losses.
-- **Geometry and tessellation: Partial.** Each geometry member a definition names becomes one body owned by every such definition. When the member's exact-geometry stream decodes, the body holds its neutral B-rep: analytic and B-spline face carriers, edge curves, coedge pcurves, loops, vertices, shells, and regions, in millimetres. Carriers with no neutral form, omitted pcurves, open loops, and gauge face sides report `pvz/exact.*` losses. A stream that does not decode reports `pvz/geometry.exact-undecoded`, and the member keeps its tessellation alone. The body also holds one tessellation per appearance and vertex layout, with per-patch triangle groups and the member's appearances bound to the tessellations. Edge tessellation, texture coordinates, the patch-header face references that would bind appearances to exact faces, and the other attribute and tessellation records report losses.
+- **Geometry and tessellation: Partial.** Each geometry member a definition names becomes a body owned by every such definition. When the member's exact-geometry stream decodes, the body holds its neutral B-rep: analytic and B-spline face carriers, edge curves, coedge pcurves, loops, vertices, closed shells, and regions, in millimetres. The open shells of the stream form a second, sheet body that the same definitions own. Edge records that store one model edge once per coedge use join into one shared edge. Carriers with no neutral form, omitted pcurves, open loops, gauge face sides, faces without a loop, and merged or collapsed edges report `pvz/exact.*` losses. A stream that does not decode reports `pvz/geometry.exact-undecoded`, and the member keeps its tessellation alone. The body also holds one tessellation per appearance and vertex layout, with per-patch triangle groups and the member's appearances bound to the tessellations. Edge tessellation, texture coordinates, the patch-header face references that would bind appearances to exact faces, and the other attribute and tessellation records report losses.
 
 ### Write and round trip
 

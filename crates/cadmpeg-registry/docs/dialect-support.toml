@@ -147,7 +147,7 @@ level = 3
 scored = ["sat:text"]
 
 [format.pvz]
-level = 2
+level = 3
 scored = ["pvz:pvs-0301", "pvz:pvs-0302", "pvz:pvs-0303", "pvz:pvs-0304", "pvz:pvs-0305"]
 
 
