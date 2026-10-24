@@ -57,7 +57,7 @@ edit without a re-render fails the gate.
 | Siemens NX `.prt`                                 | L1    |
 | CATIA V5 `.CATPart`                               | L3    |
 | Creo Parametric `.prt`                            | L1    |
-| Creo View `.pvz`                                  | L3    |
+| Creo View `.pvz`                                  | L0    |
 | STEP Part 21                                      | L8    |
 
 <!-- /generated: ladder-table -->
@@ -498,7 +498,7 @@ See [`formats/creo_prt.md`](formats/creo_prt.md) and [`formats/creo_prt-open-ite
 
 <!-- generated: dialects pvz -->
 
-**Ladder: L3.**
+**Ladder: L0.**
 
 | Dialect        | Read                   | Write |
 | -------------- | ---------------------- | ----- |
@@ -511,7 +511,7 @@ See [`formats/creo_prt.md`](formats/creo_prt.md) and [`formats/creo_prt-open-ite
 
 <!-- /generated: dialects pvz -->
 
-The codec opens the ZIP framing, the `.pvs` stream directory, and the `.ol` stream directory, expands each GZIP stream under the decode caps and checks its CRC-32, classifies the package from the generation the `.pvs` member declares, and decodes product structure, exact B-rep, and tessellation. Every undecoded record family is named by a loss. The format is at L3: each exact stream becomes connected B-rep from bodies through vertices, with face regions, coedge senses, face sides, shells, and placed analytic and B-spline carriers in millimetres, and the neutral structural validation passes. The code-built golden packages cover every structure generation, the XML structure form, and both exact-stream scalar widths.
+The codec opens the ZIP framing, the `.pvs` stream directory, and the `.ol` stream directory, expands each GZIP stream under the decode caps and checks its CRC-32, classifies the package from the generation the `.pvs` member declares, and decodes product structure, exact B-rep, and tessellation. Every undecoded record family is named by a loss. Each exact stream becomes connected B-rep from bodies through vertices, with face regions, coedge senses, face sides, shells, and placed analytic and B-spline carriers in millimetres. The code-built golden packages cover every structure generation, the XML structure form, both exact-stream scalar widths, and closed solids with plane, cylinder, cone, and rational B-spline faces, a periodic seam, a singular apex, secondary pcurves, and inner loops; the neutral structural validation passes on each. No real `.pvz` file is in the repository or in `docs/evaluations.toml`. The proof criterion that real files exercise the scored level therefore holds at no level, and code-built fixtures do not pass a level (scoring rule 2). The format is at L0, the lowest level the registry declares. Connected B-rep is an extra above that score.
 
 ### Read profile
 

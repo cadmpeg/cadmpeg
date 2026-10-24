@@ -147,7 +147,7 @@ level = 3
 scored = ["sat:text"]
 
 [format.pvz]
-level = 3
+level = 0
 scored = ["pvz:pvs-0301", "pvz:pvs-0302", "pvz:pvs-0303", "pvz:pvs-0304", "pvz:pvs-0305"]
 
 
@@ -939,51 +939,26 @@ returns Confidence::No and the forced codec path returns WrongFormat"""
 dialect = "pvz:pvs-0301"
 read = "detected"
 write = "none"
-reason = """
-the binary and XML structure forms decode into product definitions and the
-occurrence tree, and each geometry member into one body with the neutral B-rep
-of its exact-geometry stream, its tessellations, and its appearances. The
-goldens that pin the row are code-built"""
 
 [[support]]
 dialect = "pvz:pvs-0302"
 read = "detected"
 write = "none"
-reason = """
-the binary and XML structure forms decode into product definitions and the
-occurrence tree, and each geometry member into one body with the neutral B-rep
-of its exact-geometry stream, its tessellations, and its appearances. The
-goldens that pin the row are code-built"""
 
 [[support]]
 dialect = "pvz:pvs-0303"
 read = "detected"
 write = "none"
-reason = """
-the binary and XML structure forms decode into product definitions and the
-occurrence tree, and each geometry member into one body with the neutral B-rep
-of its exact-geometry stream, its tessellations, and its appearances. The
-goldens that pin the row are code-built"""
 
 [[support]]
 dialect = "pvz:pvs-0304"
 read = "detected"
 write = "none"
-reason = """
-the binary and XML structure forms decode into product definitions and the
-occurrence tree, and each geometry member into one body with the neutral B-rep
-of its exact-geometry stream, its tessellations, and its appearances. The
-goldens that pin the row are code-built"""
 
 [[support]]
 dialect = "pvz:pvs-0305"
 read = "detected"
 write = "none"
-reason = """
-the binary and XML structure forms decode into product definitions and the
-occurrence tree, and each geometry member into one body with the neutral B-rep
-of its exact-geometry stream, its tessellations, and its appearances. The
-goldens that pin the row are code-built"""
 
 [[support]]
 dialect = "pvz:unknown"

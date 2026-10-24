@@ -6,7 +6,7 @@ structure member and `.ol` geometry members.
 
 <!-- generated: capability pvz -->
 
-Support: L3 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#creo-view-pvz)).
+Support: L0 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#creo-view-pvz)).
 
 <!-- /generated: capability pvz -->
 
@@ -70,7 +70,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 Requires Rust 1.88 or later. Licensed under Apache-2.0.
 
-Format knowledge draws on openpvz-rs by Calum Knott (MIT).
+Format knowledge (no code) draws on openpvz-rs by Calum Knott (MIT).
 
 PTC, Creo, Creo View, and other product names are trademarks of their
 respective owners. cadmpeg uses them only to identify the file formats this
