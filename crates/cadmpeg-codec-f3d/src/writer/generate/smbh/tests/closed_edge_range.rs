@@ -2,6 +2,7 @@
 
 use std::f64::consts::TAU;
 
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::analytic::{CircleCurve, EllipseCurve, LineCurve};
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
@@ -54,7 +55,17 @@ fn square_loop(periodic: bool) -> CurveGeometry {
 }
 
 fn traversal(edge: &Edge, carrier: &CurveGeometry, vertex: Point3) -> Option<[f64; 2]> {
-    closed_edge_traversal(edge, carrier, vertex, 0.0).expect("the carrier evaluates")
+    closed_edge_traversal(edge, carrier, vertex, 0.0).ok()
+}
+
+fn assert_refused(edge: &Edge, carrier: &CurveGeometry, vertex: Point3) {
+    assert!(
+        matches!(
+            closed_edge_traversal(edge, carrier, vertex, 0.0),
+            Err(CodecError::NotImplemented(_))
+        ),
+        "an edge with no closed traversal is refused"
+    );
 }
 
 #[test]
@@ -104,50 +115,41 @@ fn closed_clamped_nurbs_edge_traverses_its_knot_domain() {
 }
 
 #[test]
-fn closed_edge_on_an_open_nurbs_has_no_traversal() {
+fn closed_edge_on_an_open_nurbs_is_refused() {
     let edge = closed_edge("path", "path", "v0");
     let path = square_path(false, Point3::new(0.0, 0.5, 0.0));
-    assert_eq!(traversal(&edge, &path, Point3::new(0.0, 0.0, 0.0)), None);
+    assert_refused(&edge, &path, Point3::new(0.0, 0.0, 0.0));
 }
 
 #[test]
-fn closed_edge_off_the_domain_start_has_no_traversal() {
+fn closed_edge_off_the_domain_start_is_refused() {
     let edge = closed_edge("loop", "loop", "v0");
-    assert_eq!(
-        traversal(&edge, &square_loop(false), Point3::new(1.0, 1.0, 0.0)),
-        None
-    );
-    assert_eq!(
-        traversal(&edge, &circle(), Point3::new(-10.0, 0.0, 0.0)),
-        None
-    );
+    assert_refused(&edge, &square_loop(false), Point3::new(1.0, 1.0, 0.0));
+    assert_refused(&edge, &circle(), Point3::new(-10.0, 0.0, 0.0));
 }
 
 #[test]
 fn edge_tolerance_admits_a_vertex_near_the_domain_start() {
     let edge = closed_edge("circle", "circle", "v0");
     let vertex = Point3::new(10.0, 0.001, 0.0);
-    assert_eq!(traversal(&edge, &circle(), vertex), None);
+    assert_refused(&edge, &circle(), vertex);
     assert_eq!(
         closed_edge_traversal(&edge, &circle(), vertex, 0.01).expect("the circle evaluates"),
-        Some([0.0, TAU])
+        [0.0, TAU]
     );
 }
 
 #[test]
-fn open_edge_or_open_carrier_has_no_traversal() {
+fn open_edge_or_open_carrier_is_refused() {
     let mut open = closed_edge("circle", "circle", "v0");
     open.end = cadmpeg_ir::ids::VertexId::mint("test:model:vertex#v1".to_owned())
         .expect("identity grammar");
-    assert_eq!(
-        traversal(&open, &circle(), Point3::new(10.0, 0.0, 0.0)),
-        None
-    );
+    assert_refused(&open, &circle(), Point3::new(10.0, 0.0, 0.0));
     let line = solved(SolvedCurveGeometry::Line(
         LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)).expect("line"),
     ));
     let mut on_line = closed_edge("line", "line", "v0");
     on_line.carrier =
         EdgeCarrier::new(on_line.curve().cloned(), None).expect("a curve with no range");
-    assert_eq!(traversal(&on_line, &line, Point3::new(0.0, 0.0, 0.0)), None);
+    assert_refused(&on_line, &line, Point3::new(0.0, 0.0, 0.0));
 }
