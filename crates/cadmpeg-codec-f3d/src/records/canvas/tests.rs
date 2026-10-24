@@ -171,9 +171,10 @@ fn canvas_content_edits_are_independent_of_source_payloads() {
         assert_eq!(serde_json::to_value(&image).unwrap(), wire);
         assert!(image.scope_byte_offset().is_none());
         assert!(image.geometry.byte_offset.is_none());
-        let mut fidelity = cadmpeg_ir::SourceFidelity::default();
-        image.retain_source(&mut fidelity);
-        assert!(fidelity.metadata.is_empty());
+        assert!(image
+            .source_offsets()
+            .iter()
+            .all(|(_, offset)| offset.is_none()));
     }
     for field in [
         "scope_reference_offset",
@@ -252,12 +253,9 @@ fn source_canvas_admission_checks_actual_scope_envelopes_and_overflow() {
         )
         .unwrap();
         assert_eq!(image.scope_byte_offset(), Some(402));
-        let mut fidelity = cadmpeg_ir::SourceFidelity::default();
-        image.retain_source(&mut fidelity);
-        assert_eq!(
-            fidelity.metadata[&format!("{}.geometry_byte_offset", image.id)],
-            "100"
-        );
+        let offsets: std::collections::BTreeMap<_, _> =
+            image.source_offsets().into_iter().collect();
+        assert_eq!(offsets["geometry_byte_offset"], Some(100));
         let restored: super::DesignCanvasImage =
             serde_json::from_value(serde_json::to_value(&image).unwrap()).unwrap();
         assert!(restored.scope_byte_offset().is_none());

@@ -57,40 +57,6 @@ pub(super) fn embedded_image_asset(
     ))
 }
 
-/// Decode image scopes in their owning streams, ordered by native identity.
-pub(super) fn decode_scoped_images<T>(
-    scan: &ContainerScan,
-    scopes: &[crate::records::feature::scope::DesignParameterScope],
-    kind: &crate::records::feature::scope::DesignFeatureKind,
-    mut parse: impl FnMut(
-        &[u8],
-        &str,
-        &crate::records::feature::scope::DesignParameterScope,
-    ) -> Result<Option<T>, CodecError>,
-    id: impl Fn(&T) -> &str,
-) -> Result<Vec<T>, CodecError> {
-    let mut images = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
-        let bytes = scan.entry_bytes(&entry.name)?;
-        let stream = crate::ids::native_scope(&entry.name);
-        for scope in scopes.iter().filter(|scope| {
-            scope.kind().as_str() == kind.as_str()
-                && crate::ids::native_stream(&scope.id) == Some(stream.as_str())
-        }) {
-            if let Some(image) = parse(bytes, &entry.name, scope)? {
-                images.push(image);
-            }
-        }
-    }
-    images.sort_by(|a, b| id(a).cmp(id(b)));
-    images.dedup_by(|a, b| id(a) == id(b));
-    Ok(images)
-}
-
 /// One located image record of a scope.
 pub(super) struct ImageRecord {
     /// The image's native identity.
@@ -210,7 +176,7 @@ mod tests {
     use zip::CompressionMethod;
 
     use crate::test_support::manifest_test::write_synthetic_manifests;
-    use crate::test_support::zip_test::with_scan;
+    use crate::test_support::zip_test::{with_context_scan, with_scan};
 
     #[test]
     fn embedded_image_asset_reads_unique_entry() {
@@ -287,13 +253,23 @@ mod tests {
             }))
             .unwrap();
         let kind = crate::records::feature::scope::DesignFeatureKind::Fillet;
-        with_scan(&archive, |scan| {
-            let images = super::decode_scoped_images(
+        with_context_scan(&archive, |ctx, scan| {
+            let mut pointers = crate::design::decode::sketch::SourcePointers::new();
+            let images = super::decode_scoped_image_records(
+                ctx,
                 scan,
                 std::slice::from_ref(&scope),
                 &kind,
-                |_, _, _| Ok(Some(17_u32)),
-                |_| "image",
+                &mut pointers,
+                |_, _, _| {
+                    Some(super::ImageRecord {
+                        id: "image".to_owned(),
+                        start: 0,
+                        end: 5,
+                    })
+                },
+                |_, _, _, _| Ok(Some(17_u32)),
+                |_| Vec::new(),
             )
             .unwrap();
             assert_eq!(images, [17]);

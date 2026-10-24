@@ -1016,8 +1016,12 @@ fn extend_related_design_records(
         scan,
         &design.design_parameter_scopes,
     )?;
-    design.design_canvas_images =
-        crate::design::decode::canvas::decode_canvas_images(scan, &design.design_parameter_scopes)?;
+    design.design_canvas_images = crate::design::decode::canvas::decode_canvas_images(
+        ctx,
+        scan,
+        &design.design_parameter_scopes,
+        &mut design.source_layout_pointers,
+    )?;
     design.design_decal_images = crate::design::decode::decal::decode_decal_images(
         ctx,
         scan,
