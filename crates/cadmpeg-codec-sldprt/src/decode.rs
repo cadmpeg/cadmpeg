@@ -3670,7 +3670,7 @@ fn build_geometry_report(
     classification.append_losses(&mut losses);
     Ok(DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
-        coverage: cadmpeg_ir::report::decode::Coverage::default(),
+        coverage: crate::archive::coverage(scan, ctx)?,
         losses,
         notes,
         transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
@@ -5240,7 +5240,7 @@ fn build_container_report(
 
     Ok(DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(false),
-        coverage: cadmpeg_ir::report::decode::Coverage::default(),
+        coverage: crate::archive::coverage(scan, ctx)?,
         losses,
         notes,
         transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),

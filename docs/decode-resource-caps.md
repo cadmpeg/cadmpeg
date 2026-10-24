@@ -385,6 +385,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-sldprt`   | `src/pmi.rs`                                       | `MAX_EXCLUSIVE_COUNT`                     | `9_223_372_036_854_775_808.0`                           | N    | Exclusive `i64` range for an exact count stored as `f64`.                                                                                                                                                                                                                    |
 | `cadmpeg-codec-sldprt`   | `src/resolved_features/drafts.rs`                  | `MAX_PATH_CELLS`                          | `65`                                                    | 1    | Cell count of a compact component path. Outside the range the selection is not read.                                                                                                                                                                                         |
 | `cadmpeg-codec-sldprt`   | `src/brep/spline.rs`                               | `MAX_ARRAY_VALUES`                        | `1_000_000`                                             | 2    | Declared count of one spline value array. A larger array is skipped.                                                                                                                                                                                                         |
+| `cadmpeg-codec-sldprt`   | `src/archive.rs`                                   | `MAX_OPENING_OCCURRENCES`                 | `20_000`                                                | 4    | Occurrences of one class's body opening read to confirm its index in a configuration's class map. Past it the remaining occurrences are not read; the map keeps the index the read occurrences support.                                                                    |
 | `cadmpeg-codec-sldprt`   | `src/resolved_features/relation_table.rs`          | `MAX_ARRAY`                               | `100_000`                                               | 2    | Declared record count of one relation-table marker array. A larger count ends the marker walk; later rows stay unprojected.                                                                                                                                                  |
 | `cadmpeg-codec-sldprt`   | `src/resolved_features/relation_table.rs`          | `MAX_OPERANDS`                            | `16`                                                    | 1    | Handle cells read from one relation-table row. The cells after the sixteenth stay unread.                                                                                                                                                                                    |
 | `cadmpeg-codec-catia`    | `src/families/standard/topology.rs`                | `MAX_DUPLICATE_FACE_OPERATIONS`           | `65_536`                                                | 4    | Branch operations of the duplicate-face edge search; its depth stops at the budget's recursion guard. Exhaustion also exhausts the enclosing topology `WorkBudget`, so the decode reports the topology search failure. |
@@ -477,16 +478,16 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 262.
+Production `MAX_*` constants: 263.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 33    |
 | 2    | Per-input bound            | 70    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 131   |
+| 4    | Local work cap             | 132   |
 | N    | Not a decode bound         | 28    |
-|      | Total                      | 262   |
+|      | Total                      | 263   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -495,7 +496,7 @@ By crate: `cadmpeg-core` 3, `cadmpeg-ir` 12, `cadmpeg-measure` 20, `cadmpeg-asm`
 `cadmpeg-protein` 3, `cadmpeg` 2, `cadmpeg-codec-step` 12,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 3,
 `cadmpeg-codec-freecad` 15, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 18,
-`cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 16,
+`cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 17,
 `cadmpeg-codec-catia` 57, and `cadmpeg-codec-pvz` 3.
 
 ## Routing

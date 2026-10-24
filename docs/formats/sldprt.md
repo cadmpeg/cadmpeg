@@ -1441,6 +1441,29 @@ defines a circular unit from `PerUnitAreaDiameter`.
 
 ---
 
+### 2.2 Object stream class map
+
+`Contents/Config-N` and `Contents/Config-N-ResolvedFeatures` are MFC `CArchive` serializations. The other SW Objects streams (`Contents/CnfgObjs`, `Contents/CMgr`, `Contents/Config-N-ModelHeader`, `Contents/Definition`) use the same class declaration. An object is written as a class tag followed by the object's body; the body's layout belongs to its class and carries no length, so a body cannot be skipped without knowing its class.
+
+| Tag (little-endian u16)            | Meaning                                                                     |
+| ---------------------------------- | --------------------------------------------------------------------------- |
+| `ff ff`, u16 schema, u16 *n*, *n* ASCII bytes | new class: its schema number and run-time class name; an object of it follows |
+| `0x8000 \| index` (index < `0x7fff`) | an object of the class at map `index`                                       |
+| `0x7fff`, then u32 `0x80000000 \| index` | an object of the class at map `index`, in a map whose indices reach `0x7fff` |
+| `00 00`                            | null object (MFC's form)                                      |
+
+A `suObList` object is an MFC `CObList`: a u16 element count, then that many objects. The root class `moPart_c` has one object, the one its declaration opens.
+
+A body field that refers to an object already written stores that object's map index as a little-endian u16 with bit 15 clear, or, for an index of `0x7fff` or above, as `ff 7f` followed by the index as a little-endian u32. The index can name an object of the `Config-N` stream from the `ResolvedFeatures` stream, because the two streams share one map. A field that refers to a later object holds that object, written in place.
+
+Unicode strings inside a body are `ff fe ff`, a length byte, and that many UTF-16LE code units; a length byte of `ff` is followed by a u16 length.
+
+Classes and objects share one map counter. A new-class declaration takes the next index for the class and the one after it for the object it opens; a class tag takes the next index for the object it opens. One map spans `Contents/Config-N` and `Contents/Config-N-ResolvedFeatures`: the `ResolvedFeatures` stream begins with a u32, the map count at which `Config-N` ended, and a u16, and its first declaration takes that count as its index. In a compound-file part, the `ResolvedFeatures` stream instead opens with a u16 and then a class declaration, and carries no map count. The u16 after the map count is the number of top-level objects in the stream minus two. A stream can end with four zero bytes after its last object, and an in-context part can write two zero bytes after a top-level `moProfileFeature_c` whose sketch plane is written in place; neither has an established owner (open item EV-24). `Config-N` starts its map after entries the stream does not write, so indices are not fixed. The `moNodeName_c` index is not fixed: an object name opens `04 80 ff fe ff`, `05 80 ff fe ff` and so on for the index the map holds. A map that places `moNodeName_c` at `0x46` also declares `moHeader_c`, `su_CStringArray`, `moLogs_c` and `moStamp_c` after `moPart_c` and before the part's own objects. A class declared in `Config-N` and instantiated in `ResolvedFeatures` is written there by its `Config-N` index.
+
+---
+
+
+
 ## 3. Parasolid stream
 
 ### 3.1 Stream header

@@ -102,6 +102,7 @@
 
 mod annotations;
 mod appearance;
+mod archive;
 mod brep;
 mod classification;
 mod container;
