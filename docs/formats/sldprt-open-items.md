@@ -84,6 +84,14 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must define the native family discriminator or ownership relation that selects one exact face support when several carrier families are structurally valid.
 
+### GC-10. Normal sense of non-compact surface carriers
+
+**Question.** Which field orients the surface normal against the natural normal of the neutral surface for a `00 7c` B-spline surface-use wrapper, a `00 43` or `00 44` swept or spun surface, a rolling-ball blend, and an offset surface?
+
+**Known.** `sldprt.md` §7.1 gives the orientation marker of a compact analytic surface record (`00 32` through `00 36`) and composes it with the bridge marker of §4. The `00 43`, `00 44`, blend, and offset records carry a `0x2b` or `0x2d` byte in the same compact-header position. `sldprt.md` does not give its meaning for these families.
+
+**Need.** We must know the surface normal sense to give a face on one of these carriers its outward normal.
+
 ## 3. Container metadata
 
 ### CM-01. Cache-cell prefix
@@ -132,7 +140,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Known.** `sldprt.md` §3.1 gives the stream header: the `PS 00 00` signature, `desc_len u16 BE`, the description, the padding, `schema_len u8`, and the schema. The header has no total-length field. `sldprt.md` §3.2 states that a block can hold a partition stream and a deltas stream, and gives no delimiter between them.
 
-The decoder treats a later `PS\0\0` as a boundary only when the bytes from that position contain a complete stream header with a bounded description and schema token. An unframed signature in coordinate or string data remains part of the current stream.
+A later `PS\0\0` is a boundary only when the bytes from that position contain a complete stream header with a bounded description and schema token. An unframed signature in coordinate or string data remains part of the current stream.
 
 **Need.** We must know the authoritative boundary to distinguish a real following stream from payload bytes that happen to contain a complete header-shaped sequence.
 
@@ -142,7 +150,7 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Known.** Decimal `SourceIndex=N` binds a Keywords configuration to `Config-N-Partition`. The Keywords decimal `id` selects `Config-N-ResolvedFeatures` and is independent of the partition identity. Element order and regeneration ordinal do not bind a partition. A uniquely named active configuration can use the active geometry partition. `crates/cadmpeg-ir/src/features.rs:57` defines `ConfigurationBodies::Unresolved` for every remaining configuration whose body membership is not established.
 
-**Need.** We must know whether another stored field binds an inactive source-less configuration. The decoder keeps this body membership `Unresolved` and reports the loss.
+**Need.** We must know whether another stored field binds an inactive source-less configuration. The body membership stays `Unresolved`.
 
 ## 4. Auxiliary lanes
 
@@ -169,6 +177,30 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 **Known.** `sldprt.md` §8 defines native display-state selection, three complete part-default class chains, body identity through `ATOM_ID_2001`, and generated-face feature scope through current `FACE_ID_2001` source and timestamp values. Four-word face values identify a feature-scoped owner set without a local face selector. A `moCompFace_c` object can carry a complete multi-component path. A terminal source, timestamp, and local triple can match more than one current face or omit another affected current face. A bare definition supplies no ownership. Unresolved higher-rank paths do not supply lower-rank appearance fallbacks.
 
 **Need.** The complete path-to-current-face binding for retained or modified feature faces and direct face assignments, and a complete holderless part-default owner relation. A unique terminal triple in one current identity set does not establish a general path-truncation rule.
+
+### AL-06. Decal mapping fields
+
+**Question.** What do the two u32 values that begin a `moDecalProperties_c` body select, and what unit do the decal locations, width, and height use?
+
+**Known.** `sldprt.md` §8 "A `moDecalProperties_c` instance is an 84-byte body" defines the five f64 fields. The u32 LE at `+0` is `0` or `1`, and the u32 LE at `+4` is `0` or `4`. Rotation takes the values `0`, `90`, `180`, and `270`. Width and height are metre-scale in most bodies; a width or height of exactly `500` occurs only with the pair `(1, 4)`, and a metre-scale size occurs with that pair too.
+
+**Need.** We must know the mapping mode and the size unit before a decal can be placed on its faces.
+
+### AL-07. Decal face lists in other DisplayLists forms
+
+**Question.** Where does a DisplayLists decal record store its face list when the count is not at `+315`?
+
+**Known.** `sldprt.md` §8 "A DisplayLists decal record stores its framed image path" defines one complete form. Other records store the same framed image path, and the bytes at `+6`, `+14`, and `+315` do not satisfy that grammar. A part can also declare `moDecalProperties_c` instances and store no DisplayLists decal record.
+
+**Need.** We must know the other record forms, and the binding of a decal that has no DisplayLists record, to join every decal to its faces.
+
+### AL-08. Visual-property payload fields
+
+**Question.** What do the unnamed fields of a visual-property payload store?
+
+**Known.** `sldprt.md` §8 "A visual-property payload begins at its packed colour" defines the names, the texture flag, and the image paths. The six optical scalars, the 104 bytes and 22 bytes of the texture block, the state cells, and the bytes around the appearance file path have no assigned meaning. The inline instance tag is resolved: `sldprt.md` §8 "The tag's low 15 bits are the class's index in the stream's archive map" states how its value follows from the stream.
+
+**Need.** We must know the meaning of the texture scale and orientation fields, and of the six optical scalars.
 
 ## 5. Design intent
 
@@ -288,7 +320,7 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Question.** Which endpoint does the u32 selector in an up-to-vertex code-`3` edge-endpoint reference select?
 
-**Known.** The point-reference form retains the edge and endpoint selector. The decoder retains the little-endian u32 at four bytes before the duplicated selection-vector marker as `endpoint_selector`. `sldprt.md` §2 "A `Config-N-ResolvedFeatures` lane supplies the evaluated parameter state for configuration slot" states how ordinary point-reference object indices resolve.
+**Known.** The point-reference form retains the edge and endpoint selector. The little-endian u32 at four bytes before the duplicated selection-vector marker is the `endpoint_selector`. `sldprt.md` §2 "A `Config-N-ResolvedFeatures` lane supplies the evaluated parameter state for configuration slot" states how ordinary point-reference object indices resolve.
 
 **Need.** We must know the selector values to terminate the extrusion at the correct edge endpoint.
 
@@ -344,7 +376,7 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Question.** What operation and record shape does each sparse extrusion object outside the defined form codes use?
 
-**Known.** `sldprt.md` §2 "Keywords element order is serialization order, not regeneration order. Neutral regeneration" through `sldprt.md` §2 "Feature-tree" define direct, repeated-class, sentinel, terminated-trailer, and sparse-trailer objects. Form code `11` identifies an object form and does not determine its Boolean operation. A Keywords operation token or a complete inline operation trailer supplies the operation. Without either carrier, the operation remains unresolved and the decoder reports a design loss.
+**Known.** `sldprt.md` §2 "Keywords element order is serialization order, not regeneration order. Neutral regeneration" through `sldprt.md` §2 "Feature-tree" define direct, repeated-class, sentinel, terminated-trailer, and sparse-trailer objects. Form code `11` identifies an object form and does not determine its Boolean operation. A Keywords operation token or a complete inline operation trailer supplies the operation. Without either carrier, the operation remains unresolved.
 
 **Need.** We must know the remaining form codes to parse each object and construct its Boolean operation.
 
@@ -376,7 +408,7 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Question.** How does a compact edge vector map its feature-local edge path to a final B-rep edge?
 
-**Known.** `sldprt.md` §2 defines the duplicated-marker framing, count, lane-local selector, typed and reference-list entry forms, separators, terminal slots, and lane-local type signatures. The decoder retains the ordered compact vector and its producer-feature paths. The terminal component identifies a feature-local generated edge, but it does not by itself identify the final B-rep edge.
+**Known.** `sldprt.md` §2 defines the duplicated-marker framing, count, lane-local selector, typed and reference-list entry forms, separators, terminal slots, and lane-local type signatures. The ordered compact vector and its producer-feature paths are retained. The terminal component identifies a feature-local generated edge, but it does not by itself identify the final B-rep edge.
 
 **Need.** We must define the topology join from the retained compact edge identity to the final B-rep edge before projecting the selected edge.
 
@@ -448,7 +480,7 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Question.** What fixes the end of a `moTempAxisRef_w` nine-scalar carrier, and what do its scalars at `+263`, `+271`, and `+279` hold?
 
-**Known.** `sldprt.md` §2 "An `moCirPattern_c` interval retains its repeated seed" gives the carrier at offsets `+0` through `+311`, the axis origin at `+239`, the axis direction at `+287`, and zero padding of at most 24 bytes before the next class declaration. `crates/cadmpeg-codec-sldprt/src/resolved_features/axes.rs:786-863` searches that 24-byte window for the next class marker and rejects the carrier when the search fails. The specification gives no stored field that fixes the padding length. The decoder reads the three scalars between the origin and the direction, tests them for a finite value, and then discards them.
+**Known.** `sldprt.md` §2 "An `moCirPattern_c` interval retains its repeated seed" gives the carrier at offsets `+0` through `+311`, the axis origin at `+239`, the axis direction at `+287`, and zero padding of at most 24 bytes before the next class declaration. The specification gives no stored field that fixes the padding length or binds the three scalars between the origin and the direction.
 
 **Need.** We must know the field that ends the carrier, so the record does not need a tuned search window, and the middle triple, so the complete axis frame is decoded.
 
@@ -492,6 +524,30 @@ has a derived cosmetic-thread output and no resolved seed. Another fallback
 uses the immediately preceding feature-input object. Either rule can assign an
 unrelated preceding feature as the pattern seed.
 
+### DI-42. A configuration stream that holds the active configuration's values
+
+**Question.** Does a `Contents/Config-N` stream show that its equation-manager values are not its configuration's current values?
+
+**Known.** `sldprt.md` §2 states that an inactive configuration's values come from its own stream. A stream can hold, line for line, the values of the active configuration's stream while the configuration's own body shows other values. The specification gives no field that separates such a stream from one whose configuration has the active configuration's values.
+
+**Need.** We must know this to report the configuration's values as not established. Without it, the decode keeps the active values and reports them as the configuration's.
+
+### DI-43. Where the document stores its Angular Equation Units
+
+**Question.** Which field of a SLDPRT file stores the Equations dialog's Angular Equation Units setting, degrees or radians, which sets the unit the equation manager's trigonometric functions take and give?
+
+**Known.** SolidWorks documents the setting in the Equations dialog; its default is degrees. In the only part sampled with trigonometric lines, an `atn` that gives radians reproduces the value a later line stores as its input in every configuration, and one that gives degrees reproduces none, while the same lines read their angle dimensions in degrees. After the last relation's lowercase name and value table, where a section holds the relation count minus one as a u32 followed by `00 00 ff ff ff ff`, the u32 before it is 0 in that part and in 31 others without trigonometric lines, and 1 in the parametric biped's parts, whose equations come from an external file, and in the two FRC rail parts (5 sections); 129 of 222 manager sections have no such anchor. No other field was compared. `int()` truncation was the other half of this item: it truncates the manager's value, and a value a few ulps short of a whole number is that whole number (`sldprt.md` §2). Whether it truncates or floors a negative argument is not established: none occurs in the dataset.
+
+**Need.** We must know the field to evaluate a line that calls a trigonometric function. Without it, the decode gives such a line no value, and its parameter keeps its literal.
+
+### DI-44. Sign of an integer scalar value
+
+**Question.** Is the four-byte value of an `moIntegerParameter_c` named scalar signed or unsigned?
+
+**Known.** `sldprt.md` reads it as a little-endian i32. Across the 1 040 integer cells of the 1 581-part dataset, values are 0 through 1327, so no value distinguishes i32 from u32.
+
+**Need.** We must know the sign before a writer can store a negative value. Without it, the writer refuses one.
+
 ### DI-45. Relation-table row flag
 
 **Question.** What does the u16 row flag `1` of a relation-table row mean?
@@ -508,6 +564,15 @@ unrelated preceding feature as the pattern seed.
 
 **Need.** We must draw these points to type the relations that name them.
 
+
+### DI-47. Relation-table framing
+
+**Question.** Which fields frame a sketch block's relation table: the row count, the start of the table, and the length of each row's trailer?
+
+**Known.** `sldprt.md` §2 "The relation table of a sketch block follows the last record of the block" gives the row header, the handle cells, and the trailer forms of the typed codes. The u32 thirty bytes before a table's first row is not always its row count. The handle cells are new archive objects, so a row added or removed changes the archive's object indices after it.
+
+**Need.** We must know the framing to add or remove a relation row. Without it, the writer refuses both.
+
 ## 6. Container record semantics
 
 ### EV-03. `SWObjects` record content
@@ -517,7 +582,6 @@ unrelated preceding feature as the pattern seed.
 **Known.** Configuration-manager values occur at offsets `+66`, `+107`, and `+117`; `moPart_c` has two defined fields; and `moVisualProperties_c` defines colour and name fields. The remaining bytes, the complete record lengths, and the role of `0x00c0_c0c0` in material records are undefined.
 
 **Need.** We must know what the undecoded bytes hold before the writer can edit a retained record or claim that a generated record is complete.
-
 ### EV-05. Leading word of a compound-file `ResolvedFeatures` stream
 
 **Question.** What does the u16 that opens `Contents/Config-N-ResolvedFeatures` in a compound-file part hold, and does that stream continue the class map of `Contents/Config-N`?
@@ -526,6 +590,112 @@ unrelated preceding feature as the pattern seed.
 
 **Need.** Without the map count, a reader cannot check its `Config-N` class map against the stream, and cannot resolve a `ResolvedFeatures` tag that names a `Config-N` class.
 
+### EV-06. Named-object header and feature-object block fields
+
+**Question.** What do the named-object header's u32 at +0 and +12, the feature-object block's unnamed u32 fields, its +41 f64, its two version-and-date pairs and its FILETIME hold? What are the bytes that `moEnvFolder_c` and `moDetailCabinet_c` write before the block's +55 string?
+
+**Known.** `sldprt.md` §2.3 gives the offsets and widths of the named-object header and the feature-object block. The +29 and +37 version numbers include values that are `swVersion` values, such as 17000, and values that are not, such as 1195. The +29 version is not consistently smaller or larger than the +37 version.
+
+**Need.** A writer has to fill these fields for a new or changed object, and a reader cannot state an object's provenance without them.
+
+### EV-07. Favorites and selection-set folder bodies
+
+**Question.** What do `moFavoriteFolder_c` and `moSelectionSetFolder_c` write after the feature-object block when they own items?
+
+**Known.** With no items, `moFavoriteFolder_c` writes `00 00 00 00 01 00 00 00` and `moSelectionSetFolder_c` writes `00 00 01 00 00 00`. A folder that owns one item writes `01 00` and then a `moFavoriteFeatItemData_c` or `moSelectionSetData_c` object.
+
+**Need.** A writer that adds a favorite or a selection set has to write the folder's count and the bytes that follow its items.
+
+### EV-08. Reference-plane body fields
+
+**Question.** What do the `moRefPlane_c` u32 at +64 and +136 and the f64 at +112, +120 and +128 hold?
+
+**Known.** `sldprt.md` §2.3 gives their offsets. The +112 value is negative and the +120 value positive. The +128 value is zero or of magnitude below 1e-17. The +136 value is 0, 1, 4 or 5. The +64 value is zero in most planes, and `cd cd cd cd` in some.
+
+**Need.** A writer that creates a reference plane has to fill these fields.
+
+### EV-09. Bytes after a directional light's embedded block
+
+**Question.** What does a `moDirectionLight_c` object write after the feature-object block embedded at its name string +60?
+
+**Known.** `sldprt.md` §2.3 gives the light's bytes through that block. After it come eight zero bytes in files whose `swVersion` is 15000 to 19000, and twelve zero bytes from 11000 to 14000. Six zero bytes, or six zero bytes, a class tag and two zero bytes, also occur at 17000 and 19000.
+
+**Need.** A writer that creates or changes a directional light has to write these bytes.
+
+### EV-10. Feature body head fields
+
+**Question.** What do the fields *h*, *f*, *t*, *g*, *e*, *x* and the *m* u32 values of the feature body head (`sldprt.md` §2.3) mean, and what do the `moPerBodyChooserData_c`, `moCompSolidBody_c` and `moPMarkRecord_c` objects that follow the head store?
+
+**Known.** After *x* `1` comes a u16 equal to *m* in all but two heads, then a `moPerBodyChooserData_c` object. After *g* `1` come `moCompSolidBody_c` objects in 687 of 850 heads; 153 others open with a class tag the corpus walk does not name, and whether those are solid bodies is open. Every `moRevolution_c`, `moCut_c` and `moRevCut_c` object with *g* `0`, *e* `0` and *x* `1` writes u16 `0`, a reference, u16 `1`, u32 `1`, the same reference and further bytes. `moCombineBodies_c`, `moScale_c` and `moMoveFace_c` write u16 `1` and an object in place after *x*. The *m* values equal the feature-object block +20 value of other objects, which several folders share, so they are not identifiers. *t* is `3` in body-changing features and `0` in reference features, patterns and stored bodies, with `2` in ten objects.
+
+**Need.** A writer that creates or changes a feature has to write these fields.
+
+### EV-11. The bytes around a sketch feature's sketch object
+
+**Question.** What does a `moProfileFeature_c` object write after its `sgSketch` object, and how is an in-place `sgSketch` body laid out up to its first sketch entity record?
+
+**Known.** `sldprt.md` §2.3 gives the ten zero bytes and the `sgSketch` object. An in-place `sgSketch` usually has §2's sketch entity record marker `ff ff 1f 00 03` at its class tag +14, and some have no such marker there. A referenced `sgSketch` is usually followed by `01 00 00 00 01 00 00 00`.
+
+**Need.** A writer has to emit the sketch object's framing and the profile's trailing bytes around the entity records.
+
+### EV-12. Other fillet and chamfer forms
+
+**Question.** What are the layouts of the `Fillet_c` and `Chamfer_c` objects that do not follow `sldprt.md` §2.3, and what do their fields mean?
+
+**Known.** Some fillets write a long body of repeated records after the +54 u32, with `0e 01 00 00` and a class tag in each record. Some write a body shorter than 68 bytes. Some have other values in the first 54 bytes. In a fillet the two u32 at second-table +30 and +64 usually differ by one; in a chamfer the +30 value is usually zero.
+
+**Need.** A writer that creates or changes a fillet or chamfer, including multi-edge and variable forms, has to write these bytes.
+
+### EV-13. Feature folder bytes
+
+**Question.** What does a `moFtrFolder_c` feature folder write after its eight zero bytes and u32 `1`, `1`, `0`, `1` when it does not end with a reference to itself, and how does it store the features it contains?
+
+**Known.** 176 folders written with a class declaration, 175 of them after a `moNotesAreaFtrFolder_c` folder, write u32 `1` after those values and then further bytes; the 188 such bodies that end at a declaration are 177 to 187 bytes long. 23 folders do not start with the reference and u32 values of `sldprt.md` §2.3, and 11 written with a class tag end with a reference to another object. The folder's contents are not among these bytes.
+
+**Need.** A reader that shows a feature tree's folders, and a writer that groups features into them, have to read and write these bytes.
+
+### EV-14. Persistent identity fields
+
+**Question.** What do the fields of the identity-representation objects, the `moFR_c` u32 before its time stamp, and the reference header's selector and record identifier mean, and what are the `moExtObject_c` forms whose u16 after the two string pointers is not `2`?
+
+**Known.** The `moFR_c` u32 is small and repeats across hops of one feature, so it may number the producing feature. In `moFromSktEnt3IntSurfIdRep_c` the second u32 is usually `ffffffff`. In 173 `moExtObject_c` objects the bytes between the third string and the configuration name are 17, not 18. Hop lists whose class index the corpus walk cannot name, and identity-representation classes not in the table of `sldprt.md` §2.3, remain unparsed.
+
+**Need.** A reader that resolves a selected face or edge to geometry, and a writer that creates a selection, have to read and write these fields.
+
+### EV-15. Feature-object block inputs
+
+**Question.** What are the inputs of each feature class's feature-object block, and what are the bytes that follow the inputs of a `moDetailCabinet_c` cabinet?
+
+**Known.** An extrusion's one input is a reference to the sketch feature it extrudes. A cabinet's inputs are its notes folders. In some files the cabinet's inputs are followed by a back-reference to the first input, eight zero bytes, a run of u32 `0` or `1` values and a back-reference to the last input, the same shape as the bytes a `moFtrFolder_c` folder writes of its own (§2.3); in others the last input is a `moFtrFolder_c` folder that writes them. Fourteen zero bytes instead of twelve then end the list in some files.
+
+**Need.** A writer that creates a feature has to write its inputs.
+
+### EV-16. Sketch object fields
+
+**Question.** What do the unnamed fields of the sketch record head, point and curve records, the `sgSketch` settings block and its 61 trailing bytes mean, what are the eight relation groups, and how are the compact `ff ff 07 00 01` records laid out?
+
+**Known.** In some sketches (about 17 streams; `Intake Final Drive Hex`, `105t HTD Belt…`) the dimension and relation groups hold one u16 count fewer than the usual three plus eight, with the same entries otherwise: a polygon that is the last group's entry elsewhere appears one group earlier. The header fields do not tell the two apart, but no group count has bit 15 set, so a reader detects the shorter form by the class tag that stands where the eighth count would be; which group is dropped is not known. The relation groups observed hold one-operand relations (types `4`, `5`, `17`) in the first group and two-operand relations (types `9`, `12`) in later groups. Some sketches write four zero bytes after the eight groups before the first `suObList` pointer. The zero bytes between the last curve record and the dimension count number 36 when the last curve list holds lines (106 of 115 sketches examined) and 22 when it holds arcs (187 of 220); 34 and 24 occur in the rest. The compact generation occurs in files whose sketches open their records with `ff ff 07 00 01`.
+
+**Need.** A reader that recovers sketch geometry and constraints, and a writer that creates a sketch, have to read and write these fields.
+
+### EV-17. Extrusion feature fields
+
+**Question.** Where is the item count of a feature dimension's placement block, what are the 76 bytes before an extrusion's `moFromEndSpec_c`, what does the 84-byte bounding-box form's 20-byte tail hold, what do extrusion and ICE objects write after their end specification in two-direction and up-to-surface forms, what are the `moBBoxCenterData_c` forms other than the 70- and 72-byte ones, and how is an ICE whose second body chooser and mark record are written without a class tag (by value) laid out?
+
+**Known.** After the end specification come the dimension display objects of the feature's dimensions, an up-to-surface face selection when the end type is `4`, and a `moFromEndSpec_c` object. Some bounding boxes write twelve more bytes before the next object. Some ICE objects write a body chooser's count and face references, and 64 zero bytes in place of a mark record, with no class tag. Chamfers have at least three forms: the one of `swVersion` 15000–16000 is read; in files of 12000 the dimension display is followed by u32 `1`, four empty `CString` values and f64 values, and in files of 17000 and 19000 an object follows the first `suObList` at once. A `moSketchBlockInst_c` writes, after its block definition, a 16-byte identifier, u16 `0x68`, u16 `11`, eight zero bytes, a `moDetailFolder_c`, transforms and `moAbsolutePoint_c` objects (13 files). A silhouette edge's backed-up data (u32 `9`, f64 π, …, the handle block, a `moArcBackedUpData_c` and the name `Silhouette Edge`) is not read.
+
+**Need.** A reader that recovers an extrusion's depth, direction and bodies, and a writer that creates an extrusion, have to read and write these fields.
+
+### EV-18. In-context reference fields
+
+**Question.** What do the 64 zero bytes before an in-context reference's context component, the ten bytes a face group writes after its compressed bodies, the six f64 of a group chain, the u16 group count of the sketch in-context block, the ten zero bytes and four f64 of a face support, and the frame data after a `moFaceRefPlnData_c` face reference hold?
+
+**Known.** The context component's two forms are distinguished by whether its identifier is repeated; form A carries sixteen `ff` bytes and form B two transform blocks. Each compressed body inflates to a Parasolid transmit file, the backed-up geometry of the support. A `moFaceRefPlnData_c` face reference is followed by `00 00`, u16 `1`, a context component, twelve zero bytes, i32 `-1` and a run of little-endian f64 values whose layout has not been decoded.
+
+The face geometry after a `moFaceRefPlnData_c` in an in-context part has two observed forms. In one, an 80-byte head (six f64, an f64, three f64), a transform block at +80, a flag-`0` triple, 22 bytes, a second transform block and a 65-byte tail ending `04 00 00 00 ff ff ff ff 00 00 00 00`, a u32 identifier, a u32 and eight zero bytes (402 bytes in 55 samples). In the other it opens with the 58-byte handle block's fields (three i32 `-12345`, the version), twelve zero bytes, i32 `-1` and four f64 (`-1`, `1`, `1`, `-1`) (370 bytes in 21 samples). Lengths of 210, 298, 364, 392, 436, 442 and 474 also occur.
+
+**Need.** A reader that keeps a part's in-context references, and a writer that preserves them, have to read and write these fields.
+
 ### EV-19. Configuration object stream
 
 **Question.** What is the grammar of a `moRelMgr_c` object's detailing settings after its ten dimension styles, how are `moCThreadRefMgr_c` records and the untagged thread data laid out, how are `moRelation_c` objects and their equation sides read inside `Config-N`, and what are the `Config-N` layouts of files below `swVersion` 14000?
@@ -533,6 +703,72 @@ unrelated preceding feature as the pattern seed.
 **Known.** A per-version template of gap lengths and string positions reads the detailing settings in 892 streams. Thread data with records writes 17-byte entries (u32, u32, a byte, f64), then f64 geometry of varying length, two `CString` values and three matrix rows; 124 streams stop there. 34 stop at equations, and none of the 37 streams of 10000–12000 reaches its end, for want of templates for those versions.
 
 **Need.** A writer that creates a part has to write the configuration stream, and a reader that keeps detailing settings, threads and equations has to read it.
+
+### EV-20. Favourite handle tail
+
+**Question.** Which field of a `moFavoriteHandle_c` decides the length of the bytes after its last `CString`?
+
+**Known.** The tail is a u32 flag word and 50 bytes in most handles; 85 bytes after the flag when bit 16 is set, with u32 `0` and a `CString` more when bit 0 is also set; 52 bytes and a `CString` and 18 bytes more when bit 7 is set. It is absent after a pattern-count dimension's handle and when an object follows at once, and 28 bytes before a reference object in one sample. Before an extrusion's 76-byte block it is zero bytes: 54 in 309 handles, 50 in all 4 of `swVersion` 14000, and 52 in 5 of `swVersion` 16000 and 19000. No byte of the handle's first 382 bytes separates the 52 from the 54 (314 handles of `swVersion` 15000 and above compared), so a reader finds the 76-byte block after a run of zero bytes. The 122 or 194 bytes of f64 values seen after handles with flag bits 11 and 15 set are the handle's own view block (resolved 2026-10-21; §2.3). Before a sketch's in-context block the tail is 52 bytes in four parts, told by the list that follows: a chain list, or a group header whose group data a reader would otherwise take for a chain count.
+
+**Need.** A writer has to write the tail a handle's reader expects; a wrong length shifts the object index count for the rest of the stream.
+
+### EV-21. Thread feature fields
+
+**Question.** What do the unnamed fields of a `moSweepThread_c` mean: the two f64 after the edge's handle block, the 40 bytes before u32 `1`, u32 `1`, and the f64 groups of the cylinder and surface references?
+
+**Known.** 10 of the 33 streams that hold a thread parse to their end; the start edge's point, axis and length, the pitch, the size and the library path are identified. The cylinder geometry is eleven f64 and the surface geometry thirteen f64 and a u32 in all samples read. A face-reference slot holding a `moCircleRef_w` (one file) and a 40-byte gap holding non-zero values (one file) are not read; in one file of `swVersion` 17000 the 74 bytes before the closing objects hold u32 `1`, `0`, `1` at +8 in place of u32 `1`, `1` at +40, read by length.
+
+**Need.** A writer that creates a cosmetic or modelled thread has to write these fields; a reader that keeps thread data has to read them.
+
+### EV-22. Sketch text fields and in-context plane frames
+
+**Question.** What do the unnamed fields of sketch text mean (the character format's other slots and four f64, the u32 pair before the character count, the six f64 of text on a path), and what do the two frames of a plane in an assembly's context, and the 47 bytes between them, distinguish?
+
+**Known.** Text records, their character format and outlines are read to their end in all 7 streams that hold them (3 designs; §2.3), including text on a path. The outlines are the rendered glyphs, so a writer that changes the text has to regenerate them from the font. An in-context plane's two frames were equal in the 6 parts read, and the bytes between them were 31 zero bytes, `01` and 15 zero bytes in all.
+
+**Need.** A writer that keeps a sketch's text, or a sketch placed on a face of another part of an assembly, has to write these records.
+
+### EV-23. Sheet-metal bends and single-design forms
+
+**Question.** What is the layout of a sheet-metal bend (`moOneBend_c`, the children of a `moEdgeFlange_c`), and of the forms seen in one design each: a polygon relation entry whose head differs from the documented one; a contour chooser whose tail selects sketch entities (a count, handles and identifiers `100000` + *k*); a spline tangent-magnitude dimension whose operands are data; the six f64 and u32 `0` that end one circular pattern at its stream's end; the 168 bytes that end a `moFlatPattern_c`; and the rest of a mirrored part (`moMirrorStock_c`: a `moBodyRef_w` whose `moCompBody_c` holds a context unit component, fields, a mirror frame and the mirrored body's compressed data, then further references and the mirror plane) and of an add-in's custom feature (`moMacroFeature_c`); the geometry of a `moCompRefAxis_c` (105 bytes, framed); the object index that 15 McMaster-Carr bolts count after the first `moSweepSideSurfIdRep_c` hop (a reader's count falls one short there, and nothing in the bytes shows the extra object); and a sketch's `sgBlock` (its layout is stated in §2.3; open is one block of 720 triples whose sequence after the triples differs)?
+
+**Known.** A bend is a named feature, then 122 bytes, its radius display, a `moCompFeature_c`, 33 bytes, its `moCompEdge_c` and its display objects, then a block. One block form is 215 bytes in six of the seven streams and 287 in the seventh. It opens with u32 `0` (the last display's flag word), u32 `8`, u32 `0x01000000`, u32 `0`, u16 `0x0100`, eight bytes that repeat in its middle (`20 5d 67 ce ce 72 ef bc` in the samples) and a frame of 3, 6 or 12 f64; its last 67 bytes are identical in all seven: f64 `1`, u8 `0`, eight `ff` bytes, u32 `1`, u32 `1`, thirty zero bytes and twelve `ff` bytes. Six streams write 34 further bytes before those: f64 `1`, three f64 `0` and u16 `0`. A reader frames that form by the next named object: a class tag, the name object's class tag and a Unicode `CString`. The other form opens `00 00 80 00 08 00 00 00`; it is 608 bytes and ends at the next object (a `moScalerDim_c` in the samples). A sheet-metal edge flange (`moEdgeFlange_c`) writes its counted children, then a display object, then a block that a reader frames by the next named object (a bend in the samples). A display dimension parsed at top level writes a view block after its favourite handle, opening u32 `0`, u32 `8`, u32 `0x01000000`, u32 `0`, u16 `0x0100` and the repeated eight-byte identifier; it ends at the next display object (472 bytes in the sample). The same block after a display inside a feature belongs to that feature. A top-level display dimension without that view block writes placement data before the next object: an empty Unicode `CString`, u32 values and zero bytes, all within 64 bytes of its end; without a `CString`, f64 and u32 values end at the next display object within 128 bytes.
+
+**Need.** A writer that creates sheet-metal flanges has to write bends; a reader that keeps them has to read them.
+
+## 7. Assembly documents
+
+### AS-01. Mate-list record layout
+
+**Question.** What is the layout of the `moMate*` records in `Contents/Config-N-MatesList` (`sldprt.md` §11.3), and how does each operand bind to its component instance and face?
+
+**Known.** The section holds mate class tokens, mate feature names, instance names `<instance name>@<assembly name>`, the referenced documents' paths, and `SurfIdRep` face references. No field offsets are known.
+
+**Need.** We must know the layout to transfer a mate as an assembly joint. Without it, the mates transfer only as occurrence placements.
+
+### AS-02. Component placements of a compound-file assembly
+
+**Question.** Where does a compound-file assembly (dialect `sw-version-pre-12000`) store its component instances and their placements?
+
+**Known.** The compound file has `Contents/Config-0-MatesList` and no `swXmlContents` sections, so no `COMPINSTANCETREE`. `Contents/Config-0` is the candidate.
+
+**Need.** We must know the records to transfer the occurrence tree of such an assembly. Without them, the occurrence structure does not transfer.
+
+### AS-03. Stored placement of path-driven components
+
+**Question.** Is the stored `swTransform` of a component that a path or chain mate drives the solved position of that component?
+
+**Known.** In an assembly with three chain sub-assemblies, every one of their 264 leaf instances is 0.69 mm (median) to 85 mm from the nearest instance of the STEP export of the same assembly, while the other sub-assemblies agree to 3e-11 mm. In another assembly, four instances under one sub-assembly agree with neither the parent-relative nor the root-relative composition of §11.2. The export state of these STEP files is not known.
+
+**Need.** We must know whether such placements need a solve before a consumer can use them as positions.
+
+### AS-04. Parasolid streams of an assembly document
+
+**Question.** What do the Parasolid streams in the `Contents/Config-N-ResolvedFeatures`, `Contents/Config-N-MatesList`, and `Contents/Config-N-GhostPartition` sections of an assembly document hold?
+
+**Known.** The part decode of such a document gives no body. The streams are not in embedded documents (`sldprt.md` §11.4). Assembly features (cuts, holes) and the cached geometry of mate faces are the candidates.
+
+**Need.** We must know their content to transfer it or to state that it is not model geometry. Without it, the document keeps the part losses that report an untransferred Parasolid model.
 
 ### EV-24. Bytes after the last top-level object
 
