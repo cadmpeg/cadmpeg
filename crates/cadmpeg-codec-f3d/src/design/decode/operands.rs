@@ -4590,9 +4590,26 @@ fn parse_extrude_identity_member(
         return None;
     }
     let fixed_end = start.checked_add(extrude_member::LEN)?;
+    let fixed_end = if tail_slot_present
+        && View::u32_le_at(bytes, tail_slot_offset + 1) == Some(0)
+        && after_context_id.checked_add(9)? == fixed_end
+        && bytes.get(fixed_end) == Some(&0)
+    {
+        use crate::layout::extrude_selection_member_long_tail as tail;
+        if bytes.get(fixed_end + tail::LEADING_ZERO) != Some(&tail::LEADING_ZERO_VALUE)
+            || View::u32_le_at(bytes, fixed_end + tail::KIND) != Some(tail::KIND_VALUE)
+            || View::u64_le_at(bytes, fixed_end + tail::VALUE) != Some(tail::VALUE_VALUE)
+            || bytes.get(fixed_end + tail::TRAILING_ZERO) != Some(&tail::TRAILING_ZERO_VALUE)
+        {
+            return None;
+        }
+        fixed_end.checked_add(tail::LEN)?
+    } else {
+        fixed_end
+    };
     let (next_record_index, next_byte_offset) = if View::u32_le_at(bytes, tail_slot_offset + 1)
         == Some(0)
-        && after_context_id.checked_add(9)? == fixed_end
+        && after_context_id.checked_add(9)? == start.checked_add(extrude_member::LEN)?
     {
         if fixed_end == bytes.len() {
             (0, u64::try_from(fixed_end).ok()?)
