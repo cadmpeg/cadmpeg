@@ -35,7 +35,9 @@ fn unique_closed_chain<K: Eq + Hash>(ends: &[(K, K)]) -> Option<Vec<usize>> {
         uses_from.entry(start).or_default().push(position);
     }
     let candidates = |tip: usize| uses_from.get(&ends[tip].1).map_or(&[][..], Vec::as_slice);
-    let mut used = vec![false; ends.len()];
+    let mut used = Vec::new();
+    used.try_reserve_exact(count).ok()?;
+    used.resize(count, false);
     *used.first_mut()? = true;
     let mut path = vec![0_usize];
     let mut cursors = vec![0_usize];

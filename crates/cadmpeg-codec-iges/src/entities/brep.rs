@@ -285,10 +285,15 @@ fn source_edge_for_vertices<'a>(
     matching.ok_or(SourceEdgeSelectionError::NoMatch)
 }
 
+/// The neutral uses of one Type 508 parameter-curve collection, in the
+/// traversal order of its owner. `traversal` is that traversal relative to the
+/// source order: a backward traversal lists the uses in reverse source order,
+/// and each use states the reversed interval of its parameter curve.
 fn project_pcurve_uses(
     candidate: &mut ModelDraft,
     uses: &[(bool, u32)],
     resolved: Vec<(PcurveGeometry, [f64; 2])>,
+    traversal: Sense,
     fit_tolerance: Option<f64>,
     id_stem: &crate::ids::Stem,
     ctx: &DecodeContext<'_>,
@@ -298,6 +303,18 @@ fn project_pcurve_uses(
         let parameter_range = cadmpeg_ir::units::FiniteVector::new(range).ok_or(
             PcurveProjectionError::Invalid(PcurveMetadata::NON_FINITE_PARAMETER_RANGE),
         )?;
+        let use_range = match traversal {
+            Sense::Forward => None,
+            Sense::Reversed => Some(
+                cadmpeg_ir::geometry::DirectedParameterRange::new([range[1], range[0]]).map_err(
+                    |_| {
+                        PcurveProjectionError::Invalid(
+                            "a parameter curve has no interval whose reversal a use can state",
+                        )
+                    },
+                )?,
+            ),
+        };
         let checked_tolerance = fit_tolerance
             .map(|value| {
                 cadmpeg_ir::geometry::FitTolerance::try_new(value).map_err(|_| {
@@ -316,8 +333,11 @@ fn project_pcurve_uses(
         projected.push(PcurveUse {
             pcurve: id,
             isoparametric: Some(*isoparametric),
-            parameter_range: None,
+            parameter_range: use_range,
         });
+    }
+    if traversal == Sense::Reversed {
+        projected.reverse();
     }
     Ok(projected)
 }
@@ -1264,6 +1284,7 @@ pub(super) fn project(
                                 &mut candidate,
                                 pcurves,
                                 resolved,
+                                face_sense,
                                 Some(tolerance),
                                 &shell_stem.child(loop_sequence).slot(use_index),
                                 ctx,
@@ -1466,6 +1487,7 @@ pub(super) fn project(
                             &mut candidate,
                             pcurves,
                             resolved,
+                            face_sense,
                             Some(tolerance),
                             &shell_stem.child(loop_sequence).slot(use_index),
                             ctx,

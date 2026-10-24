@@ -34,8 +34,8 @@ use cadmpeg_ir::report::{
 };
 use cadmpeg_ir::scalar::{FiniteReal, Length};
 use cadmpeg_ir::topology::{
-    BodyKind, Color, Edge, IncreasingParameterInterval, Loop, LoopBoundaryRole, PcurveUse, Region,
-    Sense,
+    BodyKind, Coedge, Color, Edge, IncreasingParameterInterval, Loop, LoopBoundaryRole, PcurveUse,
+    Region, Sense,
 };
 use cadmpeg_ir::units::{FiniteVector, OrthonormalFrame3, UnitVector3};
 use cadmpeg_ir::CadIr;
@@ -1531,7 +1531,10 @@ fn validate_brep_topology<'a>(
                             &surface.geometry,
                             span.start,
                             span.end,
-                            edge_use_sense(coedge.sense, face.sense),
+                            UseDirection {
+                                traversal: coedge.sense,
+                                written: edge_use_sense(coedge.sense, face.sense),
+                            },
                             topology_edge_explicit_tolerance(ir, edge),
                             coedge.id.as_str(),
                         );
@@ -1562,7 +1565,7 @@ fn validate_brep_topology<'a>(
                             &surface.geometry,
                             position,
                             position,
-                            Sense::Forward,
+                            UseDirection::traversed(Sense::Forward),
                             cadmpeg_ir::units::COINCIDENCE_TOLERANCE,
                             loop_.id.as_str(),
                         );
@@ -2158,7 +2161,10 @@ fn brep_entities(
                     &surface.geometry,
                     span.start,
                     span.end,
-                    use_sense,
+                    UseDirection {
+                        traversal: coedge.sense,
+                        written: use_sense,
+                    },
                     topology_edge_explicit_tolerance(ir, edge),
                     coedge.id.as_str(),
                 )
@@ -2208,7 +2214,7 @@ fn brep_entities(
                         vertex_use.pcurves.len()
                     )
                     .map_err(CodecError::malformed)?;
-                    for pcurve_use in &vertex_use.pcurves {
+                    for pcurve_use in pole_use_order(&vertex_use.pcurves, face.sense) {
                         write!(
                             parameters,
                             ",{},{}",
@@ -2230,7 +2236,7 @@ fn brep_entities(
                     pcurves.len()
                 )
                 .map_err(CodecError::malformed)?;
-                for pcurve_use in pcurves {
+                for pcurve_use in pole_use_order(pcurves, face.sense) {
                     write!(
                         parameters,
                         ",{},{}",
@@ -2389,6 +2395,15 @@ fn edge_use_sense(coedge: Sense, face: Sense) -> Sense {
         Sense::Forward
     } else {
         Sense::Reversed
+    }
+}
+
+/// The pcurve uses of a pole-vertex use in Type 508 order. A reversed face
+/// writes its loops backward, so it writes the uses in reverse order.
+fn pole_use_order(uses: &[PcurveUse], face: Sense) -> Vec<&PcurveUse> {
+    match face {
+        Sense::Forward => uses.iter().collect(),
+        Sense::Reversed => uses.iter().rev().collect(),
     }
 }
 
@@ -3332,7 +3347,7 @@ fn validate_trimmed_sheet_topology<'a>(
                     &surface.geometry,
                     span.start,
                     span.end,
-                    coedge.sense,
+                    UseDirection::traversed(coedge.sense),
                     topology_edge_explicit_tolerance(ir, edge),
                     coedge.id.as_str(),
                 );
@@ -3524,7 +3539,7 @@ fn boundary_entity(
                 surface,
                 span.start,
                 span.end,
-                coedge.sense,
+                UseDirection::traversed(coedge.sense),
                 topology_edge_explicit_tolerance(ir, edge),
                 coedge.id.as_str(),
             )
@@ -3556,6 +3571,29 @@ struct CurveOnSurfaceEntityRequest<'a> {
     pcurve_indices: &'a BTreeMap<String, usize>,
 }
 
+/// One coedge of a Type 142 boundary with its edge carrier and the direction
+/// of its pcurve chain relative to that carrier.
+struct BoundaryCoedge<'ir> {
+    coedge: &'ir Coedge,
+    edge: &'ir Edge,
+    curve_id: &'ir CurveId,
+    geometry: CurveGeometry,
+    span: CurveSpan,
+    chain: Sense,
+}
+
+impl BoundaryCoedge<'_> {
+    /// The direction relative to the edge carrier in which a boundary written
+    /// in `direction` relative to the loop traversal writes this coedge.
+    fn written(&self, direction: Sense) -> Sense {
+        if self.coedge.sense == direction {
+            Sense::Forward
+        } else {
+            Sense::Reversed
+        }
+    }
+}
+
 fn curve_on_surface_entity(
     ir: &CadIr,
     entities: &mut Vec<Entity>,
@@ -3569,8 +3607,7 @@ fn curve_on_surface_entity(
         edge_indices,
         pcurve_indices,
     } = request;
-    let mut model_children = Vec::new();
-    let mut pcurve_children = Vec::new();
+    let mut boundary = Vec::new();
     for coedge_id in loop_.coedges() {
         let coedge = ir
             .model
@@ -3615,11 +3652,52 @@ fn curve_on_surface_entity(
             CodecError::NotImplemented("IGES curve carrier has no solved geometry".into())
         })?)?;
         let span = edge_span(ir, edge, &geometry)?;
-        let model_index = if coedge.sense == Sense::Forward {
-            *edge_indices.get(edge.id.as_str()).ok_or_else(|| {
+        let chain = pcurve_orientation_context(
+            ir,
+            surface,
+            span.start,
+            span.end,
+            UseDirection::traversed(coedge.sense),
+            topology_edge_explicit_tolerance(ir, edge),
+            coedge.id.as_str(),
+        )
+        .orientation(&coedge.pcurves)?;
+        boundary.push(BoundaryCoedge {
+            coedge,
+            edge,
+            curve_id,
+            geometry,
+            span,
+            chain,
+        });
+    }
+    // Type 142 and Type 144 give a boundary no direction, so the boundary is
+    // written in the direction that takes fewer reversed copies of its curves.
+    let copies = |direction: Sense| {
+        boundary
+            .iter()
+            .map(|item| {
+                let written = item.written(direction);
+                usize::from(written == Sense::Reversed)
+                    + reversed_pcurve_copies(item.chain, written, &item.coedge.pcurves)
+            })
+            .sum::<usize>()
+    };
+    let direction = if copies(Sense::Reversed) < copies(Sense::Forward) {
+        boundary.reverse();
+        Sense::Reversed
+    } else {
+        Sense::Forward
+    };
+    let mut model_children = Vec::new();
+    let mut pcurve_children = Vec::new();
+    for item in &boundary {
+        let written = item.written(direction);
+        let model_index = if written == Sense::Forward {
+            *edge_indices.get(item.edge.id.as_str()).ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "IGES Type 142 loop {} references missing edge entity {}",
-                    loop_.id, edge.id
+                    loop_.id, item.edge.id
                 ))
             })?
         } else {
@@ -3628,10 +3706,10 @@ fn curve_on_surface_entity(
                 ir,
                 CurveEntityRequest {
                     version,
-                    curve_id,
-                    geometry: &geometry,
-                    span: Some(&span),
-                    sense: coedge.sense,
+                    curve_id: item.curve_id,
+                    geometry: &item.geometry,
+                    span: Some(&item.span),
+                    sense: Sense::Reversed,
                     status: EntityStatus::PhysicallyDependent,
                     reference_offset: 0,
                 },
@@ -3642,13 +3720,16 @@ fn curve_on_surface_entity(
             pcurve_orientation_context(
                 ir,
                 surface,
-                span.start,
-                span.end,
-                coedge.sense,
-                topology_edge_explicit_tolerance(ir, edge),
-                coedge.id.as_str(),
+                item.span.start,
+                item.span.end,
+                UseDirection {
+                    traversal: item.coedge.sense,
+                    written,
+                },
+                topology_edge_explicit_tolerance(ir, item.edge),
+                item.coedge.id.as_str(),
             )
-            .oriented_entities(&coedge.pcurves, pcurve_indices, entities)?
+            .entities_for_chain(item.chain, &item.coedge.pcurves, pcurve_indices, entities)?
             .into_iter()
             .map(|(_, index)| index),
         );
@@ -4363,10 +4444,10 @@ fn validate_brep_pcurve_uses(
                 orientation.owner, pcurve.id
             ))
         })?;
-        if pcurve_use
-            .parameter_range
-            .is_some_and(|use_range| !same_range(use_range.endpoints(), range.get()))
-        {
+        if pcurve_use.parameter_range.is_some_and(|use_range| {
+            let [start, end] = use_range.endpoints();
+            !same_range([start, end], range.get()) && !same_range([end, start], range.get())
+        }) {
             return Err(CodecError::NotImplemented(format!(
                 "IGES B-rep {} cannot restrict pcurve use {}",
                 orientation.owner, pcurve_use.pcurve
@@ -4383,10 +4464,23 @@ fn validate_brep_pcurve_uses(
     orientation.validate(uses)
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum PcurveOrientation {
-    Opposed,
-    Directed,
+/// The directions of one coedge's pcurve uses relative to its edge curve.
+#[derive(Clone, Copy)]
+struct UseDirection {
+    /// The coedge's traversal.
+    traversal: Sense,
+    /// The direction in which the owning entity writes the uses.
+    written: Sense,
+}
+
+impl UseDirection {
+    /// Uses written in the coedge's traversal direction.
+    const fn traversed(traversal: Sense) -> Self {
+        Self {
+            traversal,
+            written: traversal,
+        }
+    }
 }
 
 struct PcurveOrientationContext<'a> {
@@ -4394,7 +4488,7 @@ struct PcurveOrientationContext<'a> {
     surface: &'a SurfaceGeometry,
     natural_start: Point3,
     natural_end: Point3,
-    sense: Sense,
+    direction: UseDirection,
     tolerance: f64,
     owner: &'a str,
 }
@@ -4404,22 +4498,28 @@ impl PcurveOrientationContext<'_> {
         self.orientation(uses).map(|_| ())
     }
 
-    fn orientation(&self, uses: &[PcurveUse]) -> Result<PcurveOrientation, CodecError> {
+    /// The direction of the pcurve chain relative to the edge curve. A chain
+    /// runs in the coedge's traversal; a reversed coedge also admits a chain
+    /// stated in the edge curve's direction.
+    fn orientation(&self, uses: &[PcurveUse]) -> Result<Sense, CodecError> {
+        let traversal = self.direction.traversal;
         if uses.is_empty() {
-            return Ok(PcurveOrientation::Directed);
+            return Ok(traversal);
         }
         let tolerance = effective_topology_tolerance(self.tolerance);
         let mapped = self.map(uses)?;
-        let (directed_start, directed_end) = if self.sense == Sense::Forward {
+        let (directed_start, directed_end) = if traversal == Sense::Forward {
             (self.natural_start, self.natural_end)
         } else {
             (self.natural_end, self.natural_start)
         };
         if pcurve_chain_matches(&mapped, directed_start, directed_end, tolerance) {
-            return Ok(PcurveOrientation::Directed);
+            return Ok(traversal);
         }
-        if pcurve_chain_matches(&mapped, directed_end, directed_start, tolerance) {
-            return Ok(PcurveOrientation::Opposed);
+        if traversal == Sense::Reversed
+            && pcurve_chain_matches(&mapped, self.natural_start, self.natural_end, tolerance)
+        {
+            return Ok(Sense::Forward);
         }
         Err(CodecError::malformed(format_args!(
             "IGES {} pcurve chain endpoints disagree with its directed support edge",
@@ -4523,8 +4623,21 @@ impl PcurveOrientationContext<'_> {
         pcurve_indices: &BTreeMap<String, usize>,
         entities: &mut Vec<Entity>,
     ) -> Result<Vec<(&'uses PcurveUse, usize)>, CodecError> {
-        let orientation = self.orientation(uses)?;
-        let reverse = orientation == PcurveOrientation::Opposed;
+        let chain = self.orientation(uses)?;
+        self.entities_for_chain(chain, uses, pcurve_indices, entities)
+    }
+
+    /// The pcurve entity of each use of a chain in direction `chain`, in the
+    /// written order. A use that the written direction traverses backward
+    /// takes a reversed copy of its pcurve.
+    fn entities_for_chain<'uses>(
+        &self,
+        chain: Sense,
+        uses: &'uses [PcurveUse],
+        pcurve_indices: &BTreeMap<String, usize>,
+        entities: &mut Vec<Entity>,
+    ) -> Result<Vec<(&'uses PcurveUse, usize)>, CodecError> {
+        let reverse = chain != self.direction.written;
         let ordered_uses = if reverse {
             uses.iter().rev().collect::<Vec<_>>()
         } else {
@@ -4563,6 +4676,15 @@ impl PcurveOrientationContext<'_> {
     }
 }
 
+/// The number of reversed pcurve copies that a chain in direction `chain`
+/// takes when its uses are written in direction `written`.
+fn reversed_pcurve_copies(chain: Sense, written: Sense, uses: &[PcurveUse]) -> usize {
+    let reverse = chain != written;
+    uses.iter()
+        .filter(|pcurve_use| reverse ^ use_runs_backward(pcurve_use))
+        .count()
+}
+
 /// Whether a coedge traverses its pcurve backward: its use states a
 /// decreasing interval.
 fn use_runs_backward(pcurve_use: &PcurveUse) -> bool {
@@ -4577,7 +4699,7 @@ fn pcurve_orientation_context<'a>(
     surface: &'a SurfaceGeometry,
     natural_start: Point3,
     natural_end: Point3,
-    sense: Sense,
+    direction: UseDirection,
     tolerance: f64,
     owner: &'a str,
 ) -> PcurveOrientationContext<'a> {
@@ -4586,7 +4708,7 @@ fn pcurve_orientation_context<'a>(
         surface,
         natural_start,
         natural_end,
-        sense,
+        direction,
         tolerance,
         owner,
     }

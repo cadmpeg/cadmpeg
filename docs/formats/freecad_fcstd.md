@@ -394,8 +394,9 @@ closed chain of its oriented edge uses in which each use ends at the vertex wher
 starts. The neutral loop lists its coedges in this traversal. The traversal starts at the first
 serialized edge use, or at the last one when the face use and wire use orientations compose to
 `Reversed`. A serialized order that is already continuous is the traversal.
-CADIR decision: a face wire whose oriented edge uses form no closed chain, or more than one, keeps
-its serialized order, reversed when the face use and wire use orientations compose to `Reversed`.
+CADIR decision: a face wire whose oriented edge uses form no closed chain, or more than one, or
+whose traversal search examines more than `MAX_WIRE_TRAVERSAL_STEPS` candidate edge uses, keeps its
+serialized order, reversed when the face use and wire use orientations compose to `Reversed`.
 
 ## 8. Design-history transfer
 
