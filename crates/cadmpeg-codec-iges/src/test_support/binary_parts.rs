@@ -24,6 +24,17 @@ fn text(value: &[u8]) -> Vec<u8> {
     bytes
 }
 
+/// A format 4 (double-precision real) value group: one control byte, then
+/// the sign bit, the 11-bit exponent biased by 1024 and the 52-bit fraction
+/// of a mantissa in `[0.5, 1)` (IGES 5.3 Appendix H.1). An IEEE binary64
+/// normal number `(1 + F / 2^52) * 2^(E - 1023)` is `(0.5 + F / 2^53) *
+/// 2^(E - 1022)`, so its exponent field is `E + 2` with the same fraction.
+pub(crate) fn double(value: f64) -> Vec<u8> {
+    let mut bytes = vec![4];
+    bytes.extend_from_slice(&(value.to_bits() + (2_u64 << 52)).to_be_bytes());
+    bytes
+}
+
 fn counted(body: &[u8]) -> Vec<u8> {
     let mut bytes = u32::try_from(body.len())
         .expect("test record length")
@@ -530,4 +541,82 @@ pub(crate) fn point_group_of_three(broken: bool) -> Vec<u8> {
     prefix.extend_from_slice(&null_entity);
     prefix.extend_from_slice(&group);
     assemble(&prefix, point_parameter, &parameters)
+}
+
+/// A point (D1) whose Y coordinate is the double-precision real `y`, then an
+/// independent point (D3).
+pub(crate) fn point_with_real_y_then_point(y: f64) -> Vec<u8> {
+    let prefix = directory_record(116, 1);
+    let peer = u32::try_from(prefix.len() + 1).expect("point Directory offset");
+    let mut parameters = counted(
+        &[
+            integer(116),
+            pointer(1),
+            integer(1),
+            double(y),
+            integer(3),
+            pointer(0),
+        ]
+        .concat(),
+    );
+    let point_parameter = u32::try_from(parameters.len() + 1).expect("point Parameter offset");
+    parameters.extend_from_slice(&point_parameters(peer));
+    assemble(&prefix, point_parameter, &parameters)
+}
+
+/// A circular arc (D1) about the origin from `(start_x, 0)` to `(0, 1)`,
+/// whose start X is the double-precision real `start_x`, then an
+/// independent point (D3).
+pub(crate) fn arc_with_real_start_then_point(start_x: f64) -> Vec<u8> {
+    let prefix = directory_record(100, 1);
+    let peer = u32::try_from(prefix.len() + 1).expect("point Directory offset");
+    let mut parameters = counted(
+        &[
+            integer(100),
+            pointer(1),
+            integer(0),
+            integer(0),
+            integer(0),
+            double(start_x),
+            integer(0),
+            integer(0),
+            integer(1),
+        ]
+        .concat(),
+    );
+    let point_parameter = u32::try_from(parameters.len() + 1).expect("point Parameter offset");
+    parameters.extend_from_slice(&point_parameters(peer));
+    assemble(&prefix, point_parameter, &parameters)
+}
+
+/// The native entity of a Parameter record whose value group at value
+/// position `value` does not parse. That group and the rest of the record
+/// are one given-up `iges.binary_parameter_value`: the record keeps its
+/// entity type token and its values before `value`, then one `null` slot for
+/// each of the `slots` values the group's control byte states (iges.md,
+/// Binary Parameter Data). A Binary record states no comment; the comment of
+/// both records is the padding of a normalized card and is cleared.
+pub(crate) fn entity_with_given_up_rest(
+    entity: &cadmpeg_ir::native::NativeRecord,
+    value: usize,
+    slots: usize,
+) -> serde_json::Value {
+    let mut expected = entity_without_padding(entity);
+    let parameters = expected["parameters"].as_array().expect("parameters");
+    let mut kept = parameters[..=value].to_vec();
+    kept.extend(std::iter::repeat_n(serde_json::Value::Null, slots));
+    expected["parameters"] = serde_json::Value::Array(kept);
+    expected
+}
+
+/// A Binary native entity with its normalized-card padding comment cleared.
+/// The padding is all spaces.
+pub(crate) fn entity_without_padding(
+    entity: &cadmpeg_ir::native::NativeRecord,
+) -> serde_json::Value {
+    let mut value = serde_json::to_value(entity).expect("native entity");
+    let padding = value["comment"].as_str().expect("hex comment");
+    assert!(padding.len() % 2 == 0 && padding.as_bytes().chunks(2).all(|pair| pair == b"20"));
+    value["comment"] = serde_json::Value::Null;
+    value
 }

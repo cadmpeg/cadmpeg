@@ -219,7 +219,22 @@ struct BinaryParameter {
     entity_type: i64,
     directory_pointer: i64,
     values: Vec<BinaryValue>,
+    /// The `iges.binary_parameter_value` groups after the Directory pointer.
+    groups: Vec<ParameterGroup>,
     admitted: Option<AdmittedBinaryParameter>,
+}
+
+/// One value group of a Binary Parameter record after its Directory pointer:
+/// one `iges.binary_parameter_value` part.
+#[derive(Debug)]
+struct ParameterGroup {
+    /// The group bytes, relative to the start of the record body.
+    bytes: std::ops::Range<usize>,
+    /// The positions in `BinaryParameter::values` that the group fills.
+    values: std::ops::Range<usize>,
+    /// Why the group is given up. A group whose values do not parse leaves
+    /// every later boundary unknown, so its bytes run to the record end.
+    failure: Option<CodecError>,
 }
 
 #[derive(Debug)]
@@ -234,7 +249,7 @@ struct NormalizedParameter {
     directory_sequence: u32,
     lines: Vec<Vec<u8>>,
     first_sequence: u32,
-    admitted: Option<crate::parameter::AdmittedParameter>,
+    admitted: crate::parameter::AdmittedParameter,
 }
 
 #[derive(Debug)]
@@ -1282,10 +1297,15 @@ fn finish_parameter_record(
         ..
     } = prefix;
     let mut values = Vec::new();
-    while let Some(value) = stream.next()? {
+    // Values that repeat the Directory pointer's group belong to that group,
+    // which is record framing.
+    while stream.repeat.is_some() {
+        let value = stream
+            .next()?
+            .ok_or_else(|| malformed("Binary Parameter pointer group ends early"))?;
         values.push(value);
     }
-    stream.finish()?;
+    let groups = parameter_groups(&mut stream, &mut values)?;
     let directory_pointer = positive_pointer(directory_pointer, "Parameter Directory")?;
     if !directory_by_offset.contains_key(&directory_pointer) {
         return Err(malformed(
@@ -1297,8 +1317,63 @@ fn finish_parameter_record(
         entity_type,
         directory_pointer: i64::from(directory_pointer),
         values,
+        groups,
         admitted: None,
     })
+}
+
+/// Read the value groups that remain in `stream`, each one
+/// `iges.binary_parameter_value` (Appendix C). A group whose values do not
+/// parse is the last group: its slots are `Default` placeholders, one for
+/// each value its control byte states, and no later value is read.
+fn parameter_groups(
+    stream: &mut ValueStream<'_>,
+    values: &mut Vec<BinaryValue>,
+) -> Result<Vec<ParameterGroup>, CodecError> {
+    let mut groups = Vec::new();
+    while !stream.bits.is_empty() {
+        let start = stream.bits.byte;
+        let first = values.len();
+        let read = (|| {
+            while let Some(value) = stream.next()? {
+                values.push(value);
+                if stream.repeat.is_none() {
+                    break;
+                }
+            }
+            Ok::<_, CodecError>(())
+        })();
+        match read {
+            Ok(()) => groups.push(ParameterGroup {
+                bytes: start..stream.bits.byte,
+                values: first..values.len(),
+                failure: None,
+            }),
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+            Err(error) => {
+                let control = stream
+                    .bits
+                    .input
+                    .bytes()
+                    .get(start)
+                    .copied()
+                    .ok_or_else(|| malformed("a Binary control byte is absent"))?;
+                values.truncate(first);
+                values.extend(std::iter::repeat_n(
+                    BinaryValue::Default,
+                    usize::from((control >> 3) & 0x0f) + 1,
+                ));
+                groups.push(ParameterGroup {
+                    bytes: start..stream.bits.input.bytes().len(),
+                    values: first..values.len(),
+                    failure: Some(error),
+                });
+                return Ok(groups);
+            }
+        }
+    }
+    stream.finish()?;
+    Ok(groups)
 }
 
 fn parameter_owner<'a>(
@@ -1333,21 +1408,6 @@ fn parameter_reference(
         }
         _ => Ok(None),
     }
-}
-
-/// Check that every Directory reference of one Parameter record resolves to
-/// a surviving Directory record.
-fn check_parameter_references(
-    parameter: &BinaryParameter,
-    directory: &[BinaryDirectory],
-    directory_by_offset: &BTreeMap<u32, usize>,
-) -> Result<(), CodecError> {
-    let point_owner =
-        parameter_owner(parameter, directory, directory_by_offset)?.has_point_parameters();
-    for (index, value) in parameter.values.iter().enumerate() {
-        parameter_reference(value, index, point_owner, directory, directory_by_offset)?;
-    }
-    Ok(())
 }
 
 fn parameter_lines(
@@ -1393,13 +1453,13 @@ fn normalize_directory_and_parameters(
             ));
         }
         let directory_sequence = directory[directory_index].source_sequence;
-        let (lines, admitted) = match parameter.admitted.take() {
-            Some(admitted) => (admitted.lines, Some(admitted.content)),
-            None => (
-                parameter_lines(&mut parameter, directory, &directory_by_offset)?,
-                None,
-            ),
-        };
+        let AdmittedBinaryParameter {
+            lines,
+            content: admitted,
+        } = parameter
+            .admitted
+            .take()
+            .ok_or_else(|| malformed("Binary Parameter record was not lexed in its part"))?;
         let first_sequence = parameter_sequence;
         parameter_sequence = parameter_sequence
             .checked_add(
@@ -1558,7 +1618,6 @@ fn normalize_directory_and_parameters(
     }
     let mut parameter_sequence = 1_u32;
     let mut admitted = Vec::new();
-    let mut unadmitted = BTreeSet::new();
     let storage = normalized
         .len()
         .checked_mul(size_of::<crate::parameter::ParameterRecord>())
@@ -1584,12 +1643,7 @@ fn normalize_directory_and_parameters(
                 .checked_add(1)
                 .ok_or_else(|| malformed("normalized Parameter Data sequence overflows"))?;
         }
-        match parameter.admitted {
-            Some(content) => admitted.push(content.bind_range(first..parameter_sequence)),
-            None => {
-                unadmitted.insert(parameter.directory_sequence);
-            }
-        }
+        admitted.push(parameter.admitted.bind_range(first..parameter_sequence));
     }
     let directory_count = directory
         .len()
@@ -1602,17 +1656,13 @@ fn normalize_directory_and_parameters(
         directory_count,
         usize::try_from(parameter_count)
             .map_err(|_| malformed("normalized Parameter Data count is out of range"))?,
-        Admitted {
-            records: admitted,
-            unadmitted,
-        },
+        Admitted { records: admitted },
     ))
 }
 
-/// The normalized Parameter records, admitted one by one.
+/// The normalized Parameter records, each lexed inside its part.
 struct Admitted {
     records: Vec<crate::parameter::ParameterRecord>,
-    unadmitted: BTreeSet<u32>,
 }
 
 fn render_parameter_lines(data: &[u8], language: bool) -> Result<Vec<Vec<u8>>, CodecError> {
@@ -1683,11 +1733,9 @@ pub(crate) struct NormalizedBinary {
 pub(crate) struct BinaryAdmission {
     pub(crate) global: crate::global::ResolvedGlobal,
     pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
-    /// The admitted Parameter records.
+    /// The Parameter records, each lexed inside its
+    /// `iges.binary_parameter_record` part.
     pub(crate) parameters: Vec<crate::parameter::ParameterRecord>,
-    /// Directory sequences of the Parameter records that are not admitted:
-    /// each is assembled from its normalized cards.
-    pub(crate) unadmitted: BTreeSet<u32>,
 }
 
 pub(crate) struct BinaryIdentities(Vec<u32>);
@@ -1803,7 +1851,6 @@ fn normalize_with_records<T>(
         parameter_count,
         Admitted {
             records: parameters,
-            unadmitted,
         },
     ) = normalize_directory_and_parameters(&mut output, &directory, parameters, ctx)?;
     render_terminate(
@@ -1820,7 +1867,6 @@ fn normalize_with_records<T>(
             global,
             losses,
             parameters,
-            unadmitted,
         },
     )
 }
