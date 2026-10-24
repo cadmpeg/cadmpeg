@@ -283,6 +283,10 @@ impl SessionHandle<'_> {
         self.with_budget(|budget| budget.recover_part(expected))
     }
 
+    pub(super) fn require_source_end(self, view: View<'_>) -> Result<(), CodecError> {
+        self.session(|session| session.streams.require_end(view))
+    }
+
     pub(super) fn source_streams(self) -> Result<Vec<SourceStream>, CodecError> {
         self.session(|session| {
             session.activate()?;

@@ -19,6 +19,8 @@ mod helper;
 mod levels;
 mod rescope;
 mod sequential;
+mod terminated;
+mod terminated_container;
 
 pub use helper::{
     CapturedRecordLayout, DecodeParts, FinalizedPartOutput, ParserPartOutput,
@@ -26,6 +28,8 @@ pub use helper::{
 };
 pub use rescope::PartIdentityMap;
 pub use sequential::SequentialParts;
+pub use terminated::{TerminatedCompletion, TerminatedParent, TerminatedParts};
+pub use terminated_container::TerminatedContainer;
 
 /// The way Appendix C locates a part's next independently readable sibling.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

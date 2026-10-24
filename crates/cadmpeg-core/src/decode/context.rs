@@ -196,6 +196,19 @@ impl<'a> DecodeContext<'a> {
         }
     }
 
+    /// Require an original view that reaches its registered source stream's end.
+    ///
+    /// A shorter borrowed window cannot establish source exhaustion. This adds
+    /// no read coverage, capture, source registration or retained allocation.
+    ///
+    /// # Errors
+    /// Rejects foreign or detached views, a fused session, an unregistered
+    /// stream, an out-of-domain extent, or a window ending before the stream.
+    pub fn require_source_end(&self, view: View<'_>) -> Result<(), CodecError> {
+        self.require_source(view)?;
+        self.budget.require_source_end(view)
+    }
+
     /// Snapshot canonical source names, domains and explicit provenance edges.
     ///
     /// Registration, snapshotting and raw derived views add no semantic read.
@@ -805,7 +818,9 @@ impl<'a> ExpandWriter<'_, 'a> {
 
 #[cfg(test)]
 mod tests {
+    mod source_end;
     mod working_storage;
+
     use super::{ByteRange, DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
 
     use std::io::{self, Cursor, Read, Seek, SeekFrom};

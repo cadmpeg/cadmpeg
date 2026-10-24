@@ -135,6 +135,23 @@ impl Streams {
             .ok_or_else(|| CodecError::malformed("source stream has no registered provenance"))
     }
 
+    pub(super) fn require_end(&self, view: View<'_>) -> Result<(), CodecError> {
+        let stream = self.get(view.space())?;
+        validate_extent(
+            stream,
+            ByteRange {
+                start: u64_from_index(view.start()),
+                end: u64_from_index(view.end()),
+            },
+        )?;
+        if u64_from_index(view.end()) != stream.byte_len {
+            return Err(CodecError::malformed(
+                "source window does not reach its registered stream end",
+            ));
+        }
+        Ok(())
+    }
+
     pub(super) fn name(&self, space: SpaceId) -> Result<&str, CodecError> {
         Ok(&self.get(space)?.name)
     }
