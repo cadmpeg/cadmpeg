@@ -452,3 +452,58 @@ Parsed by:
 | 47 | 4 | `map_count` | `u32` | little | spec | map_count u32 = 0 |
 | 51 | 4 | `source_value` | `u32` | little | spec | source_value u32 |
 | 55 | 4 | `option_reference` | `u32` | little | spec | option_reference u32 |
+
+## `meta_segment_pair`
+
+Spec §13.3 · layout: byte offsets · size: 32 B
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/base.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 16 | `segment_id` | `bytes[16]` | little | spec | segment_id:bytes[16] |
+| 16 | 16 | `revision_id` | `bytes[16]` | little | spec | revision_id:bytes[16] |
+
+## `meta_external_revision`
+
+Spec §13.3 · layout: byte offsets · size: 20 B
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/base.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 16 | `revision_id` | `bytes[16]` | little | spec | revision_id:bytes[16] |
+| 16 | 2 | `segment_pair_index` | `u16` | little | spec | segment_pair_index:u16 |
+| 18 | 2 | `reference_count` | `u16` | little | spec | reference_count:u16 |
+
+## `meta_external_reference`
+
+Spec §13.3 · layout: byte offsets · size: 8 B
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/base.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `revision_index` | `u32` | little | spec | revision_index:u32 |
+| 4 | 2 | `key_extension` | `u16` | little | spec | key_extension:u16 |
+| 6 | 2 | `header_id` | `u16` | little | spec | header_id:u16 |
+
+## `kernel_entity_link`
+
+Spec §13 · layout: byte offsets · size: 23 B
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `header_value` | `u32` | little | spec | header_value u32 |
+| 4 | 2 | `header_id` | `u16` | little | spec | header_id u16 |
+| 6 | 4 | `selection_source` | `u32` | little | spec | selection_source u32 |
+| 10 | 1 | `state` | `u8` | little | spec | state u8 |
+| 11 | 4 | `body_reference` | `u32` | little | spec | body_reference u32 |
+| 15 | 4 | `entity_id` | `u32` | little | spec | entity_id u32 |
+| 19 | 4 | `entity_type` | `u32` | little | spec | entity_type u32 |

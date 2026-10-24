@@ -34,6 +34,7 @@ use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 use crate::{design::DesignInventory, sketch::SketchInventory};
 
+pub(crate) mod base;
 mod history;
 pub(crate) mod loft_sweep;
 pub(crate) mod profile;
@@ -490,14 +491,14 @@ pub(crate) struct PmDcEntityStyleLinkPayload {
     entity_type: u32,
 }
 
-/// Link from a selection to one entity of a `PmDc` kernel body.
+/// Link from a selection to one entity of its segment's kernel body.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct PmDcKernelEntityLinkPayload {
     save_version_major: u8,
     header_value: u32,
     header_id: u16,
     pub(crate) selection_source: u32,
-    state: u8,
+    pub(crate) state: u8,
     pub(crate) body: crate::pmdc::PmDcReference,
     entity_id: u32,
     entity_type: u32,
@@ -550,7 +551,7 @@ pub(crate) fn inventory(
         issues: Vec::new(),
     };
     for segment in &document.segments {
-        if segment.kind != SegmentKind::PmDc {
+        if !matches!(segment.kind, SegmentKind::PmDc | SegmentKind::PmBRep) {
             continue;
         }
         let Some(version) = segment.registry.map(|join| join.version_major) else {
@@ -574,6 +575,9 @@ pub(crate) fn inventory(
                 .entry(record.ordinal)
                 .and_modify(|previous| *previous = None)
                 .or_insert_with(|| Some(type_id_string(record.type_id)));
+            if segment.kind == SegmentKind::PmBRep && record.type_id != KERNEL_ENTITY_LINK_TYPE {
+                continue;
+            }
             let parsed = match record.type_id {
                 FEATURE_TYPE => parse_feature(record.payload, version).and_then(|feature| {
                     push_record(
@@ -1360,6 +1364,9 @@ fn parse_label(
     .map_err(CodecError::malformed)
 }
 
+const BASE_CLASS_ID: ClassId = ClassId(NativeBytes::new([
+    0x2d, 0x11, 0xa9, 0x0c, 0xd0, 0x11, 0x8b, 0x83, 0x00, 0x08, 0x19, 0xb0, 0x05, 0x24, 0xdc, 0x09,
+]));
 const EXTRUSION_CLASS_ID: ClassId = ClassId(NativeBytes::new([
     0x31, 0x11, 0xa9, 0x0c, 0xd0, 0x11, 0x8b, 0x83, 0x00, 0x08, 0x19, 0xb0, 0x05, 0x24, 0xdc, 0x09,
 ]));
@@ -1412,6 +1419,13 @@ const NATIVE_CLASSES: &[([u8; 16], &str)] = &[
             0xdc, 0x09,
         ],
         "Base",
+    ),
+    (
+        [
+            0x12, 0x96, 0x3c, 0xb8, 0xd1, 0x11, 0x8a, 0x28, 0x60, 0x00, 0x8b, 0xb8, 0x01, 0xf3,
+            0x1b, 0xb0,
+        ],
+        "Shell",
     ),
     (
         [
@@ -1578,6 +1592,7 @@ const NATIVE_CLASSES: &[([u8; 16], &str)] = &[
 
 #[derive(Clone, Copy)]
 pub(crate) enum FeatureFamily {
+    Base,
     Extrusion,
     Fillet,
     Chamfer,
@@ -1591,6 +1606,7 @@ impl FeatureFamily {
     /// The feature-label classes whose records use this family's layout.
     pub(crate) fn class_ids(self) -> &'static [ClassId] {
         match self {
+            Self::Base => &[BASE_CLASS_ID],
             Self::Extrusion => &[EXTRUSION_CLASS_ID],
             Self::Fillet => &[FILLET_CLASS_ID, CORNER_ROUND_CLASS_ID],
             Self::Chamfer => &[CHAMFER_CLASS_ID],
@@ -1603,6 +1619,7 @@ impl FeatureFamily {
 
     pub(crate) fn output_slot(self) -> usize {
         match self {
+            Self::Base => 1,
             Self::Extrusion => 26,
             Self::Fillet => 15,
             Self::Chamfer => 11,
@@ -1615,6 +1632,7 @@ impl FeatureFamily {
 
     pub(crate) fn from_class_id(class_id: ClassId) -> Option<Self> {
         [
+            Self::Base,
             Self::Extrusion,
             Self::Fillet,
             Self::Chamfer,
@@ -1632,6 +1650,9 @@ impl FeatureFamily {
         matches!(
             (self, definition),
             (
+                Self::Base,
+                FeatureDefinition::Operation(FeatureOperation::StoredGeometry {})
+            ) | (
                 Self::Extrusion | Self::Plate,
                 FeatureDefinition::Operation(FeatureOperation::Extrude { .. })
             ) | (
@@ -1655,6 +1676,7 @@ impl FeatureFamily {
 
     pub(crate) fn from_definition(definition: &FeatureDefinition) -> Option<Self> {
         match definition {
+            FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}) => Some(Self::Base),
             FeatureDefinition::Operation(FeatureOperation::Extrude { .. }) => Some(Self::Extrusion),
             FeatureDefinition::Operation(FeatureOperation::Fillet { .. }) => Some(Self::Fillet),
             FeatureDefinition::Operation(FeatureOperation::Chamfer { .. }) => Some(Self::Chamfer),
@@ -1869,6 +1891,7 @@ pub(crate) fn project(
             FeatureFamily::from_class_id(label.class_id()).map(|family| (label, family))
         }) {
             Some((label, family)) => match family {
+                FeatureFamily::Base => None,
                 FeatureFamily::Extrusion => project_extrusion(ctx, feature, label, &index),
                 FeatureFamily::Fillet => project_fillet(ctx, feature, label, &index),
                 FeatureFamily::Chamfer => project_chamfer(ctx, feature, label, &index),
@@ -2187,6 +2210,7 @@ fn native_kind(class_id: Option<ClassId>) -> cadmpeg_ir::features::NativeFeature
     };
     if let Some(family) = FeatureFamily::from_class_id(class_id) {
         return match family {
+            FeatureFamily::Base => NativeFeatureKind::Other("Base".into()),
             FeatureFamily::Extrusion => NativeFeatureKind::Extrude,
             FeatureFamily::Fillet => NativeFeatureKind::Fillet,
             FeatureFamily::Chamfer => NativeFeatureKind::Chamfer,
