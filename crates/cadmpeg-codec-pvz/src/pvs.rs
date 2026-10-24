@@ -356,7 +356,7 @@ pub(crate) fn read(ctx: &DecodeContext<'_>, member: View<'_>) -> Result<Structur
 }
 
 fn read_binary(ctx: &DecodeContext<'_>, member: View<'_>) -> Result<Structure, CodecError> {
-    let streams = directory(member)?;
+    let streams = directory(ctx, member)?;
     let mut residue = Residue::default();
     let mut pool = None;
     for stream in streams
@@ -378,7 +378,7 @@ fn read_binary(ctx: &DecodeContext<'_>, member: View<'_>) -> Result<Structure, C
                 root.family, root.descriptor
             )));
         }
-        if pool.replace(StringPool::read(root.payload)?).is_some() {
+        if pool.replace(StringPool::read(ctx, root.payload)?).is_some() {
             return Err(CodecError::malformed(
                 "structure member has more than one string-pool stream",
             ));
@@ -447,7 +447,7 @@ fn expand<'a>(ctx: &DecodeContext<'a>, stream: &Stream<'_>) -> Result<View<'a>, 
 
 /// Reads the header and the stream directory, and partitions the member into
 /// stream payloads (§3.1, §3.2).
-fn directory(member: View<'_>) -> Result<Vec<Stream<'_>>, CodecError> {
+fn directory<'a>(ctx: &DecodeContext<'_>, member: View<'a>) -> Result<Vec<Stream<'a>>, CodecError> {
     let mut view = member;
     let header = record(&mut view, pvs_header::LEN)?;
     let first_stream = at(header, pvs_header::FIRST_STREAM_OFFSET)?.req_u32_le()?;
@@ -460,15 +460,19 @@ fn directory(member: View<'_>) -> Result<Vec<Stream<'_>>, CodecError> {
                 view.remaining()
             ))
         })?;
-    let mut entries = Vec::with_capacity(count.get());
-    for _ in 0..count.get() {
+    let mut entries = ctx.alloc_filled(
+        count.get(),
+        (0, 0, String::new(), 0),
+        "PVZ structure stream directory",
+    )?;
+    for slot in &mut entries {
         let head = record(&mut view, stream_entry::LEN)?;
         let stream_type = at(head, stream_entry::STREAM_TYPE)?.req_u8()?;
         let codec = at(head, stream_entry::CODEC)?.req_u8()?;
         let name_len = at(head, stream_entry::NAME_LENGTH)?.req_u8()?;
         let name = String::from_utf8_lossy(view.req_take(usize::from(name_len))?).into_owned();
         let stored = view.req_u32_le()?;
-        entries.push((stream_type, codec, name, index_from_u32(stored)));
+        *slot = (stream_type, codec, name, index_from_u32(stored));
     }
     let first = index_from_u32(first_stream);
     if view.read_len() != first {

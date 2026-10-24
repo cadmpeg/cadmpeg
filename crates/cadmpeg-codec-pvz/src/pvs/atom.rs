@@ -3,7 +3,7 @@
 
 use std::rc::Rc;
 
-use cadmpeg_core::decode::{index_from_u64, View};
+use cadmpeg_core::decode::{index_from_u64, DecodeContext, View};
 use cadmpeg_core::CodecError;
 
 /// Payload bits one ULEB128 byte carries.
@@ -73,7 +73,7 @@ pub(crate) struct StringPool {
 impl StringPool {
     /// Reads the string-pool payload: a count, then that many
     /// length-prefixed strings that fill the payload exactly.
-    pub(crate) fn read(mut payload: View<'_>) -> Result<Self, CodecError> {
+    pub(crate) fn read(ctx: &DecodeContext<'_>, mut payload: View<'_>) -> Result<Self, CodecError> {
         let declared = uleb128(&mut payload)?;
         let count = payload
             .counted(declared, MIN_POOL_ENTRY_LEN)
@@ -83,10 +83,10 @@ impl StringPool {
                     payload.remaining()
                 ))
             })?;
-        let mut entries = Vec::with_capacity(count.get());
-        for _ in 0..count.get() {
+        let mut entries = ctx.alloc_filled(count.get(), Rc::from(""), "PVZ string pool")?;
+        for entry in &mut entries {
             let len = uleb_index(&mut payload)?;
-            entries.push(utf8(&mut payload, len)?);
+            *entry = utf8(&mut payload, len)?;
         }
         if !payload.is_empty() {
             return Err(CodecError::malformed(format_args!(
@@ -164,11 +164,10 @@ mod tests {
 
     #[test]
     fn even_codes_are_inline_text_and_odd_codes_name_pool_entries() {
-        let pool = StringPool::read(View::over_retained(&string_pool_payload(&[
-            "TOP.ASM",
-            "",
-            "BRACKET.PRT",
-        ])))
+        let pool = StringPool::read(
+            &cadmpeg_test_support::service_decode_context(),
+            View::over_retained(&string_pool_payload(&["TOP.ASM", "", "BRACKET.PRT"])),
+        )
         .unwrap();
 
         let mut bytes = inline_atom("wing");
@@ -194,8 +193,11 @@ mod tests {
     #[test]
     fn every_reference_to_a_pool_entry_shares_the_entry() {
         let long = "x".repeat(60_000);
-        let pool =
-            StringPool::read(View::over_retained(&string_pool_payload(&[long.as_str()]))).unwrap();
+        let pool = StringPool::read(
+            &cadmpeg_test_support::service_decode_context(),
+            View::over_retained(&string_pool_payload(&[long.as_str()])),
+        )
+        .unwrap();
         let references = 1000;
         let bytes: Vec<u8> = (0..references).flat_map(|_| pool_atom(0)).collect();
         let mut view = View::over_retained(&bytes);
@@ -211,7 +213,15 @@ mod tests {
     fn a_pool_that_does_not_fill_its_payload_is_refused() {
         let mut payload = string_pool_payload(&["A"]);
         payload.push(0);
-        assert!(StringPool::read(View::over_retained(&payload)).is_err());
-        assert!(StringPool::read(View::over_retained(&[0x05, 0x00])).is_err());
+        assert!(StringPool::read(
+            &cadmpeg_test_support::service_decode_context(),
+            View::over_retained(&payload)
+        )
+        .is_err());
+        assert!(StringPool::read(
+            &cadmpeg_test_support::service_decode_context(),
+            View::over_retained(&[0x05, 0x00])
+        )
+        .is_err());
     }
 }

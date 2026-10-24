@@ -2,7 +2,7 @@
 //! The edge tessellation stream (§7): the edge index table and one sampled
 //! polyline per exact edge.
 
-use cadmpeg_core::decode::{index_from_u32, View};
+use cadmpeg_core::decode::{index_from_u32, DecodeContext, View};
 use cadmpeg_core::CodecError;
 
 use super::tlv;
@@ -40,6 +40,7 @@ struct Group {
 
 /// Reads the edge tessellation stream.
 pub(super) fn read(
+    ctx: &DecodeContext<'_>,
     mut stream: View<'_>,
     stream_id: u32,
     residue: &mut MemberResidue,
@@ -90,7 +91,7 @@ pub(super) fn read(
                         current.polyline.edge
                     )));
                 }
-                current.polyline.points = read_points(record.payload)?;
+                current.polyline.points = read_points(ctx, record.payload)?;
                 current.has_block = true;
             }
             tag if tag == u32::from(token::TESS_LINE_STRIP)
@@ -118,7 +119,7 @@ fn open<'g>(group: Option<&'g mut Group>, payload: View<'_>) -> Result<&'g mut G
     })
 }
 
-fn read_points(payload: View<'_>) -> Result<Vec<[f32; 3]>, CodecError> {
+fn read_points(ctx: &DecodeContext<'_>, payload: View<'_>) -> Result<Vec<[f32; 3]>, CodecError> {
     let mut view = payload;
     let head = record(&mut view, vertex_block::LEN)?;
     let layout = at(head, vertex_block::LAYOUT)?.req_u8()?;
@@ -130,9 +131,9 @@ fn read_points(payload: View<'_>) -> Result<Vec<[f32; 3]>, CodecError> {
             view.remaining()
         )));
     }
-    let mut points = Vec::with_capacity(count);
-    for _ in 0..count {
-        points.push(f32x3(&mut view)?);
+    let mut points = ctx.alloc_filled(count, [0.0; 3], "PVZ edge vertex block")?;
+    for point in &mut points {
+        *point = f32x3(&mut view)?;
     }
     Ok(points)
 }

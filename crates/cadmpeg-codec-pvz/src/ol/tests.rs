@@ -72,6 +72,7 @@ fn each_signature_selects_its_generation() {
 
 #[test]
 fn the_directory_partitions_the_member_with_or_without_the_preamble() {
+    let ctx = cadmpeg_test_support::service_decode_context();
     for preamble in [false, true] {
         let bytes = member(
             "DIV-OL09BL",
@@ -81,7 +82,7 @@ fn the_directory_partitions_the_member_with_or_without_the_preamble() {
                 (STREAM_EXACT_F64, stream_index(STREAM_EXACT_F64)),
             ],
         );
-        let container = Container::open(View::over_retained(&bytes)).unwrap();
+        let container = Container::open(&ctx, View::over_retained(&bytes)).unwrap();
         assert_eq!(container.preamble, preamble);
         let ids: Vec<_> = container.streams.iter().map(|(id, _)| *id).collect();
         assert_eq!(ids, [STREAM_ATTRIBUTES, STREAM_EXACT_F64]);
@@ -92,6 +93,7 @@ fn the_directory_partitions_the_member_with_or_without_the_preamble() {
 
 #[test]
 fn a_directory_that_does_not_tile_the_member_is_refused() {
+    let ctx = cadmpeg_test_support::service_decode_context();
     let good = member(
         "DIV-OL08BL",
         true,
@@ -126,10 +128,10 @@ fn a_directory_that_does_not_tile_the_member_is_refused() {
         trailing,
         out_of_order,
     ] {
-        assert!(Container::open(View::over_retained(&bad)).is_err());
+        assert!(Container::open(&ctx, View::over_retained(&bad)).is_err());
     }
-    assert!(Container::open(View::over_retained(b"DIV-OL08BL")).is_err());
-    assert!(Container::open(View::over_retained(b"DIV-OL07BL and more bytes here")).is_err());
+    assert!(Container::open(&ctx, View::over_retained(b"DIV-OL08BL")).is_err());
+    assert!(Container::open(&ctx, View::over_retained(b"DIV-OL07BL and more bytes here")).is_err());
 }
 
 #[test]

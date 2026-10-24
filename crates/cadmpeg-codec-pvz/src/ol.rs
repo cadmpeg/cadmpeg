@@ -63,7 +63,7 @@ struct Container<'a> {
 
 impl<'a> Container<'a> {
     /// Reads the header, the directory, and the preamble block (§4.1–§4.3).
-    fn open(member: View<'a>) -> Result<Self, CodecError> {
+    fn open(ctx: &DecodeContext<'_>, member: View<'a>) -> Result<Self, CodecError> {
         if generation(member).is_none() {
             return Err(CodecError::malformed(
                 "geometry member opens with no known DIV-OL signature",
@@ -98,12 +98,12 @@ impl<'a> Container<'a> {
                     view.remaining()
                 ))
             })?;
-        let mut entries = Vec::with_capacity(count.get());
-        for _ in 0..count.get() {
+        let mut entries = ctx.alloc_filled(count.get(), (0, 0), "PVZ geometry directory")?;
+        for slot in &mut entries {
             let row = record(&mut view, entry::LEN)?;
             let id = at(row, entry::STREAM_ID)?.req_u32_le()?;
             let offset = index_from_u32(at(row, entry::OFFSET)?.req_u32_le()?);
-            entries.push((id, offset));
+            *slot = (id, offset);
         }
         let Some(&(sentinel, end)) = entries.last() else {
             return Err(CodecError::malformed(
@@ -186,7 +186,7 @@ pub(crate) fn exact_stream<'a>(
     ctx: &DecodeContext<'a>,
     member: View<'_>,
 ) -> Result<Option<ExactStream<'a>>, CodecError> {
-    let container = Container::open(member)?;
+    let container = Container::open(ctx, member)?;
     let mut exact = container.streams.iter().filter(|(id, _)| is_exact(*id));
     let Some(&(stream_id, stored)) = exact.next() else {
         return Ok(None);
@@ -224,7 +224,7 @@ pub(crate) fn decode(
     ctx: &DecodeContext<'_>,
     member: View<'_>,
 ) -> Result<MemberGeometry, CodecError> {
-    let container = Container::open(member)?;
+    let container = Container::open(ctx, member)?;
     let mut residue = MemberResidue {
         preambles: usize::from(container.preamble),
         ..MemberResidue::default()
@@ -277,7 +277,7 @@ pub(crate) fn decode(
             stored,
             &mut residue,
             "edge tessellation",
-            |stream, local| edges::read(stream, token::STREAM_EDGE_TESSELLATION, local),
+            |stream, local| edges::read(ctx, stream, token::STREAM_EDGE_TESSELLATION, local),
         )?;
         for polyline in polylines.into_iter().flatten() {
             residue.edge_polylines += 1;
