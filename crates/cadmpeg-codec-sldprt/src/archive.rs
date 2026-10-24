@@ -205,10 +205,10 @@ pub(crate) fn walk(
 /// `ResolvedFeatures`). That stream continues the map from this one, so its
 /// class tags name these indices. `None` when the walk does not reconcile:
 /// a map wrong from its first wrong decision on names wrong classes.
-pub(crate) fn class_index_map<'a>(
+pub(crate) fn class_index_map(
     payload: &[u8],
     resolved_count: u32,
-    ctx: &DecodeContext<'a>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<std::collections::BTreeMap<u32, String>>, CodecError> {
     let mut walker = Walker::new(payload, Some(i64::from(resolved_count)), ctx)?;
     walker.run()?;
