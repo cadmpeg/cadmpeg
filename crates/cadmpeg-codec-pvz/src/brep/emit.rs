@@ -453,12 +453,14 @@ impl Writer<'_, '_, '_, '_> {
         })
     }
 
-    /// Edges referenced by coedges, in index order.
+    /// Edges written for the coedges, in index order: each referenced edge
+    /// record, or the coincident partner it is written as.
     fn used_edges(&self) -> BTreeSet<usize> {
         self.exact
             .loops
             .iter()
             .flat_map(|record| record.coedges.iter().filter_map(|coedge| coedge.edge))
+            .map(|edge| self.topology.written_edge(edge).0)
             .collect()
     }
 
@@ -506,6 +508,16 @@ impl Writer<'_, '_, '_, '_> {
         charts: &BTreeMap<usize, CurveChart>,
     ) -> Result<BTreeSet<usize>, CodecError> {
         let mut vertices = BTreeSet::new();
+        let merged: BTreeSet<usize> = self
+            .topology
+            .partners
+            .values()
+            .map(|(class, _)| *class)
+            .collect();
+        self.tally.add(
+            PvzLossCode::ExactEdgeUsesMerged,
+            self.topology.partners.len(),
+        );
         for edge in used {
             let record = &self.exact.edges[*edge];
             let start = self.topology.slot_vertex[2 * edge];
@@ -527,15 +539,27 @@ impl Writer<'_, '_, '_, '_> {
                 None => EdgeCarrier::Free,
             };
             let id = self.ids.edge(*edge);
+            let merged = merged.contains(edge);
             self.ctx.charge_entities(1, "pvz exact edge")?;
             self.sink.model.edges.push(Edge {
                 id: id.clone(),
                 carrier,
                 start: self.ids.vertex(start),
                 end: self.ids.vertex(end),
-                tolerance: None,
+                tolerance: merged
+                    .then(|| {
+                        PositiveReal::new(
+                            ENDPOINT_TOLERANCE * SPREAD_MARGIN * MILLIMETRES_PER_METRE,
+                        )
+                    })
+                    .flatten(),
             });
             self.located(&id, record.offset, "0x14");
+            if merged {
+                self.sink
+                    .annotations
+                    .exactness(id.to_string(), Exactness::Inferred);
+            }
             vertices.extend([start, end]);
         }
         for ((loop_index, position), base) in &self.topology.free_slots {
@@ -641,13 +665,18 @@ impl Writer<'_, '_, '_, '_> {
                             &self.exact.loops[loop_topology.index].coedges[coedge_position];
                         let key = Ids::pair(loop_topology.index, coedge_position);
                         let coedge_id = self.ids.coedge(key.clone());
-                        let edge_id = match source.edge {
-                            Some(edge) => self.ids.edge(edge),
-                            None => self
-                                .ids
-                                .edge(cadmpeg_ir::identity_key!("free").colon(key.clone())),
+                        let (edge_id, same) = match source.edge {
+                            Some(edge) => {
+                                let (written, same) = self.topology.written_edge(edge);
+                                (self.ids.edge(written), same)
+                            }
+                            None => (
+                                self.ids
+                                    .edge(cadmpeg_ir::identity_key!("free").colon(key.clone())),
+                                true,
+                            ),
                         };
-                        let along = loop_topology.along[coedge_position] != reversed;
+                        let along = (loop_topology.along[coedge_position] != reversed) == same;
                         let mut pcurves = Vec::new();
                         if let (PcurveTransfer::Mapped(map), Some((pcurve, _))) =
                             (carrier.transfer, geometry.pcurve)
@@ -848,25 +877,33 @@ impl Writer<'_, '_, '_, '_> {
             .iter()
             .map(|edge| self.ids.edge(*edge))
             .collect();
+        let mut shell_of_face: Vec<usize> = flat.iter().map(|_| 0).collect();
+        for (shell, list) in members.iter().enumerate() {
+            for face in list {
+                shell_of_face[*face] = shell;
+            }
+        }
+        let mut edge_count: Vec<usize> = members.iter().map(|_| 0).collect();
+        let mut open: Vec<bool> = members.iter().map(|_| false).collect();
+        for (edge, uses) in &edge_faces {
+            let shells: BTreeSet<usize> = uses.iter().map(|face| shell_of_face[*face]).collect();
+            for shell in &shells {
+                edge_count[*shell] += 1;
+                if !singular.contains(edge) && (uses.len() != 2 || shells.len() != 1) {
+                    open[*shell] = true;
+                }
+            }
+        }
         let mut closed_shells = 0;
         let body = self.ids.body();
         let mut regions = Vec::new();
-        let mut shell_of_face = vec![0; flat.len()];
         for (shell, list) in members.iter().enumerate() {
-            let set: BTreeSet<usize> = list.iter().copied().collect();
-            let closed = edge_faces.iter().all(|(edge, uses)| {
-                let inside = uses.iter().filter(|face| set.contains(face)).count();
-                inside == 0 || singular.contains(edge) || (inside == 2 && uses.len() == 2)
-            });
-            if closed {
+            if edge_count[shell] > 0 && !open[shell] {
                 closed_shells += 1;
             }
             let shell_id = self.ids.shell(shell);
             let region_id = self.ids.region(shell);
             let face_ids: Vec<FaceId> = list.iter().map(|face| flat[*face].clone()).collect();
-            for face in list {
-                shell_of_face[*face] = shell;
-            }
             self.ctx.charge_entities(2, "pvz exact shell")?;
             self.sink.model.shells.push(
                 Shell::with_faces(shell_id.clone(), region_id.clone(), face_ids).map_err(

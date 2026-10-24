@@ -291,6 +291,44 @@ pub(crate) fn cube_stream(double: bool, inward: [bool; 6], reversed_pcurve: [boo
     stream
 }
 
+/// Stores every edge of `model` that two coedges use once per use: the
+/// second use names a new record with the same curve, reversed when
+/// `reverse`. Returns the new record of each shared edge.
+pub(crate) fn split_shared_edges(
+    model: &mut crate::brep::model::ExactModel,
+    reverse: bool,
+) -> std::collections::BTreeMap<usize, usize> {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut copies = std::collections::BTreeMap::new();
+    for loop_index in 0..model.loops.len() {
+        for position in 0..model.loops[loop_index].coedges.len() {
+            let Some(edge) = model.loops[loop_index].coedges[position].edge else {
+                continue;
+            };
+            if seen.insert(edge) {
+                continue;
+            }
+            let mut copy = model.edges[edge].clone();
+            if let (true, crate::brep::model::CurveGeometry::Line { origin, direction }) =
+                (reverse, &copy.geometry)
+            {
+                copy.geometry = crate::brep::model::CurveGeometry::Line {
+                    origin: [
+                        origin[0] + direction[0],
+                        origin[1] + direction[1],
+                        origin[2] + direction[2],
+                    ],
+                    direction: direction.map(|value| -value),
+                };
+            }
+            copies.insert(edge, model.edges.len());
+            model.loops[loop_index].coedges[position].edge = Some(model.edges.len());
+            model.edges.push(copy);
+        }
+    }
+    copies
+}
+
 fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
     [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 }

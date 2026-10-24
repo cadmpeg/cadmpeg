@@ -11,6 +11,7 @@ use cadmpeg_ir::topology::{BodyKind, FaceLoops, Sense};
 use cadmpeg_ir::ids::BodyId;
 
 use super::{emit, emit_with_work, Sink};
+use crate::brep::model::ExactModel;
 use crate::loss::PvzLossCode;
 use crate::test_support::exact::{cube_stream, Stream, CUBE_SIZE};
 
@@ -20,12 +21,22 @@ fn emit_stream(stream: Stream) -> (CadIr, Vec<LossNote>, Option<BodyId>) {
 
 /// Emits `stream`, with the derived-search work limit `work` when given.
 fn emit_stream_with(stream: Stream, work: Option<usize>) -> (CadIr, Vec<LossNote>, Option<BodyId>) {
+    emit_edited(stream, work, |_| {})
+}
+
+/// Emits `stream` after `edit` changes its parsed records.
+fn emit_edited(
+    stream: Stream,
+    work: Option<usize>,
+    edit: impl FnOnce(&mut ExactModel),
+) -> (CadIr, Vec<LossNote>, Option<BodyId>) {
     let id = stream.id();
     let bytes = stream.finish();
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
     let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let model = crate::brep::parse(&ctx, id, root).unwrap();
+    let mut model = crate::brep::parse(&ctx, id, root).unwrap();
+    edit(&mut model);
     let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let mut losses = Vec::new();
@@ -196,4 +207,34 @@ fn exhausted_nesting_is_reported() {
     assert!(losses
         .iter()
         .any(|note| note.code == PvzLossCode::ExactTopologyWorkExhausted.kind()));
+}
+
+/// Warnings and worse of the neutral validation of `ir`.
+fn serious_findings(ir: &CadIr) -> Vec<cadmpeg_ir::report::check::Finding> {
+    cadmpeg_ir::validate::validate_neutral(ir, Vec::new())
+        .unwrap()
+        .findings
+        .into_iter()
+        .filter(|finding| finding.severity >= Severity::Warning)
+        .collect()
+}
+
+#[test]
+fn edges_stored_once_per_use_become_shared_edges() {
+    for reverse in [false, true] {
+        let (ir, losses, _) =
+            emit_edited(cube_stream(true, [false; 6], [false; 6]), None, |model| {
+                crate::test_support::exact::split_shared_edges(model, reverse);
+            });
+        let model = &ir.model;
+        assert_eq!(model.bodies[0].kind, BodyKind::Solid);
+        assert_eq!(model.shells.len(), 1);
+        assert_eq!((model.edges.len(), model.vertices.len()), (12, 8));
+        assert!(model.edges.iter().all(|edge| edge.tolerance.is_some()));
+        let findings = serious_findings(&ir);
+        assert!(findings.is_empty(), "{findings:?}");
+        assert!(losses
+            .iter()
+            .any(|note| note.code == PvzLossCode::ExactEdgeUsesMerged.kind()));
+    }
 }

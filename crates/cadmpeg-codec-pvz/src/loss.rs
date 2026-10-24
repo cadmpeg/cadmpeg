@@ -117,6 +117,9 @@ pub(crate) enum PvzLossCode {
     /// A derived search ran out of work: a face kept one unclassified region,
     /// or coincident edge records stayed unpaired.
     ExactTopologyWorkExhausted,
+    /// Two edge records that one model edge stores once per use were written
+    /// as one neutral edge on the curve of the first record.
+    ExactEdgeUsesMerged,
 }
 
 impl PvzLossCode {
@@ -165,6 +168,7 @@ impl PvzLossCode {
         Self::ExactLoopOpen,
         Self::ExactFaceSideGauge,
         Self::ExactTopologyWorkExhausted,
+        Self::ExactEdgeUsesMerged,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -213,6 +217,7 @@ impl PvzLossCode {
             Self::ExactLoopOpen => "exact.loop-open",
             Self::ExactFaceSideGauge => "exact.face-side-gauge",
             Self::ExactTopologyWorkExhausted => "exact.topology-work-exhausted",
+            Self::ExactEdgeUsesMerged => "exact.edge-uses-merged",
         }
     }
 
@@ -259,7 +264,8 @@ impl PvzLossCode {
             | Self::ExactEndpointMismatch
             | Self::ExactLoopOpen
             | Self::ExactFaceSideGauge
-            | Self::ExactTopologyWorkExhausted => Severity::Warning,
+            | Self::ExactTopologyWorkExhausted
+            | Self::ExactEdgeUsesMerged => Severity::Warning,
             Self::ExactSurfaceUntyped => Severity::Error,
             Self::StructureMemberMalformed => Severity::Blocking,
         }
@@ -315,6 +321,7 @@ impl PvzLossCode {
             Self::ExactLoopOpen => LossTaxonomy::SourceTopologyInvalid,
             Self::ExactFaceSideGauge => LossTaxonomy::TopologyGaugeSubstituted,
             Self::ExactTopologyWorkExhausted => LossTaxonomy::TopologyNotTransferred,
+            Self::ExactEdgeUsesMerged => LossTaxonomy::DecodeDiagnostic,
         }
     }
 
@@ -378,6 +385,7 @@ impl PvzLossCode {
             Self::ExactTopologyWorkExhausted => {
                 "derived topology searches stopped by the work limit"
             }
+            Self::ExactEdgeUsesMerged => "edge records written as the edge of a coincident record",
         };
         format!("{count} {what}")
     }
@@ -452,6 +460,7 @@ mod tests {
                 "exact.loop-open",
                 "exact.face-side-gauge",
                 "exact.topology-work-exhausted",
+                "exact.edge-uses-merged",
             ]
         );
     }

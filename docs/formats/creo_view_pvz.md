@@ -694,9 +694,11 @@ On a periodic surface (cylinder, cone, sphere in u; torus in u and v) containmen
 
 The stream has no vertex records and no shell records. A vertex is the common point of the coedge ends that meet in a loop chain (§8.18), and of both ends of a singular edge (§8.13). An edge is shared when coedges of two faces reference it.
 
-A shell is a set of face regions connected through shared edges. A shell is closed when each non-singular edge in it has exactly two coedge uses; otherwise it is open. Two faces can also meet along two distinct edge records with coincident curves. Such edge records are not shared edges.
+A stream can also store a model edge as one edge record per coedge use. The two records of such an edge are not shared: each has one coedge use, and the two faces meet along their coincident curves. The ends of the two curves agree, and each curve passes within the tolerance of §8.21 of every point of the other. Such a pair joins the two faces as a shared edge does.
 
-The stream stores no face side. In an oriented shell the two coedges of a shared edge traverse it in opposite directions, so the stored loop directions give the side of each face relative to its neighbours.
+A shell is a set of face regions connected through shared edges and coincident edge pairs. A shell is closed when it has at least one edge and each non-singular edge in it has exactly two coedge uses, counting both records of a coincident pair as one edge; otherwise it is open.
+
+The stream stores no face side. In an oriented shell the two coedges of a shared edge, or of a coincident pair, traverse it in opposite directions, so the stored loop directions give the side of each face relative to its neighbours.
 
 ### 8.21 Units and tolerances
 
