@@ -11,6 +11,7 @@ mod framing;
 mod index;
 mod local;
 mod member;
+mod name;
 mod probe;
 
 pub use member::{MemberFrame, MemberPayload};
@@ -315,6 +316,38 @@ impl<'a> ArchiveSnapshot<'a> {
     /// Returns declarations in directory order, or physical order during recovery.
     pub fn entries(&self) -> &[EntryRecord] {
         &self.entries
+    }
+
+    /// Original raw filename field from the admitted central or recovered local declaration.
+    pub fn entry_name_source(&self, entry: &EntryRecord) -> Result<View<'a>, CodecError> {
+        self.require_entry(entry)?;
+        name::raw_source(self.root, entry)
+    }
+
+    /// Decodes an entry name from typed reads in the current record owner.
+    pub fn read_entry_name(
+        &self,
+        ctx: &DecodeContext<'_>,
+        entry: &EntryRecord,
+    ) -> Result<String, CodecError> {
+        self.require_entry(entry)?;
+        ctx.require_source(self.root)?;
+        name::read(ctx, self.root, entry)
+    }
+
+    fn require_entry(&self, entry: &EntryRecord) -> Result<(), CodecError> {
+        if self
+            .by_name
+            .get(&entry.name)
+            .and_then(|index| self.entries.get(*index))
+            .is_some_and(|admitted| std::ptr::eq(admitted, entry))
+        {
+            Ok(())
+        } else {
+            Err(CodecError::malformed(
+                "ZIP entry does not belong to this archive snapshot",
+            ))
+        }
     }
 
     /// Finds an entry record by its exact archive name.
