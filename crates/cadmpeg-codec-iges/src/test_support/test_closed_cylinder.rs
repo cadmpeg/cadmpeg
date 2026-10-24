@@ -35,7 +35,7 @@ fn id<T>(
 /// A curve association that states the curve exists only to carry topology.
 fn support(key: &str) -> SourceObjectAssociation {
     SourceObjectAssociation {
-        format: CodecFormat::Step,
+        format: CodecFormat::Iges,
         geometry_role: Some(SourceGeometryRole::Support),
         object_id: NonBlankString::new(key).expect("non-blank key"),
         name: None,

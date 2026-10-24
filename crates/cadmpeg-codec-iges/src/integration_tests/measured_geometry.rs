@@ -48,7 +48,7 @@ fn assert_close(computed: f64, expected: f64, numeric: f64) {
     let allowed = numeric + TEST_ABSOLUTE_FLOOR * expected.abs().max(1.0);
     assert!(
         (computed - expected).abs() <= allowed,
-        "computed {computed}, expected {expected}, allowed {allowed}"
+        "the measured value lies within its allowance of the expression"
     );
 }
 
@@ -74,7 +74,7 @@ fn closed_circle_edges_without_range_keep_measured_cylinder_geometry() {
         &CompareOptions::default(),
     )
     .expect("one body pair fits the pair allowance");
-    assert_eq!(comparison.verdict(), Verdict::Agree, "{comparison:#?}");
+    assert_eq!(comparison.verdict(), Verdict::Agree);
     let [body] = after.bodies().as_slice() else {
         panic!("one body row");
     };
