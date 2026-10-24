@@ -53,7 +53,7 @@ pub fn exact_geometry<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<(),
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
     let mut losses = Vec::new();
     let stream = cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("exact"));
-    let _body = crate::brep::emit(
+    let _bodies = crate::brep::emit(
         ctx,
         &exact,
         &cadmpeg_ir::identity_key!("fuzz"),

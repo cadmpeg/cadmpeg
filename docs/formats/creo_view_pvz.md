@@ -686,7 +686,7 @@ The coedges of a loop, in stored order, form a closed chain: each coedge shares 
 
 ### 8.19 Face regions and nesting
 
-Each outer loop (§8.11) is the outer boundary of one face region. Each inner loop is a hole of the face region whose outer loop contains it in the parameter domain of the face; when several outer loops contain it, the innermost one owns it. A face with several outer loops has several face regions.
+Each outer loop (§8.11) is the outer boundary of one face region. A face without a loop bounds no face region; the meaning of such a face record is an open item. Each inner loop is a hole of the face region whose outer loop contains it in the parameter domain of the face; when several outer loops contain it, the innermost one owns it. A face with several outer loops has several face regions.
 
 On a periodic surface (cylinder, cone, sphere in u; torus in u and v) containment is tested modulo the period of 2π.
 

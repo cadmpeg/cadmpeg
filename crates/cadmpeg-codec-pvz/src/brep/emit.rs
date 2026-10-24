@@ -94,6 +94,14 @@ impl Ids<'_> {
         )
     }
 
+    /// The body of the open shells of a stream that also has closed shells.
+    fn sheet_body(&self) -> BodyId {
+        BodyId::compose(
+            &cadmpeg_ir::identity_namespace!("pvz", "model", "body"),
+            self.scope.clone().colon(cadmpeg_ir::identity_key!("sheet")),
+        )
+    }
+
     fn pair(first: usize, second: usize) -> IdentityKey {
         IdentityKey::from(first).colon(second)
     }
@@ -154,15 +162,15 @@ fn annotation_error(error: impl std::fmt::Display) -> CodecError {
     CodecError::malformed(format_args!("pvz exact annotation: {error}"))
 }
 
-/// Writes the neutral B-rep of `exact` and returns its body, or `None` when
-/// the stream has no face. The body is a solid when every shell is closed,
-/// a sheet when none is, and general otherwise.
+/// Writes the neutral B-rep of `exact` and returns its bodies: a solid body
+/// of the closed shells and a sheet body of the open shells, the solid
+/// first. A stream without a face that has a loop has no body.
 pub(crate) fn emit(
     ctx: &DecodeContext<'_>,
     exact: &ExactModel,
     scope: &IdentityKey,
     sink: &mut Sink<'_>,
-) -> Result<Option<BodyId>, CodecError> {
+) -> Result<Vec<BodyId>, CodecError> {
     emit_with_work(ctx, exact, scope, sink, topology::work_limit(exact))
 }
 
@@ -173,12 +181,18 @@ fn emit_with_work(
     scope: &IdentityKey,
     sink: &mut Sink<'_>,
     work: usize,
-) -> Result<Option<BodyId>, CodecError> {
+) -> Result<Vec<BodyId>, CodecError> {
     let mut tally = LossTally::default();
     tally.add(PvzLossCode::ExactRecordUninterpreted, exact.opaque.len());
-    if exact.faces.is_empty() {
+    let unbounded = exact
+        .faces
+        .iter()
+        .filter(|face| face.loops.is_empty())
+        .count();
+    tally.add(PvzLossCode::ExactFaceUnboundedOmitted, unbounded);
+    if unbounded == exact.faces.len() {
         tally.notes(sink.losses);
-        return Ok(None);
+        return Ok(Vec::new());
     }
     let topology = topology::resolve(exact, work)?;
     let ids = Ids { scope };
@@ -190,10 +204,10 @@ fn emit_with_work(
         sink,
         tally,
     };
-    let body = writer.write()?;
+    let bodies = writer.write()?;
     let Writer { tally, sink, .. } = writer;
     tally.notes(sink.losses);
-    Ok(Some(body))
+    Ok(bodies)
 }
 
 struct Writer<'w, 's, 'c, 'k> {
@@ -222,7 +236,7 @@ impl Writer<'_, '_, '_, '_> {
         self.derived(id);
     }
 
-    fn write(&mut self) -> Result<BodyId, CodecError> {
+    fn write(&mut self) -> Result<Vec<BodyId>, CodecError> {
         let first = Arenas {
             loops: self.sink.model.loops.len(),
             coedges: self.sink.model.coedges.len(),
@@ -237,10 +251,15 @@ impl Writer<'_, '_, '_, '_> {
         self.write_shells(&faces, first)
     }
 
-    /// The neutral carrier of every face, written to the surface arena.
-    fn write_surfaces(&mut self) -> Result<Vec<FaceCarrier>, CodecError> {
+    /// The neutral carrier of every face with a loop, written to the surface
+    /// arena. A face without a loop bounds no region and has none.
+    fn write_surfaces(&mut self) -> Result<Vec<Option<FaceCarrier>>, CodecError> {
         let mut carriers = Vec::new();
         for (index, face) in self.exact.faces.iter().enumerate() {
+            if face.loops.is_empty() {
+                carriers.push(None);
+                continue;
+            }
             let carrier = self.face_carrier(index)?;
             let id = self.ids.surface(index);
             let geometry = match &carrier {
@@ -265,11 +284,11 @@ impl Writer<'_, '_, '_, '_> {
                 Exactness::Unknown
             };
             self.sink.annotations.exactness(id.to_string(), exactness);
-            carriers.push(carrier.unwrap_or(FaceCarrier {
+            carriers.push(Some(carrier.unwrap_or(FaceCarrier {
                 geometry: SolvedSurfaceGeometry::Unknown { record: None },
                 transfer: PcurveTransfer::Omitted,
                 side: 1.0,
-            }));
+            })));
         }
         Ok(carriers)
     }
@@ -612,7 +631,10 @@ impl Writer<'_, '_, '_, '_> {
 
     /// Writes loops, coedges, pcurves, and faces. Returns, per face record,
     /// the neutral faces of its regions.
-    fn write_faces(&mut self, carriers: &[FaceCarrier]) -> Result<Vec<Vec<FaceId>>, CodecError> {
+    fn write_faces(
+        &mut self,
+        carriers: &[Option<FaceCarrier>],
+    ) -> Result<Vec<Vec<FaceId>>, CodecError> {
         let mut faces = Vec::new();
         let mut radial: BTreeMap<EdgeId, Vec<CoedgeId>> = BTreeMap::new();
         let mut written: BTreeMap<CoedgeId, usize> = BTreeMap::new();
@@ -620,6 +642,9 @@ impl Writer<'_, '_, '_, '_> {
         let mut mismatched = 0;
         let mut gauged = 0;
         for (index, carrier) in carriers.iter().enumerate() {
+            let Some(carrier) = carrier else {
+                continue;
+            };
             let face_topology = &self.topology.faces[index];
             let record = &self.exact.faces[index];
             let reversed = face_topology.reversed;
@@ -835,7 +860,11 @@ impl Writer<'_, '_, '_, '_> {
 
     /// Groups neutral faces into shells by shared edges and writes shells,
     /// regions, and the body.
-    fn write_shells(&mut self, faces: &[Vec<FaceId>], first: Arenas) -> Result<BodyId, CodecError> {
+    fn write_shells(
+        &mut self,
+        faces: &[Vec<FaceId>],
+        first: Arenas,
+    ) -> Result<Vec<BodyId>, CodecError> {
         let flat: Vec<FaceId> = faces.iter().flatten().cloned().collect();
         let position: BTreeMap<&FaceId, usize> = flat
             .iter()
@@ -894,13 +923,18 @@ impl Writer<'_, '_, '_, '_> {
                 }
             }
         }
-        let mut closed_shells = 0;
-        let body = self.ids.body();
-        let mut regions = Vec::new();
+        let closed: Vec<bool> = (0..members.len())
+            .map(|shell| edge_count[shell] > 0 && !open[shell])
+            .collect();
+        let solid = self.ids.body();
+        let sheet = if closed.contains(&true) {
+            self.ids.sheet_body()
+        } else {
+            self.ids.body()
+        };
+        let mut regions: [Vec<RegionId>; 2] = [Vec::new(), Vec::new()];
         for (shell, list) in members.iter().enumerate() {
-            if edge_count[shell] > 0 && !open[shell] {
-                closed_shells += 1;
-            }
+            let body = if closed[shell] { &solid } else { &sheet };
             let shell_id = self.ids.shell(shell);
             let region_id = self.ids.region(shell);
             let face_ids: Vec<FaceId> = list.iter().map(|face| flat[*face].clone()).collect();
@@ -917,7 +951,7 @@ impl Writer<'_, '_, '_, '_> {
                 shells: vec![shell_id],
             });
             self.derived(&region_id);
-            regions.push(region_id);
+            regions[usize::from(!closed[shell])].push(region_id);
         }
         let face_shell: BTreeMap<FaceId, ShellId> = flat
             .iter()
@@ -929,26 +963,29 @@ impl Writer<'_, '_, '_, '_> {
                 face.shell = shell.clone();
             }
         }
-        let shells = members.len();
-        let kind = if closed_shells == shells {
-            BodyKind::Solid
-        } else if closed_shells == 0 {
-            BodyKind::Sheet
-        } else {
-            BodyKind::General
-        };
-        self.ctx.charge_entities(1, "pvz exact body")?;
-        self.sink.model.bodies.push(Body {
-            id: body.clone(),
-            kind,
-            regions,
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        });
-        self.derived(&body);
-        Ok(body)
+        let [solid_regions, sheet_regions] = regions;
+        let mut bodies = Vec::new();
+        for (id, kind, regions) in [
+            (solid, BodyKind::Solid, solid_regions),
+            (sheet, BodyKind::Sheet, sheet_regions),
+        ] {
+            if regions.is_empty() {
+                continue;
+            }
+            self.ctx.charge_entities(1, "pvz exact body")?;
+            self.sink.model.bodies.push(Body {
+                id: id.clone(),
+                kind,
+                regions,
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+            });
+            self.derived(&id);
+            bodies.push(id);
+        }
+        Ok(bodies)
     }
 }
 

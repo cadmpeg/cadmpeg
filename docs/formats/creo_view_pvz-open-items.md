@@ -269,3 +269,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `creo_view_pvz.md` §8.2. A coedge edge index is an ordinal among the edge records that no composite lists, and a composite member index is an ordinal among all edge records. Without composite edge records the two spaces are equal. No available stream has both a composite edge record and a singular-use record.
 
 **Need.** We must know the space to find the edge of a singular use in a stream with composite edges.
+
+### PVZ-41. Face records without a loop
+
+**Question.** What does a surface record mean when no loop record and no singular-use record follow it (`creo_view_pvz.md` §8.19)?
+
+**Known.** Such faces are plane records with both range pairs (§8.3). They come after every face with a loop in the face section. A member has up to seven of them. They have no coedge, so they bound no face region and share no edge with another face.
+
+**Need.** We must know whether they are datum planes, construction geometry, or trimmed faces that another record bounds, to decide whether a decoder can transfer them.

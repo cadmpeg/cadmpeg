@@ -120,6 +120,8 @@ pub(crate) enum PvzLossCode {
     /// Two edge records that one model edge stores once per use were written
     /// as one neutral edge on the curve of the first record.
     ExactEdgeUsesMerged,
+    /// A face record with no loop bounds no region and was not transferred.
+    ExactFaceUnboundedOmitted,
 }
 
 impl PvzLossCode {
@@ -169,6 +171,7 @@ impl PvzLossCode {
         Self::ExactFaceSideGauge,
         Self::ExactTopologyWorkExhausted,
         Self::ExactEdgeUsesMerged,
+        Self::ExactFaceUnboundedOmitted,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -218,6 +221,7 @@ impl PvzLossCode {
             Self::ExactFaceSideGauge => "exact.face-side-gauge",
             Self::ExactTopologyWorkExhausted => "exact.topology-work-exhausted",
             Self::ExactEdgeUsesMerged => "exact.edge-uses-merged",
+            Self::ExactFaceUnboundedOmitted => "exact.face-unbounded-omitted",
         }
     }
 
@@ -265,7 +269,8 @@ impl PvzLossCode {
             | Self::ExactLoopOpen
             | Self::ExactFaceSideGauge
             | Self::ExactTopologyWorkExhausted
-            | Self::ExactEdgeUsesMerged => Severity::Warning,
+            | Self::ExactEdgeUsesMerged
+            | Self::ExactFaceUnboundedOmitted => Severity::Warning,
             Self::ExactSurfaceUntyped => Severity::Error,
             Self::StructureMemberMalformed => Severity::Blocking,
         }
@@ -322,6 +327,7 @@ impl PvzLossCode {
             Self::ExactFaceSideGauge => LossTaxonomy::TopologyGaugeSubstituted,
             Self::ExactTopologyWorkExhausted => LossTaxonomy::TopologyNotTransferred,
             Self::ExactEdgeUsesMerged => LossTaxonomy::DecodeDiagnostic,
+            Self::ExactFaceUnboundedOmitted => LossTaxonomy::GeometryNotTransferred,
         }
     }
 
@@ -386,6 +392,7 @@ impl PvzLossCode {
                 "derived topology searches stopped by the work limit"
             }
             Self::ExactEdgeUsesMerged => "edge records written as the edge of a coincident record",
+            Self::ExactFaceUnboundedOmitted => "face records without a loop not transferred",
         };
         format!("{count} {what}")
     }
@@ -461,6 +468,7 @@ mod tests {
                 "exact.face-side-gauge",
                 "exact.topology-work-exhausted",
                 "exact.edge-uses-merged",
+                "exact.face-unbounded-omitted",
             ]
         );
     }

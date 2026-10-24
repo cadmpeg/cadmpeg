@@ -137,16 +137,29 @@ fn decode_model(
         let exact = if geometry.has_exact {
             exact_geometry(ctx, name, member, ir, annotations, losses)?
         } else {
-            None
+            Vec::new()
         };
         let meshes = ir.model.tessellations.len();
-        transferred |= exact.is_some();
-        let body = crate::model::display_geometry(ctx, name, &geometry, exact, ir, losses)?;
+        transferred |= !exact.is_empty();
+        let primary = exact.first().cloned();
+        let body = crate::model::display_geometry(ctx, name, &geometry, primary, ir, losses)?;
         transferred |= ir.model.tessellations.len() > meshes;
+        for extra in exact.iter().skip(1) {
+            if let Some(written) = ir
+                .model
+                .bodies
+                .iter_mut()
+                .rev()
+                .find(|written| written.id == *extra)
+            {
+                written.name = Some(name.to_owned());
+            }
+        }
         if let Some(body) = body {
             for index in owners.get(name).into_iter().flatten() {
                 if let Some(definition) = ir.model.product_definitions.get_mut(*index) {
                     definition.bodies.push(body.clone());
+                    definition.bodies.extend(exact.iter().skip(1).cloned());
                 }
             }
         }
@@ -177,9 +190,10 @@ fn decode_model(
 }
 
 /// Writes the neutral B-rep of the exact-geometry stream (§8) of geometry
-/// member `name` into `ir` and returns its body, or `None` when the stream
-/// has no face. A stream that does not decode adds nothing to `ir` and
-/// reports a loss; the member keeps its tessellation.
+/// member `name` into `ir` and returns its bodies, the solid body first; a
+/// stream without a bounded face has none. A stream that does not decode
+/// adds nothing to `ir` and reports a loss; the member keeps its
+/// tessellation.
 fn exact_geometry(
     ctx: &DecodeContext<'_>,
     name: &str,
@@ -187,17 +201,17 @@ fn exact_geometry(
     ir: &mut CadIr,
     annotations: &mut Annotations,
     losses: &mut Vec<LossNote>,
-) -> Result<Option<BodyId>, CodecError> {
+) -> Result<Vec<BodyId>, CodecError> {
     let exact = match crate::ol::exact_stream(ctx, member) {
         Ok(Some(exact)) => exact,
-        Ok(None) => return Ok(None),
+        Ok(None) => return Ok(Vec::new()),
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(error) => {
             losses.push(PvzLossCode::GeometryExactUndecoded.note(format!(
                 "geometry member {name:?}: the exact-geometry stream was not expanded ({error}); \
                  the member keeps its tessellation"
             )));
-            return Ok(None);
+            return Ok(Vec::new());
         }
     };
     let mut model = Model::default();
@@ -222,14 +236,14 @@ fn exact_geometry(
             )
         });
     match emitted {
-        Ok(body) => {
+        Ok(bodies) => {
             ir.model.extend_rewritten(model, &mut Unchanged)?;
             annotations.append(builder.build())?;
             losses.extend(notes.into_iter().map(|mut note| {
                 note.message = format!("geometry member {name:?}: {}", note.message);
                 note
             }));
-            Ok(body)
+            Ok(bodies)
         }
         Err(error @ CodecError::ResourceLimit(_)) => Err(error),
         Err(error) => {
@@ -238,7 +252,7 @@ fn exact_geometry(
                  B-rep ({error}); the member keeps its tessellation",
                 exact.stream_id
             )));
-            Ok(None)
+            Ok(Vec::new())
         }
     }
 }

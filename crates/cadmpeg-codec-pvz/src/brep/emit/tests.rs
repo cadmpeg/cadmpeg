@@ -15,12 +15,12 @@ use crate::brep::model::ExactModel;
 use crate::loss::PvzLossCode;
 use crate::test_support::exact::{cube_stream, Stream, CUBE_SIZE};
 
-fn emit_stream(stream: Stream) -> (CadIr, Vec<LossNote>, Option<BodyId>) {
+fn emit_stream(stream: Stream) -> (CadIr, Vec<LossNote>, Vec<BodyId>) {
     emit_stream_with(stream, None)
 }
 
 /// Emits `stream`, with the derived-search work limit `work` when given.
-fn emit_stream_with(stream: Stream, work: Option<usize>) -> (CadIr, Vec<LossNote>, Option<BodyId>) {
+fn emit_stream_with(stream: Stream, work: Option<usize>) -> (CadIr, Vec<LossNote>, Vec<BodyId>) {
     emit_edited(stream, work, |_| {})
 }
 
@@ -29,7 +29,7 @@ fn emit_edited(
     stream: Stream,
     work: Option<usize>,
     edit: impl FnOnce(&mut ExactModel),
-) -> (CadIr, Vec<LossNote>, Option<BodyId>) {
+) -> (CadIr, Vec<LossNote>, Vec<BodyId>) {
     let id = stream.id();
     let bytes = stream.finish();
     let arena = DecodeArena::new();
@@ -66,7 +66,7 @@ fn cube_becomes_a_valid_outward_solid() {
     ));
     assert!(losses.is_empty(), "{losses:?}");
     let model = &ir.model;
-    assert_eq!(model.bodies[0].id, body.unwrap());
+    assert_eq!(body, [model.bodies[0].id.clone()]);
     assert_eq!(model.bodies[0].kind, BodyKind::Solid);
     assert_eq!((model.faces.len(), model.shells.len()), (6, 1));
     assert_eq!(
@@ -106,20 +106,60 @@ fn cube_becomes_a_valid_outward_solid() {
 
 #[test]
 fn opaque_records_are_reported() {
-    let mut stream = Stream::new(true);
-    stream.plane([0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]);
+    let mut stream = cube_stream(true, [false; 6], [false; 6]);
     stream.record(0x0a, &[0; 12]);
     let (_, losses, body) = emit_stream(stream);
-    assert!(body.is_some());
+    assert_eq!(body.len(), 1);
     assert!(losses
         .iter()
         .any(|note| note.code == PvzLossCode::ExactRecordUninterpreted.kind()));
 }
 
 #[test]
+fn faces_without_loops_are_left_out() {
+    let stream = cube_stream(true, [false; 6], [false; 6]);
+    let (ir, losses, body) = emit_edited(stream, None, |model| {
+        let mut face = model.faces[0].clone();
+        face.loops.clear();
+        model.faces.push(face);
+    });
+    assert_eq!(body.len(), 1);
+    assert_eq!(ir.model.bodies[0].kind, BodyKind::Solid);
+    assert_eq!((ir.model.faces.len(), ir.model.surfaces.len()), (6, 6));
+    assert!(losses
+        .iter()
+        .any(|note| note.code == PvzLossCode::ExactFaceUnboundedOmitted.kind()));
+    let mut lone = Stream::new(true);
+    lone.plane([0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]);
+    let (ir, _, body) = emit_stream(lone);
+    assert!(body.is_empty());
+    assert!(ir.model.faces.is_empty());
+}
+
+#[test]
+fn open_shells_form_a_sheet_body_beside_the_solid() {
+    let stream = cube_stream(true, [false; 6], [false; 6]);
+    let (ir, _, body) = emit_edited(stream, None, |model| {
+        let mut face = model.faces[0].clone();
+        let mut record = model.loops[face.loops[0]].clone();
+        record.face = model.faces.len();
+        record.coedges.truncate(1);
+        record.coedges[0].edge = Some(model.edges.len());
+        model.edges.push(model.edges[0].clone());
+        face.loops = vec![model.loops.len()];
+        model.loops.push(record);
+        model.faces.push(face);
+    });
+    assert_eq!(body.len(), 2);
+    let kinds: Vec<BodyKind> = ir.model.bodies.iter().map(|body| body.kind).collect();
+    assert_eq!(kinds, [BodyKind::Solid, BodyKind::Sheet]);
+    assert_eq!(ir.model.shells.len(), 2);
+}
+
+#[test]
 fn stream_without_faces_writes_nothing() {
     let (ir, losses, body) = emit_stream(Stream::new(false));
-    assert!(body.is_none());
+    assert!(body.is_empty());
     assert!(losses.is_empty());
     assert!(ir.model.bodies.is_empty());
 }
