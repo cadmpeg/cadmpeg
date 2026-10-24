@@ -1540,7 +1540,7 @@ fn attribute_table_rows<'a>(
                 .integer_or(count_index, 1)
                 .ok_or(UnstatableAttributeTable::ValueCount { attribute })?,
             Some(TokenValue::Integer(value)) => *value,
-            Some(TokenValue::Real(_) | TokenValue::String(_) | TokenValue::Unreadable(_)) => {
+            Some(TokenValue::Real(_) | TokenValue::String(_)) => {
                 return Err(UnstatableAttributeTable::ValueCount { attribute });
             }
         };
@@ -4503,12 +4503,7 @@ pub(crate) fn store(
                             Some(TokenValue::Integer(_)) => {
                                 record.count_with_stride_before(cursor + 2, stride, end)
                             }
-                            None
-                            | Some(
-                                TokenValue::Real(_)
-                                | TokenValue::String(_)
-                                | TokenValue::Unreadable(_),
-                            ) => None,
+                            None | Some(TokenValue::Real(_) | TokenValue::String(_)) => None,
                         }
                     };
                     let Some(value_start) = cursor.checked_add(3) else {

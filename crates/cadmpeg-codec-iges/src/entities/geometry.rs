@@ -290,11 +290,9 @@ fn point_display_symbol_valid(
                     })
             })
         }
-        Some(
-            crate::parameter::TokenValue::Real(_)
-            | crate::parameter::TokenValue::String(_)
-            | crate::parameter::TokenValue::Unreadable(_),
-        ) => false,
+        Some(crate::parameter::TokenValue::Real(_) | crate::parameter::TokenValue::String(_)) => {
+            false
+        }
     }
 }
 

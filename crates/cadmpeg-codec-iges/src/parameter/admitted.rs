@@ -2,7 +2,8 @@
 //! Tokenized Parameter content before its actual renderer binds card positions.
 
 use super::{
-    parse_admitted, tokenize_with_limits, AdmittedParameter, OwnedParameterBytes, OwnedParseFailure,
+    lex_admitted, reject_failed_fields, AdmittedParameter, FailedField, OwnedParameterBytes,
+    OwnedParseFailure,
 };
 use crate::global::ResolvedGlobal;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
@@ -15,6 +16,20 @@ pub(crate) fn parse_lines(
     global: &ResolvedGlobal,
     ctx: &DecodeContext<'_>,
 ) -> Result<AdmittedParameter, CodecError> {
+    let (admitted, failed) = lex_lines(directory_sequence, entity_type, lines, global, ctx)?;
+    reject_failed_fields(&failed).map_err(|error| failure(directory_sequence, error))?;
+    Ok(admitted)
+}
+
+/// Lex rendered or source lines of 64 columns. A field whose literal is not
+/// admitted has no token and is returned for its caller to give up.
+pub(crate) fn lex_lines(
+    directory_sequence: u32,
+    entity_type: i64,
+    lines: &[Vec<u8>],
+    global: &ResolvedGlobal,
+    ctx: &DecodeContext<'_>,
+) -> Result<(AdmittedParameter, Vec<FailedField>), CodecError> {
     let byte_len = lines
         .len()
         .checked_mul(64)
@@ -34,7 +49,7 @@ pub(crate) fn parse_lines(
             .and_then(|index| index.checked_mul(64))
             .ok_or_else(|| CodecError::malformed("Parameter boundary overflows"))?;
     }
-    parse_admitted(
+    lex_admitted(
         directory_sequence,
         entity_type,
         OwnedParameterBytes {
@@ -42,14 +57,17 @@ pub(crate) fn parse_lines(
             card_boundaries: boundaries,
         },
         global,
-        tokenize_with_limits,
     )
-    .map_err(|error| match error {
+    .map_err(|error| failure(directory_sequence, error))
+}
+
+fn failure(directory_sequence: u32, error: OwnedParseFailure) -> CodecError {
+    match error {
         OwnedParseFailure::Error(error) => error,
         OwnedParseFailure::Defect(defect, _) => CodecError::malformed(format!(
             "Directory D{} Parameter Data: {}",
             directory_sequence,
             defect.describe()
         )),
-    })
+    }
 }

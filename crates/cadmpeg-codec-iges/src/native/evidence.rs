@@ -23,7 +23,6 @@ pub(crate) fn untyped_records(
                     Value::Object(fields) => {
                         if fields.get("diagnostic").and_then(Value::as_str)
                             == Some("native text is not UTF-8")
-                            || fields.get("kind").and_then(Value::as_str) == Some("unreadable")
                         {
                             untyped = true;
                         }
