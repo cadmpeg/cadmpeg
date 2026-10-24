@@ -11,7 +11,9 @@ use cadmpeg_ir::validate::{
     validate_neutral_for_decode, validate_neutral_with_source_fidelity_for_decode,
 };
 use cadmpeg_ir::{
+    codec::Codec,
     report::check::{Finding, ValidationReport},
+    source_fidelity::SourceFidelity,
     CadIr,
 };
 use cadmpeg_registry::InputCatalog;
@@ -40,9 +42,12 @@ pub(crate) fn validate_loaded(
             ),
             None => validate_neutral_for_decode(&ctx, &document.ir, losses),
         }?;
-        report
-            .findings
-            .extend(validate_native(&ctx, inputs, &document.ir)?);
+        report.findings.extend(validate_native(
+            &ctx,
+            inputs,
+            &document.ir,
+            document.fidelity(),
+        )?);
         ctx.finish_session()?;
         Ok::<_, CodecError>(report)
     })();
@@ -54,14 +59,36 @@ fn validate_native(
     ctx: &DecodeContext<'_>,
     inputs: &InputCatalog,
     ir: &CadIr,
+    fidelity: Option<&SourceFidelity>,
+) -> Result<Vec<Finding>, CodecError> {
+    validate_codecs(
+        ctx,
+        inputs
+            .descriptors()
+            .filter_map(cadmpeg_registry::InputDescriptor::codec),
+        ir,
+        fidelity,
+    )
+}
+
+/// Runs each codec's native validator over the namespace it owns and, when
+/// the document carries its decode sidecar, the codec's source-layout
+/// validator over that sidecar. Without a sidecar the document holds no
+/// source offsets, so no source-layout check applies.
+fn validate_codecs<'c>(
+    ctx: &DecodeContext<'_>,
+    codecs: impl IntoIterator<Item = &'c dyn Codec>,
+    ir: &CadIr,
+    fidelity: Option<&SourceFidelity>,
 ) -> Result<Vec<Finding>, CodecError> {
     let mut findings = Vec::new();
-    for descriptor in inputs.descriptors() {
-        let Some(codec) = descriptor.codec() else {
+    for codec in codecs {
+        if ir.native.namespace(codec.id().as_str()).is_none() {
             continue;
-        };
-        if ir.native.namespace(codec.id().as_str()).is_some() {
-            findings.extend(codec.validate_native(ctx, ir)?);
+        }
+        findings.extend(codec.validate_native(ctx, ir)?);
+        if let Some(fidelity) = fidelity {
+            findings.extend(codec.validate_source_layout(ctx, ir, fidelity)?);
         }
     }
     Ok(findings)
@@ -70,15 +97,20 @@ fn validate_native(
 #[cfg(test)]
 mod tests {
     use super::validate_native;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    use cadmpeg_ir::CadIr;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, Decoded, FormatId};
+    use cadmpeg_ir::report::check::{Check, Finding};
+    use cadmpeg_ir::report::Severity;
+    use cadmpeg_ir::source_fidelity::SourceFidelity;
+    use cadmpeg_ir::{CadIr, ContainerSummary};
     use cadmpeg_registry::InputCatalog;
 
     fn findings(inputs: &InputCatalog, ir: &CadIr) -> Vec<cadmpeg_ir::report::check::Finding> {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("validation context");
-        validate_native(&ctx, inputs, ir).expect("validation fits service policy")
+        validate_native(&ctx, inputs, ir, None).expect("validation fits service policy")
     }
 
     #[test]
@@ -104,6 +136,77 @@ mod tests {
         assert_eq!(report["resource"]["limit"], 4);
         assert_eq!(report["resource"]["used"], 0);
         assert_eq!(report["resource"]["requested"], 5);
+    }
+
+    /// A codec whose source-layout validator reports one finding per call,
+    /// so a test sees whether the application ran it.
+    struct SourceLayoutProbe;
+
+    impl CodecBackend for SourceLayoutProbe {
+        const FORMAT: FormatId = FormatId::new("probe");
+
+        fn validate_source_layout(
+            _ctx: &DecodeContext<'_>,
+            _ir: &CadIr,
+            _fidelity: &SourceFidelity,
+        ) -> Result<Vec<Finding>, CodecError> {
+            Ok(vec![Finding {
+                related: Vec::new(),
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "probe source layout checked".into(),
+                entity: None,
+            }])
+        }
+
+        fn detect_impl(
+            &self,
+            _ctx: &DecodeContext<'_>,
+            _prefix: View<'_>,
+        ) -> Result<Confidence, CodecError> {
+            Ok(Confidence::No)
+        }
+
+        fn inspect_impl(
+            &self,
+            _ctx: &DecodeContext<'_>,
+            _root: View<'_>,
+        ) -> Result<ContainerSummary, CodecError> {
+            Err(CodecError::NotImplemented("probe inspects nothing".into()))
+        }
+
+        fn decode_impl(
+            &self,
+            _ctx: &DecodeContext<'_>,
+            _root: View<'_>,
+        ) -> Result<Decoded, CodecError> {
+            Err(CodecError::NotImplemented("probe decodes nothing".into()))
+        }
+    }
+
+    fn probe_findings(ir: &CadIr, fidelity: Option<&SourceFidelity>) -> Vec<Finding> {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("validation context");
+        super::validate_codecs(&ctx, [&SourceLayoutProbe as &dyn Codec], ir, fidelity)
+            .expect("validation fits service policy")
+    }
+
+    #[test]
+    fn the_source_layout_validator_runs_only_with_a_decode_sidecar() {
+        let mut ir = CadIr::empty();
+        let _ = ir.native.namespace_mut("probe");
+        let fidelity = SourceFidelity::default();
+        let findings = probe_findings(&ir, Some(&fidelity));
+        assert_eq!(findings.len(), 1, "{findings:?}");
+        assert_eq!(findings[0].message, "probe source layout checked");
+        assert!(probe_findings(&ir, None).is_empty());
+    }
+
+    #[test]
+    fn the_source_layout_validator_needs_its_codec_namespace() {
+        let fidelity = SourceFidelity::default();
+        assert!(probe_findings(&CadIr::empty(), Some(&fidelity)).is_empty());
     }
 
     #[test]
