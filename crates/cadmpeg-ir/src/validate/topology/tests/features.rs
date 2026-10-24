@@ -1313,6 +1313,7 @@ fn input_edge_geometry_names_its_own_state_members_once() {
             native_ref: None,
         });
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: feature_id,
         ordinal: 0,
         name: None,

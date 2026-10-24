@@ -591,6 +591,7 @@ fn an_edge_on_a_subset_curve_stays_in_the_local_domain() {
         let mut ir = unit_cube().unwrap();
         let root = CurveId::mint("test:model:curve#root").unwrap();
         ir.model.curves.push(Curve {
+            native_ref: None,
             id: root.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0))

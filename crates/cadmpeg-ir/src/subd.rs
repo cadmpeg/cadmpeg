@@ -153,12 +153,6 @@ impl SubdCage {
         Ok(())
     }
 
-    /// Control edges in cage order.
-    #[must_use]
-    pub fn edges(&self) -> &[SubdEdge] {
-        &self.edges
-    }
-
     /// Atomically edit edge copies while preserving cage invariants.
     /// A present user-knot extension gives every unannotated edge an inherited value.
     pub fn edit_edges(

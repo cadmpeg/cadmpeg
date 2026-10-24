@@ -1549,6 +1549,7 @@ fn a_body_of_single_sided_loopless_faces_is_a_solid() {
     // One full torus face: no loops, so no edges to count.
     let mut brep = AsmBrep {
         bodies: vec![Body {
+            native_ref: None,
             id: body_id.clone(),
             kind: BodyKind::Sheet,
             regions: vec![region_id.clone()],
@@ -1558,6 +1559,7 @@ fn a_body_of_single_sided_loopless_faces_is_a_solid() {
             visible: None,
         }],
         regions: vec![Region {
+            native_ref: None,
             id: region_id.clone(),
             body: body_id,
             shells: vec![shell_id.clone()],
@@ -1566,6 +1568,7 @@ fn a_body_of_single_sided_loopless_faces_is_a_solid() {
             Shell::with_faces(shell_id.clone(), region_id, vec![face_id.clone()]).expect("shell"),
         ],
         faces: vec![Face {
+            native_ref: None,
             id: face_id.clone(),
             shell: shell_id,
             surface: SurfaceId::mint(id(FORMAT, 5).into_string()).expect("identity grammar"),

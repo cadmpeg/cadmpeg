@@ -1433,6 +1433,7 @@ fn a_reversed_subset_record_localizes_its_cache_and_edge_ranges() {
             assert_eq!(*subset.sense(), forward, "{label}");
             let native = if forward { [0.6, 1.0] } else { [-1.0, -0.6] };
             let mut edges = vec![Edge {
+                native_ref: None,
                 id: EdgeId::mint("test:asm:edge#0").unwrap(),
                 carrier: EdgeCarrier::new(Some(owner.clone()), Some(native)).unwrap(),
                 start: VertexId::mint("test:asm:vertex#0").unwrap(),
