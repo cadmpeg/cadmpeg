@@ -1408,20 +1408,27 @@ const EPS_CLOSED_EDGE_VERTEX: f64 = 1.0e-8;
 
 /// The interval that a closed edge with no stored range traverses: the
 /// carrier's closed traversal, when the edge vertex lies at both of its
-/// ends. `None` leaves the edge on the native default range.
+/// ends. Any other edge states no traversal and is refused.
 fn closed_edge_traversal(
     edge: &cadmpeg_ir::topology::Edge,
     carrier: &CurveGeometry,
     vertex: Point3,
     tolerance: f64,
-) -> Result<Option<[f64; 2]>, CodecError> {
-    let Some(geometry) = carrier.solved().filter(|_| edge.start == edge.end) else {
-        return Ok(None);
+) -> Result<[f64; 2], CodecError> {
+    let no_traversal = || {
+        CodecError::NotImplemented(format!(
+            "source-less F3D edge generation requires a parameter range for edge {}",
+            edge.id
+        ))
     };
-    let Some(range) = geometry.closed_traversal_range() else {
-        return Ok(None);
-    };
-    let range = range.endpoints();
+    let geometry = carrier
+        .solved()
+        .filter(|_| edge.start == edge.end)
+        .ok_or_else(no_traversal)?;
+    let range = geometry
+        .closed_traversal_range()
+        .ok_or_else(no_traversal)?
+        .endpoints();
     for parameter in range {
         let end = match cadmpeg_ir::eval::decode::curve_point_solved(
             EvaluationAdmission::Standard,
@@ -1436,7 +1443,7 @@ fn closed_edge_traversal(
                 EvaluationFailure::NoValue
                 | EvaluationFailure::NonFinite(_)
                 | EvaluationFailure::WorkExhausted,
-            ) => return Ok(None),
+            ) => return Err(no_traversal()),
         };
         let pairs = [(vertex.x, end.x), (vertex.y, end.y), (vertex.z, end.z)];
         let scale = pairs
@@ -1444,10 +1451,10 @@ fn closed_edge_traversal(
             .fold(1.0_f64, |scale, (a, b)| scale.max(a.abs()).max(b.abs()));
         let allowed = (scale * EPS_CLOSED_EDGE_VERTEX).max(tolerance);
         if pairs.iter().any(|(a, b)| (a - b).abs() > allowed) {
-            return Ok(None);
+            return Err(no_traversal());
         }
     }
-    Ok(Some(range))
+    Ok(range)
 }
 
 /// Base record indices for the source-less stream sections that
@@ -1549,7 +1556,6 @@ fn encode_source_less_edges_vertices_points(
                         )
                     })
                     .transpose()?
-                    .flatten()
                     .unwrap_or([0.0, 1.0])
             }
             None => [0.0, 1.0],
