@@ -1744,9 +1744,6 @@ impl F3dNative {
         for image in &self.design_canvas_images {
             image.retain_source(&mut fidelity);
         }
-        for image in &self.design_decal_images {
-            image.retain_source(&mut fidelity);
-        }
         for placement in &self.design_sketch_placements {
             placement.retain_source(&mut fidelity);
         }
