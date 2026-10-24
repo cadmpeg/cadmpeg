@@ -147,6 +147,28 @@ fn a_companion_start_away_from_its_timestamp_fails() {
     }
 }
 
+#[test]
+fn a_typed_reference_companion_prefix_passes_and_ends_its_own_prefix() {
+    use crate::layout::typed_reference_companion_prefix as typed;
+    let (ir, fidelity) = decoded_constraints();
+    for id in ids(&ir, "design_parameter_companions") {
+        let start = pointer(&fidelity, &id, "byte_offset");
+        let timestamp = start + u64::try_from(typed::TIMESTAMP_MICROS).unwrap();
+        let typed_prefix = with_pointer(&fidelity, &id, "timestamp_micros_offset", Some(timestamp));
+        if !fidelity.record_layout()[id.as_str()]
+            .pointers()
+            .contains_key("payload_byte_offset")
+        {
+            assert!(findings(&ir, &typed_prefix).is_empty());
+            continue;
+        }
+        only_finding(&findings(&ir, &typed_prefix), COMPANION_MESSAGE, &id);
+        let payload = start + u64::try_from(typed::LEN).unwrap();
+        let typed_payload = with_pointer(&typed_prefix, &id, "payload_byte_offset", Some(payload));
+        assert!(findings(&ir, &typed_payload).is_empty());
+    }
+}
+
 /// Findings of the source-layout checks over an in-memory namespace.
 fn loaded_findings(native: &F3dNative, fidelity: &SourceFidelity) -> Vec<Finding> {
     crate::test_support::with_decode_context(|decode| {
