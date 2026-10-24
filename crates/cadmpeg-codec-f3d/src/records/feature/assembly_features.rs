@@ -8,6 +8,8 @@ use crate::records::sketch_placement::SketchPlacementMatrix;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
 
+pub(crate) const OCCURRENCE_PLACEMENT_TYPE_GUID: &str = "CE2913AA-CFE0-4F04-9102-24424ED3BCFA";
+
 cadmpeg_core::named_optional_field!(
     deserialize_carrier_transform_offset,
     u64,

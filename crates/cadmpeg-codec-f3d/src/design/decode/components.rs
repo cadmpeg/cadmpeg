@@ -11,7 +11,9 @@ use crate::bytes::lp_ascii_filtered_view;
 use crate::container::ContainerScan;
 use crate::design::decode::sketch::next_indexed_record_offset;
 
-use crate::records::feature::assembly_features::DesignComponentOccurrence;
+use crate::records::feature::assembly_features::{
+    DesignComponentOccurrence, OCCURRENCE_PLACEMENT_TYPE_GUID,
+};
 
 use crate::layout::local_component_occurrence_attributed_prefix as attributed_prefix;
 use crate::layout::local_component_occurrence_identity_tail as identity_tail;
@@ -352,8 +354,6 @@ fn exact_component_occurrence(
     .ok()
 }
 
-/// Type GUID shared by occurrence-placement records, including the root instance.
-const OCCURRENCE_PLACEMENT_TYPE_GUID: &str = "CE2913AA-CFE0-4F04-9102-24424ED3BCFA";
 /// Instance name of the occurrence-placement record that places the root component.
 const ROOT_INSTANCE_NAME: &[u8] = b"rootInstance";
 

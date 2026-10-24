@@ -57,6 +57,12 @@ use crate::records::topology::sketch_profile::DesignSketchProfileOperand;
 use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(
+    deserialize_occurrence_transfer,
+    super::occurrence_transfer::DesignOccurrenceTransfer,
+    "occurrence_transfer"
+);
+
+cadmpeg_core::named_optional_field!(
     deserialize_assembly_alignment,
     DesignAssemblyAlignment,
     "assembly_alignment"
@@ -671,6 +677,8 @@ pub(crate) struct DesignParameterScope {
     reference_count_offset: u64,
     /// Ordered indexed-record references carried by the scope.
     reference_members: ReferenceRun<u32>,
+    /// Component ownership and placement recorded by paste operations.
+    pub(crate) occurrence_transfer: Option<super::occurrence_transfer::DesignOccurrenceTransfer>,
     /// Family-specific construction records.
     payload: DesignScopePayload,
     /// Reference members whose records open a construction-operand group the
@@ -727,6 +735,12 @@ pub(crate) struct DesignParameterScopeDraft {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[cfg_attr(test, derive(Serialize))]
 struct DesignParameterScopeSerde {
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_occurrence_transfer"
+    )]
+    occurrence_transfer: Option<super::occurrence_transfer::DesignOccurrenceTransfer>,
     /// Globally unique deterministic identifier for this native record.
     id: String,
     /// Byte offset of the primary indexed record header.
@@ -1934,7 +1948,8 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 "history_state_id_offset disagrees with kind_offset".into(),
             ));
         }
-        Self::try_new(DesignParameterScopeDraft {
+        let occurrence_transfer = wire.occurrence_transfer.take();
+        let mut admitted = Self::try_new(DesignParameterScopeDraft {
             id: wire.id,
             byte_offset: wire.byte_offset,
             class_tag: wire
@@ -1965,7 +1980,17 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 .try_into()
                 .map_err(DesignParameterScopePayloadError)?,
             paired_byte_offset: wire.paired_byte_offset,
-        })
+        })?;
+        if occurrence_transfer
+            .as_ref()
+            .is_some_and(|value| !value.valid_for_scope(&admitted))
+        {
+            return Err(DesignParameterScopePayloadError(
+                "occurrence_transfer disagrees with scope".into(),
+            ));
+        }
+        admitted.occurrence_transfer = occurrence_transfer;
+        Ok(admitted)
     }
 }
 
@@ -1976,6 +2001,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
         let history_state_id_offset = scope.history_state_id_offset();
         let (reference_members, reference_member_offsets) = scope.reference_members.into_wire();
         let mut wire = DesignParameterScopeSerde {
+            occurrence_transfer: scope.occurrence_transfer,
             id: scope.id,
             byte_offset: scope.byte_offset,
             class_tag: scope.class_tag.into(),
@@ -2342,6 +2368,7 @@ impl DesignParameterScope {
             previous_history_state_id_offset: draft.previous_history_state_id_offset,
             reference_count_offset: draft.reference_count_offset,
             reference_members: draft.reference_members,
+            occurrence_transfer: None,
             payload: draft.payload,
             unclosed_construction_operand_groups: draft.unclosed_construction_operand_groups,
             paired_class_tag: draft.paired_class_tag,

@@ -4017,6 +4017,31 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             && assembly_alignment_link
             && component_insert_link
             && copy_paste_component_link
+            && scope.occurrence_transfer.as_ref().is_none_or(|operation| {
+                operation.links_valid(
+                    scope,
+                    |index| {
+                        records_by_index
+                            .get(&(native_stream, index))
+                            .map(|header| header.byte_offset)
+                    },
+                    |index, guid| {
+                        native
+                            .design_types
+                            .iter()
+                            .filter(|kind| {
+                                ids::design_segment(kind.id()) == ids::design_segment(&scope.id)
+                                    && kind.type_guid.as_str().eq_ignore_ascii_case(guid)
+                                    && kind
+                                        .entities
+                                        .values()
+                                        .any(|entity| *entity == u64::from(index))
+                            })
+                            .count()
+                            == 1
+                    },
+                )
+            })
             && draft_link
             && combine_link
             && thread_link

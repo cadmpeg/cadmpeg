@@ -504,6 +504,12 @@ pub(crate) fn decode_parameter_scopes(
                     *slot = construction;
                 }
             }
+            scope.occurrence_transfer = super::occurrence_transfer::exact_occurrence_transfer(
+                bytes,
+                &records,
+                &scope,
+                &stream_types,
+            );
             bind_component_pattern_occurrences(&mut scope, component_occurrences)?;
             {
                 let construction = exact_copy_paste_bodies_operation(bytes, &records, &scope);

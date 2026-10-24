@@ -19679,3 +19679,351 @@ type = "u8"
 source = "spec"
 anchor = "byte `00`, u32 `2`, u64 `1`, and byte `00`"
 value = 0
+
+[[record]]
+name = "cut_paste_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/occurrence_transfer.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The compact CutPaste prefix"
+size = 72
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact CutPaste prefix"
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "The compact CutPaste prefix"
+
+[[record.field]]
+name = "removal_reference"
+offset = 21
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact CutPaste prefix"
+
+[[record.field]]
+name = "companion_reference"
+offset = 32
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact CutPaste prefix"
+
+[[record.field]]
+name = "companion_flag"
+offset = 43
+type = "u8"
+source = "spec"
+anchor = "The compact CutPaste prefix"
+
+[[record.field]]
+name = "second_companion_reference"
+offset = 44
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact CutPaste prefix"
+
+[[record.field]]
+name = "zero_run_4"
+offset = 55
+type = "bytes[4]"
+source = "spec"
+anchor = "The compact CutPaste prefix"
+
+[[record.field]]
+name = "relation_reference"
+offset = 59
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact CutPaste prefix"
+
+[[record.field]]
+name = "placement_flag"
+offset = 70
+type = "u8"
+source = "spec"
+anchor = "The compact CutPaste prefix"
+
+[[record.field]]
+name = "identity_flag"
+offset = 71
+type = "u8"
+source = "spec"
+anchor = "The compact CutPaste prefix"
+
+[[record]]
+name = "copy_paste_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/occurrence_transfer.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The compact CopyPaste prefix"
+size = 190
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact CopyPaste prefix"
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact CopyPaste prefix"
+
+[[record.field]]
+name = "companion_reference"
+offset = 22
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact CopyPaste prefix"
+
+[[record.field]]
+name = "zero_separator"
+offset = 33
+type = "u8"
+source = "spec"
+anchor = "The compact CopyPaste prefix"
+
+[[record.field]]
+name = "source_transform"
+offset = 34
+type = "f64[16]"
+source = "spec"
+anchor = "The compact CopyPaste prefix"
+
+[[record.field]]
+name = "second_companion_reference"
+offset = 162
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact CopyPaste prefix"
+
+[[record.field]]
+name = "zero_run_4"
+offset = 173
+type = "bytes[4]"
+source = "spec"
+anchor = "The compact CopyPaste prefix"
+
+[[record.field]]
+name = "relation_reference"
+offset = 177
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact CopyPaste prefix"
+
+[[record.field]]
+name = "placement_flag"
+offset = 188
+type = "u8"
+source = "spec"
+anchor = "The compact CopyPaste prefix"
+
+[[record.field]]
+name = "identity_flag"
+offset = 189
+type = "u8"
+source = "spec"
+anchor = "The compact CopyPaste prefix"
+
+[[record]]
+name = "paste_occurrence_relation"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/occurrence_transfer.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The relation has a 57-byte primary record"
+size = 87
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The relation has a 57-byte primary record"
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "The relation has a 57-byte primary record"
+
+[[record.field]]
+name = "occurrence_reference"
+offset = 21
+type = "bytes[11]"
+source = "spec"
+anchor = "The relation has a 57-byte primary record"
+
+[[record.field]]
+name = "zero_run_2"
+offset = 32
+type = "bytes[2]"
+source = "spec"
+anchor = "The relation has a 57-byte primary record"
+
+[[record.field]]
+name = "companion_reference"
+offset = 34
+type = "bytes[11]"
+source = "spec"
+anchor = "The relation has a 57-byte primary record"
+
+[[record.field]]
+name = "zero_separator"
+offset = 45
+type = "u8"
+source = "spec"
+anchor = "The relation has a 57-byte primary record"
+
+[[record.field]]
+name = "scope_reference"
+offset = 46
+type = "bytes[11]"
+source = "spec"
+anchor = "The relation has a 57-byte primary record"
+
+[[record.field]]
+name = "paired_header"
+offset = 57
+type = "bytes[11]"
+source = "spec"
+anchor = "The relation has a 57-byte primary record"
+
+[[record.field]]
+name = "zero_run_8"
+offset = 68
+type = "bytes[8]"
+source = "spec"
+anchor = "The relation has a 57-byte primary record"
+
+[[record.field]]
+name = "owner_marker"
+offset = 76
+type = "u8"
+source = "spec"
+anchor = "The relation has a 57-byte primary record"
+
+[[record.field]]
+name = "owner_collection"
+offset = 77
+type = "u64"
+source = "spec"
+anchor = "The relation has a 57-byte primary record"
+
+[[record.field]]
+name = "owner_zero_run"
+offset = 85
+type = "bytes[2]"
+source = "spec"
+anchor = "The relation has a 57-byte primary record"
+
+[[record]]
+name = "remove_instance_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/occurrence_transfer.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The RemoveInstance prefix"
+size = 135
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The RemoveInstance prefix"
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[22]"
+source = "spec"
+anchor = "The RemoveInstance prefix"
+
+[[record.field]]
+name = "source_relation_reference"
+offset = 33
+type = "bytes[11]"
+source = "spec"
+anchor = "The RemoveInstance prefix"
+
+[[record.field]]
+name = "occurrence_key"
+offset = 44
+type = "bytes[76]"
+source = "spec"
+anchor = "The RemoveInstance prefix"
+
+[[record.field]]
+name = "zero_run_7"
+offset = 120
+type = "bytes[7]"
+source = "spec"
+anchor = "The RemoveInstance prefix"
+
+[[record.field]]
+name = "history_state"
+offset = 127
+type = "u32"
+source = "spec"
+anchor = "The RemoveInstance prefix"
+
+[[record.field]]
+name = "kind_length"
+offset = 131
+type = "u32"
+source = "spec"
+anchor = "The RemoveInstance prefix"
+
+[[record]]
+name = "paste_context_owner_tail"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/occurrence_transfer.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The context owner tail is 52 bytes"
+size = 52
+
+[[record.field]]
+name = "collection_reference"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The context owner tail is 52 bytes"
+
+[[record.field]]
+name = "companion_reference"
+offset = 11
+type = "bytes[11]"
+source = "spec"
+anchor = "The context owner tail is 52 bytes"
+
+[[record.field]]
+name = "paired_header"
+offset = 22
+type = "bytes[11]"
+source = "spec"
+anchor = "The context owner tail is 52 bytes"
+
+[[record.field]]
+name = "zero_run_8"
+offset = 33
+type = "bytes[8]"
+source = "spec"
+anchor = "The context owner tail is 52 bytes"
+
+[[record.field]]
+name = "component_reference"
+offset = 41
+type = "bytes[11]"
+source = "spec"
+anchor = "The context owner tail is 52 bytes"

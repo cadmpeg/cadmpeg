@@ -5774,3 +5774,31 @@ pub(crate) mod extrude_selection_member_long_tail {
     /// Stated value of `trailing_zero` (`u8`). Spec §3.1.
     pub(crate) const TRAILING_ZERO_VALUE: u8 = 0;
 }
+
+/// Byte offsets for the `cut_paste_prefix` record.
+///
+/// Spec §3.1. Record length 72 B.
+pub(crate) mod cut_paste_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 72;
+}
+
+/// Byte offsets for the `copy_paste_prefix` record.
+///
+/// Spec §3.1. Record length 190 B.
+pub(crate) mod copy_paste_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 190;
+    /// Offset of `source_transform` (`f64[16]`, little-endian). Spec §3.1.
+    pub(crate) const SOURCE_TRANSFORM: usize = 34;
+}
+
+/// Byte offsets for the `paste_context_owner_tail` record.
+///
+/// Spec §3.1. Record length 52 B.
+pub(crate) mod paste_context_owner_tail {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 52;
+    /// Offset of `paired_header` (`bytes[11]`). Spec §3.1.
+    pub(crate) const PAIRED_HEADER: usize = 22;
+}
