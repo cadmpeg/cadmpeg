@@ -5,8 +5,9 @@
 //! The stream stores no face side. [`resolve`] chooses, per face, whether
 //! the neutral loops run with or against the stored order, so that the two
 //! uses of every shared edge, and of every pair of coincident unshared
-//! edges, run opposite ways. It then turns each closed component outward by
-//! a vote of its extreme points along the six axis directions. The winding
+//! edges, run opposite ways. It then turns each component with few open
+//! edges outward by a vote of its extreme points along the six axis
+//! directions. The winding
 //! of a face's outer loop in its pcurve domain relates the loop direction to
 //! the domain normal.
 
@@ -472,8 +473,9 @@ fn coincidence_gap(
 }
 
 /// Pairs each edge that has one coedge use, is not a point, and is not a
-/// collapsed singular edge with a coincident edge of the same kind (§8.20): both ends meet within the endpoint tolerance and
-/// the interior samples of each lie on the other. Pairs are taken in order
+/// collapsed singular edge with a coincident edge of the same kind (§8.20):
+/// both ends meet within the endpoint tolerance and the interior samples of
+/// each lie on the other. Pairs are taken in order
 /// of their largest sample distance, so an edge pairs with the nearest of
 /// several coincident edges. The value is the partner with the smaller index
 /// and whether both edges run the same way. The candidate tests are charged
