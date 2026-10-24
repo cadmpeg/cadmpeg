@@ -248,6 +248,9 @@ pub(crate) enum F3dLossCode {
     ManifestMetadataUnresolved,
     /// An optional bounded archive payload is unreadable.
     ArchiveEntryUnreadable,
+    /// A Design `BulkStream` stores a record run after its last indexed
+    /// record; the run is not decoded and its bytes are retained natively.
+    UnindexedRecordsRetained,
     /// Design-intent decoding failed; its sketches, features and history were dropped.
     DesignIntentUndecoded,
 }
@@ -364,6 +367,7 @@ impl F3dLossCode {
         Self::KernelHeaderMetadataUnresolved,
         Self::ManifestMetadataUnresolved,
         Self::ArchiveEntryUnreadable,
+        Self::UnindexedRecordsRetained,
         Self::DesignIntentUndecoded,
     ];
 
@@ -485,6 +489,7 @@ impl F3dLossCode {
             Self::KernelHeaderMetadataUnresolved => "brep.header-metadata-unresolved",
             Self::ManifestMetadataUnresolved => "source.manifest-metadata-unresolved",
             Self::ArchiveEntryUnreadable => "source.archive-entry-unreadable",
+            Self::UnindexedRecordsRetained => "source.unindexed-records-retained",
             Self::DesignIntentUndecoded => "design.intent-undecoded",
         }
     }
@@ -601,7 +606,8 @@ impl F3dLossCode {
             | Self::KernelHeaderToleranceUnresolved
             | Self::KernelHeaderMetadataUnresolved
             | Self::ManifestMetadataUnresolved
-            | Self::ArchiveEntryUnreadable => Severity::Warning,
+            | Self::ArchiveEntryUnreadable
+            | Self::UnindexedRecordsRetained => Severity::Warning,
         }
     }
 
@@ -719,7 +725,9 @@ impl F3dLossCode {
             Self::KernelHeaderToleranceUnresolved => LossTaxonomy::GeometryNotTransferred,
             Self::KernelHeaderMetadataUnresolved => LossTaxonomy::NoncanonicalSourceSyntax,
             Self::ManifestMetadataUnresolved => LossTaxonomy::NoncanonicalSourceSyntax,
-            Self::ArchiveEntryUnreadable => LossTaxonomy::RecordNotTyped,
+            Self::ArchiveEntryUnreadable | Self::UnindexedRecordsRetained => {
+                LossTaxonomy::RecordNotTyped
+            }
         }
     }
 
@@ -877,6 +885,7 @@ mod tests {
                 "brep.header-metadata-unresolved",
                 "source.manifest-metadata-unresolved",
                 "source.archive-entry-unreadable",
+                "source.unindexed-records-retained",
                 "design.intent-undecoded",
             ]
         );
