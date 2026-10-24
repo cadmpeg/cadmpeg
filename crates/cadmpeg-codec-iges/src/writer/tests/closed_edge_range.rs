@@ -2,7 +2,6 @@
 //! The writer's span for an edge that stores no parameter range.
 
 use super::super::edge_span;
-use crate::test_support::test_closed_cylinder::closed_edge;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::{CircleCurve, EllipseCurve, LineCurve};
@@ -12,6 +11,7 @@ use cadmpeg_ir::ids::{PointId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
 use cadmpeg_ir::CadIr;
+use cadmpeg_test_support::solids::closed_edge;
 use std::f64::consts::TAU;
 
 const MISSING_RANGE: &str = "IGES semantic writer requires a parameter range for edge";
