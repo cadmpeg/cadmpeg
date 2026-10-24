@@ -3,6 +3,39 @@
 
 use super::*;
 
+const EPS_SAME_COORDINATE: f64 = 1e-12;
+
+fn reals(values: [f64; 3]) -> [cadmpeg_ir::scalar::FiniteReal; 3] {
+    values.map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite fixture value"))
+}
+
+/// Assert a to-plane termination: origin in millimetres, normal, in-plane
+/// axis, and native record.
+fn assert_to_plane(
+    termination: &LinearTermination,
+    origin: [f64; 3],
+    normal: [f64; 3],
+    u_axis: [f64; 3],
+    native: &str,
+) {
+    let LinearTermination::ToPlane { plane, native: id } = termination else {
+        panic!("not a to-plane termination: {termination:?}");
+    };
+    let close = |actual: cadmpeg_ir::math::Vector3, expected: [f64; 3]| {
+        (actual.x - expected[0]).abs() < EPS_SAME_COORDINATE
+            && (actual.y - expected[1]).abs() < EPS_SAME_COORDINATE
+            && (actual.z - expected[2]).abs() < EPS_SAME_COORDINATE
+    };
+    let point = plane.origin().get();
+    assert!(close(
+        cadmpeg_ir::math::Vector3::new(point.x, point.y, point.z),
+        origin
+    ));
+    assert!(close(plane.normal().get(), normal));
+    assert!(close(plane.u_axis().get(), u_axis));
+    assert_eq!(id.as_str(), native);
+}
+
 fn work_plane(ordinal: u32) -> PmDcWorkPlane {
     Located::new(
         PmDcWorkPlanePayload {
@@ -11,17 +44,9 @@ fn work_plane(ordinal: u32) -> PmDcWorkPlane {
             entity_flags: 0x80_8000,
             values: vec![0; 3],
             marker: false,
-            origin: [cadmpeg_ir::scalar::FiniteReal::ZERO; 3],
-            u_axis: [
-                cadmpeg_ir::scalar::FiniteReal::ONE,
-                cadmpeg_ir::scalar::FiniteReal::ZERO,
-                cadmpeg_ir::scalar::FiniteReal::ZERO,
-            ],
-            v_axis: [
-                cadmpeg_ir::scalar::FiniteReal::ZERO,
-                cadmpeg_ir::scalar::FiniteReal::ONE,
-                cadmpeg_ir::scalar::FiniteReal::ZERO,
-            ],
+            origin: reals([1.0, -2.0, 0.5]),
+            u_axis: reals([1.0, 0.0, 0.0]),
+            v_axis: reals([0.0, 1.0, 0.0]),
         },
         crate::record_identity::RecordTypeId::from_bytes(WORK_PLANE_TYPE),
         segment(),
@@ -239,17 +264,9 @@ fn plane_surface(ordinal: u32) -> PmDcFeatureProperty {
             state: 1,
             surface_form: PLANE_SURFACE_FORM,
             value: 0,
-            origin: [cadmpeg_ir::scalar::FiniteReal::ZERO; 3],
-            u_axis: [
-                cadmpeg_ir::scalar::FiniteReal::ONE,
-                cadmpeg_ir::scalar::FiniteReal::ZERO,
-                cadmpeg_ir::scalar::FiniteReal::ZERO,
-            ],
-            v_axis: [
-                cadmpeg_ir::scalar::FiniteReal::ZERO,
-                cadmpeg_ir::scalar::FiniteReal::ONE,
-                cadmpeg_ir::scalar::FiniteReal::ZERO,
-            ],
+            origin: reals([0.0, 0.0, 4.0]),
+            u_axis: reals([0.0, 1.0, 0.0]),
+            v_axis: reals([0.0, 0.0, 1.0]),
         },
     )
 }
@@ -270,18 +287,17 @@ fn extrusion_extent_branches_project_exactly() {
     assert!(extent_extrusion(7, true, &[(11, 40)], Vec::new()).is_none());
 
     let to_plane = extent_extrusion(7, false, &[(11, 40)], Vec::new()).expect("to work plane");
-    assert!(matches!(
-        extrude_definition(&to_plane).0,
-        ExtrudeExtent::OneSided {
-            side: ExtrudeSide {
-                termination: LinearTermination::ToFace {
-                    face: cadmpeg_ir::features::FaceSelection::Native(native),
-                    offset: None,
-                },
-                ..
-            }
-        } if native == &work_plane(40).id()
-    ));
+    let ExtrudeExtent::OneSided { side } = extrude_definition(&to_plane).0 else {
+        panic!("to-plane extrusion is one-sided");
+    };
+    assert_to_plane(
+        &side.termination,
+        [10.0, -20.0, 5.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+        &work_plane(40).id(),
+    );
+    assert!(extent_extrusion(7, false, &[(11, 40), (13, 20)], Vec::new()).is_none());
 
     let to_face = extent_extrusion(
         7,
@@ -293,18 +309,16 @@ fn extrusion_extent_branches_project_exactly() {
         ],
     )
     .expect("to face");
-    assert!(matches!(
-        extrude_definition(&to_face).0,
-        ExtrudeExtent::OneSided {
-            side: ExtrudeSide {
-                termination: LinearTermination::ToFace {
-                    face: cadmpeg_ir::features::FaceSelection::Native(native),
-                    ..
-                },
-                ..
-            }
-        } if native == &plane_surface(21).id()
-    ));
+    let ExtrudeExtent::OneSided { side } = extrude_definition(&to_face).0 else {
+        panic!("to-face extrusion is one-sided");
+    };
+    assert_to_plane(
+        &side.termination,
+        [0.0, 0.0, 40.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        &plane_surface(21).id(),
+    );
     assert!(extent_extrusion(
         7,
         false,
@@ -318,18 +332,17 @@ fn extrusion_extent_branches_project_exactly() {
 
     let from_to = extent_extrusion(6, false, &[(8, 41), (11, 40)], Vec::new()).expect("from-to");
     let (extent, start) = extrude_definition(&from_to);
-    assert!(matches!(
-        start,
-        cadmpeg_ir::features::ExtrudeStart::FromFace {
-            face: cadmpeg_ir::features::FaceSelection::Native(native),
-            offset: None,
-        } if native == &work_plane(41).id()
-    ));
+    let cadmpeg_ir::features::ExtrudeStart::FromPlane { plane, native } = start else {
+        panic!("from-to extrusion starts at a plane: {start:?}");
+    };
+    assert_eq!(native.as_str(), work_plane(41).id());
+    assert_eq!(plane.origin().get(), Point3::new(10.0, -20.0, 5.0));
+    assert_eq!(plane.normal().get(), Vector3::new(0.0, 0.0, 1.0));
     assert!(matches!(
         extent,
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
-                termination: LinearTermination::ToFace { .. },
+                termination: LinearTermination::ToPlane { .. },
                 ..
             }
         }
