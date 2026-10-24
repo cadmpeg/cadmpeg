@@ -61,9 +61,6 @@ pub(crate) enum F3dLossCode {
     /// Projected Design assembly joints whose operand paths carry occurrence
     /// identity pairs of unknown effect on the joint, retained natively.
     AssemblyOperandPathPairsNative,
-    /// Projected Design assembly joints whose scope states how their operand
-    /// frames mate; the neutral joint does not carry that sense yet.
-    AssemblyJointFrameSenseUnprojected,
     /// An F3Z drawing root was omitted while its derived 3D model transferred.
     DrawingDocumentOmitted,
     /// ASM history estimated retained size exceeded the session's remaining retained-byte allowance.
@@ -102,10 +99,14 @@ pub(crate) enum F3dLossCode {
     ParameterRecordUnparsed,
     /// Design parameter owner bindings have no recognized feature scope.
     ParameterOwnerUnrecognized,
+    /// Design parameters retain owner frames that match no admitted grammar.
+    ParameterOwnerUnparsed,
     /// Design parameters retain unit tokens without a settled quantity kind.
     ParameterUnitUntyped,
     /// Material Distance properties retain unit tags without a length conversion.
     MaterialDistanceUnitUntyped,
+    /// A face material GUID names distinct visual tokens without a selection rule.
+    FaceAppearanceAmbiguous,
     /// Parameter expression symbols name same-stream parameters without an edge.
     ParameterExpressionUnbound,
     /// Feature history-state dependency links were not projected.
@@ -251,6 +252,9 @@ pub(crate) enum F3dLossCode {
     ManifestMetadataUnresolved,
     /// An optional bounded archive payload is unreadable.
     ArchiveEntryUnreadable,
+    /// A Design `BulkStream` stores a record run after its last indexed
+    /// record; the run is not decoded and its bytes are retained natively.
+    UnindexedRecordsRetained,
     /// Design-intent decoding failed; its sketches, features and history were dropped.
     DesignIntentUndecoded,
 }
@@ -275,7 +279,6 @@ impl F3dLossCode {
         Self::AssemblyJointUnprojected,
         Self::AssemblyJointMotionUndecoded,
         Self::AssemblyOperandPathPairsNative,
-        Self::AssemblyJointFrameSenseUnprojected,
         Self::DrawingDocumentOmitted,
         Self::HistoryBindingBudgetExceeded,
         Self::HistoryBindingWorkExceeded,
@@ -294,8 +297,10 @@ impl F3dLossCode {
         Self::ParameterUnprojected,
         Self::ParameterRecordUnparsed,
         Self::ParameterOwnerUnrecognized,
+        Self::ParameterOwnerUnparsed,
         Self::ParameterUnitUntyped,
         Self::MaterialDistanceUnitUntyped,
+        Self::FaceAppearanceAmbiguous,
         Self::ParameterExpressionUnbound,
         Self::HistoryDependencyUnprojected,
         Self::HistoryDependencyAmbiguous,
@@ -368,6 +373,7 @@ impl F3dLossCode {
         Self::KernelHeaderMetadataUnresolved,
         Self::ManifestMetadataUnresolved,
         Self::ArchiveEntryUnreadable,
+        Self::UnindexedRecordsRetained,
         Self::DesignIntentUndecoded,
     ];
 
@@ -395,7 +401,6 @@ impl F3dLossCode {
             Self::AssemblyJointUnprojected => "assembly.joint-unprojected",
             Self::AssemblyJointMotionUndecoded => "assembly.joint-motion-undecoded",
             Self::AssemblyOperandPathPairsNative => "assembly.operand-path-pairs-native",
-            Self::AssemblyJointFrameSenseUnprojected => "assembly.joint-frame-sense-unprojected",
             Self::DrawingDocumentOmitted => "drawing.document-omitted",
             Self::HistoryBindingBudgetExceeded => "history.binding-budget-exceeded",
             Self::HistoryBindingWorkExceeded => "history.binding-work-exceeded",
@@ -414,8 +419,10 @@ impl F3dLossCode {
             Self::ParameterUnprojected => "parameter.unprojected",
             Self::ParameterRecordUnparsed => "parameter.record-unparsed",
             Self::ParameterOwnerUnrecognized => "parameter.owner-unrecognized",
+            Self::ParameterOwnerUnparsed => "parameter.owner-unparsed",
             Self::ParameterUnitUntyped => "parameter.unit-untyped",
             Self::MaterialDistanceUnitUntyped => "material.distance-unit-untyped",
+            Self::FaceAppearanceAmbiguous => "material.face-appearance-ambiguous",
             Self::ParameterExpressionUnbound => "parameter.expression-unbound",
             Self::HistoryDependencyUnprojected => "history.dependency-unprojected",
             Self::HistoricalFaceSelectionUnbound => "history.face-selection-unbound",
@@ -490,6 +497,7 @@ impl F3dLossCode {
             Self::KernelHeaderMetadataUnresolved => "brep.header-metadata-unresolved",
             Self::ManifestMetadataUnresolved => "source.manifest-metadata-unresolved",
             Self::ArchiveEntryUnreadable => "source.archive-entry-unreadable",
+            Self::UnindexedRecordsRetained => "source.unindexed-records-retained",
             Self::DesignIntentUndecoded => "design.intent-undecoded",
         }
     }
@@ -535,7 +543,6 @@ impl F3dLossCode {
             | Self::AssemblyJointUnprojected
             | Self::AssemblyJointMotionUndecoded
             | Self::AssemblyOperandPathPairsNative
-            | Self::AssemblyJointFrameSenseUnprojected
             | Self::DrawingDocumentOmitted
             | Self::DesignBodyBindingUnresolved
             | Self::ReferenceImageNativeRetained
@@ -547,10 +554,12 @@ impl F3dLossCode {
             | Self::FeatureScopePayloadUninterpreted
             | Self::FeatureScopeEnvelopeSuperseded
             | Self::ParameterUnprojected
+            | Self::ParameterOwnerUnparsed
             | Self::ParameterRecordUnparsed
             | Self::ParameterOwnerUnrecognized
             | Self::ParameterUnitUntyped
             | Self::MaterialDistanceUnitUntyped
+            | Self::FaceAppearanceAmbiguous
             | Self::ParameterExpressionUnbound
             | Self::HistoryDependencyUnprojected
             | Self::HistoryDependencyAmbiguous
@@ -607,7 +616,8 @@ impl F3dLossCode {
             | Self::KernelHeaderToleranceUnresolved
             | Self::KernelHeaderMetadataUnresolved
             | Self::ManifestMetadataUnresolved
-            | Self::ArchiveEntryUnreadable => Severity::Warning,
+            | Self::ArchiveEntryUnreadable
+            | Self::UnindexedRecordsRetained => Severity::Warning,
         }
     }
 
@@ -619,6 +629,7 @@ impl F3dLossCode {
             | Self::BodyReferenceTailUntyped
             | Self::PlacementConstructionUntyped
             | Self::ConstructionTrackingPathUntyped
+            | Self::ParameterOwnerUnparsed
             | Self::ParameterRecordUnparsed
             | Self::HistoryRecordFramingFailed
             | Self::SolvedRecordUntyped
@@ -681,9 +692,9 @@ impl F3dLossCode {
             | Self::FeaturePatternInstanceSearchCapped
             | Self::AssemblyJointUnprojected
             | Self::AssemblyJointMotionUndecoded
-            | Self::AssemblyOperandPathPairsNative
-            | Self::AssemblyJointFrameSenseUnprojected => LossTaxonomy::FeatureHistoryRetained,
+            | Self::AssemblyOperandPathPairsNative => LossTaxonomy::FeatureHistoryRetained,
             Self::MaterialDistanceUnitUntyped => LossTaxonomy::MaterialNotTransferred,
+            Self::FaceAppearanceAmbiguous => LossTaxonomy::AppearanceReduced,
             Self::LocalOccurrenceUnplaced
             | Self::ComponentInsertUnplaced
             | Self::ComponentInsertOrderUnknown
@@ -726,7 +737,9 @@ impl F3dLossCode {
             Self::KernelHeaderToleranceUnresolved => LossTaxonomy::GeometryNotTransferred,
             Self::KernelHeaderMetadataUnresolved => LossTaxonomy::NoncanonicalSourceSyntax,
             Self::ManifestMetadataUnresolved => LossTaxonomy::NoncanonicalSourceSyntax,
-            Self::ArchiveEntryUnreadable => LossTaxonomy::RecordNotTyped,
+            Self::ArchiveEntryUnreadable | Self::UnindexedRecordsRetained => {
+                LossTaxonomy::RecordNotTyped
+            }
         }
     }
 
@@ -792,7 +805,6 @@ mod tests {
                 "assembly.joint-unprojected",
                 "assembly.joint-motion-undecoded",
                 "assembly.operand-path-pairs-native",
-                "assembly.joint-frame-sense-unprojected",
                 "drawing.document-omitted",
                 "history.binding-budget-exceeded",
                 "history.binding-work-exceeded",
@@ -811,8 +823,10 @@ mod tests {
                 "parameter.unprojected",
                 "parameter.record-unparsed",
                 "parameter.owner-unrecognized",
+                "parameter.owner-unparsed",
                 "parameter.unit-untyped",
                 "material.distance-unit-untyped",
+                "material.face-appearance-ambiguous",
                 "parameter.expression-unbound",
                 "history.dependency-unprojected",
                 "history.dependency-ambiguous",
@@ -885,6 +899,7 @@ mod tests {
                 "brep.header-metadata-unresolved",
                 "source.manifest-metadata-unresolved",
                 "source.archive-entry-unreadable",
+                "source.unindexed-records-retained",
                 "design.intent-undecoded",
             ]
         );

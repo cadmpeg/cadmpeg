@@ -3149,6 +3149,96 @@ Parsed by:
 | 0 | 4 | `count` | `u32` | big | spec | element count is u32 BE at body +0 |
 | 4 | 2 | `node_index` | `u16` | big | spec | transmit index is u16 BE at body +4 |
 
+## `relation_row_header`
+
+Spec §2 · layout: byte offsets · size: 14 B
+
+The operand handle cells follow at +14.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `code` | `u32` | little | spec | \| +0 \| u32 relation code. |
+| 4 | 2 | `constant_two` | `u16` | little | spec | \| +4 \| `02 00` \| · value `2` |
+| 6 | 2 | `flag` | `u16` | little | spec | \| +6 \| u16 row flag, `0` or `1` \| |
+| 8 | 6 | `constant_tail` | `bytes[6]` | little | spec | \| +8 \| `00 00 fe ff 00 00` \| · value `[0, 0, 254, 255, 0, 0]` |
+
+## `relation_handle_cell_narrow`
+
+Spec §2 · layout: byte offsets · size: 12 B
+
+The class reference is a u16 tag.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `class_tag` | `u16` | little | spec | The class reference is a u16 `0x8000 \| index` |
+| 2 | 2 | `slot` | `u16` | little | spec | the u16 slot of the curve in the array of its kind |
+| 4 | 4 | `sentinel` | `bytes[4]` | little | spec | `ff ff ff ff` · value `[255, 255, 255, 255]` |
+| 8 | 4 | `zero_tail` | `bytes[4]` | little | spec | four zero bytes · value `[0, 0, 0, 0]` |
+
+## `relation_handle_cell_wide`
+
+Spec §2 · layout: byte offsets · size: 16 B
+
+The wide class reference gives the cell four more bytes than the narrow form.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `class_lead` | `u16` | little | spec | a u16 `ff 7f` · value `32767` |
+| 2 | 4 | `class_index` | `u32` | little | spec | and a u32 index |
+| 6 | 2 | `slot` | `u16` | little | spec | the u16 slot of the curve in the array of its kind |
+| 8 | 4 | `sentinel` | `bytes[4]` | little | spec | `ff ff ff ff` · value `[255, 255, 255, 255]` |
+| 12 | 4 | `zero_tail` | `bytes[4]` | little | spec | four zero bytes · value `[0, 0, 0, 0]` |
+
+## `relation_handle_cell_declared`
+
+Spec §2 · layout: ordered slots (no stated byte offsets) · size: 16 B
+
+The class name is variable length; the u16 slot follows it. The size excludes the name.
+
+| # | Slot | Type | Endian | Src | Meaning |
+| -: | ---- | ---- | ------ | --- | ------- |
+| 0 | `class_lead` | `u16` | little | spec | `ff ff`, a u16 schema, a u16 length and that many ASCII class-name bytes · value `65535` |
+| 1 | `schema` | `u16` | little | spec | a u16 schema |
+| 2 | `name_length` | `u16` | little | spec | a u16 length and that many ASCII class-name bytes |
+| 3 | `class_name` | `text` | little | spec | that many ASCII class-name bytes |
+| 4 | `slot` | `u16` | little | spec | the u16 slot of the curve in the array of its kind |
+| 5 | `sentinel` | `bytes[4]` | little | spec | `ff ff ff ff` · value `[255, 255, 255, 255]` |
+| 6 | `zero_tail` | `bytes[4]` | little | spec | four zero bytes · value `[0, 0, 0, 0]` |
+
+## `relation_point_record_near`
+
+Spec §2 · layout: byte offsets · size: 78 B
+
+The handle cells follow at +78.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 56 | 2 | `coordinate_tag` | `u16` | little | spec | coordinate tag `1e 00` at marker +56 or marker +64 · value `30` |
+| 58 | 8 | `u` | `f64` | little | spec | stores its planar coordinates as two f64 values after the tag |
+| 66 | 8 | `v` | `f64` | little | spec | stores its planar coordinates as two f64 values after the tag |
+| 74 | 4 | `zero_tail` | `bytes[4]` | little | spec | then four bytes, then the handle cells · value `[0, 0, 0, 0]` |
+
+Unstated regions:
+
+- `0..56` (56 B): The sketch-marker head precedes the coordinate tag.
+
+## `relation_point_record_far`
+
+Spec §2 · layout: byte offsets · size: 86 B
+
+The handle cells follow at +86.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 64 | 2 | `coordinate_tag` | `u16` | little | spec | coordinate tag `1e 00` at marker +56 or marker +64 · value `30` |
+| 66 | 8 | `u` | `f64` | little | spec | stores its planar coordinates as two f64 values after the tag |
+| 74 | 8 | `v` | `f64` | little | spec | stores its planar coordinates as two f64 values after the tag |
+| 82 | 4 | `zero_tail` | `bytes[4]` | little | spec | then four bytes, then the handle cells · value `[0, 0, 0, 0]` |
+
+Unstated regions:
+
+- `0..64` (64 B): The sketch-marker head precedes the coordinate tag.
+
 ## Not tabulated
 
 | Area | Spec | Reason |

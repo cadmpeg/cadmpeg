@@ -247,7 +247,7 @@ def check_formats(value: object, known: set[str], failures: list[str]) -> dict[s
 
 
 def check_evaluations(value: object, known: set[str], failures: list[str]) -> dict[str, list[int]]:
-    """Validate maintainer evaluation records and return levels by dialect."""
+    """Validate evaluation records and return levels by dialect."""
     rows = value.get("evaluation") if _is_table(value) else None
     if not isinstance(rows, list):
         failures.append("evaluations.toml: [[evaluation]] must be an array of tables")

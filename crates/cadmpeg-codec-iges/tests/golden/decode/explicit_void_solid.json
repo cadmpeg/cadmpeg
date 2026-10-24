@@ -1,7 +1,7 @@
 {
   "ir": {
     "decode_depth": "full",
-    "ir_version": "11",
+    "ir_version": "8",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -23,84 +23,84 @@
           "id": "iges:model:coedge#D109:D107:D91:0",
           "owner_loop": "iges:model:loop#D109:D107:D91",
           "radial_next": "iges:model:coedge#D109:D107:D95:2",
-          "sense": "forward"
+          "sense": "reversed"
         },
         {
           "edge": "iges:model:edge#D109:D89:4",
           "id": "iges:model:coedge#D109:D107:D91:1",
           "owner_loop": "iges:model:loop#D109:D107:D91",
           "radial_next": "iges:model:coedge#D109:D107:D97:0",
-          "sense": "reversed"
+          "sense": "forward"
         },
         {
           "edge": "iges:model:edge#D109:D89:1",
           "id": "iges:model:coedge#D109:D107:D91:2",
           "owner_loop": "iges:model:loop#D109:D107:D91",
           "radial_next": "iges:model:coedge#D109:D107:D93:0",
-          "sense": "reversed"
+          "sense": "forward"
         },
         {
           "edge": "iges:model:edge#D109:D89:1",
           "id": "iges:model:coedge#D109:D107:D93:0",
           "owner_loop": "iges:model:loop#D109:D107:D93",
           "radial_next": "iges:model:coedge#D109:D107:D91:2",
-          "sense": "forward"
+          "sense": "reversed"
         },
         {
           "edge": "iges:model:edge#D109:D89:5",
           "id": "iges:model:coedge#D109:D107:D93:1",
           "owner_loop": "iges:model:loop#D109:D107:D93",
           "radial_next": "iges:model:coedge#D109:D107:D97:2",
-          "sense": "forward"
+          "sense": "reversed"
         },
         {
           "edge": "iges:model:edge#D109:D89:3",
           "id": "iges:model:coedge#D109:D107:D93:2",
           "owner_loop": "iges:model:loop#D109:D107:D93",
           "radial_next": "iges:model:coedge#D109:D107:D95:0",
-          "sense": "reversed"
+          "sense": "forward"
         },
         {
           "edge": "iges:model:edge#D109:D89:3",
           "id": "iges:model:coedge#D109:D107:D95:0",
           "owner_loop": "iges:model:loop#D109:D107:D95",
           "radial_next": "iges:model:coedge#D109:D107:D93:2",
-          "sense": "forward"
+          "sense": "reversed"
         },
         {
           "edge": "iges:model:edge#D109:D89:6",
           "id": "iges:model:coedge#D109:D107:D95:1",
           "owner_loop": "iges:model:loop#D109:D107:D95",
           "radial_next": "iges:model:coedge#D109:D107:D97:1",
-          "sense": "reversed"
+          "sense": "forward"
         },
         {
           "edge": "iges:model:edge#D109:D89:2",
           "id": "iges:model:coedge#D109:D107:D95:2",
           "owner_loop": "iges:model:loop#D109:D107:D95",
           "radial_next": "iges:model:coedge#D109:D107:D91:0",
-          "sense": "reversed"
+          "sense": "forward"
         },
         {
           "edge": "iges:model:edge#D109:D89:4",
           "id": "iges:model:coedge#D109:D107:D97:0",
           "owner_loop": "iges:model:loop#D109:D107:D97",
           "radial_next": "iges:model:coedge#D109:D107:D91:1",
-          "sense": "forward"
+          "sense": "reversed"
         },
         {
           "edge": "iges:model:edge#D109:D89:6",
           "id": "iges:model:coedge#D109:D107:D97:1",
           "owner_loop": "iges:model:loop#D109:D107:D97",
           "radial_next": "iges:model:coedge#D109:D107:D95:1",
-          "sense": "forward"
+          "sense": "reversed"
         },
         {
           "edge": "iges:model:edge#D109:D89:5",
           "id": "iges:model:coedge#D109:D107:D97:2",
           "owner_loop": "iges:model:loop#D109:D107:D97",
           "radial_next": "iges:model:coedge#D109:D107:D93:1",
-          "sense": "reversed"
+          "sense": "forward"
         },
         {
           "edge": "iges:model:edge#D109:D35:2",
@@ -768,9 +768,9 @@
         {
           "boundary": {
             "coedges": [
-              "iges:model:coedge#D109:D107:D91:0",
+              "iges:model:coedge#D109:D107:D91:2",
               "iges:model:coedge#D109:D107:D91:1",
-              "iges:model:coedge#D109:D107:D91:2"
+              "iges:model:coedge#D109:D107:D91:0"
             ],
             "kind": "ring"
           },
@@ -780,9 +780,9 @@
         {
           "boundary": {
             "coedges": [
-              "iges:model:coedge#D109:D107:D93:0",
+              "iges:model:coedge#D109:D107:D93:2",
               "iges:model:coedge#D109:D107:D93:1",
-              "iges:model:coedge#D109:D107:D93:2"
+              "iges:model:coedge#D109:D107:D93:0"
             ],
             "kind": "ring"
           },
@@ -792,9 +792,9 @@
         {
           "boundary": {
             "coedges": [
-              "iges:model:coedge#D109:D107:D95:0",
+              "iges:model:coedge#D109:D107:D95:2",
               "iges:model:coedge#D109:D107:D95:1",
-              "iges:model:coedge#D109:D107:D95:2"
+              "iges:model:coedge#D109:D107:D95:0"
             ],
             "kind": "ring"
           },
@@ -804,9 +804,9 @@
         {
           "boundary": {
             "coedges": [
-              "iges:model:coedge#D109:D107:D97:0",
+              "iges:model:coedge#D109:D107:D97:2",
               "iges:model:coedge#D109:D107:D97:1",
-              "iges:model:coedge#D109:D107:D97:2"
+              "iges:model:coedge#D109:D107:D97:0"
             ],
             "kind": "ring"
           },

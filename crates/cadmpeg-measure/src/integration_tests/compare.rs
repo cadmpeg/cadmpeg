@@ -11,7 +11,7 @@ use cadmpeg_ir::CadIr;
 use crate::compare::{compare, CompareOptions, Comparison, Operand, Rule, Verdict};
 use crate::reason::CompareCause;
 use crate::select::Selection;
-use crate::test_support::{measure, Builder};
+use crate::test_support::builders::{measure, Builder};
 use crate::value::{BoxKind, Quantity};
 
 fn cube() -> CadIr {

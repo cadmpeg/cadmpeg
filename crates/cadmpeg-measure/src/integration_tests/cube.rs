@@ -3,7 +3,7 @@
 
 use crate::report::RowStatus;
 use crate::select::{Selection, SurfaceKind};
-use crate::test_support::{assert_measured, measure, value};
+use crate::test_support::builders::{assert_measured, measure, value};
 use crate::value::BoxKind;
 
 #[test]
@@ -83,7 +83,7 @@ fn every_cube_edge_has_length_10() {
 fn an_unknown_body_selector_is_refused() {
     let cube = cadmpeg_ir::examples::unit_cube().expect("fixture");
     let missing = cadmpeg_ir::ids::BodyId::mint("test:model:body#missing").unwrap();
-    let ctx = crate::test_support::service_context();
+    let ctx = crate::test_support::builders::service_context();
     let input = crate::session::MeasureInput {
         ir: &cube,
         fidelity: None,

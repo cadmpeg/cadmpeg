@@ -232,6 +232,122 @@ fn termination_families_preserve_wire_and_reject_cross_family_variants() {
 }
 
 #[test]
+fn to_plane_termination_keeps_its_frame_and_native_record() {
+    use crate::features::{AngularTermination, LinearTermination};
+
+    let wire = serde_json::json!({
+        "kind": "to_plane",
+        "plane": {
+            "origin": {"x": 10.0, "y": -20.0, "z": 5.0},
+            "normal": {"x": 0.0, "y": 0.0, "z": 2.0},
+            "u_axis": {"x": 1.0, "y": 0.0, "z": 0.0}
+        },
+        "native": "native:plane"
+    });
+    let termination: LinearTermination = serde_json::from_value(wire.clone()).unwrap();
+    let LinearTermination::ToPlane { plane, native } = &termination else {
+        panic!("not a to-plane termination: {termination:?}");
+    };
+    assert_eq!(
+        plane.normal().get(),
+        crate::math::Vector3::new(0.0, 0.0, 2.0)
+    );
+    assert_eq!(native.as_str(), "native:plane");
+    assert_eq!(serde_json::to_value(&termination).unwrap(), wire);
+    assert!(serde_json::from_value::<AngularTermination>(wire.clone()).is_err());
+
+    let mut blank = wire.clone();
+    blank["native"] = serde_json::json!(" ");
+    let mut missing = wire.clone();
+    missing.as_object_mut().unwrap().remove("native");
+    let mut oblique = wire.clone();
+    oblique["plane"]["u_axis"] = serde_json::json!({"x": 1.0, "y": 0.0, "z": 1.0});
+    let mut degenerate = wire;
+    degenerate["plane"]["normal"] = serde_json::json!({"x": 0.0, "y": 0.0, "z": 0.0});
+    for refused in [blank, missing, oblique, degenerate] {
+        assert!(serde_json::from_value::<LinearTermination>(refused).is_err());
+    }
+}
+
+#[test]
+fn from_plane_start_keeps_its_frame_and_native_record() {
+    use crate::features::ExtrudeStart;
+
+    let wire = serde_json::json!({
+        "kind": "from_plane",
+        "plane": {
+            "origin": {"x": 0.0, "y": 0.0, "z": 40.0},
+            "normal": {"x": 1.0, "y": 0.0, "z": 0.0},
+            "u_axis": {"x": 0.0, "y": 1.0, "z": 0.0}
+        },
+        "native": "native:plane"
+    });
+    let start: ExtrudeStart = serde_json::from_value(wire.clone()).unwrap();
+    assert!(matches!(
+        &start,
+        ExtrudeStart::FromPlane { native, .. } if native.as_str() == "native:plane"
+    ));
+    assert_eq!(serde_json::to_value(&start).unwrap(), wire);
+    let mut with_offset = wire;
+    with_offset["offset"] = serde_json::json!(1.0);
+    assert!(serde_json::from_value::<ExtrudeStart>(with_offset).is_err());
+}
+
+/// The plane-to-plane extrusion example of `docs/cad-ir.md`.
+#[test]
+fn plane_to_plane_extrusion_example_round_trips() {
+    use crate::features::{
+        ExtrudeExtent, ExtrudeStart, FeatureDefinition, FeatureOperation, LinearTermination,
+    };
+
+    let plane = |z: f64| {
+        serde_json::json!({
+            "origin": {"x": 0.0, "y": 0.0, "z": z},
+            "normal": {"x": 0.0, "y": 0.0, "z": 1.0},
+            "u_axis": {"x": 1.0, "y": 0.0, "z": 0.0}
+        })
+    };
+    let wire = serde_json::json!({
+        "definition": "extrude",
+        "profile": {"kind": "native", "value": "native:profile"},
+        "direction": {"kind": "profile_normal"},
+        "start": {
+            "kind": "from_plane",
+            "plane": plane(40.0),
+            "native": "native:start-plane"
+        },
+        "extent": {
+            "kind": "one_sided",
+            "side": {
+                "termination": {
+                    "kind": "to_plane",
+                    "plane": plane(100.0),
+                    "native": "native:end-plane"
+                }
+            }
+        },
+        "op": "join"
+    });
+    let definition: FeatureDefinition = serde_json::from_value(wire.clone()).unwrap();
+    let FeatureDefinition::Operation(FeatureOperation::Extrude { start, extent, .. }) = &definition
+    else {
+        panic!("not an extrusion: {definition:?}");
+    };
+    let ExtrudeStart::FromPlane { plane: start, .. } = start else {
+        panic!("not a from-plane start: {start:?}");
+    };
+    assert_eq!(start.origin().get(), Point3::new(0.0, 0.0, 40.0));
+    let ExtrudeExtent::OneSided { side } = extent else {
+        panic!("not a one-sided extent: {extent:?}");
+    };
+    let LinearTermination::ToPlane { plane: end, .. } = &side.termination else {
+        panic!("not a to-plane termination: {:?}", side.termination);
+    };
+    assert_eq!(end.origin().get(), Point3::new(0.0, 0.0, 100.0));
+    assert_eq!(serde_json::to_value(&definition).unwrap(), wire);
+}
+
+#[test]
 fn loft_sections_preserve_profile_shape() {
     use crate::features::{
         BooleanOp, FeatureDefinition, FeatureOperation, LoftSection, PlanarProfileRef, ProfileRef,

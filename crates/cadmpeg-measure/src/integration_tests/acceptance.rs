@@ -7,7 +7,7 @@ use std::f64::consts::PI;
 use crate::reason::CaveatCode;
 use crate::report::{Classification, DeclaredRole, ListedOrder, LoopRole, RegionRule, Winding};
 use crate::select::Selection;
-use crate::test_support::{assert_measured, measure, plate_with_hole, value};
+use crate::test_support::builders::{assert_measured, measure, plate_with_hole, value};
 use crate::tolerance::QUADRATURE_RELATIVE_TARGET;
 use crate::value::BoxKind;
 
@@ -83,7 +83,7 @@ fn a_plate_with_a_hole_measures_area_lengths_box_and_roles() {
 
 #[test]
 fn a_ring_listed_out_of_order_keeps_its_area_and_reports_the_order() {
-    let mut builder = crate::test_support::Builder::new();
+    let mut builder = crate::test_support::builders::Builder::new();
     let corners = [
         builder.vertex([0.0, 0.0, 0.0]),
         builder.vertex([40.0, 0.0, 0.0]),

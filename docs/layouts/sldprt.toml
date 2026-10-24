@@ -12051,3 +12051,270 @@ offset = 4
 type = "u16"
 source = "spec"
 anchor = "transmit index is u16 BE at body +4"
+
+[[record]]
+name = "relation_row_header"
+kind = "byte"
+section = "2"
+anchor = "The relation table of a sketch block follows the last record of the block. Each relation row has this layout"
+size = 14
+endianness = "little"
+note = "The operand handle cells follow at +14."
+
+[[record.field]]
+name = "code"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "| +0 | u32 relation code."
+
+[[record.field]]
+name = "constant_two"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "| +4 | `02 00` |"
+value = 2
+
+[[record.field]]
+name = "flag"
+offset = 6
+type = "u16"
+source = "spec"
+anchor = "| +6 | u16 row flag, `0` or `1` |"
+
+[[record.field]]
+name = "constant_tail"
+offset = 8
+type = "bytes[6]"
+source = "spec"
+anchor = "| +8 | `00 00 fe ff 00 00` |"
+value = [0x00, 0x00, 0xfe, 0xff, 0x00, 0x00]
+
+[[record]]
+name = "relation_handle_cell_narrow"
+kind = "byte"
+section = "2"
+anchor = "A handle cell stores a class reference, the u16 slot of the curve in the array of its kind, `ff ff ff ff`, and four zero bytes."
+size = 12
+endianness = "little"
+note = "The class reference is a u16 tag."
+
+[[record.field]]
+name = "class_tag"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "The class reference is a u16 `0x8000 | index`"
+
+[[record.field]]
+name = "slot"
+offset = 2
+type = "u16"
+source = "spec"
+anchor = "the u16 slot of the curve in the array of its kind"
+
+[[record.field]]
+name = "sentinel"
+offset = 4
+type = "bytes[4]"
+source = "spec"
+anchor = "`ff ff ff ff`"
+value = [0xff, 0xff, 0xff, 0xff]
+
+[[record.field]]
+name = "zero_tail"
+offset = 8
+type = "bytes[4]"
+source = "spec"
+anchor = "four zero bytes"
+value = [0, 0, 0, 0]
+
+[[record]]
+name = "relation_handle_cell_wide"
+kind = "byte"
+section = "2"
+anchor = "a u16 `ff 7f` and a u32 index"
+size = 16
+endianness = "little"
+note = "The wide class reference gives the cell four more bytes than the narrow form."
+
+[[record.field]]
+name = "class_lead"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "a u16 `ff 7f`"
+value = 0x7fff
+
+[[record.field]]
+name = "class_index"
+offset = 2
+type = "u32"
+source = "spec"
+anchor = "and a u32 index"
+
+[[record.field]]
+name = "slot"
+offset = 6
+type = "u16"
+source = "spec"
+anchor = "the u16 slot of the curve in the array of its kind"
+
+[[record.field]]
+name = "sentinel"
+offset = 8
+type = "bytes[4]"
+source = "spec"
+anchor = "`ff ff ff ff`"
+value = [0xff, 0xff, 0xff, 0xff]
+
+[[record.field]]
+name = "zero_tail"
+offset = 12
+type = "bytes[4]"
+source = "spec"
+anchor = "four zero bytes"
+value = [0, 0, 0, 0]
+
+[[record]]
+name = "relation_handle_cell_declared"
+kind = "slot"
+section = "2"
+anchor = "`ff ff`, a u16 schema, a u16 length and that many ASCII class-name bytes"
+size = 16
+endianness = "little"
+note = "The class name is variable length; the u16 slot follows it. The size excludes the name."
+
+[[record.field]]
+name = "class_lead"
+type = "u16"
+source = "spec"
+anchor = "`ff ff`, a u16 schema, a u16 length and that many ASCII class-name bytes"
+value = 0xffff
+
+[[record.field]]
+name = "schema"
+type = "u16"
+source = "spec"
+anchor = "a u16 schema"
+
+[[record.field]]
+name = "name_length"
+type = "u16"
+source = "spec"
+anchor = "a u16 length and that many ASCII class-name bytes"
+
+[[record.field]]
+name = "class_name"
+type = "text"
+source = "spec"
+anchor = "that many ASCII class-name bytes"
+
+[[record.field]]
+name = "slot"
+type = "u16"
+source = "spec"
+anchor = "the u16 slot of the curve in the array of its kind"
+
+[[record.field]]
+name = "sentinel"
+type = "bytes[4]"
+source = "spec"
+anchor = "`ff ff ff ff`"
+value = [0xff, 0xff, 0xff, 0xff]
+
+[[record.field]]
+name = "zero_tail"
+type = "bytes[4]"
+source = "spec"
+anchor = "four zero bytes"
+value = [0, 0, 0, 0]
+
+[[record]]
+name = "relation_point_record_near"
+kind = "byte"
+section = "2"
+anchor = "A local point record with coordinate tag `1e 00` at marker +56 or marker +64"
+size = 78
+endianness = "little"
+note = "The handle cells follow at +78."
+
+[[record.gap]]
+offset = 0
+size = 56
+note = "The sketch-marker head precedes the coordinate tag."
+
+[[record.field]]
+name = "coordinate_tag"
+offset = 56
+type = "u16"
+source = "spec"
+anchor = "coordinate tag `1e 00` at marker +56 or marker +64"
+value = 30
+
+[[record.field]]
+name = "u"
+offset = 58
+type = "f64"
+source = "spec"
+anchor = "stores its planar coordinates as two f64 values after the tag"
+
+[[record.field]]
+name = "v"
+offset = 66
+type = "f64"
+source = "spec"
+anchor = "stores its planar coordinates as two f64 values after the tag"
+
+[[record.field]]
+name = "zero_tail"
+offset = 74
+type = "bytes[4]"
+source = "spec"
+anchor = "then four bytes, then the handle cells"
+value = [0, 0, 0, 0]
+
+[[record]]
+name = "relation_point_record_far"
+kind = "byte"
+section = "2"
+anchor = "A local point record with coordinate tag `1e 00` at marker +56 or marker +64"
+size = 86
+endianness = "little"
+note = "The handle cells follow at +86."
+
+[[record.gap]]
+offset = 0
+size = 64
+note = "The sketch-marker head precedes the coordinate tag."
+
+[[record.field]]
+name = "coordinate_tag"
+offset = 64
+type = "u16"
+source = "spec"
+anchor = "coordinate tag `1e 00` at marker +56 or marker +64"
+value = 30
+
+[[record.field]]
+name = "u"
+offset = 66
+type = "f64"
+source = "spec"
+anchor = "stores its planar coordinates as two f64 values after the tag"
+
+[[record.field]]
+name = "v"
+offset = 74
+type = "f64"
+source = "spec"
+anchor = "stores its planar coordinates as two f64 values after the tag"
+
+[[record.field]]
+name = "zero_tail"
+offset = 82
+type = "bytes[4]"
+source = "spec"
+anchor = "then four bytes, then the handle cells"
+value = [0, 0, 0, 0]

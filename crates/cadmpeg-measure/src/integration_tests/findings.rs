@@ -8,7 +8,7 @@ use cadmpeg_ir::topology::Sense;
 use cadmpeg_ir::CadIr;
 
 use crate::session::{findings, MeasureOptions};
-use crate::test_support::{plate_with_hole, service_context};
+use crate::test_support::builders::{plate_with_hole, service_context};
 
 fn run(ir: &CadIr) -> Vec<Finding> {
     let ctx = service_context();

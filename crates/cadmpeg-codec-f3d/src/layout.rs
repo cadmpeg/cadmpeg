@@ -5746,3 +5746,31 @@ pub(crate) mod rectangular_pattern_direction_record {
     /// Offset of `scope_reference` (`bytes[11]`). Spec §Assembly operands.
     pub(crate) const SCOPE_REFERENCE: usize = 209;
 }
+
+/// Byte offsets for the `extrude_selection_member_long_tail` record.
+///
+/// Spec §3.1. Record length 14 B.
+///
+/// ```text
+/// Offsets are relative to the end of the 190-byte selection-member frame.
+/// ```
+pub(crate) mod extrude_selection_member_long_tail {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 14;
+    /// Offset of `leading_zero` (`u8`). Spec §3.1.
+    pub(crate) const LEADING_ZERO: usize = 0;
+    /// Stated value of `leading_zero` (`u8`). Spec §3.1.
+    pub(crate) const LEADING_ZERO_VALUE: u8 = 0;
+    /// Offset of `kind` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const KIND: usize = 1;
+    /// Stated value of `kind` (`u32`). Spec §3.1.
+    pub(crate) const KIND_VALUE: u32 = 0x0000_0002;
+    /// Offset of `value` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const VALUE: usize = 5;
+    /// Stated value of `value` (`u64`). Spec §3.1.
+    pub(crate) const VALUE_VALUE: u64 = 0x0000_0000_0000_0001;
+    /// Offset of `trailing_zero` (`u8`). Spec §3.1.
+    pub(crate) const TRAILING_ZERO: usize = 13;
+    /// Stated value of `trailing_zero` (`u8`). Spec §3.1.
+    pub(crate) const TRAILING_ZERO_VALUE: u8 = 0;
+}

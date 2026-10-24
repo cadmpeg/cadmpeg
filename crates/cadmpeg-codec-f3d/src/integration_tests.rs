@@ -7,6 +7,7 @@ mod design_containment;
 mod history_deltas;
 mod history_scale;
 mod inconsistent_records;
+mod measured_geometry;
 mod optional_payloads;
 mod placement_history;
 

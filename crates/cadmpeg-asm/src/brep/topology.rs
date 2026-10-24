@@ -19,10 +19,10 @@ use std::collections::{HashMap, HashSet};
 
 use super::attributes::unknown_record_id;
 use super::geometry::{
-    analytic_procedural_surface, coedge_pcurve_ref, decode_curve, decode_surface,
+    analytic_procedural_surface, coedge_pcurve_ref, decode_curve, decode_surface, edge_curve_sense,
     is_analytic_curve, is_analytic_surface, is_coedge_record, is_edge_record, is_vertex_record,
     pcurve_ranges_on_domain, procedural_surface_definition_is_exact_carrier, record_reversed,
-    reverse_procedural_curve_definition, sense_at, vertex_point_ref,
+    reverse_procedural_curve_definition, vertex_point_ref,
 };
 use super::{count_kind, id, AsmBrep, Carriers, DecodePurpose, Reachable, WireShellTopology};
 /// Pass 1: classify carriers and decode analytic geometry. Returns the seeded
@@ -819,38 +819,29 @@ fn keep_wire_edge(
     Ok(())
 }
 
-/// Partition kept edges' curve references by sense so a carrier shared across
+/// Partition the edge uses of kept curves by sense so a carrier shared across
 /// both senses can emit a `:reversed` clone beside its forward orientation.
+///
+/// Every edge record counts, as in
+/// [`carrier_cache_reversed`](super::geometry::carrier_cache_reversed), so the patch
+/// path reaches the same reversal without the topology walk.
 pub(super) fn classify_edge_curve_senses(
     records: &[Record],
     reach: &Reachable,
-) -> Result<(HashSet<i64>, HashSet<i64>), cadmpeg_core::CodecError> {
-    let Reachable {
-        edges: kept_edges,
-        curves: kept_curves,
-        ..
-    } = reach;
+) -> (HashSet<i64>, HashSet<i64>) {
     let mut reversed_curve_refs: HashSet<i64> = HashSet::new();
     let mut forward_curve_refs: HashSet<i64> = HashSet::new();
-    for r in records {
-        if !is_edge_record(r)
-            || !kept_edges.contains(
-                &(i64::try_from(r.index).map_err(|_| {
-                    cadmpeg_core::CodecError::malformed("ASM record index exceeds the i64 range")
-                })?),
-            )
-        {
-            continue;
-        }
-        let Some(curve) = r.ref_at(8).filter(|c| kept_curves.contains(c)) else {
-            continue;
-        };
-        match sense_at(r, 9) {
+    for (curve, sense) in records
+        .iter()
+        .filter_map(edge_curve_sense)
+        .filter(|(curve, _)| reach.curves.contains(curve))
+    {
+        match sense {
             Sense::Reversed => reversed_curve_refs.insert(curve),
             Sense::Forward => forward_curve_refs.insert(curve),
         };
     }
-    Ok((reversed_curve_refs, forward_curve_refs))
+    (reversed_curve_refs, forward_curve_refs)
 }
 
 pub(super) fn ring_coedges(

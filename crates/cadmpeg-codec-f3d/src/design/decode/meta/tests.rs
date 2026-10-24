@@ -559,26 +559,29 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
 fn component_naming_space_binds_through_a_linked_entity() {
     const CONTEXT_UUID: &str = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
 
-    fn archive(link_type_guid: &str) -> Vec<u8> {
-        let meta = design_metastream_with_records(
-            &[
-                (
-                    "11111111-2222-3333-4444-555555555555",
-                    "21F379C8-CAFD-4985-B461-767673A4C502",
-                    0,
-                    "Component",
-                    &[17],
-                ),
+    /// The link entity 5 is registered to `link_type_guid`, or to no type.
+    fn archive(link_type_guid: Option<&str>) -> Vec<u8> {
+        let component = (
+            "11111111-2222-3333-4444-555555555555",
+            "21F379C8-CAFD-4985-B461-767673A4C502",
+            0,
+            "Component",
+            &[17_u64][..],
+        );
+        let types = match link_type_guid {
+            Some(link_type_guid) => vec![
+                component,
                 (
                     link_type_guid,
                     "046D6232-EDAB-414D-9CB0-A2E3F115AE1C",
                     4,
                     "Fusion",
-                    &[5],
+                    &[5_u64][..],
                 ),
             ],
-            &[],
-        );
+            None => vec![component],
+        };
+        let meta = design_metastream_with_records(&types, &[]);
         let mut bulk = vec![0xaa, 0xbb, 1];
         bulk.extend_from_slice(&17_u64.to_le_bytes());
         bulk.extend_from_slice(&[0, 0, 1]);
@@ -598,7 +601,7 @@ fn component_naming_space_binds_through_a_linked_entity() {
     }
 
     let spaces = with_scan(
-        &archive("8ACBA2E5-5A4C-4438-8351-276DE96E6982"),
+        &archive(Some("8ACBA2E5-5A4C-4438-8351-276DE96E6982")),
         decode_component_naming_spaces,
     )
     .expect("linked component naming space");
@@ -610,8 +613,13 @@ fn component_naming_space_binds_through_a_linked_entity() {
     assert_eq!(space.byte_offset, 2);
     assert_eq!(space.context_uuid_offset, u64_from_index(2 + 11 + 11));
 
+    // A link entity the stream registers to no type binds the same way.
+    let unregistered = with_scan(&archive(None), decode_component_naming_spaces)
+        .expect("component naming space through an unregistered entity");
+    assert_eq!(unregistered, spaces);
+
     let error = with_scan(
-        &archive("99999999-8888-7777-6666-555555555555"),
+        &archive(Some("99999999-8888-7777-6666-555555555555")),
         decode_component_naming_spaces,
     )
     .expect_err("a link entity of another type does not bind the component");
@@ -796,4 +804,60 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
         .expect_err("incompatible timeline registration metadata must be rejected");
         assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
     }
+}
+
+#[test]
+fn a_design_bulk_stream_ends_before_an_unindexed_record_run() {
+    fn record(out: &mut Vec<u8>, class: &[u8; 3], record_index: u32) {
+        out.extend_from_slice(&3_u32.to_le_bytes());
+        out.extend_from_slice(class);
+        out.extend_from_slice(&record_index.to_le_bytes());
+        out.extend_from_slice(&[0; 10]);
+    }
+    fn archive(trailing_index: u32) -> Vec<u8> {
+        let mut bulk = Vec::new();
+        record(&mut bulk, b"300", 1);
+        record(&mut bulk, b"300", 2);
+        record(&mut bulk, b"301", trailing_index);
+        record(&mut bulk, b"302", trailing_index + 1);
+        let meta = design_metastream_with_records(&[], &[(1, 0), (2, 21)]);
+        let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        write_synthetic_manifests(&mut zip, stored);
+        zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
+            .unwrap();
+        zip.write_all(&bulk).unwrap();
+        zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+            .unwrap();
+        zip.write_all(&meta).unwrap();
+        zip.finish().unwrap().into_inner()
+    }
+    let bulk = "FusionAssetName[Active]/Design1/BulkStream.dat";
+
+    with_scan(&archive(1), |scan| {
+        assert_eq!(scan.entry_bytes(bulk).unwrap().len(), 42);
+        let [(name, run, stored)] = scan.unindexed_record_runs.as_slice() else {
+            panic!("one unindexed record run");
+        };
+        assert_eq!(name, bulk);
+        assert_eq!(
+            *run,
+            super::UnindexedRecordRun {
+                start: 42,
+                first_record_index: 1,
+                headers: 2,
+            }
+        );
+        assert_eq!(*stored, 84);
+        let mut losses = Vec::new();
+        crate::report::header_losses(scan, &mut losses).unwrap();
+        assert!(losses
+            .iter()
+            .any(|loss| loss.code == crate::loss::F3dLossCode::UnindexedRecordsRetained.kind()));
+    });
+
+    with_scan(&archive(2), |scan| {
+        assert_eq!(scan.entry_bytes(bulk).unwrap().len(), 84);
+        assert!(scan.unindexed_record_runs.is_empty());
+    });
 }

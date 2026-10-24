@@ -6,7 +6,9 @@
 
 ## Checklist
 
-- [ ] Signed off — every commit (`git commit -s`), or one `Signed-off-by` line in this PR description. See [CONTRIBUTING.md](../CONTRIBUTING.md).
+<!-- PRs are squash-merged. Ticking this box is the DCO sign-off for the whole PR.
+     It needs no Signed-off-by line and no per-commit sign-off. -->
+- [ ] Signed off: I certify this PR under the [Developer Certificate of Origin](https://developercertificate.org/). See [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ## Provenance declaration (decoder or format-spec changes only)
 

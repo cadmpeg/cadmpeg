@@ -33,7 +33,7 @@
 #   site.
 #
 #   Each `[format.<id>]` block declares the published level and the `scored`
-#   rows that level covers. A fixture-backed read level or a maintainer
+#   rows that level covers. A fixture-backed read level or a recorded
 #   evaluation is a floor for its row, not a ceiling for the format: a value
 #   below the declared level does not contradict it. The renderer prints the
 #   declared level and prints each row's read cell verbatim.
@@ -145,6 +145,10 @@ scored = ["nx:splmsstr", "nx:legacy-cfb"]
 [format.sat]
 level = 3
 scored = ["sat:text"]
+
+[format.pvz]
+level = 0
+scored = ["pvz:pvs-0301", "pvz:pvs-0302", "pvz:pvs-0303", "pvz:pvs-0304", "pvz:pvs-0305"]
 
 
 # --------------------------------------------------------------------------
@@ -926,6 +930,44 @@ refusal = "no-framing-grammar"
 reason = """
 `sat:unknown` means no ASM, ACIS, or text stream framing matched. Detection
 returns Confidence::No and the forced codec path returns WrongFormat"""
+
+# --------------------------------------------------------------------------
+# pvz
+# --------------------------------------------------------------------------
+
+[[support]]
+dialect = "pvz:pvs-0301"
+read = "detected"
+write = "none"
+
+[[support]]
+dialect = "pvz:pvs-0302"
+read = "detected"
+write = "none"
+
+[[support]]
+dialect = "pvz:pvs-0303"
+read = "detected"
+write = "none"
+
+[[support]]
+dialect = "pvz:pvs-0304"
+read = "detected"
+write = "none"
+
+[[support]]
+dialect = "pvz:pvs-0305"
+read = "detected"
+write = "none"
+
+[[support]]
+dialect = "pvz:unknown"
+read = "unclassified-recovered"
+write = "none"
+reason = """
+no known structure-member signature or XML version; the member is read on the
+residual path with the grammar its leading bytes select and charges
+pvz/source.dialect-unverified"""
 
 # --------------------------------------------------------------------------
 # acis

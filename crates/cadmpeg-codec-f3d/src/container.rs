@@ -252,6 +252,14 @@ pub(crate) struct ContainerScan<'a> {
     pub(crate) manifest_diagnostics: Vec<manifest::MetadataDiagnostic>,
     /// Optional archive payload failures; complete stored bytes remain in `source_image`.
     pub(crate) entry_diagnostics: Vec<String>,
+    /// Design `BulkStream` record runs after the last indexed record, by
+    /// entry name, with the stream's stored length. Their entry views end
+    /// where the run starts; complete stored bytes remain in `source_image`.
+    pub(crate) unindexed_record_runs: Vec<(
+        String,
+        crate::design::decode::meta::UnindexedRecordRun,
+        usize,
+    )>,
     /// Entry payload views, keyed by archive path.
     inflated_entries: BTreeMap<String, View<'a>>,
     /// Entry indices per native scope key, in entry order.
@@ -575,10 +583,12 @@ pub(crate) fn scan<'a>(
         kind,
         manifest_diagnostics,
         entry_diagnostics,
+        unindexed_record_runs: Vec::new(),
         inflated_entries,
         scope_entry_indices,
         metastream_cache: std::cell::RefCell::new(std::collections::HashMap::new()),
     };
+    bound_design_bulk_streams(&mut scan);
     for index in 0..scan.entries.len() {
         let entry = &scan.entries[index];
         if entry.role != ContainerRole::BrepText || !scan.belongs_to_design_asset(&entry.name) {
@@ -608,6 +618,39 @@ pub(crate) fn scan<'a>(
         scan.text_breps.insert(name, framing);
     }
     Ok(scan)
+}
+
+/// End each Design `BulkStream` view at the record run after its last indexed
+/// record, so that decoders read only the records its `MetaStream` indexes.
+fn bound_design_bulk_streams(scan: &mut ContainerScan<'_>) {
+    let bulk_streams = scan
+        .entries
+        .iter()
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
+        .map(|entry| entry.name.clone())
+        .collect::<Vec<_>>();
+    for name in bulk_streams {
+        let Some(meta_name) = name
+            .strip_suffix("BulkStream.dat")
+            .map(|prefix| format!("{prefix}MetaStream.dat"))
+        else {
+            continue;
+        };
+        let (Some(view), Ok(meta)) = (scan.entry_view(&name), scan.parsed_metastream(&meta_name))
+        else {
+            continue;
+        };
+        let Some(run) = crate::design::decode::meta::unindexed_record_run(view.window(), &meta)
+        else {
+            continue;
+        };
+        let Some(bounded) = view.child(view.start(), view.start() + run.start) else {
+            continue;
+        };
+        let stored = view.window().len();
+        scan.inflated_entries.insert(name.clone(), bounded);
+        scan.unindexed_record_runs.push((name, run, stored));
+    }
 }
 
 /// Build a [`ContainerSummary`] without assigning model authority from a ZIP

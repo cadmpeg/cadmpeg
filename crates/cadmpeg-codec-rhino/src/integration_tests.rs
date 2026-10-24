@@ -32,6 +32,7 @@ mod dimension_userdata;
 mod fixtures;
 mod hatch_userdata;
 mod layer_userdata;
+mod measured_geometry;
 mod mesh_modifiers_userdata;
 mod mesh_userdata;
 mod object_attributes_userdata;

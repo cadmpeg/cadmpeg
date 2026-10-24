@@ -10,7 +10,9 @@ use cadmpeg_ir::CadIr;
 use crate::reason::{CaveatCode, UnavailableReason};
 use crate::report::{BodyMeasures, FaceMeasures, MeasureReport, WitnessKind};
 use crate::select::Selection;
-use crate::test_support::{assert_measured, measure, Builder, Frame, TEST_ABSOLUTE_FLOOR};
+use crate::test_support::builders::{
+    assert_measured, measure, Builder, Frame, TEST_ABSOLUTE_FLOOR,
+};
 use crate::value::{Quantity, Reading};
 
 const RADIUS: f64 = 5.0;

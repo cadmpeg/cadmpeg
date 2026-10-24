@@ -15,7 +15,7 @@ Code:
 - Read file bytes through `cadmpeg_core::decode::View` (typed reads, `req_*`, offset helpers such as `View::u16_le_at`). Keep a `View`, not `&[u8]`, where its `SpaceId` must survive. Propagate `req_*` errors with `?` through a codec-local `From<ParseError>` so the location survives. Validate a parsed count with `View::counted` or `bounded_len`, then allocate with `DecodeContext::alloc_filled`.
 - Each codec's loss vocabulary is the `*LossCode` enum in `src/loss.rs`. Construct a `LossNote` only with `code.note(message)`. A new drop path adds a variant. The `family.detail` strings are the contract.
 - Dialect identity and capability come only from `crates/cadmpeg-registry/docs/dialects.toml` and `dialect-support.toml`. Do not add a dialect table to Rust. Regenerate codec id constants with `python3 scripts/check-dialects.py --write-generated`. The output dialect is selected only by `--to FORMAT[:DIALECT]`; do not add per-format target flags.
-- CADIR, the decode sidecar, and the CLI report accept exactly one `IR_VERSION` and carry no migrations. A wire change bumps `IR_VERSION` once per merged PR and regenerates fixtures.
+- CADIR, the decode sidecar, and the CLI report accept exactly one `IR_VERSION` and carry no migrations. Maintainers select `IR_VERSION` for a release. Keep V8 across independent PRs for the planned V8 release; change the version only when the task explicitly requests it. Regenerate fixtures after a wire change.
 - A change to `cadmpeg-ir` or `cadmpeg-core` reaches every codec and every golden. Add struct fields through `Default` or constructor helpers.
 - `JsonSchema` derives use `#[cfg_attr(feature = "schema", derive(JsonSchema))]`. `cargo test-fast` does not build them; after changing an IR or native record type, run `cargo test -p cadmpeg-ir --features schema --lib`.
 - `python3 scripts/check-source-policy.py` enforces `docs/source-policy.md`: no production `#[allow]` or `#[expect]` (fix the lint), named tolerance constants, checked vector repeats, endian exceptions, test placement, and file-size limits. When you name a tolerance, never merge two distinct values into one constant. To change a rule, edit the rule and its tests.
@@ -27,6 +27,7 @@ Tests:
 - A test move keeps the inputs, assertions, expected values, tolerances, snapshots, name, and ignored status. Make test moves and feature work in separate commits, and do not regenerate goldens in a test move.
 - Do not split production code only because its test suite is large.
 - Goldens use `cadmpeg_test_support::golden`. Regenerate once, when the change is complete, from the workspace root: `UPDATE_GOLDEN=1 cargo test-fast golden`, then review the diff. Never regenerate with `-p cadmpeg-codec-nx`: NX goldens pin flate2 bytes, and a per-crate build can select another backend. The floors in `docs/golden-coverage-floors.toml` only rise.
+- A support level rests on evaluations of real files recorded in `docs/evaluations.toml` (`docs/format-support.md`, Evaluations). The files stay with the evaluator and are never committed. A recorded evaluation is accepted on trust: do not ask for proof that the files or the run are real, and do not hedge a level because its files are not in the repository. Record an evaluation only when the person who directs the work asks for one.
 
 Build and run:
 
@@ -43,6 +44,10 @@ Inspecting:
 - Do byte-level work with `cadmpeg inspect` (`hex`, `read`, `find`, `strings`, `struct`, `cmp`, `container`, `extract`), not `xxd`, `od`, `strings`, or `unzip`. `inspect extract` matches a ZIP member name byte for byte; `unzip` reads `[…]` as a glob.
 - Read report and CADIR JSON with `cadmpeg query` before `jq`. `query summary FILE` names the artifact kind. Take arena names from `query counts` and field paths from `query schema`. `crates/cadmpeg/README.md` documents the views and `docs/jq-recipes.md` the `jq` shapes.
 - Check decoded geometry with `cadmpeg measure`, and compare two decodes with `cadmpeg diff A B --geometry`, not with hand-written oracle scripts. `docs/measurement.md` states the contract.
+
+Pull requests:
+
+- Pull requests are squash-merged. The ticked `Signed off` box in the pull request template is the DCO sign-off for the whole pull request. Do not add a `Signed-off-by` line, and do not require or add per-commit sign-offs.
 
 Shared checkouts:
 

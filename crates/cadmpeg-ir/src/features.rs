@@ -7022,6 +7022,13 @@ pub enum ExtrudeStart {
         )]
         offset: Option<Length>,
     },
+    /// Begin on a selected plane that has no face identity.
+    FromPlane {
+        /// Model-space frame of the start plane.
+        plane: FeatureSupportPlaneFrame,
+        /// Native record that stores the plane.
+        native: NonBlankString,
+    },
 }
 
 /// One-sided termination law of a linear sweep. Sidedness around the profile
@@ -7061,6 +7068,13 @@ pub enum LinearTermination {
     ToVertex {
         /// Vertex terminating the operation.
         vertex: VertexSelection,
+    },
+    /// Extends until it reaches a target plane that has no face identity.
+    ToPlane {
+        /// Model-space frame of the terminating plane.
+        plane: FeatureSupportPlaneFrame,
+        /// Native record that stores the plane.
+        native: NonBlankString,
     },
     /// Extends to a fixed offset from a target face.
     OffsetFromFace {

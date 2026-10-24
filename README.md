@@ -89,6 +89,7 @@ Each format carries one support level from the ladder; `cadmpeg inspect <file>` 
 - **Siemens NX `.prt`** — L1 ([profile](docs/format-support.md#siemens-nx-prt))
 - **CATIA V5 `.CATPart`** — L3 ([profile](docs/format-support.md#catia-v5-catpart))
 - **Creo Parametric `.prt`** — L1 ([profile](docs/format-support.md#creo-parametric-prt))
+- **Creo View `.pvz`** — L0 ([profile](docs/format-support.md#creo-view-pvz))
 - **STEP Part 21** — L8 ([profile](docs/format-support.md#step-part-21))
 
 <!-- /generated: capability-lines -->
@@ -101,7 +102,7 @@ Each format carries one support level from the ladder; `cadmpeg inspect <file>` 
 input file ──▶ container decoder ──▶ format decoder ──▶ IR ──▶ validator ──▶ exporter ──▶ output + reports
 ```
 
-- [CAD IR version 11](docs/cad-ir.md)
+- [CAD IR version 8](docs/cad-ir.md)
 - [Architecture](docs/architecture.md)
 - [Format support](docs/format-support.md)
 - [Roadmap](docs/roadmap.md)
@@ -116,7 +117,7 @@ Other contributions:
 - Resolve an open format item with byte-backed evidence.
 - Add validators, exporters, IR tooling, corpus tooling, or CLI improvements.
 
-Commits require DCO sign-off; decoder and specification changes also require a provenance declaration. See [CONTRIBUTING.md](CONTRIBUTING.md), [LEGAL.md](LEGAL.md), and the [roadmap](docs/roadmap.md).
+Pull requests require a DCO sign-off; decoder and specification changes also require a provenance declaration. See [CONTRIBUTING.md](CONTRIBUTING.md), [LEGAL.md](LEGAL.md), and the [roadmap](docs/roadmap.md).
 
 ## Development
 

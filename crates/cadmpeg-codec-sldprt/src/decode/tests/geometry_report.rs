@@ -566,3 +566,57 @@ fn unsupported_swift_loss_retains_exact_text() {
         "1 SWIFT semantic annotation(s) have no neutral PMI definition: GdtAnalysisGraphUnresolved (1)."
     );
 }
+
+/// A lane with one point array and one relation row that no constraint names.
+fn relation_row_payload() -> (Vec<u8>, usize) {
+    let mut payload = Vec::new();
+    payload.extend_from_slice(&1u32.to_le_bytes());
+    payload.extend_from_slice(&[0; 10]);
+    let marker = payload.len();
+    payload.extend_from_slice(&[0xff, 0xff, 0x1f, 0x00, 0x03]);
+    payload.extend_from_slice(&[0xff; 8]);
+    payload.extend_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+    payload.resize(marker + 48, 0);
+    payload.extend_from_slice(&1.0f64.to_le_bytes());
+    payload.resize(marker + 64, 0);
+    payload.extend_from_slice(&[0x1e, 0x00]);
+    payload.extend_from_slice(&0.0f64.to_le_bytes());
+    payload.extend_from_slice(&0.0f64.to_le_bytes());
+    payload.extend_from_slice(&[0; 4]);
+    payload.resize(marker + 104, 0);
+    let row = payload.len();
+    payload.extend_from_slice(&4u32.to_le_bytes());
+    payload.extend_from_slice(&[0x02, 0x00]);
+    payload.extend_from_slice(&0u16.to_le_bytes());
+    payload.extend_from_slice(&[0x00, 0x00, 0xfe, 0xff, 0x00, 0x00]);
+    payload.resize(row + 64, 0);
+    (payload, row)
+}
+
+#[test]
+fn a_relation_row_without_a_constraint_raises_the_unprojected_count() {
+    let (payload, _) = relation_row_payload();
+    let native = SldprtNative {
+        feature_input_lanes: vec![FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: payload.into(),
+            classes: Vec::new(),
+            names: Vec::new(),
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: Vec::new(),
+        }],
+        ..SldprtNative::default()
+    };
+    assert_eq!(
+        unprojected_sketch_relation_records(&CadIr::empty(), &native),
+        1
+    );
+}

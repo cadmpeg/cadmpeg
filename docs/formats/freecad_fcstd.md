@@ -386,6 +386,18 @@ their shared edge identity carries unordered non-manifold incidence without asse
 serialization-dependent radial cycle. Each wire serializes its ordered edge uses independently;
 the format has no field that joins three or more uses into a radial cycle.
 
+The serialized order of the edge uses in a face wire is not a traversal order. The composed
+orientation of an edge use is the face use, wire use, and edge use orientations composed. An edge
+use with a `Forward` composed orientation runs from the edge's start vertex to its end vertex; a
+`Reversed` use runs from the end vertex to the start vertex. The traversal of a face wire is the
+closed chain of its oriented edge uses in which each use ends at the vertex where the next use
+starts. The neutral loop lists its coedges in this traversal. The traversal starts at the first
+serialized edge use, or at the last one when the face use and wire use orientations compose to
+`Reversed`. A serialized order that is already continuous is the traversal.
+CADIR decision: a face wire whose oriented edge uses form no closed chain, or more than one, or
+whose traversal search examines more than `MAX_WIRE_TRAVERSAL_STEPS` candidate edge uses, keeps its
+serialized order, reversed when the face use and wire use orientations compose to `Reversed`.
+
 ## 8. Design-history transfer
 
 Construction objects retain source order and native identity independently of their cached shape.

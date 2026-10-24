@@ -234,6 +234,9 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-step`     | `src/parse.rs`                                     | `MAX_EXPANDED_PAYLOAD_PER_INPUT_BYTE`     | `16`, plus `EXPANDED_PAYLOAD_BASE` (16 MiB)             | 4    | String, binary and name octets that the anchor pass, and separately the REFERENCE pass, may copy out of anchors, per input byte. Copies that an omitted item discards stay charged. An item whose copy does not fit is omitted with its exact source and `parse.expansion-bounded`, naming this constant. Recorded anchor and reference outcomes carry their octets, so a later item that cannot fit is decided before anything is copied. Working storage, not `retain_bytes`. |
 | `cadmpeg-codec-step`     | `src/reader/tessellation.rs`                       | `MAX_ITEM_PLACEMENTS`                     | `64`                                                    | 4    | Distinct inherited placements that one association walk follows into a tessellated item. Past it the item and the items it contains keep source coordinates, and `tessellation.placement-ambiguous` names the limit.                                                        |
 | `cadmpeg-codec-step`     | `src/reader/product.rs`                            | `MAX_OCCURRENCES`                         | `100_000`                                               | 4    | Occurrences expanded from the NAUO graph. At the limit expansion stops and `occurrence.expansion-output-truncated` is reported. A NAUO path of `max_recursion_depth` usages stops that branch with `occurrence.expansion-depth-truncated`.                                   |
+| `cadmpeg-codec-pvz`      | `src/model.rs`                                     | `MAX_OCCURRENCES`                         | `100_000`                                               | 4    | Occurrences expanded from the structure definition graph, roots included; child occurrences that close a cycle count toward it. At the limit expansion stops, and a path of `max_recursion_depth` definitions stops its branch; both report `structure.occurrence-expansion-truncated`. |
+| `cadmpeg-codec-pvz`      | `src/brep/records.rs`                              | `MAX_BSPLINE_DEGREE`                      | `20`                                                    | 1    | Admitted degree of an exact-stream B-spline surface, edge curve or pcurve, as for ASM `MAX_NURBS_DEGREE`. A record of a higher order refuses the exact stream as malformed; the member keeps its tessellation and `geometry.exact-undecoded` is reported. |
+| `cadmpeg-codec-pvz`      | `src/brep/topology.rs`                             | `MAX_TOPOLOGY_WORK`                       | `1 << 24`                                               | 4    | Floor of the derived-search `WorkBudget` of one exact stream; the allowance is the larger of this floor and 1,024 times its face, loop, coedge and edge records. Face-region nesting charges one unit per polygon sample of each containment test, and coincident-edge pairing one unit per candidate test. A face whose nesting finds the budget empty keeps one unclassified region; pairing stops; each skip is reported as `exact.topology-work-exhausted`. |
 | `cadmpeg-codec-step`     | `src/export/approximation.rs`                      | `MAX_PATCHES`                             | `1024`                                                  | N    | STEP writer: sampled B-spline patches along one parameter axis. A fit that needs more keeps the face or curve omitted; not a decode path.                                                                                                                                    |
 | `cadmpeg-codec-step`     | `src/export/approximation.rs`                      | `MAX_POLES`                               | `1 << 20`                                               | N    | STEP writer: sampled approximation poles of one export. A carrier that does not fit keeps the face or curve omitted; not a decode path.                                                                                                                                      |
 | `cadmpeg-codec-step`     | `src/export/approximation.rs`                      | `MAX_SAMPLES`                             | `1 << 23`                                               | N    | STEP writer: procedural point evaluations of one export for sampling and residual probes. Exhaustion keeps the face or curve omitted; not a decode path.                                                                                                                     |
@@ -266,6 +269,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-freecad` | `src/brep/location_identity.rs` | `MAX_LOCATION_TERMS` | `65_536` | 4 | Canonical elementary datum terms in one location. Excess returns a local bound outcome; the caller withholds affected topology and reports a loss. Allocator failures remain decode errors. |
 | `cadmpeg-codec-freecad` | `src/brep/location_identity.rs` | `MAX_LOCATION_WORK` | `16_777_216` | 4 | Floor of term visits for one location table; allowance is the larger of this floor and 1,024 times its row count. Composition and power expansion charge the shared budget. Excess returns a local bound outcome; the caller withholds affected topology and reports a loss. |
 | `cadmpeg-codec-freecad` | `src/topology_transfer/locations.rs` | `MAX_TOPOLOGY_LOCATION_WORK` | `16_777_216` | 4 | Floor of topology location visits, composition calls and term scans, cached products and interned terms per payload; allowance scales by 1,024 times the combined location and shape row count. Excess skips that payload topology before mutation with `topology.location-identity-bounded`. |
+| `cadmpeg-codec-freecad`  | `src/topology_transfer/ring_order.rs`              | `MAX_WIRE_TRAVERSAL_STEPS`                | `1 << 16`                                               | 4    | Candidate edge uses examined in the traversal search of one face wire, counted over the whole search. Excess keeps the serialized edge-use order, reversed when the face and wire uses compose to `Reversed`.                                                                |
 | `cadmpeg-codec-freecad`  | `src/brep.rs`                                      | `MAX_GEOMETRY_NESTING_DEPTH`              | `64`                                                    | 2    | Inline basis nesting of text and binary B-rep curves and surfaces, in the parsers and the `Nested*::try_new` carriers. Excess is `Malformed`.                                                                                                                                |
 | `cadmpeg-codec-freecad`  | `src/element_map.rs`                               | `MAX_TABLE_ENTRIES`                       | `10_000_000`                                            | 2    | String-table header count and naming record count. Excess is `Malformed`; no remaining-bytes check at these sites.                                                                                                                                                           |
 | `cadmpeg-codec-freecad`  | `src/element_map.rs`                               | `MAX_MAP_NODES`                           | `1_000_000`                                             | 2    | Element-map node count and index. Excess is `Malformed`; the count is also checked with `bounded_len` against the map text.                                                                                                                                                  |
@@ -381,6 +385,8 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-sldprt`   | `src/pmi.rs`                                       | `MAX_EXCLUSIVE_COUNT`                     | `9_223_372_036_854_775_808.0`                           | N    | Exclusive `i64` range for an exact count stored as `f64`.                                                                                                                                                                                                                    |
 | `cadmpeg-codec-sldprt`   | `src/resolved_features/drafts.rs`                  | `MAX_PATH_CELLS`                          | `65`                                                    | 1    | Cell count of a compact component path. Outside the range the selection is not read.                                                                                                                                                                                         |
 | `cadmpeg-codec-sldprt`   | `src/brep/spline.rs`                               | `MAX_ARRAY_VALUES`                        | `1_000_000`                                             | 2    | Declared count of one spline value array. A larger array is skipped.                                                                                                                                                                                                         |
+| `cadmpeg-codec-sldprt`   | `src/resolved_features/relation_table.rs`          | `MAX_ARRAY`                               | `100_000`                                               | 2    | Declared record count of one relation-table marker array. A larger count ends the marker walk; later rows stay unprojected.                                                                                                                                                  |
+| `cadmpeg-codec-sldprt`   | `src/resolved_features/relation_table.rs`          | `MAX_OPERANDS`                            | `16`                                                    | 1    | Handle cells read from one relation-table row. The cells after the sixteenth stay unread.                                                                                                                                                                                    |
 | `cadmpeg-codec-catia`    | `src/families/standard/topology.rs`                | `MAX_DUPLICATE_FACE_OPERATIONS`           | `65_536`                                                | 4    | Branch operations of the duplicate-face edge search; its depth stops at the budget's recursion guard. Exhaustion also exhausts the enclosing topology `WorkBudget`, so the decode reports the topology search failure. |
 | `cadmpeg-codec-catia` | `src/families/consolidated/records/class25.rs` | `MAX_SAMPLE_PAIRS` | `12` | 1 | The one-byte B-family payload length permits at most twelve source and target pairs after the fixed fields. |
 | `cadmpeg-codec-catia`    | `src/families/zero_entity/topology_transfer.rs`             | `MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS`     | `1_000_000`                                             | 4    | Floor of the local comparison budget for source-bound zero-entity vertex contributors. Exhaustion skips topology and reports `topology.zero-entity-candidates-bounded`. |
@@ -471,16 +477,16 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 256.
+Production `MAX_*` constants: 262.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
-| 1    | Format or reader invariant | 31    |
-| 2    | Per-input bound            | 69    |
+| 1    | Format or reader invariant | 33    |
+| 2    | Per-input bound            | 70    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 128   |
+| 4    | Local work cap             | 131   |
 | N    | Not a decode bound         | 28    |
-|      | Total                      | 256   |
+|      | Total                      | 262   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -488,9 +494,9 @@ The six `ResourceLimits` fields are the session ceilings and are not
 By crate: `cadmpeg-core` 3, `cadmpeg-ir` 12, `cadmpeg-measure` 20, `cadmpeg-asm` 4,
 `cadmpeg-protein` 3, `cadmpeg` 2, `cadmpeg-codec-step` 12,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 3,
-`cadmpeg-codec-freecad` 14, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 18,
-`cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 14,
-and `cadmpeg-codec-catia` 57.
+`cadmpeg-codec-freecad` 15, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 18,
+`cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 16,
+`cadmpeg-codec-catia` 57, and `cadmpeg-codec-pvz` 3.
 
 ## Routing
 
@@ -527,6 +533,16 @@ Current codec routes:
   Assembly occurrence expansion stops at `MAX_OCCURRENCES` or at a path of
   `max_recursion_depth` usages and reports a loss. Occurrence paths are
   parent links, so their storage is linear in the occurrences.
+- Creo View PVS element child lists charge `enter_nested`, and every PVS
+  element charges one entity. Every PVS and OL GZIP stream expands through
+  `begin_expand` with no declared size, and its trailer is checked after
+  expansion. String-pool references share the pool entry; the text of
+  definition names, properties, and occurrence names is charged to
+  `retain_bytes` when it enters the model. Occurrence expansion stops at
+  `MAX_OCCURRENCES` or at a path of `max_recursion_depth` definitions and
+  reports a loss. Occurrences are parent links keyed by expansion index, so
+  their storage is linear in the occurrences; definitions and occurrences
+  are admitted with `admit_entities`.
 - IGES occurrence expansion, type-124 chains, and composite flattening
   charge `enter_nested`. The occurrence and type-124 depth limits take `min`
   with `max_recursion_depth`. At a local limit the walk stops and reports a

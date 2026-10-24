@@ -5,7 +5,7 @@
 //! document's own rings and shells; warnings never change the exit status.
 
 #[cfg(any(feature = "fcstd", feature = "iges"))]
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::path::Path;
 #[cfg(feature = "step")]
 use std::path::PathBuf;
@@ -116,11 +116,32 @@ fn discontinuous_rings(document: &Value) -> BTreeMap<String, String> {
 
 #[cfg(feature = "fcstd")]
 #[test]
-fn freecad_rings_out_of_traversal_order_are_check_warnings() {
+fn freecad_rings_run_in_traversal_order() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../corpus/freecad_fcstd/fixtures/core_design_product.FCStd");
-    let expected = discontinuous_rings(&dumped(&path));
+    assert!(discontinuous_rings(&dumped(&path)).is_empty());
+    assert!(warnings(&check_json(&path, &[]), "ring_order").is_empty());
+}
+
+#[cfg(feature = "fcstd")]
+#[test]
+fn rings_listed_out_of_traversal_order_are_check_warnings() {
+    let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corpus/freecad_fcstd/fixtures/core_design_product.FCStd");
+    let mut document = dumped(&source);
+    for face_loop in document["model"]["loops"].as_array_mut().unwrap() {
+        if face_loop["boundary"]["kind"] == "ring" {
+            face_loop["boundary"]["coedges"]
+                .as_array_mut()
+                .unwrap()
+                .reverse();
+        }
+    }
+    let expected = discontinuous_rings(&document);
     assert!(!expected.is_empty());
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("reversed.cadir.json");
+    std::fs::write(&path, serde_json::to_vec(&document).unwrap()).unwrap();
     let report = check_json(&path, &[]);
     let found: BTreeMap<String, String> = warnings(&report, "ring_order")
         .into_iter()
@@ -146,11 +167,11 @@ fn freecad_rings_out_of_traversal_order_are_check_warnings() {
 }
 
 #[cfg(feature = "iges")]
-/// `docs/formats/iges-open-items.md` TP-02: each face of the void shell of
-/// `explicit_void_solid.igs` has the sense `reversed` and a loop that keeps
-/// it on its right, so the loop winding gives the surface normal.
+/// The faces of the void shell of `explicit_void_solid.igs` have the sense
+/// `reversed`, and their loops run backward from the Type 508 loops, so the
+/// check finds no orientation conflict.
 #[test]
-fn iges_void_shell_orientation_conflict_is_a_check_warning() {
+fn iges_void_shell_faces_have_no_orientation_finding() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../cadmpeg-codec-iges/tests/golden/fixtures/explicit_void_solid.igs");
     let document = dumped(&path);
@@ -158,56 +179,47 @@ fn iges_void_shell_orientation_conflict_is_a_check_warning() {
         panic!("one region");
     };
     let void = region["shells"][1].as_str().unwrap();
-    let void_faces: BTreeSet<&str> = by_id(&document, "faces")
-        .into_iter()
-        .filter(|(_, face)| face["shell"] == void)
-        .map(|(id, _)| id)
+    let void_faces: Vec<&Value> = by_id(&document, "faces")
+        .into_values()
+        .filter(|face| face["shell"] == void)
         .collect();
     assert_eq!(void_faces.len(), 4);
-    let body = region["body"].as_str().unwrap();
+    assert!(void_faces.iter().all(|face| face["sense"] == "reversed"));
 
     for args in [&[][..], &["--limits", "service"][..]] {
         let report = check_json(&path, args);
-        let found = warnings(&report, "orientation");
-        let faces: BTreeSet<&str> = found
-            .iter()
-            .filter(|finding| finding["entity"] != body)
-            .map(|finding| {
-                assert_eq!(
-                    finding["message"],
-                    "the face's sense gives the reversed normal and its loop winding the \
-                     surface normal"
-                );
-                finding["entity"].as_str().unwrap()
-            })
-            .collect();
-        assert_eq!(faces, void_faces);
-        let body_findings: Vec<&&Value> = found
-            .iter()
-            .filter(|finding| finding["entity"] == body)
-            .collect();
-        let [body_finding] = body_findings.as_slice() else {
-            panic!("one body finding: {found:#?}");
-        };
-        let message = body_finding["message"].as_str().unwrap();
-        assert!(message.contains("volume.orientation-conflict"), "{message}");
-        let related: BTreeSet<&str> = body_finding["related"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|face| face.as_str().unwrap())
-            .collect();
-        assert_eq!(related, void_faces);
+        assert!(warnings(&report, "orientation").is_empty());
         assert!(warnings(&report, "ring_order").is_empty());
     }
 }
 
 #[cfg(feature = "iges")]
-#[test]
-fn conversion_carries_measurement_warnings_and_succeeds() {
+/// `explicit_void_solid.igs` decoded, with the sense of each void face
+/// inverted: each of the four faces disagrees with its loops, and the body's
+/// volume readings conflict.
+fn conflicting_void_solid(dir: &Path) -> std::path::PathBuf {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../cadmpeg-codec-iges/tests/golden/fixtures/explicit_void_solid.igs");
+    let mut document = dumped(&path);
+    let void = document["model"]["regions"][0]["shells"][1]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    for face in document["model"]["faces"].as_array_mut().unwrap() {
+        if face["shell"] == void.as_str() {
+            face["sense"] = Value::from("forward");
+        }
+    }
+    let out = dir.join("conflicting.cadir.json");
+    std::fs::write(&out, serde_json::to_vec(&document).unwrap()).unwrap();
+    out
+}
+
+#[cfg(feature = "iges")]
+#[test]
+fn conversion_carries_measurement_warnings_and_succeeds() {
     let dir = tempdir().unwrap();
+    let path = conflicting_void_solid(dir.path());
     let report = dir.path().join("conversion.json");
     super::cadmpeg()
         .arg("convert")

@@ -16,6 +16,12 @@ Each item has an identifier. Use the identifier in commit messages and in code c
 
 This document uses ASD-STE100 Simplified Technical English. Record names, field names, and token values are technical names. They keep their source spelling.
 
+**Note.** The ND release comparison establishes header token values and
+directory forms, not the numeric meanings of every producer declaration or
+trailing TOC field. Need independent field semantics before using those
+values as format selectors or interpreting them as dates, capabilities, or
+checksums.
+
 ## 1. Scalar and array encoding
 
 ### SE-01. Custom relation units
@@ -297,6 +303,13 @@ witnesses; it does not by itself define the remaining carrier equation.
 **Need.** We must know the binding to add the generated faces to the body topology.
 
 ## 3. Section solving and feature placement
+
+**Note.** The extended `order_table.rg_ref_id` form is defined only for its
+null `f6` slot. Need the referenced namespace, owner, and non-null value
+grammar before transferring a non-null operand. Need a complete ownership
+and replay comparison to explain changes in generated-entity and
+affected-geometry replay counts across the release saves. Equal neutral
+feature definitions do not establish completeness of those native tables.
 
 ### SP-01. Nonlinear simultaneous equations
 
@@ -845,6 +858,13 @@ neutral loop ownership or face admission.
 **Known.** `creo_prt.md` §7 "DEPDB `crv_array` rows are sparse topology views with one-sided `[0, X1, F1, 0]` suffixes. They" defines `1f 9d 10` Unix-compress streams. `creo_prt.md` §8.3 "Unix-compress streams with header `1f 9d 10` grow code width" states that code 256 is a literal dictionary entry and not a clear code.
 
 **Need.** We must define the initial dictionary, first available code, initial code width, and width-transition rule for this stream variant.
+
+**Note.** One part re-saved in Creo 7 through 13 retains this gap in every
+release. The Creo 7 through 11 streams fail with invalid or incomplete LZW
+framing; the Creo 12 and 13 streams reach an undefined code. Other compressed
+sections expand with the defined Unix-compress grammar. Need a complete
+dictionary and width-state proof with synthetic streams before applying that
+grammar to this variant or changing the common decoder.
 
 ### PP-07. Compressed `DispDataTable` geometry binding
 
