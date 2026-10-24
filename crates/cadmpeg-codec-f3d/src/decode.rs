@@ -2425,8 +2425,14 @@ impl<'a> F3dDecodeSession<'a> {
         )?;
         let geometry_materials =
             materials::decode_with_body_bindings(ctx, scan, &design_body_bindings)?;
-        let (mut ir, source_attributes, mut native, asm_remainder) =
+        let (mut ir, source_attributes, mut native, mut asm_remainder) =
             build_geometry_ir(ctx, scan, primary_model_brep, brep)?;
+        geometry_admission::admit(
+            ctx,
+            &mut ir,
+            &mut report.losses,
+            &mut asm_remainder.annotation_records,
+        )?;
         // ASM transfer already charged its delta; keep the running counter in
         // sync so a later admit_entities call cannot double-count those bodies.
         let mut admitted_entities = u64_from_index(ir.model.entity_count());
@@ -5084,6 +5090,7 @@ fn apply_appearance_base_colors(ir: &mut CadIr) {
 }
 
 pub(crate) mod design_intent;
+mod geometry_admission;
 mod prereqs;
 
 #[cfg(test)]

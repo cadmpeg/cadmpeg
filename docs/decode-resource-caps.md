@@ -326,6 +326,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-f3d`      | `src/design/decode/scopes/sheet_metal.rs`          | `MAX_EDGE_WIDTH_DISTANCE_OWNERS`          | `2`                                                     | 1    | Width-distance owners in the single-edge flange frame. A frame with more is not recognized.                                                                                                                                                                                  |
 | `cadmpeg-codec-f3d`      | `src/design/decode/presentation.rs`                | `MAX_ENVELOPE_GAP`                        | `8`                                                     | 1    | Zero padding admitted while a presentation envelope is located.                                                                                                                                                                                                              |
 | `cadmpeg-codec-f3d`      | `src/writer/generate/native_geometry.rs`           | `MAX_GENERATED_CONIC_SPANS`               | `1 << 16`                                               | N    | Encode path: spans generated for a source-less conic. Excess returns `NotImplemented`.                                                                                                                                                                                       |
+| `cadmpeg-codec-f3d`      | `src/decode/geometry_admission/vertex_tolerance.rs` | `MAX_BODY_DIAGONAL_FRACTION`             | `0.01`                                                  | 2    | Largest exact-cache endpoint miss a derived vertex tolerance may cover, as a fraction of each owning body's vertex-point bounding diagonal. A larger miss keeps the vertex tolerance unchanged and still fails validation. |
 | `cadmpeg-codec-nx`       | `src/jt.rs`                                        | `MAX_ARITHMETIC_VALUES`                   | `1_000_000`                                             | 2    | Value count of one JT integer packet or arithmetic lane. Symbols can use zero bits, so there is no byte floor; excess leaves the lane undecoded (`None`).                                                                                                                    |
 | `cadmpeg-codec-nx`       | `src/jt.rs`                                        | `MAX_ARITHMETIC_WORK`                     | `64_000_000`                                            | 4    | Probability-entry × value lookup work of one arithmetic lane. Above it the lane is left undecoded (`None`) and the shared `ArithmeticWorkBound` is marked; `native/attach.rs` reports `container.display-jt-arithmetic-lane-bounded`.                                        |
 | `cadmpeg-codec-nx`       | `src/om.rs`                                        | `MAX_INDEXED_SECTION_REGISTRY_WORK`       | `1 << 28`                                               | 4    | `WorkBudget` per directory entry for the indexed object-model section search (`container.rs`). Exhaustion skips the remaining sections; `decode.rs` reports `source.scan-bounded`.                                                                                           |
@@ -479,16 +480,16 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 264.
+Production `MAX_*` constants: 265.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 33    |
-| 2    | Per-input bound            | 70    |
+| 2    | Per-input bound            | 71    |
 | 3    | Session ceiling            | 0     |
 | 4    | Local work cap             | 133   |
 | N    | Not a decode bound         | 28    |
-|      | Total                      | 264   |
+|      | Total                      | 265   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -496,7 +497,7 @@ The six `ResourceLimits` fields are the session ceilings and are not
 By crate: `cadmpeg-core` 3, `cadmpeg-ir` 12, `cadmpeg-measure` 20, `cadmpeg-asm` 4,
 `cadmpeg-protein` 3, `cadmpeg` 2, `cadmpeg-codec-step` 12,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 3,
-`cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 18,
+`cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 19,
 `cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 17,
 `cadmpeg-codec-catia` 57, and `cadmpeg-codec-pvz` 3.
 
