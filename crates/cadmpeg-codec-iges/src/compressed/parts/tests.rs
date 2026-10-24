@@ -29,9 +29,18 @@ fn actual_data_callback_records_match_the_existing_parameter_grammar_without_rep
     );
     assert_eq!(normalized.admission.parameters.records.len(), 2);
     assert!(normalized.admission.parameters.quarantined.is_empty());
-    let captures = ctx
+    let all_captures = ctx
         .take_record_captures()
         .expect("one completed capture drain");
+    // #222 C.5: each Global value is one `iges.global_field` part with its own
+    // capture; the Data records keep theirs.
+    let (captures, global): (Vec<_>, Vec<_>) = all_captures
+        .iter()
+        .partition(|capture| capture.id().starts_with("iges:entity:"));
+    assert!(!global.is_empty());
+    assert!(global
+        .iter()
+        .all(|capture| capture.id().starts_with("iges:global-field:")));
     assert_eq!(captures.len(), 2);
     let first = original
         .windows(3)
@@ -49,8 +58,8 @@ fn actual_data_callback_records_match_the_existing_parameter_grammar_without_rep
         end += line.len();
     }
     for (capture, id, extent) in [
-        (&captures[0], "iges:entity:directory#1", first..second),
-        (&captures[1], "iges:entity:directory#3", second..end),
+        (captures[0], "iges:entity:directory#1", first..second),
+        (captures[1], "iges:entity:directory#3", second..end),
     ] {
         assert_eq!(capture.id(), id);
         assert_eq!(

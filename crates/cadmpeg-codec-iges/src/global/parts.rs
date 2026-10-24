@@ -11,6 +11,14 @@ use cadmpeg_ir::source_fidelity::parts::{DecodeParts, ParserPartOutput, PartLeve
 use super::{frame_value, parse_raw_with, resolve, ResolvedGlobal, Value, ValueFrame, ValueKind};
 use crate::card::{CardScan, PhysicalLine, Section};
 
+/// One Global card: its absolute start, and its end after the line ending.
+/// Columns 1-72 hold Global data.
+#[derive(Clone, Copy)]
+pub(crate) struct GlobalCard {
+    pub(crate) start: usize,
+    pub(crate) end: usize,
+}
+
 pub(crate) fn parse(
     scan: &CardScan<'_>,
     ctx: &DecodeContext<'_>,
@@ -22,34 +30,53 @@ pub(crate) fn parse(
     ctx.capture_part_extent(source)?;
     let mut cards = Vec::new();
     for (_, card) in scan.section(Section::Global) {
-        append_global_item(ctx, &mut cards, card)?;
+        append_global_item(
+            ctx,
+            &mut cards,
+            GlobalCard {
+                start: absolute(source, card.offset)?,
+                end: physical_end(source, card)?,
+            },
+        )?;
     }
+    for pair in cards.windows(2) {
+        if pair[0].end != pair[1].start {
+            return super::parse(scan);
+        }
+    }
+    parse_cards(ctx, source, &cards, output)
+}
+
+/// Parse contiguous Global cards as one `iges.global_section` part with one
+/// `iges.global_field` part per field from field 3. A given-up section leaves
+/// every Global value absent; a field whose end is unknown gives up the rest
+/// of the Global stream, and the later fields are absent.
+pub(crate) fn parse_cards(
+    ctx: &DecodeContext<'_>,
+    source: View<'_>,
+    cards: &[GlobalCard],
+    output: &mut ParserPartOutput,
+) -> Result<(ResolvedGlobal, Vec<LossNote>), CodecError> {
     let first = cards
         .first()
         .ok_or_else(|| super::malformed("section is missing"))?;
     let last = cards
         .last()
         .ok_or_else(|| super::malformed("section is missing"))?;
-    for pair in cards.windows(2) {
-        if physical_end(source, pair[0])? != absolute(source, pair[1].offset)? {
-            return super::parse(scan);
-        }
-    }
     let extent = source
-        .child(absolute(source, first.offset)?, physical_end(source, last)?)
+        .child(first.start, last.end)
         .ok_or_else(|| super::malformed("section exceeds its source"))?;
     let mut inputs = Vec::new();
     let mut framing = Vec::new();
-    for card in &cards {
-        let start = absolute(source, card.offset)?;
+    for card in cards {
         let payload = source
-            .child(start, start + 72)
+            .child(card.start, card.start + 72)
             .ok_or_else(|| super::malformed("card payload exceeds its source"))?;
         append_global_item(ctx, &mut inputs, payload)?;
         append_global_item(
             ctx,
             &mut framing,
-            u64_from_index(start + 72)..u64_from_index(physical_end(source, card)?),
+            u64_from_index(card.start + 72)..u64_from_index(card.end),
         )?;
     }
     let stream = ctx.concat_named_views(
@@ -62,7 +89,7 @@ pub(crate) fn parse(
         ),
     )?;
     let bytes = stream.window();
-    match section_framing(ctx, source, &cards, bytes, &mut framing) {
+    match section_framing(ctx, cards, bytes, &mut framing) {
         Ok(()) => {}
         Err(CodecError::Malformed(_)) => {}
         Err(error) => return Err(error),
@@ -74,7 +101,6 @@ pub(crate) fn parse(
         Err(error) => return Err(error),
     };
     let section_spec = spec("iges.global_section", framing)?;
-    let mut failure = None;
     let parsed = ctx.decode_parser_scope(output, extent, section_spec, |children| {
         let mut index = 2;
         let raw = parse_raw_with(bytes, |start, frame| {
@@ -110,24 +136,32 @@ pub(crate) fn parse(
                 capture.offset(),
                 capture.byte_len()
             );
-            ctx.decode_parser_part(children, extent, spec, || {
-                ctx.record(&id, extent, || read_value(ctx, stream, frame, semantic))
-            })?
-            .ok_or_else(|| super::malformed("field value was not decoded"))
-        });
-        match raw {
-            Ok(raw) => Ok(resolve(raw)),
-            Err(error) => {
-                failure = Some(error.to_string());
-                Err(error)
-            }
+            Ok(ctx
+                .decode_parser_part(children, extent, spec, || {
+                    ctx.record(&id, extent, || read_value(ctx, stream, frame, semantic))
+                })?
+                .unwrap_or(Value::Omitted))
+        })?;
+        if let Some(unframed) = &raw.unframed {
+            let rest = stream
+                .child(unframed.offset, stream.end())
+                .ok_or_else(|| super::malformed("field exceeds its payload stream"))?;
+            ctx.decode_parser_part(
+                children,
+                rest,
+                spec("iges.global_field", Vec::new())?,
+                || -> Result<(), CodecError> {
+                    Err(super::malformed(format!(
+                        "field {} has no end: {}",
+                        unframed.field + 1,
+                        unframed.error
+                    )))
+                },
+            )?;
         }
+        Ok(resolve(raw))
     })?;
-    parsed.ok_or_else(|| {
-        CodecError::malformed(
-            failure.unwrap_or_else(|| "IGES Global section was not decoded".into()),
-        )
-    })
+    Ok(parsed.unwrap_or_else(super::given_up))
 }
 
 fn read_value(
@@ -155,8 +189,7 @@ fn read_value(
 
 fn section_framing(
     ctx: &DecodeContext<'_>,
-    source: View<'_>,
-    cards: &[&PhysicalLine],
+    cards: &[GlobalCard],
     bytes: &[u8],
     framing: &mut Vec<Range<u64>>,
 ) -> Result<(), CodecError> {
@@ -165,11 +198,11 @@ fn section_framing(
             .iter()
             .position(|byte| *byte == b';')
             .ok_or_else(|| super::malformed("record delimiter is absent"))?;
-        return physical_ranges(ctx, source, cards, terminal..terminal + 1, framing);
+        return physical_ranges(ctx, cards, terminal..terminal + 1, framing);
     }
     let (delimiter, cursor) = super::first_delimiter(bytes)?;
     let declaration_end = frame_value(bytes, cursor, delimiter, None, true)?.next;
-    physical_ranges(ctx, source, cards, 0..declaration_end, framing)?;
+    physical_ranges(ctx, cards, 0..declaration_end, framing)?;
     let mut terminal = None;
     parse_raw_with(bytes, |_, frame| {
         if frame.ended {
@@ -178,15 +211,14 @@ fn section_framing(
         Ok(Value::Omitted)
     })?;
     if let Some(terminal) = terminal {
-        physical_ranges(ctx, source, cards, terminal..terminal + 1, framing)?;
+        physical_ranges(ctx, cards, terminal..terminal + 1, framing)?;
     }
     Ok(())
 }
 
 fn physical_ranges(
     ctx: &DecodeContext<'_>,
-    source: View<'_>,
-    cards: &[&PhysicalLine],
+    cards: &[GlobalCard],
     range: Range<usize>,
     out: &mut Vec<Range<u64>>,
 ) -> Result<(), CodecError> {
@@ -195,7 +227,7 @@ fn physical_ranges(
         let card = cards
             .get(at / 72)
             .ok_or_else(|| super::malformed("framing exceeds Global cards"))?;
-        let start = absolute(source, card.offset)? + at % 72;
+        let start = card.start + at % 72;
         let count = (72 - at % 72).min(range.end - at);
         append_global_item(
             ctx,

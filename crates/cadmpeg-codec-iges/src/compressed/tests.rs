@@ -58,11 +58,25 @@ fn compressed_optional_global_suffix_recovers_the_same_points_as_fixed_ascii() {
         .decode(&mut Cursor::new(compressed), &DecodeOptions::default())
         .unwrap();
     assert_eq!(decoded.ir().model.points.len(), 2);
-    assert!(decoded
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == IgesLossCode::GlobalNoncanonicalFraming.kind()));
+    // #222 C.5: the Global field whose end is unknown is one given-up
+    // `iges.global_field` part, as in Fixed ASCII.
+    let given_up: Vec<_> = decoded
+        .source_fidelity()
+        .parts()
+        .values()
+        .filter(|part| part.state() == &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {})
+        .collect();
+    assert_eq!(given_up.len(), 1);
+    assert_eq!(given_up[0].level().as_str(), "iges.global_field");
+    assert_eq!(
+        decoded
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code.local_code() == "record.unreadable")
+            .count(),
+        1
+    );
 }
 
 fn source_lines(bytes: &[u8]) -> Vec<Vec<u8>> {
@@ -497,10 +511,11 @@ fn compressed_reserved_fields_use_fixed_directory_right_justification() {
 
 #[test]
 fn compressed_delimiters_read_the_global_prefix() {
-    let mut card = [b' '; 80];
-    card[..8].copy_from_slice(b"1H,,1H;,");
+    let mut card = [b' '; 72];
+    card[..9].copy_from_slice(b"1H,,1H;,;");
+    let (global, _) = crate::global::parse_stream(&card).unwrap();
     assert_eq!(
-        super::compressed_delimiters(&[&card]).unwrap(),
+        super::compressed_delimiters(global.parameter_delimiter, global.record_delimiter).unwrap(),
         (b',', b';')
     );
 }

@@ -8,7 +8,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::source_fidelity::parts::{DecodeParts, ParserPartOutput, PartLevel, PartSpec};
 
-use super::{malformed, CARD_DATA_WIDTH, CARD_WIDTH, PARAMETER_DATA_WIDTH};
+use super::{malformed, CARD_WIDTH, PARAMETER_DATA_WIDTH};
 use crate::directory::DirectoryEntry;
 use crate::global::ResolvedGlobal;
 
@@ -73,28 +73,25 @@ pub(crate) fn normalize(
         .skip(data_begin)
         .find_map(|(at, line)| (line.len() == CARD_WIDTH && line[72] == b'T').then_some(at))
         .ok_or_else(|| malformed("Terminate section is missing"))?;
-    let (parameter_delimiter, record_delimiter) =
-        super::compressed_delimiters(&payloads[global_begin..data_begin])?;
-    let mut global_views = Vec::new();
+    let mut parts = ParserPartOutput::new(cadmpeg_ir::CodecFormat::Iges);
+    let mut global_cards = Vec::new();
     for line in &lines[global_begin..data_begin] {
+        if line.payload.window().len() != CARD_WIDTH {
+            return Err(malformed("Global records must be 80 columns"));
+        }
         append(
             ctx,
-            &mut global_views,
-            line.payload
-                .child(line.payload.start(), line.payload.start() + CARD_DATA_WIDTH)
-                .ok_or_else(|| malformed("Global payload exceeds source"))?,
+            &mut global_cards,
+            crate::global::parts::GlobalCard {
+                start: line.extent.start(),
+                end: line.extent.end(),
+            },
         )?;
     }
-    let global_stream = ctx.concat_named_views(
-        &global_views,
-        &format!(
-            "iges/compressed/global/{}/{}",
-            ctx.capture_part_extent(source)?.stream(),
-            source.start()
-        ),
-    )?;
-    let (global, losses) = crate::global::parse_stream(global_stream.window())?;
-    let mut parts = ParserPartOutput::new(cadmpeg_ir::CodecFormat::Iges);
+    let (global, losses) =
+        crate::global::parts::parse_cards(ctx, source, &global_cards, &mut parts)?;
+    let (parameter_delimiter, record_delimiter) =
+        super::compressed_delimiters(global.parameter_delimiter, global.record_delimiter)?;
     let mut decoded = Vec::new();
     if data_begin < terminate {
         let extent = source

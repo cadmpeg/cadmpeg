@@ -89,9 +89,38 @@ fn point_parameters_with_symbol(directory_pointer: u32, symbol: u32) -> Vec<u8> 
 }
 
 fn assemble(prefix: &[u8], parameter_pointer: u32, parameters: &[u8]) -> Vec<u8> {
+    assemble_with_global(prefix, parameter_pointer, parameters, |_| {})
+}
+
+/// A point file whose Global value group `index` (0 is field 1) has the given
+/// control byte, and the file range of that group through the end of the
+/// Global payload.
+pub(crate) fn point_with_global_control(
+    index: usize,
+    control: u8,
+) -> (Vec<u8>, std::ops::Range<usize>) {
+    let mut start = 0;
+    let mut end = 0;
+    let bytes = assemble_with_global(&[], 1, &point_parameters(1), |values| {
+        values[index][0] = control;
+        start = values[..index].iter().map(Vec::len).sum();
+        end = values.iter().map(Vec::len).sum();
+    });
+    // The Flag section (80 bytes), the Start section, then the Global section
+    // identifier and its u32 payload count.
+    let payload = 80 + section(b'S', &text(b"Binary parts")).len() + 5;
+    (bytes, payload + start..payload + end)
+}
+
+fn assemble_with_global(
+    prefix: &[u8],
+    parameter_pointer: u32,
+    parameters: &[u8],
+    edit: impl FnOnce(&mut [Vec<u8>]),
+) -> Vec<u8> {
     let mut directory_bytes = prefix.to_vec();
     directory_bytes.extend_from_slice(&directory_record(116, parameter_pointer));
-    let global = [
+    let mut global = vec![
         vec![0],
         vec![0],
         text(b"product"),
@@ -116,8 +145,9 @@ fn assemble(prefix: &[u8], parameter_pointer: u32, parameters: &[u8]) -> Vec<u8>
         text(b"org"),
         integer(6),
         integer(0),
-    ]
-    .concat();
+    ];
+    edit(&mut global);
+    let global = global.concat();
     let sections = [
         section(b'S', &text(b"Binary parts")),
         section(b'G', &global),

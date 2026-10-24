@@ -216,8 +216,14 @@ fn mandatory_global_failure_has_one_shared_actual_source_home_and_no_reads() {
     let scan = card::scan_source(root, &ctx).unwrap();
     let original_error = crate::global::parse(&scan).unwrap_err();
     let mut output = ParserPartOutput::new(cadmpeg_ir::CodecFormat::Iges);
-    let error = parse(&scan, &ctx, &mut output).unwrap_err();
-    assert!(error.to_string().contains(&original_error.to_string()));
+    // #222 C.5: the delimiter declarations frame the section, so the section
+    // is given up. Every Global value is absent and the delimiters are the
+    // IGES 5.3 §2.2.4.3.1-2 defaults.
+    let (global, _) = parse(&scan, &ctx, &mut output).unwrap();
+    assert_eq!(global.parameter_delimiter, b',');
+    assert_eq!(global.record_delimiter, b';');
+    assert_eq!(global.sender_product(), None);
+    assert_eq!(global.native_file_name(), None);
     let (_, native, fidelity, losses) = output
         .into_parts(&ctx)
         .expect("finalize parser dependencies")
@@ -245,6 +251,7 @@ fn mandatory_global_failure_has_one_shared_actual_source_home_and_no_reads() {
     assert_eq!(losses.len(), 1);
     assert_eq!(losses[0].code.local_code(), "record.unreadable");
     assert_eq!(losses[0].severity, cadmpeg_ir::report::Severity::Error);
+    assert!(losses[0].message.contains(&original_error.to_string()));
     assert!(ctx.take_record_captures().unwrap().is_empty());
 }
 
@@ -263,6 +270,17 @@ fn unreadable_descriptive_suffix_keeps_original_preceding_values_and_losses() {
     assert_eq!(actual.sender_product(), Some("product"));
     assert_eq!(actual.declared_version_flag(), 11);
     assert_eq!(actual.summary_notes(), expected.summary_notes());
+    // #222 C.5: the field whose end is unknown is a given-up part. Its part
+    // loss replaces the unreadable-suffix framing loss of the partless parse.
+    let suffix = expected_losses
+        .iter()
+        .position(|loss| {
+            loss.code == crate::loss::IgesLossCode::GlobalNoncanonicalFraming.kind()
+                && loss.message.contains("unreadable suffix")
+        })
+        .unwrap();
+    let mut expected_losses = expected_losses;
+    expected_losses.remove(suffix);
     assert_eq!(
         serde_json::to_value(losses).unwrap(),
         serde_json::to_value(expected_losses).unwrap()
@@ -271,13 +289,31 @@ fn unreadable_descriptive_suffix_keeps_original_preceding_values_and_losses() {
         .into_parts(&ctx)
         .expect("finalize parser dependencies")
         .into_parts();
-    assert!(native.namespace("iges").is_none());
-    assert_eq!(fidelity.parts().len(), 22);
-    assert!(fidelity
-        .parts()
-        .values()
-        .all(|part| part.state() == &PartState::Decoded {}));
-    assert!(losses.is_empty());
+    let unknowns = native
+        .namespace("iges")
+        .unwrap()
+        .arena_as::<NativeUnknownRecord>("unknowns")
+        .unwrap();
+    assert_eq!(unknowns.len(), 1);
+    assert_eq!(fidelity.parts().len(), 23);
+    let failed = &fidelity.parts()[&unknowns[0].id];
+    assert_eq!(failed.level().as_str(), "iges.global_field");
+    assert_eq!(failed.state(), &PartState::GivenUp {});
+    let start = fields[..23]
+        .iter()
+        .map(|field| field.len() + 1)
+        .sum::<usize>();
+    assert_eq!(failed.offset(), u64::try_from(start).unwrap());
+    assert_eq!(
+        fidelity
+            .parts()
+            .values()
+            .filter(|part| part.state() == &PartState::Decoded {})
+            .count(),
+        22
+    );
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code.local_code(), "record.unreadable");
 }
 
 #[test]
