@@ -85,20 +85,19 @@
   "losses": [
     {
       "code": {
-        "code": "parameter.data-quarantined",
-        "kind": "noncanonical_source_syntax",
-        "namespace": "iges",
-        "scope": "namespaced",
-        "strict_floor": "warning"
+        "code": "record.unreadable",
+        "kind": "decode_diagnostic",
+        "namespace": "decode",
+        "scope": "namespaced"
       },
-      "message": "IGES Parameter Data of D15 (P8 through P9) is quarantined because a numeric field or its delimiter crosses a card boundary; its 2 raw card(s) are retained and no token was interpreted",
+      "message": "iges.parameter_record stream=file offset=2592 length=162 record=none error=malformed container: IGES Parameter Data D15, logical offset Some(50): a numeric field or its delimiter crosses a card boundary (numeric-crosses-card) dropped=[\"iges:entity:directory#15\"]",
       "provenance": {
+        "byte_len": 162,
         "format": "iges",
-        "offset": 2642,
-        "stream": "iges",
-        "tag": "D15:parameter"
+        "offset": 2592,
+        "stream": "file"
       },
-      "severity": "warning"
+      "severity": "error"
     }
   ],
   "notes": [
