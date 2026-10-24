@@ -377,7 +377,8 @@ impl<'ir> UseFrame<'_, 'ir> {
         if let Some((curve, [c0, c1])) = self.curve {
             let sign = if c1 >= c0 { 1.0 } else { -1.0 };
             let tangent = curve.tangent(eval, c0)?.scale(sign);
-            let image = self.mapped_velocity(eval, span, span.t0)?;
+            let image_sign = if span.t1 >= span.t0 { 1.0 } else { -1.0 };
+            let image = self.mapped_velocity(eval, span, span.t0)?.scale(image_sign);
             let product = image.dot(tangent);
             if product > 0.0 {
                 return Ok(Some(true));

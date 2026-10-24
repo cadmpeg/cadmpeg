@@ -1531,7 +1531,7 @@ fn validate_brep_topology<'a>(
                             &surface.geometry,
                             span.start,
                             span.end,
-                            coedge.sense,
+                            edge_use_sense(coedge.sense, face.sense),
                             topology_edge_explicit_tolerance(ir, edge),
                             coedge.id.as_str(),
                         );
@@ -1829,7 +1829,7 @@ fn brep_entities(
                 geometry: &geometry,
                 span: Some(&span),
                 sense: Sense::Forward,
-                status: ownership.status(curve.source_object.as_ref()),
+                status: ownership.topology_status(curve.source_object.as_ref()),
                 reference_offset: 0,
             },
         )?;
@@ -2099,7 +2099,9 @@ fn brep_entities(
                 .checked_add(loop_.vertices().count())
                 .ok_or_else(|| CodecError::Malformed("IGES loop use count overflows".into()))?;
             let mut parameters = use_count.to_string();
-            for coedge_id in loop_.coedges() {
+            let ring = loop_.coedges();
+            for position in edge_use_positions(ring.len(), face.sense) {
+                let coedge_id = &ring[position];
                 let coedge = topology
                     .coedges
                     .get(coedge_id.as_str())
@@ -2117,7 +2119,8 @@ fn brep_entities(
                         loop_.id
                     ))
                 })?;
-                let sense = brep_sense(coedge.sense);
+                let use_sense = edge_use_sense(coedge.sense, face.sense);
+                let sense = brep_sense(use_sense);
                 let edge = ir
                     .model
                     .edges
@@ -2155,7 +2158,7 @@ fn brep_entities(
                     &surface.geometry,
                     span.start,
                     span.end,
-                    coedge.sense,
+                    use_sense,
                     topology_edge_explicit_tolerance(ir, edge),
                     coedge.id.as_str(),
                 )
@@ -2182,11 +2185,19 @@ fn brep_entities(
                     )
                     .map_err(CodecError::malformed)?;
                 }
-                for vertex_use in loop_
+                let anchor = match face.sense {
+                    Sense::Forward => &coedge.id,
+                    Sense::Reversed => &ring[(position + ring.len() - 1) % ring.len()],
+                };
+                let mut following = loop_
                     .anchored_vertex_uses()
                     .iter()
-                    .filter(|vertex_use| vertex_use.after == coedge.id)
-                {
+                    .filter(|vertex_use| vertex_use.after == *anchor)
+                    .collect::<Vec<_>>();
+                if face.sense == Sense::Reversed {
+                    following.reverse();
+                }
+                for vertex_use in following {
                     let vertex_index = vertex_indices[vertex_use.vertex.as_str()];
                     write!(
                         parameters,
@@ -2367,6 +2378,26 @@ fn brep_entities(
         append_free_point_entity(&mut entities, point, &ownership, losses);
     }
     Ok(entities)
+}
+
+/// The Type 508 edge-use orientation of a coedge. A Type 508 loop keeps its
+/// face on the left about the support normal, and a reversed face keeps it on
+/// the left about the reversed normal, so a reversed face writes its loops
+/// backward.
+fn edge_use_sense(coedge: Sense, face: Sense) -> Sense {
+    if coedge == face {
+        Sense::Forward
+    } else {
+        Sense::Reversed
+    }
+}
+
+/// The ring positions of a loop in Type 508 edge-use order.
+fn edge_use_positions(count: usize, face: Sense) -> Vec<usize> {
+    match face {
+        Sense::Forward => (0..count).collect(),
+        Sense::Reversed => (0..count).rev().collect(),
+    }
 }
 
 fn brep_sense(sense: Sense) -> i32 {
@@ -3283,10 +3314,11 @@ fn validate_trimmed_sheet_topology<'a>(
                             pcurve.id
                         )));
                     };
-                    if pcurve_use
-                        .parameter_range
-                        .is_some_and(|range| !same_range(range.endpoints(), parameter_range.get()))
-                    {
+                    if pcurve_use.parameter_range.is_some_and(|range| {
+                        let [start, end] = range.endpoints();
+                        !same_range([start, end], parameter_range.get())
+                            && !same_range([end, start], parameter_range.get())
+                    }) {
                         return Err(CodecError::NotImplemented(format!(
                             "IGES semantic writer cannot restrict pcurve use {}",
                             pcurve_use.pcurve
@@ -4353,7 +4385,7 @@ fn validate_brep_pcurve_uses(
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum PcurveOrientation {
-    Natural,
+    Opposed,
     Directed,
 }
 
@@ -4386,10 +4418,8 @@ impl PcurveOrientationContext<'_> {
         if pcurve_chain_matches(&mapped, directed_start, directed_end, tolerance) {
             return Ok(PcurveOrientation::Directed);
         }
-        if self.sense == Sense::Reversed
-            && pcurve_chain_matches(&mapped, self.natural_start, self.natural_end, tolerance)
-        {
-            return Ok(PcurveOrientation::Natural);
+        if pcurve_chain_matches(&mapped, directed_end, directed_start, tolerance) {
+            return Ok(PcurveOrientation::Opposed);
         }
         Err(CodecError::malformed(format_args!(
             "IGES {} pcurve chain endpoints disagree with its directed support edge",
@@ -4477,7 +4507,12 @@ impl PcurveOrientationContext<'_> {
                     )),
                 })
             };
-            mapped.push((finite(start, "start")?.get(), finite(end, "end")?.get()));
+            let (start, end) = (finite(start, "start")?.get(), finite(end, "end")?.get());
+            mapped.push(if use_runs_backward(pcurve_use) {
+                (end, start)
+            } else {
+                (start, end)
+            });
         }
         Ok(mapped)
     }
@@ -4489,7 +4524,7 @@ impl PcurveOrientationContext<'_> {
         entities: &mut Vec<Entity>,
     ) -> Result<Vec<(&'uses PcurveUse, usize)>, CodecError> {
         let orientation = self.orientation(uses)?;
-        let reverse = self.sense == Sense::Reversed && orientation == PcurveOrientation::Natural;
+        let reverse = orientation == PcurveOrientation::Opposed;
         let ordered_uses = if reverse {
             uses.iter().rev().collect::<Vec<_>>()
         } else {
@@ -4510,7 +4545,7 @@ impl PcurveOrientationContext<'_> {
                             self.owner, pcurve_use.pcurve
                         ))
                     })?;
-                let index = if reverse {
+                let index = if reverse ^ use_runs_backward(pcurve_use) {
                     let index = entities.len();
                     entities.push(oriented_pcurve_entity(self.ir, pcurve)?);
                     index
@@ -4526,6 +4561,15 @@ impl PcurveOrientationContext<'_> {
             })
             .collect()
     }
+}
+
+/// Whether a coedge traverses its pcurve backward: its use states a
+/// decreasing interval.
+fn use_runs_backward(pcurve_use: &PcurveUse) -> bool {
+    pcurve_use.parameter_range.is_some_and(|range| {
+        let [start, end] = range.endpoints();
+        end < start
+    })
 }
 
 fn pcurve_orientation_context<'a>(
@@ -6563,12 +6607,19 @@ fn edge_span(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> Result<CurveS
         })?;
         return curve_reference_span(ir, curve_id, geometry);
     }
-    let range = edge.param_range().ok_or_else(|| {
+    let missing_range = || {
         CodecError::NotImplemented(format!(
             "IGES semantic writer requires a parameter range for edge {}",
             edge.id
         ))
-    })?;
+    };
+    let (range, full_period) = match edge.param_range() {
+        Some(range) => (range, false),
+        None => (
+            closed_edge_full_period(edge, geometry)?.ok_or_else(missing_range)?,
+            true,
+        ),
+    };
     if range[0] >= range[1] {
         return Err(CodecError::malformed(format_args!(
             "IGES edge {} requires a finite non-zero parameter span",
@@ -6620,6 +6671,9 @@ fn edge_span(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> Result<CurveS
         if !close_point_with_tolerance(start, evaluated_start.get(), tolerance)
             || !close_point_with_tolerance(end, evaluated_end.get(), tolerance)
         {
+            if full_period {
+                return Err(missing_range());
+            }
             return Err(CodecError::malformed(format_args!(
                 "IGES edge {} endpoints disagree with its curve parameter range",
                 edge.id
@@ -6627,6 +6681,27 @@ fn edge_span(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> Result<CurveS
         }
     }
     Ok(CurveSpan { range, start, end })
+}
+
+/// The canonical closed-traversal interval of a closed edge that stores no
+/// parameter range. The caller requires the edge vertex at both interval ends.
+/// `None` means the carrier has no closed traversal.
+fn closed_edge_full_period(
+    edge: &Edge,
+    geometry: &CurveGeometry,
+) -> Result<Option<FiniteVector<2>>, CodecError> {
+    if edge.start != edge.end {
+        return Ok(None);
+    }
+    geometry
+        .solved()
+        .and_then(SolvedCurveGeometry::closed_traversal_range)
+        .map(|range| {
+            FiniteVector::new(range.endpoints()).ok_or_else(|| {
+                CodecError::Malformed("IGES curve parameter range is invalid".into())
+            })
+        })
+        .transpose()
 }
 
 fn edge_topology_tolerance(ir: &CadIr, edge: &Edge) -> Result<f64, CodecError> {

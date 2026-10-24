@@ -3,6 +3,7 @@
 #![allow(clippy::unwrap_used)]
 
 pub(crate) mod test_cards;
+pub(crate) mod test_closed_cylinder;
 pub(crate) mod test_curves_and_surfaces;
 pub(crate) mod test_drawing_and_trimming;
 pub(crate) mod test_owned;

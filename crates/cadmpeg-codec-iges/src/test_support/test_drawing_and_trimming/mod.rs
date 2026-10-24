@@ -9,6 +9,7 @@ use crate::test_support::test_owned::{
     owned_test_file, owned_test_file_with_display, owned_test_file_with_global,
     owned_test_file_with_global_and_line_fonts, OwnedTestEntity,
 };
+pub(crate) mod test_boundary_direction;
 pub(crate) mod test_surface_domains;
 
 pub(crate) fn dimension_forms_file() -> Vec<u8> {
@@ -1737,65 +1738,12 @@ pub(crate) fn trimmed_plane_with_boundaries_and_inner(
     inner: &str,
     trimmed_parameters: &str,
 ) -> Vec<u8> {
-    let outer = "106,1,5,0,0,0,1,0,1,1,0,1,0,0;";
-    owned_test_file(&[
-        OwnedTestEntity {
-            entity_type: 108,
-            form: 0,
-            label: "PLANE".into(),
-            status: "00010000",
-            parameters: "108,0,0,1,0,0,0,0,0,0;".into(),
-        },
-        OwnedTestEntity {
-            entity_type: 106,
-            form: 63,
-            label: "OUTMODEL".into(),
-            status: "00010000",
-            parameters: outer.into(),
-        },
-        OwnedTestEntity {
-            entity_type: 106,
-            form: 63,
-            label: "OUTPCURV".into(),
-            status: "00010500",
-            parameters: outer_pcurve.into(),
-        },
-        OwnedTestEntity {
-            entity_type: 142,
-            form: 0,
-            label: "OUTBOUND".into(),
-            status: "00010000",
-            parameters: "142,0,1,5,3,3;".into(),
-        },
-        OwnedTestEntity {
-            entity_type: 106,
-            form: 63,
-            label: "INMODEL".into(),
-            status: "00010000",
-            parameters: inner.into(),
-        },
-        OwnedTestEntity {
-            entity_type: 106,
-            form: 63,
-            label: "INPCURVE".into(),
-            status: "00010500",
-            parameters: inner.into(),
-        },
-        OwnedTestEntity {
-            entity_type: 142,
-            form: 0,
-            label: "INBOUND".into(),
-            status: "00010000",
-            parameters: "142,0,1,11,9,3;".into(),
-        },
-        OwnedTestEntity {
-            entity_type: 144,
-            form: 0,
-            label: "ANNULUS".into(),
-            status: "00000000",
-            parameters: trimmed_parameters.into(),
-        },
-    ])
+    test_boundary_direction::trimmed_plane_with_outer_and_inner(
+        "106,1,5,0,0,0,1,0,1,1,0,1,0,0;",
+        outer_pcurve,
+        inner,
+        trimmed_parameters,
+    )
 }
 
 pub(crate) fn parameter_domain_trimmed_surface_file(trimmed_surface_parameters: &str) -> Vec<u8> {
