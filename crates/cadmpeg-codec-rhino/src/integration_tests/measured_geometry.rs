@@ -148,6 +148,7 @@ fn bulged_cube() -> CadIr {
             .try_into()
             .expect("valid identity");
         ir.model.pcurves.push(Pcurve {
+            native_ref: None,
             id: id.clone(),
             geometry: PcurveGeometry::Line(
                 LinePcurve::try_new(origin, direction).expect("top pcurve line"),

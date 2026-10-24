@@ -43,6 +43,7 @@ fn helix_edge_doc(cache: bool) -> CadIr {
     ir.model.edges[0].end = ir.model.edges[0].start.clone();
     let fitted = cadmpeg_ir::eval::helix_nurbs::helix_nurbs(&helix, ir.tolerances.linear).unwrap();
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Procedural {
@@ -99,6 +100,7 @@ fn an_edge_on_a_subset_of_an_uncached_helix_is_written_on_a_trimmed_fitted_bspli
     let construction_id =
         ProceduralCurveId::mint("test:model:procedural_curve#helix-subset").unwrap();
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: subset_id.clone(),
         geometry: CurveGeometry::Procedural {

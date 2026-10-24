@@ -1530,7 +1530,10 @@ fn nx_combined_projection_keeps_native_parameters_without_target_face_semantics(
         non_boolean_feature_definition_with_parameters, HoleProjection,
     };
 
-    let parameters = BTreeMap::from([(cadmpeg_core::nonblank_literal!("p7"), "23".to_string())]);
+    let parameters = BTreeMap::from([(
+        cadmpeg_core::nonblank_literal!("p7"),
+        cadmpeg_ir::Dimension::Literal("23".into()),
+    )]);
     let definition = non_boolean_feature_definition_with_parameters(
         "CPROJ_CMB",
         &[],

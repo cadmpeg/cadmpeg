@@ -27,6 +27,7 @@ fn vertices_at(positions: &[Point3]) -> CadIr {
             None,
         ));
         ir.model.vertices.push(Vertex {
+            native_ref: None,
             id: VertexId::mint(format!("test:model:vertex#v{index}")).expect("identity grammar"),
             point,
             tolerance: None,
@@ -76,8 +77,8 @@ fn square_path(periodic: bool, last: Point3) -> CurveGeometry {
 
 fn refusal(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> String {
     match edge_span(ir, edge, geometry) {
-        Err(CodecError::NotImplemented(message)) => message,
-        _ => panic!("expected a not-implemented refusal"),
+        Err(CodecError::UnsupportedContent(message)) => message,
+        _ => panic!("expected an unsupported-content refusal"),
     }
 }
 

@@ -582,7 +582,13 @@ mod tests {
             );
         }
         let mut losses = Vec::new();
-        push_coverage_drop_losses(&mut losses, &coverage, &[]).expect("report retained incidence");
+        push_coverage_drop_losses(
+            &mut cadmpeg_ir::ArenaClasses::default(),
+            &mut losses,
+            &coverage,
+            &[],
+        )
+        .expect("report retained incidence");
         assert_eq!(losses.len(), 1);
         assert_eq!(
             losses[0].code,
