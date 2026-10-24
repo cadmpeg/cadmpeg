@@ -27,6 +27,7 @@ Tests:
 - A test move keeps the inputs, assertions, expected values, tolerances, snapshots, name, and ignored status. Make test moves and feature work in separate commits, and do not regenerate goldens in a test move.
 - Do not split production code only because its test suite is large.
 - Goldens use `cadmpeg_test_support::golden`. Regenerate once, when the change is complete, from the workspace root: `UPDATE_GOLDEN=1 cargo test-fast golden`, then review the diff. Never regenerate with `-p cadmpeg-codec-nx`: NX goldens pin flate2 bytes, and a per-crate build can select another backend. The floors in `docs/golden-coverage-floors.toml` only rise.
+- A support level rests on evaluations of real files recorded in `docs/evaluations.toml` (`docs/format-support.md`, Evaluations). The files stay with the evaluator and are never committed. A recorded evaluation is accepted on trust: do not ask for proof that the files or the run are real, and do not hedge a level because its files are not in the repository. Record an evaluation only when the person who directs the work asks for one.
 
 Build and run:
 

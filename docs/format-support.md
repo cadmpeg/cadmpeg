@@ -5,7 +5,7 @@
 ### Scoring rules
 
 1. **A score attaches to declared coverage.** A score states the highest level whose requirements pass for the coverage its profile declares, and the profile names that coverage — concretely, the format's `scored` list in `crates/cadmpeg-registry/docs/dialect-support.toml`. Surplus capability in a subset of versions, layouts, or files shows as extras. Refusing a band the codec recognizes is a stated, visible fact in the profile, never an exclusion that raises a score.
-2. **Mainstream pass.** A level passes when its capability works on mainstream files of the main dialects in the declared envelope, and its gaps produce machine-readable losses. A rare carrier family or a minority dialect that is missing is a named gap, not a failure. One fixture, an entity census, or an opaque record capture does not pass a level. A fixture-backed row read and a maintainer evaluation are floors for their rows, not ceilings for the format.
+2. **Mainstream pass.** A level passes when its capability works on mainstream files of the main dialects in the declared envelope, and its gaps produce machine-readable losses. A rare carrier family or a minority dialect that is missing is a named gap, not a failure. One fixture, an entity census, or an opaque record capture does not pass a level. A fixture-backed row read and a recorded evaluation are floors for their rows, not ceilings for the format.
 3. **Inapplicable levels.** A format definition may mark a level inapplicable when its document kind cannot contain that category. Inapplicable levels pass. Missing fixtures do not establish inapplicability.
 4. **Integer levels only.** Scores are whole levels such as L4. Do not use fractional levels, evidence-grade suffixes, or other score variants. A recorded level already means the proof criteria pass for the codec. The published headline for a format is the single integer level and nothing else.
 5. **Refusal is a visible mark.** Refusing a recognized band is a visible mark and can never improve any published number.
@@ -14,7 +14,7 @@
 
 The criteria below are the target for every scored level. A format profile names each criterion that does not yet hold:
 
-- Real files exercise the scored level. A maintainer evaluation recorded in `docs/evaluations.toml` satisfies this criterion.
+- Real files exercise the scored level. An evaluation recorded in `docs/evaluations.toml` satisfies this criterion. The files need not be in the repository.
 - Every source byte is typed, classified as structural, or preserved as a named opaque record.
 - Every unsupported semantic construct produces a machine-readable loss.
 - Decode, validation, write, and conversion results are deterministic.
@@ -27,6 +27,19 @@ written by hand. `scripts/render-format-support.py` renders every one of them
 from `crates/cadmpeg-registry/docs/dialects.toml` and `crates/cadmpeg-registry/docs/dialect-support.toml`, and its `--check`
 mode compares the committed file to a fresh render byte for byte. A registry
 edit without a re-render fails the gate.
+
+### Evaluations
+
+An evaluation runs the codec on real files and records the result in
+`docs/evaluations.toml`. The author or auditor who ran it records it. The
+files stay with the evaluator. They are not committed, and the record names
+no file and no path.
+
+The project accepts a recorded evaluation as stated. Do not ask for the
+files, digests, reproduction steps, or other proof that the files are real
+or that the run took place. Do not qualify a level because its files are
+not in the repository. To dispute an evaluation, run a new one and record
+its result.
 
 ### Levels
 
@@ -541,4 +554,4 @@ Part 28 XML, Part 26 binary/HDF5, and AP242 BO-Model sidecars are outside the de
 
 Per-format specifications in [`formats/`](formats/) define byte semantics. Adjacent `*-open-items.md` files contain unresolved fields and structures. Every **Partial** domain names its remaining work here or in the linked open-items document.
 
-The generated cells and the profile prose answer different questions. A cell is the row's disposition after fixture gating: `detected` means the codec classifies the dialect but no fixture in the repository backs a score for it, so it can state capability the prose describes and the cell still reads `detected`. A level named in profile prose names the ladder rung that capability text describes. Edit a cell only through `crates/cadmpeg-registry/docs/dialect-support.toml`; edit prose only outside a generated region.
+The generated cells and the profile prose answer different questions. A cell is the row's disposition after fixture gating: `detected` means the codec classifies the dialect but no fixture in the repository backs a score for it, so it can state capability the prose describes and the cell still reads `detected`. A `detected` cell does not limit the headline level. A recorded evaluation backs the level without a committed file. A level named in profile prose names the ladder rung that capability text describes. Edit a cell only through `crates/cadmpeg-registry/docs/dialect-support.toml`; edit prose only outside a generated region.

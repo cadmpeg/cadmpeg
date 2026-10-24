@@ -33,7 +33,7 @@
 #   site.
 #
 #   Each `[format.<id>]` block declares the published level and the `scored`
-#   rows that level covers. A fixture-backed read level or a maintainer
+#   rows that level covers. A fixture-backed read level or a recorded
 #   evaluation is a floor for its row, not a ceiling for the format: a value
 #   below the declared level does not contradict it. The renderer prints the
 #   declared level and prints each row's read cell verbatim.
