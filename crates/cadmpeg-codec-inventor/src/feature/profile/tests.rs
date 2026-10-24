@@ -14,9 +14,13 @@ use super::{
     chord_turn, edge_name, encloses, EdgeName, LoopCurve, ProfileBody, ProfileEdge, ProfileIndex,
     ProfileWire,
 };
-use crate::feature::{PmDcKernelEntityLink, PmDcKernelEntityLinkPayload, KERNEL_ENTITY_LINK_TYPE};
+use crate::feature::{
+    PmDcEntityStyleLinkPayload, PmDcKernelEntityLink, PmDcKernelEntityLinkPayload,
+    PmDcLinkedHeader, ENTITY_STYLE_LINK_TYPE, KERNEL_ENTITY_LINK_TYPE,
+};
 use crate::pmdc::PmDcReference;
 use crate::record_identity::{Located, RecordTypeId};
+use crate::sketch::PmDcSketchEntity;
 
 const NAMING_TYPE: u32 = 38;
 const SKETCH_ORDINAL: u32 = 2;
@@ -194,7 +198,7 @@ fn index<'a>(
         .map(|id| {
             (
                 ("segment", SKETCH_ORDINAL, id),
-                Some(format!("inventor:pmdc:sketch-entity#segment-{}", 10 + id)),
+                Some(format!("inventor:design:sketch-entity#segment-{}", 10 + id)),
             )
         })
         .collect::<HashMap<_, _>>();
@@ -227,6 +231,139 @@ fn a_loop_inside_another_selected_loop_is_a_hole_of_its_region() {
     assert_eq!(
         regions.as_slice(),
         [SketchProfileRegion::loops(1, Vec::new()).expect("region")]
+    );
+}
+
+/// A raw sketch entity record of `kind` at `ordinal`, in the sketch or block
+/// definition at one-based `sketch`.
+fn raw_entity(ordinal: u32, sketch: u32, kind: &serde_json::Value) -> PmDcSketchEntity {
+    serde_json::from_value(serde_json::json!({
+        "id": format!("inventor:pmdc:sketch-entity#segment-{ordinal}"),
+        "type_id": "3bdf52ced011d0d20008ccbc0663dc09",
+        "segment_token": "segment",
+        "record_ordinal": ordinal,
+        "save_version_major": 22,
+        "header": {
+            "header_value": 0,
+            "header_id": 0,
+            "flags": 0,
+            "source_index": 0,
+            "next": {"index": 0, "qualified": false},
+            "context": {"index": 0, "qualified": false},
+        },
+        "entity_flags": 0,
+        "sketch": {"index": sketch, "qualified": true},
+        "kind": kind,
+    }))
+    .expect("raw sketch entity")
+}
+
+#[test]
+fn a_curve_that_a_block_instance_places_resolves_through_the_instance_identifiers() {
+    let (mut sketch, mut entities) = square_with_hole();
+    // Block instance 16 places definition record 40, whose circle 41 has
+    // radius 0.3 cm about the definition origin, at (1, 1) cm.
+    let instance = raw_entity(
+        16,
+        SKETCH_ORDINAL + 1,
+        &serde_json::json!({
+            "form": "block_instance",
+            "definition": {"index": 41, "qualified": true},
+            "group": {"index": 0, "qualified": false},
+            "masks": [0x0111, 0x00ca],
+            "placement": [[1.0, 0.0, 1.0], [0.0, 1.0, 1.0], [0.0, 0.0, 1.0]],
+            "value": 1,
+        }),
+    );
+    let circle = raw_entity(
+        41,
+        41,
+        &serde_json::json!({
+            "form": "circle",
+            "points": {
+                "marker": 2,
+                "metadata": {"values": [2, 0], "width": "u32"},
+                "references": [
+                    {"index": 0, "qualified": false},
+                    {"index": 0, "qualified": false},
+                ],
+            },
+            "auxiliary": [],
+            "center": {"index": 41, "qualified": true},
+            "radius": 0.3,
+            "state": 1,
+        }),
+    );
+    let placed = SketchEntity::new(
+        crate::sketch::block_curve_id(&instance, &circle).expect("placed curve id"),
+        sketch_id(),
+        entities[4].geometry.clone(),
+    )
+    .with_native_ref(Some(circle.id()));
+    entities[4] = placed.clone();
+    sketch.profiles = SketchProfiles::try_from(vec![
+        entities[..4]
+            .iter()
+            .map(|entity| SketchEntityUse {
+                entity: entity.id().clone(),
+                reversed: false,
+            })
+            .collect(),
+        vec![SketchEntityUse {
+            entity: placed.id().clone(),
+            reversed: false,
+        }],
+    ])
+    .expect("profiles");
+    // The instance's associative identifier is 10, so its first placed
+    // curve, the circle, is 12.
+    let instance_link = Located::new(
+        PmDcEntityStyleLinkPayload {
+            save_version_major: 22,
+            header: PmDcLinkedHeader {
+                header_value: 0,
+                header_id: 0,
+                values: [0; 2],
+                flags_extension: None,
+                owner: PmDcReference::new(17, true).expect("owner reference"),
+                parent: PmDcReference::new(0, false).expect("null reference"),
+                next: PmDcReference::new(0, false).expect("null reference"),
+            },
+            value: 0,
+            associative_id: 10,
+            entity_type: 0x0800_0000,
+        },
+        RecordTypeId::from_bytes(ENTITY_STYLE_LINK_TYPE),
+        cadmpeg_ir::identity_key!("segment"),
+        60,
+    );
+    let mut body = profile_body((0.0, 0.0));
+    for edge in &mut body.wires[1].edges {
+        edge.name = Some(EdgeName {
+            naming_type: i64::from(NAMING_TYPE),
+            associative_id: 12,
+        });
+    }
+    let bodies = [body];
+    let links = [kernel_link(20, 7), kernel_link(21, 8)];
+    let raw = [instance, circle];
+    let style_links = [instance_link];
+    let mut index = ProfileIndex::new(&bodies, &links, &style_links, &raw, &entities);
+    for id in 1..=4 {
+        index.curves.insert(
+            ("segment", SKETCH_ORDINAL, id),
+            Some(format!("inventor:design:sketch-entity#segment-{}", 10 + id)),
+        );
+    }
+    let profile = index
+        .regions("segment", SKETCH_ORDINAL, &sketch, &[20, 21])
+        .expect("resolved profile");
+    let PlanarProfileRef::SketchRegions { regions, .. } = profile else {
+        panic!("profile regions");
+    };
+    assert_eq!(
+        regions.as_slice(),
+        [SketchProfileRegion::loops(0, vec![1]).expect("region")]
     );
 }
 

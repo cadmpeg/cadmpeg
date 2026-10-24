@@ -18,7 +18,7 @@ use cadmpeg_ir::topology::EdgeCarrier;
 
 use super::{PmDcEntityStyleLink, PmDcKernelEntityLink};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
-use crate::sketch::PmDcSketchEntity;
+use crate::sketch::{PmDcSketchEntity, PmDcSketchEntityKind};
 
 /// ASM attribute chain that names a profile wire edge after its sketch curve.
 const NAMING_ATTRIBUTE: &str =
@@ -27,6 +27,11 @@ const NAMING_ATTRIBUTE: &str =
 const NAMED_EDGE: i64 = 2;
 /// Entity type of an entity-style link that names a sketch curve.
 const CURVE_LINK_ENTITY_TYPE: u32 = 2;
+/// Entity type of an entity-style link that names a sketch block instance.
+const BLOCK_INSTANCE_LINK_ENTITY_TYPE: u32 = 0x0800_0000;
+/// Offset from a block instance's associative id to the first id of the
+/// geometry it places.
+const BLOCK_CURVE_FIRST_ID_OFFSET: i64 = 2;
 /// Largest distance, in millimetres, between a profile wire vertex and the
 /// sketch-curve end or plane it lies on: one kernel linear tolerance.
 const EPS_PROFILE_WIRE_POINT_MM: f64 = 1.0e-5;
@@ -278,10 +283,9 @@ fn edge_name(values: &[AttributeValue]) -> Option<EdgeName> {
 pub(super) struct ProfileIndex<'a> {
     bodies: HashMap<(&'a str, u32), Option<&'a ProfileBody>>,
     kernel_links: HashMap<(&'a str, u32), &'a PmDcKernelEntityLink>,
-    /// Curve entity by segment, sketch ordinal, and associative id; `None`
-    /// when the id names more than one curve.
+    /// Neutral curve entity id by segment, sketch ordinal, and associative
+    /// id; `None` when the id names more than one curve.
     curves: HashMap<(&'a str, u32, i64), Option<String>>,
-    entities: HashMap<&'a str, &'a SketchEntity>,
     by_id: HashMap<&'a str, &'a SketchEntity>,
     /// Loops that resolved selections append to sketch profile tables.
     added: RefCell<HashMap<String, Vec<Vec<SketchEntityUse>>>>,
@@ -315,10 +319,15 @@ impl<'a> ProfileIndex<'a> {
             })
             .collect::<HashMap<_, _>>();
         let mut curves = HashMap::new();
-        for link in entity_style_links {
-            if link.entity_type != CURVE_LINK_ENTITY_TYPE {
-                continue;
+        let mut name = |key, id: Option<String>| {
+            if let Some(id) = id {
+                curves
+                    .entry(key)
+                    .and_modify(|slot| *slot = None)
+                    .or_insert(Some(id));
             }
+        };
+        for link in entity_style_links {
             let token = link.identity.segment_token.as_str();
             let Some(entity) = link
                 .header
@@ -332,10 +341,33 @@ impl<'a> ProfileIndex<'a> {
             let Some(sketch) = entity.sketch.index().checked_sub(1) else {
                 continue;
             };
-            curves
-                .entry((token, sketch, i64::from(link.associative_id)))
-                .and_modify(|slot| *slot = None)
-                .or_insert_with(|| Some(entity.id()));
+            let associative_id = i64::from(link.associative_id);
+            match (link.entity_type, &entity.kind) {
+                (CURVE_LINK_ENTITY_TYPE, _) => name(
+                    (token, sketch, associative_id),
+                    crate::sketch::entity_id(entity).map(|id| id.as_str().to_owned()),
+                ),
+                (BLOCK_INSTANCE_LINK_ENTITY_TYPE, PmDcSketchEntityKind::BlockInstance { .. }) => {
+                    // A block instance names the curves it places with ids
+                    // of its own, which no entity-style link stores.
+                    let definition = crate::sketch::block_definition_curves(entity, raw_entities);
+                    let Some(offsets) = crate::sketch::block_curve_offsets(&definition) else {
+                        continue;
+                    };
+                    for (curve, offset) in definition.into_iter().zip(offsets) {
+                        name(
+                            (
+                                token,
+                                sketch,
+                                associative_id + BLOCK_CURVE_FIRST_ID_OFFSET + i64::from(offset),
+                            ),
+                            crate::sketch::block_curve_id(entity, curve)
+                                .map(|id| id.as_str().to_owned()),
+                        );
+                    }
+                }
+                _ => {}
+            }
         }
         Self {
             bodies: body_index,
@@ -352,10 +384,6 @@ impl<'a> ProfileIndex<'a> {
                 })
                 .collect(),
             curves,
-            entities: entities
-                .iter()
-                .filter_map(|entity| Some((entity.native_ref.as_deref()?, entity)))
-                .collect(),
             by_id: entities
                 .iter()
                 .map(|entity| (entity.id().as_str(), entity))
@@ -388,14 +416,19 @@ impl<'a> ProfileIndex<'a> {
                 .get(&(token, link.body.index().checked_sub(1)?))
                 .copied()
                 .flatten()?;
-            let mut wires = body
+            // A selection can run through several wire loops of one body,
+            // such as the outer boundary and the holes of a plate face.
+            let known = rings.len();
+            for wire in body
                 .wires
                 .iter()
-                .filter(|wire| wire.key == u64::from(link.entity_id));
-            let (Some(wire), None) = (wires.next(), wires.next()) else {
+                .filter(|wire| wire.key == u64::from(link.entity_id))
+            {
+                rings.push(self.ring(token, sketch_ordinal, sketch, &frame, link, wire)?);
+            }
+            if rings.len() == known {
                 return None;
-            };
-            rings.push(self.ring(token, sketch_ordinal, sketch, &frame, link, wire)?);
+            }
         }
         if rings
             .iter()
@@ -485,11 +518,11 @@ impl<'a> ProfileIndex<'a> {
             if name.naming_type != i64::from(link.entity_type) {
                 return None;
             }
-            let native = self
+            let id = self
                 .curves
                 .get(&(token, sketch_ordinal, name.associative_id))?
                 .as_deref()?;
-            let entity = *self.entities.get(native)?;
+            let entity = *self.by_id.get(id)?;
             if entity.sketch != sketch.id || entity.construction {
                 return None;
             }
