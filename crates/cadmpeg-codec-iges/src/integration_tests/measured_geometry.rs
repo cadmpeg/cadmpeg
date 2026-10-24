@@ -152,25 +152,27 @@ fn trimmed_inner_loop_write_round_trip_keeps_measured_geometry() {
 
 /// `ir` and its IGES write round trip measure one orientation reading each
 /// and agree.
-fn assert_round_trip_keeps_measured_geometry(ir: &CadIr) {
+fn assert_round_trip_keeps_measured_geometry(label: &str, ir: &CadIr) {
     let written = round_tripped(ir);
-    let before = measured(ir);
-    let after = measured(&written);
+    let (_, before, after) = assert_measures_agree(label, ir, &written);
     assert_one_orientation_reading(&before);
     assert_one_orientation_reading(&after);
-    let comparison = compare(ir, &before, &written, &after, &CompareOptions::default())
-        .expect("one body pair fits the pair allowance");
-    assert_eq!(comparison.verdict(), Verdict::Agree);
 }
 
 #[test]
 fn reversed_closed_outer_edge_write_round_trip_keeps_measured_geometry() {
-    assert_round_trip_keeps_measured_geometry(&reversed_closed_outer_edge_model());
+    assert_round_trip_keeps_measured_geometry(
+        "reversed closed outer edge",
+        &reversed_closed_outer_edge_model(),
+    );
 }
 
 #[test]
 fn mixed_sense_outer_loop_write_round_trip_keeps_measured_geometry() {
-    assert_round_trip_keeps_measured_geometry(&mixed_sense_outer_loop_model());
+    assert_round_trip_keeps_measured_geometry(
+        "mixed-sense outer loop",
+        &mixed_sense_outer_loop_model(),
+    );
 }
 
 /// The clockwise source boundary decodes reversed, with its pcurve use on the
