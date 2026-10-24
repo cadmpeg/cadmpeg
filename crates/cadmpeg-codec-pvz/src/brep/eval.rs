@@ -70,10 +70,8 @@ fn basis(knots: &[f64], order: usize, t: f64) -> Option<(usize, Vec<f64>)> {
         return None;
     }
     let t = t.clamp(low.min(high), high.max(low));
-    let mut span = degree;
-    while span + 1 < pole_count && knots.get(span + 1).is_some_and(|knot| *knot <= t) {
-        span += 1;
-    }
+    let interior = knots.get(degree + 1..pole_count)?;
+    let span = degree + interior.partition_point(|knot| *knot <= t);
     let mut values: Vec<f64> = (0..order).map(|_| 0.0).collect();
     let mut left = values.clone();
     let mut right = values.clone();
