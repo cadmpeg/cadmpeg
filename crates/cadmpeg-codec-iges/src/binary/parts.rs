@@ -404,7 +404,7 @@ fn handoff(
     global: &crate::global::ResolvedGlobal,
     ctx: &DecodeContext<'_>,
 ) -> Result<BinaryParameter, CodecError> {
-    group::prune_failed_members(
+    group::keep_failed_members(
         &mut record,
         owner,
         directory,

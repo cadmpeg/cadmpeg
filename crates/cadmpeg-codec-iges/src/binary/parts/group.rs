@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Recovery of list entries owned by a Binary Group Parameter record.
+//! Member slots of a Binary Group Parameter record whose target is given up.
 
 use std::collections::BTreeMap;
 
@@ -12,7 +12,7 @@ use super::super::{
 use super::dependencies::Dependencies;
 use crate::directory::DirectoryFieldSlot;
 
-pub(super) fn prune_failed_members(
+pub(super) fn keep_failed_members(
     record: &mut BinaryParameter,
     owner: &BinaryDirectory,
     directory: &[BinaryDirectory],
@@ -47,23 +47,14 @@ pub(super) fn prune_failed_members(
     else {
         return Ok(());
     };
-    let mut index = 0;
-    let mut remaining = count;
-    record.values.retain(|value| {
-        let member = index > 0 && index < end;
-        index += 1;
-        if member && dependencies.failed_member(value) {
-            remaining -= 1;
-            false
-        } else {
-            true
+    // The Group keeps its source count and one slot per source pointer. A
+    // member whose Directory record is given up keeps the source sequence of
+    // that record; only its target is given up (#222 Group count ruling,
+    // rule 1).
+    for value in record.values.get_mut(1..end).into_iter().flatten() {
+        if let Some(sequence) = dependencies.failed_member_sequence(value) {
+            *value = BinaryValue::Integer(i64::from(sequence));
         }
-    });
-    if remaining != count {
-        record.values[0] = BinaryValue::Integer(
-            i64::try_from(remaining)
-                .map_err(|_| malformed("Binary Group member count exceeds signed range"))?,
-        );
     }
     Ok(())
 }

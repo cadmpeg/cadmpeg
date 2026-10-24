@@ -3758,7 +3758,12 @@ pub(crate) fn store(
                         record
                             .and_then(|record| record.integer(2 + index))
                             .and_then(|sequence| {
-                                parameter_resolver.resolve_any(entry.sequence, 2 + index, sequence)
+                                // A member slot keeps the Directory Entry
+                                // pointer it reads, whether or not its target
+                                // survives (#222 Group count ruling, rule 1).
+                                parameter_resolver
+                                    .resolve_any(entry.sequence, 2 + index, sequence)
+                                    .or_else(|| crate::graph::directory_pointer_sequence(sequence))
                             })
                             .map(|sequence| format!("iges:entity:directory#{sequence}"))
                     })

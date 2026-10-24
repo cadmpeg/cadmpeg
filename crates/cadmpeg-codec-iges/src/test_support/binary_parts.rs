@@ -462,3 +462,42 @@ pub(crate) fn entity_without_parameter_data(
     value["parameter_line_count"] = serde_json::json!(0);
     value
 }
+
+/// A Group (D5, form 7) of a point (D1), a null entity with no Parameter Data
+/// (D3) and a point (D7), each named by its source offset. The null entity
+/// states its required structure field as text: `0`, or the non-integer `x`
+/// when `broken`.
+pub(crate) fn point_group_of_three(broken: bool) -> Vec<u8> {
+    let first = directory_record(116, 1);
+    let mut null_fields = vec![integer(0), pointer(0)];
+    null_fields.extend(std::iter::repeat_n(vec![0], 14));
+    null_fields[2] = text(if broken { b"x" } else { b"0" });
+    let null_entity = counted(&null_fields.concat());
+    let offset = |length: usize| u32::try_from(length + 1).expect("test Directory offset");
+    let null_offset = offset(first.len());
+    let group_offset = offset(first.len() + null_entity.len());
+    let mut parameters = point_parameters(1);
+    let group_parameter = u32::try_from(parameters.len() + 1).expect("group Parameter offset");
+    let mut group_fields = vec![integer(402), pointer(group_parameter)];
+    group_fields.extend(std::iter::repeat_n(vec![0], 14));
+    group_fields[11] = integer(7);
+    let group = counted(&group_fields.concat());
+    let last_offset = offset(first.len() + null_entity.len() + group.len());
+    parameters.extend_from_slice(&counted(
+        &[
+            integer(402),
+            pointer(group_offset),
+            integer(3),
+            pointer(1),
+            pointer(null_offset),
+            pointer(last_offset),
+        ]
+        .concat(),
+    ));
+    let point_parameter = u32::try_from(parameters.len() + 1).expect("point Parameter offset");
+    parameters.extend_from_slice(&point_parameters(last_offset));
+    let mut prefix = first;
+    prefix.extend_from_slice(&null_entity);
+    prefix.extend_from_slice(&group);
+    assemble(&prefix, point_parameter, &parameters)
+}
