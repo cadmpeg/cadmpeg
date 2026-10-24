@@ -17,6 +17,7 @@ use super::{design_stream, push_constant_finding, Ctx};
 use crate::layout::design_parameter_owner_legacy_68 as legacy_owner_68;
 use crate::layout::design_parameter_owner_legacy_88 as legacy_owner_88;
 use crate::layout::indexed_companion_record_prefix as companion_prefix;
+use crate::layout::typed_reference_companion_prefix;
 use crate::{native, records};
 use cadmpeg_core::decode::u64_from_index;
 
@@ -134,8 +135,9 @@ fn validate_parameter_owner_layouts(
     }
 }
 
-/// A companion prefix stores its timestamp at prefix offset 42, and a bound
-/// payload starts after the 58-byte prefix.
+/// A plain companion prefix stores its timestamp at offset 42 and is 58 bytes
+/// long; a typed-reference prefix stores it at offset 82 and is 98 bytes long.
+/// A bound payload starts after the prefix.
 pub(super) fn validate_parameter_companion_layouts(
     ctx: &Ctx<'_, '_>,
     layouts: &Layouts<'_>,
@@ -145,12 +147,23 @@ pub(super) fn validate_parameter_companion_layouts(
         let id = companion.id();
         let start = layouts.pointer(id, "byte_offset");
         let timestamp = layouts.pointer(id, "timestamp_micros_offset");
-        let timestamp_valid = start
-            .and_then(|start| start.checked_add(u64_from_index(companion_prefix::TIMESTAMP_MICROS)))
-            .is_some_and(|expected| timestamp == Some(expected));
+        let prefix_len = [
+            (companion_prefix::TIMESTAMP_MICROS, companion_prefix::LEN),
+            (
+                typed_reference_companion_prefix::TIMESTAMP_MICROS,
+                typed_reference_companion_prefix::LEN,
+            ),
+        ]
+        .into_iter()
+        .find_map(|(timestamp_at, len)| {
+            let expected = start?.checked_add(u64_from_index(timestamp_at))?;
+            (timestamp == Some(expected)).then_some(len)
+        });
+        let timestamp_valid = prefix_len.is_some();
         let payload_valid = companion.payload().is_none_or(|_| {
             start
-                .and_then(|start| start.checked_add(u64_from_index(companion_prefix::LEN)))
+                .zip(prefix_len)
+                .and_then(|(start, len)| start.checked_add(u64_from_index(len)))
                 .is_some_and(|expected| {
                     layouts.pointer(id, "payload_byte_offset") == Some(expected)
                 })
