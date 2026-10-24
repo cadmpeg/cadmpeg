@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Boundaries from pcurve uses: pcurve-only edges, pcurves witnessed by
-//! their 3D curves, a pcurve chain that leaves its curve, a seam-cut
-//! cylinder side and a cone tip closed by a pole edge.
+//! their 3D curves, a pcurve chain that leaves its curve, a closed coedge on
+//! a decreasing use interval, a seam-cut cylinder side and a cone tip closed
+//! by a pole edge.
 
 use std::f64::consts::{PI, TAU};
 
@@ -280,4 +281,34 @@ fn a_cone_tip_closes_through_its_pole_edge() {
         .find(|edge| *edge.degenerate())
         .expect("a degenerate edge row");
     assert_measured(pole_edge.length(), 0.0, 1.0);
+}
+
+/// A reversed closed coedge whose use runs its counterclockwise circle
+/// pcurve over the decreasing interval `[2π, 0]` follows the coedge: the
+/// disk bounded clockwise about `+z` is the face of the `−z` oriented normal.
+#[test]
+fn a_closed_coedge_follows_its_pcurve_over_a_decreasing_use_interval() {
+    let radius = 2.0;
+    let mut builder = Builder::new();
+    let vertex = builder.vertex([radius, 0.0, 0.0]);
+    let edge = builder.circle([0.0; 3], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0], radius, &vertex);
+    let surface = builder.plane([0.0; 3], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]);
+    let face = builder.face(
+        &surface,
+        Sense::Reversed,
+        &[vec![(edge, Sense::Reversed)]],
+        true,
+    );
+    builder.circle_pcurve(&face, [0, 0], [0.0, 0.0], radius, [TAU, 0.0]);
+    let ir = builder.finish(BodyKind::Sheet);
+    let report = measure(&ir, &everything());
+    let face = only_face(&report);
+    assert_measured(
+        face.measures().area(),
+        PI * radius * radius,
+        radius * radius,
+    );
+    assert!(uv_sources(face)
+        .iter()
+        .all(|source| *source == Some(UvSource::Pcurve)));
 }
