@@ -6,10 +6,13 @@ use cadmpeg_core::CodecError;
 use super::{
     decode, exact_stream, generation, Container, Generation, MemberGeometry, PackageResidue,
 };
+use crate::layout::token::{
+    STREAM_ATTRIBUTES, STREAM_EDGE_TESSELLATION, STREAM_EXACT_F64, STREAM_SURFACE_TESSELLATION,
+};
 use crate::loss::PvzLossCode;
 use crate::test_support::ol::{
     appearance_reference, appearance_values, edge_header, member, patch_header, primitive,
-    stream_index, tlv, vertex_block, ATTRIBUTES, EDGES, EXACT_F64, SURFACE,
+    stream_index, tlv, vertex_block,
 };
 use crate::test_support::{bracket_member, plate_member};
 
@@ -36,14 +39,17 @@ fn losses(geometry: &MemberGeometry) -> Vec<cadmpeg_ir::report::loss::LossKind> 
 
 /// A member whose surface stream holds `records` after its stream index.
 fn surface_member(attributes: &[Vec<u8>], records: &[Vec<u8>]) -> Vec<u8> {
-    let mut attribute_stream = stream_index(ATTRIBUTES);
+    let mut attribute_stream = stream_index(STREAM_ATTRIBUTES);
     attribute_stream.extend(attributes.concat());
-    let mut surface = stream_index(SURFACE);
+    let mut surface = stream_index(STREAM_SURFACE_TESSELLATION);
     surface.extend(records.concat());
     member(
         "DIV-OL08BL",
         false,
-        &[(ATTRIBUTES, attribute_stream), (SURFACE, surface)],
+        &[
+            (STREAM_ATTRIBUTES, attribute_stream),
+            (STREAM_SURFACE_TESSELLATION, surface),
+        ],
     )
 }
 
@@ -71,14 +77,14 @@ fn the_directory_partitions_the_member_with_or_without_the_preamble() {
             "DIV-OL09BL",
             preamble,
             &[
-                (ATTRIBUTES, stream_index(ATTRIBUTES)),
-                (EXACT_F64, stream_index(EXACT_F64)),
+                (STREAM_ATTRIBUTES, stream_index(STREAM_ATTRIBUTES)),
+                (STREAM_EXACT_F64, stream_index(STREAM_EXACT_F64)),
             ],
         );
         let container = Container::open(View::over_retained(&bytes)).unwrap();
         assert_eq!(container.preamble, preamble);
         let ids: Vec<_> = container.streams.iter().map(|(id, _)| *id).collect();
-        assert_eq!(ids, [ATTRIBUTES, EXACT_F64]);
+        assert_eq!(ids, [STREAM_ATTRIBUTES, STREAM_EXACT_F64]);
         let last = container.streams.last().unwrap().1;
         assert_eq!(last.end(), bytes.len());
     }
@@ -89,7 +95,7 @@ fn a_directory_that_does_not_tile_the_member_is_refused() {
     let good = member(
         "DIV-OL08BL",
         true,
-        &[(ATTRIBUTES, stream_index(ATTRIBUTES))],
+        &[(STREAM_ATTRIBUTES, stream_index(STREAM_ATTRIBUTES))],
     );
     let mut version = good.clone();
     version[10] = 2;
@@ -105,8 +111,11 @@ fn a_directory_that_does_not_tile_the_member_is_refused() {
         "DIV-OL08BL",
         false,
         &[
-            (SURFACE, stream_index(SURFACE)),
-            (ATTRIBUTES, stream_index(ATTRIBUTES)),
+            (
+                STREAM_SURFACE_TESSELLATION,
+                stream_index(STREAM_SURFACE_TESSELLATION),
+            ),
+            (STREAM_ATTRIBUTES, stream_index(STREAM_ATTRIBUTES)),
         ],
     );
     for bad in [
@@ -130,8 +139,8 @@ fn the_exact_stream_is_expanded_on_request() {
     let exact = exact_stream(&ctx, View::over_retained(&plate))
         .unwrap()
         .unwrap();
-    assert_eq!(exact.stream_id, EXACT_F64);
-    assert_eq!(exact.payload.window(), stream_index(EXACT_F64));
+    assert_eq!(exact.stream_id, STREAM_EXACT_F64);
+    assert_eq!(exact.payload.window(), stream_index(STREAM_EXACT_F64));
 
     let bracket = bracket_member();
     assert!(exact_stream(&ctx, View::over_retained(&bracket))
@@ -143,7 +152,7 @@ fn the_exact_stream_is_expanded_on_request() {
         false,
         &[
             (0x0100_0003, stream_index(0x0100_0003)),
-            (EXACT_F64, stream_index(EXACT_F64)),
+            (STREAM_EXACT_F64, stream_index(STREAM_EXACT_F64)),
         ],
     );
     assert!(exact_stream(&ctx, View::over_retained(&two)).is_err());
@@ -300,14 +309,17 @@ fn edge_groups_are_decoded_and_reported() {
     assert_eq!(plate.residue.edge_index_tables, 1);
     assert!(losses(&plate).contains(&PvzLossCode::TessellationEdgesNotTransferred.kind()));
 
-    let mut edges = stream_index(EDGES);
+    let mut edges = stream_index(STREAM_EDGE_TESSELLATION);
     edges.extend(edge_header(3));
     edges.extend(vertex_block(&SQUARE[..2], None));
     edges.extend(primitive(0x1d, &[0, 1, 1]));
     let odd = member(
         "DIV-OL08BL",
         false,
-        &[(ATTRIBUTES, stream_index(ATTRIBUTES)), (EDGES, edges)],
+        &[
+            (STREAM_ATTRIBUTES, stream_index(STREAM_ATTRIBUTES)),
+            (STREAM_EDGE_TESSELLATION, edges),
+        ],
     );
     assert_eq!(
         losses(&geometry(&odd).unwrap()),
@@ -332,7 +344,7 @@ fn unknown_records_and_streams_are_counted() {
         "DIV-OL08BL",
         false,
         &[
-            (ATTRIBUTES, stream_index(ATTRIBUTES)),
+            (STREAM_ATTRIBUTES, stream_index(STREAM_ATTRIBUTES)),
             (0x0100_0009, vec![1]),
         ],
     );

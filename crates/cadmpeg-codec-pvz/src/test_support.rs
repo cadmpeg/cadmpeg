@@ -10,6 +10,7 @@ pub(crate) mod pvs;
 
 use cadmpeg_test_support::zip_fixture::{archive, crc32, RawEntry};
 
+use crate::layout::token;
 use pvs::{definition, occurrence, pool_atom, property_set, Node, Place};
 
 /// A structure member with the `PV-PVS0301` signature.
@@ -107,13 +108,13 @@ pub(crate) fn assembly_structure(signature: &str) -> Vec<u8> {
 /// The `bracket.ol` member of [`assembly`]: a red tetrahedron with edge 0.01
 /// along each axis.
 pub(crate) fn bracket_member() -> Vec<u8> {
-    let mut attributes = ol::stream_index(ol::ATTRIBUTES);
+    let mut attributes = ol::stream_index(token::STREAM_ATTRIBUTES);
     attributes.extend(ol::appearance_values([
         1.0, 0.0, 0.0, 0.8, 0.0, 0.0, 0.5, 0.5, 0.5, 32.0, 0.0, 0.0, 0.0, 1.0,
     ]));
     attributes.extend(ol::appearance_reference("red", 7));
     attributes.extend(ol::tlv(3, b"!pvFId"));
-    let mut surface = ol::stream_index(ol::SURFACE);
+    let mut surface = ol::stream_index(token::STREAM_SURFACE_TESSELLATION);
     surface.extend(ol::patch_header(0, 0));
     surface.extend(ol::vertex_block(
         &[
@@ -129,15 +130,18 @@ pub(crate) fn bracket_member() -> Vec<u8> {
     ol::member(
         "DIV-OL09BL",
         true,
-        &[(ol::ATTRIBUTES, attributes), (ol::SURFACE, surface)],
+        &[
+            (token::STREAM_ATTRIBUTES, attributes),
+            (token::STREAM_SURFACE_TESSELLATION, surface),
+        ],
     )
 }
 
 /// The `plate.ol` member of [`assembly`]: an unpainted unit-normal square as
 /// one triangle strip, its edge tessellation, and an exact stream.
 pub(crate) fn plate_member() -> Vec<u8> {
-    let attributes = ol::stream_index(ol::ATTRIBUTES);
-    let mut surface = ol::stream_index(ol::SURFACE);
+    let attributes = ol::stream_index(token::STREAM_ATTRIBUTES);
+    let mut surface = ol::stream_index(token::STREAM_SURFACE_TESSELLATION);
     surface.extend(ol::patch_header(0xffff_ffff, 0));
     surface.extend(ol::vertex_block(
         &[
@@ -149,20 +153,20 @@ pub(crate) fn plate_member() -> Vec<u8> {
         Some(&[[0.0, 0.0, 1.0]; 4]),
     ));
     surface.extend(ol::primitive(0x1a, &[0, 1, 2, 3]));
-    let mut edges = ol::stream_index(ol::EDGES);
-    edges.extend(ol::primitive(0x0100_000f, &[1, 0]));
+    let mut edges = ol::stream_index(token::STREAM_EDGE_TESSELLATION);
+    edges.extend(ol::primitive(token::EDGE_TESS_INDEX_TABLE, &[1, 0]));
     edges.extend(ol::edge_header(0));
     edges.extend(ol::vertex_block(&[[0.0, 0.0, 0.0], [0.02, 0.0, 0.0]], None));
     edges.extend(ol::primitive(0x1c, &[0, 1]));
-    let exact = ol::stream_index(ol::EXACT_F64);
+    let exact = ol::stream_index(token::STREAM_EXACT_F64);
     ol::member(
         "DIV-OL08BL",
         false,
         &[
-            (ol::ATTRIBUTES, attributes),
-            (ol::SURFACE, surface),
-            (ol::EDGES, edges),
-            (ol::EXACT_F64, exact),
+            (token::STREAM_ATTRIBUTES, attributes),
+            (token::STREAM_SURFACE_TESSELLATION, surface),
+            (token::STREAM_EDGE_TESSELLATION, edges),
+            (token::STREAM_EXACT_F64, exact),
         ],
     )
 }
@@ -181,7 +185,7 @@ pub(crate) fn assembly(signature: &str) -> Vec<u8> {
 /// its exact stream, with `f64` scalars when `double` is set, and a red
 /// surface tessellation with one patch per exact face.
 pub(crate) fn cube_member(double: bool) -> Vec<u8> {
-    let mut attributes = ol::stream_index(ol::ATTRIBUTES);
+    let mut attributes = ol::stream_index(token::STREAM_ATTRIBUTES);
     attributes.extend(ol::appearance_values([
         1.0, 0.0, 0.0, 0.8, 0.0, 0.0, 0.5, 0.5, 0.5, 32.0, 0.0, 0.0, 0.0, 1.0,
     ]));
@@ -190,7 +194,7 @@ pub(crate) fn cube_member(double: bool) -> Vec<u8> {
     let corners: Vec<[f32; 3]> = (0..8_usize)
         .map(|index| [0, 1, 2].map(|bit| if index >> bit & 1 == 1 { size } else { 0.0 }))
         .collect();
-    let mut surface = ol::stream_index(ol::SURFACE);
+    let mut surface = ol::stream_index(token::STREAM_SURFACE_TESSELLATION);
     for (face, ring) in exact::CUBE_FACES.iter().enumerate() {
         surface.extend(ol::patch_header(0, u32::try_from(face).unwrap()));
         surface.extend(ol::vertex_block(&ring.map(|corner| corners[corner]), None));
@@ -202,8 +206,8 @@ pub(crate) fn cube_member(double: bool) -> Vec<u8> {
         "DIV-OL09BL",
         false,
         &[
-            (ol::ATTRIBUTES, attributes),
-            (ol::SURFACE, surface),
+            (token::STREAM_ATTRIBUTES, attributes),
+            (token::STREAM_SURFACE_TESSELLATION, surface),
             (id, stream.finish()),
         ],
     )

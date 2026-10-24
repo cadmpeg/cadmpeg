@@ -1,20 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Code-built exact-geometry stream payloads (specification §8).
 
-/// Supporting-surface tag.
-pub(crate) const SURFACE: u32 = 0x13;
-/// Loop tag.
-pub(crate) const LOOP: u32 = 0x0100_0010;
-/// Coedge tag.
-pub(crate) const COEDGE: u32 = 0x11;
-/// Singular-use tag.
-pub(crate) const SINGULAR_USE: u32 = 0x0100_0012;
-/// Edge-curve tag.
-pub(crate) const EDGE_CURVE: u32 = 0x14;
-/// Pcurve tag.
-pub(crate) const PCURVE: u32 = 0x15;
-/// Stream index tag.
-pub(crate) const STREAM_INDEX: u32 = 0x0100_0002;
+use crate::layout::token;
+
 /// Index value that names no record.
 pub(crate) const NONE: u32 = u32::MAX;
 
@@ -87,16 +75,16 @@ impl Stream {
             bytes: Vec::new(),
         };
         let version = if double { 4 } else { 3 };
-        stream.record(STREAM_INDEX, &version_payload(version));
+        stream.record(token::STREAM_EDGE_TESSELLATION, &version_payload(version));
         stream
     }
 
     /// The stream identity matching the scalar width.
     pub(crate) fn id(&self) -> u32 {
         if self.double {
-            0x0100_0004
+            token::STREAM_EXACT_F64
         } else {
-            0x0100_0003
+            token::STREAM_EXACT_F32
         }
     }
 
@@ -104,8 +92,8 @@ impl Stream {
         Payload::new(self.double)
     }
 
-    pub(crate) fn record(&mut self, tag: u32, payload: &[u8]) -> &mut Self {
-        self.bytes.extend_from_slice(&tag.to_le_bytes());
+    pub(crate) fn record(&mut self, tag: impl Into<u32>, payload: &[u8]) -> &mut Self {
+        self.bytes.extend_from_slice(&tag.into().to_le_bytes());
         let length = u32::try_from(payload.len()).expect("record length");
         self.bytes.extend_from_slice(&length.to_le_bytes());
         self.bytes.extend_from_slice(payload);
@@ -113,12 +101,12 @@ impl Stream {
     }
 
     pub(crate) fn terminator(&mut self) -> &mut Self {
-        self.record(0, &[])
+        self.record(0_u32, &[])
     }
 
     pub(crate) fn loop_record(&mut self, marker: i32) -> &mut Self {
         let payload = self.payload().i32(marker).bytes();
-        self.record(LOOP, &payload)
+        self.record(token::EXACT_LOOP, &payload)
     }
 
     pub(crate) fn coedge(
@@ -135,7 +123,7 @@ impl Stream {
             .u32(pcurve)
             .u32(secondary)
             .bytes();
-        self.record(COEDGE, &payload)
+        self.record(token::EXACT_COEDGE, &payload)
     }
 
     /// A plane record `O + u·U + v·V` with normal `N` and no range pairs.
@@ -157,7 +145,7 @@ impl Stream {
             .scalars(&normal)
             .u8(0)
             .bytes();
-        self.record(SURFACE, &payload)
+        self.record(token::EXACT_SURFACE, &payload)
     }
 
     /// A line edge curve `O + t·D`.
@@ -170,7 +158,7 @@ impl Stream {
             .scalars(&direction)
             .u8(0)
             .bytes();
-        self.record(EDGE_CURVE, &payload)
+        self.record(token::EXACT_EDGE_CURVE, &payload)
     }
 
     /// A line pcurve `O + t·D`.
@@ -183,7 +171,7 @@ impl Stream {
             .scalars(&direction)
             .u8(0)
             .bytes();
-        self.record(PCURVE, &payload)
+        self.record(token::EXACT_PCURVE, &payload)
     }
 
     /// The stream payload with its closing stream terminator.

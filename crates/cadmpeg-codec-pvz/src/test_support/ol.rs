@@ -2,15 +2,7 @@
 //! Synthetic `.ol` geometry members built from the specification grammar.
 
 use super::gzip;
-
-/// Stream identity of the attribute stream.
-pub(crate) const ATTRIBUTES: u32 = 0x0100_0000;
-/// Stream identity of the surface tessellation stream.
-pub(crate) const SURFACE: u32 = 0x0100_0001;
-/// Stream identity of the edge tessellation stream.
-pub(crate) const EDGES: u32 = 0x0100_0002;
-/// Stream identity of the `f64` exact-geometry stream.
-pub(crate) const EXACT_F64: u32 = 0x0100_0004;
+use crate::layout::{ol_preamble_block, token};
 
 /// One TLV record (§4.4).
 pub(crate) fn tlv(tag: u32, payload: &[u8]) -> Vec<u8> {
@@ -22,7 +14,7 @@ pub(crate) fn tlv(tag: u32, payload: &[u8]) -> Vec<u8> {
 
 /// The stream index record of stream `id` (§4.5).
 pub(crate) fn stream_index(id: u32) -> Vec<u8> {
-    tlv(0x0100_0002, &(id & 0xff).to_le_bytes())
+    tlv(token::STREAM_EDGE_TESSELLATION, &(id & 0xff).to_le_bytes())
 }
 
 fn f32s(values: &[f32]) -> Vec<u8> {
@@ -62,7 +54,7 @@ pub(crate) fn patch_header(appearance: u32, face_ref: u32) -> Vec<u8> {
     let mut payload = u32s(&[appearance, face_ref]);
     payload.push(0);
     payload.extend(u32s(&[1, face_ref]));
-    tlv(0x0100_000d, &payload)
+    tlv(token::TESS_PATCH_HEADER, &payload)
 }
 
 /// A vertex block (§6.3) of positions, with normals when given.
@@ -75,7 +67,7 @@ pub(crate) fn vertex_block(positions: &[[f32; 3]], normals: Option<&[[f32; 3]]>)
             payload.extend(f32s(&normals[index]));
         }
     }
-    tlv(0x0100_0016, &payload)
+    tlv(token::TESS_VERTEX_BLOCK, &payload)
 }
 
 /// A primitive record of `tag` over `indexes` (§6.4, §7.2).
@@ -87,7 +79,7 @@ pub(crate) fn primitive(tag: u32, indexes: &[u32]) -> Vec<u8> {
 pub(crate) fn edge_header(edge: u32) -> Vec<u8> {
     let mut payload = u32s(&[edge, 0]);
     payload.extend(f32s(&[1.0]));
-    tlv(0x0100_0012, &payload)
+    tlv(token::EXACT_SINGULAR_USE, &payload)
 }
 
 /// A geometry member: the header, the directory, the preamble block when
@@ -105,9 +97,12 @@ pub(crate) fn member(signature: &str, preamble: bool, streams: &[(u32, Vec<u8>)]
         bytes.extend(u32s(&[*id, u32::try_from(offset).unwrap()]));
         offset += payload.len();
     }
-    bytes.extend(u32s(&[0x00ff_ffff, u32::try_from(offset).unwrap()]));
+    bytes.extend(u32s(&[
+        token::STREAM_END_SENTINEL,
+        u32::try_from(offset).unwrap(),
+    ]));
     if preamble {
-        bytes.extend(u32s(&[0x0100_00d4, 3]));
+        bytes.extend(u32s(&[ol_preamble_block::TAG_VALUE, 3]));
         bytes.extend_from_slice(&[0x03, signature.as_bytes()[7] - b'0', 0x01]);
         bytes.extend_from_slice(&[0; 8]);
     }

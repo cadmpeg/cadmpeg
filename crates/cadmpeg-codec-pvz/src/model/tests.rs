@@ -430,16 +430,17 @@ fn placement_defects_and_deep_chains_are_reported() {
 
 #[test]
 fn an_appearance_colour_outside_the_unit_range_is_rejected() {
+    use crate::layout::token::{STREAM_ATTRIBUTES, STREAM_SURFACE_TESSELLATION};
     use crate::test_support::ol::{
         appearance_reference, appearance_values, member, patch_header, primitive, stream_index,
-        vertex_block, ATTRIBUTES, SURFACE,
+        vertex_block,
     };
-    let mut attributes = stream_index(ATTRIBUTES);
+    let mut attributes = stream_index(STREAM_ATTRIBUTES);
     attributes.extend(appearance_values([
         2.0, 0.0, 0.0, 0.8, 0.0, 0.0, 0.5, 0.5, 0.5, 32.0, 0.0, 0.0, 0.0, 1.0,
     ]));
     attributes.extend(appearance_reference("hot", 1));
-    let mut surface = stream_index(SURFACE);
+    let mut surface = stream_index(STREAM_SURFACE_TESSELLATION);
     surface.extend(patch_header(0, 0));
     surface.extend(vertex_block(
         &[[0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
@@ -449,7 +450,10 @@ fn an_appearance_colour_outside_the_unit_range_is_rejected() {
     let bytes = member(
         "DIV-OL09BL",
         false,
-        &[(ATTRIBUTES, attributes), (SURFACE, surface)],
+        &[
+            (STREAM_ATTRIBUTES, attributes),
+            (STREAM_SURFACE_TESSELLATION, surface),
+        ],
     );
     let ctx = cadmpeg_test_support::service_decode_context();
     let geometry =

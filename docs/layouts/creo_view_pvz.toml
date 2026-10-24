@@ -569,7 +569,7 @@ anchor = "| `0x11` | Coedge |"
 [[token]]
 tag = "0x01000012"
 name = "EXACT_SINGULAR_USE"
-note = "Exact stream: singular edge use; 4 + 2w bytes."
+note = "Exact stream: singular edge use; 4 + 2w bytes. The same value is the tag of the edge header that opens an edge group (§7.2) or a line group (§6.1)."
 section = "8.2"
 anchor = "| `0x01000012` | Singular edge use |"
 

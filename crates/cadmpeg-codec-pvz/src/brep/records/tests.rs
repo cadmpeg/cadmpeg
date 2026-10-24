@@ -3,9 +3,8 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 
 use crate::brep::model::{CurveGeometry, ExactModel, Precision, SurfaceGeometry};
-use crate::test_support::exact::{
-    Payload, Stream, EDGE_CURVE, NONE, PCURVE, SINGULAR_USE, SURFACE,
-};
+use crate::layout::token::{EXACT_EDGE_CURVE, EXACT_PCURVE, EXACT_SINGULAR_USE, EXACT_SURFACE};
+use crate::test_support::exact::{Payload, Stream, NONE};
 
 fn parse_with(id: u32, bytes: &[u8]) -> Result<ExactModel, CodecError> {
     let arena = DecodeArena::new();
@@ -82,7 +81,7 @@ fn analytic_records_read_their_geometry_scalars_in_order() {
             .scalars(&[10.0, 11.0, 12.0, 13.0])
             .u8(0)
             .bytes();
-        stream.record(SURFACE, &payload);
+        stream.record(EXACT_SURFACE, &payload);
     }
     let model = parse(stream).unwrap();
     for face in &model.faces {
@@ -137,7 +136,7 @@ fn bspline_surface_reads_body_ranges_and_periodic_bits() {
         .scalars(&[0.0, 1.0, 0.5, 1.5])
         .u8(0)
         .bytes();
-    stream.record(SURFACE, &payload);
+    stream.record(EXACT_SURFACE, &payload);
     let model = parse(stream).unwrap();
     let face = &model.faces[0].surface;
     let SurfaceGeometry::Bspline(surface) = &face.geometry else {
@@ -171,7 +170,7 @@ fn pole_grid_must_follow_the_knots() {
         .scalars(&[0.0; 24])
         .u8(0)
         .bytes();
-    stream.record(SURFACE, &payload);
+    stream.record(EXACT_SURFACE, &payload);
     assert!(parse(stream).is_err());
 }
 
@@ -189,7 +188,7 @@ fn analytic_record_tail_can_hold_an_embedded_bspline() {
         .u8(0)
         .u8(0);
     let payload = bilinear_body(head).bytes();
-    stream.record(SURFACE, &payload);
+    stream.record(EXACT_SURFACE, &payload);
     let model = parse(stream).unwrap();
     let embedded = model.faces[0].surface.embedded.as_ref().unwrap();
     assert_eq!(embedded.u_knots, [0.0, 0.0, 1.0, 1.0]);
@@ -199,7 +198,7 @@ fn analytic_record_tail_can_hold_an_embedded_bspline() {
 #[test]
 fn undefined_surface_type_is_kept_unread() {
     let mut stream = Stream::new(false);
-    stream.record(SURFACE, &[3, 0, 0, 7, 7, 7]);
+    stream.record(EXACT_SURFACE, &[3, 0, 0, 7, 7, 7]);
     let model = parse(stream).unwrap();
     assert_eq!(
         model.faces[0].surface.geometry,
@@ -267,9 +266,9 @@ fn coedge_outside_a_loop_is_malformed() {
 fn singular_use_opens_a_scope_that_holds_a_tag_0a_record() {
     let mut stream = plane_stream(false);
     let singular = stream.payload().u32(0).scalar(0.0).scalar(1.0).bytes();
-    stream.record(SINGULAR_USE, &singular);
+    stream.record(EXACT_SINGULAR_USE, &singular);
     let opaque = stream.payload().u32(0).u32(1).u32(7).bytes();
-    stream.record(0x0a, &opaque).terminator();
+    stream.record(0x0a_u32, &opaque).terminator();
     stream.loop_record(-2).coedge(0, 1, NONE, NONE).terminator();
     stream.line_edge([0.0; 3], [0.0; 3]);
     let model = parse(stream).unwrap();
@@ -302,7 +301,7 @@ fn indexes_stay_inside_their_sections() {
     assert!(parse(stream).is_err());
     let mut composite = plane_stream(false);
     let payload = composite.payload().u8(2).u8(0).u32(1).u32(3).u8(0).bytes();
-    composite.record(EDGE_CURVE, &payload);
+    composite.record(EXACT_EDGE_CURVE, &payload);
     assert!(parse(composite).is_err());
 }
 
@@ -367,7 +366,7 @@ fn edge_curve_records_follow_their_layouts() {
         &spline,
         &polyline,
     ] {
-        stream.record(EDGE_CURVE, payload);
+        stream.record(EXACT_EDGE_CURVE, payload);
     }
     let model = parse(stream).unwrap();
     let CurveGeometry::Circle(conic) = &model.edges[0].geometry else {
@@ -402,7 +401,7 @@ fn edge_curve_records_follow_their_layouts() {
 fn composite_edge_curve_ends_with_its_end_byte() {
     let mut stream = plane_stream(false);
     let payload = stream.payload().u8(2).u8(0).u32(0).bytes();
-    stream.record(EDGE_CURVE, &payload);
+    stream.record(EXACT_EDGE_CURVE, &payload);
     assert!(parse(stream).is_err());
 }
 
@@ -445,7 +444,7 @@ fn pcurve_records_follow_their_layouts() {
         .u8(0)
         .bytes();
     for payload in [&ellipse, &spline, &polyline, &circle] {
-        stream.record(PCURVE, payload);
+        stream.record(EXACT_PCURVE, payload);
     }
     let model = parse(stream).unwrap();
     let CurveGeometry::Ellipse(conic) = &model.pcurves[0].geometry else {
@@ -474,7 +473,7 @@ fn single_precision_singular_use_is_twelve_bytes() {
     let mut stream = plane_stream(false);
     let payload = stream.payload().u32(0).scalar(0.25).scalar(0.75).bytes();
     assert_eq!(payload.len(), 12);
-    stream.record(SINGULAR_USE, &payload).terminator();
+    stream.record(EXACT_SINGULAR_USE, &payload).terminator();
     stream.line_edge([0.0; 3], [0.0; 3]);
     let model = parse(stream).unwrap();
     assert_eq!(model.faces[0].singular_uses[0].edge, 0);
@@ -484,7 +483,7 @@ fn single_precision_singular_use_is_twelve_bytes() {
 fn record_counts_cannot_exceed_their_payload() {
     let mut stream = plane_stream(false);
     let payload = stream.payload().u8(7).u8(0).u32(1_000_000).u8(0).bytes();
-    stream.record(PCURVE, &payload);
+    stream.record(EXACT_PCURVE, &payload);
     assert!(parse(stream).is_err());
 }
 
@@ -550,9 +549,9 @@ fn bspline_knots_are_finite_and_do_not_decrease() {
     ] {
         let mut surface = plane_stream(true);
         let record = spline_surface_record(&surface, 2, &knots);
-        surface.record(SURFACE, &record);
+        surface.record(EXACT_SURFACE, &record);
         assert!(parse(surface).is_err(), "surface knots {knots:?}");
-        for (tag, dimension) in [(EDGE_CURVE, 3), (PCURVE, 2)] {
+        for (tag, dimension) in [(EXACT_EDGE_CURVE, 3), (EXACT_PCURVE, 2)] {
             let mut curve = plane_stream(true);
             let record = spline_curve_record(&curve, dimension, 2, &knots);
             curve.record(tag, &record);
@@ -568,9 +567,9 @@ fn bspline_degree_is_at_most_the_admitted_degree() {
         let knots = clamped_knots(order);
         let mut surface = plane_stream(true);
         let record = spline_surface_record(&surface, order, &knots);
-        surface.record(SURFACE, &record);
+        surface.record(EXACT_SURFACE, &record);
         assert_eq!(parse(surface).is_ok(), accepted, "surface order {order}");
-        for (tag, dimension) in [(EDGE_CURVE, 3), (PCURVE, 2)] {
+        for (tag, dimension) in [(EXACT_EDGE_CURVE, 3), (EXACT_PCURVE, 2)] {
             let mut curve = plane_stream(true);
             let record = spline_curve_record(&curve, dimension, order, &knots);
             curve.record(tag, &record);
@@ -584,7 +583,7 @@ fn coedge_edge_index_skips_composite_members() {
     let mut stream = plane_stream(false);
     stream.loop_record(-2).coedge(1, 1, NONE, NONE).terminator();
     let singular = stream.payload().u32(0).scalar(0.0).scalar(1.0).bytes();
-    stream.record(SINGULAR_USE, &singular).terminator();
+    stream.record(EXACT_SINGULAR_USE, &singular).terminator();
     stream.line_edge([0.0; 3], [1.0, 0.0, 0.0]);
     stream.line_edge([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
     let composite = stream
@@ -596,7 +595,7 @@ fn coedge_edge_index_skips_composite_members() {
         .u32(1)
         .u8(0)
         .bytes();
-    stream.record(EDGE_CURVE, &composite);
+    stream.record(EXACT_EDGE_CURVE, &composite);
     stream.line_edge([0.0; 3], [0.0, 0.0, 1.0]);
     let model = parse(stream).unwrap();
     assert_eq!(model.loops[0].coedges[0].edge, Some(3));
@@ -621,6 +620,6 @@ fn coedge_edge_index_counts_only_unlisted_edges() {
         .u32(1)
         .u8(0)
         .bytes();
-    stream.record(EDGE_CURVE, &composite);
+    stream.record(EXACT_EDGE_CURVE, &composite);
     assert!(parse(stream).is_err());
 }

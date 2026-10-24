@@ -5,11 +5,12 @@
 use cadmpeg_core::decode::{index_from_u32, View};
 use cadmpeg_core::CodecError;
 
-use crate::layout::tlv_header;
+use crate::layout::{tlv_header, token};
 use crate::read::{at, record};
 
-/// Tag of the stream index record (§4.5).
-const STREAM_INDEX_TAG: u32 = 0x0100_0002;
+/// Tag of the stream index record (§4.5): the identity of the edge
+/// tessellation stream.
+const STREAM_INDEX_TAG: u32 = token::STREAM_EDGE_TESSELLATION;
 /// Payload bytes of the stream index record.
 const STREAM_INDEX_LEN: usize = 4;
 /// Mask of the stream identity byte the stream index record repeats.
@@ -67,12 +68,12 @@ pub(super) fn stream_index(stream: &mut View<'_>, stream_id: u32) -> Result<u32,
 mod tests {
     use cadmpeg_core::decode::View;
 
-    use super::{next, stream_index};
+    use super::{next, stream_index, STREAM_INDEX_TAG};
     use crate::test_support::ol::tlv;
 
     #[test]
     fn records_fill_the_stream_in_order() {
-        let mut bytes = tlv(0x0100_0002, &1_u32.to_le_bytes());
+        let mut bytes = tlv(STREAM_INDEX_TAG, &1_u32.to_le_bytes());
         bytes.extend(tlv(0, &[]));
         bytes.extend(tlv(0x1b, &[1, 2, 3, 4]));
         let mut stream = View::over_retained(&bytes);
@@ -95,13 +96,13 @@ mod tests {
 
     #[test]
     fn the_stream_index_record_names_its_stream() {
-        let stream = tlv(0x0100_0002, &2_u32.to_le_bytes());
+        let stream = tlv(STREAM_INDEX_TAG, &2_u32.to_le_bytes());
         assert!(stream_index(&mut View::over_retained(&stream), 0x0100_0001).is_err());
         assert_eq!(
             stream_index(&mut View::over_retained(&stream), 0x0100_0002).unwrap(),
             2
         );
-        let exact = tlv(0x0100_0002, &3_u32.to_le_bytes());
+        let exact = tlv(STREAM_INDEX_TAG, &3_u32.to_le_bytes());
         assert_eq!(
             stream_index(&mut View::over_retained(&exact), 0x0100_0003).unwrap(),
             3

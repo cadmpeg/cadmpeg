@@ -12,8 +12,9 @@ use crate::layout::{
 };
 use crate::read::{at, f32x3, record};
 
-/// Tag of the edge header that opens an edge group (§7.2).
-const EDGE_HEADER: u32 = 0x0100_0012;
+/// Tag of the edge header that opens an edge group (§7.2); the singular-use
+/// record of the exact stream (§8.13) has the same tag.
+const EDGE_HEADER: u32 = token::EXACT_SINGULAR_USE;
 /// Vertex layout of an edge vertex block: positions only.
 const LAYOUT_POSITION: u8 = 0;
 /// Bytes of one edge vertex.

@@ -7,9 +7,8 @@ use super::{coincident_partners, domain_normal, resolve, work_limit, Topology};
 use crate::brep::eval::{dot, sub};
 use crate::brep::model::{Conic, CurveGeometry, EdgeCurve, ExactModel, Precision};
 use crate::brep::resolve::{domain_point, PcurveSlot};
-use crate::test_support::exact::{
-    cube_stream, split_shared_edges, Stream, CUBE_SIZE, SINGULAR_USE,
-};
+use crate::layout::token::EXACT_SINGULAR_USE;
+use crate::test_support::exact::{cube_stream, split_shared_edges, Stream, CUBE_SIZE};
 
 fn parse(stream: Stream) -> ExactModel {
     let id = stream.id();
@@ -74,7 +73,7 @@ fn coincident_single_use_edges_carry_the_side() {
         .scalars(&[0.0, 0.0, 0.0, 0.0, CUBE_SIZE, 0.0])
         .u8(0)
         .bytes();
-    stream.record(crate::test_support::exact::EDGE_CURVE, &duplicate);
+    stream.record(crate::layout::token::EXACT_EDGE_CURVE, &duplicate);
     let model = parse(stream);
     let mut model = model;
     let (loop_index, position) = model
@@ -99,7 +98,7 @@ fn collapsed_singular_edge_joins_its_ends() {
     let mut stream = Stream::new(true);
     stream.plane([0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]);
     let singular = stream.payload().u32(0).scalar(0.0).scalar(1.0).bytes();
-    stream.record(SINGULAR_USE, &singular).terminator();
+    stream.record(EXACT_SINGULAR_USE, &singular).terminator();
     stream.line_edge([0.5, 0.5, 0.0], [0.0; 3]);
     let model = parse(stream);
     let topology = resolve(&model, work_limit(&model)).unwrap();
@@ -112,7 +111,7 @@ fn extended_singular_edge_keeps_its_ends() {
     let mut stream = Stream::new(true);
     stream.plane([0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]);
     let singular = stream.payload().u32(0).scalar(0.0).scalar(1.0).bytes();
-    stream.record(SINGULAR_USE, &singular).terminator();
+    stream.record(EXACT_SINGULAR_USE, &singular).terminator();
     stream.line_edge([0.0; 3], [0.01, 0.0, 0.0]);
     let model = parse(stream);
     let topology = resolve(&model, work_limit(&model)).unwrap();

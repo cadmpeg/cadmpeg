@@ -25,8 +25,9 @@ const VECTOR_LEN: usize = 12;
 const TEXTURE_LEN: usize = 8;
 /// Bytes of one primitive vertex index.
 const INDEX_LEN: usize = 4;
-/// Tag of the edge header that opens a line group (§6.1, §7.2).
-const LINE_GROUP_HEADER: u32 = 0x0100_0012;
+/// Tag of the edge header that opens a line group (§6.1, §7.2); the
+/// singular-use record of the exact stream (§8.13) has the same tag.
+const LINE_GROUP_HEADER: u32 = token::EXACT_SINGULAR_USE;
 
 /// One triangle mesh: the patches of a member that share an appearance and
 /// a vertex layout.

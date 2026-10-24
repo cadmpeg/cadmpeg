@@ -45,7 +45,7 @@ that width are tabled once per width.
 | `0x13` | EXACT_SURFACE | variable | Exact stream: supporting surface; starts a face. | §8.2 |
 | `0x01000010` | EXACT_LOOP | 4 B | Exact stream: loop record with an i32 marker. | §8.2 |
 | `0x11` | EXACT_COEDGE | 13 B | Exact stream: coedge record. | §8.2 |
-| `0x01000012` | EXACT_SINGULAR_USE | variable | Exact stream: singular edge use; 4 + 2w bytes. | §8.2 |
+| `0x01000012` | EXACT_SINGULAR_USE | variable | Exact stream: singular edge use; 4 + 2w bytes. The same value is the tag of the edge header that opens an edge group (§7.2) or a line group (§6.1). | §8.2 |
 | `0x14` | EXACT_EDGE_CURVE | variable | Exact stream: 3D edge curve. | §8.2 |
 | `0x15` | EXACT_PCURVE | variable | Exact stream: 2D pcurve. | §8.2 |
 

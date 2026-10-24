@@ -108,7 +108,7 @@ fn cube_becomes_a_valid_outward_solid() {
 #[test]
 fn opaque_records_are_reported() {
     let mut stream = cube_stream(true, [false; 6], [false; 6]);
-    stream.record(0x0a, &[0; 12]);
+    stream.record(0x0a_u32, &[0; 12]);
     let (_, losses, body) = emit_stream(stream);
     assert_eq!(body.len(), 1);
     assert!(losses
@@ -296,7 +296,7 @@ fn polyline_pcurve_carries_its_chord_deviation() {
         .scalars(&[0.0, 0.0, 0.0, radius, 0.0, 0.0, 0.0, radius, 0.0])
         .u8(0)
         .bytes();
-    stream.record(crate::test_support::exact::EDGE_CURVE, &circle);
+    stream.record(crate::layout::token::EXACT_EDGE_CURVE, &circle);
     let points: Vec<f64> = (0..=segments)
         .flat_map(|step| {
             let angle = std::f64::consts::TAU * f64::from(step) / f64::from(segments);
@@ -311,7 +311,7 @@ fn polyline_pcurve_carries_its_chord_deviation() {
         .scalars(&points)
         .u8(0)
         .bytes();
-    stream.record(crate::test_support::exact::PCURVE, &polyline);
+    stream.record(crate::layout::token::EXACT_PCURVE, &polyline);
     let (ir, _, _) = emit_stream(stream);
     let sagitta_mm = radius * (1.0 - (std::f64::consts::PI / f64::from(segments)).cos()) * 1000.0;
     let fit = ir.model.pcurves[0].fit_tolerance().unwrap().get();
@@ -335,7 +335,7 @@ fn square_with_collapsed_corner(extent: f64) -> Stream {
     stream.terminator();
     let singular = stream.payload().u32(4).scalar(0.0).scalar(1.0).bytes();
     stream
-        .record(crate::test_support::exact::SINGULAR_USE, &singular)
+        .record(crate::layout::token::EXACT_SINGULAR_USE, &singular)
         .terminator();
     for position in 0..4 {
         let (a, b): ([f64; 2], [f64; 2]) = (corners[position], corners[(position + 1) % 4]);
@@ -396,7 +396,7 @@ fn torus_with_secondary_pcurves(major: f64, minor: f64) -> Stream {
         .scalars(&[0.0, 0.0, 0.0, 1.0, 0.0, 0.01, 0.0, 1.0])
         .scalars(&[0.01, 0.0, 0.0, 1.0, 0.01, 0.01, 0.0, 1.0])
         .bytes();
-    stream.record(crate::test_support::exact::SURFACE, &payload);
+    stream.record(crate::layout::token::EXACT_SURFACE, &payload);
     stream
         .loop_record(-2)
         .coedge(0, 1, crate::test_support::exact::NONE, 0)
@@ -457,7 +457,7 @@ fn square_face(positions: &[usize]) -> Stream {
 #[test]
 fn undefined_surface_type_is_reported() {
     let mut stream = Stream::new(true);
-    stream.record(crate::test_support::exact::SURFACE, &[3, 0, 0, 7, 7, 7]);
+    stream.record(crate::layout::token::EXACT_SURFACE, &[3, 0, 0, 7, 7, 7]);
     stream
         .loop_record(-2)
         .coedge(0, 1, 0, crate::test_support::exact::NONE)
