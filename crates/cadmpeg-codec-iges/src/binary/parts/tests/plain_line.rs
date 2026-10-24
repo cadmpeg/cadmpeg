@@ -33,11 +33,7 @@ fn plain_line_values_are_returned_by_the_actual_binary_callback_and_source_flip(
             .expect("original counted Line Parameter");
         let (normalized, _) =
             super::super::normalize(source, &ctx).expect("actual source callbacks");
-        let records = normalized
-            .admission
-            .parameters
-            .as_ref()
-            .expect("complete real callback handoff");
+        let records = &normalized.admission.parameters;
         assert_eq!(records.len(), 2);
         assert_eq!(records[0].directory_sequence, 1);
         for (index, expected) in [110, start_x, 2, 3, 4, 5, 6].into_iter().enumerate() {

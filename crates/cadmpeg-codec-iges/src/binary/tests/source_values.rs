@@ -293,10 +293,7 @@ fn unproved_global_integer_capacity_keeps_the_existing_uncredited_handoff() {
         .expect("edited source");
     let (normalized, _) =
         crate::binary::parts::normalize(source, &ctx).expect("unchanged admitted source semantics");
-    let records = normalized
-        .admission
-        .parameters
-        .expect("existing typed handoff remains available");
+    let records = normalized.admission.parameters;
     assert_eq!(records.len(), 2);
     for (index, expected) in [110, 1, 2, 3, 4, 5, 6].into_iter().enumerate() {
         assert_eq!(records[0].integer(index), Some(expected));

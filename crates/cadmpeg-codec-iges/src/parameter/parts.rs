@@ -55,6 +55,7 @@ pub(crate) fn assemble(
                 scan,
                 directory,
                 excluded_directory,
+                None,
                 global,
                 |owned, lines, ownership| {
                     if !source_parts.initialized {

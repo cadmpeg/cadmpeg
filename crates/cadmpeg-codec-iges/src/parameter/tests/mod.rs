@@ -10,6 +10,7 @@ use crate::card::scan;
 use crate::card::Section;
 use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 
+mod admitted_route;
 mod advanced_entity_boundaries;
 mod advanced_geometry_boundaries;
 mod curve_surface_boundaries;

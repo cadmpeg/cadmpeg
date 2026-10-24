@@ -61,11 +61,7 @@ fn original_point_coordinates_keep_exact_nonzero_windows_native_values_and_sourc
         let (_, extent, body) = crate::binary::counted_record(sections.parameter, 0, "Point")
             .expect("actual counted point");
         let (normalized, _) = super::super::normalize(source, &ctx).expect("source-owned points");
-        let records = normalized
-            .admission
-            .parameters
-            .as_ref()
-            .expect("actual callback records");
+        let records = &normalized.admission.parameters;
         assert_eq!(records.len(), 2);
         assert_eq!(records[0].directory_sequence, 1);
         for (index, value) in [116, x, 2, 3].into_iter().enumerate() {

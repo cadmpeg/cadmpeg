@@ -39,10 +39,7 @@ fn binary_global_admission_uses_the_actual_rendered_card_boundaries_and_keeps_re
         Some("part.igs")
     );
     assert_eq!(normalized.admission.global.units_name(), Some("MM"));
-    let parameters = normalized
-        .admission
-        .parameters
-        .expect("typed callback handoff");
+    let parameters = normalized.admission.parameters;
     assert_eq!(parameters.len(), 1);
     assert_eq!(parameters[0].directory_sequence, 1);
     for (index, expected) in [(1, 1.0), (2, 2.0), (3, 3.0)] {

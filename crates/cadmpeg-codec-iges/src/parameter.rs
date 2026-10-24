@@ -4027,9 +4027,52 @@ pub(crate) fn assemble(
         scan,
         directory,
         excluded_directory,
+        None,
         global,
         |owned, lines, _| parse_legacy_owned(owned, lines, global),
     )
+}
+
+/// Parameter records admitted one by one.
+pub(crate) struct AdmittedRecords<'a> {
+    /// The admitted records.
+    pub(crate) records: Vec<ParameterRecord>,
+    /// Directory sequences of the records that are not admitted.
+    pub(crate) unadmitted: &'a BTreeSet<u32>,
+}
+
+/// Assemble Parameter Data whose records are admitted one by one.
+///
+/// An admitted record keeps its admission; a record that is not admitted is
+/// assembled from its cards. An entry with no Parameter record is neither.
+/// The trailing-pointer analysis runs over the union, because it relates
+/// records to each other.
+pub(crate) fn assemble_with_admitted(
+    scan: &CardScan,
+    directory: &[DirectoryEntry],
+    excluded_directory: impl IntoIterator<Item = u32>,
+    admitted: AdmittedRecords<'_>,
+    global: &ResolvedGlobal,
+) -> Result<ParameterAssembly, CodecError> {
+    let mut assembly = assemble_with(
+        scan,
+        directory,
+        excluded_directory,
+        Some(admitted.unadmitted),
+        global,
+        |owned, lines, _| parse_legacy_owned(owned, lines, global),
+    )?;
+    assembly.records.extend(admitted.records);
+    assembly
+        .records
+        .sort_by_key(|record| record.directory_sequence);
+    let entries: BTreeMap<_, _> = directory
+        .iter()
+        .filter(|entry| !(entry.entity_type == 0 && entry.parameter_line_count == 0))
+        .map(|entry| (entry.sequence, entry))
+        .collect();
+    assembly.trailing_pointer_analysis = finish_records(&entries, &mut assembly.records, global);
+    Ok(assembly)
 }
 
 enum ParsedOwned {
@@ -4042,6 +4085,7 @@ fn assemble_with(
     scan: &CardScan<'_>,
     directory: &[DirectoryEntry],
     excluded_directory: impl IntoIterator<Item = u32>,
+    only: Option<&BTreeSet<u32>>,
     global: &ResolvedGlobal,
     mut parse: impl FnMut(
         &Ownership<'_>,
@@ -4069,7 +4113,10 @@ fn assemble_with(
     let mut records = Vec::new();
     let mut quarantined = Vec::new();
     let mut given_up = BTreeSet::new();
-    for owned in &ownership {
+    for owned in ownership
+        .iter()
+        .filter(|owned| only.is_none_or(|only| only.contains(&owned.entry.sequence)))
+    {
         match parse(owned, &lines, &ownership)? {
             ParsedOwned::Record(record) => records.push(record),
             ParsedOwned::Quarantined(record) => quarantined.push(record),

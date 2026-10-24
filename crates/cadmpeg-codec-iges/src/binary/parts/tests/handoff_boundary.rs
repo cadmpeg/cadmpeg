@@ -22,7 +22,16 @@ fn an_unresolved_line_coordinate_reference_gives_up_only_its_parameter_record() 
             // refusal. It gives up the nearest part the decoder runs that
             // holds the value: the Line's Parameter Data record.
             let (actual, _) = actual.expect("an unresolved reference gives up one part");
-            assert!(actual.admission.parameters.is_some());
+            // The admitted Parameter records: the Point peer only.
+            assert_eq!(
+                actual
+                    .admission
+                    .parameters
+                    .iter()
+                    .map(|record| record.directory_sequence)
+                    .collect::<Vec<_>>(),
+                [3]
+            );
             let decoded = crate::IgesCodec
                 .decode(
                     &mut std::io::Cursor::new(bytes.clone()),
@@ -91,7 +100,18 @@ fn an_unresolved_line_coordinate_reference_gives_up_only_its_parameter_record() 
             assert_eq!(native.arenas()["entities"][1], old.arenas()["entities"][1]);
         } else {
             let (actual, _) = actual.expect("valid source reference keeps the legacy route");
-            assert!(actual.admission.parameters.is_none());
+            // #222: the route is chosen per record. The Line's encoded
+            // coordinate is not admitted, so the Line is assembled from its
+            // cards; the Point stays admitted.
+            assert_eq!(
+                actual
+                    .admission
+                    .parameters
+                    .iter()
+                    .map(|record| record.directory_sequence)
+                    .collect::<Vec<_>>(),
+                [3]
+            );
             let decoded = crate::test_support::decode(bytes.clone());
             assert_eq!(decoded.ir().model.curves.len(), 1);
             assert_eq!(decoded.ir().model.points.len(), 3);

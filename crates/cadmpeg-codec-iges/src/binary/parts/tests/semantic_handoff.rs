@@ -38,29 +38,11 @@ fn actual_binary_callbacks_return_the_same_records_that_the_renderer_binds_and_r
     assert!(quarantined.is_empty());
     let expected = crate::parameter::assemble(&scan, &directory, [], &normalized.admission.global)
         .expect("existing Parameter grammar oracle");
-    assert_eq!(
-        normalized
-            .admission
-            .parameters
-            .as_ref()
-            .expect("admitted source records"),
-        &expected.records
-    );
-    assert_eq!(
-        normalized
-            .admission
-            .parameters
-            .as_ref()
-            .expect("admitted source records")
-            .len(),
-        2
-    );
+    assert_eq!(&normalized.admission.parameters, &expected.records);
+    assert_eq!(normalized.admission.parameters.len(), 2);
     let actual = crate::parameter::finish_admitted(
         &directory,
-        normalized
-            .admission
-            .parameters
-            .expect("admitted source records"),
+        normalized.admission.parameters,
         &normalized.admission.global,
     );
     assert_eq!(
