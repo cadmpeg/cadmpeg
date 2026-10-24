@@ -2350,6 +2350,7 @@ fn resolved_fillet_assignments<'a>(
             .tangency_weight_parameter_record_index
             .map(|record| {
                 parameter(record, "TangencyWeight")
+                    .filter(|parameter| parameter.unit().is_none())
                     .map(crate::records::parameters::DesignParameter::evaluated_value)
             })
             .map_or(Some(None), |value| value.map(Some))?;
