@@ -876,6 +876,19 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             ));
         }
     }
+    let properties_by_record = data
+        .pm_dc_feature_properties
+        .iter()
+        .map(|property| {
+            (
+                (
+                    property.identity.segment_token.as_str(),
+                    property.identity.record_ordinal,
+                ),
+                property,
+            )
+        })
+        .collect::<HashMap<_, _>>();
     for property in &data.pm_dc_feature_properties {
         let mut references = vec![
             property.header.next.index(),
@@ -915,6 +928,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             | PmDcFeaturePropertyKind::Boolean { .. }
             | PmDcFeaturePropertyKind::RdxVariable { .. }
             | PmDcFeaturePropertyKind::EdgeItem { .. }
+            | PmDcFeaturePropertyKind::FaceItem { .. }
             | PmDcFeaturePropertyKind::TerminationFlag { .. } => {}
             PmDcFeaturePropertyKind::PlaneSurface {
                 references: surface,
@@ -934,6 +948,17 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor PmDc feature-property record or reference does not resolve".into(),
+                Some(property.id()),
+            ));
+        }
+        if !face_property_is_admitted(property, |ordinal| {
+            properties_by_record
+                .get(&(property.identity.segment_token.as_str(), ordinal))
+                .copied()
+        }) {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor PmDc face selection has an invalid record type, list, or member".into(),
                 Some(property.id()),
             ));
         }
@@ -1072,16 +1097,16 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         .iter()
         .map(|property| (property.id(), property))
         .collect::<HashMap<_, _>>();
-    let properties_by_record = data
-        .pm_dc_feature_properties
+    let parameters_by_record = data
+        .pm_dc_parameters
         .iter()
-        .map(|property| {
+        .map(|parameter| {
             (
                 (
-                    property.identity.segment_token.as_str(),
-                    property.identity.record_ordinal,
+                    parameter.identity.segment_token.as_str(),
+                    parameter.identity.record_ordinal,
                 ),
-                property,
+                parameter,
             )
         })
         .collect::<HashMap<_, _>>();
@@ -1116,6 +1141,12 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             if native.is_some_and(|native| history_records.contains(native))
                 && crate::feature::FeatureFamily::from_definition(feature.evaluation.definition())
                     .is_none()
+                && !matches!(
+                    feature.evaluation.definition(),
+                    cadmpeg_ir::features::FeatureDefinition::Operation(
+                        cadmpeg_ir::features::FeatureOperation::CosmeticThread { .. }
+                    )
+                )
             {
                 continue;
             }
@@ -1126,6 +1157,49 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             ));
             continue;
         };
+        if let cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::CosmeticThread {
+                face,
+                diameter,
+                extent,
+            },
+        ) = feature.evaluation.definition()
+        {
+            let token = raw_feature.identity.segment_token.as_str();
+            let collection = crate::feature::thread_face_collection(
+                raw_feature,
+                |reference| {
+                    properties_by_record
+                        .get(&(token, reference.checked_sub(1)?))
+                        .copied()
+                },
+                |reference| {
+                    reference
+                        .checked_sub(1)
+                        .is_some_and(|ordinal| parameters_by_record.contains_key(&(token, ordinal)))
+                },
+            );
+            let label_matches = labels
+                .get(&(token, raw_feature.identity.record_ordinal))
+                .is_some_and(|label| label.class_id() == crate::feature::THREAD_CLASS_ID);
+            let selection_matches = collection.is_some_and(|collection| {
+                matches!(face, cadmpeg_ir::features::FaceSelection::Native(native)
+                    if *native == collection.id())
+            });
+            if !label_matches
+                || !selection_matches
+                || diameter.is_some()
+                || extent.is_some()
+                || results.contains_key(&feature.id)
+            {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    "Inventor thread annotation does not match its PmDc face selection".into(),
+                    Some(feature.id.as_str().to_owned()),
+                ));
+            }
+            continue;
+        }
         let Some(family) =
             crate::feature::FeatureFamily::from_definition(feature.evaluation.definition())
         else {
@@ -1228,6 +1302,39 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             format!("Inventor feature record: {}", issue.detail),
             Some(issue.id()),
         ));
+    }
+}
+
+fn face_property_is_admitted<'a>(
+    property: &PmDcFeatureProperty,
+    property_at: impl Fn(u32) -> Option<&'a PmDcFeatureProperty>,
+) -> bool {
+    let face_item_type = "ccb59f50d1114f6b0008a1ba32a3dc09";
+    let face_collection_type = "f1b2bc24d01121dd0008d0bc0663dc09";
+    let valid_item = |item: &PmDcFeatureProperty| {
+        item.identity.type_id.as_str() == face_item_type
+            && matches!(&item.kind, PmDcFeaturePropertyKind::FaceItem { index_references }
+                if index_references.marker() == 2 && !index_references.values().is_empty())
+    };
+    match &property.kind {
+        PmDcFeaturePropertyKind::FaceItem { .. } => valid_item(property),
+        PmDcFeaturePropertyKind::References {
+            family: crate::feature::PmDcFeatureReferenceFamily::FaceCollection,
+            items,
+        } => {
+            property.identity.type_id.as_str() == face_collection_type
+                && items.marker() == 2
+                && items.references().iter().all(|reference| {
+                    reference
+                        .record_ordinal()
+                        .and_then(&property_at)
+                        .is_some_and(valid_item)
+                })
+        }
+        _ => {
+            property.identity.type_id.as_str() != face_item_type
+                && property.identity.type_id.as_str() != face_collection_type
+        }
     }
 }
 
@@ -2424,3 +2531,6 @@ pub(crate) fn fillet_option_is_admitted<'a>(
             type_id == crate::pmdc::type_id_string(crate::feature::BOOLEAN_TYPE)
         })
 }
+
+#[cfg(test)]
+mod tests;

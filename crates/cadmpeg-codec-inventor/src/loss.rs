@@ -63,7 +63,9 @@ pub(crate) enum InventorLossCode {
     FeatureLabelNameReplaced,
     /// Typed feature records have an operation graph that is not closed.
     FeatureOperationGraphOpen,
-    /// Inventor operations retain native result-body identity with unresolved state.
+    /// Thread annotations retain sizing and termination operands only natively.
+    FeatureThreadDefinitionPartial,
+    /// Inventor operations retain unresolved suppression and dependency state.
     FeatureStateUnresolved,
     /// Parameter records have a unit or expression graph that is not closed.
     ParameterGraphOpen,
@@ -138,6 +140,7 @@ impl InventorLossCode {
         Self::FeatureProfileBodyUndecoded,
         Self::FeatureLabelNameReplaced,
         Self::FeatureOperationGraphOpen,
+        Self::FeatureThreadDefinitionPartial,
         Self::FeatureStateUnresolved,
         Self::ParameterGraphOpen,
         Self::ParameterExpressionBounded,
@@ -188,6 +191,7 @@ impl InventorLossCode {
             Self::FeatureProfileBodyUndecoded => "feature.profile-body-undecoded",
             Self::FeatureLabelNameReplaced => "feature.label-name-replaced",
             Self::FeatureOperationGraphOpen => "feature.operation-graph-open",
+            Self::FeatureThreadDefinitionPartial => "feature.thread-definition-partial",
             Self::FeatureStateUnresolved => "feature.state-unresolved",
             Self::ParameterGraphOpen => "parameter.graph-open",
             Self::ParameterExpressionBounded => "parameter.expression-bounded",
@@ -252,6 +256,7 @@ impl InventorLossCode {
             }
             Self::KernelHeaderToleranceUnresolved => LossTaxonomy::GeometryNotTransferred,
             Self::FeatureOperationGraphOpen
+            | Self::FeatureThreadDefinitionPartial
             | Self::FeatureProfileBodyUndecoded
             | Self::SketchConstructionUnresolved
             | Self::FeatureStateUnresolved
@@ -331,6 +336,7 @@ mod tests {
                 "feature.profile-body-undecoded",
                 "feature.label-name-replaced",
                 "feature.operation-graph-open",
+                "feature.thread-definition-partial",
                 "feature.state-unresolved",
                 "parameter.graph-open",
                 "parameter.expression-bounded",

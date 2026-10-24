@@ -758,6 +758,24 @@ fn decode_container<'a>(
                 unresolved.features
             )));
         }
+        let partial_threads = ir
+            .model
+            .features
+            .iter()
+            .filter(|feature| {
+                matches!(
+                    feature.evaluation.definition(),
+                    cadmpeg_ir::features::FeatureDefinition::Operation(
+                        cadmpeg_ir::features::FeatureOperation::CosmeticThread { .. }
+                    )
+                )
+            })
+            .count();
+        if partial_threads != 0 {
+            losses.push(InventorLossCode::FeatureThreadDefinitionPartial.note(format!(
+                "Transferred {partial_threads} Inventor thread annotation(s) with native face selections; sizing, handedness, and termination operands remain native."
+            )));
+        }
         if unresolved.profile_bodies != 0 {
             losses.push(InventorLossCode::FeatureProfileBodyUndecoded.note(format!(
                 "{} PmDc profile body record(s) did not decode; extrusions whose profiles select them keep their native profile selection.",
@@ -766,7 +784,7 @@ fn decode_container<'a>(
         }
         if unresolved.feature_states != 0 {
             losses.push(InventorLossCode::FeatureStateUnresolved.note(format!(
-                "Transferred {} Inventor operation(s) with native result-body identity and unresolved suppression and dependency state.",
+                "Transferred {} Inventor operation(s) with unresolved suppression and dependency state.",
                 unresolved.feature_states
             )));
         }

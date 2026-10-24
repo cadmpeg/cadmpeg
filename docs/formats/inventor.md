@@ -372,6 +372,10 @@ The part-operation, extent, hole-form, fillet-form, and chamfer-form records use
 
 Type `284d8790d011f8d10008cabc0663dc09` adds a counted UTF-16LE name, `name_value:u32`, and a Boolean byte. The Boolean byte is 0 or 1. Types `91739422d11107cf000835bd0663dc09`, `71f23ed8d2115094a00049803603c8c9`, `ae70680ed14a1e86d76248b03c2a96e1`, and `dae9481bd211dc2c00083eab1b14dc09` add one type-2 reference list. They identify a boundary patch, feature dimensions, an object collection, and constant-radius fillet edge sets respectively.
 
+Type `f1b2bc24d01121dd0008d0bc0663dc09` stores a face collection. After the content header it stores one type-2 reference list and ends. Each non-null member selects a record in the same PmDc segment.
+
+Type `ccb59f50d1114f6b0008a1ba32a3dc09` stores a face item. After the content header it stores a nonempty type-2 `u32` index-reference list and `terminal_value:i32 = -1`, then ends. The index values are native topology selectors, not one-based PmDc record references.
+
 Type `dfd51dbbd1116e72000817bd0663dc09` adds a counted UTF-16LE name and three u32 values: the name value, nominal value, and model value. Type `474d8790d011f8d10008cabc0663dc09` adds one body reference. Type `3b2477a4d1118f96000826bd0663dc09` adds an entity-link reference and one u8 value. Type `2c9256724d4d6d709427fd964d84df16` adds transform, point, and value references.
 
 Before segment major version 28, a feature label record with type `2ba4482bd2115864600074b79b49ebb0` starts with this 26-byte linked-element header:
@@ -440,6 +444,8 @@ A constant-radius edge fillet uses slot 0 for the fillet edge-set collection, sl
 An equal-distance edge chamfer uses slot 0 for its edge collection, slot 2 for its length, slot 4 for the chamfer form, slot 5 for direction reversal, and slot 11 for the result object collection. Chamfer values 0, 1, and 2 mean equal distance, distance and angle, and two distances. The equal-distance branch does not consume an oriented support face.
 
 A hole uses slots 0 through 6 for hole form, diameter, depth, entry diameter, entry depth, entry angle, and drill-point angle. Slots 8, 9, 16, 17, 21, and 24 identify its transform, extent, a direction, a Boolean, a placement, and the result object collection. Hole-form values 0, 1, 2, and 3 mean drilled, countersink, counterbore, and spotface. The placement transform translation uses internal centimetres. The direction record supplies the drilling direction. The placement record repeats the transform reference and retains its point and value references.
+
+Feature-label class `0619aa28d411c77a6000c4a4cae1fbb0` identifies a Thread annotation on selected cylindrical faces. Its generic feature record has nine property slots. Slot 0 is the face collection; it contains at least one face item. Slots 1, 2, and 6 are Boolean properties. Slots 3 and 4 are numeric parameter references. Slot 5 is an edge collection, and slot 8 is the feature-dimension collection. Slot 7 is a native property reference. A Thread annotation has no result object collection.
 
 A result object collection contains one or more surface-body references. This ordered surface-body list is the feature's native result-body identity.
 
