@@ -9,6 +9,11 @@ use std::num::NonZeroU32;
 cadmpeg_core::named_optional_field!(deserialize_scope_record_index, u32, "scope_record_index");
 cadmpeg_core::named_optional_field!(deserialize_transform_offset, u64, "transform_offset");
 cadmpeg_core::named_optional_field!(deserialize_visibility, DesignSketchVisibility, "visibility");
+cadmpeg_core::named_optional_field!(
+    deserialize_ordinal_collection,
+    std::num::NonZeroU64,
+    "ordinal_collection"
+);
 /// Typed sketch-container visibility bound to a Design sketch entity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(
@@ -21,6 +26,7 @@ pub(crate) struct DesignSketchVisibility {
     stream_ordinal_offset: u64,
     /// Direct display visibility.
     pub(crate) visible: bool,
+    pub(crate) ordinal_collection: Option<std::num::NonZeroU64>,
 }
 
 impl DesignSketchVisibility {
@@ -36,6 +42,7 @@ impl DesignSketchVisibility {
             stream_ordinal,
             stream_ordinal_offset,
             visible,
+            ordinal_collection: None,
         })
     }
 
@@ -54,17 +61,24 @@ struct DesignSketchVisibilityWire {
     stream_ordinal_offset: u64,
     visible_offset: u64,
     visible: bool,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_ordinal_collection"
+    )]
+    ordinal_collection: Option<std::num::NonZeroU64>,
 }
 
 impl TryFrom<DesignSketchVisibilityWire> for DesignSketchVisibility {
     type Error = String;
 
     fn try_from(wire: DesignSketchVisibilityWire) -> Result<Self, Self::Error> {
-        let value = Self::new(
+        let mut value = Self::new(
             NonZeroU32::new(wire.stream_ordinal).ok_or("stream_ordinal must be nonzero")?,
             wire.stream_ordinal_offset,
             wire.visible,
         )?;
+        value.ordinal_collection = wire.ordinal_collection;
         if wire.visible_offset != value.visible_offset() {
             return Err("visible_offset must equal stream_ordinal_offset + 5".into());
         }
@@ -79,6 +93,7 @@ impl From<DesignSketchVisibility> for DesignSketchVisibilityWire {
             stream_ordinal_offset: value.stream_ordinal_offset(),
             visible_offset: value.visible_offset(),
             visible: value.visible,
+            ordinal_collection: value.ordinal_collection,
         }
     }
 }

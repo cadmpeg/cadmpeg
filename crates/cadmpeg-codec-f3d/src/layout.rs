@@ -5890,3 +5890,27 @@ pub(crate) mod rectangular_pattern_payload_suffix {
     /// Offset of `zero_tail` (`bytes[4]`). Spec §Assembly operands.
     pub(crate) const ZERO_TAIL: usize = 33;
 }
+
+/// Byte offsets for the `sketch_geometry_ordinal_collection_reference` record.
+///
+/// Spec §3.1. Record length 11 B.
+///
+/// ```text
+/// The reference starts at offset 36 relative to the Geometry-member indexed header.
+/// ```
+pub(crate) mod sketch_geometry_ordinal_collection_reference {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 11;
+    /// Offset of `target` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const TARGET: usize = 1;
+}
+
+/// Byte offsets for the `sketch_ordinal_collection_prefix` record.
+///
+/// Spec §3.1. Record length 20 B.
+pub(crate) mod sketch_ordinal_collection_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 20;
+    /// Offset of `zero_run` (`bytes[9]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+}

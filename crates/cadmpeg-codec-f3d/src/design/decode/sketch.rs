@@ -334,6 +334,12 @@ fn decode_sketch_visibilities_in_stream(
     metadata: &crate::metastream::MetaStream,
 ) -> Result<Vec<(u64, DesignSketchVisibility)>, CodecError> {
     let mut out = Vec::new();
+    let collections = super::meta::typed_primary_frames(
+        bytes,
+        metadata,
+        "5275CBA4-3D7D-40DC-A651-1DFF3FC8AFBF",
+        "sketch ordinal collection",
+    )?;
     for frame in super::meta::typed_primary_frames(
         bytes,
         metadata,
@@ -423,9 +429,57 @@ fn decode_sketch_visibilities_in_stream(
             )));
         };
 
+        if let Some(collection) = visibility.ordinal_collection {
+            let valid = collections
+                .iter()
+                .find(|frame| frame.entity_id == collection.get())
+                .is_some_and(|frame| {
+                    frame.design_type.version == 4
+                        && frame.design_type.module == "Geometry"
+                        && frame
+                            .design_type
+                            .base_type_guid
+                            .value()
+                            .is_some_and(|base| {
+                                base.as_str()
+                                    .eq_ignore_ascii_case(SKETCH_CONTAINER_MEMBER_BASE_TYPE_GUID)
+                            })
+                        && ordinal_collection_contains(
+                            &bytes[frame.start..frame.end],
+                            entity_suffix,
+                        ) == Some(true)
+                });
+            if !valid {
+                return Err(crate::design::text::malformed_design(format_args!(
+                    "F3D sketch container {entity_suffix} has an invalid ordinal collection"
+                )));
+            }
+        }
         out.push((entity_suffix, visibility));
     }
     Ok(out)
+}
+
+fn ordinal_collection_contains(bytes: &[u8], entity_suffix: u64) -> Option<bool> {
+    use crate::layout::sketch_ordinal_collection_prefix as collection;
+    if bytes.get(collection::ZERO_RUN..collection::LEN)? != [0; 9] {
+        return None;
+    }
+    let mut cursor = collection::LEN;
+    read_property_block(bytes, &mut cursor)?.find("crv_tag_id_idx")?;
+    let count = View::u32_le_at(bytes, cursor)?;
+    cursor += 4;
+    let count =
+        cadmpeg_core::decode::bounded_len(u64::from(count), 11, bytes.len().checked_sub(cursor)?)?;
+    let mut matches = 0;
+    for _ in 0..count {
+        let reference = take_reference(bytes, &mut cursor)?;
+        let (target, None) = reference.local()? else {
+            return None;
+        };
+        matches += usize::from(target == entity_suffix);
+    }
+    Some(matches == 1)
 }
 
 fn decode_sketch_visibility_member(
@@ -462,12 +516,21 @@ fn decode_sketch_visibility_member(
     if bytes.get(member_at + visibility_member::TAIL_MARKER) != Some(&1) {
         return None;
     }
-    DesignSketchVisibility::new(
+    let mut visibility = DesignSketchVisibility::new(
         stream_ordinal,
         u64_from_index(stream_ordinal_offset),
         visible,
     )
-    .ok()
+    .ok()?;
+    let mut collection_at = member_at + visibility_member::TAIL_MARKER;
+    visibility.ordinal_collection = take_reference(bytes, &mut collection_at)
+        .and_then(|reference| {
+            reference
+                .local()
+                .and_then(|(target, type_guid)| type_guid.is_none().then_some(target))
+        })
+        .and_then(std::num::NonZeroU64::new);
+    Some(visibility)
 }
 
 /// Byte length of a member-run head carrying an explicit 4×4 transform.

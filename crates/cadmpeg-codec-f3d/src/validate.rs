@@ -7727,9 +7727,7 @@ fn validate_sketch_placements(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
     let mut placement_scopes = HashSet::new();
     let mut visibility_offsets = HashSet::new();
     let mut visibility_ordinals = HashSet::new();
-    let mut ordinals_by_component = BTreeMap::<(&str, Option<u64>), Vec<(u64, u32)>>::new();
-    // Sketch Geometry member ordinals count within a component: the one whose
-    // entity cluster, starting at its root entity, holds the sketch entity.
+    let mut ordinals_by_namespace = BTreeMap::<(&str, (bool, Option<u64>)), Vec<(u64, u32)>>::new();
     let mut component_roots = HashMap::<&str, Vec<u64>>::new();
     for space in &native.design_component_naming_spaces {
         component_roots
@@ -7750,7 +7748,19 @@ fn validate_sketch_placements(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
     };
     for placement in &native.design_sketch_placements {
         let native_stream = design_stream(&placement.id);
-        let component = component_of(native_stream, placement.entity_id.suffix());
+        let ordinal_namespace = placement
+            .visibility
+            .as_ref()
+            .and_then(|visibility| visibility.ordinal_collection)
+            .map_or_else(
+                || {
+                    (
+                        false,
+                        component_of(native_stream, placement.entity_id.suffix()),
+                    )
+                },
+                |collection| (true, Some(collection.get())),
+            );
         let unique_record = placement_records.insert((native_stream, placement.record_index));
         let unique_scope = match placement.scope_record_index {
             Some(index) => placement_scopes.insert((native_stream, index)),
@@ -7767,12 +7777,12 @@ fn validate_sketch_placements(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
             if header_valid
                 && visibility_ordinals.insert((
                     native_stream,
-                    component,
+                    ordinal_namespace,
                     visibility.stream_ordinal.get(),
                 ))
             {
-                ordinals_by_component
-                    .entry((native_stream, component))
+                ordinals_by_namespace
+                    .entry((native_stream, ordinal_namespace))
                     .or_default()
                     .push((
                         placement.entity_id.suffix(),
@@ -7809,7 +7819,7 @@ fn validate_sketch_placements(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
             );
         }
     }
-    for ((stream, _), mut ordinals) in ordinals_by_component {
+    for ((stream, _), mut ordinals) in ordinals_by_namespace {
         ordinals.sort_unstable();
         if ordinals.windows(2).any(|pair| pair[0].1 >= pair[1].1) {
             push_constant_finding(

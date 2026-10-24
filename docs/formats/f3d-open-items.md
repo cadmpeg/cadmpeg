@@ -260,14 +260,6 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Need.** A writer must place each asset in the correct run. A document with two simulation studies, or with a simulation asset and no toolpath, shows which asset kinds the secondary run holds.
 
-### DR-90. Component of a sketch Geometry member in a multi-component Design
-
-**Question.** Which component numbers a sketch Geometry member ordinal when a Design stream names several components?
-
-**Known.** `f3d.md` §3.1 "The current sketch entity container" counts the ordinals within the component whose entity cluster holds the sketch entity. The validator selects that component as the naming space with the greatest component record index at or below the sketch entity suffix. In single-component Designs the ordinals increase with the sketch entity suffix. In some Designs with 10 to 362 component naming spaces, two sketches that this rule places in one component carry the same ordinal.
-
-**Need.** The entity cluster boundaries of each component, or the owner link from a sketch entity to its component, give the component of each sketch.
-
 ### DR-91. Opposed joint frame mate
 
 **Question.** For a joint whose frame-sense byte is `1` (opposed), how do the two operand frames' in-plane axes relate, and how does the alignment angle apply?

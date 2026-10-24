@@ -269,6 +269,35 @@ fn sketch_geometry_ordinals_may_skip_values_but_increase_with_entity_order() {
 }
 
 #[test]
+fn sketch_visibility_ordinals_are_unique_within_explicit_collections() {
+    crate::test_support::with_decode_context(|service_ctx| {
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let mut native = two_sketch_placements(false, [2, 2]);
+        for (placement, collection) in native.design_sketch_placements.iter_mut().zip([100, 200]) {
+            placement.visibility.as_mut().unwrap().ordinal_collection =
+                std::num::NonZeroU64::new(collection);
+        }
+        let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
+        let mut findings = Vec::new();
+        super::super::validate_sketch_placements(&ctx, &mut findings);
+        assert!(
+            findings.iter().all(|finding| finding.message
+                != "Fusion Design sketch placement has an invalid frame or scope link"),
+            "{findings:?}"
+        );
+        findings.clear();
+        native.design_sketch_placements[1]
+            .visibility
+            .as_mut()
+            .unwrap()
+            .ordinal_collection = std::num::NonZeroU64::new(100);
+        let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
+        super::super::validate_sketch_placements(&ctx, &mut findings);
+        assert_eq!(findings.len(), 1);
+    });
+}
+
+#[test]
 fn act_table_pool_without_component_links_needs_no_document_root() {
     crate::test_support::with_decode_context(|service_ctx| {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
@@ -306,5 +335,30 @@ fn act_table_pool_without_component_links_needs_no_document_root() {
         assert_eq!(findings.len(), 1);
         assert!(findings.iter().all(|finding| finding.message
             == "Fusion ACT stream does not have exactly one document-root component link"));
+    });
+}
+
+#[test]
+fn sketch_geometry_order_uses_explicit_collections() {
+    crate::test_support::with_decode_context(|service_ctx| {
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let mut native = two_sketch_placements(false, [5, 2]);
+        for (placement, collection) in native.design_sketch_placements.iter_mut().zip([100, 200]) {
+            placement.visibility.as_mut().unwrap().ordinal_collection =
+                std::num::NonZeroU64::new(collection);
+        }
+        let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
+        let mut findings = Vec::new();
+        super::super::validate_sketch_placements(&ctx, &mut findings);
+        assert!(findings.is_empty(), "{findings:?}");
+        native.design_sketch_placements[1]
+            .visibility
+            .as_mut()
+            .unwrap()
+            .ordinal_collection = std::num::NonZeroU64::new(100);
+        let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
+        super::super::validate_sketch_placements(&ctx, &mut findings);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].message, "Fusion Design sketch Geometry member ordinals do not increase with sketch entity order");
     });
 }
