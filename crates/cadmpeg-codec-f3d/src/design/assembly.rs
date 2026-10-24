@@ -94,12 +94,19 @@ impl AssemblyScopeGeneration {
             Axial, Compact, CompactWide, LegacyClass388, Standard, Wide,
         };
         let (operand_frame, lanes, locator_offsets) = match frame_length {
-            378 | 399 => (None, Some((4, 0, 4)), Some([51, 62])),
-            // The placement-ordered `As-built` form with a run of limit
-            // owners: each owner adds an 11-byte reference before the
-            // locators and an 11-byte reference-table entry.
-            422 => (None, Some((6, 0, 4)), Some([73, 84])),
-            444 => (None, Some((7, 0, 4)), Some([84, 95])),
+            378 => (None, Some((4, 0, 4)), Some([
+                crate::layout::assembly_as_built_scope_378::FIRST_LOCATOR_REFERENCE,
+                crate::layout::assembly_as_built_scope_378::SECOND_LOCATOR_REFERENCE,
+            ])),
+            399 => (None, Some((4, 0, 4)), Some([51, 62])),
+            422 => (None, Some((6, 0, 4)), Some([
+                crate::layout::assembly_as_built_scope_422::FIRST_LOCATOR_REFERENCE,
+                crate::layout::assembly_as_built_scope_422::SECOND_LOCATOR_REFERENCE,
+            ])),
+            444 => (None, Some((7, 0, 4)), Some([
+                crate::layout::assembly_as_built_scope_444::FIRST_LOCATOR_REFERENCE,
+                crate::layout::assembly_as_built_scope_444::SECOND_LOCATOR_REFERENCE,
+            ])),
             604 => (None, Some((8, 4, 8)), None),
             627 | 637 | 692 => (Some(Standard), Some((4, 0, 4)), Some([366, 377])),
             633 => (Some(Compact), Some((4, 0, 4)), Some([362, 373])),
@@ -240,16 +247,13 @@ pub(crate) fn rigid_as_built_scope(frame_length: u64, as_built: bool) -> bool {
 }
 
 /// The placement-ordered `As-built` form, whose first four owners are
-/// `OffsetX`, `OffsetY`, `OffsetZ`, and `AngleZ` in local order. Its limit
-/// owners follow them.
+/// `OffsetX`, `OffsetY`, `OffsetZ`, and `AngleZ` in local order.
 pub(crate) fn placement_ordered_as_built_scope(frame_length: u64, as_built: bool) -> bool {
-    as_built && as_built_limit_owner_count(frame_length).is_some()
+    as_built && as_built_additional_owner_count(frame_length).is_some()
 }
 
-/// The limit-owner count a placement-ordered `As-built` frame length
-/// implies: 378 bytes with none, 422 bytes with a rotation's two, and 444
-/// bytes with a slide's three.
-pub(crate) fn as_built_limit_owner_count(frame_length: u64) -> Option<usize> {
+/// The additional-owner count selected by the scope frame length.
+pub(crate) fn as_built_additional_owner_count(frame_length: u64) -> Option<usize> {
     match frame_length {
         378 => Some(0),
         422 => Some(2),
@@ -426,6 +430,7 @@ pub(crate) fn project_assembly_joints(
     let mut paired_joints = 0_usize;
     let mut unprojected_members = 0_usize;
     let mut resting_joints = 0_usize;
+    let mut native_angular_limits = 0_usize;
     for scope in scopes {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
@@ -458,6 +463,9 @@ pub(crate) fn project_assembly_joints(
                             }
                         }),
                 );
+                if motion.is_some_and(zero_lane_rotation_limits) && undecoded.is_none() {
+                    native_angular_limits += 1;
+                }
                 if let Some(reason) = undecoded {
                     undecoded_motion_count += 1;
                     undecoded_motions.insert(reason);
@@ -489,6 +497,11 @@ pub(crate) fn project_assembly_joints(
         let reasons = undecoded_motions.into_iter().collect::<Vec<_>>().join("; ");
         losses.push(F3dLossCode::AssemblyJointMotionUndecoded.note(format!(
             "{undecoded_motion_count} Design assembly joint(s) were projected as fixed: their motion does not map to a joint kind ({reasons})."
+        )));
+    }
+    if native_angular_limits != 0 {
+        losses.push(F3dLossCode::AssemblyJointAngularLimitsNative.note(format!(
+            "{native_angular_limits} projected Design assembly joint(s) retain stored angular limits natively because the zero-lane freedom value is unsettled."
         )));
     }
     if resting_joints != 0 {
@@ -532,7 +545,8 @@ fn scope_joint_motion<'a>(
     matching.next().is_none().then_some(motion)
 }
 
-/// The joint kind a decoded motion selects.
+/// The kind a motion's freedoms and limit lanes select, or the reason they
+/// select none.
 enum JointMotionKind {
     /// Rotation about the connector z axis; `turn_y_to_z` when the freedom is
     /// about the joint's local y axis.
@@ -545,8 +559,21 @@ enum JointMotionKind {
     Slider { limits: Option<JointLimits> },
 }
 
-/// The kind a motion's freedoms and limit lanes select, or the reason they
-/// select none.
+fn zero_lane_rotation_limits(
+    motion: &crate::records::feature::joint_motion::DesignJointMotion,
+) -> bool {
+    matches!(motion.freedoms.as_slice(), [freedom] if matches!(freedom.value, 1 | 2))
+        && motion
+            .entry_words
+            .iter()
+            .any(|entry| entry.zero_second_value)
+        && motion
+            .limits
+            .as_ref()
+            .is_some_and(|lanes| lanes.first_flag == 1 && lanes.second_flag == 1)
+}
+
+/// The joint kind a decoded motion selects.
 fn joint_motion_kind(
     motion: &crate::records::feature::joint_motion::DesignJointMotion,
 ) -> Result<JointMotionKind, String> {
@@ -574,7 +601,7 @@ fn joint_motion_kind(
     match codes.as_slice() {
         [code @ (1 | 2)] => Ok(JointMotionKind::Revolute {
             turn_y_to_z: *code == 1,
-            limits: limits(1.0, "rotation")?,
+            limits: limits(1.0, "rotation")?.filter(|_| !zero_lane_rotation_limits(motion)),
         }),
         [8] => Ok(JointMotionKind::Slider {
             limits: limits(10.0, "translation")?,
@@ -1608,6 +1635,34 @@ mod tests {
         assert_eq!(kind(&revolute)["kind"], "revolute");
         assert_eq!(kind(&revolute)["angular_limits"]["minimum"], -0.25);
         assert!(revolute.losses.is_empty());
+
+        for code in [1, 2, 8] {
+            let mut zero_lane = motion(&[code], [1, 1]);
+            zero_lane.entry_words.push(
+                crate::records::feature::joint_motion::DesignJointFreedomWord {
+                    word: 1,
+                    zero_second_value: true,
+                    value: Some(0.0),
+                },
+            );
+            let projected = project(&[zero_lane]);
+            if code == 8 {
+                assert_eq!(kind(&projected)["kind"], "slider");
+                assert_eq!(kind(&projected)["linear_limits"]["minimum"], -2.5);
+                assert!(projected.losses.is_empty());
+            } else {
+                assert_eq!(kind(&projected)["kind"], "revolute");
+                assert!(kind(&projected)["angular_limits"].is_null());
+                assert_eq!(
+                    projected
+                        .losses
+                        .iter()
+                        .map(|loss| loss.code.clone())
+                        .collect::<Vec<_>>(),
+                    [crate::loss::F3dLossCode::AssemblyJointAngularLimitsNative.kind()]
+                );
+            }
+        }
 
         // Rotation about local y turns each connector frame so y becomes z.
         let turned = project(&[motion(&[1], [0, 0])]);

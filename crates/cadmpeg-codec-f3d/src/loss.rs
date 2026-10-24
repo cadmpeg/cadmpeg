@@ -61,6 +61,8 @@ pub(crate) enum F3dLossCode {
     /// Projected Design assembly joints whose joint record enables a rest
     /// position, which the neutral joint does not carry; retained natively.
     AssemblyJointRestUnprojected,
+    /// Rotation limits retained natively because the zero-lane freedom value is unsettled.
+    AssemblyJointAngularLimitsNative,
     /// Projected Design assembly joints whose operand paths carry occurrence
     /// identity pairs of unknown effect on the joint, retained natively.
     AssemblyOperandPathPairsNative,
@@ -282,6 +284,7 @@ impl F3dLossCode {
         Self::AssemblyJointUnprojected,
         Self::AssemblyJointMotionUndecoded,
         Self::AssemblyJointRestUnprojected,
+        Self::AssemblyJointAngularLimitsNative,
         Self::AssemblyOperandPathPairsNative,
         Self::DrawingDocumentOmitted,
         Self::HistoryBindingBudgetExceeded,
@@ -405,6 +408,7 @@ impl F3dLossCode {
             Self::AssemblyJointUnprojected => "assembly.joint-unprojected",
             Self::AssemblyJointMotionUndecoded => "assembly.joint-motion-undecoded",
             Self::AssemblyJointRestUnprojected => "assembly.joint-rest-unprojected",
+            Self::AssemblyJointAngularLimitsNative => "assembly.joint-angular-limits-native",
             Self::AssemblyOperandPathPairsNative => "assembly.operand-path-pairs-native",
             Self::DrawingDocumentOmitted => "drawing.document-omitted",
             Self::HistoryBindingBudgetExceeded => "history.binding-budget-exceeded",
@@ -547,6 +551,7 @@ impl F3dLossCode {
             | Self::ComponentDefinitionRevised
             | Self::AssemblyJointUnprojected
             | Self::AssemblyJointMotionUndecoded
+            | Self::AssemblyJointAngularLimitsNative
             | Self::AssemblyJointRestUnprojected
             | Self::AssemblyOperandPathPairsNative
             | Self::DrawingDocumentOmitted
@@ -698,6 +703,7 @@ impl F3dLossCode {
             | Self::FeaturePatternInstanceSearchCapped
             | Self::AssemblyJointUnprojected
             | Self::AssemblyJointMotionUndecoded
+            | Self::AssemblyJointAngularLimitsNative
             | Self::AssemblyJointRestUnprojected
             | Self::AssemblyOperandPathPairsNative => LossTaxonomy::FeatureHistoryRetained,
             Self::MaterialDistanceUnitUntyped => LossTaxonomy::MaterialNotTransferred,
@@ -812,6 +818,7 @@ mod tests {
                 "assembly.joint-unprojected",
                 "assembly.joint-motion-undecoded",
                 "assembly.joint-rest-unprojected",
+                "assembly.joint-angular-limits-native",
                 "assembly.operand-path-pairs-native",
                 "drawing.document-omitted",
                 "history.binding-budget-exceeded",

@@ -244,3 +244,39 @@ fn a_freedom_entry_outside_a_motion_record_is_ignored() {
     bytes.extend_from_slice(&[0; 8]);
     assert!(codes(&bytes, &HashMap::new()).is_empty());
 }
+
+#[test]
+fn malformed_rest_lanes_refuse_limits() {
+    let mut bytes = Vec::new();
+    joint(&mut bytes, 10, Some((1.5, -1.5)));
+    let end = bytes.len();
+    assert!(super::joint_limits(&bytes, 0, end, 10).is_some());
+    let flag_at = 31 + super::REST_FLAG_AFTER_SELF_REFERENCE;
+    bytes[flag_at] = 2;
+    assert!(super::joint_limits(&bytes, 0, end, 10).is_none());
+    bytes[flag_at] = 1;
+    let value_at = 31 + super::REST_VALUE_AFTER_SELF_REFERENCE;
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        bytes[value_at..value_at + 8].copy_from_slice(&value.to_le_bytes());
+        assert!(super::joint_limits(&bytes, 0, end, 10).is_none());
+    }
+    bytes[value_at..value_at + 8].copy_from_slice(&0.25f64.to_le_bytes());
+    assert!(super::joint_limits(&bytes, 0, value_at + 7, 10).is_none());
+    assert!(super::joint_limits(&bytes, 0, flag_at, 10).is_none());
+}
+
+#[test]
+fn zero_lane_match_in_a_partner_record_is_not_a_freedom() {
+    let mut bytes = Vec::new();
+    joint(&mut bytes, 10, None);
+    scope(&mut bytes, 11, 10);
+    header(&mut bytes, *b"395", 21);
+    bytes.extend_from_slice(&[0; 13]);
+    reference(&mut bytes, 11);
+    bytes.extend_from_slice(&[0; 9]);
+    bytes.extend_from_slice(&ZERO_LANE_FREEDOM_ENTRY_PREFIX);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    bytes.extend_from_slice(&0f64.to_le_bytes());
+    assert!(codes(&bytes, &HashMap::from([(11, true)])).is_empty());
+}

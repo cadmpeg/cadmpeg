@@ -986,11 +986,11 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
     .is_none());
 }
 
-/// The placement-ordered `As-built` form stores a u32 limit-owner count at
+/// The placement-ordered `As-built` form stores a u32 additional-owner count at
 /// offset 43 and that many owner references after it, then the locator count
 /// and two locator references; its locators are wide operand-path locators.
-/// Its owners are the three offsets, the angle, and the limit owners. The
-/// 378-byte form has no limit owners, the 422-byte form two, and the 444-byte
+/// Its owners are the three offsets, the angle, and the additional owners. The
+/// 378-byte form has no additional owners, the 422-byte form two, and the 444-byte
 /// form three.
 #[test]
 fn as_built_378_alignment_reads_wide_locators() {
@@ -1009,14 +1009,15 @@ fn as_built_378_alignment_reads_wide_locators() {
         scope
             .try_edit(|draft| {
                 draft.frame_length = frame_length;
-                // Nine entries and the limit owners: one other reference, the
-                // four alignment owners, four other references, then the
-                // limit owners.
                 draft.reference_members = ReferenceRun::unlocated(
-                    [80, 50, 51, 52, 53, 81, 82, 83, 84]
-                        .into_iter()
-                        .chain(54..54 + count)
-                        .collect::<Vec<_>>(),
+                    (if count == 0 {
+                        [80, 81, 82, 83, 84, 50, 51, 52, 53]
+                    } else {
+                        [80, 50, 51, 52, 53, 81, 82, 83, 84]
+                    })
+                    .into_iter()
+                    .chain(54..54 + count)
+                    .collect::<Vec<_>>(),
                 );
                 draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
                 draft.layout_fixture_references();
@@ -1044,7 +1045,6 @@ fn as_built_378_alignment_reads_wide_locators() {
         })
         .unwrap()
     };
-    // `OffsetX`, `OffsetY`, `OffsetZ`, `AngleZ`, then the limit owners.
     let owners_of = |count: u32| {
         [(1.0, 501), (2.0, 502), (3.0, 503), (0.25, 504)]
             .into_iter()
@@ -1113,10 +1113,14 @@ fn as_built_378_alignment_reads_wide_locators() {
             .unwrap()
         };
         let alignment = read(&bytes, DesignFeatureKind::AsBuilt)
-            .unwrap_or_else(|| panic!("As-built alignment with {count} limit owners"));
+            .unwrap_or_else(|| panic!("As-built alignment with {count} additional owners"));
         assert_eq!(alignment.angle(), 0.25);
         assert_eq!(alignment.offset(), [1.0, 2.0, 3.0]);
         assert_eq!(alignment.owners.len(), 4);
+        let serialized = serde_json::to_value(&alignment).unwrap();
+        let restored: crate::records::feature::assembly::DesignAssemblyAlignment =
+            serde_json::from_value(serialized).unwrap();
+        assert_eq!(restored, alignment);
         let frames = alignment.operand_frames().expect("wide locator frames");
         assert!(frames
             .iter()
@@ -1139,6 +1143,35 @@ fn as_built_378_alignment_reads_wide_locators() {
         let mut miscounted = bytes.clone();
         miscounted[43..47].copy_from_slice(&(count + 1).to_le_bytes());
         assert!(read(&miscounted, DesignFeatureKind::AsBuilt).is_none());
+
+        if count != 0 {
+            let mut wrong_owner = bytes.clone();
+            wrong_owner[48..52].copy_from_slice(&99_u32.to_le_bytes());
+            assert!(read(&wrong_owner, DesignFeatureKind::AsBuilt).is_none());
+        } else {
+            for references in [
+                vec![50, 51, 52, 53],
+                vec![80, 50, 51, 52, 53, 81, 82, 83, 84],
+            ] {
+                let mut wrong_table = scope_of(DesignFeatureKind::AsBuilt, count);
+                wrong_table
+                    .try_edit(|draft| {
+                        draft.reference_members = ReferenceRun::unlocated(references);
+                        draft.layout_fixture_references();
+                        draft.layout_fixture_tail();
+                    })
+                    .unwrap();
+                assert!(exact_assembly_alignment_with_types(
+                    &bytes,
+                    &records,
+                    &wrong_table,
+                    &owners,
+                    &types
+                )
+                .unwrap()
+                .is_none());
+            }
+        }
     }
 }
 

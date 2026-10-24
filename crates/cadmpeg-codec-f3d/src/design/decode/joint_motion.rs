@@ -238,7 +238,8 @@ fn joint_limits(
     joint_end: usize,
     joint_index: u32,
 ) -> Option<DesignJointLimitLanes> {
-    let window = bytes.get(joint_start + 11..joint_end)?;
+    let bytes = bytes.get(..joint_end)?;
+    let window = bytes.get(joint_start + 11..)?;
     let mut needle = [0u8; 5];
     needle[0] = 1;
     needle[1..].copy_from_slice(&joint_index.to_le_bytes());
@@ -256,15 +257,12 @@ fn joint_limits(
         return None;
     }
     let rest_value_at = marker + REST_VALUE_AFTER_SELF_REFERENCE;
-    let rest = match (
-        bytes.get(marker + REST_FLAG_AFTER_SELF_REFERENCE),
-        crate::bytes::f64s_at::<1>(bytes, rest_value_at).filter(|_| rest_value_at + 8 <= joint_end),
-    ) {
-        (Some(&flag @ (0 | 1)), Some([value])) if value.is_finite() => {
-            (flag != 0 || value.to_bits() != 0).then_some(DesignJointRest { flag, value })
-        }
-        _ => None,
-    };
+    let flag = *bytes.get(marker + REST_FLAG_AFTER_SELF_REFERENCE)?;
+    let [value] = crate::bytes::f64s_at::<1>(bytes, rest_value_at)?;
+    if flag > 1 || !value.is_finite() {
+        return None;
+    }
+    let rest = (flag != 0 || value.to_bits() != 0).then_some(DesignJointRest { flag, value });
     Some(DesignJointLimitLanes {
         flags_offset: u64_from_index(flags_at),
         first_flag,

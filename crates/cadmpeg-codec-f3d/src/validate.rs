@@ -1876,6 +1876,61 @@ fn validate_body_bounds(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
     }
 }
 
+fn placement_ordered_references_hold(
+    scope: &records::feature::scope::DesignParameterScope,
+    alignment: &records::feature::assembly::DesignAssemblyAlignment,
+    owners: &[(u32, u32)],
+) -> bool {
+    use crate::layout::assembly_as_built_scope_422 as layout;
+    let Some(count) = design::assembly::as_built_additional_owner_count(scope.frame_length())
+    else {
+        return false;
+    };
+    let Some(run) = &alignment.additional_owner_run else {
+        return false;
+    };
+    let table = scope.reference_members();
+    usize::try_from(run.count.value) == Ok(count)
+        && run.count.offset == scope.byte_offset() + u64_from_index(layout::ADDITIONAL_OWNER_COUNT)
+        && run.references.len() == count
+        && owners.len() == 4 + count
+        && owners
+            .iter()
+            .enumerate()
+            .all(|(ordinal, (local, _))| usize::try_from(*local) == Ok(ordinal))
+        && alignment.owners.len() == 4
+        && alignment
+            .owners
+            .iter()
+            .zip(owners)
+            .all(|(reference, (_, index))| reference.value == *index)
+        && table.len() == 9 + count
+        && (count != 0
+            || table
+                .values_in(5..9)
+                .is_some_and(|values| values.eq(alignment.owners.iter().map(|owner| &owner.value))))
+        && run
+            .references
+            .iter()
+            .zip(owners.iter().skip(4))
+            .enumerate()
+            .all(|(ordinal, (reference, (_, index)))| {
+                reference.value == *index
+                    && reference.offset
+                        == scope.byte_offset()
+                            + u64_from_index(layout::ADDITIONAL_OWNER_REFERENCES + 11 * ordinal)
+                    && table.values().any(|value| value == index)
+            })
+        && (0..table.len())
+            .filter(|&start| {
+                table.values_in(start..start + 4).is_some_and(|values| {
+                    values.eq(alignment.owners.iter().map(|owner| &owner.value))
+                })
+            })
+            .count()
+            == 1
+}
+
 /// Validate feature parameter scopes and their paired feature-operation frames.
 /// The links resolve into design-intent records, so a document without them
 /// has nothing to check.
@@ -2696,28 +2751,17 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     scope.frame_length(),
                     scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
                 ) {
-                    // The table has nine entries more than the limit owners,
-                    // the four alignment owners appear once and contiguously,
-                    // and every limit owner after them appears.
-                    let table = scope.reference_members();
-                    design::assembly::as_built_limit_owner_count(scope.frame_length())
-                        .is_some_and(|count| table.len() == 9 + count)
-                        && (0..table.len())
-                            .filter(|&start| {
-                                table
-                                    .values_in(start..start + alignment.owners.len())
-                                    .is_some_and(|values| {
-                                        values.eq(alignment.owners.iter().map(|owner| &owner.value))
-                                    })
-                            })
-                            .count()
-                            == 1
-                        && native.design_parameter_owners.iter().all(|owner| {
-                            design_stream(owner.id()) != native_stream
-                                || owner.scope_record_index() != scope.record_index
-                                || owner.local_ordinal() < 4
-                                || table.values().any(|value| *value == owner.record_index())
+                    let mut owners = native
+                        .design_parameter_owners
+                        .iter()
+                        .filter(|owner| {
+                            design_stream(owner.id()) == native_stream
+                                && owner.scope_record_index() == scope.record_index
                         })
+                        .map(|owner| (owner.local_ordinal(), owner.record_index()))
+                        .collect::<Vec<_>>();
+                    owners.sort_unstable();
+                    placement_ordered_references_hold(scope, alignment, &owners)
                 } else {
                     scope
                         .reference_members()
@@ -2729,6 +2773,12 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 let additional_members_link =
                     rigid_group_members_link(scope, alignment, rigid_as_built);
                 operand_frames_link
+                    && (alignment.additional_owner_run.is_none()
+                        || design::assembly::placement_ordered_as_built_scope(
+                            scope.frame_length(),
+                            scope.kind()
+                                == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
+                        ))
                     && solved_frame_link
                     && operand_qualifiers_link
                     && additional_members_link
