@@ -25,6 +25,10 @@ const EDITED_LABEL: &str = "measured round trip";
 /// Every corpus document that measures a comparable body keeps its
 /// measured geometry when an edit of its document label forces the patch
 /// writer to repack the archive.
+///
+/// The patch rewrites only `Document.xml` and repacks the retained BREP
+/// entry bytes unchanged, so this measures the repack and the decode of
+/// those bytes, not a write of BREP geometry.
 #[test]
 fn patched_corpus_documents_keep_measured_geometry() {
     let fixtures =
