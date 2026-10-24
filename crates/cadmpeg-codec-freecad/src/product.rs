@@ -414,25 +414,9 @@ pub(crate) fn transfer_neutral(
                 None
             };
             let scale_transform = link_scale_transform(record.scale().unwrap_or([1.0; 3]))?;
-            let local_transform = match (
-                record
-                    .local_transform()
-                    .map(crate::native::frame::FiniteFrame::transform),
-                element_transform,
-            ) {
-                (Some(local), Some(element)) => Some(
-                    local
-                        .compose(scale_transform)
-                        .and_then(|transform| transform.compose(element))
-                        .map_err(|error| malformed(error.to_string()))?,
-                ),
-                (Some(local), None) if !element => Some(
-                    local
-                        .compose(scale_transform)
-                        .map_err(|error| malformed(error.to_string()))?,
-                ),
-                _ => None,
-            };
+            let placement = record
+                .local_transform()
+                .map(crate::native::frame::FiniteFrame::transform);
             let prototype_transform = match record_prototype_transform {
                 Some(transform) => transform,
                 None => *record_prototype_transform.insert(linked_prototype_transform(
@@ -460,11 +444,22 @@ pub(crate) fn transfer_neutral(
                     .map(cadmpeg_ir::units::FiniteVector::get)
             } else {
                 None
-            }
-            .unwrap_or([1.0; 3]);
-            let element_scale_transform = link_scale_transform(element_scale)?;
-            let local_transform = local_transform
-                .map(|transform| transform.compose(element_scale_transform))
+            };
+            let placed = placement.is_some()
+                || element_transform.is_some()
+                || record.scale().is_some()
+                || element_scale.is_some();
+            let element_scale_transform = link_scale_transform(element_scale.unwrap_or([1.0; 3]))?;
+            let local_transform = placed
+                .then(|| {
+                    placement
+                        .unwrap_or_else(Transform::identity)
+                        .compose(scale_transform)
+                        .and_then(|transform| {
+                            transform.compose(element_transform.unwrap_or_else(Transform::identity))
+                        })
+                        .and_then(|transform| transform.compose(element_scale_transform))
+                })
                 .transpose()
                 .map_err(|error| malformed(error.to_string()))?;
             let copy_on_change = record

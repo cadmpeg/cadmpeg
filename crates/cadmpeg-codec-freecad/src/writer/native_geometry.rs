@@ -106,7 +106,7 @@ pub(super) fn project(ir: &CadIr) -> Result<Option<(CadIr, Vec<LossNote>)>, Code
                 objects: &objects,
                 properties: &typed_properties,
                 payloads: &payloads,
-                element_maps: &element_maps,
+                topology_occurrences: &topology_occurrences,
                 requires_alpha_conversion: crate::gui::requires_alpha_conversion(version),
             },
         )?;

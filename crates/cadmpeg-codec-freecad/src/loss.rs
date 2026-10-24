@@ -476,6 +476,14 @@ const SOURCE_RECORD_COVERAGE: &[(FreecadLossCode, SourceRecordCoverage)] = &[
         SourceRecordCoverage::Model,
     ),
     (
+        FreecadLossCode::PcurveLocationAmbiguous,
+        SourceRecordCoverage::Model,
+    ),
+    (
+        FreecadLossCode::TopologyLocationIdentityBounded,
+        SourceRecordCoverage::Model,
+    ),
+    (
         FreecadLossCode::ProgramVersionNoncanonical,
         SourceRecordCoverage::Metadata,
     ),

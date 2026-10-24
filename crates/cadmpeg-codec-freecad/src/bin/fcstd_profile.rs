@@ -14,7 +14,7 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
+use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::{report::Severity, CadIr};
 use serde::Serialize;
 use serde_json::Value;
@@ -707,7 +707,6 @@ fn semantic_fingerprint(mut ir: CadIr) -> Result<String, Box<dyn std::error::Err
     if let Some(source) = &mut ir.source {
         source.attributes.remove("physical_archive_bytes");
         source.attributes.remove("physical_ledger_spans");
-        source.attributes.remove(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE);
     }
     if let Some(namespace) = ir.native.0.get_mut("fcstd") {
         namespace.arenas_mut().remove("physical_ledger");
@@ -1210,6 +1209,7 @@ mod tests {
     use cadmpeg_codec_freecad::{FcstdCodec, FcstdPropertyOwner};
     use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::report::export::WritePath;
     use std::io::Cursor;
 
     #[test]
@@ -1221,17 +1221,31 @@ mod tests {
             .expect("decode fixture");
         let original = semantic_fingerprint(decoded.ir().clone()).expect("fingerprint fixture");
         let mut written = Vec::new();
-        FcstdCodec
-            .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
-            .and_then(|plan| plan.write_to(&mut written))
-            .expect("write fixture");
+        let plan = FcstdCodec
+            .plan(
+                EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+                TargetRequest::Inherit,
+            )
+            .expect("plan fixture write");
+        let report = plan.report().clone();
+        plan.write_to(&mut written).expect("write fixture");
         let restored = FcstdCodec
             .decode(&mut Cursor::new(written), &DecodeOptions::default())
             .expect("decode written fixture");
-        assert_eq!(
-            original,
-            semantic_fingerprint(restored.ir().clone()).expect("fingerprint written fixture")
-        );
+        match report.write_path() {
+            WritePath::VerbatimReplay { .. } | WritePath::Patched { .. } => assert_eq!(
+                original,
+                semantic_fingerprint(restored.ir().clone()).expect("fingerprint written fixture")
+            ),
+            WritePath::Synthesized { .. } => {
+                assert!(report.synthesis_cause().is_some());
+                cadmpeg_test_support::contract::assert_written_arenas_agree(
+                    &report,
+                    decoded.ir(),
+                    restored.ir(),
+                );
+            }
+        }
 
         let mut edited = restored.ir().clone();
         FcstdCodec

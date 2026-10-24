@@ -130,7 +130,7 @@ fn array_restore_uses_expansion_mode_and_element_objects() {
                 } else {
                     0.0
                 };
-                assert_eq!(occurrence.transform.rows()[0][3], 100.0 + 2.0 * x);
+                assert_eq!(occurrence.transform.expect("placed occurrence").rows()[0][3], 100.0 + 2.0 * x);
                 let element_scale = if expanded && index == 1 {
                     [4.0, 5.0, 6.0]
                 } else if !expanded && array && index == 0 {
@@ -140,14 +140,10 @@ fn array_restore_uses_expansion_mode_and_element_objects() {
                 };
                 for (axis, parent_scale) in [2.0, 3.0, 4.0].into_iter().enumerate() {
                     assert_eq!(
-                        occurrence.transform.rows()[axis][axis],
+                        occurrence.transform.expect("placed occurrence").rows()[axis][axis],
                         parent_scale * element_scale[axis]
                     );
                 }
-                assert_eq!(
-                    occurrence.scale.map(cadmpeg_ir::scalar::FiniteReal::get),
-                    [1.0; 3]
-                );
                 assert_eq!(
                     occurrence
                         .link
@@ -228,6 +224,7 @@ fn parent_nonuniform_scale_precedes_rotated_array_element() {
     ];
     for (actual, expected) in occurrence
         .transform
+        .expect("placed occurrence")
         .rows()
         .into_iter()
         .flatten()
@@ -235,10 +232,6 @@ fn parent_nonuniform_scale_precedes_rotated_array_element() {
     {
         assert!((actual - expected).abs() < 1e-12);
     }
-    assert_eq!(
-        occurrence.scale.map(cadmpeg_ir::scalar::FiniteReal::get),
-        [1.0; 3]
-    );
     assert_valid_document(decoded.ir());
 }
 
@@ -284,15 +277,15 @@ fn link_scales_precede_the_linked_prototype_placement() {
         let [occurrence] = decoded.ir().model.occurrences.as_slice() else {
             panic!("one link use, no duplicate element")
         };
-        let effective = occurrence.effective_transform().unwrap().rows();
+        let effective = occurrence
+            .effective_transform()
+            .unwrap()
+            .expect("placed occurrence")
+            .rows();
         assert_eq!(effective[0][3], if count == 0 { 11.0 } else { 30.0 });
         assert_eq!(effective[0][0], if count == 0 { 2.0 } else { 1.0 });
         assert_eq!(effective[1][1], 3.0);
         assert_eq!(effective[2][2], if count == 0 { 4.0 } else { 6.0 });
-        assert_eq!(
-            occurrence.scale.map(cadmpeg_ir::scalar::FiniteReal::get),
-            [1.0; 3]
-        );
         assert_valid_document(decoded.ir());
     }
 }
@@ -390,15 +383,11 @@ fn link_restore_migrates_uniform_scale_vector_from_scalar_scale() {
             };
             for (axis, expected) in expected.into_iter().enumerate() {
                 assert_eq!(
-                    occurrence.transform.rows()[axis][axis],
+                    occurrence.transform.expect("placed occurrence").rows()[axis][axis],
                     expected,
                     "{runtime}: vector={vector:?}, scalar={scalar:?}"
                 );
             }
-            assert_eq!(
-                occurrence.scale.map(cadmpeg_ir::scalar::FiniteReal::get),
-                [1.0; 3]
-            );
             let properties = decoded
                 .ir()
                 .native
@@ -410,7 +399,12 @@ fn link_restore_migrates_uniform_scale_vector_from_scalar_scale() {
                 .iter()
                 .find(|property| property.name == "ScaleVector")
                 .unwrap();
-            assert!(raw_vector.xml.text().contains(&format!("valueX=\"{x}\"")));
+            let Some(native::PropertyBody::Persisted { values, .. }) = &raw_vector.body else {
+                panic!("persisted ScaleVector")
+            };
+            assert!(values
+                .iter()
+                .any(|value| value.attributes.get("valueX") == Some(&format!("{x}"))));
             assert_eq!(
                 properties.iter().any(|property| property.name == "Scale"),
                 scalar.is_some()

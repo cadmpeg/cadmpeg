@@ -1256,7 +1256,7 @@ fn spreadsheet_cells_state_quantities_and_literal_text_names_nothing() {
         cell("A1").value,
         Some(ParameterValue::String("plate_w".into()))
     );
-    assert!(cell("A1").dependencies.is_empty());
+    assert!(cell("A1").expression.dependencies().next().is_none());
     assert_eq!(
         cell("plate_w").value,
         Some(ParameterValue::Length(
@@ -1278,7 +1278,7 @@ fn spreadsheet_cells_state_quantities_and_literal_text_names_nothing() {
     // A computed cell keeps its reference and states no value of its own.
     assert_eq!(cell("half").value, None);
     assert_eq!(
-        cell("half").dependencies.iter().collect::<Vec<_>>(),
+        cell("half").expression.dependencies().collect::<Vec<_>>(),
         [&cell("plate_w").id]
     );
     assert_valid_document(result.ir());
@@ -1314,14 +1314,15 @@ fn custom_link_dependencies_do_not_depend_on_declaration_order() {
                 .iter()
                 .find(|feature| feature.name.as_deref() == Some("Operand"))
                 .unwrap();
+            assert!(!consumer.dependencies.contains(&operand.id), "{runtime}");
+            let consumer_declared_first =
+                declarations.find("Consumer") < declarations.find("Operand");
+            let operand_first = is_dependency || !consumer_declared_first;
             assert_eq!(
-                consumer.dependencies.contains(&operand.id),
-                is_dependency,
+                operand.ordinal < consumer.ordinal,
+                operand_first,
                 "{runtime}"
             );
-            if is_dependency {
-                assert!(operand.ordinal < consumer.ordinal);
-            }
             assert_valid_document(result.ir());
         }
     }
@@ -1372,10 +1373,7 @@ fn expression_owner_is_a_feature_dependency_without_objectdeps() {
             .iter()
             .find(|feature| feature.name.as_deref() == Some("Operand"))
             .unwrap();
-        assert_eq!(
-            consumer.dependencies.as_slice(),
-            std::slice::from_ref(&operand.id)
-        );
+        assert!(consumer.dependencies.is_empty());
         assert!(operand.ordinal < consumer.ordinal);
         assert_valid_document(result.ir());
     }
@@ -1441,7 +1439,7 @@ fn restored_runtime_and_extension_scopes_exclude_hidden_references() {
             .find(|feature| feature.name.as_deref() == Some("Operand"))
             .unwrap();
         assert_eq!(
-            consumer.dependencies.contains(&operand.id),
+            operand.ordinal < consumer.ordinal,
             expected,
             "{runtime} {name} {extension}"
         );
@@ -1506,16 +1504,20 @@ fn expression_dependencies_use_unique_labels_and_skip_strings_and_metadata() {
             )
             .unwrap();
         let features = &result.ir().model.features;
-        let consumer = features
-            .iter()
-            .find(|feature| feature.name.as_deref() == Some("Consumer"))
-            .unwrap();
-        let operand = features
-            .iter()
-            .find(|feature| feature.name.as_deref() == Some("Operand"))
-            .unwrap();
+        let feature = |name: &str| {
+            features
+                .iter()
+                .find(|feature| {
+                    feature.native_ref.as_deref()
+                        == Some(crate::native::native_id("object", name).as_str())
+                })
+                .unwrap()
+        };
+        let consumer = feature("Consumer");
+        let operand = feature("Operand");
+        assert!(consumer.dependencies.is_empty());
         assert_eq!(
-            consumer.dependencies.contains(&operand.id),
+            operand.ordinal < consumer.ordinal,
             expected,
             "{expression} {property_type}"
         );

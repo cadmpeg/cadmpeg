@@ -1670,10 +1670,7 @@ fn unequal_stale_arrays_do_not_establish_missing_element_count() {
         )
         .expect("inactive array carriers remain native");
     assert_eq!(result.ir().model.occurrences.len(), 1);
-    assert_eq!(
-        result.ir().model.occurrences[0].transform,
-        cadmpeg_ir::transform::Transform::identity()
-    );
+    assert_eq!(result.ir().model.occurrences[0].transform, None);
     assert_valid_document(result.ir());
 }
 
@@ -1707,10 +1704,7 @@ fn equal_stale_arrays_do_not_establish_missing_element_count() {
         )
         .expect("inactive array carriers remain native without ElementCount");
     assert_eq!(result.ir().model.occurrences.len(), 1);
-    assert_eq!(
-        result.ir().model.occurrences[0].transform,
-        cadmpeg_ir::transform::Transform::identity()
-    );
+    assert_eq!(result.ir().model.occurrences[0].transform, None);
     let native = result
         .ir()
         .native

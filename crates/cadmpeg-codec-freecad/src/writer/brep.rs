@@ -146,6 +146,8 @@ fn serialize_inner(
     let mut surfaces = Vec::new();
     let mut surface_ids = HashMap::new();
     let mut surface_slots = HashMap::new();
+    let trimmed_supports = trimmed_supports(ir, &surfaces_needed);
+    let mut support_charts = Vec::new();
     for surface in ir
         .model
         .surfaces
@@ -153,6 +155,12 @@ fn serialize_inner(
         .filter(|surface| surfaces_needed.contains(surface.id.as_str()))
     {
         if let Some((row, location)) = geometry::located_surface(ir, surface) {
+            if let Some(trimmed) = trimmed_supports.get(surface.id.as_str()) {
+                if location == cadmpeg_ir::transform::Transform::identity() {
+                    support_charts.push((surface.id.as_str(), *trimmed, row));
+                    continue;
+                }
+            }
             if !location_supported(location)
                 || (free
                     && location != cadmpeg_ir::transform::Transform::identity()
@@ -181,6 +189,28 @@ fn serialize_inner(
                 (index, register_location(location, &mut locations), chart),
             );
         }
+    }
+    // A face on the support of a trimmed surface uses the trimmed row, which
+    // keeps the support's parameters.
+    for (support, trimmed, row) in support_charts {
+        let affine = crate::brep::generated_surface_parameters(&row)?;
+        let (index, location) = match surface_ids.get(trimmed) {
+            Some(&(index, location, _)) => (index, location),
+            None => {
+                surfaces.push(row);
+                (
+                    surfaces.len(),
+                    register_location(cadmpeg_ir::transform::Transform::identity(), &mut locations),
+                )
+            }
+        };
+        let Some(chart) = cadmpeg_ir::transform::Transform2::affine([
+            [1.0 / affine.u_scale, 0.0, -affine.u_offset / affine.u_scale],
+            [0.0, 1.0 / affine.v_scale, -affine.v_offset / affine.v_scale],
+        ]) else {
+            continue;
+        };
+        surface_ids.insert(support, (index, location, chart));
     }
     let mut pcurves = Vec::new();
     let mut pcurve_ids = HashMap::new();
@@ -329,7 +359,13 @@ fn serialize_inner(
                     let Some(range) = edge.param_range() else {
                         continue;
                     };
-                    let range = range.get();
+                    let geometry = edge
+                        .curve()
+                        .and_then(|id| ir.model.curves.iter().find(|curve| curve.id == *id))
+                        .and_then(|curve| curve.geometry.solved());
+                    let Some(range) = occt_curve_range(geometry, range.get()) else {
+                        continue;
+                    };
                     format!("1 {curve} {location} {} {}", range[0], range[1])
                 }
                 None if start == end => String::new(),
@@ -712,6 +748,67 @@ fn serialize_inner(
         output.push('\n');
     }
     Ok(Some(output.into_bytes()))
+}
+
+/// Surfaces that are the inline support of a needed trimmed surface, keyed by
+/// support id.
+fn trimmed_supports<'a>(
+    ir: &'a CadIr,
+    needed: &std::collections::HashSet<String>,
+) -> HashMap<&'a str, &'a str> {
+    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+    let mut supports = HashMap::new();
+    for surface in ir
+        .model
+        .surfaces
+        .iter()
+        .filter(|surface| needed.contains(surface.id.as_str()))
+    {
+        let Some(construction) = surface.geometry.procedural_construction() else {
+            continue;
+        };
+        let Some(ProceduralSurfaceDefinition::Subset(subset)) = ir
+            .model
+            .procedural_surfaces
+            .iter()
+            .find(|record| record.id == *construction)
+            .map(|record| record.definition())
+        else {
+            continue;
+        };
+        if geometry::surface_record(ir, surface).is_some_and(|row| row.starts_with("10 "))
+            && needed.contains(subset.support().as_str())
+        {
+            supports
+                .entry(subset.support().as_str())
+                .or_insert(surface.id.as_str());
+        }
+    }
+    supports
+}
+
+/// Map a neutral curve parameter range to the OCCT parameterization that
+/// `topology_transfer::normalize_occt_curve_range` reads.
+fn occt_curve_range(
+    curve: Option<&cadmpeg_ir::geometry::SolvedCurveGeometry>,
+    range: [f64; 2],
+) -> Option<[f64; 2]> {
+    use cadmpeg_ir::geometry::SolvedCurveGeometry;
+    use cadmpeg_ir::scalar::FiniteReal;
+    match curve {
+        Some(SolvedCurveGeometry::Parabola(parabola)) => {
+            let focal_distance = parabola.focal_distance().magnitude();
+            let [start, end] = range.map(FiniteReal::new);
+            Some([
+                cadmpeg_ir::math::multiply_divide(start?, focal_distance, FiniteReal::HALF)?.get(),
+                cadmpeg_ir::math::multiply_divide(end?, focal_distance, FiniteReal::HALF)?.get(),
+            ])
+        }
+        Some(SolvedCurveGeometry::Transformed(placed)) => {
+            occt_curve_range(Some(placed.basis()), range)
+        }
+        _ => Some(range),
+    }
 }
 
 fn register_location(

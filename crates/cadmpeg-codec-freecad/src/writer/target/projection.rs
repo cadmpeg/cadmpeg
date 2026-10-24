@@ -49,7 +49,7 @@ pub(super) fn agrees(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<(), CodecErr
         .map_err(CodecError::malformed)?;
     let mut losses = Vec::new();
     let mut maps = namespace.arena_as::<native::element_map::ElementMapRecord>("element_maps")?;
-    let occurrences = crate::topology_transfer::transfer(
+    let topology_occurrences = crate::topology_transfer::transfer(
         ctx,
         &mut projected,
         &payloads,
@@ -57,12 +57,16 @@ pub(super) fn agrees(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<(), CodecErr
         &mut losses,
     )?;
     crate::topology_transfer::apply_body_names(&mut projected, &payloads, &properties);
-    crate::element_map::bind_topology(&mut maps, &occurrences);
+    crate::element_map::bind_topology(&mut maps, &topology_occurrences);
     if ir.scope.design {
+        let extensions = namespace.arena_as::<native::ExtensionRecord>("extensions")?;
         crate::design::transfer(
             &property_reader,
             &mut projected,
-            &objects,
+            crate::design::DesignObjects {
+                objects: &objects,
+                extensions: &extensions,
+            },
             &properties,
             &payloads,
             &[],
@@ -108,7 +112,7 @@ pub(super) fn agrees(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<(), CodecErr
                 objects: &objects,
                 properties: &properties,
                 payloads: &payloads,
-                element_maps: &maps,
+                topology_occurrences: &topology_occurrences,
                 requires_alpha_conversion: crate::gui::requires_alpha_conversion(version),
             },
         )?;

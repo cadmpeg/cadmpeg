@@ -117,7 +117,7 @@ fn gui_only_provider_uses_its_actual_xml_owner_and_keeps_typed_values() {
             objects: &[],
             properties: &[],
             payloads: &[],
-            element_maps: &[],
+            topology_occurrences: &[],
             requires_alpha_conversion: false,
         },
     )
@@ -264,7 +264,7 @@ fn gui_state_and_provider_property_values_keep_separate_source_owners() {
             objects: &[],
             properties: &[],
             payloads: &[],
-            element_maps: &[],
+            topology_occurrences: &[],
             requires_alpha_conversion: false,
         },
     )
@@ -339,7 +339,7 @@ fn gui_state_xml_and_offsets_leave_native_records_without_losing_empty_or_nested
             objects: &[],
             properties: &[],
             payloads: &[],
-            element_maps: &[],
+            topology_occurrences: &[],
             requires_alpha_conversion: false,
         },
     )
@@ -498,7 +498,7 @@ fn gui_property_wrappers_move_to_real_layouts_with_nested_values_empty_payload_a
             objects: &[],
             properties: &[],
             payloads: &[],
-            element_maps: &[],
+            topology_occurrences: &[],
             requires_alpha_conversion: false,
         },
     )
@@ -769,7 +769,7 @@ fn complete_typed_gui_properties_keep_exact_layouts_and_real_side_entry_views() 
             objects: &[],
             properties: &[],
             payloads: &[],
-            element_maps: &[],
+            topology_occurrences: &[],
             requires_alpha_conversion: false,
         },
     )

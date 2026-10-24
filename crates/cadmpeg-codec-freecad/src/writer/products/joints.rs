@@ -389,8 +389,15 @@ pub(super) fn write(
                 kind,
                 connectors,
                 offset_frames,
+                frame_sense,
             } => {
                 family(object, kind, label, losses);
+                if frame_sense.is_some() && *frame_sense != joint.kind_sense() {
+                    losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                        "joint {} states a connector frame sense that its FreeCAD joint type does not carry",
+                        joint.id
+                    )));
+                }
                 for (index, connector) in connectors.iter().enumerate() {
                     let suffix = index + 1;
                     let key = format!("Reference{suffix}");
