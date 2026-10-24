@@ -190,8 +190,12 @@ A single pcurve use takes the first candidate interval whose mapped ends lie
 within the allowance of the coedge's ends: the use's stored range, the
 pcurve's stored range, its trim range, the edge interval and its negation,
 the pcurve's domain, and then an interval recovered by Newton steps. A
-closed coedge takes its direction from the tangent of its 3D curve, else
-from the use's stored range. Several uses form a chain from the coedge's
+closed coedge takes its direction from the tangent of its 3D curve at the
+traversal start: the interval read forward leaves the vertex along the image
+tangent at its start, read backward it leaves against the image tangent at
+its end, and the reading whose departure has the larger component along the
+3D tangent applies. With no 3D tangent, or with equal components, the use's
+stored range gives the direction. Several uses form a chain from the coedge's
 start to its end.
 
 When the coedge also has a 3D curve, the pcurve image at the Gauss–Kronrod
