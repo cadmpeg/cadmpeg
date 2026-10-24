@@ -2715,6 +2715,12 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     scope.paired_class_tag.as_str(),
                     construction.placement.as_ref(),
                 ) {
+                    (272, "262", None) if scope.class_tag.as_str() == "357" => true,
+                    (276, "262", None)
+                        if matches!(scope.class_tag.as_str(), "357" | "360" | "362") =>
+                    {
+                        true
+                    }
                     (261, "263", None) if scope.class_tag.as_str() == "296" => true,
                     (261, "261", None) if scope.class_tag.as_str() == "410" => true,
                     (261, "258", None) if scope.class_tag.as_str() == "426" => true,
