@@ -116,11 +116,32 @@ fn discontinuous_rings(document: &Value) -> BTreeMap<String, String> {
 
 #[cfg(feature = "fcstd")]
 #[test]
-fn freecad_rings_out_of_traversal_order_are_check_warnings() {
+fn freecad_rings_run_in_traversal_order() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../corpus/freecad_fcstd/fixtures/core_design_product.FCStd");
-    let expected = discontinuous_rings(&dumped(&path));
+    assert!(discontinuous_rings(&dumped(&path)).is_empty());
+    assert!(warnings(&check_json(&path, &[]), "ring_order").is_empty());
+}
+
+#[cfg(feature = "fcstd")]
+#[test]
+fn rings_listed_out_of_traversal_order_are_check_warnings() {
+    let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corpus/freecad_fcstd/fixtures/core_design_product.FCStd");
+    let mut document = dumped(&source);
+    for face_loop in document["model"]["loops"].as_array_mut().unwrap() {
+        if face_loop["boundary"]["kind"] == "ring" {
+            face_loop["boundary"]["coedges"]
+                .as_array_mut()
+                .unwrap()
+                .reverse();
+        }
+    }
+    let expected = discontinuous_rings(&document);
     assert!(!expected.is_empty());
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("reversed.cadir.json");
+    std::fs::write(&path, serde_json::to_vec(&document).unwrap()).unwrap();
     let report = check_json(&path, &[]);
     let found: BTreeMap<String, String> = warnings(&report, "ring_order")
         .into_iter()
