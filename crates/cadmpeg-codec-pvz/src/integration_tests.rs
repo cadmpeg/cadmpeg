@@ -75,7 +75,7 @@ fn inspect_lists_every_member_with_its_role_and_signature() {
     let primary = summary.dialects().unwrap().primary();
     assert_eq!(primary.dialect().as_str(), "pvz:pvs-0304");
     assert_eq!(primary.admission(), &Admission::Admitted);
-    assert!(summary.losses.is_empty(), "{:?}", summary.losses);
+    assert_eq!(summary.losses.len(), 0);
 
     let rows = summary
         .entries
