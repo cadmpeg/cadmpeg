@@ -65,10 +65,12 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
     prepare(&mut base);
     base.model.bodies[0].transform = None;
     let mut base_bytes = Vec::new();
-    SldprtCodec
-        .plan(EncodeInput::new(&base, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut base_bytes))
-        .unwrap();
+    crate::test_support::plan_fixture_with_native_envelope(
+        EncodeInput::new(&base, None),
+        TargetRequest::Inherit,
+    )
+    .and_then(|plan| plan.write_to(&mut base_bytes))
+    .unwrap();
     let reference = SldprtCodec
         .decode(&mut Cursor::new(base_bytes), &DecodeOptions::default())
         .unwrap();
@@ -85,10 +87,12 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
         prepare(&mut moved);
         moved.model.bodies[0].transform = Some(Transform::affine(rows).expect("affine transform"));
         let mut bytes = Vec::new();
-        SldprtCodec
-            .plan(EncodeInput::new(&moved, None), TargetRequest::Inherit)
-            .and_then(|plan| plan.write_to(&mut bytes))
-            .unwrap();
+        crate::test_support::plan_fixture_with_native_envelope(
+            EncodeInput::new(&moved, None),
+            TargetRequest::Inherit,
+        )
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .unwrap();
         let decoded = SldprtCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
@@ -211,7 +215,7 @@ fn decode_is_equivariant_under_rigid_translation() {
 /// change. Paired with the value golden below so a shared reader/writer
 /// misconception cannot hide behind a self-consistent round trip.
 #[test]
-fn source_less_cube_reaches_encode_decode_fixpoint() {
+fn authored_with_retained_native_envelope_cube_reaches_encode_decode_fixpoint() {
     let first = EditableDecodeResult::from(encode_decode_result(&source_less_cube()));
     let mut encoded = Vec::new();
     crate::test_support::plan_inherited_write(first.ir(), first.source_fidelity(), &mut encoded)
@@ -237,4 +241,43 @@ fn source_less_cube_reaches_encode_decode_fixpoint() {
         sorted_point_positions(first.ir()),
         sorted_point_positions(&second)
     );
+}
+
+#[test]
+fn source_less_cube_without_native_envelope_is_refused() {
+    let ir = source_less_cube();
+    let Err(error) = SldprtCodec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit) else {
+        panic!("source-less input cannot supply native producer framing");
+    };
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::NotImplemented(ref detail)
+            if detail == "SLDPRT envelope regeneration needs validated retained local, central and EOCD signature tokens"),
+        "{error}"
+    );
+}
+
+#[test]
+fn sketch_baselines_cover_final_relation_binding_and_arena_order() {
+    for body in [triangle_body(), Vec::new()] {
+        let source = crate::test_support::history::sldprt_with_tagged_compact_relation_names(
+            &body,
+            "sgPntPntDist",
+            [[0xd6, 0x80]; 2],
+            &["Sketch1", "D2", "D1"],
+        );
+        let decoded = SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap();
+        assert!(!decoded.ir().model.sketch_constraints.is_empty());
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let baselines = &decoded.ir().source.as_ref().unwrap().attributes;
+        assert_eq!(
+            baselines["sldprt_neutral_sketch_local_sha256"],
+            crate::resolved_features::hashes::sketch_hash(&ctx, decoded.ir()).unwrap()
+        );
+        assert_eq!(
+            baselines["sldprt_neutral_sketch_constraint_local_sha256"],
+            crate::resolved_features::hashes::constraint_hash(&ctx, decoded.ir()).unwrap()
+        );
+    }
 }

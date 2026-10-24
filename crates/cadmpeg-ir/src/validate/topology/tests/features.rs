@@ -59,6 +59,7 @@ fn historical_vertex_selection_requires_input_state_membership() {
             edges: crate::features::DistinctMembers::try_from(Vec::new()).unwrap(),
             vertices: crate::features::DistinctMembers::try_from(vec![historical_vertex.clone()])
                 .unwrap(),
+            edge_geometry: Vec::new(),
             native_ref: None,
         });
     ir.model.features.push(Feature {
@@ -1277,4 +1278,76 @@ fn decals_require_valid_assets_faces_and_opacity() {
     assert!(validate_neutral(&ir, Vec::new())
         .expect("validate the neutral model")
         .is_ok());
+}
+
+#[test]
+fn input_edge_geometry_names_its_own_state_members_once() {
+    use crate::features::{
+        DistinctMembers, Feature, FeatureDefinition, FeatureId, FeatureInputTopology, FinitePoint3,
+        HistoricalEdgeGeometry,
+    };
+    use crate::ids::{FeatureInputTopologyId, HistoricalEdgeId, HistoricalFaceId};
+
+    let feature_id = FeatureId::mint("test:model:feature#fillet").expect("identity grammar");
+    let edge = HistoricalEdgeId::mint("test:model:historical-edge#1").expect("valid identity");
+    let face = HistoricalFaceId::mint("test:model:historical-face#1").expect("valid identity");
+    let geometry = |edge: &str, face: &str| HistoricalEdgeGeometry {
+        edge: HistoricalEdgeId::mint(edge).unwrap(),
+        interior: FinitePoint3::new(Point3::new(0.0, 0.0, 5.0)).unwrap(),
+        tangent: Some(crate::units::UnitVector3::Z_AXIS),
+        start: FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)),
+        end: FinitePoint3::new(Point3::new(0.0, 0.0, 10.0)),
+        faces: DistinctMembers::try_from(vec![HistoricalFaceId::mint(face).unwrap()]).unwrap(),
+    };
+    let mut ir = CadIr::empty();
+    ir.model
+        .feature_input_topologies
+        .push(FeatureInputTopology {
+            id: FeatureInputTopologyId::mint("test:model:feature-input#fillet").unwrap(),
+            input_of: feature_id.clone(),
+            bodies: DistinctMembers::default(),
+            faces: DistinctMembers::try_from(vec![face.clone()]).unwrap(),
+            edges: DistinctMembers::try_from(vec![edge.clone()]).unwrap(),
+            vertices: DistinctMembers::default(),
+            edge_geometry: vec![geometry(edge.as_str(), face.as_str())],
+            native_ref: None,
+        });
+    ir.model.features.push(Feature {
+        id: feature_id,
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: DistinctMembers::default(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: crate::features::FeatureContent::default(),
+        evaluation: crate::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(crate::features::FeatureOperation::Native {
+                kind: "Fillet".into(),
+                parameters: BTreeMap::new(),
+            }),
+        ),
+        native_ref: None,
+    });
+    let state_findings = |ir: &CadIr| {
+        validate_neutral(ir, Vec::new())
+            .expect("validate the neutral model")
+            .findings
+            .into_iter()
+            .filter(|finding| finding.entity.as_deref() == Some("test:model:feature-input#fillet"))
+            .count()
+    };
+    assert_eq!(state_findings(&ir), 0);
+
+    ir.model.feature_input_topologies[0]
+        .edge_geometry
+        .push(geometry(edge.as_str(), face.as_str()));
+    assert_eq!(state_findings(&ir), 1);
+
+    ir.model.feature_input_topologies[0].edge_geometry = vec![geometry(
+        "test:model:historical-edge#missing",
+        "test:model:historical-face#missing",
+    )];
+    assert_eq!(state_findings(&ir), 2);
 }

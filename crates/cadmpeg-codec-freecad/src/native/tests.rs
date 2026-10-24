@@ -535,7 +535,7 @@ fn document_kind_wire_must_match_domains_and_count() {
 }
 
 #[test]
-fn link_array_wire_rejects_negative_and_mismatched_counts() {
+fn link_array_wire_rejects_negative_count_and_retains_independent_lists() {
     let base = serde_json::json!({
         "id": "link", "object": "object", "kind": "occurrence",
         "members": [], "element_transforms": [], "element_scales": [],
@@ -563,7 +563,7 @@ fn link_array_wire_rejects_negative_and_mismatched_counts() {
             "element_visibility" => serde_json::json!([true]),
             _ => serde_json::json!(["object"]),
         };
-        assert!(serde_json::from_value::<super::ProductNodeRecord>(wire.clone()).is_err());
+        assert!(serde_json::from_value::<super::ProductNodeRecord>(wire.clone()).is_ok());
         wire["element_count"] = serde_json::json!(1);
         assert!(serde_json::from_value::<super::ProductNodeRecord>(wire).is_ok());
     }
@@ -571,11 +571,11 @@ fn link_array_wire_rejects_negative_and_mismatched_counts() {
     let mut object_only = base;
     object_only["element_objects"] = serde_json::json!(["object"]);
     let record = serde_json::from_value::<super::ProductNodeRecord>(object_only)
-        .expect("an object carrier establishes absent-count cardinality");
-    assert!(matches!(
+        .expect("an absent-count object carrier is retained before restoration");
+    assert_eq!(
         record.element_cardinality(),
-        Some(super::LinkArrayCardinality::Elements(elements)) if elements.get() == 1
-    ));
+        Some(super::LinkArrayCardinality::Scalar)
+    );
 }
 
 #[test]

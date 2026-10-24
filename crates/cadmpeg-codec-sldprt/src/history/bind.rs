@@ -332,10 +332,9 @@ fn copy_output_body_id(id: &str) -> Result<BodyId, cadmpeg_core::CodecError> {
 /// least one face it produced. Features whose produced faces did not survive
 /// regeneration keep an empty output list.
 ///
-/// `body_modifiers` pairs an emitted body identity with its one-based ordinal in
-/// the ordered, non-metadata Keywords feature records. A resolved ordinal adds
-/// that body to the corresponding feature's outputs. An ordinal that is absent
-/// or ambiguous across history records is ignored.
+/// `body_modifiers` pairs an emitted body identity with the native source id of
+/// its last modifying history feature. An absent or ambiguous source id does
+/// not supply an output body.
 #[derive(Clone, Copy)]
 pub(crate) struct FeatureOutputSources<'a> {
     pub face_producers: &'a [(String, u32)],
@@ -354,20 +353,17 @@ pub(crate) fn derive_feature_outputs(
         face_producers,
         body_modifiers,
     } = sources;
-    let mut feature_ids_by_ordinal = HashMap::<u32, Option<&str>>::new();
+    let mut feature_ids_by_source = HashMap::<u32, Option<&str>>::new();
     for history in histories {
-        let mut ordinal = 0_u32;
         let metadata = HistoryMetadata::new(&history.features);
         for record in &history.features {
             if metadata.contains(record) {
                 continue;
             }
-            ordinal = ordinal.checked_add(1).ok_or_else(|| {
-                cadmpeg_core::CodecError::malformed(
-                    "SLDPRT history feature record ordinal exceeds u32",
-                )
-            })?;
-            match feature_ids_by_ordinal.entry(ordinal) {
+            let Some(source_id) = record.source_value() else {
+                continue;
+            };
+            match feature_ids_by_source.entry(source_id) {
                 std::collections::hash_map::Entry::Vacant(entry) => {
                     entry.insert(Some(record.id.as_str()));
                 }
@@ -377,8 +373,8 @@ pub(crate) fn derive_feature_outputs(
             }
         }
     }
-    for (body, ordinal) in body_modifiers {
-        let Some(Some(native_ref)) = feature_ids_by_ordinal.get(ordinal) else {
+    for (body, source_id) in body_modifiers {
+        let Some(Some(native_ref)) = feature_ids_by_source.get(source_id) else {
             continue;
         };
         for feature in features

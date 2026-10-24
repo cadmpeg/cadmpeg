@@ -9,7 +9,9 @@ use cadmpeg_core::CodecError;
 
 use crate::container::ContainerScan;
 use crate::design::{design_feature_family, DesignFeatureFamily};
-use crate::records::feature::joint_motion::{DesignJointLimitLanes, DesignJointMotion};
+use crate::records::feature::joint_motion::{
+    DesignJointFreedomWord, DesignJointLimitLanes, DesignJointMotion,
+};
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::identity::Located;
 use cadmpeg_core::container::ContainerRole;
@@ -17,10 +19,16 @@ use cadmpeg_core::container::ContainerRole;
 use super::scopes::shared_frames::marked_record_reference;
 use super::sketch::{indexed_record_offsets, IndexedRecordOffsets};
 
-/// A freedom entry before its code: byte `1`, f64 `0`, f64 π, and u32 `3`.
-const FREEDOM_ENTRY_PREFIX: [u8; 21] = [
-    1, 0, 0, 0, 0, 0, 0, 0, 0, 0x18, 0x2d, 0x44, 0x54, 0xfb, 0x21, 0x09, 0x40, 3, 0, 0, 0,
+/// A freedom entry before its word: byte `1`, f64 `0`, and f64 π. The u32
+/// word, `1` or `3`, and the u32 code follow; a word-`1` entry then stores an
+/// f64.
+const FREEDOM_ENTRY_PREFIX: [u8; 17] = [
+    1, 0, 0, 0, 0, 0, 0, 0, 0, 0x18, 0x2d, 0x44, 0x54, 0xfb, 0x21, 0x09, 0x40,
 ];
+/// The words a freedom entry stores before its code.
+const FREEDOM_ENTRY_WORDS: [u32; 2] = [1, 3];
+/// The freedom entries of one record: each code with its word.
+type FreedomEntries = Vec<(Located<u32>, DesignJointFreedomWord)>;
 /// Offset of the joint reference in a current-generation motion record.
 const MOTION_JOINT_REFERENCE: usize = 24;
 /// Offsets after the joint record's self-reference marker.
@@ -75,11 +83,25 @@ pub(super) fn decode_stream(
             .map_or(bytes.len(), |(offset, _)| *offset)
     };
     // Freedom entries grouped by the record that holds them.
-    let mut by_record: Vec<(usize, u32, Vec<Located<u32>>)> = Vec::new();
+    let mut by_record: Vec<(usize, u32, FreedomEntries)> = Vec::new();
     for at in memchr::memmem::find_iter(bytes, &FREEDOM_ENTRY_PREFIX) {
-        let code_at = at + FREEDOM_ENTRY_PREFIX.len();
-        let Some(code) = View::u32_le_at(bytes, code_at) else {
+        let word_at = at + FREEDOM_ENTRY_PREFIX.len();
+        let code_at = word_at + 4;
+        let (Some(word), Some(code)) = (
+            View::u32_le_at(bytes, word_at),
+            View::u32_le_at(bytes, code_at),
+        ) else {
             continue;
+        };
+        if !FREEDOM_ENTRY_WORDS.contains(&word) {
+            continue;
+        }
+        let value = match word {
+            1 => match crate::bytes::f64s_at::<1>(bytes, code_at + 4) {
+                Some([value]) if value.is_finite() => Some(value),
+                _ => continue,
+            },
+            _ => None,
         };
         let position = headers.partition_point(|(offset, _)| *offset <= at);
         let Some(&(record_start, record_index)) =
@@ -91,13 +113,14 @@ pub(super) fn decode_stream(
             value: code,
             offset: u64_from_index(code_at),
         };
+        let entry = (located, DesignJointFreedomWord { word, value });
         match by_record.last_mut() {
-            Some((start, _, codes)) if *start == record_start => codes.push(located),
-            _ => by_record.push((record_start, record_index, vec![located])),
+            Some((start, _, entries)) if *start == record_start => entries.push(entry),
+            _ => by_record.push((record_start, record_index, vec![entry])),
         }
     }
     let mut out = Vec::new();
-    for (motion_start, motion_index, freedoms) in by_record {
+    for (motion_start, motion_index, entries) in by_record {
         let motion = MotionRecord {
             start: motion_start,
             end: record_end(motion_start),
@@ -111,6 +134,8 @@ pub(super) fn decode_stream(
         let Some(&joint_start) = records.offsets(joint_index).first() else {
             continue;
         };
+        let (freedoms, words): (Vec<_>, Vec<_>) = entries.into_iter().unzip();
+        let usual = words.iter().all(|entry| entry.word == 3);
         out.push(DesignJointMotion {
             id: format!("f3d:{entry_name}:design-joint-motion#{motion_start}"),
             joint_record_index: joint_index,
@@ -118,6 +143,7 @@ pub(super) fn decode_stream(
             motion_record_index: motion_index,
             motion_byte_offset: u64_from_index(motion_start),
             freedoms,
+            entry_words: if usual { Vec::new() } else { words },
             limits: joint_limits(bytes, joint_start, record_end(joint_start), joint_index),
         });
     }

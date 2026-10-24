@@ -1846,22 +1846,6 @@ fn native_section_dimension_constraint_definition(
             equation_id,
         )?;
     }
-    if let Some(vectors) = relation.operand_vectors {
-        for (vector, values) in ["a", "b", "c"].into_iter().zip(vectors) {
-            for (slot, value) in values.into_iter().enumerate() {
-                if let Some(object_index) = value {
-                    let field = format!("{vector}[{slot}]");
-                    push_relation_operand(
-                        &mut operands,
-                        &native_ref,
-                        "relat_ptr",
-                        Some(field),
-                        object_index,
-                    )?;
-                }
-            }
-        }
-    }
     Ok(Some(SketchConstraintDefinitionInput::Native {
         native_kind,
         native_state: Some(u64::from(relation.used)),
@@ -2834,7 +2818,11 @@ mod tests {
             relation_id: 7,
             used: 1,
             operands: Vec::new(),
-            operand_vectors: None,
+            operand_vectors: Some([
+                [Some(40), Some(41), None, Some(1)],
+                [Some(0), Some(0), Some(0), Some(0)],
+                [Some(15), Some(16), Some(15), Some(1)],
+            ]),
             sign: 1,
             dimension_id: 0,
             relation_type: 0,
@@ -2877,6 +2865,17 @@ mod tests {
             admitted[0].0.id.as_str(),
             "creo:featdefs:sketch_constraint#5:relation:7"
         );
+        let SketchConstraintDefinitionInput::Native { operands, .. } =
+            admitted[0].0.definition.kind()
+        else {
+            panic!("unresolved relation retains its native row");
+        };
+        let [operand] = operands.as_slice() else {
+            panic!("only the typed relation-row reference is an object operand");
+        };
+        assert_eq!(operand.native_kind.as_str(), "relat_ptr");
+        assert_eq!(operand.object_index, Some(7));
+        assert!(operand.field.is_none());
     }
 }
 

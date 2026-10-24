@@ -16,6 +16,7 @@ use cadmpeg_ir::units::{FinitePoint2, UnitVector3};
 use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(deserialize_anchor, Point2, "anchor");
+cadmpeg_core::named_optional_field!(deserialize_planar_z_noise, [f64; 3], "planar_z_noise");
 cadmpeg_core::named_optional_field!(deserialize_base_id, u64, "base_id");
 cadmpeg_core::named_optional_field!(deserialize_closure, SketchPointClosureSerde, "closure");
 cadmpeg_core::named_optional_field!(deserialize_entity_genesis, u64, "entity_genesis");
@@ -1087,6 +1088,56 @@ impl SketchPoint {
         ]
     }
 
+    pub(crate) fn validate_for_write(&self, curves: &[SketchCurveIdentity]) -> Result<(), String> {
+        const CENTER_RELATIVE_TOLERANCE: f64 = 1e-7;
+        let flags = self.flags();
+        if self.record_form.class_version() == 0 {
+            return Ok(());
+        }
+        if flags[2] != 0 {
+            return Err("sketch point reserved flag lane 2 must be zero".into());
+        }
+        let coordinates = self.coordinates();
+        let position = [coordinates.u, coordinates.v, self.depth()];
+        if flags[5] != 0 && (flags[3] == 0 || position.iter().any(|value| value.to_bits() != 0)) {
+            return Err(
+                "sketch point flag lane 5 requires lane 3 and positive-zero coordinates".into(),
+            );
+        }
+        if flags[7] == 0 {
+            return Ok(());
+        }
+        if self.record_form.class_version() != 11
+            || self.closure() != Some(SketchPointClosure::Selector0State1)
+            || self.companion.incident_curves.len() != 1
+        {
+            return Err("sketch point flag lane 7 requires version 11, closure (0,1), and one incident curve".into());
+        }
+        let stream = self.id.rsplit_once(':').map(|(prefix, _)| prefix);
+        let mut incident = curves.iter().filter(|curve| {
+            curve.record_index == self.companion.incident_curves[0]
+                && curve.id.rsplit_once(':').map(|(prefix, _)| prefix) == stream
+        });
+        let curve = incident.next().ok_or_else(|| {
+            "sketch point flag lane 7 has no matching incident circular curve".to_owned()
+        })?;
+        if incident.next().is_some() {
+            return Err("sketch point flag lane 7 has an ambiguous incident curve".into());
+        }
+        let Some(SketchCurveGeometry::Arc { center, .. }) = &curve.geometry else {
+            return Err("sketch point flag lane 7 requires an incident circular curve".into());
+        };
+        let center = center.as_raw();
+        let expected = [center.x, center.y, center.z];
+        if position.iter().zip(expected).any(|(actual, expected)| {
+            (actual - expected).abs()
+                > CENTER_RELATIVE_TOLERANCE * (1.0 + actual.abs().max(expected.abs()))
+        }) {
+            return Err("sketch point flag lane 7 requires the incident circular center".into());
+        }
+        Ok(())
+    }
+
     pub(crate) fn coordinates(&self) -> Point2 {
         self.coordinates.get()
     }
@@ -1451,6 +1502,15 @@ pub(crate) struct SketchCurveIdentity {
         deserialize_with = "deserialize_geometry"
     )]
     pub(crate) geometry: Option<SketchCurveGeometry>,
+    /// Raw z components of a compact planar line's start, displacement, and
+    /// direction when at least one is nonzero floating-point noise that the
+    /// projection reads as zero.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_planar_z_noise"
+    )]
+    pub(crate) planar_z_noise: Option<[f64; 3]>,
 }
 
 /// One persistent tensor-product surface owned by a spatial Fusion sketch.
@@ -2515,6 +2575,75 @@ mod tests {
             wire["closure"] = json!({"selector": 0, "state": 0});
         }
         wire
+    }
+
+    #[test]
+    fn sketch_point_write_checks_zero_marker_without_deriving_unknown_flags() {
+        let form = json!({"kind": "version11", "padded_paired_reference": false});
+        let mut wire = native_point_wire(&form);
+        wire["coordinates"] = json!({"u": 0.0, "v": 0.0});
+        wire["flags"] = json!("0000000101010000");
+        let point: SketchPoint = serde_json::from_value(wire.clone()).unwrap();
+        assert!(point.validate_for_write(&[]).is_ok());
+        for coordinates in [json!({"u": 1.0, "v": 0.0}), json!({"u": -0.0, "v": 0.0})] {
+            let mut invalid = wire.clone();
+            invalid["coordinates"] = coordinates;
+            let point: SketchPoint = serde_json::from_value(invalid).unwrap();
+            assert!(point.validate_for_write(&[]).is_err());
+        }
+        for flags in ["0000000001010000", "0000010101010000"] {
+            let mut invalid = wire.clone();
+            invalid["flags"] = json!(flags);
+            let point: SketchPoint = serde_json::from_value(invalid).unwrap();
+            assert!(point.validate_for_write(&[]).is_err());
+        }
+        wire["flags"] = json!("0101000101000100");
+        wire["coordinates"] = json!({"u": 2.0, "v": 3.0});
+        wire["closure"] = json!({"selector": 2, "state": 1});
+        wire["companion"] = json!({"incident_curves": [7]});
+        let point: SketchPoint = serde_json::from_value(wire.clone()).unwrap();
+        assert!(point.validate_for_write(&[]).is_ok());
+        wire["companion"] = json!({"incident_curves": []});
+        let point: SketchPoint = serde_json::from_value(wire).unwrap();
+        assert!(point.validate_for_write(&[]).is_ok());
+    }
+
+    #[test]
+    fn sketch_point_write_checks_its_own_incident_circular_center() {
+        let mut wire =
+            native_point_wire(&json!({"kind": "version11", "padded_paired_reference": false}));
+        wire["id"] = json!("f3d:stream:sketch-point#1");
+        wire["flags"] = json!("0000000000000001");
+        wire["closure"] = json!({"selector": 0, "state": 1});
+        wire["companion"] = json!({"incident_curves": [7]});
+        let point: SketchPoint = serde_json::from_value(wire.clone()).unwrap();
+        let curve: super::SketchCurveIdentity = serde_json::from_value(json!({
+            "id": "f3d:stream:sketch-curve#7", "record_index": 7,
+            "class_tag": "000", "byte_offset": 0, "geometry_offset": 0,
+            "owner_reference": 17, "primary_id": 1, "secondary_id": 0,
+            "geometry": {"kind": "arc", "center": {"x": 2.0, "y": 3.0, "z": 0.0},
+                "normal": {"x": 0.0, "y": 0.0, "z": 1.0},
+                "reference_direction": {"x": 1.0, "y": 0.0, "z": 0.0},
+                "radius": 1.0, "start_angle": 0.0, "end_angle": 1.0}
+        }))
+        .unwrap();
+        assert!(point
+            .validate_for_write(std::slice::from_ref(&curve))
+            .is_ok());
+        assert!(point.validate_for_write(&[]).is_err());
+        let mut wrong_stream = curve.clone();
+        wrong_stream.id = "f3d:other:sketch-curve#7".into();
+        assert!(point.validate_for_write(&[wrong_stream]).is_err());
+        let mut moved = point.clone();
+        moved
+            .try_set_coordinates(cadmpeg_ir::math::Point2 { u: 2.5, v: 3.0 })
+            .unwrap();
+        assert!(moved
+            .validate_for_write(std::slice::from_ref(&curve))
+            .is_err());
+        wire["closure"] = json!({"selector": 4, "state": 0});
+        let wrong_closure: SketchPoint = serde_json::from_value(wire).unwrap();
+        assert!(wrong_closure.validate_for_write(&[curve]).is_err());
     }
 
     #[test]

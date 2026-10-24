@@ -9,6 +9,204 @@ use crate::test_support::assembly_test::{f3d_without_brep, XREF_ROLE};
 use crate::F3dCodec;
 
 use super::occurrence_record;
+
+fn single_type_metadata(
+    type_guid: &str,
+    version: u32,
+    module: &str,
+    class_tag: &str,
+    entity: u64,
+) -> crate::metastream::MetaStream {
+    let entities = [entity];
+    let ordinal = class_tag.parse::<usize>().unwrap() - 256;
+    let mut types = vec![
+        (
+            "00000000-0000-0000-0000-000000000000",
+            "",
+            0,
+            "Other",
+            &[][..]
+        );
+        ordinal
+    ];
+    types.push((type_guid, "", version, module, entities.as_slice()));
+    let bytes =
+        crate::test_support::streams_test::design_metastream_with_records(&types, &[(entity, 0)]);
+    crate::metastream::parse(&bytes, "Design/MetaStream.dat").unwrap()
+}
+
+#[test]
+fn fixture_placement_frames_require_registered_component_types() {
+    #[derive(serde::Deserialize)]
+    struct Case {
+        label: String,
+        type_guid: String,
+        version: u32,
+        module: String,
+        class_tag: String,
+        entity: u64,
+        source_hex: cadmpeg_ir::native::bytes::NativeBytes,
+        role: Option<String>,
+        matrix: Option<[f64; 16]>,
+    }
+    let cases: Vec<Case> = serde_json::from_str(&crate::test_support::verification::text(
+        "xref/original_records.json",
+        include_str!("../../test_support/xref/original_records.json"),
+    ))
+    .unwrap();
+    for case in cases {
+        let meta = single_type_metadata(
+            &case.type_guid,
+            case.version,
+            &case.module,
+            &case.class_tag,
+            case.entity,
+        );
+        let bytes = case.source_hex.as_ref();
+        let records = super::super::typed_occurrence_placement_records(bytes, &meta).unwrap();
+        let placements = super::super::occurrence_placements(bytes, &records, None);
+        let Some(role) = case.role else {
+            assert!(records.is_empty(), "{}", case.label);
+            assert!(placements.is_empty(), "{}", case.label);
+            continue;
+        };
+        assert_eq!(placements.len(), 1, "{}", case.label);
+        assert_eq!(placements[0].link_names, [role], "{}", case.label);
+        assert_eq!(
+            placements[0].transform.map(|rows| rows.concat()),
+            case.matrix.map(|values| values.to_vec()),
+            "{}",
+            case.label
+        );
+    }
+}
+
+#[test]
+fn placement_metadata_boundaries_ignore_header_bytes_in_a_rigid_transform() {
+    let role = "cccccccc-dddd-eeee-ffff-000000000000";
+    let translation = f64::from_le_bytes([3, 0, 0, 0, b'3', b'8', b'0', 0]);
+    let matrix = [
+        [1.0, 0.0, 0.0, translation],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let bytes = super::legacy_occurrence_record(role, 10, Some(matrix));
+    let meta = single_type_metadata(
+        super::super::OCCURRENCE_PLACEMENT_TYPE_GUID,
+        2,
+        "Component",
+        "380",
+        10,
+    );
+    let records = super::super::typed_occurrence_placement_records(&bytes, &meta).unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].end, bytes.len());
+    let placements = super::super::occurrence_placements(&bytes, &records, None);
+    assert_eq!(placements.len(), 1);
+    assert_eq!(placements[0].transform, Some(matrix));
+}
+
+#[test]
+fn nested_headers_do_not_create_additional_placement_records() {
+    let role = "cccccccc-dddd-eeee-ffff-000000000000";
+    let mut bytes = super::legacy_occurrence_record(role, 10, None);
+    let boundary = bytes.len();
+    bytes.extend_from_within(..);
+    let mut meta = single_type_metadata(
+        super::super::OCCURRENCE_PLACEMENT_TYPE_GUID,
+        2,
+        "Component",
+        "380",
+        10,
+    );
+    meta.secondary_records
+        .push(crate::metastream::RecordIndexEntry {
+            entity_id: 10,
+            bulk_offset: u64::try_from(boundary).unwrap(),
+        });
+    let records = super::super::typed_occurrence_placement_records(&bytes, &meta).unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].end, boundary);
+    assert_eq!(
+        super::super::occurrence_placements(&bytes, &records, None).len(),
+        1
+    );
+    bytes[4..7].copy_from_slice(b"381");
+    assert!(super::super::typed_occurrence_placement_records(&bytes, &meta).is_err());
+}
+
+#[test]
+fn inconsistent_legacy_target_fields_retain_the_role_as_a_placement_failure() {
+    let role = "cccccccc-dddd-eeee-ffff-000000000000";
+    let original = super::legacy_occurrence_record(role, 10, None);
+    let target = super::legacy_occurrence_reference(3, 0x0102_0304_0506_0708);
+    let positions: Vec<_> = original
+        .windows(target.len())
+        .enumerate()
+        .filter_map(|(at, bytes)| (bytes == target).then_some(at))
+        .collect();
+    assert_eq!(positions.len(), 2);
+    let meta = single_type_metadata(
+        super::super::OCCURRENCE_PLACEMENT_TYPE_GUID,
+        2,
+        "Component",
+        "380",
+        10,
+    );
+    for field in [1, 10, 23] {
+        let mut bytes = original.clone();
+        bytes[positions[1] + field] += 1;
+        let records = super::super::typed_occurrence_placement_records(&bytes, &meta).unwrap();
+        let (placements, failures) =
+            super::super::occurrence_placements_with_failures(&bytes, &records, None, None)
+                .unwrap();
+        assert!(placements.is_empty());
+        assert_eq!(failures.len(), 1);
+        assert_eq!(failures[0].link_names, [role]);
+    }
+}
+
+#[test]
+fn missing_metadata_does_not_infer_an_external_transform_from_record_shape() {
+    use std::io::{Read, Write};
+    let matrix = [
+        [1.0, 0.0, 0.0, 3.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let archive = super::document_with_modern_placement(XREF_ROLE, matrix);
+    let mut source = zip::ZipArchive::new(Cursor::new(archive)).unwrap();
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    for ordinal in 0..source.len() {
+        let mut entry = source.by_index(ordinal).unwrap();
+        let name = entry.name().unwrap().into_owned();
+        if name.ends_with("/MetaStream.dat") {
+            continue;
+        }
+        zip.start_file(
+            name,
+            crate::zip_write::file_options(zip::CompressionMethod::Stored),
+        )
+        .unwrap();
+        let mut bytes = Vec::new();
+        entry.read_to_end(&mut bytes).unwrap();
+        zip.write_all(&bytes).unwrap();
+    }
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(zip.finish().unwrap().into_inner()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = crate::test_support::native_test::f3d_native(decoded.ir());
+    assert_eq!(native.xref_references.len(), 1);
+    assert_eq!(native.xref_references[0].transform, None);
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::F3dLossCode::XrefPlacementMetadataMissing.kind()
+    }));
+}
 #[test]
 fn typed_placement_admission_rejects_shape_collision() {
     let bytes = occurrence_record("role", 10, &[2, 3], None);

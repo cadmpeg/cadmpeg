@@ -32,7 +32,7 @@ rewrite_enum!(JointLimits, []; {
 rewrite_record!(JointOperand, []; {container, object, subelements});
 rewrite_enum!(JointOperands, []; {
     Grounded {connector, offset_frame},
-    Pair {kind, connectors, offset_frames},
+    Pair {kind, connectors, offset_frames, frame_sense},
 });
 rewrite_record!(LinkState, []; {linked_subelements, element_component, claim_child, copy_on_change});
 rewrite_record!(Occurrence, []; {id, prototype, parent, ordinal, transform, linked_prototype, name, visible, link, native_ref});

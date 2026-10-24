@@ -869,7 +869,7 @@ mod tests {
                     crate::brep::PersistentFaceIdentity {
                         feature_source_id: 50_u32.try_into().unwrap(),
                         local_id: 5,
-                        trailing_fields: Vec::new(),
+                        trailing_fields: vec![10],
                     },
                 ),
                 (
@@ -878,7 +878,7 @@ mod tests {
                     crate::brep::PersistentFaceIdentity {
                         feature_source_id: 50_u32.try_into().unwrap(),
                         local_id: 5,
-                        trailing_fields: Vec::new(),
+                        trailing_fields: vec![15],
                     },
                 ),
             ],

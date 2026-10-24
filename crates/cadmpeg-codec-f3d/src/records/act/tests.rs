@@ -329,7 +329,7 @@ fn act_channels_reject_unpaired_keys_and_preserve_split_wire_maps() {
 }
 
 #[test]
-fn act_class_tail_requires_nonpadding_bytes_and_a_bounded_offset() {
+fn act_stream_residue_requires_nonpadding_bytes_and_a_bounded_offset() {
     let wire = serde_json::json!({
         "id": "f3d:stream:act-entity#7", "record_index": 7, "entity_id": "0_1",
         "in_table": false, "channel_class_tag": "261", "channels": {"Appearance":"11111111-2222-3333-4444-555555555555"}, "class_tail_frame": serde_json::to_value(super::super::source_frame::SourceFrame::from(vec![0,1])).unwrap(), });

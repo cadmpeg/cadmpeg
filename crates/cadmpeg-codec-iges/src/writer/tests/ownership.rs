@@ -355,6 +355,41 @@ fn topology_owned_curve_preserves_support_and_independent_roles() {
 }
 
 #[test]
+fn topology_owned_curve_without_a_role_is_support_of_its_edge() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(
+                crate::test_support::test_solids_and_structure::explicit_tetrahedron_solid_file(),
+            ),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    ir.native = cadmpeg_ir::native::Native::default();
+    for curve in &mut ir.model.curves {
+        curve.source_object = None;
+    }
+    let ownership = super::super::ownership::SourceOwnership::build(&ir);
+    assert!(ownership.topology_status(None).is_physically_dependent());
+    assert!(!ownership.status(None).is_physically_dependent());
+    let generated = super::super::synthesize(&ir, IgesVersion::V5_3).unwrap();
+    let curve_entries: Vec<_> = generated
+        .bytes
+        .chunks_exact(81)
+        .filter(|card| card[72] == b'D' && card[..8].trim_ascii() == b"110")
+        .collect();
+    assert_eq!(curve_entries.len(), ir.model.curves.len() * 2);
+    assert!(curve_entries
+        .chunks_exact(2)
+        .all(|entry| &entry[0][64..72] == b"00010000"));
+    let result = IgesCodec
+        .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir().model.bodies.len(), ir.model.bodies.len());
+    assert_eq!(result.ir().model.curves.len(), ir.model.curves.len());
+}
+
+#[test]
 fn free_points_and_vertices_on_brep_and_trimmed_sheet_paths_have_export_losses() {
     for file in [
         crate::test_support::test_solids_and_structure::explicit_tetrahedron_solid_file(),

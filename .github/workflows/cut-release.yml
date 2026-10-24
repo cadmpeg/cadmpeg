@@ -3,7 +3,8 @@
 # Dispatch this workflow (Actions tab -> Cut release -> Run workflow) with the
 # target version, e.g. 0.1.5. It performs the entire release in a single run:
 #
-#   1. Requires a successful CI run on the main commit it releases.
+#   1. Requires a successful CI run on the main commit it releases, and waits
+#      for that run while it is queued or in progress.
 #   2. Validates the version (must be a strict upgrade; tag must not exist).
 #   3. Bumps the workspace manifest and refreshes Cargo.lock.
 #   4. Runs the repository policy gate on the bumped manifests.
@@ -73,10 +74,23 @@ jobs:
       - name: Require a successful CI run on the released commit
         env:
           GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
-          passed="$(gh api "repos/${{ github.repository }}/actions/runs?head_sha=$(git rev-parse HEAD)&status=success" \
-            --jq '[.workflow_runs[] | select(.path == ".github/workflows/ci.yml")] | length')"
-          test "$passed" -gt 0 || { echo "::error::CI has not passed on main HEAD." >&2; exit 1; }
+          set -euo pipefail
+          sha="$(git rev-parse HEAD)"
+          while :; do
+            passed="$(gh api "repos/${{ github.repository }}/actions/runs?head_sha=${sha}&status=success" \
+              --jq '[.workflow_runs[] | select(.path == ".github/workflows/ci.yml")] | length')"
+            test "${passed}" -gt 0 && break
+            pending="$(gh api "repos/${{ github.repository }}/actions/runs?head_sha=${sha}" \
+              --jq '[.workflow_runs[] | select(.path == ".github/workflows/ci.yml" and .status != "completed")] | length')"
+            if [[ "${pending}" -eq 0 ]]; then
+              echo "::error::CI has not passed on main HEAD ${sha}." >&2
+              exit 1
+            fi
+            echo "Waiting for CI on ${sha}"
+            sleep 60
+          done
 
       - name: Install stable toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -163,9 +177,9 @@ jobs:
           git config user.email "${bot_id}+${APP_SLUG}[bot]@users.noreply.github.com"
 
           git add Cargo.toml Cargo.lock
-          # Sign off under the App's bot identity so the release commit satisfies
-          # the DCO requirement (CONTRIBUTING.md: every commit is signed off),
-          # independent of the CI check's release-file exemption.
+          # Sign off under the App's bot identity. This commit goes straight to
+          # main with no pull request to carry the sign-off, so the commit
+          # carries it, independent of the CI check's release-file exemption.
           git commit -s -m "Bump workspace version to ${version}"
           git push origin HEAD:main
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"

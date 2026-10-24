@@ -2,10 +2,10 @@
 use super::Slots;
 use crate::history_records::{
     AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalCurveAxis,
-    AsmHistoricalCylinder, AsmHistoricalEdge, AsmHistoricalOptionalCarrierBinding,
-    AsmHistoricalPersistentSubentityTag, AsmHistoricalPlane, AsmHistoricalPoint,
-    AsmHistoricalRelation, AsmHistoricalSurfaceAxis, AsmHistoricalSurfaceRadius,
-    AsmHistoricalTopology,
+    AsmHistoricalCylinder, AsmHistoricalEdge, AsmHistoricalEdgeSample,
+    AsmHistoricalOptionalCarrierBinding, AsmHistoricalPersistentSubentityTag, AsmHistoricalPlane,
+    AsmHistoricalPoint, AsmHistoricalRelation, AsmHistoricalSurfaceAxis,
+    AsmHistoricalSurfaceRadius, AsmHistoricalTopology,
 };
 use std::collections::BTreeMap;
 
@@ -187,16 +187,17 @@ indexed_topology! {
         coedge_pcurves = 21: AsmHistoricalOptionalCarrierBinding => |row: &AsmHistoricalOptionalCarrierBinding| row.entity,
         vertex_points = 22: AsmHistoricalCarrierBinding => |row: &AsmHistoricalCarrierBinding| row.entity,
         point_positions = 23: AsmHistoricalPoint => |row: &AsmHistoricalPoint| row.point,
+        edge_samples = 24: AsmHistoricalEdgeSample => |row: &AsmHistoricalEdgeSample| row.edge,
     }
     containers {
-        bodies = 24: i64 => |row: &i64| *row,
-        regions = 25: i64 => |row: &i64| *row,
-        shells = 26: i64 => |row: &i64| *row,
-        body_regions = 27: AsmHistoricalRelation => |row: &AsmHistoricalRelation| row.owner_ref,
-        region_shells = 28: AsmHistoricalRelation => |row: &AsmHistoricalRelation| row.owner_ref,
-        shell_faces = 29: AsmHistoricalRelation => |row: &AsmHistoricalRelation| row.owner_ref,
-        shell_wire_edges = 30: AsmHistoricalRelation => |row: &AsmHistoricalRelation| row.owner_ref,
-        shell_free_vertices = 31: AsmHistoricalRelation => |row: &AsmHistoricalRelation| row.owner_ref,
+        bodies = 25: i64 => |row: &i64| *row,
+        regions = 26: i64 => |row: &i64| *row,
+        shells = 27: i64 => |row: &i64| *row,
+        body_regions = 28: AsmHistoricalRelation => |row: &AsmHistoricalRelation| row.owner_ref,
+        region_shells = 29: AsmHistoricalRelation => |row: &AsmHistoricalRelation| row.owner_ref,
+        shell_faces = 30: AsmHistoricalRelation => |row: &AsmHistoricalRelation| row.owner_ref,
+        shell_wire_edges = 31: AsmHistoricalRelation => |row: &AsmHistoricalRelation| row.owner_ref,
+        shell_free_vertices = 32: AsmHistoricalRelation => |row: &AsmHistoricalRelation| row.owner_ref,
     }
 }
 

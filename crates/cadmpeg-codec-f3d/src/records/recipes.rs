@@ -14,6 +14,7 @@ cadmpeg_core::named_optional_field!(
     "design_selector"
 );
 cadmpeg_core::named_optional_field!(deserialize_record_index, i32, "record_index");
+cadmpeg_core::named_optional_field!(deserialize_component_name, String, "name");
 /// Component-local Design naming space bound to a context UUID.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -30,6 +31,17 @@ pub(crate) struct DesignComponentNamingSpace {
     /// Byte offset of the UUID length prefix.
     #[serde(skip)]
     pub(crate) context_uuid_offset: Option<u64>,
+    /// The component's name, stored after the context UUID at the end of the
+    /// component's definition record.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_component_name"
+    )]
+    pub(crate) name: Option<String>,
+    /// Byte offset of the name's length prefix.
+    #[serde(skip)]
+    pub(crate) name_offset: Option<u64>,
 }
 
 /// Original authoring time attached to a solved ASM entity.

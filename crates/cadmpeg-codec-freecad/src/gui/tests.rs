@@ -1969,3 +1969,5 @@ fn assert_gui_metadata_recovery(
 }
 
 mod metadata_recovery;
+
+mod topology_appearance;

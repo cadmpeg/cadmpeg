@@ -9,15 +9,13 @@ use crate::records::{
 };
 
 #[test]
-fn legacy_pipe_projects_only_the_exact_path_reference_form() {
+fn pipe_dispatcher_requires_shape_evidence_beyond_opaque_bytes() {
     use crate::records::topology::construction::DesignConstructionOperandGroupFrame;
 
-    use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureOperation, GeneratedSweepSection, PathRef,
-    };
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut scope = DesignParameterScope::empty(
-        "f3d:test:pipe-scope#1",
+        "f3d:Design/BulkStream.dat:pipe-scope#1",
         crate::records::feature::scope::DesignFeatureKind::Pipe,
         1,
     );
@@ -28,7 +26,7 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
     scope
         .try_edit(|draft| {
             draft.reference_members =
-                crate::records::identity::ReferenceRun::unlocated(vec![10, 11, 12, 13, 20, 21, 22]);
+                crate::records::identity::ReferenceRun::unlocated(vec![30, 33, 36, 39, 20, 21, 22]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -40,13 +38,12 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
             crate::records::feature::path_features::DesignPipeConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: 26,
-                section_shape:
-                    crate::records::feature::surface_ops::DesignPipeSectionShape::Circular,
-                section_shape_offset: 30,
-                filled: true,
-                filled_offset: 31,
+                is_hollow: false,
+                is_hollow_offset: 25,
+                opaque_post_operation: [1, 1].into(),
+                opaque_post_operation_offset: 30,
                 values: crate::test_support::reals([1.0, 1.0, 0.6, 0.15]),
-                record_indexes: [10, 11, 12, 13],
+                record_indexes: [30, 33, 36, 39],
                 value_offsets: [40, 151, 262, 373],
             },
         ));
@@ -64,7 +61,7 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
                      evaluated_value: f64| {
         crate::records::parameters::DesignParameter::try_from(
             crate::records::parameters::DesignParameterDraft {
-                id: format!("f3d:test:pipe-parameter#{record_index}"),
+                id: format!("f3d:Design/BulkStream.dat:pipe-parameter#{record_index}"),
                 byte_offset: 0,
                 class_tag: crate::records::references::DesignClassTag::try_from("277".to_owned())
                     .unwrap(),
@@ -93,18 +90,44 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         .unwrap()
     };
     let parameters = [
-        parameter(10, "AlongDistance", None, 1.0),
-        parameter(11, "AgainstDistance", None, 1.0),
-        parameter(12, "SectionSize", Some("cm"), 0.6),
-        parameter(13, "SectionThickness", Some("cm"), 0.15),
+        parameter(31, "AlongDistance", None, 1.0),
+        parameter(34, "AgainstDistance", None, 1.0),
+        parameter(37, "SectionSize", Some("cm"), 0.6),
+        parameter(40, "SectionThickness", Some("cm"), 0.15),
     ];
-    let parameter_refs = parameters
+    let owners = parameters
         .iter()
-        .map(|parameter| (parameter.record_index, parameter))
+        .enumerate()
+        .map(|(ordinal, parameter)| {
+            crate::records::parameters::DesignParameterOwner::try_from(
+                crate::records::parameters::DesignParameterOwnerWire {
+                    id: format!(
+                        "f3d:Design/BulkStream.dat:parameter-owner#{}",
+                        parameter.record_index - 1
+                    ),
+                    byte_offset: 0,
+                    frame_length: 103,
+                    class_tag: crate::records::references::DesignClassTag::try_from(
+                        "342".to_owned(),
+                    )
+                    .unwrap(),
+                    record_index: parameter.record_index - 1,
+                    scope_record_index: 1,
+                    local_ordinal: u32::try_from(ordinal).unwrap(),
+                    evaluated_value: parameter.evaluated_value().get(),
+                    evaluated_value_offset: 40,
+                    parameter_record_index: parameter.record_index,
+                    owned_ordinal: u32::try_from(ordinal).unwrap(),
+                    variant: None,
+                    companion_record_index: parameter.record_index + 1,
+                },
+            )
+            .unwrap()
+        })
         .collect::<Vec<_>>();
     let path_group = DesignConstructionOperandGroup::try_from(
         crate::records::topology::construction::DesignConstructionOperandGroupDraft {
-            id: "f3d:test:pipe-group#20".into(),
+            id: "f3d:Design/BulkStream.dat:pipe-group#20".into(),
             scope_record_index: 1,
             scope_reference_ordinal: 4,
             record_index: 20,
@@ -147,230 +170,34 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
     )
     .unwrap();
 
-    let definition = crate::test_support::with_decode_context(|decode_ctx| {
-        crate::design::feature_project::project_fixed_pipe(
-            &scope,
-            &parameter_refs,
-            std::slice::from_ref(&path_group),
-            &[],
-            &[],
-            decode_ctx,
-        )
-    })
-    .unwrap()
-    .expect("exact legacy Pipe reference form");
-    assert!(matches!(
-        definition, FeatureDefinition::Operation(FeatureOperation::Sweep {
-            shape,
-            path: Some(PathRef::Native(path)),
-            ..
-        }) if matches!((shape.generated_section(),), (Some(GeneratedSweepSection::CircularRegion {
-                region,
-
-            }),) if matches!((&region.outer_radius(), &region.wall_thickness(),), (actual_outer_radius, None,) if (path == path_group.id) && actual_outer_radius.resolved_radius(&super::parameter_document(&parameters)).unwrap().get() == 3.0))));
-
-    {
-        let value = Some(DesignPathFeatureConstruction::Pipe(
-            crate::records::feature::path_features::DesignPipeConstruction {
-                operation: DesignExtrudeOperation::NewBody,
-                operation_offset: 26,
-                section_shape:
-                    crate::records::feature::surface_ops::DesignPipeSectionShape::Circular,
-                section_shape_offset: 30,
-                filled: false,
-                filled_offset: 31,
-                values: crate::test_support::reals([1.0, 1.0, 0.6, 0.15]),
-                record_indexes: [10, 11, 12, 13],
-                value_offsets: [40, 151, 262, 373],
-            },
-        ));
-        scope
-            .try_edit(|draft| {
-                draft.payload =
-                    value.map_or_else(|| draft.payload.kind().try_into().unwrap(), Into::into);
-            })
-            .unwrap();
+    for opaque in [[1, 1], [0, 1], [0, 255]] {
+        for is_hollow in [false, true] {
+            if let crate::records::feature::scope::DesignScopePayloadMut::Pipe(Some(construction)) =
+                scope.payload_mut()
+            {
+                construction.opaque_post_operation = opaque.into();
+                construction.is_hollow = is_hollow;
+            }
+            let scopes = [scope.clone()];
+            let timelines = crate::design::test_support::synthetic_feature_timelines(&scopes);
+            let projected = crate::test_support::with_decode_context(|ctx| {
+                crate::design::feature_project::project_parameter_design_with_edge_identities(
+                    ctx,
+                    &crate::design::feature_project::ProjectInputs {
+                        native: &parameters,
+                        owners: &owners,
+                        scopes: &scopes,
+                        timelines: &timelines,
+                        construction_groups: std::slice::from_ref(&path_group),
+                        ..Default::default()
+                    },
+                )
+                .unwrap()
+            });
+            assert_eq!(projected.features.len(), 1);
+            assert!(matches!(projected.features[0].evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::Native { kind, parameters })
+                if kind.as_str() == "Pipe" && parameters.len() == 4));
+        }
     }
-    let hollow_definition = crate::test_support::with_decode_context(|decode_ctx| {
-        crate::design::feature_project::project_fixed_pipe(
-            &scope,
-            &parameter_refs,
-            std::slice::from_ref(&path_group),
-            &[],
-            &[],
-            decode_ctx,
-        )
-    })
-    .unwrap()
-    .expect("exact hollow circular Pipe reference form");
-    assert!(matches!(
-        hollow_definition, FeatureDefinition::Operation(FeatureOperation::Sweep {
-            shape,
-            path: Some(PathRef::Native(path)),
-            ..
-        }) if matches!((shape.generated_section(),), (Some(GeneratedSweepSection::CircularRegion {
-                region,
-
-            }),) if matches!((&region.outer_radius(), &region.wall_thickness(),), (actual_outer_radius, Some(actual_wall_thickness),) if (path == path_group.id) && actual_outer_radius.resolved_radius(&super::parameter_document(&parameters)).unwrap().get() == 3.0 && super::dimension_value(actual_wall_thickness, &parameters).get() == 1.5))));
-
-    let mut too_thick_parameters = parameters.clone();
-    too_thick_parameters[3]
-        .try_set_evaluated_value(0.35)
-        .unwrap();
-    let too_thick_parameter_refs = too_thick_parameters
-        .iter()
-        .map(|parameter| (parameter.record_index, parameter))
-        .collect::<Vec<_>>();
-    {
-        let value = Some(DesignPathFeatureConstruction::Pipe(
-            crate::records::feature::path_features::DesignPipeConstruction {
-                operation: DesignExtrudeOperation::NewBody,
-                operation_offset: 26,
-                section_shape:
-                    crate::records::feature::surface_ops::DesignPipeSectionShape::Circular,
-                section_shape_offset: 30,
-                filled: false,
-                filled_offset: 31,
-                values: crate::test_support::reals([1.0, 1.0, 0.6, 0.35]),
-                record_indexes: [10, 11, 12, 13],
-                value_offsets: [40, 151, 262, 373],
-            },
-        ));
-        scope
-            .try_edit(|draft| {
-                draft.payload =
-                    value.map_or_else(|| draft.payload.kind().try_into().unwrap(), Into::into);
-            })
-            .unwrap();
-    }
-    assert!(crate::test_support::with_decode_context(|decode_ctx| {
-        crate::design::feature_project::project_fixed_pipe(
-            &scope,
-            &too_thick_parameter_refs,
-            std::slice::from_ref(&path_group),
-            &[],
-            &[],
-            decode_ctx,
-        )
-    })
-    .unwrap()
-    .is_none());
-
-    {
-        let value = Some(DesignPathFeatureConstruction::Pipe(
-            crate::records::feature::path_features::DesignPipeConstruction {
-                operation: DesignExtrudeOperation::NewBody,
-                operation_offset: 26,
-                section_shape:
-                    crate::records::feature::surface_ops::DesignPipeSectionShape::Circular,
-                section_shape_offset: 30,
-                filled: true,
-                filled_offset: 31,
-                values: crate::test_support::reals([1.0, 1.0, 0.6, 0.15]),
-                record_indexes: [10, 11, 12, 13],
-                value_offsets: [40, 151, 262, 373],
-            },
-        ));
-        scope
-            .try_edit(|draft| {
-                draft.payload =
-                    value.map_or_else(|| draft.payload.kind().try_into().unwrap(), Into::into);
-            })
-            .unwrap();
-    }
-
-    scope
-        .try_edit(|draft| {
-            draft.reference_members = {
-                let mut values: Vec<u32> = draft.reference_members.values().copied().collect();
-                values.push(23);
-                crate::records::identity::ReferenceRun::unlocated(values)
-            };
-            draft.layout_fixture_references();
-            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
-            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
-            draft.layout_fixture_tail();
-        })
-        .unwrap();
-    assert!(crate::test_support::with_decode_context(|decode_ctx| {
-        crate::design::feature_project::project_fixed_pipe(
-            &scope,
-            &parameter_refs,
-            std::slice::from_ref(&path_group),
-            &[],
-            &[],
-            decode_ctx,
-        )
-    })
-    .unwrap()
-    .is_none());
-
-    scope
-        .try_edit(|draft| {
-            draft.reference_members = {
-                let mut values: Vec<u32> = draft.reference_members.values().copied().collect();
-                values.pop();
-                crate::records::identity::ReferenceRun::unlocated(values)
-            };
-            draft.layout_fixture_references();
-            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
-            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
-            draft.layout_fixture_tail();
-        })
-        .unwrap();
-    scope.class_tag =
-        crate::records::references::DesignClassTag::try_from("475".to_owned()).unwrap();
-    scope.paired_class_tag =
-        crate::records::references::DesignClassTag::try_from("260".to_owned()).unwrap();
-    assert!(crate::test_support::with_decode_context(|decode_ctx| {
-        crate::design::feature_project::project_fixed_pipe(
-            &scope,
-            &parameter_refs,
-            std::slice::from_ref(&path_group),
-            &[],
-            &[],
-            decode_ctx,
-        )
-    })
-    .unwrap()
-    .is_some());
-
-    scope.class_tag =
-        crate::records::references::DesignClassTag::try_from("421".to_owned()).unwrap();
-    scope.paired_class_tag =
-        crate::records::references::DesignClassTag::try_from("257".to_owned()).unwrap();
-    {
-        let value = Some(DesignPathFeatureConstruction::Pipe(
-            crate::records::feature::path_features::DesignPipeConstruction {
-                operation: DesignExtrudeOperation::NewBody,
-                operation_offset: 25,
-                section_shape:
-                    crate::records::feature::surface_ops::DesignPipeSectionShape::Circular,
-                section_shape_offset: 29,
-                filled: true,
-                filled_offset: 30,
-                values: crate::test_support::reals([1.0, 1.0, 0.6, 0.15]),
-                record_indexes: [10, 11, 12, 13],
-                value_offsets: [40, 151, 262, 373],
-            },
-        ));
-        scope
-            .try_edit(|draft| {
-                draft.payload =
-                    value.map_or_else(|| draft.payload.kind().try_into().unwrap(), Into::into);
-            })
-            .unwrap();
-    }
-    assert!(crate::test_support::with_decode_context(|decode_ctx| {
-        crate::design::feature_project::project_fixed_pipe(
-            &scope,
-            &parameter_refs,
-            std::slice::from_ref(&path_group),
-            &[],
-            &[],
-            decode_ctx,
-        )
-    })
-    .unwrap()
-    .is_some());
 }

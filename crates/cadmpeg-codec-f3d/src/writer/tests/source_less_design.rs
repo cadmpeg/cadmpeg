@@ -489,6 +489,22 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
     assert!(error
         .to_string()
         .contains("module conflicts with MetaStream ownership"));
+    crate::test_support::zip_test::with_scan(&encoded, |scan| {
+        let bulk_name = "FusionAssetName[Active]/Design1/BulkStream.dat";
+        let bulk = scan.entry_bytes(bulk_name).unwrap();
+        let meta = scan
+            .parsed_metastream(&bulk_name.replace("BulkStream.dat", "MetaStream.dat"))
+            .unwrap();
+        assert!(scan.unindexed_record_runs.is_empty());
+        assert!(meta.secondary_records.is_empty());
+        assert_eq!(meta.records.len(), 1);
+        assert_eq!(meta.records[0].entity_id, 277);
+        assert_eq!(meta.records[0].bulk_offset, 79);
+        assert_eq!(&bulk[57..68], &[3, 0, 0, 0, b'3', b'5', b'0', 33, 0, 0, 0]);
+        assert_eq!(&bulk[68..79], &[3, 0, 0, 0, b'3', b'5', b'1', 44, 0, 0, 0]);
+        assert_eq!(&bulk[79..90], &[3, 0, 0, 0, b'2', b'5', b'6', 21, 1, 0, 0]);
+        assert_eq!(bulk.len(), 153);
+    });
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less Design ownership round trip");
@@ -730,6 +746,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
                 )
                 .unwrap(),
             ),
+            planar_z_noise: None,
         },
         SketchCurveIdentity {
             id: "f3d:generated:sketch-curve#1".into(),
@@ -753,6 +770,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
                 )
                 .unwrap(),
             ),
+            planar_z_noise: None,
         },
         SketchCurveIdentity {
             id: "f3d:generated:sketch-curve#2".into(),
@@ -786,6 +804,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
                 )
                 .unwrap(),
             )),
+            planar_z_noise: None,
         },
     ];
     native.sketch_relations = vec![SketchRelation::authored(
@@ -1079,7 +1098,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
                     padded_paired_reference: true,
                     companion_prefix_present_zero: true,
                     persistent_id,
-                    flags: [true, false, false, true, false, true, false, true],
+                    flags: [true, false, false, true, true, false, true, false],
                     closure: crate::records::sketch_geometry::SketchPointClosure::Selector4State0,
                 },
             )
@@ -1102,7 +1121,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     let extended_native = f3d_native(extended_round_trip.ir());
     let extended_point = &extended_native.sketch_points[0];
     assert_eq!(extended_point.depth(), 7.5);
-    assert_eq!(extended_point.flags(), [1, 0, 0, 1, 0, 1, 0, 1]);
+    assert_eq!(extended_point.flags(), [1, 0, 0, 1, 1, 0, 1, 0]);
     assert_eq!(
         extended_point.closure(),
         Some(crate::records::sketch_geometry::SketchPointClosure::Selector4State0)
@@ -1119,6 +1138,35 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             .expect("validate the native namespace")
     })
     .is_empty());
+
+    let mut invalid_zero_marker = extended_source_less.clone();
+    {
+        let mut zero_native = f3d_native_mut(&mut invalid_zero_marker);
+        let point = &mut zero_native.sketch_points[0];
+        point
+            .try_set_record_form(
+                crate::records::sketch_geometry::SketchPointRecordForm::Version11 {
+                    depth: 7.5,
+                    entity_genesis: point.entity_genesis(),
+                    padded_paired_reference: true,
+                    companion_prefix_present_zero: true,
+                    persistent_id: std::num::NonZeroU64::new(point.persistent_id().unwrap())
+                        .unwrap(),
+                    flags: [false, false, false, true, true, true, false, false],
+                    closure: crate::records::sketch_geometry::SketchPointClosure::Selector4State0,
+                },
+            )
+            .unwrap();
+    }
+    let mut refused_output = Vec::new();
+    let error = F3dCodec
+        .plan(
+            EncodeInput::new(&invalid_zero_marker, None),
+            TargetRequest::Inherit,
+        )
+        .and_then(|plan| plan.write_to(&mut refused_output))
+        .expect_err("a nonzero point cannot carry the zero-coordinate marker");
+    assert!(error.to_string().contains("flag lane 5"));
 
     let mut inconsistent = round_trip.ir().clone();
     f3d_native_mut(&mut inconsistent).sketch_relations[0]

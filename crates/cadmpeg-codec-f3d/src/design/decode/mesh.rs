@@ -24,6 +24,7 @@ use crate::layout::paramesh_collection_owner_v17 as collection_owner_v17;
 use crate::layout::paramesh_entry_name_prefix as entry_name_prefix;
 use crate::layout::paramesh_feature_scope_base as feature_scope_base;
 use crate::layout::paramesh_feature_scope_prefix as feature_scope;
+use crate::layout::paramesh_flagged_mesh_collection_prefix as flagged_collection;
 use crate::layout::paramesh_guid_join_prefix as guid_join;
 use crate::layout::paramesh_mesh_body_join_prefix as mesh_body;
 use crate::layout::paramesh_mesh_collection_base_prefix as mesh_collection_base;
@@ -647,25 +648,39 @@ fn parse_mesh_collection_record(
     )?;
     let record = &bytes[frame.start..frame.end];
     let identity = record_identity(record, frame, "mesh-collection")?;
-    let counted_bodies = counted_local_record_indices(
-        record,
-        mesh_collection::LEN + mesh_collection_base::BODY_COUNT,
-    );
+    let flagged = record.get(flagged_collection::FLAG) == Some(&flagged_collection::FLAG_VALUE);
+    let (prefix_len, zero_run, constant_at, texture_at) = if flagged {
+        (
+            flagged_collection::LEN,
+            flagged_collection::ZERO_RUN_9..flagged_collection::FLAG,
+            flagged_collection::CONSTANT_01_01,
+            flagged_collection::TEXTURE_TABLE_REFERENCE,
+        )
+    } else {
+        (
+            mesh_collection::LEN,
+            mesh_collection::ZERO_RUN_10..mesh_collection::BODY_COUNT,
+            mesh_collection::CONSTANT_01_01,
+            mesh_collection::TEXTURE_TABLE_REFERENCE,
+        )
+    };
+    let counted_bodies =
+        counted_local_record_indices(record, prefix_len + mesh_collection_base::BODY_COUNT);
     let parsed = (|| {
-        (record.get(mesh_collection::ZERO_RUN_10..mesh_collection::BODY_COUNT) == Some(&[0; 10]))
+        record
+            .get(zero_run)?
+            .iter()
+            .all(|byte| *byte == 0)
             .then_some(())?;
-        (record.get(mesh_collection::CONSTANT_01_01..mesh_collection::TEXTURE_TABLE_REFERENCE)
-            == Some(&[1, 1]))
-        .then_some(())?;
+        (record.get(constant_at..texture_at) == Some(&[1, 1])).then_some(())?;
         let first_count =
             usize::try_from(View::u32_le_at(record, mesh_collection::BODY_COUNT)?).ok()?;
-        let texture_table_record_index =
-            exact_local_record_index(record, mesh_collection::TEXTURE_TABLE_REFERENCE)?;
+        let texture_table_record_index = exact_local_record_index(record, texture_at)?;
         let base_record = nested_record_identity(
             record,
             crate::design::decode::mesh::NestedMeshRecordFrame {
                 frame_start: frame.start,
-                at: mesh_collection::LEN,
+                at: prefix_len,
                 end: record.len(),
                 record_index: identity.record_index(),
             },
@@ -678,12 +693,13 @@ fn parse_mesh_collection_record(
             },
         )?;
         (record.get(
-            mesh_collection::LEN + mesh_collection_base::ZERO_RUN_9
-                ..mesh_collection::LEN + mesh_collection_base::BODY_COUNT,
+            prefix_len + mesh_collection_base::ZERO_RUN_9
+                ..prefix_len + mesh_collection_base::BODY_COUNT,
         ) == Some(&[0; 9]))
         .then_some(())?;
         let (body_records, owner_at) = counted_bodies?;
         (first_count == body_records.len()).then_some(())?;
+        (!flagged || body_records.is_empty()).then_some(())?;
         // An empty collection can store a zero u32 before its owner reference.
         let owner_at = if body_records.is_empty() && View::u32_le_at(record, owner_at) == Some(0) {
             owner_at.checked_add(4)?
@@ -1940,6 +1956,16 @@ mod tests {
         }
     }
 
+    /// Prefix and owner forms of a mesh collection.
+    #[derive(Clone, Copy)]
+    enum CollectionForm {
+        Plain,
+        /// A zero u32 before the owner reference.
+        OwnerGap,
+        /// Flag byte `01` at offset 20 and this u32 at offset 25.
+        Flagged(u32),
+    }
+
     fn mesh_collection_record(
         class_tag: u32,
         base_class_tag: u32,
@@ -1947,15 +1973,19 @@ mod tests {
         texture_table_record_index: u32,
         body_record_indices: &[u32],
         owner_record_index: u32,
-        owner_gap: bool,
+        form: CollectionForm,
     ) -> Vec<u8> {
         let mut bytes = Vec::new();
         push_indexed_header(&mut bytes, class_tag, record_index);
-        bytes.extend_from_slice(&[0; 10]);
+        bytes.extend_from_slice(&[0; 9]);
+        bytes.push(u8::from(matches!(form, CollectionForm::Flagged(_))));
         bytes.extend_from_slice(
             &(u32::try_from(body_record_indices.len()).expect("fixture value fits u32"))
                 .to_le_bytes(),
         );
+        if let CollectionForm::Flagged(word) = form {
+            bytes.extend_from_slice(&word.to_le_bytes());
+        }
         bytes.extend_from_slice(&[1, 1]);
         push_reference(&mut bytes, texture_table_record_index);
         push_indexed_header(&mut bytes, base_class_tag, record_index);
@@ -1967,7 +1997,7 @@ mod tests {
         for body in body_record_indices {
             push_reference(&mut bytes, *body);
         }
-        if owner_gap {
+        if matches!(form, CollectionForm::OwnerGap) {
             bytes.extend_from_slice(&[0; 4]);
         }
         push_reference(&mut bytes, owner_record_index);
@@ -2146,14 +2176,13 @@ mod tests {
         with_textures: bool,
         body_count: usize,
     ) -> SyntheticMeshGraph {
-        synthetic_mesh_graph_with_collection(with_textures, body_count, false)
+        synthetic_mesh_graph_with_collection(with_textures, body_count, CollectionForm::Plain)
     }
 
-    /// `owner_gap`: the collection stores a zero u32 before its owner reference.
     fn synthetic_mesh_graph_with_collection(
         with_textures: bool,
         body_count: usize,
-        owner_gap: bool,
+        form: CollectionForm,
     ) -> SyntheticMeshGraph {
         const ENTRY: u32 = 102;
         const GUID: u32 = 103;
@@ -2362,7 +2391,7 @@ mod tests {
                 TEXTURES,
                 &BODIES[..body_count],
                 COLLECTION_OWNER,
-                owner_gap,
+                form,
             ),
         );
         let flags = if with_textures {
@@ -2562,7 +2591,7 @@ mod tests {
     /// still an empty registry. A nonzero value there is not a collection.
     #[test]
     fn empty_mesh_collection_with_a_zero_word_before_its_owner_is_an_empty_registry() {
-        let graph = synthetic_mesh_graph_with_collection(false, 0, true);
+        let graph = synthetic_mesh_graph_with_collection(false, 0, CollectionForm::OwnerGap);
         let mut no_asset = no_texture_asset;
         let design = parse_mesh_design_records(
             &graph.bytes,
@@ -2573,9 +2602,36 @@ mod tests {
         .expect("empty mesh registry");
         assert!(design.is_empty());
 
-        let mut graph = synthetic_mesh_graph_with_collection(false, 0, true);
+        let mut graph = synthetic_mesh_graph_with_collection(false, 0, CollectionForm::OwnerGap);
         let owner_gap = 38 + 11 + 9 + 4;
         graph.bytes[owner_gap] = 1;
+        let mut no_asset = no_texture_asset;
+        assert!(parse_mesh_design_records(
+            &graph.bytes,
+            &graph.meta,
+            "Synthetic/BulkStream.dat",
+            &mut no_asset,
+        )
+        .is_err());
+    }
+
+    /// An empty collection can store a flag byte and a u32 that move the rest
+    /// of its prefix by four bytes; a flagged collection with bodies is not a
+    /// collection.
+    #[test]
+    fn flagged_empty_mesh_collection_is_an_empty_registry() {
+        let graph = synthetic_mesh_graph_with_collection(false, 0, CollectionForm::Flagged(1));
+        let mut no_asset = no_texture_asset;
+        let design = parse_mesh_design_records(
+            &graph.bytes,
+            &graph.meta,
+            "Synthetic/BulkStream.dat",
+            &mut no_asset,
+        )
+        .expect("flagged empty mesh registry");
+        assert!(design.is_empty());
+
+        let graph = synthetic_mesh_graph_with_collection(false, 1, CollectionForm::Flagged(1));
         let mut no_asset = no_texture_asset;
         assert!(parse_mesh_design_records(
             &graph.bytes,

@@ -1151,3 +1151,373 @@ fn encodes_feature_names_into_neutral_identity_keys() {
     assert_valid_document(result.ir());
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }
+
+#[test]
+fn only_a_body_and_free_features_display_their_shapes() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="4">
+ <Object type="PartDesign::Body" name="Body" id="1"/>
+ <Object type="Sketcher::SketchObject" name="Sketch" id="2"/>
+ <Object type="PartDesign::Pad" name="Pad" id="3"/>
+ <Object type="Part::Feature" name="Free" id="4"/>
+</Objects>
+<ObjectData Count="4">
+ <Object name="Body"><Properties Count="3">
+  <Property name="Group" type="App::PropertyLinkList"><LinkList count="2"><Link value="Sketch"/><Link value="Pad"/></LinkList></Property>
+  <Property name="Tip" type="App::PropertyLink"><Link value="Pad"/></Property>
+  <Property name="Shape" type="Part::PropertyPartShape"><Part file="Body.Shape.brp"/></Property>
+ </Properties></Object>
+ <Object name="Sketch"><Properties Count="1">
+  <Property name="Shape" type="Part::PropertyPartShape"><Part file="Sketch.Shape.brp"/></Property>
+ </Properties></Object>
+ <Object name="Pad"><Properties Count="2">
+  <Property name="Shape" type="Part::PropertyPartShape"><Part file="Pad.Shape.brp"/></Property>
+  <Property name="AddSubShape" type="Part::PropertyPartShape"><Part file="Pad.AddSubShape.brp"/></Property>
+ </Properties></Object>
+ <Object name="Free"><Properties Count="1">
+  <Property name="Shape" type="Part::PropertyPartShape"><Part file="Free.Shape.brp"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let brep = b"CASCADE Topology V1, (c) Matra-Datavision
+Locations 0
+Curve2ds 0
+Curves 0
+Polygon3D 0
+PolygonOnTriangulations 0
+Surfaces 0
+Triangulations 0
+TShapes 1
+Ve 0.001 0 0 0 0 0 1001000 *
++1 0 *";
+    let names = [
+        "Body.Shape.brp",
+        "Sketch.Shape.brp",
+        "Pad.Shape.brp",
+        "Pad.AddSubShape.brp",
+        "Free.Shape.brp",
+    ];
+    let mut entries = vec![("Document.xml", document.as_bytes())];
+    entries.extend(names.iter().map(|name| (*name, &brep[..])));
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_archive::archive_entries(&entries)),
+            &DecodeOptions::default(),
+        )
+        .expect("body shapes");
+    let visible = |name: &str| {
+        result
+            .ir()
+            .model
+            .bodies
+            .iter()
+            .find(|body| body.id.as_str().contains(&format!(":{name}:")))
+            .unwrap_or_else(|| panic!("{name} body"))
+            .visible
+    };
+    assert_eq!(visible("Body.Shape.brp"), None);
+    assert_eq!(visible("Free.Shape.brp"), None);
+    for hidden in ["Sketch.Shape.brp", "Pad.Shape.brp", "Pad.AddSubShape.brp"] {
+        assert_eq!(visible(hidden), Some(false), "{hidden}");
+    }
+    assert_valid_document(result.ir());
+}
+
+#[test]
+fn spreadsheet_cells_state_quantities_and_literal_text_names_nothing() {
+    use cadmpeg_ir::features::ParameterValue;
+
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Spreadsheet::Sheet" name="Params" id="1"/></Objects>
+<ObjectData Count="1">
+ <Object name="Params"><Properties Count="1"><Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="5" xlink="1">
+  <Cell address="A1" content="'plate_w"/>
+  <Cell address="B1" content="=20 mm" alias="plate_w"/>
+  <Cell address="B2" content="=2in" alias="inch"/>
+  <Cell address="B3" content="=90 deg" alias="turn"/>
+  <Cell address="B4" content="=plate_w / 2" alias="half"/>
+ </Cells></Property></Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("spreadsheet");
+    let cell = |name: &str| {
+        result
+            .ir()
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.name == name)
+            .unwrap_or_else(|| panic!("{name} cell"))
+    };
+    assert_eq!(
+        cell("A1").value,
+        Some(ParameterValue::String("plate_w".into()))
+    );
+    assert!(cell("A1").dependencies.is_empty());
+    assert_eq!(
+        cell("plate_w").value,
+        Some(ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(20.0).unwrap()
+        ))
+    );
+    assert_eq!(
+        cell("inch").value,
+        Some(ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(50.8).unwrap()
+        ))
+    );
+    assert_eq!(
+        cell("turn").value,
+        Some(ParameterValue::Angle(
+            cadmpeg_ir::scalar::Angle::new(std::f64::consts::FRAC_PI_2).unwrap()
+        ))
+    );
+    // A computed cell keeps its reference and states no value of its own.
+    assert_eq!(cell("half").value, None);
+    assert_eq!(
+        cell("half").dependencies.iter().collect::<Vec<_>>(),
+        [&cell("plate_w").id]
+    );
+    assert_valid_document(result.ir());
+}
+
+#[test]
+fn custom_link_dependencies_do_not_depend_on_declaration_order() {
+    for declarations in [
+        r#"<Object type="PartDesign::Feature" name="Consumer"/><Object type="PartDesign::Feature" name="Operand"/>"#,
+        r#"<Object type="PartDesign::Feature" name="Operand"/><Object type="PartDesign::Feature" name="Consumer"/>"#,
+    ] {
+        for (runtime, is_dependency) in [
+            ("App::PropertyLink", true),
+            ("App::PropertyLinkChild", true),
+            ("App::PropertyLinkGlobal", true),
+            ("App::PropertyLinkHidden", false),
+        ] {
+            let document = format!(
+                r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="2">{declarations}</Objects><ObjectData Count="2"><Object name="Consumer"><Properties Count="1"><Property name="UserDefinedInput" type="{runtime}"><Link value="Operand"/></Property></Properties></Object><Object name="Operand"><Properties Count="0"/></Object></ObjectData></Document>"#
+            );
+            let result = FcstdCodec
+                .decode(
+                    &mut Cursor::new(archive(&document)),
+                    &DecodeOptions::default(),
+                )
+                .unwrap();
+            let features = &result.ir().model.features;
+            let consumer = features
+                .iter()
+                .find(|feature| feature.name.as_deref() == Some("Consumer"))
+                .unwrap();
+            let operand = features
+                .iter()
+                .find(|feature| feature.name.as_deref() == Some("Operand"))
+                .unwrap();
+            assert_eq!(
+                consumer.dependencies.contains(&operand.id),
+                is_dependency,
+                "{runtime}"
+            );
+            if is_dependency {
+                assert!(operand.ordinal < consumer.ordinal);
+            }
+            assert_valid_document(result.ir());
+        }
+    }
+}
+
+#[test]
+fn custom_forward_link_cycle_is_retained_only_in_native_graph() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="2"><Object type="PartDesign::Feature" name="A"/><Object type="PartDesign::Feature" name="B"/></Objects><ObjectData Count="2"><Object name="A"><Properties Count="1"><Property name="CustomInput" type="App::PropertyLink"><Link value="B"/></Property></Properties></Object><Object name="B"><Properties Count="1"><Property name="CustomInput" type="App::PropertyLink"><Link value="A"/></Property></Properties></Object></ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(result
+        .ir()
+        .model
+        .features
+        .iter()
+        .all(|feature| feature.dependencies.is_empty()));
+    assert!(result.report().losses.iter().any(|loss| loss.code
+        == crate::loss::FreecadLossCode::FeatureCyclicHistory
+            .note("")
+            .code));
+}
+
+#[test]
+fn expression_owner_is_a_feature_dependency_without_objectdeps() {
+    for declarations in [
+        r#"<Object type="PartDesign::Feature" name="Consumer"/><Object type="PartDesign::Feature" name="Operand"/>"#,
+        r#"<Object type="PartDesign::Feature" name="Operand"/><Object type="PartDesign::Feature" name="Consumer"/>"#,
+    ] {
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="2">{declarations}</Objects><ObjectData Count="2"><Object name="Consumer"><Properties Count="2"><Property name="Length" type="App::PropertyLength"><Float value="5"/></Property><Property name="ExpressionEngine" type="App::PropertyExpressionEngine"><ExpressionEngine count="1"><Expression path="Length" expression="Operand.Length"/></ExpressionEngine></Property></Properties></Object><Object name="Operand"><Properties Count="1"><Property name="Length" type="App::PropertyLength"><Float value="5"/></Property></Properties></Object></ObjectData></Document>"#
+        );
+        let result = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(&document)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let features = &result.ir().model.features;
+        let consumer = features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some("Consumer"))
+            .unwrap();
+        let operand = features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some("Operand"))
+            .unwrap();
+        assert_eq!(
+            consumer.dependencies.as_slice(),
+            std::slice::from_ref(&operand.id)
+        );
+        assert!(operand.ordinal < consumer.ordinal);
+        assert_valid_document(result.ir());
+    }
+}
+
+#[test]
+fn restored_runtime_and_extension_scopes_exclude_hidden_references() {
+    for (runtime, name, property_type, value, extension, expected) in [
+        (
+            "PartDesign::SubShapeBinder",
+            "Context",
+            "App::PropertyXLink",
+            r#"<XLink name="Operand"/>"#,
+            "",
+            false,
+        ),
+        (
+            "PartDesign::Feature",
+            "Context",
+            "App::PropertyXLink",
+            r#"<XLink name="Operand"/>"#,
+            "",
+            true,
+        ),
+        (
+            "PartDesign::Feature",
+            "BaseAttachment",
+            "App::PropertyLinkSubList",
+            r#"<LinkSubList count="1"><Link obj="Operand" sub="Face1"/></LinkSubList>"#,
+            r#"<Extensions Count="1"><Extension type="Part::AttachExtensionPython" name="Attachment"/></Extensions>"#,
+            false,
+        ),
+        (
+            "PartDesign::Feature",
+            "BaseAttachment",
+            "App::PropertyLinkSubList",
+            r#"<LinkSubList count="1"><Link obj="Operand" sub="Face1"/></LinkSubList>"#,
+            "",
+            true,
+        ),
+    ] {
+        let extension_flag = if extension.is_empty() {
+            ""
+        } else {
+            r#" Extensions="True""#
+        };
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="2"><Object type="{runtime}" name="Consumer"/><Object type="PartDesign::Feature" name="Operand"/></Objects><ObjectData Count="2"><Object name="Consumer"{extension_flag}>{extension}<Properties Count="1"><Property name="{name}" type="{property_type}">{value}</Property></Properties></Object><Object name="Operand"><Properties Count="0"/></Object></ObjectData></Document>"#
+        );
+        let result = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(&document)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let features = &result.ir().model.features;
+        let consumer = features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some("Consumer"))
+            .unwrap();
+        let operand = features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some("Operand"))
+            .unwrap();
+        assert_eq!(
+            consumer.dependencies.contains(&operand.id),
+            expected,
+            "{runtime} {name} {extension}"
+        );
+        assert_valid_document(result.ir());
+    }
+}
+
+#[test]
+fn expression_dependencies_use_unique_labels_and_skip_strings_and_metadata() {
+    for (expression, property_type, label, expected) in [
+        (
+            "Operand.Length",
+            "App::PropertyExpressionEngine",
+            "Stock",
+            true,
+        ),
+        (
+            "&lt;&lt;Stock&gt;&gt;.Length",
+            "App::PropertyExpressionEngine",
+            "Stock",
+            true,
+        ),
+        (
+            "&lt;&lt;Operand.Length&gt;&gt;",
+            "App::PropertyExpressionEngine",
+            "Stock",
+            false,
+        ),
+        (
+            "&quot;Operand.Length&quot;",
+            "App::PropertyExpressionEngine",
+            "Stock",
+            false,
+        ),
+        (
+            "'Operand.Length'",
+            "App::PropertyExpressionEngine",
+            "Stock",
+            false,
+        ),
+        (
+            "Foreign#Operand.Length",
+            "App::PropertyExpressionEngine",
+            "Stock",
+            false,
+        ),
+        ("Operand.Length", "Vendor::Metadata", "Stock", false),
+        (
+            "&lt;&lt;Stock&gt;&gt;.Length",
+            "App::PropertyExpressionEngine",
+            "Consumer",
+            false,
+        ),
+    ] {
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="2"><Object type="PartDesign::Feature" name="Consumer"/><Object type="PartDesign::Feature" name="Operand"/></Objects><ObjectData Count="2"><Object name="Consumer"><Properties Count="2"><Property name="Label" type="App::PropertyString"><String value="Consumer"/></Property><Property name="ExpressionEngine" type="{property_type}"><ExpressionEngine count="1"><Expression path="Length" expression="{expression}"/></ExpressionEngine></Property></Properties></Object><Object name="Operand"><Properties Count="1"><Property name="Label" type="App::PropertyString"><String value="{label}"/></Property></Properties></Object></ObjectData></Document>"#
+        );
+        let result = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(&document)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let features = &result.ir().model.features;
+        let consumer = features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some("Consumer"))
+            .unwrap();
+        let operand = features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some("Operand"))
+            .unwrap();
+        assert_eq!(
+            consumer.dependencies.contains(&operand.id),
+            expected,
+            "{expression} {property_type}"
+        );
+    }
+}

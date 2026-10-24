@@ -48,9 +48,11 @@ fn appearance(schema: Option<&str>) -> Appearance {
 }
 
 fn assert_loss(ir: &CadIr, code: SldprtLossCode, prefix: &str) {
-    let plan = SldprtCodec
-        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
-        .unwrap();
+    let plan = crate::test_support::plan_fixture_with_native_envelope(
+        EncodeInput::new(ir, None),
+        TargetRequest::Inherit,
+    )
+    .unwrap();
     let loss = plan
         .report()
         .losses
@@ -158,9 +160,11 @@ fn unbound_appearance_without_material_schema_has_counted_export_loss() {
         "1 unbound appearance outside moVisualProperties_c record(s)",
     );
     ir.model.appearances[0].schema = Some("moVisualProperties_c".into());
-    let plan = SldprtCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .unwrap();
+    let plan = crate::test_support::plan_fixture_with_native_envelope(
+        EncodeInput::new(&ir, None),
+        TargetRequest::Inherit,
+    )
+    .unwrap();
     assert!(!plan
         .report()
         .losses
@@ -188,9 +192,11 @@ fn tessellation_body_faces_and_deflection_each_have_export_loss() {
     mesh.faces = vec![ir.model.faces[0].id.clone()];
     mesh.set_chordal_deflection(Some(0.001)).unwrap();
     ir.model.tessellations.push(mesh);
-    let plan = SldprtCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .unwrap();
+    let plan = crate::test_support::plan_fixture_with_native_envelope(
+        EncodeInput::new(&ir, None),
+        TargetRequest::Inherit,
+    )
+    .unwrap();
     for field in ["body binding", "face binding", "chordal deflection"] {
         assert!(plan.report().losses.iter().any(|loss| loss.code
             == SldprtLossCode::WriterTessellationMetadataOmitted.kind()

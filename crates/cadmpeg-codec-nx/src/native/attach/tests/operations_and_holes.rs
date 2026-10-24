@@ -1053,19 +1053,24 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
             parameters: BTreeMap::new(),
         })
     );
-    for kind in ["CPROJ", "CPROJ_CMB"] {
-        assert_eq!(
-            non_boolean_feature_definition(kind, &[], None, None, None),
-            FeatureDefinition::Operation(FeatureOperation::ProjectedCurve {
-                source: cadmpeg_ir::features::PathRef::Unresolved("nx:unresolved".into()),
-                target_faces: FaceSelection::Unresolved,
-                direction: cadmpeg_ir::features::CurveProjectionDirection::State(
-                    cadmpeg_ir::features::CurveProjectionDirectionState::Unresolved,
-                ),
-                bidirectional: None,
-            })
-        );
-    }
+    assert_eq!(
+        non_boolean_feature_definition("CPROJ", &[], None, None, None),
+        FeatureDefinition::Operation(FeatureOperation::ProjectedCurve {
+            source: cadmpeg_ir::features::PathRef::Unresolved("nx:unresolved".into()),
+            target_faces: FaceSelection::Unresolved,
+            direction: cadmpeg_ir::features::CurveProjectionDirection::State(
+                cadmpeg_ir::features::CurveProjectionDirectionState::Unresolved,
+            ),
+            bidirectional: None,
+        })
+    );
+    assert_eq!(
+        non_boolean_feature_definition("CPROJ_CMB", &[], None, None, None),
+        FeatureDefinition::Operation(FeatureOperation::Native {
+            kind: "CPROJ_CMB".into(),
+            parameters: BTreeMap::new(),
+        })
+    );
     assert_eq!(
         non_boolean_feature_definition("TRIMMED_SH", &[], None, None, None),
         FeatureDefinition::Operation(FeatureOperation::TrimSurface {
@@ -1518,3 +1523,28 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
 mod hole_geometry;
 
 mod provisional_blocks;
+
+#[test]
+fn nx_combined_projection_keeps_native_parameters_without_target_face_semantics() {
+    use crate::native::attach::feature_projection::{
+        non_boolean_feature_definition_with_parameters, HoleProjection,
+    };
+
+    let parameters = BTreeMap::from([(cadmpeg_core::nonblank_literal!("p7"), "23".to_string())]);
+    let definition = non_boolean_feature_definition_with_parameters(
+        "CPROJ_CMB",
+        &[],
+        None,
+        None,
+        HoleProjection::default(),
+        parameters.clone(),
+    )
+    .unwrap();
+    assert_eq!(
+        definition,
+        FeatureDefinition::Operation(FeatureOperation::Native {
+            kind: "CPROJ_CMB".into(),
+            parameters,
+        })
+    );
+}

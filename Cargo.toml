@@ -7,6 +7,7 @@ members = [
   "crates/cadmpeg-core",
   "crates/cadmpeg-container",
   "crates/cadmpeg-ir",
+  "crates/cadmpeg-measure",
   "crates/cadmpeg-parasolid",
   "crates/cadmpeg-registry",
   "crates/cadmpeg-test-support",
@@ -22,6 +23,7 @@ members = [
   "crates/cadmpeg-codec-iges",
   "crates/cadmpeg-codec-step",
   "crates/cadmpeg-codec-sat",
+  "crates/cadmpeg-codec-pvz",
 ]
 # cadmpeg-fuzz is intentionally excluded: cargo-fuzz targets link libFuzzer and
 # require a nightly toolchain, so keeping the crate out of the default workspace
@@ -30,7 +32,7 @@ members = [
 exclude = ["crates/cadmpeg-fuzz"]
 
 [workspace.package]
-version = "0.6.3"
+version = "0.6.5"
 edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/cadmpeg/cadmpeg"
@@ -38,25 +40,27 @@ homepage = "https://github.com/cadmpeg/cadmpeg"
 rust-version = "1.88"
 
 [workspace.dependencies]
-cadmpeg-asm = { path = "crates/cadmpeg-asm", version = "0.6.3" }
-cadmpeg-core = { path = "crates/cadmpeg-core", version = "0.6.3" }
-cadmpeg-container = { path = "crates/cadmpeg-container", version = "0.6.3" }
-cadmpeg-ir = { path = "crates/cadmpeg-ir", version = "0.6.3" }
-cadmpeg-parasolid = { path = "crates/cadmpeg-parasolid", version = "0.6.3" }
-cadmpeg-registry = { path = "crates/cadmpeg-registry", version = "0.6.3", default-features = false }
+cadmpeg-asm = { path = "crates/cadmpeg-asm", version = "0.6.5" }
+cadmpeg-core = { path = "crates/cadmpeg-core", version = "0.6.5" }
+cadmpeg-container = { path = "crates/cadmpeg-container", version = "0.6.5" }
+cadmpeg-ir = { path = "crates/cadmpeg-ir", version = "0.6.5" }
+cadmpeg-measure = { path = "crates/cadmpeg-measure", version = "0.6.5" }
+cadmpeg-parasolid = { path = "crates/cadmpeg-parasolid", version = "0.6.5" }
+cadmpeg-registry = { path = "crates/cadmpeg-registry", version = "0.6.5", default-features = false }
 cadmpeg-test-support = { path = "crates/cadmpeg-test-support" }
-cadmpeg-protein = { path = "crates/cadmpeg-protein", version = "0.6.3" }
-cadmpeg-codec-f3d = { path = "crates/cadmpeg-codec-f3d", version = "0.6.3" }
-cadmpeg-codec-inventor = { path = "crates/cadmpeg-codec-inventor", version = "0.6.3" }
-cadmpeg-codec-freecad = { path = "crates/cadmpeg-codec-freecad", version = "0.6.3" }
-cadmpeg-codec-sldprt = { path = "crates/cadmpeg-codec-sldprt", version = "0.6.3" }
-cadmpeg-codec-catia = { path = "crates/cadmpeg-codec-catia", version = "0.6.3" }
-cadmpeg-codec-creo = { path = "crates/cadmpeg-codec-creo", version = "0.6.3" }
-cadmpeg-codec-nx = { path = "crates/cadmpeg-codec-nx", version = "0.6.3" }
-cadmpeg-codec-rhino = { path = "crates/cadmpeg-codec-rhino", version = "0.6.3" }
-cadmpeg-codec-iges = { path = "crates/cadmpeg-codec-iges", version = "0.6.3" }
-cadmpeg-codec-step = { path = "crates/cadmpeg-codec-step", version = "0.6.3" }
-cadmpeg-codec-sat = { path = "crates/cadmpeg-codec-sat", version = "0.6.3" }
+cadmpeg-protein = { path = "crates/cadmpeg-protein", version = "0.6.5" }
+cadmpeg-codec-f3d = { path = "crates/cadmpeg-codec-f3d", version = "0.6.5" }
+cadmpeg-codec-inventor = { path = "crates/cadmpeg-codec-inventor", version = "0.6.5" }
+cadmpeg-codec-freecad = { path = "crates/cadmpeg-codec-freecad", version = "0.6.5" }
+cadmpeg-codec-sldprt = { path = "crates/cadmpeg-codec-sldprt", version = "0.6.5" }
+cadmpeg-codec-catia = { path = "crates/cadmpeg-codec-catia", version = "0.6.5" }
+cadmpeg-codec-creo = { path = "crates/cadmpeg-codec-creo", version = "0.6.5" }
+cadmpeg-codec-nx = { path = "crates/cadmpeg-codec-nx", version = "0.6.5" }
+cadmpeg-codec-rhino = { path = "crates/cadmpeg-codec-rhino", version = "0.6.5" }
+cadmpeg-codec-iges = { path = "crates/cadmpeg-codec-iges", version = "0.6.5" }
+cadmpeg-codec-step = { path = "crates/cadmpeg-codec-step", version = "0.6.5" }
+cadmpeg-codec-sat = { path = "crates/cadmpeg-codec-sat", version = "0.6.5" }
+cadmpeg-codec-pvz = { path = "crates/cadmpeg-codec-pvz", version = "0.6.5" }
 
 # 1.0.229 is the floor, not a preference: serde_derive gained the
 # collected_deny_unknown_fields epilogue there, which is what makes

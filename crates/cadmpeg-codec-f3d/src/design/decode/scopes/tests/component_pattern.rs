@@ -75,6 +75,7 @@ fn component_pattern_keeps_seed_and_generated_instances() {
                 },
             ])),
             instance_search_cap: None,
+            directions: Vec::new(),
         })
         .unwrap();
     let mut scope = DesignParameterScope::empty(

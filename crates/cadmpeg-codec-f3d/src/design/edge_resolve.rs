@@ -13,6 +13,9 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
 
+mod surface_patch;
+use surface_patch::{surface_patch_grouped_recipe_edges, SurfacePatchRecipeEdges};
+
 const EPS_EDGE_RESOLVE_RADIUS_EDGE_GROUP_CANDIDATES_E9: f64 = 1.0e-9;
 const EPS_EDGE_RESOLVE_RADIUS_EDGE_IDENTITY_GROUP_CANDIDATES_E9: f64 = 1.0e-9;
 
@@ -78,22 +81,20 @@ pub(super) fn resolved_edge_group(
     )
 }
 
-/// Resolve a modern grouped `SurfacePatch` edge group from its exact
-/// recipe references.
-///
-/// Every nonempty exact reference of one member must identify the same sole
-/// edge, and the complete group must map to distinct edges. Conflicting exact
-/// references suppress generic reconstruction because their serialized
-/// member identity is unresolved.
+/// Resolve a grouped patch boundary through the serialized recipe roles.
 pub(super) fn resolved_surface_patch_edge_group(
     group: &DesignConstructionOperandGroup,
     groups: &[DesignConstructionOperandGroup],
     operands: &[DesignEdgeOperand],
     identity_operands: &[DesignEdgeIdentityOperand],
-    previous_state_id: Option<i64>,
-    feature_id: &cadmpeg_ir::features::FeatureId,
+    face_boundaries: &[crate::records::topology::historical_context::AsmFaceBoundary],
+    transition: EdgeGroupTransition<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<cadmpeg_ir::features::EdgeSelection, CodecError> {
+    let EdgeGroupTransition {
+        previous_state_id,
+        feature_id,
+    } = transition;
     let fallback = || {
         resolved_edge_group(
             group,
@@ -109,7 +110,7 @@ pub(super) fn resolved_surface_patch_edge_group(
     let mut member_ids = HashSet::new();
     for member in group.members() {
         if !member_ids.insert(member.value) {
-            return fallback();
+            return Ok(native_edge_selection(group));
         }
     }
     let mut matched_operands = Vec::new();
@@ -120,14 +121,14 @@ pub(super) fn resolved_surface_patch_edge_group(
                 && operand.record_index() == member.value
         });
         let Some(operand) = matches.next() else {
-            return fallback();
+            return Ok(native_edge_selection(group));
         };
         if matches.next().is_some() {
-            return fallback();
+            return Ok(native_edge_selection(group));
         }
         matched_operands.push(operand);
     }
-    let edges = match surface_patch_grouped_recipe_edges(&matched_operands) {
+    let edges = match surface_patch_grouped_recipe_edges(&matched_operands, face_boundaries) {
         SurfacePatchRecipeEdges::Absent => return fallback(),
         SurfacePatchRecipeEdges::Inconclusive => {
             return Ok(cadmpeg_ir::features::EdgeSelection::Native(
@@ -136,6 +137,15 @@ pub(super) fn resolved_surface_patch_edge_group(
         }
         SurfacePatchRecipeEdges::Resolved(edges) => edges,
     };
+    if previous_state_id.is_some_and(|state| {
+        matched_operands.iter().any(|operand| {
+            operand
+                .recipe_state_id
+                .is_some_and(|candidate| candidate != state)
+        })
+    }) {
+        return Ok(native_edge_selection(group));
+    }
     let state_id = previous_state_id.or_else(|| {
         let mut states = matched_operands
             .iter()
@@ -175,49 +185,6 @@ pub(super) fn resolved_surface_patch_edge_group(
         Ok(selection) => selection,
         Err(_) => cadmpeg_ir::features::EdgeSelection::Native(group.id.clone()),
     })
-}
-
-#[derive(Debug, PartialEq)]
-enum SurfacePatchRecipeEdges {
-    Absent,
-    Inconclusive,
-    Resolved(Vec<cadmpeg_ir::ids::EdgeId>),
-}
-
-fn surface_patch_grouped_recipe_edges(operands: &[&DesignEdgeOperand]) -> SurfacePatchRecipeEdges {
-    if operands.is_empty() {
-        return SurfacePatchRecipeEdges::Absent;
-    }
-    let mut edges = Vec::new();
-    let mut has_absent_member = false;
-    for operand in operands {
-        let mut exact = operand
-            .recipe_references
-            .iter()
-            .filter(|reference| !reference.candidate_edges.is_empty());
-        let Some(first) = exact.next() else {
-            has_absent_member = true;
-            continue;
-        };
-        let [edge] = first.candidate_edges.as_slice() else {
-            return SurfacePatchRecipeEdges::Inconclusive;
-        };
-        if exact.any(|reference| reference.candidate_edges.as_slice() != std::slice::from_ref(edge))
-        {
-            return SurfacePatchRecipeEdges::Inconclusive;
-        }
-        edges.push(edge.clone());
-    }
-    if has_absent_member {
-        return SurfacePatchRecipeEdges::Absent;
-    }
-    let mut distinct = HashSet::new();
-    for edge in &edges {
-        if !distinct.insert(edge.as_str()) {
-            return SurfacePatchRecipeEdges::Inconclusive;
-        }
-    }
-    SurfacePatchRecipeEdges::Resolved(edges)
 }
 
 fn stable_edge_slot(edge: &cadmpeg_ir::ids::EdgeId) -> Option<i64> {
@@ -535,9 +502,9 @@ enum EdgeGroupProof {
 }
 
 #[derive(Clone, Copy)]
-struct EdgeGroupTransition<'a> {
-    previous_state_id: Option<i64>,
-    feature_id: &'a cadmpeg_ir::features::FeatureId,
+pub(super) struct EdgeGroupTransition<'a> {
+    pub(super) previous_state_id: Option<i64>,
+    pub(super) feature_id: &'a cadmpeg_ir::features::FeatureId,
 }
 
 type EdgeMemberOverride<'a> = Option<&'a [crate::records::identity::Located<u32, Option<u64>>]>;
@@ -1001,12 +968,27 @@ fn resolved_edge_group_with_transition_chain(
         }
         Ok(slots)
     };
-    let resolved_slots =
-        if exact_slots.is_some() || has_standard_recipe_operands || transition_state_id.is_none() {
-            exact_slots
-        } else {
-            transition_slots()?
-        };
+    let transition_complete_slots = match (
+        allow_edge_treatment_transition_chain,
+        treatment_radius,
+        identity_matches.as_deref(),
+    ) {
+        (true, Some(radius), Some(identities))
+            if exact_slots.is_none() && transition_state_id.is_some() =>
+        {
+            transition_complete_edge_group_candidates(&matched_operands, identities, radius)
+        }
+        _ => None,
+    };
+    let resolved_slots = exact_slots.or(transition_complete_slots);
+    let resolved_slots = if resolved_slots.is_some()
+        || has_standard_recipe_operands
+        || transition_state_id.is_none()
+    {
+        resolved_slots
+    } else {
+        transition_slots()?
+    };
     let Some(resolved_slots) = resolved_slots else {
         if !group.lost_edge_references.is_empty() {
             return lost_selection();
@@ -1531,6 +1513,67 @@ pub(super) fn radius_edge_group_candidates(
         }
     }
     Some(chain)
+}
+
+/// Resolve a treatment group whose identity members have no exact slot. The
+/// operation transition is the proof: every member identity carries the same
+/// transition edge set, every edge in that set blends at the group radius,
+/// every member's deleted predecessor edges are a nonempty subset of it, and
+/// the members' union is the whole set.
+fn transition_complete_edge_group_candidates(
+    operands: &[&DesignEdgeOperand],
+    identities: &[&DesignEdgeIdentityOperand],
+    radius: f64,
+) -> Option<Vec<i64>> {
+    if operands.is_empty()
+        || operands.len() != identities.len()
+        || !radius.is_finite()
+        || radius <= 0.0
+        || identities.iter().any(|identity| {
+            identity.resolved_edge_slot.is_some() || !identity.resolved_edge_slots.is_empty()
+        })
+    {
+        return None;
+    }
+    let tolerance = EPS_EDGE_RESOLVE_RADIUS_EDGE_GROUP_CANDIDATES_E9 * (1.0 + radius.abs());
+    let [first, rest @ ..] = identities else {
+        return None;
+    };
+    let transition = sorted_transition_slots(&first.transition_edge_candidates);
+    if transition.is_empty()
+        || rest.iter().any(|identity| {
+            sorted_transition_slots(&identity.transition_edge_candidates) != transition
+                || identity.treatment_radius_candidates != first.treatment_radius_candidates
+        })
+    {
+        return None;
+    }
+    let mut blended = first
+        .treatment_radius_candidates
+        .iter()
+        .filter(|candidate| (candidate.radius.get() - radius).abs() <= tolerance)
+        .map(|candidate| candidate.edge_slot)
+        .collect::<Vec<_>>();
+    blended.sort_unstable_by(Ord::cmp);
+    blended.dedup();
+    if blended != transition {
+        return None;
+    }
+    let mut union = Vec::new();
+    for operand in operands {
+        if operand.deleted_boundary_edge_slots.is_empty()
+            || operand
+                .deleted_boundary_edge_slots
+                .iter()
+                .any(|edge| transition.binary_search(edge).is_err())
+        {
+            return None;
+        }
+        union.extend(operand.deleted_boundary_edge_slots.iter().copied());
+    }
+    union.sort_unstable_by(Ord::cmp);
+    union.dedup();
+    (union == transition).then_some(union)
 }
 
 fn radius_edge_identity_group_candidates(

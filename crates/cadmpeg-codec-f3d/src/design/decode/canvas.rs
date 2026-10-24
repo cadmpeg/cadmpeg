@@ -11,8 +11,8 @@ use crate::design::decode::sketch::next_indexed_record_offset_with_index;
 use crate::ids;
 use crate::records::{
     canvas::{
-        DesignCanvasAsset, DesignCanvasBounds, DesignCanvasGeometry, DesignCanvasGeometryPayload,
-        DesignCanvasImage, DesignCanvasPrologue,
+        geometry_layout::DesignCanvasGeometryLayout, DesignCanvasAsset, DesignCanvasBounds,
+        DesignCanvasGeometry, DesignCanvasGeometryPayload, DesignCanvasImage, DesignCanvasPrologue,
     },
     feature::scope::DesignParameterScope,
 };
@@ -21,8 +21,6 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::Asset;
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::math::Point2;
-
-const DESIGN_LENGTH_TO_MM: f64 = 10.0;
 
 /// Decode every structurally complete Canvas geometry and image-asset record.
 /// Each image is parsed inside its record scope, whose extent is the
@@ -79,8 +77,6 @@ pub(crate) fn project_canvas_images(
         let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id) else {
             continue;
         };
-        let (mirror_u, mirror_v) = image.geometry().boundary.mirroring();
-        let [minimum, maximum] = image.geometry().boundary.extents();
         let Some(asset) = embedded_image_asset(ctx, scan, image.asset_name())? else {
             continue;
         };
@@ -91,31 +87,22 @@ pub(crate) fn project_canvas_images(
         {
             assets.push(asset);
         }
-        let (opacity, frame) = image.geometry().payload.decoded();
+        let (opacity, plane) = image.geometry().payload.decoded();
+        let (frame, bounds) = image
+            .geometry()
+            .boundary
+            .image_placement(plane)
+            .map_err(CodecError::malformed)?;
         feature
             .evaluation
             .set_definition(FeatureDefinition::Operation(
                 FeatureOperation::ReferenceImage {
                     asset: asset_id,
                     visible: image.geometry().prologue.visible(),
-                    mirror_u,
-                    mirror_v,
+                    mirror_u: false,
+                    mirror_v: false,
                     frame,
-                    bounds: cadmpeg_ir::features::FeatureImageBounds::new([
-                        Point2::new(
-                            minimum.u * DESIGN_LENGTH_TO_MM,
-                            minimum.v * DESIGN_LENGTH_TO_MM,
-                        ),
-                        Point2::new(
-                            maximum.u * DESIGN_LENGTH_TO_MM,
-                            maximum.v * DESIGN_LENGTH_TO_MM,
-                        ),
-                    ])
-                    .ok_or_else(|| {
-                        CodecError::malformed(
-                            "Canvas bounds must have finite corners and nonzero extents",
-                        )
-                    })?,
+                    bounds,
                     opacity: Some(Into::into(
                         cadmpeg_ir::scalar::Fraction::new(f64::from(opacity)).ok_or_else(|| {
                             CodecError::malformed(
@@ -180,112 +167,226 @@ fn parse_canvas_image(
         if geometry_at >= scope_at {
             return None;
         }
-        let records = read(geometry_at..scope_at)?;
-        let (geometry_class_tag, after_geometry_tag) =
-            lp_ascii_filtered_view(records, 0, 0..=2000, u8::is_ascii_graphic)?;
-        let geometry_prologue: [u8; 15] = records.get(11..26)?.try_into().ok()?;
-        let geometry_prologue = DesignCanvasPrologue::try_from(geometry_prologue).ok()?;
-        if View::u32_le_at(records, after_geometry_tag)? != geometry_record_index {
-            return None;
+        let records = CanvasRecords {
+            stream,
+            scope,
+            geometry_reference_at,
+            geometry_record_index,
+            geometry_at,
+            records: read(geometry_at..scope_at)?,
+        };
+        let mut matches = DesignCanvasGeometryLayout::ALL
+            .into_iter()
+            .filter_map(|layout| parse_canvas_layout(&records, layout));
+        let image = matches.next();
+        if matches.next().is_none() {
+            image
+        } else {
+            None
         }
-
-        let paired_at = next_indexed_record_offset_with_index(records, 11, geometry_record_index)?;
-        let (paired_geometry_class_tag, after_paired_tag) =
-            lp_ascii_filtered_view(records, paired_at, 0..=2000, u8::is_ascii_graphic)?;
-        let paired_component_at = paired_at + 19;
-        if View::u32_le_at(records, after_paired_tag)? != geometry_record_index
-            || records.get(paired_at + 11..paired_component_at)? != [0; 8]
-        {
-            return None;
-        }
-
-        let boundary_offsets = [26, 34, 42, 50, 181, 189, 197, 205];
-        let mut coordinates = [0.0; 8];
-        for (coordinate, offset) in coordinates.iter_mut().zip(boundary_offsets) {
-            *coordinate = View::f64_le_at(records, offset)?;
-        }
-        let boundary_segments = [
-            [
-                Point2::new(coordinates[0], coordinates[1]),
-                Point2::new(coordinates[2], coordinates[3]),
-            ],
-            [
-                Point2::new(coordinates[4], coordinates[5]),
-                Point2::new(coordinates[6], coordinates[7]),
-            ],
-        ];
-        let boundary = DesignCanvasBounds::try_from(boundary_segments).ok()?;
-
-        let plane_at = 58;
-        let scope_reference_at = 146;
-        let component_at = 157;
-        let asset_at = 169;
-        let plane_entity_suffix = marked_reference(records, plane_at)?;
-        let scope_record_index = marked_reference(records, scope_reference_at)?;
-        let component_entity_suffix = marked_reference(records, component_at)?;
-        let asset_record_index = marked_reference(records, asset_at)?;
-        if scope_record_index != scope.record_index
-            || marked_reference(records, paired_component_at)? != component_entity_suffix
-            || records.get(paired_component_at + 5..paired_component_at + 11)? != [0; 6]
-            || records.get(plane_at + 5..plane_at + 11)? != [0; 6]
-            || records.get(scope_reference_at + 5..scope_reference_at + 11)? != [0; 6]
-            || records.get(component_at + 5..component_at + 12)? != [0; 7]
-            || records.get(asset_at + 5..asset_at + 11)? != [0; 6]
-            || records.get(asset_at + 11) != Some(&1)
-        {
-            return None;
-        }
-        let geometry_payload = records.get(69..146)?;
-        let geometry_payload = DesignCanvasGeometryPayload::try_from(geometry_payload).ok()?;
-
-        let (label, after_label) = lp_utf16_bounded(records, 213, 1..=256)?;
-        if after_label != paired_at {
-            return None;
-        }
-        let asset_record_at = paired_at.checked_add(30)?;
-        let (asset_class_tag, after_asset_tag) =
-            lp_ascii_filtered_view(records, asset_record_at, 0..=2000, u8::is_ascii_graphic)?;
-        if View::u32_le_at(records, after_asset_tag)? != asset_record_index
-            || records.get(asset_record_at + 11..asset_record_at + 21)? != [0; 10]
-        {
-            return None;
-        }
-        let (asset_name, after_asset_name) =
-            lp_utf16_bounded(records, asset_record_at + 21, 1..=1024)?;
-        if after_asset_name != records.len() {
-            return None;
-        }
-        let geometry_class_tag = geometry_class_tag.to_owned();
-        let paired_geometry_class_tag = paired_geometry_class_tag.to_owned();
-        let asset_class_tag = asset_class_tag.to_owned();
-
-        DesignCanvasImage::new(
-            ids::native_design_canvas_image_id(stream, geometry_at),
-            scope.record_index,
-            u64::try_from(geometry_reference_at + 1).ok()?,
-            DesignCanvasGeometry::new(
-                [geometry_class_tag, paired_geometry_class_tag],
-                geometry_record_index,
-                u64::try_from(geometry_at).ok()?,
-                label,
-                geometry_prologue,
-                boundary,
-                geometry_payload,
-            )
-            .ok()?,
-            DesignCanvasAsset::new(
-                asset_class_tag.try_into().ok()?,
-                asset_record_index,
-                asset_name,
-            )
-            .ok()?,
-            plane_entity_suffix,
-            component_entity_suffix,
-        )
-        .ok()
-        .map(Ok)
     })();
-    parsed.transpose()
+    Ok(parsed)
+}
+
+pub(in crate::design::decode) fn typed_canvas_reference(
+    bytes: &[u8],
+    at: usize,
+    type_guid: &str,
+) -> Option<u32> {
+    canvas_reference(
+        bytes,
+        at,
+        DesignCanvasGeometryLayout::TypedLegacy,
+        type_guid,
+    )
+}
+
+fn canvas_reference(
+    bytes: &[u8],
+    at: usize,
+    layout: DesignCanvasGeometryLayout,
+    type_guid: &str,
+) -> Option<u32> {
+    let target = marked_reference(bytes, at)?;
+    let width = layout.reference_len();
+    if bytes.get(at + 5..at + 9)? != [0; 4] || bytes.get(at + width - 2..at + width)? != [0; 2] {
+        return None;
+    }
+    if layout.typed() {
+        let (guid, end) = lp_ascii_filtered_view(bytes, at + 9, 36..=36, u8::is_ascii_graphic)?;
+        if !guid.eq_ignore_ascii_case(type_guid) || end != at + 49 {
+            return None;
+        }
+    }
+    Some(target)
+}
+
+/// The located records of one Canvas scope: the geometry, paired and asset
+/// records from the geometry record to the scope, read through the scope.
+struct CanvasRecords<'a> {
+    stream: &'a str,
+    scope: &'a DesignParameterScope,
+    geometry_reference_at: usize,
+    geometry_record_index: u32,
+    geometry_at: usize,
+    records: &'a [u8],
+}
+
+/// Parse the located Canvas records in one geometry layout. Offsets are
+/// relative to the geometry record.
+fn parse_canvas_layout(
+    located: &CanvasRecords<'_>,
+    layout: DesignCanvasGeometryLayout,
+) -> Option<DesignCanvasImage> {
+    let records = located.records;
+    let geometry_record_index = located.geometry_record_index;
+    let offsets = layout.offsets();
+    let (geometry_class_tag, after_geometry_tag) =
+        lp_ascii_filtered_view(records, 0, 0..=2000, u8::is_ascii_graphic)?;
+    let geometry_prologue =
+        DesignCanvasPrologue::from_layout(layout, records.get(11..offsets.first_boundary)?)
+            .ok()?;
+    if View::u32_le_at(records, after_geometry_tag)? != geometry_record_index {
+        return None;
+    }
+
+    let paired_at = next_indexed_record_offset_with_index(records, 11, geometry_record_index)?;
+    let (paired_geometry_class_tag, after_paired_tag) =
+        lp_ascii_filtered_view(records, paired_at, 0..=2000, u8::is_ascii_graphic)?;
+    let paired_component_at = paired_at + 19;
+    if View::u32_le_at(records, after_paired_tag)? != geometry_record_index
+        || records.get(paired_at + 11..paired_component_at)? != [0; 8]
+    {
+        return None;
+    }
+
+    let boundary_offsets = [
+        offsets.first_boundary,
+        offsets.first_boundary + 8,
+        offsets.first_boundary + 16,
+        offsets.first_boundary + 24,
+        offsets.second_boundary,
+        offsets.second_boundary + 8,
+        offsets.second_boundary + 16,
+        offsets.second_boundary + 24,
+    ];
+    let mut coordinates = [0.0; 8];
+    for (coordinate, offset) in coordinates.iter_mut().zip(boundary_offsets) {
+        *coordinate = View::f64_le_at(records, offset)?;
+    }
+    let boundary_segments = [
+        [
+            Point2::new(coordinates[0], coordinates[1]),
+            Point2::new(coordinates[2], coordinates[3]),
+        ],
+        [
+            Point2::new(coordinates[4], coordinates[5]),
+            Point2::new(coordinates[6], coordinates[7]),
+        ],
+    ];
+    let boundary = DesignCanvasBounds::try_from(boundary_segments).ok()?;
+
+    let plane_at = offsets.plane;
+    let scope_reference_at = offsets.scope;
+    let component_at = offsets.component;
+    let asset_at = offsets.asset;
+    let plane_entity_suffix = canvas_reference(
+        records,
+        plane_at,
+        layout,
+        "8D424E29-DE23-4B1F-A3AD-84C52A497D1A",
+    )?;
+    let scope_record_index = canvas_reference(
+        records,
+        scope_reference_at,
+        layout,
+        "0EE4A83E-464B-4235-A62F-984F15834C27",
+    )?;
+    let component_entity_suffix = canvas_reference(
+        records,
+        component_at,
+        layout,
+        "8EF00D65-F18D-4179-A644-FE0CA39943D6",
+    )?;
+    let asset_record_index = canvas_reference(
+        records,
+        asset_at,
+        layout,
+        "830A2A2B-0AA9-4D6A-ACA1-F7A2B2A06573",
+    )?;
+    let expected_state = u8::from(layout != DesignCanvasGeometryLayout::Legacy);
+    if scope_record_index != located.scope.record_index
+        || canvas_reference(
+            records,
+            paired_component_at,
+            layout,
+            "8EF00D65-F18D-4179-A644-FE0CA39943D6",
+        )? != component_entity_suffix
+        || records
+            .get(component_at + layout.reference_len()..asset_at)?
+            .iter()
+            .any(|byte| *byte != 0)
+        || records.get(offsets.state) != Some(&expected_state)
+    {
+        return None;
+    }
+    if layout == DesignCanvasGeometryLayout::Extra12 {
+        let extension = plane_at + layout.reference_len();
+        if View::u32_le_at(records, extension)? != 0
+            || View::u32_le_at(records, extension + 4)? != 1
+            || View::u32_le_at(records, extension + 8)? != 0
+        {
+            return None;
+        }
+    }
+    let geometry_payload = records.get(offsets.payload..scope_reference_at)?;
+    let geometry_payload = DesignCanvasGeometryPayload::try_from(geometry_payload).ok()?;
+
+    let (label, after_label) = lp_utf16_bounded(records, offsets.label, 1..=256)?;
+    if after_label != paired_at {
+        return None;
+    }
+    let asset_record_at = paired_at.checked_add(usize::try_from(layout.paired_len()).ok()?)?;
+    let (asset_class_tag, after_asset_tag) =
+        lp_ascii_filtered_view(records, asset_record_at, 0..=2000, u8::is_ascii_graphic)?;
+    if View::u32_le_at(records, after_asset_tag)? != asset_record_index
+        || records.get(asset_record_at + 11..asset_record_at + 21)? != [0; 10]
+    {
+        return None;
+    }
+    let (asset_name, after_asset_name) =
+        lp_utf16_bounded(records, asset_record_at + 21, 1..=1024)?;
+    if after_asset_name != records.len() {
+        return None;
+    }
+    let geometry_class_tag = geometry_class_tag.to_owned();
+    let paired_geometry_class_tag = paired_geometry_class_tag.to_owned();
+    let asset_class_tag = asset_class_tag.to_owned();
+
+    DesignCanvasImage::new(
+        ids::native_design_canvas_image_id(located.stream, located.geometry_at),
+        located.scope.record_index,
+        u64::try_from(located.geometry_reference_at + 1).ok()?,
+        DesignCanvasGeometry::new(
+            [geometry_class_tag, paired_geometry_class_tag],
+            geometry_record_index,
+            u64::try_from(located.geometry_at).ok()?,
+            label,
+            geometry_prologue,
+            boundary,
+            geometry_payload,
+        )
+        .ok()?,
+        DesignCanvasAsset::new(
+            asset_class_tag.try_into().ok()?,
+            asset_record_index,
+            asset_name,
+        )
+        .ok()?,
+        plane_entity_suffix,
+        component_entity_suffix,
+    )
+    .ok()
 }
 
 #[cfg(test)]
@@ -363,6 +464,126 @@ mod tests {
         }))
         .unwrap();
         (bytes, scope)
+    }
+
+    #[test]
+    fn canvas_layouts_preserve_geometry_and_reject_invalid_fields() {
+        let (modern, scope) = fixture();
+        for (
+            visibility,
+            first,
+            plane,
+            payload,
+            scope_ref,
+            component,
+            asset_ref,
+            state,
+            second,
+            label,
+            width,
+        ) in [
+            (25, 26, 58, 69, 146, 157, 169, 180, 181, 213, 11),
+            (23, 24, 56, 67, 144, 155, 166, 177, 178, 210, 11),
+            (24, 25, 57, 68, 145, 156, 168, 179, 180, 212, 11),
+            (25, 26, 58, 81, 158, 169, 181, 192, 193, 225, 11),
+            (23, 24, 56, 107, 184, 235, 286, 337, 338, 370, 51),
+            (24, 25, 57, 108, 185, 236, 288, 339, 340, 372, 51),
+        ] {
+            let paired = label + 6;
+            let asset = paired + 19 + width;
+            let scope_at = asset + 35;
+            let mut bytes = vec![0; scope_at + 36];
+            header(&mut bytes, 0, *b"300", 10);
+            header(&mut bytes, paired, *b"301", 10);
+            header(&mut bytes, asset, *b"302", 20);
+            header(&mut bytes, scope_at, *b"303", 30);
+            if visibility == 24 {
+                bytes[21] = 1;
+            }
+            bytes[visibility] = 1;
+            bytes[first..first + 32].copy_from_slice(&modern[26..58]);
+            bytes[second..second + 32].copy_from_slice(&modern[181..213]);
+            bytes[payload..payload + 77].copy_from_slice(&modern[69..146]);
+            for (at, index, guid) in [
+                (plane, 40, "8D424E29-DE23-4B1F-A3AD-84C52A497D1A"),
+                (scope_ref, 30, "0EE4A83E-464B-4235-A62F-984F15834C27"),
+                (component, 50, "8EF00D65-F18D-4179-A644-FE0CA39943D6"),
+                (asset_ref, 20, "830A2A2B-0AA9-4D6A-ACA1-F7A2B2A06573"),
+                (paired + 19, 50, "8EF00D65-F18D-4179-A644-FE0CA39943D6"),
+            ] {
+                reference(&mut bytes, at, index);
+                if width == 51 {
+                    bytes[at + 9..at + 13].copy_from_slice(&36u32.to_le_bytes());
+                    bytes[at + 13..at + 49].copy_from_slice(guid.as_bytes());
+                }
+            }
+            if payload == 81 {
+                bytes[73..77].copy_from_slice(&1u32.to_le_bytes());
+            }
+            bytes[state] = u8::from(label != 210);
+            bytes[label..label + 6].copy_from_slice(&modern[213..219]);
+            bytes[asset + 21..scope_at].copy_from_slice(&modern[270..284]);
+            reference(&mut bytes, scope_at + 21, 10);
+            let mut scope_wire = serde_json::to_value(&scope).unwrap();
+            for (field, value) in scope_wire.as_object_mut().unwrap() {
+                if field.ends_with("_offset") && value.is_u64() {
+                    *value = serde_json::json!(
+                        value.as_u64().unwrap() + u64::try_from(scope_at).unwrap() - 284
+                    );
+                } else if field == "reference_member_offsets" {
+                    for offset in value.as_array_mut().unwrap() {
+                        *offset = serde_json::json!(
+                            offset.as_u64().unwrap() + u64::try_from(scope_at).unwrap() - 284
+                        );
+                    }
+                }
+            }
+            let scope = serde_json::from_value(scope_wire).unwrap();
+            let parse = |bytes: &[u8]| {
+                parse_canvas_image(bytes, "Design/BulkStream.dat", &scope, &|range| {
+                    bytes.get(range)
+                })
+                .unwrap()
+            };
+            let image = parse(&bytes).unwrap();
+            assert_eq!(image.asset_name(), "a.png");
+            assert!(image.geometry().prologue.visible());
+            let offsets: std::collections::BTreeMap<_, _> =
+                image.source_offsets().into_iter().collect();
+            assert_eq!(
+                offsets["paired_geometry_byte_offset"],
+                Some(u64::try_from(paired).unwrap())
+            );
+            assert_eq!(
+                offsets["asset_byte_offset"],
+                Some(u64::try_from(asset).unwrap())
+            );
+            assert_eq!(
+                offsets["plane_reference_offset"],
+                Some(u64::try_from(plane + 1).unwrap())
+            );
+            let wire = serde_json::to_value(&image).unwrap();
+            let roundtrip: crate::records::canvas::DesignCanvasImage =
+                serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(&roundtrip).unwrap(), wire);
+            for offset in [visibility, state, paired + 20, scope_ref + 1, plane + 5] {
+                let mut invalid = bytes.clone();
+                invalid[offset] = 2;
+                assert!(
+                    parse(&invalid).is_none(),
+                    "label offset {label}, mutation {offset}"
+                );
+            }
+            if width == 51 {
+                let mut invalid = bytes.clone();
+                invalid[plane + 13] = b'0';
+                assert!(parse(&invalid).is_none());
+            }
+            if payload == 81 {
+                bytes[73] = 2;
+                assert!(parse(&bytes).is_none());
+            }
+        }
     }
 
     #[test]

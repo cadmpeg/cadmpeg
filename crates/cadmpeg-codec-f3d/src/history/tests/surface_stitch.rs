@@ -222,6 +222,7 @@ fn surface_stitch_fixture() -> StitchFixture {
         faces: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
         edges: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
         vertices: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
+        edge_geometry: Vec::new(),
         native_ref: None,
     }];
     StitchFixture {

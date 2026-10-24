@@ -7,16 +7,16 @@ The delivered scope tables describe each codec's normal successful full projecti
 ### Scoring rules
 
 1. **A score attaches to declared coverage.** A score states the highest level whose requirements pass for the coverage its profile declares, and the profile names that coverage — concretely, the format's `scored` list in `crates/cadmpeg-registry/docs/dialect-support.toml`. Surplus capability in a subset of versions, layouts, or files shows as extras. Refusing a band the codec recognizes is a stated, visible fact in the profile, never an exclusion that raises a score.
-2. **Full pass.** A level passes when its requirements and the proof criteria hold across mainstream files in the declared envelope. One fixture, an entity census, or an opaque record capture does not pass a level.
+2. **Mainstream pass.** A level passes when its capability works on mainstream files of the main dialects in the declared envelope, and its gaps produce machine-readable losses. A rare carrier family or a minority dialect that is missing is a named gap, not a failure. One fixture, an entity census, or an opaque record capture does not pass a level. A fixture-backed row read and a recorded evaluation are floors for their rows, not ceilings for the format.
 3. **Inapplicable levels.** A format definition may mark a level inapplicable when its document kind cannot contain that category. Inapplicable levels pass. Missing fixtures do not establish inapplicability.
 4. **Integer levels only.** Scores are whole levels such as L4. Do not use fractional levels, evidence-grade suffixes, or other score variants. A recorded level already means the proof criteria pass for the codec. The published headline for a format is the single integer level and nothing else.
 5. **Refusal is a visible mark.** Refusing a recognized band is a visible mark and can never improve any published number.
 
 ### Proof criteria
 
-A level passes only when every criterion holds for the declared envelope:
+The criteria below are the target for every scored level. A format profile names each criterion that does not yet hold:
 
-- Real files exercise the scored level. A maintainer evaluation recorded in `docs/evaluations.toml` satisfies this criterion.
+- Real files exercise the scored level. An evaluation recorded in `docs/evaluations.toml` satisfies this criterion. The files need not be in the repository.
 - Every source byte is typed, classified as structural, or preserved as a named opaque record.
 - Every unsupported semantic construct produces a machine-readable loss.
 - Decode, validation, write, and conversion results are deterministic.
@@ -29,6 +29,19 @@ written by hand. `scripts/render-format-support.py` renders every one of them
 from `crates/cadmpeg-registry/docs/dialects.toml` and `crates/cadmpeg-registry/docs/dialect-support.toml`, and its `--check`
 mode compares the committed file to a fresh render byte for byte. A registry
 edit without a re-render fails the gate.
+
+### Evaluations
+
+An evaluation runs the codec on real files and records the result in
+`docs/evaluations.toml`. The author or auditor who ran it records it. The
+files stay with the evaluator. They are not committed, and the record names
+no file and no path.
+
+The project accepts a recorded evaluation as stated. Do not ask for the
+files, digests, reproduction steps, or other proof that the files are real
+or that the run took place. Do not qualify a level because its files are
+not in the repository. To dispute an evaluation, run a new one and record
+its result.
 
 ### Levels
 
@@ -49,17 +62,18 @@ edit without a re-render fails the gate.
 
 | Format                                            | Level |
 | ------------------------------------------------- | ----- |
-| Autodesk Inventor `.ipt` and `.iam`               | L1    |
-| ASM/ACIS bare `.sat`/`.smt`/`.smb`/`.sab` streams | L1    |
+| Autodesk Inventor `.ipt` and `.iam`               | L3    |
+| ASM/ACIS bare `.sat`/`.smt`/`.smb`/`.sab` streams | L3    |
 | FreeCAD `.FCStd`                                  | L5    |
 | IGES                                              | L9    |
-| Rhino `.3dm`                                      | L1    |
-| SolidWorks `.sldprt`                              | L1    |
-| Fusion 360 `.f3d`                                 | L4    |
+| Rhino `.3dm`                                      | L2    |
+| SolidWorks `.sldprt`                              | L3    |
+| Fusion 360 `.f3d`                                 | L5    |
 | Siemens NX `.prt`                                 | L1    |
-| CATIA V5 `.CATPart`                               | L1    |
+| CATIA V5 `.CATPart`                               | L3    |
 | Creo Parametric `.prt`                            | L1    |
-| STEP Part 21                                      | L9    |
+| Creo View `.pvz`                                  | L0    |
+| STEP Part 21                                      | L8    |
 
 <!-- /generated: ladder-table -->
 
@@ -74,7 +88,7 @@ lists. Every profile below describes the envelope its rows cover.
 
 <!-- generated: dialects inventor -->
 
-**Ladder: L1.**
+**Ladder: L3.**
 
 | Dialect                     | Read                   | Write |
 | --------------------------- | ---------------------- | ----- |
@@ -91,10 +105,12 @@ lists. Every profile below describes the envelope its rows cover.
 
 <!-- /generated: dialects inventor -->
 
+Part carriers transfer into connected B-rep, which sets L3. Typed features and sketches on a minority of parts, assemblies, and appearance bindings are partial extras above L3.
+
 Structural detection requires directory evidence. The codec enumerates the complete CFB hierarchy, versioned databases, registry and revision tables, exact segment pairs, metadata tables, typed bulk records, OLE property sets, previews when present, Protein package entries and decoded catalog assets, and `UFRxDoc` external references. Optional or unknown segments remain named native records.
 
-- **Part geometry: extra above L1.** One typed active carrier in one `PmBRep` segment transfers through `cadmpeg-asm`. The kernel header controls width, units, tolerances, and SAB framing. Kernel unknown records and source annotations are retained. An empty or invalid decoded carrier produces blocking `geometry_not_transferred`.
-- **ACIS part carriers: extra above L1.** The 32-bit ACIS header and solved SAB partition transfer through the same direct and embedded kernel decoder at every save format. Connected B-rep validation and direct-carrier parity pass for majors 217 and 218, the verified bands. A carrier outside them decodes with the nearer verified band's grammar, reports the `acis:` kernel layer as `Admission::Unverified`, and charges `source.dialect-unverified`; a carrier that reads no geometry is retained verbatim and produces blocking `geometry_not_transferred`.
+- **Part geometry: L3.** One typed active carrier in one `PmBRep` segment transfers through `cadmpeg-asm`. The kernel header controls width, units, tolerances, and SAB framing. Kernel unknown records and source annotations are retained. An empty or invalid decoded carrier produces blocking `geometry_not_transferred`.
+- **ACIS part carriers: L3.** The 32-bit ACIS header and solved SAB partition transfer through the same direct and embedded kernel decoder at every save format. Connected B-rep validation and direct-carrier parity pass for majors 217 and 218, the verified bands. A carrier outside them decodes with the nearer verified band's grammar, reports the `acis:` kernel layer as `Admission::Unverified`, and charges `source.kernel-dialect-unverified`; a carrier that reads no geometry is retained verbatim and produces blocking `geometry_not_transferred`.
 - **Assemblies: partial extra.** A `UFRxDoc` occurrence transfers when its external file reference, `AmDc` occurrence identity, and active finite affine `AmGraphics` placement form one exact join. Placement translations convert from centimetres to millimetres. Suppressed occurrences transfer with hidden visibility and may use an identity placement when graphics are absent. External prototypes remain unresolved, no persisted path is opened, and local prototypes and nested parent links remain untransferred.
 - **Materials: partial extra.** Shared Protein schema decoding produces typed native assets and neutral appearance definitions. One exact `PmApp` default-style-to-rendering-style-to-asset join binds the selected appearance to transferred part bodies. One exact `PmGraphics` face-to-style-collection-to-primary-color join creates a direct face appearance that overrides the body default. Other style and texture families remain native.
 - **Design intent: partial extra.** Closed scalar parameter graphs and closed planar point, line, circle, ellipse, and constraint graphs transfer with native cross-links. Extrude, hole, constant-radius edge fillet, and equal-distance edge chamfer operations transfer only when every required typed property, dimension, native selection, placement, and result-body reference resolves. Each transferred result has a native intermediate-body identity. Suppression and dependency state remain unresolved, so this extra does not advance the score to L4.
@@ -110,7 +126,7 @@ See [`formats/inventor.md`](formats/inventor.md), [`formats/inventor-open-items.
 
 <!-- generated: dialects sat -->
 
-**Ladder: L1.**
+**Ladder: L3.**
 
 | Dialect           | Read     | Write |
 | ----------------- | -------- | ----- |
@@ -129,7 +145,7 @@ See [`formats/inventor.md`](formats/inventor.md), [`formats/inventor-open-items.
 
 <!-- /generated: dialects sat -->
 
-Detection, inspection, and decode cover the admitted binary and text branches. The codec transfers solved-record analytic, NURBS, topology, placement, and procedural carriers through `cadmpeg-asm` into connected B-rep when the stream yields surfaces, points, or faces. Header scale and tolerances populate the neutral document. Unknown SAB records retain source range, digest, and kernel-qualified identity under the `sat` namespace. A stream that frames but decodes no carrier produces blocking `geometry_not_transferred`. Feature history, assemblies, presentation documents, and native writing are inapplicable or absent for this envelope.
+Detection, inspection, and decode cover the admitted binary and text branches. The codec transfers solved-record analytic, NURBS, topology, placement, and procedural carriers through `cadmpeg-asm` into connected B-rep when the stream yields surfaces, points, or faces. Header scale and tolerances populate the neutral document. Unknown SAB records retain source range, digest, and kernel-qualified identity under the `sat` namespace. A stream that frames but decodes no carrier produces blocking `geometry_not_transferred`. Body and face colors transfer from color attributes. Connected B-rep sets L3. Feature history (L4), design completeness (L6), and assemblies (L7) are inapplicable to a bare kernel stream. Open procedural, blend, and law carrier families block L5. Native writing is absent.
 
 - **Write:** None. The codec has no encoder, replay path, or patch path.
 
@@ -268,7 +284,7 @@ Semantic decode is resource-bounded, valid-IR output is admitted atomically, eve
 
 <!-- generated: dialects rhino -->
 
-**Ladder: L1.**
+**Ladder: L2.**
 
 | Dialect            | Read                   | Write   |
 | ------------------ | ---------------------- | ------- |
@@ -294,7 +310,7 @@ Semantic decode is resource-bounded, valid-IR output is admitted atomically, eve
 
 <!-- /generated: dialects rhino -->
 
-Partial typed geometry, topology, presentation, and bounded source-less native writing show as extras above the scored rows. V1 decodes through the legacy flat-record path. Archive 5 uses the four-byte chunk scan and is admitted as `rhino:archive-5`.
+Typed curves, surfaces, meshes, SubD, and extrusions with model-space placement and units set L2. Brep topology consistency blocks L3. Partial topology, presentation, and bounded source-less native writing show as extras. V1 decodes through the legacy flat-record path. Archive 5 uses the four-byte chunk scan and is admitted as `rhino:archive-5`.
 
 ### Read profile
 
@@ -318,11 +334,11 @@ See [`formats/rhino_3dm.md`](formats/rhino_3dm.md), [`formats/rhino_3dm-open-ite
 
 **Kernel:** Parasolid
 
-**Role:** reference format for full semantic support
+**Role:** target format for full semantic support
 
 <!-- generated: dialects sldprt -->
 
-**Ladder: L1.**
+**Ladder: L3.**
 
 | Dialect                        | Read                   | Write   |
 | ------------------------------ | ---------------------- | ------- |
@@ -340,7 +356,7 @@ See [`formats/rhino_3dm.md`](formats/rhino_3dm.md), [`formats/rhino_3dm-open-ite
 
 <!-- /generated: dialects sldprt -->
 
-Unknown geometry carriers and topology cases block L5. Incomplete sketch constraints and feature families block L6.
+Connected Parasolid B-rep from the active partition sets L3. Unresolved feature operands and sketch relation codes block L4. Unknown geometry carriers and appearance ownership block L5. Native write is byte replay and retained-partition patching; no independent application accepts source-less output.
 
 ### Read profile
 
@@ -367,7 +383,7 @@ See [`formats/sldprt.md`](formats/sldprt.md) and [`formats/sldprt-open-items.md`
 
 <!-- generated: dialects f3d -->
 
-**Ladder: L4.**
+**Ladder: L5.**
 
 | Dialect                  | Read                   | Write    |
 | ------------------------ | ---------------------- | -------- |
@@ -385,7 +401,7 @@ See [`formats/sldprt.md`](formats/sldprt.md) and [`formats/sldprt-open-items.md`
 
 <!-- /generated: dialects f3d -->
 
-Undefined geometry-carrier payloads block L5. Tolerant coedge, edge, and vertex records decode across their release-gated layouts and round-trip through retained and source-less native writing. Native writing shows as extras.
+Typed carriers throughout, with body and face colors in both Design segment generations, set L5. Untyped sketch relation classes, unresolved Extrude selections, and native-only feature families block L6. Tolerant coedge, edge, and vertex records decode across their release-gated layouts and round-trip through retained and source-less native writing. Native writing shows as extras.
 
 ### Read profile
 
@@ -415,7 +431,7 @@ Undefined geometry-carrier payloads block L5. Tolerant coedge, edge, and vertex 
   Neutral-plane and parting-line `Draft` scopes transfer as typed draft nodes with their exact signed angle. Neutral drafts retain drafted-face and neutral-plane selections; parting-line drafts retain drafted-face and parting-tool selections, the WorkPlane pull direction, and the WorkPlane feature dependency. The pull direction composes the signed-angle sign with the oriented neutral carrier, and the neutral `outward` value is true for a negative signed angle. Any face recipe that does not resolve to active B-rep faces retains its native selection and the feature is reported incomplete. `SplitFace` scopes transfer typed face targets with either a Sketch path or one or more ordered WorkPlane tools.
   Extrusions driven by prior solid faces retain exact state-qualified profile faces when every counted selection member corroborates one owner face. Work-point records retain typed vertex, circle-center, two-edge, three-plane, edge-plane, and path-fraction construction rules with their exact source input arity. These rules project as neutral datum-point constructions while retaining the solved position. Edge-valued inputs retain their complete recipe operands and history context. Vertex-valued inputs resolve their persistent face references to an exact state-qualified historical vertex. Plane-valued inputs resolve to exact WorkPlane scopes and neutral feature dependencies through persistent identities. Other rule codes and counted inputs remain lossless native values.
   When design-intent decoding fails, the document keeps its geometry, topology, and typed product prerequisites, exactly as when design projection is omitted. Its scope excludes design. The report carries the error-severity loss `design.intent-undecoded` and the missing delivered class; the document carries no failure record. An `.f3z` archive holds design when any member delivers design. A resource refusal during design-intent decoding still refuses the whole document. Retained bytes cannot supply design records absent from typed neutral and native arenas.
-- **Product structure: Partial.** Body transforms and root-component records transfer. `.f3z` archives merge multi-document XREF placements into the root document. Intra-document multi-component structure and constraints remain open.
+- **Product structure: Partial.** Body transforms and root-component records transfer. `.f3z` archives merge multi-document XREF placements into the root document. Local components, occurrences, and fixed, revolute, and slider joints transfer. Nested occurrence placement and other joint freedom codes remain open.
 - **Presentation and metadata: Partial.** Linked source attributes, Protein appearance assets, material properties, body bindings, and per-body display visibility transfer. Appearance assets transfer from every document, including a document that serializes no B-rep stream. A document-local catalog that no body or face assignment names is a complete transfer; a serialized assignment that resolves to no topology is an appearance loss carrying the decoded asset count. Body appearance bindings resolve through an exactly framed named or bare typed owner, a browser-node GUID, or a browser-node reference, so a body carries its assigned colour in both Design segment generations. Face appearance bindings resolve through the B-rep face material attribute in both Design segment generations. External material-library display names and some schema fields remain unresolved.
   Canvas timeline objects with a structurally complete image-plane binding transfer as neutral reference-image features carrying their image asset, plane frame, opacity, and plane-local bounds; objects without a resolved binding remain identity-preserving native records and report an attribute loss. Decals transfer as presentation timeline objects. Neither counts as an incomplete shape-history operation.
 
@@ -484,7 +500,7 @@ See the [format specification](formats/siemens_nx.md), [coverage contract](forma
 
 <!-- generated: dialects catia -->
 
-**Ladder: L1.**
+**Ladder: L3.**
 
 | Dialect                           | Read                   | Write |
 | --------------------------------- | ---------------------- | ----- |
@@ -506,7 +522,7 @@ See the [format specification](formats/siemens_nx.md), [coverage contract](forma
 
 <!-- /generated: dialects catia -->
 
-Geometry on the standard-nested band shows as extras. L3 requires connected topology across admitted files. Current topology depends on resolved trim, support, and endpoint assignments.
+Exact geometry and connected topology on the standard-nested and FBB-only bands set L3. Topology depends on resolved trim, support, and endpoint assignments; a part whose assignments do not resolve reports the unattached topology. Feature operations and sketches block L4.
 
 ### Read profile
 
@@ -575,13 +591,45 @@ Remaining geometry work includes per-instance analytic parameter bindings, featu
 
 See [`formats/creo_prt.md`](formats/creo_prt.md) and [`formats/creo_prt-open-items.md`](formats/creo_prt-open-items.md).
 
+## Creo View `.pvz`
+
+**Container:** ZIP package with one `.pvs` structure member and `.ol` geometry members
+
+<!-- generated: dialects pvz -->
+
+**Ladder: L0.**
+
+| Dialect        | Read                   | Write |
+| -------------- | ---------------------- | ----- |
+| `pvz:pvs-0301` | detected               | none  |
+| `pvz:pvs-0302` | detected               | none  |
+| `pvz:pvs-0303` | detected               | none  |
+| `pvz:pvs-0304` | detected               | none  |
+| `pvz:pvs-0305` | detected               | none  |
+| `pvz:unknown`  | unclassified-recovered | none  |
+
+<!-- /generated: dialects pvz -->
+
+The codec opens the ZIP framing, the `.pvs` stream directory, and the `.ol` stream directory, expands each GZIP stream under the decode caps and checks its CRC-32, classifies the package from the generation the `.pvs` member declares, and decodes product structure, exact B-rep, and tessellation. Every undecoded record family is named by a loss. Each exact stream becomes connected B-rep from bodies through vertices, with face regions, coedge senses, face sides, shells, and placed analytic and B-spline carriers in millimetres. The code-built golden packages cover every structure generation, the XML structure form, both exact-stream scalar widths, and closed solids with plane, cylinder, cone, and rational B-spline faces, a periodic seam, a singular apex, secondary pcurves, and inner loops; the neutral structural validation passes on each. No real `.pvz` file is in the repository or in `docs/evaluations.toml`. The proof criterion that real files exercise the scored level therefore holds at no level, and code-built fixtures do not pass a level (scoring rule 2). The format is at L0, the lowest level the registry declares. Connected B-rep is an extra above that score.
+
+### Read profile
+
+- **Container and versions: Partial.** The codec admits the ZIP package through the shared archive snapshot, requires exactly one `.pvs` structure member, and classifies the `PV-PVS0301` to `PV-PVS0305` binary structure signatures and the matching `version` attribute of the XML structure form. A structure member that declares any other generation is read on the residual path and reports `pvz/source.dialect-unverified`. Loose `.pvs` and `.ol` files outside a package are not detected.
+- **Structure: Partial.** The binary and XML structure forms decode into product definitions with their names and properties, and into the expanded occurrence tree with placements as a rigid transform and a uniform scale. Appearance palettes, illustration and group elements, occurrence flags and extensions, typed definition bytes, and geometry-element bounds report `pvz/structure.*` losses.
+- **Geometry and tessellation: Partial.** Each geometry member a definition names becomes a body owned by every such definition. When the member's exact-geometry stream decodes, the body holds its neutral B-rep: analytic and B-spline face carriers, edge curves, coedge pcurves, loops, vertices, closed shells, and regions, in millimetres. The open shells of the stream form a second, sheet body that the same definitions own. Edge records that store one model edge once per coedge use join into one shared edge. Carriers with no neutral form, omitted pcurves, open loops, gauge face sides, faces without a loop, and merged or collapsed edges report `pvz/exact.*` losses. A stream that does not decode reports `pvz/geometry.exact-undecoded`, and the member keeps its tessellation alone. The body also holds one tessellation per appearance and vertex layout, with per-patch triangle groups and the member's appearances bound to the tessellations. Edge tessellation, texture coordinates, the patch-header face references that would bind appearances to exact faces, and the other attribute and tessellation records report losses.
+
+### Write and round trip
+
+- **Native write: None.**
+- **Round trip: None.**
+
 ## STEP Part 21
 
 **Model:** ISO 10303-21 clear-text exchange with AP203, AP214, or AP242 application data
 
 <!-- generated: dialects step -->
 
-**Ladder: L9.**
+**Ladder: L8.**
 
 | Dialect                   | Read                   | Write    |
 | ------------------------- | ---------------------- | -------- |
@@ -607,7 +655,7 @@ See [`formats/creo_prt.md`](formats/creo_prt.md) and [`formats/creo_prt-open-ite
 
 <!-- /generated: dialects step -->
 
-Part 28 XML, Part 26 binary/HDF5, and AP242 BO-Model sidecars are outside the declared bands. ZIP packaging is an extra read profile for the `ISO-10303.p21` root; subsidiary graph composition is outside the declared band. AP203/AP214 mark constructs their schemas cannot carry as inapplicable. Part 21 exchange documents have no originating feature replay histories, sketch-constraint systems, or assembly mates, so L4, L6, and the L7 mate requirement are inapplicable.
+Part 28 XML, Part 26 binary/HDF5, and AP242 BO-Model sidecars are outside the declared bands. ZIP packaging is an extra read profile for the `ISO-10303.p21` root; subsidiary graph composition is outside the declared band. AP203/AP214 mark constructs their schemas cannot carry as inapplicable. The declared bands carry no feature replay histories, sketch-constraint systems, or assembly mates, so L4, L6, and the L7 mate requirement are inapplicable. AP242 construction-history entities are outside the declared bands.
 
 ### Read profile
 
@@ -627,10 +675,10 @@ Part 28 XML, Part 26 binary/HDF5, and AP242 BO-Model sidecars are outside the de
 - **Drawing write boundary: Explicit.** The reader transfers the core drawing graph, but the writer does not generate drawing pages or views. Planning emits the representable model and records the omitted drawing graph; `--reject-lossy=export` refuses the plan before writing.
 - **Procedural geometry: Native where modeled.** Trimmed and replica curves, spatial-offset curves, linear sweeps, axis revolutions, replica and parallel-offset surfaces, and degenerate tori emit as their native STEP entities. Other definitions emit their solved carrier with a machine-readable loss. Curve-bounded surfaces lack the boundary-curve surface association required for valid native regeneration and therefore reduce with a loss; `--reject-lossy=export` refuses the plan.
 - **Fidelity policy: Explicit and atomic.** Planning returns the representable subset and every unsupported semantic fact. `--reject-lossy=export` rejects a lossy plan before writing any byte. Retained opaque records and opaque presentation targets produce losses. AP-specific tessellation and PMI compatibility is checked against the selected target.
-- **Round trip: Complete for generated outputs.** Source-less, edited, schema-targeted, topology, geometry, product, tessellation, presentation, and PMI outputs re-decode to typed IR. The optional [`verify-step-occt.py`](../scripts/verify-step-occt.py) and [`verify-step-gmsh.py`](../scripts/verify-step-gmsh.py) scripts are environment-driven validators for provided Part 21 files; they are not an in-tree generated all-target acceptance matrix.
+- **Round trip: Complete for generated outputs.** Source-less, edited, schema-targeted, topology, geometry, product, tessellation, presentation, and PMI outputs re-decode to typed IR. No independent application acceptance gate runs on generated outputs, so the format does not pass L9. The optional [`verify-step-occt.py`](../scripts/verify-step-occt.py) and [`verify-step-gmsh.py`](../scripts/verify-step-gmsh.py) scripts are environment-driven validators for provided Part 21 files; they are not an in-tree generated all-target acceptance matrix.
 
 ## Maintaining these profiles
 
 Per-format specifications in [`formats/`](formats/) define byte semantics. Adjacent `*-open-items.md` files contain unresolved fields and structures. Every **Partial** domain names its remaining work here or in the linked open-items document.
 
-The generated cells and the profile prose answer different questions. A cell is the row's disposition after fixture gating: `detected` means the codec classifies the dialect but no fixture in the repository backs a score for it, so it can state capability the prose describes and the cell still reads `detected`. A level named in profile prose names the ladder rung that capability text describes. Edit a cell only through `crates/cadmpeg-registry/docs/dialect-support.toml`; edit prose only outside a generated region.
+The generated cells and the profile prose answer different questions. A cell is the row's disposition after fixture gating: `detected` means the codec classifies the dialect but no fixture in the repository backs a score for it, so it can state capability the prose describes and the cell still reads `detected`. A `detected` cell does not limit the headline level. A recorded evaluation backs the level without a committed file. A level named in profile prose names the ladder rung that capability text describes. Edit a cell only through `crates/cadmpeg-registry/docs/dialect-support.toml`; edit prose only outside a generated region.

@@ -289,6 +289,27 @@ pub(crate) fn neutral_assembly_joint_id(
     )
 }
 
+/// The joint that ties rigid-group member `member` (2 or more) to the group's
+/// first member.
+pub(crate) fn neutral_assembly_group_joint_id(
+    scope: &crate::records::feature::scope::DesignParameterScope,
+    member: usize,
+) -> cadmpeg_ir::products::JointId {
+    let stream = cadmpeg_ir::ids::IdentityKeyTail::percent_encode(
+        native_stream(&scope.id).unwrap_or(DEFAULT_STREAM),
+    );
+    let key = cadmpeg_ir::ids::IdentityKey::from(stream.as_str().len())
+        .then(cadmpeg_ir::identity_key!(":"))
+        .with_tail(&stream)
+        .then(scope.record_index)
+        .then(cadmpeg_ir::identity_key!("m"))
+        .then(member);
+    cadmpeg_ir::products::JointId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "model", "joint"),
+        key,
+    )
+}
+
 /// The history-input state of `feature_id` relative to `previous_state_id`.
 pub(crate) fn feature_input_topology_id(
     feature_id: &cadmpeg_ir::features::FeatureId,

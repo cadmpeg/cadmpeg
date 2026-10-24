@@ -47,13 +47,19 @@ fn helix_fixture() -> (CadIr, CurveId) {
     (ir, curve_id)
 }
 
+fn helix_of(definition: &ProceduralCurveDefinition) -> &crate::geometry::HelixCurveConstruction {
+    let ProceduralCurveDefinition::Helix(helix) = definition else {
+        panic!("helix construction expected");
+    };
+    helix
+}
+
 fn expected_helix(parameter: f64) -> (Point3, Vector3, Vector3) {
-    let start = 0.25;
     let major = Vector3::new(2.0, 0.0, 0.0);
     let minor = Vector3::new(0.0, 2.0, 0.0);
     let pitch = Vector3::new(0.0, 0.0, 3.0);
     let inverse_revolution = 1.0 / std::f64::consts::TAU;
-    let revolution_fraction = (parameter - start) * inverse_revolution;
+    let revolution_fraction = parameter * inverse_revolution;
     let radial_scale = 1.0 + 0.4 * revolution_fraction;
     let radial = Vector3::new(
         major.x * parameter.cos() + minor.x * parameter.sin(),
@@ -146,8 +152,8 @@ fn reversing_a_tapered_helix_preserves_points_and_derivatives() {
         .expect("finite reversal");
     let reversed = ProceduralCurveDefinition::Helix(helix);
     for parameter in [0.25, 0.75, 1.7, 2.0] {
-        let before = super::super::helix_differential(&original, parameter).unwrap();
-        let after = super::super::helix_differential(&reversed, -parameter).unwrap();
+        let before = super::super::helix_differential(helix_of(&original), parameter).unwrap();
+        let after = super::super::helix_differential(helix_of(&reversed), -parameter).unwrap();
         assert_point_close(after.point.get(), before.point.get());
         assert_vector_close(
             after.tangent.unwrap().get(),
@@ -178,7 +184,7 @@ fn helix_angle_range_can_span_both_large_finite_signs() {
         )
         .unwrap(),
     );
-    let result = super::super::helix_differential(&definition, parameter).unwrap();
+    let result = super::super::helix_differential(helix_of(&definition), parameter).unwrap();
     assert_eq!(
         result.point,
         Point3::new(parameter.cos(), parameter.sin(), 0.0)
@@ -285,9 +291,11 @@ fn helix_inverse_finds_the_witness_without_retained_storage() {
     )
     .unwrap()
     .unwrap();
-    let evaluated =
-        super::super::helix_differential(ir.model.procedural_curves[0].definition(), inverse.get())
-            .unwrap();
+    let evaluated = super::super::helix_differential(
+        helix_of(ir.model.procedural_curves[0].definition()),
+        inverse.get(),
+    )
+    .unwrap();
     assert!(evaluated.point.distance(target) <= ir.tolerances.linear.get());
     ctx.finish_session().unwrap();
 }

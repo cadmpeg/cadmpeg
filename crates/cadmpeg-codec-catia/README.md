@@ -7,7 +7,7 @@ surfaces, curves, vertices, and B-rep topology.
 
 <!-- generated: capability catia -->
 
-Support: L1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#catia-v5-catpart)).
+Support: L3 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#catia-v5-catpart)).
 
 <!-- /generated: capability catia -->
 

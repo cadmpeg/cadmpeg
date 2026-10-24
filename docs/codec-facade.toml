@@ -56,6 +56,11 @@ hidden = [
 fuzz = "required"
 
 [[crate]]
+id = "pvz"
+names = ["PvzCodec"]
+fuzz = "required"
+
+[[crate]]
 id = "rhino"
 names = ["RhinoCodec", "RhinoArchiveVersion"]
 fuzz = "required"

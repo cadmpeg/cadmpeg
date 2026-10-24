@@ -3,6 +3,7 @@
 
 mod assembly;
 pub(crate) mod body;
+pub(crate) mod body_reference_tails;
 pub(crate) mod canvas;
 pub(crate) mod components;
 pub(crate) mod decal;
@@ -15,6 +16,7 @@ pub(crate) mod operands;
 pub(crate) mod parameter_state;
 pub(crate) mod parameters;
 mod patch;
+pub(crate) mod placement_construction;
 pub(crate) mod presentation;
 pub(crate) mod scopes;
 pub(crate) mod sheet_metal_settings;

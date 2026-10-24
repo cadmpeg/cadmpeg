@@ -27,8 +27,6 @@ use crate::test_support::parasolid::count_entity51_family;
 use crate::test_support::parasolid::entity51;
 use crate::test_support::parasolid::entity53_color;
 use crate::test_support::parasolid::face_color_definition;
-use crate::test_support::parasolid::nurbs_curve_carrier;
-use crate::test_support::parasolid::nurbs_surface_carrier;
 use crate::test_support::parasolid::owned_triangle;
 use crate::test_support::parasolid::owned_triangle_with_kind;
 use crate::test_support::parasolid::parasolid_with_body;
@@ -77,10 +75,12 @@ fn geometry_edit_replaces_each_generated_configuration_partition() {
         })
         .collect();
     let mut source = Vec::new();
-    SldprtCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut source))
-        .unwrap();
+    crate::test_support::plan_fixture_with_native_envelope(
+        EncodeInput::new(&ir, None),
+        TargetRequest::Inherit,
+    )
+    .and_then(|plan| plan.write_to(&mut source))
+    .unwrap();
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
@@ -95,8 +95,12 @@ fn geometry_edit_replaces_each_generated_configuration_partition() {
         .unwrap(),
     );
     let mut output = Vec::new();
-    crate::test_support::plan_inherited_write(decoded.ir(), decoded.source_fidelity(), &mut output)
-        .unwrap();
+    crate::test_support::plan_fixture_write_with_native_envelope(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut output,
+    )
+    .unwrap();
     let scan = crate::test_support::container::scan(&output);
     for index in 0..2 {
         let section = format!("Contents/Config-{index}-Partition");
@@ -153,7 +157,7 @@ fn retained_utf16_document_envelope_uses_the_shared_recognizer_and_patcher() {
 }
 
 #[test]
-fn encoder_writes_source_less_datum_features() {
+fn encoder_writes_authored_with_retained_native_envelope_datum_features() {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -202,10 +206,12 @@ fn encoder_writes_source_less_datum_features() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut encoded))
-        .unwrap();
+    crate::test_support::plan_fixture_with_native_envelope(
+        EncodeInput::new(&ir, None),
+        TargetRequest::Inherit,
+    )
+    .and_then(|plan| plan.write_to(&mut encoded))
+    .unwrap();
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -224,7 +230,7 @@ fn encoder_writes_source_less_datum_features() {
 }
 
 #[test]
-fn encoder_writes_source_less_neutral_configurations() {
+fn encoder_writes_authored_with_retained_native_envelope_neutral_configurations() {
     use cadmpeg_ir::features::{ConfigurationId, DesignConfiguration};
     use std::collections::BTreeMap;
 
@@ -271,10 +277,12 @@ fn encoder_writes_source_less_neutral_configurations() {
     ir.finalize();
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut encoded))
-        .unwrap();
+    crate::test_support::plan_fixture_with_native_envelope(
+        EncodeInput::new(&ir, None),
+        TargetRequest::Inherit,
+    )
+    .and_then(|plan| plan.write_to(&mut encoded))
+    .unwrap();
     let scan = crate::test_support::container::scan(&encoded);
     assert!(scan
         .blocks
@@ -370,7 +378,7 @@ fn semantic_writer_round_trips_active_configuration() {
     decoded.ir_mut().model.configurations[0].active = false;
     decoded.ir_mut().model.configurations[1].active = true;
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -388,7 +396,7 @@ fn semantic_writer_round_trips_active_configuration() {
 }
 
 #[test]
-fn encoder_partitions_source_less_bodies_by_configuration() {
+fn encoder_partitions_authored_with_retained_native_envelope_bodies_by_configuration() {
     use cadmpeg_ir::features::{ConfigurationId, DesignConfiguration};
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::tessellation::Tessellation;
@@ -483,10 +491,12 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
     ir.model.configurations[1].active = true;
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut encoded))
-        .unwrap();
+    crate::test_support::plan_fixture_with_native_envelope(
+        EncodeInput::new(&ir, None),
+        TargetRequest::Inherit,
+    )
+    .and_then(|plan| plan.write_to(&mut encoded))
+    .unwrap();
     let scan = crate::test_support::container::scan(&encoded);
     assert!(scan
         .blocks
@@ -569,7 +579,7 @@ fn semantic_writer_remaps_partition_without_remapping_resolved_features() {
 
     decoded.ir_mut().model.configurations[0].source_index = Some(5);
     let mut written = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut written,
@@ -646,7 +656,7 @@ fn semantic_writer_allocates_partition_index_without_remapping_resolved_features
     decoded.ir_mut().model.configurations[0].source_index = None;
 
     let mut written = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut written,
@@ -777,7 +787,7 @@ fn semantic_writer_synthesizes_an_empty_configuration_name_and_rejects_a_duplica
 }
 
 #[test]
-fn encoder_writes_source_less_neutral_parameters() {
+fn encoder_writes_authored_with_retained_native_envelope_neutral_parameters() {
     use cadmpeg_ir::features::{
         DesignParameter, Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
     };
@@ -833,10 +843,12 @@ fn encoder_writes_source_less_neutral_parameters() {
     });
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut encoded))
-        .unwrap();
+    crate::test_support::plan_fixture_with_native_envelope(
+        EncodeInput::new(&ir, None),
+        TargetRequest::Inherit,
+    )
+    .and_then(|plan| plan.write_to(&mut encoded))
+    .unwrap();
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -901,10 +913,12 @@ fn encoder_bakes_rigid_body_transform() {
     let expected_normal = Vector3::new(-original_normal.y, original_normal.x, original_normal.z);
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut encoded))
-        .unwrap();
+    crate::test_support::plan_fixture_with_native_envelope(
+        EncodeInput::new(&ir, None),
+        TargetRequest::Inherit,
+    )
+    .and_then(|plan| plan.write_to(&mut encoded))
+    .unwrap();
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -947,8 +961,12 @@ fn semantic_writer_regenerates_modified_planar_brep() {
         .expect("a finite position is a point"),
     );
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(result.ir(), result.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_fixture_write_with_native_envelope(
+        result.ir(),
+        result.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let mut regenerated = Cursor::new(encoded);
     let decoded = SldprtCodec
         .decode(&mut regenerated, &DecodeOptions::default())
@@ -980,7 +998,7 @@ fn semantic_writer_uses_schema_specific_face_families() {
         .expect("a finite position is a point"),
     );
     let mut solid_bytes = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         solid.ir(),
         solid.source_fidelity(),
         &mut solid_bytes,
@@ -1009,7 +1027,7 @@ fn semantic_writer_uses_schema_specific_face_families() {
         .expect("a finite position is a point"),
     );
     let mut sheet_bytes = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         sheet.ir(),
         sheet.source_fidelity(),
         &mut sheet_bytes,
@@ -1040,7 +1058,7 @@ fn semantic_writer_preserves_outer_header() {
         .expect("a finite position is a point"),
     );
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1066,7 +1084,7 @@ fn semantic_writer_regenerates_modified_analytic_breps() {
         translate_model_x(&mut result.ir_mut(), 1.0);
 
         let mut encoded = Vec::new();
-        crate::test_support::plan_inherited_write(
+        crate::test_support::plan_fixture_write_with_native_envelope(
             result.ir(),
             result.source_fidelity(),
             &mut encoded,
@@ -1127,7 +1145,7 @@ fn semantic_writer_preserves_sheet_body_classification() {
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1386,7 +1404,7 @@ fn semantic_writer_converts_millimetres_to_native_metres() {
     );
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1429,7 +1447,7 @@ fn semantic_writer_preserves_multiple_body_ownership() {
     );
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1470,13 +1488,7 @@ fn semantic_writer_regenerates_modified_nurbs_carriers() {
         CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
     };
 
-    let mut body = triangle_body();
-    let bridge_offset = body.windows(2).position(|w| w == [0x00, 0x0e]).unwrap();
-    body[bridge_offset + 26..bridge_offset + 28].copy_from_slice(&180u16.to_be_bytes());
-    let edge = body.windows(2).position(|w| w == [0x00, 0x10]).unwrap();
-    body[edge + 24..edge + 26].copy_from_slice(&170u16.to_be_bytes());
-    body.extend(nurbs_curve_carrier(170, 171));
-    body.extend(nurbs_surface_carrier(180, 181, 10));
+    let body = crate::test_support::parasolid::nurbs_triangle_body();
     let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&body)),
@@ -1529,7 +1541,7 @@ fn semantic_writer_regenerates_modified_nurbs_carriers() {
     };
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1541,7 +1553,7 @@ fn semantic_writer_regenerates_modified_nurbs_carriers() {
 
     assert!(regenerated.ir().model.curves.iter().any(
         |curve| matches!(&curve.geometry, CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(value)) if value == &expected_curve)
-    ));
+    ), "curves: {:?}; expected: {expected_curve:?}; losses: {:?}", regenerated.ir().model.curves, regenerated.report().losses);
     assert!(regenerated.ir().model.surfaces.iter().any(
         |surface| matches!(&surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(value)) if value == &expected_surface)
     ));
@@ -1574,7 +1586,7 @@ fn semantic_writer_preserves_unbound_material_definition() {
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1661,7 +1673,7 @@ fn semantic_writer_preserves_face_appearance() {
     );
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1757,7 +1769,12 @@ fn semantic_writer_preserves_idless_feature_tree_nodes() {
         br#"<Keywords><Feature Name="Root" Type="Folder" id="1"><Folder Name="Group"><Sketch Name="Profile" Type="Sketch" id="2"/></Folder></Feature></Keywords>"#,
     ));
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &(source),
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     let native = &sldprt_native(decoded.ir()).feature_histories[0].features;
@@ -1786,7 +1803,7 @@ fn semantic_writer_preserves_idless_feature_tree_nodes() {
     decoded.ir_mut().model.features[2].name = Some("Edited Profile".into());
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1815,7 +1832,9 @@ fn semantic_writer_preserves_idless_feature_tree_nodes() {
 fn semantic_writer_applies_neutral_configuration_edits() {
     let decoded = SldprtCodec
         .decode(
-            &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &(sldprt_with_body_and_history(&triangle_body())),
+            )),
             &DecodeOptions::default(),
         )
         .unwrap();
@@ -1831,7 +1850,7 @@ fn semantic_writer_applies_neutral_configuration_edits() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,

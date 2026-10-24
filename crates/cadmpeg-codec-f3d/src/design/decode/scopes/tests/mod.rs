@@ -27,6 +27,7 @@ mod scale;
 mod surfaces;
 mod thicken;
 mod thread;
+mod typed_references;
 
 mod fixed_kind_path_operations;
 mod fixed_kind_tail_operations;

@@ -94,7 +94,8 @@ fn equivalent_scope_json_refuses_nested_depth_limit() {
         let mut policy = DecodePolicy::default();
         policy.limits.max_recursion_depth = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
-        let result = admit_history_bound_scope_variants(&ctx, &mut scopes, &[]);
+        let result =
+            admit_history_bound_scope_variants(&ctx, &mut scopes, &[], &Default::default());
         if result.is_err() {
             assert_eq!(scopes.len(), 2);
         }
@@ -112,8 +113,10 @@ fn retains_the_unique_history_bound_scope_envelope() {
         history_state(6, None),
     ])];
 
-    with_test_ctx(|ctx| admit_history_bound_scope_variants(ctx, &mut scopes, &histories))
-        .expect("unique envelope");
+    with_test_ctx(|ctx| {
+        admit_history_bound_scope_variants(ctx, &mut scopes, &histories, &Default::default())
+    })
+    .expect("unique envelope");
 
     assert_eq!(scopes.len(), 1);
     assert_eq!(scopes[0].byte_offset(), 100);
@@ -130,10 +133,13 @@ fn refuses_duplicate_scope_envelopes_without_one_history_binding() {
         history_state(6, None),
     ])];
 
-    assert!(
-        with_test_ctx(|ctx| admit_history_bound_scope_variants(ctx, &mut scopes, &histories))
-            .is_err()
-    );
+    assert!(with_test_ctx(|ctx| admit_history_bound_scope_variants(
+        ctx,
+        &mut scopes,
+        &histories,
+        &Default::default()
+    ))
+    .is_err());
 }
 
 #[test]
@@ -201,8 +207,10 @@ fn retains_later_equivalent_scope_envelope_without_history_binding() {
         crate::records::references::DesignClassTag::try_from("258".to_owned()).unwrap();
 
     let mut scopes = vec![older, newer];
-    with_test_ctx(|ctx| admit_history_bound_scope_variants(ctx, &mut scopes, &[]))
-        .expect("equivalent envelope");
+    with_test_ctx(|ctx| {
+        admit_history_bound_scope_variants(ctx, &mut scopes, &[], &Default::default())
+    })
+    .expect("equivalent envelope");
 
     assert_eq!(scopes.len(), 1);
     assert_eq!(scopes[0].byte_offset(), 200);
@@ -253,15 +261,21 @@ fn thicken_variants(first: f64, second: f64) -> Vec<DesignParameterScope> {
 #[test]
 fn scope_variants_that_differ_in_a_payload_float_are_not_equivalent() {
     let mut equivalent = thicken_variants(-1.0, -1.0);
-    with_test_ctx(|ctx| admit_history_bound_scope_variants(ctx, &mut equivalent, &[]))
-        .expect("equivalent envelopes");
+    with_test_ctx(|ctx| {
+        admit_history_bound_scope_variants(ctx, &mut equivalent, &[], &Default::default())
+    })
+    .expect("equivalent envelopes");
     assert_eq!(equivalent.len(), 1);
     assert_eq!(equivalent[0].byte_offset(), 200);
 
     let mut different = thicken_variants(-1.0, -1.0 - f64::EPSILON);
-    assert!(
-        with_test_ctx(|ctx| admit_history_bound_scope_variants(ctx, &mut different, &[])).is_err()
-    );
+    assert!(with_test_ctx(|ctx| admit_history_bound_scope_variants(
+        ctx,
+        &mut different,
+        &[],
+        &Default::default()
+    ))
+    .is_err());
 }
 
 #[test]
@@ -294,8 +308,10 @@ fn duplicate_scope_selection_follows_header_link_when_transition_disagrees() {
         scopes[index].feature_ordinal = std::num::NonZeroU32::new(2).unwrap();
     }
 
-    with_test_ctx(|ctx| admit_history_bound_scope_variants(ctx, &mut scopes, &histories))
-        .expect("unique header-linked envelopes");
+    with_test_ctx(|ctx| {
+        admit_history_bound_scope_variants(ctx, &mut scopes, &histories, &Default::default())
+    })
+    .expect("unique header-linked envelopes");
 
     assert_eq!(scopes.len(), 2);
     assert_eq!(scopes[0].record_index, 42);
@@ -348,10 +364,19 @@ fn duplicate_scope_selection_is_equal_with_and_without_history_binding() {
     let mut bound_scopes = scopes.clone();
     let mut unbound_scopes = scopes;
 
-    with_test_ctx(|ctx| admit_history_bound_scope_variants(ctx, &mut bound_scopes, &[bound]))
-        .expect("bound history envelopes");
-    with_test_ctx(|ctx| admit_history_bound_scope_variants(ctx, &mut unbound_scopes, &[unbound]))
-        .expect("unbound history envelopes");
+    with_test_ctx(|ctx| {
+        admit_history_bound_scope_variants(ctx, &mut bound_scopes, &[bound], &Default::default())
+    })
+    .expect("bound history envelopes");
+    with_test_ctx(|ctx| {
+        admit_history_bound_scope_variants(
+            ctx,
+            &mut unbound_scopes,
+            &[unbound],
+            &Default::default(),
+        )
+    })
+    .expect("unbound history envelopes");
 
     let retained_ids = |scopes: &[DesignParameterScope]| {
         scopes
@@ -361,4 +386,28 @@ fn duplicate_scope_selection_is_equal_with_and_without_history_binding() {
     };
     assert_eq!(retained_ids(&bound_scopes), retained_ids(&unbound_scopes));
     assert_eq!(retained_ids(&bound_scopes), expected_ids);
+}
+
+/// Without a history binding, the one envelope that the stream's primary
+/// record index names is admitted even when the payloads differ.
+#[test]
+fn primary_indexed_scope_variant_is_admitted_without_a_history_binding() {
+    let mut different = thicken_variants(-1.0, -2.0);
+    let stream = crate::ids::native_stream(&different[0].id)
+        .expect("fixture stream")
+        .to_owned();
+    let primary = std::collections::HashSet::from([(stream.clone(), 100)]);
+    let superseded =
+        with_test_ctx(|ctx| admit_history_bound_scope_variants(ctx, &mut different, &[], &primary))
+            .expect("primary-indexed envelope");
+    assert_eq!(superseded, 1);
+    assert_eq!(different.len(), 1);
+    assert_eq!(different[0].byte_offset(), 100);
+
+    let mut both = thicken_variants(-1.0, -2.0);
+    let primary = std::collections::HashSet::from([(stream.clone(), 100), (stream, 200)]);
+    assert!(
+        with_test_ctx(|ctx| admit_history_bound_scope_variants(ctx, &mut both, &[], &primary))
+            .is_err()
+    );
 }

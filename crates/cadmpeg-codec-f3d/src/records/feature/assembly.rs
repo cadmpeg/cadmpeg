@@ -294,6 +294,21 @@ pub(crate) struct DesignAssemblyAlignment {
     pub(crate) owners: Vec<Located<u32>>,
     /// Datum, legacy solved-carrier, or qualified-operand form.
     pub(crate) form: Option<DesignAssemblyAlignmentForm>,
+    /// How the two operand frames mate, when the scope stores it.
+    pub(crate) frame_sense: Option<DesignJointFrameSense>,
+    /// Members of a rigid group after the two in `form`, in scope order.
+    pub(crate) additional_members: Vec<DesignQualifiedAssemblyOperand>,
+}
+
+/// How a joint's two operand frames mate: with their z axes opposed or
+/// aligned.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum DesignJointFrameSense {
+    /// `z₁ = −z₀`.
+    Opposed,
+    /// `z₁ = z₀`.
+    Aligned,
 }
 
 /// One assembly operand frame and its source qualifier.
@@ -367,7 +382,27 @@ impl DesignAssemblyAlignment {
             offset,
             owners,
             form,
+            frame_sense: None,
+            additional_members: Vec::new(),
         })
+    }
+    /// This alignment with the rigid-group members after its first two.
+    pub(crate) fn with_additional_members(
+        mut self,
+        members: Vec<DesignQualifiedAssemblyOperand>,
+    ) -> Result<Self, String> {
+        if !members.is_empty()
+            && !matches!(self.form, Some(DesignAssemblyAlignmentForm::Qualified(_)))
+        {
+            return Err("additional rigid-group members require qualified operands".into());
+        }
+        self.additional_members = members;
+        Ok(self)
+    }
+    /// This alignment with the mate sense its scope stores.
+    pub(crate) fn with_frame_sense(mut self, sense: Option<DesignJointFrameSense>) -> Self {
+        self.frame_sense = sense;
+        self
     }
     pub(crate) fn angle(&self) -> f64 {
         self.angle.get()
@@ -497,7 +532,23 @@ struct DesignAssemblyAlignmentSerde {
         deserialize_with = "deserialize_joint_origin_scope_record_index"
     )]
     joint_origin_scope_record_index: Option<u32>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_frame_sense"
+    )]
+    frame_sense: Option<DesignJointFrameSense>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    additional_operand_frames: Vec<DesignAssemblyOperandFrame>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    additional_operand_qualifiers: Vec<DesignAssemblyOperandQualifier>,
 }
+
+cadmpeg_core::named_optional_field!(
+    deserialize_frame_sense,
+    DesignJointFrameSense,
+    "frame_sense"
+);
 
 impl TryFrom<DesignAssemblyAlignmentSerde> for DesignAssemblyAlignment {
     type Error = String;
@@ -546,13 +597,27 @@ impl TryFrom<DesignAssemblyAlignmentSerde> for DesignAssemblyAlignment {
             (None, None, None, None, None, None) => None,
             _ => return Err("assembly alignment operand_frames, legacy_operand_carriers, solved_frame, operand_qualifiers, limits, and joint_origin_scope_record_index disagree with one form".into()),
         };
-        Self::try_new(wire.angle, wire.offset, owners, form)
+        if wire.additional_operand_frames.len() != wire.additional_operand_qualifiers.len() {
+            return Err(
+                "additional_operand_frames and additional_operand_qualifiers must have equal lengths"
+                    .into(),
+            );
+        }
+        let additional_members = wire
+            .additional_operand_frames
+            .into_iter()
+            .zip(wire.additional_operand_qualifiers)
+            .map(|(frame, qualifier)| DesignQualifiedAssemblyOperand { frame, qualifier })
+            .collect();
+        Self::try_new(wire.angle, wire.offset, owners, form)?
+            .with_frame_sense(wire.frame_sense)
+            .with_additional_members(additional_members)
     }
 }
 
 impl Serialize for DesignAssemblyAlignment {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut record = serializer.serialize_struct("DesignAssemblyAlignmentSerde", 10)?;
+        let mut record = serializer.serialize_struct("DesignAssemblyAlignmentSerde", 13)?;
         record.serialize_field("angle", &self.angle.get())?;
         record.serialize_field("offset", &self.offset.map(FiniteReal::get))?;
         record.serialize_field("owner_record_indices", &OwnerRecordIndices(&self.owners))?;
@@ -631,6 +696,23 @@ impl Serialize for DesignAssemblyAlignment {
                 record.serialize_field("operand_frames", &frames)?;
                 record.serialize_field("operand_qualifiers", &qualifiers)?;
             }
+        }
+        if let Some(sense) = &self.frame_sense {
+            record.serialize_field("frame_sense", sense)?;
+        }
+        if !self.additional_members.is_empty() {
+            let frames = self
+                .additional_members
+                .iter()
+                .map(|member| &member.frame)
+                .collect::<Vec<_>>();
+            let qualifiers = self
+                .additional_members
+                .iter()
+                .map(|member| &member.qualifier)
+                .collect::<Vec<_>>();
+            record.serialize_field("additional_operand_frames", &frames)?;
+            record.serialize_field("additional_operand_qualifiers", &qualifiers)?;
         }
         record.end()
     }
@@ -1273,8 +1355,10 @@ impl DesignAssemblyOperandPath {
         if occurrence_guids.is_empty() || (legacy_pair && occurrence_guids.len() != 1) {
             return Err("occurrence_guids has invalid assembly path arity".into());
         }
+        // A typed path continued over further typed records keeps the four
+        // identity GUIDs of each record.
         let identity_arity = if typed {
-            identity_guids.len() == 4
+            !identity_guids.is_empty() && identity_guids.len().is_multiple_of(4)
         } else if legacy_pair {
             identity_guids.len() == 1
         } else {
@@ -1327,8 +1411,12 @@ impl DesignAssemblyOperandPath {
         self.paired_occurrence_keys = keys;
         Ok(self)
     }
+    /// This path continued by a further path record of its own form: two
+    /// class-330 records, or two records admitted by the typed path type.
     pub(crate) fn try_append(self, continuation: Self) -> Option<Self> {
-        if self.class_tag.as_str() != "330" || continuation.class_tag.as_str() != "330" {
+        let typed = self.admitted_by_type() && continuation.admitted_by_type();
+        if !typed && (self.class_tag.as_str() != "330" || continuation.class_tag.as_str() != "330")
+        {
             return None;
         }
         let mut occurrences = self.occurrence_guids;
@@ -1337,10 +1425,11 @@ impl DesignAssemblyOperandPath {
         identities.extend(continuation.identity_guids);
         let mut pairs = self.paired_occurrence_keys;
         pairs.extend(continuation.paired_occurrence_keys);
-        Self::try_new(
+        Self::try_new_typed(
             self.link,
             self.record_index,
             self.class_tag,
+            self.type_guid,
             occurrences,
             identities,
         )
@@ -1411,7 +1500,7 @@ pub(crate) enum DesignAssemblyOperandQualifier {
 
 impl DesignAssemblyOperandQualifier {
     /// Return the occurrence path when this qualifier carries one.
-    fn occurrence_path(&self) -> Option<&DesignAssemblyOperandPath> {
+    pub(crate) fn occurrence_path(&self) -> Option<&DesignAssemblyOperandPath> {
         match self {
             Self::OccurrencePath { path } => Some(path),
             Self::AxialTarget { .. } | Self::JointOrigin { .. } => None,

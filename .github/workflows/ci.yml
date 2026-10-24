@@ -12,10 +12,13 @@ on:
 permissions:
   contents: read
 
-# Supersede in-flight runs when the same ref is pushed again; PR iteration
-# otherwise runs stale and current pipelines to completion side by side.
+# Supersede in-flight runs when the same PR ref is pushed again; PR iteration
+# otherwise runs stale and current pipelines to completion side by side. Each
+# push to main gets its own group: a shared group keeps one pending run, so a
+# burst of merges cancels the queued runs and leaves those commits without the
+# CI result that Cut release requires.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'push' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.event_name != 'push' }}
 
 env:
@@ -236,7 +239,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2.87.28
+        uses: taiki-e/install-action@v2.87.29
         with:
           tool: cargo-nextest
 
@@ -441,7 +444,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2.87.28
+        uses: taiki-e/install-action@v2.87.29
         with:
           tool: cargo-nextest
 

@@ -223,10 +223,22 @@ fn design_records_project_only_at_full_depth() {
     assert_eq!(parameter.name, "ratio");
     assert_eq!(full.ir().model.faces.len(), 1);
 
-    // Inventor has no geometry cut: a geometry request delivers the full document.
-    assert_eq!(geometry.report().scope(), cadmpeg_ir::ContentScope::full());
-    assert_eq!(geometry.ir().scope, cadmpeg_ir::ContentScope::full());
-    assert_eq!(geometry.ir().model, full.ir().model);
+    // A geometry request excludes design from scope: the same geometry,
+    // no design records.
+    assert_eq!(
+        geometry.report().scope(),
+        cadmpeg_ir::ContentScope::geometry()
+    );
+    assert_eq!(geometry.ir().scope, cadmpeg_ir::ContentScope::geometry());
+    assert_eq!(
+        geometry
+            .ir()
+            .model
+            .populated_arena(cadmpeg_ir::ArenaClass::Design),
+        None
+    );
+    assert!(geometry.ir().model.parameters.is_empty());
+    assert_eq!(geometry.ir().model.faces, full.ir().model.faces);
 
     assert_eq!(
         container.report().scope(),
@@ -260,7 +272,7 @@ fn design_records_project_only_at_full_depth() {
         &InventorCodec,
         &[("design", source.clone())],
     );
-    assert_eq!(summary.cut, 0, "{summary:?}");
+    assert_eq!(summary.cut, 1, "{summary:?}");
 }
 
 #[test]

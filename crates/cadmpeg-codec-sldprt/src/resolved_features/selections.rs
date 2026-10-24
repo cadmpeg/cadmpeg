@@ -2105,7 +2105,7 @@ fn edge_selection_vectors_in_interval(
     Ok(selections)
 }
 
-pub(super) const COMPACT_EDGE_VECTOR_MARKER: [u8; 16] = [
+pub(crate) const COMPACT_EDGE_VECTOR_MARKER: [u8; 16] = [
     0x7d, 0xc3, 0x94, 0x25, 0xad, 0x49, 0xb2, 0x54, 0x7d, 0xc3, 0x94, 0x25, 0xad, 0x49, 0xb2, 0x54,
 ];
 
@@ -2151,7 +2151,7 @@ pub(super) fn mirror_pattern_component_path_at(
     component_vector_path_at(payload, marker)
 }
 
-pub(super) fn component_vector_path_at(
+pub(crate) fn component_vector_path_at(
     payload: &[u8],
     marker: usize,
 ) -> Option<Vec<FeatureInputComponentPathEntry>> {

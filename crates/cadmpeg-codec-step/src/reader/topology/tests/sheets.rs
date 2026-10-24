@@ -95,7 +95,7 @@ pub(crate) fn decode_builds_a_valid_connected_sheet_brep() {
         .model
         .coedges
         .iter()
-        .all(|coedge| coedge.sense == Sense::Forward));
+        .all(|coedge| coedge.sense == Sense::Reversed));
     assert_eq!(result.ir().model.faces[0].sense, Sense::Reversed);
     assert!(result
         .ir()

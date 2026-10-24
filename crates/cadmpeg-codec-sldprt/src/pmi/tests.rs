@@ -773,7 +773,7 @@ fn decode_extracts_pmi_semantic_dimension() {
     let semantic = parameter.pmi.as_ref().expect("PMI semantics");
     assert_eq!(semantic, &super::annotation_id(dimension).unwrap());
     assert!(decoded.ir().model.pmi.iter().any(|annotation| &annotation.id == semantic && matches!(&annotation.definition, cadmpeg_ir::pmi::PmiDefinition::Dimension(dimension) if dimension.kind() == &cadmpeg_ir::pmi::DimensionKind::Size && dimension.nominal().and_then(cadmpeg_ir::Dimension::parameter) == Some(&parameter.id))));
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut Vec::new(),
@@ -970,19 +970,32 @@ fn duplicate_pmi_records_share_one_parameter_and_round_trip_edits() {
         "Contents/Keywords",
         br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
     ));
-    for guid in [
-        "01234567-89ab-cdef-0123-456789abcdef",
-        "fedcba98-7654-3210-fedc-ba9876543210",
+    for (time_date, guid) in [
+        (0x0021_0049, "01234567-89ab-cdef-0123-456789abcdef"),
+        (0x0021_004a, "fedcba98-7654-3210-fedc-ba9876543210"),
     ] {
         source.extend(make_block(
-            0x49,
+            time_date,
             "Contents/PMISemanticDataDB",
             &pmi_semantic_payload_for_with_guid("D1@Sketch1", guid),
         ));
     }
 
+    let pmi_dates: Vec<_> = crate::test_support::container::scan(&source)
+        .blocks
+        .iter()
+        .filter(|block| block.section.name() == Some("Contents/PMISemanticDataDB"))
+        .map(|block| block.type_id)
+        .collect();
+    assert_eq!(pmi_dates, [0x0021_0049, 0x0021_004a]);
+
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &(source),
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert_eq!(sldprt_native(decoded.ir()).pmi_dimensions.len(), 2);
@@ -1576,4 +1589,67 @@ fn assert_untyped_candidate_maps(
         let guid = format!("{index:08x}-0000-4000-8000-{index:012x}");
         assert_eq!(loss.message, format!("PMISemanticDataDB map at offset {offset} (guid {guid}) has no supported typed semantic record"));
     }
+}
+
+#[test]
+fn duplicate_member_identity_replays_but_refuses_semantic_edit() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x0021_0042,
+        "Contents/Keywords",
+        br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
+    ));
+    for guid in [
+        "01234567-89ab-cdef-0123-456789abcdef",
+        "fedcba98-7654-3210-fedc-ba9876543210",
+    ] {
+        source.extend(make_block(
+            0x0021_0049,
+            "Contents/PMISemanticDataDB",
+            &pmi_semantic_payload_for_with_guid("D1@Sketch1", guid),
+        ));
+    }
+    let source = crate::test_support::container::native_envelope_fixture(&source);
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    assert_eq!(sldprt_native(decoded.ir()).pmi_dimensions.len(), 2);
+    assert_eq!(decoded.ir().model.parameters.len(), 1);
+    assert!(decoded
+        .source_fidelity()
+        .retained_record(crate::SOURCE_IMAGE_ID)
+        .unwrap()
+        .data()
+        .is_some());
+    let mut unchanged = Vec::new();
+    let path = crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut unchanged,
+    )
+    .unwrap();
+    assert!(matches!(
+        path,
+        cadmpeg_ir::report::export::WritePath::VerbatimReplay { .. }
+    ));
+    assert_eq!(unchanged, source);
+    {
+        let mut ir = decoded.ir_mut();
+        let parameter = &mut ir.model.parameters[0];
+        parameter.expression = "50mm".into();
+        parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(50.0).unwrap(),
+        ));
+    }
+    let error = crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::NotImplemented(ref reason) if reason.contains("validated retained local, central and EOCD signature tokens")),
+        "{error}"
+    );
 }

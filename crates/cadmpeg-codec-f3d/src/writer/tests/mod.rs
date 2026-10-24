@@ -13,3 +13,5 @@ mod source_less_nurbs;
 mod synthesis;
 mod targets;
 mod topology_edits;
+
+mod user_knots;

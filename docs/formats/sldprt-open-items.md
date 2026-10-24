@@ -18,31 +18,21 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. Body classification
 
-### BC-03. Superseded partition faces
-
-**Question.** How does a deltas topology record replace a partition face when the replacement has a different bridge or owner identity?
-
-**Known.** `sldprt.md` §6 states that partition topology has precedence for shared identities and that a complete deltas record can supersede a partition face when the native record identifies the replacement.
-
-**Need.** We must know the replacement relation to avoid retaining a superseded partition face or emitting both faces.
-
 ### BC-04. Duplicate topology record identities
 
 **Question.** Which occurrence is authoritative when one stream contains multiple valid topology records with the same attribute but different references or coordinates?
 
-**Known.** Topology records are keyed by stream-local attribute. The specification does not define a duplicate-record rule or a native precedence field.
+**Known.** Topology records are keyed by stream-local attribute. A complete short-index FACE includes five pointers after its sense. Complete EDGE and VERTEX bodies include their trailing owner pointers. POINT has exactly four pointers before its coordinate vector. Equal projected fields do not establish equality of complete record bytes. The specification does not define a duplicate-record rule or a native precedence field.
 
 **Need.** We must select the authoritative topology record to avoid silently changing body connectivity or vertex positions when a duplicate identity is present.
 
-### BC-08. Truncated persistent face identity
+### BC-08. Complete identity in single-face component selections
 
-**Question.** Which consumers must compare the optional path tail of an `ATOM_ID_2001` persistent face identity, and when does that tail separate two faces of one producer?
+**Question.** Which single-face component-selection field, if any, supplies the complete ordered tail of a persistent face identity?
 
-**Known.** `sldprt.md` §5 "`ATOM_ID_2001` instances hang on face bridge records" gives the complete persistent identity as value 1, value 4, and the ordered optional tail. `crates/cadmpeg-codec-sldprt/src/decode.rs:2417-2440` makes two projections of the same face atoms. The complete projection keeps the tail and goes to the tessellation owner assignment only. The truncated projection keeps value 1 and value 4 only and goes to four consumers: the topology selection binding, the mirror-plane binding, the generated hole-axis projection, and the configuration topology selection binding. The topology selection binding sets a face to unresolved when two faces share the truncated pair.
+**Known.** Complete `FACE_ID_2001` and DisplayFace identities include tail length and ordered values. A source/local pair can name several distinct complete identities. A single-face selector carrying only that pair requires one distinct target. Generated-hole surface references expand the pair to a set and do not select one persistent face. A component selection has an ordered path of type signatures and optional local identifiers; path length and earlier local identifiers do not establish a persistent-identity tail.
 
-**Need.** We must know whether the tail separates faces, because a truncated comparison binds no face where the complete identity binds one, and the hole-axis projection collects every face with the truncated pair.
-
-**Conflict.** The specification gives the tail as part of the identity. Four consumers compare identities without it, while a fifth consumer in the same function compares the complete identity.
+**Need.** An explicit native field relation must distinguish a complete selector from a prefix-only selector before a colliding source/local pair can select one face.
 
 ## 2. Geometry carriers
 
@@ -98,43 +88,43 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### CM-01. Cache-cell prefix
 
-**Question.** What index-state information does the cache-cell prefix encode?
+**Question.** Which producer rule generates a new cache cell's opaque prefix values when no source bytes are available?
 
-**Known.** `sldprt.md` §1.2 "The bytes before the first valid block and the long inter-block gaps hold a **fixed-cell" through `sldprt.md` §1.2 "A valid cache cell satisfies `two_L == 2L`, `half_L == L//2`, `0 < name_len < 500`, and has a" define the cache-cell grid, cell size, and section-index interpretation.
+**Known.** The prefix occupies the `N=L/S` bytes between an independently anchored cell start and its marker. Equal section names, displacements, complete fixed headers, and unique target blocks do not determine equal prefix values. Retained cells preserve these bytes without assigning a producer meaning.
 
-**Need.** We must know the prefix semantics to validate and write a cache cell.
+**Need.** A producer-side relation must establish a regeneration rule before a source-less writer can synthesize this field.
 
 ### CM-02. Cache-cell fill
 
-**Question.** What index-state information does the cache-cell fill encode?
+**Question.** Which producer rule generates a new cache cell's opaque trailing values when no source bytes are available?
 
-**Known.** `sldprt.md` §1.2 "The bytes before the first valid block and the long inter-block gaps hold a **fixed-cell" through `sldprt.md` §1.2 "A valid cache cell satisfies `two_L == 2L`, `half_L == L//2`, `0 < name_len < 500`, and has a" define how nonzero cache-cell section indices address blocks.
+**Known.** The trailing field extends from the encoded name's end to `cell_start+S`. Equal section names, displacements, complete fixed headers, and unique target blocks do not determine equal trailing values. Zero and `ff` are opaque byte values, not structural rejection conditions. Retained cells preserve the complete range.
 
-**Need.** We must know the fill semantics to validate and write the grid.
+**Need.** A producer-side relation must establish a regeneration rule before a source-less writer can synthesize this field.
 
-### CM-03. Cache-cell `type_id` high half
+### CM-04. Opaque tail residual generation
 
-**Question.** What does the high half of a cache-cell `type_id` encode?
+**Question.** How does the producer generate the opaque prefix and residual bytes in the named tail-padding and anonymous footer cells?
 
-**Known.** `sldprt.md` §1.2 "The bytes before the first valid block and the long inter-block gaps hold a **fixed-cell" through `sldprt.md` §1.2 "A valid cache cell satisfies `two_L == 2L`, `half_L == L//2`, `0 < name_len < 500`, and has a" define the cell `type_id` field and its relation to the addressed block.
+**Known.** `sldprt.md` §1.4 defines the named-grid scales, footer scales, exact cell extents, EOCD count, and both central-directory locator equations. Bytes outside those fields remain opaque and are retained exactly; they do not select directory members.
 
-**Need.** We must know the high-half semantics to validate and write the type identifier.
+**Need.** An independent producer oracle that explains or generates those residual bytes for newly constructed cells.
 
-### CM-04. Tail-directory fill
+**Conflict.** None.
 
-**Question.** What index-state information does the variable-length fill after the final tail-directory entry encode?
+**Note.** Parsed grid geometry and EOCD fields do not establish a regeneration rule for opaque residuals.
 
-**Known.** `sldprt.md` §1.3 "The file tail carries an **OPC package section directory**" through `sldprt.md` §1.3 "The file tail carries an **OPC package section directory**" define tail-directory entry framing and section lookup.
+### CM-07. Transformed enclosure opaque prologue
 
-**Need.** We must know the fill semantics to validate and write the tail directory.
+**Question.** How does the producer generate the 24 opaque bytes in a `moTransRefPlaneData_c` serializer prologue?
 
-### CM-07. `moTransRefPlaneData_c` gap
+**Known.** `sldprt.md` §8 defines its fixed 25-byte prologue, presence byte, and optional ten-value enclosure. The stored center, corners, and radius do not define the opaque bytes.
 
-**Question.** What does the byte run between the `moTransRefPlaneData_c` class token and the first of its nine f64 values encode, and what fixes its length?
+**Need.** An independent producer rule or controlled native edit must determine these bytes for a newly authored record.
 
-**Known.** The decoder requires an eight-byte `ff` prefix and reads nine little-endian f64 values after it. The values are the plane center, two in-plane directions, and their normal. A valid transformed reference plane record follows the plane center xyz.
+**Conflict.** None.
 
-**Need.** We must know the gap to write the record back without moving or inventing undecoded bytes.
+**Note.** Retained prologue bytes can be preserved without assigning a generation rule.
 
 ### CM-10. Parasolid stream boundary
 
@@ -164,29 +154,21 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Need.** We must know the stored mapping to attach tables whose support is ambiguous or unsupported, including non-exact NURBS caches, and carry no complete matching persistent identity.
 
-### AL-03. DisplayLists extended table-header token
+### AL-03. DisplayLists renderer flag meanings
 
-**Question.** What does the nonzero extended-form token encode?
+**Question.** Which renderer states do the stored `B` and `C` flags identify?
 
-**Known.** `sldprt.md` §8 defines the common triangle-count and strip-count cells and the exact descriptor-table position of the compact and extended `uoTempFaceTessData_c` forms. The common cells do not select the form. The fixed extension cells and its nonzero token select the extended form.
+**Known.** `sldprt.md` §8 defines the four supported extended header words, their Boolean metadata triples, the exact stored-normal classification, and the optional scalar/unit-vector tuple. The independent metadata word does not contribute to the header word.
 
-**Need.** We must know the token semantics to regenerate the extended form without a retained source record.
+**Need.** We must know the renderer meanings of `B` and `C` and the rule that selects their values when no retained metadata supplies them.
 
-### AL-04. Mesh polyline candidate selection
+### AL-05. Retained and direct face appearance paths
 
-**Question.** Which native field identifies the mesh polyline used as a helix input when a stream contains more than one finite `00 22` point array?
+**Question.** Which complete persistent-path relation selects retained feature faces and direct face appearances?
 
-**Known.** `sldprt.md` §2 defines the supported helix input as a counted XYZ polyline. It does not define a native rule that ranks multiple candidate arrays by point count.
+**Known.** `sldprt.md` §8 defines native display-state selection, three complete part-default class chains, body identity through `ATOM_ID_2001`, and generated-face feature scope through current `FACE_ID_2001` source and timestamp values. Four-word face values identify a feature-scoped owner set without a local face selector. A `moCompFace_c` object can carry a complete multi-component path. A terminal source, timestamp, and local triple can match more than one current face or omit another affected current face. A bare definition supplies no ownership. Unresolved higher-rank paths do not supply lower-rank appearance fallbacks.
 
-**Need.** We must know the polyline identity to bind the helix to the correct input geometry.
-
-### AL-05. Appearance ownership beyond DisplayLists
-
-**Question.** Which records bind appearances to a part, configuration, display state, or B-rep-only feature output?
-
-**Known.** `sldprt.md` §8 defines DisplayLists body defaults, feature assignments through framed persistent surface references, face-local assignments, and their precedence. A `moVisualProperties_c` definition alone does not establish ownership. The opaque six-value `ATOM_ID_2001` layout does not establish a DisplayLists feature binding.
-
-**Need.** Part ownership, configuration and display-state selection, missing or conflicting persistent surface references, and feature appearance propagation to B-rep-only geometry remain unresolved.
+**Need.** The complete path-to-current-face binding for retained or modified feature faces and direct face assignments, and a complete holderless part-default owner relation. A unique terminal triple in one current identity set does not establish a general path-truncation rule.
 
 ## 5. Design intent
 
@@ -222,11 +204,11 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Need.** We must know the lookup rule to evaluate a configuration-qualified property operand.
 
-### DI-05. Offset-edge relation invariant
+### DI-05. Offset-edge relation invariant with an external operand
 
-**Question.** What neutral geometric invariant does an offset-edge marker relation impose?
+**Question.** What neutral geometric invariant does an offset-edge relation impose when one operand is an external-reference record?
 
-**Known.** `sldprt.md` §2 "A `Config-N-ResolvedFeatures` lane supplies the evaluated parameter state for configuration slot" through `sldprt.md` §2 "A primary line-or-circle geometry handle on a transformed line segment identifies that line" define operand resolution and the neutral invariants of the supported dimensional and geometric relations.
+**Known.** `sldprt.md` §2 "The relation table of a sketch block follows the last record of the block" gives the invariant for two local operands: two parallel lines or two concentric arcs. An external-reference record stores backed-up points in the frame of its source sketch, so a comparison in the frame of the owning sketch does not apply.
 
 **Need.** We must know the invariant to project the native relation as a neutral sketch constraint.
 
@@ -250,15 +232,15 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Question.** What neutral invariant and operand roles does each relation code in `29..32`, `36..41`, and `43..85` have?
 
-**Known.** The native numeric taxonomy defines identities through code `85`. `sldprt.md` §2 "A `Config-N-ResolvedFeatures` lane supplies the evaluated parameter state for configuration slot" through `sldprt.md` §2 "A primary line-or-circle geometry handle on a transformed line segment identifies that line" define the neutral semantics of the supported codes.
+**Known.** The native numeric taxonomy defines identities through code `85`. `sldprt.md` §2 "The relation table of a sketch block follows the last record of the block" gives the row layout and operand kinds. Relation tables use codes `32`, `40`, `50`, `53`, `55`, `56`, `57`, `62`, `64`, `65`, `66`, `67`, `75`, `80`, and `85` of this range. A patterned row (`57`) has two congruent operands, but the IR has no patterned constraint. A use-edge row (`32`) pairs an external-reference record with a local curve. An at-pierce row (`40`) has two point operands.
 
-**Need.** We must know each invariant and operand family to project the remaining codes.
+**Need.** We must know each invariant and operand role to project the remaining codes.
 
 ### DI-09. Relation codes above `85`
 
 **Question.** What native relation does each code above `85` identify?
 
-**Known.** The defined native numeric taxonomy ends at code `85`.
+**Known.** The defined native numeric taxonomy ends at code `85`. No known relation-table row or sketch marker has a code above `85`.
 
 **Need.** We must know the identities before we can define their operands and neutral invariants.
 
@@ -346,17 +328,17 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Question.** What is the disposition of a feature-local face identity when no surviving face carries that identity?
 
-**Known.** `sldprt.md` §2 "An extrusion object-name record is followed by four zero bytes, a little-endian u16 family word," through `sldprt.md` §2 "When operation objects and their dimension children form separate ordered groups, a blind" define the `moSingleFaceRef_w` path forms and their feature-local face selection. `sldprt.md` §4.1 "The fourth FACE reference is the owning SHELL." defines the typed face relation, and §5 defines how the terminal owner and feature-local face identity select the surviving face through `ATOM_ID_2001`.
+**Known.** `sldprt.md` §2 "An extrusion object-name record is followed by four zero bytes, a little-endian u16 family word," through `sldprt.md` §2 "When operation objects and their dimension children form separate ordered groups, a blind" define the `moSingleFaceRef_w` path forms and their feature-local face selection. `sldprt.md` §4.1 "The fourth FACE reference is the owning SHELL." defines the typed face relation, and §5 defines how the terminal owner and feature-local face identity select the surviving face through `FACE_ID_2001`.
 
 **Need.** We must distinguish a face consumed by a later operation from a face whose owner or identity attribute was not decoded.
 
-### DI-21. Other inline extrusion operation bytes
+### DI-21. Class-scoped inline extrusion operations
 
-**Question.** What Boolean operation does each inline family-word and operation-byte combination outside family `0x0140` byte `00` and family `0x01ca` byte `00` or `02` represent?
+**Question.** What Boolean operation does the inline family `0x0140` with operation byte `00` represent for `moCutThin_c`, and what operation does each other unsupported family-word and operation-byte combination represent?
 
-**Known.** `sldprt.md` §2 "Feature-tree" defines the three supported combinations. The family word establishes join or cut independently of a shared class token; family `0x01ca` byte `00` derives subtraction from its family rather than from the zero byte alone.
+**Known.** `sldprt.md` §2 "Feature-tree" defines the supported ordinary extrusion combinations. The ordinary `0x0140`/`00` join mapping does not establish the operation of a `moCutThin_c` object. Family `0x01ca` with byte `00` or `02` establishes cut. A normalized Keywords `CutExtrudeThin` type also establishes cut independently. A complete configuration-local operation carrier is distinct from the base configuration's operation state.
 
-**Need.** We must know the other byte values to construct the extrusion Boolean operation.
+**Need.** We must identify an independent, class-scoped Boolean discriminator for the `moCutThin_c` `0x0140`/`00` form and define the remaining family-word and operation-byte combinations.
 
 ### DI-22. Other sparse extrusion form codes
 
@@ -370,7 +352,7 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Question.** How does a body selected by a compact `moCombineBodies_c` target or tool path map to a body in the final B-rep?
 
-**Known.** The compact paths identify generated feature-local bodies. A complete target or tool path projects to one generated body reference whose feature is the terminal path producer, whose local identity is the ordered path-local sequence, and whose dependencies include every uniquely identified traversed history feature. `sldprt.md` §4.3 "00 01 00 01" through `sldprt.md` §6 "Body membership is the typed XT ownership graph." define final B-rep body identities and ownership. `ATOM_ID_2001` carries face identities and does not bind a feature-local body identity.
+**Known.** The compact paths identify generated feature-local bodies. A complete target or tool path projects to one generated body reference whose feature is the terminal path producer, whose local identity is the ordered path-local sequence, and whose dependencies include every uniquely identified traversed history feature. `sldprt.md` §4.3 "00 01 00 01" through `sldprt.md` §6 "Body membership is the typed XT ownership graph." define final B-rep body identities and ownership. `FACE_ID_2001` carries face identities and does not bind a feature-local body identity.
 
 **Need.** We must know the mapping to bind the Boolean target and tool bodies.
 
@@ -386,7 +368,7 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Question.** How does an edge selected by an entry-form `moCompEdge_c` path map to an edge in the final B-rep?
 
-**Known.** The entry path identifies a generated feature-local edge. `sldprt.md` §3.2 "An attribute" through `sldprt.md` §4 "**Bridge `00 0e`:** `attr` is u16 BE at body +0" define final B-rep edge identity and direction. `ATOM_ID_2001` carries no edge identity. The `EDGE_PERM_ID_2_2003` attribute grammar is not defined.
+**Known.** The entry path identifies a generated feature-local edge. `sldprt.md` §3.2 "An attribute" through `sldprt.md` §4 "**Bridge `00 0e`:** `attr` is u16 BE at body +0" define final B-rep edge identity and direction. `FACE_ID_2001` carries no edge identity. The `EDGE_PERM_ID_2_2003` attribute grammar is not defined.
 
 **Need.** We must know the mapping to bind the selected operation edge.
 
@@ -509,6 +491,22 @@ uses the nearest preceding sibling `moCosmeticThread_c` feature when a pattern
 has a derived cosmetic-thread output and no resolved seed. Another fallback
 uses the immediately preceding feature-input object. Either rule can assign an
 unrelated preceding feature as the pattern seed.
+
+### DI-45. Relation-table row flag
+
+**Question.** What does the u16 row flag `1` of a relation-table row mean?
+
+**Known.** `sldprt.md` §2 "The relation table of a sketch block follows the last record of the block" gives the flag position. The solved geometry satisfies a flag-`0` row. A flag-`1` row has no established invariant.
+
+**Need.** We must know the meaning to type or to write flag-`1` rows.
+
+### DI-46. Point records with a curve or relation code
+
+**Question.** Which field identifies a point record whose u32 at marker +17 is `2` or a relation code?
+
+**Known.** Such a record stores the coordinate tag `1e 00` at marker +64 and holds a slot in the point array of its block. Its u32 at marker +17 is `2` or a relation code.
+
+**Need.** We must draw these points to type the relations that name them.
 
 ## 6. Container record semantics
 

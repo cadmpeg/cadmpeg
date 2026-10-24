@@ -5,9 +5,8 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FiniteVector3;
 use cadmpeg_ir::geometry::{
-    BlendCrossSection, BlendRadiusLaw, Curve, CurveGeometry, ProceduralSurface,
-    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
-    SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     BodyId, CurveId, EdgeId, FaceId, LoopId, ProceduralSurfaceId, RegionId, ShellId, SurfaceId,
@@ -308,212 +307,6 @@ pub(super) fn insert_parameter_property(
     })?;
     properties.insert(key, value);
     Ok(())
-}
-
-/// Neutral operand family named by an NX rolling-ball blend operation.
-#[derive(Clone, Copy)]
-pub(super) enum NxBlendFamily {
-    /// Edge-selected `BLEND` operation.
-    Edge,
-    /// Face-selected `FACE_BLEND` operation.
-    Face,
-}
-
-/// Project complete owned rolling-ball carriers into their named blend family.
-pub(super) fn blend_feature_definition(
-    index: &FeatureProjectionIndex<'_>,
-    outputs: &[BodyId],
-    family: NxBlendFamily,
-) -> Option<(FeatureDefinition, Vec<SurfaceId>)> {
-    let [body] = outputs else {
-        return None;
-    };
-    let body_surfaces = index.body_surface_ids(body)?;
-    let mut surfaces = Vec::new();
-    let mut first_radius = None;
-    let mut constant_radii = true;
-    let mut uniform_radii = true;
-    let mut variable_radii = true;
-    let mut pairs = Vec::new();
-    let mut complete_pairs = true;
-    for (owner, procedural) in index.owned_procedural_surfaces(&body_surfaces) {
-        let ProceduralSurfaceDefinition::Blend(definition_payload) = procedural.definition() else {
-            continue;
-        };
-        let supports = definition_payload.supports();
-        let radius = definition_payload.radius();
-        let cross_section = definition_payload.cross_section();
-
-        if *cross_section != BlendCrossSection::Circular {
-            return None;
-        }
-
-        surfaces.push(owner.clone());
-        match radius {
-            BlendRadiusLaw::Constant { signed_radius } if signed_radius.get() != 0.0 => {
-                let magnitude = signed_radius.get().abs();
-                if first_radius.is_some_and(|first: f64| first.to_bits() != magnitude.to_bits()) {
-                    uniform_radii = false;
-                }
-                first_radius.get_or_insert(magnitude);
-                variable_radii = false;
-            }
-            BlendRadiusLaw::Linear { .. } | BlendRadiusLaw::Law { .. } => {
-                constant_radii = false;
-            }
-            BlendRadiusLaw::Constant { .. } => {
-                constant_radii = false;
-                variable_radii = false;
-            }
-        }
-        if matches!(family, NxBlendFamily::Face) {
-            if let [Some(first), Some(second)] = supports {
-                if first.surface == second.surface {
-                    complete_pairs = false;
-                } else {
-                    pairs.push([first.surface.clone(), second.surface.clone()]);
-                }
-            } else {
-                complete_pairs = false;
-            }
-        }
-    }
-    if surfaces.is_empty() {
-        return None;
-    }
-    surfaces.sort_by(Ord::cmp);
-    let radius = if constant_radii {
-        if uniform_radii {
-            first_radius
-                .and_then(cadmpeg_ir::scalar::PositiveLength::new)
-                .map_or(
-                    RadiusSpec::Unresolved {
-                        form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Constant),
-                    },
-                    |radius| RadiusSpec::Constant {
-                        radius: (radius).into(),
-                    },
-                )
-        } else {
-            RadiusSpec::Unresolved {
-                form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Constant),
-            }
-        }
-    } else if variable_radii {
-        RadiusSpec::Unresolved {
-            form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable),
-        }
-    } else {
-        RadiusSpec::Unresolved { form: None }
-    };
-    let face_blend = if matches!(family, NxBlendFamily::Face) && complete_pairs {
-        if let Some(sides) = blend_support_bipartition(&pairs) {
-            let first_native = format!("{body}:blend-first-support-surfaces");
-            let second_native = format!("{body}:blend-second-support-surfaces");
-            let (first_faces, _) = support_face_projection(index, &sides.first, first_native);
-            let (second_faces, _) = support_face_projection(index, &sides.second, second_native);
-            match (&first_faces, &second_faces) {
-                (FaceSelection::Resolved { .. }, FaceSelection::Resolved { .. }) => {
-                    cadmpeg_ir::features::FaceBlendOperands::new(first_faces, second_faces)
-                        .ok()
-                        .map(|operands| {
-                            FeatureDefinition::Operation(FeatureOperation::FaceBlend {
-                                operands,
-                                radius: radius.clone(),
-                            })
-                        })
-                }
-                _ => None,
-            }
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-    let unresolved_operands = cadmpeg_ir::features::FaceBlendOperands::new(
-        FaceSelection::Unresolved,
-        FaceSelection::Unresolved,
-    )
-    .ok()?;
-    let unresolved = match family {
-        NxBlendFamily::Edge => FeatureDefinition::Operation(FeatureOperation::Fillet {
-            groups: cadmpeg_ir::features::NonEmptyMembers::one(
-                cadmpeg_ir::features::edge_treatments::FilletGroup {
-                    edges: EdgeSelection::Unresolved,
-                    radius,
-                    tangency_weight: None,
-                },
-            ),
-        }),
-        NxBlendFamily::Face => FeatureDefinition::Operation(FeatureOperation::FaceBlend {
-            operands: unresolved_operands,
-            radius,
-        }),
-    };
-    Some((face_blend.unwrap_or(unresolved), surfaces))
-}
-
-/// Split an unordered rolling-ball support graph into two deterministic face
-/// sets. Face blending is symmetric, so each connected component starts with
-/// its lowest surface identity on the first side. The support graph must be
-/// complete bipartite: odd cycles and missing cross-pairs cannot be represented
-/// by one neutral face-blend operation.
-pub(super) struct BlendSides {
-    pub(super) first: Vec<SurfaceId>,
-    pub(super) second: Vec<SurfaceId>,
-}
-
-pub(super) fn blend_support_bipartition(pairs: &[[SurfaceId; 2]]) -> Option<BlendSides> {
-    let mut adjacent = BTreeMap::<&SurfaceId, BTreeSet<&SurfaceId>>::new();
-    for [first, second] in pairs {
-        if first == second {
-            return None;
-        }
-        for (from, to) in [(first, second), (second, first)] {
-            let neighbors = adjacent.entry(from).or_default();
-            if !neighbors.contains(to) {
-                neighbors.insert(to);
-            }
-        }
-    }
-    let mut sides = BTreeMap::<&SurfaceId, bool>::new();
-    let mut pending = Vec::new();
-    for seed in adjacent.keys() {
-        if sides.contains_key(seed) {
-            continue;
-        }
-        sides.insert(*seed, false);
-        pending.push(*seed);
-        while let Some(surface) = pending.pop() {
-            let side = sides[&surface];
-            for neighbor in &adjacent[&surface] {
-                match sides.get(neighbor) {
-                    Some(neighbor_side) if *neighbor_side == side => return None,
-                    Some(_) => {}
-                    None => {
-                        sides.insert(*neighbor, !side);
-                        pending.push(*neighbor);
-                    }
-                }
-            }
-        }
-    }
-    let mut first = Vec::new();
-    let mut second = Vec::new();
-    for (&surface, &second_side) in &sides {
-        let output = if second_side { &mut second } else { &mut first };
-
-        output.push(surface.clone());
-    }
-    for surface in &first {
-        for other in &second {
-            if !adjacent[surface].contains(other) {
-                return None;
-            }
-        }
-    }
-    Some(BlendSides { first, second })
 }
 
 pub(super) fn offset_surface_feature_definition(
@@ -1350,7 +1143,7 @@ pub(super) fn non_boolean_feature_definition_with_parameters(
         "DRAFT" => FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::Draft,
         }),
-        "CPROJ" | "CPROJ_CMB" => FeatureDefinition::Operation(FeatureOperation::ProjectedCurve {
+        "CPROJ" => FeatureDefinition::Operation(FeatureOperation::ProjectedCurve {
             source: PathRef::Unresolved("nx:unresolved".into()),
             target_faces: FaceSelection::Unresolved,
             direction: CurveProjectionDirection::State(CurveProjectionDirectionState::Unresolved),

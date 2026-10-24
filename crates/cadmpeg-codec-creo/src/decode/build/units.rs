@@ -141,13 +141,21 @@ fn scale_datum_plane_reference(
     scale: PositiveReal,
 ) -> Result<(), CodecError> {
     if let cadmpeg_ir::features::DatumPlaneReference::ResolvedPlane { frame } = reference {
-        let mut origin = frame.origin().get();
-        scale_point3(&mut origin, scale);
-        let origin = cadmpeg_ir::features::FinitePoint3::new(origin).ok_or_else(|| {
-            CodecError::malformed("Creo scaled plane support must have a finite origin")
-        })?;
-        *frame = frame.with_origin(origin);
+        scale_support_plane_frame(frame, scale)?;
     }
+    Ok(())
+}
+
+fn scale_support_plane_frame(
+    frame: &mut cadmpeg_ir::features::FeatureSupportPlaneFrame,
+    scale: PositiveReal,
+) -> Result<(), CodecError> {
+    let mut origin = frame.origin().get();
+    scale_point3(&mut origin, scale);
+    let origin = cadmpeg_ir::features::FinitePoint3::new(origin).ok_or_else(|| {
+        CodecError::malformed("Creo scaled plane support must have a finite origin")
+    })?;
+    *frame = frame.with_origin(origin);
     Ok(())
 }
 
@@ -669,6 +677,7 @@ fn scale_extrude_start(
     match start {
         ExtrudeStart::OffsetProfilePlane { offset } => scale_length(offset, scale)?,
         ExtrudeStart::FromFace { offset, .. } => scale_optional_length(offset, scale)?,
+        ExtrudeStart::FromPlane { plane, .. } => scale_support_plane_frame(plane, scale)?,
         ExtrudeStart::Unresolved {} | ExtrudeStart::ProfilePlane {} => {}
     }
     Ok(())
@@ -730,6 +739,7 @@ fn scale_linear_termination(
         LinearTermination::OffsetFromFace { offset, .. } => {
             scale_positive_length(offset, scale)?;
         }
+        LinearTermination::ToPlane { plane, .. } => scale_support_plane_frame(plane, scale)?,
         LinearTermination::Unresolved {}
         | LinearTermination::ThroughAll {}
         | LinearTermination::ThroughNext {}

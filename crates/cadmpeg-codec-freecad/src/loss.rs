@@ -92,6 +92,10 @@ pub(crate) enum FreecadLossCode {
     ElementMapMetadataUnresolved,
     /// A parameter-space curve could not enter neutral geometry.
     PcurveNotTransferred,
+    /// Equal-matrix pcurves have no admitted matching native location chain.
+    PcurveLocationAmbiguous,
+    /// Native topology remains retained when location identity expansion reaches its local cap.
+    TopologyLocationIdentityBounded,
     /// Producer version metadata used an alias or conflicting declarations.
     ProgramVersionNoncanonical,
     /// Persistence version metadata used a lowercase alias.
@@ -139,6 +143,8 @@ impl FreecadLossCode {
         Self::SourceGuiMetadataUnresolved,
         Self::ElementMapMetadataUnresolved,
         Self::PcurveNotTransferred,
+        Self::PcurveLocationAmbiguous,
+        Self::TopologyLocationIdentityBounded,
         Self::ProgramVersionNoncanonical,
         Self::FileVersionNoncanonical,
         Self::FileVersionUnverified,
@@ -186,6 +192,8 @@ impl FreecadLossCode {
             Self::SourceGuiMetadataUnresolved => "source.gui-metadata-unresolved",
             Self::ElementMapMetadataUnresolved => "element-map.metadata-unresolved",
             Self::PcurveNotTransferred => "pcurve.not-transferred",
+            Self::PcurveLocationAmbiguous => "pcurve.location-ambiguous",
+            Self::TopologyLocationIdentityBounded => "topology.location-identity-bounded",
             Self::ProgramVersionNoncanonical => "metadata.program-version-noncanonical",
             Self::FileVersionNoncanonical => "metadata.file-version-noncanonical",
             Self::FileVersionUnverified => "metadata.file-version-unverified",
@@ -214,7 +222,9 @@ impl FreecadLossCode {
             | Self::ExportProceduralReduced => Severity::Warning,
             Self::FeatureNativeKindRetained
             | Self::SketchNativeGeometry
-            | Self::SketchNativeConstraint => Severity::Blocking,
+            | Self::SketchNativeConstraint
+            | Self::PcurveLocationAmbiguous
+            | Self::TopologyLocationIdentityBounded => Severity::Blocking,
             Self::FeatureCyclicHistory
             | Self::SketchExternalCacheUnresolved
             | Self::SketchExternalReferenceUnresolved
@@ -270,7 +280,9 @@ impl FreecadLossCode {
             | Self::SourceGuiPropertyKeyBlank
             | Self::SourceGuiMetadataUnresolved
             | Self::ElementMapMetadataUnresolved
-            | Self::PcurveNotTransferred => LossTaxonomy::RecordNotTyped,
+            | Self::PcurveNotTransferred
+            | Self::PcurveLocationAmbiguous
+            | Self::TopologyLocationIdentityBounded => LossTaxonomy::RecordNotTyped,
             Self::AppearanceTopologyColorCountMismatch
             | Self::AppearancePrimitiveSizeNotTransferred => LossTaxonomy::MaterialNotTransferred,
             Self::PersistenceCountNoncanonical
@@ -608,6 +620,8 @@ mod tests {
                 "source.gui-metadata-unresolved",
                 "element-map.metadata-unresolved",
                 "pcurve.not-transferred",
+                "pcurve.location-ambiguous",
+                "topology.location-identity-bounded",
                 "metadata.program-version-noncanonical",
                 "metadata.file-version-noncanonical",
                 "metadata.file-version-unverified",

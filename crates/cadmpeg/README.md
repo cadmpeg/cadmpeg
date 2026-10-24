@@ -138,6 +138,16 @@ cadmpeg check bracket.cadir.json
 cadmpeg check bracket.f3d --json
 ```
 
+`check` also measures the model and reports three defect classes as
+warnings: a face ring whose coedges are not listed in traversal order
+(`ring_order`), a face whose sense disagrees with its loop winding, and a
+closed body whose volume readings conflict (`orientation`). The pass has its
+own allowance, much smaller than that of `measure`, and `--limits service`
+makes it smaller still. When the allowance runs out, one `info` finding
+(`measurement_incomplete`) states how many faces and bodies were not
+checked. These findings do not change the exit status
+([measurement contract][measurement]).
+
 `--container-only` stops native decoding before geometry and delivers an empty
 content scope. It is useful for container diagnostics. The CLI permits only
 CADIR output with this flag, under either empty-output policy. Writers synthesize from what the document holds. Native patch and
@@ -225,12 +235,77 @@ cadmpeg diff before.f3d after.f3d --json
 It reports unit, tolerance, arena membership, and modified entity fields.
 Exit status `1` indicates a difference.
 
+`diff --geometry` measures every body of both models in model space and
+compares the bodies without entity IDs:
+
+```sh
+cadmpeg convert part.step -o part_rt.step --to step:ap242-e3
+cadmpeg diff part.step part_rt.step --geometry
+cadmpeg diff part.step part_rt.step --geometry --tsv
+```
+
+Area, volume, centroid, box, shell closure and orientation compare within a
+tolerance made of both values' errors and a relative floor
+(`--geometry-tolerance REL`, default `1e-9`). The verdict is `agree`,
+`disagree` or `inconclusive`; exit status `1` means `disagree` or
+`inconclusive`. `--tsv` prints one row per compared value; `--json` adds a
+`geometry` member with both measurements and the comparison to the report.
+Only body pairs that can match are compared, within a pair allowance that
+`--limits` scales with the body count; a comparison that needs more is
+refused. `docs/measurement.md` states the comparison rules.
+
+## Measure models
+
+`measure` reads a native CAD file or a CADIR document and measures it in
+model space:
+
+```sh
+cadmpeg measure part.step
+cadmpeg measure part.step --faces --kind cylinder --tsv
+cadmpeg measure part.step --face face#46 --json
+```
+
+Without a face, edge or surface selector, it prints one row per body and a
+document block. `--face ID` and `--edge ID` print rows for those entities;
+`--faces` and `--edges` print a row for every face or edge in scope.
+`--surface ID` prints the carrier row of a surface: its parameters and the
+faces and bodies that use it, with no bounded measure. `--body ID` limits
+the scope. `--occurrence ID` measures in the instance space of an assembly
+occurrence: the scope is the bodies of its prototype and of the
+prototypes of its subtree, each placed by its own transform and then by
+the occurrence chain from the root, and every row states its `placement`
+space. When the space cannot place its bodies, the report has no row and
+the document totals are unavailable with the reason. `diff --geometry` stays in model space. `--kind KIND[,KIND...]` and `--radius RANGE` (`MIN..MAX`,
+`MIN..`, `..MAX`, or `R`) filter face rows. An ID is an exact ID or a unique
+ID suffix, as for `query item`.
+
+A face row gives the carrier kind and parameters, the trimmed area, the
+boundary and seam lengths, the box, the loop roles and the orientation
+reading. A body row gives the area, the volume and centroid of a closed
+body, its second moments of volume about the centroid (mm⁵) with their
+principal moments and axes, and, with `--density VALUE` in kg/m³, its mass
+(kg) and inertia tensor about the centroid (kg·mm²). Every value has a unit, a method, a numeric error and a model
+uncertainty, or is unavailable with a pinned reason code and a category.
+[`docs/measurement.md`][measurement] is the contract of the values, the
+reason codes and the caveats.
+
+`--tsv` prints one table with units in the column names: the body table,
+the face table, the edge table, or the surface table. Each row states its
+placement space in `space` (`model`, `occurrence` or `stored`) and
+`occurrence`; `carrier_placement` in the surface table is the placement
+class of the carrier. It refuses a selection
+of more than one of faces, edges and surfaces. `--json` prints the versioned envelope; `--report FILE` (also `-o`
+and `--output`) writes it to a file. `--limits service` selects the smaller
+work allowance of a measurement pass. A CADIR document decoded at container
+depth holds no geometry; `measure` refuses it with `insufficient_depth`.
+
 ## Inputs and outputs
 
 The built-in codecs recognize `.f3d`, `.FCStd`, `.ipt`, `.iam`, `.sldprt`,
 `.3dm`, `.CATPart`, IGES, STEP, bare ASM/ACIS `.sat`/`.smt`/`.smb`/`.sab`
-streams, and the NX and Creo `.prt` layouts by content. Commands that load
-models also accept CADIR JSON. Use `--input-format` (alias `--from`) to bypass
+streams, the NX and Creo `.prt` layouts, and Creo View `.pvz` packages by
+content. Commands that load models also accept CADIR JSON. Use
+`--input-format` (alias `--from`) to bypass
 detection for an ambiguous or extensionless input. Every command that takes
 one input file also accepts `--input FILE` as a spelling of the positional;
 the two-file commands (`diff`, `inspect cmp`, `inspect extract`) take their
@@ -269,9 +344,11 @@ cadmpeg convert bracket.f3d -o bracket.step \
 
 The command report contains decode, check, and export sections when those
 stages ran. `inspect --json`, `inspect container --json`, `check --json`,
-and `diff --json` write versioned JSON directly to standard output.
+`diff --json`, and `measure --json` write versioned JSON directly to standard
+output.
 
-`inspect`, `check`, and `diff` produce no artifact beside the report, so they
+`inspect`, `check`, `diff`, and `measure` produce no artifact beside the
+report, so they
 also accept `-o` and `--output` for the report path. Every command refuses to
 replace an existing report or artifact unless `--force` is present. Check
 findings live under `.check_report.findings`; `cadmpeg check` prints the
@@ -299,6 +376,7 @@ cadmpeg query graph bracket.cadir.json model.features ID --follow native_ref --r
 cadmpeg query join bracket.cadir.json model.features native.rhino.unknowns \
   --left-key native_ref --right-key id
 cadmpeg query summary report.json      # artifact kind and section counts
+cadmpeg query summary part.measure.json  # measure rows per level, unavailable per category, undefined
 cadmpeg query fidelity part.cadir.fidelity.json  # retained source records
 cadmpeg query fidelity part.cadir.fidelity.json --stream S -o s.bin  # extract
 ```
@@ -342,19 +420,23 @@ and `-` reads standard input.
 
 ## Exit status
 
-Verdict commands exit 1 on a negative verdict. Other commands do not use 1.
-Exit 2 is operational on every command.
+Verdict commands exit 1 on a negative verdict. `dump` and `measure` exit 1
+on a semantic refusal of the input. Exit 2 is operational on every command.
 
 - `0`: the requested operation completed; a verdict command had a positive
   verdict when it ran.
 - `1`: negative verdict. Verdict commands are `convert` (refused write),
   `check` (failed check), `diff` (models differ), and `inspect cmp` (files
   differ). `inspect cmp` exits 1 if the files are not identical, including
-  length-only (Unix cmp contract).
+  length-only (Unix cmp contract). `dump` and `measure` exit 1 on a semantic
+  refusal of the input: `strict_decode_rejected` under `--no-salvage`,
+  `unsupported_dialect`, or `insufficient_depth`.
 - `2`: operational error, including invalid arguments, unrecognized input,
   decode or encode failure, and file-system errors.
 
-Non-verdict commands are `dump`, `query`, and `inspect` (except `inspect cmp`).
+Non-verdict commands are `dump`, `query`, `measure`, and `inspect` (except
+`inspect cmp`). For `measure`, an unavailable quantity is data, not a
+failure.
 
 Run `cadmpeg help <command>` for the complete options of a command.
 
@@ -371,5 +453,6 @@ Requires Rust 1.88 or later. Licensed under Apache-2.0.
 [architecture]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/architecture.md
 [contributing]: https://github.com/cadmpeg/cadmpeg/blob/main/CONTRIBUTING.md
 [legal]: https://github.com/cadmpeg/cadmpeg/blob/main/LEGAL.md
+[measurement]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/measurement.md
 [repo]: https://github.com/cadmpeg/cadmpeg
 [support]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md

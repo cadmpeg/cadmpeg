@@ -259,6 +259,8 @@ pub(crate) enum RefusalStage {
     Check,
     /// Export loss policy or artifact emission refused.
     Export,
+    /// Measurement of a loaded document refused.
+    Measure,
 }
 
 impl fmt::Display for RefusalStage {
@@ -268,6 +270,7 @@ impl fmt::Display for RefusalStage {
             Self::Decode => "decode",
             Self::Check => "check",
             Self::Export => "export",
+            Self::Measure => "measure",
         })
     }
 }
@@ -383,6 +386,13 @@ pub(crate) enum ConversionRefusal {
     BinaryStdoutRejected {
         /// Human-readable message.
         message: String,
+    },
+    /// The document records less of its source than measurement needs.
+    InsufficientMeasureDepth {
+        /// The depth measurement needs and the depth the document records.
+        depth: DepthReport,
+        /// Decode report available for an optional `--report`.
+        decode_report: Option<DecodeReport>,
     },
 }
 
@@ -647,6 +657,22 @@ impl ConversionRefusal {
                 message: Cow::Borrowed(message),
                 detail: None,
                 reports: RefusalReports::default(),
+            },
+            Self::InsufficientMeasureDepth {
+                depth,
+                decode_report,
+            } => RefusalEvidence {
+                code: RefusalCode::InsufficientDepth,
+                message: Cow::Owned(format!(
+                    "measurement needs a {}-depth decode, but the document records {} depth",
+                    depth.needed, depth.recorded
+                )),
+                detail: Some(RefusalDetail::Depth(*depth)),
+                reports: RefusalReports {
+                    decode: decode_report.as_ref(),
+                    check: None,
+                    export: None,
+                },
             },
         }
     }
@@ -984,6 +1010,7 @@ mod tests {
             (super::RefusalStage::Check, "check"),
             (super::RefusalStage::Plan, "plan"),
             (super::RefusalStage::Export, "export"),
+            (super::RefusalStage::Measure, "measure"),
         ] {
             let error = anyhow::Error::new(cadmpeg_core::CodecError::ResourceLimit(limit))
                 .context("writing an artifact");

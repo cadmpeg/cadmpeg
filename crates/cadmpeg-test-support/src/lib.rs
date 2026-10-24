@@ -29,6 +29,7 @@ pub mod refusal;
 /// Names removed by the v8 codec rules and checked by the contract gates.
 pub mod removed_names;
 pub mod roundtrip;
+pub mod solids;
 pub mod unknown_keys;
 pub mod wire;
 pub mod zip_fixture;

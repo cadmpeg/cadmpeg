@@ -9,7 +9,10 @@ use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::ids::AttributeId;
 use cadmpeg_ir::Exactness;
 
-use crate::layout::transformed_reference_plane_metadata as trans_plane;
+use crate::layout::{
+    transformed_reference_enclosure_extent as enclosure_extent,
+    transformed_reference_plane_metadata as trans_plane,
+};
 
 pub(crate) fn attributes(
     ctx: &DecodeContext<'_>,
@@ -57,50 +60,56 @@ fn scan_transformed_reference_plane(
     annotations: &mut Annotations,
 ) -> Result<(), CodecError> {
     const TOKEN: &[u8] = b"moTransRefPlaneData_c";
-    const PREFIX: &[u8] = &trans_plane::PREFIX_VALUE;
-    let payload = section.payload();
-    for offset in payload
-        .windows(TOKEN.len())
-        .enumerate()
-        .filter_map(|(at, bytes)| (bytes == TOKEN).then_some(at))
-    {
-        let prefix = offset + TOKEN.len();
-        if payload.get(prefix..prefix + PREFIX.len()) != Some(PREFIX) {
+    for (offset, bytes) in section.payload().windows(TOKEN.len()).enumerate() {
+        if bytes != TOKEN {
             continue;
         }
-        let start = prefix + trans_plane::CENTER;
-        let Some(values) = (0..9)
-            .map(|index| View::f64_le_at(payload, start + index * 8))
-            .collect::<Option<Vec<_>>>()
-        else {
+        let Some(values) = transformed_enclosure(section.payload(), offset) else {
             continue;
         };
-        if !values
-            .iter()
-            .all(|value| value.is_finite() && value.abs() < 1_000.0)
-            || values[3] <= 1.0e-5
-            || values[4] <= 1.0e-5
-        {
-            continue;
-        }
-        let (Some(center), Some(extents), Some(auxiliary), Some(diagonal)) = (
+        let (Some(center), Some(upper), Some(lower), Some(radius)) = (
             millimetres(&values[..3]),
-            millimetres(&values[3..5]),
-            AttributeValue::vector(values[5..8].iter().copied()),
-            AttributeValue::float(values[8] * 1000.0),
+            millimetres(&values[3..6]),
+            millimetres(&values[6..9]),
+            AttributeValue::float(values[9] * 1000.0),
         ) else {
             continue;
         };
         out.push(attribute(
             section,
             offset,
-            &cadmpeg_ir::identity_component!("transformed_reference_plane"),
+            &cadmpeg_ir::identity_component!("transformed_reference_enclosure"),
             TOKEN,
-            vec![center, extents, auxiliary, diagonal],
+            vec![center, upper, lower, radius],
             annotations,
         )?);
     }
     Ok(())
+}
+
+pub(crate) fn transformed_enclosure(payload: &[u8], token: usize) -> Option<[f64; 10]> {
+    let declaration = token.checked_sub(6)?;
+    if payload.get(declaration..token) != Some(&[0xff, 0xff, 1, 0, 21, 0]) {
+        return None;
+    }
+    let body = token.checked_add(b"moTransRefPlaneData_c".len())?;
+    payload.get(body..body.checked_add(trans_plane::LEN)?)?;
+    if payload.get(body + trans_plane::EXTENT_PRESENT) != Some(&1) {
+        return None;
+    }
+    let start = body.checked_add(trans_plane::LEN)?;
+    payload.get(start..start.checked_add(enclosure_extent::LEN)?)?;
+    let values: [Option<f64>; 10] =
+        std::array::from_fn(|index| View::f64_le_at(payload, start + index * 8));
+    let values: Vec<_> = values.into_iter().collect::<Option<Vec<_>>>()?;
+    let values: [f64; 10] = values.try_into().ok()?;
+    valid_transformed_enclosure(&values).then_some(values)
+}
+
+pub(crate) fn valid_transformed_enclosure(values: &[f64; 10]) -> bool {
+    values.iter().all(|value| value.is_finite())
+        && values[9] >= 0.0
+        && (0..3).all(|axis| values[axis + 6] <= values[axis] && values[axis] <= values[axis + 3])
 }
 
 fn scan_length_user_units(

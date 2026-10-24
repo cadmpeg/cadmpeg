@@ -47,7 +47,7 @@ Every pull request that adds or changes a **decoder** or a **format specificatio
 
 > I derived this contribution solely by analyzing CAD files I am legally entitled to possess and from publicly available information. I did not use vendor SDKs, decompiled binaries, confidential or NDA-covered material, or any source listed as forbidden in LEGAL.md.
 
-If you cannot sign that sentence, the contribution is not acceptable in its current form. This is in addition to the DCO sign-off required on all commits (see [CONTRIBUTING.md](CONTRIBUTING.md)).
+If you cannot sign that sentence, the contribution is not acceptable in its current form. This is in addition to the DCO sign-off required on every pull request (see [CONTRIBUTING.md](CONTRIBUTING.md)).
 
 ---
 

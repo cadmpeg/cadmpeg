@@ -99,6 +99,17 @@ pub trait RewriteIdentities: Sized {
         visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>,
     ) -> Result<(), CodecError>;
 
+    /// Visit borrowed state-local member identities: the historical bodies,
+    /// faces, edges, and vertices that `visit_identity_references` leaves out.
+    /// Owners without such members expose none.
+    fn visit_local_members(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>,
+    ) -> Result<(), CodecError> {
+        Ok(())
+    }
+
     /// Return the rewritten value or the original resource refusal.
     fn rewrite_identities<F>(
         self,
@@ -379,6 +390,18 @@ impl<T: RewriteIdentities> RewriteIdentities for Option<T> {
         }
         Ok(())
     }
+    fn visit_local_members(
+        &self,
+        ctx: &DecodeContext<'_>,
+        visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>,
+    ) -> Result<(), CodecError> {
+        let _depth = ctx.enter_nested("walk typed local members option")?;
+
+        if let Some(value) = self {
+            value.visit_local_members(ctx, visitor)?;
+        }
+        Ok(())
+    }
     fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(
         self,
         ctx: &DecodeContext<'_>,
@@ -456,6 +479,18 @@ impl<T: RewriteIdentities> RewriteIdentities for Vec<T> {
 
         for value in self {
             value.visit_identity_references(ctx, visitor)?;
+        }
+        Ok(())
+    }
+    fn visit_local_members(
+        &self,
+        ctx: &DecodeContext<'_>,
+        visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>,
+    ) -> Result<(), CodecError> {
+        let _depth = ctx.enter_nested("walk typed local members sequence")?;
+
+        for value in self {
+            value.visit_local_members(ctx, visitor)?;
         }
         Ok(())
     }
@@ -558,6 +593,18 @@ impl<T: RewriteIdentities, const N: usize> RewriteIdentities for [T; N] {
         }
         Ok(())
     }
+    fn visit_local_members(
+        &self,
+        ctx: &DecodeContext<'_>,
+        visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>,
+    ) -> Result<(), CodecError> {
+        let _depth = ctx.enter_nested("walk typed local members array")?;
+
+        for value in self {
+            value.visit_local_members(ctx, visitor)?;
+        }
+        Ok(())
+    }
     fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(
         self,
         ctx: &DecodeContext<'_>,
@@ -652,6 +699,19 @@ impl<K: RewriteIdentities + Ord, V: RewriteIdentities> RewriteIdentities for BTr
         for (key, value) in self {
             key.visit_identity_references(ctx, visitor)?;
             value.visit_identity_references(ctx, visitor)?;
+        }
+        Ok(())
+    }
+    fn visit_local_members(
+        &self,
+        ctx: &DecodeContext<'_>,
+        visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>,
+    ) -> Result<(), CodecError> {
+        let _depth = ctx.enter_nested("walk typed local members map")?;
+
+        for (key, value) in self {
+            key.visit_local_members(ctx, visitor)?;
+            value.visit_local_members(ctx, visitor)?;
         }
         Ok(())
     }
@@ -764,6 +824,16 @@ impl<T: RewriteIdentities> RewriteIdentities for Box<T> {
         self.as_ref().visit_identity_references(ctx, visitor)?;
         Ok(())
     }
+    fn visit_local_members(
+        &self,
+        ctx: &DecodeContext<'_>,
+        visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>,
+    ) -> Result<(), CodecError> {
+        let _depth = ctx.enter_nested("walk typed local members box")?;
+
+        self.as_ref().visit_local_members(ctx, visitor)?;
+        Ok(())
+    }
     fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(
         self,
         ctx: &DecodeContext<'_>,
@@ -794,6 +864,12 @@ macro_rules! rewrite_tuple {
                 let _depth = ctx.enter_nested("walk typed reference tuple")?;
                 let ($($field,)*) = self;
                 $($field.visit_identity_references(ctx, visitor)?;)*
+                Ok(())
+            }
+            fn visit_local_members(&self, ctx: &DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>) -> Result<(), CodecError> {
+                let _depth = ctx.enter_nested("walk typed local members tuple")?;
+                let ($($field,)*) = self;
+                $($field.visit_local_members(ctx, visitor)?;)*
                 Ok(())
             }
             fn rewrite_identities<RewriteMapFn: FnMut(&str) -> Result<String, CodecError>>(self, ctx: &DecodeContext<'_>, map: &mut IdentityMap<'_, RewriteMapFn>) -> Result<Self, CodecError> {

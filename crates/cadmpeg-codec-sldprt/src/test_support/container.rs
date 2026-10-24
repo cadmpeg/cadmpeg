@@ -59,6 +59,24 @@ pub(crate) fn make_cache_cell(logical_len: u32, name: &str) -> Vec<u8> {
     b
 }
 
+pub(crate) fn anchored_cache_cell(
+    stride: usize,
+    displacement: u32,
+    name: &str,
+    fill: u8,
+) -> Vec<u8> {
+    assert!((5..=14).contains(&displacement));
+    let logical = u32::try_from(stride)
+        .unwrap()
+        .checked_mul(displacement)
+        .unwrap();
+    let mut bytes = vec![fill; usize::try_from(displacement).unwrap()];
+    bytes.extend(make_cache_cell(logical, name));
+    assert!(bytes.len() <= stride);
+    bytes.resize(stride, fill);
+    bytes
+}
+
 /// A tail section-directory entry naming an OPC part.
 pub(crate) fn make_directory_entry(type_id: u32, size: u32, name: &str) -> Vec<u8> {
     let swapped = swap_name(name);
@@ -105,9 +123,12 @@ pub(crate) fn sldprt_with_body_and_envelope(body: &[u8]) -> Vec<u8> {
     for value in [0.001f64, 0.002, 0.003, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0] {
         payload.extend_from_slice(&value.to_le_bytes());
     }
+    payload.extend_from_slice(&[0xff, 0xff, 1, 0, 21, 0]);
     payload.extend_from_slice(b"moTransRefPlaneData_c");
-    payload.extend_from_slice(&[0xff; 8]);
-    for value in [0.01f64, 0.02, 0.03, 0.1, 0.2, 1.0, 0.0, -1.0, 0.5] {
+    payload.extend_from_slice(&[
+        1, 0, 0, 0, 1, 0, 0, 0, 0xff, 0x80, 0, 0, 0x80, 0x40, 0, 0, 95, 0, 0, 0, 0, 0, 0, 0, 1,
+    ]);
+    for value in [0.01f64, 0.02, 0.03, 0.1, 0.2, 0.3, -0.1, -0.2, -0.3, 0.5] {
         payload.extend_from_slice(&value.to_le_bytes());
     }
     payload.extend_from_slice(b"moPart_c");
@@ -129,7 +150,7 @@ pub(crate) fn sldprt_with_body_and_envelope(body: &[u8]) -> Vec<u8> {
         "Units",
         br#"<Metadata><Property Name="SW_UnitsLinear" Value="0"/></Metadata>"#,
     ));
-    f
+    native_envelope_fixture(&f)
 }
 
 pub(crate) fn sldprt_with_partition_and_deltas(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
@@ -189,7 +210,7 @@ pub(crate) fn synthetic_sldprt() -> Vec<u8> {
         "Contents/Config-0-Partition",
         &parasolid_payload("partition body", "SCH_SW_33103_11000"),
     ));
-    f.extend_from_slice(&make_cache_cell(90, "Contents/DisplayLists"));
+    f.extend_from_slice(&anchored_cache_cell(100, 9, "Contents/DisplayLists", 0));
     f.extend_from_slice(&make_directory_entry(0x30, 2, "[Content_Types].xml"));
     f
 }
@@ -204,4 +225,75 @@ pub(crate) fn scan(bytes: &[u8]) -> crate::container::ContainerScan<'_> {
     )
     .expect("synthetic source fits service policy");
     crate::container::scan(&ctx, root).expect("synthetic container fits service policy")
+}
+
+pub(crate) fn native_envelope_fixture(source: &[u8]) -> Vec<u8> {
+    use cadmpeg_core::decode::View;
+    let indexed = scan(source);
+    let mut output = source[..8].to_vec();
+    let mut central = Vec::new();
+    for block in &indexed.blocks {
+        let pre = usize::try_from(View::u32_le_at(source, block.offset + 22).unwrap()).unwrap();
+        let end = block.offset + 26 + pre + usize::try_from(block.comp_sz).unwrap();
+        let relative = u32::try_from(output.len() - 8).unwrap();
+        output.extend([0x5a, 0xd9, 0xc8, 0x87]);
+        output.extend(&source[block.offset..end]);
+        central.extend([0x45, 0x2b, 0x7e, 0x28, 0, 0]);
+        central.extend(&source[block.offset..block.offset + 26]);
+        central.extend([0u8; 4]);
+        central.extend(1u16.to_le_bytes());
+        central.extend([0u8; 4]);
+        central.extend(relative.to_le_bytes());
+        central.extend(&source[block.offset + 26..block.offset + 26 + pre]);
+    }
+    for cell in &indexed.cache_cells {
+        output.extend(source.get(cell.physical_range.clone().unwrap()).unwrap());
+    }
+    let central_start = output.len();
+    let central_size = u32::try_from(central.len()).unwrap();
+    output.extend(central);
+    output.extend([0x9f, 0x82, 0x5e, 0x02]);
+    output.extend([0u8; 4]);
+    let count = u16::try_from(indexed.blocks.len()).unwrap();
+    output.extend(count.to_le_bytes());
+    output.extend(count.to_le_bytes());
+    output.extend(central_size.to_le_bytes());
+    output.extend(u32::try_from(central_start - 8).unwrap().to_le_bytes());
+    output.extend(0u16.to_le_bytes());
+    output
+}
+
+pub(crate) fn native_padding_fixture(root_only: &[u8], fill: u8) -> Vec<u8> {
+    use cadmpeg_core::decode::View;
+    let root = root_only.len() - 22;
+    let count = View::u16_le_at(root_only, root + 8).unwrap();
+    let mut output = root_only[..root].to_vec();
+    output.extend([fill; 2]);
+    let base = output.len();
+    output.extend([fill; 9]);
+    output.extend(MARKER);
+    output.extend(0u32.to_le_bytes());
+    for value in [1890u32, 472, 945] {
+        output.extend(value.to_le_bytes());
+    }
+    output.extend(1u16.to_le_bytes());
+    output.extend(0u16.to_le_bytes());
+    output.extend([0u8; 14]);
+    output.push(b'X'.rotate_left(4));
+    output.resize(base + 105, fill);
+    output.truncate(output.len() - 2);
+    let new_root = output.len();
+    output.extend(&root_only[root..]);
+    let size = View::u32_le_at(&output, new_root + 12).unwrap();
+    output[new_root + 12..new_root + 16].copy_from_slice(&(size + 105).to_le_bytes());
+    let footer = output.len();
+    output.extend([fill; 5]);
+    output.extend([0u8; 4]);
+    output.extend(count.to_le_bytes());
+    output.extend(count.to_le_bytes());
+    output.extend(105u32.to_le_bytes());
+    output.extend(1050u32.to_le_bytes());
+    output.extend(0u16.to_le_bytes());
+    output.resize(footer + 42, fill);
+    output
 }

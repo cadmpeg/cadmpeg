@@ -28,6 +28,7 @@ fn model_root(ordinal: u32, segment_name: &str) -> PmDcModelRoot {
             header_id: 0,
             next: reference(0),
             flags: 0x40,
+            flags_extension: None,
             identifier: "0".repeat(32),
             name: String::new(),
             members: reference_list(&[]),
@@ -83,6 +84,7 @@ fn label(
                 header_value: 0,
                 header_id: 0,
                 values: [0; 2],
+                flags_extension: None,
                 owner: reference(owner + 1),
                 parent: reference(0),
                 next: reference(0),
@@ -90,6 +92,7 @@ fn label(
             index: record,
             participants: reference_list(&one_based),
             name: name.to_owned(),
+            name_units: None,
             class_id: class_id.into(),
         })
         .expect("valid label fixture"),
@@ -150,6 +153,7 @@ fn sketch(ordinal: u32) -> crate::sketch::PmDcSketch {
 /// document model; model root 20 is the flat-pattern model.
 fn inventory() -> (FeatureInventory, Vec<crate::sketch::PmDcSketch>) {
     let inventory = FeatureInventory {
+        record_types: std::collections::HashMap::new(),
         features: vec![
             feature(2, 0x6200),
             feature(4, 0x6604),
@@ -254,9 +258,19 @@ fn projection_orders_history_and_marks_suppression() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("projection context");
-    let projection =
-        crate::feature::project(&ctx, &inventory, &design, &sketch_inventory, &[], &[])
-            .expect("feature projection");
+    let projection = crate::feature::project(
+        &ctx,
+        &inventory,
+        &design,
+        &sketch_inventory,
+        &[],
+        &crate::feature::ProjectedSketches {
+            sketches: &[],
+            entities: &[],
+            profile_bodies: &[],
+        },
+    )
+    .expect("feature projection");
     let rows = projection
         .features
         .iter()

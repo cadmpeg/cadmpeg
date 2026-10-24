@@ -504,8 +504,8 @@
       "typed_edit_round_trip": false,
       "side_entries_preserved": false,
       "entity_counts": {
-        "appearance_bindings": 25,
-        "appearances": 2,
+        "appearance_bindings": 33,
+        "appearances": 12,
         "assembly_joints": 0,
         "assets": 0,
         "attributes": 21,
@@ -603,7 +603,7 @@
         "native.fcstd.properties": 328,
         "native.fcstd.shape_payloads": 2,
         "native.fcstd.string_tables": 1,
-        "occurrences": 24,
+        "occurrences": 15,
         "parameters": 0,
         "pcurves": 30,
         "pmi": 0,
@@ -612,7 +612,7 @@
         "presentation_layers": 0,
         "procedural_curves": 0,
         "procedural_surfaces": 0,
-        "product_definitions": 14,
+        "product_definitions": 12,
         "regions": 2,
         "semantic_annotations": 0,
         "shells": 2,
@@ -984,16 +984,16 @@
       "extrude:solid=true",
       "extrude:start.kind=profile_plane",
       "fillet:edges.kind=native",
-      "fillet:operation.edges.kind=native",
+      "fillet:operation.edges.kind=resolved",
       "fillet:operation.radius.kind=constant",
       "fillet:operation.radius.radius.kind=parameter",
       "fillet:radius.kind=constant",
       "fillet:radius.radius.kind=literal",
       "hole:operation.bottom.included_angle.kind=parameter",
       "hole:operation.bottom.kind=angled",
-      "hole:operation.direction.x=0.0",
-      "hole:operation.direction.y=0.0",
-      "hole:operation.direction.z=1.0",
+      "hole:operation.direction.x=-0.0",
+      "hole:operation.direction.y=-0.0",
+      "hole:operation.direction.z=-1.0",
       "hole:operation.extent.kind=blind",
       "hole:operation.extent.length.kind=parameter",
       "hole:operation.profile.kind=sketch",
@@ -1054,7 +1054,7 @@
       "shell:join=arc",
       "shell:mode=skin",
       "shell:outward=true",
-      "shell:removed_faces.kind=native",
+      "shell:removed_faces.kind=resolved",
       "shell:resolve_intersections=true",
       "shell:thickness.kind=parameter",
       "sweep:orientation.kind=frenet",
@@ -1373,7 +1373,7 @@
         {
           "id": "appearance_coverage",
           "passed": true,
-          "observed": "25",
+          "observed": "33",
           "required": "object and subshape appearance bindings"
         }
       ]
@@ -1409,7 +1409,7 @@
         {
           "id": "product_structure_matrix",
           "passed": true,
-          "observed": "product_definitions=20, occurrences=31, constructs={\"external_occurrence\", \"group\", \"joint_limits\", \"link_array\", \"link_group\", \"nested_occurrence\", \"occurrence\", \"part\", \"persistent_joint_operands\"}",
+          "observed": "product_definitions=18, occurrences=22, constructs={\"external_occurrence\", \"group\", \"joint_limits\", \"link_array\", \"link_group\", \"nested_occurrence\", \"occurrence\", \"part\", \"persistent_joint_operands\"}",
           "required": "{\"external_occurrence\", \"group\", \"joint_limits\", \"link_array\", \"link_group\", \"nested_occurrence\", \"occurrence\", \"part\", \"persistent_joint_operands\"}"
         },
         {
@@ -1427,7 +1427,7 @@
         {
           "id": "presentation_variants",
           "passed": true,
-          "observed": "documents={\"gui\", \"headless\"}, appearances=25, constructs={\"drawing_asset\", \"gui_state:Camera\", \"gui_state:Expand\", \"thumbnail\", \"tree_state\", \"view_property:AngularDeflection\", \"view_property:BoundingBox\", \"view_property:Deviation\", \"view_property:DisplayMode\", \"view_property:DrawStyle\", \"view_property:Lighting\", \"view_property:LineColor\", \"view_property:LineColorArray\", \"view_property:LineMaterial\", \"view_property:LineWidth\", \"view_property:OnTopWhenSelected\", \"view_property:PointColor\", \"view_property:PointColorArray\", \"view_property:PointMaterial\", \"view_property:PointSize\", \"view_property:Proxy\", \"view_property:Selectable\", \"view_property:SelectionStyle\", \"view_property:ShapeAppearance\", \"view_property:ShowInTree\", \"view_property:ShowPlacement\", \"view_property:TransformOrigin\", \"view_property:Transparency\", \"view_property:Visibility\"}",
+          "observed": "documents={\"gui\", \"headless\"}, appearances=33, constructs={\"drawing_asset\", \"gui_state:Camera\", \"gui_state:Expand\", \"thumbnail\", \"tree_state\", \"view_property:AngularDeflection\", \"view_property:BoundingBox\", \"view_property:Deviation\", \"view_property:DisplayMode\", \"view_property:DrawStyle\", \"view_property:Lighting\", \"view_property:LineColor\", \"view_property:LineColorArray\", \"view_property:LineMaterial\", \"view_property:LineWidth\", \"view_property:OnTopWhenSelected\", \"view_property:PointColor\", \"view_property:PointColorArray\", \"view_property:PointMaterial\", \"view_property:PointSize\", \"view_property:Proxy\", \"view_property:Selectable\", \"view_property:SelectionStyle\", \"view_property:ShapeAppearance\", \"view_property:ShowInTree\", \"view_property:ShowPlacement\", \"view_property:TransformOrigin\", \"view_property:Transparency\", \"view_property:Visibility\"}",
           "required": "documents={\"gui\", \"headless\"}, constructs={\"drawing_asset\", \"gui_state:Camera\", \"thumbnail\", \"tree_state\", \"view_property:DisplayMode\", \"view_property:SelectionStyle\", \"view_property:Visibility\"}, appearances"
         },
         {

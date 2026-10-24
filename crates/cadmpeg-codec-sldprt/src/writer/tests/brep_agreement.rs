@@ -184,7 +184,12 @@ fn parameter_name_edit_keeps_retained_brep() {
             .payload()
             .to_vec();
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &(source),
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.parameters[0].name = "RenamedDepth".into();
@@ -220,7 +225,12 @@ fn feature_name_edit_keeps_retained_brep() {
             .payload()
             .to_vec();
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &(source),
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.features[0].name = Some("RenamedBoss".into());
@@ -256,7 +266,12 @@ fn native_feature_name_edit_keeps_retained_brep() {
             .payload()
             .to_vec();
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &(source),
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     update_sldprt_native(&mut decoded.ir_mut(), |native| {

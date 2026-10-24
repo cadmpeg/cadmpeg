@@ -464,10 +464,10 @@ fn patch_instance_colors(
                     .properties
                     .get(property_id)
                     .filter(|property| {
-                        matches!(
-                            property.value(),
-                            Some(cadmpeg_protein::property::PropertyValue::Float(_))
-                        )
+                        property
+                            .value()
+                            .and_then(cadmpeg_protein::property::PropertyValue::float_value)
+                            .is_some()
                     })
                     .map(|property| property.value_offset)
                     .ok_or_else(|| {
@@ -816,8 +816,11 @@ fn appearances_from_schema_records(
         let mut properties = BTreeMap::new();
         let mut connected = Vec::new();
         for (id, property) in &record.properties {
-            if let Some(cadmpeg_protein::property::PropertyValue::Float(value)) = property.value() {
-                properties.insert(neutral_property_name(id).to_owned(), *value);
+            if let Some(value) = property
+                .value()
+                .and_then(cadmpeg_protein::property::PropertyValue::float_value)
+            {
+                properties.insert(neutral_property_name(id).to_owned(), value);
             }
             for guid in property.connections() {
                 if let Some(texture) = textures.get(guid) {

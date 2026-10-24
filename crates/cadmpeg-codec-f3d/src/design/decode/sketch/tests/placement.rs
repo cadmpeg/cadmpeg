@@ -1030,3 +1030,152 @@ fn sketch_member_run_backfills_relation_free_owners() {
     )
     .is_err());
 }
+
+fn typed_sketch_reference(bytes: &mut Vec<u8>, target: u32) {
+    bytes.push(1);
+    bytes.extend_from_slice(&u64::from(target).to_le_bytes());
+    bytes.extend_from_slice(&36u32.to_le_bytes());
+    bytes.extend_from_slice(b"11111111-2222-3333-4444-555555555555");
+    bytes.extend_from_slice(&[0, 0]);
+}
+
+#[test]
+fn typed_legacy_sketch_pair_reads_wide_member_references_and_head_frame() {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"380");
+    bytes.extend_from_slice(&100u32.to_le_bytes());
+    bytes.resize(40, 0);
+    let paired_at = bytes.len();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"381");
+    bytes.extend_from_slice(&100u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 8]);
+    typed_sketch_reference(&mut bytes, 200);
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 7]);
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    for member in [300u32, 301] {
+        typed_sketch_reference(&mut bytes, member);
+    }
+    let members =
+        tested_parse_legacy_sketch_member_run(&bytes, 0, 100).expect("typed sketch member run");
+    assert_eq!(
+        members.iter().map(|row| row.value).collect::<Vec<_>>(),
+        [300, 301]
+    );
+    assert_eq!(
+        members.iter().map(|row| row.offset).collect::<Vec<_>>(),
+        [
+            u64_from_index(paired_at + 86),
+            u64_from_index(paired_at + 137)
+        ]
+    );
+
+    let head_at = bytes.len();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"283");
+    bytes.extend_from_slice(&200u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 11]);
+    for value in crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY
+        .rows()
+        .into_iter()
+        .flatten()
+    {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.push(0);
+    typed_sketch_reference(&mut bytes, 152);
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"284");
+    bytes.extend_from_slice(&201u32.to_le_bytes());
+    let entity_id = crate::records::identity::DesignEntityId::try_from("0_100".to_owned())
+        .expect("valid entity ID");
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let placement = crate::design::decode::sketch::parse_member_run_head_placement(
+        &bytes, 0, &entity_id, &records,
+    )
+    .expect("typed explicit head placement");
+    assert_eq!(placement.byte_offset(), u64_from_index(head_at));
+    assert_eq!(placement.frame_length(), 202);
+    assert_eq!(
+        placement.transform_offset(),
+        Some(u64_from_index(head_at + 22))
+    );
+}
+
+/// The compact planar line's trailing reference can use the 51-byte typed
+/// spelling; a truncated typed reference is not admitted.
+#[test]
+fn compact_planar_line_admits_a_typed_trailing_reference() {
+    let values: [f64; 9] = [0.5, 0.875, 0.0, 0.0, -1.75, 0.0, 0.0, -1.0, 0.0];
+    let mut bytes = vec![0u8; 133];
+    for value in values {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    typed_sketch_reference(&mut bytes, 37);
+    let parsed =
+        crate::design::decode::sketch::decode_compact_planar_line(&bytes, 0).expect("line parse");
+    assert!(parsed.is_some());
+
+    bytes.truncate(bytes.len() - 2);
+    let truncated =
+        crate::design::decode::sketch::decode_compact_planar_line(&bytes, 0).expect("line parse");
+    assert!(truncated.is_none());
+}
+
+/// A compact planar line's z component is zero when it is at most one
+/// floating-point epsilon of the same vector's largest planar coordinate,
+/// floored at 1 cm; a larger z keeps the line rejected.
+#[test]
+fn compact_planar_line_reads_sub_resolution_z_noise_as_zero() {
+    assert!(crate::design::decode::sketch::planar_z_is_zero(
+        -23.79, 14.73, 1.0e-76
+    ));
+    assert!(crate::design::decode::sketch::planar_z_is_zero(
+        0.0,
+        0.5,
+        f64::EPSILON
+    ));
+    assert!(!crate::design::decode::sketch::planar_z_is_zero(
+        0.0,
+        0.5,
+        2.0 * f64::EPSILON
+    ));
+    assert!(!crate::design::decode::sketch::planar_z_is_zero(
+        100.0, 0.0, 1.0e-12
+    ));
+
+    let line = |z: f64| {
+        let values: [f64; 9] = [0.5, 0.875, z, 0.0, -1.75, 0.0, 0.0, -1.0, z];
+        let mut bytes = vec![0u8; 133];
+        for value in values {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        typed_sketch_reference(&mut bytes, 37);
+        bytes
+    };
+    let noisy = line(1.0e-76);
+    let parsed = crate::design::decode::sketch::decode_compact_planar_line(&noisy, 0)
+        .expect("line parse")
+        .expect("noisy planar line");
+    let SketchCurveGeometry::Line { start, .. } = parsed else {
+        panic!("expected line");
+    };
+    assert_eq!(start.get(), Point3::new(5.0, 8.75, 0.0));
+    assert_eq!(
+        crate::design::decode::sketch::compact_planar_line_z_noise(&noisy),
+        Some([1.0e-76, 0.0, 1.0e-76])
+    );
+    assert_eq!(
+        crate::design::decode::sketch::compact_planar_line_z_noise(&line(0.0)),
+        None
+    );
+
+    let non_planar = line(1.0e-3);
+    assert!(
+        crate::design::decode::sketch::decode_compact_planar_line(&non_planar, 0)
+            .expect("line parse")
+            .is_none()
+    );
+}

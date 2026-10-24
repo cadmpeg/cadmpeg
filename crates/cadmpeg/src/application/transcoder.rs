@@ -26,6 +26,8 @@ pub(crate) struct SourceRequest<'a> {
     pub(crate) forced: Option<ForcedInput>,
     /// Decode options.
     pub(crate) options: DecodeOptions,
+    /// The work profile of the check's measurement findings.
+    pub(crate) work: cadmpeg_measure::WorkProfile,
 }
 
 /// Output format with an encoder already constructed at the CLI boundary.
@@ -400,7 +402,7 @@ pub(crate) fn prepare(
         return Err(refusal.into());
     }
 
-    let validation = validate_loaded(inputs, &loaded, &source.options.policy)?;
+    let validation = validate_loaded(inputs, &loaded, &source.options.policy, source.work)?;
     if source.options.depth == cadmpeg_core::decode::DecodeDepth::Container
         && format != Format::Cadir
     {

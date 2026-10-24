@@ -429,7 +429,12 @@ fn semantic_writer_retains_partial_native_scale_construction() {
         </Keywords>"#,
     ));
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &(source),
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
@@ -459,7 +464,7 @@ fn semantic_writer_retains_partial_native_scale_construction() {
         feature.name = Some(format!("Renamed scale {}", index + 1));
     }
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -566,7 +571,12 @@ fn semantic_writer_round_trips_extrusion_with_unrecognized_end_condition() {
         br#"<Keywords><Extrusion Name="Boss-Extrude1" Type="BossExtrude" id="9" EndCondition="Unrecognized" Direction="0,0,1" Face="face:1" Vertex="vertex:2"><Dimension Name="Depth">4mm</Dimension><Dimension Name="Depth2">6mm</Dimension><Dimension Name="Draft">3deg</Dimension></Extrusion></Keywords>"#,
     ));
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &(source),
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
@@ -589,7 +599,7 @@ fn semantic_writer_round_trips_extrusion_with_unrecognized_end_condition() {
     decoded.ir_mut().model.features[0].name = Some("Renamed extrusion".into());
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1062,7 +1072,12 @@ fn semantic_writer_resolves_sparse_body_delete_keep_operation() {
         br#"<Keywords><Feature Name="Body-Delete/Keep 1" Type="Body-Delete/Keep " id="20"/></Keywords>"#,
     ));
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &(source),
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
@@ -1075,7 +1090,7 @@ fn semantic_writer_resolves_sparse_body_delete_keep_operation() {
 
     decoded.ir_mut().model.features[0].name = Some("Retained sparse operation".into());
     let mut sparse_encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut sparse_encoded,
@@ -1498,7 +1513,12 @@ fn semantic_writer_retains_partial_native_dome_construction() {
         br#"<Keywords><Dome Name="Partial dome" Type="Dome" id="25" Faces="face:12" Elliptical="true" Reverse="invalid"><Dimension Name="Height">NaNmm</Dimension></Dome></Keywords>"#,
     ));
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &(source),
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
@@ -1517,7 +1537,7 @@ fn semantic_writer_retains_partial_native_dome_construction() {
 
     decoded.ir_mut().model.features[0].name = Some("Renamed dome".into());
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1708,7 +1728,7 @@ fn semantic_writer_round_trips_typed_reference_plane() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1789,7 +1809,7 @@ fn semantic_writer_round_trips_sparse_localized_offset_plane() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1878,7 +1898,7 @@ fn semantic_writer_round_trips_reference_axis_and_point() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,

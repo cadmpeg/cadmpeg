@@ -30,6 +30,7 @@ mod coverage;
 mod error;
 mod loss;
 mod source;
+pub mod subset_lowering;
 pub mod target;
 
 pub use crate::validate::ValidatedFinding;

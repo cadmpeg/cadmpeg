@@ -8,7 +8,7 @@
 //! blocks and records provenance so supported edits can retain native data.
 //!
 //! <!-- generated: capability sldprt -->
-//! Support: L1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#solidworks-sldprt)).
+//! Support: L3 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#solidworks-sldprt)).
 //! <!-- /generated: capability sldprt -->
 //!
 //! # Decode
@@ -161,7 +161,6 @@ pub struct SldprtCodec;
 /// source-fidelity sidecar throughout export.
 struct SourceRecord<'a> {
     id: UnknownId,
-    sha256: String,
     data: Option<&'a [u8]>,
     metadata: &'a std::collections::BTreeMap<String, String>,
 }
@@ -253,6 +252,7 @@ impl SldprtCodec {
             dialect,
             coverage,
             consumed_source_layout,
+            omitted_envelope_bytes,
         } = writer::write_semantic_with_records(ir, annotations, records, source_fidelity, writer)?;
         Ok(Written::Semantic {
             path: if consumed_source_layout {
@@ -263,6 +263,7 @@ impl SldprtCodec {
             dialect,
             fidelity,
             coverage,
+            omitted_envelope_bytes,
         })
     }
 }
@@ -340,6 +341,7 @@ enum Written {
         dialect: DialectId,
         fidelity: SemanticFidelity,
         coverage: ArenaDispositions,
+        omitted_envelope_bytes: usize,
     },
 }
 
@@ -436,7 +438,6 @@ fn source_records<'a>(_ir: &CadIr, source_fidelity: &'a SourceFidelity) -> Vec<S
         .iter()
         .map(|(id, record)| SourceRecord {
             id: id.clone(),
-            sha256: record.sha256(),
             data: record.data(),
             metadata: &source_fidelity.metadata,
         })

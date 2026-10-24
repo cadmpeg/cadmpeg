@@ -202,7 +202,7 @@ fn semantic_writer_applies_line_sketch_edits() {
     }
 
     let mut written = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut written,
@@ -262,7 +262,7 @@ fn semantic_writer_applies_compressed_line_sketch_edits() {
     }
 
     let mut written = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut written,
@@ -393,7 +393,7 @@ fn semantic_writer_applies_circle_sketch_edits() {
     }
 
     let mut written = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut written,
@@ -451,7 +451,7 @@ fn semantic_writer_applies_ellipse_sketch_edits() {
     }
 
     let mut written = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut written,
@@ -548,7 +548,7 @@ fn semantic_writer_applies_bounded_arc_sketch_edits() {
     }
 
     let mut written = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut written,
@@ -622,7 +622,7 @@ fn semantic_writer_applies_rational_and_non_rational_sketch_nurbs_edits() {
     }
 
     let mut written = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut written,
@@ -819,9 +819,7 @@ fn synthesis_writes_supported_lanes_from_neutral_content() {
         let section = block.section.name().unwrap();
         assert_ne!(section, "Contents/CustomData");
         assert!(scan.directory.iter().any(|entry| {
-            entry.name == section
-                && cadmpeg_core::decode::index_from_u32(entry.size) == block.uncomp_sz()
-                && entry.type_id == block.type_id
+            entry.name == section && entry.size == block.comp_sz && entry.type_id == block.type_id
         }));
     }
 }
@@ -852,7 +850,7 @@ fn semantic_writer_preserves_display_list_geometry() {
         .unwrap();
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,

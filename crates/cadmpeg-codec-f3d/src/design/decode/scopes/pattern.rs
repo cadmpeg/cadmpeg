@@ -88,6 +88,7 @@ pub(super) fn exact_rectangular_pattern_construction(
                 ],
                 instances: None,
                 instance_search_cap: None,
+                directions: Vec::new(),
             },
         )
         .ok()?;
@@ -105,7 +106,117 @@ pub(super) fn exact_rectangular_pattern_construction(
             .mark_instance_search_capped(cap)
             .map_err(CodecError::malformed)?,
     }
+    let directions = exact_rectangular_pattern_directions(bytes, records, scope);
+    if directions.len() == construction.active_direction_count() {
+        construction
+            .try_set_directions(directions)
+            .map_err(CodecError::malformed)?;
+    }
     Ok(Some(construction))
+}
+
+/// The direction records of a rectangular-pattern scope, in reference order.
+fn exact_rectangular_pattern_directions(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+) -> Vec<patterns::DesignRectangularPatternDirection> {
+    let mut directions = Vec::new();
+    for (record_index, selection_record_index) in scope
+        .reference_members()
+        .values()
+        .zip(scope.reference_members().values().skip(1))
+    {
+        for (start, paired_at) in records.frames(*record_index) {
+            if let Some(direction) = exact_rectangular_pattern_direction(
+                bytes,
+                start,
+                paired_at,
+                *record_index,
+                *selection_record_index,
+                scope.record_index,
+            ) {
+                directions.push(direction);
+            }
+        }
+    }
+    directions
+}
+
+fn exact_rectangular_pattern_direction(
+    bytes: &[u8],
+    start: usize,
+    paired_at: usize,
+    record_index: u32,
+    selection_record_index: u32,
+    scope_record_index: u32,
+) -> Option<patterns::DesignRectangularPatternDirection> {
+    use crate::layout::rectangular_pattern_direction_record as layout;
+
+    let header = start + layout::INDEXED_HEADER;
+    let (class_tag, after_tag) =
+        lp_ascii_filtered_view(bytes, header, 0..=2000, u8::is_ascii_graphic)?;
+    let selection_kind = View::u32_le_at(bytes, start + layout::SELECTION_KIND)?;
+    if class_tag.len() != 3
+        || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
+        || after_tag != header + 7
+        || View::u32_le_at(bytes, after_tag) != Some(record_index)
+        || paired_at.checked_sub(start) != Some(layout::LEN)
+        || bytes.get(start + layout::ZERO_RUN_10..start + layout::SELECTION_KIND) != Some(&[0; 10])
+        || !matches!(selection_kind, 8 | 16)
+        || bytes.get(start + layout::ZERO_RUN_16..start + layout::FIXED_EIGHT) != Some(&[0; 16])
+        || View::u32_le_at(bytes, start + layout::FIXED_EIGHT) != Some(8)
+        || (0..3).any(|lane| {
+            View::f64_le_at(bytes, start + layout::NEGATIVE_ONES + lane * 8) != Some(-1.0)
+        })
+        || View::u32_le_at(bytes, start + layout::SELECTION_COUNT) != Some(1)
+        || marked_record_reference(bytes, start + layout::SELECTION_REFERENCE)
+            != Some(selection_record_index)
+        || bytes.get(start + layout::ZERO_RUN_2..start + layout::AUXILIARY_COUNT) != Some(&[0; 2])
+        || View::u32_le_at(bytes, start + layout::AUXILIARY_COUNT) != Some(1)
+        || marked_record_reference(bytes, start + layout::AUXILIARY_REFERENCE).is_none()
+        || View::u64_le_at(bytes, start + layout::ROLE) != Some(0x0000_0004_0000_0000)
+        || bytes.get(start + layout::ZERO_RUN_AFTER_ROLE..start + layout::OPAQUE_INDEX)
+            != Some(&[0; 10])
+    {
+        return None;
+    }
+    let opaque_index = View::u32_le_at(bytes, start + layout::OPAQUE_INDEX)?;
+    if opaque_index == 0
+        || !View::f64_le_at(bytes, start + layout::OPAQUE_SCALAR)?.is_finite()
+        || View::u32_le_at(bytes, start + layout::OPAQUE_INDEX_REPEAT) != Some(opaque_index)
+        || marked_record_reference(bytes, start + layout::INDEX_PLUS_TWO_REFERENCE)
+            != record_index.checked_add(2)
+        || bytes.get(start + layout::SEPARATOR_FLAG) != Some(&1)
+        || bytes.get(start + layout::SEPARATOR_ZERO_RUN..start + layout::INDEX_PLUS_ONE_REFERENCE)
+            != Some(&[0; 2])
+        || marked_record_reference(bytes, start + layout::INDEX_PLUS_ONE_REFERENCE)
+            != record_index.checked_add(1)
+        || bytes.get(start + layout::SCOPE_SEPARATOR) != Some(&0)
+        || marked_record_reference(bytes, start + layout::SCOPE_REFERENCE)
+            != Some(scope_record_index)
+    {
+        return None;
+    }
+    let (paired_class_tag, paired_after_tag) =
+        lp_ascii_filtered_view(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
+    if paired_class_tag.len() != 3
+        || !paired_class_tag.bytes().all(|byte| byte.is_ascii_digit())
+        || paired_after_tag != paired_at + 7
+        || View::u32_le_at(bytes, paired_after_tag) != Some(record_index)
+    {
+        return None;
+    }
+    let direction = patterns::DesignRectangularPatternDirection {
+        record_index,
+        selection_record_index,
+        selection_kind,
+        origin: finite_reals_at(bytes, start + layout::ORIGIN)?,
+        origin_offset: u64::try_from(start.checked_add(layout::ORIGIN)?).ok()?,
+        displacement: finite_reals_at(bytes, start + layout::DISPLACEMENT)?,
+        displacement_offset: u64::try_from(start.checked_add(layout::DISPLACEMENT)?).ok()?,
+    };
+    direction.direction().is_some().then_some(direction)
 }
 
 /// Outcome of the rectangular-pattern instance search.

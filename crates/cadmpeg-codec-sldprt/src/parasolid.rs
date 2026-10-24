@@ -10,7 +10,6 @@
 use cadmpeg_container::compression::inflate_zlib_member;
 use cadmpeg_core::decode::{DecodeContext, ExpandSpec, View, WorkBudget};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::math::Point3;
 use flate2::{Decompress, FlushDecompress, Status};
 
 use crate::layout::{
@@ -514,69 +513,7 @@ pub(crate) fn is_body_stream(header: &StreamHeader) -> bool {
             .any(|part| part.eq_ignore_ascii_case(b"deltas"))
 }
 
-/// Decode the unique counted XYZ polyline carried by a classified mesh stream.
-///
-/// Mesh coordinate arrays use a big-endian scalar count followed by the
-/// `0x0022` array tag and consecutive f64 values. The scalar count is three
-/// times the point count.
-pub(crate) fn mesh_polyline_from_header(
-    payload: &[u8],
-    header: &StreamHeader,
-) -> Option<Vec<Point3>> {
-    let schema = header.schema.value();
-    if !schema.as_bytes().ends_with(b"_13006") {
-        return None;
-    }
-    let scan_end = payload.len().checked_sub(2)?;
-    let mut candidates = Vec::new();
-    for tag_at in header.body_offset..scan_end {
-        if payload.get(tag_at..tag_at + 2) != Some(&[0x00, 0x22]) || tag_at < 4 {
-            continue;
-        }
-        let Some(scalar_count) =
-            View::u32_be_at(payload, tag_at - 4).and_then(|count| usize::try_from(count).ok())
-        else {
-            continue;
-        };
-        if scalar_count < 6 || scalar_count % 3 != 0 {
-            continue;
-        }
-        let Some(byte_count) = scalar_count.checked_mul(8) else {
-            continue;
-        };
-        let Some(values) = payload.get(tag_at + 2..tag_at + 2 + byte_count) else {
-            continue;
-        };
-        let mut points = Vec::new();
-        for xyz in values.chunks_exact(24) {
-            let (Some(x), Some(y), Some(z)) = (
-                View::f64_be_at(xyz, 0),
-                View::f64_be_at(xyz, 8),
-                View::f64_be_at(xyz, 16),
-            ) else {
-                return None;
-            };
-            let point = Point3::new(x, y, z);
-            if !point.is_finite() {
-                points.clear();
-                break;
-            }
-            points.push(point);
-        }
-        if points.len() >= 2 {
-            candidates.push((scalar_count, points));
-        }
-    }
-    candidates.sort_by_key(|(count, _)| std::cmp::Reverse(*count));
-    let (largest_count, _) = candidates.first()?;
-    if candidates
-        .get(1)
-        .is_some_and(|(count, _)| count == largest_count)
-    {
-        return None;
-    }
-    candidates.into_iter().next().map(|(_, points)| points)
-}
+pub(crate) mod control_vertices;
 
 #[cfg(test)]
 mod tests;

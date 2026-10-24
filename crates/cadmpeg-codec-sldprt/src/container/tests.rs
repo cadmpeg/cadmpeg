@@ -16,8 +16,8 @@ use crate::container::{self, Block, BlockName, CompoundStream, Section};
 use crate::SldprtCodec;
 
 use super::{looks_like_sldprt, COMPOUND_FILE_MAGIC};
+use crate::test_support::container::anchored_cache_cell;
 use crate::test_support::container::make_block;
-use crate::test_support::container::make_cache_cell;
 use crate::test_support::container::outer_header;
 use crate::test_support::container::sldprt_with_colliding_sites;
 use crate::test_support::container::synthetic_sldprt;
@@ -41,7 +41,7 @@ fn probe_x84_wrapped_double_length_admits_overflowed_cache_cell() {
 #[test]
 fn cache_cell_counts_against_entity_limit() {
     let mut source = outer_header();
-    source.extend(make_cache_cell(90, "Contents/DisplayLists"));
+    source.extend(anchored_cache_cell(100, 9, "Contents/DisplayLists", 0));
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_entities = 0;
@@ -252,10 +252,13 @@ fn scan_classifies_blocks_cells_and_directory() {
     assert_eq!(ps.family, container::PayloadFamily::Parasolid);
 
     assert_eq!(scan.cache_cells[0].name, "Contents/DisplayLists");
-    assert_eq!(scan.cache_cells[0].logical_len, 90);
+    assert_eq!(scan.cache_cells[0].logical_len, 900);
     assert_eq!(scan.directory[0].name, "[Content_Types].xml");
     assert_eq!(scan.directory[0].descriptor, [0; 14]);
-    assert_eq!(scan.directory[0].trailer, [0xe5, 0x4b, 0x57, 0x5b, 0, 0]);
+    let next = scan.directory[0].offset
+        + crate::layout::tail_directory_entry::LEN
+        + scan.directory[0].name.len();
+    assert_eq!(&f[next..next + 6], &[0xe5, 0x4b, 0x57, 0x5b, 0, 0]);
 }
 
 #[test]
@@ -475,7 +478,7 @@ fn inspect_enumerates_every_structure() {
 #[test]
 fn inspection_inventory_names_cache_cell_entry() {
     let mut source = outer_header();
-    source.extend(make_cache_cell(90, "Contents/DisplayLists"));
+    source.extend(anchored_cache_cell(100, 9, "Contents/DisplayLists", 0));
     let scan = crate::test_support::container::scan(&source);
     let summary = container::summarize(
         &scan,

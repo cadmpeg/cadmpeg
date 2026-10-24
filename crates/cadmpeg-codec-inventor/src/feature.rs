@@ -17,7 +17,7 @@ use cadmpeg_ir::{
         edge_treatments::{ChamferGroup, ChamferSpec, FilletGroup, RadiusSpec},
         holes::{HoleKind, HolePlacement},
         BooleanOp, DesignParameter, DistinctMembers, EdgeSelection, ExtrudeDirection,
-        ExtrudeExtent, ExtrudeSide, ExtrudeStart, ExtrusionDirectionSource, Feature,
+        ExtrudeExtent, ExtrudeSide, ExtrudeStart, ExtrusionDirectionSource, FaceSelection, Feature,
         FeatureContent, FeatureDefinition, FeatureId, FeatureOperation, FeatureResultTopology,
         LinearTermination, ParameterValue,
     },
@@ -26,8 +26,8 @@ use cadmpeg_ir::{
 use serde::{Deserialize, Serialize};
 
 use crate::pmdc::{
-    content_header, inventor_id, reference_list, type_id_string, u32_list, Cursor,
-    PmDcContentHeader, PmDcReferenceList, PmDcU32List,
+    content_header, inventor_id, reference_list, state_content_header, type_id_string, u32_list,
+    Cursor, PmDcContentHeader, PmDcReferenceList, PmDcU32List,
 };
 use crate::record_identity::{push_record, Located, RecordPayload};
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
@@ -35,6 +35,7 @@ use crate::rse::{RseInventory, SegmentBulkState, SegmentKind};
 use crate::{design::DesignInventory, sketch::SketchInventory};
 
 mod history;
+pub(crate) mod profile;
 
 const EPS_FEATURE_PROJECT_HOLE_E10: f64 = 1.0e-10;
 
@@ -44,7 +45,7 @@ const FEATURE_TYPE: [u8; 16] = [
 const END_OF_FEATURES_TYPE: [u8; 16] = [
     0x24, 0xfd, 0x41, 0x8f, 0xd2, 0x11, 0xac, 0x6e, 0x00, 0x08, 0x2a, 0xab, 0x32, 0xa3, 0xdc, 0x09,
 ];
-const BOOLEAN_TYPE: [u8; 16] = inventor_id(0x9087_4d28);
+pub(crate) const BOOLEAN_TYPE: [u8; 16] = inventor_id(0x9087_4d28);
 const SURFACE_BODY_TYPE: [u8; 16] = inventor_id(0x9087_4d47);
 const ENTITY_STYLE_LINK_TYPE: [u8; 16] = inventor_id(0x9087_4d15);
 const PART_OPERATION_TYPE: [u8; 16] = [
@@ -52,6 +53,9 @@ const PART_OPERATION_TYPE: [u8; 16] = [
 ];
 const BOUNDARY_PATCH_TYPE: [u8; 16] = [
     0x91, 0x73, 0x94, 0x22, 0xd1, 0x11, 0x07, 0xcf, 0x00, 0x08, 0x35, 0xbd, 0x06, 0x63, 0xdc, 0x09,
+];
+pub(crate) const SELECTION_LIST_TYPE: [u8; 16] = [
+    0x7a, 0x25, 0xf2, 0xef, 0xd1, 0x11, 0x05, 0xaf, 0x00, 0x08, 0x47, 0xb0, 0x05, 0x24, 0xdc, 0x09,
 ];
 const EXTENT_TYPE: [u8; 16] = [
     0x29, 0x7d, 0x63, 0x92, 0xd1, 0x11, 0x3c, 0xb9, 0x00, 0x08, 0x31, 0xbd, 0x06, 0x63, 0xdc, 0x09,
@@ -68,6 +72,9 @@ const AUXILIARY_ENUM_TYPE: [u8; 16] = [
 const OBJECT_COLLECTION_TYPE: [u8; 16] = [
     0xae, 0x70, 0x68, 0x0e, 0xd1, 0x4a, 0x1e, 0x86, 0xd7, 0x62, 0x48, 0xb0, 0x3c, 0x2a, 0x96, 0xe1,
 ];
+pub(crate) const FACE_COLLECTION_TYPE: [u8; 16] = [
+    0xf1, 0xb2, 0xbc, 0x24, 0xd0, 0x11, 0x21, 0xdd, 0x00, 0x08, 0xd0, 0xbc, 0x06, 0x63, 0xdc, 0x09,
+];
 const HOLE_TYPE: [u8; 16] = [
     0x11, 0x7c, 0xcd, 0x43, 0xd2, 0x11, 0x96, 0x58, 0xa0, 0x00, 0x21, 0x80, 0x36, 0x03, 0xc8, 0xc9,
 ];
@@ -83,6 +90,9 @@ const FILLET_EDGE_SET_TYPE: [u8; 16] = [
 const EDGE_COLLECTION_TYPE: [u8; 16] = inventor_id(0x9087_4d51);
 const EDGE_ITEM_TYPE: [u8; 16] = [
     0x82, 0x69, 0x5c, 0x37, 0xd1, 0x11, 0x51, 0x6b, 0x00, 0x08, 0xa1, 0xba, 0x32, 0xa3, 0xdc, 0x09,
+];
+pub(crate) const FACE_ITEM_TYPE: [u8; 16] = [
+    0xcc, 0xb5, 0x9f, 0x50, 0xd1, 0x11, 0x4f, 0x6b, 0x00, 0x08, 0xa1, 0xba, 0x32, 0xa3, 0xdc, 0x09,
 ];
 const FILLET_TYPE: [u8; 16] = [
     0x27, 0x88, 0xf2, 0x78, 0xc5, 0x4d, 0xd7, 0xbe, 0x43, 0x13, 0xb3, 0x98, 0x60, 0x39, 0xb5, 0x2e,
@@ -124,6 +134,7 @@ const FEATURE_LABEL_TYPE: [u8; 16] = [
 
 #[derive(Debug)]
 pub(crate) struct FeatureInventory {
+    record_types: HashMap<cadmpeg_ir::ids::IdentityKey, HashMap<u32, Option<String>>>,
     pub(crate) features: Vec<PmDcFeature>,
     pub(crate) pattern_features: Vec<PmDcPatternFeature>,
     pub(crate) terminators: Vec<PmDcFeatureTerminator>,
@@ -132,6 +143,7 @@ pub(crate) struct FeatureInventory {
     pub(crate) entity_style_links: Vec<PmDcEntityStyleLink>,
     pub(crate) kernel_entity_links: Vec<PmDcKernelEntityLink>,
     pub(crate) work_planes: Vec<PmDcWorkPlane>,
+    /// Wire bodies of `PmDc` kernel-body records, which profile selections name.
     pub(crate) issues: Vec<RecordIssue>,
 }
 
@@ -140,6 +152,9 @@ pub(crate) struct FeatureProjection {
     pub(crate) result_topologies: Vec<FeatureResultTopology>,
     pub(crate) unresolved_features: usize,
     pub(crate) unresolved_states: usize,
+    /// Closed loops that resolved extrusion profiles append to sketch
+    /// profile tables, by sketch id, in table order.
+    pub(crate) added_profiles: HashMap<String, Vec<Vec<cadmpeg_ir::sketches::SketchEntityUse>>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -193,11 +208,22 @@ pub(crate) enum PmDcFeaturePropertyKind {
         radius: crate::pmdc::PmDcReference,
         selection: crate::pmdc::PmDcReference,
         continuity: crate::pmdc::PmDcReference,
+        /// The fifth reference that segment major version 23 and later store:
+        /// null or a Boolean record.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_edge_set_option"
+        )]
+        option: Option<crate::pmdc::PmDcReference>,
     },
     EdgeItem {
         index_references: PmDcU32List,
         index_reference_value: i32,
         value: u32,
+    },
+    FaceItem {
+        index_references: PmDcU32List,
     },
     TerminationFlag {
         value: u8,
@@ -250,10 +276,12 @@ pub(crate) struct PmDcPatternFeaturePayload {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum PmDcFeatureReferenceFamily {
     BoundaryPatch,
+    SelectionList,
     FeatureDimensions,
     ObjectCollection,
     FilletEdgeSets,
     EdgeCollection,
+    FaceCollection,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -261,10 +289,24 @@ pub(crate) struct PmDcLinkedHeader {
     header_value: u32,
     header_id: u16,
     values: [u32; 2],
+    /// The u32 that segment major versions from 28 store after `values`.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_linked_flags_extension"
+    )]
+    flags_extension: Option<u32>,
     pub(crate) owner: crate::pmdc::PmDcReference,
     pub(crate) parent: crate::pmdc::PmDcReference,
     pub(crate) next: crate::pmdc::PmDcReference,
 }
+
+cadmpeg_core::named_optional_field!(deserialize_linked_flags_extension, u32, "flags_extension");
+cadmpeg_core::named_optional_field!(
+    deserialize_edge_set_option,
+    crate::pmdc::PmDcReference,
+    "option"
+);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "String")]
@@ -319,6 +361,9 @@ pub(crate) struct PmDcFeatureLabelPayload {
     index: u32,
     pub(crate) participants: PmDcReferenceList,
     name: String,
+    /// The stored code units, present only when they hold an unpaired
+    /// surrogate that `name` replaces with U+FFFD.
+    name_units: Option<Vec<u16>>,
     class_id: ClassId,
 }
 
@@ -329,6 +374,8 @@ struct PmDcFeatureLabelPayloadRef<'a> {
     index: u32,
     participants: &'a PmDcReferenceList,
     name: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name_units: Option<&'a [u16]>,
     class_id: &'a ClassId,
 }
 
@@ -340,6 +387,7 @@ impl Serialize for PmDcFeatureLabelPayload {
             index: self.index,
             participants: &self.participants,
             name: self.name.as_str(),
+            name_units: self.name_units.as_deref(),
             class_id: &self.class_id,
         }
         .serialize(serializer)
@@ -353,18 +401,37 @@ struct PmDcFeatureLabelPayloadWire {
     index: u32,
     participants: PmDcReferenceList,
     name: String,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_name_units"
+    )]
+    name_units: Option<Vec<u16>>,
     class_id: String,
 }
+
+cadmpeg_core::named_optional_field!(deserialize_name_units, Vec<u16>, "name_units");
 
 impl TryFrom<PmDcFeatureLabelPayloadWire> for PmDcFeatureLabelPayload {
     type Error = String;
     fn try_from(wire: PmDcFeatureLabelPayloadWire) -> Result<Self, Self::Error> {
+        // Exact code units accompany a name only when they are not valid
+        // UTF-16 and the name is their replacement decoding.
+        if let Some(units) = &wire.name_units {
+            if String::from_utf16(units).is_ok() || String::from_utf16_lossy(units) != wire.name {
+                return Err(
+                    "Inventor feature label code units are valid UTF-16 or differ from its name"
+                        .into(),
+                );
+            }
+        }
         Ok(Self {
             save_version_major: wire.save_version_major,
             header: wire.header,
             index: wire.index,
             participants: wire.participants,
             name: wire.name,
+            name_units: wire.name_units,
             class_id: ClassId::try_from(wire.class_id)?,
         })
     }
@@ -378,6 +445,7 @@ impl From<PmDcFeatureLabelPayload> for PmDcFeatureLabelPayloadWire {
             index: value.index,
             participants: value.participants,
             name: value.name.as_str().to_owned(),
+            name_units: value.name_units,
             class_id: value.class_id.into(),
         }
     }
@@ -390,6 +458,11 @@ impl PmDcFeatureLabelPayload {
 
     pub(crate) fn class_id(&self) -> ClassId {
         self.class_id
+    }
+
+    /// Whether the neutral name replaces unpaired surrogates of the stored name.
+    pub(crate) fn name_replaced(&self) -> bool {
+        self.name_units.is_some()
     }
 }
 
@@ -450,6 +523,7 @@ pub(crate) fn inventory(
     document: &RseInventory<'_>,
 ) -> Result<FeatureInventory, CodecError> {
     let mut inventory = FeatureInventory {
+        record_types: HashMap::new(),
         features: Vec::new(),
         pattern_features: Vec::new(),
         terminators: Vec::new(),
@@ -467,7 +541,7 @@ pub(crate) fn inventory(
         let Some(version) = segment.registry.map(|join| join.version_major) else {
             continue;
         };
-        if !(15..=22).contains(&version) {
+        if !crate::pmdc::record_version_supported(version) {
             continue;
         }
         let SegmentBulkState::Framed(bulk) = &segment.bulk else {
@@ -476,7 +550,15 @@ pub(crate) fn inventory(
         let Some(table) = bulk.records.table() else {
             continue;
         };
+        let record_types = inventory
+            .record_types
+            .entry(segment.pair.token.key().clone())
+            .or_default();
         for record in &table.records {
+            record_types
+                .entry(record.ordinal)
+                .and_modify(|previous| *previous = None)
+                .or_insert_with(|| Some(type_id_string(record.type_id)));
             let parsed = match record.type_id {
                 FEATURE_TYPE => parse_feature(record.payload, version).and_then(|feature| {
                     push_record(
@@ -615,13 +697,35 @@ pub(crate) fn inventory(
     Ok(inventory)
 }
 
+fn pattern_slots(
+    cursor: &mut Cursor<'_>,
+    count: usize,
+    slots: &mut Vec<crate::pmdc::PmDcReference>,
+) -> Result<(), CodecError> {
+    for _ in 0..count {
+        slots.push(cursor.reference("pattern-feature property slot")?);
+    }
+    Ok(())
+}
+
+fn pattern_values(
+    cursor: &mut Cursor<'_>,
+    count: usize,
+    values: &mut Vec<u32>,
+) -> Result<(), CodecError> {
+    for _ in 0..count {
+        values.push(cursor.u32("pattern-feature extension value")?);
+    }
+    Ok(())
+}
+
 fn parse_pattern_feature(
     source: View<'_>,
     version: u8,
     family: PmDcPatternFamily,
 ) -> Result<PmDcPatternFeaturePayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = state_content_header(&mut cursor, version)?;
     let state = cursor.u32("pattern-feature state")?.cast_signed();
     let outline_value = cursor.u32("pattern-feature outline value")?;
     let properties = reference_list(&mut cursor, 2, "pattern-feature properties")?;
@@ -633,24 +737,32 @@ fn parse_pattern_feature(
     }
     let control = cursor.u8("pattern-feature control")?;
     let mut extension_values = Vec::new();
+    // Read the version-specific suffix in stored order, keeping its reference
+    // words with the slots and its u32 values as extension values.
     match family {
-        PmDcPatternFamily::Rectangular => {
-            let remaining = if version > 20 { 26 } else { 20 };
-            for _ in 0..remaining {
-                property_slots.push(cursor.reference("pattern-feature property slot")?);
+        PmDcPatternFamily::Rectangular if version >= 29 => {
+            pattern_slots(&mut cursor, 12, &mut property_slots)?;
+            pattern_values(&mut cursor, 8, &mut extension_values)?;
+            pattern_slots(&mut cursor, 14, &mut property_slots)?;
+            if version >= 30 {
+                pattern_values(&mut cursor, 6, &mut extension_values)?;
             }
         }
+        PmDcPatternFamily::Rectangular => {
+            let remaining = if version > 20 { 26 } else { 20 };
+            pattern_slots(&mut cursor, remaining, &mut property_slots)?;
+        }
         PmDcPatternFamily::Mirror => {
-            for _ in 0..5 {
-                property_slots.push(cursor.reference("pattern-feature property slot")?);
-            }
+            pattern_slots(&mut cursor, 5, &mut property_slots)?;
             if version > 20 {
-                for _ in 0..6 {
-                    extension_values.push(cursor.u32("pattern-feature extension value")?);
-                }
+                pattern_values(&mut cursor, 6, &mut extension_values)?;
             }
-            for _ in 0..2 {
-                property_slots.push(cursor.reference("pattern-feature property slot")?);
+            if version >= 29 {
+                pattern_slots(&mut cursor, 1, &mut property_slots)?;
+                pattern_values(&mut cursor, 8, &mut extension_values)?;
+                pattern_slots(&mut cursor, 1, &mut property_slots)?;
+            } else {
+                pattern_slots(&mut cursor, 2, &mut property_slots)?;
             }
         }
     }
@@ -672,7 +784,7 @@ fn parse_pattern_feature(
 
 fn parse_feature(source: View<'_>, version: u8) -> Result<PmDcFeaturePayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = state_content_header(&mut cursor, version)?;
     let state = cursor.u32("feature state")?.cast_signed();
     let outline_value = cursor.u32("feature outline value")?;
     let properties = reference_list(&mut cursor, 2, "feature property list")?;
@@ -693,7 +805,7 @@ fn parse_terminator(
     version: u8,
 ) -> Result<PmDcFeatureTerminatorPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = state_content_header(&mut cursor, version)?;
     let state = cursor.u32("feature terminator state")?.cast_signed();
     cursor.finish("feature terminator")?;
     Ok(PmDcFeatureTerminatorPayload {
@@ -717,6 +829,7 @@ fn feature_property_parser(type_id: [u8; 16]) -> Option<PropertyParser> {
         AUXILIARY_ENUM_TYPE => Some(parse_auxiliary_enum),
         BOOLEAN_TYPE => Some(parse_boolean),
         BOUNDARY_PATCH_TYPE => Some(parse_boundary_patch),
+        SELECTION_LIST_TYPE => Some(parse_selection_list),
         FEATURE_DIMENSIONS_TYPE => Some(parse_feature_dimensions),
         OBJECT_COLLECTION_TYPE => Some(parse_object_collection),
         FILLET_EDGE_SETS_TYPE => Some(parse_fillet_edge_sets),
@@ -726,7 +839,9 @@ fn feature_property_parser(type_id: [u8; 16]) -> Option<PropertyParser> {
         PLACEMENT_TYPE => Some(parse_placement),
         FILLET_EDGE_SET_TYPE => Some(parse_fillet_edge_set),
         EDGE_COLLECTION_TYPE => Some(parse_edge_collection),
+        FACE_COLLECTION_TYPE => Some(parse_face_collection),
         EDGE_ITEM_TYPE => Some(parse_edge_item),
+        FACE_ITEM_TYPE => Some(parse_face_item),
         TERMINATION_FLAG_TYPE => Some(parse_termination_flag),
         _ => None,
     }
@@ -750,7 +865,7 @@ fn parse_enumeration(
     family: PmDcFeatureEnumFamily,
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, version)?;
     let type_value = cursor.i16("feature enumeration type value")?;
     let value = cursor.u16("feature enumeration value")?;
     cursor.finish("feature enumeration")?;
@@ -789,7 +904,7 @@ fn parse_chamfer(
     version: u8,
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, version)?;
     let type_value = cursor.i16("chamfer enumeration type value")?;
     let value = cursor.u16("chamfer enumeration value")?;
     let terminal = cursor.u32("chamfer enumeration terminal")?;
@@ -816,7 +931,7 @@ fn parse_fillet_edge_selection(
     version: u8,
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, version)?;
     let type_value = cursor.u32("fillet edge-selection type value")?;
     let value = cursor.u32("fillet edge-selection value")?;
     cursor.finish("fillet edge-selection enumeration")?;
@@ -833,7 +948,7 @@ fn parse_boolean(
     version: u8,
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, version)?;
     let name = cursor.utf16(ctx, "feature Boolean name")?;
     let name_value = cursor.u32("feature Boolean name value")?;
     let raw = cursor.u8("feature Boolean raw value")?;
@@ -860,7 +975,7 @@ fn parse_references(
     family: PmDcFeatureReferenceFamily,
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, version)?;
     let items = reference_list(&mut cursor, 2, "feature-property references")?;
     cursor.finish("feature-property references")?;
     Ok(property(
@@ -883,10 +998,12 @@ macro_rules! reference_parser {
 }
 
 reference_parser!(parse_boundary_patch, BoundaryPatch);
+reference_parser!(parse_selection_list, SelectionList);
 reference_parser!(parse_feature_dimensions, FeatureDimensions);
 reference_parser!(parse_object_collection, ObjectCollection);
 reference_parser!(parse_fillet_edge_sets, FilletEdgeSets);
 reference_parser!(parse_edge_collection, EdgeCollection);
+reference_parser!(parse_face_collection, FaceCollection);
 
 fn parse_rdx_variable(
     ctx: &DecodeContext<'_>,
@@ -894,7 +1011,7 @@ fn parse_rdx_variable(
     version: u8,
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, version)?;
     let name = cursor.utf16(ctx, "feature RDx variable name")?;
     let name_value = cursor.u32("feature RDx variable name value")?;
     let nominal_value = cursor.u32("feature RDx variable nominal value")?;
@@ -918,7 +1035,7 @@ fn parse_surface_body(
     version: u8,
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, version)?;
     let body = cursor.reference("feature surface body reference")?;
     cursor.finish("feature surface body")?;
     Ok(property(
@@ -934,7 +1051,7 @@ fn parse_profile_selection(
     version: u8,
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, version)?;
     let entity_link = cursor.reference("profile selection entity link")?;
     let value = cursor.u8("profile selection value")?;
     cursor.finish("profile selection")?;
@@ -979,7 +1096,7 @@ fn f64_triple(
 
 fn parse_work_plane(source: View<'_>, version: u8) -> Result<PmDcWorkPlanePayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, version)?;
     let entity_flags = cursor.u32("work plane entity flags")?;
     let mut values = vec![
         cursor.u32("work plane value")?,
@@ -1015,7 +1132,7 @@ fn parse_termination_flag(
     version: u8,
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, version)?;
     let value = cursor.u8("termination flag value")?;
     cursor.finish("termination flag")?;
     Ok(property(
@@ -1032,7 +1149,7 @@ fn parse_surface(
     version: u8,
 ) -> Result<Option<PmDcFeaturePropertyPayload>, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, version)?;
     let references = [
         cursor.reference("surface reference")?,
         cursor.reference("surface reference")?,
@@ -1068,7 +1185,7 @@ fn parse_entity_style_link(
     version: u8,
 ) -> Result<PmDcEntityStyleLinkPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = linked_header(&mut cursor)?;
+    let header = linked_header(&mut cursor, version)?;
     let value = cursor.u32("entity-style link value")?;
     let associative_id = cursor.u32("entity-style link associative id")?;
     let entity_type = cursor.u32("entity-style link entity type")?;
@@ -1088,7 +1205,7 @@ fn parse_placement(
     version: u8,
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, version)?;
     let transform = cursor.reference("feature placement transform reference")?;
     let point = cursor.reference("feature placement point reference")?;
     let value = cursor.reference("feature placement value reference")?;
@@ -1110,11 +1227,16 @@ fn parse_fillet_edge_set(
     version: u8,
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, version)?;
     let edges = cursor.reference("fillet edge-set edges reference")?;
     let radius = cursor.reference("fillet edge-set radius reference")?;
     let selection = cursor.reference("fillet edge-set selection reference")?;
     let continuity = cursor.reference("fillet edge-set continuity reference")?;
+    let option = if version >= 23 {
+        Some(cursor.reference("fillet edge-set option reference")?)
+    } else {
+        None
+    };
     cursor.finish("fillet edge set")?;
     Ok(property(
         version,
@@ -1124,6 +1246,7 @@ fn parse_fillet_edge_set(
             radius,
             selection,
             continuity,
+            option,
         },
     ))
 }
@@ -1134,7 +1257,7 @@ fn parse_edge_item(
     version: u8,
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, version)?;
     let index_references = u32_list(&mut cursor, 2, "edge-item index references")?;
     let index_reference_value = if index_references.values().is_empty() {
         -1
@@ -1154,7 +1277,28 @@ fn parse_edge_item(
     ))
 }
 
-fn linked_header(cursor: &mut Cursor<'_>) -> Result<PmDcLinkedHeader, CodecError> {
+fn parse_face_item(
+    _: &DecodeContext<'_>,
+    source: View<'_>,
+    version: u8,
+) -> Result<PmDcFeaturePropertyPayload, CodecError> {
+    let mut cursor = Cursor::new(source);
+    let header = content_header(&mut cursor, version)?;
+    let index_references = u32_list(&mut cursor, 2, "face-item index references")?;
+    if index_references.values().is_empty() || cursor.i32("face-item terminal value")? != -1 {
+        return Err(CodecError::malformed(
+            "Inventor PmDc face item has no indices or an invalid terminal value",
+        ));
+    }
+    cursor.finish("face item")?;
+    Ok(property(
+        version,
+        header,
+        PmDcFeaturePropertyKind::FaceItem { index_references },
+    ))
+}
+
+fn linked_header(cursor: &mut Cursor<'_>, version: u8) -> Result<PmDcLinkedHeader, CodecError> {
     Ok(PmDcLinkedHeader {
         header_value: cursor.u32("linked header value")?,
         header_id: cursor.u16("linked header id")?,
@@ -1162,6 +1306,7 @@ fn linked_header(cursor: &mut Cursor<'_>) -> Result<PmDcLinkedHeader, CodecError
             cursor.u32("linked header value 0")?,
             cursor.u32("linked header value 1")?,
         ],
+        flags_extension: crate::pmdc::flags_extension(cursor, version)?,
         owner: cursor.reference("linked header owner reference")?,
         parent: cursor.reference("linked header parent reference")?,
         next: cursor.reference("linked header next reference")?,
@@ -1174,10 +1319,10 @@ fn parse_label(
     version: u8,
 ) -> Result<PmDcFeatureLabelPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = linked_header(&mut cursor)?;
+    let header = linked_header(&mut cursor, version)?;
     let index = cursor.u32("feature label index")?;
     let participants = reference_list(&mut cursor, 2, "feature-label participants")?;
-    let name = cursor.utf16(ctx, "feature label")?;
+    let (name, name_units) = cursor.utf16_units(ctx, "feature label")?;
     let class_id_bytes = cursor.take_array("feature-label class id")?;
     let class_id = type_id_string(class_id_bytes);
     cursor.finish("feature label")?;
@@ -1187,6 +1332,7 @@ fn parse_label(
         index,
         participants,
         name,
+        name_units,
         class_id,
     })
     .map_err(CodecError::malformed)
@@ -1203,6 +1349,12 @@ const CHAMFER_CLASS_ID: ClassId = ClassId(NativeBytes::new([
 ]));
 const HOLE_CLASS_ID: ClassId = ClassId(NativeBytes::new([
     0x1a, 0x7d, 0x75, 0x1f, 0xd2, 0x11, 0x9c, 0x54, 0xa0, 0x00, 0x20, 0x80, 0x36, 0x03, 0xc8, 0xc9,
+]));
+pub(crate) const THREAD_CLASS_ID: ClassId = ClassId(NativeBytes::new([
+    0x06, 0x19, 0xaa, 0x28, 0xd4, 0x11, 0xc7, 0x7a, 0x60, 0x00, 0xc4, 0xa4, 0xca, 0xe1, 0xfb, 0xb0,
+]));
+const THICKEN_CLASS_ID: ClassId = ClassId(NativeBytes::new([
+    0xec, 0xf4, 0x81, 0x72, 0x9c, 0x4d, 0x5f, 0x92, 0x5f, 0x21, 0x92, 0xb4, 0xa8, 0x30, 0x96, 0xac,
 ]));
 
 /// Native family names of feature-label classes outside the neutral families.
@@ -1384,13 +1536,6 @@ const NATIVE_CLASSES: &[([u8; 16], &str)] = &[
     ),
     (
         [
-            0xec, 0xf4, 0x81, 0x72, 0x9c, 0x4d, 0x5f, 0x92, 0x5f, 0x21, 0x92, 0xb4, 0xa8, 0x30,
-            0x96, 0xac,
-        ],
-        "Thicken",
-    ),
-    (
-        [
             0xf0, 0xa4, 0x97, 0xe5, 0xd4, 0x11, 0xd8, 0x84, 0x10, 0x00, 0xfa, 0xa5, 0xbb, 0xa6,
             0x47, 0xb5,
         ],
@@ -1411,6 +1556,7 @@ pub(crate) enum FeatureFamily {
     Fillet,
     Chamfer,
     Hole,
+    Thicken,
 }
 
 impl FeatureFamily {
@@ -1420,6 +1566,7 @@ impl FeatureFamily {
             Self::Fillet => FILLET_CLASS_ID,
             Self::Chamfer => CHAMFER_CLASS_ID,
             Self::Hole => HOLE_CLASS_ID,
+            Self::Thicken => THICKEN_CLASS_ID,
         }
     }
 
@@ -1429,13 +1576,20 @@ impl FeatureFamily {
             Self::Fillet => 15,
             Self::Chamfer => 11,
             Self::Hole => 24,
+            Self::Thicken => 15,
         }
     }
 
     fn from_class_id(class_id: ClassId) -> Option<Self> {
-        [Self::Extrusion, Self::Fillet, Self::Chamfer, Self::Hole]
-            .into_iter()
-            .find(|family| family.class_id() == class_id)
+        [
+            Self::Extrusion,
+            Self::Fillet,
+            Self::Chamfer,
+            Self::Hole,
+            Self::Thicken,
+        ]
+        .into_iter()
+        .find(|family| family.class_id() == class_id)
     }
 
     pub(crate) fn from_definition(definition: &FeatureDefinition) -> Option<Self> {
@@ -1444,6 +1598,7 @@ impl FeatureFamily {
             FeatureDefinition::Operation(FeatureOperation::Fillet { .. }) => Some(Self::Fillet),
             FeatureDefinition::Operation(FeatureOperation::Chamfer { .. }) => Some(Self::Chamfer),
             FeatureDefinition::Operation(FeatureOperation::Hole { .. }) => Some(Self::Hole),
+            FeatureDefinition::Operation(FeatureOperation::Thicken { .. }) => Some(Self::Thicken),
             _ => None,
         }
     }
@@ -1452,14 +1607,24 @@ impl FeatureFamily {
 struct ProjectionIndex<'a> {
     properties: HashMap<(&'a str, u32), Option<&'a PmDcFeatureProperty>>,
     parameters: HashMap<(&'a str, u32), Option<&'a crate::design::PmDcParameter>>,
-    parameter_values: HashMap<&'a str, &'a ParameterValue>,
+    parameter_values: HashMap<&'a str, Option<&'a DesignParameter>>,
     parameter_ids: HashMap<&'a str, &'a cadmpeg_ir::features::ParameterId>,
     sketches: HashMap<(&'a str, u32), Option<&'a crate::sketch::PmDcSketch>>,
     sketch_ids: HashMap<&'a str, cadmpeg_ir::sketches::SketchId>,
+    sketches_by_id: HashMap<&'a str, &'a Sketch>,
     directions: HashMap<(&'a str, u32), Option<&'a crate::sketch::PmDcDirection>>,
     transforms: HashMap<(&'a str, u32), Option<&'a crate::sketch::PmDcTransform>>,
     entity_style_links: HashSet<(&'a str, u32)>,
     work_planes: HashMap<(&'a str, u32), Option<&'a PmDcWorkPlane>>,
+    profiles: profile::ProfileIndex<'a>,
+}
+
+/// The projected sketch model that features consume.
+pub(crate) struct ProjectedSketches<'a> {
+    pub(crate) sketches: &'a [Sketch],
+    pub(crate) entities: &'a [cadmpeg_ir::sketches::SketchEntity],
+    /// The decoded profile bodies that extrusion profiles resolve through.
+    pub(crate) profile_bodies: &'a [profile::ProfileBody],
 }
 
 pub(crate) fn project(
@@ -1468,8 +1633,13 @@ pub(crate) fn project(
     design: &DesignInventory,
     sketch: &SketchInventory,
     parameters: &[DesignParameter],
-    sketches: &[Sketch],
+    projected: &ProjectedSketches<'_>,
 ) -> Result<FeatureProjection, CodecError> {
+    let ProjectedSketches {
+        sketches,
+        entities: sketch_entities,
+        profile_bodies,
+    } = *projected;
     let total = inventory.features.len() + inventory.pattern_features.len();
     let mut feature_tokens = HashSet::new();
     for token in inventory
@@ -1491,6 +1661,7 @@ pub(crate) fn project(
             result_topologies: Vec::new(),
             unresolved_features: total,
             unresolved_states: 0,
+            added_profiles: HashMap::new(),
         });
     }
 
@@ -1555,14 +1726,11 @@ pub(crate) fn project(
             .iter()
             .filter_map(|parameter| Some((parameter.native_ref.as_deref()?, &parameter.id)))
             .collect(),
-        parameter_values: {
+        parameter_values: unique_index(
             parameters
                 .iter()
-                .filter_map(|parameter| {
-                    Some((parameter.native_ref.as_deref()?, parameter.value.as_ref()?))
-                })
-                .collect()
-        },
+                .filter_map(|parameter| Some((parameter.native_ref.as_deref()?, parameter))),
+        ),
         sketches: unique_sketches,
         sketch_ids: {
             let mut ids = HashMap::new();
@@ -1574,6 +1742,10 @@ pub(crate) fn project(
             }
             ids
         },
+        sketches_by_id: sketches
+            .iter()
+            .map(|sketch| (sketch.id.as_str(), sketch))
+            .collect(),
         directions: unique_directions,
         transforms: unique_transforms,
         entity_style_links: {
@@ -1595,6 +1767,13 @@ pub(crate) fn project(
             links
         },
         work_planes: unique_work_planes,
+        profiles: profile::ProfileIndex::new(
+            profile_bodies,
+            &inventory.kernel_entity_links,
+            &inventory.entity_style_links,
+            &sketch.entities,
+            sketch_entities,
+        ),
     };
     // The label owner is a one-based reference. Keying on the optional record
     // ordinal keeps the null reference out of the ordinal space, so a label
@@ -1633,9 +1812,19 @@ pub(crate) fn project(
                 FeatureFamily::Fillet => project_fillet(ctx, feature, label, &index),
                 FeatureFamily::Chamfer => project_chamfer(ctx, feature, label, &index),
                 FeatureFamily::Hole => project_hole(ctx, feature, label, &index),
+                FeatureFamily::Thicken => project_thicken(ctx, feature, label, &index, inventory),
             }
+            .map(|result| result.map(|(feature, result)| (feature, Some(result))))
             .transpose()?,
             None => None,
+        };
+        let value = match value {
+            Some(value) => Some(value),
+            None => label
+                .filter(|label| label.class_id() == THREAD_CLASS_ID)
+                .and_then(|label| project_thread(ctx, feature, label, &index))
+                .transpose()?
+                .map(|feature| (feature, None)),
         };
         match value {
             Some((projected_feature, result)) => {
@@ -1646,7 +1835,8 @@ pub(crate) fn project(
                     flags: feature.header.flags,
                     label,
                     feature: projected_feature,
-                    result: Some(result),
+                    result,
+                    neutral: true,
                 });
             }
             None if history.placement(feature.identity.record_ordinal).is_some() => {
@@ -1657,6 +1847,7 @@ pub(crate) fn project(
                     label,
                     feature: native_feature(ctx, &feature.identity, label, feature.id())?,
                     result: None,
+                    neutral: false,
                 });
             }
             None => {}
@@ -1674,6 +1865,7 @@ pub(crate) fn project(
             label,
             feature: native_feature(ctx, &pattern.identity, label, pattern.id())?,
             result: None,
+            neutral: false,
         });
     }
     for record in &sketch.sketches {
@@ -1691,12 +1883,13 @@ pub(crate) fn project(
             label,
             feature: sketch_feature(ctx, record, label, &index)?,
             result: None,
+            neutral: false,
         });
     }
     apply_history(&mut projected, &history, inventory, token)?;
     let unresolved_states = projected
         .iter()
-        .filter(|item| item.result.is_some() && history.placement(item.record).is_none())
+        .filter(|item| item.neutral && history.placement(item.record).is_none())
         .count();
     let ordinal_counts = projected.iter().map(|item| item.feature.ordinal).fold(
         HashMap::<u64, usize>::new(),
@@ -1711,7 +1904,7 @@ pub(crate) fn project(
         .collect::<HashSet<_>>();
     projected.retain(|item| {
         let keep = !duplicate_ordinals.contains(&item.feature.ordinal);
-        if !keep && item.result.is_some() {
+        if !keep && item.neutral {
             neutral -= 1;
         }
         keep
@@ -1732,6 +1925,7 @@ pub(crate) fn project(
         unresolved_states: unresolved_states.min(neutral),
         features,
         result_topologies,
+        added_profiles: index.profiles.into_added_profiles(),
     })
 }
 
@@ -1743,6 +1937,7 @@ struct HistoryItem<'a> {
     label: Option<&'a PmDcFeatureLabel>,
     feature: Feature,
     result: Option<FeatureResultTopology>,
+    neutral: bool,
 }
 
 /// Apply browser order, suppression, end-of-part state, and consumed-node
@@ -1935,6 +2130,7 @@ fn native_kind(class_id: Option<ClassId>) -> cadmpeg_ir::features::NativeFeature
             FeatureFamily::Fillet => NativeFeatureKind::Fillet,
             FeatureFamily::Chamfer => NativeFeatureKind::Chamfer,
             FeatureFamily::Hole => NativeFeatureKind::Other("Hole".into()),
+            FeatureFamily::Thicken => NativeFeatureKind::Other("Thicken".into()),
         };
     }
     NATIVE_CLASSES
@@ -1944,6 +2140,121 @@ fn native_kind(class_id: Option<ClassId>) -> cadmpeg_ir::features::NativeFeature
             || NativeFeatureKind::Other(format!("InventorClass:{class_id}")),
             |(_, name)| NativeFeatureKind::Other((*name).to_owned()),
         )
+}
+
+/// Admit Thread annotations with nine typed slots and a closed, nonempty face selection.
+/// Edge members must resolve to edge items; both numeric parameters must be decoded.
+pub(crate) fn thread_face_collection<'a>(
+    source: &PmDcFeature,
+    property: impl Fn(u32) -> Option<&'a PmDcFeatureProperty>,
+    parameter: impl Fn(u32) -> bool,
+) -> Option<&'a PmDcFeatureProperty> {
+    let slots = source.properties.references();
+    if source.properties.marker() != 2 || slots.len() != 9 {
+        return None;
+    }
+    let faces = property(slots[0].index())?;
+    let PmDcFeaturePropertyKind::References {
+        family: PmDcFeatureReferenceFamily::FaceCollection,
+        items,
+    } = &faces.kind
+    else {
+        return None;
+    };
+    if items.marker() != 2
+        || items.references().is_empty()
+        || !items.references().iter().all(|reference| {
+            property(reference.index()).is_some_and(|item| {
+                matches!(
+                    &item.kind,
+                    PmDcFeaturePropertyKind::FaceItem { index_references }
+                        if index_references.marker() == 2 && !index_references.values().is_empty()
+                )
+            })
+        })
+        || [1, 2, 6].into_iter().any(|slot| {
+            !property(slots[slot].index())
+                .is_some_and(|value| matches!(value.kind, PmDcFeaturePropertyKind::Boolean { .. }))
+        })
+        || [3, 4]
+            .into_iter()
+            .any(|slot| !parameter(slots[slot].index()))
+    {
+        return None;
+    }
+    for (slot, family) in [
+        (5, PmDcFeatureReferenceFamily::EdgeCollection),
+        (8, PmDcFeatureReferenceFamily::FeatureDimensions),
+    ] {
+        let PmDcFeaturePropertyKind::References {
+            family: actual,
+            items,
+        } = &property(slots[slot].index())?.kind
+        else {
+            return None;
+        };
+        if *actual != family || items.marker() != 2 {
+            return None;
+        }
+        if family == PmDcFeatureReferenceFamily::EdgeCollection
+            && !items.references().iter().all(|reference| {
+                property(reference.index()).is_some_and(|item| {
+                    matches!(&item.kind, PmDcFeaturePropertyKind::EdgeItem { .. })
+                })
+            })
+        {
+            return None;
+        }
+    }
+    Some(faces)
+}
+
+fn project_thread(
+    ctx: &DecodeContext<'_>,
+    source: &PmDcFeature,
+    label: &PmDcFeatureLabel,
+    index: &ProjectionIndex<'_>,
+) -> Option<Result<Feature, CodecError>> {
+    let token = source.identity.segment_token.as_str();
+    let faces = thread_face_collection(
+        source,
+        |reference| resolve_property(token, reference, index),
+        |reference| {
+            reference
+                .checked_sub(1)
+                .and_then(|ordinal| index.parameters.get(&(token, ordinal)))
+                .is_some_and(Option::is_some)
+        },
+    )?;
+    if let Err(error) = ctx.charge_entities(1, "project Inventor thread annotation") {
+        return Some(Err(error));
+    }
+    let key = match source.identity.key() {
+        Ok(key) => key,
+        Err(error) => return Some(Err(error)),
+    };
+    Some(Ok(Feature {
+        id: FeatureId::compose(
+            &cadmpeg_ir::identity_namespace!("inventor", "design", "feature"),
+            key,
+        ),
+        ordinal: u64::from(label.index),
+        name: label.name().map(str::to_owned),
+        suppressed: None,
+        dependencies: DistinctMembers::default(),
+        source_properties: boolean_properties(source, &[1, 2, 6], index),
+        source_tag: Some("thread".into()),
+        source_text: None,
+        source_content: FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
+                face: cadmpeg_ir::features::FaceSelection::Native(faces.id()),
+                diameter: None,
+                extent: None,
+            }),
+        ),
+        native_ref: Some(source.id()),
+    }))
 }
 
 fn project_extrusion(
@@ -1973,6 +2284,7 @@ fn project_extrusion(
         return None;
     }
     let mut selections = Vec::new();
+    let mut links = Vec::new();
     for reference in boundary.references() {
         let property = resolve_property(
             source.identity.segment_token.as_str(),
@@ -1990,6 +2302,7 @@ fn project_extrusion(
             return None;
         }
         selections.push(property.id());
+        links.push(ordinal);
     }
     if selections.is_empty() || label.participants.references().len() != 1 {
         return None;
@@ -2003,6 +2316,7 @@ fn project_extrusion(
         ))
         .and_then(Option::as_ref)?;
     let sketch_id = index.sketch_ids.get(sketch.id().as_str())?.clone();
+    let neutral_sketch = index.sketches_by_id.get(sketch_id.as_str()).copied();
 
     let direction_record = resolve_direction(source, 2, index)?;
     let mut direction = cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(
@@ -2022,10 +2336,8 @@ fn project_extrusion(
         .is_some_and(|reference| reference.index() != 0);
     let first = extrusion_side(source, index, ExtrusionSideSlots::FIRST, extent_value)?;
     let start = if extent_value == EXTENT_FROM_TO {
-        ExtrudeStart::FromFace {
-            face: termination_target(source, index, 8, 10, 17)?,
-            offset: None,
-        }
+        let (plane, native) = extent_target_plane(source, index, 8, 10, 17)?;
+        ExtrudeStart::FromPlane { plane, native }
     } else {
         ExtrudeStart::ProfilePlane {}
     };
@@ -2059,7 +2371,18 @@ fn project_extrusion(
     if let Err(error) = ctx.charge_entities(1, "project Inventor feature") {
         return Some(Err(error));
     }
-    let profile = PlanarProfileRef::sketch_selection(sketch_id, selections).ok()?;
+    let regions = neutral_sketch.and_then(|neutral| {
+        index.profiles.regions(
+            source.identity.segment_token.as_str(),
+            sketch.identity.record_ordinal,
+            neutral,
+            &links,
+        )
+    });
+    let profile = match regions {
+        Some(profile) => profile,
+        None => PlanarProfileRef::sketch_selection(sketch_id, selections).ok()?,
+    };
     let feature = Feature {
         id: feature_id,
         ordinal: u64::from(label.index),
@@ -2142,10 +2465,10 @@ fn extrusion_side(
         },
         EXTENT_THROUGH_NEXT => LinearTermination::ThroughNext {},
         EXTENT_THROUGH_ALL => LinearTermination::ThroughAll {},
-        EXTENT_FROM_TO | EXTENT_TO => LinearTermination::ToFace {
-            face: termination_target(source, index, 11, 13, 18)?,
-            offset: None,
-        },
+        EXTENT_FROM_TO | EXTENT_TO => {
+            let (plane, native) = extent_target_plane(source, index, 11, 13, 18)?;
+            LinearTermination::ToPlane { plane, native }
+        }
         _ => return None,
     };
     Some(ExtrudeSide {
@@ -2157,14 +2480,18 @@ fn extrusion_side(
 }
 
 /// Resolve an extent target: a work plane, or a model face recorded as a
-/// termination flag with value 1 and its plane surface.
-fn termination_target(
+/// termination flag with value 1 and its plane surface. Both store a plane
+/// in centimetres and no face identity.
+fn extent_target_plane(
     source: &PmDcFeature,
     index: &ProjectionIndex<'_>,
     plane_slot: usize,
     flag_slot: usize,
     surface_slot: usize,
-) -> Option<cadmpeg_ir::features::FaceSelection> {
+) -> Option<(
+    cadmpeg_ir::features::FeatureSupportPlaneFrame,
+    cadmpeg_core::text::NonBlankString,
+)> {
     let references = source.properties.references();
     let plane = references.get(plane_slot)?.index();
     let flag = references.get(flag_slot)?.index();
@@ -2178,7 +2505,7 @@ fn termination_target(
             .work_planes
             .get(&(token, plane.checked_sub(1)?))
             .and_then(Option::as_ref)?;
-        return Some(cadmpeg_ir::features::FaceSelection::Native(plane.id()));
+        return target_plane(plane.origin, plane.u_axis, plane.v_axis, plane.id());
     }
     if !matches!(
         resolve_property(token, flag, index)?.kind,
@@ -2187,10 +2514,43 @@ fn termination_target(
         return None;
     }
     let surface = resolve_property(token, surface, index)?;
-    if !matches!(surface.kind, PmDcFeaturePropertyKind::PlaneSurface { .. }) {
+    let PmDcFeaturePropertyKind::PlaneSurface {
+        origin,
+        u_axis,
+        v_axis,
+        ..
+    } = surface.kind
+    else {
         return None;
-    }
-    Some(cadmpeg_ir::features::FaceSelection::Native(surface.id()))
+    };
+    target_plane(origin, u_axis, v_axis, surface.id())
+}
+
+/// Build a model-space plane frame from an origin in centimetres and two
+/// in-plane axes. The normal is the cross product of the axes.
+fn target_plane(
+    origin: [cadmpeg_ir::scalar::FiniteReal; 3],
+    u_axis: [cadmpeg_ir::scalar::FiniteReal; 3],
+    v_axis: [cadmpeg_ir::scalar::FiniteReal; 3],
+    native: String,
+) -> Option<(
+    cadmpeg_ir::features::FeatureSupportPlaneFrame,
+    cadmpeg_core::text::NonBlankString,
+)> {
+    let vector = |value: [cadmpeg_ir::scalar::FiniteReal; 3]| {
+        Vector3::new(value[0].get(), value[1].get(), value[2].get())
+    };
+    let u_axis = vector(u_axis);
+    let plane = cadmpeg_ir::features::FeatureSupportPlaneFrame::new(
+        Point3::new(
+            origin[0].get() * 10.0,
+            origin[1].get() * 10.0,
+            origin[2].get() * 10.0,
+        ),
+        u_axis.cross(vector(v_axis)),
+        u_axis,
+    )?;
+    Some((plane, cadmpeg_core::text::NonBlankString::new(native)?))
 }
 
 fn project_fillet(
@@ -2218,6 +2578,7 @@ fn project_fillet(
             radius,
             selection,
             continuity,
+            ..
         } = &set.kind
         else {
             return None;
@@ -2539,6 +2900,159 @@ fn project_hole(
     )))
 }
 
+/// Admit the join form with Boolean values `1, 0, 0, 0, 0, 1, 0` in slots
+/// 2, 3, 4, 7, 10, 16, and 17, and a positive thickness in slot 6.
+pub(crate) fn thicken_operation<'a>(
+    source: &PmDcFeature,
+    property_at: impl Fn(usize) -> Option<&'a PmDcFeatureProperty>,
+    parameter_at: impl Fn(usize) -> Option<(&'a crate::design::PmDcParameter, &'a ParameterValue)>,
+    record_type_at: impl Fn(u32) -> Option<&'a str>,
+) -> Option<FeatureOperation> {
+    if source.properties.references().len() != 18
+        || [5, 8, 11]
+            .into_iter()
+            .any(|slot| source.properties.references()[slot].index() != 0)
+        || !matches!(
+            property_at(1)?.kind,
+            PmDcFeaturePropertyKind::Enumeration {
+                family: PmDcFeatureEnumFamily::PartOperation,
+                type_value: 5,
+                value: 3,
+            }
+        )
+    {
+        return None;
+    }
+    for (slot, expected) in [
+        (2, true),
+        (3, false),
+        (4, false),
+        (7, false),
+        (10, false),
+        (16, true),
+        (17, false),
+    ] {
+        if !matches!(
+            property_at(slot)?.kind,
+            PmDcFeaturePropertyKind::Boolean { value, .. } if value == expected
+        ) {
+            return None;
+        }
+    }
+    if !matches!(
+        property_at(9)?.kind,
+        PmDcFeaturePropertyKind::References {
+            family: PmDcFeatureReferenceFamily::FeatureDimensions,
+            ..
+        }
+    ) {
+        return None;
+    }
+    for (slot, expected) in [
+        (13, "4c40b0a3ac4b9504e719b28a70e0e818"),
+        (14, "c11c7b63ea4d840b68b76e8c67bcbc48"),
+    ] {
+        if record_type_at(source.properties.references()[slot].record_ordinal()?)? != expected {
+            return None;
+        }
+    }
+    let (raw_thickness, value) = parameter_at(6)?;
+    let ParameterValue::Length(thickness) = value else {
+        return None;
+    };
+    if Length::new(raw_thickness.model_value.get() * 10.0)? != *thickness {
+        return None;
+    }
+    let (raw_control, control) = parameter_at(12)?;
+    if !matches!(control, ParameterValue::Real(value) if *value == raw_control.model_value) {
+        return None;
+    }
+    let selections = property_at(0)?;
+    let PmDcFeaturePropertyKind::References {
+        family: PmDcFeatureReferenceFamily::SelectionList,
+        items,
+    } = &selections.kind
+    else {
+        return None;
+    };
+    let mut distinct = HashSet::new();
+    if items.references().is_empty()
+        || items.references().iter().any(|reference| {
+            reference
+                .record_ordinal()
+                .and_then(&record_type_at)
+                .is_none()
+                || !distinct.insert(reference.index())
+        })
+    {
+        return None;
+    }
+    Some(FeatureOperation::Thicken {
+        faces: FaceSelection::Native(selections.id()),
+        thickness: Some(cadmpeg_ir::scalar::PositiveLength::try_from(*thickness).ok()?),
+        side: None,
+    })
+}
+
+fn project_thicken(
+    ctx: &DecodeContext<'_>,
+    source: &PmDcFeature,
+    label: &PmDcFeatureLabel,
+    index: &ProjectionIndex<'_>,
+    inventory: &FeatureInventory,
+) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
+    let operation = thicken_operation(
+        source,
+        |slot| slot_property(source, slot, index),
+        |slot| {
+            let ordinal = source.properties.references().get(slot)?.record_ordinal()?;
+            let parameter = index
+                .parameters
+                .get(&(source.identity.segment_token.as_str(), ordinal))?
+                .as_ref()?;
+            let value = index
+                .parameter_values
+                .get(parameter.id().as_str())?
+                .as_ref()?
+                .value
+                .as_ref()?;
+            Some((*parameter, value))
+        },
+        |ordinal| {
+            inventory
+                .record_types
+                .get(&source.identity.segment_token)?
+                .get(&ordinal)?
+                .as_deref()
+        },
+    )?;
+    let (feature_id, result) = match feature_result(ctx, source, 15, index)? {
+        Ok(value) => value,
+        Err(error) => return Some(Err(error)),
+    };
+    if let Err(error) = ctx.charge_entities(1, "project Inventor feature") {
+        return Some(Err(error));
+    }
+    Some(Ok((
+        Feature {
+            id: feature_id,
+            ordinal: u64::from(label.index),
+            name: label.name().map(str::to_owned),
+            suppressed: None,
+            dependencies: DistinctMembers::default(),
+            source_properties: boolean_properties(source, &[2, 3, 4, 7, 10, 16, 17], index),
+            source_tag: Some("thicken".into()),
+            source_text: None,
+            source_content: FeatureContent::default(),
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Operation(operation),
+            ),
+            native_ref: Some(source.id()),
+        },
+        result,
+    )))
+}
+
 fn feature_result(
     ctx: &DecodeContext<'_>,
     source: &PmDcFeature,
@@ -2737,7 +3251,13 @@ fn length_reference(token: &str, reference: u32, index: &ProjectionIndex<'_>) ->
         .parameters
         .get(&(token, reference.checked_sub(1)?))
         .and_then(Option::as_ref)?;
-    match index.parameter_values.get(parameter.id().as_str())? {
+    match index
+        .parameter_values
+        .get(parameter.id().as_str())?
+        .as_ref()?
+        .value
+        .as_ref()?
+    {
         ParameterValue::Length(value) if value.get() >= 0.0 => Some(*value),
         _ => None,
     }
@@ -2756,7 +3276,13 @@ fn angle_parameter(
             reference.index().checked_sub(1)?,
         ))
         .and_then(Option::as_ref)?;
-    match index.parameter_values.get(parameter.id().as_str())? {
+    match index
+        .parameter_values
+        .get(parameter.id().as_str())?
+        .as_ref()?
+        .value
+        .as_ref()?
+    {
         ParameterValue::Angle(value) => Some(*value),
         _ => None,
     }
@@ -2829,6 +3355,8 @@ impl RecordPayload for PmDcFeatureTerminatorPayload {
 
 #[cfg(test)]
 mod tests {
+    mod thicken;
+
     use super::{
         inventory, parse_boolean, parse_boundary_patch, parse_chamfer, parse_edge_item,
         parse_entity_style_link, parse_feature, parse_fillet_edge_selection, parse_fillet_edge_set,
@@ -2848,7 +3376,9 @@ mod tests {
     use crate::pmdc::{PmDcContentHeader, PmDcReferenceList, PmDcU32List};
     use crate::record_identity::Located;
     use crate::rse::{RecordFrameState, SegmentBulkState, SegmentKind};
-    use crate::test_support::test_fixtures::{content, parse, primary_envelope_fixture};
+    use crate::test_support::test_fixtures::{
+        content, content_at, parse, primary_envelope_fixture,
+    };
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, View};
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::features::{
@@ -2867,6 +3397,7 @@ mod tests {
     #[test]
     fn feature_projection_reports_an_unlabelled_feature() {
         let inventory = super::FeatureInventory {
+            record_types: std::collections::HashMap::new(),
             features: vec![test_feature(0, 0, &[])],
             pattern_features: Vec::new(),
             terminators: Vec::new(),
@@ -2898,9 +3429,20 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("build the decode context");
         assert_eq!(
-            super::project(&ctx, &inventory, &design, &sketch, &[], &[])
-                .expect("feature projection")
-                .unresolved_features,
+            super::project(
+                &ctx,
+                &inventory,
+                &design,
+                &sketch,
+                &[],
+                &super::ProjectedSketches {
+                    sketches: &[],
+                    entities: &[],
+                    profile_bodies: &[],
+                },
+            )
+            .expect("feature projection")
+            .unresolved_features,
             1
         );
     }
@@ -2974,6 +3516,17 @@ mod tests {
         payload: &[u8],
         policy: DecodePolicy,
     ) -> Result<super::FeatureInventory, CodecError> {
+        with_record(type_id, payload, policy, inventory)
+    }
+
+    /// Run `read` over a `PmDc` segment whose first record has `type_id` and
+    /// `payload`.
+    fn with_record<T>(
+        type_id: [u8; 16],
+        payload: &[u8],
+        policy: DecodePolicy,
+        read: impl FnOnce(&DecodeContext<'_>, &crate::rse::RseInventory<'_>) -> Result<T, CodecError>,
+    ) -> Result<T, CodecError> {
         let bytes = primary_envelope_fixture();
         let payload = payload.to_vec();
         let arena = DecodeArena::new();
@@ -2992,7 +3545,21 @@ mod tests {
         table.records[0].type_id = type_id;
         table.records[0].payload = View::over_retained(&payload);
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("input view");
-        inventory(&ctx, &container.rse)
+        read(&ctx, &container.rse)
+    }
+
+    #[test]
+    fn an_undecodable_profile_body_is_counted_and_is_no_record_issue() {
+        let payload = [0u8; 8];
+        let kernel = crate::kernel::KERNEL_RECORD_TYPE_ID;
+        let inventory = inventory_with_record(kernel, &payload, DecodePolicy::service())
+            .expect("feature inventory");
+        assert!(inventory.issues.is_empty());
+        let bodies = with_record(kernel, &payload, DecodePolicy::service(), |ctx, rse| {
+            super::profile::decode_profile_bodies(ctx, rse)
+        })
+        .expect("profile bodies");
+        assert_eq!((bodies.bodies.len(), bodies.undecoded), (0, 1));
     }
 
     #[test]
@@ -3095,9 +3662,35 @@ mod tests {
             header_id: 0,
             next: reference(0),
             flags: 0,
+            flags_extension: None,
             context: reference(0),
             source_index: 0,
+            stamps: Vec::new(),
         }
+    }
+
+    #[test]
+    fn a_fillet_edge_set_option_is_null_or_a_boolean_record() {
+        let edge_set = |option| PmDcFeaturePropertyKind::FilletEdgeSet {
+            edges: reference(5),
+            radius: reference(21),
+            selection: reference(6),
+            continuity: reference(7),
+            option,
+        };
+        let boolean = crate::pmdc::type_id_string(BOOLEAN_TYPE);
+        let types = |ordinal: u32| match ordinal {
+            8 => Some(boolean.as_str()),
+            9 => Some("00000000000000000000000000000009"),
+            _ => None,
+        };
+        let admitted = crate::validate::fillet_option_is_admitted;
+        assert!(admitted(&edge_set(None), types));
+        assert!(admitted(&edge_set(Some(reference(0))), types));
+        assert!(admitted(&edge_set(Some(reference(9))), types));
+        assert!(!admitted(&edge_set(Some(reference(10))), types));
+        // An unresolved reference is the reference check's single finding.
+        assert!(admitted(&edge_set(Some(reference(11))), types));
     }
 
     fn test_property(ordinal: u32, kind: PmDcFeaturePropertyKind) -> PmDcFeatureProperty {
@@ -3188,6 +3781,7 @@ mod tests {
                     header_value: 0,
                     header_id: 0,
                     values: [0; 2],
+                    flags_extension: None,
                     owner: reference(owner_ordinal + 1),
                     parent: reference(0),
                     next: reference(0),
@@ -3195,6 +3789,7 @@ mod tests {
                 index,
                 participants: reference_list(participants),
                 name: format!("Feature {index}"),
+                name_units: None,
                 class_id: class_id.into(),
             })
             .expect("valid label fixture"),
@@ -3213,8 +3808,10 @@ mod tests {
                     header_id: 0,
                     next: reference(0),
                     flags: 0,
+                    flags_extension: None,
                     context: reference(0),
                     source_index: ordinal,
+                    stamps: Vec::new(),
                 },
                 name: format!("p{ordinal}"),
                 name_value: 0,
@@ -3271,40 +3868,33 @@ mod tests {
         entity_style_links: &'a [PmDcEntityStyleLink],
     ) -> ProjectionIndex<'a> {
         ProjectionIndex {
-            properties: properties
-                .iter()
-                .map(|record| {
+            properties: super::unique_index(properties.iter().map(|record| {
+                (
                     (
-                        (
-                            record.identity.segment_token.as_str(),
-                            record.identity.record_ordinal,
-                        ),
-                        Some(record),
-                    )
-                })
-                .collect(),
-            parameters: parameters
-                .iter()
-                .map(|record| {
+                        record.identity.segment_token.as_str(),
+                        record.identity.record_ordinal,
+                    ),
+                    record,
+                )
+            })),
+            parameters: super::unique_index(parameters.iter().map(|record| {
+                (
                     (
-                        (
-                            record.identity.segment_token.as_str(),
-                            record.identity.record_ordinal,
-                        ),
-                        Some(record),
-                    )
-                })
-                .collect(),
+                        record.identity.segment_token.as_str(),
+                        record.identity.record_ordinal,
+                    ),
+                    record,
+                )
+            })),
             parameter_ids: neutral_parameters
                 .iter()
                 .filter_map(|parameter| Some((parameter.native_ref.as_deref()?, &parameter.id)))
                 .collect(),
-            parameter_values: neutral_parameters
-                .iter()
-                .filter_map(|parameter| {
-                    Some((parameter.native_ref.as_deref()?, parameter.value.as_ref()?))
-                })
-                .collect(),
+            parameter_values: super::unique_index(
+                neutral_parameters
+                    .iter()
+                    .filter_map(|parameter| Some((parameter.native_ref.as_deref()?, parameter))),
+            ),
             sketches: sketches
                 .iter()
                 .map(|record| {
@@ -3325,6 +3915,10 @@ mod tests {
                         .as_deref()
                         .map(|native| (native, sketch.id.clone()))
                 })
+                .collect(),
+            sketches_by_id: neutral_sketches
+                .iter()
+                .map(|sketch| (sketch.id.as_str(), sketch))
                 .collect(),
             directions: directions
                 .iter()
@@ -3360,6 +3954,7 @@ mod tests {
                 })
                 .collect(),
             work_planes: std::collections::HashMap::new(),
+            profiles: super::profile::ProfileIndex::new(&[], &[], entity_style_links, &[], &[]),
         }
     }
 
@@ -3393,7 +3988,11 @@ mod tests {
     }
 
     fn pattern_feature_bytes(version: u8, family: PmDcPatternFamily) -> Vec<u8> {
-        let mut bytes = content(21);
+        let mut bytes = if version >= 23 {
+            content_at(21, version, &[])
+        } else {
+            content(21)
+        };
         bytes.extend_from_slice(&69u32.to_le_bytes());
         bytes.extend_from_slice(&3u32.to_le_bytes());
         bytes.extend_from_slice(&references(&[]));
@@ -3403,24 +4002,39 @@ mod tests {
             bytes.extend_from_slice(&(0x8000_0020u32 + index).to_le_bytes());
         }
         bytes.push(1);
+        let slots = |bytes: &mut Vec<u8>, base: u32, count: u32| {
+            for index in 0..count {
+                bytes.extend_from_slice(&(base + index).to_le_bytes());
+            }
+        };
+        let values = |bytes: &mut Vec<u8>, count: u32| {
+            for index in 0..count {
+                bytes.extend_from_slice(&(0x100u32 + index).to_le_bytes());
+            }
+        };
         match family {
-            PmDcPatternFamily::Rectangular => {
-                let remaining = if version > 20 { 26 } else { 20 };
-                for index in 0..remaining {
-                    bytes.extend_from_slice(&(0x8000_0040u32 + index).to_le_bytes());
+            PmDcPatternFamily::Rectangular if version >= 29 => {
+                slots(&mut bytes, 0x8000_0040, 12);
+                values(&mut bytes, 8);
+                slots(&mut bytes, 0x8000_004c, 14);
+                if version >= 30 {
+                    values(&mut bytes, 6);
                 }
             }
+            PmDcPatternFamily::Rectangular => {
+                slots(&mut bytes, 0x8000_0040, if version > 20 { 26 } else { 20 });
+            }
             PmDcPatternFamily::Mirror => {
-                for index in 0..5 {
-                    bytes.extend_from_slice(&(0x8000_0040u32 + index).to_le_bytes());
-                }
+                slots(&mut bytes, 0x8000_0040, 5);
                 if version > 20 {
-                    for index in 0..6 {
-                        bytes.extend_from_slice(&(0x100u32 + index).to_le_bytes());
-                    }
+                    values(&mut bytes, 6);
                 }
-                for index in 0..2 {
-                    bytes.extend_from_slice(&(0x8000_0050u32 + index).to_le_bytes());
+                if version >= 29 {
+                    slots(&mut bytes, 0x8000_0050, 1);
+                    values(&mut bytes, 8);
+                    slots(&mut bytes, 0x8000_0051, 1);
+                } else {
+                    slots(&mut bytes, 0x8000_0050, 2);
                 }
             }
         }
@@ -3520,6 +4134,9 @@ mod tests {
             (21, PmDcPatternFamily::Rectangular, 32, 0),
             (16, PmDcPatternFamily::Mirror, 13, 0),
             (21, PmDcPatternFamily::Mirror, 13, 6),
+            (29, PmDcPatternFamily::Rectangular, 32, 8),
+            (30, PmDcPatternFamily::Rectangular, 32, 14),
+            (29, PmDcPatternFamily::Mirror, 13, 14),
         ] {
             let bytes = pattern_feature_bytes(version, family);
             let parsed = parse(&bytes, |_, source| {
@@ -3577,6 +4194,7 @@ mod tests {
                     radius: reference(21),
                     selection: reference(6),
                     continuity: reference(7),
+                    option: None,
                 },
             ),
             test_property(
@@ -3822,6 +4440,7 @@ mod tests {
                     header_value: 0,
                     header_id: 0,
                     values: [0; 2],
+                    flags_extension: None,
                     owner: reference(0),
                     parent: reference(0),
                     next: reference(0),
@@ -4304,6 +4923,110 @@ mod tests {
     }
 
     #[test]
+    fn a_label_name_with_an_unpaired_surrogate_keeps_its_code_units() {
+        let stored = [0x0059u16, 0xdca5, 0x006b];
+        let mut label = Vec::new();
+        label.extend_from_slice(&0u32.to_le_bytes());
+        label.extend_from_slice(&18u16.to_le_bytes());
+        for value in [0u32, 0, 0x8000_000d, 0, 0, 4] {
+            label.extend_from_slice(&value.to_le_bytes());
+        }
+        label.extend_from_slice(&references(&[0x8000_0013]));
+        label.extend_from_slice(&3u32.to_le_bytes());
+        for unit in stored {
+            label.extend_from_slice(&unit.to_le_bytes());
+        }
+        label.extend_from_slice(&[0xabu8; 16]);
+        let parsed = parse(&label, |ctx, source| {
+            parse_label(ctx, source, 16).expect("label")
+        });
+        assert_eq!(parsed.name, "Y\u{fffd}k");
+        assert!(parsed.name_replaced());
+        assert_eq!(parsed.name_units.as_deref(), Some(&stored[..]));
+
+        // The wire admits code units only beside their replacement decoding.
+        let wire = |name: &str, units: &[u16]| PmDcFeatureLabelPayloadWire {
+            save_version_major: 16,
+            header: parsed.header.clone(),
+            index: 4,
+            participants: parsed.participants.clone(),
+            name: name.to_owned(),
+            name_units: Some(units.to_vec()),
+            class_id: "ab".repeat(16),
+        };
+        assert!(PmDcFeatureLabelPayload::try_from(wire("Y\u{fffd}k", &stored)).is_ok());
+        assert!(PmDcFeatureLabelPayload::try_from(wire("Yk", &stored)).is_err());
+        assert!(PmDcFeatureLabelPayload::try_from(wire("Yk", &[0x59, 0x6b])).is_err());
+    }
+
+    #[test]
+    fn parses_newer_segment_version_record_forms() {
+        // A feature body starts with its state, so its header has no stamps.
+        let mut feature = content_at(7, 29, &[]);
+        feature.extend_from_slice(&2908i32.to_le_bytes());
+        feature.extend_from_slice(&0u32.to_le_bytes());
+        feature.extend_from_slice(&references(&[0x8000_0004]));
+        feature.extend_from_slice(&9u32.to_le_bytes());
+        let parsed = parse(&feature, |_, source| {
+            parse_feature(source, 29).expect("feature")
+        });
+        assert_eq!(parsed.header.flags_extension, Some(0));
+        assert!(parsed.header.stamps.is_empty());
+        assert_eq!(parsed.state, 2908);
+        assert_eq!(parsed.properties.references().len(), 1);
+
+        // Other content records store one stamp in version 23, two from 25,
+        // and a fillet edge set adds a fifth reference from version 23.
+        let edge_set = |version: u8, stamps: &[i32], option: u32| {
+            let mut bytes = content_at(18, version, stamps);
+            for reference in [
+                0x8000_0010u32,
+                0x8000_0011,
+                0x8000_0012,
+                0x8000_0013,
+                option,
+            ] {
+                bytes.extend_from_slice(&reference.to_le_bytes());
+            }
+            bytes
+        };
+        let parsed = parse(&edge_set(23, &[-1], 0x8000_0014), |ctx, source| {
+            parse_fillet_edge_set(ctx, source, 23).expect("fillet edge set")
+        });
+        assert_eq!(parsed.header.stamps, [-1]);
+        assert!(matches!(
+            parsed.kind,
+            PmDcFeaturePropertyKind::FilletEdgeSet { option: Some(option), .. } if option.index() == 20
+        ));
+        let parsed = parse(&edge_set(25, &[-1, 2502], 0), |ctx, source| {
+            parse_fillet_edge_set(ctx, source, 25).expect("fillet edge set")
+        });
+        assert_eq!(parsed.header.stamps, [-1, 2502]);
+        assert!(matches!(
+            parsed.kind,
+            PmDcFeaturePropertyKind::FilletEdgeSet { option: Some(option), .. } if option.index() == 0
+        ));
+        // Without its stamp, a version 23 record is short.
+        parse(&edge_set(23, &[], 0x8000_0014), |ctx, source| {
+            assert!(parse_fillet_edge_set(ctx, source, 23).is_err());
+        });
+
+        // Version 29 adds a zero u32 to the linked header after its values.
+        let mut entity_link = Vec::new();
+        entity_link.extend_from_slice(&0u32.to_le_bytes());
+        entity_link.extend_from_slice(&16u16.to_le_bytes());
+        for value in [0u32, 0, 0, 0x8000_0008, 0, 0x8000_0009, 1, 2, 3] {
+            entity_link.extend_from_slice(&value.to_le_bytes());
+        }
+        let parsed = parse(&entity_link, |_, source| {
+            parse_entity_style_link(source, 29).expect("entity-style link")
+        });
+        assert_eq!(parsed.header.owner.index(), 8);
+        assert_eq!(parsed.header.next.index(), 9);
+        assert_eq!(parsed.associative_id, 2);
+    }
+
+    #[test]
     fn class_id_admits_only_the_canonical_lowercase_spelling() {
         let lower = "ab".repeat(16);
         assert_eq!(
@@ -4351,6 +5074,7 @@ mod tests {
                 header_value: 0,
                 header_id: 18,
                 values: [0, 0],
+                flags_extension: None,
                 owner: reference,
                 parent: reference,
                 next: reference,
@@ -4363,6 +5087,7 @@ mod tests {
             )
             .expect("paired participants"),
             name: "Extrude1".to_owned(),
+            name_units: None,
             class_id: "ab".repeat(16),
         })
         .expect("feature label");
@@ -4384,4 +5109,5 @@ mod tests {
     }
 
     mod extents;
+    mod thread;
 }

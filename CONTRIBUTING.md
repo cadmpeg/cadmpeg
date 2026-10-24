@@ -8,19 +8,13 @@ Read [LEGAL.md](LEGAL.md) before contributing. It defines where format knowledge
 
 ### 1. DCO sign-off
 
-cadmpeg uses the [Developer Certificate of Origin](https://developercertificate.org/). Every contribution must be signed off. The sign-off certifies that you have the right to submit the contribution under the project's licenses. There are two ways to satisfy it:
+cadmpeg uses the [Developer Certificate of Origin](https://developercertificate.org/). Every pull request must be signed off. The sign-off certifies that you have the right to submit the contribution under the project's licenses.
 
-**Per commit** — sign off each commit:
+Pull requests are squash-merged, so the sign-off covers the pull request as a whole, not each commit. Sign off by ticking the `Signed off` box in the pull request template. The ticked box is the sign-off. It needs no `Signed-off-by` line beside it, and the commits need no `git commit -s`.
 
-```sh
-git commit -s -m "Your message"
-```
+CI also accepts a `Signed-off-by: Your Name <your@email>` line in the description, or a sign-off on every commit. Neither is required when the box is ticked.
 
-This appends a `Signed-off-by: Your Name <your@email>` line to the commit. Use this when your commits merge as-is (rebase or merge-commit).
-
-**Per PR** — put one `Signed-off-by: Your Name <your@email>` line in the pull request description. A squash-merge builds its commit message from that description, so the trailer lands verbatim on the single commit that reaches `main`. This is the path to take when you squash-merge a branch of unsigned work-in-progress commits: one sign-off covers the PR.
-
-CI accepts either path; a PR-level sign-off waives the per-commit check for that PR. Use a consistent contributor identity and an email address where you can be reached. Do not forge authorship or sign off for someone else.
+Use a consistent contributor identity and an email address where you can be reached. Do not forge authorship or sign off for someone else.
 
 ### 2. Provenance declaration on decoder and spec PRs
 
@@ -103,10 +97,35 @@ To compare a crate's public API between Git refs, install Rust nightly and `carg
 
 ---
 
+## Preflight before a pull request
+
+Run the preflight from the branch's worktree before you open or update a pull request:
+
+```sh
+python3 scripts/preflight.py          # static checks against the upstream branch
+python3 scripts/preflight.py --full   # also the Cargo checks for the crates the change reaches
+python3 scripts/preflight.py --list   # what each check looks for
+```
+
+The preflight finds the remote that points at `cadmpeg/cadmpeg`, or `origin`. It fetches that remote's default branch and checks the working tree against the merge base.
+
+Each check prints `PASS`, `FAIL`, `WARN`, or `SKIP`, with the fix. Any `FAIL` exits 1. A `FAIL` is something review or CI rejects. Examples are an `IR_VERSION` change with stale fixtures, an open-item ID that upstream already uses, and a branch that conflicts with upstream. A `WARN` needs your judgement.
+
+Without `--full`, nothing compiles. `--run-layout` regenerates changed layout tables; a layout page or `layout.rs` that changed without its table fails unless regeneration reproduces it byte for byte. `--rev REV` checks a commit instead of the working tree.
+
+The `open-prs` check lists the upstream open pull requests through the GitHub CLI, so it needs network access and an authenticated `gh` (`gh auth login`). Without them it is skipped. `--offline` skips it and the fetch.
+
+`spec-wording` warns on added format Markdown lines containing “not yet”, “do not yet”, “for now”, “currently”, or “TODO”, including open-items documents.
+
+The checks cover recurring review points, not all of them. A check is a `scripts/preflight_<name>.py` module with a `scripts/test_preflight_<name>.py` test.
+
+---
+
 ## Pull request checklist
 
-- [ ] Commits are signed off (`git commit -s`).
+- [ ] The `Signed off` box in the pull request description is ticked.
 - [ ] For decoder/spec PRs: the provenance declaration is in the description.
+- [ ] `python3 scripts/preflight.py` reports no `FAIL`.
 - [ ] `cargo fmt --all --check` passes.
 - [ ] `cargo clippy --workspace --all-targets` passes.
 - [ ] `cargo build --workspace` passes.

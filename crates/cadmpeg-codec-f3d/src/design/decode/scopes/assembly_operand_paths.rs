@@ -49,7 +49,16 @@ pub(super) fn exact_assembly_operand_paths<'a>(
         let count_at = scope_at.checked_add(
             locator_offsets[0].checked_sub(path_locator_run::FIRST_LOCATOR_REFERENCE)?,
         )?;
-        if View::u32_le_at(bytes, count_at)? != 2 {
+        // A rigid group counts one locator per member; every other form has two.
+        let expected = if crate::design::assembly::rigid_as_built_scope(
+            scope.frame_length(),
+            scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
+        ) {
+            crate::design::assembly::rigid_group_member_count(scope.frame_length())?
+        } else {
+            2
+        };
+        if usize::try_from(View::u32_le_at(bytes, count_at)?).ok()? != expected {
             return None;
         }
         let mut paths = [None, None];
@@ -102,6 +111,76 @@ pub(super) fn exact_assembly_operand_paths<'a>(
     .transpose()
 }
 
+/// The operand paths of a rigid group's members after its first two, in
+/// locator order. Each member's locator reference follows the previous one;
+/// every locator is a distinct record whose envelope overlaps no other
+/// member's.
+pub(super) fn exact_rigid_group_member_paths<'a>(
+    source: View<'a>,
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    stream_types: &StreamTypes<'_>,
+    leading: &[ParsedOperandPath<'a>; 2],
+) -> Result<Option<Vec<ParsedOperandPath<'a>>>, CodecError> {
+    use crate::layout::assembly_rigid_as_built_scope as rigid;
+    let bytes = source.window();
+    (|| {
+        let members = crate::design::assembly::rigid_group_member_count(scope.frame_length())?;
+        let scope_at = usize::try_from(scope.byte_offset()).ok()?;
+        let search_start = usize::try_from(scope.paired_byte_offset())
+            .ok()?
+            .checked_add(11)?;
+        let mut paths = Vec::new();
+        for member in 2..members {
+            let locator_reference_at = scope_at
+                .checked_add(rigid::FIRST_LOCATOR_REFERENCE)?
+                .checked_add(member.checked_mul(11)?)?;
+            let (locator_record_index, locator_reference_offset) =
+                exact_same_segment_record_reference(bytes, locator_reference_at)?;
+            let mut candidate = None;
+            for locator_at in records
+                .offsets(locator_record_index)
+                .iter()
+                .copied()
+                .filter(|locator_at| *locator_at >= search_start)
+            {
+                let parsed = match exact_assembly_operand_path_envelope(
+                    source,
+                    scope,
+                    stream_types,
+                    locator_record_index,
+                    locator_reference_offset,
+                    locator_at,
+                ) {
+                    Ok(parsed) => parsed,
+                    Err(error) => return Some(Err(error)),
+                };
+                if let Some(parsed) = parsed {
+                    if candidate.replace(parsed).is_some() {
+                        return None;
+                    }
+                }
+            }
+            paths.push(candidate?);
+        }
+        let mut spans = Vec::new();
+        for path in leading.iter().chain(&paths) {
+            let start = path.source.locator_start()?;
+            let end =
+                next_indexed_record_offset(bytes, path.source.wrapper_start()?.checked_add(1)?)?;
+            let index = path.content.link().locator_record_index;
+            if spans.iter().any(|(other, other_start, other_end)| {
+                *other == index || (start < *other_end && *other_start < end)
+            }) {
+                return None;
+            }
+            spans.push((index, start, end));
+        }
+        Some(Ok(paths))
+    })()
+    .transpose()
+}
+
 fn exact_assembly_operand_path_envelope<'a>(
     source: View<'a>,
     scope: &DesignParameterScope,
@@ -118,13 +197,17 @@ fn exact_assembly_operand_path_envelope<'a>(
             scope.paired_class_tag.as_str(),
         );
         // The wide scope's locator: its own record type and prologue.
-        let wide = crate::design::assembly::AssemblyScopeGeneration::new(
+        let wide = (crate::design::assembly::AssemblyScopeGeneration::new(
             scope.frame_length(),
             scope.class_tag.as_str(),
             scope.paired_class_tag.as_str(),
         )
         .operand_frame_variant()
         .is_some_and(crate::design::assembly::AssemblyOperandFrameVariant::is_wide_family)
+            || crate::design::assembly::wide_as_built_scope(
+                scope.frame_length(),
+                scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
+            ))
             && stream_types
                 .get(&u64::from(locator_record_index))
                 .is_some_and(|(guid, _)| guid.eq_ignore_ascii_case(WIDE_PATH_LOCATOR_TYPE_GUID));
@@ -229,8 +312,11 @@ fn exact_assembly_operand_path_envelope<'a>(
         let (wrapper_record_index, wrapper_reference_offset) =
             exact_same_segment_record_reference(bytes, locator_at.checked_add(wrapper_reference)?)?;
         let path_record_index = locator_record_index.checked_add(1)?;
+        // A variable-reference or wide locator's path can continue over
+        // further path records before its wrapper.
+        let counted_wrapper = variable_reference || wide;
         if scope_record_index != scope.record_index
-            || if variable_reference {
+            || if counted_wrapper {
                 !(locator_record_index.checked_add(2)?..=locator_record_index.checked_add(65)?)
                     .contains(&wrapper_record_index)
             } else {
@@ -265,7 +351,7 @@ fn exact_assembly_operand_path_envelope<'a>(
         };
         let wrapper_class_tag = exact_indexed_header_at(bytes, wrapper_at, wrapper_record_index)?;
         let wrapper_end = next_indexed_record_offset(bytes, wrapper_at.checked_add(1)?)?;
-        let expected_wrapper_length = if variable_reference {
+        let expected_wrapper_length = if counted_wrapper {
             path_wrapper::LEN.checked_add(path_spans.len().checked_sub(1)?.checked_mul(11)?)?
         } else {
             path_wrapper::LEN
@@ -279,7 +365,7 @@ fn exact_assembly_operand_path_envelope<'a>(
             || View::u32_le_at(
                 bytes,
                 wrapper_at.checked_add(path_wrapper::CONSTANT_ONE_WORD)?,
-            )? != if variable_reference {
+            )? != if counted_wrapper {
                 u32::try_from(path_spans.len()).ok()?
             } else {
                 1
@@ -296,7 +382,7 @@ fn exact_assembly_operand_path_envelope<'a>(
         if referenced_path_record_index != path_record_index {
             return None;
         }
-        if variable_reference
+        if counted_wrapper
             && path_spans
                 .iter()
                 .skip(1)
@@ -348,7 +434,12 @@ fn exact_assembly_operand_path_envelope<'a>(
                 Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
             };
-            if !variable_reference || continuation.content.class_tag().as_str() != "330" {
+            let continues = if variable_reference {
+                continuation.content.class_tag().as_str() == "330"
+            } else {
+                wide && path.content.admitted_by_type() && continuation.content.admitted_by_type()
+            };
+            if !continues {
                 return None;
             }
             path.content = path.content.try_append(continuation.content)?;

@@ -17,11 +17,12 @@ pub(super) fn occurrence<'a>(
     expanded: View<'a>,
     token: &str,
     frame: &RseRecordFrame<'a>,
+    version: u8,
 ) -> Result<Option<AssemblyOccurrence>, CodecError> {
     crate::records::source_admission::decode_body(ctx, output, expanded, token, frame, |stage| {
         let id = format!("inventor:assembly:occurrence#{token}-{}", frame.ordinal);
         ctx.record(&id, frame.payload, || {
-            let mut occurrence = super::parse_occurrence(ctx, frame.payload)?;
+            let mut occurrence = super::parse_occurrence(ctx, frame.payload, version)?;
             occurrence.segment_token = token.to_owned();
             occurrence.record_ordinal = frame.ordinal;
             stage.insert_native(

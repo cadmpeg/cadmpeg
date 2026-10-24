@@ -98,6 +98,8 @@ pub(crate) struct Brep {
     pub(crate) face_colors: Vec<OwnedFaceColor>,
     /// Per-face producing-feature identities resolved from Parasolid attributes.
     pub(crate) face_atoms: Vec<attrib::FaceAtom>,
+    pub(crate) native_face_identities: Vec<attrib::NativeIdentity<FaceId>>,
+    pub(crate) native_body_identities: Vec<attrib::NativeIdentity<BodyId>>,
     /// Source-local sequence-to-attribute links carried by face bridge
     /// records. The decode boundary retains this map only for the active
     /// source because SWIFT identifiers resolve in that source namespace.
@@ -352,6 +354,12 @@ impl Brep {
         for atom in &mut self.face_atoms {
             atom.face = qualified(&atom.face, &tail)?;
         }
+        for identity in &mut self.native_face_identities {
+            identity.target = qualified(&identity.target, &tail)?;
+        }
+        for identity in &mut self.native_body_identities {
+            identity.target = qualified(&identity.target, &tail)?;
+        }
         for modifier in &mut self.body_modifiers {
             if let Some(target) = &mut modifier.target {
                 *target = qualified_reference(target, site);
@@ -467,8 +475,12 @@ pub(crate) struct Stats {
     pub(crate) source_entity_records: usize,
     /// Face-color bindings withheld because current records conflict.
     pub(crate) unresolved_face_colors: usize,
-    /// Face owners with multiple non-equivalent bridge uses.
-    pub(crate) ambiguous_face_owners: usize,
+    /// Referenced POINT identities withheld because complete records conflict.
+    pub(crate) unresolved_topology_points: usize,
+    /// Referenced LOOP identities withheld because complete records conflict.
+    pub(crate) unresolved_topology_loops: usize,
+    pub(crate) unresolved_topology_fins: usize,
+    pub(crate) unresolved_topology_vertices: usize,
     /// Canonical faces that no explicit body record claims.
     pub(crate) unclaimed_faces: usize,
     /// Faces on a support surface this codec does not type; emitted with an
@@ -636,6 +648,8 @@ struct WalkedFace {
     sense: Sense,
     /// `(loop_attr, ordered_coedge_attrs)` in sibling order.
     loops: Vec<(u16, Vec<u16>)>,
+    unresolved_loop: Option<u16>,
+    unresolved_fins: Vec<u16>,
 }
 
 /// Follow the sibling loop-head chain of a bridge and each loop's coedge ring,
@@ -902,7 +916,7 @@ fn ensure_surface_support(
                     match annotate_surface_frame(annotations, id.as_str(), solved) {
                         Ok(()) => {}
                         Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => {
-                            return Err(error)
+                            return Err(error);
                         }
                         Err(_) => return Ok(None),
                     }
@@ -993,23 +1007,21 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
     let surface_attr = bridge.refs[4];
     let mut loops = Vec::new();
     let mut loop_ref = bridge.refs[2];
+    let mut unresolved_loop = None;
+    let mut unresolved_fins = Vec::new();
     let mut loop_guard = HashSet::new();
     while loop_ref != 0 {
         if !loop_guard.insert(loop_ref) {
             break;
         }
         let Some(lp) = t.loops().get(&loop_ref) else {
+            if t.loop_is_ambiguous(loop_ref) {
+                unresolved_loop = Some(loop_ref);
+            }
             break;
         };
         let owner_bridge = lp.refs[2];
-        let same_face_use = owner_bridge == bridge.attr
-            || bridge.owner.is_some_and(|owner| {
-                t.bridges()
-                    .get(&owner_bridge)
-                    .and_then(|candidate| candidate.owner)
-                    == Some(owner)
-            });
-        if !same_face_use {
+        if owner_bridge != bridge.attr {
             break;
         }
         let first = lp.refs[1];
@@ -1022,6 +1034,9 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
                 break;
             }
             let Some(ce) = t.coedges().get(&ce_ref) else {
+                if t.coedge_is_ambiguous(ce_ref) {
+                    unresolved_fins.push(ce_ref);
+                }
                 break;
             };
             if ce.refs[1] != loop_ref {
@@ -1044,6 +1059,8 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
         surface_attr,
         sense: bridge.sense,
         loops,
+        unresolved_loop,
+        unresolved_fins,
     }
 }
 
@@ -1207,6 +1224,8 @@ fn append_entity_facts(target: &mut entity::Facts, mut source: entity::Facts) {
         .face_color_versions
         .append(&mut source.face_color_versions);
     target.face_atoms.append(&mut source.face_atoms);
+    target.face_payloads.append(&mut source.face_payloads);
+    target.body_payloads.append(&mut source.body_payloads);
     target.body_modifiers.append(&mut source.body_modifiers);
     target.entity_count += source.entity_count;
     target.unresolved_face_colors += source.unresolved_face_colors;
@@ -1235,12 +1254,18 @@ pub(crate) fn decode_bodies(
         entity_streams.push((body, is_deltas_stream(header)));
     }
     let mut typed_streams = Vec::new();
-    for (body, _) in &entity_streams {
-        typed_streams.push(typed::scan(body));
+    for (body, prefixed) in &entity_streams {
+        typed_streams.push(typed::scan_with_payload_exclusions(body, *prefixed));
     }
     for stream_typed_facts in &typed_streams {
         typed_facts.merge_missing(stream_typed_facts.clone());
     }
+    let owner_attrs = typed::topology_owner_attrs_for_streams(
+        entity_streams
+            .iter()
+            .zip(&typed_streams)
+            .map(|((body, deltas), facts)| (facts, *body, *deltas)),
+    );
     let typed_bridge_attrs = typed_facts.valid_ownership_face_attrs();
     let selected_bridge_attrs = typed_bridge_attrs.as_ref();
     for (stream_order, ((payload, header), stream_typed_facts)) in
@@ -1253,13 +1278,15 @@ pub(crate) fn decode_bodies(
         carriers.merge_missing(scan_carriers(ctx, body)?);
         let curve_attrs = carriers.curve_attrs();
         let scanned_tables = if is_deltas {
-            topology::scan_deltas_with_curve_attrs_excluding(
+            topology::scan_deltas_with_owner_attrs(
                 body,
                 &curve_attrs,
                 &typed_face_offsets,
+                &tables,
+                &owner_attrs,
             )
         } else {
-            topology::scan_with_curve_attrs_excluding(body, &curve_attrs, &typed_face_offsets)
+            topology::scan_with_owner_attrs(body, &curve_attrs, &typed_face_offsets, &owner_attrs)
         };
         let mut scanned_facts = entity::scan_metadata(body, is_deltas);
         for color in &mut scanned_facts.face_colors {
@@ -1293,9 +1320,10 @@ fn decode_body(
     let mut carriers = scan_carriers(ctx, body)?;
     let curve_attrs = carriers.curve_attrs();
     let typed_facts = typed::scan(body);
+    let owner_attrs = typed::topology_owner_attrs_for_streams([(&typed_facts, body, false)]);
     let typed_face_attrs = typed_facts.valid_ownership_face_attrs();
     let typed_face_offsets = selected_typed_face_offsets(&typed_facts, typed_face_attrs.as_ref());
-    let t = topology::scan_with_curve_attrs_excluding(body, &curve_attrs, &typed_face_offsets);
+    let t = topology::scan_with_owner_attrs(body, &curve_attrs, &typed_face_offsets, &owner_attrs);
     let entity_facts = entity::scan_metadata(body, false);
     decode_graph(ctx, &mut carriers, &t, entity_facts, &typed_facts, stream)
 }
@@ -1380,11 +1408,9 @@ fn unique_body_modifiers(modifiers: Vec<attrib::BodyModifier>) -> Vec<attrib::Bo
                 entry.insert(Some(modifier));
             }
             std::collections::hash_map::Entry::Occupied(mut entry) => {
-                if entry
-                    .get()
-                    .as_ref()
-                    .is_some_and(|previous| previous.history_ordinal != modifier.history_ordinal)
-                {
+                if entry.get().as_ref().is_some_and(|previous| {
+                    previous.feature_source_id != modifier.feature_source_id
+                }) {
                     *entry.get_mut() = None;
                 }
             }
@@ -1590,48 +1616,28 @@ fn decode_graph(
         return Ok(out);
     }
 
-    // Walk every face-use bridge to collect its ordered loop/coedge structure.
-    // A bridge owner identifies the canonical face entity, not an additional
-    // face identity. Equivalent bridge payloads are duplicate uses; distinct
-    // payloads have no source selector and must remain unresolved together.
-    let mut faces = Vec::new();
-    let mut owned_faces = HashMap::<u16, Vec<(&topology::Bridge, WalkedFace)>>::new();
-    for bridge in t.bridges().values() {
-        let face = walk_face(bridge, t);
-        if let Some(owner) = bridge.owner {
-            owned_faces.entry(owner).or_default().push((bridge, face));
-        } else {
-            faces.push(face);
-        }
-    }
-    let mut ambiguous_face_owners = 0;
-    for mut uses in owned_faces.into_values() {
-        uses.sort_by_key(|(bridge, _)| (bridge.offset, bridge.attr));
-        let Some((first_bridge, first_face)) = uses.first() else {
-            continue;
-        };
-        let equivalent = uses.iter().skip(1).all(|(bridge, face)| {
-            bridge.refs == first_bridge.refs
-                && bridge.sense == first_bridge.sense
-                && face.surface_attr == first_face.surface_attr
-                && face.sense == first_face.sense
-                && face.loops == first_face.loops
-        });
-        if equivalent {
-            if let Some((_, first_face)) = uses.into_iter().next() {
-                faces.push(first_face);
-            }
-        } else {
-            ambiguous_face_owners += 1;
-        }
-    }
+    let mut faces: Vec<_> = t
+        .bridges()
+        .values()
+        .map(|bridge| walk_face(bridge, t))
+        .collect();
     faces.sort_by_key(|face| face.bridge_attr);
-    out.stats.ambiguous_face_owners += ambiguous_face_owners;
+    out.stats.unresolved_topology_loops = faces
+        .iter()
+        .filter_map(|face| face.unresolved_loop)
+        .collect::<HashSet<_>>()
+        .len();
+    out.stats.unresolved_topology_fins = faces
+        .iter()
+        .flat_map(|face| face.unresolved_fins.iter().copied())
+        .collect::<HashSet<_>>()
+        .len();
 
     // Edge attr -> [(coedge attr, start vuse, next coedge's start vuse)] from
     // the ring walk. The ring order supplies a boundary edge's second endpoint;
     // a reciprocal twin supplies it for a two-sided edge.
     let mut edge_incidence: HashMap<u16, Vec<(u16, u16, u16)>> = HashMap::new();
+    let mut unresolved_vertices = HashSet::new();
 
     for f in &faces {
         for (_loop_attr, ring) in &f.loops {
@@ -1642,6 +1648,9 @@ fn decode_graph(
                 };
                 let next_attr = ring[(i + 1) % k];
                 let start_vuse = ce.refs[4];
+                if t.vertex_is_unresolved(start_vuse) {
+                    unresolved_vertices.insert(start_vuse);
+                }
                 let next_vuse = t.coedges().get(&next_attr).map_or(0, |next| next.refs[4]);
                 let edge_attr = ce.refs[6];
                 if edge_attr != 0 {
@@ -1654,12 +1663,15 @@ fn decode_graph(
         }
     }
 
+    out.stats.unresolved_topology_vertices = unresolved_vertices.len();
+
     // Kept-entity sets, so only chain-reachable records are emitted.
     let mut kept_vertices: HashSet<u16> = HashSet::new();
     let mut kept_points: HashSet<u16> = HashSet::new();
     // Edge attr -> (canonical start vuse, canonical end vuse, curve carrier attr).
     let mut edge_ends: HashMap<u16, (u16, u16, u16)> = HashMap::new();
 
+    let mut unresolved_points = HashSet::new();
     for (edge_attr, incidences) in edge_incidence {
         let canonical =
             canonical_coedge_attr(edge_attr, t.edge_uses().get(&edge_attr), t.coedges());
@@ -1687,10 +1699,14 @@ fn decode_graph(
                 if t.points().contains_key(&point_attr) {
                     kept_vertices.insert(vuse);
                     kept_points.insert(point_attr);
+                } else if t.point_is_ambiguous(point_attr) {
+                    unresolved_points.insert(point_attr);
                 }
             }
         }
     }
+
+    out.stats.unresolved_topology_points = unresolved_points.len();
 
     // Points.
     let point_attrs = sorted_graph_attrs(kept_points.iter().copied());
@@ -1729,7 +1745,16 @@ fn decode_graph(
             native_ref: None,
             id: id_vertex(a),
             point: id_point(point_attr),
-            tolerance: None,
+            tolerance: rec
+                .tolerance_m
+                .map(|value| {
+                    cadmpeg_ir::scalar::PositiveReal::new(value * LEN_TO_MM).ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed(
+                            "VERTEX tolerance is outside finite millimetres",
+                        )
+                    })
+                })
+                .transpose()?,
         });
     }
 
@@ -2121,19 +2146,13 @@ fn decode_graph(
         let mut bridge_shell = HashMap::new();
         for (group, body_record) in body_records.iter().enumerate() {
             for face in faces {
-                let owner = t.bridges().get(&face.bridge_attr).and_then(|r| r.owner);
-                if body_record.refs.contains(&face.bridge_attr)
-                    || owner.is_some_and(|owner| body_record.refs.contains(&owner))
-                {
+                if body_record.refs.contains(&face.bridge_attr) {
                     bridge_group.insert(face.bridge_attr, group);
                     if let Some(shell) = body_record
                         .regions
                         .iter()
                         .flat_map(|region| &region.shells)
-                        .find(|shell| {
-                            shell.refs.contains(&face.bridge_attr)
-                                || owner.is_some_and(|owner| shell.refs.contains(&owner))
-                        })
+                        .find(|shell| shell.refs.contains(&face.bridge_attr))
                     {
                         bridge_shell.insert(face.bridge_attr, shell.attr);
                     }
@@ -2466,7 +2485,7 @@ fn decode_graph(
             color: t
                 .bridges()
                 .get(&f.bridge_attr)
-                .and_then(|bridge| bridge.owner)
+                .and_then(|bridge| bridge.attributes_head)
                 .and_then(|owner| {
                     out.face_colors
                         .iter()
@@ -2484,12 +2503,20 @@ fn decode_graph(
             .find(|face| {
                 t.bridges()
                     .get(&face.bridge_attr)
-                    .and_then(|bridge| bridge.owner)
+                    .and_then(|bridge| bridge.attributes_head)
                     == Some(appearance.value.face_attr)
             })
             .map(|face| id_face(face.bridge_attr))
             .filter(|face| emitted_faces.contains_key(face.as_str()))
             .map(cadmpeg_ir::ids::FaceId::into_string);
+    }
+    for (owner, values) in attrib::unique_payloads(entity_facts.face_payloads) {
+        if let Some(face) = emitted_faces.get(id_face(owner).as_str()) {
+            out.native_face_identities.push(attrib::NativeIdentity {
+                target: (*face).clone(),
+                values,
+            });
+        }
     }
     let mut bound_faces = HashSet::new();
     for atom in entity_facts.face_atoms {
@@ -2684,6 +2711,16 @@ fn decode_graph(
             std::collections::hash_map::Entry::Occupied(mut entry) => {
                 *entry.get_mut() = None;
             }
+        }
+    }
+    for (owner, values) in attrib::unique_payloads(entity_facts.body_payloads) {
+        if let Some(Some(id)) = body_ids_by_attr.get(&owner) {
+            let Some(body) = out.bodies.iter().find(|body| body.id.as_str() == *id) else {
+                continue;
+            };
+            let target = body.id.clone();
+            out.native_body_identities
+                .push(attrib::NativeIdentity { target, values });
         }
     }
     for modifier in &mut out.body_modifiers {
@@ -7013,7 +7050,7 @@ mod tests {
             sequence: 0,
             refs,
             sense: Sense::Forward,
-            owner: None,
+            attributes_head: None,
             offset: 0,
         }
     }
@@ -7037,8 +7074,12 @@ mod tests {
 
     #[test]
     fn face_walk_rejects_a_loop_owned_by_another_bridge() {
-        let bridge = bridge_record(10, [0, 0, 20, 0, 30]);
+        let mut bridge = bridge_record(10, [0, 0, 20, 0, 30]);
+        bridge.attributes_head = Some(700);
+        let mut other = bridge_record(11, [0, 0, 20, 0, 30]);
+        other.attributes_head = Some(700);
         let mut tables = Tables::default();
+        tables.insert_bridge(other);
         tables.insert_loop(loop_record(20, [0, 40, 11, 0]));
         tables.insert_coedge(coedge_record(40, [0, 0, 0, 40, 0, 0, 0, 0, 0]));
 
@@ -7865,7 +7906,7 @@ mod tests {
             sequence: 0,
             refs: [1, 1, 49, 7, 8],
             sense: Sense::Forward,
-            owner: None,
+            attributes_head: None,
             offset: 11,
         });
 
@@ -7886,40 +7927,31 @@ mod tests {
     }
 
     #[test]
-    fn ambiguous_face_owner_stats_survive_when_all_uses_are_withheld() {
+    fn attribute_chain_heads_do_not_merge_distinct_face_identities() {
+        let mut body = crate::test_support::parasolid::owned_triangle(0, 700, 0.0);
+        let mut other = crate::test_support::parasolid::owned_triangle(200, 701, 2.0);
+        let face = other
+            .windows(2)
+            .position(|bytes| bytes == [0x00, 0x0e])
+            .expect("FACE");
+        other[face + 8..face + 10].copy_from_slice(&700u16.to_be_bytes());
+        body.extend(other);
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
+            &body,
             &arena,
             &cadmpeg_core::decode::DecodePolicy::service(),
         )
         .unwrap();
-        let bridge = |attr, surface, offset| Bridge {
-            attr,
-            sequence: 0,
-            refs: [0, 0, 0, 0, surface],
-            sense: Sense::Forward,
-            owner: Some(700),
-            offset,
-        };
-        let mut tables = super::topology::Tables::default();
-        tables.insert_bridge(bridge(10, 100, 20));
-        tables.insert_bridge(bridge(11, 200, 10));
-        let decoded = super::decode_graph(
+        let decoded = super::decode_body(
             &ctx,
-            &mut crate::brep::index::CarrierIndex::default(),
-            &tables,
-            super::entity::Facts {
-                entity_count: 1,
-                ..Default::default()
-            },
-            &super::typed::Facts::default(),
-            &cadmpeg_ir::stream_name!("empty"),
+            &body,
+            &cadmpeg_ir::stream_name!("shared-metadata-head"),
         )
         .expect("valid exactness fields");
 
-        assert!(decoded.faces.is_empty());
-        assert_eq!(decoded.stats.ambiguous_face_owners, 1);
+        assert_eq!(decoded.faces.len(), 2);
+        assert_ne!(decoded.faces[0].id, decoded.faces[1].id);
     }
 
     #[test]

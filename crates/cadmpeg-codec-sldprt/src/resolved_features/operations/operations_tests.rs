@@ -782,3 +782,185 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         })
     ));
 }
+
+#[test]
+fn ambiguous_thin_join_carrier_does_not_resolve_an_operation() {
+    use cadmpeg_ir::features::{
+        ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, FeatureDefinition,
+        FeatureOperation, LinearTermination, PlanarProfileRef, ProfileRef,
+    };
+    use cadmpeg_ir::sketches::SketchId;
+
+    let mut payload = vec![0; 40];
+    payload[22..24].copy_from_slice(&0x0140u16.to_le_bytes());
+    payload[25] = 0xc0;
+    payload[26..30].copy_from_slice(&7u32.to_le_bytes());
+    payload[34..37].copy_from_slice(&[0xff, 0xfe, 0xff]);
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: payload.into(),
+        classes: Vec::new(),
+        names: vec![FeatureInputName {
+            id: "name".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 10,
+            value: "F".into(),
+            object_id: ObjectId::from_value(7),
+        }],
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+    let native = |class: &str| Feature {
+        id: "native".into(),
+        parent: "history".into(),
+        xml_tag: "Extrusion".into(),
+        tree_parent: None,
+        source_id: FeatureSource::from_value(7),
+        ordinal: 0,
+        name: "F".into(),
+        kind: "Extrusion".into(),
+        input_class: Some(class.into()),
+        suppressed: false,
+        parameters: BTreeMap::new(),
+        dimension_properties: BTreeMap::new(),
+        properties: BTreeMap::new(),
+        text: None,
+        content: Vec::new(),
+    };
+    let project = |class: &str, initial, lanes: &[FeatureInputLane]| {
+        let definition = FeatureDefinition::Operation(FeatureOperation::Extrude {
+            profile: ProfileRef::Planar(PlanarProfileRef::Sketch(
+                SketchId::mint("synthetic:test:id#sketch").unwrap(),
+            )),
+            direction: ExtrudeDirection::ProfileNormal {},
+            start: ExtrudeStart::ProfilePlane {},
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: LinearTermination::Blind {
+                        length: cadmpeg_ir::scalar::NonZeroLength::new(1.0).unwrap(),
+                    },
+                    draft: None,
+                },
+            },
+            op: initial,
+            solid: Some(true),
+            face_maker: None,
+            inner_wire_taper: None,
+            length_along_profile_normal: None,
+            allow_multi_profile_faces: None,
+        });
+        let mut features = [cadmpeg_ir::features::Feature {
+            id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#extrude").unwrap(),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+            native_ref: Some("native".into()),
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+        }];
+        let histories = [FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![native(class)],
+        }];
+        super::bind_extrusion_operations(&mut features, &histories, lanes, None);
+        let lane_names = lanes
+            .iter()
+            .map(|lane| {
+                (
+                    lane,
+                    crate::resolved_features::scalars::FeatureObjectNames::new(&lane.names),
+                )
+            })
+            .collect::<Vec<_>>();
+        if super::ambiguous_thin_join_operation(&histories[0].features[0], &lane_names) {
+            let mut base = features.clone();
+            base[0].evaluation.edit(|definition, _| {
+                let FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }) = definition
+                else {
+                    panic!("Extrude feature")
+                };
+                *op = BooleanOp::Join;
+            });
+            inherit_configuration_operations(&mut features, &base, &histories, lanes, None);
+        }
+        let FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }) =
+            features[0].evaluation.definition()
+        else {
+            panic!("Extrude feature")
+        };
+        *op
+    };
+    assert_eq!(
+        project(
+            "moExtrusion_c",
+            BooleanOp::Unresolved,
+            std::slice::from_ref(&lane)
+        ),
+        BooleanOp::Join
+    );
+    assert_eq!(
+        project(
+            "moCutThin_c",
+            BooleanOp::Unresolved,
+            std::slice::from_ref(&lane)
+        ),
+        BooleanOp::Unresolved
+    );
+    assert_eq!(
+        project("moCutThin_c", BooleanOp::Cut, std::slice::from_ref(&lane)),
+        BooleanOp::Cut
+    );
+    let mut cut = lane.clone();
+    cut.native_payload[22..24].copy_from_slice(&0x01cau16.to_le_bytes());
+    assert_eq!(
+        project(
+            "moCutThin_c",
+            BooleanOp::Unresolved,
+            std::slice::from_ref(&cut)
+        ),
+        BooleanOp::Cut
+    );
+    assert_eq!(
+        project(
+            "moCutThin_c",
+            BooleanOp::Unresolved,
+            &[cut.clone(), lane.clone()]
+        ),
+        BooleanOp::Unresolved
+    );
+    assert_eq!(
+        project("moCutThin_c", BooleanOp::Unresolved, &[lane.clone(), cut]),
+        BooleanOp::Unresolved
+    );
+    let mut mismatched = lane.clone();
+    mismatched.native_payload[26..30].copy_from_slice(&8u32.to_le_bytes());
+    assert_eq!(
+        project("moCutThin_c", BooleanOp::Unresolved, &[mismatched]),
+        BooleanOp::Unresolved
+    );
+    for end in 18..37 {
+        let mut truncated = lane.clone();
+        truncated.native_payload.truncate(end);
+        assert_eq!(
+            project("moCutThin_c", BooleanOp::Unresolved, &[truncated]),
+            BooleanOp::Unresolved
+        );
+    }
+}

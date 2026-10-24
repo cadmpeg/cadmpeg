@@ -458,6 +458,36 @@ fn decode_curve_carrier(rec: &Record, carrier: &Carrier) -> Option<CurveGeometry
     }
 }
 
+/// The curve an edge record references and the sense in which it runs on
+/// that curve.
+pub(crate) fn edge_curve_sense(record: &Record) -> Option<(i64, Sense)> {
+    if !is_edge_record(record) {
+        return None;
+    }
+    Some((record.ref_at(8)?, sense_at(record, 9)))
+}
+
+/// Whether the decoder reversed the cache of curve record `curve` an odd
+/// number of times: once for its record sense, and once more when every edge
+/// that uses it runs against it.
+pub(crate) fn carrier_cache_reversed(records: &[Record], curve: &Record) -> bool {
+    let Ok(index) = i64::try_from(curve.index) else {
+        return record_reversed(curve);
+    };
+    let (mut forward, mut reversed) = (false, false);
+    for (_, sense) in records
+        .iter()
+        .filter_map(edge_curve_sense)
+        .filter(|(edge_curve, _)| *edge_curve == index)
+    {
+        match sense {
+            Sense::Forward => forward = true,
+            Sense::Reversed => reversed = true,
+        }
+    }
+    record_reversed(curve) != (reversed && !forward)
+}
+
 pub(super) fn sense_at(rec: &Record, i: usize) -> Sense {
     match rec.chunk(i) {
         Some(Token::True) => Sense::Reversed,
@@ -470,7 +500,7 @@ pub(super) fn sense_at(rec: &Record, i: usize) -> Sense {
 /// marks geometry as the reverse of its cached definition. A reversed intcurve
 /// negates the cache parameterization (`C(t) = cache(-t)`), and a reversed
 /// spline surface flips the cache normal.
-pub(super) fn record_reversed(rec: &Record) -> bool {
+pub(crate) fn record_reversed(rec: &Record) -> bool {
     // Adjacency in chunk space: a freestanding payload identifier (e.g. the
     // embedded curve's type name) can sit between value tokens without
     // separating the sense bit from the scope it precedes.
@@ -523,6 +553,7 @@ pub(super) fn reverse_procedural_curve_definition(
     if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(helix) = definition {
         helix.try_reverse_parameterization()?;
     }
+    let _unreversed = definition.reverse_support_contexts();
     Ok(())
 }
 
@@ -1200,11 +1231,24 @@ pub(super) fn classify_body_kinds(out: &mut AsmBrep, collapsed: &HashSet<EdgeId>
             face_bodies.insert(face, body);
         }
     }
+    // A single-sided face without loops covers a whole closed surface (a
+    // full sphere or torus), so it bounds a volume by itself. A body bounded
+    // only by such faces is a solid; any other face needs its edges closed.
+    let double_sided = out
+        .face_sidedness
+        .iter()
+        .filter(|sidedness| sidedness.containment.is_some())
+        .map(|sidedness| &sidedness.face)
+        .collect::<HashSet<_>>();
+    let mut body_has_bounded_faces = HashSet::new();
     let mut loop_bodies = HashMap::new();
     for face in &out.faces {
         let Some(body) = face_bodies.get(&face.id).copied() else {
             continue;
         };
+        if !face.loops.is_empty() || double_sided.contains(&face.id) {
+            body_has_bounded_faces.insert(body);
+        }
         for loop_id in &face.loops {
             loop_bodies.insert(loop_id, body);
         }
@@ -1236,10 +1280,14 @@ pub(super) fn classify_body_kinds(out: &mut AsmBrep, collapsed: &HashSet<EdgeId>
             body.kind = BodyKind::General;
             continue;
         }
-        body.kind = faced_body_kind(
-            body_uses.get(&body.id).into_iter().flatten().copied(),
-            |edge| collapsed.contains(edge),
-        );
+        body.kind = if body_has_bounded_faces.contains(&body.id) {
+            faced_body_kind(
+                body_uses.get(&body.id).into_iter().flatten().copied(),
+                |edge| collapsed.contains(edge),
+            )
+        } else {
+            BodyKind::Solid
+        };
     }
 }
 

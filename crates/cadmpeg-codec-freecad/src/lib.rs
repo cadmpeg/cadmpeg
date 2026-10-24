@@ -1088,11 +1088,20 @@ impl CodecBackend for FcstdCodec {
                 &mut transfer_losses,
             )?;
             topology_transfer::apply_body_names(&mut ir, &shape_payloads, &graph.properties);
+            design::hide_intermediate_bodies(
+                &mut ir,
+                &graph.objects,
+                &graph.properties,
+                &shape_payloads,
+            );
             if ctx.depth() == DecodeDepth::Full {
                 let (cycle_affected, design_losses) = design::transfer(
                     &property_reader,
                     &mut ir,
-                    &graph.objects,
+                    design::DesignObjects {
+                        objects: &graph.objects,
+                        extensions: &graph.extensions,
+                    },
                     &graph.properties,
                     &shape_payloads,
                     &entry_records,
@@ -1101,13 +1110,19 @@ impl CodecBackend for FcstdCodec {
                 )?;
                 cycle_affected_design_objects = cycle_affected;
                 transfer_losses.extend(design_losses);
+                design::resolve_subelement_selections(
+                    &mut ir,
+                    &graph.properties,
+                    &topology_occurrences,
+                );
             }
             ctx.admit_entities(
                 cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
                 &mut admitted_entities,
                 "admit FCStd entities",
             )?;
-            let link_occurrences = product::link_occurrence_count(&product_nodes)?;
+            let link_occurrences =
+                product::link_occurrence_count(&product_nodes, &graph.objects, &graph.properties)?;
             ctx.admit_entities(
                 cadmpeg_core::decode::u64_from_index(ir.model.entity_count())
                     .checked_add(link_occurrences)
@@ -1164,7 +1179,7 @@ impl CodecBackend for FcstdCodec {
                         objects: &graph.objects,
                         properties: &graph.properties,
                         payloads: &shape_payloads,
-                        element_maps: &element_maps,
+                        topology_occurrences: &topology_occurrences,
                         requires_alpha_conversion: gui::requires_alpha_conversion(
                             scan.document.program_version.as_deref(),
                         ),

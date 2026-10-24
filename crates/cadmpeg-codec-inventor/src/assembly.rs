@@ -275,12 +275,14 @@ pub(crate) fn inventory<'a>(
         };
         for record in &table.records {
             if segment.kind == SegmentKind::AmDc && record.type_id == OCCURRENCE_TYPE {
+                let version = segment.registry.map_or(0, |join| join.version_major);
                 if let Some(occurrence) = parts::occurrence(
                     ctx,
                     &mut parts,
                     bulk.expanded,
                     segment.pair.token.as_str(),
                     record,
+                    version,
                 )? {
                     occurrences.push(occurrence);
                 }
@@ -310,12 +312,20 @@ pub(crate) fn inventory<'a>(
 fn parse_occurrence<'a>(
     ctx: &DecodeContext<'a>,
     payload: View<'a>,
+    version: u8,
 ) -> Result<AssemblyOccurrence, CodecError> {
     let mut cursor = Cursor::new(payload);
     let header_value = cursor.u32("occurrence header value")?;
     let header_id = cursor.u16("occurrence header id")?;
     let next_reference = cursor.u32("occurrence next reference")?;
     let flags = cursor.u32("occurrence flags")?;
+    if version >= 28 {
+        require(
+            cursor.u32("occurrence flags extension")?,
+            0,
+            "occurrence flags extension",
+        )?;
+    }
     let owner_reference = cursor.u32("occurrence owner reference")?;
     let node_index = cursor.u32("occurrence node index")?;
     let state = [
@@ -777,11 +787,26 @@ mod tests {
             let (ctx, root) =
                 DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
                     .expect("synthetic occurrence fits policy");
-            let occurrence = parse_occurrence(&ctx, root).expect("synthetic occurrence parses");
+            let occurrence = parse_occurrence(&ctx, root, 22).expect("synthetic occurrence parses");
             assert_eq!(occurrence.occurrence_id, 42);
             assert_eq!(occurrence.related_references, related);
             assert_eq!(occurrence.header_value, 6);
         }
+    }
+
+    #[test]
+    fn a_segment_version_28_occurrence_stores_a_zero_after_its_flags() {
+        let mut bytes = occurrence_fixture(42, &[]);
+        bytes.splice(14..14, 0u32.to_le_bytes());
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("synthetic occurrence fits policy");
+        let occurrence = parse_occurrence(&ctx, root, 28).expect("version 28 occurrence parses");
+        assert_eq!(occurrence.occurrence_id, 42);
+        bytes[14] = 1;
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("synthetic occurrence fits policy");
+        assert!(parse_occurrence(&ctx, root, 28).is_err());
     }
 
     #[test]

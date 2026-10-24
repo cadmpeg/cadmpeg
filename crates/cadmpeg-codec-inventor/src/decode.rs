@@ -76,20 +76,20 @@ fn decode_container<'a>(
     let sketch_inventory = crate::sketch::inventory(ctx, &container.rse)?;
     let feature_inventory = crate::feature::inventory(ctx, &container.rse)?;
     let mut ir = CadIr::empty();
+    // Design projection derives only design-class records (features,
+    // sketches, parameters) and the native records behind them, so a geometry
+    // request stops before it.
     let delivered = if ctx.container_only() {
         DecodeDepth::Container
     } else {
-        DecodeDepth::Full
+        ctx.depth()
     };
-    ir.scope = if ctx.container_only() {
-        cadmpeg_ir::ContentScope::container()
-    } else {
-        cadmpeg_ir::ContentScope::full()
-    };
+    ir.scope = delivered.required_scope();
     let unresolved = if delivered == DecodeDepth::Full {
         project_design(
             ctx,
             &mut ir,
+            &container.rse,
             &design_inventory,
             &sketch_inventory,
             &feature_inventory,
@@ -607,11 +607,13 @@ fn decode_container<'a>(
         document_native_projection::project(ctx, &mut ir, &ufrx, &properties, &mut losses)?;
     }
     let mut geometry_failure = None;
+    let mut empty_kernel_stream = false;
     let kernel_brep = match &container.rse.active_carrier {
         ActiveCarrierState::Selected(carrier) if !ctx.container_only() => {
             match carrier.header.as_ref() {
                 Ok(header) => match crate::kernel::decode_kernel_carrier(ctx, carrier, header) {
                     Ok(decoded) => {
+                        empty_kernel_stream = decoded.model_records == 0;
                         apply_kernel_header(
                             &mut ir,
                             carrier.family,
@@ -666,8 +668,11 @@ fn decode_container<'a>(
         ActiveCarrierState::Selected(_)
     ) && geometry_failure.is_none()
     {
-        geometry_failure =
-            Some("the active kernel carrier decoded no surfaces, points, or faces".to_owned());
+        geometry_failure = Some(if empty_kernel_stream {
+            "the part has no bodies: its active kernel carrier holds no model records".to_owned()
+        } else {
+            "the active kernel carrier decoded no surfaces, points, or faces".to_owned()
+        });
     }
     let presentation_projection = crate::presentation::project_bindings(
         ctx,
@@ -822,6 +827,16 @@ fn decode_container<'a>(
                 "{unnamed_labels} optional feature label(s) have no display name; their exact native records are retained."
             )));
         }
+        let replaced_names = feature_inventory
+            .labels
+            .iter()
+            .filter(|label| label.name_replaced())
+            .count();
+        if replaced_names != 0 {
+            losses.push(InventorLossCode::FeatureLabelNameReplaced.note(format!(
+                "{replaced_names} feature label name(s) store unpaired UTF-16 surrogates; their neutral names replace each with U+FFFD, and their exact native code units are retained."
+            )));
+        }
         if !feature_inventory.issues.is_empty() {
             losses.push(InventorLossCode::FeatureRecordMalformed.note({
                 untyped.insert(cadmpeg_ir::ArenaClass::Design);
@@ -839,9 +854,51 @@ fn decode_container<'a>(
             )
             }));
         }
+        let partial_threads = ir
+            .model
+            .features
+            .iter()
+            .filter(|feature| {
+                matches!(
+                    feature.evaluation.definition(),
+                    cadmpeg_ir::features::FeatureDefinition::Operation(
+                        cadmpeg_ir::features::FeatureOperation::CosmeticThread { .. }
+                    )
+                )
+            })
+            .count();
+        if partial_threads != 0 {
+            losses.push(InventorLossCode::FeatureThreadDefinitionPartial.note(format!(
+                "Transferred {partial_threads} Inventor thread annotation(s) with native face selections; sizing, handedness, and termination operands remain native."
+            )));
+        }
+        let native_thicken_operands = ir
+            .model
+            .features
+            .iter()
+            .filter(|feature| {
+                matches!(
+                    feature.evaluation.definition(),
+                    cadmpeg_ir::features::FeatureDefinition::Operation(
+                        cadmpeg_ir::features::FeatureOperation::Thicken { .. }
+                    )
+                )
+            })
+            .count();
+        if native_thicken_operands != 0 {
+            losses.push(InventorLossCode::FeatureThickenOperandsNative.note(format!(
+                "{native_thicken_operands} Inventor thicken operation(s) retain native surface selections and unresolved thickness side."
+            )));
+        }
+        if unresolved.profile_bodies != 0 {
+            losses.push(InventorLossCode::FeatureProfileBodyUndecoded.note(format!(
+                "{} PmDc profile body record(s) did not decode; extrusions whose profiles select them keep their native profile selection.",
+                unresolved.profile_bodies
+            )));
+        }
         if unresolved.feature_states != 0 {
             losses.push(InventorLossCode::FeatureStateUnresolved.note(format!(
-                "Transferred {} Inventor operation(s) with native result-body identity and unresolved suppression and dependency state.",
+                "Transferred {} Inventor operation(s) with unresolved suppression and dependency state.",
                 unresolved.feature_states
             )));
         }
@@ -868,6 +925,12 @@ fn decode_container<'a>(
                 "Retained {} Inventor sketch record(s), {} sketch-entity record(s), and {} sketch-constraint record(s) whose neutral graph is not closed.",
                 unresolved.sketches, unresolved.sketch_entities, unresolved.sketch_constraints
             ) }));
+        }
+        if unresolved.sketch_construction != 0 {
+            losses.push(InventorLossCode::SketchConstructionUnresolved.note(format!(
+                "{} Inventor sketch curve(s) carry entity flags whose construction meaning is unresolved; they project as geometry and stay out of the sketch profile tables.",
+                unresolved.sketch_construction
+            )));
         }
         if !container.rse.unpaired_metadata.is_empty() || !container.rse.unpaired_bulk.is_empty() {
             losses.push(InventorLossCode::RseStreamUnpaired.note({
@@ -1437,12 +1500,15 @@ struct UnresolvedDesign {
     sketch_constraints: usize,
     features: usize,
     feature_states: usize,
+    profile_bodies: usize,
+    sketch_construction: usize,
 }
 
 /// Projects the design inventories into the document's design arenas.
 fn project_design(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
+    rse: &crate::rse::RseInventory<'_>,
     design: &crate::design::DesignInventory,
     sketch: &crate::sketch::SketchInventory,
     feature: &crate::feature::FeatureInventory,
@@ -1456,14 +1522,28 @@ fn project_design(
     ir.model.sketches = sketches.sketches;
     ir.model.sketch_entities = sketches.entities;
     ir.model.sketch_constraints = sketches.constraints;
+    let profile_bodies = crate::feature::profile::decode_profile_bodies(ctx, rse)?;
     let features = crate::feature::project(
         ctx,
         feature,
         design,
         sketch,
         &ir.model.parameters,
-        &ir.model.sketches,
+        &crate::feature::ProjectedSketches {
+            sketches: &ir.model.sketches,
+            entities: &ir.model.sketch_entities,
+            profile_bodies: &profile_bodies.bodies,
+        },
     )?;
+    let mut added_profiles = features.added_profiles;
+    for sketch in &mut ir.model.sketches {
+        if let Some(loops) = added_profiles.remove(sketch.id.as_str()) {
+            sketch
+                .profiles
+                .edit(|profiles| profiles.extend(loops))
+                .map_err(CodecError::malformed)?;
+        }
+    }
     ir.model.features = features.features;
     ir.model.feature_result_topologies = features.result_topologies;
     // Flat-pattern models follow every projected document feature.
@@ -1491,6 +1571,8 @@ fn project_design(
         sketch_constraints: sketches.unresolved_constraints,
         features: features.unresolved_features,
         feature_states: features.unresolved_states,
+        profile_bodies: profile_bodies.undecoded,
+        sketch_construction: sketches.unresolved_construction,
     })
 }
 

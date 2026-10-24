@@ -77,6 +77,7 @@ decoding:
 - `rhino_container`
 - `iges_container`
 - `sat_container`
+- `pvz_container`
 
 Native writing and replay:
 
@@ -116,6 +117,7 @@ Focused parser coverage. Focused codec parser targets import `::fuzz` only.
   `fcstd_auxiliary`
 - IGES: `iges_cards`, `iges_global`, `iges_directory`, `iges_parameters` go
   through `cadmpeg_codec_iges::fuzz`
+- Creo View: `pvz_package` and `pvz_exact` go through `cadmpeg_codec_pvz::fuzz`
 
 IR and STEP:
 
@@ -186,9 +188,11 @@ Running the sequence again writes the same bytes. `generate_fcstd_seeds`
 rewrites those seven directories from the donated fixture and writes nothing
 else.
 
-The focused STEP, IGES, SAT, `f3d_writer`, `fcstd_write` and
+The focused STEP, IGES, SAT, Creo View, `f3d_writer`, `fcstd_write` and
 `decode_pipeline_mutated` seeds are hand-authored: they were written or reduced
-by hand and committed, and no generator writes them.
+by hand and committed, and no generator writes them. The Creo View seeds are
+the bytes of packages, members, and exact streams that the
+`cadmpeg-codec-pvz` test support builds from the specification grammar.
 
 `scripts/check-fuzz-seeds.py` builds the seven generators, runs that sequence
 into a temporary tree outside the repository, and compares it with the

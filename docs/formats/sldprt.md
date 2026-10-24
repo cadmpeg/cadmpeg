@@ -80,22 +80,67 @@ The UnQLite page semantics are defined by the [public Symisc UnQLite implementat
 
 The file starts with an 8-byte header: `file_id` (u32), then `version` (u32 **big-endian**, value `0x00000004`). The rest is a sequence of compressed blocks.
 
-A block begins with the marker `14 00 06 00 08 00` and uses this frame:
+Native compressed members use ZIP local-file-header fields with a substituted
+four-byte signature token and nibble-swapped member names. The signature token
+is retained as opaque bytes. The archive coordinate zero is absolute file offset
+8. The field marker begins four bytes after the local signature. In the native
+DEFLATE profile, the marker is `14 00 06 00 08 00`: version needed 20,
+general-purpose flags 6, and compression method 8.
 
-```
-marker      bytes[6]   ; 14 00 06 00 08 00
-type_id     u32 LE
-crc32       u32 LE     ; CRC-32 of the DECOMPRESSED payload
-comp_sz     u32 LE
-uncomp_sz   u32 LE
-pre_sz      u32 LE
-preamble    bytes[pre_sz]
-payload     bytes[comp_sz]   ; raw DEFLATE, wbits = -15
+The layout follows [PKWARE ZIP APPNOTE §§4.3.7 and 4.4.6](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT).
+All fields below use little-endian order. `zip_local_header` fixed size is 30 bytes.
+Offsets start at the substituted local signature.
+
+| Offset | Type | Field |
+| ---: | --- | --- |
+| +0 | bytes[4] | signature |
+| +4 | u16 | version_needed |
+| +6 | u16 | flags |
+| +8 | u16 | method |
+| +10 | u16 | mod_time |
+| +12 | u16 | mod_date |
+| +14 | u32 | crc32 |
+| +18 | u32 | comp_sz |
+| +22 | u32 | uncomp_sz |
+| +26 | u16 | name_len |
+| +28 | u16 | extra_len |
+
+
+The encoded name follows the fixed header, then `extra_len` extra bytes, then
+`comp_sz` raw-DEFLATE bytes. The payload expands to exactly `uncomp_sz` bytes
+and has CRC-32 `crc32`. Swapping the high and low nibble of each name byte
+produces names such as `Contents/Config-0-Partition` and `PreviewPNG`.
+
+The zero-extra local-field projection has a 26-byte fixed prefix. It starts at
+the field marker and preserves the existing packed field names:
+
+```text
+marker bytes[6] ; version needed, flags, method
+type_id u32 LE ; packed ZIP modification time/date
+crc32 u32 LE ; CRC-32 of decompressed payload
+comp_sz u32 LE ; compressed size
+uncomp_sz u32 LE ; uncompressed size
+pre_sz u32 LE ; name length with zero extra length
 ```
 
-A valid block decompresses to exactly `uncomp_sz` bytes and has CRC-32 `crc32`. Its extent is `block_end = marker_offset + 26 + pre_sz + comp_sz`. Preamble bytes decode to OPC section names by swapping the high and low nibble of each byte, such as `Contents/Config-0-Partition`, `Contents/DisplayLists`, `PreviewPNG`, and `swXmlContents/Features`.
+In that projection, `pre_sz` packs the adjacent ZIP u16 name length and zero
+u16 extra length; `block_end = marker_offset + 26 + pre_sz + comp_sz`.
+With a nonzero extra length, the complete ZIP extent instead uses the sum of
+the two u16 lengths. The packed u32 is not that sum.
+
+`type_id` packs two ZIP u16 fields: MS-DOS modification time in the low half
+and modification date in the high half. It does not identify a payload type.
+The time encodes seconds divided by two in bits 0..4, minutes in bits 5..10,
+and hours in bits 11..15. The date encodes day in bits 0..4, month in bits
+5..8, and year minus 1980 in bits 9..15. Preserve the raw bits even when they
+do not form a valid calendar date or clock time. Local and central fields for
+one member carry the same raw time/date, CRC, sizes, name length, and name.
 
 ### 1.2 Cache-cell section-index grid
+
+The cache marker-relative fixed prefix is 26 bytes. `cache.marker at +0`
+is the six-byte marker; `cache.type_id at +6` is the packed ZIP time/date
+u32 LE. The size and name-length fields are u32 LE.
 
 The bytes before the first valid block and the long inter-block gaps hold a **fixed-cell section-index grid** reusing the outer marker. These cells are **not** compressed payloads. The three size-shaped header fields are redundant scalings of one logical value `L`:
 
@@ -110,25 +155,199 @@ Each file has one cache-cell stride `S`; every `L` is an integer multiple (`L = 
 
 A valid cache cell satisfies `two_L == 2L`, `half_L == L//2`, `0 < name_len < 500`, and has a printable nibble-swapped name.
 
+The outer-header end or the exact end of a preceding validated block anchors
+a cache-cell run. Each following cell starts at the preceding cell's end.
+For an independently anchored `cell_start`, the complete ranges are:
+
+```
+marker_offset = cell_start + N
+name_end      = marker_offset + 26 + name_len
+cell_end      = cell_start + S
+prefix        = bytes[cell_start .. marker_offset]
+trailing      = bytes[name_end .. cell_end]
+```
+
+The marker displacement equals `L/S`; the complete header and name fit within
+the cell. Cell ranges do not overlap each other or validated block ranges.
+The prefix and trailing ranges are opaque retained bytes. A retained cell
+preserves both ranges byte for byte. Bytes between the last complete cell and
+the following block are outside that cell.
+
+A physically attached run ends exactly four bytes before a validated local
+field marker; the four bytes are that member's substituted local signature.
+Each cell in that run carries the successor local member's complete raw
+modification time/date u32. The decoded cell name does not select that word.
+A cell without that physical-successor relation retains its raw word
+without a current-member association.
+
 ### 1.3 Tail section directory
 
-The file tail carries an **OPC package section directory**: a per-section index, not checksum blobs. Fixed-shape frames, each naming one OPC part:
+The tail directory consists of contiguous ZIP central-directory file headers
+with substituted four-byte signature tokens and nibble-swapped member names.
+Its field order follows [PKWARE ZIP APPNOTE §4.3.12 and §§4.4.12–4.4.16](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT).
+All multibyte fields are little-endian. `zip_central_header` fixed size is 46 bytes.
+Offsets start at the substituted central signature.
 
+| Offset | Type | Field |
+| ---: | --- | --- |
+| +0 | bytes[4] | signature |
+| +4 | u16 | version_made_by |
+| +6 | u16 | version_needed |
+| +8 | u16 | flags |
+| +10 | u16 | method |
+| +12 | u16 | mod_time |
+| +14 | u16 | mod_date |
+| +16 | u32 | crc32 |
+| +20 | u32 | comp_sz |
+| +24 | u32 | uncomp_sz |
+| +28 | u16 | name_len |
+| +30 | u16 | extra_len |
+| +32 | u16 | comment_len |
+| +34 | u16 | disk_start |
+| +36 | u16 | internal_attrs |
+| +38 | u32 | external_attrs |
+| +42 | u32 | local_offset |
+
+
+The encoded name follows the fixed header, then `extra_len` extra bytes, then
+`comment_len` comment bytes. The next central header begins at
+`central_start + 46 + name_len + extra_len + comment_len`. A marker-like
+pattern elsewhere in the file does not establish a directory entry.
+
+`zip_central_descriptor` fixed size is 14 bytes. It is the final fixed portion
+of a central header, beginning at central signature +32:
+
+| Descriptor offset | Type | Field |
+| ---: | --- | --- |
+| +0 | u16 | comment_len |
+| +2 | u16 | disk_start |
+| +4 | u16 | internal_attrs |
+| +6 | u32 | external_attrs |
+| +10 | u32 | local_offset |
+
+
+`comment_len` is the file-comment byte count. `disk_start` identifies the disk
+on which the local member begins. `internal_attrs` bit 0 is the ZIP producer's
+apparently-text hint; zero indicates apparently binary data. It does not
+identify XML or a SolidWorks payload family. `external_attrs` uses the host
+system interpretation selected by `version_made_by`. These are fields, even
+when their values are zero.
+
+`local_offset` is relative to archive coordinate zero at absolute file offset
+8. Thus the local signature is at `local_offset + 8` and its field marker is
+at `local_offset + 12`. The referenced local header carries the same member
+name, raw time/date, CRC, and compressed/uncompressed sizes. An empty member
+has its own local header with CRC zero, compressed size two, uncompressed size
+zero, and raw-DEFLATE payload `03 00`.
+
+The empty-member scan projection has a 40-byte marker-relative fixed prefix.
+It preserves these existing packed field names:
+
+```text
+tail.marker at +0       bytes[6] ; version needed, flags, method
+tail.type_id at +6      u32 LE ; packed modification time/date
+tail.zero_at_10 at +10  u32 LE ; CRC zero
+tail.size at +14        u32 LE ; compressed size
+tail.zero_at_18 at +18  u32 LE ; uncompressed size zero
+tail.name_len at +22    u32 LE ; name length plus zero extra length
+tail.descriptor at +26  bytes[14]
 ```
-+0   marker      bytes[6]   ; 14 00 06 00 08 00
-+6   type_id     u32 LE
-+10  zero        u32 LE
-+14  size        u32 LE     ; section's stored/uncompressed size
-+18  zero        u32 LE
-+22  name_len    u32 LE
-+26  descriptor  bytes[14]
-+40  name        bytes[name_len]   ; nibble-swapped section name
-     trailer     bytes[6]   ; [4-byte per-file separator][00 00]
+
+This projection describes the empty-member, zero-extra-length subset of the
+central header. It does not describe ordinary nonempty central entries. The
+six bytes after an encoded name in a contiguous zero-extra, zero-comment
+chain are the next central signature token and its u16 version-made-by field.
+They are not an entry-local trailer. The final entry has no implied next-header
+trailer. Existing container projections may retain those lookahead bytes
+without assigning them to the preceding entry.
+
+### 1.4 Tail padding grids and end-of-directory root
+
+The real central directory contains one record per validated local member,
+including each empty member. An EOCD root carries the real record count and
+the archive-relative central-directory offset. Its body follows
+[PKWARE ZIP APPNOTE §4.3.16](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT).
+The substituted signature is opaque retained bytes.
+
+Let `S` be the first real central signature, `M=S+6` its field marker, and `R`
+the real central-record count. A root with body start `h` has disk fields zero,
+both counts equal to `R`, zero comment length, and both locator equations:
+
+```text
+central_offset + 8 = S
+central_size = root_signature_start - S = (h+2)-M
 ```
 
-The descriptor is an entry-local 14-byte value. The 6-byte trailer has one value for all entries in a file, for example `e5 4b 57 5b 00 00`; its first four bytes form the directory separator. Decoded names are OPC parts such as `[Content_Types].xml`, `_rels/.rels`, `docProps/Config-0-Properties.xml`, and `ThirdPty/SWA_Schedules`.
+The declared size spans from the first real central signature to the root
+signature, including intervening padding. The count selects real central
+records; central-like padding headers do not increase it. Root selection uses
+both locators and the count, rather than a zero-valued field or position alone.
 
-A tail-directory entry with `size == 2` aliases a degenerate empty compressed block. Its payload is raw-DEFLATE `03 00`, its decompressed size and CRC-32 are zero, and its section name occupies the block preamble. This directory/block aliasing is valid.
+`named_padding_header` fixed size is 40 bytes. All multibyte fields are little-endian.
+
+| Offset | Type | Field |
+| ---: | --- | --- |
+| +0 | bytes[6] | marker |
+| +6 | u32 | time_date |
+| +10 | u32 | two_l |
+| +14 | u32 | half_l |
+| +18 | u32 | l |
+| +22 | u16 | name_len |
+| +24 | u16 | extra_len |
+| +26 | bytes[14] | descriptor |
+
+
+`footer_padding_body` fixed size is 18 bytes. All multibyte fields are little-endian.
+
+| Offset | Type | Field |
+| ---: | --- | --- |
+| +0 | u32 | disk_fields |
+| +4 | u16 | entries_disk |
+| +6 | u16 | entries_total |
+| +8 | u32 | named_stride |
+| +12 | u32 | five_l |
+| +16 | u16 | comment_len |
+
+
+`zip_eocd_header` fixed size is 22 bytes. All multibyte fields are little-endian.
+
+| Offset | Type | Field |
+| ---: | --- | --- |
+| +0 | bytes[4] | signature |
+| +4 | u16 | disk_number |
+| +6 | u16 | central_disk |
+| +8 | u16 | entries_disk |
+| +10 | u16 | entries_total |
+| +12 | u32 | central_size |
+| +16 | u32 | central_offset |
+| +20 | u16 | comment_len |
+
+
+The named padding grid, when present, starts two bytes after the final real
+central name. Its stride is `B`; each cell starts at `x` and its marker is at
+`x+N`. Its scalars obey `L=N*B`, `two_l=2L`, and `half_l=L//2`. The name uses
+the central-like prefix above and has zero extra length. The fixed prefix and
+name fit wholly inside `[x,x+B)`. Adjacent cells begin exactly one stride
+apart. Prefix and residual bytes remain opaque. These records are padding,
+not local members or additional central-directory entries.
+
+If `T` is the end of the final named cell, the anonymous footer starts at
+`T-2`. The two bytes lie in the named cell's opaque residual. Ordinary footer
+cells have stride `Q`, body displacement `N`, zero disk fields and comment
+length, both apparent counts equal to `R`, `named_stride=B`, and
+`five_l=5*N*Q`. The complete body fits within its physical cell.
+
+The real root is a 22-byte cell whose body begins four bytes after its
+substituted signature. Walk the footer by `Q` for each ordinary cell and 22
+for the root; the resulting ranges tile the footer through EOF. A root can
+occur between ordinary cells. In the root-only form, the final real name ends
+at the root signature and the 22-byte root ends at EOF; no named or ordinary
+footer stride is inferred.
+
+A valid grid has independently anchored cell starts, complete cell bounds,
+consistent scaling equations, and exact EOF closure. Opaque prefix, residual, and signature bytes are retained exactly;
+zero or `ff` bytes are valid opaque values. Their values do not select
+directory membership.
 
 ---
 
@@ -471,7 +690,7 @@ A named feature-input object bound to a classless history `Sketch` record with a
 
 An extrusion feature-input object stores a little-endian u32 form code before its object-name record. A direct class declaration is preceded by the form code and four or eight zero bytes. A repeated-class name is preceded by the form code, four or eight zero bytes, and its little-endian u16 class token. A repeated `moICE_c` object may instead store the form code immediately before its non-sentinel high-bit class token. The decimal `swVersion` value in the `Contents/SolidWorks` metadata selects four-byte padding below `12000` and eight-byte padding at `12000` or above. Missing or invalid `swVersion` does not select a width. A direct `moICE_c` declaration immediately preceded by `ff ff ff ff` is the sentinel cut form.
 
-An extrusion object-name record is followed by four zero bytes, a little-endian u16 family word, a one-byte Boolean operation, one schema byte, the repeated little-endian u32 object identifier, and four zero bytes. The terminated trailer then stores `ff fe ff`. The 40-byte sparse form stores six zero bytes at trailer +16, u16 `1` at +22, a nonzero u16 token at +24, an optional u32 identity at +26, eight zero bytes at +30, and a second nonzero u16 token at +38. The optional identity is zero or non-null. The family word establishes the operation family independently of a shared class token. Family `0x0140` with operation byte `00` joins the extrusion result. Family `0x01ca` with operation byte `00` or `02` subtracts it. The zero byte in the `0x01ca` form is not an operation discriminator independent of the family word. Objects without a complete recognized trailer use class-scoped form semantics. `moExtrusion_c` form codes `1`, `4`, and `82` join. `moICE_c` form codes `6`, `21`, and `0x3ee4f8b5` join; codes `0`, `1`, `2`, `5`, `7`, `10`, `14`, `15`, `22993`, and `0xffffffff` subtract. Form code `3` joins for either class. Form code `11` does not determine the Boolean operation.
+An extrusion object-name record is followed by four zero bytes, a little-endian u16 family word, a one-byte Boolean operation, one schema byte, the repeated little-endian u32 object identifier, and four zero bytes. The terminated trailer then stores `ff fe ff`. The 40-byte sparse form stores six zero bytes at trailer +16, u16 `1` at +22, a nonzero u16 token at +24, an optional u32 identity at +26, eight zero bytes at +30, and a second nonzero u16 token at +38. The optional identity is zero or non-null. The family word establishes the operation family independently of a shared class token. Family `0x0140` with operation byte `00` joins an ordinary extrusion result. The `moCutThin_c` class is outside this mapping. Family `0x01ca` with operation byte `00` or `02` subtracts it. The zero byte in the `0x01ca` form is not an operation discriminator independent of the family word. Objects without a complete recognized trailer use class-scoped form semantics. `moExtrusion_c` form codes `1`, `4`, and `82` join. `moICE_c` form codes `6`, `21`, and `0x3ee4f8b5` join; codes `0`, `1`, `2`, `5`, `7`, `10`, `14`, `15`, `22993`, and `0xffffffff` subtract. Form code `3` joins for either class. Form code `11` does not determine the Boolean operation.
 
 A compact extrusion end-spec child carries its class either as a lane-scoped class token whose high byte has its high bit set and which is not `ff ff`, or as a direct `ff ff 01 00 0b 00 moEndSpec_c` declaration followed by two zero bytes. The direct form uses the declaration's final `_c` bytes as its anchor; the declaration ends at anchor +2. Header-shaped byte runs with zeros at the class position belong to fillet edge-set records of the `edgeRadiusObject_c` family, not to end specs; those runs carry a class token at anchor +24, the constant `02 02 01 00` at anchor −32, and two f64 `0.5` values ending at anchor −11 and anchor −3. Anchor +2 is zero, anchor +4 and anchor +8 are little-endian Boolean words, anchor +12 is a Boolean direction flag, and anchor +16 is zero. The little-endian u32 first-direction termination code is at anchor +18 and the little-endian u32 second-direction termination code is at anchor +22. A second-direction code `0` means the extrusion travels in one direction only, and code `1` is a through-all second direction. Code `0` is blind, code `1` is through-all, code `2` is through-next, and code `9` is through-all in both directions and always carries second-direction code `1`. A blind child has second-direction code `0` and owns its depth as the display-distance dimension child at anchor +26; the dimension name does not alter its role. When the feature has no Keywords depth, the first following value-only scalar named `D1` or `Depth` in the same object supplies the depth in metres. The compact blind form omits the second-direction word and begins the same dimension child at anchor +22. A single-direction through-all or through-next child has two zero u32 words after the first-direction code, `01 00 00 01`, 56 zero bytes, a control word `00 00 01 00` or little-endian u32 `1`, and six zero bytes. Its follow-on is a u16 object token with two zero bytes or the direct-class prefix `ff ff 01 00`. A third form stores a u16 object token, little-endian u32 `5`, and a complete display-distance dimension child. A single-direction through-all child may instead own a display-distance dimension child immediately at anchor +26; that retained display dimension does not change the termination. The dimensioned traversal form has two zero u32 words after the first-direction code, `01 00 00 01`, ten zero bytes, little-endian u32 `1`, twenty zero bytes, and the display-distance dimension child at anchor +68; its retained dimension likewise does not change the termination. A two-direction child with first-direction code `1` continues after a zero u32 word at +26 with the same `01 00 00 01` run; both directions are through-all. A two-direction child with first-direction code `9` continues at +26 with a display-distance dimension child carrying the retained blind depth, which the through-all-both termination does not consume. A blind child with a through-all second direction carries first-direction code `0`, `1` at +4, second-direction code `1`, and its first-direction depth as the dimension child at +26. End-spec children belong to the extrusion object whose bound feature-name record precedes them; native classes `moExtrusion_c`, `moICE_c`, and `moCut_c` establish that object independently of its Keywords element tag. Repeated feature-name records bound to the same feature are segments of one object. The end-spec header and its reference operands end before the next distinct feature-name record. The extrusion object extends through immediately following profile-feature and `moCosmeticThread_c` child objects to the next non-child feature-name record, but those child objects do not extend the end-spec operand interval.
 
@@ -574,6 +793,26 @@ Non-coordinate sketch-marker type codes `1..85` use the constraint taxonomy. Cod
 A coradial relation has exactly two circular entities. Their solved centers and radii are equal. Full circles and bounded circular arcs participate with the radius and center of their common supporting circle.
 
 A merge-points relation has two or more point loci at one solved sketch position. It has the same neutral coincidence invariant as a coincident-loci relation; its distinct native code is retained as source identity.
+
+A sketch block in a feature-input lane is a chain of counted arrays of sketch-marker records: points, then lines, then arcs, then other curves. A little-endian u32 at record −14 of the first record of an array gives the record count of the array. Ten bytes precede each record: a u16 external-reference flag at record −10, the u32 contour ordinal at record −8, and a u32 identifier at record −4. An external-reference record (flag `1`) holds a slot in its array as a local record does. A marker record in an array can store `ff ff ff ff 04 00 ff ff` at marker +5 instead of eight `ff` bytes; such a record in a line array is a construction line.
+
+A local point record with coordinate tag `1e 00` at marker +56 or marker +64 stores its planar coordinates as two f64 values after the tag, then four bytes, then the handle cells of the curves that end at the point. A handle cell stores a class reference, the u16 slot of the curve in the array of its kind, `ff ff ff ff`, and four zero bytes. The class reference is a u16 `0x8000 | index`, a u16 `ff 7f` and a u32 index, or `ff ff`, a u16 schema, a u16 length and that many ASCII class-name bytes. The tag of a class is `0x8000` or-ed with the archive index of the class. Ascending tags follow the order of the first declarations of the handle classes.
+
+The relation table of a sketch block follows the last record of the block. Each relation row has this layout:
+
+| Offset | Field |
+|---|---|
+| +0 | u32 relation code. The codes use the constraint taxonomy of the sketch-marker type codes. |
+| +4 | `02 00` |
+| +6 | u16 row flag, `0` or `1` |
+| +8 | `00 00 fe ff 00 00` |
+| +14 | the operand handle cells |
+
+The kind of an operand is the class of its handle tag: `sgPointHandle`, `sgLineHandle`, or `sgArcHandle`. The u16 in the cell is the slot of the operand in the point, line, or arc array of the same block. The solved planar geometry of a flag-`0` row satisfies the relation of its code. An offset-edge row (`16`) between two local operands has two parallel lines or two concentric arcs. A patterned row (`57`) has two lines of equal length or two arcs of equal radius. The meaning of flag `1` is open.
+
+A block's relation rows follow its last record, in any array, and continue to the next sketch-marker record of the lane. A flag-`0` row of codes `4..9`, `11..14` and `25..28` holds a typed neutral constraint when each operand names an entity or locus of the sketch and the row's geometry satisfies the constraint. A point operand names the start, end, or center of a curve that names the point's slot, when that locus lies at the point record's coordinates; otherwise it names the point entity. Tangency between two lines and symmetry of two lines are not typed: SolidWorks holds a symmetric-lines relation on the line carriers, not on their end points. Each other row of a known sketch holds a native constraint `sldprt:sketch-relation:<code>`. The native constraint keeps the row flag and, for each operand, the kind, the slot, the class tag, and the marker reference; an operand that does not resolve has the suffix `:unresolved`. The constraint of a row has the identifier `sldprt:model:sketch-constraint#relation-row:<lane>:<offset>` and no native reference. A row that does not identify one sketch has no constraint.
+
+Within one operand-kind sequence, the bytes that follow a row's handle cells have the same form for every typed code: 28 bytes after one line operand, 68 bytes after two operands.
 
 Ellipse-angle codes `33`, `34`, and `35` constrain a bounded ellipse's positive parameter sweep to π/2, π, and 3π/2 radians. The sweep is `(end − start) mod 2π`; a nonzero whole-turn difference represents 2π. The relation is invalid on a full ellipse or another geometry family.
 
@@ -935,7 +1174,15 @@ Coincident relations require every resolved locus to evaluate to one sketch coor
 
 `Helix/Spiral` history records use positional dimensions when explicit axis placement is absent: `D3` is the signed total axial rise, `D4` is the signed axial rise per revolution, `D5` is the positive revolution count, and `D7` is the start angle. The history record owns the unresolved construction axis and radius.
 
-The corresponding feature-input object contains one nested schema-format `13006` Parasolid mesh stream. Its polyline coordinate array is a big-endian u32 scalar count, the `00 22` array tag, and `count / 3` consecutive big-endian f64 xyz triples. The ordered points sample the helix from start to end. Their circular projection determines the axis placement and radius; their signed displacement along that axis determines total rise and pitch. The decoder promotes the mesh to a placed helix only when the maximum absolute coordinate residual of its linear helix fit is at most `5e-4` times the fitted radius. The fitted unit axis is the normalized cross product of the cosine and sine fit vectors; no residual-dependent component snapping applies.
+The corresponding feature-input object contains a nested schema-format `13006` neutral-binary Parasolid construction curve. Its wire `BODY` has `body_type=2`. The embedded BODY schema supplies the effective field sequence, including inserted fields; `BODY.boundary_curve` selects the boundary-curve chain. Each eligible chain member is type 134 `B_CURVE`; its `nurbs` reference selects type 136 `NURBS_CURVE`, whose `bspline_vertices` reference selects type 45 `BSPLINE_VERTICES`. The scalar count equals `n_vertices * vertex_dim`; XYZ construction requires `vertex_dim=3`, a false rational flag, and finite coordinates. Stored small XMT values are logical node indices plus one. `00 22` is stored XMT 34, not an array tag or a curve selector. Reference identity selects the array independently of its size or position. Every wire BODY in the feature-input stream contributes its boundary-curve path; record order does not select one.
+
+A BODY-leading schema-13006 construction stream has an eight-byte prefix immediately after its schema token: u16 BE maximum node type at `+0`, u32 BE zero user-field width at `+2`, and u16 BE BODY type `12` at `+6`. Embedded BODY schema data follows this prefix.
+
+First-of-type schema data occurs between the u16 BE node type and its payload. The matching-base-schema marker is `ff`; later nodes of the same type omit it. A fixed-node payload begins with its XMT identity. A variable-node payload begins with a u32 BE element count and then its XMT identity. The BODY schema edit sequence applies Copy, Delete, Insert, and Append operations to the base effective fields and ends with `Z`. Unknown or inconsistent schema edits supply no construction path. A missing or wrong-type reference, duplicate reachable identity, invalid count or dimension, non-finite coordinate, boundary cycle, or more than one complete eligible path supplies no unique construction curve. An unreferenced finite array supplies no path.
+
+With short XMT and pointer fields, the B_CURVE payload is 21 bytes: XMT at `+0`, u32 node ID at `+2`, attribute pointer at `+6`, owner at `+8`, next at `+10`, previous at `+12`, geometric owner at `+14`, sense byte at `+16`, NURBS pointer at `+17`, and auxiliary data pointer at `+19`. Its sense is ASCII `+` or `-`. The NURBS_CURVE payload is 25 bytes: XMT at `+0`, u16 degree at `+2`, u32 vertex count at `+4`, u16 vertex dimension at `+8`, u32 distinct-knot count at `+10`, knot-type byte at `+14`, periodic/closed/rational logical bytes at `+15`/`+16`/`+17`, curve-form byte at `+18`, control-vertex pointer at `+19`, multiplicity pointer at `+21`, and knot pointer at `+23`. Larger pointer indices use the variable-width XT pointer encoding and shift later fields. Curve-form values are unsigned bytes; the base enum names `1` as unset and `3` as polyline. The type-45 variable count/XMT prefix is the [B-spline array header](../layouts/sldprt.md#bspline_array_header).
+
+Type 45 stores NURBS control vertices, which need not lie on the represented curve. An unset curve form does not declare a polyline. Model-space coordinates in these embedded SolidWorks XT streams are metres; multiplication by 1000 converts them to millimetres. A circular-helix fit of the ordered construction controls is approximate. Its maximum absolute coordinate residual is bounded by `5e-4` times the fitted radius. The fitted unit axis is the normalized cross product of the cosine and sine fit vectors; no residual-dependent component snapping applies.
 
 An `moCurvePattern_c` feature-input object is immediately preceded by its seed feature object and followed by its path feature object. The preceding object identifies the repeated neutral feature. When the following object is an `moProfileFeature_c` sketch with one resolved neutral sketch, that sketch is the curve-driven pattern path. Seed and path resolve independently. A missing or multiply addressed adjacent object leaves its operand unresolved; a following object that is not a resolved sketch leaves the path unresolved.
 
@@ -957,7 +1204,7 @@ An `moMoveCopyBody_c` non-copy translation owns one `moMoveCopyBodyData_c` child
 
 An `moMirrorPattern_c` or `moMirrorSolid_c` seed vector uses the duplicated 16-byte component marker. Marker −12 stores a little-endian u32 slot count from 2 through 65, marker −8 through marker −1 are zero, and marker +16 through marker +17 are zero. The count either equals the component count or includes one or two root slots that have no component. A component is a tagged 20-byte path entry or an anonymous 16-byte entry consisting of the 12-byte type signature and u32 local id. Tagged-only paths use the edge component-path separator grammar. Mixed paths use zero or `ff` word fill of 4, 8, or 12 bytes; a root boundary within a mixed path is `01 00 00 00` followed by four or six zero bytes. The path is valid only when the count, entry widths, separators, and root slots yield one complete parse. The last uniquely identified history feature traversed by each path is its mirror seed. A terminal component whose signature has no history feature does not invalidate the preceding seed identity. Separate paths supply an ordered seed set. An immediately following `moDerivedCosmeticThread_c` object is the mirror's generated child and does not terminate the mirror interval; when the interval has no seed vector, the nearest preceding `moCosmeticThread_c` history feature is the seed. The seed set and mirror plane resolve independently. Multiple configuration lanes must yield the same ordered seed set.
 
-The mirror-plane surface vector uses the same duplicated marker with a component-vector selector whose byte 1 is `02`, whose byte 0 is a lane-specific subtype, and whose final two bytes are zero at marker −8. Its little-endian u32 count at marker −12 either equals the mixed component count or includes one root slot that has no component. The terminal component's feature source identifier and feature-local identity select the surviving face through `ATOM_ID_2001`. Exactly one planar face supplies the mirror-plane origin and normal. A proper-rigid transformed plane supplies its transformed origin and normal.
+The mirror-plane surface vector uses the same duplicated marker with a component-vector selector whose byte 1 is `02`, whose byte 0 is a lane-specific subtype, and whose final two bytes are zero at marker −8. Its little-endian u32 count at marker −12 either equals the mixed component count or includes one root slot that has no component. The terminal component's feature source identifier and feature-local identity select the surviving face through `FACE_ID_2001`. Exactly one planar face supplies the mirror-plane origin and normal. A proper-rigid transformed plane supplies its transformed origin and normal.
 
 Built-in reference-plane history records have native class `moRefPlane_c` and no dimensions or extra attributes. Within that class, source IDs `2`, `3`, and `4` identify the Front, Top, and Right principal planes.
 
@@ -1285,9 +1532,9 @@ face → 00 0f loop head → 00 11 coedge ring → 00 10 edge-use → support cu
 | `00 0d` | XT SHELL ownership node       |    variable | first/edit or tagged |
 | `00 0e` | bridge / face-use→surface link |          37 | at body +8  |
 | `00 0f` | loop head                      |         ≥14 | none        |
-| `00 10` | edge-use                       |          28 | at body +8  |
+| `00 10` | edge-use                       |          30 | at body +8  |
 | `00 11` | oriented coedge                |          21 | none        |
-| `00 12` | vertex-use                     |          24 | at body +16 |
+| `00 12` | vertex-use                     |          26 | at body +16 |
 | `00 13` | XT REGION ownership node       |    variable | first/edit or tagged |
 | `00 1d` | world point                    |          38 | none        |
 
@@ -1301,11 +1548,61 @@ second carries the remaining high bits. The decoded value is
 `(first & 0x7fff) | (second << 15)`. Values `0` and `1` are null-like
 sentinels where a field permits them.
 
-- **Bridge `00 0e`:** `attr` is u16 BE at body +0, `sequence` is u32 BE at body +2, and the owner/use field is u16 BE at body +6. `sequence` is the active-partition face identity used by SWIFT `CadIdentifier` suffixes; it is distinct from `attr`, and sequence values are unique within one partition stream. `refs[2]` = owning loop-head, `refs[4]` = primary surface carrier (compact analytic or `00 7c`), `marker` = face orientation versus the surface natural normal (`0x2b` forward / `0x2d` reversed). `ref0` = owner/use discriminator. The five references are either adjacent big-endian u16 cells followed by the marker at body +26 or `[hi][lo][01]` cells followed by the marker at body +31.
+- **Bridge `00 0e`:** `attr` is u16 BE at body +0, `sequence` is u32 BE at body +2, and the ATTRIBUTE-chain head (`attributes_groups`) is u16 BE at body +6. `sequence` is the active-partition face identity used by SWIFT `CadIdentifier` suffixes; it is distinct from `attr`, and sequence values are unique within one partition stream. `refs[2]` = owning loop-head, `refs[4]` = primary surface carrier (compact analytic or `00 7c`), `marker` = face orientation versus the surface natural normal (`0x2b` forward / `0x2d` reversed). `refs[0]` and `refs[1]` are the next and previous FACE pointers; `refs[3]` is the SHELL pointer. The five references are either adjacent big-endian u16 cells followed by the marker at body +26 or `[hi][lo][01]` cells followed by the marker at body +31.
 - **Loop head `00 0f`:** `refs[1]` = first coedge, `refs[2]` = owning bridge, `refs[3]` = next sibling loop head.
-- **Edge-use `00 10`:** `sequence` is u32 BE at body +2. Bare `refs[0]` = canonical forward coedge (`0x2b`) when the reference is not a sentinel, `refs[3]` = support curve (compact analytic or `00 86`). The prefixed deltas form carries the support curve in its third post-magic reference cell and has no serialized canonical-coedge slot.
-- **Coedge `00 11`:** `refs[1]` owning loop, `refs[2]`/`refs[3]` reciprocal ring links (prev/next), `refs[4]` start vertex-use, `refs[5]` twin coedge, `refs[6]` edge-use, `marker` sense vs canonical (`0x2b` forward, `0x2d` reversed).
-- **Vertex-use `00 12` / point `00 1d`:** `00 12.sequence` is u32 BE at body +2 and `00 12.refs[4]` = point attr; a bare `00 1d` record has four references at body +6, requires reference 0 to be sentinel `0` or `1`, and stores xyz as three f64 BE at body +14, in metres. Attrs `0` and `1` are sentinels, not world points. A `[00 1d][attr]` adjacency-table entry does not satisfy the reference-0 sentinel invariant and is not a point record.
+- **Edge-use `00 10`:** `sequence` is u32 BE at body +2. Bare `refs[0]` = canonical forward coedge (`0x2b`) when the reference is not a sentinel, `refs[3]` = support curve (compact analytic or `00 86`). The complete tripled form has the same seven post-magic pointer fields, including its canonical-fin and owner pointers.
+- **Coedge `00 11`:** `refs[1]` owning loop, `refs[2]`/`refs[3]` reciprocal FIN links (forward/backward), `refs[4]` forward vertex-use, `refs[5]` next fin around the edge, `refs[6]` edge-use, `marker` sense vs canonical (`0x2b` forward, `0x2d` reversed).
+- **Vertex-use `00 12` / point `00 1d`:** `00 12.sequence` is u32 BE at body +2 and `00 12.refs[4]` = point attr; a bare `00 1d` record has four references at body +6, reference 0 is its ATTRIBUTE-group head (`0` or `1` when null), and it stores xyz as three f64 BE at body +14, in metres. Attrs `0` and `1` are sentinels, not world points. A `[00 1d][attr]` adjacency-table entry supplies no POINT node ID, four-pointer block, or coordinate vector and is not a point record.
+
+The complete short-index bodies below exclude the type tag and optional
+first-of-type `ff` byte. A tripled pointer is a big-endian u16 followed by
+`01`. The complete FACE includes five pointers after its sense, ordered as
+next-on-surface, previous-on-surface, next-front, previous-front, and
+front-shell. The complete EDGE includes seven post-tolerance pointers:
+fin, previous, next, curve, next-on-curve, previous-on-curve, and owner.
+The complete VERTEX has five pointers before tolerance and its owner pointer
+after tolerance. A bare POINT stores its transmit index at body +0 and node ID at body +2.
+POINT has exactly four pointers before its coordinate vector.
+Coordinate bytes do not extend that pointer list. Coordinates are finite
+big-endian f64 values in metres, with no format magnitude limit. A deltas
+POINT in the tripled form has no bare-pointer fallback.
+Complete POINT frames include the optional `ff`, transmit index, node ID,
+four pointer cells, and all coordinate bytes. Equal coordinate values do not
+establish equal POINT frames. A partition POINT supplies the current value
+for its transmit index; companion deltas retain historical versions.
+
+`face_bare` has a 37-byte body: `face_bare.attr at +0` (u16), `face_bare.node_id at +2` (u32), `face_bare.attributes_head at +6` (u16), `face_bare.tolerance at +8` (bytes[8]), `face_bare.refs at +16` (u16[5]), `face_bare.sense at +26` (u8), `face_bare.surface_front_refs at +27` (u16[5]).
+
+`face_tripled` has a 48-byte body: `face_tripled.attr at +0` (u16), `face_tripled.node_id at +2` (u32), `face_tripled.attributes_head at +6` (bytes[3]), `face_tripled.tolerance at +9` (bytes[8]), `face_tripled.refs at +17` (bytes[15]), `face_tripled.sense at +32` (u8), `face_tripled.surface_front_refs at +33` (bytes[15]).
+
+A complete LOOP stores its node ID before its four pointers. Complete LOOP
+frames include the optional `ff`, transmit index, node ID, and all four pointer
+cells. Equal owning-FACE and first-FIN pointers do not establish equal LOOP
+frames. A partition LOOP supplies the current record for its transmit index;
+companion deltas retain historical versions. A FIN has no node ID. Its nine pointers are attributes_groups, loop, forward, backward,
+vertex, other, edge, curve, and next_at_vx, followed by its sense.
+Complete FIN frames include the optional `ff`, transmit index, all nine pointer
+cells, and sense. Equal loop, vertex, and edge pointers do not establish equal
+FIN frames. A partition FIN supplies the current record for its transmit index;
+companion deltas retain historical versions.
+
+`loop_bare` has a 14-byte body: `loop_bare.attr at +0` (u16), `loop_bare.node_id at +2` (u32), `loop_bare.refs at +6` (u16[4]).
+
+`loop_tripled` has an 18-byte body: `loop_tripled.attr at +0` (u16), `loop_tripled.node_id at +2` (u32), `loop_tripled.refs at +6` (bytes[12]).
+
+`fin_bare` has a 21-byte body: `fin_bare.attr at +0` (u16), `fin_bare.refs at +2` (u16[9]), `fin_bare.sense at +20` (u8).
+
+`fin_tripled` has a 30-byte body: `fin_tripled.attr at +0` (u16), `fin_tripled.refs at +2` (bytes[27]), `fin_tripled.sense at +29` (u8).
+
+`edge_bare` has a 30-byte body: `edge_bare.attr at +0` (u16), `edge_bare.node_id at +2` (u32), `edge_bare.attributes_head at +6` (u16), `edge_bare.tolerance at +8` (bytes[8]), `edge_bare.refs at +16` (u16[7]).
+
+`edge_tripled` has a 38-byte body: `edge_tripled.attr at +0` (u16), `edge_tripled.node_id at +2` (u32), `edge_tripled.attributes_head at +6` (bytes[3]), `edge_tripled.tolerance at +9` (bytes[8]), `edge_tripled.refs at +17` (bytes[21]).
+
+`vertex_bare` has a 26-byte body: `vertex_bare.attr at +0` (u16), `vertex_bare.node_id at +2` (u32), `vertex_bare.refs at +6` (u16[5]), `vertex_bare.tolerance at +16` (bytes[8]), `vertex_bare.owner at +24` (u16).
+
+`vertex_tripled` has a 32-byte body: `vertex_tripled.attr at +0` (u16), `vertex_tripled.node_id at +2` (u32), `vertex_tripled.refs at +6` (bytes[15]), `vertex_tripled.tolerance at +21` (bytes[8]), `vertex_tripled.owner at +29` (bytes[3]).
+
+`world_point_tripled` has a 42-byte body: `world_point_tripled.attr at +0` (u16), `world_point_tripled.node_id at +2` (u32), `world_point_tripled.refs at +6` (bytes[12]), `world_point_tripled.xyz at +18` (f64[3]).
 
 A support surface belongs to a face through `face -> bridge -> bridge.refs[4] -> carrier`. Face and carrier attribute equality does not establish ownership. The carrier reference uses the bridge's site.
 
@@ -1313,8 +1610,27 @@ A support surface belongs to a face through `face -> bridge -> bridge.refs[4] ->
 
 The first node of an XT type carries its schema-reconciliation data between
 the type tag and its fields. A matching base-schema type uses one `ff` byte.
-An edited type uses `C`, `D`, `I`, and `A` field-edit instructions ending in
-`Z`. Later nodes use the type tag followed by the fields. The first BODY's
+An edited first-of-type schema header has three bytes: u16 BE node type at `+0`
+and u8 current effective-field count at `+2`. The field count precedes the
+`C`, `D`, `I`, and `A` field-edit instructions ending in `Z`. Effective fields
+are transmittable or variable-length fields. The base schema-13006 effective
+field counts are BODY 23, SHELL 9, REGION 7, FACE 14, and WORLD 11. WORLD
+(type 101) uses the same complete schema-program grammar. The program extent
+ends at `Z`. Pointer-type words and field names inside that extent are field
+descriptors, not topology or data records. `C` consumes one base
+field and produces one current field; `D` consumes one base field; `I` produces
+one current field before the base fields are exhausted; `A` produces one
+current field after the base fields are exhausted. `Z` ends a complete edit
+program when all base fields are consumed and the stated current field count
+is produced.
+
+An inserted or appended field contains a byte-length-prefixed field name,
+u16 BE pointer class, and XT positive-integer element count. A zero pointer
+class adds a byte-length-prefixed field type. An element count of one adds a
+logical transmission flag. These field descriptors are part of the schema
+program. Their bytes do not start topology or data nodes. The node type that
+starts the program determines the class of the following value payload.
+Later nodes use the type tag followed by the fields. The first BODY's
 fields follow the `Z` terminator of its first-of-type edit sequence; later
 BODY nodes start with `00 0c`.
 
@@ -1394,7 +1710,7 @@ Deltas streams re-encode records in prefixed/tripled forms (each ref stored as a
 
 | Tag                    | Deltas form | Magic    | Anchor                                                                            |
 | ---------------------- | ----------- | -------- | --------------------------------------------------------------------------------- |
-| `00 0e`                | tripled     | body +9  | owner triple before magic; five ref triples then marker after                     |
+| `00 0e`                | tripled     | body +9  | ATTRIBUTE-chain head triple before magic; five ref triples then marker after                     |
 | `00 0f`                | tripled     | none     | four ref triples at body +6                                                       |
 | `00 10`                | prefixed    | body +9  | post-magic cell 2 = curve carrier; direction from unique same-edge forward coedge |
 | `00 11`                | tripled     | none     | slot4 vuse, slot5 twin, slot6 edge-use                                            |
@@ -1419,11 +1735,28 @@ A deltas change set can re-create subordinate topology and geometry records unde
 Partition topology is the base set for one site. Typed BODY, SHELL, REGION,
 and FACE nodes are combined before body membership is validated. A deltas
 node with an identity present in the partition does not replace the partition
-node. A missing deltas node is retained when its bridge attribute or bridge
-owner is named by the validated typed FACE set. An unselected compact deltas
-bridge is not part of the merged topology.
+node. When the partition bridge table is nonempty, a deltas bridge with an
+absent identity is retained only when its FACE transmit index is
+named by the validated typed FACE set. Without valid typed ownership, no
+deltas bridge is added to a nonempty partition bridge table.
 
-For bridges whose owner field is greater than one, the owner identifies the canonical face entity and the bridge identifies a face use. Bridges with the same owner and identical reference, marker, and walked loop/surface payload are duplicate uses; the bridge encoded first is canonical. Bridges with the same owner and non-equivalent payloads are alternate uses without a selector; the decoder withholds every use for that owner and reports the unresolved owner.
+An empty partition bridge table adopts all deltas bridges when valid typed
+ownership is absent. With valid typed ownership, it adopts only deltas bridges
+selected by FACE transmit index. This adoption fills an empty
+table; it does not replace a partition face. In every branch, missing loop,
+edge-use, coedge, vertex-use, and point identities are filled from deltas.
+Existing partition point coordinates remain unchanged.
+
+A compact FACE bridge and a change-roster cell contain no old-face-to-new-face
+relation. A different bridge identity does not select a partition face for
+replacement. Sequence equality, attribute-chain changes, reference overlap, geometry,
+record order, and roster adjacency do not establish partition-face replacement.
+
+The FACE `attributes_groups` pointer names the head of its ATTRIBUTE chain.
+An ATTRIBUTE names its owning FACE through its first pointer slot. The head
+is metadata identity; it does not select a FACE, assign it to a BODY, or
+identify another FACE use. Each FACE transmit index supplies a distinct face
+identity. A LOOP belongs to the FACE named by its owning-FACE pointer.
 
 ## 5. Entity records and face families
 
@@ -1452,13 +1785,42 @@ The header fields have these meanings:
   The first slot names the owner node; the next two walk that owner's
   ATTRIBUTE list; the last two walk the list for one definition.
 
-A stream declares named attribute families inline. A `00 4f` KEY node carries a
-big-endian u32 byte length, a u16 node id, and that many printable ASCII
-bytes. The immediately following `00 50` ATTRIB_DEF node carries the
-definition node id four bytes into the record. The instance's `disc` resolves
-to that definition in the same stream. Low-index system definitions may have
-no KEY name; named definitions are resolved by their stored node ids, never by
-a numeric table.
+A stream declares named attribute families through KEY and ATTRIB_DEF nodes.
+A `00 4f` KEY node carries a big-endian u32 byte length, a u16 transmit index,
+and that many printable ASCII bytes. The ATTRIB_DEF `identifier` pointer
+selects that KEY in the same stream. Adjacency does not bind a name to a
+definition. The instance's `disc` resolves to the definition by transmit
+index. Low-index system definitions can have no KEY name. Conflicting KEY
+names or definition identities do not supply a named family.
+
+An unchanged base-schema ATTRIB_DEF with short references has a 38-byte body prefix.
+The prefix follows the `00 50` tag and its optional first-of-type `ff` byte.
+field_count is the number of trailing field-type bytes.
+node_index identifies the definition.
+next_definition links the definition chain.
+identifier names the KEY containing the family name.
+type_id is the native numeric attribute type.
+actions contains eight event-action bytes.
+field_names is the field-name reference.
+legal_owners contains fourteen Boolean owner-class fields.
+The complete record includes every declared field-type byte. Field codes
+`1`, `2`, `3`, and `5` denote integer, real, character, and vector fields.
+The family name does not determine the field types.
+
+An ATTRIBUTE with short references has a 22-byte prefix. Offsets begin after
+the `00 51` tag and its optional unchanged-schema `ff` marker. The value count is u32 BE at `+0`; the transmit index is u16 BE at `+4`; the sequence is u32 BE at `+6`; and the definition pointer is u16 BE at `+10`. Five u16 BE
+references follow: owner at `+12`, previous at `+14`, next at `+16`,
+next_of_type at `+18`, and previous_of_type at `+20`. The schema-ordered value
+references start at `+22`. The supported short-reference form has one value
+reference per definition field and a value count equal to that field count.
+An extended reference does not use these short-reference offsets.
+
+The `FACE_ID_2001` definition has field codes `[9, 9, 1, 1]`.
+Its first integer field supplies the persistent face list. The
+`LAST_BODY_MODIFYING_FEATURE_ID` definition has field codes `[9, 1]`.
+Its integer field supplies the last modifying feature source identifier.
+An owner-chain reference or pointer field does not supply either integer
+payload. A different field schema does not select these consumers.
 
 A `00 51` ATTRIBUTE instance whose u16 at body +6 is zero carries its
 definition node id at body +10 and its owner attribute at body +12. Its
@@ -1466,7 +1828,7 @@ remaining slots begin at body +14. A `00 52` INT_VALUES node carries a
 big-endian u32 count, a u16 node id, and that many big-endian u32 values.
 Names, definitions, lists, and instances must fit their node framing. A
 definition or list identity with conflicting payloads is not selected. The
-supported named attribute families include `ATOM_ID_2001`,
+supported named attribute families include `FACE_ID_2001`,
 `LAST_BODY_MODIFYING_FEATURE_ID`, and `SDL/TYSA_COLOUR`; their consumers use
 the definition name and the owner relation. An `SDL/TYSA_COLOUR` instance
 whose final value slot is null-like frames the inline `00 53` color record at
@@ -1476,9 +1838,10 @@ adjacent `00 53` record. An unnamed system definition uses the same two
 structural forms when its owner-local color record is valid; no numeric
 definition id selects that family.
 
-The bridge owner field `00 0e.ref0` joins a topology bridge to a face
-attribute when that entity relation is present. Typed FACE ownership remains
-the authoritative face-to-shell relation in §4.
+The FACE `attributes_groups` pointer joins the FACE to its ATTRIBUTE-chain
+head. Each ATTRIBUTE owner pointer joins that ATTRIBUTE to its owning FACE.
+The ATTRIBUTE-chain head does not supply the FACE identity. Typed FACE
+ownership remains the face-to-shell relation in §4.
 
 A face-color record is an inline child of a framed `00 53` link record:
 
@@ -1506,27 +1869,50 @@ record is the one with the greatest sequence; a deltas record wins an
 equal-sequence tie. A deltas record with an identity absent from the
 partition adds that identity.
 
-`ATOM_ID_2001` instances hang on face bridge records and reference one
-integer list of five through seven values whose value 3 is zero. Value 1 is
+`FACE_ID_2001` instances hang on face bridge records and reference one
+integer list of four through seven values whose value 3 is zero. A four-word
+form `[36, source, timestamp, 0]` identifies a feature-scoped set of current
+FACE owners. It has no feature-local face selector and cannot select one
+face when multiple owners carry it. Local-bearing forms have five through
+seven values. Value 2 is the producer timestamp. Value 1 is
 the native object id of the history feature that produced the face and value
 4 is that producer's feature-local face identity. Values 5 through the end
 are optional signed path fields; a field with bit pattern `0xffffffff` is
 written as decimal `-1`. The complete persistent identity is value 1,
-value 4, and this ordered optional tail. A `moSingleFaceRef_w` path or a
-generated-surface component path selects the surviving face whose
-`ATOM_ID_2001` carries the same complete identity. A feature whose produced
-faces survive is a producer of every body owning one of them.
+value 4, and this ordered optional tail. Equality includes the tail length
+and every field in order. An empty tail differs from a tail containing zero.
+A complete reference selects a face only when its complete identity has one
+distinct current target.
+
+A single-face component selection that supplies only the source and local
+identity selects a face only when that pair has one distinct current target.
+Document, configuration, and mirror-plane selections use this rule. Earlier
+component-path entries do not supply an implicit persistent-identity tail.
+A generated-hole surface reference instead names all current faces with its
+source and local identity. Cylinder type and bore radius restrict that set;
+coincident axes coalesce. A feature whose produced faces survive is a
+producer of every body owning one of them.
+
+`ATOM_ID_2001` has definition field codes `[9, 1]`. Its first integer field
+carries one nonzero body identity scalar. The scalar and its complete current
+BODY owner relation establish body identity; face identity uses `FACE_ID_2001`.
 
 `LAST_BODY_MODIFYING_FEATURE_ID` instances hang on BODY attributes and
-resolve one distinct `00 52` integer-list payload containing one positive
-u32. The value is a one-based ordinal in the ordered Keywords
-modeling-feature records after metadata records are excluded; it is not a
-native feature object id or a `source_id`. Ordinal 1 names the first
-modeling feature. The body attribute names
-`sldprt:brep:body#<attr>`. A zero, missing, non-scalar, conflicting, absent,
-or history-ambiguous ordinal leaves the body-history relation unresolved. A
-resolved relation adds that body to the named feature's output bodies without
-fabricating a body or replacing an explicit body scope.
+resolve one `00 52` integer-list payload containing one native feature source
+identifier. The source identifier selects the Keywords modeling-feature
+record with the same `id`. A history ordinal does not select this record.
+The body attribute names `sldprt:brep:body#<attr>`. Zero, `0xffffffff`, a
+missing or non-scalar value, and a conflicting or ambiguous source identity
+leave the body-history relation unresolved. A resolved relation adds that
+body to the named feature's output bodies without fabricating a body or
+replacing an explicit body scope.
+
+The VERTEX owner is a non-null `SHELL_OR_BODY` reference: BODY for a non-acorn vertex, SHELL for an acorn vertex. Its FIN reference may be null. EDGE ownership uses the same union: BODY for a non-wire edge and SHELL for a wire edge. VERTEX tolerance is a double; the null-double sentinel (`-3.14158e13`) denotes an accurate vertex with tolerance half the modeller linear resolution.
+
+An INT_VALUES node has a six-byte prefix: its element count is u32 BE at body +0
+and its transmit index is u16 BE at body +4. Exactly that many u32 BE values
+follow at body +6. The count determines the complete payload extent; values
+that contain node-tag byte patterns remain integer data.
 
 ## 6. Body records
 
@@ -1731,6 +2117,21 @@ The offset surface retains the support parameterization. Nested offset carriers 
 
   A `uoTempFaceTessData_c` class token has two table-header forms. Offsets are from the byte after the class token. Both forms start with the first table's triangle count as u32 LE at `+0` and strip count as u32 LE at `+4`. These values equal `C - 2*N` and `N` for that table. In the compact form, the first descriptor starts at `+8`. The extended form has u32 LE values `1`, `0`, `0`, and one nonzero token at `+8`, `+12`, `+16`, and `+20`, followed by 16 zero bytes at `+24`; its first descriptor starts at `+40`. The fixed cells and nonzero token select the extended form. A header that does not satisfy the complete extended grammar uses the compact offset and must frame a valid descriptor table there.
 
+  Each extended table can carry the same 40-byte header immediately before its first descriptor without another class declaration. Its triangle and strip counts agree with that table. Let `M` be the exact sixth-descriptor payload end. The extended-form metadata has Boolean u32 LE cells `A` at `M+0x5c`, `B` at `M+0x68`, and `C` at `M+0x6c`; u32 LE `1` at `M+0x60`; an independent u32 word at `M+0x64`; and a four-f32 LE tuple at `M+0x70`. All cells through `M+0x80` belong to the same bounded metadata interval, before the following table header.
+
+  The supported extended form words are:
+
+  | A | B | C | header word |
+  |---|---|---|-------------|
+  | 0 | 0 | 0 | `0x00201296` |
+  | 0 | 0 | 1 | `0x00201a96` |
+  | 1 | 0 | 1 | `0x00201b96` |
+  | 0 | 1 | 1 | `0x00201e96` |
+
+  For these four triples, the word equals `0x00201296 | (A << 8) | (B << 10) | (C << 11)`. Other triples have no defined word. The independent word at `M+0x64` does not contribute. `A=1` requires one repeated 12-byte stored normal pattern; `A=0` requires more than one pattern. This classification requires a nonempty normal channel and compares bytes, including signed-zero bits. `B=0` requires sixteen zero tuple bytes. `B=1` requires a positive finite scalar and a finite unit three-vector within f32 rounding; the unit-length validation tolerance is `1e-6`. These cells do not identify a surface family, face sense, or winding.
+
+  The mapping requires the complete six-descriptor table, header shape and counts, bounded metadata cells, supported Boolean triple, normal classification, tuple constraints, and agreement between the stored and calculated word. A missing or contradictory field, unsupported triple, or unknown word supplies no known form. The structurally framed table and its channels remain intact. A writer can regenerate a supported word from its three stored flags; the base word is not a default for other states.
+
   An exact-support table has every position on its owning B-rep face support surface. The f32 coordinate precision limits this incidence test. When exactly one B-rep face has an analytic support incident to all table positions, that face owns the table and its body is the face's topological owner.
 
   A NURBS support uses the same incidence rule with a constructive parameter witness. For every table position, a bounded surface inversion must return a parameter pair whose forward-evaluated surface point is within the greater of the face tolerance and the display quantization tolerance. When exactly one NURBS face admits every table position, that face owns the table. A nearest-support result without a bounded within-tolerance witness does not establish ownership.
@@ -1747,9 +2148,9 @@ The offset surface retains the support parameterization. Nested offset carriers 
 
   A visual-property instance in the framed property slot after a validated `uoTempFaceTessData_c` table assigns a face-local appearance. A visual-property instance in a following `uoBodyPropInfo_c` interval assigns a body default to the structurally preceding table group.
 
-  A DisplayFace metadata slot can contain duplicated framed UTF-16LE strings. Their frame is `ff fe ff`, a u8 code-unit count, then the UTF-16LE payload. A payload of the form `<SurfIdRep class>,<feature source ID>,<local surface ID>[,<signed path field>...],` is a persistent surface reference when the class begins with `mo` and ends with `SurfIdRep_c`. The terminal comma is part of the framed text convention. A signed path field is a decimal signed 32-bit value compared by its u32 bit pattern; decimal `-1` therefore denotes `0xffffffff`. When every trailing field is signed numeric, the complete identity is the source ID, local surface ID, and ordered trailing fields. All complete references in one slot must agree on that identity, which joins the slot to the surviving face whose `ATOM_ID_2001` carries the same values; the join is valid only when it selects one face and that face has one body. A reference with an opaque trailing field remains a source-level reference for appearance matching but cannot establish face ownership. A missing, conflicting, or multiply resolved complete identity leaves face ownership unresolved. The feature source ID alone remains sufficient for feature-appearance matching only when all references agree on that source ID.
+  A DisplayFace metadata slot can contain duplicated framed UTF-16LE strings. Their frame is `ff fe ff`, a u8 code-unit count, then the UTF-16LE payload. A payload of the form `<SurfIdRep class>,<feature source ID>,<local surface ID>[,<signed path field>...],` is a persistent surface reference when the class begins with `mo` and ends with `SurfIdRep_c`. The terminal comma is part of the framed text convention. A signed path field is a decimal signed 32-bit value compared by its u32 bit pattern; decimal `-1` therefore denotes `0xffffffff`. When every trailing field is signed numeric, the complete identity is the source ID, local surface ID, and ordered trailing fields. All complete references in one slot must agree on that identity, which joins the slot to the surviving face whose `FACE_ID_2001` carries the same values; the join is valid only when it selects one face and that face has one body. A reference with an opaque trailing field remains a source-level reference for appearance matching but cannot establish face ownership. A missing, conflicting, or multiply resolved complete identity leaves face ownership unresolved. The feature source ID alone remains sufficient for feature-appearance matching only when all references agree on that source ID.
 
-  A `ThirdPtyStore/VisualStates` feature-appearance instance in an `moCompFeature_c` interval begins with u32 LE version `17000`, the feature source ID, the feature timestamp, u32 LE values `1`, `1`, and `2`, bytes `07 80 01 00 00 00`, and marker `09 80`. The packed `0x00BBGGRR` colour follows the marker. A matching DisplayFace persistent surface source ID binds this feature appearance to the table. Effective DisplayLists precedence is body default, feature appearance, then face-local appearance.
+  A `ThirdPtyStore/VisualStates` appearance instance begins with an unconstrained u32 LE object prelude, the feature source ID, the feature timestamp, u32 LE values `1`, `1`, and `2`, bytes `07 80 01 00 00 00`, and marker `09 80`. The packed `0x00BBGGRR` colour follows the marker. The source and timestamp select a feature assignment only through one Keywords feature, one neutral model feature, and one feature-input object. Current `FACE_ID_2001` owners with that source and timestamp establish the generated-face scope, including four-word feature-scoped owners. A matching DisplayFace persistent surface source ID binds a validated feature appearance to the table. Effective appearance precedence is part, body, feature, then face. Equal-rank conflicting assignments supply no unique effective appearance; an unresolved higher-rank relation does not supply a lower-rank fallback.
 - A DisplayLists scene-class declaration scopes its following scene objects. The byte sequence `00 00 00 00 00 00 30 40 00 00 00 00` followed by a nonzero u32 LE source identifier binds that object class to the Keywords record with the same source identifier. Anonymous object counts do not identify Keywords records.
 - **Materials / metadata** live in SW Objects blocks: `moVisualProperties_c` contains appearance definitions with material names and RGB `0x00BBGGRR` values; names use UTF-16LE. A class-token occurrence does not establish an appearance assignment. A document metadata record starts with its ASCII class token. Offsets below are from the end of that token. Scalar fields are little-endian.
 
@@ -1760,11 +2161,12 @@ The offset surface retains the support parameterization. Nested offset carriers 
 |                         | +28    | f64       | maximum radius, metres              |
 | `moDefaultRefPlnData_c` | +0     | f64[3]    | datum origin xyz, metres            |
 |                         | +24    | f64[6]    | datum frame, dimensionless          |
-| `moTransRefPlaneData_c` | +0     | bytes[8]  | `ff ff ff ff ff ff ff ff`           |
-|                         | +8     | f64[3]    | plane center xyz, metres            |
-|                         | +32    | f64[2]    | plane extents, metres               |
-|                         | +48    | f64[3]    | auxiliary frame, dimensionless      |
-|                         | +72    | f64       | plane diagonal, metres              |
+| `moTransRefPlaneData_c` | +0 | bytes[24] | opaque serializer prologue |
+| | +24 | u8 | extent presence: 0 or 1 |
+| | +25 | f64[3] | stored enclosure center xyz, metres; present branch |
+| | +49 | f64[3] | axis-aligned upper xyz, metres; present branch |
+| | +73 | f64[3] | axis-aligned lower xyz, metres; present branch |
+| | +97 | f64 | stored enclosing-sphere radius, metres; present branch |
 | `moPart_c`              | +0     | u32       | part identifier                     |
 |                         | +4     | u32       | `0`                                 |
 |                         | +8     | u32       | part version                        |
@@ -1777,10 +2179,41 @@ The offset surface retains the support parameterization. Nested offset carriers 
 |                         | +3     | u8        | UTF-16 code-unit count `n`          |
 |                         | +4     | bytes[2n] | linear-unit name, UTF-16LE          |
 
+The direct `moTransRefPlaneData_c` declaration has the six-byte prefix `ff ff 01 00 15 00` before its 21-byte ASCII token. The body has a 25-byte fixed prologue. Presence zero omits all ten enclosure doubles; presence one includes exactly 80 bytes at body +25. The 24 opaque bytes precede the presence byte without a fixed `ff` gap. Stored center and radius are independent fields; they are not derived from the two corners. The following class continuation is separate from this optional enclosure.
+
 - **Per-face appearance** uses the inline `00 53` child defined in §5.
 - **XML / UnQLite** carry OPC parts, document/feature metadata, unit metadata (`SW_UnitsLinear=0` = millimetres), and MessagePack UI data: auxiliary, not the exact B-rep.
 
 ---
+
+
+`ThirdPtyStore/VisualStates` and the inflated payload of
+`ThirdPtyStore/VisualStates__ZLB` carry the same semantic appearance stream.
+One `visStateKeyData_c` interval carries a framed UTF-16LE key formed from a
+configuration name and a nonempty display-state name separated by `_`.
+A configuration name can appear inside angle brackets. A unique exact name
+prefix selects its configuration. An absent name match supplies no configuration
+scope. An inactive configuration does not
+supply the active geometry's appearance scope. Multiple keys or multiple
+matching configuration names supply no unique active scope.
+
+A part-default definition follows one of these class sequences:
+`moCompHolder_c`, `moUnitComponent_c`, `visStateVisualPropertiesAttribute_c`,
+`moVisualProperties_c`; the same sequence with `visStateVisualStateAttribute_c`
+between the attribute and definition; or `moUnitComponent_c`,
+`visStateVisualPropertiesAttribute_c`, `visStateVisualStateAttribute_c`,
+`moCompHolder_c`, `moVisualProperties_c`. The property-attribute body is
+`01 00 00 00` or `01 00 00 00 00 00`. Class order establishes the relation;
+a fixed distance between class tokens does not. A definition alone supplies
+no part scope. An empty material name does not invalidate the stored colour.
+
+A `VisualStates` body-component identity prefix is 17 bytes relative to the
+`moCompSolidBody_c` body: a non-null high-bit u16 LE class token at `+0`,
+seven zero bytes at `+2..+8`, and equal nonzero u32 LE body identity scalars
+at `+9` and `+13`. The complete scalar resolves through a unique current
+BODY `ATOM_ID_2001` owner. A conflicting or missing owner supplies no body
+appearance scope.
+
 
 ## 9. Units
 

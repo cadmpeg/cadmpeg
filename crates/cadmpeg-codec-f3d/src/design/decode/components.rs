@@ -13,6 +13,7 @@ use crate::design::decode::sketch::next_indexed_record_offset;
 
 use crate::records::feature::assembly_features::DesignComponentOccurrence;
 
+use crate::layout::local_component_occurrence_attributed_prefix as attributed_prefix;
 use crate::layout::local_component_occurrence_identity_tail as identity_tail;
 use crate::layout::local_component_occurrence_matrix_tail as matrix_tail;
 use crate::layout::local_component_occurrence_prefix as prefix;
@@ -59,21 +60,17 @@ pub(crate) fn decode_component_occurrences(
 
 /// Most attributes an attributed occurrence frame can carry.
 const MAX_OCCURRENCE_ATTRIBUTES: u32 = 16;
-/// The seven bytes between the key reference and the repeated component
-/// reference of an attributed frame.
-const ATTRIBUTED_KEY_TAIL: [u8; 7] = [0, 1, 1, 0, 0, 0, 0];
-
 /// Read an attributed local occurrence frame.
 ///
 /// After the indexed header: u32 `0`, an empty LP-ASCII instance name, `u8 1`,
 /// u32 path count `1`, the marked u64 component reference at offset 24, two
-/// zero bytes, the u32 zero-based occurrence index at offset 35, `u8 1`, and a
+/// zero bytes, the u32 path discriminator at offset 35, `u8 1`, and a
 /// u32 attribute count at offset 40. Each attribute
 /// is an LP-ASCII name, an LP-ASCII type (`IntrinsicMetaTypebool` with one
 /// byte, or `IntrinsicMetaTypeHString` with an LP-UTF16 string), and its
 /// value. Two bytes, the u32 occurrence ordinal, the LP-UTF16 carrier GUID,
-/// and the LP-UTF16 occurrence key follow; then a marked u64 reference, the
-/// seven bytes `00 01 01 00 00 00 00`, the repeated marked component
+/// and the LP-UTF16 occurrence key follow; then a cross-segment reference,
+/// one zero byte, the repeated marked component
 /// reference, two zero bytes, the identity flag, and the common tail.
 fn attributed_component_occurrence(
     bytes: &[u8],
@@ -89,21 +86,27 @@ fn attributed_component_occurrence(
     let record_index = View::u32_le_at(bytes, after_tag)?;
     let end = next_indexed_record_offset(bytes, start.checked_add(1)?)?;
     let frame = bytes.get(start..end)?;
-    if frame.get(11..19)? != [0; 8]
-        || frame.get(19) != Some(&1)
-        || View::u32_le_at(frame, 20)? != 1
-        || frame.get(24) != Some(&1)
-        || frame.get(33..35)? != [0; 2]
-        || frame.get(39) != Some(&1)
+    if frame.get(attributed_prefix::EMPTY_INSTANCE_NAME..attributed_prefix::PATH_MARKER)? != [0; 8]
+        || frame.get(attributed_prefix::PATH_MARKER) != Some(&attributed_prefix::PATH_MARKER_VALUE)
+        || View::u32_le_at(frame, attributed_prefix::PATH_COUNT)?
+            != attributed_prefix::PATH_COUNT_VALUE
+        || frame.get(attributed_prefix::COMPONENT_REFERENCE) != Some(&1)
+        || frame.get(
+            attributed_prefix::COMPONENT_REFERENCE + MARKED_U64
+                ..attributed_prefix::PATH_DISCRIMINATOR,
+        )? != [0; 2]
+        || frame.get(attributed_prefix::ATTRIBUTES_MARKER)
+            != Some(&attributed_prefix::ATTRIBUTES_MARKER_VALUE)
     {
         return None;
     }
-    let component_record_index = View::u64_le_at(frame, 25)?;
-    let count = View::u32_le_at(frame, 40)?;
+    let component_record_index =
+        View::u64_le_at(frame, attributed_prefix::COMPONENT_REFERENCE + 1)?;
+    let count = View::u32_le_at(frame, attributed_prefix::ATTRIBUTE_COUNT)?;
     if !(1..=MAX_OCCURRENCE_ATTRIBUTES).contains(&count) {
         return None;
     }
-    let mut at = 44_usize;
+    let mut at = attributed_prefix::LEN;
     let mut attributes = Vec::new();
     for _ in 0..count {
         let (name, after_name) =
@@ -130,20 +133,22 @@ fn attributed_component_occurrence(
     }
     let ordinal_prefix = View::u16_le_at(frame, at)?;
     let ordinal = std::num::NonZeroU32::new(View::u32_le_at(frame, at + 2)?)?;
-    // The zero-based occurrence index at offset 35 precedes the ordinal.
-    if View::u32_le_at(frame, 35)?.checked_add(1) != Some(ordinal.get()) {
-        return None;
-    }
+    let path_discriminator = View::u32_le_at(frame, attributed_prefix::PATH_DISCRIMINATOR)?;
     let component_guid_at = at + 6;
     let (component_guid, after_component) = lp_utf16_bounded(frame, component_guid_at, 36..=36)?;
     let occurrence_key_at = after_component;
     let (occurrence_key, after_key) = lp_utf16_bounded(frame, occurrence_key_at, 1..=36)?;
-    if frame.get(after_key) != Some(&1) {
+    let mut key_end = after_key;
+    let crate::bytes::Reference::CrossSegment {
+        target: key_record_index,
+        inline_type_guid: None,
+        segment: key_segment_index,
+    } = crate::bytes::take_owned_reference(frame, &mut key_end)?
+    else {
         return None;
-    }
-    let key_record_index = View::u64_le_at(frame, after_key + 1)?;
-    let repeat_at = after_key + 9 + ATTRIBUTED_KEY_TAIL.len();
-    if frame.get(after_key + 9..repeat_at)? != ATTRIBUTED_KEY_TAIL
+    };
+    let repeat_at = key_end + 1;
+    if frame.get(key_end) != Some(&0)
         || frame.get(repeat_at) != Some(&1)
         || View::u64_le_at(frame, repeat_at + 1)? != component_record_index
         || frame.get(repeat_at + 9..repeat_at + 11)? != [0; 2]
@@ -153,6 +158,11 @@ fn attributed_component_occurrence(
     let flag_at = repeat_at + 11;
     let (placement, transform_offset, tail_at) = match frame.get(flag_at)? {
         1 if ordinal.get() == 1 => (DesignComponentOccurrencePlacement::Base, None, flag_at + 1),
+        1 => (
+            DesignComponentOccurrencePlacement::Identity { ordinal },
+            None,
+            flag_at + 1,
+        ),
         0 => {
             let transform = super::scopes::shared_frames::rigid_transform_at(frame, flag_at + 1)?;
             (
@@ -188,7 +198,9 @@ fn attributed_component_occurrence(
         DesignAttributedOccurrenceFrame {
             attributes,
             ordinal_prefix,
+            path_discriminator,
             key_record_index,
+            key_segment_index,
             component_guid_offset: absolute(component_guid_at + 4)?,
             occurrence_guid_offset: absolute(occurrence_key_at + 4)?,
             transform_offset: match transform_offset {
@@ -352,6 +364,8 @@ pub(crate) struct ComponentDefinition {
     pub(crate) root_entity: u64,
     /// UUID that selects the component naming space.
     pub(crate) context_uuid: crate::records::mesh::DesignRelaxedGuidText,
+    /// The component's name, when its definition record stores one.
+    pub(crate) name: Option<String>,
 }
 
 /// Local component definitions of one Design stream.
@@ -363,6 +377,56 @@ pub(crate) struct StreamComponents {
     pub(crate) roots: std::collections::BTreeMap<u64, ComponentDefinition>,
     /// Component definition placed by the root instance, when exactly one names it.
     pub(crate) root_component: Option<u64>,
+    /// Later revisions of a component definition record whose context binding
+    /// is not the one that defines the component.
+    pub(crate) revised_definitions: usize,
+}
+
+impl StreamComponents {
+    /// Bind each definition frame to the naming space of its earliest
+    /// binding. A later revision's binding selects the same naming space and
+    /// is counted in `revised_definitions`.
+    fn bind_definitions<'a>(
+        &mut self,
+        definitions: impl IntoIterator<
+            Item = (u64, &'a crate::records::recipes::DesignComponentNamingSpace),
+        >,
+    ) {
+        let mut root_offsets = std::collections::BTreeMap::<u64, u64>::new();
+        for (frame_entity, space) in definitions {
+            if let Some(earlier) = root_offsets.get(&frame_entity) {
+                self.revised_definitions += 1;
+                if *earlier < space.byte_offset {
+                    continue;
+                }
+            }
+            root_offsets.insert(frame_entity, space.byte_offset);
+            self.roots.insert(
+                frame_entity,
+                ComponentDefinition {
+                    root_entity: space.component_record_index,
+                    context_uuid: space.context_uuid.clone(),
+                    name: space.name.clone(),
+                },
+            );
+        }
+    }
+}
+
+/// The loss note for later component definition revisions across every
+/// Design stream, when any stream has one.
+pub(crate) fn revised_definitions_loss(
+    components: &std::collections::BTreeMap<String, StreamComponents>,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    let revised = components
+        .values()
+        .map(|components| components.revised_definitions)
+        .sum::<usize>();
+    (revised != 0).then(|| {
+        crate::loss::F3dLossCode::ComponentDefinitionRevised.note(format!(
+            "{revised} later revision(s) of component definition records bind their own context UUID; the earliest record defines each component, and every bound UUID selects its naming space."
+        ))
+    })
 }
 
 /// Join every Design stream's component definition records to their naming
@@ -394,6 +458,7 @@ pub(crate) fn decode_local_components(
             continue;
         };
         let mut components = StreamComponents::default();
+        let mut definitions = Vec::new();
         for space in spaces {
             components
                 .root_entities
@@ -410,14 +475,9 @@ pub(crate) fn decode_local_components(
             else {
                 continue;
             };
-            components.roots.insert(
-                frame.entity_id,
-                ComponentDefinition {
-                    root_entity: space.component_record_index,
-                    context_uuid: space.context_uuid.clone(),
-                },
-            );
+            definitions.push((frame.entity_id, space));
         }
+        components.bind_definitions(definitions);
         let mut root_components = frames
             .iter()
             .filter(|frame| {
@@ -462,6 +522,8 @@ fn root_instance_component(bytes: &[u8], start: usize, end: usize) -> Option<u64
 #[cfg(test)]
 mod tests {
     #![allow(clippy::trivially_copy_pass_by_ref)]
+
+    mod original;
 
     use super::{
         attributed_component_occurrence, exact_component_occurrence, root_instance_component,
@@ -714,15 +776,91 @@ mod tests {
         assert_eq!(transform.value.rows()[2][3], 4.0);
         let wire = serde_json::to_value(&occurrence).unwrap();
         assert_eq!(wire["attributed"]["key_record_index"], 139);
+        assert_eq!(wire["attributed"]["key_segment_index"], 1);
         assert_eq!(wire["attributed"]["attributes"][0]["name"], "GatedByParent");
         let round_trip: crate::records::feature::assembly_features::DesignComponentOccurrence =
             serde_json::from_value(wire).unwrap();
         assert_eq!(round_trip, occurrence);
 
-        // A GUID key reads too; the zero-based index must match the ordinal.
+        // A path discriminator is independent of the occurrence ordinal.
         let bytes = attributed(OCCURRENCE, 1, 2);
         assert!(attributed_component_occurrence(&bytes, 0, "f3d:Design/BulkStream.dat").is_some());
         let bytes = attributed("34", 0, 2);
+        let occurrence = attributed_component_occurrence(&bytes, 0, "f3d:Design/BulkStream.dat")
+            .expect("independent path discriminator");
+        let wire = serde_json::to_value(&occurrence).unwrap();
+        assert_eq!(wire["attributed"]["path_discriminator"], 0);
+        assert_eq!(wire["occurrence_ordinal"], 2);
+    }
+
+    #[test]
+    fn fixture_attributed_occurrence_retains_all_three_typed_properties() {
+        let bytes = crate::test_support::verification::bytes(
+            "xref/attributed-occurrence.bin",
+            include_bytes!("../../test_support/xref/attributed-occurrence.bin"),
+        );
+        let occurrence = attributed_component_occurrence(&bytes, 0, "f3d:Design/BulkStream.dat")
+            .expect("original attributed occurrence");
+        let wire = serde_json::to_value(&occurrence).unwrap();
+        assert_eq!(wire["attributed"]["key_segment_index"], 10);
+        assert_eq!(
+            wire["attributed"]["attributes"],
+            serde_json::json!([
+                {"name":"GatedByParent","value":{"type":"bool","value":false}},
+                {"name":"ResolutionTime","value":{"type":"text","value":""}},
+                {"name":"SelfGated","value":{"type":"bool","value":false}}
+            ])
+        );
+        let decoded: crate::records::feature::assembly_features::DesignComponentOccurrence =
+            serde_json::from_value(wire).unwrap();
+        assert_eq!(decoded, occurrence);
+    }
+
+    #[test]
+    fn fixture_named_root_instance_uses_the_root_component_reader() {
+        let bytes = crate::test_support::verification::bytes(
+            "xref/root-instance.bin",
+            include_bytes!("../../test_support/xref/root-instance.bin"),
+        );
+        assert_eq!(root_instance_component(&bytes, 0, bytes.len()), Some(3));
         assert!(attributed_component_occurrence(&bytes, 0, "f3d:Design/BulkStream.dat").is_none());
+    }
+
+    #[test]
+    fn earliest_definition_binding_defines_the_component() {
+        let space = |byte_offset: u64, context_uuid: &str| {
+            crate::records::recipes::DesignComponentNamingSpace {
+                id: format!(
+                    "f3d:Design/BulkStream.dat:design-component-naming-space#{byte_offset}"
+                ),
+                byte_offset,
+                component_record_index: 17,
+                context_uuid: crate::records::mesh::DesignRelaxedGuidText::try_from(
+                    context_uuid.to_owned(),
+                )
+                .unwrap(),
+                context_uuid_offset: byte_offset + 12,
+                name: Some("Feet".to_owned()),
+                name_offset: Some(byte_offset + 88),
+            }
+        };
+        let later = space(400, OCCURRENCE);
+        let earlier = space(100, COMPONENT);
+        let mut components = super::StreamComponents::default();
+        components.bind_definitions([(16, &later), (16, &earlier)]);
+        assert_eq!(components.roots[&16].context_uuid.as_str(), COMPONENT);
+        assert_eq!(components.revised_definitions, 1);
+
+        let streams = std::collections::BTreeMap::from([("f3d:Design".to_owned(), components)]);
+        let loss = super::revised_definitions_loss(&streams).expect("revision loss");
+        assert_eq!(
+            loss.code,
+            crate::loss::F3dLossCode::ComponentDefinitionRevised.kind()
+        );
+        let unrevised = std::collections::BTreeMap::from([(
+            "f3d:Design".to_owned(),
+            super::StreamComponents::default(),
+        )]);
+        assert!(super::revised_definitions_loss(&unrevised).is_none());
     }
 }

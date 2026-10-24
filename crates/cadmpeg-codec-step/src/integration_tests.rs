@@ -65,6 +65,8 @@ use crate::writer::tests::round_trips::{
 };
 use crate::{StepCodec, StepSchema, StepWriteOptions};
 
+mod measured_geometry;
+
 fn assert_valid(result: &EditableDecodeResult) {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
         .expect("validate the neutral model");

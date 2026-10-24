@@ -1784,6 +1784,10 @@ pub struct FeatureInputTopology {
     /// Vertices present in this state.
     #[serde(default, skip_serializing_if = "DistinctMembers::is_empty")]
     pub vertices: DistinctMembers<HistoricalVertexId>,
+    /// Sampled geometry of edges present in this state, at most one entry
+    /// per edge.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub edge_geometry: Vec<HistoricalEdgeGeometry>,
     /// Full-fidelity source state reference.
     #[serde(
         default,
@@ -1791,6 +1795,45 @@ pub struct FeatureInputTopology {
         deserialize_with = "deserialize_native_ref"
     )]
     pub native_ref: Option<String>,
+}
+
+/// Geometry of one historical edge in a feature's input state.
+///
+/// Positions and directions are in millimetres in the frame of the body that
+/// the feature evaluates, before the feature applies.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct HistoricalEdgeGeometry {
+    /// Edge of the owning input state.
+    pub edge: HistoricalEdgeId,
+    /// Point on the edge at the midpoint of its carrier parameter interval.
+    pub interior: FinitePoint3,
+    /// Unit carrier tangent at `interior`, in the carrier's parameter
+    /// direction.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_edge_geometry_tangent"
+    )]
+    pub tangent: Option<UnitVector3>,
+    /// Position of the start vertex.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_edge_geometry_start"
+    )]
+    pub start: Option<FinitePoint3>,
+    /// Position of the end vertex.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_edge_geometry_end"
+    )]
+    pub end: Option<FinitePoint3>,
+    /// Faces of the owning input state that use the edge.
+    #[serde(default, skip_serializing_if = "DistinctMembers::is_empty")]
+    pub faces: DistinctMembers<HistoricalFaceId>,
 }
 
 /// One member of a feature result state: a body, face, edge, or vertex.
@@ -6866,6 +6909,13 @@ pub enum ExtrudeStart {
         )]
         offset: Option<Dimension<Length>>,
     },
+    /// Begin on a selected plane that has no face identity.
+    FromPlane {
+        /// Model-space frame of the start plane.
+        plane: FeatureSupportPlaneFrame,
+        /// Native record that stores the plane.
+        native: NonBlankString,
+    },
 }
 
 /// One-sided termination law of a linear sweep. Sidedness around the profile
@@ -6905,6 +6955,13 @@ pub enum LinearTermination {
     ToVertex {
         /// Vertex terminating the operation.
         vertex: VertexSelection,
+    },
+    /// Extends until it reaches a target plane that has no face identity.
+    ToPlane {
+        /// Model-space frame of the terminating plane.
+        plane: FeatureSupportPlaneFrame,
+        /// Native record that stores the plane.
+        native: NonBlankString,
     },
     /// Extends to a fixed offset from a target face.
     OffsetFromFace {
@@ -8965,6 +9022,9 @@ mod tests;
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_plane, FeatureId, "plane");
 cadmpeg_core::named_optional_field!(deserialize_pull, DraftPull, "pull");
+cadmpeg_core::named_optional_field!(deserialize_edge_geometry_tangent, UnitVector3, "tangent");
+cadmpeg_core::named_optional_field!(deserialize_edge_geometry_start, FinitePoint3, "start");
+cadmpeg_core::named_optional_field!(deserialize_edge_geometry_end, FinitePoint3, "end");
 cadmpeg_core::named_optional_field!(deserialize_source_index, u32, "source_index");
 cadmpeg_core::named_optional_field!(deserialize_name, String, "name");
 cadmpeg_core::named_optional_field!(deserialize_material, String, "material");

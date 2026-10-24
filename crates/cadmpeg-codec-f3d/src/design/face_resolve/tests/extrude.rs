@@ -624,7 +624,7 @@ fn extrude_leaf_fixture() -> (
             "program": [0, -1, 1],
             "recipe_structure": {
                 "root": 0,
-                "prelude": [0, 0],
+                "prelude": [0, 2],
                 "sides": [
                     {"field_count": 1, "header_value": 0, "payload_entry_count": 0, "payload_prefix": [], "scalars": [], "entries": []},
                     {"field_count": 1, "header_value": 0, "payload_entry_count": 0, "payload_prefix": [], "scalars": [], "entries": []}

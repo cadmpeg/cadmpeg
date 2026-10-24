@@ -27,7 +27,6 @@ use crate::units::COINCIDENCE_TOLERANCE;
 use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
 use cadmpeg_core::CodecError;
 
-use super::pcurve_parameter_domain;
 use crate::index::identities::BorrowedIdentities;
 
 mod surface_cache;
@@ -866,7 +865,7 @@ fn pcurve_parameter_ranges(
     }
     ranges.extend(pcurve_parameter_extremes(ctx, pcurve)?);
     if !ranges.is_empty() {
-        if let Some(domain) = pcurve_parameter_domain(ctx, &pcurve.geometry)? {
+        if let Some(domain) = pcurve.geometry.parameter_domain(ctx)? {
             ranges.push(domain.endpoints());
         }
     }
@@ -992,7 +991,9 @@ fn mapped_pcurve_parameter_near_point(
     if !tolerance.is_finite() || tolerance < 0.0 {
         return Ok(None);
     }
-    let domain = pcurve_parameter_domain(ctx, pcurve_geometry)?.map(ParameterInterval::from);
+    let domain = pcurve_geometry
+        .parameter_domain(ctx)?
+        .map(ParameterInterval::from);
     // A step projects onto the pcurve domain. Without a domain, a step past
     // the finite range reaches no pcurve point at a finite distance, so the
     // search ends there.
@@ -1141,7 +1142,7 @@ fn pcurve_parameter_seeds(
     if let Some(range) = pcurve.parameter_range() {
         seeds.extend(range.get());
     }
-    if let Some(domain) = pcurve_parameter_domain(ctx, &pcurve.geometry)? {
+    if let Some(domain) = pcurve.geometry.parameter_domain(ctx)? {
         let [start, end] = domain.endpoints();
         seeds.extend([start, start.midpoint(end), end]);
     }
@@ -1220,38 +1221,8 @@ fn pcurve_parameter_extremes(
         .map(crate::units::FiniteVector::get)
     {
         Some(range) => Ok(Some(range)),
-        None => pcurve_geometry_trim_range(ctx, &pcurve.geometry),
+        None => pcurve.geometry.trim_range(ctx),
     }
-}
-
-fn pcurve_geometry_trim_range(
-    ctx: &DecodeContext<'_>,
-    geometry: &PcurveGeometry,
-) -> Result<Option<[f64; 2]>, ResourceLimit> {
-    let _depth = ctx.enter_nested_limit("pcurve trim range nesting")?;
-
-    Ok(match geometry {
-        PcurveGeometry::Trimmed(trimmed_pcurve) => {
-            let parameter_range = trimmed_pcurve.parameter_range();
-            Some(parameter_range.endpoints())
-        }
-        PcurveGeometry::Offset(offset_pcurve) => {
-            let basis = offset_pcurve.basis();
-            pcurve_geometry_trim_range(ctx, basis)?
-        }
-        PcurveGeometry::Transformed(placed) => pcurve_geometry_trim_range(ctx, placed.basis())?,
-        PcurveGeometry::Line(_) => None,
-        PcurveGeometry::Circle(_) => None,
-        PcurveGeometry::Ellipse(_) => None,
-        PcurveGeometry::Harmonic(_) => None,
-        PcurveGeometry::Parabola(_) => None,
-        PcurveGeometry::Hyperbola(_) => None,
-        PcurveGeometry::Hyperbolic(_) => None,
-        PcurveGeometry::PolarHarmonic(_) => None,
-        PcurveGeometry::PolarNurbs { .. } => None,
-        PcurveGeometry::Nurbs { .. } => None,
-        PcurveGeometry::SphericalGreatCircle(_) => None,
-    })
 }
 
 #[cfg(test)]

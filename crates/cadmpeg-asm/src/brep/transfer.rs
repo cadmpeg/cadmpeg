@@ -65,12 +65,12 @@ pub fn transfer_into_ir<'ir>(
         shells,
         faces,
         loops,
-        coedges,
-        edges,
+        mut coedges,
+        mut edges,
         vertices,
         points,
         surfaces,
-        curves,
+        mut curves,
         pcurves,
         procedural_surfaces,
         procedural_curves,
@@ -91,6 +91,7 @@ pub fn transfer_into_ir<'ir>(
         stats,
         annotation_records,
     } = brep;
+    super::subsets::localize_subsets(&mut curves, &mut edges, &mut coedges, &procedural_curves)?;
 
     let entity_count = [
         bodies.len(),

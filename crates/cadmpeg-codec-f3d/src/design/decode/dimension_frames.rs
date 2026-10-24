@@ -800,9 +800,15 @@ fn dimension_recipe_edge_matches(
     if native_stream(&operand.id) != native_stream(&record.id) {
         return false;
     }
+    let Some(prelude_length) = super::operands::edge_recipe_prelude_length(
+        &operand.recipe_program,
+        &cadmpeg_core::decode::WorkBudget::new(super::operands::RECIPE_SIDE_SEARCH_WORK),
+    ) else {
+        return false;
+    };
     let Some(tail) = operand
         .recipe_program
-        .get(7..)
+        .get(prelude_length..)
         .filter(|tail| !tail.is_empty())
     else {
         return false;
@@ -1991,9 +1997,8 @@ pub(super) fn companion_owned_interval<'a>(
         }
     }
     let start = companion
-        .byte_offset()
-        .and_then(|offset| usize::try_from(offset).ok())
-        .and_then(|offset| offset.checked_add(58))?;
+        .payload_byte_offset()
+        .and_then(|offset| usize::try_from(offset).ok())?;
     let end = owners
         .iter()
         .filter(|owner| {

@@ -39,9 +39,9 @@
 #   site.
 #
 #   Each `[format.<id>]` block declares the published level and the `scored`
-#   rows that level covers. A fixture-backed read level or a maintainer
-#   evaluation below the declared level is a contradiction. An absent fixture
-#   or evaluation does not contradict the level. The renderer prints the
+#   rows that level covers. A fixture-backed read level or a recorded
+#   evaluation is a floor for its row, not a ceiling for the format: a value
+#   below the declared level does not contradict it. The renderer prints the
 #   declared level and prints each row's read cell verbatim.
 #
 # How the write cell is chosen. There are two write capabilities, and the
@@ -98,7 +98,7 @@ delivered_scope = ["model", "design"]
 write_paths = ["synthesized"]
 dropped_arenas = ["subds", "assets", "features", "feature_input_topologies", "feature_result_topologies", "configurations", "parameters", "sketches", "sketch_entities", "sketch_constraints", "spatial_sketches", "spatial_sketch_entities", "spatial_sketch_constraints", "spreadsheets", "assembly_joints", "drawings", "semantic_annotations", "presentation_documents", "view_presentations", "attributes"]
 omitted_arenas = []
-level = 9
+level = 8
 scored = [
   "step:ap203-e1",
   "step:ap203-e2",
@@ -114,7 +114,7 @@ delivered_scope = ["model", "design"]
 write_paths = ["synthesized"]
 dropped_arenas = ["subds", "procedural_surfaces", "features", "configurations", "parameters", "sketches", "sketch_entities", "sketch_constraints", "attributes"]
 omitted_arenas = ["assets", "feature_input_topologies", "feature_result_topologies", "spatial_sketches", "spatial_sketch_entities", "spatial_sketch_constraints", "spreadsheets", "product_definitions", "occurrences", "assembly_joints", "drawings", "semantic_annotations", "presentation_documents", "view_presentations", "pmi", "presentation_layers"]
-level = 1
+level = 2
 scored = [
   "rhino:archive-2",
   "rhino:archive-3",
@@ -138,7 +138,7 @@ delivered_scope = ["model", "design"]
 write_paths = ["synthesized", "patched", "verbatim_replay"]
 dropped_arenas = ["subds", "assets", "features", "feature_input_topologies", "feature_result_topologies", "sketches", "sketch_entities", "sketch_constraints", "spatial_sketches", "spatial_sketch_entities", "spatial_sketch_constraints", "spreadsheets", "product_definitions", "occurrences", "assembly_joints", "drawings", "semantic_annotations", "presentation_documents", "view_presentations", "tessellations", "appearance_bindings", "attributes", "pmi", "presentation_layers"]
 omitted_arenas = []
-level = 4
+level = 5
 scored = ["f3d:manifest-3-2-0-0", "f3d:f3z-multi-document"]
 
 [format.catia]
@@ -146,7 +146,7 @@ delivered_scope = ["model", "design"]
 write_paths = []
 dropped_arenas = []
 omitted_arenas = []
-level = 1
+level = 3
 scored = [
   "catia:standard-nested",
   "catia:fbb-only",
@@ -169,7 +169,7 @@ delivered_scope = ["model", "design"]
 write_paths = ["synthesized", "patched", "verbatim_replay"]
 dropped_arenas = ["subds", "pcurves", "procedural_surfaces", "procedural_curves", "assets", "feature_input_topologies", "feature_result_topologies", "spreadsheets", "product_definitions", "occurrences", "assembly_joints", "drawings", "semantic_annotations", "presentation_documents", "view_presentations", "presentation_layers", "pmi", "spatial_sketch_constraints"]
 omitted_arenas = []
-level = 1
+level = 3
 scored = ["sldprt:sw-version-pre-12000", "sldprt:sw-version-12000-plus"]
 
 [format.inventor]
@@ -177,7 +177,7 @@ delivered_scope = ["model", "design"]
 write_paths = []
 dropped_arenas = []
 omitted_arenas = []
-level = 1
+level = 3
 scored = ["inventor:cfb3-rse31-meta8"]
 
 [format.nx]
@@ -193,8 +193,12 @@ delivered_scope = ["model", "design"]
 write_paths = []
 dropped_arenas = []
 omitted_arenas = []
-level = 1
+level = 3
 scored = ["sat:text"]
+
+[format.pvz]
+level = 0
+scored = ["pvz:pvs-0301", "pvz:pvs-0302", "pvz:pvs-0303", "pvz:pvs-0304", "pvz:pvs-0305"]
 
 
 # --------------------------------------------------------------------------
@@ -940,6 +944,44 @@ refusal = "no-framing-grammar"
 reason = """
 `sat:unknown` means no ASM, ACIS, or text stream framing matched. Detection
 returns Confidence::No and the forced codec path returns WrongFormat"""
+
+# --------------------------------------------------------------------------
+# pvz
+# --------------------------------------------------------------------------
+
+[[support]]
+dialect = "pvz:pvs-0301"
+read = "detected"
+write = "none"
+
+[[support]]
+dialect = "pvz:pvs-0302"
+read = "detected"
+write = "none"
+
+[[support]]
+dialect = "pvz:pvs-0303"
+read = "detected"
+write = "none"
+
+[[support]]
+dialect = "pvz:pvs-0304"
+read = "detected"
+write = "none"
+
+[[support]]
+dialect = "pvz:pvs-0305"
+read = "detected"
+write = "none"
+
+[[support]]
+dialect = "pvz:unknown"
+read = "unclassified-recovered"
+write = "none"
+reason = """
+no known structure-member signature or XML version; the member is read on the
+residual path with the grammar its leading bytes select and charges
+pvz/source.dialect-unverified"""
 
 # --------------------------------------------------------------------------
 # acis

@@ -30,6 +30,16 @@ cadmpeg_core::named_optional_field!(
     DesignFixedExtrudeScalar,
     "side_two_taper_angle"
 );
+cadmpeg_core::named_optional_field!(
+    deserialize_profile_offset,
+    DesignFixedExtrudeScalar,
+    "profile_offset"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_side_one_offset,
+    DesignFixedExtrudeScalar,
+    "side_one_offset"
+);
 /// One exact scalar carrier used by an Extrude scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignFixedExtrudeScalar<T = FiniteReal> {
@@ -174,6 +184,22 @@ pub(crate) struct DesignFixedExtrudeParameters {
         deserialize_with = "deserialize_side_two_taper_angle"
     )]
     pub(crate) side_two_taper_angle: Option<DesignFixedExtrudeScalar>,
+    /// Start-offset lane of an offset-start or face-start Extrude in source
+    /// centimetres.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_profile_offset"
+    )]
+    pub(crate) profile_offset: Option<DesignFixedExtrudeScalar>,
+    /// First-side termination-offset lane of a to-face Extrude in source
+    /// centimetres.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_side_one_offset"
+    )]
+    pub(crate) side_one_offset: Option<DesignFixedExtrudeScalar>,
 }
 
 /// Exact fixed scalar lanes carried by a Fillet scope.

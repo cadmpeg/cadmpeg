@@ -217,6 +217,9 @@ pub(crate) enum StepLossCode {
     GeometryCarrierNotWritten,
     /// Coedge pcurve carriers use unwritable geometry or surface references.
     PcurveCarrierUnwritable,
+    /// Pcurves on helix surfaces written as fitted B-spline surfaces, whose
+    /// parameters differ from the native ones.
+    PcurveOnFittedHelixSurface,
     /// Assembly occurrences were omitted because the parent has no local product.
     AssemblyOccurrenceOmittedNoParentProduct,
     /// Regions have no shell list and were not written.
@@ -283,6 +286,15 @@ pub(crate) enum StepLossCode {
     SourceAttributeNotWritten,
     /// Procedural definitions were reduced to solved STEP carriers.
     ProceduralReducedToCarrier,
+    /// Helix definitions without a solved carrier were written as fitted
+    /// cubic B-splines.
+    HelixFittedToBspline,
+    /// Procedural definitions without another STEP carrier were written as
+    /// sampled cubic B-splines.
+    ProceduralSampledToBspline,
+    /// A helix definition without a solved carrier had no B-spline within the
+    /// linear tolerance, so its carrier was not written.
+    HelixFitFailed,
     /// A procedural definition has no emitted native construction or solved carrier.
     ProceduralDefinitionNotWritten,
     /// A region has no writable outer shell.
@@ -452,6 +464,7 @@ impl StepLossCode {
         Self::UnknownSurfaceFaceOmitted,
         Self::GeometryCarrierNotWritten,
         Self::PcurveCarrierUnwritable,
+        Self::PcurveOnFittedHelixSurface,
         Self::AssemblyOccurrenceOmittedNoParentProduct,
         Self::RegionNoShellList,
         Self::WireRegionNoConnectedEdgeSet,
@@ -485,6 +498,9 @@ impl StepLossCode {
         Self::AppearanceBindingMetadataReduced,
         Self::SourceAttributeNotWritten,
         Self::ProceduralReducedToCarrier,
+        Self::HelixFittedToBspline,
+        Self::ProceduralSampledToBspline,
+        Self::HelixFitFailed,
         Self::ProceduralDefinitionNotWritten,
         Self::RegionNoWritableOuterShell,
         Self::RegionOmittedVoidShell,
@@ -632,6 +648,7 @@ impl StepLossCode {
             Self::UnknownSurfaceFaceOmitted => "geometry.unknown-surface-face-omitted",
             Self::GeometryCarrierNotWritten => "geometry.carrier-not-written",
             Self::PcurveCarrierUnwritable => "pcurve.carrier-unwritable",
+            Self::PcurveOnFittedHelixSurface => "pcurve.on-fitted-helix-surface",
             Self::AssemblyOccurrenceOmittedNoParentProduct => {
                 "assembly.occurrence-omitted-no-parent-product"
             }
@@ -667,6 +684,9 @@ impl StepLossCode {
             Self::AppearanceBindingMetadataReduced => "appearance.binding-metadata-reduced",
             Self::SourceAttributeNotWritten => "attribute.source-record-not-written",
             Self::ProceduralReducedToCarrier => "geometry.procedural-reduced-to-carrier",
+            Self::HelixFittedToBspline => "geometry.helix-fitted-to-bspline",
+            Self::ProceduralSampledToBspline => "geometry.procedural-sampled-to-bspline",
+            Self::HelixFitFailed => "geometry.helix-fit-failed",
             Self::ProceduralDefinitionNotWritten => "geometry.procedural-definition-not-written",
             Self::RegionNoWritableOuterShell => "topology.region-no-writable-outer-shell",
             Self::RegionOmittedVoidShell => "topology.region-omitted-void-shell",
@@ -756,6 +776,8 @@ impl StepLossCode {
             | Self::AppearanceBindingMetadataReduced
             | Self::SourceAttributeNotWritten
             | Self::ProceduralReducedToCarrier
+            | Self::HelixFittedToBspline
+            | Self::ProceduralSampledToBspline
             | Self::NonManifoldEdgeSplit => Severity::Info,
             _ => Severity::Warning,
         }
@@ -830,6 +852,7 @@ impl StepLossCode {
             | Self::PmiAngleUnitUnresolved
             | Self::ValidationMeasureUnitUnresolved
             | Self::GeometryCarrierNotWritten
+            | Self::HelixFitFailed
             | Self::ProceduralDefinitionNotWritten => LossTaxonomy::GeometryNotTransferred,
             Self::TopologyRootRejected
             | Self::TopologyRootIncomplete
@@ -882,6 +905,7 @@ impl StepLossCode {
             Self::PcurveEndpointsDiscontinuous
             | Self::PcurveLocusDiscontinuous
             | Self::PcurveCarrierUnwritable
+            | Self::PcurveOnFittedHelixSurface
             | Self::CoedgePcurveNoGeometry
             | Self::CoedgePcurveNativeMetadata
             | Self::PcurveUseNativeMetadata => LossTaxonomy::PcurveOmitted,
@@ -920,7 +944,9 @@ impl StepLossCode {
             Self::AppearanceReducedToBaseColor | Self::AppearanceBindingMetadataReduced => {
                 LossTaxonomy::AppearanceReduced
             }
-            Self::ProceduralReducedToCarrier => LossTaxonomy::ProceduralReduced,
+            Self::ProceduralReducedToCarrier
+            | Self::HelixFittedToBspline
+            | Self::ProceduralSampledToBspline => LossTaxonomy::ProceduralReduced,
         }
     }
 
@@ -1262,6 +1288,7 @@ mod tests {
                 "geometry.unknown-surface-face-omitted",
                 "geometry.carrier-not-written",
                 "pcurve.carrier-unwritable",
+                "pcurve.on-fitted-helix-surface",
                 "assembly.occurrence-omitted-no-parent-product",
                 "topology.region-no-shell-list",
                 "topology.wire-region-no-connected-edge-set",
@@ -1295,6 +1322,9 @@ mod tests {
                 "appearance.binding-metadata-reduced",
                 "attribute.source-record-not-written",
                 "geometry.procedural-reduced-to-carrier",
+                "geometry.helix-fitted-to-bspline",
+                "geometry.procedural-sampled-to-bspline",
+                "geometry.helix-fit-failed",
                 "geometry.procedural-definition-not-written",
                 "topology.region-no-writable-outer-shell",
                 "topology.region-omitted-void-shell",

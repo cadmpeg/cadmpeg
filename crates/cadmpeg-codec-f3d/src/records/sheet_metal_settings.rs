@@ -73,7 +73,23 @@ pub(crate) struct DesignSheetMetalSettings {
     pub(crate) presentation_record_index: u64,
     pub(crate) owner_record_index: u64,
     pub(crate) context_record_index: u64,
+    /// The rule record's sheet thickness in centimetres, when its leading
+    /// entry is the `Thickness` value.
+    pub(crate) rule_thickness: Option<cadmpeg_ir::scalar::PositiveReal>,
+    /// Byte offset of `rule_thickness`.
+    pub(crate) rule_thickness_offset: Option<u64>,
 }
+
+cadmpeg_core::named_optional_field!(
+    deserialize_rule_thickness,
+    cadmpeg_ir::scalar::PositiveReal,
+    "rule_thickness"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_rule_thickness_offset,
+    u64,
+    "rule_thickness_offset"
+);
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -88,6 +104,18 @@ pub(crate) struct DesignSheetMetalSettingsWire {
     pub(crate) presentation_record_index: u64,
     pub(crate) owner_record_index: u64,
     pub(crate) context_record_index: u64,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_rule_thickness"
+    )]
+    pub(crate) rule_thickness: Option<cadmpeg_ir::scalar::PositiveReal>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_rule_thickness_offset"
+    )]
+    pub(crate) rule_thickness_offset: Option<u64>,
 }
 
 impl DesignSheetMetalSettings {
@@ -128,6 +156,8 @@ impl TryFrom<DesignSheetMetalSettingsWire> for DesignSheetMetalSettings {
             presentation_record_index: wire.presentation_record_index,
             owner_record_index: wire.owner_record_index,
             context_record_index: wire.context_record_index,
+            rule_thickness: wire.rule_thickness,
+            rule_thickness_offset: wire.rule_thickness_offset,
         })
     }
 }
@@ -143,6 +173,10 @@ struct DesignSheetMetalSettingsWireRef<'a> {
     presentation_record_index: u64,
     owner_record_index: u64,
     context_record_index: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rule_thickness: Option<cadmpeg_ir::scalar::PositiveReal>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rule_thickness_offset: Option<u64>,
 }
 impl Serialize for DesignSheetMetalSettings {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -157,11 +191,13 @@ impl Serialize for DesignSheetMetalSettings {
             presentation_record_index: self.presentation_record_index,
             owner_record_index: self.owner_record_index,
             context_record_index: self.context_record_index,
+            rule_thickness: self.rule_thickness,
+            rule_thickness_offset: self.rule_thickness_offset,
         }
         .serialize(serializer)
     }
 }
-rewrite_native_record!(DesignSheetMetalSettings, []; {id, record_index, byte_offset, paired_byte_offset, mask, inputs, rule_record_index, presentation_record_index, owner_record_index, context_record_index});
+rewrite_native_record!(DesignSheetMetalSettings, []; {id, record_index, byte_offset, paired_byte_offset, mask, inputs, rule_record_index, presentation_record_index, owner_record_index, context_record_index, rule_thickness, rule_thickness_offset});
 rewrite_native_scalar!(DesignSheetMetalSettingsInputs);
 
 #[cfg(test)]

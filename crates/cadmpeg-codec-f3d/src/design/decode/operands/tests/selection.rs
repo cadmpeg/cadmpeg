@@ -314,7 +314,7 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
     bytes.extend_from_slice(&[0; 5]);
     indexed_header(&mut bytes, *b"301", 900);
 
-    let identity = parse_construction_operand_identity(&bytes, &group, &wrapper_header, 0)
+    let identity = parse_construction_operand_identity(&bytes, &group, &wrapper_header, 0, None)
         .expect("identity chain");
     assert_eq!(
         identity
@@ -347,14 +347,101 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
     expanded_bytes.extend_from_slice(&900u32.to_le_bytes());
     expanded_bytes.extend_from_slice(&[0; 6]);
     indexed_header(&mut expanded_bytes, *b"301", 900);
-    let expanded = parse_construction_operand_identity(&expanded_bytes, &group, &wrapper_header, 0)
-        .expect("identity chain with expanded tail reference");
+    let expanded =
+        parse_construction_operand_identity(&expanded_bytes, &group, &wrapper_header, 0, None)
+            .expect("identity chain with expanded tail reference");
     let persistent = expanded
         .persistent_identity()
         .expect("expanded persistent identity leaf");
     assert_eq!(persistent.tail_slot_offset(), Some(233));
     assert_eq!(persistent.next_record_index, 900);
     assert_eq!(persistent.next_byte_offset(), Some(248));
+
+    let mut gapped = Vec::new();
+    indexed_header(&mut gapped, *b"256", 291);
+    gapped.extend_from_slice(&[0; 11]);
+    for value in [
+        1.0_f64, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+    ] {
+        gapped.extend_from_slice(&value.to_le_bytes());
+    }
+    gapped.extend_from_slice(&[1, 0]);
+    gapped.extend_from_slice(&bytes);
+    gapped[156..159].copy_from_slice(b"257");
+    let gapped_header = DesignRecordHeader {
+        id: "f3d:Design/BulkStream.dat:record#291".into(),
+        byte_offset: Some(0),
+        class_tag: "256".to_owned().try_into().unwrap(),
+        record_index: 291,
+    };
+    let meta = crate::metastream::MetaStream {
+        types: [
+            ("2DF7DA30-A4E4-4260-AFD1-D9C7154CB44B", 291),
+            ("11111111-2222-3333-4444-555555555555", 300),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(
+            |(ordinal, (guid, entity))| crate::records::entity_header::SegmentTypeData {
+                class_tag: (256 + ordinal).to_string().try_into().unwrap(),
+                byte_offset: Some(0),
+                type_guid: guid.to_owned().try_into().unwrap(),
+                type_guid_offset: Some(0),
+                base_type_guid: crate::records::entity_header::BaseTypeGuid::Guid {
+                    value: "872045B4-F653-4691-9752-ABC7684834BF"
+                        .to_owned()
+                        .try_into()
+                        .unwrap(),
+                    offset: Some(0),
+                },
+                version: 0,
+                version_offset: Some(0),
+                module: "EntityTracking".into(),
+                entities: crate::records::identity::ReferenceRun::unlocated(vec![entity]),
+            },
+        )
+        .collect(),
+        records: vec![
+            crate::metastream::RecordIndexEntry {
+                entity_id: 291,
+                bulk_offset: 0,
+            },
+            crate::metastream::RecordIndexEntry {
+                entity_id: 300,
+                bulk_offset: 152,
+            },
+        ],
+        secondary_records: Vec::new(),
+    };
+    assert!(parse_construction_operand_identity(&gapped, &group, &gapped_header, 0, None).is_none());
+    let registry =
+        super::super::tracking_registration::Registry::new(std::rc::Rc::new(meta.clone()));
+    let gapped_identity =
+        parse_construction_operand_identity(&gapped, &group, &gapped_header, 0, Some(&registry))
+            .expect("registered transform starts an identity chain");
+    assert_eq!(gapped_identity.following_record_index(), 400);
+    for mutation in 0..3 {
+        let mut invalid = meta.clone();
+        match mutation {
+            0 => invalid.types[0].version = 1,
+            1 => invalid.records[1].bulk_offset += 1,
+            2 => {
+                invalid.types[1].entities =
+                    crate::records::identity::ReferenceRun::unlocated(vec![999]);
+            }
+            _ => unreachable!(),
+        }
+        let registry =
+            super::super::tracking_registration::Registry::new(std::rc::Rc::new(invalid));
+        assert!(parse_construction_operand_identity(
+            &gapped,
+            &group,
+            &gapped_header,
+            0,
+            Some(&registry),
+        )
+        .is_none());
+    }
 
     let mut bound_group = group;
     let mut terminating_identity = identity;

@@ -141,3 +141,32 @@ fn extrude_group_rejects_invalid_run_and_scalar_admission() {
         assert_eq!(changed, group);
     }
 }
+
+/// The typed-reference group widens the scope reference, every member, and
+/// the three references after the opaque lane by forty bytes each, and it
+/// stores no variant byte.
+#[test]
+fn typed_selection_group_offsets_use_the_wide_reference_stride() {
+    let mut wire = selection_group_wire();
+    wire.typed_references = true;
+    wire.variant = None;
+    wire.member_count_offset = 72;
+    wire.member_offsets = vec![77, 128];
+    wire.opaque_index_offset = 178;
+    wire.opaque_scalar_offset = 182;
+    wire.paired_byte_offset = 350;
+    let group = super::DesignExtrudeSelectionGroup::try_from(wire.clone()).expect("typed group");
+    assert!(group.typed_references);
+    assert_eq!(group.variant, None);
+    let round_trip = serde_json::to_value(&group).unwrap();
+    assert_eq!(round_trip["typed_references"], true);
+    assert!(round_trip.get("variant").is_none());
+
+    // The plain stride or a variant byte does not fit the typed form.
+    let mut plain_stride = wire.clone();
+    plain_stride.member_offsets = vec![77, 88];
+    assert!(super::DesignExtrudeSelectionGroup::try_from(plain_stride).is_err());
+    let mut with_variant = wire;
+    with_variant.variant = Some(false);
+    assert!(super::DesignExtrudeSelectionGroup::try_from(with_variant).is_err());
+}

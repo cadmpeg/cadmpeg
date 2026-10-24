@@ -322,17 +322,29 @@ occupies the first indexed position. A distinct copied shape at that location an
 different location occupy separate indexed positions. A nested compound root therefore occupies
 one `Compound` position; its nested and later sibling compounds are not visited for that map.
 
-CADIR decision: neutral occurrence keys, topology labels, and located curve or surface identities
-use the exact components of the fully composed transform. Any nonzero component difference keeps
-the identities separate, including a difference below `1.0e-12`. Identity elision occurs only for
-an exact identity transform. This preserves source-distinct placements when the text carrier has
-already composed a location chain.
+Location zero is the empty datum chain. Each elementary location record introduces a distinct
+identity, including an elementary record whose matrix is the identity matrix. Compound factors
+refer to earlier location records and multiply on the left in serialized order. Signed powers
+expand a referenced chain; negative powers reverse its order and negate its powers. Adjacent
+powers of the same elementary datum combine, and a zero sum removes that datum pair. Nonadjacent
+datums do not commute. This reduced chain determines location identity independently of matrix
+arithmetic. An empty compound record has the empty chain.
 
 The native location chain is applied exactly once at the owning topology level. Display
 tessellation is presentation data and does not replace an available exact shape. Each root shape
 use is a distinct neutral occurrence. Repeated root uses of the same shape at the same placement
 retain their serialized root order as an occurrence discriminator; they do not share body,
 region, shell, face, loop, coedge, edge, vertex, or point identity.
+A body's kind is its topology's dimension. An edge occurrence in a shell is an edge shape at the
+location identity of its composed face, wire, and edge use locations, so one edge shape at two
+location identities is two occurrences. A shell is closed when each non-degenerate edge occurrence of its faces' wires
+occurs exactly twice in the shell. The closed flag (the fifth of the `free,
+modified, checked, orientable, closed, infinite, convex` flags) does not determine closure. A
+`Solid` whose children are all closed shells is a solid body. A `Solid` whose children are all
+shells, with at least one open shell, is a sheet body. A `Solid` with no child or with a child
+that is not a shell is a general body. A `Shell` or `Face` is a sheet and a `Wire` or `Edge` a
+wire. A `Compound` or `CompSolid` has the kind its member shapes share, so a compound that holds
+one closed solid is a solid body; members of different kinds make it a general body.
 
 An edge endpoint accessor visits the edge's direct child uses in serialized order. Its endpoint
 incidence has exactly one `Forward` vertex use and exactly one `Reversed` vertex use: `Forward`
@@ -351,28 +363,48 @@ ranges are equal. Equivalent repeats select the first representation for the exa
 carrier and parameter range. A repeat with different curve geometry, carrier location, or
 parameter range is malformed. Only when no 3D curve exists can the first stored polygon
 representation supply an approximate carrier; a second fallback polygon is malformed. Polygon
-carriers that coexist with an exact 3D curve do not compete for the neutral carrier. For a face
-use, the first pcurve representation whose surface and composed location equal the face surface
-supplies the pcurve; later matching pcurves remain native and do not replace it. Equality of the
-composed locations is exact; a nonzero difference, including a sub-`1.0e-12` difference, does not
-match. A closed-surface
-representation supplies its second pcurve when the edge use is reversed. A primary and secondary
-pcurve in one closed-surface representation are one paired edge representation, not duplicate
-matching pcurves for one face use. Polygon carriers are separate representation families and are
-not implied by pcurve multiplicity. The neutral analytic-surface frame uses the cross product of
-its axis and reference direction. If the persisted plane frame has the opposite V direction, the
-pcurve V parameter is negated. If a persisted cylinder, cone, sphere, or torus frame has the
-opposite circumferential direction, the pcurve U parameter is negated. A cone pcurve V parameter
+carriers that coexist with an exact 3D curve do not compete for the neutral carrier.
+
+Pcurve restoration processes representations in serialized order. A later single or paired
+pcurve replaces the preceding representation for the same surface identity and native location.
+The replacement supplies its own curve references and parameter range. A native location has an
+ordered chain of elementary-location identities and integer powers; equal affine matrices do not
+establish equal native locations. A surface and location with no later replacement keep their
+representation. Face access selects the restored representation on its surface and relative
+native location. A closed-surface representation supplies its second pcurve when the edge use is
+reversed. A primary and secondary pcurve in one closed-surface representation are one paired edge
+representation, not duplicate matching pcurves for one face use. Polygon carriers are separate
+representation families and are not implied by pcurve multiplicity.
+
+The neutral analytic-surface frame uses the cross product of its axis and reference direction.
+If the persisted plane frame has the opposite V direction, the pcurve V parameter is negated. If a persisted cylinder, cone, sphere, or torus frame has the
+opposite circumferential direction, the pcurve U parameter is negated. Either reversal also turns
+the neutral surface normal against the persisted one, so the face's sense against its neutral
+surface is the persisted face orientation reversed; its wires keep their orientation. A trimmed or
+offset surface takes the reversal of its basis. A cone pcurve V parameter
 is also multiplied by the cosine of the cone half-angle to convert persisted slant distance to
 neutral axial distance. A surface of revolution uses U as its rotation angle and V as its directrix
-parameter. A trimmed surface converts its persisted support-coordinate bounds and pcurves to
-zero-based local parameters while preserving each bound's direction.
+parameter. A rectangular-trimmed surface retains its basis parameterization. Its bounds describe
+the declared rectangle; point and derivative evaluation delegate to the basis, including outside
+that rectangle. Face pcurves on a rectangular-trimmed surface use the basis coordinates.
 
 The serialized edge child uses provide endpoint incidence but no radial-neighbor relation. One
 coedge is self-radial. Two coedges reference each other. Three or more coedges remain self-radial;
 their shared edge identity carries unordered non-manifold incidence without asserting a
 serialization-dependent radial cycle. Each wire serializes its ordered edge uses independently;
 the format has no field that joins three or more uses into a radial cycle.
+
+The serialized order of the edge uses in a face wire is not a traversal order. The composed
+orientation of an edge use is the face use, wire use, and edge use orientations composed. An edge
+use with a `Forward` composed orientation runs from the edge's start vertex to its end vertex; a
+`Reversed` use runs from the end vertex to the start vertex. The traversal of a face wire is the
+closed chain of its oriented edge uses in which each use ends at the vertex where the next use
+starts. The neutral loop lists its coedges in this traversal. The traversal starts at the first
+serialized edge use, or at the last one when the face use and wire use orientations compose to
+`Reversed`. A serialized order that is already continuous is the traversal.
+CADIR decision: a face wire whose oriented edge uses form no closed chain, or more than one, or
+whose traversal search examines more than `MAX_WIRE_TRAVERSAL_STEPS` candidate edge uses, keeps its
+serialized order, reversed when the face use and wire use orientations compose to `Reversed`.
 
 ## 8. Design-history transfer
 
@@ -420,34 +452,37 @@ record is a cached external carrier. Its external key is the `Ref` attribute of 
 the same reference and flag bits when the extension is not present, and a current record mirrors
 them in lowercase `ref` and `flags`. If both spellings are present, they are equal. The key for a
 local `ExternalGeometry` link is its persisted object name, a dot, and its subelement name, such
-as `Source.Edge1`. A cache record with a non-empty key belongs to the one link with that exact key.
-One link may own zero, one, or multiple cached carriers; carrier order remains `ExternalGeo` order,
-and each carrier creates one ordered construction entity with the link's subelements. A link with
-no carrier creates an unresolved external-reference entity. A non-empty key with no link is valid
-only when the carrier's `Missing` flag bit is set; its solved geometry is retained without a link.
-An empty key is a detached carrier and has no link. A short prefix, wrong reserved id, duplicate
-link match, unmatched non-missing key, or any `GeometryList` count/direct-child mismatch is
-malformed. Constraints can address its entity, endpoint, and center loci without inventing solved
-coordinates.
+as `Source.Edge1`. Each `LinkSubList` child has one `obj` and one `sub` string; selecting several
+subelements of one object requires repeated children with that object and one selector each.
+A selector can be empty to denote the object. The restored `shadowed` selector, when present,
+replaces `sub`; `shadow` alone does not replace the live selector. A cache reference can use the
+mapped name carried by `shadowed` or `shadow`. In a dotted selector, a mapped segment starts with
+`;`; a final dotted legacy element name after that segment is excluded from the mapped cache key.
+The mapped key is the current cache identity; the old spelling is a historical alias. Distinct
+current keys can share an old spelling. Current identity takes precedence over historical aliases.
+A cache record's `RefIndex` on the geometry extension, mirrored by `refIndex` on `Geometry`, is a
+zero-based position in the ordered `ExternalGeometry` link list. It restores reference identity
+when export or import changes object names. A nonnegative index takes precedence over the text
+key. Absence or `-1` denotes no ordinal reference. Both index spellings, when present, are equal.
+Reserved axis records have no nonnegative reference index. One link may own zero, one, or multiple
+cached carriers. Carrier order remains `ExternalGeo` order; each associated carrier belongs to
+that link's single selector. The `Missing` flag marks a carrier whose referenced source is
+unavailable. A cached carrier can outlive its live link; its solved geometry remains distinct
+from reference resolution. An empty key with no nonnegative reference index is detached and has
+no link. A short prefix, wrong reserved id, duplicate current link match, or any `GeometryList`
+count/direct-child mismatch is malformed. Constraints address entity, endpoint, and center loci
+independently of cached coordinates.
 
 Sketch persistence has separate ordered `GeometryList` and `ConstraintList` values. The geometry
 list carries source entity order and the constraint list carries append order and geometry-position
 operands. The format has no profile chain, profile seed entity, endpoint-junction tolerance, or
 junction tie-break field. `ArcFitTolerance` is a separate precision property
 for fitting arcs of projected external geometry; it is not an endpoint-junction tolerance.
-CADIR decision: FreeCAD persists no profile seed or producer-defined disconnected-profile rule.
-Each disconnected neutral profile therefore starts at the lowest unassigned non-construction
-entity ordinal in `GeometryList` order. The neutral entity retains that persisted ordinal, and
-profiles are emitted in seed order. This is a projection rule, not a producer-defined field.
-
-CADIR decision: FreeCAD persists no endpoint tolerance or junction tie-break. For neutral profile
-projection, an endpoint without an explicit active coincident relation matches another endpoint
-only when their Euclidean distance is at most `64 × f64::EPSILON × max(1, |a.u|, |a.v|, |b.u|,
-|b.v|)`. An explicit coincident relation supplies endpoint identity before coordinate matching.
-When an endpoint has more than one eligible continuation, including multiple explicit coincident
-continuations, all involved entities remain separate profile seeds; no source-order tie-break is
-applied. This numeric boundary and ambiguity result are CADIR projection rules, not producer
-tolerances.
+Coincident endpoint constraints state relations between geometry loci. They do not serialize wire
+membership, edge-use direction, or a starting entity. Equal endpoint coordinates do not carry a
+constraint. The cached sketch `Shape` has its own edge and wire topology; those wire uses are
+separate from the geometry and constraint lists. A profile operand selects a sketch or shape
+subelement and does not add a profile-chain record to `GeometryList`.
 
 Sketch constraints retain their append-only native family code and ordered geometry-position
 operands. Each `Constrain` has a required integer `Type` attribute. Code `0` is an explicit
@@ -484,8 +519,12 @@ not create fabricated parameter identities.
 
 Spreadsheet sheets are equation-tree nodes. Every persisted used cell becomes an ordered design
 parameter whose identity includes its sheet and address. Address and alias remain separate;
-content, display unit, alignment, style, colors, and spans are retained independently. Plain numeric
-content supplies a dimensionless evaluated value, while formula content remains an expression.
+content, display unit, alignment, style, colors, and spans are retained independently. A cell's
+content states its own value when it is a `'`-quoted string, or a number with an optional length
+unit (`nm`, `um`, `mm`, `cm`, `dm`, `m`, `km`, `in`, `"`, `ft`, `'`, `thou`, `mil`, `yd`) or angle
+unit (`deg`, `°`, `rad`), written directly or as the whole `=` formula: a number alone is
+dimensionless, a length becomes millimetres and an angle radians. Other formula content remains an
+expression without a value. Content without a leading `=` is a literal and references nothing.
 Same-sheet aliases and qualified `Sheet.alias` references connect spreadsheet and feature
 parameters without evaluating arbitrary formulas in the decoder. Cell counts are bounded and must
 match their declared framing. Parameter ordinals use stable dependency order and persisted cell
@@ -513,7 +552,11 @@ as application records. Product dispatch uses the exact runtime registry: `Assem
 not enter the product arena. CADIR components separate reusable definitions from occurrences.
 Ordered container membership resolves to component or occurrence ids, and each link-array element
 becomes its own occurrence with a stable array index, scale, local transform, and transform
-resolved through its containing components exactly once. Local prototypes resolve to component ids;
+resolved through its containing components exactly once. An assembly's members include its
+`Assembly::JointGroup` and its joint objects; those constrain the components and are neither
+components nor occurrences. A component gets its own occurrence when it is a product container, a
+container member, or an object a joint names directly; an object reached only as a link prototype
+is a definition placed by its links. Local prototypes resolve to component ids;
 cross-document links keep the document token and target object without attempting to open the
 document. Missing local targets, invalid array counts, non-finite transforms, and container cycles
 are validation errors; external targets remain intentionally unresolved. The native graph retains
@@ -522,27 +565,30 @@ distinct parent container. Overlapping parent containers are refused instead of 
 order. Product record identities are unique by object identity; duplicate records are invalid.
 
 Product metadata uses exact `App::PropertyString` properties. Each selected property has exactly one
-direct `String` value with a required `value` attribute and no nested element. `Label`, `Description`,
-and `PartNumber` supply the corresponding product-definition fields. `Label2`, `StockCode`, `Vendor`,
-and `Manufacturer` supply named BOM properties. `Label` may carry the additional `restore` attribute;
-it does not replace the `value` attribute. `Id` on the part runtimes is the built-in item
-part-number carrier. CADIR decision: `PartNumber` takes precedence; when that carrier is absent or
-invalid, `Id` supplies the part number for a part runtime. An `Id` carrier on another product runtime
-is native-only. An empty `PartNumber` or `Id` value leaves the neutral part-number field unset. A
-wrong runtime type, wrong root tag, missing or extra direct value, nested value, or missing `value`
-leaves the selected neutral field unset and retains the property natively. Duplicate property names
-within one owner are malformed.
+direct `String` value with a required `value` attribute and no nested element. `Label` may carry the
+additional `restore` attribute; it does not replace the `value` attribute. `App::Part`,
+`Assembly::AssemblyObject`, and `Assembly::AssemblyLink` carry the built-in `Id` string for the item's
+part number. The assembly runtimes inherit this property with the same empty-string default. Their
+own `Id` value belongs to that object; a linked assembly does not replace it with the target's `Id`.
+`PartNumber` is a distinct, user-defined property. Its presence or contents do not override `Id`, and
+an empty or absent `Id` does not select `PartNumber`. Other product runtimes have no built-in part
+number semantics for a same-named `Id` property. Product object identity, user-visible labels, and BOM
+column selection are distinct from the part-number value. Both properties retain their own type and
+value, including empty strings. A wrong runtime type, wrong root tag, missing or extra direct value,
+nested value, or missing `value` retains the property natively. Duplicate property names within one
+owner are malformed.
 
 Named product carriers use the producer runtime type and value grammar. `Group` and `ElementList`
 are `App::PropertyLinkList` properties with one `LinkList` root; its `count` equals the number of
 ordered `Link` children. `LinkedObject` and `LinkCopyOnChangeSource` are `App::PropertyXLink`
 properties with one `XLink` target. `LinkCopyOnChangeGroup` is an `App::PropertyLink` with one
-`Link` target. `LinkTransform`, `LinkClaimChild`, and `LinkCopyOnChangeTouched` are
+`Link` target. `ShowElement`, `LinkTransform`, `LinkClaimChild`, and `LinkCopyOnChangeTouched` are
 `App::PropertyBool` properties with one `Bool` value. `ElementCount` is an
 `App::PropertyIntegerConstraint` with one `Integer` value. `Scale` is an `App::PropertyFloat`
 with one `Float` value, and `ScaleVector` is an `App::PropertyVector` with one `PropertyVector`
-value carrying `valueX`, `valueY`, and `valueZ`; `ScaleVector` is authoritative when both scale
-carriers are present. `VisibilityList` is an `App::PropertyBoolList` with one `BoolList` root and
+value carrying `valueX`, `valueY`, and `valueZ`. Link restoration keeps a nonuniform `ScaleVector`
+authoritative. A uniform `ScaleVector` takes the scalar `Scale` value on all axes; an absent `Scale`
+has the built-in default one. Both original carriers remain independently persisted properties. `VisibilityList` is an `App::PropertyBoolList` with one `BoolList` root and
 a `value` bit string. Its characters are ordered most-significant bit first: for a string of length
 `n`, character `n - 1 - i` is `1` when `ElementList` element `i` is visible and `0` when it is
 hidden. The typed native property record retains the complete bit string. CADIR decision:
@@ -595,17 +641,34 @@ type is `App::PropertyEnumeration`; a same-named property of another runtime typ
 and does not alter occurrence semantics. Copy-on-change is typed as disabled, enabled, owned,
 tracking, or an explicit future native policy, with its source, ownership group, and touched state
 resolved independently.
-All array-valued fields must either be absent or match `ElementCount`.
-A present zero `ElementCount` requires every array-valued field to be empty. The link retains its
-single scalar occurrence. An absent `ElementCount` permits one scalar link occurrence or infers a
-nonzero count from the populated array-valued fields.
+`ShowElement` selects expanded element objects or a collapsed array. Its default is true. With
+`ShowElement=true`, restoration sets the count to the length of `ElementList`, including zero. This
+rule applies to absent, zero, and positive persisted `ElementCount` values. The ordered element
+objects supply their own placements and scale vectors; parent `PlacementList` and `ScaleList`
+carriers are inactive. With `ShowElement=false`, `ElementCount` supplies the count and defaults to
+zero when absent. `ElementList`, `PlacementList`, `ScaleList`, and `VisibilityList` do not establish
+this count. Zero denotes a scalar link, not an array of one element. Scalar links do not apply
+per-element placement or scale carriers.
+
+The count and array-valued carriers persist independently. Their lengths need not agree. For a
+collapsed array, element `i` uses `PlacementList[i]` and `ScaleList[i]` when each is present. An absent
+placement is the identity relative to the scalar link placement; an absent scale is `(1, 1, 1)`.
+Entries beyond the active count do not create occurrences. Inactive carriers remain document data.
+Visibility bits do not determine array cardinality. A missing visibility bit means visible; a scalar
+link does not apply the per-element visibility list. A member with runtime `App::LinkElement` and
+an absent or zero `_LinkOwner` acquires the containing link's persistent object ID at restoration.
+A nonzero `_LinkOwner` retains that owner; another containing list does not replace it. Owned link
+elements do not create independent root occurrences. A member of another runtime remains an
+independent object; membership alone does not make an ordinary `App::Link` an owned element. For an active array, the transform order is
+scalar placement, scalar scale, element placement, element scale, and the linked prototype placement
+when `LinkTransform` enables it. A scalar link applies scalar placement and scalar scale before the
+linked prototype placement. Nonuniform scale does not commute with rotation or translation.
 
 The native namespace extends occurrences with ordered link-array element placements and
 scale vectors. Each side entry begins with a little-endian element count followed by either all
 single-precision or all double-precision components; exact entry length selects the precision.
 Placement records carry position plus quaternion, while scale records carry three components.
-Zero quaternions, non-finite values, malformed lengths, and non-empty list counts that disagree with
-`ElementCount` are invalid.
+Zero quaternions, non-finite values, and malformed side-entry lengths are invalid.
 
 The native namespace holds ordered assembly-joint records. Grounded constraints retain their
 object and grounding frame. Other joints retain the persisted enumeration family, two connector
@@ -673,7 +736,9 @@ the body natively instead of selecting a source-order value. A valid tip identif
 member as the active result. Suppressed, active,
 frozen, invalid, touched, mapping, support, and visibility properties remain individually named
 state rather than being collapsed into one enabled flag. Validation rejects duplicate members,
-inconsistent parentage, missing members, and an active tip outside the body's ordered membership.
+inconsistent parentage, missing members, and an active tip outside the body's ordered membership. A body displays its result through its own `Shape`; the bodies transferred from its members'
+shapes, and from any shape property other than `Shape` (such as a feature's `AddSubShape` tool
+shape), are intermediate and carry `visible: false` unless a GUI view provider states otherwise.
 
 Revolution and groove operations retain their linked profile, explicit base point and axis,
 one-angle or two-angle extent, and additive or subtractive effect. Fillet operations retain a
@@ -801,12 +866,14 @@ retaining the complete native property and the otherwise valid typed hole. An ou
 has the same result. A descendant `Enum`, an uppercase `Value`, or the numeric index itself does
 not supply a label.
 PartDesign `Hole` boolean carriers `Threaded`, `ModelThread`, `DrillForDepth`, `Tapered`,
-`UseCustomThreadClearance`, and `AllowMultiFace` are `App::PropertyBool` values. Their direct
+`UseCustomThreadClearance`, `AllowMultiFace`, and `Reversed` are `App::PropertyBool` values. Their direct
 `Bool` values are `false` and `true`; an absent carrier means `false`. `Threaded` selects threaded
 versus clearance-hole thread fields, `ModelThread` selects modeled thread geometry,
 `DrillForDepth` includes the angled drill tip in a blind depth, `Tapered` enables `TaperedAngle`,
-`UseCustomThreadClearance` enables `CustomThreadClearance`, and `AllowMultiFace` permits multiple
-profile faces. A present carrier with another runtime type, without exactly one direct `Bool`, or
+`UseCustomThreadClearance` enables `CustomThreadClearance`, `AllowMultiFace` permits multiple
+profile faces, and `Reversed` drills along the profile's normal. Otherwise a hole drills against
+the profile's normal, into the support, and the neutral drilling direction is that reversed
+normal. A present carrier with another runtime type, without exactly one direct `Bool`, or
 with any other value does not select a neutral hole; the operation remains native.
 `CosmeticThread`, when present, is an optional `App::PropertyBool` carrier whose direct `Bool`
 values select cosmetic thread presentation. CADIR decision: an absent carrier means `false`. A
@@ -818,9 +885,13 @@ bits affect profile selection; higher bits are ignored. A present carrier with a
 type, without exactly one direct `Integer`, or with a non-integer or negative value does not select
 a neutral hole. If no profile-selection bit is set, the operation remains native.
 These operation dimensions participate in the same literal/evaluated/expression parameter graph.
-When a dress-up subelement selector has not resolved through persistent topology identity, its
-native `Base` property remains the edge selection; the decoder does not infer an edge from a
-transient label.
+A face or edge selection of a shell, draft, fillet, or chamfer names indexed subelements (`Face6`,
+`Edge5`, or a mapped name ending in one) of each linked object. The index counts that object's
+stored `Shape` in its own face or edge order, so a selection whose every subelement names exactly
+one transferred face or edge of the linked object's stored shape resolves to those faces or edges,
+with its native property kept beside them. Any other selection, including one that names an
+external document, a whole object, or an index the stored shape does not have, remains the native
+property.
 
 Decode loss reporting is attributable at the native record boundary. Each design operation or
 sketch geometry family that remains only in the native lane produces its own blocking note carrying
@@ -1068,34 +1139,22 @@ decode as red, green, blue, and reserved low byte; the independent transparency 
 determines opacity. The effective body display fields mirror this object-level assignment.
 `ShapeAppearance` is the current shape material carrier. One material replaces the legacy shape
 color assignment, binds to every body transferred from `Shape`, and supplies diffuse color,
-transparency, four packed material colors, shininess, and UUID. Multiple materials bind in order to
-the persistent Face element-map group only when their count equals the group's indexed face count.
-If persistent face identity is absent or the counts differ, the material list remains native and
-the legacy object color remains the neutral fallback.
-Topology-color and multi-material association requires one unambiguous application property named
-`Shape`, at most one exact-shape payload for that property, and at most one element-map record for
-that payload. The final `ElementMap2` node owns the shape. A requested `Face`, `Edge`, or `Vertex`
-group occurs at most once in that node. Duplicate association candidates are malformed. Missing
-association candidates retain the native side entry or material list without a source-order choice.
-Per-face `DiffuseColor`, per-edge `LineColorArray`, and per-vertex `PointColorArray` lists are
-higher-precedence presentation layers. They are not inferred from the corresponding object color.
-Each list contains a little-endian count followed by packed-color records. A count of one applies
-its color to every member of the corresponding Face, Edge, or Vertex element-map group. FreeCAD
-accepts every other count representable by the side-entry payload and does not compare it with the
-mapped count. Neutral transfer creates indexed bindings only when the count equals the number of
-names in that ordered group. For any other count, the exact side entry remains native, the neutral
-override is withheld, and the decoder emits loss code
-`appearance.topology-color-count-mismatch`; it does not guess transient topology labels. The group
-comes only from the element map owned by the `Shape` property. Each persistent element name
-supplies the neutral topology occurrences that receive an accepted override. The resulting
-bindings explicitly record face-over-object, edge-array-over-line, or vertex-array-over-point
-precedence.
+transparency, four packed material colors, shininess, and UUID. Multiple materials correspond in
+order to the shape's indexed Face subelements. These indices belong to the saved shape topology;
+they do not require persistent element names. An element-map group can name only a subset of the
+indexed subelements, or describe ranges through child maps, so its direct name count is not the
+shape's subelement count.
 
-`ShapeAppearance` uses the same admission rule for its material records. One material is the
-uniform object appearance. Multiple materials create indexed Face bindings only when their count
-equals the mapped Face count. A different count, including zero, leaves the exact material-list
-side entry native, withholds the neutral Face override, and emits the same loss code. If persistent
-Face identity is absent, the material list remains native without choosing transient labels.
+Topology-color and multi-material association uses the application property named `Shape` and its
+exact-shape payload. Other exact-shape properties on the same object have independent subelement
+indices. Per-face `DiffuseColor`, per-edge `LineColorArray`, and per-vertex `PointColorArray` lists
+are higher-precedence presentation layers. Each list contains a little-endian count followed by
+packed-color records. An empty color list supplies no override. A count of one applies uniformly
+to the corresponding subelements. Larger lists use the saved shape's indexed Face, Edge, or Vertex
+order. `ShapeAppearance` uses the same Face order for multiple material records, with one material
+as the uniform object appearance. Persistent names are independent of these positional lists.
+Multiple shape materials address faces, including when the shape contains several solids. A list
+length equal to the number of solids does not change the material index domain.
 
 Application data without a neutral representation retains its owning object and property,
 declared application type, links, source order, XML bytes, referenced side-entry bytes, byte spans,
@@ -1424,17 +1483,21 @@ be ordered. Incomplete or invalid primitive definitions remain attributable nati
 Part cut, fuse, common, multi-fuse, and multi-common objects transfer as neutral Boolean combine
 operations. Two-input forms retain distinct `Base` and `Tool` property identities. Multi-input
 forms define link zero as the target and the remaining ordered `Shapes` links as tools without
-claiming that application-object links are already neutral body ids. For non-container features,
-feature dependencies are the stable union of all declared object dependencies and earlier
-link-property operands in source order. PartDesign body dependency records describe structural
-membership and do not duplicate the body's neutral child relations. Body membership comes from the
-current `Group` link list or the legacy `Model` link list. A declared dependency can
-target a later declaration. Declared dependency identities are resolved before neutral ordinal
-assignment; their source declaration order does not filter them. Neutral feature ordinals use a
-stable dependency order and use source order as the tie-break rule. Forward profile, base-feature,
-and pattern-seed links also precede
-their consumers. Body child lists are structural membership, not body inputs. If the native graph
-contains a dependency, parent, or expression cycle, the native graph retains it.
+claiming that application-object links are already neutral body ids. Non-hidden link-property
+runtime families carry directed object dependencies, including dynamically added properties and
+extension-owned properties. An arbitrary property name and object declaration order do not select dependencies.
+The `App::PropertyLink`, `PropertyLinkList`, `PropertyLinkSub`, and `PropertyLinkSubList` families
+include their child and global variants; their hidden variants retain references without creating
+dependency edges. `PropertyXLink`, `PropertyXLinkSub`, `PropertyXLinkList`, and
+`PropertyXLinkSubList` follow the same rule, with `PropertyXLinkSubHidden` excluded. Display-hidden
+property metadata is distinct from a hidden link runtime. Runtime-owned scope also applies:
+`PartDesign::SubShapeBinder` properties `Context` and `_CopiedLink` are hidden references;
+`Part::AttachExtension` and `Part::AttachExtensionPython` restore `BaseAttachment` with hidden
+scope, including a retained older non-hidden link runtime. Expression-engine object references
+supply separate dependencies; quoted string values do not. A declared `ObjectDeps` record remains an explicit directed relation even when no
+property carrier names it. Forward links have the same meaning as backward links. PartDesign body
+`Group` or legacy `Model` links carry structural membership. Body child lists are not construction
+inputs. A native dependency, parent, or expression graph can contain cycles.
 The dependency envelope has no neutral cycle ordinal or edge-discard field.
 CADIR decision: when acyclic admission cannot progress, the remaining cycle-affected objects receive
 ordinals in persisted object order for stable identity, but they have no neutral feature dependency,

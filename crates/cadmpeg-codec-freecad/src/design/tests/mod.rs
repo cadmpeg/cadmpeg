@@ -208,3 +208,34 @@ fn assert_unreadable_properties(
         .collect();
     assert_eq!(actual, expected);
 }
+
+#[test]
+fn external_geometry_keys_require_one_selector_per_link() {
+    for selectors in [vec![], vec!["Edge1".to_owned(), "Edge2".to_owned()]] {
+        let reference =
+            crate::native::LinkTarget::optional_from_wire(crate::native::LinkTargetWire {
+                document: None,
+                document_attribute: None,
+                object: Some("Source".into()),
+                subelements: selectors,
+            })
+            .unwrap()
+            .unwrap();
+        assert!(super::external_link_key(&reference).is_err());
+    }
+    for selector in ["Edge1", "Edge2", ""] {
+        let reference =
+            crate::native::LinkTarget::optional_from_wire(crate::native::LinkTargetWire {
+                document: None,
+                document_attribute: None,
+                object: Some("Source".into()),
+                subelements: vec![selector.to_owned()],
+            })
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            super::external_link_key(&reference).unwrap(),
+            Some(format!("Source.{selector}"))
+        );
+    }
+}

@@ -30,3 +30,57 @@ fn numerical_0922_interior_trim_is_preserved() {
         assert_eq!(result, range);
     }
 }
+
+#[test]
+fn an_occt_endpoint_a_whole_period_off_a_circle_subset_start_maps_to_local_zero() {
+    use cadmpeg_ir::geometry::analytic::CircleCurve;
+    use cadmpeg_ir::geometry::curve_payloads::SubsetCurveConstruction;
+    use cadmpeg_ir::geometry::{Curve, ProceduralCurve, ProceduralCurveDefinition};
+    use cadmpeg_ir::ids::{CurveId, ProceduralCurveId};
+    use cadmpeg_ir::math::Point3;
+
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let source = CurveId::mint("test:model:curve#circle").unwrap();
+    let subset = CurveId::mint("test:model:curve#subset").unwrap();
+    let construction = ProceduralCurveId::mint("test:model:construction#subset").unwrap();
+    ir.model.curves.push(Curve {
+        id: source.clone(),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+            CircleCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                1.0,
+            )
+            .unwrap(),
+        )),
+        parameter_range: None,
+        source_object: None,
+    });
+    ir.model.curves.push(Curve {
+        id: subset.clone(),
+        geometry: CurveGeometry::Procedural {
+            construction: construction.clone(),
+            cache: None,
+        },
+        parameter_range: None,
+        source_object: None,
+    });
+    ir.model
+        .add_procedural_curve(
+            &subset,
+            ProceduralCurve::new(
+                construction,
+                ProceduralCurveDefinition::Subset(
+                    SubsetCurveConstruction::try_new(source, [1.0, 2.0], true, None).unwrap(),
+                ),
+            ),
+        )
+        .unwrap();
+    let below_period = 1.0 - std::f64::consts::TAU - 4.0 * f64::EPSILON;
+    let range = [below_period, 2.0].map(|value| FiniteReal::new(value).unwrap());
+    let local = occt_subset_local_range(&ir, &subset, range)
+        .unwrap()
+        .map(FiniteReal::get);
+    assert_eq!(local, [0.0, 1.0]);
+}

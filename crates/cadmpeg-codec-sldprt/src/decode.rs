@@ -130,10 +130,16 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     }
 
     let streams = active_body_streams(&scan);
+    let mut brep_fallback_losses = Vec::new();
     if !streams.is_empty() {
         ctx.charge_entities(u64_from_index(streams.len()), "admit SLDPRT body streams")?;
-        if let Some((decoded, mut report)) = try_decode_brep(ctx, &scan, &streams, &classification)?
-        {
+        if let Some((decoded, mut report)) = try_decode_brep(
+            ctx,
+            &scan,
+            &streams,
+            &classification,
+            &mut brep_fallback_losses,
+        )? {
             let (ir, annotations, unknowns, mut pmi_losses, retention) = build_geometry_ir(
                 ctx,
                 &mut scan,
@@ -158,6 +164,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     )?;
     let mut report = build_container_report(ctx, &scan, &classification, container::notes(&scan))?;
     report.transfer.scope = ir.scope;
+    report.losses.append(&mut brep_fallback_losses);
     report.losses.append(&mut pmi_losses);
     append_design_losses(&retention.class_sources, ctx, &ir, &mut report)?;
     decode_result(ctx, ir, report, annotations, unknowns, retention)
@@ -1167,7 +1174,8 @@ fn append_design_losses(
         | LinearTermination::ThroughAll {}
         | LinearTermination::ThroughNext {}
         | LinearTermination::ToFirst {}
-        | LinearTermination::ToLast {} => false,
+        | LinearTermination::ToLast {}
+        | LinearTermination::ToPlane { .. } => false,
     };
     let incomplete_angular_termination = |termination: &AngularTermination| match termination {
         AngularTermination::Unresolved {} => true,
@@ -1347,9 +1355,8 @@ fn append_design_losses(
                                 incomplete_face_selection(face)
                             }
                             cadmpeg_ir::features::ExtrudeStart::ProfilePlane {}
-                            | cadmpeg_ir::features::ExtrudeStart::OffsetProfilePlane { .. } => {
-                                false
-                            }
+                            | cadmpeg_ir::features::ExtrudeStart::OffsetProfilePlane { .. }
+                            | cadmpeg_ir::features::ExtrudeStart::FromPlane { .. } => false,
                         }
                         || matches!(
                             direction,
@@ -1769,6 +1776,47 @@ fn append_design_losses(
         )));
     }
 
+    let ambiguous_thin_operations = native.as_ref().map_or(0, |native| {
+        let histories = crate::records::HistoryFeatures::new(&native.feature_histories);
+        let lane_names = native
+            .feature_input_lanes
+            .iter()
+            .map(|lane| {
+                (
+                    lane,
+                    crate::resolved_features::scalars::FeatureObjectNames::new(&lane.names),
+                )
+            })
+            .collect::<Vec<_>>();
+        evaluated_feature_states
+            .iter()
+            .filter(|state| {
+                matches!(
+                    state.definition,
+                    FeatureDefinition::Operation(FeatureOperation::Extrude {
+                        op: BooleanOp::Unresolved,
+                        ..
+                    })
+                ) && state
+                    .feature
+                    .native_ref
+                    .as_deref()
+                    .and_then(|reference| histories.get(reference))
+                    .is_some_and(|feature| {
+                        crate::resolved_features::operations::ambiguous_thin_join_operation(
+                            feature,
+                            &lane_names,
+                        )
+                    })
+            })
+            .count()
+    });
+    if ambiguous_thin_operations > 0 {
+        report.losses.push(SldprtLossCode::FeatureThinOperationAmbiguous.note(format!(
+            "{ambiguous_thin_operations} thin extrusion state(s) retain an ambiguous inline Boolean operation."
+        )));
+    }
+
     let unresolved_body_modes = evaluated_feature_states
         .iter()
         .filter(|state| {
@@ -1889,6 +1937,13 @@ fn unbound_feature_input_operation_objects(
 }
 
 fn unprojected_sketch_relation_records(ir: &CadIr, native: &crate::native::SldprtNative) -> usize {
+    use crate::resolved_features::relation_table;
+    let constraint_ids = ir
+        .model
+        .sketch_constraints
+        .iter()
+        .map(|constraint| constraint.id.as_str())
+        .collect::<HashSet<_>>();
     let sketch_feature_refs = ir
         .model
         .features
@@ -1979,7 +2034,17 @@ fn unprojected_sketch_relation_records(ir: &CadIr, native: &crate::native::Sldpr
                 markers += 1;
             }
         }
-        total += instances + bindings + markers;
+        let lane_key = lane
+            .id
+            .rsplit_once('#')
+            .map_or(lane.id.as_str(), |(_, key)| key);
+        let table_rows = relation_table::lane_tables(&lane.native_payload)
+            .iter()
+            .flat_map(|sketch| &sketch.rows)
+            .map(|row| relation_table::row_id(lane_key, row.offset))
+            .filter(|id| !constraint_ids.contains(id.as_str()))
+            .count();
+        total += instances + bindings + markers + table_rows;
     }
     total
 }
@@ -2129,6 +2194,7 @@ fn try_decode_brep(
     scan: &ContainerScan,
     streams: &[ActiveParasolidSite<'_>],
     classification: &crate::dialect::LayerClassification,
+    fallback_losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<(DecodedBrep, DecodeBody)>, CodecError> {
     let mut sites: BTreeMap<String, Vec<usize>> = BTreeMap::new();
     for (index, stream) in streams.iter().enumerate() {
@@ -2166,6 +2232,7 @@ fn try_decode_brep(
         || !decoded_sites[selected_site].2.points.is_empty();
     if resolved_active_site.is_some() {
         if !selected_is_empty_model && !selected_has_geometry {
+            append_topology_record_losses(&decoded_sites[selected_site].2.stats, fallback_losses);
             return Ok(None);
         }
     } else {
@@ -2185,6 +2252,9 @@ fn try_decode_brep(
                 })
         });
         if !any_site_has_geometry && !any_empty_model {
+            for (_, _, decoded) in &decoded_sites {
+                append_topology_record_losses(&decoded.stats, fallback_losses);
+            }
             return Ok(None);
         }
     }
@@ -2313,6 +2383,12 @@ fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
     target.unknowns.append(&mut source.unknowns);
     target.face_colors.append(&mut source.face_colors);
     target.face_atoms.append(&mut source.face_atoms);
+    target
+        .native_face_identities
+        .append(&mut source.native_face_identities);
+    target
+        .native_body_identities
+        .append(&mut source.native_body_identities);
     target.body_modifiers.append(&mut source.body_modifiers);
     target.losses.append(&mut source.losses);
     target.untyped_model |= source.untyped_model;
@@ -2327,10 +2403,19 @@ fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
         .append(&mut source.stats.surface_solver_capped);
     target.stats.source_entity_records += source.stats.source_entity_records;
     target.stats.unresolved_face_colors += source.stats.unresolved_face_colors;
-    target.stats.ambiguous_face_owners += source.stats.ambiguous_face_owners;
+    target.stats.unresolved_topology_points += source.stats.unresolved_topology_points;
+    target.stats.unresolved_topology_loops += source.stats.unresolved_topology_loops;
+    target.stats.unresolved_topology_fins += source.stats.unresolved_topology_fins;
+    target.stats.unresolved_topology_vertices += source.stats.unresolved_topology_vertices;
     target.stats.unclaimed_faces += source.stats.unclaimed_faces;
     target.stats.synthetic_body_grouping |= source.stats.synthetic_body_grouping;
     Ok(())
+}
+
+#[derive(Clone, Copy)]
+enum ScopedAppearanceOrigin {
+    DisplayList,
+    VisualState,
 }
 
 fn ensure_display_appearance(
@@ -2338,6 +2423,7 @@ fn ensure_display_appearance(
     definition: &crate::appearance::AppearanceDefinition,
     section_ordinal: usize,
     annotations: &mut Annotations,
+    origin: ScopedAppearanceOrigin,
 ) -> Result<AppearanceId, CodecError> {
     if let Some(existing) = ir.model.appearances.iter().find(|appearance| {
         appearance.name.as_deref() == Some(definition.name.as_str())
@@ -2345,8 +2431,20 @@ fn ensure_display_appearance(
     }) {
         return Ok(existing.id.clone());
     }
+    let (namespace, kind, schema) = match origin {
+        ScopedAppearanceOrigin::DisplayList => (
+            cadmpeg_ir::identity_namespace!("sldprt", "appearance", "displaylist"),
+            "displaylist_visual_properties",
+            "moVisualProperties_c",
+        ),
+        ScopedAppearanceOrigin::VisualState => (
+            cadmpeg_ir::identity_namespace!("sldprt", "appearance", "visualstate"),
+            "visual_states_scoped_appearance",
+            "SolidWorks.VisualStates",
+        ),
+    };
     let id = AppearanceId::compose(
-        &cadmpeg_ir::identity_namespace!("sldprt", "appearance", "displaylist"),
+        &namespace,
         cadmpeg_ir::ids::IdentityKey::from(section_ordinal).colon(definition.record_offset),
     );
     crate::annotations::note(
@@ -2354,7 +2452,7 @@ fn ensure_display_appearance(
         id.as_str(),
         &definition.source_name,
         u64_from_index(definition.record_offset),
-        "displaylist_visual_properties",
+        kind,
         Exactness::ByteExact,
     )?;
     ir.model.appearances.push(Appearance {
@@ -2365,7 +2463,7 @@ fn ensure_display_appearance(
         library_id: None,
         visual_guid: None,
         physical_token: None,
-        schema: Some("moVisualProperties_c".into()),
+        schema: Some(schema.into()),
         category: None,
         base_color: Some(definition.color),
         properties: BTreeMap::new(),
@@ -2416,9 +2514,17 @@ fn build_geometry_ir(
     let mut display_summary = crate::tessellation::Summary::default();
     for section in scan.sections() {
         let faces = crate::tessellation::section_display_faces(ctx, section)?;
-        let summary = crate::tessellation::summary_for_faces(&faces);
+        let summary = crate::tessellation::summary_for_faces(section.payload(), &faces);
         display_summary.vertices += summary.vertices;
         display_summary.triangles += summary.triangles;
+        for (total, count) in display_summary
+            .extended_forms
+            .iter_mut()
+            .zip(summary.extended_forms)
+        {
+            *total += count;
+        }
+        display_summary.opaque_extended_tables += summary.opaque_extended_tables;
         display_sections.push((section, faces));
     }
     let mut ir = CadIr::decoded(source_meta(
@@ -2733,12 +2839,17 @@ fn build_geometry_ir(
             identity.feature_source_id.value(),
         ));
     }
+    for identity in &brep.native_face_identities {
+        if identity.values.len() == 4 {
+            face_producers.push((identity.target.as_str().to_owned(), identity.values[1]));
+        }
+    }
     let body_modifiers = std::mem::take(&mut brep.body_modifiers)
         .into_iter()
         .filter_map(|modifier| {
             modifier
                 .target
-                .map(|target| (target, modifier.history_ordinal))
+                .map(|target| (target, modifier.feature_source_id.value()))
         })
         .collect::<Vec<_>>();
     crate::history::bind::derive_feature_outputs(
@@ -2913,6 +3024,17 @@ fn build_geometry_ir(
         &mut pmi_losses,
     )?);
     input_topologies::project(&mut ir, &all_lanes, &mut pmi_losses);
+    let native_appearance_plan = crate::appearance::visual_states::resolve(
+        ctx,
+        scan,
+        crate::appearance::visual_states::Inputs {
+            model: &ir.model,
+            histories: &histories,
+            lanes: &all_lanes,
+            faces: &brep.native_face_identities,
+            bodies: &brep.native_body_identities,
+        },
+    )?;
     let mut native = crate::native::SldprtNative {
         feature_histories: histories,
         feature_input_lanes: all_lanes,
@@ -3044,9 +3166,10 @@ fn build_geometry_ir(
         .into_iter()
         .map(|assignment| assignment.feature_source_id)
         .collect::<BTreeSet<_>>();
-    let mut matched_feature_sources = BTreeSet::new();
+    let mut matched_feature_sources = native_appearance_plan.feature_sources.clone();
     let mut conflicting_display_references = Vec::new();
     let mut persistent_face_bindings = Vec::new();
+    let mut display_appearance_ranks = BTreeMap::new();
     for (display, display_faces) in display_sections {
         if display_faces.is_empty() {
             continue;
@@ -3066,8 +3189,13 @@ fn build_geometry_ir(
                 ));
             }
         }
-        let resolved =
-            crate::appearance::resolve_display_appearances(ctx, scan, display, &display_faces)?;
+        let resolved = crate::appearance::resolve_display_appearances(
+            ctx,
+            scan,
+            display,
+            &display_faces,
+            &native_appearance_plan.feature_sources,
+        )?;
         for source in resolved.matched_feature_sources {
             matched_feature_sources.insert(source);
         }
@@ -3097,7 +3225,9 @@ fn build_geometry_ir(
                 Exactness::ByteExact,
             )?;
             display_links.push(id.clone());
-            if let Some(definition) = resolved.by_face.get(&table_index) {
+            if let Some(resolved_definition) = resolved.by_face.get(&table_index) {
+                display_appearance_ranks.insert(id.clone(), resolved_definition.rank);
+                let definition = &resolved_definition.definition;
                 let source_entity_id =
                     format!("{}::DisplayFace[{table_index}]", display_stream.as_str());
                 let appearance = ensure_display_appearance(
@@ -3105,6 +3235,7 @@ fn build_geometry_ir(
                     definition,
                     display.ordinal(),
                     &mut annotations,
+                    ScopedAppearanceOrigin::DisplayList,
                 )?;
                 ir.model.appearance_bindings.push(AppearanceBinding {
                     native_ref: None,
@@ -3168,7 +3299,85 @@ fn build_geometry_ir(
     let remaining_assignments =
         crate::tessellation::assign_unique_surface_owners(ctx, &mut ir.model, &mut pmi_losses)?;
     assigned_tessellations.extend(remaining_assignments);
+    if native_appearance_plan.unresolved > 0 {
+        pmi_losses.push(
+            SldprtLossCode::NativeAppearanceScopeUnresolved.note(format!(
+                "{} native appearance ownership or display-state relation(s) remain unresolved.",
+                native_appearance_plan.unresolved
+            )),
+        );
+    }
+    let mut scoped_color_faces = Vec::new();
+    for (face_index, (face_id, choice)) in native_appearance_plan.faces.iter().enumerate() {
+        let Some(definition) = choice.definition.as_ref() else {
+            continue;
+        };
+        let Some(face) = ir.model.faces.iter().find(|face| &face.id == face_id) else {
+            continue;
+        };
+        if face.color.is_some() && choice.rank < 4 {
+            continue;
+        }
+        if face.color.is_some_and(|color| color != definition.color) && choice.rank == 4 {
+            pmi_losses.push(
+                SldprtLossCode::NativeAppearanceScopeUnresolved
+                    .note("Conflicting face appearances remain unresolved."),
+            );
+            continue;
+        }
+        let appearance = ensure_display_appearance(
+            &mut ir,
+            definition,
+            choice.ordinal,
+            &mut annotations,
+            ScopedAppearanceOrigin::VisualState,
+        )?;
+        if let Some(face) = ir.model.faces.iter_mut().find(|face| &face.id == face_id) {
+            face.color = Some(definition.color);
+            scoped_color_faces.push(face_id.clone());
+        }
+        ir.model.appearance_bindings.push(AppearanceBinding {
+            id: cadmpeg_ir::ids::AppearanceBindingId::compose(
+                &cadmpeg_ir::identity_namespace!("sldprt", "appearance", "native-binding"),
+                cadmpeg_ir::ids::IdentityKey::from(choice.ordinal)
+                    .colon(definition.record_offset)
+                    .colon(face_index),
+            ),
+            target: AppearanceTarget::Face(face_id.clone()),
+            appearance,
+            source_entity_id: Some(format!(
+                "{}:{}",
+                definition.source_name.as_str(),
+                definition.record_offset
+            )),
+            object_type: Some("Native scoped face".into()),
+            visible: None,
+            channels: BTreeMap::new(),
+        });
+    }
+    for tessellation in &ir.model.tessellations {
+        let old_rank = display_appearance_ranks
+            .get(tessellation.id.as_str())
+            .copied()
+            .unwrap_or(0);
+        let blocked = native_appearance_plan.blocked_display_rank >= old_rank
+            && native_appearance_plan.blocked_display_rank != 0
+            || tessellation.faces.iter().any(|face| {
+                native_appearance_plan
+                    .faces
+                    .get(face)
+                    .is_some_and(|choice| choice.definition.is_none() && choice.rank >= old_rank)
+            });
+        if blocked {
+            ir.model.appearance_bindings.retain(|binding| {
+                binding.target != AppearanceTarget::Tessellation(tessellation.id.to_string())
+            });
+        }
+    }
     let mut annotation_builder = AnnotationBuilder::resume(annotations);
+    for id in scoped_color_faces {
+        annotation_builder.field_exactness(id.as_str(), "color", Exactness::Derived)?;
+    }
     for id in assigned_tessellations {
         annotation_builder.field_exactness(id.as_str(), "body", Exactness::Derived)?;
         annotation_builder.field_exactness(id.as_str(), "faces", Exactness::Derived)?;
@@ -3301,6 +3510,32 @@ fn source_meta(
             display.triangles.to_string(),
         );
     }
+    for (name, count) in [
+        (
+            cadmpeg_core::nonblank_literal!("displaylist_form_00201296"),
+            display.extended_forms[0],
+        ),
+        (
+            cadmpeg_core::nonblank_literal!("displaylist_form_00201a96"),
+            display.extended_forms[1],
+        ),
+        (
+            cadmpeg_core::nonblank_literal!("displaylist_form_00201b96"),
+            display.extended_forms[2],
+        ),
+        (
+            cadmpeg_core::nonblank_literal!("displaylist_form_00201e96"),
+            display.extended_forms[3],
+        ),
+        (
+            cadmpeg_core::nonblank_literal!("displaylist_opaque_extended_tables"),
+            display.opaque_extended_tables,
+        ),
+    ] {
+        if count != 0 {
+            attributes.insert(name, count.to_string());
+        }
+    }
     if let Some(site) = container::select_active_parasolid_site(scan) {
         attributes.insert(
             cadmpeg_core::nonblank_literal!("active_parasolid_block"),
@@ -3373,6 +3608,41 @@ fn add_solidworks_xml_metadata(
     Ok(())
 }
 
+fn append_topology_record_losses(
+    stats: &crate::brep::graph::Stats,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    if stats.unresolved_topology_vertices > 0 {
+        losses.push(SldprtLossCode::TopologyVertexRecordUnresolved.note(format!(
+            "{} referenced VERTEX record(s) lack a uniquely framed record with a verified owner class and IR-supported tolerance.",
+            stats.unresolved_topology_vertices,
+        )));
+    }
+    for (count, code, family) in [
+        (
+            stats.unresolved_topology_points,
+            SldprtLossCode::GeometryPointRecordAmbiguous,
+            "POINT",
+        ),
+        (
+            stats.unresolved_topology_loops,
+            SldprtLossCode::TopologyLoopRecordAmbiguous,
+            "LOOP",
+        ),
+        (
+            stats.unresolved_topology_fins,
+            SldprtLossCode::TopologyFinRecordAmbiguous,
+            "FIN",
+        ),
+    ] {
+        if count > 0 {
+            losses.push(code.note(format!(
+                "{count} referenced {family} record(s) were withheld because complete records conflict and no current occurrence is selected."
+            )));
+        }
+    }
+}
+
 fn build_geometry_report(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
@@ -3423,12 +3693,12 @@ fn build_geometry_report(
     if !s.surface_solver_capped.is_empty() {
         losses.push(
             SldprtLossCode::GeometrySurfaceSolverWorkCapped.note(format!(
-            "{} coedge pcurve(s) were skipped because a NURBS surface solve exceeded the local \
+                "{} coedge pcurve(s) were skipped because a NURBS surface solve exceeded the local \
              work cap SURFACE_SOLVER_LOCAL_WORK ({}): {}.",
-            s.surface_solver_capped.count(),
-            crate::brep::evaluation::SURFACE_SOLVER_LOCAL_WORK,
-            s.surface_solver_capped,
-        )),
+                s.surface_solver_capped.count(),
+                crate::brep::evaluation::SURFACE_SOLVER_LOCAL_WORK,
+                s.surface_solver_capped,
+            )),
         );
     }
     if s.off_surface_nurbs_pcurves > 0 {
@@ -3437,16 +3707,11 @@ fn build_geometry_report(
             s.off_surface_nurbs_pcurves
         )));
     }
+    append_topology_record_losses(s, &mut losses);
     if s.unresolved_face_colors > 0 {
         losses.push(SldprtLossCode::AppearanceFaceColorUnresolved.note(format!(
             "{} face-color binding(s) were withheld because the current face and link records do not select one consistent framed color record.",
             s.unresolved_face_colors
-        )));
-    }
-    if s.ambiguous_face_owners > 0 {
-        losses.push(SldprtLossCode::TopologyFaceOwnerAmbiguous.note(format!(
-            "{} face owner(s) have non-equivalent bridge uses; all uses for each owner remain unresolved.",
-            s.ambiguous_face_owners
         )));
     }
     if s.unclaimed_faces > 0 {

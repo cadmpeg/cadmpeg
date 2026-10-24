@@ -107,7 +107,9 @@ pub(super) fn extrude_start_is_incomplete(start: &ExtrudeStart) -> bool {
     match start {
         ExtrudeStart::Unresolved {} => true,
         ExtrudeStart::FromFace { face, .. } => face_selection_is_incomplete(face),
-        ExtrudeStart::OffsetProfilePlane { .. } | ExtrudeStart::ProfilePlane {} => false,
+        ExtrudeStart::OffsetProfilePlane { .. }
+        | ExtrudeStart::ProfilePlane {}
+        | ExtrudeStart::FromPlane { .. } => false,
     }
 }
 
@@ -169,7 +171,8 @@ pub(super) fn termination_is_incomplete(termination: &LinearTermination) -> bool
         LinearTermination::ThroughAll {}
         | LinearTermination::ThroughNext {}
         | LinearTermination::ToFirst {}
-        | LinearTermination::ToLast {} => false,
+        | LinearTermination::ToLast {}
+        | LinearTermination::ToPlane { .. } => false,
     }
 }
 

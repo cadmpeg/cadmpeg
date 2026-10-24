@@ -3,10 +3,13 @@
 use cadmpeg_core::decode::u64_from_index;
 
 use super::references::DesignClassTag;
-use cadmpeg_ir::features::{FeatureUnitPlaneFrame, FinitePoint3};
+use cadmpeg_ir::features::{FeatureImageBounds, FeatureUnitPlaneFrame, FinitePoint3};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::units::UnitVector3;
 use serde::{Deserialize, Serialize};
+
+pub(crate) mod geometry_layout;
+use geometry_layout::DesignCanvasGeometryLayout;
 
 const DESIGN_CANVAS_LENGTH_TO_MM: f64 = 10.0;
 
@@ -71,15 +74,13 @@ impl DesignCanvasGeometryPayload {
     }
 }
 
-/// Authored Canvas boundary segments in an admitted horizontal or vertical form.
+const EPS_CANVAS_BOUNDARY_CLOSURE: f64 = 64.0 * f64::EPSILON;
+const EPS_CANVAS_BOUNDARY_ORTHOGONAL: f64 = 64.0 * f64::EPSILON;
+
+/// Ordered opposite image edges in the supporting plane.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct DesignCanvasBounds {
-    form: DesignCanvasBoundaryForm,
-}
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum DesignCanvasBoundaryForm {
-    Horizontal([[Point2; 2]; 2]),
-    Vertical([[Point2; 2]; 2]),
+    segments: [[Point2; 2]; 2],
 }
 impl TryFrom<[[Point2; 2]; 2]> for DesignCanvasBounds {
     type Error = String;
@@ -87,92 +88,127 @@ impl TryFrom<[[Point2; 2]; 2]> for DesignCanvasBounds {
         if segments.iter().flatten().any(|point| !point.is_finite()) {
             return Err("boundary_segments must contain finite coordinates".into());
         }
-        let [[a, b], [c, d]] = segments;
-        let close = |left: f64, right: f64| {
-            (left - right).abs() <= 64.0 * f64::EPSILON * left.abs().max(right.abs()).max(1.0)
+        let [[origin_corner, width_corner], [height_corner, opposite_corner]] = segments;
+        let width_delta = Point2::new(
+            width_corner.u - origin_corner.u,
+            width_corner.v - origin_corner.v,
+        );
+        let height_delta = Point2::new(
+            height_corner.u - origin_corner.u,
+            height_corner.v - origin_corner.v,
+        );
+        let width = width_delta.u.hypot(width_delta.v);
+        let height = height_delta.u.hypot(height_delta.v);
+        if !width.is_finite() || !height.is_finite() || width <= 0.0 || height <= 0.0 {
+            return Err("boundary_segments must have finite nonzero image axes".into());
+        }
+        let dot = (width_delta.u / width) * (height_delta.u / height)
+            + (width_delta.v / width) * (height_delta.v / height);
+        let close = |actual: f64, expected: f64| {
+            expected.is_finite()
+                && (actual - expected).abs()
+                    <= EPS_CANVAS_BOUNDARY_CLOSURE * actual.abs().max(expected.abs()).max(1.0)
         };
-        let horizontal = close(a.v, b.v)
-            && close(c.v, d.v)
-            && close(a.u, c.u)
-            && close(b.u, d.u)
-            && !close(a.v, c.v);
-        let vertical = close(a.u, b.u)
-            && close(c.u, d.u)
-            && close(a.v, c.v)
-            && close(b.v, d.v)
-            && !close(a.u, c.u);
-        let form = if horizontal {
-            DesignCanvasBoundaryForm::Horizontal(segments)
-        } else if vertical {
-            DesignCanvasBoundaryForm::Vertical(segments)
-        } else {
-            return Err(
-                "boundary_segments must form an admitted horizontal or vertical pair".into(),
-            );
-        };
-        Ok(Self { form })
+        if dot.abs() > EPS_CANVAS_BOUNDARY_ORTHOGONAL
+            || !close(opposite_corner.u, width_corner.u + height_delta.u)
+            || !close(opposite_corner.v, width_corner.v + height_delta.v)
+        {
+            return Err("boundary_segments must form an ordered rectangle".into());
+        }
+        Ok(Self { segments })
     }
 }
 impl DesignCanvasBounds {
     fn segments(self) -> [[Point2; 2]; 2] {
-        match self.form {
-            DesignCanvasBoundaryForm::Horizontal(segments)
-            | DesignCanvasBoundaryForm::Vertical(segments) => segments,
-        }
+        self.segments
     }
-    pub(crate) fn mirroring(self) -> (bool, bool) {
-        match self.form {
-            DesignCanvasBoundaryForm::Horizontal([[a, b], [c, _]]) => (a.u > b.u, a.v > c.v),
-            DesignCanvasBoundaryForm::Vertical([[a, b], [c, _]]) => (a.u > c.u, a.v > b.v),
-        }
-    }
-    pub(crate) fn extents(self) -> [Point2; 2] {
-        let [[a, b], [c, d]] = self.segments();
-        let (minimum, maximum) = [b, c, d]
-            .into_iter()
-            .fold((a, a), |(minimum, maximum), point| {
-                (
-                    Point2::new(minimum.u.min(point.u), minimum.v.min(point.v)),
-                    Point2::new(maximum.u.max(point.u), maximum.v.max(point.v)),
-                )
-            });
-        [minimum, maximum]
+
+    pub(crate) fn image_placement(
+        self,
+        plane: FeatureUnitPlaneFrame,
+    ) -> Result<(FeatureUnitPlaneFrame, FeatureImageBounds), String> {
+        let [[origin_corner, width_corner], [height_corner, _]] = self.segments;
+        let width_delta = Point2::new(
+            width_corner.u - origin_corner.u,
+            width_corner.v - origin_corner.v,
+        );
+        let height_delta = Point2::new(
+            height_corner.u - origin_corner.u,
+            height_corner.v - origin_corner.v,
+        );
+        let width = width_delta.u.hypot(width_delta.v);
+        let height = height_delta.u.hypot(height_delta.v);
+        let plane_u = *plane.u_axis().as_raw();
+        let plane_v = *plane.v_axis().as_raw();
+        let origin = plane
+            .origin()
+            .get()
+            .translated(plane_u, origin_corner.u * DESIGN_CANVAS_LENGTH_TO_MM)
+            .translated(plane_v, origin_corner.v * DESIGN_CANVAS_LENGTH_TO_MM);
+        let frame = FeatureUnitPlaneFrame::new(
+            origin,
+            plane_u.scale(width_delta.u / width) + plane_v.scale(width_delta.v / width),
+            plane_u.scale(height_delta.u / height) + plane_v.scale(height_delta.v / height),
+        )
+        .ok_or("Canvas image frame must be finite and orthonormal")?;
+        let bounds = FeatureImageBounds::new([
+            Point2::new(0.0, 0.0),
+            Point2::new(
+                width * DESIGN_CANVAS_LENGTH_TO_MM,
+                height * DESIGN_CANVAS_LENGTH_TO_MM,
+            ),
+        ])
+        .ok_or("Canvas image dimensions must be finite and positive")?;
+        Ok((frame, bounds))
     }
 }
 
-/// Canvas geometry flags; all other prologue bytes are fixed zero.
+/// Canvas geometry flags and their physical layout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct DesignCanvasPrologue {
+    layout: DesignCanvasGeometryLayout,
     first_flag: bool,
     visible: bool,
 }
 impl TryFrom<[u8; 15]> for DesignCanvasPrologue {
     type Error = String;
     fn try_from(bytes: [u8; 15]) -> Result<Self, Self::Error> {
-        if bytes[..10] != [0; 10]
-            || !matches!(bytes[10], 0 | 1)
-            || bytes[11..14] != [0; 3]
-            || !matches!(bytes[14], 0 | 1)
-        {
-            return Err(
-                "geometry_prologue must contain only its two boolean flags and fixed zero bytes"
-                    .into(),
-            );
-        }
-        Ok(Self {
-            first_flag: bytes[10] != 0,
-            visible: bytes[14] != 0,
-        })
+        Self::from_layout(DesignCanvasGeometryLayout::Modern, &bytes)
     }
 }
 impl DesignCanvasPrologue {
+    pub(crate) fn from_layout(
+        layout: DesignCanvasGeometryLayout,
+        bytes: &[u8],
+    ) -> Result<Self, String> {
+        let length = layout.offsets().first_boundary - 11;
+        if bytes.len() != length || !matches!(bytes.last(), Some(0 | 1)) {
+            return Err("geometry_prologue must match its layout and visibility Boolean".into());
+        }
+        let valid = match layout {
+            DesignCanvasGeometryLayout::Legacy | DesignCanvasGeometryLayout::TypedLegacy => {
+                bytes[..12] == [0; 12]
+            }
+            DesignCanvasGeometryLayout::Transitional
+            | DesignCanvasGeometryLayout::TypedTransitional => {
+                bytes[..10] == [0; 10] && bytes[10..13] == [1, 0, 0]
+            }
+            _ => bytes[..10] == [0; 10] && matches!(bytes[10], 0 | 1) && bytes[11..14] == [0; 3],
+        };
+        if !valid {
+            return Err("geometry_prologue must contain its fixed bytes and Boolean flags".into());
+        }
+        Ok(Self {
+            layout,
+            first_flag: bytes[10] != 0,
+            visible: bytes[length - 1] != 0,
+        })
+    }
     pub(crate) fn visible(self) -> bool {
         self.visible
     }
 }
 
-const CANVAS_GEOMETRY_PREFIX_BYTES: u64 = 217;
-const CANVAS_PAIRED_GEOMETRY_BYTES: u64 = 30;
 const CANVAS_IMAGE_ASSET_PREFIX_BYTES: u64 = 25;
 
 /// Canvas geometry and its same-index closing record.
@@ -212,10 +248,10 @@ impl DesignCanvasGeometry {
         }
         let units = u32::try_from(label.encode_utf16().count())
             .map_err(|_| "label UTF-16 count must fit u32")?;
-        let frame_length = CANVAS_GEOMETRY_PREFIX_BYTES + 2 * u64::from(units);
+        let frame_length = u64_from_index(prologue.layout.offsets().prefix) + 2 * u64::from(units);
         byte_offset
             .checked_add(frame_length)
-            .and_then(|end| end.checked_add(CANVAS_PAIRED_GEOMETRY_BYTES))
+            .and_then(|end| end.checked_add(prologue.layout.paired_len()))
             .ok_or("geometry_byte_offset and label must leave a complete paired geometry record")?;
         Ok(Self {
             class_tags,
@@ -231,38 +267,59 @@ impl DesignCanvasGeometry {
         self.record_index
     }
     fn frame_length(&self) -> u64 {
-        CANVAS_GEOMETRY_PREFIX_BYTES + 2 * u64_from_index(self.label.encode_utf16().count())
+        u64_from_index(self.prologue.layout.offsets().prefix)
+            + 2 * u64_from_index(self.label.encode_utf16().count())
     }
     fn paired_byte_offset(&self) -> Option<u64> {
         self.byte_offset?.checked_add(self.frame_length())
     }
     fn scope_reference_offset(&self) -> Option<u64> {
-        self.byte_offset?.checked_add(147)
+        self.byte_offset?
+            .checked_add(u64_from_index(self.prologue.layout.offsets().scope + 1))
     }
     fn visibility_offset(&self) -> Option<u64> {
-        self.byte_offset?.checked_add(25)
+        self.byte_offset?
+            .checked_add(u64_from_index(self.prologue.layout.offsets().first_boundary - 1))
     }
     fn paired_component_reference_offset(&self) -> Option<u64> {
         self.paired_byte_offset()?.checked_add(20)
     }
     fn boundary_coordinate_offsets(&self) -> Option<[u64; 8]> {
         let start = self.byte_offset?;
-        Some([26, 34, 42, 50, 181, 189, 197, 205].map(|relative| start + relative))
+        let offsets = self.prologue.layout.offsets();
+        Some(
+            [
+                offsets.first_boundary,
+                offsets.first_boundary + 8,
+                offsets.first_boundary + 16,
+                offsets.first_boundary + 24,
+                offsets.second_boundary,
+                offsets.second_boundary + 8,
+                offsets.second_boundary + 16,
+                offsets.second_boundary + 24,
+            ]
+            .map(|relative| start + u64_from_index(relative)),
+        )
     }
     fn second_boundary_present_offset(&self) -> Option<u64> {
-        self.byte_offset?.checked_add(180)
+        self.byte_offset?
+            .checked_add(u64_from_index(self.prologue.layout.offsets().state))
     }
     fn plane_reference_offset(&self) -> Option<u64> {
-        self.byte_offset?.checked_add(59)
+        self.byte_offset?
+            .checked_add(u64_from_index(self.prologue.layout.offsets().plane + 1))
     }
     fn component_reference_offset(&self) -> Option<u64> {
-        self.byte_offset?.checked_add(158)
+        self.byte_offset?
+            .checked_add(u64_from_index(self.prologue.layout.offsets().component + 1))
     }
     fn asset_reference_offset(&self) -> Option<u64> {
-        self.byte_offset?.checked_add(170)
+        self.byte_offset?
+            .checked_add(u64_from_index(self.prologue.layout.offsets().asset + 1))
     }
     fn label_offset(&self) -> Option<u64> {
-        self.byte_offset?.checked_add(CANVAS_GEOMETRY_PREFIX_BYTES)
+        self.byte_offset?
+            .checked_add(u64_from_index(self.prologue.layout.offsets().prefix))
     }
 }
 
@@ -362,7 +419,7 @@ impl DesignCanvasImage {
         }
         let scope_offset = geometry
             .paired_byte_offset()
-            .and_then(|offset| offset.checked_add(CANVAS_PAIRED_GEOMETRY_BYTES))
+            .and_then(|offset| offset.checked_add(geometry.prologue.layout.paired_len()))
             .and_then(|offset| offset.checked_add(asset.frame_length()))
             .ok_or("asset_name must end at a representable scope byte offset")?;
         let scope_form = match geometry_reference_offset.checked_sub(scope_offset) {
@@ -396,7 +453,7 @@ impl DesignCanvasImage {
     fn asset_byte_offset(&self) -> Option<u64> {
         self.geometry
             .paired_byte_offset()?
-            .checked_add(CANVAS_PAIRED_GEOMETRY_BYTES)
+            .checked_add(self.geometry.prologue.layout.paired_len())
     }
     fn asset_name_offset(&self) -> Option<u64> {
         self.asset_byte_offset()?
@@ -521,6 +578,7 @@ impl TryFrom<DesignCanvasImageWire> for DesignCanvasImage {
                 byte_offset: None,
                 label: wire.label,
                 prologue: DesignCanvasPrologue {
+                    layout: DesignCanvasGeometryLayout::Modern,
                     first_flag: wire.geometry_first_flag,
                     visible: wire.visible,
                 },

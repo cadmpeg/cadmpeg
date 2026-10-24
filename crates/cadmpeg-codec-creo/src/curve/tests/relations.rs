@@ -936,6 +936,44 @@ fn proves_exists_for_local_and_external_relation_symbols() {
 }
 
 #[test]
+fn exists_preserves_qualified_identity_when_values_conflict() {
+    let lines = [
+        "external=exists('WIDTH:FID_7:CID_3')",
+        "value=width:fid_7:cid_3",
+        "other=exists('width:fid_7:cid_4')",
+        "local=exists('custom:TID_9')",
+        "custom:tid_9=missing",
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(offset, text)| CurveExpressionLine {
+        text: text.to_owned(),
+        offset,
+    })
+    .collect::<Vec<_>>();
+    let mut external_symbols = ExternalRelationSymbols::default();
+    for value in [1.0, 2.0] {
+        observe_relation_symbol(
+            &mut external_symbols,
+            "width:fid_7:cid_3",
+            Some(CurveExpressionValue::Number(
+                cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite relation fixture"),
+            )),
+        );
+    }
+    let assignments = evaluate_expression_program(&lines, None, &external_symbols);
+    let one = Some(CurveExpressionValue::Number(
+        cadmpeg_ir::scalar::FiniteReal::ONE,
+    ));
+    assert_eq!(assignments.len(), 5);
+    assert_eq!(assignments[0].value, one);
+    assert_eq!(assignments[1].value, None);
+    assert_eq!(assignments[2].value, None);
+    assert_eq!(assignments[3].value, one);
+    assert_eq!(assignments[4].value, None);
+}
+
+#[test]
 fn reevaluates_expression_records_after_external_symbols_are_decoded() {
     let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
         \xe0\x0aexpression\0\xf8\x03IF exists('d42')\0selected=1\0ENDIF\0";

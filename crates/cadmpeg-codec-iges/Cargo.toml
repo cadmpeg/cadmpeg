@@ -29,6 +29,7 @@ toml = "1.1"
 
 [dev-dependencies]
 # Test-only golden harness and round-trip helpers.
+cadmpeg-measure = { workspace = true, features = ["test-support"] }
 cadmpeg-test-support = { workspace = true }
 
 [[bin]]
