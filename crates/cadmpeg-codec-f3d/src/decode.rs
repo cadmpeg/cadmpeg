@@ -2695,7 +2695,8 @@ impl<'a> F3dDecodeSession<'a> {
                 self.report.notes.extend(materials.notes);
                 self.ir.model.appearances = materials.appearances;
                 self.ir.model.appearance_bindings = materials.bindings;
-                resolve_face_appearance_bindings(&mut self.ir, &materials.face_assignments)?;
+                let face_losses =
+                    resolve_face_appearance_bindings(&mut self.ir, &materials.face_assignments)?;
                 apply_appearance_base_colors(&mut self.ir);
                 self.ir
                     .model
@@ -2706,6 +2707,7 @@ impl<'a> F3dDecodeSession<'a> {
                     &self.ir,
                     materials.has_topology_assignments,
                 );
+                self.report.losses.extend(face_losses);
                 annotate_docstruct(self.ctx, &mut self.source_attributes, scan)?;
                 match &prereqs.xref {
                     Ok(Some(table)) => {
@@ -4822,18 +4824,18 @@ pub(crate) fn reconcile_appearance_loss(
 pub(crate) fn resolve_face_appearance_bindings(
     ir: &mut CadIr,
     face_assignments: &[materials::FaceAppearanceAssignment],
-) -> Result<(), CodecError> {
+) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
     use cadmpeg_ir::appearance::{AppearanceBinding, AppearanceTarget};
     use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
     use std::collections::btree_map::Entry;
 
     struct Assignment<'a> {
-        visual_guid: &'a crate::records::references::DesignVisualToken,
+        visual_guid: Option<&'a crate::records::references::DesignVisualToken>,
         color: Option<cadmpeg_ir::topology::Color>,
     }
 
     if face_assignments.is_empty() {
-        return Ok(());
+        return Ok(Vec::new());
     }
 
     let mut assignments_by_guid = std::collections::BTreeMap::new();
@@ -4841,17 +4843,17 @@ pub(crate) fn resolve_face_appearance_bindings(
         match assignments_by_guid.entry(assignment.face_guid.as_str()) {
             Entry::Vacant(entry) => {
                 entry.insert(Assignment {
-                    visual_guid: &assignment.visual_guid,
+                    visual_guid: Some(&assignment.visual_guid),
                     color: assignment.color,
                 });
             }
             Entry::Occupied(mut entry) => {
                 let existing = entry.get_mut();
-                if !existing.visual_guid.matches(&assignment.visual_guid) {
-                    return Err(CodecError::malformed(format_args!(
-                        "F3D face material GUID {} carries conflicting visual tokens",
-                        assignment.face_guid
-                    )));
+                if existing
+                    .visual_guid
+                    .is_some_and(|token| !token.matches(&assignment.visual_guid))
+                {
+                    existing.visual_guid = None;
                 }
                 match (existing.color, assignment.color) {
                     (Some(left), Some(right)) if left != right => {
@@ -4942,15 +4944,21 @@ pub(crate) fn resolve_face_appearance_bindings(
         face_indices.insert(id, index);
     }
     let mut new_bindings = Vec::new();
+    let mut losses = Vec::new();
     for (face_guid, assignment) in assignments_by_guid {
         let Some(faces) = faces_by_guid.get(face_guid) else {
             continue;
         };
-        let appearance = materials::appearance_for_visual_token(
-            &ir.model.appearances,
-            assignment.visual_guid,
-            None,
-        )?;
+        let appearance = if let Some(token) = assignment.visual_guid {
+            materials::appearance_for_visual_token(&ir.model.appearances, token, None)?
+        } else {
+            losses.push(F3dLossCode::FaceAppearanceAmbiguous.note(format!(
+                "{} face(s) share a material GUID with distinct visual tokens; \
+                 the face appearance was not selected. Assignment records remain in the source image.",
+                faces.len()
+            )));
+            None
+        };
         for face in faces {
             if let Some(color) = assignment.color {
                 if let Some(index) = face_indices.get(face.as_str()).copied() {
@@ -4961,6 +4969,9 @@ pub(crate) fn resolve_face_appearance_bindings(
                 }
             }
             let Some(appearance) = appearance.as_ref() else {
+                continue;
+            };
+            let Some(visual_guid) = assignment.visual_guid else {
                 continue;
             };
             if let Some(existing) = bound_faces.get(*face) {
@@ -4975,16 +4986,13 @@ pub(crate) fn resolve_face_appearance_bindings(
             bound_faces.insert(*face, &appearance.id);
             let target = AppearanceTarget::Face((*face).clone());
             let appearance_id = appearance.id.clone();
-            let id = crate::ids::face_appearance_binding_id(
-                face_guid,
-                assignment.visual_guid.identity_key(),
-                face,
-            )
-            .map_err(|error| {
-                CodecError::malformed(format_args!(
-                    "F3D face appearance binding identity is invalid: {error}"
-                ))
-            })?;
+            let id =
+                crate::ids::face_appearance_binding_id(face_guid, visual_guid.identity_key(), face)
+                    .map_err(|error| {
+                        CodecError::malformed(format_args!(
+                            "F3D face appearance binding identity is invalid: {error}"
+                        ))
+                    })?;
             new_bindings.push(AppearanceBinding {
                 // The face id completes the key: one appearance attribute GUID
                 // reaches every face carrying it, so the assignment pair alone
@@ -5001,7 +5009,7 @@ pub(crate) fn resolve_face_appearance_bindings(
     }
     drop(bound_faces);
     ir.model.appearance_bindings.extend(new_bindings);
-    Ok(())
+    Ok(losses)
 }
 
 /// Fill absent explicit topology colors from uniquely bound appearance assets.
