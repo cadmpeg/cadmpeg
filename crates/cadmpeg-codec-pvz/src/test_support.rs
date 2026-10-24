@@ -185,6 +185,18 @@ pub(crate) fn assembly(signature: &str) -> Vec<u8> {
 /// its exact stream, with `f64` scalars when `double` is set, and a red
 /// surface tessellation with one patch per exact face.
 pub(crate) fn cube_member(double: bool) -> Vec<u8> {
+    exact_member(exact::cube_stream(double, [false; 6], [false; 6]))
+}
+
+/// A geometry member holding [`exact::cube_and_sheet_stream`] and the red
+/// cube tessellation of [`cube_member`].
+pub(crate) fn cube_and_sheet_member() -> Vec<u8> {
+    exact_member(exact::cube_and_sheet_stream(true))
+}
+
+/// A geometry member holding the exact stream `stream` and a red surface
+/// tessellation with one patch per cube face.
+fn exact_member(stream: exact::Stream) -> Vec<u8> {
     let mut attributes = ol::stream_index(token::STREAM_ATTRIBUTES);
     attributes.extend(ol::appearance_values([
         1.0, 0.0, 0.0, 0.8, 0.0, 0.0, 0.5, 0.5, 0.5, 32.0, 0.0, 0.0, 0.0, 1.0,
@@ -200,7 +212,6 @@ pub(crate) fn cube_member(double: bool) -> Vec<u8> {
         surface.extend(ol::vertex_block(&ring.map(|corner| corners[corner]), None));
         surface.extend(ol::primitive(0x1b, &[0, 1, 2, 0, 2, 3]));
     }
-    let stream = exact::cube_stream(double, [false; 6], [false; 6]);
     let id = stream.id();
     ol::member(
         "DIV-OL09BL",
@@ -250,6 +261,27 @@ pub(crate) fn exact_assembly() -> Vec<u8> {
         ("cube64.ol", &cube_member(true)),
         ("cube32.ol", &cube_member(false)),
         ("plate.ol", &plate_member()),
+    ])
+}
+
+/// A package whose `TOP.ASM` places `PART.PRT`, the
+/// [`cube_and_sheet_member`] `part.ol`.
+pub(crate) fn cube_and_sheet_assembly() -> Vec<u8> {
+    let pool = Node::leaf(0x01, pvs::string_pool_payload(&["part.ol"])).encode();
+    let mut payload = pool_atom(0);
+    payload.extend([0_u8; 24]);
+    let structure = Node::list(
+        0x02,
+        vec![
+            definition("TOP.ASM", vec![occurrence(1, Place::Identity, "41")]),
+            definition("PART.PRT", vec![Node::typed(0x23, 0x01, payload)]),
+        ],
+    )
+    .encode();
+    let structure = pvs::member("PV-PVS0304", &[(1, "", pool), (2, "", structure)]);
+    package(&[
+        ("model.pvs", &structure),
+        ("part.ol", &cube_and_sheet_member()),
     ])
 }
 

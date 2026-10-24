@@ -12,8 +12,8 @@ use cadmpeg_ir::ContainerSummary;
 
 use crate::loss::PvzLossCode;
 use crate::test_support::{
-    assembly, assembly_structure, bracket_member, exact_assembly, package, plate_member, OL_08,
-    OL_09, PVS_0301, PVS_0304,
+    assembly, assembly_structure, bracket_member, cube_and_sheet_assembly, exact_assembly, package,
+    plate_member, OL_08, OL_09, PVS_0301, PVS_0304,
 };
 use crate::PvzCodec;
 
@@ -428,6 +428,56 @@ fn exact_streams_become_solids_that_keep_their_tessellation() {
             && loss.message.contains("\"plate.ol\"")
     }));
     assert!(result.report().geometry_transferred());
+    let report = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).unwrap();
+    let serious: Vec<_> = report
+        .findings
+        .iter()
+        .filter(|finding| finding.severity >= cadmpeg_ir::report::Severity::Warning)
+        .collect();
+    assert!(serious.is_empty(), "{serious:?}");
+}
+
+#[test]
+fn closed_and_open_shells_of_one_member_become_a_solid_and_a_sheet() {
+    use cadmpeg_ir::topology::BodyKind;
+
+    let result = decode(&cube_and_sheet_assembly());
+    let model = &result.ir().model;
+    let of_kind = |kind: BodyKind| {
+        let found: Vec<_> = model
+            .bodies
+            .iter()
+            .filter(|body| body.kind == kind)
+            .collect();
+        assert_eq!(found.len(), 1, "{kind:?}");
+        found[0]
+    };
+    let (solid, sheet) = (of_kind(BodyKind::Solid), of_kind(BodyKind::Sheet));
+    assert_eq!(model.bodies.len(), 2);
+    for body in [solid, sheet] {
+        assert_eq!(body.name.as_deref(), Some("part.ol"));
+    }
+    let shells = |body: &cadmpeg_ir::topology::Body| -> usize {
+        model
+            .regions
+            .iter()
+            .filter(|region| body.regions.contains(&region.id))
+            .map(|region| region.shells.len())
+            .sum()
+    };
+    assert_eq!((shells(solid), shells(sheet)), (1, 1));
+    let part = model
+        .product_definitions
+        .iter()
+        .find(|definition| definition.bodies.contains(&solid.id))
+        .unwrap();
+    assert_eq!(part.bodies, [solid.id.clone(), sheet.id.clone()]);
+    let meshes: Vec<_> = model
+        .tessellations
+        .iter()
+        .map(|mesh| mesh.body.clone())
+        .collect();
+    assert_eq!(meshes, [Some(solid.id.clone())]);
     let report = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).unwrap();
     let serious: Vec<_> = report
         .findings

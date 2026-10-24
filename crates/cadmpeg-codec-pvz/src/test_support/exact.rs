@@ -221,6 +221,21 @@ pub(crate) const CUBE_FACES: [[usize; 4]; 6] = [
 /// stored loop direction point into the cube. `reversed_pcurve[f]` stores
 /// every pcurve of face `f` against the loop direction.
 pub(crate) fn cube_stream(double: bool, inward: [bool; 6], reversed_pcurve: [bool; 6]) -> Stream {
+    cube_with_sheet(double, inward, reversed_pcurve, false)
+}
+
+/// The closed cube of [`cube_stream`] followed by one open square face of
+/// side [`CUBE_SIZE`] in the plane `z = 2s`, which bounds no volume.
+pub(crate) fn cube_and_sheet_stream(double: bool) -> Stream {
+    cube_with_sheet(double, [false; 6], [false; 6], true)
+}
+
+fn cube_with_sheet(
+    double: bool,
+    inward: [bool; 6],
+    reversed_pcurve: [bool; 6],
+    sheet: bool,
+) -> Stream {
     let mut edges: Vec<(usize, usize)> = Vec::new();
     for ring in CUBE_FACES {
         for position in 0..4 {
@@ -269,9 +284,42 @@ pub(crate) fn cube_stream(double: bool, inward: [bool; 6], reversed_pcurve: [boo
         }
         stream.terminator();
     }
+    let height = 2.0 * CUBE_SIZE;
+    let square = [
+        [0.0, 0.0],
+        [CUBE_SIZE, 0.0],
+        [CUBE_SIZE, CUBE_SIZE],
+        [0.0, CUBE_SIZE],
+    ];
+    if sheet {
+        stream.plane(
+            [0.0, 0.0, height],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+        );
+        stream.loop_record(-2);
+        for position in 0..4 {
+            let (start, end) = (square[position], square[(position + 1) % 4]);
+            let edge = u32::try_from(edges.len() + position).expect("edge index");
+            let pcurve = u32::try_from(pcurves.len()).expect("pcurve index");
+            pcurves.push((start, [end[0] - start[0], end[1] - start[1]]));
+            stream.coedge(edge, 1, pcurve, NONE);
+        }
+        stream.terminator();
+    }
     for (a, b) in &edges {
         let start = cube_corner(*a);
         stream.line_edge(start, sub(cube_corner(*b), start));
+    }
+    if sheet {
+        for position in 0..4 {
+            let (start, end) = (square[position], square[(position + 1) % 4]);
+            stream.line_edge(
+                [start[0], start[1], height],
+                [end[0] - start[0], end[1] - start[1], 0.0],
+            );
+        }
     }
     for (origin, direction) in pcurves {
         stream.line_pcurve(origin, direction);
