@@ -872,6 +872,7 @@ mod subset_carriers {
         let root = cadmpeg_ir::ids::CurveId::mint("test:model:curve#subset-source").unwrap();
         let mut source = (root.clone(), Some(through(basis, first, second, normal)));
         ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+            native_ref: None,
             id: root,
             geometry: CurveGeometry::Solved(source.1.clone().unwrap()),
             parameter_range: cadmpeg_ir::topology::IncreasingParameterInterval::new(RANGE),
@@ -887,6 +888,7 @@ mod subset_carriers {
                     cadmpeg_ir::ids::CurveId::mint(format!("test:model:curve#subset-{index}"))
                         .unwrap();
                 ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+                    native_ref: None,
                     id: curve_id.clone(),
                     geometry: CurveGeometry::Solved(line_placeholder()),
                     parameter_range: None,

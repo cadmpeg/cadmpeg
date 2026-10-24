@@ -298,7 +298,7 @@ fn step_artifact_starts_with_step_header() {
 
 #[cfg(feature = "sldprt")]
 #[test]
-fn source_less_sldprt_without_a_native_envelope_is_refused_prewrite() {
+fn source_less_ir_exports_to_decodable_sldprt() {
     let dir = tempdir().unwrap();
     let input = fixture(dir.path(), "cube.cadir.json", &sldprt_cube());
     let output = dir.path().join("cube.sldprt");
@@ -313,11 +313,15 @@ fn source_less_sldprt_without_a_native_envelope_is_refused_prewrite() {
             output.to_str().unwrap(),
         ])
         .assert()
-        .code(2)
-        .stderr(predicate::str::contains(
-            "SLDPRT envelope regeneration needs validated retained",
-        ));
-    assert!(!output.exists());
+        .success();
+
+    let bytes = fs::read(output).unwrap();
+    let decoded = cadmpeg_codec_sldprt::SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(decoded.ir().model.faces.len(), 6);
+    assert_eq!(decoded.ir().model.edges.len(), 12);
 }
 
 #[cfg(feature = "rhino")]
@@ -688,29 +692,23 @@ fn cadir_extension_is_inferred_and_decode_output_matches_stdout() {
 fn fidelity_sidecar_replays_native_bytes_and_missing_sidecar_refuses_prewrite() {
     let dir = tempdir().unwrap();
     for format in ["f3d", "sldprt"] {
-        let native = dir.path().join(format!("source.{format}"));
-        if format == "sldprt" {
-            fs::write(
-                &native,
-                include_bytes!("../../../cadmpeg-codec-sldprt/tests/golden/fixtures/authored_complete_planar.sldprt"),
-            ).unwrap();
+        let source_ir = if format == "sldprt" {
+            sldprt_cube()
         } else {
-            let cube = fixture(
-                dir.path(),
-                &format!("cube-{format}.cadir.json"),
-                &unit_cube().expect("unit cube fixture is admitted"),
-            );
-            Command::cargo_bin("cadmpeg")
-                .unwrap()
-                .args([
-                    "convert",
-                    cube.to_str().unwrap(),
-                    "-o",
-                    native.to_str().unwrap(),
-                ])
-                .assert()
-                .success();
-        }
+            unit_cube().expect("unit cube fixture is admitted")
+        };
+        let cube = fixture(dir.path(), &format!("cube-{format}.cadir.json"), &source_ir);
+        let native = dir.path().join(format!("source.{format}"));
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args([
+                "convert",
+                cube.to_str().unwrap(),
+                "-o",
+                native.to_str().unwrap(),
+            ])
+            .assert()
+            .success();
 
         let persisted = dir.path().join(format!("decoded-{format}.cadir.json"));
         Command::cargo_bin("cadmpeg")
@@ -741,7 +739,7 @@ fn fidelity_sidecar_replays_native_bytes_and_missing_sidecar_refuses_prewrite() 
 
         fs::remove_file(sidecar).unwrap();
         let refused = dir.path().join(format!("refused.{format}"));
-        let refused_command = Command::cargo_bin("cadmpeg")
+        Command::cargo_bin("cadmpeg")
             .unwrap()
             .args([
                 "convert",
@@ -750,17 +748,12 @@ fn fidelity_sidecar_replays_native_bytes_and_missing_sidecar_refuses_prewrite() 
                 refused.to_str().unwrap(),
                 "--reject-lossy",
             ])
-            .assert();
-        if format == "sldprt" {
-            refused_command.code(2).stderr(predicate::str::contains(
-                "SLDPRT envelope regeneration needs validated retained",
-            ));
-        } else {
-            refused_command.code(1).stderr(
+            .assert()
+            .code(1)
+            .stderr(
                 predicate::str::contains("Preserved")
                     .or(predicate::str::contains("source image is unavailable")),
             );
-        }
         assert!(!refused.exists());
     }
 }
