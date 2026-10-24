@@ -334,12 +334,6 @@ fn decode_sketch_visibilities_in_stream(
     metadata: &crate::metastream::MetaStream,
 ) -> Result<Vec<(u64, DesignSketchVisibility)>, CodecError> {
     let mut out = Vec::new();
-    let collections = super::meta::typed_primary_frames(
-        bytes,
-        metadata,
-        "5275CBA4-3D7D-40DC-A651-1DFF3FC8AFBF",
-        "sketch ordinal collection",
-    )?;
     for frame in super::meta::typed_primary_frames(
         bytes,
         metadata,
@@ -429,38 +423,72 @@ fn decode_sketch_visibilities_in_stream(
             )));
         };
 
-        if let Some(collection) = visibility.ordinal_collection {
-            let valid = collections
-                .iter()
-                .find(|frame| frame.entity_id == collection.get())
-                .is_some_and(|frame| {
-                    frame.design_type.version == 4
-                        && frame.design_type.module == "Geometry"
-                        && frame
-                            .design_type
-                            .base_type_guid
-                            .value()
-                            .is_some_and(|base| {
-                                base.as_str()
-                                    .eq_ignore_ascii_case(SKETCH_CONTAINER_MEMBER_BASE_TYPE_GUID)
-                            })
-                        && ordinal_collection_contains(
-                            &bytes[frame.start..frame.end],
-                            entity_suffix,
-                        ) == Some(true)
-                });
-            if !valid {
+        out.push((entity_suffix, visibility));
+    }
+    if out.is_empty() {
+        return Ok(out);
+    }
+    let visibilities = out
+        .iter()
+        .copied()
+        .collect::<std::collections::HashMap<_, _>>();
+    let mut listed = std::collections::HashSet::new();
+    let mut collections = std::collections::HashSet::new();
+    for frame in super::meta::typed_primary_frames(
+        bytes,
+        metadata,
+        "5275CBA4-3D7D-40DC-A651-1DFF3FC8AFBF",
+        "sketch ordinal collection",
+    )? {
+        let members = (frame.design_type.version == 4
+            && frame.design_type.module == "Geometry"
+            && frame
+                .design_type
+                .base_type_guid
+                .value()
+                .is_some_and(|base| {
+                    base.as_str()
+                        .eq_ignore_ascii_case(SKETCH_CONTAINER_MEMBER_BASE_TYPE_GUID)
+                }))
+        .then(|| ordinal_collection_members(&bytes[frame.start..frame.end]))
+        .flatten();
+        let Some(members) = members else {
+            return Err(crate::design::text::malformed_design(format_args!(
+                "F3D sketch ordinal collection {} has an invalid member run",
+                frame.entity_id
+            )));
+        };
+        collections.insert(frame.entity_id);
+        for target in members {
+            if !listed.insert(target)
+                || !visibilities.get(&target).is_some_and(|visibility| {
+                    visibility.ordinal_collection.map(std::num::NonZeroU64::get)
+                        == Some(frame.entity_id)
+                })
+            {
                 return Err(crate::design::text::malformed_design(format_args!(
-                    "F3D sketch container {entity_suffix} has an invalid ordinal collection"
+                    "F3D sketch ordinal collection {} has an invalid sketch member {target}",
+                    frame.entity_id
                 )));
             }
         }
-        out.push((entity_suffix, visibility));
+    }
+    for (entity, visibility) in &out {
+        if !visibility
+            .ordinal_collection
+            .is_some_and(|collection| collections.contains(&collection.get()))
+            || !listed.contains(entity)
+        {
+            return Err(crate::design::text::malformed_design(format_args!(
+                "F3D sketch container {entity} has an invalid ordinal collection"
+            )));
+        }
     }
     Ok(out)
 }
 
-fn ordinal_collection_contains(bytes: &[u8], entity_suffix: u64) -> Option<bool> {
+fn ordinal_collection_members(bytes: &[u8]) -> Option<impl Iterator<Item = u64> + '_> {
+    use crate::layout::sketch_geometry_ordinal_collection_reference as reference;
     use crate::layout::sketch_ordinal_collection_prefix as collection;
     if bytes.get(collection::ZERO_RUN..collection::LEN)? != [0; 9] {
         return None;
@@ -469,17 +497,24 @@ fn ordinal_collection_contains(bytes: &[u8], entity_suffix: u64) -> Option<bool>
     read_property_block(bytes, &mut cursor)?.find("crv_tag_id_idx")?;
     let count = View::u32_le_at(bytes, cursor)?;
     cursor += 4;
-    let count =
-        cadmpeg_core::decode::bounded_len(u64::from(count), 11, bytes.len().checked_sub(cursor)?)?;
-    let mut matches = 0;
-    for _ in 0..count {
-        let reference = take_reference(bytes, &mut cursor)?;
-        let (target, None) = reference.local()? else {
+    let count = cadmpeg_core::decode::bounded_len(
+        u64::from(count),
+        reference::LEN,
+        bytes.len().checked_sub(cursor)?,
+    )?;
+    let end = cursor.checked_add(count.checked_mul(reference::LEN)?)?;
+    let run = bytes.get(cursor..end)?;
+    for member in run.chunks_exact(reference::LEN) {
+        let mut at = 0;
+        if !matches!(take_reference(member, &mut at)?.local(), Some((target, None)) if target != 0)
+        {
             return None;
-        };
-        matches += usize::from(target == entity_suffix);
+        }
     }
-    Some(matches == 1)
+    Some(
+        run.chunks_exact(reference::LEN)
+            .filter_map(|member| View::u64_le_at(member, reference::TARGET)),
+    )
 }
 
 fn decode_sketch_visibility_member(
@@ -523,13 +558,11 @@ fn decode_sketch_visibility_member(
     )
     .ok()?;
     let mut collection_at = member_at + visibility_member::TAIL_MARKER;
-    visibility.ordinal_collection = take_reference(bytes, &mut collection_at)
-        .and_then(|reference| {
-            reference
-                .local()
-                .and_then(|(target, type_guid)| type_guid.is_none().then_some(target))
-        })
-        .and_then(std::num::NonZeroU64::new);
+    let reference = take_reference(bytes, &mut collection_at)?;
+    let (target, None) = reference.local()? else {
+        return None;
+    };
+    visibility.ordinal_collection = Some(std::num::NonZeroU64::new(target)?);
     Some(visibility)
 }
 

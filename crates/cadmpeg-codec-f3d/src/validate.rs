@@ -7727,40 +7727,31 @@ fn validate_sketch_placements(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
     let mut placement_scopes = HashSet::new();
     let mut visibility_offsets = HashSet::new();
     let mut visibility_ordinals = HashSet::new();
-    let mut ordinals_by_namespace = BTreeMap::<(&str, (bool, Option<u64>)), Vec<(u64, u32)>>::new();
-    let mut component_roots = HashMap::<&str, Vec<u64>>::new();
-    for space in &native.design_component_naming_spaces {
-        component_roots
-            .entry(design_stream(&space.id))
-            .or_default()
-            .push(space.component_record_index);
-    }
-    for roots in component_roots.values_mut() {
-        roots.sort_unstable();
-    }
-    let component_of = |stream: &str, entity: u64| {
-        component_roots.get(stream).and_then(|roots| {
-            roots
-                .partition_point(|root| *root <= entity)
-                .checked_sub(1)
-                .and_then(|index| roots.get(index).copied())
+    let mut ordinals_by_namespace = BTreeMap::<(&str, u64), Vec<(u64, u32)>>::new();
+    let collections = native
+        .design_types
+        .iter()
+        .filter(|registration| {
+            registration
+                .type_guid
+                .as_str()
+                .eq_ignore_ascii_case("5275CBA4-3D7D-40DC-A651-1DFF3FC8AFBF")
+                && registration.version == 4
+                && registration.module == "Geometry"
+                && registration.base_type_guid.value().is_some_and(|base| {
+                    base.as_str()
+                        .eq_ignore_ascii_case("A7AEA631-985B-4DD1-8CE2-DE2C-14B54081")
+                })
         })
-    };
+        .flat_map(|registration| {
+            registration
+                .entities
+                .values()
+                .map(move |entity| (ids::design_segment(registration.id()), *entity))
+        })
+        .collect::<HashSet<_>>();
     for placement in &native.design_sketch_placements {
         let native_stream = design_stream(&placement.id);
-        let ordinal_namespace = placement
-            .visibility
-            .as_ref()
-            .and_then(|visibility| visibility.ordinal_collection)
-            .map_or_else(
-                || {
-                    (
-                        false,
-                        component_of(native_stream, placement.entity_id.suffix()),
-                    )
-                },
-                |collection| (true, Some(collection.get())),
-            );
         let unique_record = placement_records.insert((native_stream, placement.record_index));
         let unique_scope = match placement.scope_record_index {
             Some(index) => placement_scopes.insert((native_stream, index)),
@@ -7774,24 +7765,28 @@ fn validate_sketch_placements(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
                 .entities_by_suffix
                 .get(&(native_stream, placement.entity_id.suffix()))
                 .is_some_and(|entity| visibility.stream_ordinal_offset() > entity.byte_offset);
-            if header_valid
-                && visibility_ordinals.insert((
-                    native_stream,
-                    ordinal_namespace,
-                    visibility.stream_ordinal.get(),
-                ))
-            {
-                ordinals_by_namespace
-                    .entry((native_stream, ordinal_namespace))
-                    .or_default()
-                    .push((
-                        placement.entity_id.suffix(),
+            visibility.ordinal_collection.is_some_and(|collection| {
+                let collection = collection.get();
+                if header_valid
+                    && collections.contains(&(ids::design_segment(&placement.id), collection))
+                    && visibility_ordinals.insert((
+                        native_stream,
+                        collection,
                         visibility.stream_ordinal.get(),
-                    ));
-                visibility_offsets.insert((native_stream, visibility.visible_offset()))
-            } else {
-                false
-            }
+                    ))
+                {
+                    ordinals_by_namespace
+                        .entry((native_stream, collection))
+                        .or_default()
+                        .push((
+                            placement.entity_id.suffix(),
+                            visibility.stream_ordinal.get(),
+                        ));
+                    visibility_offsets.insert((native_stream, visibility.visible_offset()))
+                } else {
+                    false
+                }
+            })
         } else {
             true
         };

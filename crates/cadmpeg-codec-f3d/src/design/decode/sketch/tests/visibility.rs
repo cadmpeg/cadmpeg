@@ -24,6 +24,8 @@ fn member(stream_ordinal: u32, visible: u8) -> Vec<u8> {
     bytes.push(0);
     bytes.push(visible);
     bytes.push(1);
+    bytes.extend_from_slice(&300u64.to_le_bytes());
+    bytes.extend_from_slice(&[0; 2]);
     bytes
 }
 
@@ -122,9 +124,49 @@ fn visibility_stream() -> (Vec<u8>, crate::metastream::MetaStream) {
     (bytes, metadata)
 }
 
+fn collection_stream(
+    named_collection: u64,
+    collections: &[(u64, &[u64])],
+) -> (Vec<u8>, crate::metastream::MetaStream) {
+    let (mut bytes, mut metadata) = visibility_stream();
+    let member_at = bytes.len() - member(1, 1).len();
+    bytes[member_at + 37..member_at + 45].copy_from_slice(&named_collection.to_le_bytes());
+    let mut collection_type = metadata.types[1].clone();
+    collection_type.type_guid = "5275CBA4-3D7D-40DC-A651-1DFF3FC8AFBF"
+        .to_owned()
+        .try_into()
+        .unwrap();
+    collection_type.entities = crate::records::identity::ReferenceRun::unlocated(
+        collections.iter().map(|(id, _)| *id).collect(),
+    );
+    metadata.types.push(collection_type);
+    for (id, members) in collections {
+        let collection_at = bytes.len();
+        crate::test_support::lp_ascii(&mut bytes, "258");
+        bytes.extend_from_slice(&u32::try_from(*id).unwrap().to_le_bytes());
+        bytes.extend_from_slice(&[0; 9]);
+        bytes.push(1);
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        crate::test_support::lp_ascii(&mut bytes, "crv_tag_id_idx");
+        crate::test_support::lp_ascii(&mut bytes, "IntrinsicMetaTypeuint64");
+        bytes.extend_from_slice(&7u64.to_le_bytes());
+        bytes.extend_from_slice(&u32::try_from(members.len()).unwrap().to_le_bytes());
+        for target in *members {
+            bytes.push(1);
+            bytes.extend_from_slice(&target.to_le_bytes());
+            bytes.extend_from_slice(&[0; 2]);
+        }
+        metadata.records.push(crate::metastream::RecordIndexEntry {
+            entity_id: *id,
+            bulk_offset: cadmpeg_core::decode::u64_from_index(collection_at),
+        });
+    }
+    (bytes, metadata)
+}
+
 #[test]
 fn sketch_visibility_accepts_settled_container_header() {
-    let (bytes, metadata) = visibility_stream();
+    let (bytes, metadata) = collection_stream(300, &[(300, &[ENTITY_SUFFIX])]);
 
     let visibilities =
         decode_sketch_visibilities_in_stream(&bytes, &metadata).expect("settled header");
@@ -136,71 +178,102 @@ fn sketch_visibility_accepts_settled_container_header() {
 #[test]
 fn sketch_visibility_retains_its_explicit_ordinal_collection() {
     let mut bytes = member(2, 0);
-    bytes.extend_from_slice(&300u64.to_le_bytes());
-    bytes.extend_from_slice(&[0; 2]);
+    bytes[37..45].copy_from_slice(&400u64.to_le_bytes());
     let visibility = decode_sketch_visibility_member(&bytes, 0, ENTITY_SUFFIX).unwrap();
-    assert_eq!(visibility.ordinal_collection.unwrap().get(), 300);
+    assert_eq!(visibility.ordinal_collection.unwrap().get(), 400);
 }
 
 #[test]
-fn ordinal_collection_requires_exactly_one_reciprocal_member() {
-    let mut bytes = vec![0; 20];
-    bytes.push(1);
-    bytes.extend_from_slice(&1u32.to_le_bytes());
-    crate::test_support::lp_ascii(&mut bytes, "crv_tag_id_idx");
-    crate::test_support::lp_ascii(&mut bytes, "IntrinsicMetaTypeuint64");
-    bytes.extend_from_slice(&7u64.to_le_bytes());
-    bytes.extend_from_slice(&1u32.to_le_bytes());
-    bytes.push(1);
-    bytes.extend_from_slice(&ENTITY_SUFFIX.to_le_bytes());
-    bytes.extend_from_slice(&[0; 2]);
-    assert_eq!(
-        super::super::ordinal_collection_contains(&bytes, ENTITY_SUFFIX),
-        Some(true)
-    );
-    assert_eq!(
-        super::super::ordinal_collection_contains(&bytes, ENTITY_SUFFIX + 1),
-        Some(false)
-    );
-    bytes.pop();
-    assert_eq!(
-        super::super::ordinal_collection_contains(&bytes, ENTITY_SUFFIX),
-        None
-    );
+fn sketch_listed_twice_in_collection_is_rejected() {
+    let (bytes, metadata) = collection_stream(300, &[(300, &[ENTITY_SUFFIX, ENTITY_SUFFIX])]);
+    assert!(decode_sketch_visibilities_in_stream(&bytes, &metadata).is_err());
+}
+
+#[test]
+fn sketch_listed_in_two_collections_is_rejected() {
+    let (bytes, metadata) =
+        collection_stream(300, &[(300, &[ENTITY_SUFFIX]), (400, &[ENTITY_SUFFIX])]);
+    assert!(decode_sketch_visibilities_in_stream(&bytes, &metadata).is_err());
+}
+
+#[test]
+fn collection_listing_sketch_that_names_another_collection_is_rejected() {
+    let (bytes, metadata) =
+        collection_stream(400, &[(300, &[ENTITY_SUFFIX]), (400, &[ENTITY_SUFFIX])]);
+    let error = decode_sketch_visibilities_in_stream(&bytes, &metadata).unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("sketch ordinal collection 300 has an invalid sketch member 201"));
+}
+
+#[test]
+fn collection_run_target_must_resolve_to_sketch_container() {
+    let (bytes, metadata) = collection_stream(300, &[(300, &[ENTITY_SUFFIX, 202])]);
+    assert!(decode_sketch_visibilities_in_stream(&bytes, &metadata).is_err());
 }
 
 #[test]
 fn typed_sketch_visibility_requires_reciprocal_collection_membership() {
-    let (mut bytes, mut metadata) = visibility_stream();
-    bytes.extend_from_slice(&300u64.to_le_bytes());
-    bytes.extend_from_slice(&[0; 2]);
-    let collection_at = bytes.len();
-    crate::test_support::lp_ascii(&mut bytes, "258");
-    bytes.extend_from_slice(&300u32.to_le_bytes());
-    bytes.extend_from_slice(&[0; 9]);
-    bytes.push(1);
-    bytes.extend_from_slice(&1u32.to_le_bytes());
-    crate::test_support::lp_ascii(&mut bytes, "crv_tag_id_idx");
-    crate::test_support::lp_ascii(&mut bytes, "IntrinsicMetaTypeuint64");
-    bytes.extend_from_slice(&7u64.to_le_bytes());
-    bytes.extend_from_slice(&1u32.to_le_bytes());
-    bytes.push(1);
-    let target_at = bytes.len();
-    bytes.extend_from_slice(&ENTITY_SUFFIX.to_le_bytes());
-    bytes.extend_from_slice(&[0; 2]);
-    let mut collection_type = metadata.types[1].clone();
-    collection_type.type_guid = "5275CBA4-3D7D-40DC-A651-1DFF3FC8AFBF"
-        .to_owned()
-        .try_into()
-        .unwrap();
-    collection_type.entities = crate::records::identity::ReferenceRun::unlocated(vec![300]);
-    metadata.types.push(collection_type);
-    metadata.records.push(crate::metastream::RecordIndexEntry {
-        entity_id: 300,
-        bulk_offset: cadmpeg_core::decode::u64_from_index(collection_at),
-    });
+    let (bytes, metadata) = collection_stream(300, &[(300, &[ENTITY_SUFFIX])]);
     let visibilities = decode_sketch_visibilities_in_stream(&bytes, &metadata).unwrap();
     assert_eq!(visibilities[0].1.ordinal_collection.unwrap().get(), 300);
-    bytes[target_at] = 202;
+    let (bytes, metadata) = collection_stream(300, &[(300, &[])]);
     assert!(decode_sketch_visibilities_in_stream(&bytes, &metadata).is_err());
+}
+
+#[test]
+fn collection_run_allows_uninterpreted_frame_tail() {
+    let (mut bytes, metadata) = collection_stream(300, &[(300, &[ENTITY_SUFFIX])]);
+    bytes.extend_from_slice(&[0; 3]);
+    assert!(decode_sketch_visibilities_in_stream(&bytes, &metadata).is_ok());
+    bytes.push(1);
+    assert!(decode_sketch_visibilities_in_stream(&bytes, &metadata).is_ok());
+}
+
+#[test]
+fn unreferenced_collection_registration_needs_no_primary_frame() {
+    let (mut bytes, mut metadata) = collection_stream(300, &[(300, &[ENTITY_SUFFIX])]);
+    bytes.truncate(usize::try_from(metadata.records.pop().unwrap().bulk_offset).unwrap());
+    metadata.types[0].version = CURRENT_SKETCH_CONTAINER_VERSION - 1;
+    assert!(decode_sketch_visibilities_in_stream(&bytes, &metadata)
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn sketch_visibility_requires_plain_nonzero_local_collection_reference() {
+    let valid = member(1, 1);
+    for end in 36..47 {
+        assert!(decode_sketch_visibility_member(&valid[..end], 0, ENTITY_SUFFIX).is_none());
+    }
+    let mut null_target = valid.clone();
+    null_target[37..45].fill(0);
+    assert!(decode_sketch_visibility_member(&null_target, 0, ENTITY_SUFFIX).is_none());
+    let mut cross_segment = valid.clone();
+    cross_segment[46] = 1;
+    cross_segment.extend_from_slice(&1u32.to_le_bytes());
+    assert!(decode_sketch_visibility_member(&cross_segment, 0, ENTITY_SUFFIX).is_none());
+    let mut typed = valid[..45].to_vec();
+    crate::test_support::lp_ascii(&mut typed, SKETCH_CONTAINER_TYPE_GUID);
+    typed.extend_from_slice(&[0; 2]);
+    assert!(decode_sketch_visibility_member(&typed, 0, ENTITY_SUFFIX).is_none());
+    let (mut bytes, metadata) = visibility_stream();
+    bytes.truncate(bytes.len() - 10);
+    assert!(decode_sketch_visibilities_in_stream(&bytes, &metadata).is_err());
+}
+
+#[test]
+fn collection_counted_run_requires_complete_plain_local_references() {
+    let (valid, metadata) = collection_stream(300, &[(300, &[ENTITY_SUFFIX])]);
+    let reference_at = valid.len() - 11;
+    for end in reference_at..valid.len() {
+        assert!(decode_sketch_visibilities_in_stream(&valid[..end], &metadata).is_err());
+    }
+    let mut null_target = valid.clone();
+    null_target[reference_at + 1..reference_at + 9].fill(0);
+    assert!(decode_sketch_visibilities_in_stream(&null_target, &metadata).is_err());
+    let mut cross_segment = valid;
+    cross_segment[reference_at + 10] = 1;
+    cross_segment.extend_from_slice(&1u32.to_le_bytes());
+    assert!(decode_sketch_visibilities_in_stream(&cross_segment, &metadata).is_err());
 }

@@ -318,6 +318,14 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Conflict.** The tail values alone do not assign a new selected entity or an additional member.
 
+### DR-99. Sketch ordinal collection frame tail
+
+**Question.** What fields follow the counted sketch-member run in a Geometry ordinal collection frame?
+
+**Known.** `f3d.md` §3.1 "The current sketch entity container" defines the collection prefix, property block, counted local-reference run, and reciprocal sketch membership. The counted run does not consume the frame. The remaining bytes include nonzero values.
+
+**Need.** A complete field grammar must identify the tail boundaries and reference roles before a writer can construct the full collection frame.
+
 ## 2. External references
 
 ### DR-82. Other joint freedom codes and the limit flags

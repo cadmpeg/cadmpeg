@@ -21,7 +21,7 @@ cadmpeg_core::named_optional_field!(
     into = "DesignSketchVisibilityWire"
 )]
 pub(crate) struct DesignSketchVisibility {
-    /// One-based ordinal among sketch Geometry members in the Design stream.
+    /// One-based ordinal among sketch Geometry members in the referenced collection.
     pub(crate) stream_ordinal: NonZeroU32,
     stream_ordinal_offset: u64,
     /// Direct display visibility.
