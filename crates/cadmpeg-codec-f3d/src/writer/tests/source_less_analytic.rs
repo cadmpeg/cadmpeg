@@ -1941,4 +1941,5 @@ fn generated_f3d_rewrites_cone_ratio_and_half_angle() {
     );
 }
 
+mod closed_edges;
 mod family_changes;
