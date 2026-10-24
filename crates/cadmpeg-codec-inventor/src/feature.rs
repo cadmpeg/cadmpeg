@@ -15,7 +15,7 @@ use cadmpeg_ir::sketches::Sketch;
 use cadmpeg_ir::{
     features::{
         edge_treatments::{ChamferGroup, ChamferSpec, FilletGroup, RadiusSpec},
-        holes::{HoleKind, HolePlacement},
+        holes::HoleKind,
         BooleanOp, DesignParameter, DistinctMembers, EdgeSelection, ExtrudeDirection,
         ExtrudeExtent, ExtrudeSide, ExtrudeStart, ExtrusionDirectionSource, FaceSelection, Feature,
         FeatureContent, FeatureDefinition, FeatureId, FeatureOperation, FeatureResultTopology,
@@ -35,6 +35,7 @@ use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 use crate::{design::DesignInventory, sketch::SketchInventory};
 
 mod history;
+mod hole;
 pub(crate) mod loft_sweep;
 pub(crate) mod profile;
 
@@ -291,6 +292,7 @@ pub(crate) struct PmDcPatternFeaturePayload {
 pub(crate) enum PmDcFeatureReferenceFamily {
     BoundaryPatch,
     SelectionList,
+    HoleCenters,
     FeatureDimensions,
     ObjectCollection,
     FilletEdgeSets,
@@ -852,6 +854,7 @@ fn feature_property_parser(type_id: [u8; 16]) -> Option<PropertyParser> {
         BOOLEAN_TYPE => Some(parse_boolean),
         BOUNDARY_PATCH_TYPE => Some(parse_boundary_patch),
         SELECTION_LIST_TYPE => Some(parse_selection_list),
+        hole::CENTERS_TYPE => Some(parse_hole_centers),
         FEATURE_DIMENSIONS_TYPE => Some(parse_feature_dimensions),
         OBJECT_COLLECTION_TYPE => Some(parse_object_collection),
         FILLET_EDGE_SETS_TYPE => Some(parse_fillet_edge_sets),
@@ -1021,6 +1024,7 @@ macro_rules! reference_parser {
 
 reference_parser!(parse_boundary_patch, BoundaryPatch);
 reference_parser!(parse_selection_list, SelectionList);
+reference_parser!(parse_hole_centers, HoleCenters);
 reference_parser!(parse_feature_dimensions, FeatureDimensions);
 reference_parser!(parse_object_collection, ObjectCollection);
 reference_parser!(parse_fillet_edge_sets, FilletEdgeSets);
@@ -1667,6 +1671,7 @@ impl FeatureFamily {
 }
 
 struct ProjectionIndex<'a> {
+    sketch_entities: HashMap<(&'a str, u32), Option<&'a crate::sketch::PmDcSketchEntity>>,
     properties: HashMap<(&'a str, u32), Option<&'a PmDcFeatureProperty>>,
     parameters: HashMap<(&'a str, u32), Option<&'a crate::design::PmDcParameter>>,
     parameter_values: HashMap<&'a str, Option<&'a DesignParameter>>,
@@ -1784,6 +1789,38 @@ pub(crate) fn project(
         )
     }));
     let index = ProjectionIndex {
+        sketch_entities: if inventory.properties.iter().any(|property| {
+            matches!(
+                property.kind,
+                PmDcFeaturePropertyKind::References {
+                    family: PmDcFeatureReferenceFamily::HoleCenters,
+                    ..
+                }
+            )
+        }) {
+            unique_index(
+                sketch
+                    .entities
+                    .iter()
+                    .filter(|record| {
+                        matches!(
+                            record.kind,
+                            crate::sketch::PmDcSketchEntityKind::Point { .. }
+                        )
+                    })
+                    .map(|record| {
+                        (
+                            (
+                                record.identity.segment_token.as_str(),
+                                record.identity.record_ordinal,
+                            ),
+                            record,
+                        )
+                    }),
+            )
+        } else {
+            HashMap::new()
+        },
         properties: unique_properties,
         parameters: unique_parameters,
         parameter_values: unique_index(
@@ -3067,27 +3104,18 @@ fn project_hole(
             diameter: cadmpeg_ir::scalar::PositiveLength::try_from(head_diameter).ok()?,
             angle: cadmpeg_ir::scalar::InteriorAngle::try_from(head_angle).ok()?,
         },
-        2 if point_angle.get() == 0.0 => HoleKind::Counterbore {
+        2 | 3 if point_angle.get() == 0.0 => HoleKind::Counterbore {
             diameter: cadmpeg_ir::scalar::PositiveLength::try_from(head_diameter).ok()?,
             depth: cadmpeg_ir::scalar::PositiveLength::try_from(head_depth).ok()?,
         },
-        2 => HoleKind::CounterboreDrilled {
+        2 | 3 => HoleKind::CounterboreDrilled {
             diameter: cadmpeg_ir::scalar::PositiveLength::try_from(head_diameter).ok()?,
             depth: cadmpeg_ir::scalar::PositiveLength::try_from(head_depth).ok()?,
             drill_point_angle: cadmpeg_ir::scalar::InteriorAngle::try_from(point_angle).ok()?,
         },
         _ => return None,
     };
-    let extent = match enum16(source, 9, PmDcFeatureEnumFamily::Extent, index)? {
-        1 => LinearTermination::Blind {
-            length: cadmpeg_ir::scalar::NonZeroLength::from(
-                cadmpeg_ir::scalar::PositiveLength::try_from(depth).ok()?,
-            ),
-        },
-        4 => LinearTermination::ThroughNext {},
-        5 => LinearTermination::ThroughAll {},
-        _ => return None,
-    };
+    let extent = hole::termination(source, index, depth)?;
     let transform_reference = source.properties.references().get(8)?;
     let transform = index
         .transforms
@@ -3109,26 +3137,7 @@ fn project_hole(
         direction_record.direction[1].get(),
         direction_record.direction[2].get(),
     ))?;
-    let placement = slot_property(source, 21, index)?;
-    let PmDcFeaturePropertyKind::Placement {
-        transform: placement_transform,
-        point,
-        value,
-    } = &placement.kind
-    else {
-        return None;
-    };
-    if placement_transform.index() != transform_reference.index()
-        || point.index() == 0
-        || value.index() == 0
-    {
-        return None;
-    }
-    let position = cadmpeg_ir::features::FinitePoint3::new(Point3::new(
-        transform.matrix.rows()[0][3] * 10.0,
-        transform.matrix.rows()[1][3] * 10.0,
-        transform.matrix.rows()[2][3] * 10.0,
-    ))?;
+    let placements = hole::placements(source, label, index, transform, direction)?;
     let shape = cadmpeg_ir::features::holes::HoleShape::new(
         cadmpeg_ir::features::holes::HoleConstruction::Form {
             kind,
@@ -3152,7 +3161,14 @@ fn project_hole(
             name: label.name().map(str::to_owned),
             suppressed: None,
             dependencies: DistinctMembers::default(),
-            source_properties: BTreeMap::new(),
+            source_properties: if hole_form == 3 {
+                BTreeMap::from([(
+                    cadmpeg_core::nonblank_literal!("inventor.hole_form"),
+                    "spotface".into(),
+                )])
+            } else {
+                BTreeMap::new()
+            },
             source_tag: Some("hole".into()),
             source_text: None,
             source_content: FeatureContent::default(),
@@ -3163,10 +3179,7 @@ fn project_hole(
                     profile_filter: None,
                     face: None,
                     direction: None,
-                    placements: Some(vec![HolePlacement::Directed {
-                        position,
-                        direction: cadmpeg_ir::features::FeatureDirection3::from(direction),
-                    }]),
+                    placements: Some(placements),
                     shape,
 
                     extent: Some(extent),
@@ -3610,6 +3623,7 @@ impl RecordPayload for PmDcFeatureTerminatorPayload {
 
 #[cfg(test)]
 mod tests {
+    mod holes;
     mod thicken;
 
     use super::{
@@ -4148,6 +4162,7 @@ mod tests {
         entity_style_links: &'a [PmDcEntityStyleLink],
     ) -> ProjectionIndex<'a> {
         ProjectionIndex {
+            sketch_entities: std::collections::HashMap::new(),
             properties: super::unique_index(properties.iter().map(|record| {
                 (
                     (
