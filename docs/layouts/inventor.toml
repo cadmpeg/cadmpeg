@@ -1452,3 +1452,119 @@ offset = 55
 type = "u32"
 source = "spec"
 anchor = "option_reference u32"
+
+[[record]]
+name = "pm_dc_point_paired_tail"
+kind = "byte"
+section = "12"
+anchor = "From segment major version 25, state 2 selects the paired association form"
+size = 76
+parsed_by = "crates/cadmpeg-codec-inventor/src/sketch/point_tail.rs"
+note = "Offsets are relative to the state word after the point's endpoint-of and center-of lists."
+
+[[record.field]]
+name = "state"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "state u32"
+value = 2
+
+[[record.field]]
+name = "scalar_marker"
+offset = 4
+type = "u16[2]"
+source = "spec"
+anchor = "scalar_marker u16[2]"
+note = "Marker words are 2 and 0x3000."
+
+[[record.field]]
+name = "scalar_count"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "scalar_count u32"
+value = 2
+
+[[record.field]]
+name = "scalar_metadata"
+offset = 12
+type = "u32[2]"
+source = "spec"
+anchor = "scalar_metadata u32[2]"
+
+[[record.field]]
+name = "scalar_values"
+offset = 20
+type = "f64[2]"
+source = "spec"
+anchor = "scalar_values f64[2]"
+
+[[record.field]]
+name = "operand_marker"
+offset = 36
+type = "u16[2]"
+source = "spec"
+anchor = "operand_marker u16[2]"
+note = "Marker words are 2 and 0x3000."
+
+[[record.field]]
+name = "operand_count"
+offset = 40
+type = "u32"
+source = "spec"
+anchor = "operand_count u32"
+value = 2
+
+[[record.field]]
+name = "operand_metadata"
+offset = 44
+type = "u32[2]"
+source = "spec"
+anchor = "operand_metadata u32[2]"
+
+[[record.field]]
+name = "first_auxiliary_marker"
+offset = 52
+type = "u16[2]"
+source = "spec"
+anchor = "first_auxiliary_marker u16[2]"
+note = "Marker words are 2 and 0x3000."
+
+[[record.field]]
+name = "first_auxiliary_count"
+offset = 56
+type = "u32"
+source = "spec"
+anchor = "first_auxiliary_count u32"
+value = 0
+
+[[record.field]]
+name = "first_operand"
+offset = 60
+type = "u32"
+source = "spec"
+anchor = "first_operand u32"
+
+[[record.field]]
+name = "second_auxiliary_marker"
+offset = 64
+type = "u16[2]"
+source = "spec"
+anchor = "second_auxiliary_marker u16[2]"
+note = "Marker words are 2 and 0x3000."
+
+[[record.field]]
+name = "second_auxiliary_count"
+offset = 68
+type = "u32"
+source = "spec"
+anchor = "second_auxiliary_count u32"
+value = 0
+
+[[record.field]]
+name = "second_operand"
+offset = 72
+type = "u32"
+source = "spec"
+anchor = "second_operand u32"
