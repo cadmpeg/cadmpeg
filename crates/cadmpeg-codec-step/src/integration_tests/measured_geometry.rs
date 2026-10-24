@@ -10,10 +10,10 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
-use cadmpeg_measure::compare::{compare, CompareOptions, Verdict};
 use cadmpeg_measure::report::MeasureReport;
+use cadmpeg_measure::test_support::round_trip::{assert_measures_agree, measured};
 use cadmpeg_measure::value::Quantity;
-use cadmpeg_measure::{MeasureInput, MeasureOptions, Measurer, Selection};
+use cadmpeg_measure::MeasureOptions;
 
 use crate::export::write_step;
 use crate::test_support::box_brep::{box_shell, solid_representation, BoxFaceUse};
@@ -23,23 +23,6 @@ use crate::{StepCodec, StepSchema, StepWriteOptions};
 /// Allowance of a measured value against its expression beyond the value's
 /// numeric error, per unit of the larger of the expected magnitude and 1.
 const TEST_ABSOLUTE_FLOOR: f64 = 1.0e-9;
-
-/// The body rows of `ir`, measured in model space.
-fn measured(ir: &CadIr) -> MeasureReport {
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
-    let ctx = DecodeContext::for_loaded_input(&arena, &policy, 0).expect("context");
-    let input = MeasureInput {
-        ir,
-        fidelity: None,
-        geometry_transferred: true,
-    };
-    let report = Measurer::new(input, MeasureOptions::default())
-        .measure(&ctx, &Selection::default())
-        .expect("measured");
-    ctx.finish_session().expect("session stays unrefused");
-    report
-}
 
 /// The orientation findings of `ir`.
 fn orientation_findings(ir: &CadIr) -> Vec<cadmpeg_ir::report::check::Finding> {
@@ -101,17 +84,7 @@ fn writer_round_trip_keeps_measured_body_geometry() {
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode placed body");
-    let before = measured(&ir);
-    let after = measured(decoded.ir());
-    let comparison = compare(
-        &ir,
-        &before,
-        decoded.ir(),
-        &after,
-        &CompareOptions::default(),
-    )
-    .expect("one body pair fits the pair allowance");
-    assert_eq!(comparison.verdict(), Verdict::Agree, "{comparison:#?}");
+    let (_, _, after) = assert_measures_agree("placed cube", &ir, decoded.ir());
     let [body] = after.bodies().as_slice() else {
         panic!("one body row");
     };
@@ -255,7 +228,7 @@ fn reversed_void_shell_measures_the_enclosed_volume_through_a_round_trip() {
     assert_eq!(decoded.ir().model.regions[0].shells.len(), 2);
     let findings = orientation_findings(decoded.ir());
     assert!(findings.is_empty(), "{findings:#?}");
-    let before = measured(decoded.ir());
+    let before = measured("solid with a void", decoded.ir());
     let (volume, error) = body_volume(&before);
     assert_close(volume, 976.0, error);
 
@@ -272,16 +245,25 @@ fn reversed_void_shell_measures_the_enclosed_volume_through_a_round_trip() {
         .expect("decode written solid with a void");
     let findings = orientation_findings(round_trip.ir());
     assert!(findings.is_empty(), "{findings:#?}");
-    let after = measured(round_trip.ir());
+    let (_, _, after) = assert_measures_agree("solid with a void", decoded.ir(), round_trip.ir());
     let (volume, error) = body_volume(&after);
     assert_close(volume, 976.0, error);
-    let comparison = compare(
-        decoded.ir(),
-        &before,
-        round_trip.ir(),
-        &after,
-        &CompareOptions::default(),
-    )
-    .expect("one body pair fits the pair allowance");
-    assert_eq!(comparison.verdict(), Verdict::Agree, "{comparison:#?}");
+}
+
+/// A solid cylinder with radius 10 and height 30, whose closed circle edges
+/// store no parameter range, keeps its measured geometry through a STEP
+/// write round trip under every written schema.
+#[test]
+fn solid_cylinder_round_trip_keeps_measured_geometry() {
+    let ir = cadmpeg_test_support::solids::solid_cylinder();
+    for schema in [StepSchema::Ap214, StepSchema::Ap242Edition3] {
+        let mut output = Vec::new();
+        write_step(&ir, &mut output, schema, &StepWriteOptions::default())
+            .expect("write the cylinder");
+        let decoded = StepCodec::default()
+            .decode(&mut Cursor::new(output), &DecodeOptions::default())
+            .expect("decode the written cylinder");
+        assert_eq!(decoded.ir().model.bodies.len(), ir.model.bodies.len());
+        assert_measures_agree("cylinder", &ir, decoded.ir());
+    }
 }
