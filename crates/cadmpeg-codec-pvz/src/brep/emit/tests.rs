@@ -278,3 +278,44 @@ fn edges_stored_once_per_use_become_shared_edges() {
             .any(|note| note.code == PvzLossCode::ExactEdgeUsesMerged.kind()));
     }
 }
+
+#[test]
+fn polyline_pcurve_carries_its_chord_deviation() {
+    let (radius, segments) = (0.01, 8_u32);
+    let mut stream = Stream::new(true);
+    stream.plane([0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]);
+    stream
+        .loop_record(-2)
+        .coedge(0, 1, 0, crate::test_support::exact::NONE)
+        .terminator();
+    let circle = stream
+        .payload()
+        .u8(1)
+        .u8(0)
+        .scalars(&[0.0, 0.0, 0.0, radius, 0.0, 0.0, 0.0, radius, 0.0])
+        .u8(0)
+        .bytes();
+    stream.record(crate::test_support::exact::EDGE_CURVE, &circle);
+    let points: Vec<f64> = (0..=segments)
+        .flat_map(|step| {
+            let angle = std::f64::consts::TAU * f64::from(step) / f64::from(segments);
+            [radius * angle.cos(), radius * angle.sin()]
+        })
+        .collect();
+    let polyline = stream
+        .payload()
+        .u8(7)
+        .u8(0)
+        .u32(segments + 1)
+        .scalars(&points)
+        .u8(0)
+        .bytes();
+    stream.record(crate::test_support::exact::PCURVE, &polyline);
+    let (ir, _, _) = emit_stream(stream);
+    let sagitta_mm = radius * (1.0 - (std::f64::consts::PI / f64::from(segments)).cos()) * 1000.0;
+    let fit = ir.model.pcurves[0].fit_tolerance().unwrap().get();
+    assert!(
+        fit >= sagitta_mm && fit <= 2.0 * sagitta_mm,
+        "{fit} {sagitta_mm}"
+    );
+}

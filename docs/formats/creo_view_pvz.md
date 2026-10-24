@@ -672,11 +672,11 @@ Tag `0x15` holds one 2D curve in a surface parameter domain. Every pcurve record
 | 6 | Rational B-spline | `rational:u8`, `order:u32`, `knot_count:u32`, `knots:scalar[knot_count]`, `pole_count:u32`, `poles:scalar[pole_count × 3]`, [`t_start`, `t_end`], `00` |
 | 7 | Polyline | `count:u32`, `points:scalar[count × 2]`, `00` |
 
-The parameterisations are the 2D forms of §8.15. A type-2 pcurve lists other pcurve records by index. A B-spline pcurve stores homogeneous poles `(w·u, w·v, w)`. A B-spline pcurve with flag `0x08` uses the range pair as its interval; otherwise its interval is the knot domain. The pcurve start point and end point are the images of the interval ends.
+The parameterisations are the 2D forms of §8.15. A type-2 pcurve lists other pcurve records by index. A B-spline pcurve stores homogeneous poles `(w·u, w·v, w)`. A B-spline pcurve with flag `0x08` uses the range pair as its interval; otherwise its interval is the knot domain. The pcurve start point and end point are the images of the interval ends. The points of a type-7 pcurve lie on the image of the edge curve on the surface; its segments are chords in the parameter domain, and between the points their images leave the edge curve by up to the chord sagitta.
 
 ### 8.17 Coedge geometry and sense
 
-The model stores each coedge twice: once as the edge curve, once as the pcurve image on the face surface. Let `S` be the face surface (native pcurve) or its embedded B-spline (secondary pcurve), `p0` and `p1` the pcurve start and end points, and `e0` and `e1` the edge curve start and end points. Then either `S(p0) = e0` and `S(p1) = e1`, or `S(p0) = e1` and `S(p1) = e0`, within the tolerance of §8.21.
+The model stores each coedge twice: once as the edge curve, once as the pcurve image on the face surface. The two agree at the ends within the tolerance of §8.21, and along the whole coedge except between the points of a polyline pcurve (§8.16). Let `S` be the face surface (native pcurve) or its embedded B-spline (secondary pcurve), `p0` and `p1` the pcurve start and end points, and `e0` and `e1` the edge curve start and end points. Then either `S(p0) = e0` and `S(p1) = e1`, or `S(p0) = e1` and `S(p1) = e0`, within the tolerance of §8.21.
 
 The coedge sense is forward when the first condition holds and reversed when the second holds. A reader derives the sense from these endpoints. It does not take the sense from the `orientation` byte. For a closed edge curve both conditions hold; the sense is then forward when the pcurve image near the start of the pcurve interval lies on the edge curve near the start of the edge interval.
 

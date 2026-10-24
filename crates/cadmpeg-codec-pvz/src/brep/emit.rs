@@ -16,8 +16,8 @@ use cadmpeg_ir::document::Model;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::pcurve::{Pcurve, PcurveGeometry, PcurveMetadata};
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry as IrCurveGeometry, DirectedParameterRange, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, Surface, SurfaceGeometry as IrSurfaceGeometry,
+    Curve, CurveGeometry as IrCurveGeometry, DirectedParameterRange, FitTolerance,
+    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry as IrSurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, IdentityKey, LoopId, PcurveId, PointId, RegionId,
@@ -32,9 +32,9 @@ use cadmpeg_ir::topology::{
 };
 use cadmpeg_ir::Exactness;
 
-use super::eval::{cross, curve_interval, dot, scale};
+use super::eval::{cross, curve_interval, dot, nearest_distance, scale};
 use super::frames::{self, CarrierRefusal, CurveChart, SurfaceChart, UvMap, MILLIMETRES_PER_METRE};
-use super::model::{ExactModel, SurfaceGeometry, Vec2, Vec3};
+use super::model::{CurveGeometry, ExactModel, SurfaceGeometry, Vec2, Vec3};
 use super::resolve::{domain_point, PcurveSlot, ENDPOINT_TOLERANCE};
 use super::topology::{self, Topology};
 use crate::loss::PvzLossCode;
@@ -45,6 +45,9 @@ const RESIDUAL_MARGIN: f64 = 1.5;
 /// Factor between the spread of the ends joined into a vertex and the
 /// vertex tolerance.
 const SPREAD_MARGIN: f64 = 1.5;
+/// Chord midpoints of one polyline pcurve that its fit tolerance is
+/// measured at.
+const CHORD_SAMPLES: usize = 64;
 
 /// Destination of the neutral records of one exact stream.
 pub(crate) struct Sink<'s> {
@@ -711,12 +714,22 @@ impl Writer<'_, '_, '_, '_> {
                                 Ok(pcurve_geometry) => {
                                     let runs =
                                         loop_topology.directions[coedge_position] != reversed;
+                                    let fit = match (&native.geometry, geometry.pcurve, source.edge)
+                                    {
+                                        (
+                                            CurveGeometry::Polyline(points),
+                                            Some((_, slot)),
+                                            Some(edge),
+                                        ) => self.chord_deviation(index, slot, points, edge),
+                                        _ => None,
+                                    };
                                     pcurves.push(self.write_pcurve(
                                         key.clone(),
                                         pcurve_geometry,
                                         native.offset,
                                         geometry.interval,
                                         runs,
+                                        fit,
                                     )?);
                                     if let Some(value) = geometry.residual {
                                         residual = residual.max(value);
@@ -830,6 +843,36 @@ impl Writer<'_, '_, '_, '_> {
         Ok(faces)
     }
 
+    /// Largest distance, in millimetres and with [`RESIDUAL_MARGIN`], from
+    /// the image of a polyline pcurve on face `face` to the curve that edge
+    /// record `edge` is written on. The polyline points lie on the edge
+    /// image and its segments are chords (§8.16), so the distance is taken
+    /// at the chord midpoints, at most [`CHORD_SAMPLES`] of them.
+    fn chord_deviation(
+        &self,
+        face: usize,
+        slot: PcurveSlot,
+        points: &[Vec2],
+        edge: usize,
+    ) -> Option<f64> {
+        let record = self.exact.faces.get(face)?;
+        let curve = &self
+            .exact
+            .edges
+            .get(self.topology.written_edge(edge).0)?
+            .geometry;
+        let interval = curve_interval(curve)?;
+        let segments = points.len().checked_sub(1)?;
+        let step = segments.div_ceil(CHORD_SAMPLES).max(1);
+        let mut worst: f64 = 0.0;
+        for index in (0..segments).step_by(step) {
+            let [a, b] = [*points.get(index)?, *points.get(index + 1)?];
+            let image = domain_point(record, slot, [a[0].midpoint(b[0]), a[1].midpoint(b[1])])?;
+            worst = worst.max(nearest_distance(curve, interval, image)?);
+        }
+        Some(worst * RESIDUAL_MARGIN * MILLIMETRES_PER_METRE)
+    }
+
     fn write_pcurve(
         &mut self,
         key: IdentityKey,
@@ -837,15 +880,23 @@ impl Writer<'_, '_, '_, '_> {
         offset: usize,
         interval: Option<Vec2>,
         runs: bool,
+        fit: Option<f64>,
     ) -> Result<PcurveUse, CodecError> {
         let id = self.ids.pcurve(key);
         self.ctx.charge_entities(1, "pvz exact pcurve")?;
+        let fit = fit.and_then(|fit| FitTolerance::try_new(fit).ok());
         self.sink.model.pcurves.push(Pcurve {
             id: id.clone(),
             geometry,
-            metadata: PcurveMetadata::default(),
+            metadata: PcurveMetadata::general(None, None, fit),
         });
         self.located(&id, offset, "0x15");
+        if fit.is_some() {
+            self.sink
+                .annotations
+                .field_exactness(id.to_string(), "metadata", Exactness::Derived)
+                .map_err(annotation_error)?;
+        }
         let parameter_range = interval.and_then(|[start, end]| {
             let ends = if runs { [start, end] } else { [end, start] };
             let ends = [FiniteReal::new(ends[0])?, FiniteReal::new(ends[1])?];

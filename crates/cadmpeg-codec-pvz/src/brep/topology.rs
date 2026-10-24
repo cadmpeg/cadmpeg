@@ -15,7 +15,7 @@ use std::collections::BTreeSet;
 use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_core::CodecError;
 
-use super::eval::{cross, distance, dot, norm, scale, sub};
+use super::eval::{cross, distance, dot, norm, scale, sub, NEAREST_POINT_WORK};
 use super::model::{CurveGeometry, ExactModel, Vec2, Vec3};
 use super::resolve::{
     closure_gap, coedge_geometry, domain_periods, domain_point, edges_along, encloses,
@@ -47,14 +47,9 @@ const TOPOLOGY_WORK_PER_RECORD: usize = 1 << 10;
 /// Natural-interval fractions of the interior samples that a coincident
 /// edge must pass through.
 const PARTNER_FRACTIONS: [f64; 3] = [0.25, 0.5, 0.75];
-/// Uniform samples of the nearest-point search on a partner curve.
-const PARTNER_CURVE_SAMPLES: usize = 16;
-/// Golden-section steps that refine the nearest-point search.
-const PARTNER_REFINEMENT_STEPS: usize = 24;
-/// Work of one coincidence test of two curves: the curve evaluations of the
-/// nearest-point searches for both sample sets.
-const PARTNER_COINCIDENCE_WORK: usize =
-    2 * PARTNER_FRACTIONS.len() * (PARTNER_CURVE_SAMPLES + 1 + 2 * PARTNER_REFINEMENT_STEPS);
+/// Work of one coincidence test of two curves: the nearest-point searches
+/// for both sample sets.
+const PARTNER_COINCIDENCE_WORK: usize = 2 * PARTNER_FRACTIONS.len() * NEAREST_POINT_WORK;
 
 /// One loop with its resolved coedges.
 #[derive(Debug, Clone, PartialEq)]
@@ -453,41 +448,6 @@ fn neighbour_cells(cell: [i64; 3]) -> impl Iterator<Item = [i64; 3]> {
     })
 }
 
-/// Distance from `point` to `curve` over `interval`: the nearest of
-/// [`PARTNER_CURVE_SAMPLES`] samples, refined by a golden-section search in
-/// the sample intervals next to it.
-fn distance_to_curve(curve: &CurveGeometry<3>, interval: Vec2, point: Vec3) -> Option<f64> {
-    let [low, high] = interval;
-    let samples = cadmpeg_core::convert::f64_from_index(PARTNER_CURVE_SAMPLES)?;
-    let parameter = |step: usize| {
-        Some(low + (high - low) * cadmpeg_core::convert::f64_from_index(step)? / samples)
-    };
-    let gap = |t: f64| Some(distance(super::eval::curve_point(curve, t)?, point));
-    let mut nearest = (0, f64::INFINITY);
-    for step in 0..=PARTNER_CURVE_SAMPLES {
-        let value = gap(parameter(step)?)?;
-        if value < nearest.1 {
-            nearest = (step, value);
-        }
-    }
-    let (step, mut best) = nearest;
-    let mut a = parameter(step.max(1) - 1)?;
-    let mut b = parameter((step + 1).min(PARTNER_CURVE_SAMPLES))?;
-    let ratio = (5.0_f64.sqrt() - 1.0) / 2.0;
-    for _ in 0..PARTNER_REFINEMENT_STEPS {
-        let c = b - (b - a) * ratio;
-        let d = a + (b - a) * ratio;
-        let (gap_c, gap_d) = (gap(c)?, gap(d)?);
-        best = best.min(gap_c).min(gap_d);
-        if gap_c < gap_d {
-            b = d;
-        } else {
-            a = c;
-        }
-    }
-    Some(best)
-}
-
 /// Largest distance from an interior sample of either edge to the other
 /// curve, or `None` when it exceeds the endpoint tolerance.
 fn coincidence_gap(
@@ -497,7 +457,8 @@ fn coincidence_gap(
 ) -> Option<f64> {
     let gaps = |points: &[Vec3], curve: usize, interval: Vec2| {
         points.iter().try_fold(0.0_f64, |worst, point| {
-            let gap = distance_to_curve(&model.edges[curve].geometry, interval, *point)?;
+            let gap =
+                super::eval::nearest_distance(&model.edges[curve].geometry, interval, *point)?;
             (gap <= ENDPOINT_TOLERANCE).then_some(worst.max(gap))
         })
     };
