@@ -182,6 +182,7 @@ fn a_given_up_type_table_links_its_segment_record_and_its_missing_states_validat
         .iter()
         .any(|link| link.as_str() == crate::rse::segment_record_id("dc"))));
     assert!(segment_state_findings(&ir).is_empty());
+}
 
 use super::face_property_is_admitted;
 use crate::feature::{

@@ -2571,7 +2571,10 @@ mod tests {
         let result = render_graph(&DecodePolicy::service(), kinds, 4)
             .expect("admitted graph")
             .expect("closed graph");
-        assert_eq!(result.0, "-(((x) + (x)))");
+        assert_eq!(
+            result.0.render_with(|_| Some("x".into())).as_deref(),
+            Some("-(((x) + (x)))")
+        );
     }
 
     fn function_call(function: u32, argument: u32) -> PmDcExpressionKind {
@@ -2596,7 +2599,10 @@ mod tests {
             )
             .expect("admitted graph")
             .expect("closed graph");
-            assert_eq!(result.0, format!("{name}(x)"));
+            assert_eq!(
+                result.0.render_with(|_| Some("x".into())),
+                Some(format!("{name}(x)"))
+            );
         }
         // An unknown function leaves the formula native.
         assert!(render_graph(

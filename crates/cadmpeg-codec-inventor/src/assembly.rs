@@ -798,12 +798,17 @@ mod tests {
     fn a_segment_version_28_occurrence_stores_a_zero_after_its_flags() {
         let mut bytes = occurrence_fixture(42, &[]);
         bytes.splice(14..14, 0u32.to_le_bytes());
-        let arena = DecodeArena::new();
-        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
-            .expect("synthetic occurrence fits policy");
-        let occurrence = parse_occurrence(&ctx, root, 28).expect("version 28 occurrence parses");
-        assert_eq!(occurrence.occurrence_id, 42);
+        {
+            let arena = DecodeArena::new();
+            let (ctx, root) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+                    .expect("synthetic occurrence fits policy");
+            let occurrence =
+                parse_occurrence(&ctx, root, 28).expect("version 28 occurrence parses");
+            assert_eq!(occurrence.occurrence_id, 42);
+        }
         bytes[14] = 1;
+        let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic occurrence fits policy");
         assert!(parse_occurrence(&ctx, root, 28).is_err());

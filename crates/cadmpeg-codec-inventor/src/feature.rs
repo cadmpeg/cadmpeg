@@ -2234,6 +2234,7 @@ fn project_thread(
         Err(error) => return Some(Err(error)),
     };
     Some(Ok(Feature {
+        needs_recompute: false,
         id: FeatureId::compose(
             &cadmpeg_ir::identity_namespace!("inventor", "design", "feature"),
             key,
@@ -2905,7 +2906,13 @@ fn project_hole(
 pub(crate) fn thicken_operation<'a>(
     source: &PmDcFeature,
     property_at: impl Fn(usize) -> Option<&'a PmDcFeatureProperty>,
-    parameter_at: impl Fn(usize) -> Option<(&'a crate::design::PmDcParameter, &'a ParameterValue)>,
+    parameter_at: impl Fn(
+        usize,
+    ) -> Option<(
+        &'a crate::design::PmDcParameter,
+        &'a ParameterValue,
+        &'a cadmpeg_ir::features::ParameterId,
+    )>,
     record_type_at: impl Fn(u32) -> Option<&'a str>,
 ) -> Option<FeatureOperation> {
     if source.properties.references().len() != 18
@@ -2956,14 +2963,14 @@ pub(crate) fn thicken_operation<'a>(
             return None;
         }
     }
-    let (raw_thickness, value) = parameter_at(6)?;
+    let (raw_thickness, value, thickness_parameter) = parameter_at(6)?;
     let ParameterValue::Length(thickness) = value else {
         return None;
     };
     if Length::new(raw_thickness.model_value.get() * 10.0)? != *thickness {
         return None;
     }
-    let (raw_control, control) = parameter_at(12)?;
+    let (raw_control, control, _) = parameter_at(12)?;
     if !matches!(control, ParameterValue::Real(value) if *value == raw_control.model_value) {
         return None;
     }
@@ -2989,7 +2996,12 @@ pub(crate) fn thicken_operation<'a>(
     }
     Some(FeatureOperation::Thicken {
         faces: FaceSelection::Native(selections.id()),
-        thickness: Some(cadmpeg_ir::scalar::PositiveLength::try_from(*thickness).ok()?),
+        thickness: {
+            cadmpeg_ir::scalar::PositiveLength::try_from(*thickness).ok()?;
+            Some(cadmpeg_ir::features::Dimension::Parameter(
+                thickness_parameter.clone(),
+            ))
+        },
         side: None,
     })
 }
@@ -3010,13 +3022,11 @@ fn project_thicken(
                 .parameters
                 .get(&(source.identity.segment_token.as_str(), ordinal))?
                 .as_ref()?;
-            let value = index
+            let design = index
                 .parameter_values
                 .get(parameter.id().as_str())?
-                .as_ref()?
-                .value
                 .as_ref()?;
-            Some((*parameter, value))
+            Some((*parameter, design.value.as_ref()?, &design.id))
         },
         |ordinal| {
             inventory
@@ -3035,6 +3045,7 @@ fn project_thicken(
     }
     Some(Ok((
         Feature {
+            needs_recompute: false,
             id: feature_id,
             ordinal: u64::from(label.index),
             name: label.name().map(str::to_owned),

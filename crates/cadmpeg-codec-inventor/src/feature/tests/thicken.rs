@@ -266,7 +266,12 @@ fn projects_thicken_with_native_selection_thickness_and_ordered_results() {
             .id()
         )
     );
-    assert_eq!(thickness.expect("positive thickness").get(), 2.0);
+    assert_eq!(
+        thickness,
+        &Some(cadmpeg_ir::features::Dimension::Parameter(
+            fixture().neutral[0].id.clone()
+        ))
+    );
     assert_eq!(*side, None);
     assert_eq!(feature.source_properties.len(), 7);
     assert_eq!(result.output_of, feature.id);

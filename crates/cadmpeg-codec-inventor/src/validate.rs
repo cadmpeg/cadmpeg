@@ -1276,12 +1276,8 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
                         .record_ordinal()?;
                     let parameter = thicken_parameters.get(&(token, ordinal))?.as_ref()?;
                     let native = parameter.id();
-                    let value = thicken_values
-                        .get(native.as_str())?
-                        .as_ref()?
-                        .value
-                        .as_ref()?;
-                    Some((*parameter, value))
+                    let design = thicken_values.get(native.as_str())?.as_ref()?;
+                    Some((*parameter, design.value.as_ref()?, &design.id))
                 },
                 |ordinal| {
                     thicken_record_types

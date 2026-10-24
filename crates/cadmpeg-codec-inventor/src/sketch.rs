@@ -1800,7 +1800,7 @@ fn project_constraint(
                 SketchConstraintDefinitionInput::DistanceLoci {
                     first: SketchLocus::Entity(members[0].id().clone()),
                     second: SketchLocus::Entity(members[1].id().clone()),
-                    parameter,
+                    parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
                 },
                 None,
                 members,
