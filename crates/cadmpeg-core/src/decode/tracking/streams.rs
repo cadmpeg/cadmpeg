@@ -4,7 +4,7 @@
 use std::borrow::Cow;
 use std::ops::Range;
 
-use super::{copy_string, reserve};
+use super::{copy_string, reserve, reserve_working};
 use crate::decode::budget::DecodeBudget;
 use crate::decode::{u64_from_index, ByteRange, SpaceId, View};
 use crate::CodecError;
@@ -335,7 +335,7 @@ impl Streams {
             },
         };
         let mut pending = Vec::new();
-        reserve(budget, &mut pending, 1)?;
+        reserve_working(budget, &mut pending, 1)?;
         pending.push(initial);
         let mut seen: Vec<Extent> = Vec::new();
         while let Some(current) = pending.pop() {
@@ -359,10 +359,10 @@ impl Streams {
             }) {
                 continue;
             }
-            reserve(budget, &mut seen, 1)?;
+            reserve_working(budget, &mut seen, 1)?;
             seen.push(current);
             let mut push = |space, range| -> Result<(), CodecError> {
-                reserve(budget, &mut pending, 1)?;
+                reserve_working(budget, &mut pending, 1)?;
                 pending.push(Extent { space, range });
                 Ok(())
             };

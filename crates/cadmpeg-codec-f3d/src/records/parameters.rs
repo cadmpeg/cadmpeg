@@ -1191,6 +1191,7 @@ impl DesignParameterCompanion {
     }
 
     /// Byte offset of `timestamp_micros`.
+    #[cfg(test)]
     #[must_use]
     pub(crate) fn timestamp_micros_offset(&self) -> Option<u64> {
         self.timestamp_micros_offset

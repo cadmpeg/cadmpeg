@@ -22,8 +22,10 @@ pub mod b1;
 pub mod freecad;
 mod part;
 pub mod parts;
+mod source_exclusion;
 
 pub use part::RecordLayout;
+pub use source_exclusion::SourceRecordExclusion;
 
 /// Retained-byte operation for one appended native unknown record.
 const ATTACH_UNKNOWN_RECORD: &str = "attach native unknown record";

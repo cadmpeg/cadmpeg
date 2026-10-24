@@ -236,6 +236,22 @@ fn companion_findings(
         ctx.records_by_index.insert((stream, 8), &header);
         let mut findings = Vec::new();
         super::super::validate_parameter_companions(&ctx, &mut findings);
+        let mut pointers = vec![
+            ("byte_offset", byte_offset),
+            ("timestamp_micros_offset", timestamp_offset),
+        ];
+        pointers.extend(payload_offset.map(|offset| ("payload_byte_offset", offset)));
+        let fidelity = crate::test_support::source_layout::sidecar(
+            "Design/BulkStream.dat",
+            &[(native.design_parameter_companions[0].id(), 0, 58, &pointers)],
+        );
+        super::super::source_layout::validate_parameter_companion_layouts(
+            &ctx,
+            &super::super::source_layout::Layouts {
+                fidelity: &fidelity,
+            },
+            &mut findings,
+        );
         findings
     })
 }
