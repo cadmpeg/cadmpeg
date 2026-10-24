@@ -15,6 +15,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::features::{ExtrudeExtent, FeatureDefinition, FeatureOperation, LinearTermination};
 use cadmpeg_ir::report::export::WritePath;
+use cadmpeg_measure::test_support::round_trip::{assert_measures_agree, measures_decide};
 use cadmpeg_test_support::golden::{
     elide_local_digests, snapshot_text, snapshots_agree, Branch, Harness,
 };
@@ -153,6 +154,7 @@ fn fixtures_replay_verbatim() {
 #[test]
 fn fixtures_survive_the_semantic_write_path() {
     let mut written_count = 0usize;
+    let mut measured_count = 0usize;
     for (name, bytes) in harness().fixture_inputs() {
         if frozen_invalid_cache_fixture(&name, &bytes) {
             continue;
@@ -171,6 +173,7 @@ fn fixtures_survive_the_semantic_write_path() {
             continue;
         }
         let expected = neutral_document(&bytes);
+        let source = bytes.clone();
         semantic_roundtrip(&SldprtCodec, &name, &bytes, |outcome| match outcome {
             SemanticOutcome::Written { report, bytes, .. } => {
                 written_count += 1;
@@ -180,6 +183,9 @@ fn fixtures_survive_the_semantic_write_path() {
                 );
                 if let Err(mismatch) = snapshots_agree(&expected, &neutral_document(bytes)) {
                     panic!("fixture `{name}`: the semantically written container decodes to a different document: {mismatch}");
+                }
+                if written_measures_agree(&name, &source, bytes) {
+                    measured_count += 1;
                 }
             }
             SemanticOutcome::Refused { error } => {
@@ -196,6 +202,31 @@ fn fixtures_survive_the_semantic_write_path() {
         "no fixture reached the semantic writer, so this test exercised nothing; \
          add a fixture the writer can write, or this lane is dead"
     );
+    assert!(
+        measured_count >= MEASURED_FIXTURE_FLOOR,
+        "fewer fixtures than the floor measure a comparable body through the semantic writer"
+    );
+}
+
+/// Written fixtures whose measures the semantic write lane compares, the
+/// authored cylinder, sphere and NURBS solids among them.
+const MEASURED_FIXTURE_FLOOR: usize = 16;
+
+/// Decodes `source` and `written` and, when the source measures a
+/// comparable body, asserts that both measure the same. Returns whether the
+/// source measures a comparable body.
+fn written_measures_agree(name: &str, source: &[u8], written: &[u8]) -> bool {
+    let decode = |bytes: &[u8]| {
+        SldprtCodec
+            .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
+            .unwrap_or_else(|_| panic!("fixture `{name}`: a container does not decode"))
+    };
+    let before = decode(source);
+    if !measures_decide(name, before.ir()) {
+        return false;
+    }
+    assert_measures_agree(name, before.ir(), decode(written).ir());
+    true
 }
 
 /// How far the mutation lane moves an extrusion depth, in millimetres.
