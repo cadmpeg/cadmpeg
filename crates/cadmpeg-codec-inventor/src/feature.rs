@@ -40,6 +40,7 @@ pub(crate) mod history;
 mod hole;
 pub(crate) mod loft_sweep;
 pub(crate) mod mirror;
+pub(crate) mod motion;
 pub(crate) mod profile;
 pub(crate) mod revolve;
 pub(crate) mod sheet_metal;
@@ -302,6 +303,7 @@ pub(crate) enum PmDcFeatureEnumFamily {
     Chamfer,
     Auxiliary,
     PlateSide,
+    Motion,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -339,6 +341,8 @@ pub(crate) enum PmDcFeatureReferenceFamily {
     FaceCollection,
     LoftSections,
     SheetMetalAttachmentSelections,
+    TransformList,
+    BodySelection,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -957,7 +961,9 @@ fn feature_property_parser(type_id: [u8; 16]) -> Option<PropertyParser> {
         TERMINATION_FLAG_TYPE => Some(parse_termination_flag),
         WORK_AXIS_TYPE => Some(parse_work_axis),
         revolve::CONTROL_TYPE => Some(parse_auxiliary_enum),
-        _ => sheet_metal::property_parser(type_id).or_else(|| split::property_parser(type_id)),
+        _ => sheet_metal::property_parser(type_id)
+            .or_else(|| split::property_parser(type_id))
+            .or_else(|| motion::parser(type_id)),
     }
 }
 
@@ -1708,6 +1714,7 @@ pub(crate) enum FeatureFamily {
     Sweep,
     Loft,
     Revolve,
+    Motion,
 }
 
 impl FeatureFamily {
@@ -1726,6 +1733,11 @@ impl FeatureFamily {
             Self::Sweep => &[loft_sweep::slots::SWEEP_CLASS],
             Self::Loft => &[loft_sweep::slots::LOFT_CLASS],
             Self::Revolve => &[REVOLVE_CLASS_ID],
+            Self::Motion => &[
+                motion::MOVE_CLASS_ID,
+                motion::MOVE_BODY_CLASS_ID,
+                motion::ROTATE_CLASS_ID,
+            ],
         }
     }
 
@@ -1749,6 +1761,8 @@ impl FeatureFamily {
             Self::Sweep => 15,
             Self::Loft => 13,
             Self::Revolve => 17,
+            Self::Motion if source.properties.references().len() == 13 => 8,
+            Self::Motion => 0,
         }
     }
 
@@ -1766,6 +1780,7 @@ impl FeatureFamily {
             Self::Sweep,
             Self::Loft,
             Self::Revolve,
+            Self::Motion,
         ]
         .into_iter()
         .find(|family| family.class_ids().contains(&class_id))
@@ -1814,6 +1829,11 @@ impl FeatureFamily {
             ) | (
                 Self::Revolve,
                 FeatureDefinition::Operation(FeatureOperation::Revolve { .. })
+            ) | (
+                Self::Motion,
+                FeatureDefinition::Operation(
+                    FeatureOperation::MoveBody { .. } | FeatureOperation::MoveFace { .. }
+                )
             )
         )
     }
@@ -1839,6 +1859,9 @@ impl FeatureFamily {
                 Some(Self::Loft)
             }
             FeatureDefinition::Operation(FeatureOperation::Revolve { .. }) => Some(Self::Revolve),
+            FeatureDefinition::Operation(
+                FeatureOperation::MoveBody { .. } | FeatureOperation::MoveFace { .. },
+            ) => Some(Self::Motion),
             _ => None,
         }
     }
@@ -2118,6 +2141,7 @@ pub(crate) fn project(
                 FeatureFamily::Revolve => {
                     project_revolve(ctx, feature, label, &index, &mut revolve_losses)
                 }
+                FeatureFamily::Motion => motion::project(ctx, feature, label, &index),
             }
             .map(|result| result.map(|(feature, result)| (feature, Some(result))))
             .transpose()?,
@@ -2525,6 +2549,13 @@ fn native_kind(class_id: Option<ClassId>) -> cadmpeg_ir::features::NativeFeature
             FeatureFamily::Sweep => NativeFeatureKind::Other("Sweep".into()),
             FeatureFamily::Loft => NativeFeatureKind::Other("Loft".into()),
             FeatureFamily::Revolve => NativeFeatureKind::Other("Revolve".into()),
+            FeatureFamily::Motion => NativeFeatureKind::Other(
+                NATIVE_CLASSES
+                    .iter()
+                    .find(|(bytes, _)| *bytes == class_id.0.into_inner())
+                    .map_or("MoveBody", |(_, name)| *name)
+                    .into(),
+            ),
         };
     }
     if let Some(family) = loft_sweep::slots::Family::from_class_id(class_id) {
@@ -3972,7 +4003,8 @@ fn enum16(
         PmDcFeatureEnumFamily::Hole => 3,
         PmDcFeatureEnumFamily::Fillet
         | PmDcFeatureEnumFamily::Chamfer
-        | PmDcFeatureEnumFamily::PlateSide => 2,
+        | PmDcFeatureEnumFamily::PlateSide
+        | PmDcFeatureEnumFamily::Motion => 2,
         PmDcFeatureEnumFamily::Auxiliary => return None,
     };
     match property.kind {

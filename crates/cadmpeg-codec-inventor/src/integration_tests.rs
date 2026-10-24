@@ -2,6 +2,7 @@
 
 mod base;
 mod mirror;
+mod motion;
 
 use cadmpeg_container::compound::CompoundSnapshot;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};

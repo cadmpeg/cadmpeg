@@ -420,17 +420,18 @@ Feature property records use the same 22-byte content header. The following enum
 - `297d6392d1113cb9000831bd0663dc09`: extent;
 - `117ccd43d2119658a00021803603c8c9`: hole form;
 - `2788f278c54dd7be4313b3986039b52e`: fillet form;
-- `7339fdce7a4e4011bee343897908ba92`: auxiliary feature enumeration.
+- `7339fdce7a4e4011bee343897908ba92`: auxiliary feature enumeration;
+- `fb7982ef3347f24f718133968efffa3f`: face-motion mode.
 
 Types `1990e1b8d311467bc000e39545df724f` and `1790e1b8d311467bc000e39545df724f` use the same enumeration grammar. Their type values are 3 and 4 respectively. Both use the versioned content header of section 12, including its stamps.
 
 Type `3200aa7dd2112b836000f3a89dccefb0` stores the chamfer form. It adds the same `type_value:i16` and `value:u16` fields, followed by a zero u32 terminal value.
 
-The part-operation, hole-form, fillet-form, and chamfer-form records use type values 5, 3, 2, and 2 respectively. Extent records use type value 11 through segment major version 21 and type value 12 from segment major version 22.
+The part-operation, hole-form, fillet-form, and chamfer-form records use type values 5, 3, 2, and 2 respectively. Extent records use type value 11 through segment major version 21 and type value 12 from segment major version 22. The face-motion mode uses type value 2.
 
 Type `284d8790d011f8d10008cabc0663dc09` adds a counted UTF-16LE name, `name_value:u32`, and a Boolean byte. The Boolean byte is 0 or 1. Types `91739422d11107cf000835bd0663dc09`, `71f23ed8d2115094a00049803603c8c9`, `ae70680ed14a1e86d76248b03c2a96e1`, and `dae9481bd211dc2c00083eab1b14dc09` add one type-2 reference list. They identify a boundary patch, feature dimensions, an object collection, and constant-radius fillet edge sets respectively.
 
-Type `f1b2bc24d01121dd0008d0bc0663dc09` stores a face collection. After the content header it stores one type-2 reference list and ends. Each non-null member selects a record in the same PmDc segment.
+Type `f1b2bc24d01121dd0008d0bc0663dc09` stores a face collection. After the content header it stores one type-2 reference list and ends. Each member names a distinct face-selection item of type `ccb59f50d1114f6b0008a1ba32a3dc09` in the same PmDc segment. The face collection and its items define a native selection independent of the current kernel topology.
 
 Type `ccb59f50d1114f6b0008a1ba32a3dc09` stores a face item. After the content header it stores a type-2 `u32` index-reference list. An empty list selects no face and ends the record without a trailer. A nonempty list is followed by `terminal_value:i32 = -1`, then the record ends. The index values are native topology selectors, not one-based PmDc record references.
 
@@ -581,7 +582,15 @@ Slot 6 supplies the thickness length in internal centimetres. Slot 12 supplies a
 
 Feature-label class identifier `12963cb8d1118a2860008bb801f31bb0` identifies a Shell operation. Slot 1 identifies the removed-face collection. An empty collection removes no face. Collection members are non-null and distinct by record index. Slot 2 identifies a selection list. Slot 3 identifies the wall-thickness length parameter, with units as defined in section 11. Slot 4 stores a reference. Slot 9 identifies the result object collection, whose members identify the output bodies.
 
-A result object collection contains one or more surface-body references. This ordered surface-body list is the feature's native result-body identity.
+A result object collection contains one or more distinct surface-body references in the same PmDc segment. This ordered surface-body list is the feature's native result-body identity.
+
+Feature-label class identifiers `dea6a68f4c4b529188ca31b5630198c8`, `e99f832b7a4295a1d9763383bea17cce`, and `e6da3f26924b5dab8e1bc5a93fead7de` identify Move, MoveBody, and Rotate respectively. The class identifier, not the display name, identifies the operation.
+
+Each class has a three-slot body-motion form. Slot 0 is an object collection of the selected surface-body wrappers. The collection members are distinct wrappers in the same PmDc segment. Slot 1 is a transform list of type `29fe0008d511dd3510003697ab9f0ab5`. Slot 2 contains feature dimensions. A transform-list record contains the versioned content header and one type-2 reference list, then ends. In the single-transform form the list has one member, a transform of type `184d8790d011f8d10008cabc0663dc09`. It applies to every selected body. The matrix maps a model-space point `p` to `R*p + t`, with column vectors. The linear part is a proper orthogonal rotation; the last row is `0, 0, 0, 1`. Translation values use internal centimetres. The selected bodies keep their identities; this form creates no copies.
+
+Type `83aadad54f4375dacd1003b260a8a422` is an ordered body selection. It contains the versioned content header and one type-2 reference list, then ends. Each non-null member names a distinct surface-body wrapper in the same PmDc segment. A null member selects no body. The wrapper identity is the persistent body selection.
+
+Move also has a 13-slot face-motion form. Slot 0 is a face collection of type `f1b2bc24d01121dd0008d0bc0663dc09`. Slot 1 is the face-motion mode. Slot 8 is the selection of affected bodies. Slot 9 contains feature dimensions. Slot 11 is a Boolean. Slot 12 is the model-space motion transform. Face-motion mode 2 with null slots 2 through 7 and 10, a true slot-11 Boolean, and an identity linear part translates the selected faces by the transform translation. The body identities in slot 8 persist after this motion.
 
 Types `44326720d211c51d60002aab01f31bb0` and `b5a9d9fad211053360002cab01f31bb0` store rectangular-pattern and mirror feature records. Both start with the generic 30-byte feature prefix through `outline_value`, followed by a type-2 property-reference list, `value:u32`, a type-2 participant-reference list, six property references, and `control:u8`.
 
