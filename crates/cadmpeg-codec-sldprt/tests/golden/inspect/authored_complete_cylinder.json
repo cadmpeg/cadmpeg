@@ -7,19 +7,19 @@
         "offset": "12",
         "parasolid_description": "partition body",
         "parasolid_schema": "SCH_SW_33103_11000",
-        "sha256": "819255cf670381be33a1fbc58dfcd9267999592bc642e71f5d9dec715e3fc5e3",
+        "sha256": "bb9460753b10063053b6aa30b29f42a268c28bc7e6c9093935790579ba3f8cb6",
         "type_id": "0x00000020"
       },
       "compression": "deflate",
       "expanded": 800,
       "name": "Contents/Config-0-Partition",
       "role": "block",
-      "stored": 295
+      "stored": 284
     },
     {
       "attributes": {
         "family": "unknown",
-        "offset": "364",
+        "offset": "353",
         "sha256": "a43790da2e3406f2bae4d13a1da4fc2358d0cba873bc096aed123d9ec60b1e64",
         "type_id": "0x00000042"
       },
@@ -32,7 +32,7 @@
     {
       "attributes": {
         "family": "unknown",
-        "offset": "484",
+        "offset": "473",
         "sha256": "a607e8d2c83c2f7280e62dfab609d47a3f5b4b72f22062db57ce0dcbbfc6f870",
         "type_id": "0x00000043"
       },
@@ -44,7 +44,7 @@
     },
     {
       "attributes": {
-        "offset": "686",
+        "offset": "675",
         "type_id": "0x00000020"
       },
       "compression": "none",
@@ -52,12 +52,12 @@
       "role": "directory-entry",
       "size": {
         "form": "payload_only",
-        "payload": 295
+        "payload": 284
       }
     },
     {
       "attributes": {
-        "offset": "759",
+        "offset": "748",
         "type_id": "0x00000042"
       },
       "compression": "none",
@@ -70,7 +70,7 @@
     },
     {
       "attributes": {
-        "offset": "822",
+        "offset": "811",
         "type_id": "0x00000043"
       },
       "compression": "none",

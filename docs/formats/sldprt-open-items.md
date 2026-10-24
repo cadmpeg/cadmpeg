@@ -90,7 +90,17 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Known.** `sldprt.md` §7.1 "The marker of a compact line, circle, or ellipse gives the direction" defines the marker rule. A circle edge between a cylinder face and a planar face can have marker `0x2b` while its display tessellation runs along the curve parameter. The specification defines no second field that overrides the marker.
 
+**Conflict.** The decoder applies the marker rule to that edge and reports no loss, so the neutral edge trims the circle through the complementary arc of the tessellated arc.
+
 **Need.** We must find the overriding field, or the defect in the marker rule, so that this edge does not trim the circle through the complementary arc.
+
+### GC-12. Bounded-curve wrapper ranges that miss the edge vertices
+
+**Question.** Which direction does an edge on a bounded-curve wrapper have when the wrapper range endpoints match the edge vertices in neither order?
+
+**Known.** `sldprt.md` §7.1 "The marker of a compact line, circle, or ellipse gives the direction" states that a bounded-curve wrapper range sets the edge direction instead of the marker. The range start and end points match the edge vertices in order or in reverse order and so give the direction. The specification defines no direction for a range whose endpoints match the vertices in neither order. The wrapper carries its own orientation marker byte.
+
+**Need.** We must define whether the wrapper marker, the basis curve marker, or another field sets the direction of such an edge.
 
 ## 3. Container metadata
 

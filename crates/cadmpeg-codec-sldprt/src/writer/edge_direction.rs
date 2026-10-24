@@ -72,3 +72,6 @@ pub(super) fn reversed_compact_edges(ir: &CadIr) -> Result<ReversedCompactEdges,
         .collect();
     Ok(ReversedCompactEdges { curves, edges })
 }
+
+#[cfg(test)]
+mod tests;

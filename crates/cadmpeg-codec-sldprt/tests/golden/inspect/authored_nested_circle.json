@@ -22,19 +22,19 @@
         "offset": "348",
         "parasolid_description": "feature input circular sketch",
         "parasolid_schema": "SCH_SW_33103_11000",
-        "sha256": "cffb6e2b8a43dcd5f2ebe24fe809dbc4073343d58aaa760d097b76b347f14fa6",
+        "sha256": "2faaed193afbceb089b425c4becc41697d752ca07e23a926ac18d36f74851d12",
         "type_id": "0x00000045"
       },
       "compression": "deflate",
       "expanded": 884,
       "name": "Contents/Config-0-ResolvedFeatures",
       "role": "block",
-      "stored": 394
+      "stored": 397
     },
     {
       "attributes": {
         "family": "unknown",
-        "offset": "806",
+        "offset": "809",
         "sha256": "a43790da2e3406f2bae4d13a1da4fc2358d0cba873bc096aed123d9ec60b1e64",
         "type_id": "0x00000042"
       },
@@ -47,7 +47,7 @@
     {
       "attributes": {
         "family": "unknown",
-        "offset": "926",
+        "offset": "929",
         "sha256": "a607e8d2c83c2f7280e62dfab609d47a3f5b4b72f22062db57ce0dcbbfc6f870",
         "type_id": "0x00000043"
       },
@@ -59,7 +59,7 @@
     },
     {
       "attributes": {
-        "offset": "1128",
+        "offset": "1131",
         "type_id": "0x00000020"
       },
       "compression": "none",
@@ -72,7 +72,7 @@
     },
     {
       "attributes": {
-        "offset": "1201",
+        "offset": "1204",
         "type_id": "0x00000045"
       },
       "compression": "none",
@@ -80,12 +80,12 @@
       "role": "directory-entry",
       "size": {
         "form": "payload_only",
-        "payload": 394
+        "payload": 397
       }
     },
     {
       "attributes": {
-        "offset": "1281",
+        "offset": "1284",
         "type_id": "0x00000042"
       },
       "compression": "none",
@@ -98,7 +98,7 @@
     },
     {
       "attributes": {
-        "offset": "1344",
+        "offset": "1347",
         "type_id": "0x00000043"
       },
       "compression": "none",
