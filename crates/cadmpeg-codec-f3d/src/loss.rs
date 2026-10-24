@@ -208,6 +208,10 @@ pub(crate) enum F3dLossCode {
     MeshSurfaceSentinel,
     /// Edges reference a procedural 3D curve with no decodable B-spline cache.
     ProceduralCurveUndecoded,
+    /// Vertex tolerance is widened to cover exact cache endpoints.
+    VertexToleranceWidened,
+    /// A cache-first spring support pcurve has no admitted endpoint relation.
+    SpringSupportPcurveUnresolved,
     /// Coedges carry a UV pcurve reference with no decodable 2D carrier.
     PcurveUndecoded,
     /// Rolling-ball blend definitions resolved only one of two native supports.
@@ -356,6 +360,8 @@ impl F3dLossCode {
         Self::SurfaceShapeNotDecoded,
         Self::MeshSurfaceSentinel,
         Self::ProceduralCurveUndecoded,
+        Self::VertexToleranceWidened,
+        Self::SpringSupportPcurveUnresolved,
         Self::PcurveUndecoded,
         Self::BlendSupportPartial,
         Self::SolvedRecordUntyped,
@@ -482,6 +488,8 @@ impl F3dLossCode {
             Self::SurfaceShapeNotDecoded => "geometry.surface-shape-not-decoded",
             Self::MeshSurfaceSentinel => "geometry.mesh-surface-sentinel",
             Self::ProceduralCurveUndecoded => "geometry.procedural-curve-undecoded",
+            Self::VertexToleranceWidened => "geometry.vertex-tolerance-widened",
+            Self::SpringSupportPcurveUnresolved => "geometry.spring-support-pcurve-unresolved",
             Self::PcurveUndecoded => "geometry.pcurve-undecoded",
             Self::BlendSupportPartial => "geometry.blend-support-partial",
             Self::SolvedRecordUntyped => "geometry.solved-record-untyped",
@@ -613,6 +621,8 @@ impl F3dLossCode {
             | Self::FaceSurfaceReferenceDangling
             | Self::SurfaceShapeNotDecoded
             | Self::ProceduralCurveUndecoded
+            | Self::VertexToleranceWidened
+            | Self::SpringSupportPcurveUnresolved
             | Self::PcurveUndecoded
             | Self::BlendSupportPartial
             | Self::SolvedRecordUntyped
@@ -736,9 +746,10 @@ impl F3dLossCode {
             | Self::NurbsSurfaceCarrier
             | Self::NurbsCurveCarrier
             | Self::MeshSurfaceSentinel => LossTaxonomy::CarrierSummary,
-            Self::ProceduralCurveUndecoded | Self::BlendSupportPartial => {
-                LossTaxonomy::ProceduralReduced
-            }
+            Self::VertexToleranceWidened => LossTaxonomy::DecodeDiagnostic,
+            Self::ProceduralCurveUndecoded
+            | Self::SpringSupportPcurveUnresolved
+            | Self::BlendSupportPartial => LossTaxonomy::ProceduralReduced,
             Self::MaterialNotTransferred => LossTaxonomy::MaterialNotTransferred,
             Self::TopologyNotTransferred => LossTaxonomy::TopologyNotTransferred,
             Self::MissingGeometryStream => LossTaxonomy::MissingGeometryStream,
@@ -890,6 +901,8 @@ mod tests {
                 "geometry.surface-shape-not-decoded",
                 "geometry.mesh-surface-sentinel",
                 "geometry.procedural-curve-undecoded",
+                "geometry.vertex-tolerance-widened",
+                "geometry.spring-support-pcurve-unresolved",
                 "geometry.pcurve-undecoded",
                 "geometry.blend-support-partial",
                 "geometry.solved-record-untyped",
