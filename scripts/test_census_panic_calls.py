@@ -217,6 +217,29 @@ fn production() { value.expect("production"); }
         self.assertIn(f"{crate}/src/lib.rs 1", output)
         self.assertIn(f"check excludes {crate}:", output)
 
+    def test_a_declared_test_support_module_is_excluded_but_its_crate_is_not(self) -> None:
+        self.write("lib.rs", "fn f() {}\n")
+        module = next(iter(census.TEST_SUPPORT_MODULES))
+        crate_root = self.root / module.split("/src/")[0] / "src"
+        support = self.root / module / "round_trip.rs"
+        support.parent.mkdir(parents=True)
+        (crate_root / "lib.rs").write_text(
+            '#[cfg(any(test, feature = "test-support"))]\npub mod test_support;\n'
+        )
+        (crate_root / "test_support.rs").write_text("pub mod round_trip;\n")
+        support.write_text('pub fn assert_it() { panic!("the test\'s own assertion"); }\n')
+        result = io.StringIO()
+        with redirect_stdout(result):
+            self.assertEqual(census.census_panic_calls(check=True), 0)
+        self.assertIn(f"{module}/round_trip.rs 1", result.getvalue())
+        self.assertIn(f"check excludes {module}:", result.getvalue())
+        (crate_root / "lib.rs").write_text(
+            '#[cfg(any(test, feature = "test-support"))]\npub mod test_support;\n'
+            'fn g() { panic!("a production refusal"); }\n'
+        )
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(census.census_panic_calls(check=True), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
