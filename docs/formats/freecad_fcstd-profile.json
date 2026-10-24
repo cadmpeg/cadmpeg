@@ -14,7 +14,7 @@
     {
       "filename": "application_payloads.FCStd",
       "sha256": "410af2e9ed55011039ee065b20e7614037482d382e75e173d78c9a008522de75",
-      "canonical_cadir_sha256": "bd3e305f1c847bf2068e3eb5de8592b48a8d3d98f30afbea00eafb1a855ed8df",
+      "canonical_cadir_sha256": "ba0fe244343d378d30748b28fee97d24df6add81d98b37250de9a1df04e17092",
       "deterministic": true,
       "blocking_losses": 3,
       "neutral_errors": 0,
@@ -23,13 +23,13 @@
       "write_deterministic": true,
       "semantic_round_trip": false,
       "typed_edit_round_trip": false,
-      "side_entries_preserved": false,
+      "side_entries_preserved": true,
       "entity_counts": {
         "appearance_bindings": 0,
         "appearances": 0,
         "assembly_joints": 0,
         "assets": 0,
-        "attributes": 46,
+        "attributes": 42,
         "bodies": 0,
         "coedges": 0,
         "configurations": 0,
@@ -39,10 +39,11 @@
         "faces": 0,
         "feature_input_topologies": 0,
         "feature_result_topologies": 0,
-        "features": 0,
+        "features": 3,
         "loops": 0,
         "native.fcstd.applications": 7,
         "native.fcstd.attachments": 3,
+        "native.fcstd.design_census": 3,
         "native.fcstd.document": 1,
         "native.fcstd.entries": 7,
         "native.fcstd.extensions": 2,
@@ -80,7 +81,7 @@
     {
       "filename": "binary_exact_shape.FCStd",
       "sha256": "86ecddcee6d677370343c2f5a9682e57ca58db5808775b0e8812bdbe844dbe1e",
-      "canonical_cadir_sha256": "b05170c72971d183257c9eef804d8ab2f9f576940ec5c100fd1a0d46319b853b",
+      "canonical_cadir_sha256": "8ef69be5b76af0838bb2d57fde341a21855f91cec69a8cfdb311a1d4ced3bf26",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -89,7 +90,7 @@
       "write_deterministic": true,
       "semantic_round_trip": false,
       "typed_edit_round_trip": false,
-      "side_entries_preserved": false,
+      "side_entries_preserved": true,
       "entity_counts": {
         "appearance_bindings": 0,
         "appearances": 0,
@@ -147,7 +148,7 @@
     {
       "filename": "core_design_product.FCStd",
       "sha256": "69c6aa00699cb8d8bb4014b48eb7c419352c49f360cffb45075f31e152f989ba",
-      "canonical_cadir_sha256": "bd3d7a9914b047576fa17597e598dac739dbbf30a46a96838cd6f3e3775568ab",
+      "canonical_cadir_sha256": "5fa33ad12ce5f917c9928a8d276418c013326dbea995fe5890e7ea469beda504",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -156,7 +157,7 @@
       "write_deterministic": true,
       "semantic_round_trip": false,
       "typed_edit_round_trip": false,
-      "side_entries_preserved": false,
+      "side_entries_preserved": true,
       "entity_counts": {
         "appearance_bindings": 0,
         "appearances": 0,
@@ -218,7 +219,7 @@
     {
       "filename": "core_operations.FCStd",
       "sha256": "54cc992ca6278fdd8e38b3d01f37c616e5dfdc38ca7a058fe838599b709ed228",
-      "canonical_cadir_sha256": "e32d69d8c107725894174e1df9ef0329d0b5b8d48ea83821ca8284b94056c055",
+      "canonical_cadir_sha256": "5f3c08cde32d422fdef22e3d429ce413414023b07bfc69012e0c511f7b24bd52",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -227,7 +228,7 @@
       "write_deterministic": true,
       "semantic_round_trip": false,
       "typed_edit_round_trip": false,
-      "side_entries_preserved": false,
+      "side_entries_preserved": true,
       "entity_counts": {
         "appearance_bindings": 0,
         "appearances": 0,
@@ -259,7 +260,7 @@
         "native.fcstd.string_tables": 1,
         "occurrences": 0,
         "parameters": 27,
-        "pcurves": 409,
+        "pcurves": 411,
         "pmi": 0,
         "points": 191,
         "presentation_documents": 0,
@@ -288,7 +289,7 @@
     {
       "filename": "design_history.FCStd",
       "sha256": "c71da85ee80979f3f210690125da00406b2d49682be765100fc1cfb1d98ea0d7",
-      "canonical_cadir_sha256": "8fd00c6e2f52fc010a62311625340199e267e01fef1d0b784b7fb4626107d146",
+      "canonical_cadir_sha256": "d961399b1bf9100f2eb7303c604b0e592b2c84c34ec0292f21e1fd295793ea7f",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -297,7 +298,7 @@
       "write_deterministic": true,
       "semantic_round_trip": false,
       "typed_edit_round_trip": false,
-      "side_entries_preserved": false,
+      "side_entries_preserved": true,
       "entity_counts": {
         "appearance_bindings": 0,
         "appearances": 0,
@@ -358,7 +359,7 @@
     {
       "filename": "external_component.FCStd",
       "sha256": "e1a563bd89e46c00237b65ac543482aaa361c833deef759164143687d0de557b",
-      "canonical_cadir_sha256": "a2f2e2c669da457413dea7f62a24ba6ad0bcc8f92ea927354b0c278d803dded6",
+      "canonical_cadir_sha256": "5544d9787d9264ddf4d6f0e3a286e54dae2855afe60a5e887212dd60284c9c8d",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -367,7 +368,7 @@
       "write_deterministic": true,
       "semantic_round_trip": false,
       "typed_edit_round_trip": false,
-      "side_entries_preserved": false,
+      "side_entries_preserved": true,
       "entity_counts": {
         "appearance_bindings": 0,
         "appearances": 0,
@@ -425,7 +426,7 @@
     {
       "filename": "geometry_topology.FCStd",
       "sha256": "d7c0a6325cd4f68413f5ba9b0e51cd1396d4dc32a5f08dedc3ed5b00fc12cb59",
-      "canonical_cadir_sha256": "63a24f5f3e787cf6305fd63fd67c4eb84fb3f483149119144d5835cef7141fa6",
+      "canonical_cadir_sha256": "80e2e9e64382549482d3178cc0ad1678d442a651e2bf6928f3a17415da1857e7",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -434,7 +435,7 @@
       "write_deterministic": true,
       "semantic_round_trip": false,
       "typed_edit_round_trip": false,
-      "side_entries_preserved": false,
+      "side_entries_preserved": true,
       "entity_counts": {
         "appearance_bindings": 0,
         "appearances": 0,
@@ -493,7 +494,7 @@
     {
       "filename": "gui_appearance.FCStd",
       "sha256": "393db41b6acd1d3c890dc07085017fa6f07e91f96d59e7a244e2c834075ffcc2",
-      "canonical_cadir_sha256": "714a1b85fa6965b567c85a7be1b3dcfcd009c35375aecf0e1376a45a121dd902",
+      "canonical_cadir_sha256": "599009cbc5549f857cf67ea9f1d73cac91b3aa807497a568ced64e8ee1d82f01",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -502,7 +503,7 @@
       "write_deterministic": true,
       "semantic_round_trip": false,
       "typed_edit_round_trip": false,
-      "side_entries_preserved": false,
+      "side_entries_preserved": true,
       "entity_counts": {
         "appearance_bindings": 33,
         "appearances": 12,
@@ -564,7 +565,7 @@
     {
       "filename": "product_assembly.FCStd",
       "sha256": "b8e0e92c0155b4182565493deace3e30b42fe1e45e8424ae4fd1d9bc5ddd8340",
-      "canonical_cadir_sha256": "80065a694b9fcd2b2c714cb7d2b1f45af7fb7cdaae7e933590127d1b05859563",
+      "canonical_cadir_sha256": "cec0a8521881a28777eb81c91172ab357b48d50b4540163f750ff5ee0b6948a1",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -573,13 +574,13 @@
       "write_deterministic": true,
       "semantic_round_trip": false,
       "typed_edit_round_trip": false,
-      "side_entries_preserved": false,
+      "side_entries_preserved": true,
       "entity_counts": {
         "appearance_bindings": 0,
         "appearances": 0,
         "assembly_joints": 2,
         "assets": 0,
-        "attributes": 170,
+        "attributes": 174,
         "bodies": 2,
         "coedges": 30,
         "configurations": 0,
@@ -634,7 +635,7 @@
     {
       "filename": "sketch_conics.FCStd",
       "sha256": "517b5fd0c7ea35aea9d43a22dea1ffd0a50200c54c2c61aea856a0ca5d5b9751",
-      "canonical_cadir_sha256": "7275d08de328bc7d5dea1ac2a150d4a5a03975ba8cc1d44f83bdc21431873a2e",
+      "canonical_cadir_sha256": "55a2d70a2b850003c252ed8a37a3a340375cf1287bada4fe762c06dde4346715",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -643,7 +644,7 @@
       "write_deterministic": true,
       "semantic_round_trip": false,
       "typed_edit_round_trip": false,
-      "side_entries_preserved": false,
+      "side_entries_preserved": true,
       "entity_counts": {
         "appearance_bindings": 0,
         "appearances": 0,
@@ -704,7 +705,7 @@
     {
       "filename": "sketch_constraints.FCStd",
       "sha256": "35bbba0d7529415176cfbbbdc1fabc265ac3748f5fc38058887ac254e44d074f",
-      "canonical_cadir_sha256": "ae855b2f8c29c68b1510b7b9663acb77bfbf06a38a448a848b1107d7c6bd1ae0",
+      "canonical_cadir_sha256": "b1c75245deb31235cbd2d084b49802f5acf6fc91bed2741fb9e682b53dc6f1d4",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -713,7 +714,7 @@
       "write_deterministic": true,
       "semantic_round_trip": false,
       "typed_edit_round_trip": false,
-      "side_entries_preserved": false,
+      "side_entries_preserved": true,
       "entity_counts": {
         "appearance_bindings": 0,
         "appearances": 0,
@@ -774,7 +775,7 @@
     {
       "filename": "techdraw_annotations.FCStd",
       "sha256": "6bc4c0e639b8055640c0bb02e2828a63184c787d42bda85d661707de3db84317",
-      "canonical_cadir_sha256": "d4935da986b84894f50829d39faf1afa014e1de8aab6d3c2f3c7ecb7481043f8",
+      "canonical_cadir_sha256": "67dcee7905035628cb5742d8368493bf492cbbc6d8f6be5a015db730ca68ee40",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -783,7 +784,7 @@
       "write_deterministic": true,
       "semantic_round_trip": false,
       "typed_edit_round_trip": false,
-      "side_entries_preserved": false,
+      "side_entries_preserved": true,
       "entity_counts": {
         "appearance_bindings": 0,
         "appearances": 0,
@@ -892,6 +893,7 @@
       "fillet",
       "loft",
       "mirror_shape",
+      "native",
       "post_process",
       "primitive",
       "revolve",
@@ -955,7 +957,7 @@
       "draft:operation.anchor.pull.direction.y=0.0",
       "draft:operation.anchor.pull.direction.z=1.0",
       "draft:operation.angle.kind=parameter",
-      "draft:operation.faces.kind=native",
+      "draft:operation.faces.kind=resolved",
       "draft:operation.outward=true",
       "extrude:direction.kind=explicit",
       "extrude:direction.source.kind=custom",
@@ -1015,6 +1017,9 @@
       "mirror_shape:plane_origin.y=0.0",
       "mirror_shape:plane_origin.z=0.0",
       "mirror_shape:source.kind=native",
+      "native:kind=Fem::ConstraintTemperature",
+      "native:kind=Fem::FemAnalysis",
+      "native:kind=Path::Feature",
       "pattern:operation.kind=feature",
       "pattern:operation.pattern.count.kind=parameter",
       "pattern:operation.pattern.direction.x=-0.0",
@@ -1355,7 +1360,7 @@
         {
           "id": "design_records",
           "passed": true,
-          "observed": "features=44, sketches=13, constraints=41, parameters=68",
+          "observed": "features=47, sketches=13, constraints=41, parameters=68",
           "required": "nonempty feature, sketch, constraint, and parameter graphs"
         },
         {
@@ -1391,14 +1396,14 @@
         {
           "id": "core_operation_families",
           "passed": true,
-          "observed": "{\"chamfer\", \"combine\", \"datum_axis\", \"datum_coordinate_system\", \"datum_plane\", \"datum_point\", \"draft\", \"extrude\", \"fillet\", \"hole\", \"loft\", \"mirror_shape\", \"pattern\", \"post_process\", \"primitive\", \"revolve\", \"shell\", \"sketch\", \"stored_geometry\", \"sweep\", \"tree_node\"}",
+          "observed": "{\"chamfer\", \"combine\", \"datum_axis\", \"datum_coordinate_system\", \"datum_plane\", \"datum_point\", \"draft\", \"extrude\", \"fillet\", \"hole\", \"loft\", \"mirror_shape\", \"native\", \"pattern\", \"post_process\", \"primitive\", \"revolve\", \"shell\", \"sketch\", \"stored_geometry\", \"sweep\", \"tree_node\"}",
           "required": "{\"chamfer\", \"combine\", \"datum_axis\", \"datum_coordinate_system\", \"datum_plane\", \"datum_point\", \"draft\", \"extrude\", \"fillet\", \"hole\", \"loft\", \"mirror_shape\", \"pattern\", \"primitive\", \"revolve\", \"shell\", \"sketch\", \"sweep\"}"
         },
         {
           "id": "non_default_operation_branches",
           "passed": false,
-          "observed": "{\"chamfer:edges.kind=native\", \"chamfer:flip_direction=false\", \"chamfer:spec.first.kind=literal\", \"chamfer:spec.kind=two_distances\", \"chamfer:spec.second.kind=literal\", \"combine:operation.op=cut\", \"combine:operation.operands.target.kind=native\", \"combine:operation.operands.tools.kind=native\", \"datum_axis:direction.x=0.0\", \"datum_axis:direction.y=0.0\", \"datum_axis:direction.z=1.0\", \"datum_axis:origin.x=2.0\", \"datum_axis:origin.y=3.0\", \"datum_axis:origin.z=0.0\", \"datum_coordinate_system:frame.origin.x=7.0\", \"datum_coordinate_system:frame.origin.y=8.0\", \"datum_coordinate_system:frame.origin.z=9.0\", \"datum_coordinate_system:frame.x_axis.x=1.0\", \"datum_coordinate_system:frame.x_axis.y=0.0\", \"datum_coordinate_system:frame.x_axis.z=0.0\", \"datum_coordinate_system:frame.y_axis.x=0.0\", \"datum_coordinate_system:frame.y_axis.y=1.0\", \"datum_coordinate_system:frame.y_axis.z=0.0\", \"datum_coordinate_system:frame.z_axis.x=0.0\", \"datum_coordinate_system:frame.z_axis.y=0.0\", \"datum_coordinate_system:frame.z_axis.z=1.0\", \"datum_plane:frame.normal.x=0.0\", \"datum_plane:frame.normal.y=0.0\", \"datum_plane:frame.normal.z=1.0\", \"datum_plane:frame.origin.x=0.0\", \"datum_plane:frame.origin.y=0.0\", \"datum_plane:frame.origin.z=4.0\", \"datum_plane:frame.u_axis.x=1.0\", \"datum_plane:frame.u_axis.y=0.0\", \"datum_plane:frame.u_axis.z=0.0\", \"datum_point:position.x=4.0\", \"datum_point:position.y=5.0\", \"datum_point:position.z=6.0\", \"draft:operation.anchor.kind=neutral_plane\", \"draft:operation.anchor.plane.kind=native\", \"draft:operation.anchor.pull.direction.x=0.0\", \"draft:operation.anchor.pull.direction.y=0.0\", \"draft:operation.anchor.pull.direction.z=1.0\", \"draft:operation.angle.kind=parameter\", \"draft:operation.faces.kind=native\", \"draft:operation.outward=true\", \"extrude:direction.kind=explicit\", \"extrude:direction.source.kind=custom\", \"extrude:direction.vector.x=0.0\", \"extrude:direction.vector.y=0.0\", \"extrude:direction.vector.z=1.0\", \"extrude:extent.kind=symmetric\", \"extrude:extent.side.draft.kind=parameter\", \"extrude:extent.side.termination.kind=blind\", \"extrude:extent.side.termination.length.kind=literal\", \"extrude:op=new_body\", \"extrude:operation.direction.kind=explicit\", \"extrude:operation.direction.source.kind=profile_normal\", \"extrude:operation.direction.vector.x=0.0\", \"extrude:operation.direction.vector.y=0.0\", \"extrude:operation.direction.vector.z=1.0\", \"extrude:operation.extent.kind=one_sided\", \"extrude:operation.extent.side.termination.kind=blind\", \"extrude:operation.extent.side.termination.length.kind=parameter\", \"extrude:operation.op=cut\", \"extrude:operation.op=join\", \"extrude:operation.profile.kind=sketch\", \"extrude:operation.solid=true\", \"extrude:operation.start.kind=profile_plane\", \"extrude:profile.kind=native\", \"extrude:solid=true\", \"extrude:start.kind=profile_plane\", \"fillet:edges.kind=native\", \"fillet:operation.edges.kind=native\", \"fillet:operation.radius.kind=constant\", \"fillet:operation.radius.radius.kind=parameter\", \"fillet:radius.kind=constant\", \"fillet:radius.radius.kind=literal\", \"hole:operation.bottom.included_angle.kind=parameter\", \"hole:operation.bottom.kind=angled\", \"hole:operation.direction.x=0.0\", \"hole:operation.direction.y=0.0\", \"hole:operation.direction.z=1.0\", \"hole:operation.extent.kind=blind\", \"hole:operation.extent.length.kind=parameter\", \"hole:operation.profile.kind=sketch\", \"hole:operation.shape.construction.kind.angle.kind=parameter\", \"hole:operation.shape.construction.kind.diameter.kind=parameter\", \"hole:operation.shape.construction.kind.kind=countersink\", \"hole:operation.shape.diameter.kind=parameter\", \"loft:closed=false\", \"loft:guidance.kind=guides\", \"loft:kind=native\", \"loft:max_degree.kind=parameter\", \"loft:op=new_body\", \"loft:ruled=true\", \"loft:solid=true\", \"mirror_shape:plane_normal.x=1.0\", \"mirror_shape:plane_normal.y=0.0\", \"mirror_shape:plane_normal.z=0.0\", \"mirror_shape:plane_origin.x=0.0\", \"mirror_shape:plane_origin.y=0.0\", \"mirror_shape:plane_origin.z=0.0\", \"mirror_shape:source.kind=native\", \"pattern:operation.kind=feature\", \"pattern:operation.pattern.count.kind=parameter\", \"pattern:operation.pattern.direction.x=-0.0\", \"pattern:operation.pattern.direction.y=-0.0\", \"pattern:operation.pattern.direction.z=-1.0\", \"pattern:operation.pattern.distance.distance.kind=parameter\", \"pattern:operation.pattern.distance.kind=span\", \"pattern:operation.pattern.kind=linear\", \"post_process:fuzzy_tolerance.kind=kernel_default\", \"primitive:op=new_body\", \"primitive:operation.op=join\", \"primitive:operation.solid.height.kind=parameter\", \"primitive:operation.solid.kind=box\", \"primitive:operation.solid.length.kind=parameter\", \"primitive:operation.solid.width.kind=parameter\", \"primitive:solid.angle.kind=parameter\", \"primitive:solid.height.kind=parameter\", \"primitive:solid.kind=box\", \"primitive:solid.kind=cylinder\", \"primitive:solid.length.kind=parameter\", \"primitive:solid.radius.kind=radius\", \"primitive:solid.radius.value.kind=parameter\", \"primitive:solid.width.kind=parameter\", \"revolve:construction.axis.direction.x=0.0\", \"revolve:construction.axis.direction.y=1.0\", \"revolve:construction.axis.direction.z=0.0\", \"revolve:construction.axis.origin.x=0.0\", \"revolve:construction.axis.origin.y=0.0\", \"revolve:construction.axis.origin.z=0.0\", \"revolve:construction.extent.kind=symmetric\", \"revolve:construction.extent.termination.angle.kind=parameter\", \"revolve:construction.extent.termination.kind=angle\", \"revolve:construction.profile.kind=sketch\", \"revolve:construction.solid=false\", \"revolve:op=new_body\", \"shell:allow_self_intersections=false\", \"shell:join=arc\", \"shell:mode=skin\", \"shell:outward=true\", \"shell:removed_faces.kind=native\", \"shell:resolve_intersections=true\", \"shell:thickness.kind=parameter\", \"sweep:orientation.kind=frenet\", \"sweep:path.kind=native\", \"sweep:shape.mode=solid\", \"sweep:shape.op=new_body\", \"sweep:shape.section.kind=profile\", \"sweep:shape.section.value.kind=native\", \"sweep:transformation=constant\", \"sweep:transition=transformed\"}",
-          "required": "{\"chamfer:spec.kind=two_distances\", \"combine:operation.op=cut\", \"datum_axis:origin.x=2.0\", \"datum_coordinate_system:frame.origin.z=9.0\", \"datum_plane:frame.origin.z=4.0\", \"datum_point:position.z=6.0\", \"draft:operation.outward=true\", \"extrude:extent.kind=symmetric\", \"fillet:radius.kind=constant\", \"hole:operation.bottom.kind=angled\", \"hole:operation.shape.kind.kind=countersink\", \"loft:max_degree=4\", \"loft:ruled=true\", \"mirror_shape:plane_normal.x=1.0\", \"pattern:operation.pattern.count=4\", \"pattern:operation.pattern.direction.z=-1.0\", \"primitive:solid.kind=box\", \"primitive:solid.kind=cylinder\", \"revolve:construction.extent.kind=symmetric\", \"revolve:construction.extent.termination.kind=angle\", \"revolve:construction.solid=false\", \"shell:resolve_intersections=true\", \"sweep:orientation.kind=frenet\"}"
+          "observed": "{\"chamfer:edges.kind=native\", \"chamfer:flip_direction=false\", \"chamfer:spec.first.kind=literal\", \"chamfer:spec.kind=two_distances\", \"chamfer:spec.second.kind=literal\", \"combine:operation.op=cut\", \"combine:operation.operands.target.kind=native\", \"combine:operation.operands.tools.kind=native\", \"datum_axis:direction.x=0.0\", \"datum_axis:direction.y=0.0\", \"datum_axis:direction.z=1.0\", \"datum_axis:origin.x=2.0\", \"datum_axis:origin.y=3.0\", \"datum_axis:origin.z=0.0\", \"datum_coordinate_system:frame.origin.x=7.0\", \"datum_coordinate_system:frame.origin.y=8.0\", \"datum_coordinate_system:frame.origin.z=9.0\", \"datum_coordinate_system:frame.x_axis.x=1.0\", \"datum_coordinate_system:frame.x_axis.y=0.0\", \"datum_coordinate_system:frame.x_axis.z=0.0\", \"datum_coordinate_system:frame.y_axis.x=0.0\", \"datum_coordinate_system:frame.y_axis.y=1.0\", \"datum_coordinate_system:frame.y_axis.z=0.0\", \"datum_coordinate_system:frame.z_axis.x=0.0\", \"datum_coordinate_system:frame.z_axis.y=0.0\", \"datum_coordinate_system:frame.z_axis.z=1.0\", \"datum_plane:frame.normal.x=0.0\", \"datum_plane:frame.normal.y=0.0\", \"datum_plane:frame.normal.z=1.0\", \"datum_plane:frame.origin.x=0.0\", \"datum_plane:frame.origin.y=0.0\", \"datum_plane:frame.origin.z=4.0\", \"datum_plane:frame.u_axis.x=1.0\", \"datum_plane:frame.u_axis.y=0.0\", \"datum_plane:frame.u_axis.z=0.0\", \"datum_point:position.x=4.0\", \"datum_point:position.y=5.0\", \"datum_point:position.z=6.0\", \"draft:operation.anchor.kind=neutral_plane\", \"draft:operation.anchor.plane.kind=native\", \"draft:operation.anchor.pull.direction.x=0.0\", \"draft:operation.anchor.pull.direction.y=0.0\", \"draft:operation.anchor.pull.direction.z=1.0\", \"draft:operation.angle.kind=parameter\", \"draft:operation.faces.kind=resolved\", \"draft:operation.outward=true\", \"extrude:direction.kind=explicit\", \"extrude:direction.source.kind=custom\", \"extrude:direction.vector.x=0.0\", \"extrude:direction.vector.y=0.0\", \"extrude:direction.vector.z=1.0\", \"extrude:extent.kind=symmetric\", \"extrude:extent.side.draft.kind=parameter\", \"extrude:extent.side.termination.kind=blind\", \"extrude:extent.side.termination.length.kind=literal\", \"extrude:op=new_body\", \"extrude:operation.direction.kind=explicit\", \"extrude:operation.direction.source.kind=profile_normal\", \"extrude:operation.direction.vector.x=0.0\", \"extrude:operation.direction.vector.y=0.0\", \"extrude:operation.direction.vector.z=1.0\", \"extrude:operation.extent.kind=one_sided\", \"extrude:operation.extent.side.termination.kind=blind\", \"extrude:operation.extent.side.termination.length.kind=parameter\", \"extrude:operation.op=cut\", \"extrude:operation.op=join\", \"extrude:operation.profile.kind=sketch\", \"extrude:operation.solid=true\", \"extrude:operation.start.kind=profile_plane\", \"extrude:profile.kind=native\", \"extrude:solid=true\", \"extrude:start.kind=profile_plane\", \"fillet:edges.kind=native\", \"fillet:operation.edges.kind=resolved\", \"fillet:operation.radius.kind=constant\", \"fillet:operation.radius.radius.kind=parameter\", \"fillet:radius.kind=constant\", \"fillet:radius.radius.kind=literal\", \"hole:operation.bottom.included_angle.kind=parameter\", \"hole:operation.bottom.kind=angled\", \"hole:operation.direction.x=-0.0\", \"hole:operation.direction.y=-0.0\", \"hole:operation.direction.z=-1.0\", \"hole:operation.extent.kind=blind\", \"hole:operation.extent.length.kind=parameter\", \"hole:operation.profile.kind=sketch\", \"hole:operation.shape.construction.kind.angle.kind=parameter\", \"hole:operation.shape.construction.kind.diameter.kind=parameter\", \"hole:operation.shape.construction.kind.kind=countersink\", \"hole:operation.shape.diameter.kind=parameter\", \"loft:closed=false\", \"loft:guidance.kind=guides\", \"loft:kind=native\", \"loft:max_degree.kind=parameter\", \"loft:op=new_body\", \"loft:ruled=true\", \"loft:solid=true\", \"mirror_shape:plane_normal.x=1.0\", \"mirror_shape:plane_normal.y=0.0\", \"mirror_shape:plane_normal.z=0.0\", \"mirror_shape:plane_origin.x=0.0\", \"mirror_shape:plane_origin.y=0.0\", \"mirror_shape:plane_origin.z=0.0\", \"mirror_shape:source.kind=native\", \"native:kind=Fem::ConstraintTemperature\", \"native:kind=Fem::FemAnalysis\", \"native:kind=Path::Feature\", \"pattern:operation.kind=feature\", \"pattern:operation.pattern.count.kind=parameter\", \"pattern:operation.pattern.direction.x=-0.0\", \"pattern:operation.pattern.direction.y=-0.0\", \"pattern:operation.pattern.direction.z=-1.0\", \"pattern:operation.pattern.distance.distance.kind=parameter\", \"pattern:operation.pattern.distance.kind=span\", \"pattern:operation.pattern.kind=linear\", \"post_process:fuzzy_tolerance.kind=kernel_default\", \"primitive:op=new_body\", \"primitive:operation.op=join\", \"primitive:operation.solid.height.kind=parameter\", \"primitive:operation.solid.kind=box\", \"primitive:operation.solid.length.kind=parameter\", \"primitive:operation.solid.width.kind=parameter\", \"primitive:solid.angle.kind=parameter\", \"primitive:solid.height.kind=parameter\", \"primitive:solid.kind=box\", \"primitive:solid.kind=cylinder\", \"primitive:solid.length.kind=parameter\", \"primitive:solid.radius.kind=radius\", \"primitive:solid.radius.value.kind=parameter\", \"primitive:solid.width.kind=parameter\", \"revolve:construction.axis.direction.x=0.0\", \"revolve:construction.axis.direction.y=1.0\", \"revolve:construction.axis.direction.z=0.0\", \"revolve:construction.axis.origin.x=0.0\", \"revolve:construction.axis.origin.y=0.0\", \"revolve:construction.axis.origin.z=0.0\", \"revolve:construction.extent.kind=symmetric\", \"revolve:construction.extent.termination.angle.kind=parameter\", \"revolve:construction.extent.termination.kind=angle\", \"revolve:construction.profile.kind=sketch\", \"revolve:construction.solid=false\", \"revolve:op=new_body\", \"shell:allow_self_intersections=false\", \"shell:join=arc\", \"shell:mode=skin\", \"shell:outward=true\", \"shell:removed_faces.kind=resolved\", \"shell:resolve_intersections=true\", \"shell:thickness.kind=parameter\", \"sweep:orientation.kind=frenet\", \"sweep:path.kind=native\", \"sweep:shape.mode=solid\", \"sweep:shape.op=new_body\", \"sweep:shape.section.kind=profile\", \"sweep:shape.section.value.kind=native\", \"sweep:transformation=constant\", \"sweep:transition=transformed\"}",
+          "required": "{\"chamfer:spec.kind=two_distances\", \"combine:operation.op=cut\", \"datum_axis:origin.x=2.0\", \"datum_coordinate_system:frame.origin.z=9.0\", \"datum_plane:frame.origin.z=4.0\", \"datum_point:position.z=6.0\", \"draft:operation.outward=true\", \"extrude:extent.kind=symmetric\", \"fillet:radius.kind=constant\", \"hole:operation.bottom.kind=angled\", \"hole:operation.shape.construction.kind.kind=countersink\", \"loft:max_degree=4\", \"loft:ruled=true\", \"mirror_shape:plane_normal.x=1.0\", \"pattern:operation.pattern.count=4\", \"pattern:operation.pattern.direction.z=-1.0\", \"primitive:solid.kind=box\", \"primitive:solid.kind=cylinder\", \"revolve:construction.extent.kind=symmetric\", \"revolve:construction.extent.termination.kind=angle\", \"revolve:construction.solid=false\", \"shell:resolve_intersections=true\", \"sweep:orientation.kind=frenet\"}"
         }
       ]
     },
@@ -1456,8 +1461,8 @@
         },
         {
           "id": "unsupported_record_survival",
-          "passed": false,
-          "observed": "0 of 12 fixture entry sets preserved",
+          "passed": true,
+          "observed": "12 of 12 fixture entry sets preserved",
           "required": "every named logical entry retains identity and digest"
         },
         {
