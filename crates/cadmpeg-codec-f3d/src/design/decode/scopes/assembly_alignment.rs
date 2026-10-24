@@ -154,7 +154,19 @@ pub(super) fn exact_assembly_alignment_with_types(
             }
             let (alignment_start, alignment_end) = generation.alignment_lane_bounds(lanes.len())?;
             let alignment_lanes = lanes.get(alignment_start..alignment_end)?;
+            let placement_ordered = crate::design::assembly::placement_ordered_as_built_scope(
+                scope.frame_length(),
+                scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
+            );
             let (angle, offset) = match alignment_lanes {
+                [offset_x, offset_y, offset_z, angle] if placement_ordered => (
+                    angle.evaluated_value().get(),
+                    [
+                        offset_x.evaluated_value().get(),
+                        offset_y.evaluated_value().get(),
+                        offset_z.evaluated_value().get(),
+                    ],
+                ),
                 [angle, offset_x, offset_y, offset_z] => (
                     angle.evaluated_value().get(),
                     [
@@ -311,7 +323,7 @@ pub(super) fn exact_assembly_alignment_with_types(
                         frames: exact_as_built_operand_frames(
                             bytes,
                             &paths,
-                            crate::design::assembly::rigid_as_built_scope(
+                            crate::design::assembly::wide_as_built_scope(
                                 scope.frame_length(),
                                 scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
                             ),

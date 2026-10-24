@@ -298,6 +298,16 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Conflict.** Treating the word as an entry count reads one entry fewer than the record holds.
 
+### DR-94. Freedom entry word and trailing value
+
+**Question.** What does the u32 word before a freedom code state, and what does the f64 after the code of a word-`1` entry state?
+
+**Known.** Word-`3` entries occur in current-document joints. Word-`1` entries occur in the motion records of `As-built` joints in inserted designs. The trailing f64 of those entries is `0` or 2π. Their freedom codes select the same motion as word-`3` codes: each word-`1` code-`2` joint's two connector frames share an origin and a z axis.
+
+**Need.** Joints that differ only in their motion settings, saved once with each word, would fix what the word selects. Varying such a joint's angle would show whether the trailing value tracks it.
+
+**Conflict.** Treating the trailing value as an angle, a period, or a limit states a meaning no sample fixes.
+
 ### DR-95. Rectangular-pattern direction selection kind `16` and the reference at offset 138
 
 **Question.** What does selection kind `16` select in a rectangular-pattern direction record, what do its origin and displacement mean, and what record does the marked reference at offset 138 name?
