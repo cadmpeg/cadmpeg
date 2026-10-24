@@ -594,10 +594,10 @@ Tag `0x01000010` has a 4-byte payload `marker` (`i32`). It starts a loop on the 
 
 | `marker` | Meaning |
 | -------: | ------- |
-| −2 | The loop starts a new loop group on the current face. |
-| ≥ 0 | The loop joins the loop group whose first loop has global index `marker`. That loop has marker −2, precedes this loop, and belongs to the same face. |
+| −2 | The loop is an outer loop of the current face. |
+| ≥ 0 | The loop is an inner loop of the current face. `marker` is the global index of the first loop of the face, which has marker −2. |
 
-Other negative values are open items. A loop group need not be contiguous: loops of other groups of the same face can come between its members.
+The first loop of a face has marker −2. A face can have several outer loops, and inner loops can stand between them. The marker of an inner loop does not name the outer loop that contains it; §8.19 assigns each inner loop to an outer loop. Other negative values are open items.
 
 ### 8.12 Coedge record
 
@@ -682,11 +682,11 @@ The coedge sense is forward when the first condition holds and reversed when the
 
 ### 8.18 Loop traversal
 
-The coedges of a loop, in stored order, form a closed chain: each coedge shares one end with the coedge before it and its other end with the coedge after it, and the last coedge shares an end with the first. Each pcurve runs along the stored order or against it, independently of its neighbours; a reader takes the direction of a pcurve from the ends it shares with its neighbours. The edge curve of a coedge runs along the stored order when the pcurve does and the sense is forward, and when the pcurve runs against it and the sense is reversed. The ends of a loop of one or two coedges do not give a direction to the stored order.
+The coedges of a loop, in stored order, form a closed chain: each coedge shares one end with the coedge before it and its other end with the coedge after it, and the last coedge shares an end with the first. Each pcurve runs along the stored order or against it, independently of its neighbours. The directions of the pcurves of a loop are the choice that closes every junction of the chain, in model space and in the pcurve domain. The edge curve of a coedge runs along the stored order when the pcurve does and the sense is forward, and when the pcurve runs against it and the sense is reversed. The ends of a loop of one or two coedges do not give a direction to the stored order. A closed edge curve, whose ends are one point, gets its direction from the pcurve-domain junctions.
 
 ### 8.19 Face regions and nesting
 
-A loop group (§8.11) bounds one or more face regions on its face. Within a group, a loop is nested in another loop when it lies inside that loop in the parameter domain of the face. The nesting depth of a loop is the number of loops of the group that contain it. A loop of even depth is the outer boundary of a face region. A loop of odd depth is a hole of the region whose outer loop immediately contains it. A face with several loop groups, or with even-depth loops beyond depth 0, has several face regions.
+Each outer loop (§8.11) is the outer boundary of one face region. Each inner loop is a hole of the face region whose outer loop contains it in the parameter domain of the face; when several outer loops contain it, the innermost one owns it. A face with several outer loops has several face regions.
 
 On a periodic surface (cylinder, cone, sphere in u; torus in u and v) containment is tested modulo the period of 2π.
 

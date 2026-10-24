@@ -163,13 +163,24 @@ pub(crate) fn emit(
     scope: &IdentityKey,
     sink: &mut Sink<'_>,
 ) -> Result<Option<BodyId>, CodecError> {
+    emit_with_work(ctx, exact, scope, sink, topology::work_limit(exact))
+}
+
+/// [`emit`] with the derived-search work limit `work`.
+fn emit_with_work(
+    ctx: &DecodeContext<'_>,
+    exact: &ExactModel,
+    scope: &IdentityKey,
+    sink: &mut Sink<'_>,
+    work: usize,
+) -> Result<Option<BodyId>, CodecError> {
     let mut tally = LossTally::default();
     tally.add(PvzLossCode::ExactRecordUninterpreted, exact.opaque.len());
     if exact.faces.is_empty() {
         tally.notes(sink.losses);
         return Ok(None);
     }
-    let topology = topology::resolve(exact)?;
+    let topology = topology::resolve(exact, work)?;
     let ids = Ids { scope };
     let mut writer = Writer {
         ctx,
@@ -757,6 +768,10 @@ impl Writer<'_, '_, '_, '_> {
         self.tally.add(
             PvzLossCode::ExactFaceSideGauge,
             self.topology.side_conflicts,
+        );
+        self.tally.add(
+            PvzLossCode::ExactTopologyWorkExhausted,
+            self.topology.work_exhausted,
         );
         Ok(faces)
     }

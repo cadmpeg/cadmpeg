@@ -12,6 +12,7 @@
 
 use std::collections::BTreeSet;
 
+use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_core::CodecError;
 
 use super::eval::{cross, distance, dot, norm, scale, sub};
@@ -34,6 +35,12 @@ const INTERIOR_SAMPLES: usize = 6;
 const COLLAPSE_SAMPLES: usize = 8;
 /// Smallest `|n·x̂|` of a unit normal that decides the side of a component.
 const SIDE_DECISION: f64 = 0.1;
+/// Floor of the derived-search work of one stream: containment tests in
+/// face region nesting, charged per polygon sample, and coincident-edge
+/// candidate tests.
+pub(crate) const MAX_TOPOLOGY_WORK: usize = 1 << 24;
+/// Derived-search work allowed per face, loop, coedge, and edge record.
+const TOPOLOGY_WORK_PER_RECORD: usize = 1 << 10;
 
 /// One loop with its resolved coedges.
 #[derive(Debug, Clone, PartialEq)]
@@ -69,6 +76,9 @@ pub(crate) struct FaceTopology {
     pub(crate) reversed: bool,
     /// The side came from an outward test of a closed component.
     pub(crate) side_derived: bool,
+    /// [`MAX_TOPOLOGY_WORK`] ran out before the loops were nested; the
+    /// face has one unclassified region.
+    pub(crate) nesting_exhausted: bool,
 }
 
 /// Start and end slots of a coedge end in stored order.
@@ -100,6 +110,9 @@ pub(crate) struct Topology {
     pub(crate) split_junctions: usize,
     /// Two-use edges whose uses cannot run opposite ways.
     pub(crate) side_conflicts: usize,
+    /// Derived searches that [`MAX_TOPOLOGY_WORK`] stopped: face region
+    /// nesting and coincident-edge pairing.
+    pub(crate) work_exhausted: usize,
 }
 
 impl Topology {
@@ -133,11 +146,14 @@ impl Topology {
     }
 }
 
-/// Resolves loops, regions, vertices, and face sides.
-pub(crate) fn resolve(model: &ExactModel) -> Result<Topology, CodecError> {
+/// Resolves loops, regions, vertices, and face sides with the derived-search
+/// work limit `work`.
+pub(crate) fn resolve(model: &ExactModel, work: usize) -> Result<Topology, CodecError> {
+    let budget = WorkBudget::new(work);
     let mut faces: Vec<FaceTopology> = (0..model.faces.len())
-        .map(|face| face_topology(model, face))
+        .map(|face| face_topology(model, face, &budget))
         .collect();
+    let regions_exhausted = faces.iter().filter(|face| face.nesting_exhausted).count();
     let mut free_slots = std::collections::BTreeMap::new();
     let slot_overflow = || CodecError::malformed("exact stream has too many coedge ends");
     let mut next_slot = model.edges.len().checked_mul(2).ok_or_else(slot_overflow)?;
@@ -171,12 +187,23 @@ pub(crate) fn resolve(model: &ExactModel) -> Result<Topology, CodecError> {
         singular_edges,
         split_junctions: 0,
         side_conflicts: 0,
+        work_exhausted: regions_exhausted,
     };
     let side_conflicts = orient(model, &mut faces, &topology.singular_edges);
     topology.side_conflicts = side_conflicts;
     topology.faces = faces;
     join_vertices(model, &mut topology, next_slot);
     Ok(topology)
+}
+
+/// Work limit of the derived searches of `model`: the larger of
+/// [`MAX_TOPOLOGY_WORK`] and [`TOPOLOGY_WORK_PER_RECORD`] per record.
+pub(crate) fn work_limit(model: &ExactModel) -> usize {
+    let coedges: usize = model.loops.iter().map(|record| record.coedges.len()).sum();
+    let records = model.faces.len() + model.loops.len() + coedges + model.edges.len();
+    records
+        .checked_mul(TOPOLOGY_WORK_PER_RECORD)
+        .map_or(MAX_TOPOLOGY_WORK, |work| work.max(MAX_TOPOLOGY_WORK))
 }
 
 /// Whether a curve stays within the endpoint tolerance of its start.
@@ -195,7 +222,7 @@ fn collapsed(curve: &CurveGeometry<3>) -> bool {
     })
 }
 
-fn face_topology(model: &ExactModel, face: usize) -> FaceTopology {
+fn face_topology(model: &ExactModel, face: usize, budget: &WorkBudget) -> FaceTopology {
     let record = &model.faces[face];
     let slot = face_slot(model, face);
     let periods = slot.map_or([None, None], |slot| {
@@ -225,16 +252,23 @@ fn face_topology(model: &ExactModel, face: usize) -> FaceTopology {
             }
         })
         .collect();
-    let groups: Vec<usize> = record
+    let inner: Vec<bool> = record
         .loops
         .iter()
-        .map(|index| model.loops[*index].group)
+        .map(|index| model.loops[*index].inner)
         .collect();
     let polygons: Vec<Option<LoopPolygon>> = loops
         .iter()
         .map(|topology| topology.polygon.clone())
         .collect();
-    let regions = face_regions(&groups, &polygons, periods);
+    let nested = face_regions(&inner, &polygons, periods, budget);
+    let nesting_exhausted = nested.is_none();
+    let regions = nested.unwrap_or_else(|| {
+        vec![RegionLoops {
+            loops: (0..inner.len()).collect(),
+            classified: false,
+        }]
+    });
     let winding = regions
         .iter()
         .find(|region| region.classified)
@@ -254,6 +288,7 @@ fn face_topology(model: &ExactModel, face: usize) -> FaceTopology {
         winding,
         reversed: false,
         side_derived: false,
+        nesting_exhausted,
     }
 }
 

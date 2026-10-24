@@ -192,8 +192,8 @@ pub(crate) struct BsplineSurface {
 pub(crate) struct Loop {
     /// Owning face index.
     pub(crate) face: usize,
-    /// Loop group: the global index of the group's first loop.
-    pub(crate) group: usize,
+    /// The loop is an inner loop (a hole) of its face: its marker is not −2.
+    pub(crate) inner: bool,
     /// Coedges in record order.
     pub(crate) coedges: Vec<Coedge>,
     /// Payload offset of the loop record.

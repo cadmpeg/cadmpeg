@@ -4,6 +4,8 @@
 
 use std::f64::consts::TAU;
 
+use cadmpeg_core::decode::{work_units, WorkBudget};
+
 use super::eval::{bspline_surface_point, curve_ends, curve_interval, curve_point, distance};
 use super::model::{CurveGeometry, ExactModel, Face, SurfaceGeometry, Vec2, Vec3};
 
@@ -13,6 +15,8 @@ pub(crate) const ENDPOINT_TOLERANCE: f64 = 2.0e-5;
 const CLOSED_EDGE_PROBE: f64 = 0.25;
 /// Pcurve samples per coedge in a loop polygon.
 const POLYGON_SAMPLES: usize = 16;
+/// Junction gap in the pcurve domain below which two pcurve ends meet.
+const DOMAIN_JOIN_TOLERANCE: f64 = 1.0e-9;
 
 /// Parameter domain a coedge pcurve lies in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -176,42 +180,121 @@ fn sense_from_ends(
     }
 }
 
+/// Cost of one choice of pcurve directions: the model-space junction gaps
+/// above the endpoint tolerance, the domain junction gaps above
+/// [`DOMAIN_JOIN_TOLERANCE`], and the coedges whose direction disagrees with
+/// their `orientation` byte, compared in that order.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+struct DirectionCost(f64, f64, usize);
+
+impl DirectionCost {
+    fn plus(self, other: Self) -> Self {
+        Self(self.0 + other.0, self.1 + other.1, self.2 + other.2)
+    }
+
+    fn below(self, other: Self) -> bool {
+        self.partial_cmp(&other) == Some(std::cmp::Ordering::Less)
+    }
+}
+
 /// Direction of each coedge pcurve along the stored coedge order of a loop
 /// (§8.18): `true` when the pcurve runs from the end it shares with the
-/// previous coedge to the end it shares with the next. A coedge whose ends do
-/// not decide the direction takes it from its `orientation` byte and its
-/// sense: the byte is 1 when the edge curve runs along the stored order.
+/// previous coedge to the end it shares with the next. The directions of a
+/// loop are chosen together so that the junctions of the closed chain have
+/// the smallest gaps, first in model space, then in the pcurve domain. A tie
+/// keeps the direction that the `orientation` byte and the sense give: the
+/// byte is 1 when the edge curve runs along the stored order.
 pub(crate) fn pcurve_directions(orientations: &[u8], coedges: &[CoedgeGeometry]) -> Vec<bool> {
     let count = coedges.len();
-    let near = |point: Vec3, other: Option<[Vec3; 2]>| {
-        other.is_some_and(|[start, end]| {
-            distance(point, start).min(distance(point, end)) <= ENDPOINT_TOLERANCE
-        })
-    };
-    (0..count)
-        .map(|position| {
-            let coedge = &coedges[position];
-            let by_byte = orientations
+    let by_byte: Vec<bool> = coedges
+        .iter()
+        .enumerate()
+        .map(|(position, coedge)| {
+            orientations
                 .get(position)
-                .is_none_or(|byte| (*byte == 1) == (coedge.sense != Some(Sense::Reversed)));
-            let Some([start, end]) = coedge.ends else {
-                return by_byte;
-            };
-            if count < 3 {
-                return by_byte;
-            }
-            let next = coedges[(position + 1) % count].ends;
-            let previous = coedges[(position + count - 1) % count].ends;
-            match (
-                near(end, next) && near(start, previous),
-                near(start, next) && near(end, previous),
-            ) {
-                (true, false) => true,
-                (false, true) => false,
-                _ => by_byte,
-            }
+                .is_none_or(|byte| (*byte == 1) == (coedge.sense != Some(Sense::Reversed)))
         })
-        .collect()
+        .collect();
+    if count < 2 {
+        return by_byte;
+    }
+    let junction = |position: usize, here: bool, next: bool| {
+        let following = (position + 1) % count;
+        let gap = |ends: fn(&CoedgeGeometry) -> Option<[[f64; 3]; 2]>, tolerance: f64| match (
+            ends(&coedges[position]),
+            ends(&coedges[following]),
+        ) {
+            (Some(a), Some(b)) => {
+                let gap = distance(a[usize::from(here)], b[usize::from(!next)]);
+                if gap <= tolerance {
+                    0.0
+                } else {
+                    gap
+                }
+            }
+            _ => 0.0,
+        };
+        DirectionCost(
+            gap(|coedge| coedge.ends, ENDPOINT_TOLERANCE),
+            gap(
+                |coedge| coedge.uv_ends.map(|ends| ends.map(|[u, v]| [u, v, 0.0])),
+                DOMAIN_JOIN_TOLERANCE,
+            ),
+            0,
+        )
+    };
+    let byte_cost = |position: usize, forward: bool| {
+        DirectionCost(0.0, 0.0, usize::from(forward != by_byte[position]))
+    };
+    let mut best: Option<(DirectionCost, Vec<bool>)> = None;
+    for first in [true, false] {
+        let mut cost: [Option<DirectionCost>; 2] = [None, None];
+        cost[usize::from(first)] = Some(byte_cost(0, first));
+        let mut back: Vec<[bool; 2]> = Vec::with_capacity(count);
+        back.push([first, first]);
+        for position in 1..count {
+            let mut next: [Option<DirectionCost>; 2] = [None, None];
+            let mut from = [false, false];
+            for forward in [false, true] {
+                for previous in [false, true] {
+                    let Some(prefix) = cost[usize::from(previous)] else {
+                        continue;
+                    };
+                    let candidate = prefix
+                        .plus(junction(position - 1, previous, forward))
+                        .plus(byte_cost(position, forward));
+                    let slot = &mut next[usize::from(forward)];
+                    if slot.is_none_or(|current| candidate.below(current)) {
+                        *slot = Some(candidate);
+                        from[usize::from(forward)] = previous;
+                    }
+                }
+            }
+            cost = next;
+            back.push(from);
+        }
+        for last in [false, true] {
+            let Some(prefix) = cost[usize::from(last)] else {
+                continue;
+            };
+            let total = prefix.plus(junction(count - 1, last, first));
+            if best
+                .as_ref()
+                .is_some_and(|(current, _)| !total.below(*current))
+            {
+                continue;
+            }
+            let mut directions = Vec::with_capacity(count);
+            let mut forward = last;
+            for position in (0..count).rev() {
+                directions.push(forward);
+                forward = back[position][usize::from(forward)];
+            }
+            directions.reverse();
+            best = Some((total, directions));
+        }
+    }
+    best.map_or(by_byte, |(_, directions)| directions)
 }
 
 /// Largest distance between consecutive coedge ends along the stored order,
@@ -352,88 +435,86 @@ pub(crate) fn edges_along(
 pub(crate) struct RegionLoops {
     /// Member loops; the first is the outer loop when `classified`.
     pub(crate) loops: Vec<usize>,
-    /// Whether the outer and hole loops were classified by nesting.
+    /// Whether the first loop is the outer loop and the others its holes.
     pub(crate) classified: bool,
 }
 
-/// Splits the loops of one face into regions by loop group and nesting
-/// parity. `groups[i]` is the loop group of loop `i`, `polygons[i]` its
-/// domain polygon.
+/// Splits the loops of one face into regions (§8.19). `inner[i]` marks loop
+/// `i` as an inner loop and `polygons[i]` is its domain polygon. Each outer
+/// loop bounds one region; each inner loop is a hole of the innermost outer
+/// loop that contains it. A region is classified when each of its loops has
+/// a polygon that closes in the domain. An inner loop that no closed outer
+/// polygon contains is a region of its own and is not classified. Returns
+/// `None` when `budget` runs out.
 pub(crate) fn face_regions(
-    groups: &[usize],
+    inner: &[bool],
     polygons: &[Option<LoopPolygon>],
     periods: [Option<f64>; 2],
-) -> Vec<RegionLoops> {
-    let mut seen: Vec<usize> = Vec::new();
-    for group in groups {
-        if !seen.contains(group) {
-            seen.push(*group);
-        }
-    }
-    let mut regions = Vec::new();
-    for group in seen {
-        let members: Vec<usize> = (0..groups.len())
-            .filter(|position| groups[*position] == group)
-            .collect();
-        let closed: Option<Vec<&LoopPolygon>> = members
-            .iter()
-            .map(|position| {
-                polygons
-                    .get(*position)?
-                    .as_ref()
-                    .filter(|polygon| polygon.closes(periods))
-            })
-            .collect();
-        let Some(closed) = closed else {
-            regions.push(RegionLoops {
-                loops: members,
+    budget: &WorkBudget,
+) -> Option<Vec<RegionLoops>> {
+    let outers: Vec<usize> = (0..inner.len()).filter(|loop_| !inner[*loop_]).collect();
+    let holes = (0..inner.len()).filter(|loop_| inner[*loop_]);
+    let closed = |loop_: usize| {
+        polygons
+            .get(loop_)?
+            .as_ref()
+            .filter(|polygon| polygon.closes(periods))
+    };
+    match outers.as_slice() {
+        [] if inner.is_empty() => return Some(Vec::new()),
+        [] => {
+            return Some(vec![RegionLoops {
+                loops: (0..inner.len()).collect(),
                 classified: false,
-            });
-            continue;
-        };
-        let contains = |outer: usize, inner: usize| {
-            outer != inner
-                && closed[inner]
-                    .points
-                    .first()
-                    .is_some_and(|point| encloses(&closed[outer].points, *point, periods))
-        };
-        let depth: Vec<usize> = (0..members.len())
-            .map(|inner| {
-                (0..members.len())
-                    .filter(|outer| contains(*outer, inner))
-                    .count()
-            })
-            .collect();
-        let mut owned: Vec<RegionLoops> = Vec::new();
-        let mut region_of = vec![None; members.len()];
-        for (local, position) in members.iter().enumerate() {
-            if depth[local].is_multiple_of(2) {
-                region_of[local] = Some(owned.len());
-                owned.push(RegionLoops {
-                    loops: vec![*position],
-                    classified: true,
-                });
-            }
+            }])
         }
-        for (local, position) in members.iter().enumerate() {
-            if depth[local].is_multiple_of(2) {
-                continue;
-            }
-            let parent = (0..members.len())
-                .filter(|outer| contains(*outer, local) && depth[*outer] + 1 == depth[local])
-                .find_map(|outer| region_of[outer]);
-            match parent.and_then(|region| owned.get_mut(region)) {
-                Some(region) => region.loops.push(*position),
-                None => owned.push(RegionLoops {
-                    loops: vec![*position],
-                    classified: false,
-                }),
-            }
+        [outer] => {
+            return Some(vec![RegionLoops {
+                loops: std::iter::once(*outer).chain(holes).collect(),
+                classified: (0..inner.len()).all(|loop_| closed(loop_).is_some()),
+            }])
         }
-        regions.extend(owned);
+        _ => {}
     }
-    regions
+    let areas: Vec<f64> = outers
+        .iter()
+        .map(|outer| {
+            closed(*outer).map_or(f64::INFINITY, |polygon| signed_area(&polygon.points).abs())
+        })
+        .collect();
+    let mut regions: Vec<RegionLoops> = outers
+        .iter()
+        .map(|outer| RegionLoops {
+            loops: vec![*outer],
+            classified: closed(*outer).is_some(),
+        })
+        .collect();
+    for hole in holes {
+        let mut owner: Option<usize> = None;
+        if let Some(point) = closed(hole).and_then(|polygon| polygon.points.first().copied()) {
+            for (rank, outer) in outers.iter().enumerate() {
+                let Some(polygon) = closed(*outer) else {
+                    continue;
+                };
+                if !budget.charge_by(work_units(polygon.points.len())) {
+                    return None;
+                }
+                if encloses(&polygon.points, point, periods)
+                    && owner.is_none_or(|current| areas[rank] < areas[current])
+                {
+                    owner = Some(rank);
+                }
+            }
+        }
+        match owner.and_then(|rank| regions.get_mut(rank)) {
+            Some(region) => region.loops.push(hole),
+            None => regions.push(RegionLoops {
+                loops: vec![hole],
+                classified: false,
+            }),
+        }
+    }
+    Some(regions)
 }
 
 /// Even-odd point-in-polygon test, with `point` moved by whole periods next

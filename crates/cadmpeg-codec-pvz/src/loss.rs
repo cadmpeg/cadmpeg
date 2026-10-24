@@ -114,6 +114,9 @@ pub(crate) enum PvzLossCode {
     ExactLoopOpen,
     /// A face side came from a gauge, not from an outward test.
     ExactFaceSideGauge,
+    /// A derived search ran out of work: a face kept one unclassified region,
+    /// or coincident edge records stayed unpaired.
+    ExactTopologyWorkExhausted,
 }
 
 impl PvzLossCode {
@@ -161,6 +164,7 @@ impl PvzLossCode {
         Self::ExactEndpointMismatch,
         Self::ExactLoopOpen,
         Self::ExactFaceSideGauge,
+        Self::ExactTopologyWorkExhausted,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -208,6 +212,7 @@ impl PvzLossCode {
             Self::ExactEndpointMismatch => "exact.endpoint-mismatch",
             Self::ExactLoopOpen => "exact.loop-open",
             Self::ExactFaceSideGauge => "exact.face-side-gauge",
+            Self::ExactTopologyWorkExhausted => "exact.topology-work-exhausted",
         }
     }
 
@@ -253,7 +258,8 @@ impl PvzLossCode {
             | Self::ExactSecondaryPcurveOmitted
             | Self::ExactEndpointMismatch
             | Self::ExactLoopOpen
-            | Self::ExactFaceSideGauge => Severity::Warning,
+            | Self::ExactFaceSideGauge
+            | Self::ExactTopologyWorkExhausted => Severity::Warning,
             Self::ExactSurfaceUntyped => Severity::Error,
             Self::StructureMemberMalformed => Severity::Blocking,
         }
@@ -308,6 +314,7 @@ impl PvzLossCode {
             }
             Self::ExactLoopOpen => LossTaxonomy::SourceTopologyInvalid,
             Self::ExactFaceSideGauge => LossTaxonomy::TopologyGaugeSubstituted,
+            Self::ExactTopologyWorkExhausted => LossTaxonomy::TopologyNotTransferred,
         }
     }
 
@@ -367,6 +374,9 @@ impl PvzLossCode {
             Self::ExactLoopOpen => "open loops or loop junctions that join no vertex",
             Self::ExactFaceSideGauge => {
                 "faces whose side is a propagation gauge, or side conflicts between faces"
+            }
+            Self::ExactTopologyWorkExhausted => {
+                "derived topology searches stopped by the work limit"
             }
         };
         format!("{count} {what}")
@@ -441,6 +451,7 @@ mod tests {
                 "exact.endpoint-mismatch",
                 "exact.loop-open",
                 "exact.face-side-gauge",
+                "exact.topology-work-exhausted",
             ]
         );
     }

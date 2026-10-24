@@ -208,7 +208,7 @@ fn undefined_surface_type_is_kept_unread() {
 }
 
 #[test]
-fn loops_group_and_collect_their_coedges() {
+fn loops_mark_inner_loops_and_collect_their_coedges() {
     let mut stream = plane_stream(false);
     stream.loop_record(-2).coedge(0, 1, 0, NONE).terminator();
     stream.loop_record(-2).coedge(0, 0, NONE, 0).terminator();
@@ -217,8 +217,8 @@ fn loops_group_and_collect_their_coedges() {
     stream.line_pcurve([0.0; 2], [1.0, 0.0]);
     let model = parse(stream).unwrap();
     assert_eq!(model.faces[0].loops, [0, 1, 2]);
-    let groups: Vec<usize> = model.loops.iter().map(|record| record.group).collect();
-    assert_eq!(groups, [0, 1, 0]);
+    let inner: Vec<bool> = model.loops.iter().map(|record| record.inner).collect();
+    assert_eq!(inner, [false, false, true]);
     let coedge = model.loops[0].coedges[0];
     assert_eq!(
         (
@@ -233,7 +233,7 @@ fn loops_group_and_collect_their_coedges() {
 }
 
 #[test]
-fn loop_marker_names_an_earlier_group_start_of_its_face() {
+fn inner_loop_marker_names_the_first_loop_of_its_face() {
     for marker in [5, -1] {
         let mut stream = plane_stream(false);
         stream.loop_record(marker).terminator();
@@ -243,6 +243,16 @@ fn loop_marker_names_an_earlier_group_start_of_its_face() {
     stream.loop_record(-2).terminator();
     stream.plane([0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]);
     stream.loop_record(0).terminator();
+    assert!(parse(stream).is_err());
+    let mut stream = plane_stream(false);
+    stream.loop_record(-2).terminator();
+    stream.loop_record(0).terminator();
+    stream.loop_record(1).terminator();
+    assert!(parse(stream).is_err());
+    let mut stream = plane_stream(false);
+    stream.loop_record(-2).terminator();
+    stream.loop_record(-2).terminator();
+    stream.loop_record(1).terminator();
     assert!(parse(stream).is_err());
 }
 

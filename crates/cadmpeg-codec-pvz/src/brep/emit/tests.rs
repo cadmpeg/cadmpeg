@@ -6,15 +6,20 @@ use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::IdentityKey;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::report::Severity;
-use cadmpeg_ir::topology::{BodyKind, Sense};
+use cadmpeg_ir::topology::{BodyKind, FaceLoops, Sense};
 
 use cadmpeg_ir::ids::BodyId;
 
-use super::{emit, Sink};
+use super::{emit, emit_with_work, Sink};
 use crate::loss::PvzLossCode;
 use crate::test_support::exact::{cube_stream, Stream, CUBE_SIZE};
 
 fn emit_stream(stream: Stream) -> (CadIr, Vec<LossNote>, Option<BodyId>) {
+    emit_stream_with(stream, None)
+}
+
+/// Emits `stream`, with the derived-search work limit `work` when given.
+fn emit_stream_with(stream: Stream, work: Option<usize>) -> (CadIr, Vec<LossNote>, Option<BodyId>) {
     let id = stream.id();
     let bytes = stream.finish();
     let arena = DecodeArena::new();
@@ -26,17 +31,16 @@ fn emit_stream(stream: Stream) -> (CadIr, Vec<LossNote>, Option<BodyId>) {
     let mut losses = Vec::new();
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("part.ol"));
     let scope = IdentityKey::encode_segment("part.ol");
-    let body = emit(
-        &ctx,
-        &model,
-        &scope,
-        &mut Sink {
-            model: &mut ir.model,
-            annotations: &mut annotations,
-            losses: &mut losses,
-            stream: &stream,
-        },
-    )
+    let mut sink = Sink {
+        model: &mut ir.model,
+        annotations: &mut annotations,
+        losses: &mut losses,
+        stream: &stream,
+    };
+    let body = match work {
+        Some(work) => emit_with_work(&ctx, &model, &scope, &mut sink, work),
+        None => emit(&ctx, &model, &scope, &mut sink),
+    }
     .unwrap();
     ir.model.finalize();
     (ir, losses, body)
@@ -107,4 +111,89 @@ fn stream_without_faces_writes_nothing() {
     assert!(body.is_none());
     assert!(losses.is_empty());
     assert!(ir.model.bodies.is_empty());
+}
+
+/// Line edges and line pcurves of a plane stream, written after its faces.
+#[derive(Default)]
+struct PlaneLoops {
+    edges: Vec<([f64; 3], [f64; 3])>,
+    pcurves: Vec<([f64; 2], [f64; 2])>,
+}
+
+impl PlaneLoops {
+    /// A loop around the square `[low, low + size]²` of the plane `z = 0`,
+    /// counter-clockwise unless `clockwise`, with loop `marker`.
+    fn square(
+        &mut self,
+        stream: &mut Stream,
+        low: [f64; 2],
+        size: f64,
+        marker: i32,
+        clockwise: bool,
+    ) {
+        let mut corners = [
+            low,
+            [low[0] + size, low[1]],
+            [low[0] + size, low[1] + size],
+            [low[0], low[1] + size],
+        ];
+        if clockwise {
+            corners.reverse();
+        }
+        stream.loop_record(marker);
+        for position in 0..4 {
+            let (a, b) = (corners[position], corners[(position + 1) % 4]);
+            let direction = [b[0] - a[0], b[1] - a[1]];
+            let edge = u32::try_from(self.edges.len()).unwrap();
+            let pcurve = u32::try_from(self.pcurves.len()).unwrap();
+            self.edges
+                .push(([a[0], a[1], 0.0], [direction[0], direction[1], 0.0]));
+            self.pcurves.push((a, direction));
+            stream.coedge(edge, 1, pcurve, crate::test_support::exact::NONE);
+        }
+        stream.terminator();
+    }
+
+    fn finish(self, stream: &mut Stream) {
+        for (origin, direction) in self.edges {
+            stream.line_edge(origin, direction);
+        }
+        for (origin, direction) in self.pcurves {
+            stream.line_pcurve(origin, direction);
+        }
+    }
+}
+
+/// One plane face with two outer squares and a hole in the second.
+fn two_region_plane() -> Stream {
+    let mut stream = Stream::new(true);
+    stream.plane([0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]);
+    let mut loops = PlaneLoops::default();
+    loops.square(&mut stream, [0.0, 0.0], 0.01, -2, false);
+    loops.square(&mut stream, [0.02, 0.0], 0.01, -2, false);
+    loops.square(&mut stream, [0.0225, 0.0025], 0.005, 0, true);
+    loops.finish(&mut stream);
+    stream
+}
+
+#[test]
+fn inner_loop_joins_the_outer_loop_that_contains_it() {
+    let (ir, losses, _) = emit_stream(two_region_plane());
+    assert_eq!(ir.model.faces.len(), 2);
+    let FaceLoops::Classified { inner, .. } = &ir.model.faces[1].loops else {
+        panic!("classified loops");
+    };
+    assert_eq!(inner.len(), 1);
+    assert!(!losses
+        .iter()
+        .any(|note| note.code == PvzLossCode::ExactTopologyWorkExhausted.kind()));
+}
+
+#[test]
+fn exhausted_nesting_is_reported() {
+    let (ir, losses, _) = emit_stream_with(two_region_plane(), Some(1));
+    assert_eq!(ir.model.faces.len(), 1);
+    assert!(losses
+        .iter()
+        .any(|note| note.code == PvzLossCode::ExactTopologyWorkExhausted.kind()));
 }

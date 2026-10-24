@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
-use super::{domain_normal, resolve, Topology};
+use super::{domain_normal, resolve, work_limit, Topology};
 use crate::brep::eval::{dot, sub};
 use crate::brep::model::ExactModel;
 use crate::brep::resolve::{domain_point, PcurveSlot};
@@ -35,7 +35,7 @@ fn closed_cube_turns_every_face_outward() {
     for inward in [[false; 6], [true, false, true, false, false, true]] {
         for reversed in [[false; 6], [false, true, true, false, true, false]] {
             let model = parse(cube_stream(true, inward, reversed));
-            let topology = resolve(&model).unwrap();
+            let topology = resolve(&model, work_limit(&model)).unwrap();
             assert_eq!(topology.side_conflicts, 0);
             assert_outward(&model, &topology);
             for face in &topology.faces {
@@ -49,7 +49,7 @@ fn closed_cube_turns_every_face_outward() {
 #[test]
 fn cube_corners_join_into_eight_vertices() {
     let model = parse(cube_stream(false, [false; 6], [false; 6]));
-    let topology = resolve(&model).unwrap();
+    let topology = resolve(&model, work_limit(&model)).unwrap();
     let used: std::collections::BTreeSet<usize> =
         topology.slot_vertex[..24].iter().copied().collect();
     assert_eq!(used.len(), 8);
@@ -86,7 +86,7 @@ fn coincident_single_use_edges_carry_the_side() {
         })
         .unwrap();
     model.loops[loop_index].coedges[position].edge = Some(12);
-    let topology = resolve(&model).unwrap();
+    let topology = resolve(&model, work_limit(&model)).unwrap();
     assert_outward(&model, &topology);
 }
 
@@ -98,7 +98,7 @@ fn collapsed_singular_edge_joins_its_ends() {
     stream.record(SINGULAR_USE, &singular).terminator();
     stream.line_edge([0.5, 0.5, 0.0], [0.0; 3]);
     let model = parse(stream);
-    let topology = resolve(&model).unwrap();
+    let topology = resolve(&model, work_limit(&model)).unwrap();
     assert!(topology.singular_edges.contains(&0));
     assert_eq!(topology.slot_vertex[0], topology.slot_vertex[1]);
 }
@@ -111,7 +111,7 @@ fn extended_singular_edge_keeps_its_ends() {
     stream.record(SINGULAR_USE, &singular).terminator();
     stream.line_edge([0.0; 3], [0.01, 0.0, 0.0]);
     let model = parse(stream);
-    let topology = resolve(&model).unwrap();
+    let topology = resolve(&model, work_limit(&model)).unwrap();
     assert!(topology.singular_edges.is_empty());
     assert_ne!(topology.slot_vertex[0], topology.slot_vertex[1]);
 }

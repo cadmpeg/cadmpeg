@@ -17,8 +17,8 @@ use crate::layout::{coedge_record, loop_record};
 /// Loop and singular-use terminator (§8.14).
 const TAG_TERMINATOR: u32 = 0;
 
-/// Loop marker that starts a new loop group.
-const LOOP_GROUP_START: i32 = -2;
+/// Loop marker of an outer loop (§8.11).
+const LOOP_OUTER: i32 = -2;
 /// Index value that names no record.
 const NO_INDEX: u32 = u32::MAX;
 /// Stream index record payload length.
@@ -240,28 +240,24 @@ impl StreamBuilder {
         }
         let marker = body.req_i32_le()?;
         let index = self.model.loops.len();
-        let group = if marker == LOOP_GROUP_START {
-            index
-        } else {
-            let first = usize::try_from(marker)
-                .ok()
-                .filter(|first| {
-                    self.model
-                        .loops
-                        .get(*first)
-                        .is_some_and(|start| start.face == face && start.group == *first)
-                })
-                .ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "loop marker {marker} at offset {offset} names no loop group of its face"
-                    ))
-                })?;
-            first
-        };
+        let inner = marker != LOOP_OUTER;
+        if inner {
+            let first = self
+                .model
+                .faces
+                .get(face)
+                .and_then(|record| record.loops.first().copied());
+            if first.is_none() || usize::try_from(marker).ok() != first {
+                return Err(CodecError::malformed(format_args!(
+                    "loop marker {marker} at offset {offset} does not name the first loop of its \
+                     face"
+                )));
+            }
+        }
         ctx.charge_entities(1, "pvz exact loop")?;
         self.model.loops.push(Loop {
             face,
-            group,
+            inner,
             coedges: Vec::new(),
             offset,
         });
