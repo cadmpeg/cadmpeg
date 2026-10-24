@@ -17,9 +17,8 @@ use crate::test_support::plan_at;
 use crate::test_support::test_closed_cylinder::{
     solid_cylinder, solid_cylinder_without_curve_roles, CYLINDER_HEIGHT, CYLINDER_RADIUS,
 };
-use crate::test_support::test_drawing_and_trimming::{
-    trimmed_nurbs_patch_file, trimmed_plane_with_inner_loop_file,
-};
+use crate::test_support::test_drawing_and_trimming::test_boundary_direction::trimmed_nurbs_patch_file;
+use crate::test_support::test_drawing_and_trimming::trimmed_plane_with_inner_loop_file;
 use crate::test_support::test_owned::explicit_void_solid_file;
 use crate::{IgesCodec, IgesVersion};
 

@@ -13,10 +13,12 @@ use cadmpeg_ir::CadIr;
 
 use super::super::winding::polygon_signed_area_twice;
 use crate::loss::IgesLossCode;
+use crate::test_support::test_drawing_and_trimming::test_boundary_direction::{
+    trimmed_nurbs_patch_file, trimmed_plane_with_outer_and_inner,
+};
 use crate::test_support::test_drawing_and_trimming::{
-    trimmed_nurbs_patch_file, trimmed_plane_with_boundaries,
-    trimmed_plane_with_boundaries_and_inner, trimmed_plane_with_inner_loop_file,
-    trimmed_plane_with_outer_and_inner,
+    trimmed_plane_with_boundaries, trimmed_plane_with_boundaries_and_inner,
+    trimmed_plane_with_inner_loop_file,
 };
 use crate::IgesCodec;
 
