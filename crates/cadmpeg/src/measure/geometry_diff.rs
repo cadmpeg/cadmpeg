@@ -17,7 +17,7 @@ use cadmpeg_measure::{Selection, WorkProfile};
 use serde::Serialize;
 
 use super::render::{name, number};
-use super::{input_summary, require_geometry, run, MeasureBody, Session};
+use super::{input_summary, run, MeasureBody, Session};
 use crate::application::document::LoadedDocument;
 use crate::application::refusal::{ApplicationError, RefusalStage};
 
@@ -73,7 +73,7 @@ impl GeometryDiff {
             density: None,
         };
         let measured = |loaded: &LoadedDocument| -> Result<MeasureReport, ApplicationError> {
-            require_geometry(loaded)?;
+            crate::commands::print_scope_note(&mut io::stderr(), loaded.ir.scope)?;
             let transferred = loaded
                 .decode_report()
                 .is_none_or(DecodeReport::geometry_transferred);

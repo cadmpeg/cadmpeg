@@ -151,6 +151,8 @@ pub enum UnavailableReason {
     MassPrincipalAxesDegenerate,
     /// An occurrence of the chain has a scale other than `(1, 1, 1)`.
     PlacementOccurrenceScale,
+    /// An occurrence of the chain or of its subtree states no placement.
+    PlacementOccurrenceUnplaced,
     /// The occurrence's prototype is external or unresolved.
     PlacementPrototypeUnresolved,
     /// The occurrence's parent chain does not reach a root occurrence.
@@ -167,7 +169,7 @@ pub enum UnavailableReason {
 
 impl UnavailableReason {
     /// Every reason, in declaration order.
-    pub const ALL: [Self; 47] = [
+    pub const ALL: [Self; 48] = [
         Self::CarrierUnknown,
         Self::CarrierUnresolved,
         Self::CarrierProceduralUnevaluated,
@@ -210,6 +212,7 @@ impl UnavailableReason {
         Self::PlacementCarrierShared,
         Self::MassPrincipalAxesDegenerate,
         Self::PlacementOccurrenceScale,
+        Self::PlacementOccurrenceUnplaced,
         Self::PlacementPrototypeUnresolved,
         Self::PlacementOccurrenceChainBroken,
         Self::PlacementOccurrenceBodyRepeated,
@@ -263,6 +266,7 @@ impl UnavailableReason {
             Self::PlacementCarrierShared => "placement.carrier-shared",
             Self::MassPrincipalAxesDegenerate => "mass.principal-axes-degenerate",
             Self::PlacementOccurrenceScale => "placement.occurrence-scale",
+            Self::PlacementOccurrenceUnplaced => "placement.occurrence-unplaced",
             Self::PlacementPrototypeUnresolved => "placement.prototype-unresolved",
             Self::PlacementOccurrenceChainBroken => "placement.occurrence-chain-broken",
             Self::PlacementOccurrenceBodyRepeated => "placement.occurrence-body-repeated",
@@ -320,6 +324,7 @@ impl UnavailableReason {
             | Self::PlacementNonFinite
             | Self::PlacementCarrierShared
             | Self::PlacementOccurrenceScale
+            | Self::PlacementOccurrenceUnplaced
             | Self::PlacementPrototypeUnresolved
             | Self::PlacementOccurrenceBodyRepeated => Category::Placement,
             Self::AggregateMemberUnavailable => return None,
@@ -443,7 +448,7 @@ impl Serialize for CompareCause {
 mod tests {
     use super::{Category, CaveatCode, CompareCause, UnavailableReason};
 
-    const REASONS: [(&str, Option<&str>); 47] = [
+    const REASONS: [(&str, Option<&str>); 48] = [
         ("carrier.unknown", Some("input")),
         ("carrier.unresolved", Some("input")),
         ("carrier.procedural-unevaluated", Some("unsupported")),
@@ -486,6 +491,7 @@ mod tests {
         ("placement.carrier-shared", Some("placement")),
         ("mass.principal-axes-degenerate", Some("undefined")),
         ("placement.occurrence-scale", Some("placement")),
+        ("placement.occurrence-unplaced", Some("placement")),
         ("placement.prototype-unresolved", Some("placement")),
         ("placement.occurrence-chain-broken", Some("input")),
         ("placement.occurrence-body-repeated", Some("placement")),

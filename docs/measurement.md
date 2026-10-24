@@ -132,7 +132,8 @@ cites.
 | `length.derivative-unavailable` | unsupported | A procedural curve without a solved cache has no derivative evaluator. |
 | `placement.carrier-shared` | placement | A surface row's surface is used by faces of bodies with different placements. |
 | `mass.principal-axes-degenerate` | undefined | A principal moment agrees with another within their separation, so its principal axis is not determined. |
-| `placement.occurrence-scale` | placement | An occurrence of the `--occurrence` chain or of its subtree has a scale other than `(1, 1, 1)`. |
+| `placement.occurrence-scale` | placement | The placement of an occurrence of the `--occurrence` chain or of its subtree is not rigid: its linear part has a scale other than `(1, 1, 1)`. |
+| `placement.occurrence-unplaced` | placement | An occurrence of the `--occurrence` chain or of its subtree states no placement. |
 | `placement.prototype-unresolved` | placement | The prototype of the `--occurrence` occurrence or of an occurrence of its subtree is external or unresolved, or its definition does not resolve. |
 | `placement.occurrence-chain-broken` | input | The `--occurrence` parent chain does not reach a root occurrence: a parent is missing or the chain repeats. |
 | `placement.occurrence-body-repeated` | placement | Two occurrences of the `--occurrence` subtree place the same body; a pass has one row per body. |

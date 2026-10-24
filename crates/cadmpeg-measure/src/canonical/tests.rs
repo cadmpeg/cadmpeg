@@ -13,6 +13,7 @@ use crate::value::{Method, Quantity, Scalar, SourceExactness};
 
 fn surface(geometry: SolvedSurfaceGeometry) -> Surface {
     Surface {
+        native_ref: None,
         id: cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#s").unwrap(),
         geometry: SurfaceGeometry::Solved(geometry),
         source_object: None,

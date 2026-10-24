@@ -35,10 +35,6 @@ pub(crate) const SIMILARITY_GRAM_RELATIVE_DEVIATION: f64 = 1.0e-8;
 /// placement is rigid.
 pub(crate) const RIGID_SCALE_DEVIATION: f64 = 1.0e-8;
 
-/// Largest deviation of an occurrence's scale factor from 1 for which an
-/// ID-free comparison takes the occurrence as unscaled.
-pub(crate) const COMPARE_OCCURRENCE_SCALE_DEVIATION: f64 = 1.0e-8;
-
 /// Largest deviation of an entry of an occurrence's effective linear part
 /// from the identity for which an ID-free comparison takes the occurrence
 /// as unrotated.

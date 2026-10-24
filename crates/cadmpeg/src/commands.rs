@@ -64,7 +64,7 @@ pub(crate) fn print_load_notice(document: &LoadedDocument) {
     }
 }
 
-fn print_scope_note(
+pub(crate) fn print_scope_note(
     writer: &mut impl Write,
     scope: cadmpeg_ir::document::ContentScope,
 ) -> io::Result<()> {

@@ -387,13 +387,6 @@ pub(crate) enum ConversionRefusal {
         /// Human-readable message.
         message: String,
     },
-    /// The document records less of its source than measurement needs.
-    InsufficientMeasureDepth {
-        /// The depth measurement needs and the depth the document records.
-        depth: DepthReport,
-        /// Decode report available for an optional `--report`.
-        decode_report: Option<DecodeReport>,
-    },
 }
 
 /// Stable typed contents of the command-report `refusal` object.
@@ -657,22 +650,6 @@ impl ConversionRefusal {
                 message: Cow::Borrowed(message),
                 detail: None,
                 reports: RefusalReports::default(),
-            },
-            Self::InsufficientMeasureDepth {
-                depth,
-                decode_report,
-            } => RefusalEvidence {
-                code: RefusalCode::InsufficientDepth,
-                message: Cow::Owned(format!(
-                    "measurement needs a {}-depth decode, but the document records {} depth",
-                    depth.needed, depth.recorded
-                )),
-                detail: Some(RefusalDetail::Depth(*depth)),
-                reports: RefusalReports {
-                    decode: decode_report.as_ref(),
-                    check: None,
-                    export: None,
-                },
             },
         }
     }

@@ -8,7 +8,6 @@ use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::products::{
     Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
 };
-use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
@@ -30,7 +29,6 @@ fn definition(ir: &CadIr) -> ProductDefinition {
 }
 
 fn occurrence(n: u32, transform: Transform) -> Occurrence {
-    let one = FiniteReal::new(1.0).expect("finite");
     Occurrence {
         id: OccurrenceId::mint(format!("test:model:occurrence#{n}")).expect("id"),
         prototype: PrototypeReference::Local {
@@ -38,9 +36,8 @@ fn occurrence(n: u32, transform: Transform) -> Occurrence {
         },
         parent: OccurrenceParent::Root {},
         ordinal: n,
-        transform,
+        transform: Some(transform),
         linked_prototype: None,
-        scale: [one; 3],
         name: None,
         visible: None,
         link: None,

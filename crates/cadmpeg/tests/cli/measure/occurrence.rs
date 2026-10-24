@@ -192,8 +192,18 @@ fn occurrence_mut<'a>(document: &'a mut Value, id: &str) -> &'a mut Value {
 fn a_scaled_chain_or_an_external_prototype_gives_no_rows() {
     let dir = tempdir().unwrap();
     let scaled = edited(dir.path(), |document| {
-        occurrence_mut(document, "step:product:occurrence#150")["scale"] =
-            serde_json::json!([2.0, 1.0, 1.0]);
+        // The occurrence scale (2, 1, 1) composes into the placement's x column.
+        let occurrence = occurrence_mut(document, "step:product:occurrence#150");
+        if occurrence["transform"].is_null() {
+            occurrence["transform"] = serde_json::json!([
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0]
+            ]);
+        }
+        for row in occurrence["transform"].as_array_mut().unwrap() {
+            row[0] = serde_json::json!(row[0].as_f64().unwrap() * 2.0);
+        }
     });
     let report = occurrence_report(&scaled, "occurrence#160", &[]);
     assert!(report["measure"]["bodies"].as_array().unwrap().is_empty());

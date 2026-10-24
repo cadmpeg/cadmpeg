@@ -23,7 +23,7 @@ native CAD or CADIR ── load + decode/parse ──> CadIr
 
 CADIR input parses directly into `CadIr`. The parser accepts exactly IR version 8, including its required `subds` arena. Source annotations and retained records stay in the source-fidelity sidecar. Empty geometry output is written with an `export:output.empty` Warning; `--reject-empty` refuses it. A stale sidecar binding is ignored and reported as a current `sidecar.stale` Warning; sidecar read and parse failures remain errors.
 
-`convert` requests `geometry` for STEP, IGES, and Rhino and `full` for other encoders through `Encoder::request`. `--full-decode` requests full independently of the target, as does `--reject-lossy`. `--container-only` requests container scope and conflicts with `--full-decode`; its restriction to CADIR output is caller policy. `dump`, `check`, and `diff` request full; `measure` requests `geometry` and refuses a document whose scope does not hold the model class. Stderr reports delivered content scope, not an ordered decode depth.
+`convert` requests `geometry` for STEP, IGES, and Rhino and `full` for other encoders through `Encoder::request`. `--full-decode` requests full independently of the target, as does `--reject-lossy`. `--container-only` requests container scope and conflicts with `--full-decode`; its restriction to CADIR output is caller policy. `dump`, `check`, and `diff` request full; `measure` requests `geometry`; for a document whose scope does not hold the model class it prints the scope note and measures the empty model. Stderr reports delivered content scope, not an ordered decode depth.
 
 A successful dump is not a checked model.
 
