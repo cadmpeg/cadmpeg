@@ -1014,12 +1014,10 @@ fn validate_loaded(
 /// stored document-root discriminator.
 fn validate_act(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
     let native = ctx.native;
-    let mut streams = std::collections::BTreeMap::<&str, &str>::new();
     let mut record_indices = HashSet::new();
     for entity in &native.act_entities {
         let stream = entity.stream();
 
-        streams.entry(stream).or_insert(entity.id().as_str());
         let unique_index = record_indices.insert((stream, entity.record_index()));
         if !unique_index {
             push_constant_finding(findings, Check::NativeLinks, "Fusion ACT entity has an invalid identity, table membership, or change-group frame", Some(entity.id().to_owned()));
@@ -1030,8 +1028,6 @@ fn validate_act(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result<(), Co
     let mut guid_offsets = HashSet::new();
     for guid in &native.act_guids {
         let stream = guid.stream();
-
-        streams.entry(stream).or_insert(guid.id().as_str());
 
         guid_ordinals
             .entry(stream)
@@ -1059,8 +1055,6 @@ fn validate_act(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result<(), Co
     for reference in &native.act_table_references {
         let stream = reference.stream();
 
-        streams.entry(stream).or_insert(reference.id().as_str());
-
         table_reference_ordinals
             .entry(stream)
             .or_insert((HashSet::new(), reference.id().as_str()));
@@ -1087,8 +1081,6 @@ fn validate_act(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result<(), Co
     for channel in &native.act_registry_channels {
         let stream = channel.stream();
 
-        streams.entry(stream).or_insert(channel.id().as_str());
-
         registry_ordinals
             .entry(stream)
             .or_insert((HashSet::new(), channel.id().as_str()));
@@ -1105,20 +1097,22 @@ fn validate_act(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result<(), Co
         }
     }
 
-    let mut root_counts = HashMap::<&str, usize>::new();
+    let mut root_counts = BTreeMap::<&str, (&str, usize)>::new();
     for root in &native.act_root_components {
         let stream = root.stream();
 
-        streams.entry(stream).or_insert(root.id().as_str());
-        *root_counts.entry(stream).or_default() += 1;
+        root_counts
+            .entry(stream)
+            .or_insert((root.id().as_str(), 0))
+            .1 += 1;
         let unique_record_index = record_indices.insert((stream, root.record_index));
         if !unique_record_index {
             push_constant_finding(findings, Check::NativeLinks, "Fusion ACT root component has an invalid identity, frame, or tracked-entity reference", Some(root.id().to_owned()));
         }
     }
 
-    for (stream, witness) in streams {
-        if root_counts.get(stream).copied() != Some(1) {
+    for (witness, count) in root_counts.into_values() {
+        if count != 1 {
             push_constant_finding(
                 findings,
                 Check::NativeLinks,
