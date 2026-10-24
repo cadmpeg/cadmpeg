@@ -824,6 +824,7 @@ impl<'a> Projector<'a> {
 
 fn component_definition(id: ProductDefinitionId, bodies: Vec<BodyId>) -> ProductDefinition {
     ProductDefinition {
+        sketches: Vec::default(),
         id,
         kind: ProductDefinitionKind::Part,
         source_name: None,

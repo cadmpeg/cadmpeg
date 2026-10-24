@@ -52,6 +52,8 @@ pub(crate) enum F3dLossCode {
     LocalOccurrenceExpansionLimit,
     /// A component feature names no unique expanded occurrence.
     FeatureOccurrencePathUnresolved,
+    /// A sketch collection owner does not bind one component definition.
+    SketchOwnerUnresolved,
     /// Unresolved `Component Insert` occurrences whose placement has no finite millimetre transform.
     ComponentInsertUnplaced,
     /// Unresolved `Component Insert` occurrences dropped because no authored timeline order tells
@@ -291,6 +293,7 @@ impl F3dLossCode {
         Self::LocalOccurrenceOwnerCycle,
         Self::LocalOccurrenceExpansionLimit,
         Self::FeatureOccurrencePathUnresolved,
+        Self::SketchOwnerUnresolved,
         Self::ComponentInsertUnplaced,
         Self::ComponentInsertOrderUnknown,
         Self::ComponentDefinitionRevised,
@@ -419,6 +422,7 @@ impl F3dLossCode {
             Self::LocalOccurrenceOwnerCycle => "assembly.local-occurrence-owner-cycle",
             Self::LocalOccurrenceExpansionLimit => "assembly.local-occurrence-expansion-limit",
             Self::FeatureOccurrencePathUnresolved => "feature.occurrence-path-unresolved",
+            Self::SketchOwnerUnresolved => "sketch.component-owner-unresolved",
             Self::ComponentInsertUnplaced => "assembly.component-insert-unplaced",
             Self::ComponentInsertOrderUnknown => "assembly.component-insert-order-unknown",
             Self::ComponentDefinitionRevised => "assembly.component-definition-revised",
@@ -567,6 +571,7 @@ impl F3dLossCode {
             | Self::LocalOccurrenceExpansionLimit
             | Self::FeatureOccurrencePathUnresolved
             | Self::LocalOccurrenceUnplaced
+            | Self::SketchOwnerUnresolved
             | Self::ComponentInsertUnplaced
             | Self::ComponentInsertOrderUnknown
             | Self::ComponentDefinitionRevised
@@ -737,7 +742,8 @@ impl F3dLossCode {
             | Self::ComponentInsertUnplaced
             | Self::ComponentInsertOrderUnknown
             | Self::ComponentDefinitionRevised => LossTaxonomy::AssemblyPlacementsNotTransferred,
-            Self::DesignBodyBindingUnresolved
+            Self::SketchOwnerUnresolved
+            | Self::DesignBodyBindingUnresolved
             | Self::FaceSurfaceReferenceDangling
             | Self::PcurveUndecoded => LossTaxonomy::ReferenceGraphNotClosed,
             Self::ReferenceImageNativeRetained
@@ -841,6 +847,7 @@ mod tests {
                 "assembly.local-occurrence-owner-cycle",
                 "assembly.local-occurrence-expansion-limit",
                 "feature.occurrence-path-unresolved",
+                "sketch.component-owner-unresolved",
                 "assembly.component-insert-unplaced",
                 "assembly.component-insert-order-unknown",
                 "assembly.component-definition-revised",

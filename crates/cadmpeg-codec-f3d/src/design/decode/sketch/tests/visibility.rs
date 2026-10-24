@@ -128,6 +128,14 @@ fn collection_stream(
     named_collection: u64,
     collections: &[(u64, &[u64])],
 ) -> (Vec<u8>, crate::metastream::MetaStream) {
+    collection_stream_version(named_collection, collections, 4)
+}
+
+fn collection_stream_version(
+    named_collection: u64,
+    collections: &[(u64, &[u64])],
+    version: u32,
+) -> (Vec<u8>, crate::metastream::MetaStream) {
     let (mut bytes, mut metadata) = visibility_stream();
     let member_at = bytes.len() - member(1, 1).len();
     bytes[member_at + 37..member_at + 45].copy_from_slice(&named_collection.to_le_bytes());
@@ -136,6 +144,7 @@ fn collection_stream(
         .to_owned()
         .try_into()
         .unwrap();
+    collection_type.version = version;
     collection_type.entities = crate::records::identity::ReferenceRun::unlocated(
         collections.iter().map(|(id, _)| *id).collect(),
     );
@@ -150,6 +159,9 @@ fn collection_stream(
         crate::test_support::lp_ascii(&mut bytes, "crv_tag_id_idx");
         crate::test_support::lp_ascii(&mut bytes, "IntrinsicMetaTypeuint64");
         bytes.extend_from_slice(&7u64.to_le_bytes());
+        if version == 3 {
+            bytes.extend_from_slice(&[0; 6]);
+        }
         bytes.extend_from_slice(&u32::try_from(members.len()).unwrap().to_le_bytes());
         for target in *members {
             bytes.push(1);
@@ -276,4 +288,14 @@ fn collection_counted_run_requires_complete_plain_local_references() {
     cross_segment[reference_at + 10] = 1;
     cross_segment.extend_from_slice(&1u32.to_le_bytes());
     assert!(decode_sketch_visibilities_in_stream(&cross_segment, &metadata).is_err());
+}
+
+#[test]
+fn version_three_collection_has_six_bytes_before_its_member_run() {
+    let (bytes, metadata) = collection_stream_version(300, &[(300, &[ENTITY_SUFFIX])], 3);
+    let visibilities = decode_sketch_visibilities_in_stream(&bytes, &metadata).unwrap();
+    assert_eq!(visibilities.len(), 1);
+    assert_eq!(visibilities[0].0, ENTITY_SUFFIX);
+    assert_eq!(visibilities[0].1.ordinal_collection.unwrap().get(), 300);
+    assert!(visibilities[0].1.visible);
 }
