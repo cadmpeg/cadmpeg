@@ -1183,3 +1183,118 @@ fn class_414_component_insert_admits_shifted_identity_and_matrix_prologues() {
 }
 
 mod copy_paste;
+
+#[test]
+fn identity_insert_prologues_validate_identity_relation_and_null_guid() {
+    for shifted in [false, true] {
+        let delta = if shifted { 4 } else { 0 };
+        let mut bytes = vec![0; 126 + delta];
+        if shifted {
+            bytes[20] = 1;
+        }
+        bytes[25 + delta..33 + delta].copy_from_slice(&17_u64.to_le_bytes());
+        bytes[37 + delta] = 1;
+        bytes[38 + delta..42 + delta].copy_from_slice(&20_u32.to_le_bytes());
+        bytes[48 + delta..50 + delta].copy_from_slice(&[1, 1]);
+        bytes[50 + delta..].copy_from_slice(
+            &crate::bytes::lp_utf16_bytes("00000000-0000-0000-0000-000000000000").unwrap(),
+        );
+        assert_eq!(
+            super::exact_identity_insert_scope(&bytes, 0, 20, shifted),
+            Some(17)
+        );
+        assert!(super::exact_identity_insert_scope(&bytes, 0, 21, shifted).is_none());
+        for offset in [
+            11,
+            33 + delta,
+            37 + delta,
+            42 + delta,
+            48 + delta,
+            54 + delta,
+        ] {
+            let saved = bytes[offset];
+            bytes[offset] ^= 2;
+            assert!(super::exact_identity_insert_scope(&bytes, 0, 20, shifted).is_none());
+            bytes[offset] = saved;
+        }
+        for end in 0..bytes.len() {
+            assert!(super::exact_identity_insert_scope(&bytes[..end], 0, 20, shifted).is_none());
+        }
+    }
+}
+
+#[test]
+fn identity_insert_scopes_join_relation_and_external_carrier() {
+    let role = "aaaabbbb-cccc-dddd-eeee-ffff00001111";
+    for (class, frame) in [("357", 272), ("357", 276), ("360", 276), ("362", 276)] {
+        let delta = usize::from(frame == 276) * 4;
+        let mut bytes =
+            crate::test_support::component_insert_test::identity_insert_carrier(role, 10);
+        let relation_at = bytes.len();
+        let header = |bytes: &mut Vec<u8>, class: &str, record: u32| {
+            bytes.extend_from_slice(&3_u32.to_le_bytes());
+            bytes.extend_from_slice(class.as_bytes());
+            bytes.extend_from_slice(&record.to_le_bytes());
+        };
+        header(&mut bytes, "343", 20);
+        bytes.extend_from_slice(&[0; 10]);
+        bytes.push(1);
+        bytes.extend_from_slice(&10_u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        bytes.extend_from_slice(&[1, 0, 0, 1]);
+        bytes.extend_from_slice(&21_u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 7]);
+        bytes.push(1);
+        bytes.extend_from_slice(&30_u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        assert_eq!(bytes.len() - relation_at, 58);
+        header(&mut bytes, "262", 20);
+        let start = bytes.len();
+        header(&mut bytes, class, 30);
+        bytes.resize(start + frame, 0);
+        if delta != 0 {
+            bytes[start + 20] = 1;
+        }
+        bytes[start + 25 + delta..start + 33 + delta].copy_from_slice(&19_u64.to_le_bytes());
+        bytes[start + 37 + delta] = 1;
+        bytes[start + 38 + delta..start + 42 + delta].copy_from_slice(&20_u32.to_le_bytes());
+        bytes[start + 48 + delta..start + 50 + delta].copy_from_slice(&[1, 1]);
+        bytes[start + 50 + delta..start + 126 + delta].copy_from_slice(
+            &crate::bytes::lp_utf16_bytes("00000000-0000-0000-0000-000000000000").unwrap(),
+        );
+        header(&mut bytes, "262", 30);
+        let mut scope = DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:design-parameter-scope#30",
+            crate::records::feature::scope::DesignFeatureKind::ComponentInsert,
+            30,
+        );
+        scope
+            .try_edit(|draft| {
+                draft.byte_offset = u64_from_index(start);
+                draft.class_tag =
+                    crate::records::references::DesignClassTag::try_from(class.to_owned()).unwrap();
+                draft.frame_length = u64_from_index(frame);
+                draft.paired_byte_offset = u64_from_index(start + frame);
+                draft.paired_class_tag =
+                    crate::records::references::DesignClassTag::try_from("262".to_owned()).unwrap();
+                draft.reference_count_offset = u64_from_index(start + 129 + delta);
+                draft.reference_members = crate::records::identity::ReferenceRun::from_columns(
+                    vec![20],
+                    vec![u64_from_index(start + 134 + delta)],
+                    "reference_members",
+                )
+                .unwrap();
+                draft.kind_offset = u64_from_index(start + 152 + delta);
+                draft.feature_ordinal_offset = u64_from_index(start + 184 + delta);
+            })
+            .unwrap();
+        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+        let construction = tested_component_insert_construction(&bytes, &records, &scope).unwrap();
+        assert_eq!(construction.neutron_role, role);
+        assert_eq!(construction.occurrence_identity, Some(19));
+        assert_eq!(construction.carrier_record_index, 10);
+        assert!(construction.placement.is_none());
+        bytes[relation_at + 48..relation_at + 52].copy_from_slice(&31_u32.to_le_bytes());
+        assert!(tested_component_insert_construction(&bytes, &records, &scope).is_none());
+    }
+}

@@ -5940,6 +5940,305 @@ Offsets are relative to the end of the 190-byte selection-member frame.
 | 5 | 8 | `value` | `u64` | little | spec | byte `00`, u32 `2`, u64 `1`, and byte `00` · value `1` |
 | 13 | 1 | `trailing_zero` | `u8` | little | spec | byte `00`, u32 `2`, u64 `1`, and byte `00` · value `0` |
 
+## `cut_paste_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 72 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/occurrence_transfer.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The compact CutPaste prefix |
+| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | The compact CutPaste prefix |
+| 21 | 11 | `removal_reference` | `bytes[11]` | little | spec | The compact CutPaste prefix |
+| 32 | 11 | `companion_reference` | `bytes[11]` | little | spec | The compact CutPaste prefix |
+| 43 | 1 | `companion_flag` | `u8` | little | spec | The compact CutPaste prefix |
+| 44 | 11 | `second_companion_reference` | `bytes[11]` | little | spec | The compact CutPaste prefix |
+| 55 | 4 | `zero_run_4` | `bytes[4]` | little | spec | The compact CutPaste prefix |
+| 59 | 11 | `relation_reference` | `bytes[11]` | little | spec | The compact CutPaste prefix |
+| 70 | 1 | `placement_flag` | `u8` | little | spec | The compact CutPaste prefix |
+| 71 | 1 | `identity_flag` | `u8` | little | spec | The compact CutPaste prefix |
+
+## `copy_paste_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 190 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/occurrence_transfer.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The compact CopyPaste prefix |
+| 11 | 11 | `zero_run` | `bytes[11]` | little | spec | The compact CopyPaste prefix |
+| 22 | 11 | `companion_reference` | `bytes[11]` | little | spec | The compact CopyPaste prefix |
+| 33 | 1 | `zero_separator` | `u8` | little | spec | The compact CopyPaste prefix |
+| 34 | 128 | `source_transform` | `f64[16]` | little | spec | The compact CopyPaste prefix |
+| 162 | 11 | `second_companion_reference` | `bytes[11]` | little | spec | The compact CopyPaste prefix |
+| 173 | 4 | `zero_run_4` | `bytes[4]` | little | spec | The compact CopyPaste prefix |
+| 177 | 11 | `relation_reference` | `bytes[11]` | little | spec | The compact CopyPaste prefix |
+| 188 | 1 | `placement_flag` | `u8` | little | spec | The compact CopyPaste prefix |
+| 189 | 1 | `identity_flag` | `u8` | little | spec | The compact CopyPaste prefix |
+
+## `paste_occurrence_relation`
+
+Spec §3.1 · layout: byte offsets · size: 87 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/occurrence_transfer.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The relation has a 57-byte primary record |
+| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | The relation has a 57-byte primary record |
+| 21 | 11 | `occurrence_reference` | `bytes[11]` | little | spec | The relation has a 57-byte primary record |
+| 32 | 2 | `zero_run_2` | `bytes[2]` | little | spec | The relation has a 57-byte primary record |
+| 34 | 11 | `companion_reference` | `bytes[11]` | little | spec | The relation has a 57-byte primary record |
+| 45 | 1 | `zero_separator` | `u8` | little | spec | The relation has a 57-byte primary record |
+| 46 | 11 | `scope_reference` | `bytes[11]` | little | spec | The relation has a 57-byte primary record |
+| 57 | 11 | `paired_header` | `bytes[11]` | little | spec | The relation has a 57-byte primary record |
+| 68 | 8 | `zero_run_8` | `bytes[8]` | little | spec | The relation has a 57-byte primary record |
+| 76 | 1 | `owner_marker` | `u8` | little | spec | The relation has a 57-byte primary record |
+| 77 | 8 | `owner_collection` | `u64` | little | spec | The relation has a 57-byte primary record |
+| 85 | 2 | `owner_zero_run` | `bytes[2]` | little | spec | The relation has a 57-byte primary record |
+
+## `remove_instance_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 135 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/occurrence_transfer.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The RemoveInstance prefix |
+| 11 | 22 | `zero_run` | `bytes[22]` | little | spec | The RemoveInstance prefix |
+| 33 | 11 | `source_relation_reference` | `bytes[11]` | little | spec | The RemoveInstance prefix |
+| 44 | 76 | `occurrence_key` | `bytes[76]` | little | spec | The RemoveInstance prefix |
+| 120 | 7 | `zero_run_7` | `bytes[7]` | little | spec | The RemoveInstance prefix |
+| 127 | 4 | `history_state` | `u32` | little | spec | The RemoveInstance prefix |
+| 131 | 4 | `kind_length` | `u32` | little | spec | The RemoveInstance prefix |
+
+## `paste_context_owner_tail`
+
+Spec §3.1 · layout: byte offsets · size: 52 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/occurrence_transfer.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `collection_reference` | `bytes[11]` | little | spec | The context owner tail is 52 bytes |
+| 11 | 11 | `companion_reference` | `bytes[11]` | little | spec | The context owner tail is 52 bytes |
+| 22 | 11 | `paired_header` | `bytes[11]` | little | spec | The context owner tail is 52 bytes |
+| 33 | 8 | `zero_run_8` | `bytes[8]` | little | spec | The context owner tail is 52 bytes |
+| 41 | 11 | `component_reference` | `bytes[11]` | little | spec | The context owner tail is 52 bytes |
+
+## `component_insert_identity_scope_272_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 126 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/component_constructions.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | fourteen zero bytes at offsets 11 through 24 |
+| 11 | 14 | `zero_prefix` | `bytes[14]` | little | spec | fourteen zero bytes at offsets 11 through 24 |
+| 25 | 8 | `occurrence_identity` | `u64` | little | spec | its occurrence identity u64 at offset 25 |
+| 33 | 4 | `zero_after_identity` | `bytes[4]` | little | spec | four zero bytes at offset 33 |
+| 37 | 5 | `relation_reference` | `bytes[5]` | little | spec | its marked relation reference at offset 37 |
+| 42 | 6 | `zero_after_relation` | `bytes[6]` | little | spec | six zero bytes at offset 42 |
+| 48 | 2 | `identity_markers` | `bytes[2]` | little | spec | identity bytes `01 01` at offset 48 |
+| 50 | 76 | `null_guid` | `bytes[76]` | little | spec | The LP-UTF16 null GUID starts at offset 50 |
+
+## `component_insert_identity_scope_276_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 130 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/component_constructions.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | All subsequent fields move four bytes later |
+| 11 | 18 | `prologue` | `bytes[18]` | little | spec | All subsequent fields move four bytes later |
+| 29 | 8 | `occurrence_identity` | `u64` | little | spec | All subsequent fields move four bytes later |
+| 37 | 4 | `zero_after_identity` | `bytes[4]` | little | spec | All subsequent fields move four bytes later |
+| 41 | 5 | `relation_reference` | `bytes[5]` | little | spec | All subsequent fields move four bytes later |
+| 46 | 6 | `zero_after_relation` | `bytes[6]` | little | spec | All subsequent fields move four bytes later |
+| 52 | 2 | `identity_markers` | `bytes[2]` | little | spec | All subsequent fields move four bytes later |
+| 54 | 76 | `null_guid` | `bytes[76]` | little | spec | All subsequent fields move four bytes later |
+
+## `component_insert_identity_carrier`
+
+Spec §3.1 · layout: byte offsets · size: 420 B
+
+The sequential legacy target-reference grammar and the fixed identity insertion members determine these offsets.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/xref.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 19 | `indexed_entity_and_empty_name` | `bytes[19]` | little | spec | The 420-byte identity insertion carrier |
+| 19 | 1 | `path_marker` | `u8` | little | spec | The 420-byte identity insertion carrier |
+| 20 | 4 | `path_count` | `u32` | little | spec | The 420-byte identity insertion carrier |
+| 24 | 60 | `target_reference` | `bytes[60]` | little | spec | The 420-byte identity insertion carrier |
+| 84 | 4 | `instance_discriminator` | `u32` | little | spec | The 420-byte identity insertion carrier |
+| 88 | 4 | `member_count` | `u32` | little | spec | The 420-byte identity insertion carrier |
+| 92 | 1 | `zero_after_count` | `u8` | little | spec | The 420-byte identity insertion carrier |
+| 93 | 1 | `metadata_boolean` | `u8` | little | spec | The 420-byte identity insertion carrier |
+| 94 | 1 | `zero_after_boolean` | `u8` | little | spec | The 420-byte identity insertion carrier |
+| 95 | 4 | `metadata_count` | `u32` | little | spec | The 420-byte identity insertion carrier |
+| 99 | 76 | `placement_metadata_guid` | `bytes[76]` | little | spec | The 420-byte identity insertion carrier |
+| 175 | 76 | `tracking_link_guid` | `bytes[76]` | little | spec | The 420-byte identity insertion carrier |
+| 251 | 1 | `metadata_marker` | `u8` | little | spec | The 420-byte identity insertion carrier |
+| 252 | 8 | `opaque_metadata_token` | `u64` | little | spec | The 420-byte identity insertion carrier |
+| 260 | 7 | `metadata_tail` | `bytes[7]` | little | spec | The 420-byte identity insertion carrier |
+| 267 | 60 | `repeated_target_reference` | `bytes[60]` | little | spec | The 420-byte identity insertion carrier |
+| 327 | 1 | `identity_flag` | `u8` | little | spec | The 420-byte identity insertion carrier |
+| 328 | 4 | `zero_after_identity` | `u32` | little | spec | The 420-byte identity insertion carrier |
+| 332 | 76 | `occurrence_role` | `bytes[76]` | little | spec | The 420-byte identity insertion carrier |
+| 408 | 12 | `closure` | `bytes[12]` | little | spec | The 420-byte identity insertion carrier |
+
+## `emboss_scope_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 156 B
+
+Offsets are relative to the primary indexed header. The null GUID and common reference table follow this prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/emboss.rs`
+- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The `Emboss` fixed-prefix form has nine ordered references. |
+| 11 | 9 | `zero_run` | `bytes[9]` | little | spec | The `Emboss` fixed-prefix form has nine ordered references. · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 20 | 8 | `control_words` | `u32[2]` | little | spec | The `Emboss` fixed-prefix form has nine ordered references. |
+| 28 | 11 | `depth_owner_reference` | `bytes[11]` | little | spec | The `Emboss` fixed-prefix form has nine ordered references. |
+| 39 | 11 | `auxiliary_group_reference` | `bytes[11]` | little | spec | The `Emboss` fixed-prefix form has nine ordered references. |
+| 50 | 11 | `horizontal_owner_reference` | `bytes[11]` | little | spec | The `Emboss` fixed-prefix form has nine ordered references. |
+| 61 | 4 | `native_pair_count` | `u32` | little | spec | The `Emboss` fixed-prefix form has nine ordered references. · value `1` |
+| 65 | 16 | `native_pair` | `u64[2]` | little | spec | The `Emboss` fixed-prefix form has nine ordered references. |
+| 81 | 11 | `rotation_owner_reference` | `bytes[11]` | little | spec | The `Emboss` fixed-prefix form has nine ordered references. |
+| 92 | 11 | `face_group_reference` | `bytes[11]` | little | spec | The `Emboss` fixed-prefix form has nine ordered references. |
+| 103 | 11 | `vertical_owner_reference` | `bytes[11]` | little | spec | The `Emboss` fixed-prefix form has nine ordered references. |
+| 114 | 4 | `profile_group_count` | `u32` | little | spec | The `Emboss` fixed-prefix form has nine ordered references. · value `1` |
+| 118 | 11 | `profile_group_reference` | `bytes[11]` | little | spec | The `Emboss` fixed-prefix form has nine ordered references. |
+| 129 | 12 | `zero_tail` | `bytes[12]` | little | spec | The `Emboss` fixed-prefix form has nine ordered references. · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 141 | 4 | `face_group_count` | `u32` | little | spec | The `Emboss` fixed-prefix form has nine ordered references. · value `1` |
+| 145 | 11 | `repeated_face_group_reference` | `bytes[11]` | little | spec | The `Emboss` fixed-prefix form has nine ordered references. |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs` — The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal.
+- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs` — The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal.
+- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs` — The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal.
+- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs` — The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal.
+- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs` — The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal.
+- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs` — The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal.
+- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs` — The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal.
+
+## `emboss_scope_reference_table_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 239 B
+
+The operation prefix, null GUID, and separator precede the common reference count.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/emboss.rs`
+- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 156 | `operation_prefix` | `bytes[156]` | little | spec | Its operation prefix is the `emboss_scope_prefix` record |
+| 156 | 4 | `null_guid_count` | `u32` | little | spec | A 36-code-unit LP-UTF16 null GUID and three zero bytes separate the prefix · value `36` |
+| 160 | 72 | `null_guid` | `u16[36]` | little | spec | A 36-code-unit LP-UTF16 null GUID and three zero bytes separate the prefix |
+| 232 | 3 | `zero_separator` | `bytes[3]` | little | spec | A 36-code-unit LP-UTF16 null GUID and three zero bytes separate the prefix · value `[0, 0, 0]` |
+| 235 | 4 | `reference_count` | `u32` | little | spec | The `Emboss` fixed-prefix form has nine ordered references. · value `9` |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs` — The common reference count follows the complete null-GUID separator.
+
+## `rectangular_pattern_spacing_direction_record`
+
+Spec §Assembly operands · layout: byte offsets · size: 221 B
+
+Offsets are relative to the direction record's primary indexed header. The paired header starts at offset 221.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The 221-byte spacing direction form |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | The 221-byte spacing direction form |
+| 21 | 4 | `selection_kind` | `u32` | little | spec | The 221-byte spacing direction form |
+| 25 | 24 | `origin` | `f64[3]` | little | spec | The 221-byte spacing direction form |
+| 49 | 24 | `displacement` | `f64[3]` | little | spec | The 221-byte spacing direction form |
+| 73 | 16 | `zero_run_16` | `bytes[16]` | little | spec | The 221-byte spacing direction form |
+| 89 | 4 | `distance_type` | `u32` | little | spec | The 221-byte spacing direction form · value `7` |
+| 93 | 1 | `spacing_flag` | `u8` | little | spec | The 221-byte spacing direction form · value `0` |
+| 94 | 24 | `negative_ones` | `f64[3]` | little | spec | The 221-byte spacing direction form |
+| 118 | 4 | `selection_count` | `u32` | little | spec | The 221-byte spacing direction form |
+| 122 | 11 | `selection_reference` | `bytes[11]` | little | spec | The 221-byte spacing direction form |
+| 133 | 2 | `zero_run_2` | `bytes[2]` | little | spec | The 221-byte spacing direction form |
+| 135 | 4 | `auxiliary_count` | `u32` | little | spec | The 221-byte spacing direction form |
+| 139 | 11 | `auxiliary_reference` | `bytes[11]` | little | spec | The 221-byte spacing direction form |
+| 150 | 8 | `role` | `u64` | little | spec | The 221-byte spacing direction form |
+| 158 | 10 | `zero_run_after_role` | `bytes[10]` | little | spec | The 221-byte spacing direction form |
+| 168 | 4 | `opaque_index` | `u32` | little | spec | The 221-byte spacing direction form |
+| 172 | 8 | `opaque_scalar` | `f64` | little | spec | The 221-byte spacing direction form |
+| 180 | 4 | `opaque_index_repeat` | `u32` | little | spec | The 221-byte spacing direction form |
+| 184 | 11 | `index_plus_two_reference` | `bytes[11]` | little | spec | The 221-byte spacing direction form |
+| 195 | 1 | `separator_flag` | `u8` | little | spec | The 221-byte spacing direction form |
+| 196 | 2 | `separator_zero_run` | `bytes[2]` | little | spec | The 221-byte spacing direction form |
+| 198 | 11 | `index_plus_one_reference` | `bytes[11]` | little | spec | The 221-byte spacing direction form |
+| 209 | 1 | `scope_separator` | `u8` | little | spec | The 221-byte spacing direction form |
+| 210 | 11 | `scope_reference` | `bytes[11]` | little | spec | The 221-byte spacing direction form |
+
+## `rectangular_pattern_payload_prefix`
+
+Spec §Assembly operands · layout: byte offsets · size: 133 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
+| 11 | 8 | `zero_head` | `bytes[8]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
+| 19 | 1 | `flag` | `u8` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
+| 20 | 4 | `count` | `u32` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
+| 24 | 11 | `u_count` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
+| 35 | 4 | `zero_middle` | `bytes[4]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
+| 39 | 11 | `v_count` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
+| 50 | 9 | `zero_tail` | `bytes[9]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
+| 59 | 4 | `sentinel` | `u32` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
+| 63 | 24 | `v_direction` | `f64[3]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
+| 87 | 11 | `u_distance` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
+| 98 | 11 | `v_distance` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
+| 109 | 2 | `zero_distance` | `bytes[2]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
+| 111 | 11 | `v_count_repeat` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
+| 122 | 11 | `u_direction` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
+
+## `rectangular_pattern_payload_suffix`
+
+Spec §Assembly operands · layout: byte offsets · size: 37 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `u_count` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
+| 11 | 11 | `scope` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
+| 22 | 11 | `seed_group` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
+| 33 | 4 | `zero_tail` | `bytes[4]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

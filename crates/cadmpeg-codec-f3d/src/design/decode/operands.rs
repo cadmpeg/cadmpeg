@@ -816,6 +816,13 @@ pub(crate) fn decode_face_operands(
             crate::records::feature::scope::DesignFeatureKind::DeleteFace
                 | crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
         );
+        let is_emboss_face = scope.kind()
+            == crate::records::feature::scope::DesignFeatureKind::Emboss
+            && group.role() == DesignOperandRole::ROLE_0X10
+            && scope.emboss_construction().is_some_and(|construction| {
+                group.record_index == construction.face_group.value
+                    && group.scope_reference_ordinal == 2
+            });
         let is_thread_face = scope.kind()
             == crate::records::feature::scope::DesignFeatureKind::Thread
             && group.role() == DesignOperandRole::ROLE_0X10;
@@ -841,6 +848,7 @@ pub(crate) fn decode_face_operands(
             && !is_mirror_plane
             && !is_split_face_operand
             && !is_delete_face_operand
+            && !is_emboss_face
             && !is_thread_face
             && !is_hole_face
             && !is_draft_operand
@@ -1571,6 +1579,7 @@ pub(crate) fn bind_sketch_profiles(
     for scope in scopes.iter_mut().filter(|scope| {
         design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Extrude)
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sweep)
+            || scope.emboss_construction().is_some()
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::BaseFlange
     }) {
         let Some(stream) = native_stream(&scope.id) else {
@@ -1584,6 +1593,9 @@ pub(crate) fn bind_sketch_profiles(
         let mut unique = None;
         let mut multiple = false;
         for (ordinal, record_index) in scope.reference_members().values().copied().enumerate() {
+            if scope.emboss_construction().is_some() && ordinal != 1 {
+                continue;
+            }
             let (Ok(ordinal), Some(header)) =
                 (u32::try_from(ordinal), headers.get(&(stream, record_index)))
             else {
@@ -1609,6 +1621,15 @@ pub(crate) fn bind_sketch_profiles(
                 slot.get_or_insert_with(Default::default)
                     .base_flange_profile = Some(profile);
             }
+        } else if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Emboss {
+            if profile.scope_reference_ordinal == 1 {
+                if let crate::records::feature::scope::DesignScopePayloadMut::Emboss(Some(
+                    construction,
+                )) = scope.payload_mut()
+                {
+                    construction.sketch_profile = Some(profile);
+                }
+            }
         } else if design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sweep) {
             if let crate::records::feature::scope::DesignScopePayloadMut::Sweep(slot) =
                 scope.payload_mut()
@@ -1626,7 +1647,7 @@ pub(crate) fn bind_sketch_profiles(
     Ok(())
 }
 
-/// Decode the counted selection group named by each Extrude scope.
+/// Decode compact counted selections in Extrude and Emboss scopes.
 pub(crate) fn decode_extrude_selection_groups(
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
@@ -1634,10 +1655,10 @@ pub(crate) fn decode_extrude_selection_groups(
 ) -> Result<Vec<DesignExtrudeSelectionGroup>, CodecError> {
     let headers = indexed_operand_headers(headers);
     let mut out = Vec::new();
-    for scope in scopes
-        .iter()
-        .filter(|scope| design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Extrude))
-    {
+    for scope in scopes.iter().filter(|scope| {
+        design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Extrude)
+            || scope.emboss_construction().is_some()
+    }) {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
@@ -1647,6 +1668,9 @@ pub(crate) fn decode_extrude_selection_groups(
         };
         let bytes = scan.entry_bytes(&entry.name)?;
         for (ordinal, record_index) in scope.reference_members().values().copied().enumerate() {
+            if scope.emboss_construction().is_some() && ordinal != 8 {
+                continue;
+            }
             let Ok(ordinal) = u32::try_from(ordinal) else {
                 continue;
             };
@@ -1713,6 +1737,8 @@ pub(crate) fn decode_construction_operand_groups(
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::DeleteFace
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::Decal
+            || (scope.kind() == crate::records::feature::scope::DesignFeatureKind::Emboss
+                && scope.emboss_construction().is_some())
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::Thread
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::Hole
             || matches!(
@@ -1734,6 +1760,9 @@ pub(crate) fn decode_construction_operand_groups(
         let bytes = scan.entry_bytes(&entry.name)?;
         let mut unclosed = Vec::new();
         for (ordinal, record_index) in scope.reference_members().values().copied().enumerate() {
+            if scope.emboss_construction().is_some() && !matches!(ordinal, 0 | 2) {
+                continue;
+            }
             let (Ok(ordinal), Some(header)) =
                 (u32::try_from(ordinal), headers.get(&(stream, record_index)))
             else {
@@ -3497,15 +3526,27 @@ fn parse_extrude_selection_group(
 /// Decode the fixed-width records named by Extrude selection groups.
 pub(crate) fn decode_extrude_selection_members(
     scan: &ContainerScan,
+    scopes: &[DesignParameterScope],
     groups: &[DesignExtrudeSelectionGroup],
     headers: &[DesignRecordHeader],
 ) -> Result<Vec<DesignExtrudeSelectionMember>, CodecError> {
     let headers = indexed_operand_headers(headers);
+    let extrude_scopes = scopes
+        .iter()
+        .filter_map(|scope| {
+            (design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Extrude))
+                .then(|| native_stream(&scope.id).map(|stream| (stream, scope.record_index)))
+                .flatten()
+        })
+        .collect::<HashSet<_>>();
     let mut out = Vec::new();
     for group in groups {
         let Some(stream) = native_stream(&group.id) else {
             continue;
         };
+        if !extrude_scopes.contains(&(stream, group.scope_record_index)) {
+            continue;
+        }
         let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
         else {
             continue;

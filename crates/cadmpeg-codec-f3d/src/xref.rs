@@ -1304,6 +1304,33 @@ fn modern_occurrence_placement(
     None
 }
 
+pub(crate) fn identity_component_insert_carrier(
+    bytes: &[u8],
+    carrier_at: usize,
+    relation_at: usize,
+    carrier_record_index: u32,
+) -> Option<(String, usize)> {
+    let body = bytes.get(carrier_at..relation_at)?;
+    if View::u64_le_at(body, 7)? != u64::from(carrier_record_index) {
+        return None;
+    }
+    let (mut at, targets_match) = legacy_occurrence_prefix(body, true)?;
+    if !targets_match || body.get(at) != Some(&1) {
+        return None;
+    }
+    at += 1;
+    if View::u32_le_at(body, at)? != 0 {
+        return None;
+    }
+    at += 4;
+    let role_at = at + 4;
+    let (role, next) = lp_utf16_bounded_view(body, at, 36..=36)?;
+    if !role.is_guid_relaxed() || body.get(next..)? != [0, 1, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0] {
+        return None;
+    }
+    Some((role.to_string(), carrier_at + role_at))
+}
+
 /// Parse the legacy typed placement envelope.
 ///
 /// This form keeps the same stable type-table identity as the current
@@ -1312,7 +1339,7 @@ fn modern_occurrence_placement(
 /// not an admission key: the type-table identity and exact member framing are
 /// the stable discriminators.
 fn legacy_occurrence_placement(body: &[u8]) -> Option<(Utf16View<'_>, Option<[[f64; 4]; 4]>)> {
-    let (mut at, targets_match) = legacy_occurrence_prefix(body)?;
+    let (mut at, targets_match) = legacy_occurrence_prefix(body, false)?;
     if !targets_match {
         return None;
     }
@@ -1349,7 +1376,7 @@ fn legacy_occurrence_placement(body: &[u8]) -> Option<(Utf16View<'_>, Option<[[f
 /// so the caller can report an undecoded typed placement against the correct
 /// external reference instead of treating it as an unrelated record.
 fn legacy_occurrence_role(body: &[u8]) -> Option<Utf16View<'_>> {
-    let (mut at, _) = legacy_occurrence_prefix(body)?;
+    let (mut at, _) = legacy_occurrence_prefix(body, false)?;
     match *body.get(at)? {
         1 => at += 1,
         0 => at = at.checked_add(129)?,
@@ -1364,10 +1391,13 @@ fn legacy_occurrence_role(body: &[u8]) -> Option<Utf16View<'_>> {
 }
 
 /// Parse the shared prefix of the legacy identity and matrix forms.
-fn legacy_occurrence_prefix(body: &[u8]) -> Option<(usize, bool)> {
+fn legacy_occurrence_prefix(body: &[u8], insert: bool) -> Option<(usize, bool)> {
     let (_class_tag, after_tag) = lp_ascii_strict(body, 0, 3..=3)?;
     let mut at = after_tag.checked_add(8)?;
-    let (_name, after_name) = lp_ascii_strict(body, at, 0..=256)?;
+    let (name, after_name) = lp_ascii_strict(body, at, 0..=256)?;
+    if insert && !name.is_empty() {
+        return None;
+    }
     at = after_name;
     if body.get(at) != Some(&1) {
         return None;
@@ -1378,6 +1408,13 @@ fn legacy_occurrence_prefix(body: &[u8]) -> Option<(usize, bool)> {
     }
     at += 4;
     let first_target = take_legacy_occurrence_reference(body, &mut at)?;
+    if insert
+        && !first_target
+            .type_guid
+            .eq_ignore_ascii_case("E03784ED-5E19-4E14-B9F2-3B07017018CD")
+    {
+        return None;
+    }
     View::u32_le_at(body, at)?;
     at += 4;
     if View::u32_le_at(body, at)? != 1 {
@@ -1388,6 +1425,12 @@ fn legacy_occurrence_prefix(body: &[u8]) -> Option<(usize, bool)> {
         return None;
     }
     at += 1;
+    if insert {
+        if !matches!(body.get(at), Some(0 | 1)) || body.get(at + 1) != Some(&0) {
+            return None;
+        }
+        at += 2;
+    }
     if View::u32_le_at(body, at)? != 1 {
         return None;
     }
@@ -1399,10 +1442,20 @@ fn legacy_occurrence_prefix(body: &[u8]) -> Option<(usize, bool)> {
         }
         at = next;
     }
-    if body.get(at) != Some(&0) {
-        return None;
+    if insert {
+        if body.get(at) != Some(&1)
+            || View::u64_le_at(body, at + 1)? == 0
+            || body.get(at + 9..at + 16)? != [0, 1, 1, 0, 0, 0, 0]
+        {
+            return None;
+        }
+        at += 16;
+    } else {
+        if body.get(at) != Some(&0) {
+            return None;
+        }
+        at += 1;
     }
-    at += 1;
     let second_target = take_legacy_occurrence_reference(body, &mut at)?;
     let targets_match = first_target.entity == second_target.entity
         && first_target.source_occurrence_identity == second_target.source_occurrence_identity

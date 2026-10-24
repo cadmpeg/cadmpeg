@@ -1015,6 +1015,13 @@ pub(super) fn scope_related_indices(
             .values()
             .copied()
             .chain(thread_trailer)
+            .chain(
+                scope
+                    .occurrence_transfer
+                    .as_ref()
+                    .into_iter()
+                    .flat_map(crate::records::feature::occurrence_transfer::DesignOccurrenceTransfer::record_indices),
+            )
             .map(move |record_index| (stream, record_index))
     }))
 }
@@ -1303,6 +1310,7 @@ fn extend_related_design_records(
     design.design_extrude_selection_members =
         crate::design::decode::operands::decode_extrude_selection_members(
             scan,
+            &design.design_parameter_scopes,
             &design.design_extrude_selection_groups,
             &design.design_record_headers,
         )?;

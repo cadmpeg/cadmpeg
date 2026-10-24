@@ -86,6 +86,7 @@ impl Serialize for DesignParameterScope {
             };
         }
 
+        emit_opt!("occurrence_transfer", self.occurrence_transfer.as_ref());
         emit!("id", &self.id);
         emit!("byte_offset", self.byte_offset);
         emit!("class_tag", self.class_tag.as_str());
@@ -230,6 +231,7 @@ impl Serialize for DesignParameterScope {
 
         emit_opt!("combine_operation", self.combine_operation());
         emit_opt!("thread_construction", self.thread_construction());
+        emit_opt!("emboss_construction", self.emboss_construction());
         emit_opt!("draft_operation", self.draft_operation());
         match &self.payload {
             DesignScopePayload::CPattern(value)

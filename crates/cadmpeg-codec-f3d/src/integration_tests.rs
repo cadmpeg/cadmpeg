@@ -4,6 +4,7 @@
 mod attribute_colors;
 mod body_reference_tails;
 mod design_containment;
+mod emboss_operands;
 mod history_deltas;
 mod history_scale;
 mod inconsistent_records;

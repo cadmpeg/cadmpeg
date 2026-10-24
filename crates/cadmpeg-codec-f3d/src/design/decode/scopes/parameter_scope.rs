@@ -22,6 +22,7 @@ use super::direct_face::exact_direct_face_operation;
 use super::direct_face::exact_move_operation;
 use super::direct_face::exact_scale_operation;
 use super::draft::exact_draft_operation_with_owners;
+use super::emboss::exact_emboss_construction;
 use super::extrude::{exact_extrude_prologue, exact_typed_extrude_prologue};
 use super::fixed_parameters::exact_fixed_chamfer_parameters;
 use super::fixed_parameters::exact_fixed_extrude_parameters;
@@ -126,6 +127,10 @@ pub(crate) fn decode_parameter_scopes(
             );
             if let scope::DesignScopePayloadMut::SurfacePatch(patch) = scope.payload_mut() {
                 patch.normal = normal;
+            }
+            let emboss = exact_emboss_construction(bytes, &scope);
+            if let scope::DesignScopePayloadMut::Emboss(slot) = scope.payload_mut() {
+                *slot = emboss;
             }
             bind_coil_extent_from_parameters(&mut scope, parameters, parameter_owners);
             bind_hem_operation_from_parameters(bytes, &mut scope, parameters, parameter_owners);
@@ -504,6 +509,12 @@ pub(crate) fn decode_parameter_scopes(
                     *slot = construction;
                 }
             }
+            scope.occurrence_transfer = super::occurrence_transfer::exact_occurrence_transfer(
+                bytes,
+                &records,
+                &scope,
+                &stream_types,
+            );
             bind_component_pattern_occurrences(&mut scope, component_occurrences)?;
             {
                 let construction = exact_copy_paste_bodies_operation(bytes, &records, &scope);
