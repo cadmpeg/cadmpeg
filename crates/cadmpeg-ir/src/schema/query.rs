@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Compiler-bound identities for dimension and D10 schema-query references.
 
+#[cfg(test)]
 mod native_links;
-pub use native_links::visit_native_references;
 
 use std::any::type_name;
 use std::collections::{BTreeMap, BTreeSet};
