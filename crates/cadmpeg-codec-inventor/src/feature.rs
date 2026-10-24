@@ -1307,9 +1307,9 @@ fn parse_face_item(
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor, version)?;
     let index_references = u32_list(&mut cursor, 2, "face-item index references")?;
-    if index_references.values().is_empty() || cursor.i32("face-item terminal value")? != -1 {
+    if !index_references.values().is_empty() && cursor.i32("face-item terminal value")? != -1 {
         return Err(CodecError::malformed(
-            "Inventor PmDc face item has no indices or an invalid terminal value",
+            "Inventor PmDc face item has an invalid terminal value",
         ));
     }
     cursor.finish("face item")?;
