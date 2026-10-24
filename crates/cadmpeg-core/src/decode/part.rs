@@ -4,6 +4,8 @@
 use super::{DecodeContext, LimitScope, ResourceDimension, ResourceFailure, ResourceLimit, View};
 use crate::CodecError;
 
+mod sequential;
+
 /// Actual source extent and innermost record containing one attempted part.
 ///
 /// This is framing metadata, not semantic read coverage. The IR part helper

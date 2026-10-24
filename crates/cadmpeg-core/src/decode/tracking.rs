@@ -11,6 +11,7 @@ mod authority;
 mod batches;
 pub use authority::DecodeSessionToken;
 mod owners;
+mod part_prefix;
 mod streams;
 use super::{
     u64_from_index, DecodePolicy, ResourceDimension, ResourceFailure, ResourceLimit, SpaceId, View,
@@ -103,6 +104,8 @@ struct Frame {
     captures: Vec<RecordCapture>,
     deltas: Vec<ReadDelta>,
     part_attempts: Option<Vec<String>>,
+    // Ephemeral observed reads for a grammar-discovered boundary, never credit.
+    boundary_reads: Option<Vec<(SpaceId, Range<u64>)>>,
 }
 
 #[derive(Debug)]
@@ -589,6 +592,16 @@ impl SessionHandle<'_> {
             return Ok(());
         }
         self.session(|session| {
+            // Boundary observation is independent of semantic record ownership.
+            // Every active discovered transaction sees actual nested reads,
+            // including reads whose semantic transaction later rolls back.
+            if !range.is_empty() {
+                for frame in &mut session.frames {
+                    if let Some(reads) = &mut frame.boundary_reads {
+                        part_prefix::observe_read(&session.budget, reads, space, range.clone())?;
+                    }
+                }
+            }
             let Some(owner) = session
                 .frames
                 .iter()
@@ -870,6 +883,7 @@ impl Session {
             captures: Vec::new(),
             deltas: Vec::new(),
             part_attempts: part.then(Vec::new),
+            boundary_reads: None,
         });
         Ok(token)
     }

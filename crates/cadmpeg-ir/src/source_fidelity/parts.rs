@@ -18,12 +18,14 @@ use crate::ids::UnknownId;
 mod helper;
 mod levels;
 mod rescope;
+mod sequential;
 
 pub use helper::{
     CapturedRecordLayout, DecodeParts, FinalizedPartOutput, ParserPartOutput,
     PartDependencyPruning, PartOutput, PrunedPartCaptures,
 };
 pub use rescope::PartIdentityMap;
+pub use sequential::SequentialParts;
 
 /// The way Appendix C locates a part's next independently readable sibling.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
