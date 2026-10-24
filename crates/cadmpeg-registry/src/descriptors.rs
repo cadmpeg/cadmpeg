@@ -46,7 +46,8 @@ pub(crate) enum FormatKind {
         feature = "rhino",
         feature = "step",
         feature = "iges",
-        feature = "sat"
+        feature = "sat",
+        feature = "pvz"
     ))]
     Native(NativeDescriptor),
 }
@@ -131,7 +132,8 @@ impl FormatDescriptor {
                 feature = "rhino",
                 feature = "step",
                 feature = "iges",
-                feature = "sat"
+                feature = "sat",
+                feature = "pvz"
             ))]
             FormatKind::Native(native) => native.id,
         }
@@ -154,7 +156,8 @@ impl FormatDescriptor {
                 feature = "rhino",
                 feature = "step",
                 feature = "iges",
-                feature = "sat"
+                feature = "sat",
+                feature = "pvz"
             ))]
             FormatKind::Native(native) => native.input_extensions,
         }
@@ -174,7 +177,8 @@ impl FormatDescriptor {
                 feature = "rhino",
                 feature = "step",
                 feature = "iges",
-                feature = "sat"
+                feature = "sat",
+                feature = "pvz"
             ))]
             FormatKind::Native(native) => ForcedInput::Codec(native),
         }
@@ -186,7 +190,8 @@ impl FormatDescriptor {
     feature = "catia",
     feature = "creo",
     feature = "nx",
-    feature = "sat"
+    feature = "sat",
+    feature = "pvz"
 ))]
 macro_rules! reader {
     ($name:ident, $id:expr, $input_exts:expr, $decoder:expr) => {
@@ -314,6 +319,10 @@ reader!(
     &["sat", "sab", "smt", "smb"],
     || Box::new(cadmpeg_codec_sat::SatCodec)
 );
+#[cfg(feature = "pvz")]
+reader!(PVZ, FormatId::new("pvz"), &["pvz"], || Box::new(
+    cadmpeg_codec_pvz::PvzCodec
+));
 static CADIR_OUTPUT: OutputDescriptor = OutputDescriptor {
     extensions: &["cadir", "json"],
     physics: OutputPhysics::NeutralText,
@@ -348,6 +357,8 @@ pub(crate) static FORMAT_DESCRIPTORS: &[&FormatDescriptor] = &[
     &IGES,
     #[cfg(feature = "sat")]
     &SAT,
+    #[cfg(feature = "pvz")]
+    &PVZ,
     &CADIR,
 ];
 

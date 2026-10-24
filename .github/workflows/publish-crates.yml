@@ -48,6 +48,7 @@ jobs:
             cadmpeg-codec-iges
             cadmpeg-codec-inventor
             cadmpeg-codec-nx
+            cadmpeg-codec-pvz
             cadmpeg-codec-rhino
             cadmpeg-codec-sat
             cadmpeg-codec-sldprt

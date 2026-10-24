@@ -357,7 +357,7 @@ pub(crate) fn inspect(
 
 fn inspect_unrecognized(path: &Path) -> anyhow::Error {
     anyhow!(
-        "no codec recognized {}; inspect supports container inputs only, not .cadir.json IR documents; supported: FCStd, f3d, Inventor IPT/IAM, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP; use --input-format to override detection",
+        "no codec recognized {}; inspect supports container inputs only, not .cadir.json IR documents; supported: FCStd, f3d, Inventor IPT/IAM, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP, Creo View pvz; use --input-format to override detection",
         path.display()
     )
 }

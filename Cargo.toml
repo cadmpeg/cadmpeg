@@ -23,6 +23,7 @@ members = [
   "crates/cadmpeg-codec-iges",
   "crates/cadmpeg-codec-step",
   "crates/cadmpeg-codec-sat",
+  "crates/cadmpeg-codec-pvz",
 ]
 # cadmpeg-fuzz is intentionally excluded: cargo-fuzz targets link libFuzzer and
 # require a nightly toolchain, so keeping the crate out of the default workspace
@@ -59,6 +60,7 @@ cadmpeg-codec-rhino = { path = "crates/cadmpeg-codec-rhino", version = "0.6.5" }
 cadmpeg-codec-iges = { path = "crates/cadmpeg-codec-iges", version = "0.6.5" }
 cadmpeg-codec-step = { path = "crates/cadmpeg-codec-step", version = "0.6.5" }
 cadmpeg-codec-sat = { path = "crates/cadmpeg-codec-sat", version = "0.6.5" }
+cadmpeg-codec-pvz = { path = "crates/cadmpeg-codec-pvz", version = "0.6.5" }
 
 # 1.0.229 is the floor, not a preference: serde_derive gained the
 # collected_deny_unknown_fields epilogue there, which is what makes

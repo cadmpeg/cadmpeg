@@ -171,6 +171,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "cadmpeg-codec-pvz"
+version = "0.6.5"
+dependencies = [
+ "cadmpeg-container",
+ "cadmpeg-core",
+ "cadmpeg-ir",
+ "crc32fast",
+ "roxmltree",
+]
+
+[[package]]
 name = "cadmpeg-codec-rhino"
 version = "0.6.5"
 dependencies = [
@@ -263,6 +274,7 @@ dependencies = [
  "cadmpeg-codec-iges",
  "cadmpeg-codec-inventor",
  "cadmpeg-codec-nx",
+ "cadmpeg-codec-pvz",
  "cadmpeg-codec-rhino",
  "cadmpeg-codec-sat",
  "cadmpeg-codec-sldprt",
