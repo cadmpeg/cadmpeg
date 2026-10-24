@@ -1367,6 +1367,8 @@ pub(crate) const THREAD_CLASS_ID: ClassId = ClassId(NativeBytes::new([
 ]));
 const THICKEN_CLASS_ID: ClassId = ClassId(NativeBytes::new([
     0xec, 0xf4, 0x81, 0x72, 0x9c, 0x4d, 0x5f, 0x92, 0x5f, 0x21, 0x92, 0xb4, 0xa8, 0x30, 0x96, 0xac,
+const SHELL_CLASS_ID: ClassId = ClassId(NativeBytes::new([
+    0x12, 0x96, 0x3c, 0xb8, 0xd1, 0x11, 0x8a, 0x28, 0x60, 0x00, 0x8b, 0xb8, 0x01, 0xf3, 0x1b, 0xb0,
 ]));
 
 /// Native family names of feature-label classes outside the neutral families.
@@ -1384,13 +1386,6 @@ const NATIVE_CLASSES: &[([u8; 16], &str)] = &[
             0xfb, 0xb0,
         ],
         "Thread",
-    ),
-    (
-        [
-            0x12, 0x96, 0x3c, 0xb8, 0xd1, 0x11, 0x8a, 0x28, 0x60, 0x00, 0x8b, 0xb8, 0x01, 0xf3,
-            0x1b, 0xb0,
-        ],
-        "Shell",
     ),
     (
         [
@@ -1570,6 +1565,7 @@ pub(crate) enum FeatureFamily {
     Hole,
     Plate,
     Thicken,
+    Shell,
 }
 
 impl FeatureFamily {
@@ -1582,6 +1578,7 @@ impl FeatureFamily {
             Self::Hole => &[HOLE_CLASS_ID],
             Self::Plate => &[PLATE_CLASS_ID],
             Self::Thicken => &[THICKEN_CLASS_ID],
+            Self::Shell => &[SHELL_CLASS_ID],
         }
     }
 
@@ -1593,6 +1590,7 @@ impl FeatureFamily {
             Self::Hole => 24,
             Self::Plate => 6,
             Self::Thicken => 15,
+            Self::Shell => 9,
         }
     }
 
@@ -1604,6 +1602,7 @@ impl FeatureFamily {
             Self::Hole,
             Self::Plate,
             Self::Thicken,
+            Self::Shell,
         ]
         .into_iter()
         .find(|family| family.class_ids().contains(&class_id))
@@ -1628,6 +1627,9 @@ impl FeatureFamily {
             ) | (
                 Self::Thicken,
                 FeatureDefinition::Operation(FeatureOperation::Thicken { .. })
+            ) | (
+                Self::Shell,
+                FeatureDefinition::Operation(FeatureOperation::Shell { .. })
             )
         )
     }
@@ -1639,6 +1641,7 @@ impl FeatureFamily {
             FeatureDefinition::Operation(FeatureOperation::Chamfer { .. }) => Some(Self::Chamfer),
             FeatureDefinition::Operation(FeatureOperation::Hole { .. }) => Some(Self::Hole),
             FeatureDefinition::Operation(FeatureOperation::Thicken { .. }) => Some(Self::Thicken),
+            FeatureDefinition::Operation(FeatureOperation::Shell { .. }) => Some(Self::Shell),
             _ => None,
         }
     }
@@ -1853,6 +1856,7 @@ pub(crate) fn project(
                 FeatureFamily::Hole => project_hole(ctx, feature, label, &index),
                 FeatureFamily::Plate => project_plate(ctx, feature, label, &index),
                 FeatureFamily::Thicken => project_thicken(ctx, feature, label, &index, inventory),
+                FeatureFamily::Shell => project_shell(ctx, feature, label, &index),
             }
             .map(|result| result.map(|(feature, result)| (feature, Some(result))))
             .transpose()?,
@@ -2170,6 +2174,7 @@ fn native_kind(class_id: Option<ClassId>) -> cadmpeg_ir::features::NativeFeature
             FeatureFamily::Hole => NativeFeatureKind::Other("Hole".into()),
             FeatureFamily::Plate => NativeFeatureKind::Other("Plate".into()),
             FeatureFamily::Thicken => NativeFeatureKind::Other("Thicken".into()),
+            FeatureFamily::Shell => NativeFeatureKind::Other("Shell".into()),
         };
     }
     NATIVE_CLASSES
@@ -2936,6 +2941,80 @@ fn project_chamfer(
                         spec: ChamferSpec::Distance { distance },
                     }),
                     flip_direction,
+                }),
+            ),
+            native_ref: Some(source.id()),
+        },
+        result,
+    )))
+}
+
+/// Project the ten-slot Shell branch with an empty selection list in slot 2 and null slot 4.
+/// Require distinct non-null removed faces, a positive length, and a resolved body result.
+fn project_shell(
+    ctx: &DecodeContext<'_>,
+    source: &PmDcFeature,
+    label: &PmDcFeatureLabel,
+    index: &ProjectionIndex<'_>,
+) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
+    let slots = source.properties.references();
+    if slots.len() != 10 || slots.get(4)?.index() != 0 {
+        return None;
+    }
+    let faces = slot_property(source, 1, index)?;
+    let PmDcFeaturePropertyKind::References {
+        family: PmDcFeatureReferenceFamily::FaceCollection,
+        items,
+    } = &faces.kind
+    else {
+        return None;
+    };
+    let mut distinct = HashSet::new();
+    if !items
+        .references()
+        .iter()
+        .all(|reference| reference.index() != 0 && distinct.insert(reference.index()))
+        || !references(source, 2, PmDcFeatureReferenceFamily::SelectionList, index)?
+            .references()
+            .is_empty()
+    {
+        return None;
+    }
+    let thickness =
+        cadmpeg_ir::scalar::PositiveLength::try_from(length_parameter(source, 3, index)?).ok()?;
+    let removed_faces = if items.references().is_empty() {
+        cadmpeg_ir::features::FaceSelection::Faces(Vec::new())
+    } else {
+        cadmpeg_ir::features::FaceSelection::Native(faces.id())
+    };
+    let (feature_id, result) = match feature_result(ctx, source, 9, index)? {
+        Ok(value) => value,
+        Err(error) => return Some(Err(error)),
+    };
+    if let Err(error) = ctx.charge_entities(1, "project Inventor feature") {
+        return Some(Err(error));
+    }
+    Some(Ok((
+        Feature {
+            id: feature_id,
+            ordinal: u64::from(label.index),
+            name: label.name().map(str::to_owned),
+            suppressed: None,
+            dependencies: DistinctMembers::default(),
+            source_properties: BTreeMap::new(),
+            source_tag: Some("shell".into()),
+            source_text: None,
+            source_content: FeatureContent::default(),
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Operation(FeatureOperation::Shell {
+                    bodies: None,
+                    removed_faces,
+                    thickness: Some(thickness),
+                    outward: None,
+                    mode: None,
+                    join: None,
+                    resolve_intersections: None,
+                    allow_self_intersections: None,
                 }),
             ),
             native_ref: Some(source.id()),
@@ -5285,5 +5364,6 @@ mod tests {
     }
 
     mod extents;
+    mod shell;
     mod thread;
 }

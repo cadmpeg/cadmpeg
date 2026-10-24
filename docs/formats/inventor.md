@@ -304,6 +304,8 @@ Records whose body starts with a state value store no stamps: planar sketches, s
 
 Type `114d8790d011f8d10008cabc0663dc09` is a planar sketch. The content header is followed by `state:i32`, `count_value:u32`, a type-8 entity-reference array, transform and direction references, and two u32 values. A trailing type-2 reference list is optional. The entity-reference array contains geometric entities, constraints, and helper records.
 
+PmDc references store a one-based record index in bits 0 through 30 and a qualifier in bit 31. The qualifier does not change the selected record. A zero index is null.
+
 A type-8 reference array starts with u16 values `8, 0x3000` and a u32 count. A nonempty array then stores two u16 metadata values and the counted PmDc references. A type-2 reference list starts with u16 values `2, 0x3000` and a u32 count. A nonempty list then stores two u32 metadata values and the counted references.
 
 Planar sketch entities add `entity_flags:u32` and `sketch_reference:u32` after the content header. The sketch reference identifies the owning planar sketch.
@@ -473,6 +475,7 @@ Feature-label class identifier `ecf481729c4d5f925f2192b4a83096ac` identifies Thi
 | 15 | Result object collection |
 
 Slot 6 supplies the thickness length in internal centimetres. Slot 12 supplies a dimensionless value; it is not a second thickness. Both parameters use the ownership rules of section 11. Part-operation value 3 selects a solid join, and value 2 selects a cut. Slot 0 supplies the selected support geometry through a selection list. Each non-null selection reference resolves in the same PmDc segment. These references do not identify faces of the final model body.
+Feature-label class identifier `12963cb8d1118a2860008bb801f31bb0` identifies a Shell operation. Slot 1 identifies the removed-face collection. An empty collection removes no face. Collection members are non-null and distinct by record index. Slot 2 identifies a selection list. Slot 3 identifies the wall-thickness length parameter, with units as defined in section 11. Slot 4 stores a reference. Slot 9 identifies the result object collection, whose members identify the output bodies.
 
 A result object collection contains one or more surface-body references. This ordered surface-body list is the feature's native result-body identity.
 
