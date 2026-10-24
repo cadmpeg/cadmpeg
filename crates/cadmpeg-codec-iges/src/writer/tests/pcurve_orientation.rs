@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Pcurve ends mapped through their face support before orientation.
 
-use super::super::pcurve_orientation_context;
+use super::super::{pcurve_orientation_context, UseDirection};
 use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::PcurveId;
@@ -41,7 +41,7 @@ fn a_pcurve_end_whose_support_point_overflows_is_refused_as_non_finite() {
         &surface,
         Point3::new(0.0, 0.0, 0.0),
         Point3::new(1.0, 0.0, 0.0),
-        Sense::Forward,
+        UseDirection::traversed(Sense::Forward),
         1.0e-6,
         "edge test",
     );
@@ -80,7 +80,7 @@ fn line_pcurve_end_error(surface: &SurfaceGeometry, line: LinePcurve) -> String 
         surface,
         Point3::new(0.0, 0.0, 0.0),
         Point3::new(1.0, 0.0, 0.0),
-        Sense::Forward,
+        UseDirection::traversed(Sense::Forward),
         1.0e-6,
         "edge test",
     );
@@ -225,7 +225,7 @@ fn a_pcurve_on_an_extrusion_whose_directrix_acceleration_overflows_maps_to_finit
         &surface,
         Point3::new(0.0, 0.0, 0.0),
         Point3::new(0.0, 0.0, 2.0),
-        Sense::Forward,
+        UseDirection::traversed(Sense::Forward),
         1.0e-6,
         "edge test",
     );

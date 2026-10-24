@@ -6,7 +6,9 @@ use cadmpeg_ir::geometry::analytic::{
     CircleCurve, ConeSurface, CylinderSurface, LineCurve, PlaneSurface, SphereSurface, TorusSurface,
 };
 use cadmpeg_ir::geometry::nurbs::{NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis, WeightedPole3};
-use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
+use cadmpeg_ir::geometry::pcurve::{
+    CirclePcurve, LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata,
+};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, DirectedParameterRange, SolvedCurveGeometry, SolvedSurfaceGeometry,
     Surface, SurfaceGeometry,
@@ -338,22 +340,56 @@ impl Builder {
     pub(crate) fn line_pcurve(
         &mut self,
         face: &FaceId,
-        [ring, position]: [usize; 2],
+        at: [usize; 2],
         origin: [f64; 2],
         direction: [f64; 2],
+        range: [f64; 2],
+    ) {
+        let geometry = PcurveGeometry::Line(
+            LinePcurve::try_new(
+                Point2::new(origin[0], origin[1]),
+                Point2::new(direction[0], direction[1]),
+            )
+            .expect("line pcurve"),
+        );
+        self.pcurve_use(face, at, geometry, range);
+    }
+
+    /// Append the counterclockwise circle pcurve of `radius` about `center`
+    /// on the use interval `range` to the pcurve uses of the coedge at
+    /// `position` of ring `ring` of `face`.
+    pub(crate) fn circle_pcurve(
+        &mut self,
+        face: &FaceId,
+        at: [usize; 2],
+        center: [f64; 2],
+        radius: f64,
+        range: [f64; 2],
+    ) {
+        let geometry = PcurveGeometry::Circle(
+            CirclePcurve::try_new(
+                Point2::new(center[0], center[1]),
+                Point2::new(1.0, 0.0),
+                Point2::new(0.0, 1.0),
+                radius,
+            )
+            .expect("circle pcurve"),
+        );
+        self.pcurve_use(face, at, geometry, range);
+    }
+
+    fn pcurve_use(
+        &mut self,
+        face: &FaceId,
+        [ring, position]: [usize; 2],
+        geometry: PcurveGeometry,
         range: [f64; 2],
     ) {
         let n = self.serial();
         let pcurve = id(PcurveId::mint, "pcurve", n);
         self.ir.model.pcurves.push(Pcurve {
             id: pcurve.clone(),
-            geometry: PcurveGeometry::Line(
-                LinePcurve::try_new(
-                    Point2::new(origin[0], origin[1]),
-                    Point2::new(direction[0], direction[1]),
-                )
-                .expect("line pcurve"),
-            ),
+            geometry,
             metadata: PcurveMetadata::default(),
         });
         let loop_id = self
