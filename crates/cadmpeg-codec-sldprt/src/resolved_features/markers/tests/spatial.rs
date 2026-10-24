@@ -76,6 +76,7 @@ fn reference_cells_bind_reused_lane_local_tokens_to_their_declared_class() {
         value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
         role: FeatureInputScalarRole::Driving,
         operands: vec![reference(143), reference(287)],
+        archive_class: None,
     }];
     let classes = [FeatureInputClass {
         id: "sldprt:feature-input:class#synthetic:155".into(),
@@ -126,6 +127,7 @@ fn reference_cells_copy_operand_identity() {
             entity_index: 7,
             entity_ref: None,
         }],
+        archive_class: None,
     };
     assert_eq!(
         reference_cells(std::slice::from_ref(&scalar), &[]).unwrap(),
@@ -694,6 +696,7 @@ fn relation_binding_requires_family_operand_signature() {
         value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
         role: FeatureInputScalarRole::Driving,
         operands: vec![operand(kind, 0), operand(kind, 1)],
+        archive_class: None,
     };
 
     assert_eq!(
@@ -746,6 +749,7 @@ fn relation_binding_with_ambiguous_declarations_is_withheld() {
         value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
         role: FeatureInputScalarRole::Driving,
         operands: vec![operand(0), operand(1)],
+        archive_class: None,
     };
 
     assert!(relation_bindings(
@@ -785,6 +789,7 @@ fn scoped_relation_binding_does_not_cross_feature_interval() {
         value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
         role: FeatureInputScalarRole::Driving,
         operands: vec![operand(0), operand(1)],
+        archive_class: None,
     };
 
     assert!(relation_bindings(
@@ -1403,6 +1408,7 @@ fn reference_cells_index_classes_by_parent_and_offset() {
         value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
         role: FeatureInputScalarRole::Driving,
         operands,
+        archive_class: None,
     }];
     let class = |parent: &str, offset: u64, id: String| FeatureInputClass {
         id,
