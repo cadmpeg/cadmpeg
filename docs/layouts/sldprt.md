@@ -3020,6 +3020,312 @@ Parsed by:
 | 8 | 8 | `value_page` | `u64` | big | spec | value-start page u64 at +8 |
 | 16 | 2 | `value_offset` | `u16` | big | spec | value-start offset u16 at +16 |
 
+## `attribute_definition_short_refs`
+
+Spec §5 · layout: byte offsets · size: 38 B
+
+Body-relative after the type tag and optional first-of-type ff. Short pointer indexes occupy two bytes. Field types follow the fixed prefix; their count is field_count.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/brep/attrib.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `field_count` | `u32` | big | spec | field_count is the number of trailing field-type bytes. |
+| 4 | 2 | `node_index` | `u16` | big | spec | node_index identifies the definition. |
+| 6 | 2 | `next_definition` | `u16` | big | spec | next_definition links the definition chain. |
+| 8 | 2 | `identifier` | `u16` | big | spec | identifier names the KEY containing the family name. |
+| 10 | 4 | `type_id` | `u32` | big | spec | type_id is the native numeric attribute type. |
+| 14 | 8 | `actions` | `bytes[8]` | big | spec | actions contains eight event-action bytes. |
+| 22 | 2 | `field_names` | `u16` | big | spec | field_names is the field-name reference. |
+| 24 | 14 | `legal_owners` | `bytes[14]` | big | spec | legal_owners contains fourteen Boolean owner-class fields. |
+
+## `attribute_short_references`
+
+Spec §5 · layout: byte offsets · size: 22 B
+
+Body-relative prefix after the tag and optional unchanged-schema marker. Schema-ordered value references follow this prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/brep/attrib.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `value_count` | `u32` | big | spec | value count is u32 BE at `+0` |
+| 4 | 2 | `node_index` | `u16` | big | spec | transmit index is u16 BE at `+4` |
+| 6 | 4 | `sequence` | `u32` | big | spec | sequence is u32 BE at `+6` |
+| 10 | 2 | `definition` | `u16` | big | spec | definition pointer is u16 BE at `+10` |
+| 12 | 2 | `owner` | `u16` | big | spec | owner at `+12` |
+| 14 | 2 | `previous` | `u16` | big | spec | previous at `+14` |
+| 16 | 2 | `next` | `u16` | big | spec | next at `+16` |
+| 18 | 2 | `next_of_type` | `u16` | big | spec | next_of_type at `+18` |
+| 20 | 2 | `previous_of_type` | `u16` | big | spec | previous_of_type at `+20` |
+
+## `display_lists_extended_metadata`
+
+Spec §8 · layout: byte offsets · size: 128 B
+
+Offsets begin at the exact sixth-descriptor payload end M. The complete interval ends before the next table header.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/tessellation.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 92 | 4 | `a` | `u32` | little | spec | `A` at `M+0x5c` |
+| 96 | 4 | `one` | `u32` | little | spec | u32 LE `1` at `M+0x60` · value `1` |
+| 100 | 4 | `independent_word` | `u32` | little | spec | independent u32 word at `M+0x64` |
+| 104 | 4 | `b` | `u32` | little | spec | `B` at `M+0x68` |
+| 108 | 4 | `c` | `u32` | little | spec | `C` at `M+0x6c` |
+| 112 | 16 | `tuple` | `bytes[16]` | little | spec | four-f32 LE tuple at `M+0x70` |
+
+Unstated regions:
+
+- `0..92` (92 B): Variable metadata before the three stored Boolean cells.
+
+## `parasolid_b_curve_short`
+
+Spec §2 · layout: byte offsets · size: 21 B
+
+Offsets begin after the type and optional first-of-type schema marker. This layout uses short XMT/pointer fields; extended indices shift subsequent fields.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/parasolid/control_vertices.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `xmt` | `u16` | big | spec | XMT at `+0` |
+| 2 | 4 | `node_id` | `u32` | big | spec | u32 node ID at `+2` |
+| 6 | 2 | `attributes` | `u16` | big | spec | attribute pointer at `+6` |
+| 8 | 2 | `owner` | `u16` | big | spec | owner at `+8` |
+| 10 | 2 | `next` | `u16` | big | spec | next at `+10` |
+| 12 | 2 | `previous` | `u16` | big | spec | previous at `+12` |
+| 14 | 2 | `geometric_owner` | `u16` | big | spec | geometric owner at `+14` |
+| 16 | 1 | `sense` | `u8` | big | spec | sense byte at `+16` |
+| 17 | 2 | `nurbs` | `u16` | big | spec | NURBS pointer at `+17` |
+| 19 | 2 | `data` | `u16` | big | spec | auxiliary data pointer at `+19` |
+
+## `parasolid_nurbs_curve_short`
+
+Spec §2 · layout: byte offsets · size: 25 B
+
+Offsets begin after the type and optional first-of-type schema marker. This layout uses short XMT/pointer fields; extended indices shift subsequent fields.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/parasolid/control_vertices.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `xmt` | `u16` | big | spec | XMT at `+0` |
+| 2 | 2 | `degree` | `u16` | big | spec | u16 degree at `+2` |
+| 4 | 4 | `vertex_count` | `u32` | big | spec | u32 vertex count at `+4` |
+| 8 | 2 | `vertex_dimension` | `u16` | big | spec | u16 vertex dimension at `+8` |
+| 10 | 4 | `knot_count` | `u32` | big | spec | u32 distinct-knot count at `+10` |
+| 14 | 1 | `knot_type` | `u8` | big | spec | knot-type byte at `+14` |
+| 15 | 1 | `periodic` | `u8` | big | spec | at `+15`/`+16`/`+17` |
+| 16 | 1 | `closed` | `u8` | big | spec | at `+15`/`+16`/`+17` |
+| 17 | 1 | `rational` | `u8` | big | spec | at `+15`/`+16`/`+17` |
+| 18 | 1 | `curve_form` | `u8` | big | spec | curve-form byte at `+18` |
+| 19 | 2 | `vertices` | `u16` | big | spec | control-vertex pointer at `+19` |
+| 21 | 2 | `multiplicities` | `u16` | big | spec | multiplicity pointer at `+21` |
+| 23 | 2 | `knots` | `u16` | big | spec | knot pointer at `+23` |
+
+## `parasolid_edited_type_header`
+
+Spec §4.1 · layout: byte offsets · size: 3 B
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/brep/typed/schema.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `node_type` | `u16` | big | spec | u16 BE node type at `+0` |
+| 2 | 1 | `field_count` | `u8` | big | spec | u8 current effective-field count at `+2` |
+
+## `parasolid_construction_prefix`
+
+Spec §2 · layout: byte offsets · size: 8 B
+
+Relative to the end of the schema token. Zero user-field width and a first BODY define this supported construction-stream prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/parasolid/control_vertices.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `maximum_node_type` | `u16` | big | spec | u16 BE maximum node type at `+0` |
+| 2 | 4 | `user_field_width` | `u32` | big | spec | u32 BE zero user-field width at `+2` · value `0` |
+| 6 | 2 | `first_node_type` | `u16` | big | spec | u16 BE BODY type `12` at `+6` · value `12` |
+
+## `visual_component_body_prefix`
+
+Spec §8 · layout: byte offsets · size: 17 B
+
+Relative to a moCompSolidBody_c body. The identity scalar resolves only through a current BODY native attribute owner.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/appearance/visual_states.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `class_token` | `u16` | little | spec | u16 LE class token at `+0` |
+| 2 | 7 | `zero_padding` | `bytes[7]` | little | spec | seven zero bytes at `+2..+8` · value `[0, 0, 0, 0, 0, 0, 0]` |
+| 9 | 4 | `identity` | `u32` | little | spec | at `+9` and `+13` |
+| 13 | 4 | `identity_copy` | `u32` | little | spec | at `+9` and `+13` |
+
+## `named_padding_header`
+
+Spec §1.4 · layout: byte offsets · size: 40 B
+
+Marker-relative central-like padding prefix. The name follows at +40; the complete physical cell includes its opaque prefix and residual.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 6 | `marker` | `bytes[6]` | little | spec | \| +0 \| bytes[6] \| marker \| |
+| 6 | 4 | `time_date` | `u32` | little | spec | \| +6 \| u32 \| time_date \| |
+| 10 | 4 | `two_l` | `u32` | little | spec | \| +10 \| u32 \| two_l \| |
+| 14 | 4 | `half_l` | `u32` | little | spec | \| +14 \| u32 \| half_l \| |
+| 18 | 4 | `l` | `u32` | little | spec | \| +18 \| u32 \| l \| |
+| 22 | 2 | `name_len` | `u16` | little | spec | \| +22 \| u16 \| name_len \| |
+| 24 | 2 | `extra_len` | `u16` | little | spec | \| +24 \| u16 \| extra_len \| |
+| 26 | 14 | `descriptor` | `bytes[14]` | little | spec | \| +26 \| bytes[14] \| descriptor \| |
+
+## `footer_padding_body`
+
+Spec §1.4 · layout: byte offsets · size: 18 B
+
+Body-relative ordinary footer fields. Complete cell stride and body displacement come from the five_l scaling and exact footer tiling.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `disk_fields` | `u32` | little | spec | \| +0 \| u32 \| disk_fields \| |
+| 4 | 2 | `entries_disk` | `u16` | little | spec | \| +4 \| u16 \| entries_disk \| |
+| 6 | 2 | `entries_total` | `u16` | little | spec | \| +6 \| u16 \| entries_total \| |
+| 8 | 4 | `named_stride` | `u32` | little | spec | \| +8 \| u32 \| named_stride \| |
+| 12 | 4 | `five_l` | `u32` | little | spec | \| +12 \| u32 \| five_l \| |
+| 16 | 2 | `comment_len` | `u16` | little | spec | \| +16 \| u16 \| comment_len \| |
+
+## `zip_eocd_header`
+
+Spec §1.4 · layout: byte offsets · size: 22 B
+
+Native ZIP EOCD header, including substituted signature. Its count and both directory locators distinguish the real root from ordinary footer bodies.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `signature` | `bytes[4]` | little | spec | \| +0 \| bytes[4] \| signature \| |
+| 4 | 2 | `disk_number` | `u16` | little | spec | \| +4 \| u16 \| disk_number \| |
+| 6 | 2 | `central_disk` | `u16` | little | spec | \| +6 \| u16 \| central_disk \| |
+| 8 | 2 | `entries_disk` | `u16` | little | spec | \| +8 \| u16 \| entries_disk \| |
+| 10 | 2 | `entries_total` | `u16` | little | spec | \| +10 \| u16 \| entries_total \| |
+| 12 | 4 | `central_size` | `u32` | little | spec | \| +12 \| u32 \| central_size \| |
+| 16 | 4 | `central_offset` | `u32` | little | spec | \| +16 \| u32 \| central_offset \| |
+| 20 | 2 | `comment_len` | `u16` | little | spec | \| +20 \| u16 \| comment_len \| |
+
+## `integer_values_header`
+
+Spec §5 · layout: byte offsets · size: 6 B
+
+Body-relative prefix after the type tag and optional unchanged-schema marker. Exactly count u32 values follow the prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/brep/topology.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `count` | `u32` | big | spec | element count is u32 BE at body +0 |
+| 4 | 2 | `node_index` | `u16` | big | spec | transmit index is u16 BE at body +4 |
+
+## `relation_row_header`
+
+Spec §2 · layout: byte offsets · size: 14 B
+
+The operand handle cells follow at +14.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `code` | `u32` | little | spec | \| +0 \| u32 relation code. |
+| 4 | 2 | `constant_two` | `u16` | little | spec | \| +4 \| `02 00` \| · value `2` |
+| 6 | 2 | `flag` | `u16` | little | spec | \| +6 \| u16 row flag, `0` or `1` \| |
+| 8 | 6 | `constant_tail` | `bytes[6]` | little | spec | \| +8 \| `00 00 fe ff 00 00` \| · value `[0, 0, 254, 255, 0, 0]` |
+
+## `relation_handle_cell_narrow`
+
+Spec §2 · layout: byte offsets · size: 12 B
+
+The class reference is a u16 tag.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `class_tag` | `u16` | little | spec | The class reference is a u16 `0x8000 \| index` |
+| 2 | 2 | `slot` | `u16` | little | spec | the u16 slot of the curve in the array of its kind |
+| 4 | 4 | `sentinel` | `bytes[4]` | little | spec | `ff ff ff ff` · value `[255, 255, 255, 255]` |
+| 8 | 4 | `zero_tail` | `bytes[4]` | little | spec | four zero bytes · value `[0, 0, 0, 0]` |
+
+## `relation_handle_cell_wide`
+
+Spec §2 · layout: byte offsets · size: 16 B
+
+The wide class reference gives the cell four more bytes than the narrow form.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `class_lead` | `u16` | little | spec | a u16 `ff 7f` · value `32767` |
+| 2 | 4 | `class_index` | `u32` | little | spec | and a u32 index |
+| 6 | 2 | `slot` | `u16` | little | spec | the u16 slot of the curve in the array of its kind |
+| 8 | 4 | `sentinel` | `bytes[4]` | little | spec | `ff ff ff ff` · value `[255, 255, 255, 255]` |
+| 12 | 4 | `zero_tail` | `bytes[4]` | little | spec | four zero bytes · value `[0, 0, 0, 0]` |
+
+## `relation_handle_cell_declared`
+
+Spec §2 · layout: ordered slots (no stated byte offsets) · size: 16 B
+
+The class name is variable length; the u16 slot follows it. The size excludes the name.
+
+| # | Slot | Type | Endian | Src | Meaning |
+| -: | ---- | ---- | ------ | --- | ------- |
+| 0 | `class_lead` | `u16` | little | spec | `ff ff`, a u16 schema, a u16 length and that many ASCII class-name bytes · value `65535` |
+| 1 | `schema` | `u16` | little | spec | a u16 schema |
+| 2 | `name_length` | `u16` | little | spec | a u16 length and that many ASCII class-name bytes |
+| 3 | `class_name` | `text` | little | spec | that many ASCII class-name bytes |
+| 4 | `slot` | `u16` | little | spec | the u16 slot of the curve in the array of its kind |
+| 5 | `sentinel` | `bytes[4]` | little | spec | `ff ff ff ff` · value `[255, 255, 255, 255]` |
+| 6 | `zero_tail` | `bytes[4]` | little | spec | four zero bytes · value `[0, 0, 0, 0]` |
+
+## `relation_point_record_near`
+
+Spec §2 · layout: byte offsets · size: 78 B
+
+The handle cells follow at +78.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 56 | 2 | `coordinate_tag` | `u16` | little | spec | coordinate tag `1e 00` at marker +56 or marker +64 · value `30` |
+| 58 | 8 | `u` | `f64` | little | spec | stores its planar coordinates as two f64 values after the tag |
+| 66 | 8 | `v` | `f64` | little | spec | stores its planar coordinates as two f64 values after the tag |
+| 74 | 4 | `zero_tail` | `bytes[4]` | little | spec | then four bytes, then the handle cells · value `[0, 0, 0, 0]` |
+
+Unstated regions:
+
+- `0..56` (56 B): The sketch-marker head precedes the coordinate tag.
+
+## `relation_point_record_far`
+
+Spec §2 · layout: byte offsets · size: 86 B
+
+The handle cells follow at +86.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 64 | 2 | `coordinate_tag` | `u16` | little | spec | coordinate tag `1e 00` at marker +56 or marker +64 · value `30` |
+| 66 | 8 | `u` | `f64` | little | spec | stores its planar coordinates as two f64 values after the tag |
+| 74 | 8 | `v` | `f64` | little | spec | stores its planar coordinates as two f64 values after the tag |
+| 82 | 4 | `zero_tail` | `bytes[4]` | little | spec | then four bytes, then the handle cells · value `[0, 0, 0, 0]` |
+
+Unstated regions:
+
+- `0..64` (64 B): The sketch-marker head precedes the coordinate tag.
+
 ## Not tabulated
 
 | Area | Spec | Reason |

@@ -5364,6 +5364,43 @@ Parsed by:
 | 265 | 7 | `second_reference_zero_run` | `bytes[7]` | little | spec | seven zero bytes follow each reference |
 | 272 | 128 | `second_operand_transform` | `f64[16]` | little | spec | row-major transforms start at offsets 50 and 272 |
 
+## `design_parameter_state`
+
+Spec §3.1 · layout: byte offsets · size: 61 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/parameter_state.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | **Parameter state.** |
+| 11 | 23 | `zero_run_23` | `bytes[23]` | little | spec | **Parameter state.** |
+| 34 | 1 | `companion_marker` | `u8` | little | spec | **Parameter state.** |
+| 35 | 8 | `companion_index` | `u64` | little | spec | **Parameter state.** |
+| 43 | 2 | `companion_flags` | `bytes[2]` | little | spec | **Parameter state.** |
+| 45 | 5 | `zero_run_5` | `bytes[5]` | little | spec | **Parameter state.** |
+| 50 | 1 | `root_marker` | `u8` | little | spec | **Parameter state.** |
+| 51 | 8 | `root_index` | `u64` | little | spec | **Parameter state.** |
+| 59 | 2 | `root_flags` | `bytes[2]` | little | spec | **Parameter state.** |
+
+## `design_parameter_state_companion`
+
+Spec §3.1 · layout: byte offsets · size: 44 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/parameter_state.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | **Parameter state.** |
+| 11 | 8 | `zero_run_8` | `bytes[8]` | little | spec | **Parameter state.** |
+| 19 | 1 | `control` | `u8` | little | spec | **Parameter state.** |
+| 20 | 4 | `control_word` | `u32` | little | spec | **Parameter state.** |
+| 24 | 1 | `state_marker` | `u8` | little | spec | **Parameter state.** |
+| 25 | 8 | `state_index` | `u64` | little | spec | **Parameter state.** |
+| 33 | 2 | `state_flags` | `bytes[2]` | little | spec | **Parameter state.** |
+| 35 | 9 | `zero_run_9` | `bytes[9]` | little | spec | **Parameter state.** |
+
 ## `body_reference_tail_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 25 B
@@ -5939,43 +5976,6 @@ Offsets are relative to the end of the 190-byte selection-member frame.
 | 1 | 4 | `kind` | `u32` | little | spec | byte `00`, u32 `2`, u64 `1`, and byte `00` · value `2` |
 | 5 | 8 | `value` | `u64` | little | spec | byte `00`, u32 `2`, u64 `1`, and byte `00` · value `1` |
 | 13 | 1 | `trailing_zero` | `u8` | little | spec | byte `00`, u32 `2`, u64 `1`, and byte `00` · value `0` |
-
-## `design_parameter_state`
-
-Spec §3.1 · layout: byte offsets · size: 61 B
-
-Parsed by:
-- `crates/cadmpeg-codec-f3d/src/design/decode/parameter_state.rs`
-
-| Offset | Size | Field | Type | Endian | Src | Meaning |
-| -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | **Parameter state.** |
-| 11 | 23 | `zero_run_23` | `bytes[23]` | little | spec | **Parameter state.** |
-| 34 | 1 | `companion_marker` | `u8` | little | spec | **Parameter state.** |
-| 35 | 8 | `companion_index` | `u64` | little | spec | **Parameter state.** |
-| 43 | 2 | `companion_flags` | `bytes[2]` | little | spec | **Parameter state.** |
-| 45 | 5 | `zero_run_5` | `bytes[5]` | little | spec | **Parameter state.** |
-| 50 | 1 | `root_marker` | `u8` | little | spec | **Parameter state.** |
-| 51 | 8 | `root_index` | `u64` | little | spec | **Parameter state.** |
-| 59 | 2 | `root_flags` | `bytes[2]` | little | spec | **Parameter state.** |
-
-## `design_parameter_state_companion`
-
-Spec §3.1 · layout: byte offsets · size: 44 B
-
-Parsed by:
-- `crates/cadmpeg-codec-f3d/src/design/decode/parameter_state.rs`
-
-| Offset | Size | Field | Type | Endian | Src | Meaning |
-| -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | **Parameter state.** |
-| 11 | 8 | `zero_run_8` | `bytes[8]` | little | spec | **Parameter state.** |
-| 19 | 1 | `control` | `u8` | little | spec | **Parameter state.** |
-| 20 | 4 | `control_word` | `u32` | little | spec | **Parameter state.** |
-| 24 | 1 | `state_marker` | `u8` | little | spec | **Parameter state.** |
-| 25 | 8 | `state_index` | `u64` | little | spec | **Parameter state.** |
-| 33 | 2 | `state_flags` | `bytes[2]` | little | spec | **Parameter state.** |
-| 35 | 9 | `zero_run_9` | `bytes[9]` | little | spec | **Parameter state.** |
 
 ## Not tabulated
 
