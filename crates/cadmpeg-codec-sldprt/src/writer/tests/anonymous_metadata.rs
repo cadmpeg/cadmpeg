@@ -2,7 +2,6 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::AttributeValue;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_test_support::EditableDecodeResult;
@@ -37,6 +36,9 @@ fn anonymous_metadata_replays_but_only_a_real_named_owner_can_be_edited() {
             .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
             .unwrap();
         let mut decoded = EditableDecodeResult::from(decoded);
+        // The member has no typed stream owner, so the source keeps an
+        // unrepresented class and replay and patch are ineligible (#209 §1.4).
+        assert!(!decoded.source_fidelity().unrepresented().is_empty());
         let mut replay = Vec::new();
         let path = crate::test_support::plan_inherited_write(
             decoded.ir(),
@@ -46,9 +48,8 @@ fn anonymous_metadata_replays_but_only_a_real_named_owner_can_be_edited() {
         .unwrap();
         assert!(matches!(
             path,
-            cadmpeg_ir::report::export::WritePath::VerbatimReplay { .. }
+            cadmpeg_ir::report::export::WritePath::Synthesized { .. }
         ));
-        assert_eq!(replay, source);
         {
             let mut ir = decoded.ir_mut();
             let bbox = ir
@@ -63,29 +64,29 @@ fn anonymous_metadata_replays_but_only_a_real_named_owner_can_be_edited() {
             values[3] = cadmpeg_ir::scalar::FiniteReal::new(41.0).unwrap();
         }
         let mut written = Vec::new();
-        let result = crate::test_support::plan_inherited_write(
+        let path = crate::test_support::plan_inherited_write(
             decoded.ir(),
             decoded.source_fidelity(),
             &mut written,
-        );
-        if name.is_empty() {
-            assert!(
-                matches!(result, Err(CodecError::NotImplemented(detail)) if detail.contains("anonymous metadata owner"))
-            );
-            assert!(written.is_empty());
-        } else {
-            result.unwrap();
-            let scan = crate::test_support::container::scan(&written);
-            let owned: Vec<_> = scan
-                .blocks
-                .iter()
-                .filter(|block| block.section.name() == Some(name))
-                .collect();
-            assert_eq!(owned.len(), 1);
-            let mut expected = payload;
-            let radius = expected.len() - 8;
-            expected[radius..].copy_from_slice(&0.041f64.to_le_bytes());
-            assert_eq!(owned[0].payload, expected);
-        }
+        )
+        .unwrap();
+        assert!(matches!(
+            path,
+            cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+        ));
+        let readback = SldprtCodec
+            .decode(&mut Cursor::new(written), &DecodeOptions::default())
+            .unwrap();
+        let bbox = readback
+            .ir()
+            .model
+            .attributes
+            .iter()
+            .find(|attribute| attribute.name == "bounding_envelope")
+            .unwrap();
+        let AttributeValue::Vector(values) = &bbox.values[0] else {
+            panic!("bbox")
+        };
+        assert_eq!(values[3].get(), 41.0);
     }
 }

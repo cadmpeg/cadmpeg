@@ -33,9 +33,20 @@ pub(super) fn reduce(ir: &mut CadIr, losses: &mut Vec<LossNote>) -> Result<(), C
         if !attribute.id.as_str().starts_with("sldprt:") {
             continue;
         }
-        let supported = attribute.target == AttributeTarget::Document
-            && super::super::MetadataRecord::project(&attribute, 0.001, |_| Ok(()))?.is_some();
-        if supported {
+        let projected = if attribute.target == AttributeTarget::Document {
+            super::super::MetadataRecord::project(&attribute, 0.001, |_| Ok(()))?
+        } else {
+            None
+        };
+        if matches!(
+            projected,
+            Some(super::super::MetadataRecord::TransformedReferenceEnclosure { .. })
+        ) {
+            losses.push(SldprtLossCode::WriterAttributesOmitted.note(format!(
+                "attribute {} ({}): a synthesized enclosure has no source serializer prologue",
+                attribute.id, attribute.name
+            )));
+        } else if projected.is_some() {
             attributes.push(attribute);
         } else {
             losses.push(SldprtLossCode::WriterAttributesOmitted.note(format!(

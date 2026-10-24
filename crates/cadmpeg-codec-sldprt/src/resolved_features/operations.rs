@@ -363,6 +363,23 @@ pub(crate) fn ambiguous_thin_join_operation(
         })
 }
 
+/// History feature ids whose inline thin join operation is ambiguous.
+pub(crate) fn ambiguous_thin_features(
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+) -> std::collections::BTreeSet<String> {
+    let lane_names = lanes
+        .iter()
+        .map(|lane| (lane, FeatureObjectNames::new(&lane.names)))
+        .collect::<Vec<_>>();
+    histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .filter(|feature| ambiguous_thin_join_operation(feature, &lane_names))
+        .map(|feature| feature.id.clone())
+        .collect()
+}
+
 /// Project the feature-input operation discriminator onto typed extrusions.
 pub(crate) fn bind_extrusion_operations(
     class_sources: &ClassSources,

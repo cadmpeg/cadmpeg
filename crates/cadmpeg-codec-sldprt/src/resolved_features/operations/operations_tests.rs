@@ -804,8 +804,10 @@ fn ambiguous_thin_join_carrier_does_not_resolve_an_operation() {
         names: vec![FeatureInputName {
             id: "name".into(),
             parent: "lane".into(),
+            feature_ref: None,
             ordinal: 0,
-            offset: 10,
+            sequence: 0,
+            offset: Some(10),
             value: "F".into(),
             object_id: ObjectId::from_value(7),
         }],
@@ -846,7 +848,9 @@ fn ambiguous_thin_join_carrier_does_not_resolve_an_operation() {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(1.0).unwrap(),
+                        length: cadmpeg_ir::features::Dimension::Literal(
+                            cadmpeg_ir::scalar::NonZeroLength::new(1.0).unwrap(),
+                        ),
                     },
                     draft: None,
                 },
@@ -859,6 +863,7 @@ fn ambiguous_thin_join_carrier_does_not_resolve_an_operation() {
             allow_multi_profile_faces: None,
         });
         let mut features = [cadmpeg_ir::features::Feature {
+            needs_recompute: false,
             id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#extrude").unwrap(),
             ordinal: 0,
             name: None,
@@ -879,7 +884,13 @@ fn ambiguous_thin_join_carrier_does_not_resolve_an_operation() {
             configurations: Vec::new(),
             features: vec![native(class)],
         }];
-        super::bind_extrusion_operations(&mut features, &histories, lanes, None);
+        super::bind_extrusion_operations(
+            &crate::resolved_features::class_sources::ClassSources::default(),
+            &mut features,
+            &histories,
+            lanes,
+            None,
+        );
         let lane_names = lanes
             .iter()
             .map(|lane| {
@@ -898,7 +909,14 @@ fn ambiguous_thin_join_carrier_does_not_resolve_an_operation() {
                 };
                 *op = BooleanOp::Join;
             });
-            inherit_configuration_operations(&mut features, &base, &histories, lanes, None);
+            inherit_configuration_operations(
+                &crate::resolved_features::class_sources::ClassSources::default(),
+                &mut features,
+                &base,
+                &histories,
+                lanes,
+                None,
+            );
         }
         let FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }) =
             features[0].evaluation.definition()

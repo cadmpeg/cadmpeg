@@ -489,10 +489,13 @@ mod tests {
     };
 
     fn scan(source: &[u8]) -> Result<super::super::ContainerScan<'_>, CodecError> {
-        super::super::scan(
-            &cadmpeg_test_support::service_decode_context(),
-            View::over_retained(source),
-        )
+        let arena = Box::leak(Box::new(cadmpeg_core::decode::DecodeArena::new()));
+        let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            source,
+            arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )?;
+        super::super::scan(&ctx, root)
     }
 
     fn primary_grid(fill: u8) -> Vec<u8> {

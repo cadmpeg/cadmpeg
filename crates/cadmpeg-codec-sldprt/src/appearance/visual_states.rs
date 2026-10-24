@@ -241,7 +241,7 @@ fn feature_faces(inputs: &Inputs<'_>, source: u32, timestamp: u32) -> Option<Fea
     let [(lane, name)] = objects.as_slice() else {
         return None;
     };
-    let start = usize::try_from(name.offset).ok()?;
+    let start = usize::try_from(name.offset?).ok()?;
     let names = crate::resolved_features::scalars::FeatureObjectNames::new(&lane.names);
     let end = crate::resolved_features::scalars::FeatureObjectStarts::new(inputs.histories, &names)
         .end(name.offset, lane.native_payload.len());

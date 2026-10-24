@@ -701,6 +701,10 @@ const REPRESENTATION: &[(SldprtLossCode, Representation)] = &[
         Representation::Reduced,
     ),
     (
+        SldprtLossCode::FeatureThinOperationAmbiguous,
+        Representation::Reduced,
+    ),
+    (
         SldprtLossCode::FeatureBodyRetentionUnresolved,
         Representation::Reduced,
     ),
@@ -710,6 +714,10 @@ const REPRESENTATION: &[(SldprtLossCode, Representation)] = &[
     ),
     (
         SldprtLossCode::GeometryEdgeSupportCurveUntyped,
+        Representation::Model,
+    ),
+    (
+        SldprtLossCode::GeometryPointRecordAmbiguous,
         Representation::Model,
     ),
     (
@@ -733,6 +741,10 @@ const REPRESENTATION: &[(SldprtLossCode, Representation)] = &[
         Representation::Model,
     ),
     (
+        SldprtLossCode::NativeAppearanceScopeUnresolved,
+        Representation::Model,
+    ),
+    (
         SldprtLossCode::TessellationFaceOwnershipUnresolved,
         Representation::Reduced,
     ),
@@ -745,14 +757,22 @@ const REPRESENTATION: &[(SldprtLossCode, Representation)] = &[
         Representation::Reduced,
     ),
     (
-        SldprtLossCode::TopologyFaceOwnerAmbiguous,
-        Representation::Reduced,
-    ),
-    (
         SldprtLossCode::TopologyFaceSenseConflict,
         Representation::Reduced,
     ),
     (SldprtLossCode::TopologyFaceUnclaimed, Representation::Model),
+    (
+        SldprtLossCode::TopologyFinRecordAmbiguous,
+        Representation::Model,
+    ),
+    (
+        SldprtLossCode::TopologyLoopRecordAmbiguous,
+        Representation::Model,
+    ),
+    (
+        SldprtLossCode::TopologyVertexRecordUnresolved,
+        Representation::Model,
+    ),
     (
         SldprtLossCode::TopologyPcurveCarrierOffSurface,
         Representation::Model,
@@ -819,6 +839,10 @@ const REPRESENTATION: &[(SldprtLossCode, Representation)] = &[
     ),
     (
         SldprtLossCode::WriterTessellationMetadataOmitted,
+        Representation::Writer,
+    ),
+    (
+        SldprtLossCode::WriterNativeEnvelopeAuxiliaryOmitted,
         Representation::Writer,
     ),
     (

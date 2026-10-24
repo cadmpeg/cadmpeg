@@ -350,7 +350,7 @@ fn untyped_surface_content_cannot_reenter_through_a_point_patch() {
     );
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_fixture_write_with_native_envelope(
+    crate::test_support::plan_inherited_write(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -600,12 +600,6 @@ fn auxiliary_edit_synthesizes_without_opaque_partition_content() {
     source.extend(anchored_cache_cell(100, 10, "Contents/Keywords", 0xff));
     source = native_envelope_fixture(&source);
     let source_scan = crate::test_support::container::scan(&source);
-    let source_cache = source_scan
-        .cache_cells
-        .iter()
-        .find(|cell| cell.name == "Contents/Config-0-Partition")
-        .map(|cell| source[cell.physical_range.clone().unwrap()].to_vec())
-        .unwrap();
     let source_partition = source_scan
         .blocks
         .iter()

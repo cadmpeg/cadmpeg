@@ -86,6 +86,7 @@ fn enclosure_metadata_generation_requires_retained_opaque_prologue() {
     use cadmpeg_ir::attributes::AttributeValue;
     let mut ir = CadIr::empty();
     ir.model.attributes.push(SourceAttribute {
+        native_ref: None,
         id: AttributeId::mint("sldprt:metadata:transformed_reference_enclosure#0:6").unwrap(),
         target: AttributeTarget::Document,
         name: "transformed_reference_enclosure".into(),

@@ -126,6 +126,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         };
         report.losses.append(&mut pmi_losses);
         append_design_losses(&retention.class_sources, ctx, &ir, &mut report)?;
+        append_thin_operation_losses(&retention.ambiguous_thin_features, &ir, &mut report);
         return decode_result(ctx, ir, report, annotations, unknowns, retention);
     }
 
@@ -151,6 +152,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             report.losses.append(&mut pmi_losses);
             append_tessellation_losses(&ir, &mut report);
             append_design_losses(&retention.class_sources, ctx, &ir, &mut report)?;
+            append_thin_operation_losses(&retention.ambiguous_thin_features, &ir, &mut report);
             return decode_result(ctx, ir, report, annotations, unknowns, retention);
         }
     }
@@ -167,7 +169,59 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     report.losses.append(&mut brep_fallback_losses);
     report.losses.append(&mut pmi_losses);
     append_design_losses(&retention.class_sources, ctx, &ir, &mut report)?;
+    append_thin_operation_losses(&retention.ambiguous_thin_features, &ir, &mut report);
     decode_result(ctx, ir, report, annotations, unknowns, retention)
+}
+
+/// Report thin extrusions whose ambiguous inline operation stayed unresolved.
+fn append_thin_operation_losses(
+    ambiguous_thin_features: &BTreeSet<String>,
+    ir: &CadIr,
+    report: &mut DecodeBody,
+) {
+    use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, FeatureOperation};
+    let unresolved = |definition: &FeatureDefinition| {
+        matches!(
+            definition,
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
+                op: BooleanOp::Unresolved,
+                ..
+            })
+        )
+    };
+    let ambiguous = |feature: &cadmpeg_ir::features::Feature| {
+        feature
+            .native_ref
+            .as_ref()
+            .is_some_and(|reference| ambiguous_thin_features.contains(reference))
+    };
+    let base = ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| ambiguous(feature) && unresolved(feature.evaluation.definition()))
+        .count();
+    let configured = ir
+        .model
+        .configurations
+        .iter()
+        .flat_map(|configuration| {
+            ir.model.features.iter().filter(move |feature| {
+                ambiguous(feature)
+                    && configuration
+                        .feature_states
+                        .get(&feature.id)
+                        .and_then(|state| state.definition())
+                        .is_some_and(unresolved)
+            })
+        })
+        .count();
+    let ambiguous_thin_operations = base + configured;
+    if ambiguous_thin_operations > 0 {
+        report.losses.push(SldprtLossCode::FeatureThinOperationAmbiguous.note(format!(
+            "{ambiguous_thin_operations} thin extrusion state(s) retain an ambiguous inline Boolean operation."
+        )));
+    }
 }
 
 fn append_tessellation_losses(ir: &CadIr, report: &mut DecodeBody) {
@@ -1776,47 +1830,6 @@ fn append_design_losses(
         )));
     }
 
-    let ambiguous_thin_operations = native.as_ref().map_or(0, |native| {
-        let histories = crate::records::HistoryFeatures::new(&native.feature_histories);
-        let lane_names = native
-            .feature_input_lanes
-            .iter()
-            .map(|lane| {
-                (
-                    lane,
-                    crate::resolved_features::scalars::FeatureObjectNames::new(&lane.names),
-                )
-            })
-            .collect::<Vec<_>>();
-        evaluated_feature_states
-            .iter()
-            .filter(|state| {
-                matches!(
-                    state.definition,
-                    FeatureDefinition::Operation(FeatureOperation::Extrude {
-                        op: BooleanOp::Unresolved,
-                        ..
-                    })
-                ) && state
-                    .feature
-                    .native_ref
-                    .as_deref()
-                    .and_then(|reference| histories.get(reference))
-                    .is_some_and(|feature| {
-                        crate::resolved_features::operations::ambiguous_thin_join_operation(
-                            feature,
-                            &lane_names,
-                        )
-                    })
-            })
-            .count()
-    });
-    if ambiguous_thin_operations > 0 {
-        report.losses.push(SldprtLossCode::FeatureThinOperationAmbiguous.note(format!(
-            "{ambiguous_thin_operations} thin extrusion state(s) retain an ambiguous inline Boolean operation."
-        )));
-    }
-
     let unresolved_body_modes = evaluated_feature_states
         .iter()
         .filter(|state| {
@@ -3035,6 +3048,8 @@ fn build_geometry_ir(
             bodies: &brep.native_body_identities,
         },
     )?;
+    retention.ambiguous_thin_features =
+        crate::resolved_features::operations::ambiguous_thin_features(&histories, &all_lanes);
     let mut native = crate::native::SldprtNative {
         feature_histories: histories,
         feature_input_lanes: all_lanes,
@@ -3199,7 +3214,10 @@ fn build_geometry_ir(
         for source in resolved.matched_feature_sources {
             matched_feature_sources.insert(source);
         }
-        let mut display_links = Vec::new();
+        let display_id = UnknownId::compose(
+            &cadmpeg_ir::identity_namespace!("sldprt", "displaylist", "record"),
+            display.ordinal(),
+        );
         for (table_index, display_face) in display_faces.into_iter().enumerate() {
             let id = format!(
                 "sldprt:displaylist:record#{}:{}",
@@ -3224,7 +3242,6 @@ fn build_geometry_ir(
                 "displaylist_tessellation",
                 Exactness::ByteExact,
             )?;
-            display_links.push(id.clone());
             if let Some(resolved_definition) = resolved.by_face.get(&table_index) {
                 display_appearance_ranks.insert(id.clone(), resolved_definition.rank);
                 let definition = &resolved_definition.definition;
@@ -3254,21 +3271,18 @@ fn build_geometry_ir(
                 });
             }
             let mesh = display_face.mesh;
-            ir.model.tessellations.push(
-                mesh.into_tessellation(
+            let mut tessellation = mesh
+                .into_tessellation(
                     cadmpeg_ir::tessellation::TessellationId::mint(id).map_err(|error| {
                         CodecError::malformed(format_args!("invalid display tessellation: {error}"))
                     })?,
                 )
                 .map_err(|error| {
                     CodecError::malformed(format_args!("invalid display tessellation: {error}"))
-                })?,
-            );
+                })?;
+            tessellation.native_ref = Some(display_id.as_str().to_owned());
+            ir.model.tessellations.push(tessellation);
         }
-        let display_id = UnknownId::compose(
-            &cadmpeg_ir::identity_namespace!("sldprt", "displaylist", "record"),
-            display.ordinal(),
-        );
         crate::annotations::note(
             &mut annotations,
             display_id.as_str(),
@@ -3281,7 +3295,7 @@ fn build_geometry_ir(
             display_id,
             0,
             retained_copy(ctx, display.payload(), "retain SLDPRT display section")?,
-            display_links,
+            Vec::new(),
         ));
     }
     if let Some(message) = appearance_assignment_loss_message(
@@ -3337,6 +3351,7 @@ fn build_geometry_ir(
             scoped_color_faces.push(face_id.clone());
         }
         ir.model.appearance_bindings.push(AppearanceBinding {
+            native_ref: None,
             id: cadmpeg_ir::ids::AppearanceBindingId::compose(
                 &cadmpeg_ir::identity_namespace!("sldprt", "appearance", "native-binding"),
                 cadmpeg_ir::ids::IdentityKey::from(choice.ordinal)
@@ -3863,6 +3878,15 @@ fn build_metadata_ir(
             retained_copy(ctx, site.payload, "retain SLDPRT active site")?,
             Vec::new(),
         ));
+    } else if scan.sections().any(|section| {
+        section
+            .ps_streams()
+            .iter()
+            .any(|stream| crate::parasolid::is_body_stream(&stream.header))
+    }) {
+        // Body streams without one active site leave the model untyped; the
+        // source image still owns them.
+        retention.source(cadmpeg_ir::document::ArenaClass::Model);
     }
 
     ir.source = Some(SourceMeta::classified(
@@ -4174,6 +4198,8 @@ fn build_metadata_ir(
     crate::history::configuration::inherit_configuration_reference_plane_states(ctx, &mut ir)?;
     crate::history::bind::order_model_features_for_regeneration(ctx, &mut ir)?;
     input_topologies::project(&mut ir, &all_lanes, &mut pmi_losses);
+    retention.ambiguous_thin_features =
+        crate::resolved_features::operations::ambiguous_thin_features(&histories, &all_lanes);
     let mut native = crate::native::SldprtNative {
         feature_histories: histories,
         feature_input_lanes: all_lanes,

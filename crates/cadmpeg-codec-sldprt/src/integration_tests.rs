@@ -412,9 +412,8 @@ fn inherit_synthesizes_the_source_dialect_without_retained_bytes() {
     assert_eq!(classify(output), "sldprt:sw-version-12000-plus");
 }
 
-/// Cross-dialect synthesis does not consume the retained Native envelope.
 #[test]
-fn explicit_cross_dialect_synthesis_without_consuming_native_framing_is_refused() {
+fn an_explicit_catalog_row_synthesizes_without_consuming_a_different_dialect() {
     let result = decode(versioned_part());
     assert!(result
         .source_fidelity()
@@ -422,17 +421,28 @@ fn explicit_cross_dialect_synthesis_without_consuming_native_framing_is_refused(
         .unwrap()
         .data()
         .is_some());
-    let error = plan(
+    let plan = plan(
         &result,
         true,
         cadmpeg_ir::codec::write::target::TargetRequest::Explicit("sldprt:unknown"),
     )
-    .expect_err("nonconsuming cross-dialect synthesis has no Native envelope tokens");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(ref detail)
-        if detail.contains("validated retained local, central and EOCD signature tokens")),
-        "{error}"
+    .expect("the catalog row is synthesized from the neutral IR");
+    assert_eq!(named_target(&plan), "sldprt:unknown");
+    assert!(matches!(
+        plan.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    ));
+    assert_eq!(
+        wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
+        cadmpeg_ir::report::export::FidelityResolution::NotConsumed {}
     );
+
+    let mut written = Vec::new();
+    plan.write_to(&mut written).unwrap();
+    assert_eq!(classify(written), "sldprt:unknown");
 }
 
 #[test]
@@ -489,7 +499,7 @@ fn the_patch_path_names_the_preserved_dialect() {
 }
 
 #[test]
-fn digest_only_source_image_cannot_supply_native_envelope() {
+fn a_retained_source_record_without_data_reports_degraded_fidelity() {
     let result = decode(versioned_part());
     let (ir, _, mut fidelity) = result.into_parts();
     let unavailable = {
@@ -519,33 +529,35 @@ fn digest_only_source_image_cannot_supply_native_envelope() {
         .insert_retained_record(source_image_id, unavailable)
         .expect("source image identity is unique");
 
-    assert!(fidelity
-        .retained_record(crate::SOURCE_IMAGE_ID)
-        .unwrap()
-        .data()
-        .is_none());
-    let error = SldprtCodec
+    let plan = SldprtCodec
         .plan(
             cadmpeg_ir::codec::write::EncodeInput::new(&ir, Some(&fidelity)),
             cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
         )
-        .expect_err("digest-only source image cannot supply Native envelope framing");
-    let cadmpeg_core::CodecError::UnsupportedTarget(refusal) = &error else {
-        panic!("expected a target refusal, got {error}");
-    };
-    assert_eq!(refusal.format(), "sldprt");
-    let wire = serde_json::to_value(refusal).expect("serialize refusal");
-    assert_eq!(wire["refusal"]["source"], "sldprt:sw-version-12000-plus");
-    assert!(refusal
-        .available()
-        .iter()
-        .any(|target| target.id.as_str() == "sldprt:unknown"));
-    let reason = wire["refusal"]["reason"].as_str().expect("refusal reason");
-    assert!(reason.contains("sldprt:unknown"), "{reason}");
-    assert!(
-        reason.contains("validated retained local, central and EOCD signature tokens"),
-        "{reason}"
+        .expect("missing retained bytes fall back to semantic writing");
+    assert!(!matches!(
+        plan.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::VerbatimReplay { .. }
+    ));
+    assert_eq!(
+        &wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
+        &cadmpeg_ir::report::export::FidelityResolution::Degraded {
+            reason: "preserved SLDPRT source image is unavailable".into(),
+        }
     );
+    let unavailable = plan
+        .report()
+        .losses
+        .iter()
+        .find(|loss| {
+            loss.code == crate::loss::SldprtLossCode::SourcePreservedImageUnavailable.kind()
+        })
+        .expect("missing retained bytes charge image unavailability");
+    assert!(unavailable.message.contains("retained source records"));
+    assert!(!unavailable.message.contains("regenerated from IR"));
 }
 
 #[test]

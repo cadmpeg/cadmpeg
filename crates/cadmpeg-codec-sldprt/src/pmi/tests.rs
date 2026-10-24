@@ -1642,14 +1642,19 @@ fn duplicate_member_identity_replays_but_refuses_semantic_edit() {
             cadmpeg_ir::scalar::Length::new(50.0).unwrap(),
         ));
     }
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(ref reason) if reason.contains("validated retained local, central and EOCD signature tokens")),
-        "{error}"
-    );
+    // A declined patch selects synthesis (#237 item 1).
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    let plan = SldprtCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+    assert!(matches!(
+        plan.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    ));
+    assert!(matches!(plan.report().synthesis_cause(),
+        Some(cadmpeg_ir::codec::write::SynthesisCause::PatchDeclined { reason }) if !reason.is_empty()));
+    plan.write_to(&mut Vec::new()).unwrap();
 }

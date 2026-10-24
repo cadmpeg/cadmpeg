@@ -451,13 +451,21 @@ pub(super) fn write_semantic_at(
         envelope::build(&sections, &type_ids, source_scan.as_ref())?
     } else {
         let mut bytes = outer_header(retained_records).to_vec();
+        let mut compressed_sizes = Vec::with_capacity(sections.len());
         for ((section, payload), type_id) in sections.iter().zip(&type_ids) {
-            bytes.extend(block(payload, section, *type_id)?);
+            let (framed, compressed_size) = block_with_compressed_size(payload, section, *type_id)?;
+            compressed_sizes.push(compressed_size);
+            bytes.extend(framed);
         }
         for cell in retained_cache_cells(source_scan.as_ref(), &sections) {
             bytes.extend(cell);
         }
-        for entry in section_directory_entries(source_scan.as_ref(), &sections, &type_ids)? {
+        for entry in section_directory_entries(
+            source_scan.as_ref(),
+            &sections,
+            &type_ids,
+            &compressed_sizes,
+        )? {
             bytes.extend(entry);
         }
         envelope::Regenerated {
@@ -713,14 +721,14 @@ fn section_directory_entries(
     source_scan: Option<&crate::container::ContainerScan<'_>>,
     sections: &[(String, Vec<u8>)],
     type_ids: &[u32],
+    compressed_sizes: &[u32],
 ) -> Result<Vec<Vec<u8>>, CodecError> {
     sections
         .iter()
         .zip(type_ids)
-        .map(|((section, payload), type_id)| {
-            let size = u32::try_from(payload.len())
-                // (O-capacity): the target field cannot encode a value outside its width.
-                .map_err(|_| CodecError::NotImplemented("SLDPRT section exceeds 4 GiB".into()))?;
+        .zip(compressed_sizes)
+        .map(|(((section, _), type_id), size)| {
+            let size = *size;
             let source_entry = source_scan.and_then(|scan| {
                 scan.directory
                     .iter()
@@ -3742,7 +3750,7 @@ fn write_body_hierarchy(
             native_regions.push(native_region);
             let mut native_lumps = Vec::new();
             if body.kind == BodyKind::Sheet && region.shells.is_empty() {
-                entity51(out, 1, native_region, 0x001d, &[0; 6]);
+                entity51(out, 1, native_region, 0x001d, &[0; 6])?;
             }
             for shell_id in &region.shells {
                 let shell = shells.get(shell_id).ok_or_else(|| {
@@ -4856,6 +4864,14 @@ pub(crate) fn parasolid_stream_named(
     Ok(out)
 }
 fn block(payload: &[u8], section: &str, type_id: u32) -> Result<Vec<u8>, CodecError> {
+    block_with_compressed_size(payload, section, type_id).map(|(framed, _)| framed)
+}
+
+fn block_with_compressed_size(
+    payload: &[u8],
+    section: &str,
+    type_id: u32,
+) -> Result<(Vec<u8>, u32), CodecError> {
     use flate2::write::DeflateEncoder;
     let mut encoder = DeflateEncoder::new(Vec::new(), flate2::Compression::default());
     encoder.write_all(payload)?;
@@ -4866,11 +4882,8 @@ fn block(payload: &[u8], section: &str, type_id: u32) -> Result<Vec<u8>, CodecEr
     out.extend_from_slice(&crc32fast::hash(payload).to_le_bytes());
     // (O-capacity): the target field cannot encode a value outside its width.
     let too_large = || CodecError::NotImplemented("SLDPRT block section is too large".into());
-    out.extend_from_slice(
-        &u32::try_from(compressed.len())
-            .map_err(|_| too_large())?
-            .to_le_bytes(),
-    );
+    let compressed_size = u32::try_from(compressed.len()).map_err(|_| too_large())?;
+    out.extend_from_slice(&compressed_size.to_le_bytes());
     out.extend_from_slice(
         &u32::try_from(payload.len())
             .map_err(|_| too_large())?
@@ -4883,7 +4896,7 @@ fn block(payload: &[u8], section: &str, type_id: u32) -> Result<Vec<u8>, CodecEr
     );
     out.extend_from_slice(&preamble);
     out.extend_from_slice(&compressed);
-    Ok(out)
+    Ok((out, compressed_size))
 }
 
 fn directory_entry(

@@ -114,6 +114,7 @@ fn state(owner: &FeatureId) -> FeatureInputTopology {
         faces: cadmpeg_ir::features::DistinctMembers::default(),
         edges: cadmpeg_ir::features::DistinctMembers::default(),
         vertices: cadmpeg_ir::features::DistinctMembers::default(),
+        edge_geometry: Vec::new(),
         native_ref: None,
     }
 }

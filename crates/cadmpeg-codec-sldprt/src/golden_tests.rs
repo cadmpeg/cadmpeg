@@ -374,12 +374,21 @@ fn edited_blind_depth_writes_design_and_reports_stale_brep() {
                 TargetRequest::Inherit,
             )
             .unwrap_or_else(|error| panic!("fixture {name}: {error}"));
-        assert!(
-            matches!(plan.report().write_path(), WritePath::Patched { .. }),
-            "fixture {name}: path={:?}; losses={:?}",
-            plan.report().write_path(),
-            plan.report().losses,
-        );
+        // An unrepresented source class makes patch ineligible (#209 §1.4).
+        if fidelity.unrepresented().is_empty() {
+            assert!(
+                matches!(plan.report().write_path(), WritePath::Patched { .. }),
+                "fixture {name}: path={:?}; losses={:?}",
+                plan.report().write_path(),
+                plan.report().losses,
+            );
+        } else {
+            assert!(
+                matches!(plan.report().write_path(), WritePath::Synthesized { .. }),
+                "fixture {name}: path={:?}",
+                plan.report().write_path(),
+            );
+        }
         let mut bytes = Vec::new();
         plan.write_to(&mut bytes).unwrap();
         let written = cadmpeg_test_support::golden::decode(
@@ -637,7 +646,23 @@ fn assert_legacy_history_preconditions(bytes: &[u8]) {
         !depths(&mut ir).is_empty(),
         "legacy blind-depth coverage remains explicit"
     );
-    verbatim_replay_holds(&SldprtCodec, "body_history", bytes);
+    // An unrepresented source class makes replay and patch ineligible (#209 §1.4).
+    if result.source_fidelity().unrepresented().is_empty() {
+        verbatim_replay_holds(&SldprtCodec, "body_history", bytes);
+    } else {
+        use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+        let plan = SldprtCodec
+            .plan(
+                EncodeInput::new(result.ir(), Some(result.source_fidelity())),
+                TargetRequest::Inherit,
+            )
+            .unwrap();
+        assert!(
+            matches!(plan.report().write_path(), WritePath::Synthesized { .. }),
+            "body_history: path={:?}",
+            plan.report().write_path(),
+        );
+    }
 }
 
 /// The size of each topological arena, so a rewrite that loses one fails.

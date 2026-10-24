@@ -96,7 +96,7 @@ fn authored_control(keywords: &[u8], reference_only: bool) -> cadmpeg_ir::codec:
 
 #[test]
 fn frozen_reference_only_pmi_parameter_is_not_driving() {
-    let source = include_bytes!("../../../tests/golden/fixtures/pmi_semantic_dimension.sldprt");
+    let source = include_bytes!("../../../tests/golden/fixtures/authored_pmi_dimension.sldprt");
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();

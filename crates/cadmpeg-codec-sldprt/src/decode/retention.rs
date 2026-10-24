@@ -5,7 +5,7 @@
 //! independent audit and never supplies this production state.
 
 use crate::resolved_features::class_sources::ClassSources;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{ArenaClass, ArenaClasses};
@@ -17,6 +17,8 @@ pub(super) struct Retention {
     source: ArenaClasses,
     pub(super) class_sources: ClassSources,
     pub(super) pmi_pointers: BTreeMap<String, BTreeMap<String, u64>>,
+    /// History features whose inline thin operation is ambiguous in a lane.
+    pub(super) ambiguous_thin_features: BTreeSet<String>,
 }
 
 impl Retention {

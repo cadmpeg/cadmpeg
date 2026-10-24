@@ -2,7 +2,7 @@
 //! Typed-feature design-completeness audits.
 #![allow(clippy::unwrap_used)]
 
-use crate::decode::append_design_losses;
+use crate::decode::{append_design_losses, append_thin_operation_losses};
 use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_ir::ids::{BodyId, EdgeId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -1515,8 +1515,10 @@ fn thin_operation_ambiguity_has_a_stable_loss() {
         names: vec![FeatureInputName {
             id: "sldprt:feature-input:name#0:10".into(),
             parent: "sldprt:feature-input:resolved-features#0".into(),
+            feature_ref: None,
             ordinal: 0,
-            offset: 10,
+            sequence: 0,
+            offset: Some(10),
             value: "F".into(),
             object_id: ObjectId::from_value(7),
         }],
@@ -1557,7 +1559,9 @@ fn thin_operation_ambiguity_has_a_stable_loss() {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(1.0).unwrap(),
+                        length: cadmpeg_ir::features::Dimension::Literal(
+                            cadmpeg_ir::scalar::NonZeroLength::new(1.0).unwrap(),
+                        ),
                     },
                     draft: None,
                 },
@@ -1570,6 +1574,7 @@ fn thin_operation_ambiguity_has_a_stable_loss() {
             allow_multi_profile_faces: None,
         });
         let features = [cadmpeg_ir::features::Feature {
+            needs_recompute: false,
             id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#extrude").unwrap(),
             ordinal: 0,
             name: None,
@@ -1595,12 +1600,13 @@ fn thin_operation_ambiguity_has_a_stable_loss() {
         ir.model.features = features.to_vec();
         let ctx = cadmpeg_test_support::service_decode_context();
         let mut native_lanes = lanes.to_vec();
+        let mut class_sources = ClassSources::default();
         for lane in &mut native_lanes {
             let mut payload = vec![0; 64];
             payload.extend_from_slice(&lane.native_payload);
             for name in &mut lane.names {
-                name.offset += 64;
-                let name_offset = usize::try_from(name.offset).unwrap();
+                name.offset = name.offset.map(|offset| offset + 64);
+                let name_offset = usize::try_from(name.offset.unwrap()).unwrap();
                 let class_offset = name_offset - 6 - class.len();
                 payload[class_offset..class_offset + 4].copy_from_slice(&[0xff, 0xff, 1, 0]);
                 payload[class_offset + 4..class_offset + 6]
@@ -1617,6 +1623,16 @@ fn thin_operation_ambiguity_has_a_stable_loss() {
             lane.names =
                 crate::resolved_features::names::object_names(&ctx, &lane.native_payload, &lane.id)
                     .unwrap();
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let (lane_ctx, source) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &lane.native_payload,
+                &arena,
+                &cadmpeg_core::decode::DecodePolicy::service(),
+            )
+            .unwrap();
+            class_sources
+                .admit_source(&lane_ctx, source, &lane.classes)
+                .unwrap();
             assert_eq!(lane.classes.len(), 1);
             assert_eq!(lane.names.len(), 1);
             assert_eq!(
@@ -1625,7 +1641,11 @@ fn thin_operation_ambiguity_has_a_stable_loss() {
             );
         }
         assert_eq!(
-            crate::resolved_features::classes::history_classes(&histories, &native_lanes),
+            crate::resolved_features::classes::history_classes(
+                &class_sources,
+                &histories,
+                &native_lanes
+            ),
             vec![Some(class)],
         );
         for history in &histories {
@@ -1650,6 +1670,10 @@ fn thin_operation_ambiguity_has_a_stable_loss() {
                 assert_eq!(name.parent, lane.id);
             }
         }
+        let ambiguous_thin_features = crate::resolved_features::operations::ambiguous_thin_features(
+            &histories,
+            &native_lanes,
+        );
         crate::native::SldprtNative {
             feature_histories: histories.to_vec(),
             feature_input_lanes: native_lanes,
@@ -1658,7 +1682,8 @@ fn thin_operation_ambiguity_has_a_stable_loss() {
         .store(&ctx, ir.native.namespace_mut("sldprt"))
         .unwrap();
         let mut report = super::empty_report(true);
-        append_design_losses(&ctx, &ir, &mut report).unwrap();
+        append_design_losses(&class_sources, &ctx, &ir, &mut report).unwrap();
+        append_thin_operation_losses(&ambiguous_thin_features, &ir, &mut report);
         report
             .losses
             .into_iter()
