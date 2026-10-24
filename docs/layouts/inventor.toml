@@ -1373,3 +1373,82 @@ offset = 50
 type = "u32"
 source = "spec"
 anchor = "related_count u32"
+
+[[record]]
+name = "pm_dc_loft_section"
+kind = "byte"
+section = "13.2"
+anchor = "A loft-section selection with an empty type-7 map contains"
+size = 59
+note = "Offsets hold in segment major versions 15 through 22 with an empty type-7 map. Later versions extend the embedded content header as section 12 states."
+parsed_by = ["crates/cadmpeg-codec-inventor/src/feature/loft_sweep.rs"]
+
+[[record.field]]
+name = "content_header"
+offset = 0
+type = "bytes[22]"
+source = "spec"
+anchor = "content_header"
+
+[[record.field]]
+name = "entity_link_reference"
+offset = 22
+type = "u32"
+source = "spec"
+anchor = "entity_link_reference u32"
+
+[[record.field]]
+name = "value"
+offset = 26
+type = "u8"
+source = "spec"
+anchor = "value u8"
+
+[[record.field]]
+name = "condition_reference"
+offset = 27
+type = "u32"
+source = "spec"
+anchor = "condition_reference u32"
+
+[[record.field]]
+name = "parameter_references"
+offset = 31
+type = "u32[2]"
+source = "spec"
+anchor = "parameter_references u32[2]"
+
+[[record.field]]
+name = "map_value"
+offset = 39
+type = "u32"
+source = "spec"
+anchor = "map_value u32 = 0"
+
+[[record.field]]
+name = "map_marker"
+offset = 43
+type = "u32"
+source = "spec"
+anchor = "map_marker u32 = 0x30000007"
+
+[[record.field]]
+name = "map_count"
+offset = 47
+type = "u32"
+source = "spec"
+anchor = "map_count u32 = 0"
+
+[[record.field]]
+name = "source_value"
+offset = 51
+type = "u32"
+source = "spec"
+anchor = "source_value u32"
+
+[[record.field]]
+name = "option_reference"
+offset = 55
+type = "u32"
+source = "spec"
+anchor = "option_reference u32"
