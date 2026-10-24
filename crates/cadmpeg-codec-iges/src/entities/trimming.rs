@@ -1078,205 +1078,44 @@ fn linear_boundary_geometry(
     }
 }
 
-/// Points sampled on each boundary curve to find the boundary's winding.
-const BOUNDARY_WINDING_SAMPLES: u32 = 64;
+/// The stated interval of each parameter-curve use of each boundary item.
+type UseRanges = Vec<Vec<Option<cadmpeg_ir::geometry::DirectedParameterRange>>>;
 
-/// A parameter-space boundary closes when its ends lie within this fraction
-/// of the boundary's parameter-space extent. A seam-crossing boundary on a
-/// periodic support does not close and has no winding.
-const EPS_PARAMETER_RING_CLOSURE: f64 = 1.0e-6;
-
-fn sample_parameters([start, end]: [f64; 2]) -> impl Iterator<Item = f64> {
-    (0..=BOUNDARY_WINDING_SAMPLES).map(move |step| {
-        start + (end - start) * f64::from(step) / f64::from(BOUNDARY_WINDING_SAMPLES)
-    })
-}
-
-/// Twice the signed area of the closed polygon through `points`.
-fn polygon_signed_area_twice(points: &[[f64; 2]]) -> f64 {
-    let Some(origin) = points.first().copied() else {
-        return 0.0;
-    };
-    let mut area = 0.0;
-    for (index, point) in points.iter().enumerate() {
-        let next = points[(index + 1) % points.len()];
-        let (a, b) = (
-            [point[0] - origin[0], point[1] - origin[1]],
-            [next[0] - origin[0], next[1] - origin[1]],
-        );
-        area += a[0] * b[1] - a[1] * b[0];
-    }
-    area
-}
-
-/// The signed parameter-space area of a boundary traversed in source order:
-/// positive when it runs counterclockwise in `(u, v)`. It is absent when an
-/// item has no parameter curves, when a curve does not evaluate, or when the
-/// image does not close.
-fn parameter_boundary_signed_area(
+/// Whether a Type 144 boundary is traversed backward, with the use interval
+/// of each parameter curve of each item: absent in source order, and the
+/// reversed interval of the parameter curve in backward order. A backward
+/// boundary keeps its parameter curves and states the reversal in their uses.
+/// The error names why the boundary keeps its source traversal.
+fn reversed_use_ranges(
     items: &[BoundaryItem],
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<f64>, CodecError> {
-    let mut points = Vec::new();
-    for item in items {
-        if item.pcurves.is_empty() {
-            return Ok(None);
-        }
-        let mut item_points = Vec::new();
-        for (geometry, range) in &item.pcurves {
-            for parameter in sample_parameters(*range) {
-                let Some(point) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
-                    cadmpeg_ir::eval::decode::pcurve_uv(ctx, geometry, parameter),
-                )?)?
-                else {
-                    return Ok(None);
-                };
-                item_points.push([point.u, point.v]);
-            }
-        }
-        if item.segment.sense == Sense::Reversed {
-            item_points.reverse();
-        }
-        points.extend(item_points);
+    winding: winding::BoundaryWinding,
+) -> Result<(bool, UseRanges), &'static str> {
+    match winding {
+        winding::BoundaryWinding::Kept => Ok((
+            false,
+            items
+                .iter()
+                .map(|item| vec![None; item.pcurves.len()])
+                .collect(),
+        )),
+        winding::BoundaryWinding::Unresolved(reason) => Err(reason),
+        winding::BoundaryWinding::Reversed => items
+            .iter()
+            .map(|item| {
+                item.pcurves
+                    .iter()
+                    .map(|(_, [start, end])| {
+                        cadmpeg_ir::geometry::DirectedParameterRange::new([*end, *start])
+                            .map(Some)
+                            .map_err(|_| {
+                                "a parameter curve has no interval whose reversal a use can state"
+                            })
+                    })
+                    .collect()
+            })
+            .collect::<Result<_, _>>()
+            .map(|ranges| (true, ranges)),
     }
-    let (Some(first), Some(last)) = (points.first().copied(), points.last().copied()) else {
-        return Ok(None);
-    };
-    let mut low = first;
-    let mut high = first;
-    for point in &points {
-        for axis in 0..2 {
-            low[axis] = low[axis].min(point[axis]);
-            high[axis] = high[axis].max(point[axis]);
-        }
-    }
-    let extent = (high[0] - low[0]).hypot(high[1] - low[1]);
-    let gap = (last[0] - first[0]).hypot(last[1] - first[1]);
-    if !(extent.is_finite() && gap.is_finite()) || gap > extent * EPS_PARAMETER_RING_CLOSURE {
-        return Ok(None);
-    }
-    Ok(Some(polygon_signed_area_twice(&points)))
-}
-
-/// The signed model-space area of a boundary on a plane about the plane
-/// normal: positive when it runs counterclockwise about that normal.
-fn planar_model_boundary_signed_area(
-    items: &[BoundaryItem],
-    index: &ModelIndex<'_>,
-    normal: cadmpeg_ir::math::Vector3,
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<f64>, CodecError> {
-    let mut points = Vec::new();
-    for item in items {
-        let Some(curve) = index.curves(item.model_curve.as_str(), cadmpeg_ir::index::StandardIndex)
-        else {
-            return Ok(None);
-        };
-        let Some(range) = item.source_edge.param_range() else {
-            return Ok(None);
-        };
-        let mut item_points = Vec::new();
-        for parameter in sample_parameters(range.get()) {
-            let Some(point) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
-                cadmpeg_ir::eval::decode::curve_point(ctx, &curve.geometry, parameter),
-            )?)?
-            else {
-                return Ok(None);
-            };
-            item_points.push(point.get());
-        }
-        if item.segment.sense == Sense::Reversed {
-            item_points.reverse();
-        }
-        points.extend(item_points);
-    }
-    let Some(origin) = points.first().copied() else {
-        return Ok(None);
-    };
-    let mut area = 0.0;
-    for (position, point) in points.iter().enumerate() {
-        let next = points[(position + 1) % points.len()];
-        area += point
-            .vector_from(origin)
-            .cross(next.vector_from(origin))
-            .dot(normal);
-    }
-    Ok(area.is_finite().then_some(area))
-}
-
-/// A parameter curve with the interval its coedge uses.
-type RangedPcurve = (PcurveGeometry, [f64; 2]);
-
-/// The parameter curve that traverses `pcurve` backward over the same
-/// interval: knots reflected within the interval and poles in reverse order.
-fn reversed_pcurve((geometry, [start, end]): &RangedPcurve) -> Option<RangedPcurve> {
-    let PcurveGeometry::Nurbs { nurbs } = geometry else {
-        return None;
-    };
-    let (low, high) = (
-        cadmpeg_ir::scalar::FiniteReal::new(*start)?,
-        cadmpeg_ir::scalar::FiniteReal::new(*end)?,
-    );
-    let knots = nurbs
-        .knots()
-        .finite_knots()
-        .rev()
-        .map(|knot| cadmpeg_ir::math::reflect_parameter(knot, low, high))
-        .collect::<Option<Vec<_>>>()?;
-    let mut points = nurbs.control_points();
-    points.reverse();
-    let weights = nurbs.weights().map(|mut weights| {
-        weights.reverse();
-        weights
-    });
-    let reversed =
-        PcurveNurbs::from_checked_lanes(nurbs.degree(), knots, points, weights, nurbs.periodic())
-            .ok()?;
-    Some((PcurveGeometry::Nurbs { nurbs: reversed }, [*start, *end]))
-}
-
-/// The parameter curves of every item, each traversed backward and listed in
-/// backward order, or absent when one of them has no reversal.
-fn reversed_item_pcurves(items: &[BoundaryItem]) -> Option<Vec<Vec<RangedPcurve>>> {
-    items
-        .iter()
-        .map(|item| item.pcurves.iter().rev().map(reversed_pcurve).collect())
-        .collect()
-}
-
-/// Whether a Type 144 boundary runs against the neutral loop direction.
-/// Type 144 and Type 142 state no traversal direction, and the face keeps the
-/// support normal, so the outer boundary must keep the face on its left about
-/// that normal and every inner boundary must keep the face on its right.
-fn trimmed_boundary_runs_backward(
-    items: &[BoundaryItem],
-    outer: bool,
-    index: &ModelIndex<'_>,
-    support: &SurfaceGeometry,
-    ctx: &DecodeContext<'_>,
-) -> Result<bool, CodecError> {
-    let area = match parameter_boundary_signed_area(items, ctx)? {
-        Some(area) => match support {
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))
-                if nurbs.normal_reversed() =>
-            {
-                Some(-area)
-            }
-            _ => Some(area),
-        },
-        None => match support {
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) => {
-                planar_model_boundary_signed_area(
-                    items,
-                    index,
-                    *plane.frame().axis().as_raw(),
-                    ctx,
-                )?
-            }
-            _ => None,
-        },
-    };
-    Ok(area.is_some_and(|area| if outer { area < 0.0 } else { area > 0.0 }))
 }
 
 #[derive(Debug)]
@@ -2904,24 +2743,37 @@ pub(super) fn project(
                 surface_kind,
                 ctx,
             )?);
-            let backward_pcurves = if surface_kind == BoundarySurfaceKind::Trimmed
-                && trimmed_boundary_runs_backward(
+            let winding = if surface_kind == BoundarySurfaceKind::Trimmed {
+                winding::trimmed_boundary_winding(
                     &items,
                     explicit_outer_sequence == Some(sequence),
                     &carrier_index,
                     &support_geometry,
                     ctx,
-                )? {
-                reversed_item_pcurves(&items)
+                )?
             } else {
-                None
+                winding::BoundaryWinding::Kept
             };
-            let runs_backward = backward_pcurves.is_some();
-            if let Some(backward_pcurves) = backward_pcurves {
-                for (item, pcurves) in items.iter_mut().zip(backward_pcurves) {
-                    item.pcurves = pcurves;
+            let (runs_backward, use_ranges) = match reversed_use_ranges(&items, winding) {
+                Ok(reversal) => reversal,
+                Err(reason) => {
+                    super::push_attributed_loss(
+                            &mut losses,
+                            entry,
+                            IgesLossCode::BoundaryWindingUnresolved,
+                            format_args!(
+                                "IGES Type 144 boundary {boundary_index} keeps its source traversal: {reason}"
+                            ),
+                        );
+                    (
+                        false,
+                        items
+                            .iter()
+                            .map(|item| vec![None; item.pcurves.len()])
+                            .collect(),
+                    )
                 }
-            }
+            };
             let loop_id = crate::ids::r#loop(&stem.slot(boundary_index));
             let mut coedge_ids = Vec::new();
             let mut source_endpoints = Vec::new();
@@ -3030,8 +2882,11 @@ pub(super) fn project(
                     break;
                 }
                 let mut pcurve_uses = Vec::new();
-                for (pcurve_index, (geometry, parameter_range)) in
-                    item.pcurves.into_iter().enumerate()
+                for (pcurve_index, ((geometry, parameter_range), use_range)) in item
+                    .pcurves
+                    .into_iter()
+                    .zip(use_ranges[segment_index].iter().copied())
+                    .enumerate()
                 {
                     let id = crate::ids::pcurve(
                         &stem
@@ -3056,8 +2911,11 @@ pub(super) fn project(
                     pcurve_uses.push(PcurveUse {
                         pcurve: id,
                         isoparametric: None,
-                        parameter_range: None,
+                        parameter_range: use_range,
                     });
+                }
+                if runs_backward {
+                    pcurve_uses.reverse();
                 }
                 let coedge_id = coedge_ids[segment_index].clone();
                 ctx.charge_entities(1, "iges_geometry_trimming")?;
@@ -3285,6 +3143,8 @@ pub(super) fn project(
         boundary_vertex_derivations,
     ))
 }
+
+mod winding;
 
 #[cfg(test)]
 mod tests;

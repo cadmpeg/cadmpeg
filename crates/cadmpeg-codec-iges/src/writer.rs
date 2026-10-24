@@ -3314,10 +3314,11 @@ fn validate_trimmed_sheet_topology<'a>(
                             pcurve.id
                         )));
                     };
-                    if pcurve_use
-                        .parameter_range
-                        .is_some_and(|range| !same_range(range.endpoints(), parameter_range.get()))
-                    {
+                    if pcurve_use.parameter_range.is_some_and(|range| {
+                        let [start, end] = range.endpoints();
+                        !same_range([start, end], parameter_range.get())
+                            && !same_range([end, start], parameter_range.get())
+                    }) {
                         return Err(CodecError::NotImplemented(format!(
                             "IGES semantic writer cannot restrict pcurve use {}",
                             pcurve_use.pcurve
@@ -4506,7 +4507,12 @@ impl PcurveOrientationContext<'_> {
                     )),
                 })
             };
-            mapped.push((finite(start, "start")?.get(), finite(end, "end")?.get()));
+            let (start, end) = (finite(start, "start")?.get(), finite(end, "end")?.get());
+            mapped.push(if use_runs_backward(pcurve_use) {
+                (end, start)
+            } else {
+                (start, end)
+            });
         }
         Ok(mapped)
     }
@@ -4539,7 +4545,7 @@ impl PcurveOrientationContext<'_> {
                             self.owner, pcurve_use.pcurve
                         ))
                     })?;
-                let index = if reverse {
+                let index = if reverse ^ use_runs_backward(pcurve_use) {
                     let index = entities.len();
                     entities.push(oriented_pcurve_entity(self.ir, pcurve)?);
                     index
@@ -4555,6 +4561,15 @@ impl PcurveOrientationContext<'_> {
             })
             .collect()
     }
+}
+
+/// Whether a coedge traverses its pcurve backward: its use states a
+/// decreasing interval.
+fn use_runs_backward(pcurve_use: &PcurveUse) -> bool {
+    pcurve_use.parameter_range.is_some_and(|range| {
+        let [start, end] = range.endpoints();
+        end < start
+    })
 }
 
 fn pcurve_orientation_context<'a>(

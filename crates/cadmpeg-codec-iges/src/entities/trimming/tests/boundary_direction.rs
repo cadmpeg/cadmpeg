@@ -5,20 +5,24 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::eval::admission::EvaluationAdmission;
-use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs, PcurveNurbsPoles};
-use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::topology::{LoopBoundaryRole, Sense};
-use cadmpeg_ir::units::FinitePoint2;
+use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+use cadmpeg_ir::geometry::DirectedParameterRange;
+use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::topology::{Coedge, LoopBoundaryRole, Sense};
 use cadmpeg_ir::CadIr;
 
-use super::super::{polygon_signed_area_twice, reversed_pcurve};
+use super::super::winding::polygon_signed_area_twice;
+use crate::loss::IgesLossCode;
 use crate::test_support::test_drawing_and_trimming::{
-    trimmed_plane_with_boundaries, trimmed_plane_with_boundaries_and_inner,
-    trimmed_plane_with_inner_loop_file,
+    trimmed_nurbs_patch_file, trimmed_plane_with_boundaries,
+    trimmed_plane_with_boundaries_and_inner, trimmed_plane_with_inner_loop_file,
+    trimmed_plane_with_outer_and_inner,
 };
 use crate::IgesCodec;
 
-const EPS_REVERSED_PCURVE_POINT: f64 = 1.0e-12;
+/// A clockwise square about `+z` from `(0.2, 0.2)` over `[0, 4]`.
+const CLOCKWISE_SQUARE: &str = "106,1,5,0,0.2,0.2,0.2,0.8,0.8,0.8,0.8,0.2,0.2,0.2;";
+
 const SAMPLES_PER_COEDGE: u32 = 16;
 
 /// The model-space area of the loop `loop_id` about `normal`, traversed with
@@ -81,8 +85,9 @@ fn loop_area_about(ir: &CadIr, loop_id: &str, normal: Vector3) -> f64 {
     area
 }
 
-/// The parameter-space area of the single pcurve of each coedge of
-/// `loop_id`, traversed in the pcurve's own direction.
+/// The parameter-space area of the pcurves of each coedge of `loop_id`, in
+/// use order, each traversed over the interval its use states or else over
+/// its own range.
 fn pcurve_area(ir: &CadIr, loop_id: &str) -> f64 {
     let loop_ = ir
         .model
@@ -105,7 +110,10 @@ fn pcurve_area(ir: &CadIr, loop_id: &str) -> f64 {
                 .iter()
                 .find(|pcurve| pcurve.id == pcurve_use.pcurve)
                 .unwrap();
-            let [start, end] = pcurve.parameter_range().unwrap().get();
+            let [start, end] = pcurve_use.parameter_range.map_or_else(
+                || pcurve.parameter_range().unwrap().get(),
+                cadmpeg_ir::geometry::DirectedParameterRange::endpoints,
+            );
             for step in 0..=SAMPLES_PER_COEDGE {
                 let t = start + (end - start) * f64::from(step) / f64::from(SAMPLES_PER_COEDGE);
                 let uv = cadmpeg_ir::eval::decode::pcurve_uv(
@@ -147,7 +155,7 @@ fn decoded(bytes: Vec<u8>) -> CadIr {
 
 /// Each loop keeps the face on its left about the +z support normal: the
 /// outer loop runs counterclockwise, the inner loop clockwise, and the
-/// parameter curve of each coedge runs with its coedge.
+/// parameter-curve uses of each coedge run with its coedge.
 fn assert_neutral_directions(ir: &CadIr) {
     let normal = Vector3::new(0.0, 0.0, 1.0);
     for (loop_id, role) in face_loops(ir) {
@@ -170,17 +178,115 @@ fn assert_neutral_directions(ir: &CadIr) {
     }
 }
 
+/// The one coedge of the loop `loop_id`.
+fn only_coedge<'ir>(ir: &'ir CadIr, loop_id: &str) -> &'ir Coedge {
+    let mut coedges = ir
+        .model
+        .coedges
+        .iter()
+        .filter(|coedge| coedge.owner_loop.as_str() == loop_id);
+    let coedge = coedges.next().expect("the loop has a coedge");
+    assert!(coedges.next().is_none(), "the loop has one coedge");
+    coedge
+}
+
+/// The coedge runs backward over its source boundary: its sense is reversed
+/// and its one pcurve use states the reversed interval `[4, 0]` of a pcurve
+/// whose poles keep the source order, starting at `first` toward `second`.
+fn assert_reversed_use(ir: &CadIr, coedge: &Coedge, first: [f64; 2], second: [f64; 2]) {
+    assert_eq!(coedge.sense, Sense::Reversed);
+    let [pcurve_use] = coedge.pcurves.as_slice() else {
+        panic!("the coedge has one pcurve use");
+    };
+    assert_eq!(
+        pcurve_use.parameter_range,
+        Some(DirectedParameterRange::new([4.0, 0.0]).unwrap())
+    );
+    let pcurve = ir
+        .model
+        .pcurves
+        .iter()
+        .find(|pcurve| pcurve.id == pcurve_use.pcurve)
+        .unwrap();
+    assert_eq!(pcurve.parameter_range().unwrap().get(), [0.0, 4.0]);
+    let PcurveGeometry::Nurbs { nurbs } = &pcurve.geometry else {
+        panic!("the pcurve is a NURBS curve");
+    };
+    let poles = nurbs.control_points();
+    assert_eq!([poles[0].u, poles[0].v], first);
+    assert_eq!([poles[1].u, poles[1].v], second);
+}
+
 #[test]
 fn counterclockwise_inner_boundary_runs_clockwise_about_the_support_normal() {
     let ir = decoded(trimmed_plane_with_inner_loop_file());
     assert_neutral_directions(&ir);
-    let inner = ir
-        .model
-        .coedges
+    let inner = only_coedge(&ir, "iges:model:loop#D15:1");
+    assert_reversed_use(&ir, inner, [0.25, 0.25], [0.75, 0.25]);
+}
+
+#[test]
+fn clockwise_outer_boundary_runs_counterclockwise_about_the_support_normal() {
+    let ir = decoded(trimmed_plane_with_outer_and_inner(
+        CLOCKWISE_SQUARE,
+        CLOCKWISE_SQUARE,
+        "106,1,5,0,0.4,0.4,0.4,0.6,0.6,0.6,0.6,0.4,0.4,0.4;",
+        "144,1,1,1,7,13;",
+    ));
+    assert_neutral_directions(&ir);
+    let outer = only_coedge(&ir, "iges:model:loop#D15:0");
+    assert_reversed_use(&ir, outer, [0.2, 0.2], [0.2, 0.8]);
+    assert_eq!(
+        only_coedge(&ir, "iges:model:loop#D15:1").sense,
+        Sense::Forward
+    );
+}
+
+/// On the NURBS patch `S(u, v) = (u, v, 0)` the support normal is `+z`, and
+/// the winding comes from the parameter-space image.
+#[test]
+fn clockwise_outer_boundary_on_a_nurbs_support_runs_counterclockwise() {
+    let ir = decoded(trimmed_nurbs_patch_file(CLOCKWISE_SQUARE, true));
+    assert_neutral_directions(&ir);
+    let outer = only_coedge(&ir, "iges:model:loop#D9:0");
+    assert_reversed_use(&ir, outer, [0.2, 0.2], [0.2, 0.8]);
+}
+
+#[test]
+fn counterclockwise_outer_boundary_on_a_nurbs_support_keeps_its_source_direction() {
+    let ir = decoded(trimmed_nurbs_patch_file(
+        "106,1,5,0,0.2,0.2,0.8,0.2,0.8,0.8,0.2,0.8,0.2,0.2;",
+        true,
+    ));
+    assert_neutral_directions(&ir);
+    let outer = only_coedge(&ir, "iges:model:loop#D9:0");
+    assert_eq!(outer.sense, Sense::Forward);
+    assert!(outer
+        .pcurves
         .iter()
-        .find(|coedge| coedge.owner_loop.as_str() == "iges:model:loop#D15:1")
+        .all(|pcurve_use| pcurve_use.parameter_range.is_none()));
+}
+
+/// A model-space boundary on a non-plane support has no parameter-space image
+/// and no planar model-space image, so it keeps its source traversal and
+/// reports the unresolved winding.
+#[test]
+fn model_space_boundary_on_a_nurbs_support_keeps_its_source_traversal_with_a_loss() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(trimmed_nurbs_patch_file(CLOCKWISE_SQUARE, false)),
+            &DecodeOptions::default(),
+        )
         .unwrap();
-    assert_eq!(inner.sense, Sense::Reversed);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::BoundaryWindingUnresolved.kind()));
+    let [coedge] = result.ir().model.coedges.as_slice() else {
+        panic!("the face has one coedge");
+    };
+    assert_eq!(coedge.sense, Sense::Forward);
 }
 
 #[test]
@@ -211,43 +317,6 @@ fn inner_boundary_of_the_parameter_domain_runs_clockwise() {
     for (loop_id, _) in loops {
         assert!(loop_area_about(&ir, &loop_id, normal) < 0.0);
         assert!(pcurve_area(&ir, &loop_id) < 0.0);
-    }
-}
-
-#[test]
-fn reversed_pcurve_traverses_the_interval_backward() {
-    let nurbs = PcurveNurbs::new(
-        2,
-        vec![0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 2.0],
-        PcurveNurbsPoles::Polynomial {
-            points: [[0.0, 0.0], [1.0, 2.0], [3.0, 1.0], [4.0, 4.0]]
-                .into_iter()
-                .map(|[u, v]| FinitePoint2::new(Point2::new(u, v)).unwrap())
-                .collect(),
-        },
-        false,
-    )
-    .unwrap();
-    let source = (PcurveGeometry::Nurbs { nurbs }, [0.5, 1.75]);
-    let reversed = reversed_pcurve(&source).unwrap();
-    assert_eq!(reversed.1, source.1);
-    for step in 0..=SAMPLES_PER_COEDGE {
-        let t = 0.5 + 1.25 * f64::from(step) / f64::from(SAMPLES_PER_COEDGE);
-        let forward = cadmpeg_ir::eval::decode::pcurve_uv(
-            EvaluationAdmission::Standard,
-            &source.0,
-            0.5 + 1.75 - t,
-        )
-        .unwrap()
-        .get();
-        let backward =
-            cadmpeg_ir::eval::decode::pcurve_uv(EvaluationAdmission::Standard, &reversed.0, t)
-                .unwrap()
-                .get();
-        assert!(
-            (forward.u - backward.u).hypot(forward.v - backward.v) <= EPS_REVERSED_PCURVE_POINT,
-            "sample {step} agrees"
-        );
     }
 }
 

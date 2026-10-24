@@ -17,7 +17,9 @@ use crate::test_support::plan_at;
 use crate::test_support::test_closed_cylinder::{
     solid_cylinder, solid_cylinder_without_curve_roles, CYLINDER_HEIGHT, CYLINDER_RADIUS,
 };
-use crate::test_support::test_drawing_and_trimming::trimmed_plane_with_inner_loop_file;
+use crate::test_support::test_drawing_and_trimming::{
+    trimmed_nurbs_patch_file, trimmed_plane_with_inner_loop_file,
+};
 use crate::test_support::test_owned::explicit_void_solid_file;
 use crate::{IgesCodec, IgesVersion};
 
@@ -152,6 +154,24 @@ fn void_solid_write_round_trip_keeps_measured_geometry() {
 #[test]
 fn trimmed_inner_loop_write_round_trip_keeps_measured_geometry() {
     let ir = decoded(trimmed_plane_with_inner_loop_file());
+    let written = round_tripped(&ir);
+    let before = measured(&ir);
+    let after = measured(&written);
+    assert_one_orientation_reading(&before);
+    assert_one_orientation_reading(&after);
+    let comparison = compare(&ir, &before, &written, &after, &CompareOptions::default())
+        .expect("one body pair fits the pair allowance");
+    assert_eq!(comparison.verdict(), Verdict::Agree);
+}
+
+/// The clockwise source boundary decodes reversed, with its pcurve use on the
+/// reversed interval; the writer writes the pcurve in the coedge direction.
+#[test]
+fn reversed_nurbs_outer_boundary_write_round_trip_keeps_measured_geometry() {
+    let ir = decoded(trimmed_nurbs_patch_file(
+        "106,1,5,0,0.2,0.2,0.2,0.8,0.8,0.8,0.8,0.2,0.2,0.2;",
+        true,
+    ));
     let written = round_tripped(&ir);
     let before = measured(&ir);
     let after = measured(&written);
