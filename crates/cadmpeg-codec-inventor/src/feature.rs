@@ -14,7 +14,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::Sketch;
 use cadmpeg_ir::{
     features::{
-        edge_treatments::{ChamferGroup, ChamferSpec, FilletGroup, RadiusSpec},
+        edge_treatments::{ChamferForm, ChamferGroup, ChamferSpec, FilletGroup, RadiusSpec},
         holes::{HoleKind, HolePlacement},
         BooleanOp, DesignParameter, DistinctMembers, EdgeSelection, ExtrudeDirection,
         ExtrudeExtent, ExtrudeSide, ExtrudeStart, ExtrusionDirectionSource, FaceSelection, Feature,
@@ -1981,10 +1981,21 @@ pub(crate) fn project(
             result_topologies.push(result);
         }
     }
+    let unresolved_chamfers = features
+        .iter()
+        .filter(|feature| {
+            matches!(feature.evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. })
+                    if groups.iter().any(|group| group.spec.is_unresolved()))
+        })
+        .count();
     Ok(FeatureProjection {
-        unresolved_features: total.checked_sub(neutral).ok_or_else(|| {
-            CodecError::malformed("Inventor feature projection exceeds inventory")
-        })?,
+        unresolved_features: total
+            .checked_sub(neutral)
+            .and_then(|unresolved| unresolved.checked_add(unresolved_chamfers))
+            .ok_or_else(|| {
+                CodecError::malformed("Inventor feature projection exceeds inventory")
+            })?,
         unresolved_states: unresolved_states.min(neutral),
         features,
         result_topologies,
@@ -2836,7 +2847,7 @@ fn project_fillet(
         if !matches!(
             selection.kind,
             PmDcFeaturePropertyKind::WideEnumeration {
-                type_value: 4,
+                type_value: 4 | 0x0002_0004,
                 value: 0
             }
         ) || !matches!(
@@ -2871,7 +2882,12 @@ fn project_fillet(
             .get(),
         )?;
         groups.push(FilletGroup {
-            edges: EdgeSelection::Native(edge_collection.id()),
+            edges: EdgeSelection::Native(match selection.kind {
+                PmDcFeaturePropertyKind::WideEnumeration { type_value: 4, .. } => {
+                    edge_collection.id()
+                }
+                _ => set.id(),
+            }),
             radius: RadiusSpec::Constant { radius },
             tangency_weight: None,
         });
@@ -2916,9 +2932,7 @@ fn project_chamfer(
     label: &PmDcFeatureLabel,
     index: &ProjectionIndex<'_>,
 ) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
-    if enum16(source, 4, PmDcFeatureEnumFamily::Chamfer, index)? != 0 {
-        return None;
-    }
+    let form = enum16(source, 4, PmDcFeatureEnumFamily::Chamfer, index)?;
     let edges = slot_property(source, 0, index)?;
     let PmDcFeaturePropertyKind::References {
         family: PmDcFeatureReferenceFamily::EdgeCollection,
@@ -2932,6 +2946,51 @@ fn project_chamfer(
     }
     let distance =
         cadmpeg_ir::scalar::PositiveLength::try_from(length_parameter(source, 2, index)?).ok()?;
+    let spec = match form {
+        0 => ChamferSpec::Distance { distance },
+        1 | 2 => {
+            let faces = references(source, 1, PmDcFeatureReferenceFamily::FaceCollection, index)?;
+            if faces.references().is_empty()
+                || !faces.references().iter().all(|reference| {
+                    resolve_property(
+                        source.identity.segment_token.as_str(),
+                        reference.index(),
+                        index,
+                    )
+                    .is_some_and(|property| {
+                        matches!(&property.kind, PmDcFeaturePropertyKind::FaceItem {
+                            index_references, ..
+                        } if !index_references.values().is_empty())
+                    })
+                })
+            {
+                return None;
+            }
+            if form == 1 {
+                cadmpeg_ir::scalar::InteriorAngle::try_from(angle_parameter(source, 10, index)?)
+                    .ok()?;
+                ChamferSpec::Unresolved {
+                    form: Some(ChamferForm::DistanceAngle),
+                }
+            } else {
+                let second = cadmpeg_ir::scalar::PositiveLength::try_from(length_parameter(
+                    source, 3, index,
+                )?)
+                .ok()?;
+                if distance == second {
+                    ChamferSpec::TwoDistances {
+                        first: distance,
+                        second,
+                    }
+                } else {
+                    ChamferSpec::Unresolved {
+                        form: Some(ChamferForm::TwoDistances),
+                    }
+                }
+            }
+        }
+        _ => return None,
+    };
     let flip_direction = boolean(source, 5, index)?;
     let (feature_id, result) = match feature_result(ctx, source, 11, index)? {
         Ok(value) => value,
@@ -2956,8 +3015,12 @@ fn project_chamfer(
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Chamfer {
                     groups: cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
-                        edges: EdgeSelection::Native(edges.id()),
-                        spec: ChamferSpec::Distance { distance },
+                        edges: EdgeSelection::Native(if form == 0 {
+                            edges.id()
+                        } else {
+                            source.id()
+                        }),
+                        spec,
                     }),
                     flip_direction,
                 }),
@@ -4555,6 +4618,63 @@ mod tests {
             vec![fillet_properties[8].id()]
         );
 
+        for (type_value, value, continuity, admitted) in [
+            (0x0002_0004, 0, Some(false), true),
+            (0x0002_0004, 0, Some(true), false),
+            (0x0002_0004, 0, None, false),
+            (0x0002_0004, 1, Some(false), false),
+            (4, 1, Some(false), false),
+            (5, 0, Some(false), false),
+        ] {
+            let mut properties = fillet_properties.clone();
+            properties[4] = test_property(
+                5,
+                PmDcFeaturePropertyKind::WideEnumeration { type_value, value },
+            );
+            properties[2] = test_property(
+                3,
+                PmDcFeaturePropertyKind::FilletEdgeSet {
+                    edges: reference(5),
+                    radius: reference(21),
+                    selection: reference(6),
+                    continuity: reference(if continuity.is_some() { 7 } else { 0 }),
+                    option: None,
+                },
+            );
+            properties[5] = test_property(
+                6,
+                PmDcFeaturePropertyKind::Boolean {
+                    name: String::new(),
+                    name_value: 0,
+                    value: continuity.unwrap_or(false),
+                },
+            );
+            let index = test_projection_index(
+                &properties,
+                std::slice::from_ref(&raw_radius),
+                std::slice::from_ref(&neutral_radius),
+                &[],
+                &[],
+                &[],
+                &[],
+                &[],
+            );
+            let projected = project_fillet(&ctx, &fillet, &label, &index);
+            if admitted {
+                let (feature, _) = projected
+                    .expect("native selector")
+                    .expect("fillet projection");
+                assert!(matches!(feature.evaluation.definition(),
+                    FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
+                        if matches!(&groups[0].edges, cadmpeg_ir::features::EdgeSelection::Native(id)
+                            if id == &properties[2].id())
+                        && matches!(groups[0].radius, RadiusSpec::Constant { radius } if radius.get() == 2.5)
+                ));
+            } else {
+                assert!(projected.is_none());
+            }
+        }
+
         let raw_distance = raw_parameter(40);
         let neutral_distance = neutral_parameter(
             &raw_distance,
@@ -5382,6 +5502,7 @@ mod tests {
         crate::pmdc::PMDC_LIST_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
     }
 
+    mod edge_treatments;
     mod extents;
     mod shell;
     mod thread;

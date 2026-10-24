@@ -1012,6 +1012,16 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
                 Some(property.id()),
             ));
         }
+        if let Some(message) = fillet_continuity_type_error(&property.kind, |ordinal| {
+            raw.get(&(property.identity.segment_token.as_str(), ordinal))
+                .copied()
+        }) {
+            findings.push(finding(
+                Check::NativeLinks,
+                message.into(),
+                Some(property.id()),
+            ));
+        }
         if !fillet_option_is_admitted(&property.kind, |ordinal| {
             raw.get(&(property.identity.segment_token.as_str(), ordinal))
                 .copied()
@@ -2698,6 +2708,21 @@ pub(crate) fn fillet_option_is_admitted<'a>(
         || type_at(option.index() - 1).is_none_or(|type_id| {
             type_id == crate::pmdc::type_id_string(crate::feature::BOOLEAN_TYPE)
         })
+}
+
+fn fillet_continuity_type_error<'a>(
+    kind: &PmDcFeaturePropertyKind,
+    type_at: impl Fn(u32) -> Option<&'a str>,
+) -> Option<&'static str> {
+    let PmDcFeaturePropertyKind::FilletEdgeSet { continuity, .. } = kind else {
+        return None;
+    };
+    let boolean_type = crate::pmdc::type_id_string(crate::feature::BOOLEAN_TYPE);
+    continuity
+        .record_ordinal()
+        .and_then(type_at)
+        .is_some_and(|type_id| type_id != boolean_type)
+        .then_some("Inventor PmDc fillet continuity is not a Boolean record")
 }
 
 #[cfg(test)]

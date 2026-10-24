@@ -434,3 +434,26 @@ fn thread_validation_requires_decoded_numeric_parameters_and_the_thread_class() 
     );
     Ok(())
 }
+
+#[test]
+fn fillet_continuity_is_nullable_and_rejects_a_resolved_non_boolean() {
+    let boolean_type = crate::pmdc::type_id_string(crate::feature::BOOLEAN_TYPE);
+    for (index, admitted) in [(0, true), (1, true), (2, false), (3, true)] {
+        let kind = PmDcFeaturePropertyKind::FilletEdgeSet {
+            edges: PmDcReference::new(0, false).expect("null"),
+            radius: PmDcReference::new(0, false).expect("null"),
+            selection: PmDcReference::new(0, false).expect("null"),
+            continuity: PmDcReference::new(index, false).expect("reference"),
+            option: None,
+        };
+        let types = |ordinal| match ordinal {
+            0 => Some(boolean_type.as_str()),
+            1 => Some("00000000000000000000000000000000"),
+            _ => None,
+        };
+        assert_eq!(
+            super::fillet_continuity_type_error(&kind, types).is_none(),
+            admitted
+        );
+    }
+}
