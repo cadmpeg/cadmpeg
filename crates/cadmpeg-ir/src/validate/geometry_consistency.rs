@@ -352,6 +352,72 @@ fn check_support_sides(
     entity: &str,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
+    visit_support_failures(
+        ctx,
+        supports,
+        contract,
+        model,
+        bound,
+        |side_index, mismatch| {
+            super::record_finding(
+                findings,
+                Check::GeometricConsistency,
+                Severity::Error,
+                Some(entity),
+                format_args!(
+                "procedural support side {side_index} misses its endpoint distance contract by \
+                 {mismatch:.6}"
+            ),
+            );
+        },
+    )
+}
+
+/// Return support-side indexes whose endpoint images miss a solved cache.
+/// Uses the same parameter maps, evaluation admission and distance allowance
+/// as the procedural support consistency check. Unevaluable sides are absent;
+/// resource refusals propagate.
+pub fn cache_support_endpoint_failures(
+    ctx: &DecodeContext<'_>,
+    index: &crate::index::ModelIndex<'_>,
+    curve: &crate::geometry::CurveGeometry,
+    context: &crate::geometry::IntcurveSupportContext,
+    cache_fit_tolerance: Option<f64>,
+) -> Result<Vec<usize>, CodecError> {
+    let solved = context
+        .parameter_range()
+        .endpoints()
+        .map(|parameter| measured_point(crate::eval::decode::curve_point(ctx, curve, parameter)));
+    let [Some(start), Some(end)] = [solved[0]?, solved[1]?] else {
+        return Ok(Vec::new());
+    };
+    let evaluations = ModelEvaluationPass::new();
+    let mut sides = Vec::new();
+    visit_support_failures(
+        ctx,
+        (context, None),
+        SupportEndpointContract::Coincident([start, end]),
+        PassEvaluator {
+            index,
+            pass: &evaluations,
+        },
+        procedural_support_allowance(index.ir().tolerances.linear, cache_fit_tolerance),
+        |side, _mismatch| sides.push(side),
+    )?;
+    Ok(sides)
+}
+
+fn visit_support_failures(
+    ctx: &DecodeContext<'_>,
+    supports: (
+        &crate::geometry::IntcurveSupportContext,
+        Option<&crate::geometry::IntcurveSupportSide>,
+    ),
+    contract: SupportEndpointContract,
+    model: PassEvaluator<'_, '_>,
+    bound: f64,
+    mut failure: impl FnMut(usize, f64),
+) -> Result<(), CodecError> {
     let (context, third) = supports;
     let (constrained, expected_distance) = match contract {
         SupportEndpointContract::Coincident(endpoints) => (endpoints, None),
@@ -400,16 +466,7 @@ fn check_support_sides(
             endpoint_mismatch(constrained[1], support_end),
         );
         if !mismatch.is_finite() || mismatch > bound {
-            super::record_finding(
-                findings,
-                Check::GeometricConsistency,
-                Severity::Error,
-                Some(entity),
-                format_args!(
-                    "procedural support side {side_index} misses its endpoint distance contract by \
-                     {mismatch:.6}"
-                ),
-            );
+            failure(side_index, mismatch);
         }
     }
     Ok(())
