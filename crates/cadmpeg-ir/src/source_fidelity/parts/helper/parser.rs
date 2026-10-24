@@ -19,6 +19,12 @@ use cadmpeg_core::CodecError;
 /// let parser = ParserPartOutput::new(cadmpeg_ir::CodecFormat::Step);
 /// let semantic_stage = parser.0;
 /// ```
+///
+/// ```compile_fail
+/// use cadmpeg_ir::source_fidelity::parts::ParserPartOutput;
+/// let parser = ParserPartOutput::new(cadmpeg_ir::CodecFormat::Step);
+/// parser.native().namespace_mut("step");
+/// ```
 #[derive(Debug)]
 pub struct ParserPartOutput(pub(super) PartOutput);
 
@@ -26,6 +32,21 @@ impl ParserPartOutput {
     /// Begin source-addressed syntax parsing for one codec.
     pub fn new(codec: CodecFormat) -> Self {
         Self(PartOutput::new(codec))
+    }
+
+    /// Borrow parser failure records without releasing the semantic stage.
+    pub fn native(&self) -> &crate::native::Native {
+        self.0.native()
+    }
+
+    /// Borrow source facts without finalizing the decode session.
+    pub fn fidelity(&self) -> &crate::SourceFidelity {
+        self.0.fidelity()
+    }
+
+    /// Borrow diagnostics without admitting new records.
+    pub fn losses(&self) -> &[crate::report::loss::LossNote] {
+        self.0.losses()
     }
 
     /// Finalize actual attempted-record dependencies before releasing output.

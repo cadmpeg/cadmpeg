@@ -295,11 +295,11 @@ fn detached_source_and_fatal_session_budget_never_fabricate_global_parts() {
         parse(&scan, &ctx, &mut output),
         Err(CodecError::ResourceLimit(_))
     ));
-    let (_, native, fidelity, losses) = output
-        .into_parts(&ctx)
-        .expect("finalize parser dependencies")
-        .into_parts();
-    assert!(native.namespace("iges").is_none());
-    assert!(fidelity.parts().is_empty());
-    assert!(losses.is_empty());
+    assert!(output.native().namespace("iges").is_none());
+    assert!(output.fidelity().parts().is_empty());
+    assert!(output.losses().is_empty());
+    assert!(matches!(
+        output.into_parts(&ctx),
+        Err(CodecError::ResourceLimit(refusal)) if Some(refusal) == ctx.resource_refusal()
+    ));
 }

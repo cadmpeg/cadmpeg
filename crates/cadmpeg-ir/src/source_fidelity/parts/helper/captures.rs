@@ -60,6 +60,40 @@ impl CapturedRecordLayout {
 }
 
 impl SourceFidelity {
+    /// Install captures after removing only the actual finalized dependency drops.
+    /// A foreign proof refuses before this session's captures are extracted.
+    pub fn install_pruned_record_captures(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        pruning: super::PrunedPartCaptures,
+        mut fields: impl FnMut(&str, &mut RecordLayout) -> Result<(), CodecError>,
+    ) -> Result<(), CodecError> {
+        self.install_mapped_pruned_record_captures(ctx, pruning, |mut capture| {
+            if capture.batch_id().is_some() {
+                return Err(CodecError::malformed(
+                    "a batched record capture needs install_mapped_pruned_record_captures",
+                ));
+            }
+            fields(&capture.id, &mut capture.layout)?;
+            Ok(capture)
+        })
+    }
+
+    /// Install surviving captures through the actual member mapping after pruning.
+    pub fn install_mapped_pruned_record_captures(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        pruning: super::PrunedPartCaptures,
+        map: impl FnMut(CapturedRecordLayout) -> Result<CapturedRecordLayout, CodecError>,
+    ) -> Result<(), CodecError> {
+        if ctx.session_token()? != pruning.session {
+            return Err(CodecError::malformed(
+                "capture pruning belongs to another decode session",
+            ));
+        }
+        self.install_filtered_record_captures(ctx, Some(pruning), map)
+    }
+
     /// Install completed captures through their actual batch-aware mapper.
     ///
     /// Drains the context once. Each callback owns one genuine capture; only
@@ -70,11 +104,32 @@ impl SourceFidelity {
     pub fn install_mapped_record_captures(
         &mut self,
         ctx: &DecodeContext<'_>,
+        map: impl FnMut(CapturedRecordLayout) -> Result<CapturedRecordLayout, CodecError>,
+    ) -> Result<(), CodecError> {
+        self.install_filtered_record_captures(ctx, None, map)
+    }
+
+    fn install_filtered_record_captures(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        pruning: Option<super::PrunedPartCaptures>,
         mut map: impl FnMut(CapturedRecordLayout) -> Result<CapturedRecordLayout, CodecError>,
     ) -> Result<(), CodecError> {
         let mut staged = SourceFidelity::default();
         for capture in ctx.take_record_captures()? {
             let batch = capture.batch_id();
+            if pruning.as_ref().is_some_and(|proof| {
+                proof
+                    .dropped
+                    .binary_search_by(|(id, owner)| {
+                        id.as_str()
+                            .cmp(capture.id())
+                            .then_with(|| owner.cmp(&batch))
+                    })
+                    .is_ok()
+            }) {
+                continue;
+            }
             let (id, layout) = RecordLayout::from_capture(capture);
             let mapped = map(CapturedRecordLayout { id, batch, layout })?;
             ctx.retain_bytes(

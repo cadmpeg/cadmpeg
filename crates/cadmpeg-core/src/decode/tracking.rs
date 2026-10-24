@@ -7,7 +7,9 @@ use std::ops::Range;
 
 use super::budget::DecodeBudget;
 
+mod authority;
 mod batches;
+pub use authority::DecodeSessionToken;
 mod owners;
 mod streams;
 use super::{
@@ -81,6 +83,7 @@ struct SessionSlot {
 
 #[derive(Debug)]
 struct Session {
+    identity: Option<DecodeSessionToken>,
     budget: DecodeBudget,
     streams: Streams,
     frames: Vec<Frame>,
@@ -803,6 +806,7 @@ impl SessionHandle<'_> {
 impl Session {
     fn new(policy: DecodePolicy, input_bytes: u64) -> Self {
         Self {
+            identity: None,
             budget: DecodeBudget::new(policy, input_bytes),
             streams: Streams::default(),
             frames: Vec::new(),

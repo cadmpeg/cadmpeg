@@ -135,6 +135,7 @@ impl PartOutput {
         part: &str,
         dependents: impl IntoIterator<Item = String>,
     ) -> Result<(), CodecError> {
+        self.bind_context(ctx)?;
         let failure = self
             .failures
             .iter_mut()
@@ -174,6 +175,7 @@ impl PartOutput {
         &mut self,
         ctx: &DecodeContext<'_>,
     ) -> Result<PartDependencyPruning, CodecError> {
+        self.bind_context(ctx)?;
         let mut graph = BTreeMap::<String, Vec<Edge>>::new();
         macro_rules! model_edges {
             ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => { $(

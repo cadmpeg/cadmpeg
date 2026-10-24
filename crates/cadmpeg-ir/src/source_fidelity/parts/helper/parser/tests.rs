@@ -158,14 +158,22 @@ fn nested_parser_resource_refusal_stays_fatal_and_never_becomes_a_give_up() {
             })
         })
         .expect_err("fused resource refusal");
-    assert!(matches!(error, CodecError::ResourceLimit(_)));
-    let (_, native, fidelity, losses) = output
+    assert!(matches!(&error, CodecError::ResourceLimit(limit)
+        if limit.scope == cadmpeg_core::decode::LimitScope::Session
+            && limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && limit.additional == 1 && limit.operation == "over caller allowance"));
+    // #215: a Session refusal neither publishes a stub nor permits finalization.
+    assert!(output.0.native().namespace("fcstd").is_none());
+    assert!(output.0.fidelity().parts().is_empty());
+    assert!(output.0.losses().is_empty());
+    let final_error = output
         .into_parts(&ctx)
-        .expect("finalize parser dependencies")
-        .into_parts();
-    assert!(native.namespace("fcstd").is_none());
-    assert!(fidelity.parts.is_empty());
-    assert!(losses.is_empty());
+        .expect_err("session refusal remains fatal");
+    assert_eq!(final_error.to_string(), error.to_string());
+    assert_eq!(
+        ctx.finish_session().unwrap_err().to_string(),
+        error.to_string()
+    );
 }
 
 #[test]
@@ -277,4 +285,31 @@ fn a_child_given_up_inside_a_parser_scope_is_charged_once_at_the_root() {
         child_part_cost(true, true) - child_part_cost(true, false),
         at_root
     );
+}
+
+#[test]
+fn borrowed_diagnostics_preserve_a_fused_session_and_cannot_finalize_it() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &DecodePolicy::service())
+        .expect("actual caller session");
+    let output = ParserPartOutput::new(CodecFormat::Iges);
+    ctx.retain_bytes(ctx.retained_bytes_available(), "consume caller allowance")
+        .expect("exact caller allowance");
+    assert!(matches!(
+        ctx.retain_bytes(1, "latch original session refusal"),
+        Err(CodecError::ResourceLimit(_))
+    ));
+    let refusal = ctx.resource_refusal().expect("original fused refusal");
+    assert!(output.native().namespace("iges").is_none());
+    assert!(output.fidelity().parts().is_empty());
+    assert!(output.losses().is_empty());
+    assert_eq!(ctx.resource_refusal(), Some(refusal));
+    assert!(matches!(
+        output.into_parts(&ctx),
+        Err(CodecError::ResourceLimit(actual)) if actual == refusal
+    ));
+    assert!(matches!(
+        ctx.finish_session(),
+        Err(CodecError::ResourceLimit(actual)) if actual == refusal
+    ));
 }

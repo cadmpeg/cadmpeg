@@ -375,10 +375,13 @@ fn detached_scan_and_session_budget_refusal_create_no_parameter_failure_home() {
         assemble(&scan, &directory, [], &global, &ctx, &mut output),
         Err(CodecError::ResourceLimit(_))
     ));
-    let (_, native, fidelity, losses) = output.into_parts(&ctx).unwrap().into_parts();
-    assert!(native.namespace("iges").is_none());
-    assert!(fidelity.parts().is_empty());
-    assert!(losses.is_empty());
+    assert!(output.native().namespace("iges").is_none());
+    assert!(output.fidelity().parts().is_empty());
+    assert!(output.losses().is_empty());
+    assert!(matches!(
+        output.into_parts(&ctx),
+        Err(CodecError::ResourceLimit(refusal)) if Some(refusal) == ctx.resource_refusal()
+    ));
 }
 
 #[test]

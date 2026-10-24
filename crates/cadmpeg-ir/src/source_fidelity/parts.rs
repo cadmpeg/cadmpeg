@@ -21,7 +21,7 @@ mod rescope;
 
 pub use helper::{
     CapturedRecordLayout, DecodeParts, FinalizedPartOutput, ParserPartOutput,
-    PartDependencyPruning, PartOutput,
+    PartDependencyPruning, PartOutput, PrunedPartCaptures,
 };
 pub use rescope::PartIdentityMap;
 

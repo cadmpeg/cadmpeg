@@ -4,7 +4,7 @@
 use std::collections::BTreeSet;
 
 use crate::schema::rewrite::typed::RewriteIdentities;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, DecodeSessionToken, View};
 use cadmpeg_core::CodecError;
 use serde::{de::DeserializeOwned, Serialize};
 
@@ -14,7 +14,7 @@ mod finalization;
 mod parser;
 pub use captures::CapturedRecordLayout;
 pub use dependencies::PartDependencyPruning;
-pub use finalization::FinalizedPartOutput;
+pub use finalization::{FinalizedPartOutput, PrunedPartCaptures};
 pub use parser::ParserPartOutput;
 
 use super::{PartLevel, PartRecord, PartSpec, PartState};
@@ -34,12 +34,14 @@ use crate::NativeUnknownRecord;
 /// Dropping its stage discards records, layouts, retained bytes and diagnostics.
 #[derive(Debug)]
 pub struct PartOutput {
+    session: Option<DecodeSessionToken>,
     codec: CodecFormat,
     model: Model,
     native: Native,
     fidelity: SourceFidelity,
     losses: Vec<LossNote>,
     ids: BTreeSet<String>,
+    record_batches: Vec<(String, Option<cadmpeg_core::decode::RecordBatchId>)>,
     native_owners: std::collections::BTreeMap<String, dependencies::NativeOwner>,
     failures: Vec<dependencies::FailureHome>,
     // A part's stage moves its records into the parent output on commit.
@@ -52,11 +54,13 @@ impl PartOutput {
     pub fn new(codec: CodecFormat) -> Self {
         Self {
             codec,
+            session: None,
             model: Model::default(),
             native: Native::default(),
             fidelity: SourceFidelity::default(),
             losses: Vec::new(),
             ids: BTreeSet::new(),
+            record_batches: Vec::new(),
             native_owners: std::collections::BTreeMap::new(),
             failures: Vec::new(),
             staged: false,
@@ -67,6 +71,16 @@ impl PartOutput {
             staged: true,
             ..Self::new(codec)
         }
+    }
+    fn bind_context(&mut self, ctx: &DecodeContext<'_>) -> Result<DecodeSessionToken, CodecError> {
+        let token = ctx.session_token()?;
+        if self.session.is_some_and(|session| session != token) {
+            return Err(CodecError::malformed(
+                "part output belongs to another decode session",
+            ));
+        }
+        self.session = Some(token);
+        Ok(token)
     }
     /// Borrow successfully staged model records.
     pub fn model(&self) -> &Model {
@@ -90,6 +104,7 @@ impl PartOutput {
     }
     /// Stage a successful part's diagnostic under the same session budget.
     pub fn push_loss(&mut self, ctx: &DecodeContext<'_>, loss: LossNote) -> Result<(), CodecError> {
+        self.bind_context(ctx)?;
         ctx.retain_bytes(u64_from_index(loss.message.len()), "part diagnostic text")?;
         reserve_output(ctx, self.staged, &mut self.losses, 1)?;
         self.losses.push(loss);
@@ -102,6 +117,7 @@ impl PartOutput {
         ctx: &DecodeContext<'_>,
         entity: T,
     ) -> Result<(), CodecError> {
+        self.bind_context(ctx)?;
         self.admit_id(ctx, entity.identity())?;
         reserve_output(ctx, self.staged, T::arena_mut(&mut self.model), 1)?;
         ctx.charge_entities(1, "part neutral entity")?;
@@ -115,6 +131,7 @@ impl PartOutput {
         arena: &str,
         value: T,
     ) -> Result<(), CodecError> {
+        self.bind_context(ctx)?;
         let mut records =
             crate::native::arena_from(ctx, std::iter::once(Ok::<T, NativeConvertError>(value)))?;
         let record = records
@@ -146,10 +163,25 @@ impl PartOutput {
                 .ok_or_else(|| CodecError::malformed("part identity storage overflows"))?,
             "part identity index",
         )?;
+        let batch = ctx.current_record_batch()?;
+        ctx.reserve_working(
+            &mut self.record_batches,
+            1,
+            "part record batch working storage",
+        )?;
+        let mut key = ctx.alloc_filled(id.len(), 0u8, "part record batch identity")?;
+        key.copy_from_slice(id.as_bytes());
+        let key = String::from_utf8(key).map_err(CodecError::malformed)?;
+        self.record_batches.push((key, batch));
         self.ids.insert(id.to_owned());
         Ok(())
     }
     fn preflight(&self, other: &Self) -> Result<(), CodecError> {
+        if self.session != other.session {
+            return Err(CodecError::malformed(
+                "part output belongs to another decode session",
+            ));
+        }
         if let Some(id) = self.ids.intersection(&other.ids).next() {
             return Err(CodecError::malformed(format_args!(
                 "duplicate part record {id}"
@@ -217,6 +249,12 @@ impl PartOutput {
         reserve_output(ctx, staged, &mut self.failures, other.failures.len())?;
         self.failures.append(&mut other.failures);
         self.ids.append(&mut other.ids);
+        ctx.reserve_working(
+            &mut self.record_batches,
+            other.record_batches.len(),
+            "part record batch working storage",
+        )?;
+        self.record_batches.append(&mut other.record_batches);
         reserve_output(ctx, staged, &mut self.losses, other.losses.len())?;
         self.losses.append(&mut other.losses);
         Ok(())
@@ -277,7 +315,9 @@ impl DecodeParts for DecodeContext<'_> {
     ) -> Result<Option<T>, CodecError> {
         self.decode_part(&mut output.0, extent, spec, |stage| {
             let mut parser = ParserPartOutput(PartOutput::stage(stage.codec));
+            parser.0.bind_context(self)?;
             let result = decode(&mut parser);
+            parser.0.bind_context(self)?;
             *stage = parser.0;
             result
         })
@@ -290,11 +330,13 @@ impl DecodeParts for DecodeContext<'_> {
         spec: PartSpec,
         decode: impl FnOnce(&mut PartOutput) -> Result<T, CodecError>,
     ) -> Result<Option<T>, CodecError> {
+        output.bind_context(self)?;
         // Framing bytes come from the format's header fields, which damaged
         // input can corrupt. A framing error is a failure of this part only.
         let framing = spec.validate(extent);
         let framing_valid = framing.is_ok();
         let mut staged = PartOutput::stage(output.codec);
+        staged.bind_context(self)?;
         let outcome = self.part_transaction(extent, || {
             framing?;
             let value = decode(&mut staged)?;
@@ -384,6 +426,7 @@ impl DecodeParts for DecodeContext<'_> {
                 // All staged model/native/retention/layout/loss state is dropped.
                 drop(staged);
                 let mut replacement = PartOutput::stage(output.codec);
+                replacement.bind_context(self)?;
                 let links = capture
                     .record_id()
                     .map(|id| {
