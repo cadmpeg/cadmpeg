@@ -7,7 +7,7 @@ use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceDimension, Res
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::source_fidelity::parts::{DecodeParts, ParserPartOutput, PartLevel, PartSpec};
 
-use super::{admit_fields_with, fields, DirectoryDefect, DirectoryEntry, GlobalTable};
+use super::{fields, DirectoryDefect, DirectoryEntry, GlobalTable};
 use crate::card::{CardScan, PhysicalLine, ScannedLine, Section};
 
 mod metadata;
@@ -89,53 +89,51 @@ pub(crate) fn parse(
                     else {
                         return Err(CodecError::malformed("Directory card is absent"));
                     };
-                    let Some(second) = pair.get(1) else {
-                        return Err(CodecError::malformed(DirectoryDefect::UnpairedCard));
-                    };
                     let id = format!("iges:entity:directory#{sequence}");
+                    // The required fields decide whether the record forms. A
+                    // given-up required field leaves no record to link to.
+                    let required = admit_fields(
+                        ctx,
+                        source,
+                        first,
+                        pair.get(1).map(ScannedLine::physical),
+                        global,
+                        fields_output,
+                        Fields::Required,
+                    )?;
+                    if pair.get(1).is_none() {
+                        return Err(DirectoryDefect::UnpairedCard.into());
+                    }
+                    // A given-up required field: the record does not form, so
+                    // it has no optional fields.
+                    if (0..18).any(|slot| {
+                        Fields::Required.holds(slot / 9 * 10 + slot % 9 + 1)
+                            && required[slot].is_none()
+                    }) {
+                        return Ok(None);
+                    }
                     // Parameter parsing owns the primary capture; retain only
                     // this Directory parser's attempted native identity.
                     let primary_capture = ctx.read_transaction()?;
                     let parsed = ctx.record(&id, extent, || {
-                        admit_fields_with(
-                            *sequence,
-                            first.offset,
-                            fields(first),
-                            fields(second.physical()),
+                        let optional = admit_fields(
+                            ctx,
+                            source,
+                            first,
+                            pair.get(1).map(ScannedLine::physical),
                             global,
-                            |_field, name, number| {
-                                let (card, field) = if number < 10 {
-                                    (first, usize::from(number - 1))
-                                } else {
-                                    (second.physical(), usize::from(number - 11))
-                                };
-                                let start = absolute(source, card.offset)?
-                                    .checked_add(field * 8)
-                                    .ok_or_else(|| {
-                                    CodecError::malformed("Directory field offset overflows")
-                                })?;
-                                let end = start.checked_add(8).ok_or_else(|| {
-                                    CodecError::malformed("Directory field end overflows")
-                                })?;
-                                let field_source = source.child(start, end).ok_or_else(|| {
-                                    CodecError::malformed("Directory field exceeds actual source")
-                                })?;
-                                metadata::admit(
-                                    ctx,
-                                    field_source,
-                                    name,
-                                    number,
-                                    global,
-                                    fields_output,
-                                )
-                            },
-                        )
+                            fields_output,
+                            Fields::Optional,
+                        )?;
+                        form_entry(*sequence, first, &required, &optional, global)
                     });
                     drop(primary_capture);
                     parsed
                 })? {
-                    Some(entry) => append_parser_item(ctx, &mut entries, entry)?,
-                    None => append_given_up(ctx, &mut given_up, pair)?,
+                    Some(Some(entry)) => append_parser_item(ctx, &mut entries, entry)?,
+                    // A given-up entry, or an entry whose required field part
+                    // is given up: no record is formed (#215 rule 1).
+                    Some(None) | None => append_given_up(ctx, &mut given_up, pair)?,
                 }
             }
             Ok((entries, given_up))
@@ -158,6 +156,149 @@ pub(crate) fn parse(
         }
     }
     Ok(DirectoryParts { entries, given_up })
+}
+
+/// Which Directory fields one pass admits.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Fields {
+    /// The fields the record needs: 1-3, 7, 9, 11 and 14-18.
+    Required,
+    /// The independently interpretable metadata fields: 4-6, 8, 12, 13
+    /// and 19.
+    Optional,
+}
+
+impl Fields {
+    const fn holds(self, number: usize) -> bool {
+        let optional = matches!(number, 4 | 5 | 6 | 8 | 12 | 13 | 19);
+        match self {
+            Self::Required => !optional,
+            Self::Optional => optional,
+        }
+    }
+}
+
+/// Admit one pass of Directory fields; each field is one
+/// `iges.directory_field` part. The values are indexed by field slot
+/// (card times nine plus column).
+fn admit_fields(
+    ctx: &DecodeContext<'_>,
+    source: View<'_>,
+    first: &PhysicalLine,
+    second: Option<&PhysicalLine>,
+    global: GlobalTable,
+    output: &mut ParserPartOutput,
+    pass: Fields,
+) -> Result<[Option<metadata::FieldValue>; 18], CodecError> {
+    let mut values = [None; 18];
+    for (card, line) in std::iter::once(first).chain(second).enumerate() {
+        let start = absolute(source, line.offset)?;
+        for field in 0..9 {
+            let number = card * 10 + field + 1;
+            if !pass.holds(number) {
+                continue;
+            }
+            let begin = start
+                .checked_add(field * 8)
+                .ok_or_else(|| CodecError::malformed("Directory field offset overflows"))?;
+            let end = begin
+                .checked_add(8)
+                .ok_or_else(|| CodecError::malformed("Directory field end overflows"))?;
+            let view = source
+                .child(begin, end)
+                .ok_or_else(|| CodecError::malformed("Directory field exceeds actual source"))?;
+            let number = u8::try_from(number)
+                .map_err(|_| CodecError::malformed("Directory field number overflows"))?;
+            values[card * 9 + field] = metadata::admit_field(ctx, view, number, global, output)?;
+        }
+    }
+    Ok(values)
+}
+
+/// Form one Directory Entry record from its admitted fields. A required
+/// field part that is given up leaves the record unformed, and the entry
+/// part stays decoded (#215 rule 1). An unreadable optional field has no
+/// value.
+fn form_entry(
+    sequence: u32,
+    first: &PhysicalLine,
+    required: &[Option<metadata::FieldValue>; 18],
+    optional: &[Option<metadata::FieldValue>; 18],
+    global: GlobalTable,
+) -> Result<Option<DirectoryEntry>, CodecError> {
+    let integer = |values: &[Option<metadata::FieldValue>; 18], slot: usize| match values[slot] {
+        Some(metadata::FieldValue::Integer(value)) => Some(value),
+        _ => None,
+    };
+    let raw = |slot: usize| match required[slot] {
+        Some(metadata::FieldValue::Raw(bytes)) => Some(bytes),
+        _ => None,
+    };
+    let status = match required[8] {
+        Some(metadata::FieldValue::Status(status)) => Some(status),
+        _ => None,
+    };
+    let (
+        Some(entity_type),
+        Some(parameter_start),
+        Some(structure),
+        Some(transform),
+        Some(status),
+        Some(repeated_type),
+        Some(parameter_line_count),
+        Some(form),
+        Some(reserved_first),
+        Some(reserved_second),
+        Some(label),
+    ) = (
+        integer(required, 0),
+        integer(required, 1),
+        integer(required, 2),
+        integer(required, 6),
+        status,
+        integer(required, 9),
+        integer(required, 12),
+        integer(required, 13),
+        raw(14),
+        raw(15),
+        raw(16),
+    )
+    else {
+        return Ok(None);
+    };
+    if entity_type != repeated_type {
+        return Err(DirectoryDefect::RepeatedEntityTypeMismatch {
+            declared: entity_type,
+            repeated: repeated_type,
+        }
+        .into());
+    }
+    let status_field = fields(first)[8];
+    Ok(Some(DirectoryEntry {
+        source_offset: first.offset,
+        sequence,
+        entity_type,
+        parameter_start,
+        structure,
+        line_font: integer(optional, 3),
+        level: integer(optional, 4),
+        view: integer(optional, 5),
+        transform,
+        label_display: integer(optional, 7),
+        status,
+        status_padding_recovered: !matches!(
+            global,
+            GlobalTable::Legacy | GlobalTable::V4_0 | GlobalTable::V5_0
+        ) && status_field[0] == b' '
+            && status_field.iter().any(u8::is_ascii_digit),
+        line_weight: integer(optional, 10),
+        color: integer(optional, 11),
+        parameter_line_count,
+        form,
+        reserved: [reserved_first, reserved_second],
+        label,
+        subscript: integer(optional, 17),
+    }))
 }
 
 /// The Directory Entries of a Directory parse and the given-up ones.

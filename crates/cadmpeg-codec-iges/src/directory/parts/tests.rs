@@ -81,14 +81,13 @@ fn actual_directory_callbacks_match_original_values_and_independent_source_exten
         .is_none_or(|namespace| namespace.arenas().is_empty()));
     let mut reference = Vec::new();
     cadmpeg_test_support::framing::iges::frame(&ctx, source, &mut reference).unwrap();
+    // #215 framer test and #222: every Directory level (section, entry and
+    // field) and every field, with no further filter.
+    // Appendix C gives 18 `iges.directory_field` parts per entry; fields 2
+    // and 14 are wholly framing.
     let mut expected: Vec<_> = reference
         .iter()
-        .filter(|part| {
-            matches!(
-                part.level().as_str(),
-                "iges.directory_section" | "iges.directory_entry"
-            )
-        })
+        .filter(|part| part.level().as_str().starts_with("iges.directory_"))
         .map(|part| {
             (
                 part.level().as_str(),
@@ -101,12 +100,6 @@ fn actual_directory_callbacks_match_original_values_and_independent_source_exten
     let mut actual: Vec<_> = fidelity
         .parts()
         .values()
-        .filter(|part| {
-            matches!(
-                part.level().as_str(),
-                "iges.directory_section" | "iges.directory_entry"
-            )
-        })
         .map(|part| {
             (
                 part.level().as_str(),
@@ -119,7 +112,7 @@ fn actual_directory_callbacks_match_original_values_and_independent_source_exten
     expected.sort_unstable_by_key(|part| (part.0, part.1));
     actual.sort_unstable_by_key(|part| (part.0, part.1));
     assert_eq!(actual, expected);
-    assert_eq!(actual.len(), 3);
+    assert_eq!(actual.len(), 1 + 2 + 2 * 18);
     let (section_id, _) = fidelity
         .parts()
         .iter()
@@ -133,32 +126,17 @@ fn actual_directory_callbacks_match_original_values_and_independent_source_exten
         assert_eq!(part.parent(), Some(section_id));
         assert_eq!(part.state(), &PartState::Decoded {});
     }
-    let mut expected_fields: Vec<_> = optional_field_columns(&original, 3)
-        .into_iter()
-        .map(|(parent, offset)| (offset, 8, parent, Vec::<std::ops::Range<u64>>::new()))
-        .collect();
-    assert_eq!(expected_fields.len(), 2 * 7);
-    let mut actual_fields: Vec<_> = fidelity
+    for part in fidelity
         .parts()
         .values()
         .filter(|part| part.level().as_str() == "iges.directory_field")
-        .map(|part| {
-            let parent = &fidelity.parts()[part.parent().expect("actual entry parent")];
-            assert_eq!(parent.level().as_str(), "iges.directory_entry");
-            assert_eq!(parent.state(), &PartState::Decoded {});
-            assert_eq!(part.state(), &PartState::Decoded {});
-            assert_eq!(part.stream(), parent.stream());
-            (
-                part.offset(),
-                part.byte_len(),
-                parent.offset(),
-                part.framing_bytes().to_vec(),
-            )
-        })
-        .collect();
-    expected_fields.sort_unstable_by_key(|field| field.0);
-    actual_fields.sort_unstable_by_key(|field| field.0);
-    assert_eq!(actual_fields, expected_fields);
+    {
+        let parent = &fidelity.parts()[part.parent().expect("actual entry parent")];
+        assert_eq!(parent.level().as_str(), "iges.directory_entry");
+        assert_eq!(parent.state(), &PartState::Decoded {});
+        assert_eq!(part.state(), &PartState::Decoded {});
+        assert_eq!(part.stream(), parent.stream());
+    }
     assert!(fidelity.record_layout().is_empty());
     assert!(ctx.take_record_captures().unwrap().is_empty());
 }
@@ -192,16 +170,26 @@ fn failed_real_pair_has_one_shared_home_and_preserves_the_independent_peer() {
         .unwrap()
         .arena_as::<NativeUnknownRecord>("unknowns")
         .unwrap();
+    // #222: a Directory Entry field is a given-up `iges.directory_field`.
+    // The damaged field is the required transformation field (card 1
+    // columns 49-56), so the record is not formed and its entry part stays
+    // decoded (#215 rule 1).
     assert_eq!(unknowns.len(), 1);
     let id = unknowns[0].id.as_str();
     assert_eq!(fidelity.retained_records().len(), 1);
     assert_eq!(
         fidelity.retained_record(id).unwrap().data(),
-        Some(&damaged[start..start + 162])
+        Some(&damaged[start + 48..start + 56])
     );
-    assert_eq!(fidelity.parts()[id].offset(), u64::try_from(start).unwrap());
-    assert_eq!(fidelity.parts()[id].byte_len(), 162);
-    assert_eq!(fidelity.parts()[id].state(), &PartState::GivenUp {});
+    let field = &fidelity.parts()[id];
+    assert_eq!(field.level().as_str(), "iges.directory_field");
+    assert_eq!(field.offset(), u64::try_from(start + 48).unwrap());
+    assert_eq!(field.byte_len(), 8);
+    assert_eq!(field.state(), &PartState::GivenUp {});
+    let entry = &fidelity.parts()[field.parent().expect("actual entry parent")];
+    assert_eq!(entry.level().as_str(), "iges.directory_entry");
+    assert_eq!(entry.offset(), u64::try_from(start).unwrap());
+    assert_eq!(entry.state(), &PartState::Decoded {});
     assert_eq!(
         fidelity
             .parts()
@@ -212,22 +200,17 @@ fn failed_real_pair_has_one_shared_home_and_preserves_the_independent_peer() {
             ))
             .filter(|part| part.state() == &PartState::Decoded {})
             .count(),
-        2
+        3
     );
-    assert!(fidelity.parts()[id].parent().is_some());
     assert_eq!(losses.len(), 1);
     assert_eq!(losses[0].code.local_code(), "record.unreadable");
     assert_eq!(losses[0].severity, cadmpeg_ir::report::Severity::Error);
+    // The peer has all 18 fields. The unformed entry has its 11 required
+    // fields (1-3, 7, 9, 11, 14-18), one of them given up; its optional
+    // fields belong to a record that does not form.
     let columns = optional_field_columns(&original, 0);
     let first = columns[0].0;
-    let expected_peer: Vec<_> = columns
-        .iter()
-        .filter(|(parent, _)| *parent == first)
-        .map(|(_, field)| *field)
-        .collect();
-    assert_eq!(expected_peer.len(), 7);
-    let mut actual_peer = Vec::new();
-    let mut actual_covered = Vec::new();
+    let (mut peer, mut unformed) = (0, 0);
     for (field_id, part) in fidelity
         .parts()
         .iter()
@@ -236,37 +219,20 @@ fn failed_real_pair_has_one_shared_home_and_preserves_the_independent_peer() {
         let parent = &fidelity.parts()[part.parent().expect("actual entry parent")];
         assert_eq!(parent.level().as_str(), "iges.directory_entry");
         assert_eq!(part.byte_len(), 8);
-        assert!(part.framing_bytes().is_empty());
-        assert!(!fidelity.retained_records().contains_key(field_id.as_str()));
-        assert!(!fidelity.record_layout().contains_key(field_id.as_str()));
+        assert_eq!(parent.state(), &PartState::Decoded {});
         if parent.offset() == first {
-            assert_eq!(parent.state(), &PartState::Decoded {});
             assert_eq!(part.state(), &PartState::Decoded {});
-            actual_peer.push(part.offset());
+            peer += 1;
         } else {
             assert_eq!(parent.offset(), u64::try_from(start).unwrap());
-            assert_eq!(part.parent(), Some(&unknowns[0].id));
             assert_eq!(
-                part.state(),
-                &PartState::Covered {
-                    by: unknowns[0].id.clone()
-                }
+                part.state() == &PartState::GivenUp {},
+                field_id.as_str() == id
             );
-            actual_covered.push(part.offset());
+            unformed += 1;
         }
     }
-    actual_peer.sort_unstable();
-    assert_eq!(actual_peer, expected_peer);
-    let expected_covered: Vec<_> = columns
-        .iter()
-        .filter(|(parent, field)| {
-            *parent == u64::try_from(start).unwrap() && *field < u64::try_from(start + 48).unwrap()
-        })
-        .map(|(_, field)| *field)
-        .collect();
-    assert_eq!(expected_covered.len(), 3);
-    actual_covered.sort_unstable();
-    assert_eq!(actual_covered, expected_covered);
+    assert_eq!((peer, unformed), (18, 11));
     assert_eq!(
         fidelity
             .record_layout()
