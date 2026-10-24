@@ -181,7 +181,7 @@ pub(crate) enum StepLossCode {
     HiddenPmiVisibilityUnsupported,
     /// A wire shell has free vertices without an edge-based STEP carrier.
     WireShellFreeVertices,
-    /// Bodies have no owning product representation.
+    /// Bodies without component ownership are assigned to the root product.
     BodyWithoutProductRepresentation,
     /// Solid and sheet shells omit wire edges and free vertices.
     SurfaceShellWireTopologyOmitted,
