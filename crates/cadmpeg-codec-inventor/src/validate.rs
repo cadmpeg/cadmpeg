@@ -897,6 +897,16 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         })
         .collect::<HashMap<_, _>>();
     let selection_list_type = crate::pmdc::type_id_string(crate::feature::SELECTION_LIST_TYPE);
+    let kernel_links =
+        cadmpeg_core::decode::unique_index(data.pm_dc_kernel_entity_links.iter().map(|link| {
+            (
+                (
+                    link.identity.segment_token.as_str(),
+                    link.identity.record_ordinal,
+                ),
+                link,
+            )
+        }));
     for property in &data.pm_dc_feature_properties {
         let mut references = vec![
             property.header.next.index(),
@@ -910,6 +920,19 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             PmDcFeaturePropertyKind::ProfileSelection { entity_link, .. } => {
                 references.push(entity_link.index());
             }
+            PmDcFeaturePropertyKind::LoftSection {
+                entity_link,
+                condition,
+                parameters,
+                option,
+                ..
+            } => references.extend([
+                entity_link.index(),
+                condition.index(),
+                parameters[0].index(),
+                parameters[1].index(),
+                option.index(),
+            ]),
             PmDcFeaturePropertyKind::Placement {
                 transform,
                 point,
@@ -967,6 +990,25 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor PmDc face selection has an invalid record type, list, or member".into(),
+                Some(property.id()),
+            ));
+        }
+        if !crate::feature::loft_sweep::valid_references(
+            property,
+            |ordinal| {
+                raw.get(&(property.identity.segment_token.as_str(), ordinal))
+                    .copied()
+            },
+            |ordinal| {
+                kernel_links
+                    .get(&(property.identity.segment_token.as_str(), ordinal))
+                    .and_then(Option::as_ref)
+                    .copied()
+            },
+        ) {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor loft section control or reference type is invalid".into(),
                 Some(property.id()),
             ));
         }

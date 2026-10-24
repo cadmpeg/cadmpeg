@@ -430,3 +430,25 @@ Spec §9 · layout: byte offsets · size: 54 B
 | 42 | 4 | `ordinal_key` | `u32` | little | spec | ordinal_key u32 |
 | 46 | 4 | `related_marker` | `u32` | little | spec | related_marker u32 |
 | 50 | 4 | `related_count` | `u32` | little | spec | related_count u32 |
+
+## `pm_dc_loft_section`
+
+Spec §13.2 · layout: byte offsets · size: 59 B
+
+Offsets hold in segment major versions 15 through 22 with an empty type-7 map. Later versions extend the embedded content header as section 12 states.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 22 | `content_header` | `bytes[22]` | little | spec | content_header |
+| 22 | 4 | `entity_link_reference` | `u32` | little | spec | entity_link_reference u32 |
+| 26 | 1 | `value` | `u8` | little | spec | value u8 |
+| 27 | 4 | `condition_reference` | `u32` | little | spec | condition_reference u32 |
+| 31 | 8 | `parameter_references` | `u32[2]` | little | spec | parameter_references u32[2] |
+| 39 | 4 | `map_value` | `u32` | little | spec | map_value u32 = 0 |
+| 43 | 4 | `map_marker` | `u32` | little | spec | map_marker u32 = 0x30000007 |
+| 47 | 4 | `map_count` | `u32` | little | spec | map_count u32 = 0 |
+| 51 | 4 | `source_value` | `u32` | little | spec | source_value u32 |
+| 55 | 4 | `option_reference` | `u32` | little | spec | option_reference u32 |

@@ -499,6 +499,57 @@ The participants of a pattern-feature record are its seed features.
 
 Content-header flag bit 2 (`0x4`) marks a suppressed feature, pattern-feature, or sketch record. Flag bit 19 (`0x80000`) marks a feature, pattern-feature, or sketch record below the end-of-part marker.
 
+### 13.2 Loft and sweep operands
+
+Feature-label classes `e0ef542fd111340900084eba32a3dc09`, `808b00afd41140881000fca5bba647b5`, and `05daba90d111386100080bbd0663dc09` identify solid loft, surface loft, and sweep respectively. Operand references select records in the feature's PmDc segment.
+
+Type `509e2f31d1110344000881ba32a3dc09` stores an ordered loft-selection list. The content header is followed by one type-2 reference list and the record ends. Each member is a non-null reference to a type `e850314bd111d641000880ba32a3dc09` loft-section selection. A loft-section selection with an empty type-7 map contains:
+
+```text
+content_header
+entity_link_reference u32
+value u8
+condition_reference u32
+parameter_references u32[2]
+map_value u32 = 0
+map_marker u32 = 0x30000007
+map_count u32 = 0
+source_value u32
+option_reference u32
+```
+
+The record ends after `option_reference`. Section 12 defines the content-header extensions and stamps. `entity_link_reference` selects a kernel-entity link. The link's `selection_source` equals the section's content-header `source_index`, and its non-null body reference selects a kernel-body record. `condition_reference` selects type `6c1c6c3c9a43e3947318e2bbd0c39ff8`. Both parameter references select numeric parameter records of type `264d8790d011f8d10008cabc0663dc09`. The option reference is null or selects a Boolean record. `value` and `source_value` are unsigned scalar fields, not references. All their bit patterns are valid. `source_value` is distinct from the content-header source index.
+
+Types `6c1c6c3c9a43e3947318e2bbd0c39ff8`, `02e2e3e0d111480900084eba32a3dc09`, `b7849ca26d4811e38b95b3a06051b440`, `ed2ef031904b9b04d79918b91f1619c8`, and `e211b05c3e46583e928a0cbf3a085834` use the content-header enumeration grammar, with `type_value:i16` and `value:u16`. They identify the loft section condition, loft construction control, sweep construction control, sweep orientation control, and sweep scaling control. The record ends after `value`. Both scalar fields admit all bit patterns.
+
+Loft property slots are:
+
+| Slot | Operand |
+| ---: | --- |
+| 0 | Ordered section list |
+| 1 | Part operation |
+| 2 | Boolean construction control |
+| 6 | Surface-loft result body wrapper |
+| 7 | Auxiliary loft-selection list |
+| 9 | Boolean construction control |
+| 10 | Loft construction enumeration |
+| 13 | Solid-loft result object collection |
+
+Sweep property slots are:
+
+| Slot | Operand |
+| ---: | --- |
+| 0 | Boundary patch |
+| 1 | Path selection |
+| 2 | Part operation |
+| 3 | Angular parameter |
+| 4 | Extent enumeration |
+| 7 | Feature dimensions |
+| 8 | Sweep construction enumeration |
+| 9 | Sweep orientation enumeration |
+| 10 | Sweep scaling enumeration |
+| 15 | Result object collection |
+
 ## 14. Document kind
 
 `Pm*` segment families identify a part document. `Am*` segment families identify an assembly document. A document that contains both families has the distinct `mixed_part_assembly` kind. Property metadata can identify a part, assembly, drawing, or presentation only when segment-family evidence does not already identify the kind.

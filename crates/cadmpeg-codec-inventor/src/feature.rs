@@ -35,6 +35,7 @@ use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 use crate::{design::DesignInventory, sketch::SketchInventory};
 
 mod history;
+pub(crate) mod loft_sweep;
 pub(crate) mod profile;
 
 const EPS_FEATURE_PROJECT_HOLE_E10: f64 = 1.0e-10;
@@ -202,6 +203,15 @@ pub(crate) enum PmDcFeaturePropertyKind {
         entity_link: crate::pmdc::PmDcReference,
         value: u8,
     },
+    LoftSection {
+        entity_link: crate::pmdc::PmDcReference,
+        value: u8,
+        condition: crate::pmdc::PmDcReference,
+        parameters: [crate::pmdc::PmDcReference; 2],
+        map_value: u32,
+        source_value: u32,
+        option: crate::pmdc::PmDcReference,
+    },
     Placement {
         transform: crate::pmdc::PmDcReference,
         point: crate::pmdc::PmDcReference,
@@ -286,6 +296,7 @@ pub(crate) enum PmDcFeatureReferenceFamily {
     FilletEdgeSets,
     EdgeCollection,
     FaceCollection,
+    LoftSections,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -824,6 +835,13 @@ type PropertyParser =
 
 fn feature_property_parser(type_id: [u8; 16]) -> Option<PropertyParser> {
     match type_id {
+        loft_sweep::SECTION_LIST_TYPE => Some(loft_sweep::parse_sections),
+        loft_sweep::SECTION_TYPE => Some(loft_sweep::parse_section),
+        loft_sweep::LOFT_MODE_TYPE
+        | loft_sweep::SECTION_CONDITION_TYPE
+        | loft_sweep::SWEEP_MODE_TYPE
+        | loft_sweep::SWEEP_ORIENTATION_TYPE
+        | loft_sweep::SWEEP_SCALING_TYPE => Some(parse_auxiliary_enum),
         PART_OPERATION_TYPE => Some(parse_part_operation),
         EXTENT_TYPE => Some(parse_extent),
         HOLE_TYPE => Some(parse_hole),

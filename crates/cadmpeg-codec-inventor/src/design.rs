@@ -52,7 +52,7 @@ const fn expression_id(time_low: u32) -> [u8; 16] {
     ]
 }
 
-const PARAMETER_FULL_TYPE: [u8; 16] = inventor_id(0x9087_4d26);
+pub(crate) const PARAMETER_FULL_TYPE: [u8; 16] = inventor_id(0x9087_4d26);
 const MILLIMETRE_TYPE: [u8; 16] = [
     0xbc, 0x20, 0x41, 0x62, 0xd2, 0x11, 0x9b, 0x0b, 0x60, 0x00, 0x6a, 0xb7, 0x60, 0xfe, 0xc3, 0xb0,
 ];
