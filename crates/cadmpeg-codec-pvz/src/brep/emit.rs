@@ -32,7 +32,7 @@ use cadmpeg_ir::topology::{
 };
 use cadmpeg_ir::Exactness;
 
-use super::eval::{cross, curve_interval, dot, nearest_distance, scale};
+use super::eval::{cross, curve_interval, dot, nearest_distance, norm, scale};
 use super::frames::{self, CarrierRefusal, CurveChart, SurfaceChart, UvMap, MILLIMETRES_PER_METRE};
 use super::model::{CurveGeometry, ExactModel, SurfaceGeometry, Vec2, Vec3};
 use super::resolve::{domain_point, PcurveSlot, ENDPOINT_TOLERANCE};
@@ -48,6 +48,13 @@ const SPREAD_MARGIN: f64 = 1.5;
 /// Chord midpoints of one polyline pcurve that its fit tolerance is
 /// measured at.
 const CHORD_SAMPLES: usize = 64;
+/// Loop samples of a face that vote on the side of its embedded B-spline.
+const SIDE_SAMPLES: usize = 16;
+/// Smallest `|n·n'|` of two unit normals that votes on the side.
+const SIDE_AGREEMENT: f64 = 0.5;
+/// Pcurve-domain distance between the ends of a pcurve above which a coedge
+/// on a collapsed edge spans a chart singularity.
+const DOMAIN_EXTENT_TOLERANCE: f64 = 1.0e-9;
 
 /// Destination of the neutral records of one exact stream.
 pub(crate) struct Sink<'s> {
@@ -206,6 +213,7 @@ fn emit_with_work(
         ids,
         sink,
         tally,
+        dropped: BTreeSet::new(),
     };
     let bodies = writer.write()?;
     let Writer { tally, sink, .. } = writer;
@@ -220,6 +228,8 @@ struct Writer<'w, 's, 'c, 'k> {
     ids: Ids<'k>,
     sink: &'w mut Sink<'s>,
     tally: LossTally,
+    /// Coedges left out of their loops, keyed by loop and position.
+    dropped: BTreeSet<(usize, usize)>,
 }
 
 impl Writer<'_, '_, '_, '_> {
@@ -246,6 +256,11 @@ impl Writer<'_, '_, '_, '_> {
             faces: self.sink.model.faces.len(),
         };
         let carriers = self.write_surfaces()?;
+        self.dropped = self.degenerate_coedges(&carriers);
+        self.tally.add(
+            PvzLossCode::ExactCoedgeDegenerateOmitted,
+            self.dropped.len(),
+        );
         let used_edges = self.used_edges();
         let charts = self.write_curves(&used_edges)?;
         let used_vertices = self.write_edges(&used_edges, &charts)?;
@@ -356,6 +371,15 @@ impl Writer<'_, '_, '_, '_> {
                 if edgeless {
                     return Ok(self.embedded_fallback(index, CarrierRefusal::Untyped, embedded()));
                 }
+                if let SurfaceGeometry::Torus(torus) = geometry {
+                    if norm(torus.major_cos) <= norm(torus.minor_cos) {
+                        return Ok(self.embedded_fallback(
+                            index,
+                            CarrierRefusal::Frame("the torus is a horn or spindle torus"),
+                            embedded(),
+                        ));
+                    }
+                }
                 match frames::analytic_chart(geometry) {
                     Ok(chart) => {
                         self.tally
@@ -430,49 +454,106 @@ impl Writer<'_, '_, '_, '_> {
     }
 
     /// Sign of the embedded B-spline normal against the neutral analytic
-    /// normal, at a loop sample of the face.
+    /// normal: the majority over up to [`SIDE_SAMPLES`] loop samples of the
+    /// face where both normals exist and agree or disagree by at least
+    /// [`SIDE_AGREEMENT`]. A sample where a normal vanishes, such as a cone
+    /// apex, does not vote.
     fn secondary_side(&self, index: usize, chart: &SurfaceChart) -> Result<f64, CodecError> {
         let face = &self.exact.faces[index];
-        let sample = self.topology.faces[index]
+        let points: Vec<Vec2> = self.topology.faces[index]
             .loops
             .iter()
-            .find_map(|loop_| loop_.polygon.as_ref()?.points.first().copied());
-        let Some(uv) = sample else {
-            return Ok(1.0);
-        };
-        let (Some(point), Some(normal)) = (
-            domain_point(face, PcurveSlot::Secondary, uv),
-            topology::domain_normal(self.exact, index, PcurveSlot::Secondary, uv),
-        ) else {
-            return Ok(1.0);
-        };
+            .filter_map(|loop_| loop_.polygon.as_ref())
+            .flat_map(|polygon| polygon.points.iter().copied())
+            .collect();
+        let step = points.len().div_ceil(SIDE_SAMPLES).max(1);
         let geometry = IrSurfaceGeometry::Solved(chart.geometry.clone());
-        let [x, y, z] = scale(point, MILLIMETRES_PER_METRE);
-        let Some(parameters) =
-            cadmpeg_ir::eval::analytic_surface_parameters(&geometry, Point3::new(x, y, z))
-        else {
-            return Ok(1.0);
-        };
-        let parameters = parameters.get();
-        let partials = match cadmpeg_ir::eval::surface_partials(
-            self.ctx,
-            &geometry,
-            parameters.u,
-            parameters.v,
-        ) {
-            Ok(partials) => partials.into_raw(),
-            Err(failure) => {
-                failure.non_finite().map_err(CodecError::ResourceLimit)?;
-                return Ok(1.0);
-            }
-        };
         let raw = |vector: cadmpeg_ir::math::Vector3| [vector.x, vector.y, vector.z];
-        let neutral = cross(raw(partials.du), raw(partials.dv));
-        Ok(if dot(normal, neutral) < 0.0 {
-            -1.0
-        } else {
-            1.0
-        })
+        let mut votes = 0_i64;
+        for uv in points.iter().step_by(step) {
+            let (Some(point), Some(normal)) = (
+                domain_point(face, PcurveSlot::Secondary, *uv),
+                topology::domain_normal(self.exact, index, PcurveSlot::Secondary, *uv),
+            ) else {
+                continue;
+            };
+            let [x, y, z] = scale(point, MILLIMETRES_PER_METRE);
+            let Some(parameters) =
+                cadmpeg_ir::eval::analytic_surface_parameters(&geometry, Point3::new(x, y, z))
+            else {
+                continue;
+            };
+            let parameters = parameters.get();
+            let partials = match cadmpeg_ir::eval::surface_partials(
+                self.ctx,
+                &geometry,
+                parameters.u,
+                parameters.v,
+            ) {
+                Ok(partials) => partials.into_raw(),
+                Err(failure) => {
+                    failure.non_finite().map_err(CodecError::ResourceLimit)?;
+                    continue;
+                }
+            };
+            let neutral = cross(raw(partials.du), raw(partials.dv));
+            let length = norm(neutral);
+            if !(length > 0.0 && length.is_finite()) {
+                continue;
+            }
+            let agreement = dot(normal, neutral) / length;
+            if agreement >= SIDE_AGREEMENT {
+                votes += 1;
+            } else if agreement <= -SIDE_AGREEMENT {
+                votes -= 1;
+            }
+        }
+        Ok(if votes < 0 { -1.0 } else { 1.0 })
+    }
+
+    /// Coedges on a collapsed singular edge whose ends are one vertex, away
+    /// from a chart singularity: their face carrier takes no pcurve for them,
+    /// or their pcurve has no extent in the domain. A loop keeps at least one
+    /// coedge.
+    fn degenerate_coedges(&self, carriers: &[Option<FaceCarrier>]) -> BTreeSet<(usize, usize)> {
+        let mut dropped = BTreeSet::new();
+        for (face, carrier) in self.topology.faces.iter().zip(carriers) {
+            let Some(carrier) = carrier else {
+                continue;
+            };
+            for loop_topology in &face.loops {
+                let record = &self.exact.loops[loop_topology.index];
+                let collapsed: Vec<usize> = record
+                    .coedges
+                    .iter()
+                    .enumerate()
+                    .filter(|(position, coedge)| {
+                        let Some(edge) = coedge.edge else {
+                            return false;
+                        };
+                        let one_vertex = self.topology.slot_vertex.get(2 * edge)
+                            == self.topology.slot_vertex.get(2 * edge + 1);
+                        let extent = loop_topology.coedges[*position]
+                            .uv_ends
+                            .map_or(0.0, |[start, end]| super::eval::distance(start, end));
+                        let singular_chart = matches!(carrier.transfer, PcurveTransfer::Mapped(_))
+                            && extent > DOMAIN_EXTENT_TOLERANCE;
+                        self.topology.singular_edges.contains(&edge)
+                            && one_vertex
+                            && !singular_chart
+                    })
+                    .map(|(position, _)| position)
+                    .collect();
+                if collapsed.len() < record.coedges.len() {
+                    dropped.extend(
+                        collapsed
+                            .into_iter()
+                            .map(|position| (loop_topology.index, position)),
+                    );
+                }
+            }
+        }
+        dropped
     }
 
     /// Edges written for the coedges, in index order: each referenced edge
@@ -481,7 +562,15 @@ impl Writer<'_, '_, '_, '_> {
         self.exact
             .loops
             .iter()
-            .flat_map(|record| record.coedges.iter().filter_map(|coedge| coedge.edge))
+            .enumerate()
+            .flat_map(|(index, record)| {
+                record
+                    .coedges
+                    .iter()
+                    .enumerate()
+                    .filter(move |(position, _)| !self.dropped.contains(&(index, *position)))
+                    .filter_map(|(_, coedge)| coedge.edge)
+            })
             .map(|edge| self.topology.written_edge(edge).0)
             .collect()
     }
@@ -688,6 +777,12 @@ impl Writer<'_, '_, '_, '_> {
                     };
                     let mut ring = Vec::new();
                     for coedge_position in order {
+                        if self
+                            .dropped
+                            .contains(&(loop_topology.index, coedge_position))
+                        {
+                            continue;
+                        }
                         let geometry = &loop_topology.coedges[coedge_position];
                         let source =
                             &self.exact.loops[loop_topology.index].coedges[coedge_position];

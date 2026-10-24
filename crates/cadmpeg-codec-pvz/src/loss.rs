@@ -122,6 +122,9 @@ pub(crate) enum PvzLossCode {
     ExactEdgeUsesMerged,
     /// A face record with no loop bounds no region and was not transferred.
     ExactFaceUnboundedOmitted,
+    /// A coedge on a collapsed singular edge away from a chart singularity was
+    /// left out of its loop.
+    ExactCoedgeDegenerateOmitted,
 }
 
 impl PvzLossCode {
@@ -172,6 +175,7 @@ impl PvzLossCode {
         Self::ExactTopologyWorkExhausted,
         Self::ExactEdgeUsesMerged,
         Self::ExactFaceUnboundedOmitted,
+        Self::ExactCoedgeDegenerateOmitted,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -222,6 +226,7 @@ impl PvzLossCode {
             Self::ExactTopologyWorkExhausted => "exact.topology-work-exhausted",
             Self::ExactEdgeUsesMerged => "exact.edge-uses-merged",
             Self::ExactFaceUnboundedOmitted => "exact.face-unbounded-omitted",
+            Self::ExactCoedgeDegenerateOmitted => "exact.coedge-degenerate-omitted",
         }
     }
 
@@ -270,7 +275,8 @@ impl PvzLossCode {
             | Self::ExactFaceSideGauge
             | Self::ExactTopologyWorkExhausted
             | Self::ExactEdgeUsesMerged
-            | Self::ExactFaceUnboundedOmitted => Severity::Warning,
+            | Self::ExactFaceUnboundedOmitted
+            | Self::ExactCoedgeDegenerateOmitted => Severity::Warning,
             Self::ExactSurfaceUntyped => Severity::Error,
             Self::StructureMemberMalformed => Severity::Blocking,
         }
@@ -328,6 +334,7 @@ impl PvzLossCode {
             Self::ExactTopologyWorkExhausted => LossTaxonomy::TopologyNotTransferred,
             Self::ExactEdgeUsesMerged => LossTaxonomy::DecodeDiagnostic,
             Self::ExactFaceUnboundedOmitted => LossTaxonomy::GeometryNotTransferred,
+            Self::ExactCoedgeDegenerateOmitted => LossTaxonomy::TopologyNotTransferred,
         }
     }
 
@@ -393,6 +400,9 @@ impl PvzLossCode {
             }
             Self::ExactEdgeUsesMerged => "edge records written as the edge of a coincident record",
             Self::ExactFaceUnboundedOmitted => "face records without a loop not transferred",
+            Self::ExactCoedgeDegenerateOmitted => {
+                "coedges on collapsed singular edges left out of their loops"
+            }
         };
         format!("{count} {what}")
     }
@@ -469,6 +479,7 @@ mod tests {
                 "exact.topology-work-exhausted",
                 "exact.edge-uses-merged",
                 "exact.face-unbounded-omitted",
+                "exact.coedge-degenerate-omitted",
             ]
         );
     }

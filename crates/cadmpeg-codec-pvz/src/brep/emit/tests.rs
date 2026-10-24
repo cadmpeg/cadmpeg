@@ -319,3 +319,108 @@ fn polyline_pcurve_carries_its_chord_deviation() {
         "{fit} {sagitta_mm}"
     );
 }
+
+/// A square plane face whose loop holds, at its third corner, a coedge on a
+/// collapsed singular edge with a pcurve of domain length `extent`.
+fn square_with_collapsed_corner(extent: f64) -> Stream {
+    let size = 0.01;
+    let corners = [[0.0, 0.0], [size, 0.0], [size, size], [0.0, size]];
+    let mut stream = Stream::new(true);
+    stream.plane([0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]);
+    stream.loop_record(-2);
+    for (edge, slot) in [0_u32, 1, 4, 2, 3].into_iter().zip(0_u32..) {
+        stream.coedge(edge, 1, slot, crate::test_support::exact::NONE);
+    }
+    stream.terminator();
+    let singular = stream.payload().u32(4).scalar(0.0).scalar(1.0).bytes();
+    stream
+        .record(crate::test_support::exact::SINGULAR_USE, &singular)
+        .terminator();
+    for position in 0..4 {
+        let (a, b): ([f64; 2], [f64; 2]) = (corners[position], corners[(position + 1) % 4]);
+        stream.line_edge([a[0], a[1], 0.0], [b[0] - a[0], b[1] - a[1], 0.0]);
+    }
+    stream.line_edge([size, size, 0.0], [0.0; 3]);
+    for position in [0, 1, 4, 2, 3] {
+        if position == 4 {
+            stream.line_pcurve(corners[2], [extent, 0.0]);
+            continue;
+        }
+        let (a, b) = (corners[position], corners[(position + 1) % 4]);
+        stream.line_pcurve(a, [b[0] - a[0], b[1] - a[1]]);
+    }
+    stream
+}
+
+#[test]
+fn collapsed_singular_coedge_leaves_its_loop() {
+    let (ir, losses, _) = emit_stream(square_with_collapsed_corner(0.0));
+    assert_eq!(ir.model.coedges.len(), 4);
+    assert_eq!(ir.model.edges.len(), 4);
+    assert!(losses
+        .iter()
+        .any(|note| note.code == PvzLossCode::ExactCoedgeDegenerateOmitted.kind()));
+    let (ir, losses, _) = emit_stream(square_with_collapsed_corner(1.0));
+    assert_eq!(ir.model.coedges.len(), 5);
+    assert!(!losses
+        .iter()
+        .any(|note| note.code == PvzLossCode::ExactCoedgeDegenerateOmitted.kind()));
+}
+
+/// A torus face of major radius `major` and minor radius `minor` about the
+/// z axis with an embedded bilinear B-spline, and one loop whose coedge has
+/// only a secondary pcurve.
+fn torus_with_secondary_pcurves(major: f64, minor: f64) -> Stream {
+    let mut stream = Stream::new(true);
+    let payload = stream
+        .payload()
+        .u8(9)
+        .u8(0)
+        .u8(0)
+        .scalars(&[0.0, 0.0, 0.0])
+        .scalars(&[major, 0.0, 0.0, 0.0, major, 0.0, 0.0, 0.0, 1.0])
+        .scalars(&[minor, 0.0, 0.0, 0.0, 0.0, minor, 0.0, -1.0, 0.0])
+        .u8(4)
+        .u8(0)
+        .u8(0)
+        .u8(0)
+        .u32(2)
+        .u32(4)
+        .scalars(&[0.0, 0.0, 1.0, 1.0])
+        .u32(2)
+        .u32(4)
+        .scalars(&[0.0, 0.0, 1.0, 1.0])
+        .u32(2)
+        .u32(2)
+        .scalars(&[0.0, 0.0, 0.0, 1.0, 0.0, 0.01, 0.0, 1.0])
+        .scalars(&[0.01, 0.0, 0.0, 1.0, 0.01, 0.01, 0.0, 1.0])
+        .bytes();
+    stream.record(crate::test_support::exact::SURFACE, &payload);
+    stream
+        .loop_record(-2)
+        .coedge(0, 1, crate::test_support::exact::NONE, 0)
+        .terminator();
+    stream.line_edge([0.0; 3], [0.01, 0.0, 0.0]);
+    stream.line_pcurve([0.0, 0.0], [1.0, 0.0]);
+    stream
+}
+
+#[test]
+fn spindle_torus_with_secondary_pcurves_is_written_as_its_bspline() {
+    let has =
+        |losses: &[LossNote], code: PvzLossCode| losses.iter().any(|note| note.code == code.kind());
+    let (ir, losses, _) = emit_stream(torus_with_secondary_pcurves(0.004, 0.037));
+    assert!(matches!(
+        ir.model.surfaces[0].geometry,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
+    ));
+    assert!(has(&losses, PvzLossCode::ExactSurfaceAsBspline));
+    assert_eq!(ir.model.coedges[0].pcurves.len(), 1);
+    let (ir, losses, _) = emit_stream(torus_with_secondary_pcurves(0.05, 0.01));
+    assert!(matches!(
+        ir.model.surfaces[0].geometry,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(_))
+    ));
+    assert!(has(&losses, PvzLossCode::ExactSecondaryPcurveOmitted));
+    assert!(ir.model.coedges[0].pcurves.is_empty());
+}
