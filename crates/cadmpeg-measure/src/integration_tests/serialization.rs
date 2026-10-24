@@ -2,7 +2,7 @@
 //! The serialized report: finite numbers and members in contract order.
 
 use crate::select::Selection;
-use crate::test_support::{measure, plate_with_hole};
+use crate::test_support::builders::{measure, plate_with_hole};
 
 /// The keys of the top-level object of a JSON text, in text order.
 fn keys(text: &str) -> Vec<String> {
@@ -201,7 +201,7 @@ fn quantities_that_do_not_apply_are_absent() {
 /// entries under `value`, and one value per principal moment and axis.
 #[test]
 fn mass_properties_are_value_objects() {
-    let ir = crate::test_support::cylinder_solid(10.0, 30.0);
+    let ir = crate::test_support::builders::cylinder_solid(10.0, 30.0);
     let report = measure(&ir, &Selection::default());
     let typed = report.bodies()[0]
         .second_moments()

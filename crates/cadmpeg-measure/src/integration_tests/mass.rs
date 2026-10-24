@@ -11,7 +11,7 @@ use crate::reason::{Category, UnavailableReason};
 use crate::report::{BodyMeasures, MeasureReport, RowStatus};
 use crate::select::Selection;
 use crate::session::{Density, MeasureInput, MeasureOptions, Measurer};
-use crate::test_support::{
+use crate::test_support::builders::{
     assert_measured, cuboid, cylinder_solid, rotated_cuboid, rotation, service_context, Builder,
     Frame, TEST_ABSOLUTE_FLOOR,
 };

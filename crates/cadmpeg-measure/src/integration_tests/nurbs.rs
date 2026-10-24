@@ -12,7 +12,9 @@ use cadmpeg_ir::CadIr;
 use crate::reason::CaveatCode;
 use crate::report::{FaceMeasures, MeasureReport, RegionRule, WitnessKind};
 use crate::select::Selection;
-use crate::test_support::{assert_measured, assert_range, measure, Builder, Circle, Frame};
+use crate::test_support::builders::{
+    assert_measured, assert_range, measure, Builder, Circle, Frame,
+};
 use crate::value::{BoxKind, Quantity, Reading};
 
 fn faces() -> Selection {

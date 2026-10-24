@@ -11,7 +11,7 @@ use crate::reason::UnavailableReason;
 use crate::report::{FaceMeasures, MeasureReport, RegionRule};
 use crate::select::Selection;
 use crate::session::{findings, MeasureOptions};
-use crate::test_support::{
+use crate::test_support::builders::{
     assert_measured, assert_tight_box, measure, service_context, Builder, Frame,
     TEST_ABSOLUTE_FLOOR,
 };

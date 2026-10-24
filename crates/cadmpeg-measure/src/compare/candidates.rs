@@ -183,7 +183,7 @@ fn sweep_tolerance(sweeps: &[Swept], context: &Context) -> f64 {
 mod tests {
     use super::{compatible_pairs, Context, PairWork};
     use crate::select::Selection;
-    use crate::test_support::measure;
+    use crate::test_support::builders::measure;
 
     #[test]
     fn a_spent_pair_allowance_refuses_the_comparison() {

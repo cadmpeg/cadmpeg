@@ -401,7 +401,9 @@ mod tests {
     use crate::face::FaceInput;
     use crate::flux::Flux;
     use crate::session::{MeasureInput, MeasureOptions, Measurer};
-    use crate::test_support::{rotated_cuboid, rotation, service_context, TEST_ABSOLUTE_FLOOR};
+    use crate::test_support::builders::{
+        rotated_cuboid, rotation, service_context, TEST_ABSOLUTE_FLOOR,
+    };
 
     /// The cube with its first face flipped and its first ring listed in
     /// reversed order: one ring-order and two orientation findings.
@@ -566,7 +568,7 @@ mod tests {
                 half.map(|h| -h),
                 half,
             ),
-            crate::test_support::plate_with_hole(true),
+            crate::test_support::builders::plate_with_hole(true),
         ] {
             let fluxes = planar_fluxes(&ir);
             assert!(!fluxes.is_empty());

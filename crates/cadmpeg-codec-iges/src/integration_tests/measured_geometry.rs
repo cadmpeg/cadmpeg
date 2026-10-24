@@ -8,8 +8,8 @@ use std::io::Cursor;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::CadIr;
-use cadmpeg_measure::compare::{compare, CompareOptions, Verdict};
 use cadmpeg_measure::report::MeasureReport;
+use cadmpeg_measure::test_support::round_trip::{measured, measures_agree};
 use cadmpeg_measure::value::Quantity;
 use cadmpeg_measure::{MeasureInput, MeasureOptions, Measurer, Selection};
 
@@ -30,11 +30,6 @@ use crate::{IgesCodec, IgesVersion};
 /// Allowance of a measured value against its expression beyond the value's
 /// numeric error, per unit of the larger of the expected magnitude and 1.
 const TEST_ABSOLUTE_FLOOR: f64 = 1.0e-9;
-
-/// The body rows of `ir`, measured in model space.
-fn measured(ir: &CadIr) -> MeasureReport {
-    measured_rows(ir, &Selection::default())
-}
 
 /// The rows of `ir` that `selection` names, measured in model space.
 fn measured_rows(ir: &CadIr, selection: &Selection) -> MeasureReport {
@@ -73,17 +68,8 @@ fn closed_circle_edges_without_range_keep_measured_cylinder_geometry() {
     let decoded = IgesCodec
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode the written cylinder");
-    let before = measured(&ir);
-    let after = measured(decoded.ir());
-    let comparison = compare(
-        &ir,
-        &before,
-        decoded.ir(),
-        &after,
-        &CompareOptions::default(),
-    )
-    .expect("one body pair fits the pair allowance");
-    assert_eq!(comparison.verdict(), Verdict::Agree);
+    let (_, _, after) = measures_agree("cylinder", &ir, decoded.ir())
+        .expect("the round trip keeps its measured geometry");
     let [body] = after.bodies().as_slice() else {
         panic!("one body row");
     };
@@ -130,7 +116,7 @@ fn assert_one_orientation_reading(report: &MeasureReport) {
 #[test]
 fn void_solid_measures_one_orientation_reading() {
     let (bytes, ..) = explicit_void_solid_file();
-    let report = measured(&decoded(bytes));
+    let report = measured("void solid", &decoded(bytes)).expect("the document is measured");
     assert_one_orientation_reading(&report);
     let [body] = report.bodies().as_slice() else {
         panic!("one body row");
@@ -152,48 +138,45 @@ fn void_solid_write_round_trip_keeps_measured_geometry() {
     let (bytes, ..) = explicit_void_solid_file();
     let ir = decoded(bytes);
     let written = round_tripped(&ir);
-    let before = measured(&ir);
-    let after = measured(&written);
+    let (_, _, after) = measures_agree("void solid", &ir, &written)
+        .expect("the round trip keeps its measured geometry");
     assert_one_orientation_reading(&after);
-    let comparison = compare(&ir, &before, &written, &after, &CompareOptions::default())
-        .expect("one body pair fits the pair allowance");
-    assert_eq!(comparison.verdict(), Verdict::Agree);
 }
 
 #[test]
 fn trimmed_inner_loop_write_round_trip_keeps_measured_geometry() {
     let ir = decoded(trimmed_plane_with_inner_loop_file());
     let written = round_tripped(&ir);
-    let before = measured(&ir);
-    let after = measured(&written);
+    let (_, before, after) = measures_agree("trimmed inner loop", &ir, &written)
+        .expect("the round trip keeps its measured geometry");
     assert_one_orientation_reading(&before);
     assert_one_orientation_reading(&after);
-    let comparison = compare(&ir, &before, &written, &after, &CompareOptions::default())
-        .expect("one body pair fits the pair allowance");
-    assert_eq!(comparison.verdict(), Verdict::Agree);
 }
 
 /// `ir` and its IGES write round trip measure one orientation reading each
 /// and agree.
-fn assert_round_trip_keeps_measured_geometry(ir: &CadIr) {
+fn assert_round_trip_keeps_measured_geometry(label: &str, ir: &CadIr) {
     let written = round_tripped(ir);
-    let before = measured(ir);
-    let after = measured(&written);
+    let (_, before, after) =
+        measures_agree(label, ir, &written).expect("the round trip keeps its measured geometry");
     assert_one_orientation_reading(&before);
     assert_one_orientation_reading(&after);
-    let comparison = compare(ir, &before, &written, &after, &CompareOptions::default())
-        .expect("one body pair fits the pair allowance");
-    assert_eq!(comparison.verdict(), Verdict::Agree);
 }
 
 #[test]
 fn reversed_closed_outer_edge_write_round_trip_keeps_measured_geometry() {
-    assert_round_trip_keeps_measured_geometry(&reversed_closed_outer_edge_model());
+    assert_round_trip_keeps_measured_geometry(
+        "reversed closed outer edge",
+        &reversed_closed_outer_edge_model(),
+    );
 }
 
 #[test]
 fn mixed_sense_outer_loop_write_round_trip_keeps_measured_geometry() {
-    assert_round_trip_keeps_measured_geometry(&mixed_sense_outer_loop_model());
+    assert_round_trip_keeps_measured_geometry(
+        "mixed-sense outer loop",
+        &mixed_sense_outer_loop_model(),
+    );
 }
 
 /// The clockwise source boundary decodes reversed, with its pcurve use on the
@@ -205,13 +188,10 @@ fn reversed_nurbs_outer_boundary_write_round_trip_keeps_measured_geometry() {
         true,
     ));
     let written = round_tripped(&ir);
-    let before = measured(&ir);
-    let after = measured(&written);
+    let (_, before, after) = measures_agree("reversed NURBS outer boundary", &ir, &written)
+        .expect("the round trip keeps its measured geometry");
     assert_one_orientation_reading(&before);
     assert_one_orientation_reading(&after);
-    let comparison = compare(&ir, &before, &written, &after, &CompareOptions::default())
-        .expect("one body pair fits the pair allowance");
-    assert_eq!(comparison.verdict(), Verdict::Agree);
 }
 
 /// The cylinder's curves carry no source association, so only the edges
@@ -221,11 +201,8 @@ fn topology_owned_curves_without_a_role_round_trip_as_one_solid() {
     let ir = cadmpeg_test_support::solids::solid_cylinder();
     let written = round_tripped(&ir);
     assert_eq!(written.model.bodies.len(), ir.model.bodies.len());
-    let before = measured(&ir);
-    let after = measured(&written);
-    let comparison = compare(&ir, &before, &written, &after, &CompareOptions::default())
-        .expect("one body pair fits the pair allowance");
-    assert_eq!(comparison.verdict(), Verdict::Agree);
+    measures_agree("role-less cylinder", &ir, &written)
+        .expect("the round trip keeps its measured geometry");
 }
 
 /// The unit square face used through a false `OF`: its coedge with two
