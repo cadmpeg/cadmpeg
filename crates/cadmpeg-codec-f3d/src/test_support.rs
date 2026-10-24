@@ -193,3 +193,5 @@ pub(crate) mod step_conversion;
 pub(crate) mod loss_codes;
 
 pub(crate) mod record_access;
+
+pub(crate) mod source_layout;

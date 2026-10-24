@@ -10,6 +10,7 @@
 //! generic IR validation report.
 
 mod sheet_metal_settings;
+pub(crate) mod source_layout;
 
 use cadmpeg_core::convert::f64_from_index;
 
@@ -2004,7 +2005,6 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     && construction
                         .owner_record_indices
                         .iter()
-                        .zip(construction.value_offsets)
                         .zip([
                             f64::from(construction.u_count()),
                             f64::from(construction.v_count()),
@@ -2012,16 +2012,13 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                             construction.v_extent(),
                         ])
                         .enumerate()
-                        .all(|(ordinal, ((record_index, value_offset), value))| {
+                        .all(|(ordinal, (record_index, value))| {
                             native.design_parameter_owners.iter().any(|owner| {
                                 design_stream(owner.id()) == native_stream
                                     && owner.record_index() == *record_index
                                     && owner.scope_record_index() == Some(scope.record_index)
                                     && u32::try_from(ordinal).ok() == owner.local_ordinal()
                                     && owner.evaluated_value().get() == value
-                                    && owner
-                                        .evaluated_value_offset()
-                                        .is_none_or(|offset| offset == value_offset)
                             })
                         })
             }
@@ -2295,25 +2292,10 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         match (alignment.limits(), alignment.owners.as_slice()) {
                             (Some(limits), [angle, offset_x, offset_y, offset_z]) => {
                                 let alignment_lanes = [
-                                    (
-                                        offset_x.value,
-                                        offset_x.offset,
-                                        alignment.offset()[0],
-                                        0_u32,
-                                    ),
-                                    (
-                                        offset_y.value,
-                                        offset_y.offset,
-                                        alignment.offset()[1],
-                                        1_u32,
-                                    ),
-                                    (
-                                        offset_z.value,
-                                        offset_z.offset,
-                                        alignment.offset()[2],
-                                        2_u32,
-                                    ),
-                                    (angle.value, angle.offset, alignment.angle(), 3_u32),
+                                    (offset_x.value, alignment.offset()[0], 0_u32),
+                                    (offset_y.value, alignment.offset()[1], 1_u32),
+                                    (offset_z.value, alignment.offset()[2], 2_u32),
+                                    (angle.value, alignment.angle(), 3_u32),
                                 ];
                                 let limit_order = if generation.reverse_limit_order() {
                                     [1, 0]
@@ -2324,7 +2306,6 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                     |(index, local_ordinal)| {
                                         (
                                             limits.owner_record_indices[index],
-                                            limits.value_offsets[index],
                                             [limits.minimum(), limits.maximum()][index],
                                             local_ordinal,
                                         )
@@ -2332,7 +2313,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                 );
                                 limits.kind == generation.limit_kind()
                                     && alignment_lanes.into_iter().chain(limit_lanes).all(
-                                        |(record_index, value_offset, value, local_ordinal)| {
+                                        |(record_index, value, local_ordinal)| {
                                             native.design_parameter_owners.iter().any(|owner| {
                                                 design_stream(owner.id()) == native_stream
                                                     && owner.record_index() == record_index
@@ -2340,9 +2321,6 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                                         == Some(scope.record_index)
                                                     && owner.local_ordinal() == Some(local_ordinal)
                                                     && owner.evaluated_value().get() == value
-                                                    && owner
-                                                        .evaluated_value_offset()
-                                                        .is_none_or(|offset| offset == value_offset)
                                             })
                                         },
                                     )
@@ -2363,9 +2341,6 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                             && u32::try_from(alignment_start + ordinal).ok()
                                                 == owner.local_ordinal()
                                             && owner.evaluated_value().get() == *value
-                                            && owner
-                                                .evaluated_value_offset()
-                                                .is_none_or(|offset| offset == lane.offset)
                                     })
                                 },
                             )
@@ -7497,19 +7472,6 @@ fn validate_parameter_owners(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
         let native_stream = design_stream(owner.id());
         let unique_index = owner_indices.insert((native_stream, owner.record_index()));
         let parameter = parameters_by_index.get(&(native_stream, owner.parameter_record_index()));
-        // A source layout comparison is meaningful only when both records retain
-        // actual source positions. CADIR admission still checks scalar agreement.
-        let frame_layout = match (
-            owner.evaluated_value_offset(),
-            parameter.and_then(|p| p.evaluated_value_offset()),
-        ) {
-            (Some(owner_offset), Some(parameter_offset))
-                if matches!(owner.frame_length(), Some(68 | 88)) =>
-            {
-                owner_offset == parameter_offset
-            }
-            _ => true,
-        };
         let scope_resolves = owner
             .scope_record_index()
             .is_none_or(|scope| records_by_index.contains_key(&(native_stream, scope)));
@@ -7520,8 +7482,7 @@ fn validate_parameter_owners(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
             (_, None) => true,
             (None, Some(_)) => false,
         };
-        let valid = frame_layout
-            && scope_resolves
+        let valid = scope_resolves
             && records_by_index.contains_key(&(native_stream, owner.parameter_record_index()))
             && records_by_index.contains_key(&(native_stream, owner.companion_record_index()))
             && companions_by_index
@@ -7612,23 +7573,10 @@ fn validate_parameter_companions(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>)
                     })
             })
         });
-        let prefix_layout_valid =
-            match (companion.byte_offset(), companion.timestamp_micros_offset()) {
-                (Some(start), Some(timestamp)) => start.checked_add(42) == Some(timestamp),
-                (None, None) => true,
-                _ => false,
-            } && match (
-                companion.byte_offset(),
-                payload.and_then(super::records::parameters::DesignCompanionPayload::byte_offset),
-            ) {
-                (Some(start), Some(payload_start)) => start.checked_add(58) == Some(payload_start),
-                _ => true,
-            };
         let unique_index = companion_indices.insert((native_stream, companion.record_index()));
         let unique_owner = companion_owners.insert((native_stream, companion.owner_record_index()));
         let owner = owners_by_index.get(&(native_stream, companion.owner_record_index()));
-        let valid = prefix_layout_valid
-            && source_payload_valid
+        let valid = source_payload_valid
             && recipe_links_valid
             && records_by_index.contains_key(&(native_stream, companion.record_index()))
             && owner
