@@ -62,10 +62,12 @@ use crate::test_support::test_surface_fixtures::trimmed_plane_file;
 use crate::writer::Entity;
 use crate::{IgesCodec, IgesVersion};
 
+mod closed_edge_range;
 mod encode;
 mod extrusion_directrix;
 mod ownership;
 mod pcurve_orientation;
+mod physical_dependence;
 mod quarantine;
 mod roundtrip;
 

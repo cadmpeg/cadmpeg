@@ -1096,3 +1096,4 @@ mod nesting_bound;
 mod support_mapping;
 
 mod carrier_interval;
+mod closed_traversal_range;

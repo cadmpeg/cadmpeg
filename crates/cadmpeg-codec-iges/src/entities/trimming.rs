@@ -1078,6 +1078,46 @@ fn linear_boundary_geometry(
     }
 }
 
+/// The stated interval of each parameter-curve use of each boundary item.
+type UseRanges = Vec<Vec<Option<cadmpeg_ir::geometry::DirectedParameterRange>>>;
+
+/// Whether a Type 144 boundary is traversed backward, with the use interval
+/// of each parameter curve of each item: absent in source order, and the
+/// reversed interval of the parameter curve in backward order. A backward
+/// boundary keeps its parameter curves and states the reversal in their uses.
+/// The error names why the boundary keeps its source traversal.
+fn reversed_use_ranges(
+    items: &[BoundaryItem],
+    winding: winding::BoundaryWinding,
+) -> Result<(bool, UseRanges), &'static str> {
+    match winding {
+        winding::BoundaryWinding::Kept => Ok((
+            false,
+            items
+                .iter()
+                .map(|item| vec![None; item.pcurves.len()])
+                .collect(),
+        )),
+        winding::BoundaryWinding::Unresolved(reason) => Err(reason),
+        winding::BoundaryWinding::Reversed => items
+            .iter()
+            .map(|item| {
+                item.pcurves
+                    .iter()
+                    .map(|(_, [start, end])| {
+                        cadmpeg_ir::geometry::DirectedParameterRange::new([*end, *start])
+                            .map(Some)
+                            .map_err(|_| {
+                                "a parameter curve has no interval whose reversal a use can state"
+                            })
+                    })
+                    .collect()
+            })
+            .collect::<Result<_, _>>()
+            .map(|ranges| (true, ranges)),
+    }
+}
+
 #[derive(Debug)]
 struct SimpleRing(Vec<[f64; 2]>);
 
@@ -2703,6 +2743,37 @@ pub(super) fn project(
                 surface_kind,
                 ctx,
             )?);
+            let winding = if surface_kind == BoundarySurfaceKind::Trimmed {
+                winding::trimmed_boundary_winding(
+                    &items,
+                    explicit_outer_sequence == Some(sequence),
+                    &carrier_index,
+                    &support_geometry,
+                    ctx,
+                )?
+            } else {
+                winding::BoundaryWinding::Kept
+            };
+            let (runs_backward, use_ranges) = match reversed_use_ranges(&items, winding) {
+                Ok(reversal) => reversal,
+                Err(reason) => {
+                    super::push_attributed_loss(
+                            &mut losses,
+                            entry,
+                            IgesLossCode::BoundaryWindingUnresolved,
+                            format_args!(
+                                "IGES Type 144 boundary {boundary_index} keeps its source traversal: {reason}"
+                            ),
+                        );
+                    (
+                        false,
+                        items
+                            .iter()
+                            .map(|item| vec![None; item.pcurves.len()])
+                            .collect(),
+                    )
+                }
+            };
             let loop_id = crate::ids::r#loop(&stem.slot(boundary_index));
             let mut coedge_ids = Vec::new();
             let mut source_endpoints = Vec::new();
@@ -2811,8 +2882,11 @@ pub(super) fn project(
                     break;
                 }
                 let mut pcurve_uses = Vec::new();
-                for (pcurve_index, (geometry, parameter_range)) in
-                    item.pcurves.into_iter().enumerate()
+                for (pcurve_index, ((geometry, parameter_range), use_range)) in item
+                    .pcurves
+                    .into_iter()
+                    .zip(use_ranges[segment_index].iter().copied())
+                    .enumerate()
                 {
                     let id = crate::ids::pcurve(
                         &stem
@@ -2837,8 +2911,11 @@ pub(super) fn project(
                     pcurve_uses.push(PcurveUse {
                         pcurve: id,
                         isoparametric: None,
-                        parameter_range: None,
+                        parameter_range: use_range,
                     });
+                }
+                if runs_backward {
+                    pcurve_uses.reverse();
                 }
                 let coedge_id = coedge_ids[segment_index].clone();
                 ctx.charge_entities(1, "iges_geometry_trimming")?;
@@ -2847,10 +2924,16 @@ pub(super) fn project(
                     owner_loop: loop_id.clone(),
                     edge: edge_id,
                     radial_next: coedge_id,
-                    sense: item.segment.sense,
+                    sense: match (item.segment.sense, runs_backward) {
+                        (Sense::Forward, false) | (Sense::Reversed, true) => Sense::Forward,
+                        (Sense::Forward, true) | (Sense::Reversed, false) => Sense::Reversed,
+                    },
                     pcurves: pcurve_uses,
                     use_curve: None,
                 });
+            }
+            if runs_backward {
+                coedge_ids.reverse();
             }
             let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new()) else {
                 super::push_geometry_loss(
@@ -3060,6 +3143,8 @@ pub(super) fn project(
         boundary_vertex_derivations,
     ))
 }
+
+mod winding;
 
 #[cfg(test)]
 mod tests;

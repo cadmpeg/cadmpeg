@@ -36,11 +36,15 @@
           "owner_loop": "iges:model:loop#D15:1",
           "pcurves": [
             {
+              "parameter_range": [
+                4.0,
+                0.0
+              ],
               "pcurve": "iges:model:pcurve#D15:1:0:0"
             }
           ],
           "radial_next": "iges:model:coedge#D15:1:0",
-          "sense": "forward"
+          "sense": "reversed"
         }
       ],
       "configurations": [],

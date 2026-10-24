@@ -67,13 +67,19 @@ impl<'ir> SourceOwnership<'ir> {
             .copied()
             .unwrap_or(EntityStatus::Independent);
         if source.is_some_and(|source| source.geometry_role == Some(SourceGeometryRole::Support)) {
-            match status {
-                EntityStatus::Independent | EntityStatus::Definition => {
-                    EntityStatus::PhysicallyDependent
-                }
-                EntityStatus::LogicallyDependent => EntityStatus::BothDependent,
-                status => status,
-            }
+            physically_dependent(status)
+        } else {
+            status
+        }
+    }
+
+    /// The status of a carrier that exported topology uses. A carrier with no
+    /// stated geometry role is support of that topology; only an explicit
+    /// `independent` role also makes it standalone geometry.
+    pub(super) fn topology_status(&self, source: Option<&SourceObjectAssociation>) -> EntityStatus {
+        let status = self.status(source);
+        if source.and_then(|source| source.geometry_role).is_none() {
+            physically_dependent(status)
         } else {
             status
         }
@@ -104,5 +110,14 @@ impl<'ir> SourceOwnership<'ir> {
         // standalone geometry by some importers. Withhold that orphan instead.
         (!status.is_physically_dependent() || self.owned_surfaces.contains(&surface.id))
             .then_some(status)
+    }
+}
+
+/// `status` with physical dependence added.
+const fn physically_dependent(status: EntityStatus) -> EntityStatus {
+    match status {
+        EntityStatus::Independent | EntityStatus::Definition => EntityStatus::PhysicallyDependent,
+        EntityStatus::LogicallyDependent => EntityStatus::BothDependent,
+        status => status,
     }
 }
