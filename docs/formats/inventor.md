@@ -376,6 +376,8 @@ Type `f1b2bc24d01121dd0008d0bc0663dc09` stores a face collection. After the cont
 
 Type `ccb59f50d1114f6b0008a1ba32a3dc09` stores a face item. After the content header it stores a nonempty type-2 `u32` index-reference list and `terminal_value:i32 = -1`, then ends. The index values are native topology selectors, not one-based PmDc record references.
 
+Type `7a25f2efd11105af000847b00524dc09` stores a selection list. After the content header it stores one type-2 reference list and ends. Each non-null member selects a record in the same PmDc segment.
+
 Type `dfd51dbbd1116e72000817bd0663dc09` adds a counted UTF-16LE name and three u32 values: the name value, nominal value, and model value. Type `474d8790d011f8d10008cabc0663dc09` adds one body reference. Type `3b2477a4d1118f96000826bd0663dc09` adds an entity-link reference and one u8 value. Type `2c9256724d4d6d709427fd964d84df16` adds transform, point, and value references.
 
 Before segment major version 28, a feature label record with type `2ba4482bd2115864600074b79b49ebb0` starts with this 26-byte linked-element header:
@@ -446,6 +448,23 @@ An equal-distance edge chamfer uses slot 0 for its edge collection, slot 2 for i
 A hole uses slots 0 through 6 for hole form, diameter, depth, entry diameter, entry depth, entry angle, and drill-point angle. Slots 8, 9, 16, 17, 21, and 24 identify its transform, extent, a direction, a Boolean, a placement, and the result object collection. Hole-form values 0, 1, 2, and 3 mean drilled, countersink, counterbore, and spotface. The placement transform translation uses internal centimetres. The direction record supplies the drilling direction. The placement record repeats the transform reference and retains its point and value references.
 
 Feature-label class `0619aa28d411c77a6000c4a4cae1fbb0` identifies a Thread annotation on selected cylindrical faces. Its generic feature record has nine property slots. Slot 0 is the face collection; it contains at least one face item. Slots 1, 2, and 6 are Boolean properties. Slots 3 and 4 are numeric parameter references. Slot 5 is an edge collection, and slot 8 is the feature-dimension collection. Slot 7 is a native property reference. A Thread annotation has no result object collection.
+
+Feature-label class identifier `ecf481729c4d5f925f2192b4a83096ac` identifies Thicken. Its 18-slot property vector has these roles:
+
+| Slot | Property |
+| --- | --- |
+| 0 | Selection list `7a25f2efd11105af000847b00524dc09` |
+| 1 | Part-operation enumeration |
+| 2, 3, 4, 7, 10, 16, 17 | Boolean controls |
+| 5, 8, 11 | Null references |
+| 6 | Thickness length parameter |
+| 9 | Feature-dimension reference list |
+| 12 | Dimensionless numeric parameter |
+| 13 | Control record `4c40b0a3ac4b9504e719b28a70e0e818` |
+| 14 | Control record `c11c7b63ea4d840b68b76e8c67bcbc48` |
+| 15 | Result object collection |
+
+Slot 6 supplies the thickness length in internal centimetres. Slot 12 supplies a dimensionless value; it is not a second thickness. Both parameters use the ownership rules of section 11. Part-operation value 3 selects a solid join, and value 2 selects a cut. Slot 0 supplies the selected support geometry through a selection list. Each non-null selection reference resolves in the same PmDc segment. These references do not identify faces of the final model body.
 
 A result object collection contains one or more surface-body references. This ordered surface-body list is the feature's native result-body identity.
 
