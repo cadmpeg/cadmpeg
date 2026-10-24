@@ -283,8 +283,9 @@ fn face_recipe_postlude_derives_delimiters_and_rejects_other_programs() {
 fn face_recipe_ordinals_keep_zero_and_group_design_references() {
     let mut references = Vec::new();
     for (offset, design_reference) in [(100, 418), (100, 419), (125, 418), (150, 418), (175, 418)] {
+        let clause_index = (offset - 100) / 25;
         references.push(serde_json::from_value::<crate::records::dimensions::DesignRecipeReference>(
-            serde_json::json!({"selector":1,"selector_offset":offset,"token":"2","token_offset":offset+8,"design_reference":design_reference,"design_reference_offset":offset+17}),
+            serde_json::json!({"clause_index":clause_index,"selector":1,"selector_offset":offset,"token":"2","token_offset":offset+8,"design_reference":design_reference,"design_reference_offset":offset+17}),
         ).unwrap());
     }
     let side = |fan: [i32; 3]| super::DesignTopologyRecipeSide {

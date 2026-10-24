@@ -125,6 +125,7 @@ pub(super) fn regenerate(
                     component_naming_spaces: &[],
                     histories: &[],
                     face_boundaries: &[],
+                    sheet_metal_settings: &[],
                 },
             )?
             .parameters,

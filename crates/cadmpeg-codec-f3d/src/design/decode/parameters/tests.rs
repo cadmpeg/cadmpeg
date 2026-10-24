@@ -1864,7 +1864,7 @@ fn typed_companion_prefix_moves_the_timestamp_after_the_wide_owner_reference() {
     let record = parsed
         .into_record("Design/BulkStream.dat", 1000)
         .expect("typed companion record");
-    assert_eq!(record.timestamp_micros_offset(), 1082);
+    assert_eq!(record.timestamp_micros_offset(), Some(1082));
     assert_eq!(record.payload_byte_offset(), Some(1098));
 
     // A nonzero byte in the zero run after the timestamp is not a prefix.

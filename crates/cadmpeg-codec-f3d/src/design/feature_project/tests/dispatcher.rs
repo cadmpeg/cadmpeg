@@ -936,7 +936,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     assert!(ruled_projection.features.iter().any(|feature| matches!(
         feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange { thickness, .. })
-            if thickness.get() == 2.5
+            if thickness.literal().is_some_and(|thickness| thickness.get() == 2.5)
     )));
     let definition = |kind: &str| {
         features

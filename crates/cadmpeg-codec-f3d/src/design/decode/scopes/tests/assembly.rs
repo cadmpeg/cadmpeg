@@ -1081,8 +1081,8 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
 /// are the three offsets followed by the angle.
 #[test]
 fn as_built_378_alignment_reads_wide_locators() {
-    use crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment_with_types;
     use crate::records::feature::assembly::TYPED_OCCURRENCE_PATH_TYPE_GUID;
+    use compact_wide::exact_assembly_alignment_with_types;
     use compact_wide::{push_header, push_wide_operand_path};
     let scope_record_index = 10_u32;
     let scope_of = |kind| {
@@ -1185,7 +1185,7 @@ fn as_built_378_alignment_reads_wide_locators() {
     );
     let paths = alignment.operand_path_refs().expect("both operand paths");
     assert_eq!(
-        paths.map(|path| path.occurrence_guids()[0].value.as_str().to_owned()),
+        paths.map(|path| path.occurrence_guids()[0].as_str().to_owned()),
         [
             "11111111-1111-1111-1111-111111111111".to_owned(),
             "66666666-6666-6666-6666-666666666666".to_owned()

@@ -14,7 +14,10 @@ use crate::test_support::push_marked_reference;
 
 #[test]
 fn source_trailing_transforms_preserve_nonconsecutive_following_records() {
-    use crate::records::topology::construction::DesignConstructionOperandTransform;
+    use crate::records::topology::construction::{
+        DesignConstructionOperandTransform, DesignConstructionOperandTransformContent,
+        DesignConstructionOperandTransformDraft,
+    };
     use cadmpeg_ir::native::bytes::NativeBytes;
 
     for fixture in [
@@ -42,13 +45,18 @@ fn source_trailing_transforms_preserve_nonconsecutive_following_records() {
         let fixture: serde_json::Value = serde_json::from_str(&fixture).unwrap();
         let raw: NativeBytes<Vec<u8>> =
             serde_json::from_value(fixture["source_bytes"].clone()).unwrap();
-        let expected: DesignConstructionOperandTransform =
-            serde_json::from_value(fixture["native"].clone()).unwrap();
+        let expected = DesignConstructionOperandTransform::try_new(
+            serde_json::from_value::<DesignConstructionOperandTransformDraft>(
+                fixture["native"].clone(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
         let mut bytes = vec![0; 17];
         bytes.extend_from_slice(&raw);
         let header = DesignRecordHeader {
             id: "f3d:Design/BulkStream.dat:source-transform".into(),
-            byte_offset: 17,
+            byte_offset: Some(17),
             record_index: expected.record_index(),
             class_tag: expected.class_tag.clone(),
         };
@@ -57,8 +65,10 @@ fn source_trailing_transforms_preserve_nonconsecutive_following_records() {
         assert_eq!(actual, expected);
         let wire = serde_json::to_value(&actual).unwrap();
         assert_eq!(
-            serde_json::from_value::<DesignConstructionOperandTransform>(wire).unwrap(),
-            actual
+            DesignConstructionOperandTransformContent::from(
+                serde_json::from_value::<DesignConstructionOperandTransform>(wire).unwrap()
+            ),
+            DesignConstructionOperandTransformContent::from(actual.clone())
         );
         bytes[176..180].copy_from_slice(&header.record_index.to_le_bytes());
         assert!(parse_construction_operand_transform(&bytes, &header).is_none());

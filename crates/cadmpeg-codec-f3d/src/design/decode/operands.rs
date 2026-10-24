@@ -6268,7 +6268,10 @@ pub(crate) fn decode_profile_curve_selections(
             let Some(header) = headers.get(&(stream, record_index)) else {
                 continue;
             };
-            let Ok(start) = usize::try_from(header.byte_offset) else {
+            let Some(byte_offset) = header.byte_offset else {
+                continue;
+            };
+            let Ok(start) = usize::try_from(byte_offset) else {
                 continue;
             };
             // Only a typed selection prefix selects this form.
@@ -6288,11 +6291,8 @@ pub(crate) fn decode_profile_curve_selections(
             else {
                 continue;
             };
-            selection.id = design_record_id(
-                &entry.name,
-                ":design-profile-curve-selection#",
-                header.byte_offset,
-            );
+            selection.id =
+                design_record_id(&entry.name, ":design-profile-curve-selection#", byte_offset);
             out.push(selection);
         }
     }
@@ -6312,7 +6312,8 @@ fn parse_typed_profile_curve_selection(
     use crate::records::topology::entity_selection::{
         DesignProfileCurveEntry, DesignProfileCurveSelection,
     };
-    let Ok(start) = usize::try_from(header.byte_offset) else {
+    let byte_offset = header.byte_offset?;
+    let Ok(start) = usize::try_from(byte_offset) else {
         return None;
     };
     let record_index = header.record_index;
@@ -6421,7 +6422,7 @@ fn parse_typed_profile_curve_selection(
         group_record_index: group.record_index,
         group_member_ordinal,
         record_index,
-        byte_offset: header.byte_offset,
+        byte_offset,
         owner_text_offset: cadmpeg_core::decode::u64_from_index(after_asset + 4),
         owner_text,
         sketch_scope_record_index,

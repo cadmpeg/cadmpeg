@@ -100,44 +100,16 @@ fn rigid_group_members_link(
     if rigid_as_built && alignment.form.is_some() {
         design::assembly::rigid_group_member_count(scope.frame_length())
             == alignment.additional_members.len().checked_add(2)
-            && alignment.additional_members.iter().enumerate().all(
-                |(ordinal, member)| {
-                    use crate::layout::assembly_wide_operand_path_locator as wide;
-                    let records::feature::assembly::DesignAssemblyOperandQualifier::OccurrencePath { path } =
-                        &member.qualifier
-                    else {
-                        return false;
-                    };
-                    let Some(locator_offset) = ordinal
-                        .checked_add(2)
-                        .and_then(|member| member.checked_mul(11))
-                        .and_then(|offset| {
-                            offset.checked_add(
-                                crate::layout::assembly_rigid_as_built_scope::FIRST_LOCATOR_REFERENCE,
-                            )
-                        })
-                    else {
-                        return false;
-                    };
-                    let locator = path.link().locator_byte_offset;
-                    let identity = member.frame.transform.rows()
-                        == cadmpeg_ir::transform::Transform::identity().rows();
-                    let transform_at: &[usize] = if identity {
-                        &[wide::IDENTITY_FLAG, wide::TRANSFORM]
-                    } else {
-                        &[wide::TRANSFORM]
-                    };
-                    valid_assembly_operand_path_link(scope, path, locator_offset)
-                        && locator.checked_add(u64_from_index(
-                            wide::NONZERO_RECORD_REFERENCE + 1,
-                        )) == Some(member.frame.reference_offset)
-                        && transform_at.iter().any(|at| {
-                            locator.checked_add(u64_from_index(*at))
-                                == Some(member.frame.transform_offset)
-                        })
-                        && member.frame.reference_record_index != 0
-                },
-            )
+            && alignment.additional_members.iter().all(|member| {
+                let records::feature::assembly::DesignAssemblyOperandQualifier::OccurrencePath {
+                    path,
+                } = &member.qualifier
+                else {
+                    return false;
+                };
+                valid_assembly_operand_path_link(scope, path)
+                    && member.frame.reference_record_index != 0
+            })
     } else {
         alignment.additional_members.is_empty()
     }
@@ -5186,7 +5158,7 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 let lane_is_owner = lane.is_some_and(|lane| {
                     native.design_parameter_owners.iter().any(|owner| {
                         design_stream(owner.id()) == native_stream
-                            && owner.scope_record_index() == scope.record_index
+                            && owner.scope_record_index() == Some(scope.record_index)
                             && owner.record_index() == lane.record_index
                             && parameters_by_index
                                 .get(&(native_stream, owner.parameter_record_index()))

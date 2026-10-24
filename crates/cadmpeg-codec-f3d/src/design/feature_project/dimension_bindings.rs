@@ -95,7 +95,9 @@ pub(super) fn extrude(
         match start {
             ExtrudeStart::OffsetProfilePlane { offset } => *offset = parameter(source),
             ExtrudeStart::FromFace { offset, .. } => *offset = Some(parameter(source)),
-            ExtrudeStart::Unresolved {} | ExtrudeStart::ProfilePlane {} => {}
+            ExtrudeStart::Unresolved {}
+            | ExtrudeStart::ProfilePlane {}
+            | ExtrudeStart::FromPlane { .. } => {}
         }
     }
     match extent {

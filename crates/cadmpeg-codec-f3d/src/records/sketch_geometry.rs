@@ -2619,7 +2619,7 @@ mod tests {
         let point: SketchPoint = serde_json::from_value(wire.clone()).unwrap();
         let curve: super::SketchCurveIdentity = serde_json::from_value(json!({
             "id": "f3d:stream:sketch-curve#7", "record_index": 7,
-            "class_tag": "000", "byte_offset": 0, "geometry_offset": 0,
+            "class_tag": "000",
             "owner_reference": 17, "primary_id": 1, "secondary_id": 0,
             "geometry": {"kind": "arc", "center": {"x": 2.0, "y": 3.0, "z": 0.0},
                 "normal": {"x": 0.0, "y": 0.0, "z": 1.0},

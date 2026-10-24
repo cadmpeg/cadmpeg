@@ -1063,6 +1063,7 @@ fn sketch_placement_source_forms_conserve_transform_in_payload_free_document() {
             Form::MemberExplicit {
                 paired_byte_offset: 50,
                 transform: matrix,
+                typed_reference: false,
             },
             162,
             Some(122),

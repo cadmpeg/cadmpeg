@@ -173,7 +173,7 @@ pub(super) fn exact_path_feature_construction(
                     operation_offset: u64::try_from(start + referenced_revolve::OPERATION).ok()?,
                     angle: cadmpeg_ir::scalar::PositiveAngle::new(angle.evaluated_value().get())?,
                     angle_record_index,
-                    angle_offset: angle.evaluated_value_offset(),
+                    angle_offset: angle.evaluated_value_offset()?,
                     opposite_angle: None,
                 },
             ))

@@ -816,7 +816,7 @@ impl DesignFaceRecipeStructure {
     pub(crate) fn has_valid_operand_ordinals(&self, references: &[DesignRecipeReference]) -> bool {
         let operand_count = references
             .iter()
-            .map(|reference| (reference.selector_offset, reference.token_offset))
+            .map(|reference| reference.clause_index)
             .collect::<std::collections::HashSet<_>>()
             .len();
         let in_range =

@@ -392,7 +392,7 @@ impl StreamComponents {
             Item = (u64, &'a crate::records::recipes::DesignComponentNamingSpace),
         >,
     ) {
-        let mut root_offsets = std::collections::BTreeMap::<u64, u64>::new();
+        let mut root_offsets = std::collections::BTreeMap::<u64, Option<u64>>::new();
         for (frame_entity, space) in definitions {
             if let Some(earlier) = root_offsets.get(&frame_entity) {
                 self.revised_definitions += 1;
@@ -833,13 +833,13 @@ mod tests {
                 id: format!(
                     "f3d:Design/BulkStream.dat:design-component-naming-space#{byte_offset}"
                 ),
-                byte_offset,
+                byte_offset: Some(byte_offset),
                 component_record_index: 17,
                 context_uuid: crate::records::mesh::DesignRelaxedGuidText::try_from(
                     context_uuid.to_owned(),
                 )
                 .unwrap(),
-                context_uuid_offset: byte_offset + 12,
+                context_uuid_offset: Some(byte_offset + 12),
                 name: Some("Feet".to_owned()),
                 name_offset: Some(byte_offset + 88),
             }

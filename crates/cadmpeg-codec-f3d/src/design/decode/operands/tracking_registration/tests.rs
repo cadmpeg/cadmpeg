@@ -4,17 +4,18 @@ use crate::metastream::RecordIndexEntry;
 use crate::records::entity_header::BaseTypeGuid;
 use crate::records::identity::ReferenceRun;
 
-fn row(guid: &str, base: &str, version: u32, entity: u64) -> SegmentTypeData {
+fn row(class_tag: &str, guid: &str, base: &str, version: u32, entity: u64) -> SegmentTypeData {
     SegmentTypeData {
-        byte_offset: 0,
+        class_tag: class_tag.to_owned().try_into().unwrap(),
+        byte_offset: Some(0),
         type_guid: guid.to_owned().try_into().unwrap(),
-        type_guid_offset: 0,
+        type_guid_offset: Some(0),
         base_type_guid: BaseTypeGuid::Guid {
             value: base.to_owned().try_into().unwrap(),
-            offset: 0,
+            offset: Some(0),
         },
         version,
-        version_offset: 0,
+        version_offset: Some(0),
         module: "EntityTracking".into(),
         entities: ReferenceRun::unlocated(vec![entity]),
     }
@@ -24,12 +25,14 @@ fn fixture() -> (MetaStream, DesignConstructionTrackingPath) {
     let meta = MetaStream {
         types: vec![
             row(
+                "256",
                 "335CC7BD-BBE5-40AA-9E8C-5EC99D427A3A",
                 "5C069ACB-169F-4555-9792-815B4671DDA0",
                 0,
                 300,
             ),
             row(
+                "257",
                 "2DEE34BE-FA70-4D54-979C-164D86FDA786",
                 "70F5E801-1E8E-436E-8A09-36487F8A2859",
                 2,
@@ -48,13 +51,27 @@ fn fixture() -> (MetaStream, DesignConstructionTrackingPath) {
         ],
         secondary_records: Vec::new(),
     };
-    let path = serde_json::from_value(serde_json::json!({
-        "wrapper_record_index":300,"wrapper_byte_offset":0,"wrapper_class_tag":"256",
-        "carrier_record_index":301,"carrier_byte_offset":33,"carrier_class_tag":"257",
-        "primary_identity":268,"primary_identity_offset":70,"selector":1,"selector_offset":90,
-        "kind":1,"kind_offset":94,"following_record_index":302,"following_byte_offset":114,
-        "following_class_tag":"258"
-    }))
+    let path = DesignConstructionTrackingPath::try_new(
+        crate::records::topology::construction::DesignConstructionTrackingPathDraft {
+            wrapper_record_index: 300,
+            wrapper_byte_offset: 0,
+            wrapper_class_tag: "256".to_owned().try_into().unwrap(),
+            carrier_record_index: 301,
+            carrier_byte_offset: 33,
+            carrier_class_tag: "257".to_owned().try_into().unwrap(),
+            primary_identity: 268,
+            primary_identity_offset: 70,
+            selector: 1,
+            selector_offset: 90,
+            kind: 1,
+            kind_offset: 94,
+            first_related_identity: None,
+            second_related_identity: None,
+            following_record_index: 302,
+            following_byte_offset: 114,
+            following_class_tag: "258".to_owned().try_into().unwrap(),
+        },
+    )
     .unwrap();
     (meta, path)
 }
@@ -81,7 +98,7 @@ fn registration_follows_dynamic_classes_and_case_insensitive_guids() {
             .to_ascii_lowercase();
         row.base_type_guid = BaseTypeGuid::Guid {
             value: base.try_into().unwrap(),
-            offset: 0,
+            offset: Some(0),
         };
     }
     assert!(Registry::new(Rc::new(meta)).supports(&path));
@@ -112,7 +129,7 @@ fn registration_rejects_wrong_family_version_membership_and_physical_offsets() {
                             .to_owned()
                             .try_into()
                             .unwrap(),
-                        offset: 0,
+                        offset: Some(0),
                     }
                 }
                 8 => meta.types[index].version = if index == 0 { 2 } else { 1 },
@@ -131,12 +148,14 @@ fn nonconsecutive_transform_requires_typed_membership_and_the_next_active_primar
     let meta = MetaStream {
         types: vec![
             row(
+                "256",
                 "2DF7DA30-A4E4-4260-AFD1-D9C7154CB44B",
                 "872045B4-F653-4691-9752-ABC7684834BF",
                 0,
                 300,
             ),
             row(
+                "257",
                 "11111111-2222-3333-4444-555555555555",
                 "872045B4-F653-4691-9752-ABC7684834BF",
                 0,
@@ -155,12 +174,26 @@ fn nonconsecutive_transform_requires_typed_membership_and_the_next_active_primar
         ],
         secondary_records: Vec::new(),
     };
-    let transform = serde_json::from_value(serde_json::json!({
-        "record_index":300, "byte_offset":17, "class_tag":"256",
-        "transform":[[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]], "transform_offset":39,
-        "following_record_index":309, "following_byte_offset":169, "following_class_tag":"257"
-    }))
-    .unwrap();
+    let transform =
+        crate::records::topology::construction::DesignConstructionOperandTransform::try_new(
+            crate::records::topology::construction::DesignConstructionOperandTransformDraft {
+                record_index: 300,
+                byte_offset: 17,
+                class_tag: "256".to_owned().try_into().unwrap(),
+                transform: serde_json::from_value(serde_json::json!([
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0]
+                ]))
+                .unwrap(),
+                transform_offset: 39,
+                following_record_index: 309,
+                following_byte_offset: 169,
+                following_class_tag: "257".to_owned().try_into().unwrap(),
+            },
+        )
+        .unwrap();
     assert!(Registry::new(Rc::new(meta.clone())).supports_transform(&transform));
     for mutation in 0..10 {
         let mut invalid = meta.clone();

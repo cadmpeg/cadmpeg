@@ -2844,7 +2844,7 @@ fn decode_legacy_sketch_text_record_tail(
 }
 
 pub(crate) fn sketch_text_neutral_state(text: &SketchText) -> Option<bool> {
-    let payload = text.raw_bytes.as_ref();
+    let payload = text.raw_bytes.data()?;
     if let Some((head, identity)) = decode_sketch_text_head(payload, text.class_version).ok()? {
         if let Some(tail) = decode_legacy_sketch_text_record_tail(
             payload,

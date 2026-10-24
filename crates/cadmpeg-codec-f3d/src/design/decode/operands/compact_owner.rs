@@ -80,7 +80,7 @@ pub(crate) fn source_selectors(
         {
             let Some((index, owner)) = frames.iter().enumerate().find(|(_, frame)| {
                 frame.entity_id == u64::from(identity.following_record_index())
-                    && u64::try_from(frame.start).ok() == Some(identity.following_byte_offset())
+                    && u64::try_from(frame.start).ok() == identity.following_byte_offset()
             }) else {
                 continue;
             };
@@ -117,17 +117,18 @@ mod tests {
     use crate::records::entity_header::{BaseTypeGuid, SegmentTypeData};
     use crate::records::identity::ReferenceRun;
 
-    fn kind(guid: &str, base: &str, version: u32) -> SegmentTypeData {
+    fn kind(class_tag: &str, guid: &str, base: &str, version: u32) -> SegmentTypeData {
         SegmentTypeData {
-            byte_offset: 0,
+            class_tag: class_tag.to_owned().try_into().unwrap(),
+            byte_offset: Some(0),
             type_guid: guid.to_owned().try_into().unwrap(),
-            type_guid_offset: 0,
+            type_guid_offset: Some(0),
             base_type_guid: BaseTypeGuid::Guid {
                 value: base.to_owned().try_into().unwrap(),
-                offset: 0,
+                offset: Some(0),
             },
             version,
-            version_offset: 0,
+            version_offset: Some(0),
             module: "EntityTracking".into(),
             entities: ReferenceRun::unlocated(Vec::new()),
         }
@@ -145,11 +146,13 @@ mod tests {
             }
         }
         let owner_type = kind(
+            "264",
             "CB4F4CC2-9D6F-48BA-9B1F-20C1992C9C9C",
             "5C069ACB-169F-4555-9792-815B4671DDA0",
             2,
         );
         let mut body_type = kind(
+            "531",
             "90055C05-546C-4EE7-B3C9-3DD922AD0C9C",
             "70F5E801-1E8E-436E-8A09-36487F8A2859",
             0,

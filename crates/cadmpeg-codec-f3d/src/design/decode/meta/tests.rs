@@ -614,8 +614,8 @@ fn component_naming_space_binds_through_a_linked_entity() {
     };
     assert_eq!(space.component_record_index, 17);
     assert_eq!(space.context_uuid.as_str(), CONTEXT_UUID);
-    assert_eq!(space.byte_offset, 2);
-    assert_eq!(space.context_uuid_offset, u64_from_index(2 + 11 + 11));
+    assert_eq!(space.byte_offset, Some(2));
+    assert_eq!(space.context_uuid_offset, Some(u64_from_index(2 + 11 + 11)));
 
     // A link entity the stream registers to no type binds the same way.
     let unregistered = with_scan(&archive(None), decode_component_naming_spaces)

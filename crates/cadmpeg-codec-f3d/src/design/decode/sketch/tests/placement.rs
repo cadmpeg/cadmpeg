@@ -1096,8 +1096,8 @@ fn typed_legacy_sketch_pair_reads_wide_member_references_and_head_frame() {
         &bytes, 0, &entity_id, &records,
     )
     .expect("typed explicit head placement");
-    assert_eq!(placement.byte_offset(), u64_from_index(head_at));
-    assert_eq!(placement.frame_length(), 202);
+    assert_eq!(placement.byte_offset(), Some(u64_from_index(head_at)));
+    assert_eq!(placement.frame_length(), Some(202));
     assert_eq!(
         placement.transform_offset(),
         Some(u64_from_index(head_at + 22))

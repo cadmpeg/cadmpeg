@@ -256,7 +256,7 @@ fn exact_named_fixed_extrude_lanes(
             .iter()
             .find(|owner| {
                 native_stream(owner.id()) == native_stream(&scope.id)
-                    && owner.scope_record_index() == scope.record_index
+                    && owner.scope_record_index() == Some(scope.record_index)
                     && owner.record_index() == record_index
             })
             .and_then(|owner| {

@@ -130,7 +130,7 @@ fn parse(
         id: "f3d:Design/BulkStream.dat:design-record-header#0".into(),
         record_index: 100,
         class_tag: DesignClassTag::try_from("264".to_owned()).unwrap(),
-        byte_offset: 0,
+        byte_offset: Some(0),
     };
     super::super::parse_typed_profile_curve_selection(bytes, &records, &group(), 0, &header)
 }

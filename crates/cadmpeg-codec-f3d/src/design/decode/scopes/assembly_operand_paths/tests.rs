@@ -406,7 +406,7 @@ fn wide_locator_path_continues_over_typed_records() {
     let occurrences = path
         .occurrence_guids()
         .iter()
-        .map(|guid| guid.value.as_str())
+        .map(|guid| guid.as_str())
         .collect::<Vec<_>>();
     assert_eq!(occurrences, [GUID, "77777777-7777-7777-7777-777777777777"]);
     assert_eq!(path.identity_guids().len(), 8);
@@ -416,7 +416,7 @@ fn wide_locator_path_continues_over_typed_records() {
     let pairs = path
         .paired_occurrence_keys()
         .iter()
-        .map(|key| key.value.as_str())
+        .map(|key| key.as_str())
         .collect::<Vec<_>>();
     assert_eq!(pairs, ["43", "66666666-6666-6666-6666-666666666666"]);
 

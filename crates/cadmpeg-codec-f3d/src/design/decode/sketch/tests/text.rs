@@ -51,16 +51,23 @@ fn text_fixture_records_preserve_styles_and_refuse_unrepresented_orientation() {
             "{}",
             case.label
         );
-        assert_eq!(text.raw_bytes, case.source_hex, "{}", case.label);
+        assert_eq!(
+            text.raw_bytes.data(),
+            Some(case.source_hex.as_ref()),
+            "{}",
+            case.label
+        );
         assert_eq!(
             super::super::sketch_text_neutral_state(&text),
             Some(case.neutral_state),
             "{}",
             case.label
         );
+        let wire = serde_json::to_value(&text).unwrap();
         let replay: crate::records::sketch_geometry::SketchText =
-            serde_json::from_value(serde_json::to_value(&text).unwrap()).unwrap();
-        assert_eq!(replay, text, "{}", case.label);
+            serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&replay).unwrap(), wire, "{}", case.label);
+        assert_eq!(replay.raw_bytes.data(), None, "{}", case.label);
     }
 }
 
@@ -87,7 +94,7 @@ fn txt_tag_font_weight_is_retained_without_a_neutral_weight_assignment() {
         .unwrap()
         .unwrap();
         assert_eq!(text.font_weight, weight);
-        assert_eq!(text.raw_bytes.as_ref(), bytes);
+        assert_eq!(text.raw_bytes.data(), Some(bytes.as_slice()));
         assert!(cadmpeg_ir::sketches::SketchFontWeight::try_from(text.font_weight).is_err());
     }
 }

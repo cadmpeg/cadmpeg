@@ -203,7 +203,9 @@ pub(crate) fn joint_placed_identity_occurrences<'a>(
             matches!(
                 occurrence.prototype,
                 cadmpeg_ir::products::PrototypeReference::External { .. }
-            ) && occurrence.transform.rows() == cadmpeg_ir::transform::Transform::identity().rows()
+            ) && occurrence.transform.as_ref().is_none_or(|transform| {
+                transform.rows() == cadmpeg_ir::transform::Transform::identity().rows()
+            })
         })
         .fold((0_usize, 0_usize), |(direct, unnamed), occurrence| {
             if named.contains(&occurrence.id) {
@@ -1437,7 +1439,6 @@ mod tests {
                 "parent": {"kind": "root"},
                 "ordinal": 0,
                 "transform": [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]],
-                "scale": [1.0, 1.0, 1.0],
             }))
             .unwrap()
         };

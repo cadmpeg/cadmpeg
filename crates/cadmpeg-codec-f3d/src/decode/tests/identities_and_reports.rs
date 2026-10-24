@@ -197,9 +197,11 @@ fn archive_entries_do_not_hide_new_model_entities() {
 
 #[test]
 fn unsupported_parameter_owners_report_a_loss_only_when_present() {
-    let mut report = cadmpeg_ir::codec::DecodeBody::new(
-        cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
-    );
+    let mut report =
+        cadmpeg_ir::codec::DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer {
+            scope: cadmpeg_ir::document::ContentScope::container(),
+            geometry_transferred: false,
+        });
     super::super::report_unparsed_parameter_owners(&mut report, 0);
     assert!(report.losses.is_empty());
     super::super::report_unparsed_parameter_owners(&mut report, 2);

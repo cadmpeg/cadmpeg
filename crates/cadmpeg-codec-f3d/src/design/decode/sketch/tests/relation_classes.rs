@@ -713,12 +713,12 @@ fn fixture_relation_frames_retain_source_bytes_and_rectangular_flags() {
         let relation = case.decode();
         assert_eq!(
             relation.raw_bytes(),
-            case.source_hex.as_ref(),
+            Some(case.source_hex.as_ref()),
             "{}",
             case.label
         );
         assert_eq!(
-            rectangular_pattern_flags(relation.raw_bytes()),
+            relation.raw_bytes().and_then(rectangular_pattern_flags),
             case.rectangular_flags,
             "{}",
             case.label
@@ -726,7 +726,8 @@ fn fixture_relation_frames_retain_source_bytes_and_rectangular_flags() {
         let json = serde_json::to_string(&relation).unwrap();
         let restored: crate::records::sketch_relations::SketchRelation =
             serde_json::from_str(&json).unwrap();
-        assert_eq!(restored, relation, "{}", case.label);
+        assert_eq!(serde_json::to_string(&restored).unwrap(), json, "{}", case.label);
+        assert_eq!(restored.raw_bytes(), None, "{}", case.label);
     }
 }
 

@@ -2630,8 +2630,13 @@ mod tests {
             .root = 1;
         assert_eq!(super::complete_counted_face_recipe(&operand), None);
         assert_eq!(operand.recipe_program, source_program);
-        operand.recipe_references[1].selector_offset += 25;
-        operand.recipe_references[1].token_offset += 25;
+        operand.recipe_references[1].selector_offset = operand.recipe_references[1]
+            .selector_offset
+            .map(|offset| offset + 25);
+        operand.recipe_references[1].token_offset = operand.recipe_references[1]
+            .token_offset
+            .map(|offset| offset + 25);
+        operand.recipe_references[1].clause_index = 1;
         assert_eq!(super::complete_counted_face_recipe(&operand), Some(1));
         operand.recipe_nodes[0]
             .recipe_structure

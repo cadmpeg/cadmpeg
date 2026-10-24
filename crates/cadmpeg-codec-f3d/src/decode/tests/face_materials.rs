@@ -32,6 +32,7 @@ fn model() -> cadmpeg_ir::CadIr {
                 AttributeValue::String("NEUTRON_Material_attrib_def".into()),
                 AttributeValue::String(guid.into()),
             ],
+            native_ref: None,
         });
     }
     for (index, token) in [VISUAL, REVISION].into_iter().enumerate() {
@@ -49,6 +50,7 @@ fn model() -> cadmpeg_ir::CadIr {
             base_color: None,
             properties: Default::default(),
             textures: Vec::new(),
+            native_ref: None,
         });
     }
     ir

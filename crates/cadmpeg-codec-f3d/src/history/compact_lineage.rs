@@ -80,7 +80,9 @@ pub(crate) fn bind(inputs: Inputs<'_>, bindings: &mut HashMap<String, String>) -
                 && operand.scope_record_index == scope.record_index
                 && operand.group_record_index == group.record_index
                 && operand.record_index() == member.value
-                && operand.layout().is_compact()
+                && operand.layout().is_some_and(
+                    crate::records::topology::edge_identity::DesignEdgeIdentityLayout::is_compact,
+                )
         });
         let Some(operand) = operands.next().filter(|_| operands.next().is_none()) else {
             continue;

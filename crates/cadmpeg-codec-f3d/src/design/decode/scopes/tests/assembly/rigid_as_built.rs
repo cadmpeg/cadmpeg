@@ -38,7 +38,7 @@ fn rigid_as_built_stream() -> Vec<u8> {
 
 #[test]
 fn rigid_as_built_scope_reads_its_two_wide_operand_paths_without_owners() {
-    use crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment_with_types;
+    use super::compact_wide::exact_assembly_alignment_with_types;
     use crate::records::feature::assembly::TYPED_OCCURRENCE_PATH_TYPE_GUID;
     let bytes = rigid_as_built_stream();
     let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
@@ -117,7 +117,7 @@ fn rigid_as_built_scope_reads_its_two_wide_operand_paths_without_owners() {
     );
     let paths = alignment.operand_path_refs().expect("both operand paths");
     assert_eq!(
-        paths.map(|path| path.occurrence_guids()[0].value.as_str().to_owned()),
+        paths.map(|path| path.occurrence_guids()[0].as_str().to_owned()),
         [
             "11111111-1111-1111-1111-111111111111".to_owned(),
             "66666666-6666-6666-6666-666666666666".to_owned()
@@ -162,7 +162,7 @@ fn three_member_rigid_group_stream() -> Vec<u8> {
 
 #[test]
 fn rigid_group_reads_every_member_after_its_first_two() {
-    use crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment_with_types;
+    use super::compact_wide::exact_assembly_alignment_with_types;
     use crate::records::feature::assembly::{
         DesignAssemblyOperandQualifier, TYPED_OCCURRENCE_PATH_TYPE_GUID,
     };
@@ -203,7 +203,7 @@ fn rigid_group_reads_every_member_after_its_first_two() {
         .operand_path_refs()
         .expect("the first two members");
     assert_eq!(
-        paths.map(|path| path.occurrence_guids()[0].value.as_str().to_owned()),
+        paths.map(|path| path.occurrence_guids()[0].as_str().to_owned()),
         [
             "11111111-1111-1111-1111-111111111111".to_owned(),
             "66666666-6666-6666-6666-666666666666".to_owned()
@@ -216,7 +216,7 @@ fn rigid_group_reads_every_member_after_its_first_two() {
         panic!("an occurrence path");
     };
     assert_eq!(
-        path.occurrence_guids()[0].value.as_str(),
+        path.occurrence_guids()[0].as_str(),
         "77777777-7777-7777-7777-777777777777"
     );
     assert_eq!(

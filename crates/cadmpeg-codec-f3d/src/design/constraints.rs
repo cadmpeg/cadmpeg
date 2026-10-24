@@ -323,7 +323,10 @@ pub(crate) fn bind_pattern_count_caches(
     relations: &[SketchRelation],
 ) {
     use crate::records::sketch_relations::SketchPatternDefinition;
-    let mut bind = |scope: &str, owner: u32, count: u32| {
+    let mut bind = |scope: &str, owner: Option<u32>, count: u32| {
+        let Some(owner) = owner else {
+            return;
+        };
         let mut candidates = native.iter().filter(|parameter| {
             native_stream(&parameter.id) == Some(scope)
                 && parameter.owner_record_index() == Some(owner)
@@ -394,12 +397,14 @@ fn exact_rectangular_pattern(
     {
         return Ok(None);
     }
-    let distance_form =
-        match crate::design::decode::sketch::rectangular_pattern_flags(relation.raw_bytes()) {
-            Some([0, 0, 0]) => RectangularPatternDistanceForm::AdjacentSpacing,
-            Some([1, 0, 0]) => RectangularPatternDistanceForm::SeedToFinalSpan,
-            _ => return Ok(None),
-        };
+    let Some(raw_bytes) = relation.raw_bytes() else {
+        return Ok(None);
+    };
+    let distance_form = match crate::design::decode::sketch::rectangular_pattern_flags(raw_bytes) {
+        Some([0, 0, 0]) => RectangularPatternDistanceForm::AdjacentSpacing,
+        Some([1, 0, 0]) => RectangularPatternDistanceForm::SeedToFinalSpan,
+        _ => return Ok(None),
+    };
     let pattern = relation.definition.pattern();
     let Some(SketchPatternDefinition::Rectangular { directions }) = pattern else {
         return Ok(None);

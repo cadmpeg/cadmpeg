@@ -70,7 +70,7 @@ pub(super) fn push_wide_operand_path(
     push_marked(bytes, index + 1);
 }
 
-fn exact_assembly_alignment_with_types(
+pub(super) fn exact_assembly_alignment_with_types(
     bytes: &[u8],
     records: &crate::design::decode::sketch::IndexedRecordOffsets,
     scope: &DesignParameterScope,

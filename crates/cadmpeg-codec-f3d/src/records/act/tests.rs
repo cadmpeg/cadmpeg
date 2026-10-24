@@ -691,10 +691,10 @@ fn root_strings_edit_without_fabricated_cadir_source_layout() {
 
 #[test]
 fn actual_act_tail_admission_checks_padding_and_overflow() {
-    assert!(super::ActClassTail::new(Vec::new(), 300).is_err());
-    assert!(super::ActClassTail::new(vec![0, 0], 300).is_err());
-    assert!(super::ActClassTail::new(vec![1], u64::MAX).is_err());
-    let tail = super::ActClassTail::new(vec![0, 1], 300).unwrap();
+    assert!(super::ActStreamResidue::new(Vec::new(), 300).is_err());
+    assert!(super::ActStreamResidue::new(vec![0, 0], 300).is_err());
+    assert!(super::ActStreamResidue::new(vec![1], u64::MAX).is_err());
+    let tail = super::ActStreamResidue::new(vec![0, 1], 300).unwrap();
     assert_eq!(tail.bytes(), Some([0, 1].as_slice()));
     assert_eq!(tail.offset(), Some(300));
 }

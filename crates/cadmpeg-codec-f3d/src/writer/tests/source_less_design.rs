@@ -503,7 +503,7 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
         assert_eq!(&bulk[57..68], &[3, 0, 0, 0, b'3', b'5', b'0', 33, 0, 0, 0]);
         assert_eq!(&bulk[68..79], &[3, 0, 0, 0, b'3', b'5', b'1', 44, 0, 0, 0]);
         assert_eq!(&bulk[79..90], &[3, 0, 0, 0, b'2', b'5', b'6', 21, 1, 0, 0]);
-        assert_eq!(bulk.len(), 153);
+        assert_eq!(bulk.len(), 149);
     });
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())

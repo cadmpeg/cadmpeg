@@ -1606,9 +1606,14 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     let context_reference = operand.recipe_references[0].clone();
     for ordinal in 1..4 {
         let mut reference = context_reference.clone();
-        reference.selector_offset += ordinal * 25;
-        reference.token_offset += ordinal * 25;
-        reference.design_reference_offset += ordinal * 25;
+        reference.clause_index = u32::try_from(ordinal).expect("test clause index");
+        reference.selector_offset = reference
+            .selector_offset
+            .map(|offset| offset + ordinal * 25);
+        reference.token_offset = reference.token_offset.map(|offset| offset + ordinal * 25);
+        reference.design_reference_offset = reference
+            .design_reference_offset
+            .map(|offset| offset + ordinal * 25);
         operand.recipe_references.push(reference);
     }
     operand.recipe_nodes.clear();

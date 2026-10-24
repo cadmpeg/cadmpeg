@@ -492,6 +492,7 @@ fn indexed_record_header_requires_a_complete_class_header() {
 }
 
 fn registered_type(
+    class_tag: &str,
     type_guid: &str,
     entities: &[u64],
     byte_offset: u64,
@@ -499,12 +500,13 @@ fn registered_type(
     crate::records::entity_header::SegmentType::try_new(
         format!("f3d:Design/MetaStream.dat:design-type#{byte_offset}"),
         crate::records::entity_header::SegmentTypeData {
-            byte_offset,
+            class_tag: class_tag.to_owned().try_into().unwrap(),
+            byte_offset: Some(byte_offset),
             type_guid: type_guid.to_owned().try_into().unwrap(),
-            type_guid_offset: 4,
+            type_guid_offset: Some(4),
             base_type_guid: crate::records::entity_header::BaseTypeGuid::Absent,
             version: 1,
-            version_offset: 44,
+            version_offset: Some(44),
             module: "MSketch".into(),
             entities: crate::records::identity::ReferenceRun::located(
                 entities
@@ -524,8 +526,13 @@ fn registered_type(
 /// table, not from a sketch member run; other registrations do not count.
 #[test]
 fn relation_records_are_the_relation_class_registrations() {
-    let relation = registered_type("60403D47-0C49-49B0-BDE8-1679608164A2", &[547, 548], 10);
-    let container = registered_type("44A64366-4BD3-4B24-881A-F94C206E8F2D", &[222], 20);
+    let relation = registered_type(
+        "256",
+        "60403D47-0C49-49B0-BDE8-1679608164A2",
+        &[547, 548],
+        10,
+    );
+    let container = registered_type("257", "44A64366-4BD3-4B24-881A-F94C206E8F2D", &[222], 20);
     let indices =
         crate::design::decode::sketch::registered_relation_record_indices([&relation, &container]);
     assert_eq!(indices, [547, 548]);
