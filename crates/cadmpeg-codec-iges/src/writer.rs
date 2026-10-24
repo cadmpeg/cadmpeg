@@ -34,8 +34,8 @@ use cadmpeg_ir::report::{
 };
 use cadmpeg_ir::scalar::{FiniteReal, Length};
 use cadmpeg_ir::topology::{
-    BodyKind, Color, Edge, IncreasingParameterInterval, Loop, LoopBoundaryRole, PcurveUse, Region,
-    Sense,
+    BodyKind, Coedge, Color, Edge, IncreasingParameterInterval, Loop, LoopBoundaryRole, PcurveUse,
+    Region, Sense,
 };
 use cadmpeg_ir::units::{FiniteVector, OrthonormalFrame3, UnitVector3};
 use cadmpeg_ir::CadIr;
@@ -3571,6 +3571,29 @@ struct CurveOnSurfaceEntityRequest<'a> {
     pcurve_indices: &'a BTreeMap<String, usize>,
 }
 
+/// One coedge of a Type 142 boundary with its edge carrier and the direction
+/// of its pcurve chain relative to that carrier.
+struct BoundaryCoedge<'ir> {
+    coedge: &'ir Coedge,
+    edge: &'ir Edge,
+    curve_id: &'ir CurveId,
+    geometry: CurveGeometry,
+    span: CurveSpan,
+    chain: Sense,
+}
+
+impl BoundaryCoedge<'_> {
+    /// The direction relative to the edge carrier in which a boundary written
+    /// in `direction` relative to the loop traversal writes this coedge.
+    fn written(&self, direction: Sense) -> Sense {
+        if self.coedge.sense == direction {
+            Sense::Forward
+        } else {
+            Sense::Reversed
+        }
+    }
+}
+
 fn curve_on_surface_entity(
     ir: &CadIr,
     entities: &mut Vec<Entity>,
@@ -3584,8 +3607,7 @@ fn curve_on_surface_entity(
         edge_indices,
         pcurve_indices,
     } = request;
-    let mut model_children = Vec::new();
-    let mut pcurve_children = Vec::new();
+    let mut boundary = Vec::new();
     for coedge_id in loop_.coedges() {
         let coedge = ir
             .model
@@ -3630,11 +3652,52 @@ fn curve_on_surface_entity(
             CodecError::NotImplemented("IGES curve carrier has no solved geometry".into())
         })?)?;
         let span = edge_span(ir, edge, &geometry)?;
-        let model_index = if coedge.sense == Sense::Forward {
-            *edge_indices.get(edge.id.as_str()).ok_or_else(|| {
+        let chain = pcurve_orientation_context(
+            ir,
+            surface,
+            span.start,
+            span.end,
+            UseDirection::traversed(coedge.sense),
+            topology_edge_explicit_tolerance(ir, edge),
+            coedge.id.as_str(),
+        )
+        .orientation(&coedge.pcurves)?;
+        boundary.push(BoundaryCoedge {
+            coedge,
+            edge,
+            curve_id,
+            geometry,
+            span,
+            chain,
+        });
+    }
+    // Type 142 and Type 144 give a boundary no direction, so the boundary is
+    // written in the direction that takes fewer reversed copies of its curves.
+    let copies = |direction: Sense| {
+        boundary
+            .iter()
+            .map(|item| {
+                let written = item.written(direction);
+                usize::from(written == Sense::Reversed)
+                    + reversed_pcurve_copies(item.chain, written, &item.coedge.pcurves)
+            })
+            .sum::<usize>()
+    };
+    let direction = if copies(Sense::Reversed) < copies(Sense::Forward) {
+        boundary.reverse();
+        Sense::Reversed
+    } else {
+        Sense::Forward
+    };
+    let mut model_children = Vec::new();
+    let mut pcurve_children = Vec::new();
+    for item in &boundary {
+        let written = item.written(direction);
+        let model_index = if written == Sense::Forward {
+            *edge_indices.get(item.edge.id.as_str()).ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "IGES Type 142 loop {} references missing edge entity {}",
-                    loop_.id, edge.id
+                    loop_.id, item.edge.id
                 ))
             })?
         } else {
@@ -3643,10 +3706,10 @@ fn curve_on_surface_entity(
                 ir,
                 CurveEntityRequest {
                     version,
-                    curve_id,
-                    geometry: &geometry,
-                    span: Some(&span),
-                    sense: coedge.sense,
+                    curve_id: item.curve_id,
+                    geometry: &item.geometry,
+                    span: Some(&item.span),
+                    sense: Sense::Reversed,
                     status: EntityStatus::PhysicallyDependent,
                     reference_offset: 0,
                 },
@@ -3657,13 +3720,16 @@ fn curve_on_surface_entity(
             pcurve_orientation_context(
                 ir,
                 surface,
-                span.start,
-                span.end,
-                UseDirection::traversed(coedge.sense),
-                topology_edge_explicit_tolerance(ir, edge),
-                coedge.id.as_str(),
+                item.span.start,
+                item.span.end,
+                UseDirection {
+                    traversal: item.coedge.sense,
+                    written,
+                },
+                topology_edge_explicit_tolerance(ir, item.edge),
+                item.coedge.id.as_str(),
             )
-            .oriented_entities(&coedge.pcurves, pcurve_indices, entities)?
+            .entities_for_chain(item.chain, &item.coedge.pcurves, pcurve_indices, entities)?
             .into_iter()
             .map(|(_, index)| index),
         );
@@ -4608,6 +4674,15 @@ impl PcurveOrientationContext<'_> {
             })
             .collect()
     }
+}
+
+/// The number of reversed pcurve copies that a chain in direction `chain`
+/// takes when its uses are written in direction `written`.
+fn reversed_pcurve_copies(chain: Sense, written: Sense, uses: &[PcurveUse]) -> usize {
+    let reverse = chain != written;
+    uses.iter()
+        .filter(|pcurve_use| reverse ^ use_runs_backward(pcurve_use))
+        .count()
 }
 
 /// Whether a coedge traverses its pcurve backward: its use states a
