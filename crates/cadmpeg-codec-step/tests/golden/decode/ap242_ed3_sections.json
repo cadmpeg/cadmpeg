@@ -39,7 +39,6 @@
           "id": "step:product:product#1",
           "kind": "part",
           "label": "Part",
-          "native_ref": "#1",
           "part_number": "P1",
           "source_name": "Part"
         }
@@ -203,6 +202,56 @@
       "data_sections": "2",
       "entity_instances": "2",
       "schema": "AP242"
+    },
+    "parts": {
+      "step:source:part#1fccfb03418f97e8c167cc824a51651c71f1d93b13fd57fef97f602c53db5a52": {
+        "byte_len": 28,
+        "framing_bytes": [
+          {
+            "end": 400,
+            "start": 398
+          },
+          {
+            "end": 401,
+            "start": 400
+          },
+          {
+            "end": 426,
+            "start": 425
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 398,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#981e7c38dfd131a3525477cdd3c4f8d44726ee9729a2a6e09d78fecf7afe2b7b": {
+        "byte_len": 30,
+        "framing_bytes": [
+          {
+            "end": 332,
+            "start": 330
+          },
+          {
+            "end": 333,
+            "start": 332
+          },
+          {
+            "end": 360,
+            "start": 359
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 330,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      }
     },
     "retained_records": {
       "step:data:example_record#2": {

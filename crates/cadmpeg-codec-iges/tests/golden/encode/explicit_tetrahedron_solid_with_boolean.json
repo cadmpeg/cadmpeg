@@ -234,7 +234,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 1 native record(s) from `iges.boolean_trees`",
+        "message": "the iges write omits 1 native record(s) from `iges.boolean_trees`: iges:solid:boolean-tree#D59",
         "severity": "info"
       },
       {
@@ -244,7 +244,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 4 native record(s) from `iges.directions`",
+        "message": "the iges write omits 4 native record(s) from `iges.directions`: iges:native:direction#D11, iges:native:direction#D5, iges:native:direction#D7, iges:native:direction#D9",
         "severity": "info"
       },
       {
@@ -254,7 +254,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 32 native record(s) from `iges.display_attributes`",
+        "message": "the iges write omits 32 native record(s) from `iges.display_attributes`: iges:presentation:display-attributes#D1, iges:presentation:display-attributes#D11, iges:presentation:display-attributes#D13, iges:presentation:display-attributes#D15, iges:presentation:display-attributes#D17, iges:presentation:display-attributes#D19, iges:presentation:display-attributes#D21, iges:presentation:display-attributes#D23, iges:presentation:display-attributes#D25, iges:presentation:display-attributes#D27, iges:presentation:display-attributes#D29, iges:presentation:display-attributes#D3, iges:presentation:display-attributes#D31, iges:presentation:display-attributes#D33, iges:presentation:display-attributes#D35, iges:presentation:display-attributes#D37, iges:presentation:display-attributes#D39, iges:presentation:display-attributes#D41, iges:presentation:display-attributes#D43, iges:presentation:display-attributes#D45, iges:presentation:display-attributes#D47, iges:presentation:display-attributes#D49, iges:presentation:display-attributes#D5, iges:presentation:display-attributes#D51, iges:presentation:display-attributes#D53, iges:presentation:display-attributes#D55, iges:presentation:display-attributes#D57, iges:presentation:display-attributes#D59, iges:presentation:display-attributes#D61, iges:presentation:display-attributes#D63, iges:presentation:display-attributes#D7, iges:presentation:display-attributes#D9",
         "severity": "info"
       },
       {
@@ -264,7 +264,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 32 native record(s) from `iges.entities`",
+        "message": "the iges write omits 32 native record(s) from `iges.entities`: iges:entity:directory#1, iges:entity:directory#11, iges:entity:directory#13, iges:entity:directory#15, iges:entity:directory#17, iges:entity:directory#19, iges:entity:directory#21, iges:entity:directory#23, iges:entity:directory#25, iges:entity:directory#27, iges:entity:directory#29, iges:entity:directory#3, iges:entity:directory#31, iges:entity:directory#33, iges:entity:directory#35, iges:entity:directory#37, iges:entity:directory#39, iges:entity:directory#41, iges:entity:directory#43, iges:entity:directory#45, iges:entity:directory#47, iges:entity:directory#49, iges:entity:directory#5, iges:entity:directory#51, iges:entity:directory#53, iges:entity:directory#55, iges:entity:directory#57, iges:entity:directory#59, iges:entity:directory#61, iges:entity:directory#63, iges:entity:directory#7, iges:entity:directory#9",
         "severity": "info"
       },
       {
@@ -274,7 +274,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 1 native record(s) from `iges.primitive_solids`",
+        "message": "the iges write omits 1 native record(s) from `iges.primitive_solids`: iges:solid:primitive#D57",
         "severity": "info"
       },
       {
@@ -284,7 +284,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 1 native record(s) from `iges.product_occurrence_expansion`",
+        "message": "the iges write omits 1 native record(s) from `iges.product_occurrence_expansion`: iges:product:occurrence-expansion#state",
         "severity": "info"
       },
       {
@@ -294,7 +294,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 1 native record(s) from `iges.solid_assemblies`",
+        "message": "the iges write omits 1 native record(s) from `iges.solid_assemblies`: iges:product:solid-assembly#D61",
         "severity": "info"
       },
       {
@@ -304,7 +304,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 1 native record(s) from `iges.solid_instances`",
+        "message": "the iges write omits 1 native record(s) from `iges.solid_instances`: iges:product:solid-instance#D63",
         "severity": "info"
       }
     ],

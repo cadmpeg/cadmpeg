@@ -331,8 +331,8 @@
                 0.5
               ],
               "dimension_range": [
-                -20.0,
-                30.0
+                -2.0,
+                3.0
               ],
               "path": {
                 "angle_range": [
@@ -368,7 +368,7 @@
               },
               "profile": {
                 "kind": "circle",
-                "length": 12.5,
+                "angle": 1.25,
                 "radius": 7.5
               }
             }
@@ -430,6 +430,7 @@
         "design_body_bounds": [],
         "design_body_members": [],
         "design_body_recipe_operands": [],
+        "design_body_reference_tails": [],
         "design_canvas_images": [],
         "design_component_naming_spaces": [],
         "design_component_occurrences": [],
@@ -465,6 +466,8 @@
         "design_parameter_state_companions": [],
         "design_parameter_states": [],
         "design_parameters": [],
+        "design_placement_constructions": [],
+        "design_profile_curve_selections": [],
         "design_record_headers": [],
         "design_sheet_metal_settings": [],
         "design_sketch_placements": [],
@@ -826,7 +829,7 @@
     "metadata": {
       "active_brep": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
       "active_brep_sha256": "86c45b8b4d4e6b49f0425e195bacce5071fb5b08121f51ff66e0872a6de92e76",
-      "document_local_sha256": "aafa4e0f127c853915caa7625ed180fc9a79fd40143d9a90231df9df381ca95e"
+      "document_local_sha256": "64a41b1021671b252a98cdc890d329f79c3fdb8428514afc1a38ad4a1801273c"
     },
     "retained_records": {
       "f3d:file:source-image#0": {

@@ -101,6 +101,17 @@
       },
       {
         "code": {
+          "code": "export.no-exportable-solids",
+          "kind": "no_exportable_solids",
+          "namespace": "iges",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "the document holds no geometry that IGES can encode",
+        "severity": "warning"
+      },
+      {
+        "code": {
           "code": "writer.minimum-resolution-adjusted",
           "kind": "metadata_not_transferred",
           "namespace": "iges",
@@ -116,7 +127,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 3 native record(s) from `iges.display_attributes`",
+        "message": "the iges write omits 3 native record(s) from `iges.display_attributes`: iges:presentation:display-attributes#D1, iges:presentation:display-attributes#D3, iges:presentation:display-attributes#D5",
         "severity": "info"
       },
       {
@@ -126,7 +137,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 3 native record(s) from `iges.entities`",
+        "message": "the iges write omits 3 native record(s) from `iges.entities`: iges:entity:directory#1, iges:entity:directory#3, iges:entity:directory#5",
         "severity": "info"
       },
       {
@@ -136,7 +147,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 1 native record(s) from `iges.product_occurrence_expansion`",
+        "message": "the iges write omits 1 native record(s) from `iges.product_occurrence_expansion`: iges:product:occurrence-expansion#state",
         "severity": "info"
       }
     ],
@@ -153,14 +164,14 @@
             "attribute_table_definitions": {
               "disposition": "dropped",
               "records": {
-                "iges:product:attribute-definition#D1": "regenerated"
+                "iges:product:attribute-definition#D1": "written"
               }
             },
             "attribute_table_instances": {
               "disposition": "dropped",
               "records": {
-                "iges:product:attribute-instance#D3": "regenerated",
-                "iges:product:attribute-instance#D5": "regenerated"
+                "iges:product:attribute-instance#D3": "written",
+                "iges:product:attribute-instance#D5": "written"
               }
             },
             "boolean_trees": {

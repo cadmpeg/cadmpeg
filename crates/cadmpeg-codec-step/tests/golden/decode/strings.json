@@ -168,6 +168,32 @@
       "entity_instances": "1",
       "schema": "AP214"
     },
+    "parts": {
+      "step:source:part#b7d4bd98bdb7b2a67a43d52364dc7fb15ba580f62c4bad702d6660ffa5d246b9": {
+        "byte_len": 95,
+        "framing_bytes": [
+          {
+            "end": 195,
+            "start": 193
+          },
+          {
+            "end": 196,
+            "start": 195
+          },
+          {
+            "end": 288,
+            "start": 287
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 193,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      }
+    },
     "retained_records": {
       "step:data:example_strings#1": {
         "bytes": {

@@ -193,7 +193,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 1 native record(s) from `iges.directions`",
+        "message": "the iges write omits 1 native record(s) from `iges.directions`: iges:native:direction#D3",
         "severity": "info"
       },
       {
@@ -203,7 +203,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 19 native record(s) from `iges.display_attributes`",
+        "message": "the iges write omits 19 native record(s) from `iges.display_attributes`: iges:presentation:display-attributes#D1, iges:presentation:display-attributes#D11, iges:presentation:display-attributes#D13, iges:presentation:display-attributes#D15, iges:presentation:display-attributes#D17, iges:presentation:display-attributes#D19, iges:presentation:display-attributes#D21, iges:presentation:display-attributes#D23, iges:presentation:display-attributes#D25, iges:presentation:display-attributes#D27, iges:presentation:display-attributes#D29, iges:presentation:display-attributes#D3, iges:presentation:display-attributes#D31, iges:presentation:display-attributes#D33, iges:presentation:display-attributes#D35, iges:presentation:display-attributes#D37, iges:presentation:display-attributes#D5, iges:presentation:display-attributes#D7, iges:presentation:display-attributes#D9",
         "severity": "info"
       },
       {
@@ -213,7 +213,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 19 native record(s) from `iges.entities`",
+        "message": "the iges write omits 19 native record(s) from `iges.entities`: iges:entity:directory#1, iges:entity:directory#11, iges:entity:directory#13, iges:entity:directory#15, iges:entity:directory#17, iges:entity:directory#19, iges:entity:directory#21, iges:entity:directory#23, iges:entity:directory#25, iges:entity:directory#27, iges:entity:directory#29, iges:entity:directory#3, iges:entity:directory#31, iges:entity:directory#33, iges:entity:directory#35, iges:entity:directory#37, iges:entity:directory#5, iges:entity:directory#7, iges:entity:directory#9",
         "severity": "info"
       },
       {
@@ -223,7 +223,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 1 native record(s) from `iges.product_occurrence_expansion`",
+        "message": "the iges write omits 1 native record(s) from `iges.product_occurrence_expansion`: iges:product:occurrence-expansion#state",
         "severity": "info"
       }
     ],

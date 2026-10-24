@@ -2,13 +2,13 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 47984,
-      "payload_sha256": "ad2eb5ea1c03f23620ee9c5231d0aeecb778b26e1652728bb4238dd4e62b07af"
+      "payload_len": 47964,
+      "payload_sha256": "c583ca15fe90ad31d324fe409be5e3b333a990bd172379bacb6831b637a63e82"
     },
     {
       "name": "Box.brp",
       "payload_len": 2561,
-      "payload_sha256": "4bf06219286d9da23bc748350862acfe58d091073dce268854e3d2dd09aad1e3"
+      "payload_sha256": "16de1522c25fb2a6e3968e6844b3116fe26303f9270bc1dc8d9b6c8227529e5a"
     },
     {
       "name": "Cadmpeg.StringHasher.0.txt",
@@ -17,18 +17,18 @@
     },
     {
       "name": "Cut.brp",
-      "payload_len": 3415,
-      "payload_sha256": "4237c3451a477d024c7fe23a02a04e5e8426dd35ee09cee46e39073441e35aa5"
+      "payload_len": 3394,
+      "payload_sha256": "d6cc0f557fcb70498b1ff6622eef2365a0ecff61f82bf3315c47c7e8bf1faa7e"
     },
     {
       "name": "Cylinder.brp",
       "payload_len": 1073,
-      "payload_sha256": "18a56afd0b5872c1ad24c76e61ff6d4894836ea15bfaba8ec7458a5cc46e8fda"
+      "payload_sha256": "342baf200e88094055fe0c7534117b17f5e643d226736134ca4058176e481f90"
     },
     {
       "name": "DesignedFeature.brp",
       "payload_len": 2511,
-      "payload_sha256": "0eeaeaeb7884c9cc84085c0318c2bd2a68854b33b2acd2e52907a2a9555686d2"
+      "payload_sha256": "3da28d61fb861bbb43ac3f0e300d74d920db9609ff6989f20de5250bb1b5b79d"
     },
     {
       "name": "Profile.brp",
@@ -445,7 +445,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 11 native record(s) from `fcstd.entries`",
+        "message": "the fcstd write omits 11 native record(s) from `fcstd.entries`: fcstd:native:entry#Box.Shape.brp, fcstd:native:entry#Cut.Shape.Map.txt, fcstd:native:entry#Cut.Shape.brp, fcstd:native:entry#Cylinder.Shape.brp, fcstd:native:entry#DesignedFeature.Shape.brp, fcstd:native:entry#DesignedFeature.SuppressedShape.brp, fcstd:native:entry#PlacementList, fcstd:native:entry#Profile.InternalShape.brp, fcstd:native:entry#Profile.Shape.Map.txt, fcstd:native:entry#Profile.Shape.brp, fcstd:native:entry#ScaleList",
         "severity": "info"
       },
       {
@@ -455,7 +455,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 37 native record(s) from `fcstd.properties`",
+        "message": "the fcstd write omits 37 native record(s) from `fcstd.properties`: fcstd:native:property#CorpusMetadata:ExpressionEngine, fcstd:native:property#Cut:ExpressionEngine, fcstd:native:property#DesignedFeature:BaseFeature, fcstd:native:property#DesignedFeature:PreviewShape, fcstd:native:property#DesignedFeature:Profile, fcstd:native:property#DesignedFeature:SuppressedShape, fcstd:native:property#Occurrence:ColoredElements, fcstd:native:property#Occurrence:ElementCount, fcstd:native:property#Occurrence:ElementList, fcstd:native:property#Occurrence:ExpressionEngine, fcstd:native:property#Occurrence:Label2, fcstd:native:property#Occurrence:LinkCopyOnChangeGroup, fcstd:native:property#Occurrence:LinkCopyOnChangeSource, fcstd:native:property#Occurrence:LinkExecute, fcstd:native:property#Occurrence:LinkPlacement, fcstd:native:property#Occurrence:PlacementList, fcstd:native:property#Occurrence:Scale, fcstd:native:property#Occurrence:ScaleList, fcstd:native:property#Occurrence:ScaleVector, fcstd:native:property#Occurrence:ShowElement, fcstd:native:property#Occurrence:Visibility, fcstd:native:property#Occurrence:VisibilityList, fcstd:native:property#Occurrence:_LinkOwner, fcstd:native:property#Origin001:ExpressionEngine, fcstd:native:property#Origin:ExpressionEngine, fcstd:native:property#Origin:OriginFeatures, fcstd:native:property#Parameters:ExpressionEngine, fcstd:native:property#Product:Visibility, fcstd:native:property#Profile:ExternalGeo, fcstd:native:property#Profile:ExternalGeometry, fcstd:native:property#Profile:InternalShape, fcstd:native:property#XY_Plane:ExpressionEngine, fcstd:native:property#XZ_Plane:ExpressionEngine, fcstd:native:property#X_Axis:ExpressionEngine, fcstd:native:property#YZ_Plane:ExpressionEngine, fcstd:native:property#Y_Axis:ExpressionEngine, fcstd:native:property#Z_Axis:ExpressionEngine",
         "severity": "info"
       },
       {
@@ -465,7 +465,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 2 native record(s) from `fcstd.shape_payloads`",
+        "message": "the fcstd write omits 2 native record(s) from `fcstd.shape_payloads`: fcstd:native:shape-payload#DesignedFeature:SuppressedShape:DesignedFeature.SuppressedShape.brp, fcstd:native:shape-payload#Profile:InternalShape:Profile.InternalShape.brp",
         "severity": "info"
       }
     ],
@@ -826,9 +826,6 @@
               }
             },
             "unknowns": {
-              "disposition": "dropped"
-            },
-            "unreadable_entries": {
               "disposition": "dropped"
             }
           }

@@ -2,13 +2,13 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 46014,
-      "payload_sha256": "c1e81d0db6834816f5cb84d085e280c3b1b30c5b98e9115bfe79e1a0e8bc1e5d"
+      "payload_len": 46686,
+      "payload_sha256": "b0b16ab1e06b0a9788c7ca30a89ee058240d403156e9ac6f2794880843456e4d"
     },
     {
       "name": "Body.brp",
-      "payload_len": 3616,
-      "payload_sha256": "cbc2e9f3088878966603155dd1c4551e3fdd85f3573db9d2ad805927d948a515"
+      "payload_len": 3597,
+      "payload_sha256": "7d0996f5c035694276d210541772732515c1a3c4dddd89c1aa26f20ae8523de5"
     },
     {
       "name": "Cadmpeg.StringHasher.0.txt",
@@ -17,13 +17,18 @@
     },
     {
       "name": "Fillet.brp",
-      "payload_len": 3663,
-      "payload_sha256": "7d1cfd4aaa138c413497400a31d6a8e479a3856650f1288ddad35dd5b0660526"
+      "payload_len": 3644,
+      "payload_sha256": "fa133e9590bdcdc2a2085eeeac86fb35123bb59a50c6ea3701888c5d3cfb3faf"
+    },
+    {
+      "name": "GuiDocument.xml",
+      "payload_len": 931,
+      "payload_sha256": "307b1cf970c93749ffbd2c213704eecb2704a7025239cd7eca005351ac8c2879"
     },
     {
       "name": "Pad.brp",
       "payload_len": 3668,
-      "payload_sha256": "636f9b99ec661cd472014b2a085d234e81e96968cc7ed98ab44a848b43d3e7d2"
+      "payload_sha256": "447e28bf4ef76cfe61a2836e222756d8cb7493c0157012ea5edbdb17e1c21418"
     },
     {
       "name": "PadSketch.brp",
@@ -32,8 +37,8 @@
     },
     {
       "name": "Pocket.brp",
-      "payload_len": 3420,
-      "payload_sha256": "00c4a90a8e97c398700754b9358ca3f593352fd2330d9bafd640ec97a9aab501"
+      "payload_len": 3399,
+      "payload_sha256": "b43cb843240d38a34ba329d3e96c032135a82d1bda14d241abf0bcf31d7a371e"
     },
     {
       "name": "PocketSketch.brp",
@@ -124,7 +129,7 @@
         "pcurves": "written",
         "pmi": "dropped",
         "points": "written",
-        "presentation_documents": "written",
+        "presentation_documents": "reported",
         "presentation_layers": "dropped",
         "procedural_curves": "written",
         "procedural_surfaces": "written",
@@ -143,7 +148,7 @@
         "surfaces": "written",
         "tessellations": "dropped",
         "vertices": "written",
-        "view_presentations": "written"
+        "view_presentations": "reported"
       },
       "coverage": "declared"
     },
@@ -284,12 +289,22 @@
       },
       {
         "code": {
+          "code": "presentation.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "FreeCAD GUI carriers create presentation records for appearance or visibility state without an authored neutral presentation",
+        "severity": "warning"
+      },
+      {
+        "code": {
           "code": "native.records-omitted",
           "kind": "record_not_typed",
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 2 native record(s) from `fcstd.element_maps`",
+        "message": "the fcstd write omits 2 native record(s) from `fcstd.element_maps`: fcstd:native:element-map#Pad:AddSubShape:map, fcstd:native:element-map#Pocket:AddSubShape:map",
         "severity": "info"
       },
       {
@@ -299,7 +314,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 23 native record(s) from `fcstd.entries`",
+        "message": "the fcstd write omits 23 native record(s) from `fcstd.entries`: fcstd:native:entry#Body.Shape.Map.txt, fcstd:native:entry#Body.Shape.brp, fcstd:native:entry#Fillet.AddSubShape.brp, fcstd:native:entry#Fillet.Shape.Map.txt, fcstd:native:entry#Fillet.Shape.brp, fcstd:native:entry#Fillet.SuppressedShape.brp, fcstd:native:entry#Pad.AddSubShape.Map.txt, fcstd:native:entry#Pad.AddSubShape.brp, fcstd:native:entry#Pad.Shape.Map.txt, fcstd:native:entry#Pad.Shape.brp, fcstd:native:entry#Pad.SuppressedShape.brp, fcstd:native:entry#PadSketch.InternalShape.brp, fcstd:native:entry#PadSketch.Shape.Map.txt, fcstd:native:entry#PadSketch.Shape.brp, fcstd:native:entry#Pocket.AddSubShape.Map.txt, fcstd:native:entry#Pocket.AddSubShape.brp, fcstd:native:entry#Pocket.Shape.Map.txt, fcstd:native:entry#Pocket.Shape.brp, fcstd:native:entry#Pocket.SuppressedShape.brp, fcstd:native:entry#PocketSketch.InternalShape.brp, fcstd:native:entry#PocketSketch.Shape.Map.txt, fcstd:native:entry#PocketSketch.Shape.brp, fcstd:native:entry#StringHasher.Table.txt",
         "severity": "info"
       },
       {
@@ -309,7 +324,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 45 native record(s) from `fcstd.properties`",
+        "message": "the fcstd write omits 45 native record(s) from `fcstd.properties`: fcstd:native:property#Body:BaseFeature, fcstd:native:property#Body:ExpressionEngine, fcstd:native:property#Body:Origin, fcstd:native:property#Body:Placement, fcstd:native:property#CorpusMetadata:ExpressionEngine, fcstd:native:property#Fillet:AddSubShape, fcstd:native:property#Fillet:BaseFeature, fcstd:native:property#Fillet:Placement, fcstd:native:property#Fillet:PreviewShape, fcstd:native:property#Fillet:SuppressedShape, fcstd:native:property#Origin001:ExpressionEngine, fcstd:native:property#Origin:ExpressionEngine, fcstd:native:property#Origin:OriginFeatures, fcstd:native:property#Pad:AddSubShape, fcstd:native:property#Pad:BaseFeature, fcstd:native:property#Pad:Direction, fcstd:native:property#Pad:Placement, fcstd:native:property#Pad:PreviewShape, fcstd:native:property#Pad:ReferenceAxis, fcstd:native:property#Pad:Reversed, fcstd:native:property#Pad:SuppressedShape, fcstd:native:property#Pad:UpToFace, fcstd:native:property#Pad:UpToFace2, fcstd:native:property#PadSketch:ExternalGeo, fcstd:native:property#PadSketch:ExternalGeometry, fcstd:native:property#PadSketch:InternalShape, fcstd:native:property#Pocket:AddSubShape, fcstd:native:property#Pocket:BaseFeature, fcstd:native:property#Pocket:Direction, fcstd:native:property#Pocket:Placement, fcstd:native:property#Pocket:PreviewShape, fcstd:native:property#Pocket:ReferenceAxis, fcstd:native:property#Pocket:Reversed, fcstd:native:property#Pocket:SuppressedShape, fcstd:native:property#Pocket:UpToFace, fcstd:native:property#Pocket:UpToFace2, fcstd:native:property#PocketSketch:ExternalGeo, fcstd:native:property#PocketSketch:ExternalGeometry, fcstd:native:property#PocketSketch:InternalShape, fcstd:native:property#XY_Plane:ExpressionEngine, fcstd:native:property#XZ_Plane:ExpressionEngine, fcstd:native:property#X_Axis:ExpressionEngine, fcstd:native:property#YZ_Plane:ExpressionEngine, fcstd:native:property#Y_Axis:ExpressionEngine, fcstd:native:property#Z_Axis:ExpressionEngine",
         "severity": "info"
       },
       {
@@ -319,7 +334,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 8 native record(s) from `fcstd.shape_payloads`",
+        "message": "the fcstd write omits 8 native record(s) from `fcstd.shape_payloads`: fcstd:native:shape-payload#Fillet:AddSubShape:Fillet.AddSubShape.brp, fcstd:native:shape-payload#Fillet:SuppressedShape:Fillet.SuppressedShape.brp, fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp, fcstd:native:shape-payload#Pad:SuppressedShape:Pad.SuppressedShape.brp, fcstd:native:shape-payload#PadSketch:InternalShape:PadSketch.InternalShape.brp, fcstd:native:shape-payload#Pocket:AddSubShape:Pocket.AddSubShape.brp, fcstd:native:shape-payload#Pocket:SuppressedShape:Pocket.SuppressedShape.brp, fcstd:native:shape-payload#PocketSketch:InternalShape:PocketSketch.InternalShape.brp",
         "severity": "info"
       }
     ],
@@ -690,9 +705,6 @@
               }
             },
             "unknowns": {
-              "disposition": "dropped"
-            },
-            "unreadable_entries": {
               "disposition": "dropped"
             }
           }

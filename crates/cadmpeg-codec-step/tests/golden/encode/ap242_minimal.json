@@ -78,6 +78,17 @@
       "losses": [
         {
           "code": {
+            "code": "export.no-exportable-solids",
+            "kind": "no_exportable_solids",
+            "namespace": "step",
+            "scope": "namespaced",
+            "strict_floor": "warning"
+          },
+          "message": "no exportable solids or standalone geometry; the STEP representation is empty",
+          "severity": "warning"
+        },
+        {
+          "code": {
             "code": "target.source-dialect-displaced",
             "kind": "source_dialect_displaced",
             "namespace": "step",
@@ -86,16 +97,6 @@
           },
           "message": "source dialect step:ap242-e2 was displaced by target dialect step:ap242-e3; the source dialect identity is not preserved",
           "severity": "warning"
-        },
-        {
-          "code": {
-            "code": "native.records-omitted",
-            "kind": "record_not_typed",
-            "namespace": "export",
-            "scope": "namespaced"
-          },
-          "message": "the step write omits 2 native record(s) from `step.unknowns`",
-          "severity": "info"
         }
       ],
       "native_dispositions": {
@@ -200,6 +201,17 @@
       "losses": [
         {
           "code": {
+            "code": "export.no-exportable-solids",
+            "kind": "no_exportable_solids",
+            "namespace": "step",
+            "scope": "namespaced",
+            "strict_floor": "warning"
+          },
+          "message": "no exportable solids or standalone geometry; the STEP representation is empty",
+          "severity": "warning"
+        },
+        {
+          "code": {
             "code": "target.source-dialect-displaced",
             "kind": "source_dialect_displaced",
             "namespace": "step",
@@ -208,16 +220,6 @@
           },
           "message": "source dialect step:ap242-e2 was displaced by target dialect step:ap214; the source dialect identity is not preserved",
           "severity": "warning"
-        },
-        {
-          "code": {
-            "code": "native.records-omitted",
-            "kind": "record_not_typed",
-            "namespace": "export",
-            "scope": "namespaced"
-          },
-          "message": "the step write omits 2 native record(s) from `step.unknowns`",
-          "severity": "info"
         }
       ],
       "native_dispositions": {
@@ -322,13 +324,14 @@
       "losses": [
         {
           "code": {
-            "code": "native.records-omitted",
-            "kind": "record_not_typed",
-            "namespace": "export",
-            "scope": "namespaced"
+            "code": "export.no-exportable-solids",
+            "kind": "no_exportable_solids",
+            "namespace": "step",
+            "scope": "namespaced",
+            "strict_floor": "warning"
           },
-          "message": "the step write omits 2 native record(s) from `step.unknowns`",
-          "severity": "info"
+          "message": "no exportable solids or standalone geometry; the STEP representation is empty",
+          "severity": "warning"
         }
       ],
       "native_dispositions": {

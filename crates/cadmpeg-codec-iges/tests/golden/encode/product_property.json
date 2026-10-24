@@ -127,7 +127,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 3 native record(s) from `iges.display_attributes`",
+        "message": "the iges write omits 3 native record(s) from `iges.display_attributes`: iges:presentation:display-attributes#D1, iges:presentation:display-attributes#D3, iges:presentation:display-attributes#D5",
         "severity": "info"
       },
       {
@@ -137,7 +137,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 3 native record(s) from `iges.entities`",
+        "message": "the iges write omits 3 native record(s) from `iges.entities`: iges:entity:directory#1, iges:entity:directory#3, iges:entity:directory#5",
         "severity": "info"
       },
       {
@@ -147,7 +147,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 1 native record(s) from `iges.product_occurrence_expansion`",
+        "message": "the iges write omits 1 native record(s) from `iges.product_occurrence_expansion`: iges:product:occurrence-expansion#state",
         "severity": "info"
       }
     ],
@@ -248,15 +248,15 @@
             "product_properties": {
               "disposition": "dropped",
               "records": {
-                "iges:product:property#D3": "regenerated",
-                "iges:product:property#D5": "regenerated"
+                "iges:product:property#D3": "written",
+                "iges:product:property#D5": "written"
               }
             },
             "properties": {
               "disposition": "dropped",
               "records": {
-                "iges:application:property#D3": "regenerated",
-                "iges:application:property#D5": "regenerated"
+                "iges:application:property#D3": "written",
+                "iges:application:property#D5": "written"
               }
             },
             "quarantined_directory_records": {

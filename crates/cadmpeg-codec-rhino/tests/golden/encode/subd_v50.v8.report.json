@@ -86,7 +86,7 @@
       "spatial_sketch_entities": "omitted",
       "spatial_sketches": "omitted",
       "spreadsheets": "omitted",
-      "subds": "dropped",
+      "subds": "reported",
       "surfaces": "reported",
       "tessellations": "reported",
       "vertices": "reported",
@@ -99,28 +99,6 @@
     "target": "rhino:archive-80"
   },
   "losses": [
-    {
-      "code": {
-        "code": "writer.subds-omitted",
-        "kind": "subd_omitted",
-        "namespace": "rhino",
-        "scope": "namespaced",
-        "strict_floor": "warning"
-      },
-      "message": "model arena subds: 1 record(s) reduced or omitted",
-      "severity": "warning"
-    },
-    {
-      "code": {
-        "code": "export.no-exportable-solids",
-        "kind": "no_exportable_solids",
-        "namespace": "rhino",
-        "scope": "namespaced",
-        "strict_floor": "warning"
-      },
-      "message": "the document holds no exportable geometry",
-      "severity": "warning"
-    },
     {
       "code": {
         "code": "target.source-dialect-displaced",
@@ -139,17 +117,7 @@
         "namespace": "export",
         "scope": "namespaced"
       },
-      "message": "the rhino write omits 1 native record(s) from `rhino.document_settings`",
-      "severity": "info"
-    },
-    {
-      "code": {
-        "code": "native.records-omitted",
-        "kind": "record_not_typed",
-        "namespace": "export",
-        "scope": "namespaced"
-      },
-      "message": "the rhino write omits 1 native record(s) from `rhino.unknowns`",
+      "message": "the rhino write omits 1 native record(s) from `rhino.document_settings`: rhino:document:settings#current",
       "severity": "info"
     }
   ],

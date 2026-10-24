@@ -1,12 +1,68 @@
 {
   "ir": {
-    "decode_depth": "full",
     "ir_version": "8",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
       "assembly_joints": [],
-      "attributes": [],
+      "attributes": [
+        {
+          "id": "sldprt:model:attribute#pmi:01234567-89ab-cdef-0123-456789abcdef:basic",
+          "name": "basic",
+          "target": {
+            "id": "sldprt:model:pmi#01234567-89ab-cdef-0123-456789abcdef",
+            "kind": "pmi"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": true
+            }
+          ]
+        },
+        {
+          "id": "sldprt:model:attribute#pmi:01234567-89ab-cdef-0123-456789abcdef:inspection",
+          "name": "inspection",
+          "target": {
+            "id": "sldprt:model:pmi#01234567-89ab-cdef-0123-456789abcdef",
+            "kind": "pmi"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": false
+            }
+          ]
+        },
+        {
+          "id": "sldprt:model:attribute#pmi:01234567-89ab-cdef-0123-456789abcdef:precision",
+          "name": "precision",
+          "target": {
+            "id": "sldprt:model:pmi#01234567-89ab-cdef-0123-456789abcdef",
+            "kind": "pmi"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 3
+            }
+          ]
+        },
+        {
+          "id": "sldprt:model:attribute#pmi:01234567-89ab-cdef-0123-456789abcdef:reference_only",
+          "name": "reference_only",
+          "target": {
+            "id": "sldprt:model:pmi#01234567-89ab-cdef-0123-456789abcdef",
+            "kind": "pmi"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": true
+            }
+          ]
+        }
+      ],
       "bodies": [
         {
           "id": "sldprt:brep:body#900",
@@ -45,29 +101,10 @@
           "bodies": [
             "sldprt:brep:body#900"
           ],
-          "feature_states": {
-            "sldprt:model:feature#348:0": {
-              "definition": {
-                "definition": "sketch",
-                "sketch": {
-                  "space": "planar"
-                }
-              },
-              "evaluation": {
-                "kind": "active"
-              }
-            }
-          },
           "id": "sldprt:model:configuration#348:0",
           "name": "Default",
           "native_ref": "sldprt:history:configuration#348:0",
           "ordinal": 0,
-          "parameter_values": {
-            "sldprt:model:parameter#348:0:0": {
-              "kind": "length",
-              "value": 25.0
-            }
-          },
           "source_index": 0
         }
       ],
@@ -118,6 +155,7 @@
           "id": "sldprt:model:feature#348:0",
           "name": "Sketch1",
           "native_ref": "sldprt:history:feature#348:0",
+          "needs_recompute": false,
           "ordinal": 0,
           "source_tag": "Sketch",
           "suppressed": false
@@ -140,22 +178,20 @@
       "occurrences": [],
       "parameters": [
         {
-          "expression": "25mm",
+          "driving": false,
+          "expression": {
+            "tokens": [
+              {
+                "kind": "text",
+                "value": "25mm"
+              }
+            ]
+          },
           "id": "sldprt:model:parameter#348:0:0",
           "name": "D1",
           "ordinal": 0,
           "owner": "sldprt:model:feature#348:0",
-          "pmi": {
-            "basic": true,
-            "display_text": "25.000 mm",
-            "inspection": false,
-            "native_ref": "sldprt:pmi:dimension#01234567-89ab-cdef-0123-456789abcdef",
-            "precision": 3,
-            "reference_only": true,
-            "subtype": {
-              "kind": "linear"
-            }
-          },
+          "pmi": "sldprt:model:pmi#01234567-89ab-cdef-0123-456789abcdef",
           "value": {
             "kind": "length",
             "value": 25.0
@@ -163,7 +199,29 @@
         }
       ],
       "pcurves": [],
-      "pmi": [],
+      "pmi": [
+        {
+          "definition": {
+            "dimension": "size",
+            "kind": "dimension",
+            "nominal": {
+              "kind": "parameter",
+              "value": "sldprt:model:parameter#348:0:0"
+            }
+          },
+          "id": "sldprt:model:pmi#01234567-89ab-cdef-0123-456789abcdef"
+        },
+        {
+          "definition": {
+            "kind": "presentation",
+            "semantics": [
+              "sldprt:model:pmi#01234567-89ab-cdef-0123-456789abcdef"
+            ],
+            "text": "25.000 mm"
+          },
+          "id": "sldprt:model:pmi#presentation:01234567-89ab-cdef-0123-456789abcdef"
+        }
+      ],
       "points": [
         {
           "id": "sldprt:brep:point#60",
@@ -276,6 +334,7 @@
             "source_index": 0
           }
         ],
+        "document_metadata": [],
         "feature_histories": [
           {
             "configurations": [],
@@ -320,23 +379,16 @@
         "pmi_dimensions": [
           {
             "basic": true,
-            "basic_offset": 184,
             "cad_text": "D1@Sketch1",
             "display_text": "25.000 mm",
-            "display_text_offset": 254,
             "guid": "01234567-89ab-cdef-0123-456789abcdef",
             "id": "sldprt:pmi:dimension#01234567-89ab-cdef-0123-456789abcdef",
             "inspection": false,
-            "inspection_offset": 198,
-            "offset": 100,
             "parent": "sldprt:file:block#495",
             "precision": 3,
-            "precision_offset": 229,
             "reference_only": true,
-            "reference_only_offset": 215,
             "subtype": "Linear",
-            "value": 0.025,
-            "value_offset": 237
+            "value": 0.025
           }
         ],
         "sketch_input_entities": [],
@@ -356,30 +408,14 @@
         ]
       }
     },
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
       "attributes": {
-        "active_parasolid_block": "Contents/Config-0-Partition",
-        "block_count": "4",
-        "bmp_thumbnail_count": "0",
-        "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "compound_stream_count": "0",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "outer_version": "0x00000004",
         "parasolid_description": "partition body",
         "parasolid_schema": "SCH_SW_33103_11000",
-        "png_preview_count": "0",
-        "sldprt_configuration_feature_states_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_configuration_parameter_values_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_configuration_snapshot_synthesized": "sldprt:model:configuration#348:0",
-        "sldprt_native_configuration_sha256": "9bb36afa9da442742240d37b14a980031f21f7cace629a9a496d68f5cc32b36c",
-        "sldprt_native_history_sha256": "35dc6bbd9eaa0ea769faf4742efea2067cf1da7c544a43759e7c0be40971aebb",
-        "sldprt_native_parameter_sha256": "3663e2d5d0f83942dff0fff51d2042e85d3377689d01e7307c536b1b2573f6f4",
-        "sldprt_native_sketch_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "sldprt_neutral_configuration_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_feature_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_parameter_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_sketch_constraint_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_sketch_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sw_configuration_0_most_recent": "YES",
         "sw_configuration_name": "Default"
       },
@@ -452,6 +488,16 @@
         },
         "message": "1 typed feature(s) retain native or unresolved required operation operands.",
         "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "source.opaque-records-unrepresented",
+          "kind": "record_not_typed",
+          "namespace": "sldprt",
+          "scope": "namespaced"
+        },
+        "message": "source record sldprt:file:block#767 has no typed neutral or native payload representation",
+        "severity": "warning"
       }
     ],
     "notes": [
@@ -461,7 +507,10 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
@@ -612,6 +661,51 @@
         }
       }
     },
+    "metadata": {
+      "active_parasolid_block": "Contents/Config-0-Partition",
+      "brep_local_sha256": "9eb57dfd034507ec6f252a2e84d8a3d188fb192da6773984d90bd30798ea4b48",
+      "document_local_sha256": "8ba837891f44860479cf9e207a600a5877156de6bf4a3782de64d5d4d02b3dd8",
+      "outer_version": "0x00000004",
+      "sldprt_pmi_local_sha256": "dba189438d34ab0770595e339e419d2b761e15102f0dec4f3093ec845b3e083e",
+      "sldprt_swobjects_local_sha256": "586ffb909b0bba2aacc4d34937062d2b3c9cb6c81d2f794c686ad550b192d8dc",
+      "sldprt_swobjects_material_local_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "sldprt_swobjects_metadata_identity_local_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "record_layout": {
+      "sldprt:pmi:dimension#01234567-89ab-cdef-0123-456789abcdef": {
+        "byte_len": 201,
+        "offset": 100,
+        "payloads": {},
+        "pointers": {
+          "basic_offset": 184,
+          "display_text_offset": 254,
+          "inspection_offset": 198,
+          "offset": 100,
+          "precision_offset": 229,
+          "reference_only_offset": 215,
+          "value_offset": 237
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 763,
+              "start": 547
+            }
+          ],
+          "sldprt-block:4:file:547:216": [
+            {
+              "end": 282,
+              "start": 64
+            },
+            {
+              "end": 301,
+              "start": 291
+            }
+          ]
+        },
+        "stream": "sldprt-block:4:file:547:216"
+      }
+    },
     "retained_records": {
       "sldprt:file:block#12": {
         "bytes": {
@@ -619,7 +713,8 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "Contents/Config-0-Partition"
+        "stream": "Contents/Config-0-Partition",
+        "untyped": []
       },
       "sldprt:file:block#348": {
         "bytes": {
@@ -627,7 +722,8 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "Contents/Keywords"
+        "stream": "Contents/Keywords",
+        "untyped": []
       },
       "sldprt:file:block#495": {
         "bytes": {
@@ -635,7 +731,8 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "Contents/PMISemanticDataDB"
+        "stream": "Contents/PMISemanticDataDB",
+        "untyped": []
       },
       "sldprt:file:block#767": {
         "bytes": {
@@ -643,7 +740,11 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "Contents/Features"
+        "stream": "Contents/Features",
+        "untyped": [
+          "model",
+          "design"
+        ]
       },
       "sldprt:file:source-image#0": {
         "bytes": {
@@ -651,8 +752,13 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "source"
+        "stream": "source",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": [
+      "model",
+      "design"
+    ]
   }
 }

@@ -40,7 +40,9 @@
       "vertices": [],
       "view_presentations": []
     },
-    "native": {},
+    "native": {
+      "step": {}
+    },
     "scope": {
       "design": true,
       "model": true
@@ -165,6 +167,40 @@
       "data_sections": "1",
       "entity_instances": "1",
       "schema": "AUTOMOTIVE_DESIGN_CC2"
+    },
+    "parts": {
+      "step:source:part#b53670ae79b0b8cfb886008041ae598e5ef22256e9ebeac76e3a9bc8fa509914": {
+        "byte_len": 59,
+        "framing_bytes": [
+          {
+            "end": 192,
+            "start": 190
+          },
+          {
+            "end": 193,
+            "start": 192
+          },
+          {
+            "end": 194,
+            "start": 193
+          },
+          {
+            "end": 248,
+            "start": 247
+          },
+          {
+            "end": 249,
+            "start": 248
+          }
+        ],
+        "level": "step.complex_entity_instance",
+        "offset": 190,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      }
     },
     "unrepresented": []
   }

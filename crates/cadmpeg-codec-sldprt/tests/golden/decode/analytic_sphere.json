@@ -6,360 +6,28 @@
       "appearances": [],
       "assembly_joints": [],
       "attributes": [],
-      "bodies": [
-        {
-          "id": "sldprt:brep:body#0",
-          "kind": "solid",
-          "regions": [
-            "sldprt:brep:region#0"
-          ]
-        }
-      ],
-      "coedges": [
-        {
-          "edge": "sldprt:brep:edge#40",
-          "id": "sldprt:brep:coedge#30",
-          "owner_loop": "sldprt:brep:loop#20",
-          "pcurves": [
-            {
-              "pcurve": "sldprt:brep:pcurve#sphere:30"
-            }
-          ],
-          "radial_next": "sldprt:brep:coedge#30",
-          "sense": "forward"
-        },
-        {
-          "edge": "sldprt:brep:edge#41",
-          "id": "sldprt:brep:coedge#31",
-          "owner_loop": "sldprt:brep:loop#20",
-          "pcurves": [
-            {
-              "pcurve": "sldprt:brep:pcurve#sphere:31"
-            }
-          ],
-          "radial_next": "sldprt:brep:coedge#31",
-          "sense": "forward"
-        },
-        {
-          "edge": "sldprt:brep:edge#42",
-          "id": "sldprt:brep:coedge#32",
-          "owner_loop": "sldprt:brep:loop#20",
-          "pcurves": [
-            {
-              "pcurve": "sldprt:brep:pcurve#sphere:32"
-            }
-          ],
-          "radial_next": "sldprt:brep:coedge#32",
-          "sense": "forward"
-        },
-        {
-          "edge": "sldprt:brep:edge#sphere-seam-face:0",
-          "id": "sldprt:brep:coedge#sphere-seam-face:0",
-          "owner_loop": "sldprt:brep:loop#20",
-          "pcurves": [
-            {
-              "parameter_range": [
-                0.0,
-                6.283185307179586
-              ],
-              "pcurve": "sldprt:brep:pcurve#sphere-seam-face:0"
-            }
-          ],
-          "radial_next": "sldprt:brep:coedge#sphere-seam-face:0",
-          "sense": "forward"
-        }
-      ],
-      "configurations": [
-        {
-          "active": true,
-          "bodies": [
-            "sldprt:brep:body#0"
-          ],
-          "id": "sldprt:model:configuration#partition:0",
-          "name": "Config-0",
-          "ordinal": 0,
-          "source_index": 0
-        }
-      ],
-      "curves": [
-        {
-          "geometry": {
-            "axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "center": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "circle",
-            "radius": 1000.0,
-            "ref_direction": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            }
-          },
-          "id": "sldprt:brep:curve#70"
-        },
-        {
-          "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "center": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "circle",
-            "radius": 1000.0,
-            "ref_direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            }
-          },
-          "id": "sldprt:brep:curve#71"
-        },
-        {
-          "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "center": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "circle",
-            "radius": 1000.0,
-            "ref_direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            }
-          },
-          "id": "sldprt:brep:curve#72"
-        },
-        {
-          "geometry": {
-            "kind": "degenerate",
-            "point": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1000.0
-            }
-          },
-          "id": "sldprt:brep:curve#sphere-seam-face:0"
-        }
-      ],
+      "bodies": [],
+      "coedges": [],
+      "configurations": [],
+      "curves": [],
       "drawings": [],
-      "edges": [
-        {
-          "carrier": {
-            "curve": "sldprt:brep:curve#70"
-          },
-          "end": "sldprt:brep:vertex#51",
-          "id": "sldprt:brep:edge#40",
-          "start": "sldprt:brep:vertex#50"
-        },
-        {
-          "carrier": {
-            "curve": "sldprt:brep:curve#71"
-          },
-          "end": "sldprt:brep:vertex#52",
-          "id": "sldprt:brep:edge#41",
-          "start": "sldprt:brep:vertex#51"
-        },
-        {
-          "carrier": {
-            "curve": "sldprt:brep:curve#72"
-          },
-          "end": "sldprt:brep:vertex#50",
-          "id": "sldprt:brep:edge#42",
-          "start": "sldprt:brep:vertex#52"
-        },
-        {
-          "carrier": {
-            "curve": "sldprt:brep:curve#sphere-seam-face:0"
-          },
-          "end": "sldprt:brep:vertex#52",
-          "id": "sldprt:brep:edge#sphere-seam-face:0",
-          "start": "sldprt:brep:vertex#52"
-        }
-      ],
-      "faces": [
-        {
-          "id": "sldprt:brep:face#10",
-          "loops": {
-            "classification": "unspecified",
-            "loops": [
-              "sldprt:brep:loop#20"
-            ]
-          },
-          "sense": "forward",
-          "shell": "sldprt:brep:shell#0",
-          "surface": "sldprt:brep:surf#10"
-        }
-      ],
+      "edges": [],
+      "faces": [],
       "features": [],
-      "loops": [
-        {
-          "boundary": {
-            "coedges": [
-              "sldprt:brep:coedge#30",
-              "sldprt:brep:coedge#31",
-              "sldprt:brep:coedge#32",
-              "sldprt:brep:coedge#sphere-seam-face:0"
-            ],
-            "kind": "ring"
-          },
-          "face": "sldprt:brep:face#10",
-          "id": "sldprt:brep:loop#20"
-        }
-      ],
+      "loops": [],
       "occurrences": [],
       "parameters": [],
-      "pcurves": [
-        {
-          "geometry": {
-            "direction": {
-              "u": 1.0,
-              "v": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "u": 0.0,
-              "v": 1.5707963267948966
-            }
-          },
-          "id": "sldprt:brep:pcurve#sphere-seam-face:0",
-          "metadata": {
-            "form": {
-              "parameter_range": [
-                0.0,
-                6.283185307179586
-              ]
-            },
-            "source": "general"
-          }
-        },
-        {
-          "geometry": {
-            "direction": {
-              "u": 0.0,
-              "v": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "u": 1.5707963267948966,
-              "v": 0.0
-            }
-          },
-          "id": "sldprt:brep:pcurve#sphere:30",
-          "metadata": {
-            "form": {},
-            "source": "general"
-          }
-        },
-        {
-          "geometry": {
-            "direction": {
-              "u": 0.0,
-              "v": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "u": 3.141592653589793,
-              "v": 3.141592653589793
-            }
-          },
-          "id": "sldprt:brep:pcurve#sphere:31",
-          "metadata": {
-            "form": {},
-            "source": "general"
-          }
-        },
-        {
-          "geometry": {
-            "direction": {
-              "u": 1.0,
-              "v": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "u": 0.0,
-              "v": 0.0
-            }
-          },
-          "id": "sldprt:brep:pcurve#sphere:32",
-          "metadata": {
-            "form": {},
-            "source": "general"
-          }
-        }
-      ],
+      "pcurves": [],
       "pmi": [],
-      "points": [
-        {
-          "id": "sldprt:brep:point#60",
-          "position": {
-            "x": 1000.0,
-            "y": 0.0,
-            "z": 0.0
-          }
-        },
-        {
-          "id": "sldprt:brep:point#61",
-          "position": {
-            "x": 0.0,
-            "y": 1000.0,
-            "z": 0.0
-          }
-        },
-        {
-          "id": "sldprt:brep:point#62",
-          "position": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 1000.0
-          }
-        }
-      ],
+      "points": [],
       "presentation_documents": [],
       "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
       "product_definitions": [],
-      "regions": [
-        {
-          "body": "sldprt:brep:body#0",
-          "id": "sldprt:brep:region#0",
-          "shells": [
-            "sldprt:brep:shell#0"
-          ]
-        }
-      ],
+      "regions": [],
       "semantic_annotations": [],
-      "shells": [
-        {
-          "id": "sldprt:brep:shell#0",
-          "members": [
-            {
-              "id": "sldprt:brep:face#10",
-              "kind": "face"
-            }
-          ],
-          "region": "sldprt:brep:region#0"
-        }
-      ],
+      "shells": [],
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
@@ -367,45 +35,9 @@
       "spatial_sketches": [],
       "spreadsheets": [],
       "subds": [],
-      "surfaces": [
-        {
-          "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "center": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "sphere",
-            "radius": 1000.0,
-            "ref_direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            }
-          },
-          "id": "sldprt:brep:surf#10"
-        }
-      ],
+      "surfaces": [],
       "tessellations": [],
-      "vertices": [
-        {
-          "id": "sldprt:brep:vertex#50",
-          "point": "sldprt:brep:point#60"
-        },
-        {
-          "id": "sldprt:brep:vertex#51",
-          "point": "sldprt:brep:point#61"
-        },
-        {
-          "id": "sldprt:brep:vertex#52",
-          "point": "sldprt:brep:point#62"
-        }
-      ],
+      "vertices": [],
       "view_presentations": []
     },
     "native": {
@@ -435,15 +67,12 @@
       }
     },
     "scope": {
-      "design": true,
-      "model": true
+      "design": false,
+      "model": false
     },
     "source": {
       "attributes": {
-        "bmp_thumbnail_count": "0",
-        "parasolid_description": "partition body",
-        "parasolid_schema": "SCH_SW_33103_11000",
-        "png_preview_count": "0"
+        "parasolid_schema": "SCH_SW_33103_11000"
       },
       "identity": {
         "classification": "classified",
@@ -496,12 +125,34 @@
     "losses": [
       {
         "code": {
-          "code": "topology.body-hierarchy-derived",
-          "kind": "topology_gauge_substituted",
+          "code": "geometry.parasolid-not-transferred",
+          "kind": "geometry_not_transferred",
+          "namespace": "sldprt",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "Parasolid B-rep geometry was not transferred: no partition/deltas stream resolved into a topology graph. 1 payload source(s) were enumerated, 1 carrying Parasolid streams.",
+        "severity": "blocking"
+      },
+      {
+        "code": {
+          "code": "topology.graph-not-transferred",
+          "kind": "topology_not_transferred",
+          "namespace": "sldprt",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built for this file.",
+        "severity": "blocking"
+      },
+      {
+        "code": {
+          "code": "material.metadata-not-transferred",
+          "kind": "material_not_transferred",
           "namespace": "sldprt",
           "scope": "namespaced"
         },
-        "message": "No body record was available; one body/region/shell hierarchy was derived.",
+        "message": "Body-bound appearances and tessellation were not transferred because no body graph exists.",
         "severity": "warning"
       },
       {
@@ -517,13 +168,25 @@
       },
       {
         "code": {
-          "code": "config.inferred-without-native",
-          "kind": "feature_history_retained",
+          "code": "topology.vertex-record-unresolved",
+          "kind": "topology_not_transferred",
           "namespace": "sldprt",
-          "scope": "namespaced"
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
-        "message": "1 configuration state(s) are inferred from geometry partitions without native configuration definitions.",
+        "message": "3 referenced VERTEX record(s) lack a uniquely framed record with a verified owner class and IR-supported tolerance.",
         "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "depth.not-delivered",
+          "kind": "geometry_not_transferred",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "requested full depth but the sldprt decoder did not deliver classes: model, design",
+        "severity": "error"
       }
     ],
     "notes": [
@@ -532,209 +195,26 @@
       "Parasolid body streams supply the typed topology and analytic carriers used by decode"
     ],
     "transfer": {
-      "geometry_transferred": true,
+      "geometry_transferred": false,
       "scope": {
-        "design": true,
-        "model": true
+        "design": false,
+        "model": false
       }
     }
   },
   "source_fidelity": {
     "annotations": {
       "exactness": {
-        "sldprt:brep:body#0": {
-          "entity": "derived",
+        "sldprt:file:block#8": {
+          "entity": "unknown",
           "scope": "entity"
-        },
-        "sldprt:brep:coedge#sphere-seam-face:0": {
-          "entity": "derived",
-          "scope": "entity"
-        },
-        "sldprt:brep:curve#sphere-seam-face:0": {
-          "entity": "derived",
-          "scope": "entity"
-        },
-        "sldprt:brep:edge#sphere-seam-face:0": {
-          "entity": "derived",
-          "scope": "entity"
-        },
-        "sldprt:brep:pcurve#sphere-seam-face:0": {
-          "entity": "derived",
-          "scope": "entity"
-        },
-        "sldprt:brep:pcurve#sphere:30": {
-          "entity": "derived",
-          "scope": "entity"
-        },
-        "sldprt:brep:pcurve#sphere:31": {
-          "entity": "derived",
-          "scope": "entity"
-        },
-        "sldprt:brep:pcurve#sphere:32": {
-          "entity": "derived",
-          "scope": "entity"
-        },
-        "sldprt:brep:region#0": {
-          "entity": "derived",
-          "scope": "entity"
-        },
-        "sldprt:brep:shell#0": {
-          "entity": "derived",
-          "scope": "entity"
-        },
-        "sldprt:brep:surf#10": {
-          "fields": {
-            "geometry.axis": "derived",
-            "geometry.ref_direction": "derived"
-          },
-          "scope": "fields"
         }
       },
       "provenance": {
-        "sldprt:brep:body#0": {
-          "offset": 0,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "synthetic_grouping"
-        },
-        "sldprt:brep:coedge#30": {
-          "offset": 451,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_11"
-        },
-        "sldprt:brep:coedge#31": {
-          "offset": 474,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_11"
-        },
-        "sldprt:brep:coedge#32": {
-          "offset": 497,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_11"
-        },
-        "sldprt:brep:coedge#sphere-seam-face:0": {
-          "offset": 0,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "derived_sphere_seam"
-        },
-        "sldprt:brep:curve#70": {
-          "offset": 99,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "compact_curve"
-        },
-        "sldprt:brep:curve#71": {
-          "offset": 198,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "compact_curve"
-        },
-        "sldprt:brep:curve#72": {
-          "offset": 297,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "compact_curve"
-        },
-        "sldprt:brep:curve#sphere-seam-face:0": {
-          "offset": 0,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "derived_sphere_seam"
-        },
-        "sldprt:brep:edge#40": {
-          "offset": 520,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_10"
-        },
-        "sldprt:brep:edge#41": {
-          "offset": 550,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_10"
-        },
-        "sldprt:brep:edge#42": {
-          "offset": 580,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_10"
-        },
-        "sldprt:brep:edge#sphere-seam-face:0": {
-          "offset": 0,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "derived_sphere_seam"
-        },
-        "sldprt:brep:face#10": {
-          "offset": 396,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_0e"
-        },
-        "sldprt:brep:loop#20": {
-          "offset": 435,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_0f"
-        },
-        "sldprt:brep:pcurve#sphere-seam-face:0": {
-          "offset": 0,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "derived_sphere_seam"
-        },
-        "sldprt:brep:pcurve#sphere:30": {
-          "offset": 0,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "derived_spherical_pcurve"
-        },
-        "sldprt:brep:pcurve#sphere:31": {
-          "offset": 0,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "derived_spherical_pcurve"
-        },
-        "sldprt:brep:pcurve#sphere:32": {
-          "offset": 0,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "derived_spherical_pcurve"
-        },
-        "sldprt:brep:point#60": {
-          "offset": 688,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_1d"
-        },
-        "sldprt:brep:point#61": {
-          "offset": 728,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_1d"
-        },
-        "sldprt:brep:point#62": {
-          "offset": 768,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_1d"
-        },
-        "sldprt:brep:region#0": {
-          "offset": 0,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "synthetic_grouping"
-        },
-        "sldprt:brep:shell#0": {
-          "offset": 0,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "synthetic_grouping"
-        },
-        "sldprt:brep:surf#10": {
-          "offset": 0,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "compact_surface"
-        },
-        "sldprt:brep:vertex#50": {
-          "offset": 610,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_12"
-        },
-        "sldprt:brep:vertex#51": {
-          "offset": 636,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_12"
-        },
-        "sldprt:brep:vertex#52": {
-          "offset": 662,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_12"
-        },
         "sldprt:file:block#8": {
-          "offset": 8,
+          "offset": 0,
           "stream": "Contents/Config-0-Partition",
-          "tag": "parasolid"
+          "tag": "parasolid_stream"
         },
         "sldprt:file:source-image#0": {
           "offset": 0,
@@ -745,10 +225,8 @@
     },
     "metadata": {
       "active_parasolid_block": "Contents/Config-0-Partition",
-      "block_count": "1",
-      "brep_local_sha256": "6a1edf0df087421908f14786d3742ba586294e30e16f3ecc094c3299aef76272",
-      "compound_stream_count": "0",
-      "document_local_sha256": "1693527e858ddbb1e5f2aefef6d58f4a431a08f9d043ffa409e1ebd9a0a4b6e2",
+      "brep_local_sha256": "90c8f71fa076a81c0c053ae3a519abe4e4e722a097fa23c783ef7abb5dab1f29",
+      "document_local_sha256": "659122a2ff21d5592d4ba70c01375ab4b54e02ea150fee63bbc030125932b7cd",
       "outer_version": "0x00000004",
       "sldprt_swobjects_local_sha256": "586ffb909b0bba2aacc4d34937062d2b3c9cb6c81d2f794c686ad550b192d8dc",
       "sldprt_swobjects_material_local_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
@@ -760,9 +238,11 @@
           "data": "UFMAAAAOcGFydGl0aW9uIGJvZHkAABJTQ0hfU1dfMzMxMDNfMTEwMDAANQBkAAAAAAAAAAAAAAAAAAArAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAA/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHwBGAAAAAAAAAAAAAAAAAAArAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAAAAAAAAAAAAP/AAAAAAAAAAHwBHAAAAAAAAAAAAAAAAAAArAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAAAHwBIAAAAAAAAAAAAAAAAAAArAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAAADgAKAAAAAAAAwrySj5luAAAAAAAAABQAAABkKwAAAAAAAAAAAAAADwAUAAAAAAAAAB4ACgAAABEAHgAAABQAAAAfADIAAAAoAAAAACsAEQAfAAAAFAAAACAAMwAAACkAAAAAKwARACAAAAAUAAAAHgA0AAAAKgAAAAArABAAKAAAAAAAAMK8ko+ZbgAAAAAAAAAAAEYAAAAAABAAKQAAAAAAAMK8ko+ZbgAAAAAAAAAAAEcAAAAAABAAKgAAAAAAAMK8ko+ZbgAAAAAAAAAAAEgAAAAAABIAMgAAAAAAAAAAAAAAAAA8wrySj5luAAAAEgAzAAAAAAAAAAAAAAAAAD3CvJKPmW4AAAASADQAAAAAAAAAAAAAAAAAPsK8ko+ZbgAAAB0APAAAAAAAAAAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAdAD0AAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAHQA+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAA",
           "retention": "inline"
         },
-        "offset": 0,
+        "offset": 8,
         "stream": "Contents/Config-0-Partition",
-        "untyped": []
+        "untyped": [
+          "model"
+        ]
       },
       "sldprt:file:source-image#0": {
         "bytes": {
@@ -774,6 +254,8 @@
         "untyped": []
       }
     },
-    "unrepresented": []
+    "unrepresented": [
+      "model"
+    ]
   }
 }

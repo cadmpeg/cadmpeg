@@ -117,17 +117,7 @@
         "namespace": "export",
         "scope": "namespaced"
       },
-      "message": "the rhino write omits 1 native record(s) from `rhino.document_settings`",
-      "severity": "info"
-    },
-    {
-      "code": {
-        "code": "native.records-omitted",
-        "kind": "record_not_typed",
-        "namespace": "export",
-        "scope": "namespaced"
-      },
-      "message": "the rhino write omits 1 native record(s) from `rhino.unknowns`",
+      "message": "the rhino write omits 1 native record(s) from `rhino.document_settings`: rhino:document:settings#current",
       "severity": "info"
     }
   ],

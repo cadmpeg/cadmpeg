@@ -11,6 +11,11 @@
       "payload_sha256": "fb6584f9f9e27a1800242afb8012578f820f423a4ae7fda4be20731580cbe0a1"
     },
     {
+      "name": "ColoredModel.DiffuseColor",
+      "payload_len": 36,
+      "payload_sha256": "c26338173af0327599410f6f106dce476c1d902971df398fc94a2084358529ee"
+    },
+    {
       "name": "ColoredModel.LineColorArray",
       "payload_len": 64,
       "payload_sha256": "220d0db0c1b62cbf5ebc83cd98f684727c9d0f7c54aebe789d6b73bf72b31d9d"
@@ -22,13 +27,13 @@
     },
     {
       "name": "ColoredModel.brp",
-      "payload_len": 3388,
-      "payload_sha256": "c3d70049dac25036c68b7cd3024049919645342ab89581c27bd0748594b0fb2d"
+      "payload_len": 3367,
+      "payload_sha256": "2d8921023225a25d0dc67bc6a44131c62c62f076eac028dc30e173db8c1df046"
     },
     {
       "name": "GuiDocument.xml",
-      "payload_len": 2730,
-      "payload_sha256": "72bf8a279af67f88e4e44d12dd2e078db14367b98a1dcd752324f50e64b2fce3"
+      "payload_len": 2846,
+      "payload_sha256": "69a02f5ea861843799b4f128363e48763ddc72f668a14e1336db9c8f92ef3bfc"
     }
   ],
   "report": {
@@ -210,7 +215,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:0 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:12%40location1 independent visibility/channel gates are reduced to the effective native provider state",
         "severity": "warning"
       },
       {
@@ -220,7 +225,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance fcstd:appearance:edge#ColoredModel catalog identity metadata has no FreeCAD GUI encoding",
+        "message": "appearance fcstd:appearance:edge#ColoredModel:1 catalog identity metadata has no FreeCAD GUI encoding",
         "severity": "warning"
       },
       {
@@ -230,7 +235,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:14%40location1 independent visibility/channel gates are reduced to the effective native provider state",
         "severity": "warning"
       },
       {
@@ -240,7 +245,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance fcstd:appearance:edge#ColoredModel catalog identity metadata has no FreeCAD GUI encoding",
+        "message": "appearance fcstd:appearance:edge#ColoredModel:1 catalog identity metadata has no FreeCAD GUI encoding",
         "severity": "warning"
       },
       {
@@ -250,7 +255,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:10 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:15%40location1 independent visibility/channel gates are reduced to the effective native provider state",
         "severity": "warning"
       },
       {
@@ -260,7 +265,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance fcstd:appearance:edge#ColoredModel catalog identity metadata has no FreeCAD GUI encoding",
+        "message": "appearance fcstd:appearance:edge#ColoredModel:1 catalog identity metadata has no FreeCAD GUI encoding",
         "severity": "warning"
       },
       {
@@ -270,7 +275,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:11 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:19%40location1 independent visibility/channel gates are reduced to the effective native provider state",
         "severity": "warning"
       },
       {
@@ -280,7 +285,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance fcstd:appearance:edge#ColoredModel catalog identity metadata has no FreeCAD GUI encoding",
+        "message": "appearance fcstd:appearance:edge#ColoredModel:1 catalog identity metadata has no FreeCAD GUI encoding",
         "severity": "warning"
       },
       {
@@ -290,7 +295,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:12 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:20%40location1 independent visibility/channel gates are reduced to the effective native provider state",
         "severity": "warning"
       },
       {
@@ -300,7 +305,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance fcstd:appearance:edge#ColoredModel catalog identity metadata has no FreeCAD GUI encoding",
+        "message": "appearance fcstd:appearance:edge#ColoredModel:1 catalog identity metadata has no FreeCAD GUI encoding",
         "severity": "warning"
       },
       {
@@ -310,7 +315,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:13 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:23%40location1 independent visibility/channel gates are reduced to the effective native provider state",
         "severity": "warning"
       },
       {
@@ -320,7 +325,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance fcstd:appearance:edge#ColoredModel catalog identity metadata has no FreeCAD GUI encoding",
+        "message": "appearance fcstd:appearance:edge#ColoredModel:1 catalog identity metadata has no FreeCAD GUI encoding",
         "severity": "warning"
       },
       {
@@ -330,7 +335,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:14 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:27%40location1 independent visibility/channel gates are reduced to the effective native provider state",
         "severity": "warning"
       },
       {
@@ -340,7 +345,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance fcstd:appearance:edge#ColoredModel catalog identity metadata has no FreeCAD GUI encoding",
+        "message": "appearance fcstd:appearance:edge#ColoredModel:1 catalog identity metadata has no FreeCAD GUI encoding",
         "severity": "warning"
       },
       {
@@ -350,7 +355,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:2 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:28%40location1 independent visibility/channel gates are reduced to the effective native provider state",
         "severity": "warning"
       },
       {
@@ -360,7 +365,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance fcstd:appearance:edge#ColoredModel catalog identity metadata has no FreeCAD GUI encoding",
+        "message": "appearance fcstd:appearance:edge#ColoredModel:1 catalog identity metadata has no FreeCAD GUI encoding",
         "severity": "warning"
       },
       {
@@ -370,7 +375,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:3 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:3%40location1 independent visibility/channel gates are reduced to the effective native provider state",
         "severity": "warning"
       },
       {
@@ -380,7 +385,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance fcstd:appearance:edge#ColoredModel catalog identity metadata has no FreeCAD GUI encoding",
+        "message": "appearance fcstd:appearance:edge#ColoredModel:1 catalog identity metadata has no FreeCAD GUI encoding",
         "severity": "warning"
       },
       {
@@ -390,7 +395,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:4 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:31%40location1 independent visibility/channel gates are reduced to the effective native provider state",
         "severity": "warning"
       },
       {
@@ -400,7 +405,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance fcstd:appearance:edge#ColoredModel catalog identity metadata has no FreeCAD GUI encoding",
+        "message": "appearance fcstd:appearance:edge#ColoredModel:1 catalog identity metadata has no FreeCAD GUI encoding",
         "severity": "warning"
       },
       {
@@ -410,7 +415,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:5 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:37%40location1 independent visibility/channel gates are reduced to the effective native provider state",
         "severity": "warning"
       },
       {
@@ -420,7 +425,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance fcstd:appearance:edge#ColoredModel catalog identity metadata has no FreeCAD GUI encoding",
+        "message": "appearance fcstd:appearance:edge#ColoredModel:1 catalog identity metadata has no FreeCAD GUI encoding",
         "severity": "warning"
       },
       {
@@ -430,7 +435,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:6 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:38%40location1 independent visibility/channel gates are reduced to the effective native provider state",
         "severity": "warning"
       },
       {
@@ -440,7 +445,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance fcstd:appearance:edge#ColoredModel catalog identity metadata has no FreeCAD GUI encoding",
+        "message": "appearance fcstd:appearance:edge#ColoredModel:1 catalog identity metadata has no FreeCAD GUI encoding",
         "severity": "warning"
       },
       {
@@ -450,7 +455,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:7 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:5%40location1 independent visibility/channel gates are reduced to the effective native provider state",
         "severity": "warning"
       },
       {
@@ -460,7 +465,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance fcstd:appearance:edge#ColoredModel catalog identity metadata has no FreeCAD GUI encoding",
+        "message": "appearance fcstd:appearance:edge#ColoredModel:1 catalog identity metadata has no FreeCAD GUI encoding",
         "severity": "warning"
       },
       {
@@ -470,7 +475,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:8 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:7%40location1 independent visibility/channel gates are reduced to the effective native provider state",
         "severity": "warning"
       },
       {
@@ -480,7 +485,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance fcstd:appearance:edge#ColoredModel catalog identity metadata has no FreeCAD GUI encoding",
+        "message": "appearance fcstd:appearance:edge#ColoredModel:1 catalog identity metadata has no FreeCAD GUI encoding",
         "severity": "warning"
       },
       {
@@ -490,7 +495,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:9 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:8%40location1 independent visibility/channel gates are reduced to the effective native provider state",
         "severity": "warning"
       },
       {
@@ -500,7 +505,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance fcstd:appearance:edge#ColoredModel catalog identity metadata has no FreeCAD GUI encoding",
+        "message": "appearance binding fcstd:appearance:binding#shape-material:ColoredModel:25 independent visibility/channel gates are reduced to the effective native provider state",
         "severity": "warning"
       },
       {
@@ -510,7 +515,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:ColoredModel:0 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance fcstd:appearance:shape-material#ColoredModel:1 property ambient_packed has no FreeCAD GUI encoding",
         "severity": "warning"
       },
       {
@@ -520,7 +525,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance fcstd:appearance:vertex#ColoredModel catalog identity metadata has no FreeCAD GUI encoding",
+        "message": "appearance fcstd:appearance:shape-material#ColoredModel:1 property emissive_packed has no FreeCAD GUI encoding",
         "severity": "warning"
       },
       {
@@ -530,7 +535,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:ColoredModel:1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance fcstd:appearance:shape-material#ColoredModel:1 property specular_packed has no FreeCAD GUI encoding",
         "severity": "warning"
       },
       {
@@ -540,7 +545,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance fcstd:appearance:vertex#ColoredModel catalog identity metadata has no FreeCAD GUI encoding",
+        "message": "appearance fcstd:appearance:shape-material#ColoredModel:1 property transparency has no FreeCAD GUI encoding",
         "severity": "warning"
       },
       {
@@ -550,7 +555,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:ColoredModel:2 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance fcstd:appearance:shape-material#ColoredModel:1 catalog identity metadata has no FreeCAD GUI encoding",
         "severity": "warning"
       },
       {
@@ -560,7 +565,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance fcstd:appearance:vertex#ColoredModel catalog identity metadata has no FreeCAD GUI encoding",
+        "message": "appearance binding fcstd:appearance:binding#shape-material:ColoredModel:26 independent visibility/channel gates are reduced to the effective native provider state",
         "severity": "warning"
       },
       {
@@ -570,7 +575,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:ColoredModel:3 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance fcstd:appearance:shape-material#ColoredModel:2 property ambient_packed has no FreeCAD GUI encoding",
         "severity": "warning"
       },
       {
@@ -580,7 +585,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance fcstd:appearance:vertex#ColoredModel catalog identity metadata has no FreeCAD GUI encoding",
+        "message": "appearance fcstd:appearance:shape-material#ColoredModel:2 property emissive_packed has no FreeCAD GUI encoding",
         "severity": "warning"
       },
       {
@@ -590,7 +595,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:ColoredModel:4 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance fcstd:appearance:shape-material#ColoredModel:2 property specular_packed has no FreeCAD GUI encoding",
         "severity": "warning"
       },
       {
@@ -600,7 +605,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance fcstd:appearance:vertex#ColoredModel catalog identity metadata has no FreeCAD GUI encoding",
+        "message": "appearance fcstd:appearance:shape-material#ColoredModel:2 property transparency has no FreeCAD GUI encoding",
         "severity": "warning"
       },
       {
@@ -610,7 +615,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:ColoredModel:5 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance fcstd:appearance:shape-material#ColoredModel:2 catalog identity metadata has no FreeCAD GUI encoding",
         "severity": "warning"
       },
       {
@@ -620,7 +625,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance fcstd:appearance:vertex#ColoredModel catalog identity metadata has no FreeCAD GUI encoding",
+        "message": "appearance binding fcstd:appearance:binding#shape-material:ColoredModel:27 independent visibility/channel gates are reduced to the effective native provider state",
         "severity": "warning"
       },
       {
@@ -630,7 +635,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:ColoredModel:6 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance fcstd:appearance:shape-material#ColoredModel:3 property ambient_packed has no FreeCAD GUI encoding",
         "severity": "warning"
       },
       {
@@ -640,7 +645,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance fcstd:appearance:vertex#ColoredModel catalog identity metadata has no FreeCAD GUI encoding",
+        "message": "appearance fcstd:appearance:shape-material#ColoredModel:3 property emissive_packed has no FreeCAD GUI encoding",
         "severity": "warning"
       },
       {
@@ -650,7 +655,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:ColoredModel:7 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance fcstd:appearance:shape-material#ColoredModel:3 property specular_packed has no FreeCAD GUI encoding",
         "severity": "warning"
       },
       {
@@ -660,7 +665,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance fcstd:appearance:vertex#ColoredModel catalog identity metadata has no FreeCAD GUI encoding",
+        "message": "appearance fcstd:appearance:shape-material#ColoredModel:3 property transparency has no FreeCAD GUI encoding",
         "severity": "warning"
       },
       {
@@ -670,7 +675,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:ColoredModel:8 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance fcstd:appearance:shape-material#ColoredModel:3 catalog identity metadata has no FreeCAD GUI encoding",
         "severity": "warning"
       },
       {
@@ -680,7 +685,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance fcstd:appearance:vertex#ColoredModel catalog identity metadata has no FreeCAD GUI encoding",
+        "message": "appearance binding fcstd:appearance:binding#shape-material:ColoredModel:28 independent visibility/channel gates are reduced to the effective native provider state",
         "severity": "warning"
       },
       {
@@ -690,7 +695,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:ColoredModel:9 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance fcstd:appearance:shape-material#ColoredModel:4 property ambient_packed has no FreeCAD GUI encoding",
         "severity": "warning"
       },
       {
@@ -700,7 +705,487 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance fcstd:appearance:vertex#ColoredModel catalog identity metadata has no FreeCAD GUI encoding",
+        "message": "appearance fcstd:appearance:shape-material#ColoredModel:4 property emissive_packed has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:shape-material#ColoredModel:4 property specular_packed has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:shape-material#ColoredModel:4 property transparency has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:shape-material#ColoredModel:4 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#shape-material:ColoredModel:29 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:shape-material#ColoredModel:5 property ambient_packed has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:shape-material#ColoredModel:5 property emissive_packed has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:shape-material#ColoredModel:5 property specular_packed has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:shape-material#ColoredModel:5 property transparency has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:shape-material#ColoredModel:5 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#shape-material:ColoredModel:30 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:shape-material#ColoredModel:6 property ambient_packed has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:shape-material#ColoredModel:6 property emissive_packed has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:shape-material#ColoredModel:6 property specular_packed has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:shape-material#ColoredModel:6 property transparency has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:shape-material#ColoredModel:6 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#shape-material:ColoredModel:31 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:shape-material#ColoredModel:7 property ambient_packed has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:shape-material#ColoredModel:7 property emissive_packed has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:shape-material#ColoredModel:7 property specular_packed has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:shape-material#ColoredModel:7 property transparency has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:shape-material#ColoredModel:7 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#shape-material:ColoredModel:32 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:shape-material#ColoredModel:8 property ambient_packed has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:shape-material#ColoredModel:8 property emissive_packed has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:shape-material#ColoredModel:8 property specular_packed has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:shape-material#ColoredModel:8 property transparency has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:shape-material#ColoredModel:8 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:1%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:vertex#ColoredModel:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:11%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:vertex#ColoredModel:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:13%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:vertex#ColoredModel:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:18%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:vertex#ColoredModel:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:2%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:22%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:vertex#ColoredModel:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:26%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:vertex#ColoredModel:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:36%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:vertex#ColoredModel:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:4%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:vertex#ColoredModel:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:6%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:vertex#ColoredModel:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "unbound appearance fcstd:appearance:edge#ColoredModel has no FreeCAD GUI owner and is omitted",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "unbound appearance fcstd:appearance:vertex#ColoredModel has no FreeCAD GUI owner and is omitted",
         "severity": "warning"
       },
       {
@@ -710,7 +1195,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 5 native record(s) from `fcstd.entries`",
+        "message": "the fcstd write omits 5 native record(s) from `fcstd.entries`: fcstd:native:entry#ColoredModel.Shape.brp, fcstd:native:entry#LineColorArray, fcstd:native:entry#PointColorArray, fcstd:native:entry#ShapeAppearance, fcstd:native:entry#thumbnails/Thumbnail.png",
         "severity": "info"
       },
       {
@@ -720,7 +1205,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 16 native record(s) from `fcstd.gui_properties`",
+        "message": "the fcstd write omits 16 native record(s) from `fcstd.gui_properties`: fcstd:native:gui-property#ColoredModel:AngularDeflection, fcstd:native:gui-property#ColoredModel:BoundingBox, fcstd:native:gui-property#ColoredModel:Deviation, fcstd:native:gui-property#ColoredModel:DrawStyle, fcstd:native:gui-property#ColoredModel:Lighting, fcstd:native:gui-property#ColoredModel:LineColor, fcstd:native:gui-property#ColoredModel:OnTopWhenSelected, fcstd:native:gui-property#ColoredModel:PointColor, fcstd:native:gui-property#ColoredModel:Selectable, fcstd:native:gui-property#ColoredModel:ShapeAppearance, fcstd:native:gui-property#ColoredModel:ShowInTree, fcstd:native:gui-property#ColoredModel:ShowPlacement, fcstd:native:gui-property#ColoredModel:Transparency, fcstd:native:gui-property#CorpusMetadata:OnTopWhenSelected, fcstd:native:gui-property#CorpusMetadata:Proxy, fcstd:native:gui-property#CorpusMetadata:ShowInTree",
         "severity": "info"
       },
       {
@@ -730,17 +1215,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 2 native record(s) from `fcstd.properties`",
-        "severity": "info"
-      },
-      {
-        "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
-          "scope": "namespaced"
-        },
-        "message": "the fcstd write omits 1 native record(s) from `fcstd.unknowns`",
+        "message": "the fcstd write omits 2 native record(s) from `fcstd.properties`: fcstd:native:property#ColoredModel:ExpressionEngine, fcstd:native:property#CorpusMetadata:ExpressionEngine",
         "severity": "info"
       }
     ],
@@ -891,9 +1366,6 @@
               }
             },
             "unknowns": {
-              "disposition": "dropped"
-            },
-            "unreadable_entries": {
               "disposition": "dropped"
             }
           }

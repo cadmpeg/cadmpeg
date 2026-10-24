@@ -384,11 +384,11 @@
                         "points": [
                           {
                             "u": 0.5,
-                            "v": 0.25
+                            "v": 3.391592653589793
                           },
                           {
                             "u": 1.5,
-                            "v": 0.75
+                            "v": 3.891592653589793
                           }
                         ]
                       },
@@ -474,6 +474,7 @@
         "design_body_bounds": [],
         "design_body_members": [],
         "design_body_recipe_operands": [],
+        "design_body_reference_tails": [],
         "design_canvas_images": [],
         "design_component_naming_spaces": [],
         "design_component_occurrences": [],
@@ -509,6 +510,8 @@
         "design_parameter_state_companions": [],
         "design_parameter_states": [],
         "design_parameters": [],
+        "design_placement_constructions": [],
+        "design_profile_curve_selections": [],
         "design_record_headers": [],
         "design_sheet_metal_settings": [],
         "design_sketch_placements": [],
@@ -792,7 +795,7 @@
     "metadata": {
       "active_brep": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
       "active_brep_sha256": "d3f3396de9a191715ed337e9de54fd5a845fcfb3c2d53feca7b2742b7ed5e482",
-      "document_local_sha256": "b434818c6306d002fcdd5d083447c6282107bd585dfab4905d6657815a8f7ff0"
+      "document_local_sha256": "0f3f6bbc59f75dee11ff82fa5008727ee75545e8d20510e6c479d3187fc79e09"
     },
     "retained_records": {
       "f3d:file:source-image#0": {

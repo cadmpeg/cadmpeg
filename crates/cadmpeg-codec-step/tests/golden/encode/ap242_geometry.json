@@ -139,16 +139,6 @@
           },
           "message": "source dialect step:ap242 was displaced by target dialect step:ap242-e3; the source dialect identity is not preserved",
           "severity": "warning"
-        },
-        {
-          "code": {
-            "code": "native.records-omitted",
-            "kind": "record_not_typed",
-            "namespace": "export",
-            "scope": "namespaced"
-          },
-          "message": "the step write omits 2 native record(s) from `step.unknowns`",
-          "severity": "info"
         }
       ],
       "native_dispositions": {
@@ -314,16 +304,6 @@
           },
           "message": "source dialect step:ap242 was displaced by target dialect step:ap214; the source dialect identity is not preserved",
           "severity": "warning"
-        },
-        {
-          "code": {
-            "code": "native.records-omitted",
-            "kind": "record_not_typed",
-            "namespace": "export",
-            "scope": "namespaced"
-          },
-          "message": "the step write omits 2 native record(s) from `step.unknowns`",
-          "severity": "info"
         }
       ],
       "native_dispositions": {
@@ -350,6 +330,168 @@
     }
   },
   "inherit": {
-    "encode_error": "step cannot preserve source dialect step:ap242: the semantic writer cannot synthesize it, and writing another schema would change what the file declares; name a target to choose one; available targets: step:ap203-e1, step:ap203-e2, step:ap214, step:ap242-e1, step:ap242-e2, step:ap242-e3"
+    "output": "ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('CAD model exported by cadmpeg'),'2;1');\nFILE_NAME('cadmpeg_model','1970-01-01T00:00:00',(''),(''),'cadmpeg-step','cadmpeg','');\nFILE_SCHEMA(('AUTOMOTIVE_DESIGN { 1 0 10303 214 1 1 1 1 }'));\nENDSEC;\nDATA;\n#1 = ( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.) );\n#2 = ( NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.) );\n#3 = ( NAMED_UNIT(*) SI_UNIT($,.STERADIAN.) SOLID_ANGLE_UNIT() );\n#4 = UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.000001),#1,'distance_accuracy_value','maximum model space distance');\n#5 = ( GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#4)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#2,#3)) REPRESENTATION_CONTEXT('Context','3D') );\n#6 = CARTESIAN_POINT('',(1.,2.,3.));\n#7 = DIRECTION('',(0.,0.,1.));\n#8 = DIRECTION('',(1.,0.,0.));\n#9 = AXIS2_PLACEMENT_3D('',#6,#7,#8);\n#10 = PLANE('',#9);\n#11 = AXIS2_PLACEMENT_3D('',#6,#7,#8);\n#12 = CONICAL_SURFACE('',#11,5.,0.25);\n#13 = AXIS2_PLACEMENT_3D('',#6,#7,#8);\n#14 = SPHERICAL_SURFACE('',#13,5.);\n#15 = AXIS2_PLACEMENT_3D('',#6,#7,#8);\n#16 = TOROIDAL_SURFACE('',#15,8.,2.);\n#17 = CARTESIAN_POINT('',(0.,0.,0.));\n#18 = CARTESIAN_POINT('',(0.,1.,0.));\n#19 = CARTESIAN_POINT('',(1.,0.,0.));\n#20 = CARTESIAN_POINT('',(2.,0.,0.));\n#21 = ( BOUNDED_SURFACE() B_SPLINE_SURFACE(1,1,((#17,#18),(#19,#20)),.UNSPECIFIED.,.F.,.F.,.U.) B_SPLINE_SURFACE_WITH_KNOTS((2,2),(2,2),(0.,1.),(0.,1.),.UNSPECIFIED.) GEOMETRIC_REPRESENTATION_ITEM() RATIONAL_B_SPLINE_SURFACE(((1.,1.),(1.,0.75))) REPRESENTATION_ITEM('') SURFACE() );\n#22 = AXIS2_PLACEMENT_3D('',#6,#7,#8);\n#23 = CIRCLE('',#22,4.);\n#24 = VECTOR('',#7,2.);\n#25 = SURFACE_OF_LINEAR_EXTRUSION('',#23,#24);\n#26 = AXIS1_PLACEMENT('',#6,#7);\n#27 = SURFACE_OF_REVOLUTION('',#23,#26);\n#28 = AXIS2_PLACEMENT_3D('',#6,#7,#8);\n#29 = CYLINDRICAL_SURFACE('',#28,5.);\n#30 = OFFSET_SURFACE('',#29,0.5,.F.);\n#31 = AXIS2_PLACEMENT_3D('',#6,#7,#8);\n#32 = DEGENERATE_TOROIDAL_SURFACE('',#31,2.,8.,.T.);\n#33 = AXIS2_PLACEMENT_3D('',#6,#7,#8);\n#34 = ELLIPSE('',#33,6.,2.);\n#35 = ( BOUNDED_CURVE() B_SPLINE_CURVE(2,(#17,#19,#20),.UNSPECIFIED.,.F.,.U.) B_SPLINE_CURVE_WITH_KNOTS((3,3),(0.,1.),.UNSPECIFIED.) CURVE() GEOMETRIC_REPRESENTATION_ITEM() RATIONAL_B_SPLINE_CURVE((1.,0.5,1.)) REPRESENTATION_ITEM('') );\n#36 = TRIMMED_CURVE('',#23,(PARAMETER_VALUE(0.)),(PARAMETER_VALUE(1.5707963267948966)),.T.,.PARAMETER.);\n#37 = OFFSET_CURVE_3D('',#23,1.,.U.,#7);\n#38 = TRIMMED_CURVE('',#23,(PARAMETER_VALUE(0.)),(PARAMETER_VALUE(1.5707963267948966)),.T.,.PARAMETER.);\n#39 = COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.T.,#38);\n#40 = COMPOSITE_CURVE('',(#39),.F.);\n#41 = B_SPLINE_CURVE_WITH_KNOTS('',1,(#17,#19,#20),.UNSPECIFIED.,.F.,.U.,(2,1,2),(0.,1.,2.),.UNSPECIFIED.);\n#42 = VECTOR('',#7,1.);\n#43 = LINE('',#6,#42);\n#44 = GEOMETRIC_SET('',(#10,#12,#14,#16,#21,#25,#27,#30,#32,#34,#35,#36,#37,#40,#41,#43,#6));\n#45 = AXIS2_PLACEMENT_3D('',#17,#7,#8);\n#46 = APPLICATION_CONTEXT('automotive design');\n#47 = APPLICATION_PROTOCOL_DEFINITION('international standard','automotive_design',2000,#46);\n#48 = PRODUCT_CONTEXT('',#46,'mechanical');\n#49 = PRODUCT('cadmpeg_model','cadmpeg_model','',(#48));\n#50 = PRODUCT_DEFINITION_FORMATION('','',#49);\n#51 = PRODUCT_DEFINITION_CONTEXT('part definition',#46,'design');\n#52 = PRODUCT_DEFINITION('design','',#50,#51);\n#53 = PRODUCT_DEFINITION_SHAPE('','',#52);\n#54 = SHAPE_REPRESENTATION('',(#44,#45),#5);\n#55 = SHAPE_DEFINITION_REPRESENTATION(#53,#54);\n#56 = COLOUR_RGB('geometry blue',0.20000000298023224,0.4000000059604645,0.800000011920929);\n#57 = DRAUGHTING_PRE_DEFINED_CURVE_FONT('continuous');\n#58 = CURVE_STYLE('',#57,POSITIVE_LENGTH_MEASURE(0.1),#56);\n#59 = PRESENTATION_STYLE_ASSIGNMENT((#58));\n#60 = STYLED_ITEM('color',(#59),#23);\n#61 = COLOUR_RGB('geometry blue',0.20000000298023224,0.4000000059604645,0.800000011920929);\n#62 = FILL_AREA_STYLE_COLOUR('',#61);\n#63 = FILL_AREA_STYLE('',(#62));\n#64 = SURFACE_STYLE_FILL_AREA(#63);\n#65 = SURFACE_SIDE_STYLE('',(#64));\n#66 = SURFACE_STYLE_USAGE(.BOTH.,#65);\n#67 = PRESENTATION_STYLE_ASSIGNMENT((#66));\n#68 = STYLED_ITEM('color',(#67),#10);\n#69 = COLOUR_RGB('geometry blue',0.20000000298023224,0.4000000059604645,0.800000011920929);\n#70 = POINT_STYLE('',.DOT.,POSITIVE_LENGTH_MEASURE(1.),#69);\n#71 = PRESENTATION_STYLE_ASSIGNMENT((#70));\n#72 = STYLED_ITEM('color',(#71),#6);\n#73 = STYLED_ITEM('color',(#71),#6);\n#74 = STYLED_ITEM('color',(#59),#23);\n#75 = STYLED_ITEM('color',(#59),#41);\n#76 = MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION('',(#60,#68,#72,#73,#74,#75),#5);\nENDSEC;\nEND-ISO-10303-21;\n",
+    "report": {
+      "census": {
+        "basis": "target_records",
+        "counts": {
+          "APPLICATION_CONTEXT": 1,
+          "APPLICATION_PROTOCOL_DEFINITION": 1,
+          "AXIS1_PLACEMENT": 1,
+          "AXIS2_PLACEMENT_3D": 9,
+          "B_SPLINE_CURVE_WITH_KNOTS": 2,
+          "B_SPLINE_SURFACE_WITH_KNOTS": 1,
+          "CARTESIAN_POINT": 5,
+          "CIRCLE": 1,
+          "COLOUR_RGB": 3,
+          "COMPOSITE_CURVE": 1,
+          "COMPOSITE_CURVE_SEGMENT": 1,
+          "CONICAL_SURFACE": 1,
+          "CURVE_STYLE": 1,
+          "CYLINDRICAL_SURFACE": 1,
+          "DEGENERATE_TOROIDAL_SURFACE": 1,
+          "DIRECTION": 2,
+          "DRAUGHTING_PRE_DEFINED_CURVE_FONT": 1,
+          "ELLIPSE": 1,
+          "FILL_AREA_STYLE": 1,
+          "FILL_AREA_STYLE_COLOUR": 1,
+          "GEOMETRIC_REPRESENTATION_CONTEXT": 1,
+          "GEOMETRIC_SET": 1,
+          "LENGTH_UNIT": 1,
+          "LINE": 1,
+          "MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION": 1,
+          "OFFSET_CURVE_3D": 1,
+          "OFFSET_SURFACE": 1,
+          "PLANE": 1,
+          "PLANE_ANGLE_UNIT": 1,
+          "POINT_STYLE": 1,
+          "PRESENTATION_STYLE_ASSIGNMENT": 3,
+          "PRODUCT": 1,
+          "PRODUCT_CONTEXT": 1,
+          "PRODUCT_DEFINITION": 1,
+          "PRODUCT_DEFINITION_CONTEXT": 1,
+          "PRODUCT_DEFINITION_FORMATION": 1,
+          "PRODUCT_DEFINITION_SHAPE": 1,
+          "SHAPE_DEFINITION_REPRESENTATION": 1,
+          "SHAPE_REPRESENTATION": 1,
+          "SOLID_ANGLE_UNIT": 1,
+          "SPHERICAL_SURFACE": 1,
+          "STYLED_ITEM": 6,
+          "SURFACE_OF_LINEAR_EXTRUSION": 1,
+          "SURFACE_OF_REVOLUTION": 1,
+          "SURFACE_SIDE_STYLE": 1,
+          "SURFACE_STYLE_FILL_AREA": 1,
+          "SURFACE_STYLE_USAGE": 1,
+          "TOROIDAL_SURFACE": 1,
+          "TRIMMED_CURVE": 2,
+          "UNCERTAINTY_MEASURE_WITH_UNIT": 1,
+          "VECTOR": 2
+        }
+      },
+      "coverage": {
+        "arenas": {
+          "appearance_bindings": "reported",
+          "appearances": "reported",
+          "assembly_joints": "dropped",
+          "assets": "dropped",
+          "attributes": "dropped",
+          "bodies": "written",
+          "coedges": "written",
+          "configurations": "dropped",
+          "curves": "written",
+          "drawings": "dropped",
+          "edges": "written",
+          "faces": "written",
+          "feature_input_topologies": "dropped",
+          "feature_result_topologies": "dropped",
+          "features": "dropped",
+          "loops": "written",
+          "occurrences": "written",
+          "parameters": "dropped",
+          "pcurves": "written",
+          "pmi": "reported",
+          "points": "written",
+          "presentation_documents": "dropped",
+          "presentation_layers": "written",
+          "procedural_curves": "written",
+          "procedural_surfaces": "written",
+          "product_definitions": "written",
+          "regions": "written",
+          "semantic_annotations": "dropped",
+          "shells": "written",
+          "sketch_constraints": "dropped",
+          "sketch_entities": "dropped",
+          "sketches": "dropped",
+          "spatial_sketch_constraints": "dropped",
+          "spatial_sketch_entities": "dropped",
+          "spatial_sketches": "dropped",
+          "spreadsheets": "dropped",
+          "subds": "dropped",
+          "surfaces": "written",
+          "tessellations": "reported",
+          "vertices": "written",
+          "view_presentations": "dropped"
+        },
+        "coverage": "declared"
+      },
+      "identity": {
+        "payload": "native",
+        "target": "step:ap214"
+      },
+      "losses": [
+        {
+          "code": {
+            "code": "appearance.reduced-to-base-color",
+            "kind": "appearance_reduced",
+            "namespace": "step",
+            "scope": "namespaced"
+          },
+          "message": "1 appearance asset(s) were not fully encoded by STEP presentation; display overrides take precedence, and unsupported schemas, textures, and shader properties were not written",
+          "severity": "info"
+        },
+        {
+          "code": {
+            "code": "attribute.source-record-not-written",
+            "kind": "attributes_not_transferred",
+            "namespace": "step",
+            "scope": "namespaced"
+          },
+          "message": "1 source attribute record(s) were not written to STEP",
+          "severity": "info"
+        },
+        {
+          "code": {
+            "code": "target.source-dialect-displaced",
+            "kind": "source_dialect_displaced",
+            "namespace": "step",
+            "scope": "namespaced",
+            "strict_floor": "warning"
+          },
+          "message": "source dialect step:ap242 was displaced by target dialect step:ap214; the source dialect identity is not preserved",
+          "severity": "warning"
+        }
+      ],
+      "native_dispositions": {
+        "namespaces": {
+          "step": {
+            "arenas": {
+              "drawing_targets": {
+                "disposition": "dropped"
+              },
+              "unknowns": {
+                "disposition": "dropped"
+              }
+            }
+          }
+        }
+      },
+      "notes": [],
+      "write_path": {
+        "fidelity": {
+          "status": "not_provided"
+        },
+        "path": "synthesized"
+      }
+    }
   }
 }

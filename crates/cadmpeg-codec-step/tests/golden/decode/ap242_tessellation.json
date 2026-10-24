@@ -476,7 +476,9 @@
       ],
       "view_presentations": []
     },
-    "native": {},
+    "native": {
+      "step": {}
+    },
     "scope": {
       "design": true,
       "model": true
@@ -570,6 +572,1632 @@
       "data_sections": "1",
       "entity_instances": "67",
       "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"
+    },
+    "parts": {
+      "step:source:part#00e734c9793adc8a312aee6f095698d1792e8f688a9e8eb99e279535cf5f6f74": {
+        "byte_len": 48,
+        "framing_bytes": [
+          {
+            "end": 2391,
+            "start": 2388
+          },
+          {
+            "end": 2392,
+            "start": 2391
+          },
+          {
+            "end": 2436,
+            "start": 2435
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 2388,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#040c0a3924b67f61eab02f0632f9819169aae3d0a79726b5bdfb7caf53ce6a91": {
+        "byte_len": 32,
+        "framing_bytes": [
+          {
+            "end": 2709,
+            "start": 2706
+          },
+          {
+            "end": 2710,
+            "start": 2709
+          },
+          {
+            "end": 2738,
+            "start": 2737
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 2706,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#07a53a7573308e87219c7b906ec59d4b7b81d07e7366d929ca5381bb1fb08490": {
+        "byte_len": 29,
+        "framing_bytes": [
+          {
+            "end": 1123,
+            "start": 1120
+          },
+          {
+            "end": 1124,
+            "start": 1123
+          },
+          {
+            "end": 1149,
+            "start": 1148
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 1120,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#0bc77cc0e9ca1ce17179eb8c7cc8d6fdca8bd3fbaf23725813174dbd7c016c26": {
+        "byte_len": 32,
+        "framing_bytes": [
+          {
+            "end": 1581,
+            "start": 1578
+          },
+          {
+            "end": 1582,
+            "start": 1581
+          },
+          {
+            "end": 1610,
+            "start": 1609
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 1578,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#14e3b7b4766d07c4c775c70906dd12bad1c5eab7e7739f2c453e25e3881192b2": {
+        "byte_len": 35,
+        "framing_bytes": [
+          {
+            "end": 1404,
+            "start": 1401
+          },
+          {
+            "end": 1405,
+            "start": 1404
+          },
+          {
+            "end": 1436,
+            "start": 1435
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 1401,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#16747e6956e660595ff31f76d60f01f8b7b3920e3c861c83c793728c1858f240": {
+        "byte_len": 73,
+        "framing_bytes": [
+          {
+            "end": 2561,
+            "start": 2558
+          },
+          {
+            "end": 2562,
+            "start": 2561
+          },
+          {
+            "end": 2631,
+            "start": 2630
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 2558,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#1ae6daa7919b29f6f506476b7c6277c74bc45fe2cd97c77b694a7be0c3660265": {
+        "byte_len": 35,
+        "framing_bytes": [
+          {
+            "end": 1440,
+            "start": 1437
+          },
+          {
+            "end": 1441,
+            "start": 1440
+          },
+          {
+            "end": 1472,
+            "start": 1471
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 1437,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#1cc204967fe5b57a939cc96c07b9ee1a48ecf84fbc33bf976e54927e87fafd99": {
+        "byte_len": 36,
+        "framing_bytes": [
+          {
+            "end": 1707,
+            "start": 1704
+          },
+          {
+            "end": 1708,
+            "start": 1707
+          },
+          {
+            "end": 1740,
+            "start": 1739
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 1704,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#1cc64280652562eae6dada039a2e8a214f7a34e9a45550ba0f6cbb9b9e8a9ab3": {
+        "byte_len": 34,
+        "framing_bytes": [
+          {
+            "end": 1511,
+            "start": 1508
+          },
+          {
+            "end": 1512,
+            "start": 1511
+          },
+          {
+            "end": 1542,
+            "start": 1541
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 1508,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#1f997165b13f566dde13c92dcd68a655f9cb2b1cfcd6685417e107fb3c9ff33b": {
+        "byte_len": 23,
+        "framing_bytes": [
+          {
+            "end": 1215,
+            "start": 1212
+          },
+          {
+            "end": 1216,
+            "start": 1215
+          },
+          {
+            "end": 1235,
+            "start": 1234
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 1212,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#2145f244db8725cd5bdc5447d929ce5ea15f9b89cca59f31936e0103817cb6df": {
+        "byte_len": 78,
+        "framing_bytes": [
+          {
+            "end": 2905,
+            "start": 2902
+          },
+          {
+            "end": 2906,
+            "start": 2905
+          },
+          {
+            "end": 2980,
+            "start": 2979
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 2902,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#219d90eeb3c9d9d164d13a33d2f5849431dbb8483365a194cb0be5650bb7f3df": {
+        "byte_len": 41,
+        "framing_bytes": [
+          {
+            "end": 3247,
+            "start": 3244
+          },
+          {
+            "end": 3248,
+            "start": 3247
+          },
+          {
+            "end": 3285,
+            "start": 3284
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 3244,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#21dd94608fbad05e83c974fa61e9173672a4afa7f7fc58014af8401651206877": {
+        "byte_len": 29,
+        "framing_bytes": [
+          {
+            "end": 1093,
+            "start": 1090
+          },
+          {
+            "end": 1094,
+            "start": 1093
+          },
+          {
+            "end": 1119,
+            "start": 1118
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 1090,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#2211e694bf90bb2d2f80c1e5f29e750ee64ff59018276ca93bafe2ea515432f8": {
+        "byte_len": 21,
+        "framing_bytes": [
+          {
+            "end": 1302,
+            "start": 1299
+          },
+          {
+            "end": 1303,
+            "start": 1302
+          },
+          {
+            "end": 1320,
+            "start": 1319
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 1299,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#2258dce2d8c454814a397c66244b9ad2fe60a4576e7af0c73cde498848df5aef": {
+        "byte_len": 32,
+        "framing_bytes": [
+          {
+            "end": 2742,
+            "start": 2739
+          },
+          {
+            "end": 2743,
+            "start": 2742
+          },
+          {
+            "end": 2771,
+            "start": 2770
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 2739,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#23b9536ed325c2c5625a505fafc62568172a174c02ef52a788964bb7a8b9e7bc": {
+        "byte_len": 83,
+        "framing_bytes": [
+          {
+            "end": 411,
+            "start": 409
+          },
+          {
+            "end": 412,
+            "start": 411
+          },
+          {
+            "end": 492,
+            "start": 491
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 409,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#28dd2196bade5fa7efc3948d9e54b0cb9dffb08ccf20d8ee12693e4ee9390614": {
+        "byte_len": 60,
+        "framing_bytes": [
+          {
+            "end": 843,
+            "start": 841
+          },
+          {
+            "end": 844,
+            "start": 843
+          },
+          {
+            "end": 901,
+            "start": 900
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 841,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#39c7fc5497554593447a6ee7ff24102c9cb6a86ab801e49dab086542ede4d6fa": {
+        "byte_len": 23,
+        "framing_bytes": [
+          {
+            "end": 1278,
+            "start": 1275
+          },
+          {
+            "end": 1279,
+            "start": 1278
+          },
+          {
+            "end": 1298,
+            "start": 1297
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 1275,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#3a351273b12342f2f9ae5b7bee4271a7cc04776d3b19245873d7b7c8dea37310": {
+        "byte_len": 44,
+        "framing_bytes": [
+          {
+            "end": 1992,
+            "start": 1989
+          },
+          {
+            "end": 1993,
+            "start": 1992
+          },
+          {
+            "end": 2033,
+            "start": 2032
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 1989,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#3e2875b8891ee97d48456d447c86708f935efb9b6975f1c6ce79c035bcd6c099": {
+        "byte_len": 34,
+        "framing_bytes": [
+          {
+            "end": 1476,
+            "start": 1473
+          },
+          {
+            "end": 1477,
+            "start": 1476
+          },
+          {
+            "end": 1507,
+            "start": 1506
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 1473,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#458c51a66d2a1e963cb3320ab2711d5ddf7a3a433b4dd52391a80c1ec635b3ac": {
+        "byte_len": 30,
+        "framing_bytes": [
+          {
+            "end": 3111,
+            "start": 3108
+          },
+          {
+            "end": 3112,
+            "start": 3111
+          },
+          {
+            "end": 3138,
+            "start": 3137
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 3108,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#481800513553ee5ab9a4d65e0f404d91713935cde5c2008c23a70d3288e01d71": {
+        "byte_len": 33,
+        "framing_bytes": [
+          {
+            "end": 3142,
+            "start": 3139
+          },
+          {
+            "end": 3143,
+            "start": 3142
+          },
+          {
+            "end": 3172,
+            "start": 3171
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 3139,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#4959ec8ac6f443bfcd0b17db4297ec88417a4ba9e04d5145456b9cad0fae77e8": {
+        "byte_len": 30,
+        "framing_bytes": [
+          {
+            "end": 1153,
+            "start": 1150
+          },
+          {
+            "end": 1154,
+            "start": 1153
+          },
+          {
+            "end": 1180,
+            "start": 1179
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 1150,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#4ace5612194a5deb9c1934c3f37b338b13eda7b934d02bc2d947582b82b044e8": {
+        "byte_len": 33,
+        "framing_bytes": [
+          {
+            "end": 3176,
+            "start": 3173
+          },
+          {
+            "end": 3177,
+            "start": 3176
+          },
+          {
+            "end": 3206,
+            "start": 3205
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 3173,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#4b54876231260031197b68ab6a5beebd14c8b3d4e52db18c85e68daf5ef569e2": {
+        "byte_len": 53,
+        "framing_bytes": [
+          {
+            "end": 562,
+            "start": 560
+          },
+          {
+            "end": 563,
+            "start": 562
+          },
+          {
+            "end": 613,
+            "start": 612
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 560,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#528273f7360616dac6e547a2941033f54f33351fc14121286091812549a89fd9": {
+        "byte_len": 36,
+        "framing_bytes": [
+          {
+            "end": 978,
+            "start": 975
+          },
+          {
+            "end": 979,
+            "start": 978
+          },
+          {
+            "end": 1011,
+            "start": 1010
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 975,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#56a87e9e5ebd96f15e5258b6a3ac334c63cf19bc28f459b1f10b22d58f55a517": {
+        "byte_len": 35,
+        "framing_bytes": [
+          {
+            "end": 1368,
+            "start": 1365
+          },
+          {
+            "end": 1369,
+            "start": 1368
+          },
+          {
+            "end": 1400,
+            "start": 1399
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 1365,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#57f4e636703799fb3476d4f7c8449bba04ec7ccd89cbe380c98c4416d088595f": {
+        "byte_len": 33,
+        "framing_bytes": [
+          {
+            "end": 1614,
+            "start": 1611
+          },
+          {
+            "end": 1615,
+            "start": 1614
+          },
+          {
+            "end": 1644,
+            "start": 1643
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 1611,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#61680ed3c5befb045ee7b0ce00a38f7ad0dc34296add93466642ef53f1ba62a2": {
+        "byte_len": 29,
+        "framing_bytes": [
+          {
+            "end": 3289,
+            "start": 3286
+          },
+          {
+            "end": 3290,
+            "start": 3289
+          },
+          {
+            "end": 3315,
+            "start": 3314
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 3286,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#718b97d18422394cefb6cbef1149c81805b594681c1d08abc4de7a721d9cb33f": {
+        "byte_len": 44,
+        "framing_bytes": [
+          {
+            "end": 2860,
+            "start": 2857
+          },
+          {
+            "end": 2861,
+            "start": 2860
+          },
+          {
+            "end": 2901,
+            "start": 2900
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 2857,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#7223f527291be348601ced7b8ae5e5356449f765f742c9777e2c23fc323d1999": {
+        "byte_len": 77,
+        "framing_bytes": [
+          {
+            "end": 2313,
+            "start": 2310
+          },
+          {
+            "end": 2314,
+            "start": 2313
+          },
+          {
+            "end": 2387,
+            "start": 2386
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 2310,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#73c09ccfd3ea1e80e15610c311d970c46c58664733fa3fbf15ae23b1c816f0d9": {
+        "byte_len": 21,
+        "framing_bytes": [
+          {
+            "end": 1324,
+            "start": 1321
+          },
+          {
+            "end": 1325,
+            "start": 1324
+          },
+          {
+            "end": 1342,
+            "start": 1341
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 1321,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#7404b8202406f3e7756a8fae6d8e1e549f957fe012a31745a376fcec416f653f": {
+        "byte_len": 48,
+        "framing_bytes": [
+          {
+            "end": 2984,
+            "start": 2981
+          },
+          {
+            "end": 2985,
+            "start": 2984
+          },
+          {
+            "end": 3029,
+            "start": 3028
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 2981,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#753c033d862e5c66868b4aef1698c73eadbdc9d1ef0b833d25a45c3046a1db8f": {
+        "byte_len": 25,
+        "framing_bytes": [
+          {
+            "end": 1067,
+            "start": 1064
+          },
+          {
+            "end": 1068,
+            "start": 1067
+          },
+          {
+            "end": 1089,
+            "start": 1088
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 1064,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#77b4bbc48a9d90ee03703369d854e2815fd90892b63ca7bda0ce0857bff0f5b5": {
+        "byte_len": 30,
+        "framing_bytes": [
+          {
+            "end": 1184,
+            "start": 1181
+          },
+          {
+            "end": 1185,
+            "start": 1184
+          },
+          {
+            "end": 1211,
+            "start": 1210
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 1181,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#7b82bf1144db7b2c11eaa5ee1a9927d9497fd4bb17a2641210578a9468946f02": {
+        "byte_len": 38,
+        "framing_bytes": [
+          {
+            "end": 1239,
+            "start": 1236
+          },
+          {
+            "end": 1240,
+            "start": 1239
+          },
+          {
+            "end": 1274,
+            "start": 1273
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 1236,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#84049f1f25eb42201422832c571831f0fa6f2d8bcad3d29cb8f3948d65c2f59e": {
+        "byte_len": 36,
+        "framing_bytes": [
+          {
+            "end": 3210,
+            "start": 3207
+          },
+          {
+            "end": 3211,
+            "start": 3210
+          },
+          {
+            "end": 3243,
+            "start": 3242
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 3207,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#86971cc7477d9263025d4aef1841530b55a6f4609e09cd5b1b89a557be16c989": {
+        "byte_len": 18,
+        "framing_bytes": [
+          {
+            "end": 1688,
+            "start": 1685
+          },
+          {
+            "end": 1689,
+            "start": 1688
+          },
+          {
+            "end": 1703,
+            "start": 1702
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 1685,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#8ad2acfa10c4b906020e60821b155e047e043bb67e5e794e40a6341f36c41bf6": {
+        "byte_len": 40,
+        "framing_bytes": [
+          {
+            "end": 1770,
+            "start": 1767
+          },
+          {
+            "end": 1771,
+            "start": 1770
+          },
+          {
+            "end": 1807,
+            "start": 1806
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 1767,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#9131858690abf3892714311a78283c02ed6042f5bfaf162a3bfb7f7c167924dc": {
+        "byte_len": 21,
+        "framing_bytes": [
+          {
+            "end": 1346,
+            "start": 1343
+          },
+          {
+            "end": 1347,
+            "start": 1346
+          },
+          {
+            "end": 1364,
+            "start": 1363
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 1343,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#a29e9b4804f67d913869829498f6b5f947fd07cce0a60ff5483dd4f843a93c38": {
+        "byte_len": 36,
+        "framing_bytes": [
+          {
+            "end": 941,
+            "start": 938
+          },
+          {
+            "end": 942,
+            "start": 941
+          },
+          {
+            "end": 974,
+            "start": 973
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 938,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#a8a3f635b13043ac7310f0fd10236aaccc5aaf48e7c3089a7b18e453ac9907ed": {
+        "byte_len": 78,
+        "framing_bytes": [
+          {
+            "end": 1913,
+            "start": 1910
+          },
+          {
+            "end": 1914,
+            "start": 1913
+          },
+          {
+            "end": 1988,
+            "start": 1987
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 1910,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#ac5a083f6ee058e518abcfc21b3454550fb69f88aa5daa2e7f5c0d4284bdb1fe": {
+        "byte_len": 34,
+        "framing_bytes": [
+          {
+            "end": 1546,
+            "start": 1543
+          },
+          {
+            "end": 1547,
+            "start": 1546
+          },
+          {
+            "end": 1577,
+            "start": 1576
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 1543,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#aedb772d01eb78f733238fd676387549e4bb52ff1007f9a4b44779ac9b4879f6": {
+        "byte_len": 25,
+        "framing_bytes": [
+          {
+            "end": 1015,
+            "start": 1012
+          },
+          {
+            "end": 1016,
+            "start": 1015
+          },
+          {
+            "end": 1037,
+            "start": 1036
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 1012,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#afdf008dd0de8761899ace1afbbf31a9f493b85e63bb70345ce61b66b4f11574": {
+        "byte_len": 48,
+        "framing_bytes": [
+          {
+            "end": 2141,
+            "start": 2138
+          },
+          {
+            "end": 2142,
+            "start": 2141
+          },
+          {
+            "end": 2186,
+            "start": 2185
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 2138,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#b3f9cc5e5f5fabb69ebeb013407bb87cec22aa530bf5a4594a99dc383c836a5c": {
+        "byte_len": 84,
+        "framing_bytes": [
+          {
+            "end": 2775,
+            "start": 2772
+          },
+          {
+            "end": 2776,
+            "start": 2775
+          },
+          {
+            "end": 2856,
+            "start": 2855
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 2772,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#bb46da4c8c9689b0be514733c9422fee79ee754a8a31dffe5bbbb689908fe312": {
+        "byte_len": 45,
+        "framing_bytes": [
+          {
+            "end": 1867,
+            "start": 1864
+          },
+          {
+            "end": 1868,
+            "start": 1867
+          },
+          {
+            "end": 1909,
+            "start": 1908
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 1864,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#be3c9ae1f888fa6ef933bdb4d18407765fac50743a28eb810abd33c322233f2d": {
+        "byte_len": 40,
+        "framing_bytes": [
+          {
+            "end": 2272,
+            "start": 2269
+          },
+          {
+            "end": 2273,
+            "start": 2272
+          },
+          {
+            "end": 2309,
+            "start": 2308
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 2269,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#c3b6fe6c483a058d663e4928848501c66a8797d69660e7951be3c0db0389c41a": {
+        "byte_len": 41,
+        "framing_bytes": [
+          {
+            "end": 3033,
+            "start": 3030
+          },
+          {
+            "end": 3034,
+            "start": 3033
+          },
+          {
+            "end": 3071,
+            "start": 3070
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 3030,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#c894db9f4685c288fefc15bd3bfcd8b21608a495fdd134f3d0c15705b9af377f": {
+        "byte_len": 66,
+        "framing_bytes": [
+          {
+            "end": 495,
+            "start": 493
+          },
+          {
+            "end": 496,
+            "start": 495
+          },
+          {
+            "end": 559,
+            "start": 558
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 493,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#ca3861d771e65574b4d9730838e10636c0e6fc6846171203ee09c6b2900722c0": {
+        "byte_len": 55,
+        "framing_bytes": [
+          {
+            "end": 1811,
+            "start": 1808
+          },
+          {
+            "end": 1812,
+            "start": 1811
+          },
+          {
+            "end": 1863,
+            "start": 1862
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 1808,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#d17ee4d7058ae8b086806d34356cd5930c3838d48d7f8bff1731c4bb27f16244": {
+        "byte_len": 25,
+        "framing_bytes": [
+          {
+            "end": 1041,
+            "start": 1038
+          },
+          {
+            "end": 1042,
+            "start": 1041
+          },
+          {
+            "end": 1063,
+            "start": 1062
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 1038,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#d835aa031983718128e39d66841fa018ff4681f24e34c9b19b2cfeac081fdb28": {
+        "byte_len": 38,
+        "framing_bytes": [
+          {
+            "end": 2522,
+            "start": 2519
+          },
+          {
+            "end": 2523,
+            "start": 2522
+          },
+          {
+            "end": 2557,
+            "start": 2556
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 2519,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#e0d80a670bab0fd11cb8b74e3b572bdd40f265d88a111076f6b290f2532ec8e6": {
+        "byte_len": 113,
+        "framing_bytes": [
+          {
+            "end": 297,
+            "start": 295
+          },
+          {
+            "end": 298,
+            "start": 297
+          },
+          {
+            "end": 299,
+            "start": 298
+          },
+          {
+            "end": 407,
+            "start": 406
+          },
+          {
+            "end": 408,
+            "start": 407
+          }
+        ],
+        "level": "step.complex_entity_instance",
+        "offset": 295,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#e217aa13eefcb5ec1180352c57f9748e7d40f1e851675ae3a0e1b94c555b8ba9": {
+        "byte_len": 58,
+        "framing_bytes": [
+          {
+            "end": 238,
+            "start": 236
+          },
+          {
+            "end": 239,
+            "start": 238
+          },
+          {
+            "end": 240,
+            "start": 239
+          },
+          {
+            "end": 293,
+            "start": 292
+          },
+          {
+            "end": 294,
+            "start": 293
+          }
+        ],
+        "level": "step.complex_entity_instance",
+        "offset": 236,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#e4c6b4aa3a703d3e2b167c895e3ee70e454ffa1b41c9f92ed8eda44af0fc7e9d": {
+        "byte_len": 35,
+        "framing_bytes": [
+          {
+            "end": 3075,
+            "start": 3072
+          },
+          {
+            "end": 3076,
+            "start": 3075
+          },
+          {
+            "end": 3107,
+            "start": 3106
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 3072,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#ea00089edd9cc2ef4272488b73528caa261e9c466c1b410ce3a98933c1562a37": {
+        "byte_len": 35,
+        "framing_bytes": [
+          {
+            "end": 905,
+            "start": 902
+          },
+          {
+            "end": 906,
+            "start": 905
+          },
+          {
+            "end": 937,
+            "start": 936
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 902,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#eac3ed8922d515e0f00b9144fdd6ea43fb231bab9207865d9cb03fed84e2515a": {
+        "byte_len": 93,
+        "framing_bytes": [
+          {
+            "end": 616,
+            "start": 614
+          },
+          {
+            "end": 617,
+            "start": 616
+          },
+          {
+            "end": 707,
+            "start": 706
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 614,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#ef09fa5a756d6c4b184ec55f4a9ac6fc9f502e7c9592abedb6f3807ff0344f3e": {
+        "byte_len": 24,
+        "framing_bytes": [
+          {
+            "end": 2116,
+            "start": 2113
+          },
+          {
+            "end": 2117,
+            "start": 2116
+          },
+          {
+            "end": 2137,
+            "start": 2136
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 2113,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#f050534b691cc2a6438ff9d4164c87bfdfefe9b2643568631a7ed794315a141c": {
+        "byte_len": 25,
+        "framing_bytes": [
+          {
+            "end": 1744,
+            "start": 1741
+          },
+          {
+            "end": 1745,
+            "start": 1744
+          },
+          {
+            "end": 1766,
+            "start": 1765
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 1741,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#f178d83220c4a3d83ca7f9be7cd1ca9254cb1cac0b949feb4daf6818e410af53": {
+        "byte_len": 132,
+        "framing_bytes": [
+          {
+            "end": 710,
+            "start": 708
+          },
+          {
+            "end": 711,
+            "start": 710
+          },
+          {
+            "end": 840,
+            "start": 839
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 708,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#f33e6c21a9cb755a1ada220b56de0b6b31c9e356650a4550b13c76ad747f5000": {
+        "byte_len": 48,
+        "framing_bytes": [
+          {
+            "end": 2660,
+            "start": 2657
+          },
+          {
+            "end": 2661,
+            "start": 2660
+          },
+          {
+            "end": 2705,
+            "start": 2704
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 2657,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#f7414a0b58618deb5489037f0b98de0cd660a21de2a03a2c3698356c5470c488": {
+        "byte_len": 24,
+        "framing_bytes": [
+          {
+            "end": 2635,
+            "start": 2632
+          },
+          {
+            "end": 2636,
+            "start": 2635
+          },
+          {
+            "end": 2656,
+            "start": 2655
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 2632,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#f91e92d728755c4ab9b3a0120c72a6be57e58a523f0a8204319c55c9f07b202f": {
+        "byte_len": 78,
+        "framing_bytes": [
+          {
+            "end": 2037,
+            "start": 2034
+          },
+          {
+            "end": 2038,
+            "start": 2037
+          },
+          {
+            "end": 2112,
+            "start": 2111
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 2034,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#fcaf06f69c8b62c4a77dba39c6acb807cef2456e0cf02f2f0b9be744d6e76ea2": {
+        "byte_len": 39,
+        "framing_bytes": [
+          {
+            "end": 1648,
+            "start": 1645
+          },
+          {
+            "end": 1649,
+            "start": 1648
+          },
+          {
+            "end": 1684,
+            "start": 1683
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 1645,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#fdac51ed1a6da5a47dddab585194b475518df234a0d7663d714053a15a18c59b": {
+        "byte_len": 81,
+        "framing_bytes": [
+          {
+            "end": 2190,
+            "start": 2187
+          },
+          {
+            "end": 2191,
+            "start": 2190
+          },
+          {
+            "end": 2268,
+            "start": 2267
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 2187,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#feb672d77828a72e91ddb3d1916894043aa33d4b140073414fd6da31594e066f": {
+        "byte_len": 81,
+        "framing_bytes": [
+          {
+            "end": 2440,
+            "start": 2437
+          },
+          {
+            "end": 2441,
+            "start": 2440
+          },
+          {
+            "end": 2518,
+            "start": 2517
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 2437,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      }
     },
     "unrepresented": []
   }

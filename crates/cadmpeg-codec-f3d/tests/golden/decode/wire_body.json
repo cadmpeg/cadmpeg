@@ -200,6 +200,7 @@
         "design_body_bounds": [],
         "design_body_members": [],
         "design_body_recipe_operands": [],
+        "design_body_reference_tails": [],
         "design_canvas_images": [],
         "design_component_naming_spaces": [],
         "design_component_occurrences": [],
@@ -235,6 +236,8 @@
         "design_parameter_state_companions": [],
         "design_parameter_states": [],
         "design_parameters": [],
+        "design_placement_constructions": [],
+        "design_profile_curve_selections": [],
         "design_record_headers": [],
         "design_sheet_metal_settings": [],
         "design_sketch_placements": [],
@@ -418,7 +421,7 @@
     "metadata": {
       "active_brep": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
       "active_brep_sha256": "87d7fe044fd1c424a2a9b629f8afbdef325cd26d7d882e6deb5a8b3898eef5ab",
-      "document_local_sha256": "511822b343f65b07085cf7b23dd9e5ff4cb6b143c79cac67988181b03d3357a3"
+      "document_local_sha256": "8b75b809044e43c588a5543f1fb8999298491e53cc65670c871115a17c951aaa"
     },
     "retained_records": {
       "f3d:file:source-image#0": {

@@ -4,7 +4,7 @@
     "model": {
       "appearance_bindings": [
         {
-          "appearance": "catia:appearance:rgba#d2d2d2d2",
+          "appearance": "catia:appearance:rgba#d2d2d2d2:63617469613a70726573656e746174696f6e3a646973706c61792d636f6c6f722330",
           "id": "catia:appearance:binding#0:d2d2d2d2",
           "object_type": "CATIA V5 display property",
           "target": {
@@ -13,7 +13,7 @@
           }
         },
         {
-          "appearance": "catia:appearance:rgba#d2d2d2d2",
+          "appearance": "catia:appearance:rgba#d2d2d2d2:63617469613a70726573656e746174696f6e3a646973706c61792d636f6c6f722331",
           "id": "catia:appearance:binding#1:d2d2d2d2",
           "object_type": "CATIA V5 display property",
           "target": {
@@ -22,7 +22,7 @@
           }
         },
         {
-          "appearance": "catia:appearance:rgba#d2d2d2d2",
+          "appearance": "catia:appearance:rgba#d2d2d2d2:63617469613a70726573656e746174696f6e3a646973706c61792d636f6c6f722332",
           "id": "catia:appearance:binding#2:d2d2d2d2",
           "object_type": "CATIA V5 display property",
           "target": {
@@ -31,7 +31,7 @@
           }
         },
         {
-          "appearance": "catia:appearance:rgba#d2d2d2d2",
+          "appearance": "catia:appearance:rgba#d2d2d2d2:63617469613a70726573656e746174696f6e3a646973706c61792d636f6c6f722333",
           "id": "catia:appearance:binding#3:d2d2d2d2",
           "object_type": "CATIA V5 display property",
           "target": {
@@ -48,7 +48,41 @@
             "g": 0.8235294222831726,
             "r": 0.8235294222831726
           },
-          "id": "catia:appearance:rgba#d2d2d2d2",
+          "id": "catia:appearance:rgba#d2d2d2d2:63617469613a70726573656e746174696f6e3a646973706c61792d636f6c6f722330",
+          "native_ref": "catia:presentation:display-color#0",
+          "schema": "CATIA V5 display color"
+        },
+        {
+          "base_color": {
+            "a": 0.8235294222831726,
+            "b": 0.8235294222831726,
+            "g": 0.8235294222831726,
+            "r": 0.8235294222831726
+          },
+          "id": "catia:appearance:rgba#d2d2d2d2:63617469613a70726573656e746174696f6e3a646973706c61792d636f6c6f722331",
+          "native_ref": "catia:presentation:display-color#1",
+          "schema": "CATIA V5 display color"
+        },
+        {
+          "base_color": {
+            "a": 0.8235294222831726,
+            "b": 0.8235294222831726,
+            "g": 0.8235294222831726,
+            "r": 0.8235294222831726
+          },
+          "id": "catia:appearance:rgba#d2d2d2d2:63617469613a70726573656e746174696f6e3a646973706c61792d636f6c6f722332",
+          "native_ref": "catia:presentation:display-color#2",
+          "schema": "CATIA V5 display color"
+        },
+        {
+          "base_color": {
+            "a": 0.8235294222831726,
+            "b": 0.8235294222831726,
+            "g": 0.8235294222831726,
+            "r": 0.8235294222831726
+          },
+          "id": "catia:appearance:rgba#d2d2d2d2:63617469613a70726573656e746174696f6e3a646973706c61792d636f6c6f722333",
+          "native_ref": "catia:presentation:display-color#3",
           "schema": "CATIA V5 display color"
         }
       ],
@@ -739,25 +773,21 @@
         "design_objects": [],
         "display_colors": [
           {
-            "appearance": "catia:appearance:rgba#d2d2d2d2",
             "id": "catia:presentation:display-color#0",
             "source_kind": "fbb-face-color",
             "source_record": null
           },
           {
-            "appearance": "catia:appearance:rgba#d2d2d2d2",
             "id": "catia:presentation:display-color#1",
             "source_kind": "fbb-face-color",
             "source_record": null
           },
           {
-            "appearance": "catia:appearance:rgba#d2d2d2d2",
             "id": "catia:presentation:display-color#2",
             "source_kind": "fbb-face-color",
             "source_record": null
           },
           {
-            "appearance": "catia:appearance:rgba#d2d2d2d2",
             "id": "catia:presentation:display-color#3",
             "source_kind": "fbb-face-color",
             "source_record": null
@@ -1159,7 +1189,7 @@
       "standard_topology_multiple_endpoint_domain_count": 0,
       "standard_topology_native_endpoint_pair_count": 0,
       "standard_topology_singleton_endpoint_domain_count": 6,
-      "transferred_appearance_asset_count": 1,
+      "transferred_appearance_asset_count": 4,
       "transferred_appearance_binding_count": 4,
       "transferred_configuration_count": 0,
       "transferred_consolidated_line_profile_count": 0,

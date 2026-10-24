@@ -2,8 +2,8 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 8200,
-      "payload_sha256": "439363aa3ac23fc793ba4458c62d69ba9d81fcf1da99a9e97c6e8faa3013283e"
+      "payload_len": 8199,
+      "payload_sha256": "8dea5bb9ed33ee33f1201a060529760b4848049b4a8bc9653a3383b5ecaaee24"
     },
     {
       "name": "Cadmpeg.StringHasher.0.txt",
@@ -13,7 +13,7 @@
     {
       "name": "Model.brp",
       "payload_len": 2536,
-      "payload_sha256": "4467376c133eba28456fc5636e40283e0ac65ddf3974d210bed40bc7b858e9d0"
+      "payload_sha256": "fe32214a322d4110bcd377b28fcefb07b56a3f92b9198b941cb1e6694933076f"
     }
   ],
   "report": {
@@ -455,7 +455,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 3 native record(s) from `fcstd.annotations`",
+        "message": "the fcstd write omits 3 native record(s) from `fcstd.annotations`: fcstd:native:annotation#Dimension, fcstd:native:annotation#Note, fcstd:native:annotation#Symbol",
         "severity": "info"
       },
       {
@@ -465,7 +465,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 6 native record(s) from `fcstd.applications`",
+        "message": "the fcstd write omits 6 native record(s) from `fcstd.applications`: fcstd:native:application#Dimension, fcstd:native:application#Note, fcstd:native:application#Page, fcstd:native:application#Symbol, fcstd:native:application#Template, fcstd:native:application#View",
         "severity": "info"
       },
       {
@@ -475,7 +475,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 6 native record(s) from `fcstd.drawings`",
+        "message": "the fcstd write omits 6 native record(s) from `fcstd.drawings`: fcstd:native:drawing#Dimension, fcstd:native:drawing#Note, fcstd:native:drawing#Page, fcstd:native:drawing#Symbol, fcstd:native:drawing#Template, fcstd:native:drawing#View",
         "severity": "info"
       },
       {
@@ -485,7 +485,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 4 native record(s) from `fcstd.entries`",
+        "message": "the fcstd write omits 4 native record(s) from `fcstd.entries`: fcstd:native:entry#BoxCorners, fcstd:native:entry#Dimension.SavedGeometry.0.brp, fcstd:native:entry#Model.Shape.brp, fcstd:native:entry#cc0_template.svg",
         "severity": "info"
       },
       {
@@ -495,7 +495,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 1 native record(s) from `fcstd.extensions`",
+        "message": "the fcstd write omits 1 native record(s) from `fcstd.extensions`: fcstd:native:extension#View:0%3ACosmeticExtension",
         "severity": "info"
       },
       {
@@ -505,7 +505,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 6 native record(s) from `fcstd.objects`",
+        "message": "the fcstd write omits 6 native record(s) from `fcstd.objects`: fcstd:native:object#Dimension, fcstd:native:object#Note, fcstd:native:object#Page, fcstd:native:object#Symbol, fcstd:native:object#Template, fcstd:native:object#View",
         "severity": "info"
       },
       {
@@ -515,7 +515,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 117 native record(s) from `fcstd.properties`",
+        "message": "the fcstd write omits 117 native record(s) from `fcstd.properties`: fcstd:native:property#CorpusMetadata:ExpressionEngine, fcstd:native:property#Dimension:AngleOverride, fcstd:native:property#Dimension:Arbitrary, fcstd:native:property#Dimension:ArbitraryTolerances, fcstd:native:property#Dimension:BoxCorners, fcstd:native:property#Dimension:Caption, fcstd:native:property#Dimension:EqualTolerance, fcstd:native:property#Dimension:ExpressionEngine, fcstd:native:property#Dimension:ExtensionAngle, fcstd:native:property#Dimension:FormatSpec, fcstd:native:property#Dimension:FormatSpecOverTolerance, fcstd:native:property#Dimension:FormatSpecUnderTolerance, fcstd:native:property#Dimension:Inverted, fcstd:native:property#Dimension:Label, fcstd:native:property#Dimension:Label2, fcstd:native:property#Dimension:LineAngle, fcstd:native:property#Dimension:LockPosition, fcstd:native:property#Dimension:MeasureType, fcstd:native:property#Dimension:OverTolerance, fcstd:native:property#Dimension:References2D, fcstd:native:property#Dimension:References3D, fcstd:native:property#Dimension:Rotation, fcstd:native:property#Dimension:SavedGeometry, fcstd:native:property#Dimension:Scale, fcstd:native:property#Dimension:ScaleType, fcstd:native:property#Dimension:ShowUnits, fcstd:native:property#Dimension:TheoreticalExact, fcstd:native:property#Dimension:Type, fcstd:native:property#Dimension:UnderTolerance, fcstd:native:property#Dimension:UseActualArea, fcstd:native:property#Dimension:Visibility, fcstd:native:property#Dimension:X, fcstd:native:property#Dimension:Y, fcstd:native:property#Note:Caption, fcstd:native:property#Note:ExpressionEngine, fcstd:native:property#Note:Font, fcstd:native:property#Note:Label, fcstd:native:property#Note:Label2, fcstd:native:property#Note:LineSpace, fcstd:native:property#Note:LockPosition, fcstd:native:property#Note:MaxWidth, fcstd:native:property#Note:Owner, fcstd:native:property#Note:Rotation, fcstd:native:property#Note:Scale, fcstd:native:property#Note:ScaleType, fcstd:native:property#Note:Text, fcstd:native:property#Note:TextColor, fcstd:native:property#Note:TextSize, fcstd:native:property#Note:TextStyle, fcstd:native:property#Note:Visibility, fcstd:native:property#Note:X, fcstd:native:property#Note:Y, fcstd:native:property#Page:ExpressionEngine, fcstd:native:property#Page:KeepUpdated, fcstd:native:property#Page:Label, fcstd:native:property#Page:Label2, fcstd:native:property#Page:NextBalloonIndex, fcstd:native:property#Page:ProjectionType, fcstd:native:property#Page:Scale, fcstd:native:property#Page:Template, fcstd:native:property#Page:Views, fcstd:native:property#Page:Visibility, fcstd:native:property#Symbol:Caption, fcstd:native:property#Symbol:EditableTexts, fcstd:native:property#Symbol:ExpressionEngine, fcstd:native:property#Symbol:Label, fcstd:native:property#Symbol:Label2, fcstd:native:property#Symbol:LockPosition, fcstd:native:property#Symbol:Owner, fcstd:native:property#Symbol:Rotation, fcstd:native:property#Symbol:Scale, fcstd:native:property#Symbol:ScaleType, fcstd:native:property#Symbol:Symbol, fcstd:native:property#Symbol:Visibility, fcstd:native:property#Symbol:X, fcstd:native:property#Symbol:Y, fcstd:native:property#Template:EditableTexts, fcstd:native:property#Template:ExpressionEngine, fcstd:native:property#Template:Height, fcstd:native:property#Template:Label, fcstd:native:property#Template:Label2, fcstd:native:property#Template:Orientation, fcstd:native:property#Template:PageResult, fcstd:native:property#Template:Template, fcstd:native:property#Template:Visibility, fcstd:native:property#Template:Width, fcstd:native:property#View:Caption, fcstd:native:property#View:CenterLines, fcstd:native:property#View:CoarseView, fcstd:native:property#View:CosmeticEdges, fcstd:native:property#View:CosmeticVertexes, fcstd:native:property#View:Direction, fcstd:native:property#View:ExpressionEngine, fcstd:native:property#View:Focus, fcstd:native:property#View:GeomFormats, fcstd:native:property#View:HardHidden, fcstd:native:property#View:IsoCount, fcstd:native:property#View:IsoHidden, fcstd:native:property#View:IsoVisible, fcstd:native:property#View:Label, fcstd:native:property#View:Label2, fcstd:native:property#View:LockPosition, fcstd:native:property#View:Perspective, fcstd:native:property#View:Rotation, fcstd:native:property#View:Scale, fcstd:native:property#View:ScaleType, fcstd:native:property#View:ScrubCount, fcstd:native:property#View:SeamHidden, fcstd:native:property#View:SeamVisible, fcstd:native:property#View:SmoothHidden, fcstd:native:property#View:SmoothVisible, fcstd:native:property#View:Source, fcstd:native:property#View:Visibility, fcstd:native:property#View:X, fcstd:native:property#View:XDirection, fcstd:native:property#View:XSource, fcstd:native:property#View:Y",
         "severity": "info"
       }
     ],
@@ -660,9 +660,6 @@
               }
             },
             "unknowns": {
-              "disposition": "dropped"
-            },
-            "unreadable_entries": {
               "disposition": "dropped"
             }
           }
