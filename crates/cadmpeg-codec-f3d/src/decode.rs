@@ -532,7 +532,8 @@ fn linear_termination_is_resolved(termination: &cadmpeg_ir::features::LinearTerm
         | LinearTermination::ThroughAll {}
         | LinearTermination::ThroughNext {}
         | LinearTermination::ToFirst {}
-        | LinearTermination::ToLast {} => true,
+        | LinearTermination::ToLast {}
+        | LinearTermination::ToPlane { .. } => true,
     }
 }
 
@@ -637,7 +638,9 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             let start_is_resolved = match start {
                 ExtrudeStart::Unresolved {} => false,
                 ExtrudeStart::FromFace { face, .. } => face_selection_is_resolved(face),
-                ExtrudeStart::ProfilePlane {} | ExtrudeStart::OffsetProfilePlane { .. } => true,
+                ExtrudeStart::ProfilePlane {}
+                | ExtrudeStart::OffsetProfilePlane { .. }
+                | ExtrudeStart::FromPlane { .. } => true,
             };
             let extent_is_resolved = match extent {
                 ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {

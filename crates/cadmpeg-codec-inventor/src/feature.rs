@@ -2142,10 +2142,8 @@ fn project_extrusion(
         .is_some_and(|reference| reference.index() != 0);
     let first = extrusion_side(source, index, ExtrusionSideSlots::FIRST, extent_value)?;
     let start = if extent_value == EXTENT_FROM_TO {
-        ExtrudeStart::FromFace {
-            face: termination_target(source, index, 8, 10, 17)?,
-            offset: None,
-        }
+        let (plane, native) = extent_target_plane(source, index, 8, 10, 17)?;
+        ExtrudeStart::FromPlane { plane, native }
     } else {
         ExtrudeStart::ProfilePlane {}
     };
@@ -2271,10 +2269,10 @@ fn extrusion_side(
         },
         EXTENT_THROUGH_NEXT => LinearTermination::ThroughNext {},
         EXTENT_THROUGH_ALL => LinearTermination::ThroughAll {},
-        EXTENT_FROM_TO | EXTENT_TO => LinearTermination::ToFace {
-            face: termination_target(source, index, 11, 13, 18)?,
-            offset: None,
-        },
+        EXTENT_FROM_TO | EXTENT_TO => {
+            let (plane, native) = extent_target_plane(source, index, 11, 13, 18)?;
+            LinearTermination::ToPlane { plane, native }
+        }
         _ => return None,
     };
     Some(ExtrudeSide {
@@ -2284,14 +2282,18 @@ fn extrusion_side(
 }
 
 /// Resolve an extent target: a work plane, or a model face recorded as a
-/// termination flag with value 1 and its plane surface.
-fn termination_target(
+/// termination flag with value 1 and its plane surface. Both store a plane
+/// in centimetres and no face identity.
+fn extent_target_plane(
     source: &PmDcFeature,
     index: &ProjectionIndex<'_>,
     plane_slot: usize,
     flag_slot: usize,
     surface_slot: usize,
-) -> Option<cadmpeg_ir::features::FaceSelection> {
+) -> Option<(
+    cadmpeg_ir::features::FeatureSupportPlaneFrame,
+    cadmpeg_core::text::NonBlankString,
+)> {
     let references = source.properties.references();
     let plane = references.get(plane_slot)?.index();
     let flag = references.get(flag_slot)?.index();
@@ -2305,7 +2307,7 @@ fn termination_target(
             .work_planes
             .get(&(token, plane.checked_sub(1)?))
             .and_then(Option::as_ref)?;
-        return Some(cadmpeg_ir::features::FaceSelection::Native(plane.id()));
+        return target_plane(plane.origin, plane.u_axis, plane.v_axis, plane.id());
     }
     if !matches!(
         resolve_property(token, flag, index)?.kind,
@@ -2314,10 +2316,43 @@ fn termination_target(
         return None;
     }
     let surface = resolve_property(token, surface, index)?;
-    if !matches!(surface.kind, PmDcFeaturePropertyKind::PlaneSurface { .. }) {
+    let PmDcFeaturePropertyKind::PlaneSurface {
+        origin,
+        u_axis,
+        v_axis,
+        ..
+    } = surface.kind
+    else {
         return None;
-    }
-    Some(cadmpeg_ir::features::FaceSelection::Native(surface.id()))
+    };
+    target_plane(origin, u_axis, v_axis, surface.id())
+}
+
+/// Build a model-space plane frame from an origin in centimetres and two
+/// in-plane axes. The normal is the cross product of the axes.
+fn target_plane(
+    origin: [cadmpeg_ir::scalar::FiniteReal; 3],
+    u_axis: [cadmpeg_ir::scalar::FiniteReal; 3],
+    v_axis: [cadmpeg_ir::scalar::FiniteReal; 3],
+    native: String,
+) -> Option<(
+    cadmpeg_ir::features::FeatureSupportPlaneFrame,
+    cadmpeg_core::text::NonBlankString,
+)> {
+    let vector = |value: [cadmpeg_ir::scalar::FiniteReal; 3]| {
+        Vector3::new(value[0].get(), value[1].get(), value[2].get())
+    };
+    let u_axis = vector(u_axis);
+    let plane = cadmpeg_ir::features::FeatureSupportPlaneFrame::new(
+        Point3::new(
+            origin[0].get() * 10.0,
+            origin[1].get() * 10.0,
+            origin[2].get() * 10.0,
+        ),
+        u_axis.cross(vector(v_axis)),
+        u_axis,
+    )?;
+    Some((plane, cadmpeg_core::text::NonBlankString::new(native)?))
 }
 
 fn project_fillet(

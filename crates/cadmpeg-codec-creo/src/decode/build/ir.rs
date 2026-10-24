@@ -158,7 +158,8 @@ pub(super) fn linear_termination_has_unresolved_operands(termination: &LinearTer
         | LinearTermination::ThroughAll {}
         | LinearTermination::ThroughNext {}
         | LinearTermination::ToFirst {}
-        | LinearTermination::ToLast {} => false,
+        | LinearTermination::ToLast {}
+        | LinearTermination::ToPlane { .. } => false,
     }
 }
 
