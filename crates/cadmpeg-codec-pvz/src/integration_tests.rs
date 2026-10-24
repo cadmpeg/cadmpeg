@@ -17,6 +17,8 @@ use crate::test_support::{
 };
 use crate::PvzCodec;
 
+mod curved_solids;
+
 fn inspect(bytes: &[u8]) -> ContainerSummary {
     PvzCodec
         .inspect(&mut Cursor::new(bytes), &InspectOptions::default())

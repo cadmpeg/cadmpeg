@@ -174,6 +174,135 @@ impl Stream {
         self.record(token::EXACT_PCURVE, &payload)
     }
 
+    /// A cylinder record `O + cos(u)·X + sin(u)·Y + v·A` (§8.5) with no
+    /// range pairs.
+    pub(crate) fn cylinder(
+        &mut self,
+        origin: [f64; 3],
+        x: [f64; 3],
+        y: [f64; 3],
+        axis: [f64; 3],
+    ) -> &mut Self {
+        let payload = self
+            .payload()
+            .u8(2)
+            .u8(0)
+            .u8(0)
+            .scalars(&origin)
+            .scalars(&x)
+            .scalars(&y)
+            .scalars(&axis)
+            .u8(0)
+            .bytes();
+        self.record(token::EXACT_SURFACE, &payload)
+    }
+
+    /// A cone record `O + v·A + (a + b·v)·(cos(u)·X + sin(u)·Y)` (§8.6)
+    /// with no range pairs.
+    pub(crate) fn cone(
+        &mut self,
+        origin: [f64; 3],
+        x: [f64; 3],
+        y: [f64; 3],
+        axis: [f64; 3],
+        [a, b]: [f64; 2],
+    ) -> &mut Self {
+        let payload = self
+            .payload()
+            .u8(1)
+            .u8(0)
+            .u8(0)
+            .scalars(&origin)
+            .scalars(&x)
+            .scalars(&y)
+            .scalars(&axis)
+            .scalars(&[a, b])
+            .u8(0)
+            .bytes();
+        self.record(token::EXACT_SURFACE, &payload)
+    }
+
+    /// A B-spline surface record (§8.9) with no periodic direction and no
+    /// range pairs.
+    pub(crate) fn bspline_surface(&mut self, patch: &Patch) -> &mut Self {
+        let head = self.payload().u8(4).u8(0).u8(0);
+        let payload = patch.body(head).u8(0).bytes();
+        self.record(token::EXACT_SURFACE, &payload)
+    }
+
+    /// A plane record `O + u·U + v·V` with normal `N`, no range pairs, and
+    /// the embedded B-spline `embedded` (§8.10).
+    pub(crate) fn plane_with_embedded(
+        &mut self,
+        origin: [f64; 3],
+        u: [f64; 3],
+        v: [f64; 3],
+        normal: [f64; 3],
+        embedded: &Patch,
+    ) -> &mut Self {
+        let head = self
+            .payload()
+            .u8(5)
+            .u8(0)
+            .u8(0)
+            .scalars(&origin)
+            .scalars(&u)
+            .scalars(&v)
+            .scalars(&normal)
+            .u8(4)
+            .u8(0)
+            .u8(0);
+        let payload = embedded.body(head).bytes();
+        self.record(token::EXACT_SURFACE, &payload)
+    }
+
+    /// A singular edge use of edge `edge` over `[t_start, t_end]` (§8.13),
+    /// with its terminator.
+    pub(crate) fn singular_use(&mut self, edge: u32, [start, end]: [f64; 2]) -> &mut Self {
+        let payload = self.payload().u32(edge).scalar(start).scalar(end).bytes();
+        self.record(token::EXACT_SINGULAR_USE, &payload);
+        self.terminator()
+    }
+
+    /// A full circle edge curve `C + cos(t)·X + sin(t)·Y`, `t` in `[0, 2π]`.
+    pub(crate) fn circle_edge(&mut self, center: [f64; 3], x: [f64; 3], y: [f64; 3]) -> &mut Self {
+        let payload = self
+            .payload()
+            .u8(1)
+            .u8(0)
+            .scalars(&center)
+            .scalars(&x)
+            .scalars(&y)
+            .u8(0)
+            .bytes();
+        self.record(token::EXACT_EDGE_CURVE, &payload)
+    }
+
+    /// A point edge curve.
+    pub(crate) fn point_edge(&mut self, point: [f64; 3]) -> &mut Self {
+        let payload = self.payload().u8(3).u8(0).scalars(&point).u8(0).bytes();
+        self.record(token::EXACT_EDGE_CURVE, &payload)
+    }
+
+    /// A full ellipse pcurve `C + cos(t)·X + sin(t)·Y`, `t` in `[0, 2π]`.
+    pub(crate) fn ellipse_pcurve(
+        &mut self,
+        center: [f64; 2],
+        x: [f64; 2],
+        y: [f64; 2],
+    ) -> &mut Self {
+        let payload = self
+            .payload()
+            .u8(4)
+            .u8(0)
+            .scalars(&center)
+            .scalars(&x)
+            .scalars(&y)
+            .u8(0)
+            .bytes();
+        self.record(token::EXACT_PCURVE, &payload)
+    }
+
     /// The stream payload with its closing stream terminator.
     pub(crate) fn finish(mut self) -> Vec<u8> {
         self.terminator();
@@ -183,6 +312,62 @@ impl Stream {
     /// The stream payload without a closing stream terminator.
     pub(crate) fn unterminated(self) -> Vec<u8> {
         self.bytes
+    }
+}
+
+/// The body of a B-spline surface (§8.9): the `rational` byte, the knot
+/// axes, the pole counts, and the homogeneous poles in u-major order.
+#[derive(Debug, Clone)]
+pub(crate) struct Patch {
+    pub(crate) rational: bool,
+    pub(crate) orders: [u32; 2],
+    pub(crate) knots: [Vec<f64>; 2],
+    pub(crate) counts: [u32; 2],
+    /// Homogeneous poles `(w·x, w·y, w·z, w)`.
+    pub(crate) poles: Vec<[f64; 4]>,
+}
+
+impl Patch {
+    /// The bilinear patch over `[u0, u1] × [v0, v1]` whose point at
+    /// `(u, v)` is `point(u, v)` when `point` is affine. A rational patch
+    /// gives every pole the weight `weight`; otherwise every weight is 1.
+    pub(crate) fn bilinear(
+        [u0, u1]: [f64; 2],
+        [v0, v1]: [f64; 2],
+        weight: Option<f64>,
+        point: impl Fn(f64, f64) -> [f64; 3],
+    ) -> Self {
+        let rational = weight.is_some();
+        let weight = weight.unwrap_or(1.0);
+        let mut poles = Vec::new();
+        for u in [u0, u1] {
+            for v in [v0, v1] {
+                let [x, y, z] = point(u, v);
+                poles.push([weight * x, weight * y, weight * z, weight]);
+            }
+        }
+        Self {
+            rational,
+            orders: [2, 2],
+            knots: [vec![u0, u0, u1, u1], vec![v0, v0, v1, v1]],
+            counts: [2, 2],
+            poles,
+        }
+    }
+
+    /// `payload` followed by this body.
+    fn body(&self, payload: Payload) -> Payload {
+        let mut payload = payload.u8(u8::from(self.rational));
+        for (order, knots) in self.orders.iter().zip(&self.knots) {
+            payload = payload
+                .u32(*order)
+                .u32(u32::try_from(knots.len()).expect("knot count"))
+                .scalars(knots);
+        }
+        payload = payload.u32(self.counts[0]).u32(self.counts[1]);
+        self.poles
+            .iter()
+            .fold(payload, |payload, pole| payload.scalars(pole))
     }
 }
 

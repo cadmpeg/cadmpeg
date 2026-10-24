@@ -11,7 +11,13 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_test_support::golden::{snapshot_text, Branch, Harness};
 use cadmpeg_test_support::EditableDecodeResult;
 
-use crate::test_support::{assembly, assembly_structure, bracket_member, exact_assembly, package};
+use crate::test_support::solids::{
+    cone_stream, cylinder_stream, holed_block, polyhedron_stream, PlanarCarrier,
+};
+use crate::test_support::{
+    assembly, assembly_structure, bracket_member, cube_package, exact_assembly, package,
+    solid_package,
+};
 use crate::PvzCodec;
 
 const REGENERATE: &str = "UPDATE_GOLDEN=1 cargo test-fast golden";
@@ -63,6 +69,25 @@ fn inputs() -> Vec<(String, Vec<u8>)> {
         "structure_without_geometry".to_owned(),
         package(&[("model.pvs", &assembly_structure("PV-PVS0304"))]),
     ));
+    inputs.extend([
+        (
+            "exact_cylinder".to_owned(),
+            solid_package(cylinder_stream()),
+        ),
+        ("exact_cone_apex".to_owned(), solid_package(cone_stream())),
+        (
+            "exact_bspline_face".to_owned(),
+            cube_package(1, PlanarCarrier::RationalBspline),
+        ),
+        (
+            "exact_secondary_pcurves".to_owned(),
+            cube_package(1, PlanarCarrier::SecondaryPcurves),
+        ),
+        (
+            "exact_holed_block".to_owned(),
+            solid_package(polyhedron_stream(&holed_block())),
+        ),
+    ]);
     inputs
 }
 

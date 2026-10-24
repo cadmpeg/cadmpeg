@@ -1,0 +1,53 @@
+{
+  "container_kind": "zip",
+  "entries": [
+    {
+      "attributes": {
+        "central_header_offset": "1496",
+        "crc32": "362edd1d",
+        "data_offset": "39",
+        "header_offset": "0",
+        "signature": "PV-PVS0304"
+      },
+      "compression": "stored",
+      "name": "model.pvs",
+      "role": "document",
+      "size": {
+        "form": "exact",
+        "size": 158
+      }
+    },
+    {
+      "attributes": {
+        "central_header_offset": "1551",
+        "crc32": "e55b94b5",
+        "data_offset": "234",
+        "header_offset": "197",
+        "signature": "DIV-OL09BL"
+      },
+      "compression": "stored",
+      "name": "part.ol",
+      "role": "model-data",
+      "size": {
+        "form": "exact",
+        "size": 1262
+      }
+    }
+  ],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "pvs_signature": "PV-PVS0304"
+        },
+        "dialect": "pvz:pvs-0304"
+      }
+    }
+  },
+  "notes": [
+    "structure member model.pvs; 1 geometry members"
+  ]
+}

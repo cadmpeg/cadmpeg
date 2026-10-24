@@ -23,6 +23,7 @@ roxmltree.workspace = true
 [dev-dependencies]
 # Test-only raw ZIP fixture assembly.
 cadmpeg-test-support = { workspace = true }
+cadmpeg-measure.workspace = true
 serde_json.workspace = true
 
 [lints]

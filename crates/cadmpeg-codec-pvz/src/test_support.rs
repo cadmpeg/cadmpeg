@@ -267,6 +267,12 @@ pub(crate) fn exact_assembly() -> Vec<u8> {
 /// A package whose `TOP.ASM` places `PART.PRT`, the
 /// [`cube_and_sheet_member`] `part.ol`.
 pub(crate) fn cube_and_sheet_assembly() -> Vec<u8> {
+    part_package(&cube_and_sheet_member())
+}
+
+/// A package whose `TOP.ASM` places `PART.PRT` once with the identity
+/// placement; `PART.PRT` names the geometry member `part.ol`, `member`.
+pub(crate) fn part_package(member: &[u8]) -> Vec<u8> {
     let pool = Node::leaf(0x01, pvs::string_pool_payload(&["part.ol"])).encode();
     let mut payload = pool_atom(0);
     payload.extend([0_u8; 24]);
@@ -279,10 +285,44 @@ pub(crate) fn cube_and_sheet_assembly() -> Vec<u8> {
     )
     .encode();
     let structure = pvs::member("PV-PVS0304", &[(1, "", pool), (2, "", structure)]);
-    package(&[
-        ("model.pvs", &structure),
-        ("part.ol", &cube_and_sheet_member()),
-    ])
+    package(&[("model.pvs", &structure), ("part.ol", member)])
+}
+
+/// A geometry member holding one red appearance and the exact stream
+/// `stream`, with no tessellation.
+pub(crate) fn solid_member(stream: exact::Stream) -> Vec<u8> {
+    let mut attributes = ol::stream_index(token::STREAM_ATTRIBUTES);
+    attributes.extend(ol::appearance_values([
+        1.0, 0.0, 0.0, 0.8, 0.0, 0.0, 0.5, 0.5, 0.5, 32.0, 0.0, 0.0, 0.0, 1.0,
+    ]));
+    attributes.extend(ol::appearance_reference("red", 7));
+    let id = stream.id();
+    ol::member(
+        "DIV-OL09BL",
+        false,
+        &[
+            (token::STREAM_ATTRIBUTES, attributes),
+            (id, stream.finish()),
+        ],
+    )
+}
+
+/// The [`part_package`] of the [`solid_member`] of `stream`.
+pub(crate) fn solid_package(stream: exact::Stream) -> Vec<u8> {
+    part_package(&solid_member(stream))
+}
+
+/// The [`solid_package`] of the cube of [`solids::cube`] whose face `face`
+/// has the carrier `carrier` and whose other faces are planes.
+pub(crate) fn cube_package(face: usize, carrier: solids::PlanarCarrier) -> Vec<u8> {
+    solid_package(solids::polyhedron_stream(&solids::cube(|index| {
+        if index == face {
+            carrier
+        } else {
+            solids::PlanarCarrier::Plane
+        }
+    })))
 }
 
 pub(crate) mod exact;
+pub(crate) mod solids;
