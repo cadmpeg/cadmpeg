@@ -490,3 +490,122 @@ fn accounts_moved_to_threads_reserve_against_one_aggregate_ceiling() {
         matches!(ctx.finish_session(), Err(crate::CodecError::ResourceLimit(actual)) if actual == error)
     );
 }
+
+#[test]
+fn source_free_encode_helpers_use_absolute_retention_on_the_same_actual_account() {
+    use crate::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
+    const DECODE_FLOOR: u64 = 16 * 1024 * 1024;
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 2 * DECODE_FLOOR;
+    let decode_arena = DecodeArena::new();
+    let decode = DecodeContext::new(&decode_arena, &policy, DecodeDepth::Full);
+    assert!(!decode.is_encoding());
+    assert_eq!(decode.retained_bytes_available(), DECODE_FLOOR);
+    let arena = DecodeArena::new();
+    let ctx = DecodeContext::for_encode(&arena, &policy);
+    assert!(ctx.is_encoding());
+    assert_eq!(ctx.depth(), DecodeDepth::Full);
+    assert_eq!(ctx.policy(), &policy);
+    assert_eq!(
+        ctx.retained_bytes_available(),
+        policy.limits.max_retained_bytes
+    );
+    let session = EncodeSession::from_context(&ctx).unwrap();
+    assert!(std::sync::Arc::ptr_eq(
+        &ctx.operation_budget(),
+        &session.account
+    ));
+    ctx.retain_bytes(DECODE_FLOOR + 1, "actual retained encode helper")
+        .unwrap();
+    let available = policy.limits.max_retained_bytes - DECODE_FLOOR - 1;
+    assert_eq!(ctx.retained_bytes_available(), available);
+    let mut output = session.buffer();
+    output.append(b"abc", "simultaneous encoded bytes").unwrap();
+    assert_eq!(output.as_bytes(), b"abc");
+    assert!(ctx.retained_bytes_available() < available);
+    drop(output);
+    assert_eq!(ctx.retained_bytes_available(), available);
+    assert!(ctx.source_streams().unwrap().is_empty());
+    session.finish().unwrap();
+    ctx.finish_session().unwrap();
+    let crate::CodecError::ResourceLimit(error) = decode
+        .retain_bytes(DECODE_FLOOR + 1, "unchanged decode allowance")
+        .unwrap_err()
+    else {
+        panic!("decode proportional refusal");
+    };
+    assert_eq!(
+        (error.limit, error.used, error.additional),
+        (DECODE_FLOOR, 0, DECODE_FLOOR + 1)
+    );
+    assert_eq!(decode.resource_refusal(), Some(error));
+}
+
+#[test]
+fn output_refusal_is_observed_by_source_free_helpers_without_a_new_account() {
+    use crate::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 4;
+    let arena = DecodeArena::new();
+    let ctx = DecodeContext::for_encode(&arena, &policy);
+    let session = EncodeSession::from_context(&ctx).unwrap();
+    let mut output = session.buffer();
+    output.append(b"1234", "full retained output").unwrap();
+    let error = output.append(b"5", "fifth output byte").unwrap_err();
+    assert_eq!((error.limit, error.used, error.additional), (4, 4, 1));
+    assert!(
+        matches!(ctx.retain_bytes(0,"ignored output refusal"),Err(crate::CodecError::ResourceLimit(actual)) if actual==error)
+    );
+    assert_eq!(session.finish(), Err(error));
+    assert_eq!(ctx.resource_refusal(), Some(error));
+}
+
+#[test]
+fn encode_helper_working_overflow_reports_absolute_usage_and_fuses_the_same_session() {
+    use crate::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 32 * 1024 * 1024;
+    let arena = DecodeArena::new();
+    let ctx = DecodeContext::for_encode(&arena, &policy);
+    let session = EncodeSession::from_context(&ctx).unwrap();
+    ctx.retain_bytes(5, "five held report bytes").unwrap();
+    let mut values = Vec::<u64>::new();
+    let crate::CodecError::ResourceLimit(error) = ctx
+        .reserve_working(&mut values, usize::MAX, "actual working size overflow")
+        .unwrap_err()
+    else {
+        panic!("working allocation refusal");
+    };
+    assert_eq!(error.reason, ResourceFailure::AllocationFailed);
+    assert_eq!(error.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(
+        (error.limit, error.used, error.additional),
+        (policy.limits.max_retained_bytes, 5, u64::MAX)
+    );
+    assert_eq!(session.finish(), Err(error));
+    assert_eq!(ctx.resource_refusal(), Some(error));
+    assert!(values.is_empty());
+}
+
+#[test]
+fn encode_helper_allocation_observes_the_existing_shared_refusal_before_cloning() {
+    use crate::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 4;
+    let arena = DecodeArena::new();
+    let ctx = DecodeContext::for_encode(&arena, &policy);
+    let session = EncodeSession::from_context(&ctx).unwrap();
+    let crate::CodecError::ResourceLimit(error) = ctx
+        .retain_bytes(5, "first absolute helper refusal")
+        .unwrap_err()
+    else {
+        panic!("actual caller ceiling");
+    };
+    assert_eq!((error.limit, error.used, error.additional), (4, 0, 5));
+    assert!(matches!(
+        ctx.alloc_filled(1, 0_u64, "allocation after prior refusal"),
+        Err(crate::CodecError::ResourceLimit(actual)) if actual == error
+    ));
+    assert_eq!(ctx.resource_refusal(), Some(error));
+    assert_eq!(session.finish(), Err(error));
+}

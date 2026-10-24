@@ -32,6 +32,7 @@ pub struct DecodeContext<'a> {
     arena: &'a DecodeArena,
     depth: DecodeDepth,
     policy: DecodePolicy,
+    encoding: bool,
     pub(super) budget: SessionHandle<'a>,
     derived_spaces: Cell<usize>,
 }
@@ -50,9 +51,26 @@ impl<'a> DecodeContext<'a> {
             arena,
             depth,
             policy: *policy,
+            encoding: false,
             budget: arena.tracking.session(*policy, 0),
             derived_spaces: Cell::new(0),
         }
+    }
+
+    /// Creates source-free encode helpers under the caller's absolute ceilings.
+    ///
+    /// Retained helper output shares the account used by
+    /// [`crate::encode::EncodeSession::from_context`]. No source byte length
+    /// or source stream is invented to obtain an encode allowance.
+    pub fn for_encode(arena: &'a DecodeArena, policy: &DecodePolicy) -> Self {
+        let mut ctx = Self::new(arena, policy, DecodeDepth::Full);
+        ctx.encoding = true;
+        ctx
+    }
+
+    /// Whether this context owns temporary projections for an encode operation.
+    pub const fn is_encoding(&self) -> bool {
+        self.encoding
     }
 
     /// Starts post-decode processing with the measured byte length of an already
@@ -158,6 +176,7 @@ impl<'a> DecodeContext<'a> {
             arena,
             depth,
             policy: *policy,
+            encoding: false,
             budget: arena.tracking.session(*policy, length),
             derived_spaces: Cell::new(0),
         };
@@ -287,21 +306,27 @@ impl<'a> DecodeContext<'a> {
         )
     }
 
-    /// Charges bytes that decoded output keeps for the rest of the session.
+    /// Charges bytes kept in output for the rest of the operation.
     ///
-    /// This is the one retained-bytes chokepoint: native record text, arena
-    /// buffers, and retained copies of source bytes call it. Temporary and
-    /// derived storage is not charged.
+    /// Decode uses its input-proportional allowance. Encode helpers use the
+    /// shared account's absolute caller ceiling. Temporary and derived storage
+    /// is not charged.
     pub fn retain_bytes(&self, bytes: u64, operation: &'static str) -> Result<(), CodecError> {
+        if self.encoding {
+            return self
+                .operation_budget()
+                .charge_retained(bytes, operation)
+                .map_err(Into::into);
+        }
         self.budget
             .retain_bytes(bytes, operation)
             .map_err(Into::into)
     }
 
-    /// Retained bytes the session can still afford: the retained-byte
-    /// allowance (the smaller of `max_retained_bytes` and the
-    /// input-proportional allowance) minus the bytes already retained, or zero
-    /// after a refusal fused the session.
+    /// Retained bytes the operation can still afford, or zero after a refusal.
+    ///
+    /// Decode uses its input-proportional allowance. Encode helpers use the
+    /// absolute caller ceiling. Both include actual live serialized output.
     ///
     /// A codec uses this only to decide whether to skip optional enrichment
     /// before it builds the enrichment, and reports the skip as a loss. It
@@ -309,7 +334,27 @@ impl<'a> DecodeContext<'a> {
     /// through [`DecodeContext::retain_bytes`], which can still refuse.
     #[must_use]
     pub fn retained_bytes_available(&self) -> u64 {
+        if self.encoding {
+            return self.operation_budget().retained_bytes_available();
+        }
         self.budget.retained_bytes_available()
+    }
+
+    fn allocation_failed(&self, requested: u64, operation: &'static str) -> CodecError {
+        if !self.encoding {
+            return self.budget.retained_allocation_failed(requested, operation);
+        }
+        let account = self.operation_budget();
+        let failure = ResourceLimit {
+            scope: LimitScope::Session,
+            dimension: ResourceDimension::RetainedBytes,
+            reason: ResourceFailure::AllocationFailed,
+            limit: account.limits.max_retained_bytes,
+            used: account.retained_used(),
+            additional: requested,
+            operation,
+        };
+        account.refuse(failure).into()
     }
 
     fn allocate_space(&self) -> Result<SpaceId, CodecError> {
@@ -365,11 +410,15 @@ impl<'a> DecodeContext<'a> {
         value: T,
         operation: &'static str,
     ) -> Result<Vec<T>, CodecError> {
+        if self.encoding {
+            if let Some(refusal) = self.resource_refusal() {
+                return Err(refusal.into());
+            }
+        }
         let mut values = Vec::new();
-        values.try_reserve_exact(count).map_err(|_| {
-            self.budget
-                .retained_allocation_failed(u64_from_index(count), operation)
-        })?;
+        values
+            .try_reserve_exact(count)
+            .map_err(|_| self.allocation_failed(u64_from_index(count), operation))?;
         values.resize(count, value);
         Ok(values)
     }
@@ -386,11 +435,10 @@ impl<'a> DecodeContext<'a> {
         }
         let bytes = additional
             .checked_mul(size_of::<T>())
-            .ok_or_else(|| self.budget.retained_allocation_failed(u64::MAX, operation))?;
-        values.try_reserve_exact(additional).map_err(|_| {
-            self.budget
-                .retained_allocation_failed(u64_from_index(bytes), operation)
-        })?;
+            .ok_or_else(|| self.allocation_failed(u64::MAX, operation))?;
+        values
+            .try_reserve_exact(additional)
+            .map_err(|_| self.allocation_failed(u64_from_index(bytes), operation))?;
         Ok(())
     }
 

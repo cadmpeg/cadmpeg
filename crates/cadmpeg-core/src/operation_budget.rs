@@ -45,6 +45,29 @@ impl OperationBudget {
     pub(crate) fn retained_used(&self) -> u64 {
         self.state().retained
     }
+    pub(crate) fn retained_bytes_available(&self) -> u64 {
+        let mut state = self.state();
+        if state.failure.is_some() {
+            return 0;
+        }
+        let limit = self.limits.max_retained_bytes;
+        match limit.checked_sub(state.retained) {
+            Some(remaining) => remaining,
+            None => {
+                let failure = ResourceLimit {
+                    scope: LimitScope::Session,
+                    dimension: ResourceDimension::RetainedBytes,
+                    reason: ResourceFailure::BudgetExceeded,
+                    limit,
+                    used: state.retained,
+                    additional: 0,
+                    operation: "read retained-byte allowance",
+                };
+                Self::refuse_locked(&mut state, failure);
+                0
+            }
+        }
+    }
     pub(crate) fn entities_used(&self) -> u64 {
         self.state().entities
     }
@@ -204,6 +227,7 @@ impl OperationBudget {
 
 #[cfg(test)]
 mod tests {
+    mod retained_allowance;
     use super::*;
     use std::sync::Arc;
 
