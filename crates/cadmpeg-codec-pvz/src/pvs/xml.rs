@@ -6,6 +6,7 @@
 
 use std::rc::Rc;
 
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use roxmltree::Node;
 
@@ -70,12 +71,10 @@ pub(super) fn declared_version(bytes: &[u8]) -> Option<&[u8]> {
 }
 
 /// Decodes an XML structure member.
-pub(super) fn read(bytes: &[u8]) -> Result<Structure, CodecError> {
+pub(super) fn read(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Structure, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::malformed("XML structure member is not valid UTF-8"))?;
-    let document = roxmltree::Document::parse(text).map_err(|error| {
-        CodecError::malformed(format_args!("XML structure member does not parse: {error}"))
-    })?;
+    let document = ctx.parse_xml(text, "PVZ XML structure member")?;
     let root = document.root_element();
     if root.tag_name().name() != ROOT || root.attribute("type") != Some("PVS") {
         return Err(CodecError::malformed(

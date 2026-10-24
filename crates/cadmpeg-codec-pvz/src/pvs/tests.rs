@@ -467,3 +467,18 @@ fn the_xml_form_maps_to_the_same_model() {
     assert!(decode(br#"<PV_FILE type="PVS"><section_structure><component name="A"><component_instance index="0" translation="1,2"/></component></section_structure></PV_FILE>"#).is_err());
     assert!(decode(b"<PV_FILE type=\"PVS\">").is_err());
 }
+
+#[test]
+fn deeply_nested_xml_is_refused_without_recursion() {
+    let depth = 20_000;
+    let mut xml = String::from(
+        r#"<PV_FILE type="PVS" version="0302"><section_structure><component name="A">"#,
+    );
+    xml.push_str(&"<a>".repeat(depth));
+    xml.push_str(&"</a>".repeat(depth));
+    xml.push_str("</component></section_structure></PV_FILE>");
+    assert!(matches!(
+        decode(xml.as_bytes()),
+        Err(CodecError::ResourceLimit(_))
+    ));
+}

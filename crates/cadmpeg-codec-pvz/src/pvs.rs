@@ -347,7 +347,7 @@ pub(crate) fn read(ctx: &DecodeContext<'_>, member: View<'_>) -> Result<Structur
     if window.starts_with(BINARY_PREFIX) {
         read_binary(ctx, member)
     } else if window.starts_with(XML_PREFIX) {
-        xml::read(window)
+        xml::read(ctx, window)
     } else {
         Err(CodecError::malformed(
             "structure member opens with neither PV-PVS nor <PV_FILE",
