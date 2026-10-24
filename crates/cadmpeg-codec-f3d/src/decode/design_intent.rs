@@ -411,9 +411,16 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             ),
         );
     }
-    design.persistent_references =
-        crate::design::decode::sketch::decode_persistent_references(scan)?;
-    design.lost_edge_references = crate::design::decode::sketch::decode_lost_edge_references(scan)?;
+    design.persistent_references = crate::design::decode::sketch::decode_persistent_references(
+        ctx,
+        scan,
+        &mut design.source_layout_pointers,
+    )?;
+    design.lost_edge_references = crate::design::decode::sketch::decode_lost_edge_references(
+        ctx,
+        scan,
+        &mut design.source_layout_pointers,
+    )?;
     design.sketch_relations = crate::design::decode::sketch::decode_sketch_relations(
         scan,
         &prereqs.design_record_headers,
@@ -1009,10 +1016,18 @@ fn extend_related_design_records(
         scan,
         &design.design_parameter_scopes,
     )?;
-    design.design_canvas_images =
-        crate::design::decode::canvas::decode_canvas_images(scan, &design.design_parameter_scopes)?;
-    design.design_decal_images =
-        crate::design::decode::decal::decode_decal_images(scan, &design.design_parameter_scopes)?;
+    design.design_canvas_images = crate::design::decode::canvas::decode_canvas_images(
+        ctx,
+        scan,
+        &design.design_parameter_scopes,
+        &mut design.source_layout_pointers,
+    )?;
+    design.design_decal_images = crate::design::decode::decal::decode_decal_images(
+        ctx,
+        scan,
+        &design.design_parameter_scopes,
+        &mut design.source_layout_pointers,
+    )?;
     crate::design::decode::operands::disambiguate_fixed_fillet_parameters(
         &mut design.design_parameter_scopes,
         &prereqs.design_parameter_owners,

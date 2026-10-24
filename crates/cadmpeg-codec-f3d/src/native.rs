@@ -1741,12 +1741,6 @@ impl F3dNative {
         {
             pair.retain_source(&mut fidelity);
         }
-        for image in &self.design_canvas_images {
-            image.retain_source(&mut fidelity);
-        }
-        for image in &self.design_decal_images {
-            image.retain_source(&mut fidelity);
-        }
         for placement in &self.design_sketch_placements {
             placement.retain_source(&mut fidelity);
         }
@@ -1761,15 +1755,6 @@ impl F3dNative {
         }
         for visibility in &self.body_visibilities {
             visibility.retain_source(&mut fidelity);
-        }
-        for reference in &self.persistent_references {
-            reference.retain_source(&mut fidelity);
-        }
-        for reference in &self.lost_edge_references {
-            reference.retain_source(&mut fidelity);
-        }
-        for material in &self.design_material_assignments {
-            material.retain_source(&mut fidelity);
         }
         for scope in &self.design_parameter_scopes {
             for (role, profile) in [

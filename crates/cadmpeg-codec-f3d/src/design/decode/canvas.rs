@@ -25,16 +25,36 @@ use cadmpeg_ir::math::Point2;
 const DESIGN_LENGTH_TO_MM: f64 = 10.0;
 
 /// Decode every structurally complete Canvas geometry and image-asset record.
+/// Each image is parsed inside its record scope, whose extent is the
+/// geometry record's primary-index frame, and its source offsets are
+/// `record_layout` pointers in `pointers`.
 pub(crate) fn decode_canvas_images(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
+    pointers: &mut crate::design::decode::sketch::SourcePointers,
 ) -> Result<Vec<DesignCanvasImage>, CodecError> {
-    super::image::decode_scoped_images(
+    super::image::decode_scoped_image_records(
+        ctx,
         scan,
         scopes,
         &crate::records::feature::scope::DesignFeatureKind::Canvas,
+        pointers,
+        |bytes, stream, scope| {
+            let start = canvas_geometry_at(bytes, scope)?;
+            // With no primary index, the geometry, paired and asset records
+            // run from the geometry record to the scope.
+            let end = usize::try_from(scope.byte_offset())
+                .ok()
+                .filter(|end| *end > start)?;
+            Some(super::image::ImageRecord {
+                id: ids::native_design_canvas_image_id(stream, start),
+                start,
+                end,
+            })
+        },
         parse_canvas_image,
-        |image| image.id.as_str(),
+        |image| image.source_offsets(),
     )
 }
 
@@ -110,63 +130,79 @@ pub(crate) fn project_canvas_images(
     Ok(assets)
 }
 
+/// The geometry reference of a Canvas scope prefix: after ten zero bytes,
+/// or after nine zero bytes and a marked null reference.
+fn canvas_geometry_reference<'a>(
+    scope_at: usize,
+    read: &super::image::ImageRead<'a, '_>,
+) -> Option<(usize, u32)> {
+    let zeros = read(scope_at + 11..scope_at + 21)?;
+    let geometry_reference_at = if zeros == [0; 10] {
+        scope_at + 21
+    } else if zeros.get(..9)? == [0; 9]
+        && marked_reference(read(scope_at + 20..scope_at + 25)?, 0)? == 0
+    {
+        scope_at + 25
+    } else {
+        return None;
+    };
+    let index = marked_reference(read(geometry_reference_at..geometry_reference_at + 5)?, 0)?;
+    Some((geometry_reference_at, index))
+}
+
+/// The geometry record of a Canvas scope: the indexed header that carries
+/// the record index the scope prefix references. The indexed-header-shaped
+/// runs locate it (Appendix C `scan_recovery` of `f3d.bulk_class_members`
+/// for `design_canvas_images`).
+fn canvas_geometry_at(bytes: &[u8], scope: &DesignParameterScope) -> Option<usize> {
+    let scope_at = usize::try_from(scope.byte_offset()).ok()?;
+    let (_, index) = canvas_geometry_reference(scope_at, &|range| bytes.get(range))?;
+    next_indexed_record_offset_with_index(bytes, 0, index)
+}
+
+/// Parse one Canvas image. `bytes` is the stream, whose indexed-header-shaped
+/// runs locate the geometry and paired records; `read` returns the stream
+/// bytes of a range, and the grammar reads the scope prefix and the records
+/// from the geometry record to the scope through it.
 fn parse_canvas_image(
     bytes: &[u8],
     stream: &str,
     scope: &DesignParameterScope,
+    read: &super::image::ImageRead<'_, '_>,
 ) -> Result<Option<DesignCanvasImage>, CodecError> {
     let parsed = (|| {
         let scope_at = usize::try_from(scope.byte_offset()).ok()?;
-        let geometry_reference_at = if bytes.get(scope_at + 11..scope_at + 21)? == [0; 10] {
-            scope_at + 21
-        } else if bytes.get(scope_at + 11..scope_at + 20)? == [0; 9]
-            && marked_reference(bytes, scope_at + 20)? == 0
-        {
-            scope_at + 25
-        } else {
-            return None;
-        };
-        let geometry_record_index = marked_reference(bytes, geometry_reference_at)?;
+        let (geometry_reference_at, geometry_record_index) =
+            canvas_geometry_reference(scope_at, read)?;
         let geometry_at = next_indexed_record_offset_with_index(bytes, 0, geometry_record_index)?;
+        // The geometry, paired and asset records run from the geometry
+        // record to the scope.
+        if geometry_at >= scope_at {
+            return None;
+        }
+        let records = read(geometry_at..scope_at)?;
         let (geometry_class_tag, after_geometry_tag) =
-            lp_ascii_filtered_view(bytes, geometry_at, 0..=2000, u8::is_ascii_graphic)?;
-        let geometry_prologue: [u8; 15] = bytes
-            .get(geometry_at + 11..geometry_at + 26)?
-            .try_into()
-            .ok()?;
+            lp_ascii_filtered_view(records, 0, 0..=2000, u8::is_ascii_graphic)?;
+        let geometry_prologue: [u8; 15] = records.get(11..26)?.try_into().ok()?;
         let geometry_prologue = DesignCanvasPrologue::try_from(geometry_prologue).ok()?;
-        if View::u32_le_at(bytes, after_geometry_tag)? != geometry_record_index {
+        if View::u32_le_at(records, after_geometry_tag)? != geometry_record_index {
             return None;
         }
 
-        let paired_at = next_indexed_record_offset_with_index(
-            bytes,
-            geometry_at.checked_add(11)?,
-            geometry_record_index,
-        )?;
+        let paired_at = next_indexed_record_offset_with_index(records, 11, geometry_record_index)?;
         let (paired_geometry_class_tag, after_paired_tag) =
-            lp_ascii_filtered_view(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
+            lp_ascii_filtered_view(records, paired_at, 0..=2000, u8::is_ascii_graphic)?;
         let paired_component_at = paired_at + 19;
-        if View::u32_le_at(bytes, after_paired_tag)? != geometry_record_index
-            || paired_at <= geometry_at
-            || bytes.get(paired_at + 11..paired_component_at)? != [0; 8]
+        if View::u32_le_at(records, after_paired_tag)? != geometry_record_index
+            || records.get(paired_at + 11..paired_component_at)? != [0; 8]
         {
             return None;
         }
 
-        let boundary_offsets = [
-            geometry_at + 26,
-            geometry_at + 34,
-            geometry_at + 42,
-            geometry_at + 50,
-            geometry_at + 181,
-            geometry_at + 189,
-            geometry_at + 197,
-            geometry_at + 205,
-        ];
+        let boundary_offsets = [26, 34, 42, 50, 181, 189, 197, 205];
         let mut coordinates = [0.0; 8];
         for (coordinate, offset) in coordinates.iter_mut().zip(boundary_offsets) {
-            *coordinate = View::f64_le_at(bytes, offset)?;
+            *coordinate = View::f64_le_at(records, offset)?;
         }
         let boundary_segments = [
             [
@@ -180,43 +216,43 @@ fn parse_canvas_image(
         ];
         let boundary = DesignCanvasBounds::try_from(boundary_segments).ok()?;
 
-        let plane_at = geometry_at + 58;
-        let scope_reference_at = geometry_at + 146;
-        let component_at = geometry_at + 157;
-        let asset_at = geometry_at + 169;
-        let plane_entity_suffix = marked_reference(bytes, plane_at)?;
-        let scope_record_index = marked_reference(bytes, scope_reference_at)?;
-        let component_entity_suffix = marked_reference(bytes, component_at)?;
-        let asset_record_index = marked_reference(bytes, asset_at)?;
+        let plane_at = 58;
+        let scope_reference_at = 146;
+        let component_at = 157;
+        let asset_at = 169;
+        let plane_entity_suffix = marked_reference(records, plane_at)?;
+        let scope_record_index = marked_reference(records, scope_reference_at)?;
+        let component_entity_suffix = marked_reference(records, component_at)?;
+        let asset_record_index = marked_reference(records, asset_at)?;
         if scope_record_index != scope.record_index
-            || marked_reference(bytes, paired_component_at)? != component_entity_suffix
-            || bytes.get(paired_component_at + 5..paired_component_at + 11)? != [0; 6]
-            || bytes.get(plane_at + 5..plane_at + 11)? != [0; 6]
-            || bytes.get(scope_reference_at + 5..scope_reference_at + 11)? != [0; 6]
-            || bytes.get(component_at + 5..component_at + 12)? != [0; 7]
-            || bytes.get(asset_at + 5..asset_at + 11)? != [0; 6]
-            || bytes.get(asset_at + 11) != Some(&1)
+            || marked_reference(records, paired_component_at)? != component_entity_suffix
+            || records.get(paired_component_at + 5..paired_component_at + 11)? != [0; 6]
+            || records.get(plane_at + 5..plane_at + 11)? != [0; 6]
+            || records.get(scope_reference_at + 5..scope_reference_at + 11)? != [0; 6]
+            || records.get(component_at + 5..component_at + 12)? != [0; 7]
+            || records.get(asset_at + 5..asset_at + 11)? != [0; 6]
+            || records.get(asset_at + 11) != Some(&1)
         {
             return None;
         }
-        let geometry_payload = bytes.get(geometry_at + 69..geometry_at + 146)?;
+        let geometry_payload = records.get(69..146)?;
         let geometry_payload = DesignCanvasGeometryPayload::try_from(geometry_payload).ok()?;
 
-        let (label, after_label) = lp_utf16_bounded(bytes, geometry_at + 213, 1..=256)?;
+        let (label, after_label) = lp_utf16_bounded(records, 213, 1..=256)?;
         if after_label != paired_at {
             return None;
         }
         let asset_record_at = paired_at.checked_add(30)?;
         let (asset_class_tag, after_asset_tag) =
-            lp_ascii_filtered_view(bytes, asset_record_at, 0..=2000, u8::is_ascii_graphic)?;
-        if View::u32_le_at(bytes, after_asset_tag)? != asset_record_index
-            || bytes.get(asset_record_at + 11..asset_record_at + 21)? != [0; 10]
+            lp_ascii_filtered_view(records, asset_record_at, 0..=2000, u8::is_ascii_graphic)?;
+        if View::u32_le_at(records, after_asset_tag)? != asset_record_index
+            || records.get(asset_record_at + 11..asset_record_at + 21)? != [0; 10]
         {
             return None;
         }
         let (asset_name, after_asset_name) =
-            lp_utf16_bounded(bytes, asset_record_at + 21, 1..=1024)?;
-        if after_asset_name != scope_at {
+            lp_utf16_bounded(records, asset_record_at + 21, 1..=1024)?;
+        if after_asset_name != records.len() {
             return None;
         }
         let geometry_class_tag = geometry_class_tag.to_owned();
@@ -332,10 +368,57 @@ mod tests {
     #[test]
     fn canvas_image_decodes_asset_name() {
         let (bytes, scope) = fixture();
-        let image = parse_canvas_image(&bytes, "Design/BulkStream.dat", &scope)
+        let image = parse_canvas_image(&bytes, "Design/BulkStream.dat", &scope, &|range| {
+            bytes.get(range)
+        })
+        .unwrap()
+        .unwrap();
+        assert_eq!(image.asset_name(), "a.png");
+    }
+
+    /// #225 comment 6358238990 item 4 and #214: the Canvas grammar reads the
+    /// scope prefix through its geometry reference and the geometry, paired
+    /// and asset records from the geometry record (0) to the scope (284)
+    /// through the scope's read, so a record scope around the parse captures
+    /// exactly those bytes.
+    #[test]
+    fn canvas_image_reads_its_scope_prefix_and_its_records() {
+        let (bytes, scope) = fixture();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &bytes,
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
+        let read = |range: std::ops::Range<usize>| {
+            let view = root.child(range.start, range.end)?;
+            view.read_slice(range)
+        };
+        let extent = root.child(0, 284).unwrap();
+        let image = ctx
+            .record("f3d:test:canvas", extent, || {
+                parse_canvas_image(&bytes, "Design/BulkStream.dat", &scope, &read)
+            })
             .unwrap()
             .unwrap();
         assert_eq!(image.asset_name(), "a.png");
+        // The scope prefix holds ten zero bytes at 11..21 and the marked
+        // geometry reference at 21..26.
+        let captures = ctx.take_record_captures().unwrap();
+        assert_eq!(captures.len(), 1);
+        assert_eq!(
+            captures[0].reads(),
+            &std::collections::BTreeMap::from([(
+                "file".to_owned(),
+                vec![0..284, 284 + 11..284 + 26]
+            )])
+        );
+        let offsets: std::collections::BTreeMap<_, _> =
+            image.source_offsets().into_iter().collect();
+        assert_eq!(offsets["geometry_byte_offset"], Some(0));
+        assert_eq!(offsets["geometry_reference_offset"], Some(284 + 22));
+        assert_eq!(offsets["boundary_coordinate_offsets.7"], Some(205));
     }
 
     #[test]
@@ -349,9 +432,11 @@ mod tests {
 
         const ENTRY: &str = "FusionAssetName[Active]/Design1/Images.BlobParts/a.png";
         let (bytes, scope) = fixture();
-        let image = parse_canvas_image(&bytes, "Design/BulkStream.dat", &scope)
-            .unwrap()
-            .unwrap();
+        let image = parse_canvas_image(&bytes, "Design/BulkStream.dat", &scope, &|range| {
+            bytes.get(range)
+        })
+        .unwrap()
+        .unwrap();
         let feature = || Feature {
             needs_recompute: false,
             id: crate::ids::neutral_feature_id(&scope),

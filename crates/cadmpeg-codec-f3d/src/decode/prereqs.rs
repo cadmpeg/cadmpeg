@@ -148,7 +148,9 @@ pub(super) fn decode(
         }
     }
     let construction_recipes = crate::design::decode::parameters::decode_recipes(scan)?;
-    let design_material_assignments = crate::materials::decode_design_assignments(scan)?;
+    let mut material_source_pointers = crate::design::decode::sketch::SourcePointers::new();
+    let design_material_assignments =
+        crate::materials::decode_design_assignments(ctx, scan, &mut material_source_pointers)?;
     let design_types = crate::design::decode::meta::decode_types(scan)?;
     let crate::design::decode::parameters::DecodedParameters {
         parameters: mut design_parameters,
@@ -207,7 +209,10 @@ pub(super) fn decode(
             &design_parameter_scopes,
             source_layout_drafts,
         )?;
-    for (id, pointers) in parameter_source_pointers {
+    for (id, pointers) in parameter_source_pointers
+        .into_iter()
+        .chain(material_source_pointers)
+    {
         if source_layout_pointers.insert(id, pointers).is_some() {
             return Err(CodecError::malformed("source pointer owner is duplicated"));
         }

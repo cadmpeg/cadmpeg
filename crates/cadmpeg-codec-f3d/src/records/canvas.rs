@@ -562,8 +562,20 @@ impl From<DesignCanvasImage> for DesignCanvasImageWire {
     }
 }
 impl DesignCanvasImage {
-    pub(crate) fn retain_source(&self, fidelity: &mut cadmpeg_ir::SourceFidelity) {
-        for (name, offset) in [
+    /// The source offsets of a decoded image, as the `record_layout`
+    /// pointers of its capture.
+    pub(crate) fn source_offsets(&self) -> Vec<(&'static str, Option<u64>)> {
+        const BOUNDARY: [&str; 8] = [
+            "boundary_coordinate_offsets.0",
+            "boundary_coordinate_offsets.1",
+            "boundary_coordinate_offsets.2",
+            "boundary_coordinate_offsets.3",
+            "boundary_coordinate_offsets.4",
+            "boundary_coordinate_offsets.5",
+            "boundary_coordinate_offsets.6",
+            "boundary_coordinate_offsets.7",
+        ];
+        let mut offsets = vec![
             (
                 "scope_reference_offset",
                 self.geometry.scope_reference_offset(),
@@ -601,21 +613,11 @@ impl DesignCanvasImage {
             ("asset_byte_offset", self.asset_byte_offset()),
             ("asset_name_offset", self.asset_name_offset()),
             ("label_offset", self.geometry.label_offset()),
-        ] {
-            if let Some(offset) = offset {
-                fidelity
-                    .metadata
-                    .insert(format!("{}.{name}", self.id), offset.to_string());
-            }
+        ];
+        if let Some(boundary) = self.geometry.boundary_coordinate_offsets() {
+            offsets.extend(BOUNDARY.into_iter().zip(boundary.into_iter().map(Some)));
         }
-        if let Some(offsets) = self.geometry.boundary_coordinate_offsets() {
-            for (index, offset) in offsets.into_iter().enumerate() {
-                fidelity.metadata.insert(
-                    format!("{}.boundary_coordinate_offsets.{index}", self.id),
-                    offset.to_string(),
-                );
-            }
-        }
+        offsets
     }
 }
 

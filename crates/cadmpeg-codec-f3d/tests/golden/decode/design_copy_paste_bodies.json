@@ -1870,37 +1870,6 @@
       "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#3347.byte_offset": "3347",
       "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#820.byte_offset": "820",
       "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#921.byte_offset": "921",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:lost-edge-reference#2967.byte_offset": "2996",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:lost-edge-reference#2967.class_tag_offset": "2971",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:lost-edge-reference#2967.next_byte_offset": "3015",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:lost-edge-reference#2967.record_byte_offset": "2967",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:lost-edge-reference#2967.record_index_offset": "2974",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:material-assignment#111.asm_body_key_offset": "25",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:material-assignment#111.entity_id_offset": "136",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:material-assignment#111.entity_suffix_offset": "33",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:material-assignment#111.physical_token_offset": "389",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:material-assignment#111.visual_guid_offset": "468",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:material-assignment#111.visual_preset_offset": "620",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1051.byte_offset": "1051",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1051.value_offset": "33",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1257.byte_offset": "1257",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1257.value_offset": "33",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1463.byte_offset": "1463",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1463.value_offset": "33",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1669.byte_offset": "1669",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1669.value_offset": "33",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1875.byte_offset": "1875",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1875.value_offset": "41",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1928.byte_offset": "1928",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1928.value_offset": "43",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#2167.byte_offset": "2167",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#2167.value_offset": "33",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#2425.byte_offset": "2425",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#2425.value_offset": "41",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#2478.byte_offset": "2478",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#2478.value_offset": "43",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#2926.byte_offset": "2926",
-      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#2926.value_offset": "33",
       "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-curve-identity#1846.byte_offset": "1846",
       "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-curve-identity#1846.geometry_offset": "133",
       "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-curve-identity#2344.byte_offset": "2344",
@@ -2066,6 +2035,309 @@
       "f3d:FusionAssetName[Active]/FusionACTSegmentType1/MetaStream.dat:design-type#898.version_offset": "942"
     },
     "record_layout": {
+      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:lost-edge-reference#2967": {
+        "stream": "zip:4:file:0:11088:FusionAssetName[Active]/Design1/BulkStream.dat",
+        "offset": 2967,
+        "byte_len": 48,
+        "reads": {
+          "file": [
+            {
+              "start": 6010,
+              "end": 6069
+            }
+          ],
+          "zip:4:file:0:11088:FusionAssetName[Active]/Design1/BulkStream.dat": [
+            {
+              "start": 2967,
+              "end": 3026
+            }
+          ]
+        },
+        "pointers": {
+          "byte_offset": 2996,
+          "class_tag_offset": 2971,
+          "next_byte_offset": 3015,
+          "record_byte_offset": 2967,
+          "record_index_offset": 2974
+        },
+        "payloads": {}
+      },
+      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:material-assignment#111": {
+        "stream": "zip:4:file:0:11088:FusionAssetName[Active]/Design1/BulkStream.dat",
+        "offset": 111,
+        "byte_len": 527,
+        "reads": {
+          "file": [
+            {
+              "start": 3068,
+              "end": 3084
+            },
+            {
+              "start": 3154,
+              "end": 3681
+            }
+          ],
+          "zip:4:file:0:11088:FusionAssetName[Active]/Design1/BulkStream.dat": [
+            {
+              "start": 25,
+              "end": 41
+            },
+            {
+              "start": 111,
+              "end": 638
+            }
+          ]
+        },
+        "pointers": {
+          "asm_body_key_offset": 25,
+          "entity_id_offset": 136,
+          "entity_suffix_offset": 33,
+          "physical_token_offset": 389,
+          "visual_guid_offset": 468,
+          "visual_preset_offset": 620
+        },
+        "payloads": {}
+      },
+      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1051": {
+        "stream": "zip:4:file:0:11088:FusionAssetName[Active]/Design1/BulkStream.dat",
+        "offset": 1051,
+        "byte_len": 41,
+        "reads": {
+          "file": [
+            {
+              "start": 4094,
+              "end": 4135
+            }
+          ],
+          "zip:4:file:0:11088:FusionAssetName[Active]/Design1/BulkStream.dat": [
+            {
+              "start": 1051,
+              "end": 1092
+            }
+          ]
+        },
+        "pointers": {
+          "byte_offset": 1051,
+          "value_offset": 33
+        },
+        "payloads": {}
+      },
+      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1257": {
+        "stream": "zip:4:file:0:11088:FusionAssetName[Active]/Design1/BulkStream.dat",
+        "offset": 1257,
+        "byte_len": 41,
+        "reads": {
+          "file": [
+            {
+              "start": 4300,
+              "end": 4341
+            }
+          ],
+          "zip:4:file:0:11088:FusionAssetName[Active]/Design1/BulkStream.dat": [
+            {
+              "start": 1257,
+              "end": 1298
+            }
+          ]
+        },
+        "pointers": {
+          "byte_offset": 1257,
+          "value_offset": 33
+        },
+        "payloads": {}
+      },
+      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1463": {
+        "stream": "zip:4:file:0:11088:FusionAssetName[Active]/Design1/BulkStream.dat",
+        "offset": 1463,
+        "byte_len": 41,
+        "reads": {
+          "file": [
+            {
+              "start": 4506,
+              "end": 4547
+            }
+          ],
+          "zip:4:file:0:11088:FusionAssetName[Active]/Design1/BulkStream.dat": [
+            {
+              "start": 1463,
+              "end": 1504
+            }
+          ]
+        },
+        "pointers": {
+          "byte_offset": 1463,
+          "value_offset": 33
+        },
+        "payloads": {}
+      },
+      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1669": {
+        "stream": "zip:4:file:0:11088:FusionAssetName[Active]/Design1/BulkStream.dat",
+        "offset": 1669,
+        "byte_len": 41,
+        "reads": {
+          "file": [
+            {
+              "start": 4712,
+              "end": 4753
+            }
+          ],
+          "zip:4:file:0:11088:FusionAssetName[Active]/Design1/BulkStream.dat": [
+            {
+              "start": 1669,
+              "end": 1710
+            }
+          ]
+        },
+        "pointers": {
+          "byte_offset": 1669,
+          "value_offset": 33
+        },
+        "payloads": {}
+      },
+      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1875": {
+        "stream": "zip:4:file:0:11088:FusionAssetName[Active]/Design1/BulkStream.dat",
+        "offset": 1875,
+        "byte_len": 49,
+        "reads": {
+          "file": [
+            {
+              "start": 4918,
+              "end": 4967
+            }
+          ],
+          "zip:4:file:0:11088:FusionAssetName[Active]/Design1/BulkStream.dat": [
+            {
+              "start": 1875,
+              "end": 1924
+            }
+          ]
+        },
+        "pointers": {
+          "byte_offset": 1875,
+          "value_offset": 41
+        },
+        "payloads": {}
+      },
+      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1928": {
+        "stream": "zip:4:file:0:11088:FusionAssetName[Active]/Design1/BulkStream.dat",
+        "offset": 1928,
+        "byte_len": 51,
+        "reads": {
+          "file": [
+            {
+              "start": 4971,
+              "end": 5022
+            }
+          ],
+          "zip:4:file:0:11088:FusionAssetName[Active]/Design1/BulkStream.dat": [
+            {
+              "start": 1928,
+              "end": 1979
+            }
+          ]
+        },
+        "pointers": {
+          "byte_offset": 1928,
+          "value_offset": 43
+        },
+        "payloads": {}
+      },
+      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#2167": {
+        "stream": "zip:4:file:0:11088:FusionAssetName[Active]/Design1/BulkStream.dat",
+        "offset": 2167,
+        "byte_len": 41,
+        "reads": {
+          "file": [
+            {
+              "start": 5210,
+              "end": 5251
+            }
+          ],
+          "zip:4:file:0:11088:FusionAssetName[Active]/Design1/BulkStream.dat": [
+            {
+              "start": 2167,
+              "end": 2208
+            }
+          ]
+        },
+        "pointers": {
+          "byte_offset": 2167,
+          "value_offset": 33
+        },
+        "payloads": {}
+      },
+      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#2425": {
+        "stream": "zip:4:file:0:11088:FusionAssetName[Active]/Design1/BulkStream.dat",
+        "offset": 2425,
+        "byte_len": 49,
+        "reads": {
+          "file": [
+            {
+              "start": 5468,
+              "end": 5517
+            }
+          ],
+          "zip:4:file:0:11088:FusionAssetName[Active]/Design1/BulkStream.dat": [
+            {
+              "start": 2425,
+              "end": 2474
+            }
+          ]
+        },
+        "pointers": {
+          "byte_offset": 2425,
+          "value_offset": 41
+        },
+        "payloads": {}
+      },
+      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#2478": {
+        "stream": "zip:4:file:0:11088:FusionAssetName[Active]/Design1/BulkStream.dat",
+        "offset": 2478,
+        "byte_len": 51,
+        "reads": {
+          "file": [
+            {
+              "start": 5521,
+              "end": 5572
+            }
+          ],
+          "zip:4:file:0:11088:FusionAssetName[Active]/Design1/BulkStream.dat": [
+            {
+              "start": 2478,
+              "end": 2529
+            }
+          ]
+        },
+        "pointers": {
+          "byte_offset": 2478,
+          "value_offset": 43
+        },
+        "payloads": {}
+      },
+      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#2926": {
+        "stream": "zip:4:file:0:11088:FusionAssetName[Active]/Design1/BulkStream.dat",
+        "offset": 2926,
+        "byte_len": 41,
+        "reads": {
+          "file": [
+            {
+              "start": 5969,
+              "end": 6010
+            }
+          ],
+          "zip:4:file:0:11088:FusionAssetName[Active]/Design1/BulkStream.dat": [
+            {
+              "start": 2926,
+              "end": 2967
+            }
+          ]
+        },
+        "pointers": {
+          "byte_offset": 2926,
+          "value_offset": 33
+        },
+        "payloads": {}
+      },
       "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#1022": {
         "stream": "zip:4:file:0:11088:FusionAssetName[Active]/Design1/BulkStream.dat",
         "offset": 1022,

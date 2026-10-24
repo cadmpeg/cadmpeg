@@ -228,8 +228,10 @@ impl DesignDecalImage {
             u64_from_index(crate::layout::design_decal_scope_prefix::TARGET_GROUP_REFERENCE) + 1,
         )
     }
-    pub(crate) fn retain_source(&self, fidelity: &mut cadmpeg_ir::SourceFidelity) {
-        for (field, offset) in [
+    /// The source offsets of a decoded image, as the `record_layout`
+    /// pointers of its capture.
+    pub(crate) fn source_offsets(&self) -> [(&'static str, Option<u64>); 8] {
+        [
             ("scope_byte_offset", self.scope_byte_offset()),
             ("asset_reference_offset", self.asset_reference_offset()),
             ("mapping_mode_offset", self.mapping_mode_offset()),
@@ -244,13 +246,7 @@ impl DesignDecalImage {
             ),
             ("name_byte_offset", self.asset.name_byte_offset()),
             ("asset_name_offset", self.asset.name_offset()),
-        ] {
-            if let Some(offset) = offset {
-                fidelity
-                    .metadata
-                    .insert(format!("{}.{}", self.id, field), offset.to_string());
-            }
-        }
+        ]
     }
 }
 
