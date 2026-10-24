@@ -3,7 +3,7 @@
 use cadmpeg_ir::CadIr;
 
 use super::{measures_agree, measures_decide, RoundTripError, RoundTripFailure};
-use crate::test_support::cuboid;
+use crate::test_support::builders::cuboid;
 
 const LABEL: &str = "fixture";
 

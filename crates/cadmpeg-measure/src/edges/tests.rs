@@ -12,7 +12,7 @@ use crate::canonical::placement::Placement;
 use crate::context::{Eval, Work};
 use crate::owners::Owners;
 use crate::reason::UnavailableReason;
-use crate::test_support::{service_context, Builder};
+use crate::test_support::builders::{service_context, Builder};
 use crate::value::Method;
 
 /// One edge's interval and its length with the length's method.
@@ -191,7 +191,7 @@ fn an_ellipse_quarter_integrates_to_its_series_length() {
 fn cuboid_rows(
     placement: &super::Outcome<Placement>,
 ) -> Vec<(cadmpeg_ir::math::Point3, crate::report::EdgeMeasures)> {
-    let ir = crate::test_support::cuboid([0.0; 3], [2.0, 3.0, 4.0]);
+    let ir = crate::test_support::builders::cuboid([0.0; 3], [2.0, 3.0, 4.0]);
     let ctx = service_context();
     let owners = Owners::new(&ir);
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);

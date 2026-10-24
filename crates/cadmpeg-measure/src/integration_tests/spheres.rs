@@ -11,7 +11,7 @@ use cadmpeg_ir::CadIr;
 use crate::reason::{Category, CaveatCode, UnavailableReason};
 use crate::report::{FaceMeasures, MeasureReport, RegionRule};
 use crate::select::Selection;
-use crate::test_support::{
+use crate::test_support::builders::{
     assert_measured, assert_range, assert_tight_box, measure, Builder, Circle, Frame,
     TEST_ABSOLUTE_FLOOR,
 };

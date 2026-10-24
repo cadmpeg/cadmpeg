@@ -12,7 +12,7 @@ use cadmpeg_ir::topology::{BodyKind, Sense};
 use crate::reason::{Category, UnavailableReason};
 use crate::report::{FaceMeasures, MeasureReport, UvSource};
 use crate::select::Selection;
-use crate::test_support::{assert_measured, assert_tight_box, measure, Builder, Frame};
+use crate::test_support::builders::{assert_measured, assert_tight_box, measure, Builder, Frame};
 use crate::value::Quantity;
 
 fn everything() -> Selection {

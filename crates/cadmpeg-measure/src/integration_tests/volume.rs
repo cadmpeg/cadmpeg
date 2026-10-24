@@ -7,7 +7,7 @@ use cadmpeg_ir::topology::{BodyKind, Sense};
 use crate::reason::{Category, UnavailableReason};
 use crate::report::BodyMeasures;
 use crate::select::Selection;
-use crate::test_support::{
+use crate::test_support::builders::{
     assert_measured, measure, plate_with_hole, Builder, TEST_ABSOLUTE_FLOOR,
 };
 use crate::value::{Quantity, Reading};

@@ -10,7 +10,7 @@ use cadmpeg_ir::CadIr;
 use crate::reason::{Category, UnavailableReason};
 use crate::report::{CarrierParameters, RowPlacement, RowStatus, SurfaceMeasures};
 use crate::select::{Selection, SurfaceKind};
-use crate::test_support::{assert_measured, measure, Builder, Frame};
+use crate::test_support::builders::{assert_measured, measure, Builder, Frame};
 use crate::value::Quantity;
 
 const RADIUS: f64 = 10.0;
@@ -280,7 +280,7 @@ fn a_procedural_surface_row_states_why_it_has_no_parameters() {
 #[test]
 fn a_surface_outside_the_body_scope_is_refused() {
     let (ir, surface) = with_unused_plane();
-    let ctx = crate::test_support::service_context();
+    let ctx = crate::test_support::builders::service_context();
     let input = crate::session::MeasureInput {
         ir: &ir,
         fidelity: None,
