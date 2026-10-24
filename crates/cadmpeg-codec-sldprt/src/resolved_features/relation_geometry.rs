@@ -2784,6 +2784,12 @@ pub(crate) fn project_relation_bindings(
             }
         }
     }
+    super::relation_table::project_relation_tables(
+        constraints,
+        &sketches_by_feature,
+        sketch_entities,
+        lanes,
+    );
     Ok(())
 }
 

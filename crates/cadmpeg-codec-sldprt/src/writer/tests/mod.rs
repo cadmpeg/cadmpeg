@@ -13,6 +13,7 @@ mod normalization;
 mod parameters_extrude;
 mod patterns_history;
 mod record_losses;
+mod reemitted_lanes;
 mod round_trip;
 mod sketch_tessellation;
 mod swobjects;
