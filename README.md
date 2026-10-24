@@ -116,7 +116,7 @@ Other contributions:
 - Resolve an open format item with byte-backed evidence.
 - Add validators, exporters, IR tooling, corpus tooling, or CLI improvements.
 
-Commits require DCO sign-off; decoder and specification changes also require a provenance declaration. See [CONTRIBUTING.md](CONTRIBUTING.md), [LEGAL.md](LEGAL.md), and the [roadmap](docs/roadmap.md).
+Pull requests require a DCO sign-off; decoder and specification changes also require a provenance declaration. See [CONTRIBUTING.md](CONTRIBUTING.md), [LEGAL.md](LEGAL.md), and the [roadmap](docs/roadmap.md).
 
 ## Development
 

@@ -177,9 +177,9 @@ jobs:
           git config user.email "${bot_id}+${APP_SLUG}[bot]@users.noreply.github.com"
 
           git add Cargo.toml Cargo.lock
-          # Sign off under the App's bot identity so the release commit satisfies
-          # the DCO requirement (CONTRIBUTING.md: every commit is signed off),
-          # independent of the CI check's release-file exemption.
+          # Sign off under the App's bot identity. This commit goes straight to
+          # main with no pull request to carry the sign-off, so the commit
+          # carries it, independent of the CI check's release-file exemption.
           git commit -s -m "Bump workspace version to ${version}"
           git push origin HEAD:main
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"

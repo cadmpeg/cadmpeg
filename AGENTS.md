@@ -45,6 +45,10 @@ Inspecting:
 - Read report and CADIR JSON with `cadmpeg query` before `jq`. `query summary FILE` names the artifact kind. Take arena names from `query counts` and field paths from `query schema`. `crates/cadmpeg/README.md` documents the views and `docs/jq-recipes.md` the `jq` shapes.
 - Check decoded geometry with `cadmpeg measure`, and compare two decodes with `cadmpeg diff A B --geometry`, not with hand-written oracle scripts. `docs/measurement.md` states the contract.
 
+Pull requests:
+
+- Pull requests are squash-merged. The ticked `Signed off` box in the pull request template is the DCO sign-off for the whole pull request. Do not add a `Signed-off-by` line, and do not require or add per-commit sign-offs.
+
 Shared checkouts:
 
 - Work in your assigned worktree and branch.
