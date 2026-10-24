@@ -242,7 +242,7 @@ fn global_hollerith_values_reject_non_printable_ascii() {
 /// Global value is absent, and the later sections use the comma and
 /// semicolon of IGES 5.3 §2.2.4.3.1-2, which this file also uses.
 #[test]
-fn a_forbidden_delimiter_payload_still_refuses_the_file() {
+fn a_forbidden_delimiter_payload_gives_up_the_global_section() {
     for field in [b"1H,".as_slice(), b"1H;".as_slice()] {
         let mut bytes = point_file();
         let position = bytes
@@ -318,7 +318,7 @@ fn a_twenty_seventh_global_field_decodes_with_the_noncanonical_framing_loss() {
 /// declarations frame the Global section (Appendix C `iges.global_section`,
 /// IGES 5.3 §2.2.3.1). The section is given up and the file is not refused.
 #[test]
-fn prohibited_delimiter_declarations_refuse_before_parameter_decode() {
+fn prohibited_delimiter_declarations_give_up_the_global_section() {
     let prohibited = [
         ' ', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '+', '-', '.', 'D', 'E', 'H',
     ];
