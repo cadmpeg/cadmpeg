@@ -5,9 +5,8 @@
 ``--check`` fails on any production ``.expect(``, ``.unwrap(``, ``panic!`` or
 ``unreachable!``. A ``panic!`` or ``unreachable!`` inside a ``const``
 initializer is a compile-time refusal of a source literal, not a runtime panic
-route, and is not counted; neither is a crate listed in ``TEST_ONLY_CRATES`` or
-a module directory listed in ``TEST_SUPPORT_MODULES``, each with the reason it
-is outside the check.
+route, and is not counted; neither is a crate listed in ``TEST_ONLY_CRATES``,
+each with the reason it is outside the check.
 
 With no argument the census is ``.expect(`` and ``.unwrap(``. ``--pattern`` takes
 any Python regular expression and censuses that spelling over the same scope and
@@ -60,15 +59,6 @@ TEST_ONLY_CRATES = {
     "crates/cadmpeg-test-support": (
         "every dependent names it under [dev-dependencies], so no production "
         "build links it; its `panic!` is the failing test's own assertion"
-    ),
-}
-# Test-support modules of production crates, with the reason each is outside
-# the production panic check. The key is the module directory. A module there
-# compiles only under `cfg(test)` or its crate's `test-support` feature.
-TEST_SUPPORT_MODULES = {
-    "crates/cadmpeg-measure/src/test_support": (
-        "writer crates enable the `test-support` feature only under "
-        "[dev-dependencies]; its `panic!` is the failing test's own assertion"
     ),
 }
 EXPECT_CALL = re.compile(r"\.\s*expect\s*\(")
@@ -318,8 +308,8 @@ def panic_macro_sites(code: str) -> list[int]:
 
 def test_only_reason(relative: str) -> str | None:
     """The reason ``relative`` is outside the production panic check."""
-    for prefix, reason in (*TEST_ONLY_CRATES.items(), *TEST_SUPPORT_MODULES.items()):
-        if relative.startswith(f"{prefix}/"):
+    for crate, reason in TEST_ONLY_CRATES.items():
+        if relative.startswith(f"{crate}/"):
             return reason
     return None
 
@@ -375,8 +365,8 @@ def census_panic_calls(listing: bool = False, check: bool = False) -> int:
     for relative, count in sorted(macro_buckets.items()):
         print(f"  {relative} {count}")
     if check:
-        for prefix, reason in sorted((*TEST_ONLY_CRATES.items(), *TEST_SUPPORT_MODULES.items())):
-            print(f"check excludes {prefix}: {reason}")
+        for crate, reason in sorted(TEST_ONLY_CRATES.items()):
+            print(f"check excludes {crate}: {reason}")
         print(f"remaining production panic calls: {remaining_calls}")
     return int(check and remaining_calls != 0)
 
@@ -399,7 +389,7 @@ def main() -> int:
     parser.add_argument(
         "--check", action="store_true",
         help="fail on production expect/unwrap calls and runtime panic!/unreachable! sites, "
-             "except the declared test-only crates and test-support modules",
+             "except the declared test-only crates",
     )
     arguments = parser.parse_args()
     if arguments.check and arguments.pattern is not None:

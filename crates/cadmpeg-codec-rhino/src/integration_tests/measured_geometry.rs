@@ -13,7 +13,7 @@ use cadmpeg_ir::geometry::{FitTolerance, SolvedSurfaceGeometry, SurfaceGeometry}
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::topology::{PcurveUse, Sense};
 use cadmpeg_ir::CadIr;
-use cadmpeg_measure::test_support::round_trip::assert_measures_agree;
+use cadmpeg_measure::test_support::round_trip::measures_agree;
 
 use crate::{RhinoArchiveVersion, RhinoCodec};
 
@@ -173,7 +173,7 @@ fn planar_cube_round_trip_keeps_measured_geometry() {
     let ir = unnamed_cube();
     for (_, written) in round_trips(&ir) {
         assert_eq!(written.model.bodies.len(), ir.model.bodies.len());
-        assert_measures_agree("cube", &ir, &written);
+        measures_agree("cube", &ir, &written).expect("the round trip keeps its measured geometry");
     }
 }
 
@@ -186,7 +186,8 @@ fn bulged_cube_round_trip_keeps_measured_geometry() {
     let expected = CUBE_SIDE.powi(3) + BULGE_RISE * CUBE_SIDE.powi(2) / 9.0;
     for (_, written) in round_trips(&ir) {
         assert_eq!(written.model.bodies.len(), ir.model.bodies.len());
-        let (_, before, _) = assert_measures_agree("bulged cube", &ir, &written);
+        let (_, before, _) = measures_agree("bulged cube", &ir, &written)
+            .expect("the round trip keeps its measured geometry");
         let volume = before.bodies()[0]
             .volume()
             .as_ref()

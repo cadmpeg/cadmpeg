@@ -11,7 +11,7 @@ use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 use cadmpeg_measure::report::MeasureReport;
-use cadmpeg_measure::test_support::round_trip::{assert_measures_agree, measured};
+use cadmpeg_measure::test_support::round_trip::{measured, measures_agree};
 use cadmpeg_measure::value::Quantity;
 use cadmpeg_measure::MeasureOptions;
 
@@ -84,7 +84,8 @@ fn writer_round_trip_keeps_measured_body_geometry() {
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode placed body");
-    let (_, _, after) = assert_measures_agree("placed cube", &ir, decoded.ir());
+    let (_, _, after) = measures_agree("placed cube", &ir, decoded.ir())
+        .expect("the round trip keeps its measured geometry");
     let [body] = after.bodies().as_slice() else {
         panic!("one body row");
     };
@@ -228,7 +229,7 @@ fn reversed_void_shell_measures_the_enclosed_volume_through_a_round_trip() {
     assert_eq!(decoded.ir().model.regions[0].shells.len(), 2);
     let findings = orientation_findings(decoded.ir());
     assert!(findings.is_empty(), "{findings:#?}");
-    let before = measured("solid with a void", decoded.ir());
+    let before = measured("solid with a void", decoded.ir()).expect("the document is measured");
     let (volume, error) = body_volume(&before);
     assert_close(volume, 976.0, error);
 
@@ -245,7 +246,8 @@ fn reversed_void_shell_measures_the_enclosed_volume_through_a_round_trip() {
         .expect("decode written solid with a void");
     let findings = orientation_findings(round_trip.ir());
     assert!(findings.is_empty(), "{findings:#?}");
-    let (_, _, after) = assert_measures_agree("solid with a void", decoded.ir(), round_trip.ir());
+    let (_, _, after) = measures_agree("solid with a void", decoded.ir(), round_trip.ir())
+        .expect("the round trip keeps its measured geometry");
     let (volume, error) = body_volume(&after);
     assert_close(volume, 976.0, error);
 }
@@ -264,6 +266,7 @@ fn solid_cylinder_round_trip_keeps_measured_geometry() {
             .decode(&mut Cursor::new(output), &DecodeOptions::default())
             .expect("decode the written cylinder");
         assert_eq!(decoded.ir().model.bodies.len(), ir.model.bodies.len());
-        assert_measures_agree("cylinder", &ir, decoded.ir());
+        measures_agree("cylinder", &ir, decoded.ir())
+            .expect("the round trip keeps its measured geometry");
     }
 }

@@ -8,7 +8,7 @@ use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::CadIr;
-use cadmpeg_measure::test_support::round_trip::assert_measures_agree;
+use cadmpeg_measure::test_support::round_trip::measures_agree;
 
 use crate::F3dCodec;
 
@@ -33,7 +33,7 @@ fn source_less_solid_cylinder_keeps_measured_geometry() {
     let ir = cadmpeg_test_support::solids::solid_cylinder();
     let written = round_tripped(&ir);
     assert_eq!(written.model.bodies.len(), ir.model.bodies.len());
-    assert_measures_agree("cylinder", &ir, &written);
+    measures_agree("cylinder", &ir, &written).expect("the round trip keeps its measured geometry");
 }
 
 /// The 10 mm cube under a rigid placement.
@@ -50,5 +50,6 @@ fn source_less_placed_cube_keeps_measured_geometry() {
     );
     let written = round_tripped(&ir);
     assert_eq!(written.model.bodies.len(), ir.model.bodies.len());
-    assert_measures_agree("placed cube", &ir, &written);
+    measures_agree("placed cube", &ir, &written)
+        .expect("the round trip keeps its measured geometry");
 }

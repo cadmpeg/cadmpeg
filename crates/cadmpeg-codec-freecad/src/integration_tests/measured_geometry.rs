@@ -8,7 +8,7 @@ use std::path::Path;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::report::export::WritePath;
 use cadmpeg_ir::{Codec, DecodeOptions};
-use cadmpeg_measure::test_support::round_trip::{assert_measures_agree, measures_decide};
+use cadmpeg_measure::test_support::round_trip::{measures_agree, measures_decide};
 
 use crate::FcstdCodec;
 
@@ -49,7 +49,7 @@ fn patched_corpus_documents_keep_measured_geometry() {
         let decoded = FcstdCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap_or_else(|_| panic!("{label}: the fixture does not decode"));
-        if !measures_decide(&label, decoded.ir()) {
+        if !measures_decide(&label, decoded.ir()).expect("the fixture is measured") {
             continue;
         }
         let mut edited = decoded.ir().clone();
@@ -81,7 +81,8 @@ fn patched_corpus_documents_keep_measured_geometry() {
             decoded.ir().model.bodies.len(),
             "{label}: the body count changes"
         );
-        assert_measures_agree(&label, decoded.ir(), round_trip.ir());
+        measures_agree(&label, decoded.ir(), round_trip.ir())
+            .expect("the round trip keeps its measured geometry");
         measured.push(label);
     }
     assert!(

@@ -9,7 +9,7 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::CadIr;
 use cadmpeg_measure::report::MeasureReport;
-use cadmpeg_measure::test_support::round_trip::{assert_measures_agree, measured};
+use cadmpeg_measure::test_support::round_trip::{measured, measures_agree};
 use cadmpeg_measure::value::Quantity;
 use cadmpeg_measure::{MeasureInput, MeasureOptions, Measurer, Selection};
 
@@ -68,7 +68,8 @@ fn closed_circle_edges_without_range_keep_measured_cylinder_geometry() {
     let decoded = IgesCodec
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode the written cylinder");
-    let (_, _, after) = assert_measures_agree("cylinder", &ir, decoded.ir());
+    let (_, _, after) = measures_agree("cylinder", &ir, decoded.ir())
+        .expect("the round trip keeps its measured geometry");
     let [body] = after.bodies().as_slice() else {
         panic!("one body row");
     };
@@ -115,7 +116,7 @@ fn assert_one_orientation_reading(report: &MeasureReport) {
 #[test]
 fn void_solid_measures_one_orientation_reading() {
     let (bytes, ..) = explicit_void_solid_file();
-    let report = measured("void solid", &decoded(bytes));
+    let report = measured("void solid", &decoded(bytes)).expect("the document is measured");
     assert_one_orientation_reading(&report);
     let [body] = report.bodies().as_slice() else {
         panic!("one body row");
@@ -137,7 +138,8 @@ fn void_solid_write_round_trip_keeps_measured_geometry() {
     let (bytes, ..) = explicit_void_solid_file();
     let ir = decoded(bytes);
     let written = round_tripped(&ir);
-    let (_, _, after) = assert_measures_agree("void solid", &ir, &written);
+    let (_, _, after) = measures_agree("void solid", &ir, &written)
+        .expect("the round trip keeps its measured geometry");
     assert_one_orientation_reading(&after);
 }
 
@@ -145,7 +147,8 @@ fn void_solid_write_round_trip_keeps_measured_geometry() {
 fn trimmed_inner_loop_write_round_trip_keeps_measured_geometry() {
     let ir = decoded(trimmed_plane_with_inner_loop_file());
     let written = round_tripped(&ir);
-    let (_, before, after) = assert_measures_agree("trimmed inner loop", &ir, &written);
+    let (_, before, after) = measures_agree("trimmed inner loop", &ir, &written)
+        .expect("the round trip keeps its measured geometry");
     assert_one_orientation_reading(&before);
     assert_one_orientation_reading(&after);
 }
@@ -154,7 +157,8 @@ fn trimmed_inner_loop_write_round_trip_keeps_measured_geometry() {
 /// and agree.
 fn assert_round_trip_keeps_measured_geometry(label: &str, ir: &CadIr) {
     let written = round_tripped(ir);
-    let (_, before, after) = assert_measures_agree(label, ir, &written);
+    let (_, before, after) =
+        measures_agree(label, ir, &written).expect("the round trip keeps its measured geometry");
     assert_one_orientation_reading(&before);
     assert_one_orientation_reading(&after);
 }
@@ -184,7 +188,8 @@ fn reversed_nurbs_outer_boundary_write_round_trip_keeps_measured_geometry() {
         true,
     ));
     let written = round_tripped(&ir);
-    let (_, before, after) = assert_measures_agree("reversed NURBS outer boundary", &ir, &written);
+    let (_, before, after) = measures_agree("reversed NURBS outer boundary", &ir, &written)
+        .expect("the round trip keeps its measured geometry");
     assert_one_orientation_reading(&before);
     assert_one_orientation_reading(&after);
 }
@@ -196,7 +201,8 @@ fn topology_owned_curves_without_a_role_round_trip_as_one_solid() {
     let ir = cadmpeg_test_support::solids::solid_cylinder();
     let written = round_tripped(&ir);
     assert_eq!(written.model.bodies.len(), ir.model.bodies.len());
-    assert_measures_agree("role-less cylinder", &ir, &written);
+    measures_agree("role-less cylinder", &ir, &written)
+        .expect("the round trip keeps its measured geometry");
 }
 
 /// The unit square face used through a false `OF`: its coedge with two

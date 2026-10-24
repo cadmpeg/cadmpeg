@@ -15,7 +15,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::features::{ExtrudeExtent, FeatureDefinition, FeatureOperation, LinearTermination};
 use cadmpeg_ir::report::export::WritePath;
-use cadmpeg_measure::test_support::round_trip::{assert_measures_agree, measures_decide};
+use cadmpeg_measure::test_support::round_trip::{measures_agree, measures_decide};
 use cadmpeg_test_support::golden::{
     elide_local_digests, snapshot_text, snapshots_agree, Branch, Harness,
 };
@@ -222,10 +222,11 @@ fn written_measures_agree(name: &str, source: &[u8], written: &[u8]) -> bool {
             .unwrap_or_else(|_| panic!("fixture `{name}`: a container does not decode"))
     };
     let before = decode(source);
-    if !measures_decide(name, before.ir()) {
+    if !measures_decide(name, before.ir()).expect("the fixture is measured") {
         return false;
     }
-    assert_measures_agree(name, before.ir(), decode(written).ir());
+    measures_agree(name, before.ir(), decode(written).ir())
+        .expect("the round trip keeps its measured geometry");
     true
 }
 

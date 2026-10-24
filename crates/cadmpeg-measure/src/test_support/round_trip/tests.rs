@@ -1,26 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use std::panic::{catch_unwind, AssertUnwindSafe};
-
 use cadmpeg_ir::CadIr;
 
-use super::{assert_measures_agree, measures_decide};
+use super::{measures_agree, measures_decide, RoundTripError, RoundTripFailure};
 use crate::test_support::cuboid;
 
 const LABEL: &str = "fixture";
 
-/// The message of the panic that `check` raises.
-fn panic_message(check: impl FnOnce()) -> String {
-    let payload = catch_unwind(AssertUnwindSafe(check)).expect_err("the check panics");
-    payload
-        .downcast_ref::<String>()
-        .cloned()
-        .or_else(|| {
-            payload
-                .downcast_ref::<&str>()
-                .map(|text| (*text).to_owned())
-        })
-        .expect("a text panic payload")
+/// The `Display` text and the `Debug` text that `expect` prints.
+fn messages(error: &RoundTripError) -> [String; 2] {
+    let display = error.to_string();
+    let debug = format!("{error:?}");
+    assert_eq!(display, debug, "Debug prints the Display text");
+    [display, debug]
 }
 
 /// The message names no body identity and prints no number.
@@ -42,31 +34,35 @@ fn assert_states_no_document_text(message: &str, documents: &[&CadIr]) {
 #[test]
 fn a_document_agrees_with_itself_over_one_body_pair() {
     let cube = cuboid([0.0; 3], [1.0; 3]);
-    let (comparison, before, after) = assert_measures_agree(LABEL, &cube, &cube);
+    let (comparison, before, after) =
+        measures_agree(LABEL, &cube, &cube).expect("the cube agrees with itself");
     assert_eq!(comparison.pairs().len(), 1);
     assert_eq!(before.bodies().len(), 1);
     assert_eq!(after.bodies().len(), 1);
-    assert!(measures_decide(LABEL, &cube));
+    assert!(measures_decide(LABEL, &cube).expect("the cube is measured"));
 }
 
 #[test]
 fn a_changed_body_fails_with_fixed_text_only() {
     let small = cuboid([0.0; 3], [1.0; 3]);
     let large = cuboid([0.0; 3], [2.0; 3]);
-    let message = panic_message(|| {
-        assert_measures_agree(LABEL, &small, &large);
-    });
-    assert!(message.starts_with("fixture: the round trip does not keep its measured geometry; "));
-    assert_states_no_document_text(&message, &[&small, &large]);
+    let error = measures_agree(LABEL, &small, &large).expect_err("the cubes disagree");
+    assert!(matches!(error.failure(), RoundTripFailure::Disagrees(_)));
+    for message in messages(&error) {
+        assert!(
+            message.starts_with("fixture: the round trip does not keep its measured geometry; ")
+        );
+        assert_states_no_document_text(&message, &[&small, &large]);
+    }
 }
 
 #[test]
 fn a_document_with_no_body_decides_nothing() {
     let empty = CadIr::empty();
-    assert!(!measures_decide(LABEL, &empty));
-    let message = panic_message(|| {
-        assert_measures_agree(LABEL, &empty, &empty);
-    });
-    assert!(message.starts_with("fixture: "));
-    assert_states_no_document_text(&message, &[&empty]);
+    assert!(!measures_decide(LABEL, &empty).expect("the empty document is measured"));
+    let error = measures_agree(LABEL, &empty, &empty).expect_err("no body pair agrees");
+    for message in messages(&error) {
+        assert!(message.starts_with("fixture: "));
+        assert_states_no_document_text(&message, &[&empty]);
+    }
 }

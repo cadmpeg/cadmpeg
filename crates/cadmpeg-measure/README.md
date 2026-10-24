@@ -33,6 +33,7 @@ entity IDs. The CLI exposes measurement as `cadmpeg measure` and the
 comparison as `cadmpeg diff A B --geometry`.
 
 Writer tests take `cadmpeg_measure::test_support::round_trip` through the
-`test-support` feature in `[dev-dependencies]`: `assert_measures_agree`
-compares a document with its written and decoded copy, and `measures_decide`
-selects the fixtures whose self-comparison agrees.
+`test-support` feature in `[dev-dependencies]`: `measures_agree` compares a
+document with its written and decoded copy, and `measures_decide` selects the
+fixtures whose self-comparison agrees. Each returns a `RoundTripError` whose
+text names no decoded value; the test calls `expect`.
