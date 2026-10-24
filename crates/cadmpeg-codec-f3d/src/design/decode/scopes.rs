@@ -14,6 +14,7 @@ mod component_constructions;
 mod copy_paste_bodies;
 mod direct_face;
 mod draft;
+mod emboss;
 pub(crate) mod extrude;
 mod fixed_parameters;
 pub(super) mod hole;

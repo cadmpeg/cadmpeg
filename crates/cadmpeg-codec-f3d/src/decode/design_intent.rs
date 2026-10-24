@@ -1310,6 +1310,7 @@ fn extend_related_design_records(
     design.design_extrude_selection_members =
         crate::design::decode::operands::decode_extrude_selection_members(
             scan,
+            &design.design_parameter_scopes,
             &design.design_extrude_selection_groups,
             &design.design_record_headers,
         )?;

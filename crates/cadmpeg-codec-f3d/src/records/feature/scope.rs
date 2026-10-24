@@ -22,6 +22,7 @@ use super::direct_face::{
     DesignDirectFaceOperation, DesignDraftOperation, DesignMoveOperation,
     DesignOffsetFacesOperation, DesignShellOperation, DesignThickenOperation,
 };
+use super::emboss::DesignEmbossConstruction;
 use super::extrude::{DesignExtrudeOperation, DesignExtrudePrologue};
 use super::fixed_parameters::{
     DesignFixedChamferParameters, DesignFixedExtrudeParameters, DesignFixedFilletParameters,
@@ -251,6 +252,11 @@ cadmpeg_core::named_optional_field!(
     "sweep_profile"
 );
 cadmpeg_core::named_optional_field!(
+    deserialize_emboss_construction,
+    DesignEmbossConstruction,
+    "emboss_construction"
+);
+cadmpeg_core::named_optional_field!(
     deserialize_thread_construction,
     DesignThreadConstruction,
     "thread_construction"
@@ -462,6 +468,9 @@ macro_rules! design_feature_kinds {
         impl DesignScopePayload {
             /// The source envelope is decoded, but its optional family-specific data is not.
             pub(crate) fn is_uninterpreted(&self) -> bool {
+                if matches!(self, Self::Emboss(_)) {
+                    return true;
+                }
                 match self {
                     $(Self::$variant(value) => ScopePayloadCompleteness::is_uninterpreted(value),)+
                     $(Self::$fixed(value) => ScopePayloadCompleteness::is_uninterpreted(value),)+
@@ -564,6 +573,7 @@ design_feature_kinds! {
         Scale => "Scale": Option<DesignScaleOperation>,
         Massstab => "Maßstab": Option<DesignScaleOperation>,
         Thread => "Thread": Option<DesignThreadConstruction>,
+        Emboss => "Emboss": Option<DesignEmbossConstruction>,
         EdgeFlange => "EdgeFlange": Option<DesignEdgeFlangeOperation>,
         Hem => "Hem": Option<DesignHemOperation>,
         BaseFlange => "BaseFlange": Option<DesignBaseFlangeScope>,
@@ -918,6 +928,13 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_thread_construction"
     )]
     thread_construction: Option<DesignThreadConstruction>,
+    /// Emboss scalar owners, selection groups, and retained control words.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_emboss_construction"
+    )]
+    emboss_construction: Option<DesignEmbossConstruction>,
     /// Exact signed-angle construction carried by a `Draft` scope.
     #[serde(
         default,
@@ -1549,6 +1566,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         if wire.combine_operation.is_some() {
             present.push("combine_operation");
         }
+        if wire.emboss_construction.is_some() {
+            present.push("emboss_construction");
+        }
         if wire.thread_construction.is_some() {
             present.push("thread_construction");
         }
@@ -1801,6 +1821,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             DesignFeatureKind::Massstab => {
                 DesignScopePayload::Massstab(wire.scale_operation.take())
             }
+            DesignFeatureKind::Emboss => {
+                DesignScopePayload::Emboss(wire.emboss_construction.take())
+            }
             DesignFeatureKind::Thread => {
                 DesignScopePayload::Thread(wire.thread_construction.take())
             }
@@ -1921,6 +1944,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             || wire.fixed_fillet_parameters.is_some()
             || wire.fixed_chamfer_parameters.is_some()
             || wire.combine_operation.is_some()
+            || wire.emboss_construction.is_some()
             || wire.thread_construction.is_some()
             || wire.draft_operation.is_some()
             || wire.circular_pattern_construction.is_some()
@@ -2038,6 +2062,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             path_feature: None,
             combine_operation: None,
             thread_construction: None,
+            emboss_construction: None,
             draft_operation: None,
             circular_pattern_construction: None,
             rectangular_pattern_construction: None,
@@ -2142,6 +2167,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             }
             DesignScopePayload::Combine(value) => wire.combine_operation = value,
             DesignScopePayload::Thread(value) => wire.thread_construction = value,
+            DesignScopePayload::Emboss(value) => wire.emboss_construction = value,
             DesignScopePayload::Draft(value) => wire.draft_operation = value,
             DesignScopePayload::CPattern(value)
             | DesignScopePayload::CircularPattern(value)
@@ -2351,7 +2377,7 @@ impl DesignParameterScope {
         {
             return Err(fail("reference_member_offsets/kind_offset"));
         }
-        Ok(Self {
+        let scope = Self {
             #[cfg(test)]
             clone_probe: ScopeCloneProbe,
             id: draft.id,
@@ -2373,7 +2399,14 @@ impl DesignParameterScope {
             unclosed_construction_operand_groups: draft.unclosed_construction_operand_groups,
             paired_class_tag: draft.paired_class_tag,
             paired_byte_offset: draft.paired_byte_offset,
-        })
+        };
+        if scope
+            .emboss_construction()
+            .is_some_and(|construction| !construction.links_match(&scope))
+        {
+            return Err(fail("emboss_construction"));
+        }
+        Ok(scope)
     }
 
     #[cfg(test)]
@@ -2626,6 +2659,13 @@ impl DesignParameterScope {
     pub(crate) fn combine_operation_mut(&mut self) -> Option<&mut DesignCombineOperation> {
         match &mut self.payload {
             DesignScopePayload::Combine(value) => value.as_mut(),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn emboss_construction(&self) -> Option<&DesignEmbossConstruction> {
+        match &self.payload {
+            DesignScopePayload::Emboss(value) => value.as_ref(),
             _ => None,
         }
     }

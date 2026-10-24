@@ -6102,6 +6102,67 @@ Parsed by:
 | 332 | 76 | `occurrence_role` | `bytes[76]` | little | spec | The 420-byte identity insertion carrier |
 | 408 | 12 | `closure` | `bytes[12]` | little | spec | The 420-byte identity insertion carrier |
 
+## `emboss_scope_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 156 B
+
+Offsets are relative to the primary indexed header. The null GUID and common reference table follow this prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/emboss.rs`
+- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The `Emboss` fixed-prefix form has nine ordered references. |
+| 11 | 9 | `zero_run` | `bytes[9]` | little | spec | The `Emboss` fixed-prefix form has nine ordered references. · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 20 | 8 | `control_words` | `u32[2]` | little | spec | The `Emboss` fixed-prefix form has nine ordered references. |
+| 28 | 11 | `depth_owner_reference` | `bytes[11]` | little | spec | The `Emboss` fixed-prefix form has nine ordered references. |
+| 39 | 11 | `auxiliary_group_reference` | `bytes[11]` | little | spec | The `Emboss` fixed-prefix form has nine ordered references. |
+| 50 | 11 | `horizontal_owner_reference` | `bytes[11]` | little | spec | The `Emboss` fixed-prefix form has nine ordered references. |
+| 61 | 4 | `native_pair_count` | `u32` | little | spec | The `Emboss` fixed-prefix form has nine ordered references. · value `1` |
+| 65 | 16 | `native_pair` | `u64[2]` | little | spec | The `Emboss` fixed-prefix form has nine ordered references. |
+| 81 | 11 | `rotation_owner_reference` | `bytes[11]` | little | spec | The `Emboss` fixed-prefix form has nine ordered references. |
+| 92 | 11 | `face_group_reference` | `bytes[11]` | little | spec | The `Emboss` fixed-prefix form has nine ordered references. |
+| 103 | 11 | `vertical_owner_reference` | `bytes[11]` | little | spec | The `Emboss` fixed-prefix form has nine ordered references. |
+| 114 | 4 | `profile_group_count` | `u32` | little | spec | The `Emboss` fixed-prefix form has nine ordered references. · value `1` |
+| 118 | 11 | `profile_group_reference` | `bytes[11]` | little | spec | The `Emboss` fixed-prefix form has nine ordered references. |
+| 129 | 12 | `zero_tail` | `bytes[12]` | little | spec | The `Emboss` fixed-prefix form has nine ordered references. · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 141 | 4 | `face_group_count` | `u32` | little | spec | The `Emboss` fixed-prefix form has nine ordered references. · value `1` |
+| 145 | 11 | `repeated_face_group_reference` | `bytes[11]` | little | spec | The `Emboss` fixed-prefix form has nine ordered references. |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs` — The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal.
+- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs` — The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal.
+- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs` — The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal.
+- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs` — The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal.
+- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs` — The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal.
+- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs` — The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal.
+- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs` — The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal.
+
+## `emboss_scope_reference_table_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 239 B
+
+The operation prefix, null GUID, and separator precede the common reference count.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/emboss.rs`
+- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 156 | `operation_prefix` | `bytes[156]` | little | spec | Its operation prefix is the `emboss_scope_prefix` record |
+| 156 | 4 | `null_guid_count` | `u32` | little | spec | A 36-code-unit LP-UTF16 null GUID and three zero bytes separate the prefix · value `36` |
+| 160 | 72 | `null_guid` | `u16[36]` | little | spec | A 36-code-unit LP-UTF16 null GUID and three zero bytes separate the prefix |
+| 232 | 3 | `zero_separator` | `bytes[3]` | little | spec | A 36-code-unit LP-UTF16 null GUID and three zero bytes separate the prefix · value `[0, 0, 0]` |
+| 235 | 4 | `reference_count` | `u32` | little | spec | The `Emboss` fixed-prefix form has nine ordered references. · value `9` |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs` — The common reference count follows the complete null-GUID separator.
+
 ## Not tabulated
 
 | Area | Spec | Reason |

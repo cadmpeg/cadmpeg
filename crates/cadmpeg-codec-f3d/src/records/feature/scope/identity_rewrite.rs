@@ -28,6 +28,13 @@ fn scope_fields<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
     cadmpeg_ir::schema::rewrite::typed::native_fields::rewrite_field(
         ctx,
         value,
+        "emboss_construction",
+        map,
+        DesignParameterScope::emboss_construction,
+    )?;
+    cadmpeg_ir::schema::rewrite::typed::native_fields::rewrite_field(
+        ctx,
+        value,
         "assembly_alignment",
         map,
         DesignParameterScope::assembly_alignment,
