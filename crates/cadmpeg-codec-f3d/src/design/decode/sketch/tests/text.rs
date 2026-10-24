@@ -9,6 +9,26 @@ const EPS_TEXT_ROTATION: f64 = 1.0e-12;
 
 use crate::design::decode::sketch::decode_sketch_points_from_stream;
 
+/// Decode the sketch points of one stream in its own source session.
+fn points_from_stream(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+) -> Result<Vec<crate::records::sketch_geometry::SketchPoint>, cadmpeg_core::CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+    decode_sketch_points_from_stream(
+        &ctx,
+        root,
+        meta,
+        "Design/BulkStream.dat",
+        &mut std::collections::BTreeMap::new(),
+    )
+}
+
 use crate::design::decode::sketch::decode_sketch_texts_from_stream;
 
 use crate::design::decode::sketch::decode_sketch_curve_identities_from_stream;
@@ -403,8 +423,7 @@ fn sketch_records_use_the_primary_index_live_copy() {
 
     let (bytes, mut meta, live_point_at, live_curve_at, live_text_at, nested_at) =
         indexed_sketch_fixture();
-    let points = decode_sketch_points_from_stream(&bytes, &meta, "Design/BulkStream.dat")
-        .expect("indexed sketch points");
+    let points = points_from_stream(&bytes, &meta).expect("indexed sketch points");
     assert_eq!(points.len(), 1);
     assert_eq!(points[0].byte_offset, Some(u64_from_index(live_point_at)));
     assert_eq!(points[0].coordinates(), Point2::new(70.0, -30.0));
@@ -412,11 +431,9 @@ fn sketch_records_use_the_primary_index_live_copy() {
         .to_owned()
         .try_into()
         .expect("type GUID");
-    assert!(
-        decode_sketch_points_from_stream(&bytes, &meta, "Design/BulkStream.dat",)
-            .expect("structurally point-shaped foreign type")
-            .is_empty()
-    );
+    assert!(points_from_stream(&bytes, &meta)
+        .expect("structurally point-shaped foreign type")
+        .is_empty());
     meta.types[1].type_guid = crate::design::decode::sketch::CURRENT_SKETCH_POINT_TYPE
         .0
         .to_owned()
@@ -425,7 +442,7 @@ fn sketch_records_use_the_primary_index_live_copy() {
     let mut malformed_point = bytes.clone();
     malformed_point[live_point_at + 70] = 0;
     assert!(matches!(
-        decode_sketch_points_from_stream(&malformed_point, &meta, "Design/BulkStream.dat",),
+        points_from_stream(&malformed_point, &meta),
         Err(cadmpeg_core::CodecError::Malformed(_))
     ));
 
@@ -448,16 +465,78 @@ fn sketch_records_use_the_primary_index_live_copy() {
     mismatched_primary[live_point_at + 7..live_point_at + 11]
         .copy_from_slice(&999u32.to_le_bytes());
     assert!(matches!(
-        decode_sketch_points_from_stream(&mismatched_primary, &meta, "Design/BulkStream.dat",),
+        points_from_stream(&mismatched_primary, &meta),
         Err(cadmpeg_core::CodecError::Malformed(_))
     ));
 
     let mut mismatched_secondary = bytes;
     mismatched_secondary[nested_at + 7..nested_at + 11].copy_from_slice(&999u32.to_le_bytes());
     assert!(matches!(
-        decode_sketch_points_from_stream(&mismatched_secondary, &meta, "Design/BulkStream.dat",),
+        points_from_stream(&mismatched_secondary, &meta),
         Err(cadmpeg_core::CodecError::Malformed(_))
     ));
+}
+
+/// #225 comment 6358238990 item 4 and #214: the point is parsed inside its
+/// record scope; its source offsets are `record_layout` pointers and not on
+/// the document wire; the point and companion grammars consume every byte of
+/// their frames.
+#[test]
+fn a_sketch_point_capture_holds_its_source_offsets_and_reads_its_frames() {
+    let (bytes, meta, live_point_at, ..) = indexed_sketch_fixture();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    let mut pointers = std::collections::BTreeMap::new();
+    let points =
+        decode_sketch_points_from_stream(&ctx, root, &meta, "Design/BulkStream.dat", &mut pointers)
+            .unwrap();
+    assert_eq!(points.len(), 1);
+    let point = &points[0];
+    let coordinate_offset = point.coordinate_offset.expect("decoded coordinate offset");
+    assert_eq!(
+        pointers[&point.id],
+        std::collections::BTreeMap::from([
+            ("byte_offset".to_owned(), u64_from_index(live_point_at)),
+            ("coordinate_offset".to_owned(), u64::from(coordinate_offset)),
+        ])
+    );
+    let wire = serde_json::to_value(point).unwrap();
+    assert!(wire.get("byte_offset").is_none());
+    assert!(wire.get("coordinate_offset").is_none());
+
+    let frames = crate::metastream::primary_record_frames(&meta, bytes.len()).unwrap();
+    let point_frame = frames
+        .iter()
+        .find(|frame| frame.start == live_point_at)
+        .unwrap();
+    let companion_frame = frames
+        .iter()
+        .find(|frame| frame.entity_id == u64::from(point.paired_reference))
+        .unwrap();
+    assert!(point_frame.end < companion_frame.start);
+    let captures = ctx.take_record_captures().unwrap();
+    assert_eq!(captures.len(), 1);
+    assert_eq!(captures[0].id(), point.id);
+    assert_eq!(captures[0].offset(), u64_from_index(point_frame.start));
+    assert_eq!(
+        captures[0].byte_len(),
+        u64_from_index(point_frame.end - point_frame.start)
+    );
+    assert_eq!(
+        captures[0].reads(),
+        &std::collections::BTreeMap::from([(
+            "file".to_owned(),
+            vec![
+                u64_from_index(point_frame.start)..u64_from_index(point_frame.end),
+                u64_from_index(companion_frame.start)..u64_from_index(companion_frame.end),
+            ]
+        )])
+    );
 }
 
 #[test]

@@ -16,7 +16,6 @@ use cadmpeg_ir::units::{FinitePoint2, UnitVector3};
 use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(deserialize_anchor, Point2, "anchor");
-cadmpeg_core::named_optional_field!(deserialize_point_byte_offset, u64, "byte_offset");
 cadmpeg_core::named_optional_field!(deserialize_base_id, u64, "base_id");
 cadmpeg_core::named_optional_field!(deserialize_closure, SketchPointClosureSerde, "closure");
 cadmpeg_core::named_optional_field!(deserialize_entity_genesis, u64, "entity_genesis");
@@ -910,10 +909,14 @@ pub(crate) struct SketchPoint {
     pub(crate) owner_reference: Option<u32>,
     /// Source per-file dynamic three-digit ASCII class tag naming this point's record type.
     pub(crate) class_tag: DesignClassTag,
-    /// Byte offset of this record within its Design `BulkStream`.
+    /// Byte offset of this record within its Design `BulkStream`. It is the
+    /// `byte_offset` pointer of the record's `record_layout` entry and is not
+    /// on the document wire.
     pub(crate) byte_offset: Option<u64>,
-    /// Byte offset of the first coordinate relative to the record start.
-    pub(crate) coordinate_offset: u32,
+    /// Byte offset of the first coordinate relative to the record start. It
+    /// is the `coordinate_offset` pointer of the record's `record_layout`
+    /// entry and is not on the document wire.
+    pub(crate) coordinate_offset: Option<u32>,
     /// Serialized point-record member sequence, identity, flags, and closure.
     record_form: SketchPointRecordForm<FiniteReal>,
     companion: SketchPointCompanion,
@@ -961,9 +964,6 @@ impl Serialize for SketchPoint {
             owner_reference: Option<u32>,
             class_tag: &'a str,
             #[serde(skip_serializing_if = "Option::is_none")]
-            byte_offset: Option<u64>,
-            coordinate_offset: u32,
-            #[serde(skip_serializing_if = "Option::is_none")]
             entity_genesis: Option<u64>,
             record_form: SketchPointRecordFormSerde,
             #[serde(skip_serializing_if = "Option::is_none")]
@@ -1006,8 +1006,6 @@ impl Serialize for SketchPoint {
             record_index: self.record_index,
             owner_reference: self.owner_reference,
             class_tag: self.class_tag.as_str(),
-            byte_offset: self.byte_offset,
-            coordinate_offset: self.coordinate_offset,
             entity_genesis: self.entity_genesis(),
             record_form,
             persistent_id: self.persistent_id(),
@@ -1038,7 +1036,7 @@ pub(crate) struct SketchPointDraft {
     /// Byte offset of this record within its Design `BulkStream`.
     pub(crate) byte_offset: Option<u64>,
     /// Byte offset of the first coordinate relative to the record start.
-    pub(crate) coordinate_offset: u32,
+    pub(crate) coordinate_offset: Option<u32>,
     /// Serialized point-record member sequence, identity, flags, and closure.
     pub(crate) record_form: SketchPointRecordForm,
     pub(crate) companion: SketchPointCompanion,
@@ -1081,6 +1079,14 @@ impl SketchPoint {
 }
 
 impl SketchPoint {
+    /// Source field offsets of this record, by `record_layout` pointer name.
+    pub(crate) fn source_offsets(&self) -> [(&'static str, Option<u64>); 2] {
+        [
+            ("byte_offset", self.byte_offset),
+            ("coordinate_offset", self.coordinate_offset.map(u64::from)),
+        ]
+    }
+
     pub(crate) fn coordinates(&self) -> Point2 {
         self.coordinates.get()
     }
@@ -1178,13 +1184,6 @@ pub(super) struct SketchPointSerde {
     )]
     owner_reference: Option<u32>,
     class_tag: String,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_point_byte_offset"
-    )]
-    byte_offset: Option<u64>,
-    coordinate_offset: u32,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -1346,8 +1345,8 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
             record_index: wire.record_index,
             owner_reference: wire.owner_reference,
             class_tag: wire.class_tag.try_into()?,
-            byte_offset: wire.byte_offset,
-            coordinate_offset: wire.coordinate_offset,
+            byte_offset: None,
+            coordinate_offset: None,
             record_form,
             companion,
             paired_reference: wire.paired_reference,
@@ -1396,8 +1395,6 @@ impl From<SketchPoint> for SketchPointSerde {
             record_index: point.record_index,
             owner_reference: point.owner_reference,
             class_tag: point.class_tag.into(),
-            byte_offset: point.byte_offset,
-            coordinate_offset: point.coordinate_offset,
             entity_genesis,
             record_form,
             persistent_id,
@@ -2509,7 +2506,7 @@ mod tests {
     fn native_point_wire(form: &serde_json::Value) -> serde_json::Value {
         let mut wire = json!({
             "id": "point", "record_index": 1, "class_tag": "000",
-            "byte_offset": 0, "coordinate_offset": 1, "record_form": form,
+            "record_form": form,
             "paired_reference": 2, "coordinates": {"u": 2.0, "v": 3.0},
             "depth": 0.0, "companion": {"incident_curves": [7, 2]}
         });
