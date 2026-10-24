@@ -5,7 +5,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::CadIr;
 
+use crate::test_support::test_drawing_and_trimming::test_mixed_sense::{
+    composite_edge_outer_loop_model, edge_direction_parameter_curve_boundary_model,
+    edge_direction_parameter_curve_brep_model, mixed_sense_outer_loop_model,
+    reversed_closed_outer_edge_model,
+};
 use crate::test_support::test_drawing_and_trimming::{
     reversed_face_use_multi_pcurve_loop_file, trimmed_plane_with_inner_loop_file,
 };
@@ -82,6 +88,16 @@ fn pointers(entity: &WrittenEntity) -> Vec<u32> {
     let mut indices = Vec::new();
     match entity.entity_type {
         102 => indices.extend(2..2 + usize::try_from(token(1)).expect("count")),
+        141 => {
+            indices.push(3);
+            let mut index = 5;
+            for _ in 0..token(4) {
+                let pcurves = usize::try_from(token(index + 2)).expect("count");
+                indices.push(index);
+                indices.extend(index + 3..index + 3 + pcurves);
+                index += 3 + pcurves;
+            }
+        }
         142 => indices.extend([2, 3, 4]),
         143 => {
             indices.push(2);
@@ -116,7 +132,7 @@ fn pointers(entity: &WrittenEntity) -> Vec<u32> {
             let count = usize::try_from(token(1)).expect("count");
             indices.extend((0..count).map(|face| 2 + 2 * face));
         }
-        110 | 116 | 123 | 126 | 502 => {}
+        110 | 116 | 123 | 126 | 128 | 502 => {}
         _ => panic!("the written file has an entity type this check does not read"),
     }
     let mut pointers = indices
@@ -129,14 +145,21 @@ fn pointers(entity: &WrittenEntity) -> Vec<u32> {
     pointers
 }
 
-/// Write `bytes` decoded as IGES 5.3 and require a parent for every entity
-/// whose subordinate status is physically dependent.
-fn assert_dependents_have_parents(bytes: Vec<u8>) {
-    let decoded = IgesCodec
+fn decoded(bytes: Vec<u8>) -> CadIr {
+    IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("decode the fixture");
-    let generated =
-        super::super::synthesize(decoded.ir(), IgesVersion::V5_3).expect("write the decoded model");
+        .expect("decode the fixture")
+        .ir()
+        .clone()
+}
+
+/// Write the valid neutral model `ir` as IGES 5.3 and require a parent for
+/// every entity whose subordinate status is physically dependent.
+fn assert_dependents_have_parents(ir: &CadIr) {
+    let validation =
+        cadmpeg_ir::validate_neutral(ir, Vec::new()).expect("validate the neutral model");
+    assert!(validation.is_ok());
+    let generated = super::super::synthesize(ir, IgesVersion::V5_3).expect("write the model");
     let entities = written_entities(&generated.bytes);
     let referenced = entities
         .values()
@@ -157,10 +180,46 @@ fn assert_dependents_have_parents(bytes: Vec<u8>) {
 
 #[test]
 fn trimmed_inner_loop_writes_no_dependent_entity_without_a_parent() {
-    assert_dependents_have_parents(trimmed_plane_with_inner_loop_file());
+    assert_dependents_have_parents(&decoded(trimmed_plane_with_inner_loop_file()));
 }
 
 #[test]
 fn reversed_face_use_writes_no_dependent_entity_without_a_parent() {
-    assert_dependents_have_parents(reversed_face_use_multi_pcurve_loop_file());
+    assert_dependents_have_parents(&decoded(reversed_face_use_multi_pcurve_loop_file()));
+}
+
+/// The reversed closed edge and its parameter curve take one reversed copy
+/// in either boundary direction, so one stored carrier has no use.
+#[test]
+fn reversed_closed_outer_edge_writes_no_dependent_entity_without_a_parent() {
+    assert_dependents_have_parents(&reversed_closed_outer_edge_model());
+}
+
+/// The Type 142 boundary writes the reversed edge through a reversed copy of
+/// its curve, so the stored edge curve has no use.
+#[test]
+fn mixed_sense_outer_loop_writes_no_dependent_entity_without_a_parent() {
+    assert_dependents_have_parents(&mixed_sense_outer_loop_model());
+}
+
+/// A Type 102 composite cannot be a constituent of the Type 102 model curve
+/// of a Type 142 boundary, so the boundary takes the constituents of each
+/// composite edge curve.
+#[test]
+fn composite_edges_of_a_composed_boundary_write_no_dependent_entity_without_a_parent() {
+    assert_dependents_have_parents(&composite_edge_outer_loop_model());
+}
+
+/// The Type 141 boundary writes the parameter curve in the traversal, through
+/// a reversed copy, so the stored parameter curve has no use.
+#[test]
+fn edge_direction_parameter_curve_of_a_boundary_writes_no_dependent_entity_without_a_parent() {
+    assert_dependents_have_parents(&edge_direction_parameter_curve_boundary_model());
+}
+
+/// The Type 508 loop writes the parameter curves in the traversal, through
+/// reversed copies, so the stored parameter curves have no use.
+#[test]
+fn edge_direction_parameter_curves_of_a_brep_loop_write_no_dependent_entity_without_a_parent() {
+    assert_dependents_have_parents(&edge_direction_parameter_curve_brep_model());
 }

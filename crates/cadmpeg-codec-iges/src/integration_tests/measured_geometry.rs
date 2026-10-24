@@ -18,6 +18,9 @@ use crate::test_support::test_closed_cylinder::{
     solid_cylinder, solid_cylinder_without_curve_roles, CYLINDER_HEIGHT, CYLINDER_RADIUS,
 };
 use crate::test_support::test_drawing_and_trimming::test_boundary_direction::trimmed_nurbs_patch_file;
+use crate::test_support::test_drawing_and_trimming::test_mixed_sense::{
+    mixed_sense_outer_loop_model, reversed_closed_outer_edge_model,
+};
 use crate::test_support::test_drawing_and_trimming::{
     reversed_face_use_multi_pcurve_loop_file, trimmed_plane_with_inner_loop_file,
 };
@@ -168,6 +171,29 @@ fn trimmed_inner_loop_write_round_trip_keeps_measured_geometry() {
     let comparison = compare(&ir, &before, &written, &after, &CompareOptions::default())
         .expect("one body pair fits the pair allowance");
     assert_eq!(comparison.verdict(), Verdict::Agree);
+}
+
+/// `ir` and its IGES write round trip measure one orientation reading each
+/// and agree.
+fn assert_round_trip_keeps_measured_geometry(ir: &CadIr) {
+    let written = round_tripped(ir);
+    let before = measured(ir);
+    let after = measured(&written);
+    assert_one_orientation_reading(&before);
+    assert_one_orientation_reading(&after);
+    let comparison = compare(ir, &before, &written, &after, &CompareOptions::default())
+        .expect("one body pair fits the pair allowance");
+    assert_eq!(comparison.verdict(), Verdict::Agree);
+}
+
+#[test]
+fn reversed_closed_outer_edge_write_round_trip_keeps_measured_geometry() {
+    assert_round_trip_keeps_measured_geometry(&reversed_closed_outer_edge_model());
+}
+
+#[test]
+fn mixed_sense_outer_loop_write_round_trip_keeps_measured_geometry() {
+    assert_round_trip_keeps_measured_geometry(&mixed_sense_outer_loop_model());
 }
 
 /// The clockwise source boundary decodes reversed, with its pcurve use on the
