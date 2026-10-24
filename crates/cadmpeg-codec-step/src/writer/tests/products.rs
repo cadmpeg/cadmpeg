@@ -15,6 +15,7 @@ fn unnamed_definition(
     bodies: Vec<cadmpeg_ir::ids::BodyId>,
 ) -> cadmpeg_ir::products::ProductDefinition {
     cadmpeg_ir::products::ProductDefinition {
+        sketches: Vec::default(),
         id: cadmpeg_ir::ids::ProductDefinitionId::mint(id).expect("identity grammar"),
         kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
         source_name: None,

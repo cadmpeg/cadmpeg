@@ -60,6 +60,7 @@ fn placed_point_product() -> CadIr {
     let part: cadmpeg_ir::ids::ProductDefinitionId =
         "cadir:model:product#pin".try_into().expect("identity");
     ir.model.product_definitions.push(ProductDefinition {
+        sketches: Vec::default(),
         id: part.clone(),
         kind: ProductDefinitionKind::Part,
         source_name: Some("Pin".into()),

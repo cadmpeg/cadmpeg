@@ -20886,6 +20886,7 @@ anchor = "Byte 36 opens a same-segment marked reference; its u64 target at membe
 [[record]]
 name = "sketch_ordinal_collection_prefix"
 kind = "byte"
+parsed_by = ["crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs", "crates/cadmpeg-codec-f3d/src/design/decode/sketch_owners.rs"]
 section = "3.1"
 anchor = "Its indexed header is followed by nine zero bytes, a property block carrying `crv_tag_id_idx`"
 size = 20
@@ -21151,3 +21152,90 @@ offset = 47
 type = "bytes[11]"
 source = "spec"
 anchor = "`47 + 11k`"
+
+[[record]]
+name = "sketch_owner_collection_legacy_list_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "Version `3` has six bytes after this property block and before the member list."
+size = 6
+parsed_by = ["crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs", "crates/cadmpeg-codec-f3d/src/design/decode/sketch_owners.rs"]
+
+[[record.field]]
+name = "prefix"
+offset = 0
+type = "bytes[6]"
+source = "spec"
+anchor = "Version `3` has six bytes after this property block and before the member list."
+
+[[record]]
+name = "sketch_owner_reference"
+kind = "byte"
+section = "3.1"
+anchor = "This local reference is either eleven bytes"
+size = 11
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/sketch_owners.rs"
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "a one-byte marker"
+
+[[record.field]]
+name = "target"
+offset = 1
+type = "u64"
+source = "spec"
+anchor = "a u64 target"
+
+[[record.field]]
+name = "flags"
+offset = 9
+type = "bytes[2]"
+source = "spec"
+anchor = "two zero flag bytes"
+
+[[record]]
+name = "sketch_owner_typed_reference"
+kind = "byte"
+section = "3.1"
+anchor = "or 51 bytes, with an additional u32 length `36`"
+size = 51
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/sketch_owners.rs"
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "a one-byte marker"
+
+[[record.field]]
+name = "target"
+offset = 1
+type = "u64"
+source = "spec"
+anchor = "a u64 target"
+
+[[record.field]]
+name = "type_guid_length"
+offset = 9
+type = "u32"
+source = "spec"
+anchor = "an additional u32 length `36`"
+
+[[record.field]]
+name = "type_guid"
+offset = 13
+type = "bytes[36]"
+source = "spec"
+anchor = "36 ASCII type-GUID bytes between the target and the flags"
+
+[[record.field]]
+name = "flags"
+offset = 49
+type = "bytes[2]"
+source = "spec"
+anchor = "two zero flag bytes"
