@@ -268,6 +268,42 @@ fn linked_component_binding(
     Some((component_record_index, context_uuid, uuid_offset))
 }
 
+/// A run of records after a Design `BulkStream`'s last indexed record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct UnindexedRecordRun {
+    /// Offset of the run's first indexed header, where the indexed extent ends.
+    pub(crate) start: usize,
+    /// Record index of the run's first header.
+    pub(crate) first_record_index: u32,
+    /// Indexed headers in the run.
+    pub(crate) headers: usize,
+}
+
+/// The unindexed suffix whose first header has a lower record index than
+/// the header at the greatest offset in either `MetaStream` index.
+pub(crate) fn unindexed_record_run(
+    bulk: &[u8],
+    meta: &crate::metastream::MetaStream,
+) -> Option<UnindexedRecordRun> {
+    let last_indexed = usize::try_from(
+        meta.records
+            .iter()
+            .chain(&meta.secondary_records)
+            .map(|record| record.bulk_offset)
+            .max()?,
+    )
+    .ok()?;
+    let preceding = super::sketch::indexed_record_header_at(bulk, last_indexed)?;
+    let tail_start = last_indexed.checked_add(1)?;
+    let mut headers = super::sketch::indexed_record_offsets(bulk.get(tail_start..)?);
+    let first = headers.next()?;
+    (first.record_index < preceding.record_index).then(|| UnindexedRecordRun {
+        start: tail_start + first.offset,
+        first_record_index: first.record_index,
+        headers: 1 + headers.count(),
+    })
+}
+
 /// Decode each component entity's UUID-bound local naming space.
 pub(crate) fn decode_component_naming_spaces(
     scan: &ContainerScan,

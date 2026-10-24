@@ -805,3 +805,59 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
         assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
     }
 }
+
+#[test]
+fn a_design_bulk_stream_ends_before_an_unindexed_record_run() {
+    fn record(out: &mut Vec<u8>, class: &[u8; 3], record_index: u32) {
+        out.extend_from_slice(&3_u32.to_le_bytes());
+        out.extend_from_slice(class);
+        out.extend_from_slice(&record_index.to_le_bytes());
+        out.extend_from_slice(&[0; 10]);
+    }
+    fn archive(trailing_index: u32) -> Vec<u8> {
+        let mut bulk = Vec::new();
+        record(&mut bulk, b"300", 1);
+        record(&mut bulk, b"300", 2);
+        record(&mut bulk, b"301", trailing_index);
+        record(&mut bulk, b"302", trailing_index + 1);
+        let meta = design_metastream_with_records(&[], &[(1, 0), (2, 21)]);
+        let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        write_synthetic_manifests(&mut zip, stored);
+        zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
+            .unwrap();
+        zip.write_all(&bulk).unwrap();
+        zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+            .unwrap();
+        zip.write_all(&meta).unwrap();
+        zip.finish().unwrap().into_inner()
+    }
+    let bulk = "FusionAssetName[Active]/Design1/BulkStream.dat";
+
+    with_scan(&archive(1), |scan| {
+        assert_eq!(scan.entry_bytes(bulk).unwrap().len(), 42);
+        let [(name, run, stored)] = scan.unindexed_record_runs.as_slice() else {
+            panic!("one unindexed record run");
+        };
+        assert_eq!(name, bulk);
+        assert_eq!(
+            *run,
+            super::UnindexedRecordRun {
+                start: 42,
+                first_record_index: 1,
+                headers: 2,
+            }
+        );
+        assert_eq!(*stored, 84);
+        let mut losses = Vec::new();
+        crate::report::header_losses(scan, &mut losses).unwrap();
+        assert!(losses
+            .iter()
+            .any(|loss| loss.code == crate::loss::F3dLossCode::UnindexedRecordsRetained.kind()));
+    });
+
+    with_scan(&archive(2), |scan| {
+        assert_eq!(scan.entry_bytes(bulk).unwrap().len(), 84);
+        assert!(scan.unindexed_record_runs.is_empty());
+    });
+}
