@@ -132,7 +132,7 @@ Analytic surfaces carry the frame needed to interpret parameters: plane `u_axis`
 
 `Curve.parameter_range` optionally retains a finite source interval independently of topology edges. Its first endpoint is strictly below its second. The interval records the bounded carrier extent; it does not restrict use of the underlying mathematical curve outside that interval.
 
-`Edge.param_range` uses the canonical parameterization of its curve when a 3D carrier exists. A carrier-less degenerate or tolerant edge has no canonical 3D domain; its optional range retains finite native endpoint doubles without imposing carrier-domain ordering. Full circles are anchored to `[0, 2π]`. Periodic ranges may cross a seam by using an end value greater than the start value in the unwrapped domain. Pcurve coordinates use the corresponding surface conventions.
+`Edge.param_range` uses the canonical parameterization of its curve when a 3D carrier exists. A carrier-less degenerate or tolerant edge has no canonical 3D domain; its optional range retains finite native endpoint doubles without imposing carrier-domain ordering. Full circles are anchored to `[0, 2π]`. A closed edge, whose start and end are one vertex, with no range traverses its carrier once: one revolution `[0, 2π]` of a circle or an ellipse, or the effective knot domain of a clamped or periodic NURBS curve; a placed curve takes the interval of its basis. The edge is closed over that interval only when both ends of the interval evaluate to its vertex. Periodic ranges may cross a seam by using an end value greater than the start value in the unwrapped domain. Pcurve coordinates use the corresponding surface conventions.
 
 Decoders convert kernel conventions at decode:
 
