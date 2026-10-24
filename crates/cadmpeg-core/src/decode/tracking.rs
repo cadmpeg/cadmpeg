@@ -708,15 +708,11 @@ impl SessionHandle<'_> {
                     };
                     record.reads.insert(stream, delta.ranges);
                 }
-                reserve_captures(
-                    &session.budget,
-                    &mut frame.captures,
-                    std::slice::from_ref(&record),
-                )?;
+                reserve_working(&session.budget, &mut frame.captures, 1)?;
                 frame.captures.push(record);
             }
             if let Some(parent) = session.frames.last_mut() {
-                reserve_captures(&session.budget, &mut parent.captures, &frame.captures)?;
+                reserve_working(&session.budget, &mut parent.captures, frame.captures.len())?;
                 parent.captures.extend(frame.captures);
                 for delta in frame.deltas {
                     for range in delta.ranges {

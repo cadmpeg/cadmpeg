@@ -771,3 +771,143 @@ fn nested_transactions_keep_fragment_read_staging_uncharged_through_every_parent
         )])
     );
 }
+
+#[test]
+fn one_hundred_fragments_of_an_existing_read_fit_the_primary_capture_budget() {
+    let id = "joined";
+    let retained = size_of::<super::super::SessionSlot>()
+        + size_of::<crate::operation_budget::OperationBudget>()
+        + size_of::<super::super::Frame>()
+        + size_of::<super::super::RecordCapture>()
+        + id.len()
+        + "file".len()
+        + size_of::<std::ops::Range<u64>>()
+        + size_of::<(String, Vec<std::ops::Range<u64>>)>()
+        + "file".len();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes =
+        u64::try_from(retained).expect("retained capture budget fits u64");
+    let arena = DecodeArena::new();
+    let (ctx, root) = DecodeContext::from_root_bytes(b"ABC", &arena, &policy)
+        .expect("create tracked primary-source decode context");
+    let (_, owner) = ctx
+        .record_owner(id, root, || {
+            assert_eq!(root.read_at(0, 3), Some(b"ABC".as_slice()));
+            Ok(())
+        })
+        .expect("declare primary record owner");
+    assert_eq!(ctx.retained_bytes_available(), 0);
+    for _ in 0..100 {
+        ctx.record_fragment(&owner, root, || {
+            assert_eq!(root.read_at(0, 3), Some(b"ABC".as_slice()));
+            Ok(())
+        })
+        .expect("accept repeated primary-source fragment");
+        assert_eq!(ctx.retained_bytes_available(), 0);
+    }
+    let captures = ctx
+        .take_record_captures()
+        .expect("extract accepted primary record captures");
+    assert_eq!(ctx.retained_bytes_available(), 0);
+    assert_eq!(captures.len(), 1);
+    assert_eq!(captures[0].id(), id);
+    assert_eq!(
+        (
+            captures[0].stream(),
+            captures[0].offset(),
+            captures[0].byte_len()
+        ),
+        ("file", 0, 3)
+    );
+    assert_eq!(
+        captures[0].reads(),
+        &BTreeMap::from([(
+            "file".into(),
+            std::iter::once(0..3).collect::<Vec<std::ops::Range<u64>>>()
+        )])
+    );
+    assert!(ctx.resource_refusal().is_none());
+}
+
+#[test]
+fn a_new_fragment_range_refuses_at_final_retention_without_refunding_or_exposing_captures() {
+    let id = "joined";
+    let retained = size_of::<super::super::SessionSlot>()
+        + size_of::<crate::operation_budget::OperationBudget>()
+        + size_of::<super::super::Frame>()
+        + size_of::<super::super::RecordCapture>()
+        + id.len()
+        + "file".len()
+        + size_of::<std::ops::Range<u64>>()
+        + size_of::<(String, Vec<std::ops::Range<u64>>)>()
+        + "file".len();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes =
+        u64::try_from(retained).expect("primary-only retained budget fits u64");
+    let arena = DecodeArena::new();
+    let (ctx, root) = DecodeContext::from_root_bytes(b"ABC---DEF", &arena, &policy)
+        .expect("create tracked final-retention decode context");
+    let (_, owner) = ctx
+        .record_owner(
+            id,
+            root.child(0, 3)
+                .expect("select final-retention primary source window"),
+            || {
+                assert_eq!(root.read_at(0, 3), Some(b"ABC".as_slice()));
+                Ok(())
+            },
+        )
+        .expect("declare final-retention primary record owner");
+    assert_eq!(ctx.retained_bytes_available(), 0);
+    for _ in 0..100 {
+        ctx.record_fragment(
+            &owner,
+            root.child(6, 9)
+                .expect("select final-retention fragment source window"),
+            || {
+                assert_eq!(root.read_at(6, 3), Some(b"DEF".as_slice()));
+                Ok(())
+            },
+        )
+        .expect("stage fragment before final retention");
+        assert_eq!(ctx.retained_bytes_available(), 0);
+        assert!(ctx.resource_refusal().is_none());
+    }
+    let failure = match ctx.take_record_captures() {
+        Err(CodecError::ResourceLimit(failure)) => failure,
+        other => panic!("expected actual retained-range refusal, got {other:?}"),
+    };
+    assert_eq!(failure.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(failure.scope, crate::decode::LimitScope::Session);
+    assert_eq!(
+        failure.reason,
+        crate::decode::ResourceFailure::BudgetExceeded
+    );
+    assert_eq!(
+        failure.limit,
+        u64::try_from(retained).expect("retained refusal limit fits u64")
+    );
+    assert_eq!(
+        failure.used,
+        u64::try_from(retained).expect("retained refusal used bytes fit u64")
+    );
+    assert_eq!(
+        failure.additional,
+        u64::try_from(size_of::<std::ops::Range<u64>>())
+            .expect("retained refusal range increment fits u64")
+    );
+    assert_eq!(ctx.resource_refusal(), Some(failure));
+    assert!(
+        matches!(ctx.take_record_captures(), Err(CodecError::ResourceLimit(repeated)) if repeated == failure)
+    );
+    let mut ran = false;
+    assert!(ctx
+        .record_fragment(&owner, root, || {
+            ran = true;
+            Ok(())
+        })
+        .is_err());
+    assert!(!ran);
+    assert_eq!(ctx.resource_refusal(), Some(failure));
+    assert_eq!(ctx.retained_bytes_available(), 0);
+}
