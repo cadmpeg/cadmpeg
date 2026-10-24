@@ -35,6 +35,7 @@ use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 use crate::{design::DesignInventory, sketch::SketchInventory};
 
 pub(crate) mod base;
+pub(crate) mod combine;
 mod edge_selection;
 pub(crate) mod history;
 mod hole;
@@ -1798,6 +1799,7 @@ pub(crate) enum FeatureFamily {
     Loft,
     Revolve,
     Motion,
+    Combine,
 }
 
 impl FeatureFamily {
@@ -1821,6 +1823,7 @@ impl FeatureFamily {
                 motion::MOVE_BODY_CLASS_ID,
                 motion::ROTATE_CLASS_ID,
             ],
+            Self::Combine => &[combine::CLASS_ID],
         }
     }
 
@@ -1846,6 +1849,7 @@ impl FeatureFamily {
             Self::Revolve => 17,
             Self::Motion if source.properties.references().len() == 13 => 8,
             Self::Motion => 0,
+            Self::Combine => 0,
         }
     }
 
@@ -1864,6 +1868,7 @@ impl FeatureFamily {
             Self::Loft,
             Self::Revolve,
             Self::Motion,
+            Self::Combine,
         ]
         .into_iter()
         .find(|family| family.class_ids().contains(&class_id))
@@ -1917,6 +1922,9 @@ impl FeatureFamily {
                 FeatureDefinition::Operation(
                     FeatureOperation::MoveBody { .. } | FeatureOperation::MoveFace { .. }
                 )
+            ) | (
+                Self::Combine,
+                FeatureDefinition::Operation(FeatureOperation::Combine { .. })
             )
         )
     }
@@ -1945,6 +1953,7 @@ impl FeatureFamily {
             FeatureDefinition::Operation(
                 FeatureOperation::MoveBody { .. } | FeatureOperation::MoveFace { .. },
             ) => Some(Self::Motion),
+            FeatureDefinition::Operation(FeatureOperation::Combine { .. }) => Some(Self::Combine),
             _ => None,
         }
     }
@@ -2226,6 +2235,7 @@ pub(crate) fn project(
                     project_revolve(ctx, feature, label, &index, &mut revolve_losses)
                 }
                 FeatureFamily::Motion => motion::project(ctx, feature, label, &index),
+                FeatureFamily::Combine => combine::project(ctx, feature, label, &index),
             }
             .map(|result| result.map(|(feature, result)| (feature, Some(result))))
             .transpose()?,
@@ -2649,6 +2659,7 @@ fn native_kind(class_id: Option<ClassId>) -> cadmpeg_ir::features::NativeFeature
                     .map_or("MoveBody", |(_, name)| *name)
                     .into(),
             ),
+            FeatureFamily::Combine => NativeFeatureKind::Other("Combine".into()),
         };
     }
     if let Some(family) = loft_sweep::slots::Family::from_class_id(class_id) {
@@ -3989,6 +4000,16 @@ fn result_from_collection(
     else {
         return None;
     };
+    feature_result_members(ctx, identity, collection, items, index)
+}
+
+fn feature_result_members(
+    ctx: &DecodeContext<'_>,
+    identity: &crate::record_identity::RecordIdentity,
+    collection: &PmDcFeatureProperty,
+    items: &PmDcReferenceList,
+    index: &ProjectionIndex<'_>,
+) -> Option<Result<(FeatureId, FeatureResultTopology), CodecError>> {
     let mut bodies = Vec::new();
     for reference in items.references() {
         let body = resolve_property(identity.segment_token.as_str(), reference.index(), index)?;
@@ -6192,6 +6213,7 @@ pub(crate) mod tests {
         crate::pmdc::PMDC_LIST_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
     }
 
+    mod body_selection;
     mod edge_treatments;
     mod extents;
     mod revolve;
