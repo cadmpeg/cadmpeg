@@ -6234,26 +6234,46 @@ fn project_rectangular_pattern_scalars(
     use cadmpeg_ir::scalar::PositiveLength;
 
     let construction = scope.rectangular_pattern_construction()?;
-    // A scope stores one direction record per active direction or none, so
-    // the records pair with the active directions in U-then-V order.
     let mut direction_records = construction.directions().iter();
     let mut active = Vec::new();
-    for (count, extent) in [
+    let adjacent = construction
+        .directions()
+        .first()
+        .is_some_and(|record| record.distance_type == 7);
+    for (axis, (count, extent)) in [
         (construction.u_count(), construction.u_extent()),
         (construction.v_count(), construction.v_extent()),
-    ] {
+    ]
+    .into_iter()
+    .enumerate()
+    {
         let Some(intervals) = PatternIntervals::new(count) else {
             continue;
         };
-        let direction = direction_records.next().and_then(|record| {
-            let direction = record.direction()?;
-            Some(if extent < 0.0 {
+        let stored_direction = if axis == 1 && construction.secondary_direction().is_some() {
+            construction.secondary_direction().and_then(|record| {
+                cadmpeg_ir::units::UnitVector3::normalized(Vector3::from(
+                    record.value.map(cadmpeg_ir::scalar::FiniteReal::get),
+                ))
+            })
+        } else {
+            direction_records.next().and_then(
+                crate::records::feature::patterns::DesignRectangularPatternDirection::direction,
+            )
+        };
+        let direction = stored_direction.map(|direction| {
+            if extent < 0.0 {
                 direction.negated()
             } else {
                 direction
-            })
+            }
         });
-        let spacing = PositiveLength::new(extent.abs() * 10.0 / f64::from(intervals.get()))?;
+        let divisor = if adjacent {
+            1.0
+        } else {
+            f64::from(intervals.get())
+        };
+        let spacing = PositiveLength::new(extent.abs() * 10.0 / divisor)?;
         active.push((count, spacing, direction));
     }
     let instance_direction = construction.instances().and_then(|instances| {

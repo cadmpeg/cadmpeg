@@ -20517,3 +20517,338 @@ anchor = "The `Emboss` fixed-prefix form has nine ordered references."
 path = "crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs"
 contains = "scope.byte_offset().checked_add(235) != Some(scope.reference_count_offset())"
 note = "The common reference count follows the complete null-GUID separator."
+
+[[record]]
+name = "rectangular_pattern_spacing_direction_record"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The 221-byte spacing direction form"
+size = 221
+note = "Offsets are relative to the direction record's primary indexed header. The paired header starts at offset 221."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "selection_kind"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "origin"
+offset = 25
+type = "f64[3]"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "displacement"
+offset = 49
+type = "f64[3]"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "zero_run_16"
+offset = 73
+type = "bytes[16]"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "distance_type"
+offset = 89
+type = "u32"
+value = 7
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "spacing_flag"
+offset = 93
+type = "u8"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+value = 0
+
+[[record.field]]
+name = "negative_ones"
+offset = 94
+type = "f64[3]"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "selection_count"
+offset = 118
+type = "u32"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "selection_reference"
+offset = 122
+type = "bytes[11]"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "zero_run_2"
+offset = 133
+type = "bytes[2]"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "auxiliary_count"
+offset = 135
+type = "u32"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "auxiliary_reference"
+offset = 139
+type = "bytes[11]"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "role"
+offset = 150
+type = "u64"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "zero_run_after_role"
+offset = 158
+type = "bytes[10]"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "opaque_index"
+offset = 168
+type = "u32"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "opaque_scalar"
+offset = 172
+type = "f64"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "opaque_index_repeat"
+offset = 180
+type = "u32"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "index_plus_two_reference"
+offset = 184
+type = "bytes[11]"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "separator_flag"
+offset = 195
+type = "u8"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "separator_zero_run"
+offset = 196
+type = "bytes[2]"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "index_plus_one_reference"
+offset = 198
+type = "bytes[11]"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "scope_separator"
+offset = 209
+type = "u8"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "scope_reference"
+offset = 210
+type = "bytes[11]"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record]]
+name = "rectangular_pattern_payload_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+size = 133
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+
+[[record.field]]
+name = "zero_head"
+offset = 11
+type = "bytes[8]"
+source = "spec"
+anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+
+[[record.field]]
+name = "flag"
+offset = 19
+type = "u8"
+source = "spec"
+anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+
+[[record.field]]
+name = "count"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+
+[[record.field]]
+name = "u_count"
+offset = 24
+type = "bytes[11]"
+source = "spec"
+anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+
+[[record.field]]
+name = "zero_middle"
+offset = 35
+type = "bytes[4]"
+source = "spec"
+anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+
+[[record.field]]
+name = "v_count"
+offset = 39
+type = "bytes[11]"
+source = "spec"
+anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+
+[[record.field]]
+name = "zero_tail"
+offset = 50
+type = "bytes[9]"
+source = "spec"
+anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+
+[[record.field]]
+name = "sentinel"
+offset = 59
+type = "u32"
+source = "spec"
+anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+
+[[record.field]]
+name = "v_direction"
+offset = 63
+type = "f64[3]"
+source = "spec"
+anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+
+[[record.field]]
+name = "u_distance"
+offset = 87
+type = "bytes[11]"
+source = "spec"
+anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+
+[[record.field]]
+name = "v_distance"
+offset = 98
+type = "bytes[11]"
+source = "spec"
+anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+
+[[record.field]]
+name = "zero_distance"
+offset = 109
+type = "bytes[2]"
+source = "spec"
+anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+
+[[record.field]]
+name = "v_count_repeat"
+offset = 111
+type = "bytes[11]"
+source = "spec"
+anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+
+[[record.field]]
+name = "u_direction"
+offset = 122
+type = "bytes[11]"
+source = "spec"
+anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+
+[[record]]
+name = "rectangular_pattern_payload_suffix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+size = 37
+
+[[record.field]]
+name = "u_count"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+
+[[record.field]]
+name = "scope"
+offset = 11
+type = "bytes[11]"
+source = "spec"
+anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+
+[[record.field]]
+name = "seed_group"
+offset = 22
+type = "bytes[11]"
+source = "spec"
+anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+
+[[record.field]]
+name = "zero_tail"
+offset = 33
+type = "bytes[4]"
+source = "spec"
+anchor = "The payload has a 133-byte prefix and a 37-byte suffix."

@@ -90,6 +90,7 @@ fn rectangular_scope() -> DesignParameterScope {
                     instances: None,
                     instance_search_cap: None,
                     directions: Vec::new(),
+                    secondary_direction: None,
                 },
             )
             .unwrap(),
@@ -220,6 +221,7 @@ fn direction_record(
         record_index,
         selection_record_index: record_index + 3,
         selection_kind: 8,
+        distance_type: 8,
         origin: crate::test_support::reals([0.0, 0.0, 0.0]),
         origin_offset: 0,
         displacement: crate::test_support::reals(displacement),
@@ -251,6 +253,7 @@ fn two_direction_scope(
                     instances: None,
                     instance_search_cap: None,
                     directions,
+                    secondary_direction: None,
                 },
             )
             .unwrap(),
@@ -351,6 +354,7 @@ fn single_direction_scope_with_run(
                     )),
                     instance_search_cap: None,
                     directions,
+                    secondary_direction: None,
                 },
             )
             .unwrap(),
@@ -508,4 +512,74 @@ fn compact_entity_selection_seed_without_a_feature_scope_stays_native() {
         .expect("rectangular pattern");
         assert_linear_seed(definition, native.clone());
     }
+}
+
+#[test]
+fn spacing_pattern_payload_projects_both_axes_and_feature_seed() {
+    use crate::records::feature::patterns::DesignRectangularPatternConstructionWire;
+    let mut direction = direction_record(20, [0.0, 2.0, 0.0]);
+    direction.distance_type = 7;
+    let mut scope = two_direction_scope(Vec::new());
+    let mut wire = DesignRectangularPatternConstructionWire::from(
+        scope.rectangular_pattern_construction().unwrap().clone(),
+    );
+    wire.u_count = 5;
+    wire.v_count = 3;
+    wire.u_extent = 1.7;
+    wire.v_extent = -0.9;
+    wire.directions = vec![direction];
+    wire.secondary_direction = Some(crate::records::identity::Located {
+        value: crate::test_support::reals([0.0, 0.0, 4.0]),
+        offset: 63,
+    });
+    if let crate::records::feature::scope::DesignScopePayloadMut::RPattern(slot) =
+        scope.payload_mut()
+    {
+        *slot = Some(DesignRectangularPatternConstruction::try_from(wire).unwrap());
+    }
+    let feature = seed_scope(5, Some(2));
+    let expected = PatternSeed::Feature(crate::ids::neutral_feature_id(&feature));
+    let definition = project_rectangular_pattern_scalars(
+        &scope,
+        &[group(10, 30, DesignOperandRole::BODIES_A)],
+        &[],
+        &[compact_entity_selection(30, 31, 5)],
+        &[feature],
+    )
+    .expect("spacing pattern");
+    let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) = definition
+    else {
+        panic!("pattern");
+    };
+    assert_eq!(seeds, vec![expected]);
+    let PatternTransform::Linear {
+        direction,
+        spacing,
+        count,
+        second,
+    } = pattern.definition()
+    else {
+        panic!("linear pattern");
+    };
+    assert_eq!(*count, 5);
+    assert!((spacing.get() - 17.0).abs() < EPS_SPACING);
+    assert_eq!(
+        cadmpeg_ir::features::FiniteVector3::from(direction.unwrap()).get(),
+        cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
+    );
+    let second = second.as_ref().unwrap();
+    assert_eq!(second.count, 3);
+    assert!((second.spacing.get() - 9.0).abs() < EPS_SPACING);
+    assert_eq!(
+        cadmpeg_ir::features::FiniteVector3::from(second.direction).get(),
+        cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0)
+    );
+    let record = scope.rectangular_pattern_construction().unwrap();
+    assert_eq!(
+        serde_json::from_value::<DesignRectangularPatternConstruction>(
+            serde_json::to_value(record).unwrap()
+        )
+        .unwrap(),
+        *record
+    );
 }
