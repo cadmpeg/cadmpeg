@@ -1548,6 +1548,16 @@ face may have this type. Section §5.5.19 defines `FACE.bounds` as
 `SET[1:?] OF FACE_BOUND`; its WR2 permits at most one `FACE_OUTER_BOUND`, and
 the outer role is optional. Other face bounds are not outer bounds.
 
+Section §5.5.19 defines the face domain as an oriented, connected, finite
+2-manifold, and the topological normal `n` such that each bound runs
+counterclockwise around the face when `n` points up: the face interior lies
+to the left of every oriented bound. Section §5.5.20 states in
+`FACE_SURFACE.same_sense` whether the surface normal agrees with `n`. A
+face with no `FACE_OUTER_BOUND` follows the same rule, and a single
+`FACE_BOUND` is not an outer bound. On an unbounded surface such as a
+`PLANE`, the region to the left of one bound that runs clockwise about `n` is
+not finite, so that bound set is not a face.
+
 Section §5.5.17 defines the inherited `FACE_BOUND` attributes `bound` and
 `orientation`. Section §5.5.18 declares `FACE_OUTER_BOUND` as a subtype with
 no additional explicit attributes. Therefore, in a complex instance, the

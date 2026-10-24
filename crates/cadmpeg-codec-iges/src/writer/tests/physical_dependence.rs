@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
+use std::path::{Path, PathBuf};
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::CadIr;
@@ -98,6 +99,8 @@ fn pointers(entity: &WrittenEntity) -> Vec<u32> {
                 index += 3 + pcurves;
             }
         }
+        120 => indices.extend([1, 2]),
+        122 => indices.push(1),
         142 => indices.extend([2, 3, 4]),
         143 => {
             indices.push(2);
@@ -107,7 +110,13 @@ fn pointers(entity: &WrittenEntity) -> Vec<u32> {
             indices.extend([1, 4]);
             indices.extend(5..5 + usize::try_from(token(3)).expect("count"));
         }
+        186 => {
+            indices.push(1);
+            let voids = usize::try_from(token(3)).expect("count");
+            indices.extend((0..voids).map(|void| 4 + 2 * void));
+        }
         190 => indices.extend(1..entity.tokens.len()),
+        196 => indices.extend([1, 3, 4]),
         504 => {
             let count = usize::try_from(token(1)).expect("count");
             for edge in 0..count {
@@ -132,7 +141,7 @@ fn pointers(entity: &WrittenEntity) -> Vec<u32> {
             let count = usize::try_from(token(1)).expect("count");
             indices.extend((0..count).map(|face| 2 + 2 * face));
         }
-        110 | 116 | 123 | 126 | 128 | 502 => {}
+        100 | 104 | 110 | 116 | 123 | 124 | 126 | 128 | 502 => {}
         _ => panic!("the written file has an entity type this check does not read"),
     }
     let mut pointers = indices
@@ -153,6 +162,26 @@ fn decoded(bytes: Vec<u8>) -> CadIr {
         .clone()
 }
 
+/// The number of physically dependent entities in the written file `bytes`
+/// and the number of them that no written entity references.
+fn dependents_without_parents(bytes: &[u8]) -> (usize, usize) {
+    let entities = written_entities(bytes);
+    let referenced = entities
+        .values()
+        .flat_map(pointers)
+        .collect::<BTreeSet<_>>();
+    let dependents = entities
+        .iter()
+        .filter(|(_, entity)| matches!(&entity.subordinate, b"01" | b"03"))
+        .map(|(sequence, _)| sequence)
+        .collect::<Vec<_>>();
+    let orphans = dependents
+        .iter()
+        .filter(|sequence| !referenced.contains(sequence))
+        .count();
+    (dependents.len(), orphans)
+}
+
 /// Write the valid neutral model `ir` as IGES 5.3 and require a parent for
 /// every entity whose subordinate status is physically dependent.
 fn assert_dependents_have_parents(ir: &CadIr) {
@@ -160,22 +189,65 @@ fn assert_dependents_have_parents(ir: &CadIr) {
         cadmpeg_ir::validate_neutral(ir, Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok());
     let generated = super::super::synthesize(ir, IgesVersion::V5_3).expect("write the model");
-    let entities = written_entities(&generated.bytes);
-    let referenced = entities
-        .values()
-        .flat_map(pointers)
-        .collect::<BTreeSet<_>>();
-    let mut dependents = 0_usize;
-    for (sequence, entity) in &entities {
-        if matches!(&entity.subordinate, b"01" | b"03") {
-            dependents += 1;
-            assert!(
-                referenced.contains(sequence),
-                "a physically dependent entity has a parent"
-            );
-        }
-    }
+    let (dependents, orphans) = dependents_without_parents(&generated.bytes);
     assert!(dependents > 0);
+    assert_eq!(orphans, 0, "a physically dependent entity has a parent");
+}
+
+/// The IGES files in `directory`, in name order.
+fn iges_files(directory: &Path) -> Vec<PathBuf> {
+    let mut files = std::fs::read_dir(directory)
+        .expect("read the fixture directory")
+        .map(|entry| entry.expect("read a fixture entry").path())
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|extension| extension == "igs" || extension == "iges")
+        })
+        .collect::<Vec<_>>();
+    files.sort();
+    files
+}
+
+/// Every golden encode input and every IGES measure fixture that the writer
+/// regenerates writes a parent for each physically dependent entity.
+#[test]
+fn every_regenerated_fixture_writes_no_dependent_entity_without_a_parent() {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let files = [
+        manifest.join("tests/golden/fixtures"),
+        manifest.join("../cadmpeg/tests/fixtures/measure"),
+    ]
+    .iter()
+    .flat_map(|directory| iges_files(directory))
+    .collect::<Vec<_>>();
+    let mut written = Vec::new();
+    let mut orphaned = Vec::new();
+    for file in files {
+        let bytes = std::fs::read(&file).expect("read the fixture");
+        let Ok(result) = IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        else {
+            continue;
+        };
+        let Ok(generated) = super::super::synthesize(result.ir(), IgesVersion::V5_3) else {
+            continue;
+        };
+        let name = file
+            .file_name()
+            .expect("fixture file name")
+            .to_string_lossy()
+            .into_owned();
+        if dependents_without_parents(&generated.bytes).1 != 0 {
+            orphaned.push(name.clone());
+        }
+        written.push(name);
+    }
+    assert!(written
+        .iter()
+        .any(|name| name == "measure_implicit_outer_plane.igs"));
+    assert!(
+        orphaned.is_empty(),
+        "these fixtures write a physically dependent entity without a parent: {orphaned:?}"
+    );
 }
 
 #[test]
@@ -222,4 +294,23 @@ fn edge_direction_parameter_curve_of_a_boundary_writes_no_dependent_entity_witho
 #[test]
 fn edge_direction_parameter_curves_of_a_brep_loop_write_no_dependent_entity_without_a_parent() {
     assert_dependents_have_parents(&edge_direction_parameter_curve_brep_model());
+}
+
+/// A native Type 120 or Type 122 output writes the source axis and the
+/// source generatrix or directrix as its own constituents, so no support
+/// curve is withheld and none is written without a parent.
+#[test]
+fn native_constructions_write_their_support_curves_as_constituents() {
+    for file in [
+        crate::test_support::test_surface_fixtures::line_surface_of_revolution_file(),
+        crate::test_support::test_surface_fixtures::hyperbola_surface_of_revolution_file(),
+        crate::test_support::test_tabulated_surfaces::placed_tabulated_hyperbola_file(),
+        crate::test_support::test_procedural_surfaces::cacheless_line_tabulated_surface_file(),
+    ] {
+        let ir = decoded(file);
+        let generated = super::super::synthesize(&ir, IgesVersion::V5_3).expect("write the model");
+        assert!(generated.losses.iter().all(|loss| loss.code
+            != crate::loss::IgesLossCode::WriterSupportGeometryNotRepresented.kind()));
+        assert_eq!(dependents_without_parents(&generated.bytes).1, 0);
+    }
 }
