@@ -376,11 +376,11 @@ fn read_parameters(
                         )?;
                     }
                 }
-                let record = ctx.decode_parser_part(
+                let record = ctx.decode_parser_scope(
                     children,
                     extent,
                     spec("iges.binary_parameter_record", framing)?,
-                    || {
+                    |values| {
                         if dependencies.source_line(offset) || dependencies.source_point(offset) {
                             let navigation = prefix?;
                             let pointer = positive_pointer(
@@ -408,11 +408,15 @@ fn read_parameters(
                                     handoff(
                                         record,
                                         owner,
-                                        directory,
-                                        directory_by_offset,
-                                        dependencies,
-                                        global,
+                                        &Lexing {
+                                            directory,
+                                            directory_by_offset,
+                                            dependencies,
+                                            global,
+                                            body,
+                                        },
                                         ctx,
+                                        values,
                                     )
                                 },
                             );
@@ -425,31 +429,24 @@ fn read_parameters(
                             .ok_or_else(|| malformed("Binary Parameter owner is absent"))?;
                         let owner = &directory[*index];
                         check_owner(&record, owner, offset, dependencies)?;
+                        let lexing = Lexing {
+                            directory,
+                            directory_by_offset,
+                            dependencies,
+                            global,
+                            body,
+                        };
                         if !admission::allows_handoff(&record, owner, dependencies) {
-                            // An unresolved reference gives up this record,
-                            // the nearest part the decoder runs that holds the
-                            // value (#215 §4.5; #222).
-                            super::check_parameter_references(
-                                &record,
-                                directory,
-                                directory_by_offset,
-                            )?;
-                            return Ok(record);
+                            // An unresolved reference gives up this record
+                            // (#215 §4.5; #222). Its values are lexed here, as
+                            // an admitted record's are; no record is assembled
+                            // again from its normalized cards.
+                            return lex_values(record, owner, &lexing, ctx, values);
                         }
                         ctx.record(
                             &format!("iges:entity:directory#{}", owner.source_sequence),
                             extent,
-                            || {
-                                handoff(
-                                    record,
-                                    owner,
-                                    directory,
-                                    directory_by_offset,
-                                    dependencies,
-                                    global,
-                                    ctx,
-                                )
-                            },
+                            || handoff(record, owner, &lexing, ctx, values),
                         )
                     },
                 )?;
@@ -505,30 +502,111 @@ fn check_owner(
     dependencies.parameter(record, owner)
 }
 
+/// The decode state that lexing one Binary Parameter record reads.
+struct Lexing<'a, 'source> {
+    directory: &'a [BinaryDirectory],
+    directory_by_offset: &'a BTreeMap<u32, usize>,
+    dependencies: &'a Dependencies,
+    global: &'a crate::global::ResolvedGlobal,
+    /// The record body: the bytes after its 4-byte count.
+    body: View<'source>,
+}
+
 fn handoff(
     mut record: BinaryParameter,
     owner: &BinaryDirectory,
-    directory: &[BinaryDirectory],
-    directory_by_offset: &BTreeMap<u32, usize>,
-    dependencies: &Dependencies,
-    global: &crate::global::ResolvedGlobal,
+    lexing: &Lexing<'_, '_>,
     ctx: &DecodeContext<'_>,
+    output: &mut ParserPartOutput,
 ) -> Result<BinaryParameter, CodecError> {
     group::keep_failed_members(
         &mut record,
         owner,
-        directory,
-        directory_by_offset,
-        dependencies,
+        lexing.directory,
+        lexing.directory_by_offset,
+        lexing.dependencies,
     )?;
-    let lines = super::parameter_lines(&mut record, directory, directory_by_offset)?;
-    let content = crate::parameter::admitted::parse_lines(
+    lex_values(record, owner, lexing, ctx, output)
+}
+
+/// Render and lex one Parameter record, and read each value group after its
+/// Directory pointer as one `iges.binary_parameter_value` part (Appendix C).
+///
+/// A group whose values do not parse, or whose rendered literal is not
+/// admitted, gives up only its part. Each slot of a given-up group is `null`;
+/// the record and its other values stay (#215 rule 1; #222).
+fn lex_values(
+    mut record: BinaryParameter,
+    owner: &BinaryDirectory,
+    lexing: &Lexing<'_, '_>,
+    ctx: &DecodeContext<'_>,
+    output: &mut ParserPartOutput,
+) -> Result<BinaryParameter, CodecError> {
+    let lines = super::parameter_lines(&mut record, lexing.directory, lexing.directory_by_offset)?;
+    let (mut content, failed) = crate::parameter::admitted::lex_lines(
         owner.source_sequence,
         record.entity_type,
         &lines,
-        global,
+        lexing.global,
         ctx,
     )?;
+    // Token 0 is the entity type; token `k` renders value `k - 1`.
+    for field in failed {
+        let group = field
+            .index
+            .checked_sub(1)
+            .and_then(|value| {
+                record
+                    .groups
+                    .iter_mut()
+                    .find(|group| group.values.contains(&value))
+            })
+            .ok_or_else(|| {
+                malformed(format!(
+                    "Parameter field {} is outside every value group: {}",
+                    field.index,
+                    field.defect.describe()
+                ))
+            })?;
+        if group.failure.is_none() {
+            group.failure = Some(malformed(format!(
+                "Parameter value {}: {}",
+                field.index,
+                field.defect.describe()
+            )));
+        }
+    }
+    for group in &mut record.groups {
+        let start = lexing.body.start().checked_add(group.bytes.start);
+        let end = lexing.body.start().checked_add(group.bytes.end);
+        let extent = start
+            .zip(end)
+            .and_then(|(start, end)| lexing.body.child(start, end))
+            .ok_or_else(|| malformed("Binary Parameter value exceeds its record"))?;
+        let failure = group.failure.take();
+        let kept = ctx.decode_parser_part(
+            output,
+            extent,
+            spec("iges.binary_parameter_value", Vec::new())?,
+            || match failure {
+                Some(error) => Err(error),
+                None => Ok(()),
+            },
+        )?;
+        if kept.is_none() && record.entity_type != 306 {
+            let first = group
+                .values
+                .start
+                .checked_add(1)
+                .ok_or_else(|| malformed("Binary Parameter field ordinal overflows"))?;
+            let last = group
+                .values
+                .end
+                .checked_add(1)
+                .ok_or_else(|| malformed("Binary Parameter field ordinal overflows"))?;
+            content.give_up_fields(first..last);
+        }
+    }
     record.admitted = Some(super::AdmittedBinaryParameter { lines, content });
     Ok(record)
 }

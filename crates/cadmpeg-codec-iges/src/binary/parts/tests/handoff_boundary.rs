@@ -99,10 +99,12 @@ fn an_unresolved_line_coordinate_reference_gives_up_only_its_parameter_record() 
             );
             assert_eq!(native.arenas()["entities"][1], old.arenas()["entities"][1]);
         } else {
-            let (actual, _) = actual.expect("valid source reference keeps the legacy route");
-            // #222: the route is chosen per record. The Line's encoded
-            // coordinate is not admitted, so the Line is assembled from its
-            // cards; the Point stays admitted.
+            let (actual, _) = actual.expect("valid source reference keeps the record");
+            // #222: every Binary Parameter record is lexed inside its own
+            // `iges.binary_parameter_record` part, so no record is assembled
+            // again from its normalized cards. The Line's encoded coordinate
+            // is not on the semantic handoff route, and the Line is lexed in
+            // its part as the Point is.
             assert_eq!(
                 actual
                     .admission
@@ -110,7 +112,7 @@ fn an_unresolved_line_coordinate_reference_gives_up_only_its_parameter_record() 
                     .iter()
                     .map(|record| record.directory_sequence)
                     .collect::<Vec<_>>(),
-                [3]
+                [1, 3]
             );
             let decoded = crate::test_support::decode(bytes.clone());
             assert_eq!(decoded.ir().model.curves.len(), 1);

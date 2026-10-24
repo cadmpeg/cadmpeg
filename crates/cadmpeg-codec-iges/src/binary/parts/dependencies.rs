@@ -159,6 +159,10 @@ impl Dependencies {
             match parameter_prefix(body, sections.lengths) {
                 Ok(mut prefix) => {
                     let mut source_point = false;
+                    // A value group that does not parse is one given-up
+                    // `iges.binary_parameter_value`; its record stays and no
+                    // later value is read (#215 rule 1).
+                    let mut value_failed = false;
                     if let Ok(owner) =
                         positive_pointer(prefix.directory_pointer, "Parameter Directory")
                     {
@@ -191,7 +195,7 @@ impl Dependencies {
                                     Ok(None) => break,
                                     Err(error) => {
                                         propagate_resource(error)?;
-                                        insert(ctx, &mut bad, address)?;
+                                        value_failed = true;
                                         break;
                                     }
                                 }
@@ -225,7 +229,16 @@ impl Dependencies {
                         let syntax = (|| {
                             let mut macro_values = Vec::new();
                             let mut source_line = prefix.entity_type == 110 && source_integers;
-                            while let Some(value) = prefix.stream.next()? {
+                            while !value_failed {
+                                let value = match prefix.stream.next() {
+                                    Ok(Some(value)) => value,
+                                    Ok(None) => break,
+                                    Err(error) => {
+                                        propagate_resource(error)?;
+                                        value_failed = true;
+                                        break;
+                                    }
+                                };
                                 source_point = false;
                                 source_line &= matches!(
                                     value,
@@ -244,7 +257,18 @@ impl Dependencies {
                                     macro_values.push(value);
                                 }
                             }
-                            prefix.stream.finish()?;
+                            if value_failed {
+                                // A Macro statement that does not parse is a
+                                // structural defect of its record (iges.md,
+                                // Type 306).
+                                if prefix.entity_type == 306 {
+                                    return Err(malformed("a Binary Macro value does not parse"));
+                                }
+                                source_line = false;
+                                source_point = false;
+                            } else {
+                                prefix.stream.finish()?;
+                            }
                             if source_line {
                                 source_lines.try_reserve(1).map_err(|_| {
                                     cadmpeg_core::decode::ResourceLimit::allocation_failed(
