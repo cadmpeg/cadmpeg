@@ -6239,6 +6239,27 @@ Parsed by:
 | 22 | 11 | `seed_group` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
 | 33 | 4 | `zero_tail` | `bytes[4]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
 
+## `sketch_geometry_ordinal_collection_reference`
+
+Spec §3.1 · layout: byte offsets · size: 11 B
+
+The reference starts at offset 36 relative to the Geometry-member indexed header.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | byte 36 is `01` · value `1` |
+| 1 | 8 | `target` | `u64` | little | spec | its u64 target at member offset 37 names the ordinal collection |
+| 9 | 2 | `flags` | `bytes[2]` | little | spec | Byte 36 opens a same-segment marked reference; its u64 target at member offset 37 names the ordinal collection. |
+
+## `sketch_ordinal_collection_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 20 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its indexed header is followed by nine zero bytes, a property block carrying `crv_tag_id_idx` |
+| 11 | 9 | `zero_run` | `bytes[9]` | little | spec | Its indexed header is followed by nine zero bytes, a property block carrying `crv_tag_id_idx` |
+
 ## Not tabulated
 
 | Area | Spec | Reason |
