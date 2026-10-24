@@ -602,3 +602,172 @@ fn coalescing_fragments_charges_what_one_primary_record_with_the_same_reads_char
     );
     assert_eq!(fragments, primary);
 }
+
+#[test]
+fn repeated_fragment_ranges_are_charged_once_when_new_to_the_primary_stream() {
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(b"ABC---DEF", &arena, &DecodePolicy::default())
+            .expect("create tracked disjoint-source decode context");
+    let (_, owner) = ctx
+        .record_owner(
+            "joined",
+            root.child(0, 3)
+                .expect("select primary record source window"),
+            || {
+                assert_eq!(root.read_at(0, 3), Some(b"ABC".as_slice()));
+                Ok(())
+            },
+        )
+        .expect("declare disjoint-source primary owner");
+    let before = ctx.retained_bytes_available();
+    for _ in 0..100 {
+        ctx.record_fragment(
+            &owner,
+            root.child(6, 9)
+                .expect("select disjoint fragment source window"),
+            || {
+                assert_eq!(root.read_at(6, 3), Some(b"DEF".as_slice()));
+                Ok(())
+            },
+        )
+        .expect("accept repeated disjoint-source fragment");
+    }
+    assert_eq!(ctx.retained_bytes_available(), before);
+    let captures = ctx
+        .take_record_captures()
+        .expect("extract disjoint-source record captures");
+    assert_eq!(
+        before - ctx.retained_bytes_available(),
+        u64::try_from(size_of::<std::ops::Range<u64>>()).expect("one retained range size fits u64")
+    );
+    assert_eq!(captures.len(), 1);
+    assert_eq!((captures[0].offset(), captures[0].byte_len()), (0, 3));
+    assert_eq!(
+        captures[0].reads(),
+        &BTreeMap::from([("file".into(), vec![0..3, 6..9])])
+    );
+}
+
+#[test]
+fn one_hundred_fragments_charge_only_two_new_actual_stream_entries() {
+    let arena = DecodeArena::new();
+    let (ctx, root) = DecodeContext::from_root_bytes(b"ABCDEF", &arena, &DecodePolicy::default())
+        .expect("create tracked multi-stream decode context");
+    let a = ctx
+        .register_named_slice(
+            root,
+            crate::decode::ByteRange { start: 0, end: 3 },
+            "member-a",
+        )
+        .expect("register member-a original source slice");
+    let b = ctx
+        .register_named_slice(
+            root,
+            crate::decode::ByteRange { start: 3, end: 6 },
+            "member-b",
+        )
+        .expect("register member-b original source slice");
+    let (_, owner) = ctx
+        .record_owner("joined", root, || {
+            assert_eq!(root.read_at(0, 6), Some(b"ABCDEF".as_slice()));
+            Ok(())
+        })
+        .expect("declare multi-stream primary record owner");
+    let before = ctx.retained_bytes_available();
+    for _ in 0..50 {
+        for (member, expected) in [(a, b"A".as_slice()), (b, b"D".as_slice())] {
+            ctx.record_fragment(&owner, member, || {
+                assert_eq!(member.read_at(0, 1), Some(expected));
+                Ok(())
+            })
+            .expect("accept repeated actual-member fragment");
+        }
+    }
+    assert_eq!(ctx.retained_bytes_available(), before);
+    let captures = ctx
+        .take_record_captures()
+        .expect("extract merged multi-stream record captures");
+    let entry = size_of::<(String, Vec<std::ops::Range<u64>>)>();
+    let range = size_of::<std::ops::Range<u64>>();
+    let retained = entry + "member-a".len() + range + entry + "member-b".len() + range;
+    assert_eq!(
+        before - ctx.retained_bytes_available(),
+        u64::try_from(retained).expect("new stream entry retention size fits u64")
+    );
+    assert_eq!(captures.len(), 1);
+    assert_eq!(
+        (
+            captures[0].stream(),
+            captures[0].offset(),
+            captures[0].byte_len()
+        ),
+        ("file", 0, 6)
+    );
+    assert_eq!(
+        captures[0].reads(),
+        &BTreeMap::from([
+            (
+                "file".into(),
+                std::iter::once(0..6).collect::<Vec<std::ops::Range<u64>>>()
+            ),
+            (
+                "member-a".into(),
+                std::iter::once(0..1).collect::<Vec<std::ops::Range<u64>>>()
+            ),
+            (
+                "member-b".into(),
+                std::iter::once(0..1).collect::<Vec<std::ops::Range<u64>>>()
+            ),
+        ])
+    );
+    assert!(ctx.resource_refusal().is_none());
+}
+
+#[test]
+fn nested_transactions_keep_fragment_read_staging_uncharged_through_every_parent() {
+    let arena = DecodeArena::new();
+    let (ctx, root) = DecodeContext::from_root_bytes(b"ABC", &arena, &DecodePolicy::default())
+        .expect("create tracked nested-transaction decode context");
+    let first = ctx.read_transaction().expect("open first read transaction");
+    let second = ctx
+        .read_transaction()
+        .expect("open second read transaction");
+    let third = ctx.read_transaction().expect("open third read transaction");
+    third.commit().expect("commit third read transaction");
+    second.commit().expect("commit second read transaction");
+    first.commit().expect("commit first read transaction");
+    let (_, owner) = ctx
+        .record_owner("joined", root, || {
+            assert_eq!(root.read_at(0, 3), Some(b"ABC".as_slice()));
+            Ok(())
+        })
+        .expect("declare nested-transaction primary record owner");
+    let before = ctx.retained_bytes_available();
+    for _ in 0..100 {
+        ctx.record_fragment(&owner, root, || {
+            let outer = ctx.read_transaction()?;
+            let inner = ctx.read_transaction()?;
+            assert_eq!(root.read_at(0, 3), Some(b"ABC".as_slice()));
+            inner.commit()?;
+            outer.commit()?;
+            Ok(())
+        })
+        .expect("accept fragment through nested transactions");
+        assert_eq!(ctx.retained_bytes_available(), before);
+    }
+    let captures = ctx
+        .take_record_captures()
+        .expect("extract nested-transaction record captures");
+    assert_eq!(ctx.retained_bytes_available(), before);
+    assert_eq!(captures.len(), 1);
+    assert_eq!(captures[0].id(), "joined");
+    assert_eq!((captures[0].offset(), captures[0].byte_len()), (0, 3));
+    assert_eq!(
+        captures[0].reads(),
+        &BTreeMap::from([(
+            "file".into(),
+            std::iter::once(0..3).collect::<Vec<std::ops::Range<u64>>>()
+        )])
+    );
+}
