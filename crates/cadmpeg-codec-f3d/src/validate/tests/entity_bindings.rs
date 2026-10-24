@@ -267,3 +267,44 @@ fn sketch_geometry_ordinals_may_skip_values_but_increase_with_entity_order() {
         );
     })
 }
+
+#[test]
+fn act_table_pool_without_component_links_needs_no_document_root() {
+    crate::test_support::with_decode_context(|service_ctx| {
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let mut native = crate::native::F3dNative::default();
+        native.act_guids.push(
+            crate::records::act::ActGuid::new(
+                "f3d:ACT/BulkStream.dat:act-guid#20".into(),
+                20,
+                0,
+                "11111111-2222-4333-8444-555555555555".into(),
+            )
+            .unwrap(),
+        );
+        let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
+        let mut findings = Vec::new();
+        super::super::validate_act(&ctx, &mut findings).unwrap();
+        assert!(findings.is_empty(), "{findings:?}");
+        for (offset, index) in [(100, 1), (200, 2)] {
+            native.act_root_components.push(
+                crate::records::act::ActRootComponent::try_new(
+                    format!("f3d:ACT/BulkStream.dat:act-root-component#{offset}"),
+                    index,
+                    "267".to_owned().try_into().unwrap(),
+                    12,
+                    7,
+                    crate::records::act::ActRegistryFlag::Off,
+                    crate::records::act::ActRootLayout::new(offset, "0_3".into(), "Root".into(), 1)
+                        .unwrap(),
+                )
+                .unwrap(),
+            );
+        }
+        let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
+        super::super::validate_act(&ctx, &mut findings).unwrap();
+        assert_eq!(findings.len(), 1);
+        assert!(findings.iter().all(|finding| finding.message
+            == "Fusion ACT stream does not have exactly one document-root component link"));
+    });
+}
