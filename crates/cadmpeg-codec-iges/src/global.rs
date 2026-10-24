@@ -132,7 +132,18 @@ struct RawGlobal {
     record_delimiter: u8,
     values: Vec<Value>,
     field_count: usize,
-    unreadable_suffix: Option<(usize, CodecError)>,
+    unframed: Option<UnframedField>,
+}
+
+/// A Global field whose end is unknown. No later field has a boundary, so
+/// every later field is absent.
+#[derive(Debug)]
+struct UnframedField {
+    /// The Global field index (0 is field 1).
+    field: usize,
+    /// The Global stream offset where the field starts.
+    offset: usize,
+    error: CodecError,
 }
 
 /// The effective specification family selected by Global field 23.
@@ -310,6 +321,14 @@ const FIELD_DRAFTING_STANDARD: usize = 23;
 const FIELD_MODEL_DATE: usize = 24;
 const FIELD_APPLICATION_PROTOCOL: usize = 25;
 const TABLE_1_FIELD_COUNT: usize = 26;
+
+/// The parameter delimiter when Global field 1 is empty or given up: a comma
+/// (IGES 5.3 §2.2.4.3.1).
+pub(crate) const DEFAULT_PARAMETER_DELIMITER: u8 = b',';
+
+/// The record delimiter when Global field 2 is empty or given up: a
+/// semicolon (IGES 5.3 §2.2.4.3.2).
+pub(crate) const DEFAULT_RECORD_DELIMITER: u8 = b';';
 
 const FIELD_NAMES: [&str; TABLE_1_FIELD_COUNT] = [
     "parameter delimiter",
@@ -735,11 +754,11 @@ fn parse_raw_with(
     }
     if bytes.iter().copied().filter(|byte| *byte != b' ').eq(*b";") {
         return Ok(RawGlobal {
-            parameter_delimiter: b',',
-            record_delimiter: b';',
+            parameter_delimiter: DEFAULT_PARAMETER_DELIMITER,
+            record_delimiter: DEFAULT_RECORD_DELIMITER,
             values: vec![Value::Omitted; 26],
             field_count: 1,
-            unreadable_suffix: None,
+            unframed: None,
         });
     }
     let (parameter_delimiter, mut cursor) = first_delimiter(bytes)?;
@@ -747,7 +766,7 @@ fn parse_raw_with(
     let record_value = record_frame.window_value(bytes);
     cursor = record_frame.next;
     let record_delimiter = match &record_value {
-        Value::Omitted => b';',
+        Value::Omitted => DEFAULT_RECORD_DELIMITER,
         Value::String(value) if value.len() == 1 => value[0],
         Value::String(_) | Value::Malformed(_) | Value::ForbiddenString | Value::Atom(_) => {
             return Err(malformed("record delimiter must contain one byte"));
@@ -774,7 +793,7 @@ fn parse_raw_with(
         Value::String(vec![record_delimiter])
     };
     let mut field_count = 2_usize;
-    let mut unreadable_suffix = None;
+    let mut unframed = None;
     loop {
         let retain = field_count < values.len();
         let framed = frame_value(
@@ -786,11 +805,14 @@ fn parse_raw_with(
         );
         let frame = match framed {
             Ok(frame) => frame,
-            // Every field after the version declaration is descriptive. The
-            // Global cards bound their suffix independently of Directory and
-            // Parameter cards; no later field boundary needs to be guessed.
-            Err(error @ CodecError::Malformed(_)) if field_count > FIELD_VERSION_FLAG => {
-                unreadable_suffix = Some((cursor, error));
+            // The delimiter declarations bound every field. A field whose end
+            // is unknown leaves only the later fields without boundaries.
+            Err(error @ CodecError::Malformed(_)) => {
+                unframed = Some(UnframedField {
+                    field: field_count,
+                    offset: cursor,
+                    error,
+                });
                 break;
             }
             Err(error) => return Err(error),
@@ -812,17 +834,56 @@ fn parse_raw_with(
         record_delimiter,
         values,
         field_count,
-        unreadable_suffix,
+        unframed,
+    })
+}
+
+/// The Global loss of a field whose end is unknown, when no part holds it.
+fn unframed_loss(raw: &RawGlobal) -> Option<LossNote> {
+    let unframed = raw.unframed.as_ref()?;
+    let message = format!(
+        "IGES Global field {} ({}) at Global byte {} has an unreadable suffix: {}; \
+         preceding interpretation fields retained, remaining metadata left source-only",
+        unframed.field + 1,
+        field_name(unframed.field),
+        unframed.offset,
+        unframed.error
+    );
+    Some(admitted_global_loss(
+        IgesLossCode::GlobalNoncanonicalFraming,
+        message,
+    ))
+}
+
+/// Resolve a raw Global record that no part holds.
+fn resolve_unparted(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
+    let suffix = unframed_loss(&raw);
+    let (global, mut losses) = resolve(raw);
+    if let Some(loss) = suffix {
+        losses.insert(0, loss);
+    }
+    (global, losses)
+}
+
+/// The Global context of a given-up Global section: every field is absent,
+/// and the delimiters are the specified defaults.
+pub(crate) fn given_up() -> (ResolvedGlobal, Vec<LossNote>) {
+    resolve(RawGlobal {
+        parameter_delimiter: DEFAULT_PARAMETER_DELIMITER,
+        record_delimiter: DEFAULT_RECORD_DELIMITER,
+        values: vec![Value::Omitted; 26],
+        field_count: 2,
+        unframed: None,
     })
 }
 
 /// Recover the Global field boundaries, then resolve every field once.
 pub(crate) fn parse(scan: &CardScan) -> Result<(ResolvedGlobal, Vec<LossNote>), CodecError> {
-    Ok(resolve(parse_raw(scan)?))
+    Ok(resolve_unparted(parse_raw(scan)?))
 }
 
 pub(crate) fn parse_stream(bytes: &[u8]) -> Result<(ResolvedGlobal, Vec<LossNote>), CodecError> {
-    Ok(resolve(parse_raw_with(bytes, |_, frame| {
+    Ok(resolve_unparted(parse_raw_with(bytes, |_, frame| {
         Ok(frame.window_value(bytes))
     })?))
 }
@@ -1419,7 +1480,7 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
         record_delimiter,
         values,
         field_count,
-        unreadable_suffix,
+        unframed: _,
     } = raw;
     let mut resolution = Resolution {
         values,
@@ -1432,18 +1493,6 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
         let note = admitted_global_loss(IgesLossCode::GlobalNoncanonicalFraming, message);
         resolution.losses.push(note);
     }
-    if let Some((offset, error)) = unreadable_suffix {
-        let message = format!(
-            "IGES Global field {} ({}) at Global byte {offset} has an unreadable \
-             suffix: {error}; preceding interpretation fields retained, remaining \
-             metadata left source-only",
-            field_count + 1,
-            field_name(field_count)
-        );
-        let note = admitted_global_loss(IgesLossCode::GlobalNoncanonicalFraming, message);
-        resolution.losses.push(note);
-    }
-
     let declaration = match resolution.supplied_integer(FIELD_VERSION_FLAG) {
         Supplied::Absent => VersionDeclaration::Exact(VersionFlag::V2_0),
         Supplied::Value(value) => match VersionFlag::exact(value) {

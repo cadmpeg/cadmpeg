@@ -2592,9 +2592,7 @@ pub(super) fn project(
                         .then_some(count)
                     })
                 }
-                Some(TokenValue::Real(_) | TokenValue::String(_) | TokenValue::Unreadable(_)) => {
-                    None
-                }
+                Some(TokenValue::Real(_) | TokenValue::String(_)) => None,
             };
             cursor += 3;
             attributes_valid &=
@@ -2802,21 +2800,28 @@ pub(super) fn project(
             continue;
         };
         let count = record.count(1).filter(|count| *count > 0);
+        // The neutral membership holds only the members whose target record
+        // exists in the decode. A pointer that names a given-up or absent
+        // Directory Entry is absent from it and charges no loss here (#222
+        // Group count ruling, rules 2-3).
         let members_valid = count.is_some_and(|count| {
             (0..count).all(|index| {
-                record
+                let Some(sequence) = record
                     .integer(2 + index)
-                    .and_then(|value| u32::try_from(value).ok())
-                    .filter(|sequence| sequence % 2 == 1 && entries.contains_key(sequence))
-                    .is_some_and(|sequence| {
-                        !matches!(entry.form, 1 | 14)
-                            || records.get(&sequence).is_some_and(|member_record| {
-                                has_association_back_pointer(
-                                    member_record,
-                                    entry.sequence,
-                                    trailing_pointer_analysis,
-                                )
-                            })
+                    .and_then(crate::graph::directory_pointer_sequence)
+                else {
+                    return false;
+                };
+                if !entries.contains_key(&sequence) {
+                    return true;
+                }
+                !matches!(entry.form, 1 | 14)
+                    || records.get(&sequence).is_some_and(|member_record| {
+                        has_association_back_pointer(
+                            member_record,
+                            entry.sequence,
+                            trailing_pointer_analysis,
+                        )
                     })
             })
         });

@@ -430,34 +430,6 @@ impl<'a> PhysicalParse<'a> {
         for record in &self.quarantined_parameters {
             losses.push(record.loss_note()?);
         }
-        let mut entries = BTreeMap::new();
-        for record in &self.parameters {
-            for (index, token) in record.tokens().iter().enumerate() {
-                let Some(parameter::Token {
-                    value: parameter::TokenValue::Unreadable(defect),
-                    ..
-                }) = token
-                else {
-                    continue;
-                };
-                if entries.is_empty() {
-                    for entry in &self.directory {
-                        entries.insert(entry.sequence, entry);
-                    }
-                }
-                let entry = entries.get(&record.directory_sequence).ok_or_else(|| {
-                    CodecError::malformed("IGES parameter literal has no Directory owner")
-                })?;
-                let code = IgesLossCode::ParameterLiteralUnusable;
-                let message = format!(
-                    "Parameter field {index} in D{} is unreadable: {}; exact field retained",
-                    record.directory_sequence,
-                    defect.describe(),
-                );
-
-                losses.push(code.note(message).with_provenance(entry.loss_provenance()));
-            }
-        }
         Ok(losses)
     }
 }

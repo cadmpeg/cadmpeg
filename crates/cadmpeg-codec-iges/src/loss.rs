@@ -65,8 +65,6 @@ loss_codes! {
     EntityNotProjected => "entity.not-projected",
     /// A recognized geometric entity could not retain its required geometry.
     GeometryNotProjected => "geometry.not-projected",
-    /// A framed Parameter Data literal is retained without an interpreted value.
-    ParameterLiteralUnusable => "parameter.literal-unusable",
     /// Redundant spline claims disagreed with the serialized carrier mathematics.
     SplineClaimRecovered => "geometry.spline-claim-recovered",
     /// A NURBS coordinate or parameter transformation produced a non-finite value.
@@ -182,7 +180,6 @@ impl IgesLossCode {
             | Self::EntityOutsideEnvelope
             | Self::EntityNotProjected
             | Self::GeometryNotProjected
-            | Self::ParameterLiteralUnusable
             | Self::SplineClaimRecovered
             | Self::NurbsTransformNonFinite
             | Self::BoundaryPcurveOutsideSupportDomain
@@ -268,7 +265,6 @@ impl IgesLossCode {
             | Self::AttributeTableCountUnstatable
             | Self::DirectoryRecordQuarantined
             | Self::ParameterDataQuarantined
-            | Self::ParameterLiteralUnusable
             | Self::CardFramingRecovered => LossTaxonomy::NoncanonicalSourceSyntax,
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
             Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
@@ -370,10 +366,6 @@ const UNREPRESENTED: &[(IgesLossCode, cadmpeg_ir::ArenaClass)] = &[
         cadmpeg_ir::ArenaClass::Model,
     ),
     (
-        IgesLossCode::ParameterLiteralUnusable,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
         IgesLossCode::PointerUnresolved,
         cadmpeg_ir::ArenaClass::Model,
     ),
@@ -435,7 +427,6 @@ mod tests {
                 "entity.outside-envelope",
                 "entity.not-projected",
                 "geometry.not-projected",
-                "parameter.literal-unusable",
                 "geometry.spline-claim-recovered",
                 "geometry.nurbs-transform-non-finite",
                 "topology.boundary-pcurve-outside-support-domain",

@@ -197,9 +197,7 @@ fn text_font_definition(
                     .get(sequence)
                     .is_some_and(|target| target.entity_type == 310 && target.form == 0)
             }),
-        Some(TokenValue::Real(_) | TokenValue::String(_) | TokenValue::Unreadable(_)) => {
-            return None
-        }
+        Some(TokenValue::Real(_) | TokenValue::String(_)) => return None,
     };
     if record.integer(3).is_some_and(|value| value < 0) && supersedes.is_none() {
         return None;
@@ -463,9 +461,7 @@ pub(super) fn project(
                 None
             }
             Some(
-                crate::parameter::TokenValue::Integer(_)
-                | crate::parameter::TokenValue::Real(_)
-                | crate::parameter::TokenValue::Unreadable(_),
+                crate::parameter::TokenValue::Integer(_) | crate::parameter::TokenValue::Real(_),
             ) => {
                 push_presentation_loss(&mut losses, entry, "optional color name is not a string");
                 continue;

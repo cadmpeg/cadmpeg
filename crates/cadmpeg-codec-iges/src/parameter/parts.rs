@@ -9,8 +9,8 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartLevel, PartOutput, PartSpec};
 
 use super::{
-    OwnedParameterBytes, OwnedParseFailure, Ownership, ParameterAssembly, ParameterDefect,
-    ParsedOwned, Token, TokenValue,
+    FailedField, OwnedParameterBytes, OwnedParseFailure, Ownership, ParameterAssembly,
+    ParameterDefect, ParsedOwned, Token, TokenValue,
 };
 use crate::card::{CardScan, PhysicalLine, Section};
 use crate::directory::DirectoryEntry;
@@ -154,15 +154,9 @@ fn parse_owned(
             extent.end()
         ),
     )?;
-    let tokenize: super::FieldTokenizer = if owned.entry.entity_type == 116 && owned.entry.form == 0
-    {
-        super::tokenize_source_fields
-    } else {
-        super::tokenize_with_limits
-    };
     let mut framing = envelopes(ctx, source, &cards, 64)?;
     if owned.entry.entity_type != 306 {
-        match tokenize(
+        match super::tokenize_fields(
             stream.window(),
             &card_boundaries,
             global.parameter_delimiter,
@@ -170,8 +164,8 @@ fn parse_owned(
             global.global_table(),
             global.numeric_limits(),
         ) {
-            Ok((_, end)) => {
-                let logical = end - 1;
+            Ok(fields) => {
+                let logical = fields.end - 1;
                 let card = cards.get(logical / 64).ok_or_else(|| {
                     CodecError::malformed("IGES Parameter terminal exceeds its cards")
                 })?;
@@ -211,23 +205,19 @@ fn parse_owned(
                     bytes,
                     card_boundaries,
                 };
-                let mut record =
-                    super::parse_owned_record_with_tokenizer(owned, owned_bytes, global, tokenize)
-                        .map_err(|error| failure(owned.entry.sequence, error))?;
+                let (mut record, failed) = super::parse_owned_fields(owned, owned_bytes, global)
+                    .map_err(|error| failure(owned.entry.sequence, error))?;
                 if owned.entry.entity_type != 306 {
-                    for token in record.tokens.iter_mut().skip(1) {
-                        if owned.entry.entity_type == 116 && owned.entry.form == 0 {
-                            read_point_field(
-                                ctx,
-                                stream,
-                                token,
-                                global,
-                                owned.entry.sequence,
-                                staged,
-                            )?;
-                        } else if let Some(token) = token {
-                            read_token(ctx, stream, token, global, owned.entry.sequence)?;
-                        }
+                    let mut failed = failed.into_iter().peekable();
+                    for (index, slot) in record.tokens.iter_mut().enumerate().skip(1) {
+                        let field =
+                            match (slot.take(), failed.next_if(|field| field.index == index)) {
+                                (Some(token), _) => Field::Token(token),
+                                (None, Some(field)) => Field::Failed(field),
+                                (None, None) => continue,
+                            };
+                        *slot =
+                            read_field(ctx, stream, field, global, owned.entry.sequence, staged)?;
                     }
                 }
                 if let Some(projector) = source_points {
@@ -310,77 +300,69 @@ impl ConflictParts {
     }
 }
 
-fn read_point_field(
+/// One lexed Parameter Data field: its token, or the field whose literal is
+/// not admitted.
+enum Field {
+    Token(Token),
+    Failed(FailedField),
+}
+
+/// Read one field as its `iges.parameter_field` part. A failed field gives up
+/// only its part; its slot is absent and the record keeps its other fields.
+fn read_field(
     ctx: &DecodeContext<'_>,
     stream: View<'_>,
-    slot: &mut Option<Token>,
+    field: Field,
     global: &ResolvedGlobal,
     sequence: u32,
     output: &mut PartOutput,
-) -> Result<(), CodecError> {
-    let Some(mut token) = slot.take() else {
-        return Ok(());
+) -> Result<Option<Token>, CodecError> {
+    let span = match &field {
+        Field::Token(token) => token.span.clone(),
+        Field::Failed(field) => field.span.clone(),
     };
-    let end = token
-        .span
+    let end = span
         .end
         .checked_add(1)
-        .ok_or_else(|| CodecError::malformed("IGES coordinate field extent overflows"))?;
+        .ok_or_else(|| CodecError::malformed("IGES Parameter field extent overflows"))?;
     let extent = stream
-        .child(token.span.start, end)
-        .ok_or_else(|| CodecError::malformed("IGES coordinate field exceeds its source"))?;
+        .child(span.start, end)
+        .ok_or_else(|| CodecError::malformed("IGES Parameter field exceeds its source"))?;
     let mut framing = Vec::new();
-    if let TokenValue::String(value) = &token.value {
-        let header_end = token
-            .span
-            .end
-            .checked_sub(value.as_ref().len())
-            .ok_or_else(|| {
-                CodecError::malformed("IGES coordinate Hollerith header exceeds its field")
-            })?;
+    if let Field::Token(Token {
+        value: TokenValue::String(value),
+        ..
+    }) = &field
+    {
+        let header_end = span.end.checked_sub(value.as_ref().len()).ok_or_else(|| {
+            CodecError::malformed("IGES Parameter Hollerith header exceeds its field")
+        })?;
         append_parameter_item(
             ctx,
             &mut framing,
-            u64_from_index(token.span.start)..u64_from_index(header_end),
+            u64_from_index(span.start)..u64_from_index(header_end),
         )?;
     }
     append_parameter_item(
         ctx,
         &mut framing,
-        u64_from_index(token.span.end)..u64_from_index(end),
+        u64_from_index(span.end)..u64_from_index(end),
     )?;
-    *slot = ctx.decode_part(
+    ctx.decode_part(
         output,
         extent,
         spec("iges.parameter_field", framing)?,
-        |_| {
-            if matches!(token.value, TokenValue::Unreadable(_)) {
-                let bytes = stream.read_slice(token.span.clone()).ok_or_else(|| {
-                    CodecError::malformed("IGES coordinate source token is unreadable")
-                })?;
-                if matches!(
-                    token.value,
-                    TokenValue::Unreadable(super::ParameterDefect::NumericCrossesCard)
-                ) {
-                    return Err(failure(
-                        sequence,
-                        OwnedParseFailure::Defect(
-                            super::ParameterDefect::NumericCrossesCard,
-                            Some(token.span.start),
-                        ),
-                    ));
-                }
-                let value =
-                    super::numeric_with_limits(bytes, 0..bytes.len(), global.numeric_limits())
-                        .map_err(|error| failure(sequence, error.into()))?;
-                token.value = value.value;
-            } else {
+        |_| match field {
+            Field::Token(mut token) => {
                 read_token(ctx, stream, &mut token, global, sequence)?;
+                Ok(token)
             }
-            Ok(token)
+            Field::Failed(field) => Err(failure(
+                sequence,
+                OwnedParseFailure::Defect(field.defect, Some(field.offset)),
+            )),
         },
-    )?;
-    Ok(())
+    )
 }
 
 fn read_token(
@@ -413,7 +395,7 @@ fn read_token(
             value.copy_from_slice(bytes);
             token.value = TokenValue::String(value.into());
         }
-        TokenValue::Omitted | TokenValue::Unreadable(_) => {}
+        TokenValue::Omitted => {}
     }
     Ok(())
 }

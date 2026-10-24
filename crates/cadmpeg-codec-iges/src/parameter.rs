@@ -38,8 +38,6 @@ pub(crate) enum TokenValue {
     Integer(i64),
     Real(FiniteReal),
     String(cadmpeg_ir::native::bytes::NativeBytes),
-    /// The field boundaries are known, but its literal cannot be interpreted.
-    Unreadable(ParameterDefect),
 }
 
 impl Serialize for TokenValue {
@@ -51,7 +49,6 @@ impl Serialize for TokenValue {
             Integer(i64),
             Real(FiniteReal),
             String(cadmpeg_ir::native::bytes::NativeBytes<&'a [u8]>),
-            Unreadable(ParameterDefect),
         }
         match self {
             Self::Omitted => Wire::Omitted,
@@ -60,7 +57,6 @@ impl Serialize for TokenValue {
             Self::String(bytes) => {
                 Wire::String(cadmpeg_ir::native::bytes::NativeBytes::from(bytes.as_ref()))
             }
-            Self::Unreadable(defect) => Wire::Unreadable(*defect),
         }
         .serialize(serializer)
     }
@@ -288,20 +284,14 @@ impl ParameterRecord {
     fn raw_integer(&self, index: usize) -> Option<i64> {
         match self.raw_value(index)? {
             TokenValue::Integer(value) => Some(*value),
-            TokenValue::Omitted
-            | TokenValue::Real(_)
-            | TokenValue::String(_)
-            | TokenValue::Unreadable(_) => None,
+            TokenValue::Omitted | TokenValue::Real(_) | TokenValue::String(_) => None,
         }
     }
 
     pub(crate) fn integer(&self, index: usize) -> Option<i64> {
         match self.value(index)? {
             TokenValue::Integer(value) => Some(*value),
-            TokenValue::Omitted
-            | TokenValue::Real(_)
-            | TokenValue::String(_)
-            | TokenValue::Unreadable(_) => None,
+            TokenValue::Omitted | TokenValue::Real(_) | TokenValue::String(_) => None,
         }
     }
 
@@ -314,7 +304,7 @@ impl ParameterRecord {
         match &token.value {
             TokenValue::Omitted => Some(default),
             TokenValue::Integer(value) => Some(*value),
-            TokenValue::Real(_) | TokenValue::String(_) | TokenValue::Unreadable(_) => None,
+            TokenValue::Real(_) | TokenValue::String(_) => None,
         }
     }
 
@@ -322,7 +312,7 @@ impl ParameterRecord {
         match self.value(index)? {
             TokenValue::Integer(value) => cadmpeg_core::convert::f64_from_i64(*value),
             TokenValue::Real(value) => Some(value.get()),
-            TokenValue::Omitted | TokenValue::String(_) | TokenValue::Unreadable(_) => None,
+            TokenValue::Omitted | TokenValue::String(_) => None,
         }
     }
 
@@ -336,7 +326,7 @@ impl ParameterRecord {
             TokenValue::Omitted => Some(default),
             TokenValue::Integer(value) => cadmpeg_core::convert::f64_from_i64(*value),
             TokenValue::Real(value) => Some(value.get()),
-            TokenValue::String(_) | TokenValue::Unreadable(_) => None,
+            TokenValue::String(_) => None,
         }
     }
 
@@ -375,10 +365,7 @@ impl ParameterRecord {
     pub(crate) fn string(&self, index: usize) -> Option<&[u8]> {
         match self.value(index)? {
             TokenValue::String(value) => Some(value),
-            TokenValue::Omitted
-            | TokenValue::Integer(_)
-            | TokenValue::Real(_)
-            | TokenValue::Unreadable(_) => None,
+            TokenValue::Omitted | TokenValue::Integer(_) | TokenValue::Real(_) => None,
         }
     }
 
@@ -391,7 +378,7 @@ impl ParameterRecord {
         match &token.value {
             TokenValue::Omitted => Some(&[]),
             TokenValue::String(value) => Some(value),
-            TokenValue::Integer(_) | TokenValue::Real(_) | TokenValue::Unreadable(_) => None,
+            TokenValue::Integer(_) | TokenValue::Real(_) => None,
         }
     }
 
@@ -3380,84 +3367,62 @@ fn numeric_with_limits(
     Ok(Token { value, span })
 }
 
-fn tokenize_with_limits(
-    bytes: &[u8],
-    card_boundaries: &[usize],
-    parameter_delimiter: u8,
-    record_delimiter: u8,
-    global_table: GlobalTable,
-    limits: NumericLimits,
-) -> Result<(Vec<Token>, usize), TokenizeFailure> {
-    tokenize_with_crossings(
-        bytes,
-        card_boundaries,
-        parameter_delimiter,
-        record_delimiter,
-        global_table,
-        limits,
-        |_, first_value| {
-            Err(TokenizeFailure::Defect(
-                ParameterDefect::NumericCrossesCard,
-                first_value,
-            ))
-        },
-    )
+/// One Parameter Data field whose boundaries are known and whose literal is
+/// not admitted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct FailedField {
+    /// The field position in the record.
+    pub(crate) index: usize,
+    /// The field value in the record stream.
+    pub(crate) span: Range<usize>,
+    pub(crate) defect: ParameterDefect,
+    /// The record-stream offset that a record-level defect names.
+    pub(crate) offset: usize,
 }
 
-fn tokenize_source_fields(
-    bytes: &[u8],
-    card_boundaries: &[usize],
-    parameter_delimiter: u8,
-    record_delimiter: u8,
-    global_table: GlobalTable,
-    limits: NumericLimits,
-) -> Result<(Vec<Token>, usize), TokenizeFailure> {
-    tokenize_with_crossings(
-        bytes,
-        card_boundaries,
-        parameter_delimiter,
-        record_delimiter,
-        global_table,
-        limits,
-        |span, _| {
-            Ok(Token {
-                value: TokenValue::Unreadable(ParameterDefect::NumericCrossesCard),
-                span,
-            })
-        },
-    )
+/// The fields of one Parameter Data record. A failed field has no token.
+#[derive(Debug)]
+pub(crate) struct TokenizedFields {
+    pub(crate) tokens: Vec<Option<Token>>,
+    pub(crate) failed: Vec<FailedField>,
+    /// The stream offset after the record delimiter.
+    pub(crate) end: usize,
 }
 
-fn tokenize_with_crossings(
+fn tokenize_fields(
     bytes: &[u8],
     card_boundaries: &[usize],
     parameter_delimiter: u8,
     record_delimiter: u8,
     global_table: GlobalTable,
     limits: NumericLimits,
-    mut crossing: impl FnMut(Range<usize>, usize) -> Result<Token, TokenizeFailure>,
-) -> Result<(Vec<Token>, usize), TokenizeFailure> {
-    let mut tokens = Vec::new();
+) -> Result<TokenizedFields, TokenizeFailure> {
+    let mut fields = TokenizedFields {
+        tokens: Vec::new(),
+        failed: Vec::new(),
+        end: 0,
+    };
     let mut cursor = 0_usize;
     loop {
         while bytes.get(cursor) == Some(&b' ') {
             cursor += 1;
         }
         if bytes.get(cursor) == Some(&record_delimiter) {
-            return Ok((tokens, cursor + 1));
+            fields.end = cursor + 1;
+            return Ok(fields);
         }
         if bytes.get(cursor) == Some(&parameter_delimiter) {
-            tokens.push(Token {
+            fields.tokens.push(Some(Token {
                 value: TokenValue::Omitted,
                 span: cursor..cursor,
-            });
+            }));
             cursor += 1;
             continue;
         }
-        let (token, end) = if let Some(value) =
+        let (token, end) = if let Some((token, end)) =
             hollerith(bytes, card_boundaries, cursor, global_table)?
         {
-            value
+            (Some(token), end)
         } else {
             let end = bytes[cursor..]
                 .iter()
@@ -3481,13 +3446,16 @@ fn tokenize_with_crossings(
                     .iter()
                     .position(|byte| !byte.is_ascii_whitespace())
                     .unwrap_or(span.len());
-            let token =
+            let failure =
                 if first_value < end && card_boundary_within(card_boundaries, first_value, end) {
-                    crossing(span, first_value)?
+                    Some((ParameterDefect::NumericCrossesCard, first_value))
                 } else {
                     match numeric_with_limits(bytes, span.clone(), limits) {
-                        Ok(token) => token,
-                        Err(TokenizeFailure::Defect(defect, _))
+                        Ok(token) => {
+                            fields.tokens.push(Some(token));
+                            None
+                        }
+                        Err(TokenizeFailure::Defect(defect, offset))
                             if matches!(
                                 defect,
                                 ParameterDefect::NumericContainsBlanks
@@ -3496,20 +3464,31 @@ fn tokenize_with_crossings(
                                     | ParameterDefect::NumericOutOfRange
                             ) =>
                         {
-                            Token {
-                                value: TokenValue::Unreadable(defect),
-                                span,
-                            }
+                            Some((defect, offset))
                         }
                         Err(error) => return Err(error),
                     }
                 };
-            (token, end)
+            if let Some((defect, offset)) = failure {
+                fields.failed.push(FailedField {
+                    index: fields.tokens.len(),
+                    span,
+                    defect,
+                    offset,
+                });
+                fields.tokens.push(None);
+            }
+            (None, end)
         };
-        tokens.push(token);
+        if let Some(token) = token {
+            fields.tokens.push(Some(token));
+        }
         match bytes.get(end).copied() {
             Some(value) if value == parameter_delimiter => cursor = end + 1,
-            Some(value) if value == record_delimiter => return Ok((tokens, end + 1)),
+            Some(value) if value == record_delimiter => {
+                fields.end = end + 1;
+                return Ok(fields);
+            }
             _ => {
                 return Err(TokenizeFailure::Defect(
                     ParameterDefect::DelimiterMissing,
@@ -3527,8 +3506,8 @@ fn tokenize(
     parameter_delimiter: u8,
     record_delimiter: u8,
     global_table: GlobalTable,
-) -> Result<(Vec<Token>, usize), TokenizeFailure> {
-    tokenize_with_limits(
+) -> Result<TokenizedFields, TokenizeFailure> {
+    tokenize_fields(
         bytes,
         card_boundaries,
         parameter_delimiter,
@@ -3878,35 +3857,28 @@ impl From<TokenizeFailure> for OwnedParseFailure {
     }
 }
 
-type FieldTokenizer = fn(
-    &[u8],
-    &[usize],
-    u8,
-    u8,
-    GlobalTable,
-    NumericLimits,
-) -> Result<(Vec<Token>, usize), TokenizeFailure>;
-
 fn parse_owned_record(
     owned: &Ownership<'_>,
     owned_bytes: OwnedParameterBytes,
     global: &ResolvedGlobal,
 ) -> Result<ParameterRecord, OwnedParseFailure> {
-    parse_owned_record_with_tokenizer(owned, owned_bytes, global, tokenize_with_limits)
+    let (record, failed) = parse_owned_fields(owned, owned_bytes, global)?;
+    reject_failed_fields(&failed)?;
+    Ok(record)
 }
 
-fn parse_owned_record_with_tokenizer(
+/// Parse one owned record. A field whose literal is not admitted has no token
+/// and is returned for its caller to give up.
+fn parse_owned_fields(
     owned: &Ownership<'_>,
     owned_bytes: OwnedParameterBytes,
     global: &ResolvedGlobal,
-    tokenize_fields: FieldTokenizer,
-) -> Result<ParameterRecord, OwnedParseFailure> {
-    let admitted = parse_admitted(
+) -> Result<(ParameterRecord, Vec<FailedField>), OwnedParseFailure> {
+    let (admitted, failed) = lex_admitted(
         owned.entry.sequence,
         owned.entry.entity_type,
         owned_bytes,
         global,
-        tokenize_fields,
     )?;
     let line_start = owned.cards.first().copied().unwrap_or_default();
     let line_end = match owned.cards.last() {
@@ -3917,7 +3889,15 @@ fn parse_owned_record_with_tokenizer(
         })?,
         None => line_start,
     };
-    Ok(admitted.bind_range(line_start..line_end))
+    Ok((admitted.bind_range(line_start..line_end), failed))
+}
+
+/// A caller with no field part refuses the record at its first failed field.
+fn reject_failed_fields(failed: &[FailedField]) -> Result<(), OwnedParseFailure> {
+    match failed.first() {
+        Some(field) => Err(OwnedParseFailure::Defect(field.defect, Some(field.offset))),
+        None => Ok(()),
+    }
 }
 
 #[derive(Debug)]
@@ -3942,19 +3922,23 @@ impl AdmittedParameter {
     }
 }
 
-fn parse_admitted(
+fn lex_admitted(
     directory_sequence: u32,
     entity_type: i64,
     owned_bytes: OwnedParameterBytes,
     global: &ResolvedGlobal,
-    tokenize_fields: FieldTokenizer,
-) -> Result<AdmittedParameter, OwnedParseFailure> {
-    let tokenized = if entity_type == 306 {
+) -> Result<(AdmittedParameter, Vec<FailedField>), OwnedParseFailure> {
+    let fields = if entity_type == 306 {
         tokenize_macro(
             &owned_bytes.bytes,
             global.parameter_delimiter,
             global.record_delimiter,
         )
+        .map(|(tokens, end)| TokenizedFields {
+            tokens: tokens.into_iter().map(Some).collect(),
+            failed: Vec::new(),
+            end,
+        })
     } else {
         tokenize_fields(
             &owned_bytes.bytes,
@@ -3964,27 +3948,40 @@ fn parse_admitted(
             global.global_table(),
             global.numeric_limits(),
         )
-    };
-    let (tokens, record_end) = tokenized.map_err(OwnedParseFailure::from)?;
-    if !matches!(tokens.first().map(|token| &token.value), Some(TokenValue::Integer(value)) if *value == entity_type)
-    {
-        return Err(OwnedParseFailure::Defect(
-            ParameterDefect::EntityTypeTokenMismatch,
-            tokens.first().map(|token| token.span.start),
-        ));
     }
-    let parameter_end = tokens.len();
-    Ok(AdmittedParameter {
-        directory_sequence,
-        comment: owned_bytes
-            .bytes
-            .get(record_end..)
-            .unwrap_or_default()
-            .to_vec(),
-        bytes: owned_bytes.bytes,
-        tokens: tokens.into_iter().map(Some).collect(),
-        parameter_end,
-    })
+    .map_err(OwnedParseFailure::from)?;
+    match fields.tokens.first() {
+        Some(Some(Token {
+            value: TokenValue::Integer(value),
+            ..
+        })) if *value == entity_type => {}
+        first => {
+            let offset = match first {
+                Some(Some(token)) => Some(token.span.start),
+                Some(None) => fields.failed.first().map(|field| field.span.start),
+                None => None,
+            };
+            return Err(OwnedParseFailure::Defect(
+                ParameterDefect::EntityTypeTokenMismatch,
+                offset,
+            ));
+        }
+    }
+    let parameter_end = fields.tokens.len();
+    Ok((
+        AdmittedParameter {
+            directory_sequence,
+            comment: owned_bytes
+                .bytes
+                .get(fields.end..)
+                .unwrap_or_default()
+                .to_vec(),
+            bytes: owned_bytes.bytes,
+            tokens: fields.tokens,
+            parameter_end,
+        },
+        fields.failed,
+    ))
 }
 
 fn parse_legacy_owned(

@@ -12,6 +12,7 @@ use crate::directory::DirectoryFieldSlot;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceDimension, ResourceLimit, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::source_fidelity::parts::ParserPartOutput;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) mod parts;
@@ -847,11 +848,37 @@ fn positive_pointer(value: i64, what: &str) -> Result<u32, CodecError> {
     u32::try_from(value).map_err(|_| malformed(format!("Binary {what} pointer is out of range")))
 }
 
-fn read_global(payload: &[u8], lengths: PrimitiveLengths) -> Result<Vec<BinaryValue>, CodecError> {
+/// The payload ranges of the value groups of one Binary section, in order,
+/// through the first group whose values do not parse. That group starts at
+/// the returned offset, and its end is unknown.
+fn value_groups(
+    payload: &[u8],
+    lengths: PrimitiveLengths,
+    mut group: impl FnMut(std::ops::Range<usize>) -> Result<(), CodecError>,
+) -> Result<Option<(usize, CodecError)>, CodecError> {
     let mut stream = ValueStream::new(payload, lengths);
+    loop {
+        let start = stream.bits.byte;
+        if stream.bits.is_empty() {
+            return Ok(None);
+        }
+        loop {
+            match stream.next() {
+                Ok(Some(_)) if stream.repeat.is_some() => {}
+                Ok(_) => break,
+                Err(error) => return Ok(Some((start, error))),
+            }
+        }
+        group(start..stream.bits.byte)?;
+    }
+}
+
+/// The values of one value group.
+fn read_group(bytes: &[u8], lengths: PrimitiveLengths) -> Result<Vec<BinaryValue>, CodecError> {
+    let mut stream = ValueStream::new(bytes, lengths);
     let mut values = Vec::new();
-    for _ in 0..24 {
-        values.push(one_value(&mut stream, "Global")?);
+    while let Some(value) = stream.next()? {
+        values.push(value);
     }
     stream.finish()?;
     Ok(values)
@@ -1719,15 +1746,17 @@ fn resolve_value(
 fn normalize_with_records<T>(
     source: View<'_>,
     ctx: &DecodeContext<'_>,
+    output: &mut ParserPartOutput,
     parse: impl FnOnce(
         &BinarySections<'_>,
         &crate::global::ResolvedGlobal,
+        &mut ParserPartOutput,
     ) -> Result<(Vec<BinaryDirectory>, Vec<BinaryParameter>), CodecError>,
     finish: impl FnOnce(Vec<u8>, Vec<BinaryDirectory>, BinaryAdmission) -> Result<T, CodecError>,
 ) -> Result<T, CodecError> {
     let sections = parse_sections(source)?;
     let start_text = normalize_start(sections.start.window(), sections.lengths)?;
-    let global_values = read_global(sections.global.window(), sections.lengths)?;
+    let global_values = parts::read_global(source, &sections, ctx, output)?;
     let global_text = normalize_global(&global_values)?;
     let global_cards = crate::global::layout_global_cards(&global_text)?;
     let global_byte_len = global_cards
@@ -1749,7 +1778,7 @@ fn normalize_with_records<T>(
             .copy_from_slice(card);
     }
     let (global, losses) = crate::global::parse_stream(&global_payload)?;
-    let (directory, parameters) = parse(&sections, &global)?;
+    let (directory, parameters) = parse(&sections, &global, output)?;
     let mut output = Vec::new();
     let mut start_sequence = 1_u32;
     render_start_cards(&mut output, &start_text, &mut start_sequence)?;
@@ -2074,6 +2103,20 @@ mod tests {
         fn bytes(self) -> Vec<u8> {
             self.bytes
         }
+    }
+
+    /// The Global values of a Binary file whose every value group parses.
+    pub(crate) fn global_values(sections: &super::BinarySections<'_>) -> Vec<super::BinaryValue> {
+        let payload = sections.global.window();
+        let mut values = Vec::new();
+        let failed = super::value_groups(payload, sections.lengths, |range| {
+            values.extend(super::read_group(&payload[range], sections.lengths)?);
+            Ok(())
+        })
+        .expect("actual Binary Global groups");
+        assert!(failed.is_none());
+        assert_eq!(values.len(), 24);
+        values
     }
 
     fn lengths() -> PrimitiveLengths {

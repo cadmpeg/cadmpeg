@@ -90,12 +90,12 @@
         "namespace": "decode",
         "scope": "namespaced"
       },
-      "message": "iges.parameter_record stream=file offset=729 length=162 record=none error=malformed container: IGES Parameter Data D3, logical offset Some(63): a numeric field or its delimiter crosses a card boundary (numeric-crosses-card) dropped=[\"iges:entity:directory#3\"]",
+      "message": "iges.parameter_field stream=iges/parameter/file/729/891 offset=63 length=2 record=iges:entity:directory#3 error=malformed container: IGES Parameter Data D3, logical offset Some(63): a numeric field or its delimiter crosses a card boundary (numeric-crosses-card) dropped=[]",
       "provenance": {
-        "byte_len": 162,
+        "byte_len": 2,
         "format": "iges",
-        "offset": 729,
-        "stream": "file"
+        "offset": 63,
+        "stream": "iges/parameter/file/729/891"
       },
       "severity": "error"
     }
@@ -110,8 +110,8 @@
     "entities=2",
     "entity.212.form.0=1",
     "entity.213.form.0=1",
-    "parameter_records=1",
-    "parameter_tokens=26",
+    "parameter_records=2",
+    "parameter_tokens=59",
     "external_references=0"
   ]
 }

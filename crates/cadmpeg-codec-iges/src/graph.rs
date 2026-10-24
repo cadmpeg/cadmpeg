@@ -392,6 +392,13 @@ fn positive_candidate(kind: ReferenceKind, raw_pointer: i64) -> Candidate {
     }
 }
 
+/// The Directory Entry sequence a positive pointer value names: an odd
+/// sequence in pointer range. The value names it whether or not that entry
+/// exists in the decode.
+pub(crate) fn directory_pointer_sequence(raw_pointer: i64) -> Option<u32> {
+    positive_pointer_sequence(raw_pointer).filter(|sequence| sequence % 2 == 1)
+}
+
 fn positive_pointer_sequence(raw_pointer: i64) -> Option<u32> {
     if !(1..=MAX_POINTER_SEQUENCE).contains(&raw_pointer) {
         return None;

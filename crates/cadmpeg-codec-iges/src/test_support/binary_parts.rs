@@ -89,9 +89,38 @@ fn point_parameters_with_symbol(directory_pointer: u32, symbol: u32) -> Vec<u8> 
 }
 
 fn assemble(prefix: &[u8], parameter_pointer: u32, parameters: &[u8]) -> Vec<u8> {
+    assemble_with_global(prefix, parameter_pointer, parameters, |_| {})
+}
+
+/// A point file whose Global value group `index` (0 is field 1) has the given
+/// control byte, and the file range of that group through the end of the
+/// Global payload.
+pub(crate) fn point_with_global_control(
+    index: usize,
+    control: u8,
+) -> (Vec<u8>, std::ops::Range<usize>) {
+    let mut start = 0;
+    let mut end = 0;
+    let bytes = assemble_with_global(&[], 1, &point_parameters(1), |values| {
+        values[index][0] = control;
+        start = values[..index].iter().map(Vec::len).sum();
+        end = values.iter().map(Vec::len).sum();
+    });
+    // The Flag section (80 bytes), the Start section, then the Global section
+    // identifier and its u32 payload count.
+    let payload = 80 + section(b'S', &text(b"Binary parts")).len() + 5;
+    (bytes, payload + start..payload + end)
+}
+
+fn assemble_with_global(
+    prefix: &[u8],
+    parameter_pointer: u32,
+    parameters: &[u8],
+    edit: impl FnOnce(&mut [Vec<u8>]),
+) -> Vec<u8> {
     let mut directory_bytes = prefix.to_vec();
     directory_bytes.extend_from_slice(&directory_record(116, parameter_pointer));
-    let global = [
+    let mut global = vec![
         vec![0],
         vec![0],
         text(b"product"),
@@ -116,8 +145,9 @@ fn assemble(prefix: &[u8], parameter_pointer: u32, parameters: &[u8]) -> Vec<u8>
         text(b"org"),
         integer(6),
         integer(0),
-    ]
-    .concat();
+    ];
+    edit(&mut global);
+    let global = global.concat();
     let sections = [
         section(b'S', &text(b"Binary parts")),
         section(b'G', &global),
@@ -461,4 +491,43 @@ pub(crate) fn entity_without_parameter_data(
     .expect("empty comment");
     value["parameter_line_count"] = serde_json::json!(0);
     value
+}
+
+/// A Group (D5, form 7) of a point (D1), a null entity with no Parameter Data
+/// (D3) and a point (D7), each named by its source offset. The null entity
+/// states its required structure field as text: `0`, or the non-integer `x`
+/// when `broken`.
+pub(crate) fn point_group_of_three(broken: bool) -> Vec<u8> {
+    let first = directory_record(116, 1);
+    let mut null_fields = vec![integer(0), pointer(0)];
+    null_fields.extend(std::iter::repeat_n(vec![0], 14));
+    null_fields[2] = text(if broken { b"x" } else { b"0" });
+    let null_entity = counted(&null_fields.concat());
+    let offset = |length: usize| u32::try_from(length + 1).expect("test Directory offset");
+    let null_offset = offset(first.len());
+    let group_offset = offset(first.len() + null_entity.len());
+    let mut parameters = point_parameters(1);
+    let group_parameter = u32::try_from(parameters.len() + 1).expect("group Parameter offset");
+    let mut group_fields = vec![integer(402), pointer(group_parameter)];
+    group_fields.extend(std::iter::repeat_n(vec![0], 14));
+    group_fields[11] = integer(7);
+    let group = counted(&group_fields.concat());
+    let last_offset = offset(first.len() + null_entity.len() + group.len());
+    parameters.extend_from_slice(&counted(
+        &[
+            integer(402),
+            pointer(group_offset),
+            integer(3),
+            pointer(1),
+            pointer(null_offset),
+            pointer(last_offset),
+        ]
+        .concat(),
+    ));
+    let point_parameter = u32::try_from(parameters.len() + 1).expect("point Parameter offset");
+    parameters.extend_from_slice(&point_parameters(last_offset));
+    let mut prefix = first;
+    prefix.extend_from_slice(&null_entity);
+    prefix.extend_from_slice(&group);
+    assemble(&prefix, point_parameter, &parameters)
 }

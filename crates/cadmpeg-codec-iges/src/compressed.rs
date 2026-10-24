@@ -118,15 +118,10 @@ fn malformed(message: impl Into<String>) -> CodecError {
     crate::error::malformed(format!("IGES Compressed ASCII: {}", message.into()))
 }
 
-fn compressed_delimiters(cards: &[&[u8]]) -> Result<(u8, u8), CodecError> {
-    if cards.iter().any(|card| card.len() != CARD_WIDTH) {
-        return Err(malformed("Start and Global records must be 80 columns"));
-    }
-    let mut bytes = cards
-        .iter()
-        .flat_map(|card| card[..CARD_DATA_WIDTH].iter().copied());
-    let parameter = delimiter_field(&mut bytes, b',', b',')?;
-    let record = delimiter_field(&mut bytes, parameter, b';')?;
+/// The Global delimiters as the Compressed Data section uses them. The record
+/// delimiter cannot be the Directory field-specifier marker `@`, and the two
+/// delimiters differ.
+fn compressed_delimiters(parameter: u8, record: u8) -> Result<(u8, u8), CodecError> {
     if record == b'@' {
         return Err(malformed(
             "record delimiter conflicts with the Directory field-specifier marker",
@@ -136,55 +131,6 @@ fn compressed_delimiters(cards: &[&[u8]]) -> Result<(u8, u8), CodecError> {
         return Err(malformed("parameter and record delimiters are equal"));
     }
     Ok((parameter, record))
-}
-
-fn delimiter_field(
-    bytes: &mut impl Iterator<Item = u8>,
-    separator: u8,
-    default: u8,
-) -> Result<u8, CodecError> {
-    let next = |bytes: &mut dyn Iterator<Item = u8>| -> Result<u8, CodecError> {
-        loop {
-            let byte = bytes
-                .next()
-                .ok_or_else(|| malformed("Global delimiter declaration is truncated"))?;
-            if byte != b' ' {
-                return Ok(byte);
-            }
-        }
-    };
-    let mut byte = next(bytes)?;
-    if byte == separator {
-        return Ok(default);
-    }
-    let mut count = 0_u64;
-    let mut digits = false;
-    while byte.is_ascii_digit() {
-        digits = true;
-        count = count
-            .checked_mul(10)
-            .and_then(|count| count.checked_add(u64::from(byte - b'0')))
-            .ok_or_else(|| malformed("Global delimiter Hollerith count overflows"))?;
-        byte = next(bytes)?;
-    }
-    if !digits || !matches!(byte, b'H' | b'h') || count != 1 {
-        return Err(malformed(
-            "Global delimiter is not a one-byte Hollerith field",
-        ));
-    }
-
-    let value = bytes
-        .next()
-        .ok_or_else(|| malformed("Global delimiter payload is truncated"))?;
-    let terminator = next(bytes)?;
-    // The first declaration terminates itself. The second uses the first.
-    let expected = if default == b',' { value } else { separator };
-    if terminator != expected {
-        return Err(malformed(
-            "Global delimiter field has an invalid terminator",
-        ));
-    }
-    Ok(value)
 }
 
 fn parse_sequence(bytes: &[u8], start: usize, label: &str) -> Result<(u32, usize), CodecError> {

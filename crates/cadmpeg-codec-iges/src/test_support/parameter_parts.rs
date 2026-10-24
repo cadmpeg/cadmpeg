@@ -88,8 +88,7 @@ pub(crate) fn assert_one_parameter_field(
         .message
         .contains("record=iges:entity:directory#1"));
     assert!(result.report().losses.iter().all(|loss| loss.code
-        != crate::loss::IgesLossCode::ParameterLiteralUnusable.kind()
-        && loss.code != crate::loss::IgesLossCode::ParameterDataQuarantined.kind()
+        != crate::loss::IgesLossCode::ParameterDataQuarantined.kind()
         && loss.code != crate::loss::IgesLossCode::GeometryNotProjected.kind()));
     let owner = &fidelity.record_layout()["iges:entity:directory#1"];
     for (stream, ranges) in owner.reads() {

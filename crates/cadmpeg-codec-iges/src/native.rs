@@ -1540,7 +1540,7 @@ fn attribute_table_rows<'a>(
                 .integer_or(count_index, 1)
                 .ok_or(UnstatableAttributeTable::ValueCount { attribute })?,
             Some(TokenValue::Integer(value)) => *value,
-            Some(TokenValue::Real(_) | TokenValue::String(_) | TokenValue::Unreadable(_)) => {
+            Some(TokenValue::Real(_) | TokenValue::String(_)) => {
                 return Err(UnstatableAttributeTable::ValueCount { attribute });
             }
         };
@@ -3758,7 +3758,12 @@ pub(crate) fn store(
                         record
                             .and_then(|record| record.integer(2 + index))
                             .and_then(|sequence| {
-                                parameter_resolver.resolve_any(entry.sequence, 2 + index, sequence)
+                                // A member slot keeps the Directory Entry
+                                // pointer it reads, whether or not its target
+                                // survives (#222 Group count ruling, rule 1).
+                                parameter_resolver
+                                    .resolve_any(entry.sequence, 2 + index, sequence)
+                                    .or_else(|| crate::graph::directory_pointer_sequence(sequence))
                             })
                             .map(|sequence| format!("iges:entity:directory#{sequence}"))
                     })
@@ -4498,12 +4503,7 @@ pub(crate) fn store(
                             Some(TokenValue::Integer(_)) => {
                                 record.count_with_stride_before(cursor + 2, stride, end)
                             }
-                            None
-                            | Some(
-                                TokenValue::Real(_)
-                                | TokenValue::String(_)
-                                | TokenValue::Unreadable(_),
-                            ) => None,
+                            None | Some(TokenValue::Real(_) | TokenValue::String(_)) => None,
                         }
                     };
                     let Some(value_start) = cursor.checked_add(3) else {

@@ -9,9 +9,13 @@ use cadmpeg_ir::source_fidelity::parts::{DecodeParts, ParserPartOutput, PartLeve
 
 use super::{
     counted_record, finish_parameter_record, malformed, normalize_with_records, parameter_prefix,
-    parse_directory_record, positive_pointer, source_sequence, BinaryDirectory, BinaryIdentities,
-    BinaryParameter, BinarySections, NormalizedBinary, PrimitiveLengths, SECTION_HEADER_WIDTH,
+    parse_directory_record, positive_pointer, read_group, source_sequence, value_groups,
+    BinaryDirectory, BinaryIdentities, BinaryParameter, BinarySections, BinaryValue,
+    NormalizedBinary, PrimitiveLengths, SECTION_HEADER_WIDTH,
 };
+
+/// The Global fields of a Binary file (IGES 5.3 Appendix H.2.3).
+const GLOBAL_FIELD_COUNT: usize = 24;
 
 mod admission;
 mod dependencies;
@@ -28,9 +32,10 @@ pub(crate) fn normalize(
     let bytes = normalize_with_records(
         source,
         ctx,
-        |sections, global| {
+        &mut output,
+        |sections, global, output| {
             let dependencies = Dependencies::inspect(sections, global, ctx)?;
-            let mut directory = read_directory(source, sections, ctx, &mut output, &dependencies)?;
+            let mut directory = read_directory(source, sections, ctx, output, &dependencies)?;
             let mut directory_by_offset = BTreeMap::new();
             for (index, record) in directory.iter().enumerate() {
                 ctx.retain_bytes(
@@ -45,7 +50,7 @@ pub(crate) fn normalize(
                 &directory,
                 &directory_by_offset,
                 ctx,
-                &mut output,
+                output,
                 &dependencies,
                 global,
             )?;
@@ -71,6 +76,111 @@ pub(crate) fn normalize(
         },
     )?;
     Ok((bytes, output))
+}
+
+/// Read the Global values. The G section is one `iges.binary_section` part
+/// and each value group is one `iges.binary_global_value` part. A group whose
+/// values do not parse gives up the rest of the payload: its fields and every
+/// later field are absent. Bytes after the last field give up alone.
+pub(super) fn read_global(
+    source: View<'_>,
+    sections: &BinarySections<'_>,
+    ctx: &DecodeContext<'_>,
+    output: &mut ParserPartOutput,
+) -> Result<Vec<BinaryValue>, CodecError> {
+    let payload = sections.global;
+    let start = payload
+        .start()
+        .checked_sub(SECTION_HEADER_WIDTH)
+        .ok_or_else(|| malformed("Binary Global header offset underflows"))?;
+    let end = sections
+        .directory
+        .start()
+        .checked_sub(SECTION_HEADER_WIDTH)
+        .ok_or_else(|| malformed("Binary Directory header offset underflows"))?;
+    let extent = source
+        .child(start, end)
+        .ok_or_else(|| malformed("Binary Global section exceeds its source"))?;
+    let mut framing = Vec::new();
+    append(
+        ctx,
+        &mut framing,
+        u64_from_index(start)..u64_from_index(payload.start()),
+    )?;
+    if payload.end() < end {
+        append(
+            ctx,
+            &mut framing,
+            u64_from_index(payload.end())..u64_from_index(end),
+        )?;
+    }
+    let absent = || {
+        ctx.alloc_filled(
+            GLOBAL_FIELD_COUNT,
+            BinaryValue::Default,
+            "IGES Binary Global values",
+        )
+    };
+    let values = ctx.decode_parser_scope(
+        output,
+        extent,
+        spec("iges.binary_section", framing)?,
+        |children| {
+            let mut values = absent()?;
+            let mut field = 0;
+            let child = |range: std::ops::Range<usize>| {
+                payload
+                    .start()
+                    .checked_add(range.start)
+                    .zip(payload.start().checked_add(range.end))
+                    .and_then(|(start, end)| payload.child(start, end))
+                    .ok_or_else(|| malformed("Binary Global value exceeds its section"))
+            };
+            let failed = value_groups(payload.window(), sections.lengths, |range| {
+                let group = child(range.clone())?;
+                let parsed = ctx.decode_parser_part(
+                    children,
+                    group,
+                    spec("iges.binary_global_value", Vec::new())?,
+                    || {
+                        let group = read_group(&payload.window()[range.clone()], sections.lengths)?;
+                        if group.len() > GLOBAL_FIELD_COUNT.checked_sub(field).unwrap_or_default() {
+                            return Err(malformed(
+                                "a Binary Global value group exceeds the Global fields",
+                            ));
+                        }
+                        Ok(group)
+                    },
+                )?;
+                let count = parsed.as_ref().map_or(1, Vec::len);
+                for (slot, value) in values
+                    .iter_mut()
+                    .skip(field)
+                    .zip(parsed.into_iter().flatten())
+                {
+                    *slot = value;
+                }
+                field = field
+                    .checked_add(count)
+                    .ok_or_else(|| malformed("Binary Global field ordinal overflows"))?;
+                Ok(())
+            })?;
+            if let Some((offset, error)) = failed {
+                let rest = child(offset..payload.window().len())?;
+                ctx.decode_parser_part(
+                    children,
+                    rest,
+                    spec("iges.binary_global_value", Vec::new())?,
+                    || -> Result<(), CodecError> { Err(error) },
+                )?;
+            }
+            Ok(values)
+        },
+    )?;
+    match values {
+        Some(values) => Ok(values),
+        None => absent(),
+    }
 }
 
 fn read_directory(
@@ -404,7 +514,7 @@ fn handoff(
     global: &crate::global::ResolvedGlobal,
     ctx: &DecodeContext<'_>,
 ) -> Result<BinaryParameter, CodecError> {
-    group::prune_failed_members(
+    group::keep_failed_members(
         &mut record,
         owner,
         directory,

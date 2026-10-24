@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The Binary admission and renderer use the same Global card boundaries.
 
-use super::{binary_point_file, lengths};
-use crate::binary::{normalize_global, parse_sections, read_global};
+use super::binary_point_file;
+use crate::binary::{normalize_global, parse_sections};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 #[test]
@@ -13,7 +13,7 @@ fn binary_global_admission_uses_the_actual_rendered_card_boundaries_and_keeps_re
     let (ctx, root) = DecodeContext::from_root_bytes(&source, &arena, &DecodePolicy::service())
         .expect("actual source session");
     let sections = parse_sections(root).expect("Binary sections");
-    let values = read_global(sections.global.window(), lengths()).expect("actual Global fields");
+    let values = super::global_values(&sections);
     let logical = normalize_global(&values).expect("logical Global text");
     let (crossed, _) = crate::global::parse_stream(&logical).expect("physical card interpretation");
     assert!(crossed.length_context().is_none());

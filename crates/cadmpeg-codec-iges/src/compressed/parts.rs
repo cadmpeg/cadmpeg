@@ -8,7 +8,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::source_fidelity::parts::{DecodeParts, ParserPartOutput, PartLevel, PartSpec};
 
-use super::{malformed, CARD_DATA_WIDTH, CARD_WIDTH};
+use super::{malformed, CARD_WIDTH, PARAMETER_DATA_WIDTH};
 use crate::directory::DirectoryEntry;
 use crate::global::ResolvedGlobal;
 
@@ -73,28 +73,25 @@ pub(crate) fn normalize(
         .skip(data_begin)
         .find_map(|(at, line)| (line.len() == CARD_WIDTH && line[72] == b'T').then_some(at))
         .ok_or_else(|| malformed("Terminate section is missing"))?;
-    let (parameter_delimiter, record_delimiter) =
-        super::compressed_delimiters(&payloads[global_begin..data_begin])?;
-    let mut global_views = Vec::new();
+    let mut parts = ParserPartOutput::new(cadmpeg_ir::CodecFormat::Iges);
+    let mut global_cards = Vec::new();
     for line in &lines[global_begin..data_begin] {
+        if line.payload.window().len() != CARD_WIDTH {
+            return Err(malformed("Global records must be 80 columns"));
+        }
         append(
             ctx,
-            &mut global_views,
-            line.payload
-                .child(line.payload.start(), line.payload.start() + CARD_DATA_WIDTH)
-                .ok_or_else(|| malformed("Global payload exceeds source"))?,
+            &mut global_cards,
+            crate::global::parts::GlobalCard {
+                start: line.extent.start(),
+                end: line.extent.end(),
+            },
         )?;
     }
-    let global_stream = ctx.concat_named_views(
-        &global_views,
-        &format!(
-            "iges/compressed/global/{}/{}",
-            ctx.capture_part_extent(source)?.stream(),
-            source.start()
-        ),
-    )?;
-    let (global, losses) = crate::global::parse_stream(global_stream.window())?;
-    let mut parts = ParserPartOutput::new(cadmpeg_ir::CodecFormat::Iges);
+    let (global, losses) =
+        crate::global::parts::parse_cards(ctx, source, &global_cards, &mut parts)?;
+    let (parameter_delimiter, record_delimiter) =
+        super::compressed_delimiters(global.parameter_delimiter, global.record_delimiter)?;
     let mut decoded = Vec::new();
     if data_begin < terminate {
         let extent = source
@@ -215,7 +212,19 @@ pub(crate) fn normalize(
                                         &entity.parameter_lines,
                                         &global,
                                         ctx,
-                                    )?;
+                                    )?
+                                    .map(|(record, failed)| {
+                                        admit_parameter_fields(
+                                            ctx,
+                                            extent,
+                                            &lines[parsed.next..end],
+                                            entry.entity_type,
+                                            record,
+                                            failed,
+                                            specifiers,
+                                        )
+                                    })
+                                    .transpose()?;
                                     Ok((entity, entry, parameter))
                                 },
                             )
@@ -395,6 +404,109 @@ fn admit_optional_specifiers(
         )?;
     }
     Ok(())
+}
+
+/// Each Parameter Data field after the entity type is one
+/// `iges.compressed_parameter_field` part. A field whose literal is not
+/// admitted gives up only its part; its slot is absent.
+fn admit_parameter_fields(
+    ctx: &DecodeContext<'_>,
+    record: View<'_>,
+    lines: &[source::Line<'_>],
+    entity_type: i64,
+    parameter: crate::parameter::ParameterRecord,
+    failed: Vec<crate::parameter::FailedField>,
+    output: &mut ParserPartOutput,
+) -> Result<crate::parameter::ParameterRecord, CodecError> {
+    if entity_type == 306 {
+        return Ok(parameter);
+    }
+    let mut failed = failed.into_iter().peekable();
+    for (index, token) in parameter.tokens().iter().enumerate().skip(1) {
+        let failure = failed.next_if(|field| field.index == index);
+        let (span, header) = match (token, &failure) {
+            (Some(token), _) => (
+                token.span.clone(),
+                match &token.value {
+                    crate::parameter::TokenValue::String(value) => Some(
+                        token
+                            .span
+                            .end
+                            .checked_sub(value.as_ref().len())
+                            .ok_or_else(|| {
+                                malformed("Parameter Hollerith header exceeds its field")
+                            })?,
+                    ),
+                    _ => None,
+                },
+            ),
+            (None, Some(field)) => (field.span.clone(), None),
+            (None, None) => continue,
+        };
+        let start = parameter_source_offset(lines, span.start)?;
+        let delimiter = parameter_source_offset(lines, span.end)?;
+        let end = delimiter
+            .checked_add(1)
+            .ok_or_else(|| malformed("Parameter field extent overflows"))?;
+        let extent = record
+            .child(start, end)
+            .ok_or_else(|| malformed("Parameter field exceeds its Data record"))?;
+        let mut framing = Vec::new();
+        if let Some(header_end) = header {
+            append(
+                ctx,
+                &mut framing,
+                u64_from_index(start)..u64_from_index(parameter_source_offset(lines, header_end)?),
+            )?;
+        }
+        for pair in lines.windows(2) {
+            if start < pair[0].payload.end() && pair[1].payload.start() < end {
+                append(
+                    ctx,
+                    &mut framing,
+                    u64_from_index(pair[0].payload.end())..u64_from_index(pair[1].payload.start()),
+                )?;
+            }
+        }
+        append(
+            ctx,
+            &mut framing,
+            u64_from_index(delimiter)..u64_from_index(end),
+        )?;
+        ctx.decode_parser_part(
+            output,
+            extent,
+            spec("iges.compressed_parameter_field", framing)?,
+            || match &failure {
+                Some(field) => Err(malformed(format!(
+                    "Parameter field {index}: {}",
+                    field.defect.describe()
+                ))),
+                None => Ok(()),
+            },
+        )?;
+    }
+    Ok(parameter)
+}
+
+/// The source offset of a logical offset in the record's 64-column Parameter
+/// stream. Each line holds columns 1-64 of its record stream; the columns
+/// after its last byte are padding with no source bytes.
+fn parameter_source_offset(
+    lines: &[source::Line<'_>],
+    logical: usize,
+) -> Result<usize, CodecError> {
+    let line = lines
+        .get(logical / PARAMETER_DATA_WIDTH)
+        .ok_or_else(|| malformed("Parameter field exceeds its lines"))?;
+    let column = logical % PARAMETER_DATA_WIDTH;
+    if column >= line.payload.window().len() {
+        return Err(malformed("Parameter field byte is line padding"));
+    }
+    line.payload
+        .start()
+        .checked_add(column)
+        .ok_or_else(|| malformed("Parameter field offset overflows"))
 }
 
 fn spec(name: &str, framing: Vec<Range<u64>>) -> Result<PartSpec, CodecError> {

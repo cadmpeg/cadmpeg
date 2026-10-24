@@ -417,21 +417,21 @@ impl Dependencies {
             || (pointer > 0 && self.failed.contains(&Address::Directory(offset)))
     }
 
-    pub(super) fn failed_member(&self, value: &super::super::BinaryValue) -> bool {
-        let offset = match value {
-            super::super::BinaryValue::Pointer(pointer) => {
-                u32::try_from(*pointer).ok().filter(|pointer| *pointer != 0)
-            }
-            super::super::BinaryValue::Integer(sequence) => u32::try_from(*sequence)
-                .ok()
-                .filter(|sequence| sequence % 2 == 1)
-                .and_then(|sequence| usize::try_from((sequence - 1) / 2).ok())
-                .and_then(|ordinal| self.directory_sources.get(ordinal).copied()),
-            super::super::BinaryValue::Default
-            | super::super::BinaryValue::Real(_)
-            | super::super::BinaryValue::String(_) => None,
+    /// The source sequence of the given-up Directory record that a pointer
+    /// value names by its source offset.
+    pub(super) fn failed_member_sequence(&self, value: &super::super::BinaryValue) -> Option<u32> {
+        let super::super::BinaryValue::Pointer(pointer) = value else {
+            return None;
         };
-        offset.is_some_and(|offset| self.failed.contains(&Address::Directory(offset)))
+        let offset = u32::try_from(*pointer)
+            .ok()
+            .filter(|pointer| *pointer != 0)?;
+        if !self.failed.contains(&Address::Directory(offset)) {
+            return None;
+        }
+        // Directory records are read in source order, so their offsets ascend.
+        let ordinal = self.directory_sources.binary_search(&offset).ok()?;
+        source_sequence(ordinal).ok()
     }
 
     fn require(&self, target: Address) -> Result<(), CodecError> {
