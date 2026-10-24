@@ -21124,3 +21124,30 @@ note = "Each marked reference has eleven bytes; K = 3."
 offset = 332
 size = 112
 note = "Scope suffix after the reference table."
+
+[[record]]
+name = "assembly_as_built_scope_owner_run"
+kind = "byte"
+section = "Assembly operands"
+anchor = "with a counted run of additional owners"
+parsed_by = ["crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_alignment.rs", "crates/cadmpeg-codec-f3d/src/validate.rs"]
+note = "This size-less byte record gives the common count and owner-run start in the 378-, 422-, and 444-byte As-built scopes. Offsets are relative to the primary indexed header. The count K controls the number of eleven-byte marked references; K = 0 stores no owner reference."
+
+[[record.gap]]
+offset = 0
+size = 43
+note = "Prefix before the common owner count."
+
+[[record.field]]
+name = "additional_owner_count"
+offset = 43
+type = "u32"
+source = "spec"
+anchor = "offset 43"
+
+[[record.field]]
+name = "additional_owner_references"
+offset = 47
+type = "bytes[11]"
+source = "spec"
+anchor = "`47 + 11k`"

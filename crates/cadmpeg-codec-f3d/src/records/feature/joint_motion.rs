@@ -62,6 +62,9 @@ pub(crate) struct DesignJointLimitLanes {
         deserialize_with = "deserialize_rest"
     )]
     pub(crate) rest: Option<DesignJointRest>,
+    /// The stored rest flag or value is invalid or incomplete.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) rest_malformed: bool,
 }
 
 /// The rest flag byte after a joint record's two limit flags, and the f64

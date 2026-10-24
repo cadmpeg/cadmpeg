@@ -430,6 +430,7 @@ pub(crate) fn project_assembly_joints(
     let mut paired_joints = 0_usize;
     let mut unprojected_members = 0_usize;
     let mut resting_joints = 0_usize;
+    let mut malformed_rest_joints = 0_usize;
     let mut native_angular_limits = 0_usize;
     for scope in scopes {
         let Some(stream) = native_stream(&scope.id) else {
@@ -472,6 +473,12 @@ pub(crate) fn project_assembly_joints(
                 }
                 if motion
                     .and_then(|motion| motion.limits.as_ref())
+                    .is_some_and(|lanes| lanes.rest_malformed)
+                {
+                    malformed_rest_joints += 1;
+                }
+                if motion
+                    .and_then(|motion| motion.limits.as_ref())
                     .and_then(|lanes| lanes.rest)
                     .is_some_and(|rest| rest.flag == 1)
                 {
@@ -502,6 +509,11 @@ pub(crate) fn project_assembly_joints(
     if native_angular_limits != 0 {
         losses.push(F3dLossCode::AssemblyJointAngularLimitsNative.note(format!(
             "{native_angular_limits} projected Design assembly joint(s) retain stored angular limits natively because the zero-lane freedom value is unsettled."
+        )));
+    }
+    if malformed_rest_joints != 0 {
+        losses.push(F3dLossCode::AssemblyJointRestUnprojected.note(format!(
+            "{malformed_rest_joints} projected Design assembly joint(s) have a stored rest that is malformed; the rest was refused and the limit lanes were retained."
         )));
     }
     if resting_joints != 0 {
@@ -1609,6 +1621,7 @@ mod tests {
                 minimum: -0.25,
                 values_offset: 823,
                 rest: None,
+                rest_malformed: false,
             }),
         };
         let project = |motions: &[DesignJointMotion]| {

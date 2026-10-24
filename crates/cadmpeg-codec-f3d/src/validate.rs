@@ -1881,7 +1881,7 @@ fn placement_ordered_references_hold(
     alignment: &records::feature::assembly::DesignAssemblyAlignment,
     owners: &[(u32, u32)],
 ) -> bool {
-    use crate::layout::assembly_as_built_scope_422 as layout;
+    use crate::layout::assembly_as_built_scope_owner_run as layout;
     let Some(count) = design::assembly::as_built_additional_owner_count(scope.frame_length())
     else {
         return false;

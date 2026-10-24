@@ -58,8 +58,9 @@ pub(crate) enum F3dLossCode {
     /// Design assembly joints projected as fixed because their freedom codes or
     /// limit lanes do not map to a joint kind.
     AssemblyJointMotionUndecoded,
-    /// Projected Design assembly joints whose joint record enables a rest
-    /// position, which the neutral joint does not carry; retained natively.
+    /// Projected Design assembly joints whose stored rest is malformed or
+    /// enabled. The neutral joint carries no rest; the native record retains
+    /// the valid rest or the malformed-rest mark.
     AssemblyJointRestUnprojected,
     /// Rotation limits retained natively because the zero-lane freedom value is unsettled.
     AssemblyJointAngularLimitsNative,

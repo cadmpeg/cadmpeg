@@ -247,7 +247,9 @@ fn joint_limits(
         .find(|&at| marked_record_reference(window, at) == Some(joint_index))?;
     let marker = joint_start + 11 + marker;
     let flags_at = marker + LIMIT_FLAGS_AFTER_SELF_REFERENCE;
-    let (first_flag, second_flag) = (*bytes.get(flags_at)?, *bytes.get(flags_at + 1)?);
+    let mut fields = View::over_retained(bytes);
+    fields.seek(flags_at)?;
+    let (first_flag, second_flag) = (fields.u8()?, fields.u8()?);
     if first_flag > 1 || second_flag > 1 {
         return None;
     }
@@ -257,12 +259,15 @@ fn joint_limits(
         return None;
     }
     let rest_value_at = marker + REST_VALUE_AFTER_SELF_REFERENCE;
-    let flag = *bytes.get(marker + REST_FLAG_AFTER_SELF_REFERENCE)?;
-    let [value] = crate::bytes::f64s_at::<1>(bytes, rest_value_at)?;
-    if flag > 1 || !value.is_finite() {
-        return None;
-    }
-    let rest = (flag != 0 || value.to_bits() != 0).then_some(DesignJointRest { flag, value });
+    let stored_rest = fields
+        .seek(marker + REST_FLAG_AFTER_SELF_REFERENCE)
+        .and_then(|()| fields.u8())
+        .zip(View::f64_le_at(bytes, rest_value_at))
+        .filter(|(flag, value)| *flag <= 1 && value.is_finite());
+    let rest_malformed = stored_rest.is_none();
+    let rest = stored_rest.and_then(|(flag, value)| {
+        (flag != 0 || value.to_bits() != 0).then_some(DesignJointRest { flag, value })
+    });
     Some(DesignJointLimitLanes {
         flags_offset: u64_from_index(flags_at),
         first_flag,
@@ -271,6 +276,7 @@ fn joint_limits(
         minimum,
         values_offset: u64_from_index(values_at),
         rest,
+        rest_malformed,
     })
 }
 

@@ -1810,7 +1810,7 @@ owners are the `OffsetX`, `OffsetY`, `OffsetZ`, and `AngleZ` lanes at
 owner-local ordinals zero through three, followed by the `K` additional owners in
 the order of their references; its alignment angle is the `AngleZ` value and
 its offsets are the other three. The four alignment owners appear once and
-contiguously in the reference table, and every additional owner appears in it. The 378-byte form stores nine reference-table entries, with the four alignment owners at zero-based positions five through eight. The reference-table counts are at offsets 163, 185, and 196 in the 378-, 422-, and 444-byte forms, respectively. The 444-byte form's additional owners are `SlideMinimum`, `SlideMaximum`, and `SlideRest`, in that order. `SlideRest` is the slide rest position. The 604-byte datum-envelope form, the 732-byte joint form, and
+contiguously in the reference table, and every additional owner appears in it. The 378-byte form stores nine reference-table entries, with the four alignment owners at zero-based positions five through eight. The reference-table counts are at offsets 163, 185, and 196 in the 378-, 422-, and 444-byte forms, respectively. The 444-byte form's additional owners are the parameters named `SlideMinimum`, `SlideMaximum`, and `SlideRest`, in that order. Its stored owner value and the joint record's rest value are equal in both 444-byte scopes: each stores `0.0` cm, equivalent to `0.0` mm. The 604-byte datum-envelope form, the 732-byte joint form, and
 the class-430/262 744- and 748-byte forms have exactly eight owners. Their
 four placement owners are at local ordinals zero through three, and their four
 alignment owners are at ordinals four through seven in the same angle, X, Y,

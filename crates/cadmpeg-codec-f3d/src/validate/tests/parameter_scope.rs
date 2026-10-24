@@ -109,3 +109,48 @@ fn placement_ordered_owner_count_and_references_match_the_frame() {
         &owners[..5]
     ));
 }
+
+#[test]
+fn validation_accepts_malformed_rest_with_retained_limits() {
+    use super::{
+        f3d_native_mut, f3d_with_smbh_and_protein, synthetic_geometry_smbh, Codec, Cursor,
+        DecodeOptions, F3dCodec,
+    };
+    use crate::records::feature::joint_motion::{DesignJointLimitLanes, DesignJointMotion};
+    let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let (mut ir, _, _) = decoded.into_parts();
+    let before = crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native(ctx, &ir).unwrap()
+    });
+    f3d_native_mut(&mut ir)
+        .design_joint_motions
+        .push(DesignJointMotion {
+            id: "f3d:Design/BulkStream.dat:design-joint-motion#12".into(),
+            joint_record_index: 10,
+            joint_byte_offset: 0,
+            motion_record_index: 12,
+            motion_byte_offset: 100,
+            freedoms: vec![crate::records::identity::Located {
+                value: 8,
+                offset: 150,
+            }],
+            entry_words: Vec::new(),
+            limits: Some(DesignJointLimitLanes {
+                flags_offset: 42,
+                first_flag: 1,
+                second_flag: 1,
+                maximum: 1.5,
+                minimum: -1.5,
+                values_offset: 54,
+                rest: None,
+                rest_malformed: true,
+            }),
+        });
+    let after = crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native(ctx, &ir).unwrap()
+    });
+    assert_eq!(before, after);
+}

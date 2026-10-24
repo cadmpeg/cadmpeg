@@ -61,7 +61,7 @@ pub(super) fn exact_assembly_alignment(
     )
 }
 
-use crate::layout::assembly_as_built_scope_422 as as_built;
+use crate::layout::assembly_as_built_scope_owner_run as as_built;
 
 /// Whether a placement-ordered `As-built` scope stores its owner run: the u32
 /// additional-owner count at offset 43 is the count its frame length implies, the

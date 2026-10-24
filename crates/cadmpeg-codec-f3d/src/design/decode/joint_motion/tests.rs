@@ -246,22 +246,120 @@ fn a_freedom_entry_outside_a_motion_record_is_ignored() {
 }
 
 #[test]
-fn malformed_rest_lanes_refuse_limits() {
+fn malformed_rest_lanes_keep_limits() {
+    use crate::records::feature::{
+        assembly::{
+            DesignAssemblyAlignment, DesignAssemblyAlignmentForm, DesignAssemblyAxialOperandTarget,
+            DesignAssemblyOperandFrame, DesignAssemblyOperandQualifier,
+        },
+        scope::{DesignFeatureKind, DesignParameterScope, DesignScopePayload},
+    };
     let mut bytes = Vec::new();
     joint(&mut bytes, 10, Some((1.5, -1.5)));
     let end = bytes.len();
-    assert!(super::joint_limits(&bytes, 0, end, 10).is_some());
+    let valid = super::joint_limits(&bytes, 0, end, 10).unwrap();
+    assert!(!valid.rest_malformed);
+    assert!(serde_json::to_value(&valid)
+        .unwrap()
+        .get("rest_malformed")
+        .is_none());
     let flag_at = 31 + super::REST_FLAG_AFTER_SELF_REFERENCE;
-    bytes[flag_at] = 2;
-    assert!(super::joint_limits(&bytes, 0, end, 10).is_none());
-    bytes[flag_at] = 1;
     let value_at = 31 + super::REST_VALUE_AFTER_SELF_REFERENCE;
-    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+    let cases = [
+        (2, 0.25, end),
+        (1, f64::NAN, end),
+        (1, f64::INFINITY, end),
+        (1, f64::NEG_INFINITY, end),
+        (1, 0.25, value_at + 7),
+    ];
+    for (flag, value, joint_end) in cases {
+        bytes[flag_at] = flag;
         bytes[value_at..value_at + 8].copy_from_slice(&value.to_le_bytes());
-        assert!(super::joint_limits(&bytes, 0, end, 10).is_none());
+        let lanes = super::joint_limits(&bytes, 0, joint_end, 10).unwrap();
+        assert_eq!((lanes.first_flag, lanes.second_flag), (1, 1));
+        assert_eq!((lanes.minimum, lanes.maximum), (-1.5, 1.5));
+        assert_eq!(lanes.flags_offset, valid.flags_offset);
+        assert_eq!(lanes.values_offset, valid.values_offset);
+        assert!(lanes.rest.is_none());
+        assert!(lanes.rest_malformed);
+        let stored = serde_json::to_value(&lanes).unwrap();
+        assert_eq!(stored["rest_malformed"], true);
+        assert_eq!(
+            serde_json::from_value::<crate::records::feature::joint_motion::DesignJointLimitLanes>(
+                stored
+            )
+            .unwrap(),
+            lanes
+        );
+        let mut scopes = Vec::new();
+        for index in [1, 2] {
+            let mut scope = DesignParameterScope::empty(
+                &format!("f3d:Design/BulkStream.dat:design-parameter-scope#{index}"),
+                DesignFeatureKind::JointOrigin,
+                index,
+            );
+            scope.with_joint_origin_transform(
+                crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
+            );
+            scopes.push(scope);
+        }
+        let mut scope = DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:design-parameter-scope#11",
+            DesignFeatureKind::Assemble,
+            11,
+        );
+        scope.try_edit(|draft| {
+            draft.payload = DesignScopePayload::Assemble(Some(
+                DesignAssemblyAlignment::try_new(0.0, [0.0; 3], Vec::new(), Some(
+                    DesignAssemblyAlignmentForm::qualified(
+                        [1, 2].map(|index| DesignAssemblyOperandFrame {
+                            reference_record_index: index, reference_offset: 0,
+                            transform: crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
+                            transform_offset: 0,
+                        }),
+                        [1, 2].map(|scope_record_index| DesignAssemblyOperandQualifier::AxialTarget {
+                            target: DesignAssemblyAxialOperandTarget::DocumentRootJointOrigin { scope_record_index },
+                        }),
+                    ),
+                )).unwrap(),
+            ));
+        }).unwrap();
+        scopes.push(scope);
+        for (code, limits_key, scale) in [(2, "angular_limits", 1.0), (8, "linear_limits", 10.0)] {
+            let motion = crate::records::feature::joint_motion::DesignJointMotion {
+                id: "f3d:Design/BulkStream.dat:design-joint-motion#12".into(),
+                joint_record_index: 10,
+                joint_byte_offset: 0,
+                motion_record_index: 12,
+                motion_byte_offset: cadmpeg_core::decode::u64_from_index(end),
+                freedoms: vec![crate::records::identity::Located {
+                    value: code,
+                    offset: 0,
+                }],
+                entry_words: Vec::new(),
+                limits: Some(lanes.clone()),
+            };
+            let projection = crate::design::assembly::project_assembly_joints(
+                &scopes,
+                &[],
+                &crate::design::components::ComponentInserts::default(),
+                &[motion],
+            );
+            assert_eq!(projection.joints.len(), 1);
+            let joint = serde_json::to_value(&projection.joints[0]).unwrap();
+            let limits = &joint["operands"]["kind"][limits_key];
+            assert_eq!(limits["minimum"], -1.5 * scale);
+            assert_eq!(limits["maximum"], 1.5 * scale);
+            assert_eq!(projection.losses.len(), 1);
+            assert_eq!(
+                projection.losses[0].code,
+                crate::loss::F3dLossCode::AssemblyJointRestUnprojected.kind()
+            );
+            assert!(projection.losses[0]
+                .message
+                .contains("stored rest that is malformed"));
+        }
     }
-    bytes[value_at..value_at + 8].copy_from_slice(&0.25f64.to_le_bytes());
-    assert!(super::joint_limits(&bytes, 0, value_at + 7, 10).is_none());
     assert!(super::joint_limits(&bytes, 0, flag_at, 10).is_none());
 }
 
