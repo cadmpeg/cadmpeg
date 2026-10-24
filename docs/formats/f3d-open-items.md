@@ -308,6 +308,16 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Need.** A writer must emit the selection kind, the origin, and the reference at offset 138 for a direction that does not come from a linear edge, and a reader must know whether a kind-`16` origin is a point of a planar face, an axis, or another entity.
 
+### DR-97. Freedom entry second value `0`
+
+**Question.** What does a freedom entry state when its second f64 is `0` rather than π?
+
+**Known.** `f3d.md` "Assembly operands" gives the freedom entry and its second f64. The one zero-lane entry seen is a word-`1` rotation entry whose joint record enables both limit flags, with a −58° minimum and a 0° maximum. Word-`1` rotation entries of unlimited joints and word-`1` translation entries of limited joints store π.
+
+**Need.** A reader must know whether the value bounds the freedom, so that it can tell whether a limited rotation's range is complete without it. Rotations saved with and without limits, and with ranges of different widths, would fix what it states.
+
+**Conflict.** Treating the value as a period or as a range bound states a meaning that one sample does not fix.
+
 ### DR-98. Persistent selection long-tail fields
 
 **Question.** What do the u32 and u64 fields in the fourteen-byte persistent selection tail select?
@@ -330,9 +340,9 @@ the native feature when a fixed lane carries a symmetric distance.
 
 ### DR-82. Other joint freedom codes and the limit flags
 
-**Question.** Which degrees of freedom do freedom codes other than `1`, `2`, and `8` name, what do the two joint-record limit flag bytes select, and in which unit is a translation limit stored?
+**Question.** Which degrees of freedom do freedom codes other than `1`, `2`, and `8` name, and what do the two joint-record limit flag bytes select, and does the 444-byte `As-built` form's `SlideRest` owner hold the joint-record rest value?
 
-**Known.** `f3d.md` "Assembly operands" gives the joint and motion records, the freedom entry, codes `1`, `2`, and `8`, and the limit lanes. Freedom codes `0`, `6`, and `7` also occur, alone and in pairs such as `2` with `7`, `0` with `8`, and `2` with `6` and `7`. Both flags are `1` on a joint with a minimum and a maximum.
+**Known.** `f3d.md` "Assembly operands" gives the joint and motion records, the freedom entry, codes `1`, `2`, and `8`, and the limit lanes. Freedom codes `0`, `6`, and `7` also occur, alone and in pairs such as `2` with `7`, `0` with `8`, and `2` with `6` and `7`. Both flags are `1` on a joint with a minimum and a maximum. A slide whose joint record stores −0.5 and 1.6 has `SlideMinimum` and `SlideMaximum` owners of −5 mm and 16 mm, so translation limits are in centimetres. The 444-byte `As-built` form adds `SlideMinimum`, `SlideMaximum`, and `SlideRest` owners at local ordinals four, five, and six. Where both a `SlideRest` owner and a joint-record rest value are stored, both are `0.0`, so the stored values do not show whether the owner holds the rest value. In both 444-byte scopes, its owner stores f64 `0.0` cm and the linked joint rest lane stores f64 `0.0` cm (`0.0` mm). The two value pairs agree; the name is not the only evidence. Both joint rest flags are `1`.
 
 **Need.** Cylindrical, pin-slot, planar, and ball joints combine freedoms. A joint with only one limit needs the flag that enables it.
 
