@@ -34,6 +34,7 @@ use crate::options::{StepSchema, StepWriteOptions};
 use crate::writer::{refs, string, Emitter, Ref};
 
 pub(crate) mod approximation;
+mod implicit_outer;
 mod non_manifold;
 mod ownership;
 mod wire;
@@ -311,6 +312,9 @@ pub(crate) struct Builder<'a> {
     /// Whole-period parameter-space shift per coedge that joins its pcurve to
     /// the previous pcurve of its loop, computed once over every face.
     pcurve_period_shifts: HashMap<&'a str, [f64; 2]>,
+    /// The outer bound of each face whose outer boundary is implicit,
+    /// computed once over every face.
+    implicit_outer_bounds: HashMap<&'a str, implicit_outer::OuterBound>,
     /// Helix constructions written as fitted B-splines because they carry no
     /// solved carrier.
     fitted_helix_curves: BTreeSet<String>,
@@ -548,6 +552,7 @@ impl<'a> Builder<'a> {
             written_procedural_surfaces: BTreeSet::new(),
             written_procedural_curves: BTreeSet::new(),
             pcurve_period_shifts: HashMap::new(),
+            implicit_outer_bounds: HashMap::new(),
             fitted_helix_curves: BTreeSet::new(),
             fitted_helix_surfaces: BTreeSet::new(),
             failed_helix_fits: BTreeMap::new(),
@@ -593,6 +598,7 @@ impl<'a> Builder<'a> {
             construction_supports,
         };
         builder.pcurve_period_shifts = builder.loop_pcurve_period_shifts()?;
+        builder.implicit_outer_bounds = builder.implicit_outer_bounds()?;
         Ok(builder)
     }
 
@@ -2574,6 +2580,14 @@ impl<'a> Builder<'a> {
         let surface_id = face.surface.as_str();
         let same_sense = matches!(face.sense, Sense::Forward) != reversed;
         let bound_flag = if reversed { ".F." } else { ".T." };
+        let rectangle = match self.implicit_outer_bounds.get(face_id).cloned() {
+            None => None,
+            Some(implicit_outer::OuterBound::Rectangle(rectangle)) => Some(*rectangle),
+            Some(implicit_outer::OuterBound::Unwritable(reason)) => {
+                self.implicit_outer_loss(face_id, reason);
+                return None;
+            }
+        };
 
         // Surface emission admits either a writable construction or a solved
         // carrier. An absent or opaque solved cache cannot veto a construction.
@@ -2583,6 +2597,16 @@ impl<'a> Builder<'a> {
         };
 
         let mut bound_refs = Vec::new();
+        if let Some(rectangle) = rectangle {
+            let Some(bound) = self.emit_parameter_rectangle(rectangle, surf_ref, bound_flag) else {
+                self.implicit_outer_loss(
+                    face_id,
+                    "a side of the parameter rectangle is not writable",
+                );
+                return None;
+            };
+            bound_refs.push(bound);
+        }
         for loop_id in &face.loops {
             let lid = loop_id.as_str();
             if let Some(loop_ref) = self.emit_loop(lid) {
@@ -2630,6 +2654,16 @@ impl<'a> Builder<'a> {
         self.face_step_refs
             .insert(face_id.to_string(), advanced_face);
         Some(advanced_face)
+    }
+
+    fn implicit_outer_loss(&mut self, face_id: &str, reason: &str) {
+        self.topology_relation_loss(
+            format!("face:{face_id}:implicit-outer"),
+            StepLossCode::FaceImplicitOuterBoundUnwritable,
+            format!(
+                "face {face_id} was omitted because STEP has no bound for its implicit outer boundary: {reason}"
+            ),
+        );
     }
 
     fn emit_loop(&mut self, loop_id: &str) -> Option<Ref> {
@@ -3090,16 +3124,7 @@ impl<'a> Builder<'a> {
         } else {
             geometry::pcurve(&mut self.emitter, &aligned)?
         };
-        let context = if let Some(context) = self.pcurve_context {
-            context
-        } else {
-            let context = self.emitter.emit_raw(
-                "GEOMETRIC_REPRESENTATION_CONTEXT",
-                "( GEOMETRIC_REPRESENTATION_CONTEXT(2) PARAMETRIC_REPRESENTATION_CONTEXT() REPRESENTATION_CONTEXT('uv','2D') )",
-            );
-            self.pcurve_context = Some(context);
-            context
-        };
+        let context = self.pcurve_context();
         let representation = self.emitter.emit(
             "DEFINITIONAL_REPRESENTATION",
             &format!("'',({curve}),{context}"),
@@ -3108,6 +3133,19 @@ impl<'a> Builder<'a> {
             self.emitter
                 .emit("PCURVE", &format!("'',{surface},{representation}")),
         )
+    }
+
+    /// The parameter-space representation context shared by every pcurve.
+    fn pcurve_context(&mut self) -> Ref {
+        if let Some(context) = self.pcurve_context {
+            return context;
+        }
+        let context = self.emitter.emit_raw(
+            "GEOMETRIC_REPRESENTATION_CONTEXT",
+            "( GEOMETRIC_REPRESENTATION_CONTEXT(2) PARAMETRIC_REPRESENTATION_CONTEXT() REPRESENTATION_CONTEXT('uv','2D') )",
+        );
+        self.pcurve_context = Some(context);
+        context
     }
 
     /// The nonzero pcurve period shifts of every loop on a periodic surface.
