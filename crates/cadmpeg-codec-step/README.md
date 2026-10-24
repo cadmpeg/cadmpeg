@@ -56,6 +56,16 @@ and rational or non-rational NURBS surfaces. Supported curve carriers are lines,
 circles, ellipses, parabolas, hyperbolas, and rational or non-rational NURBS
 curves. The writer preserves shared carriers by reusing STEP instances.
 
+Bodies absent from every product definition's body list are written once in
+model coordinates in a representation linked to the root product. Claimed
+bodies keep their component ownership and occurrence placements. Without a
+unique local root product, the writer creates a separate model product for
+the unclaimed bodies. The stable
+`step/product.body-without-representation` loss code reports the count of
+bodies assigned to the root. Its message states this assignment. The code,
+taxonomy, and severity remain unchanged, so `--reject-lossy` still refuses
+this assignment.
+
 A procedural surface or curve with no STEP construction and no writable solved
 carrier is written as a sampled cubic `B_SPLINE_SURFACE_WITH_KNOTS` or
 `B_SPLINE_CURVE_WITH_KNOTS` carrier when cadmpeg can evaluate it over a finite

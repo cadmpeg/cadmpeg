@@ -613,27 +613,6 @@ impl<'a> Builder<'a> {
     }
 
     pub(crate) fn build(&mut self) {
-        if !self.ir.model.product_definitions.is_empty() {
-            let owned = self
-                .ir
-                .model
-                .product_definitions
-                .iter()
-                .flat_map(|product| &product.bodies)
-                .collect::<BTreeSet<_>>();
-            let count = self
-                .ir
-                .model
-                .bodies
-                .iter()
-                .filter(|body| !owned.contains(&body.id))
-                .count();
-            if count != 0 {
-                self.loss(StepLossCode::BodyWithoutProductRepresentation, format!(
-                    "{count} body record(s) have no product representation; their shape items are not attached to a representation"
-                ));
-            }
-        }
         let surface_regions = self
             .ir
             .model
@@ -1560,6 +1539,12 @@ impl<'a> Builder<'a> {
             representations.insert(product.id.clone(), representation);
         }
 
+        let root_representation = root_product
+            .or_else(|| (occurrences.is_empty() && products.len() == 1).then(|| &products[0].id))
+            .and_then(|product| representations.get(product))
+            .copied();
+        self.emit_unclaimed_body_representation(context, root_representation);
+
         for (occurrence, &occurrence_name) in occurrences.iter().zip(&occurrence_names) {
             let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent else {
                 let transform = match occurrence.effective_transform() {
@@ -1670,6 +1655,70 @@ impl<'a> Builder<'a> {
                 &format!("{relationship},{usage_shape}"),
             );
         }
+    }
+
+    fn emit_unclaimed_body_representation(&mut self, context: Ref, root: Option<Ref>) {
+        let owned = self
+            .ir
+            .model
+            .product_definitions
+            .iter()
+            .flat_map(|product| &product.bodies)
+            .collect::<BTreeSet<_>>();
+        let bodies = self
+            .ir
+            .model
+            .bodies
+            .iter()
+            .filter(|body| !owned.contains(&body.id))
+            .filter(|body| self.body_item_refs.contains_key(body.id.as_str()))
+            .collect::<Vec<_>>();
+        if bodies.is_empty() {
+            return;
+        }
+        let mut items = bodies
+            .iter()
+            .flat_map(|body| &self.body_item_refs[body.id.as_str()])
+            .copied()
+            .collect::<Vec<_>>();
+        let kind = if bodies.iter().all(|body| {
+            body.kind == BodyKind::Solid
+                && body
+                    .transform
+                    .is_none_or(|transform| is_identity(&transform.rows()))
+        }) {
+            "ADVANCED_BREP_SHAPE_REPRESENTATION"
+        } else {
+            "SHAPE_REPRESENTATION"
+        };
+        items.push(geometry::placement(
+            &mut self.emitter,
+            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            cadmpeg_ir::units::UnitVector3::Z_AXIS,
+            cadmpeg_ir::units::UnitVector3::X_AXIS,
+        ));
+        let representation = self
+            .emitter
+            .emit(kind, &format!("'',{},{context}", refs(&items)));
+        if let Some(root) = root {
+            self.emitter.emit(
+                "SHAPE_REPRESENTATION_RELATIONSHIP",
+                &format!("'','',{root},{representation}"),
+            );
+        } else {
+            let shape = self.emit_product_structure();
+            self.emitter.emit(
+                "SHAPE_DEFINITION_REPRESENTATION",
+                &format!("{shape},{representation}"),
+            );
+        }
+        self.loss(
+            StepLossCode::BodyWithoutProductRepresentation,
+            format!(
+                "{} body record(s) not assigned to a component were written in the root product in model coordinates",
+                bodies.len()
+            ),
+        );
     }
 
     fn emit_context(&mut self) -> Ref {
