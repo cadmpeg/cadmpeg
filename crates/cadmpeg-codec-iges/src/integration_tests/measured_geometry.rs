@@ -18,7 +18,9 @@ use crate::test_support::test_closed_cylinder::{
     solid_cylinder, solid_cylinder_without_curve_roles, CYLINDER_HEIGHT, CYLINDER_RADIUS,
 };
 use crate::test_support::test_drawing_and_trimming::test_boundary_direction::trimmed_nurbs_patch_file;
-use crate::test_support::test_drawing_and_trimming::trimmed_plane_with_inner_loop_file;
+use crate::test_support::test_drawing_and_trimming::{
+    reversed_face_use_multi_pcurve_loop_file, trimmed_plane_with_inner_loop_file,
+};
 use crate::test_support::test_owned::explicit_void_solid_file;
 use crate::{IgesCodec, IgesVersion};
 
@@ -28,6 +30,11 @@ const TEST_ABSOLUTE_FLOOR: f64 = 1.0e-9;
 
 /// The body rows of `ir`, measured in model space.
 fn measured(ir: &CadIr) -> MeasureReport {
+    measured_rows(ir, &Selection::default())
+}
+
+/// The rows of `ir` that `selection` names, measured in model space.
+fn measured_rows(ir: &CadIr, selection: &Selection) -> MeasureReport {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let ctx = DecodeContext::for_loaded_input(&arena, &policy, 0).expect("context");
@@ -37,7 +44,7 @@ fn measured(ir: &CadIr) -> MeasureReport {
         geometry_transferred: true,
     };
     let report = Measurer::new(input, MeasureOptions::default())
-        .measure(&ctx, &Selection::default())
+        .measure(&ctx, selection)
         .expect("measured");
     ctx.finish_session().expect("session stays unrefused");
     report
@@ -193,4 +200,26 @@ fn topology_owned_curves_without_a_role_round_trip_as_one_solid() {
     let comparison = compare(&ir, &before, &written, &after, &CompareOptions::default())
         .expect("one body pair fits the pair allowance");
     assert_eq!(comparison.verdict(), Verdict::Agree);
+}
+
+/// The unit square face used through a false `OF`: its coedge with two
+/// parameter curves resolves as one chain from the coedge's start to its end,
+/// and the face measures area 1, before and after a write round trip.
+#[test]
+fn reversed_face_use_parameter_curve_chain_measures_the_face() {
+    let ir = decoded(reversed_face_use_multi_pcurve_loop_file());
+    let selection = Selection {
+        all_faces: true,
+        ..Selection::default()
+    };
+    for model in [round_tripped(&ir), ir] {
+        let report = measured_rows(&model, &selection);
+        let [face] = report.faces().as_slice() else {
+            panic!("one face row");
+        };
+        assert!(face.caveats().is_empty());
+        assert!(face.unavailable_codes().is_empty());
+        let area = face.measures().area().measured().expect("measured area");
+        assert_close(area.value().value.get(), 1.0, area.numeric_error().get());
+    }
 }

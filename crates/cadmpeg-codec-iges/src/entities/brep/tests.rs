@@ -14,7 +14,9 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Coedge, Edge, Sense};
 use cadmpeg_ir::CadIr;
 
-use crate::test_support::test_drawing_and_trimming::explicit_multi_pcurve_loop_file_with_first_edge;
+use crate::test_support::test_drawing_and_trimming::{
+    explicit_multi_pcurve_loop_file_with_first_edge, reversed_face_use_multi_pcurve_loop_file,
+};
 use crate::test_support::test_owned::explicit_void_solid_file;
 use crate::test_support::test_solids_and_structure::{
     explicit_non_manifold_open_shell_file, explicit_open_shell_file,
@@ -604,8 +606,16 @@ fn brep_projected_pcurve_use_adds_one_model_pcurve() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let mut candidate = super::ModelDraft::new();
-    let projected =
-        super::project_pcurve_uses(&mut candidate, &uses, resolved, None, &stem, &ctx).unwrap();
+    let projected = super::project_pcurve_uses(
+        &mut candidate,
+        &uses,
+        resolved,
+        Sense::Forward,
+        None,
+        &stem,
+        &ctx,
+    )
+    .unwrap();
     assert_eq!(projected.len(), 1);
     assert_eq!(candidate.model().pcurves.len(), 1);
 }
@@ -944,4 +954,105 @@ fn pole_use_follows_the_next_edge_use_of_a_reversed_face() {
         super::vertex_use_anchor(&BTreeMap::new(), 0, 1, Sense::Reversed),
         None
     );
+}
+
+/// A face used through a false `OF` traverses its loop backward, so the two
+/// parameter curves of its first edge use are listed from the coedge's start
+/// to its end, each on the reversed interval of its parameter curve.
+#[test]
+fn reversed_face_use_lists_parameter_curves_in_traversal_order() {
+    use cadmpeg_ir::eval::admission::EvaluationAdmission;
+
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(reversed_face_use_multi_pcurve_loop_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let ir = result.ir();
+    let [face] = ir.model.faces.as_slice() else {
+        panic!("one face");
+    };
+    assert_eq!(face.sense, Sense::Reversed);
+    let surface = ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == face.surface)
+        .unwrap();
+    let [coedge] = ir
+        .model
+        .coedges
+        .iter()
+        .filter(|coedge| coedge.pcurves.len() == 2)
+        .collect::<Vec<_>>()[..]
+    else {
+        panic!("one coedge has two parameter curves");
+    };
+    assert_eq!(coedge.sense, Sense::Reversed);
+    let edge = ir
+        .model
+        .edges
+        .iter()
+        .find(|edge| edge.id == coedge.edge)
+        .unwrap();
+    let position = |vertex_id: &VertexId| {
+        let vertex = ir
+            .model
+            .vertices
+            .iter()
+            .find(|vertex| vertex.id == *vertex_id)
+            .unwrap();
+        ir.model
+            .points
+            .iter()
+            .find(|point| point.id == vertex.point)
+            .unwrap()
+            .position()
+            .get()
+    };
+    let mut previous = position(&edge.end);
+    for pcurve_use in &coedge.pcurves {
+        let pcurve = ir
+            .model
+            .pcurves
+            .iter()
+            .find(|pcurve| pcurve.id == pcurve_use.pcurve)
+            .unwrap();
+        let [start, end] = pcurve_use
+            .parameter_range
+            .expect("a backward use states its interval")
+            .endpoints();
+        assert!(end < start, "the use runs its parameter curve backward");
+        let point = |parameter| {
+            let uv = cadmpeg_ir::eval::decode::pcurve_uv(
+                EvaluationAdmission::Standard,
+                &pcurve.geometry,
+                parameter,
+            )
+            .unwrap()
+            .get();
+            cadmpeg_ir::eval::model_surface_point(
+                EvaluationAdmission::Standard,
+                ir,
+                &surface.geometry,
+                uv.u,
+                uv.v,
+            )
+            .unwrap()
+            .get()
+        };
+        assert!(
+            point(start).distance(previous) <= EPS_EDGE_ENDPOINT_MATCH,
+            "each use starts where the chain stands"
+        );
+        previous = point(end);
+    }
+    assert!(
+        previous.distance(position(&edge.start)) <= EPS_EDGE_ENDPOINT_MATCH,
+        "the chain ends at the coedge's end"
+    );
+    let validation =
+        cadmpeg_ir::validate_neutral(ir, Vec::new()).expect("validate the neutral model");
+    assert!(validation.is_ok());
 }

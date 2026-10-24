@@ -1467,17 +1467,31 @@ pub(crate) fn explicit_multi_pcurve_loop_file() -> Vec<u8> {
 }
 
 pub(crate) fn explicit_multi_pcurve_loop_file_with_first_pcurve(first_pcurve: &str) -> Vec<u8> {
-    explicit_multi_pcurve_loop_file_with_carriers(first_pcurve, "110,0,0,0,1,0,0;")
+    explicit_multi_pcurve_loop_file_with_carriers(first_pcurve, "110,0,0,0,1,0,0;", true)
 }
 
 pub(crate) fn explicit_multi_pcurve_loop_file_with_first_edge(first_edge: &str) -> Vec<u8> {
     explicit_multi_pcurve_loop_file_with_carriers(
         "126,1,1,1,0,1,0,0,0,1,1,1,1,0,0,0,0.5,0,0,0,1,0,0,1;",
         first_edge,
+        true,
     )
 }
 
-fn explicit_multi_pcurve_loop_file_with_carriers(first_pcurve: &str, first_edge: &str) -> Vec<u8> {
+/// The multi-pcurve loop face used through a false Type 514 `OF` logical.
+pub(crate) fn reversed_face_use_multi_pcurve_loop_file() -> Vec<u8> {
+    explicit_multi_pcurve_loop_file_with_carriers(
+        "126,1,1,1,0,1,0,0,0,1,1,1,1,0,0,0,0.5,0,0,0,1,0,0,1;",
+        "110,0,0,0,1,0,0;",
+        false,
+    )
+}
+
+fn explicit_multi_pcurve_loop_file_with_carriers(
+    first_pcurve: &str,
+    first_edge: &str,
+    face_use_orientation: bool,
+) -> Vec<u8> {
     let mut entities = vec![
         OwnedTestEntity {
             entity_type: 116,
@@ -1567,7 +1581,7 @@ fn explicit_multi_pcurve_loop_file_with_carriers(first_pcurve: &str, first_edge:
             form: 2,
             label: "SHELL".into(),
             status: "00000000",
-            parameters: "514,1,25,1;".into(),
+            parameters: format!("514,1,25,{};", i32::from(face_use_orientation)),
         },
     ]);
     owned_test_file(&entities)
