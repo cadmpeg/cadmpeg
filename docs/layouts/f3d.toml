@@ -2501,6 +2501,110 @@ anchor = "marked references at offsets 29, 40, and 64 naming the final, first, a
 
 
 [[record]]
+name = "scale_legacy_uniform_309"
+kind = "byte"
+section = "3.1"
+anchor = "A legacy uniform `Scale` scope also has a 309-byte five-reference form"
+size = 309
+note = "Offsets are relative to the primary indexed header. The paired same-index header is outside this frame."
+parsed_by = ["crates/cadmpeg-codec-f3d/src/design/decode/scopes/direct_face.rs", "crates/cadmpeg-codec-f3d/src/design/decode/scopes/parameter_scope.rs"]
+
+[[record.field]]
+name = "operation_prefix"
+offset = 0
+type = "bytes[75]"
+source = "spec"
+anchor = "It uses the same 75-byte fixed operation prefix"
+
+[[record.field]]
+name = "null_guid_code_unit_count"
+offset = 75
+type = "u32"
+source = "spec"
+anchor = "A 36-code-unit LP-UTF16 null GUID starts at offset 75"
+value = 36
+
+[[record.field]]
+name = "null_guid"
+offset = 79
+type = "bytes[72]"
+source = "derived"
+anchor = "A 36-code-unit LP-UTF16 null GUID starts at offset 75"
+note = "The GUID follows its four-byte count and occupies two bytes per code unit."
+
+[[record.field]]
+name = "zero_before_reference_table"
+offset = 151
+type = "bytes[3]"
+source = "derived"
+anchor = "three zero bytes follow it"
+note = "The three zero bytes follow the GUID at offsets 79 through 150."
+value = [0, 0, 0]
+
+[[record.field]]
+name = "reference_count"
+offset = 154
+type = "u32"
+source = "spec"
+anchor = "The five-entry ordered reference table starts at offset 154"
+value = 5
+
+[[record.field]]
+name = "references"
+offset = 158
+type = "bytes[55]"
+source = "derived"
+anchor = "The five-entry ordered reference table starts at offset 154"
+note = "Five eleven-byte references follow the four-byte count."
+
+[[record.field]]
+name = "history_state_id"
+offset = 213
+type = "u32"
+source = "spec"
+anchor = "The current history-state identity is at offset 213"
+
+[[record.field]]
+name = "kind_code_unit_count"
+offset = 217
+type = "u32"
+source = "spec"
+anchor = "the kind code-unit count is at offset 217"
+value = 5
+
+[[record.field]]
+name = "kind"
+offset = 221
+type = "bytes[10]"
+source = "spec"
+anchor = "`Scale` starts at offset 221"
+
+[[record.field]]
+name = "feature_ordinal"
+offset = 231
+type = "u32"
+source = "spec"
+anchor = "The feature ordinal starts the 78-byte fixed tail at offset 231"
+
+[[record.gap]]
+offset = 235
+size = 27
+note = "Common fixed-tail fields between the ordinal and preceding history state."
+
+[[record.field]]
+name = "previous_history_state_id"
+offset = 262
+type = "u32"
+source = "spec"
+anchor = "The preceding history-state identity is at offset 262"
+
+[[record.gap]]
+offset = 266
+size = 43
+note = "Common fixed-tail fields up to the paired header at offset 309."
+
+
+[[record]]
 name = "design_body_map_prefix_10"
 kind = "byte"
 section = "3.1"

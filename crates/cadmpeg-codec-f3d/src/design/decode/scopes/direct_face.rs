@@ -330,10 +330,28 @@ pub(super) fn exact_scale_operation(
                     center,
                 )
             } else if scope.kind() == scope::DesignFeatureKind::Scale
-                && matches!(scope.reference_members().len(), 5 | 6)
-                && scope.frame_length()
-                    == 307 + u64::try_from(scope.reference_members().len() - 5).ok()? * 11
+                && matches!(
+                    (scope.frame_length(), scope.reference_members().len()),
+                    (307 | 309, 5) | (318, 6)
+                )
             {
+                if scope.frame_length() == 309 {
+                    let (guid, _) = crate::bytes::lp_utf16_bounded_view(
+                        bytes,
+                        start.checked_add(75)?,
+                        36..=36,
+                    )?;
+                    if !guid.eq_str("00000000-0000-0000-0000-000000000000")
+                        || View::u24_le_at(bytes, start.checked_add(151)?)? != 0
+                        || scope.reference_count_offset() != scope.byte_offset().checked_add(154)?
+                        || scope.kind_offset() != scope.byte_offset().checked_add(221)?
+                        || scope.feature_ordinal_offset() != scope.byte_offset().checked_add(231)?
+                        || scope.previous_history_state_id_offset()
+                            != scope.byte_offset().checked_add(262)
+                    {
+                        return None;
+                    }
+                }
                 let mut references = scope.reference_members().values();
                 let factor_record_index = references.next()?;
                 let body_group_record_index = references.next()?;
@@ -377,3 +395,6 @@ pub(super) fn exact_scale_operation(
     })()
     .transpose()
 }
+
+#[cfg(test)]
+mod tests;
