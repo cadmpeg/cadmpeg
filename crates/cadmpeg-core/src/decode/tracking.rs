@@ -12,6 +12,7 @@ mod batches;
 pub use authority::DecodeSessionToken;
 mod owners;
 mod part_prefix;
+mod source_extent;
 mod streams;
 use super::{
     u64_from_index, DecodePolicy, ResourceDimension, ResourceFailure, ResourceLimit, SpaceId, View,
