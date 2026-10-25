@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Source-framing and partial-part contract checks.
+//! Source-framing, partial-part and golden data contract checks.
 
+mod conformance;
+mod golden_data;
 mod partial_parts;
 
 #[cfg(feature = "step")]

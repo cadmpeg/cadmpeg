@@ -16,6 +16,7 @@ pub mod bytes;
 pub mod comparison;
 pub mod compound;
 pub mod contract;
+pub mod data_checks;
 pub mod decode;
 pub mod depth;
 pub mod detection;
