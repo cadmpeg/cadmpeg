@@ -442,6 +442,21 @@ impl<'a> DecodeContext<'a> {
         Ok(())
     }
 
+    /// Reserves temporary UTF-8 string storage without charging retained output.
+    pub fn reserve_text_working(
+        &self,
+        text: &mut String,
+        additional: usize,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        if let Some(refusal) = self.resource_refusal() {
+            return Err(refusal.into());
+        }
+        text.try_reserve_exact(additional)
+            .map_err(|_| self.allocation_failed(u64_from_index(additional), operation))?;
+        Ok(())
+    }
+
     /// Charges admitted entities.
     pub fn charge_entities(&self, count: u64, operation: &'static str) -> Result<(), CodecError> {
         self.budget.charge_entities(count, operation)
@@ -868,6 +883,7 @@ impl<'a> ExpandWriter<'_, 'a> {
 mod tests {
     mod source_end;
     mod working_storage;
+    mod working_text;
 
     use super::{ByteRange, DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
 
