@@ -280,6 +280,16 @@ third axis after scale. A chart reflection retains the curve parameter and rever
 the chart handedness; it does not reverse the curve parameter.
 For a bounded circle or ellipse edge, the neutral start parameter is wrapped into `[0, 2π)` and
 the serialized sweep is preserved. A full-period edge retains its serialized phase.
+A non-periodic B-spline's evaluable domain is bounded by its degree-th and pole-count-th expanded
+knots. A 3D edge endpoint outside that domain by at most `1e-12 * max(1, abs(boundary_knot))`
+normalizes to the boundary knot. Each normalization neighborhood is limited to one quarter of
+the domain width. Interior endpoints and larger excursions retain their values. Native edge
+ranges and knot values remain independently retained.
+
+A periodic B-spline pcurve's period is the positive width of its evaluable knot domain. Its
+coedge range retains the unwrapped phase and may cross the knot-domain seam. Point and derivative
+evaluation reduce the parameter by whole periods into that domain. A use spans at most one
+period in either direction; an explicit trimmed carrier keeps its own bounded interval.
 Transient table indices do not constitute persistent element identity. Persistent element names
 exist only when an element-map record supplies them.
 
