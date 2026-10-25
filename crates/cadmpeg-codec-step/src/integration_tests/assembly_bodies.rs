@@ -33,6 +33,7 @@ fn product(name: &str, bodies: Vec<BodyId>) -> ProductDefinition {
         part_number: Some(name.into()),
         bom_properties: BTreeMap::new(),
         bodies,
+        sketches: Vec::default(),
         native_ref: None,
     }
 }

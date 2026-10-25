@@ -50,6 +50,38 @@ fn dimension_expression(value: Option<f64>) -> Result<String, cadmpeg_core::Code
         .map(std::option::Option::unwrap_or_default)
 }
 
+pub(in crate::decode) fn dimension_measurement_value(
+    dimension: &crate::feature::definitions::FeatureDimension,
+) -> Option<f64> {
+    let stored = dimension.value.resolved()?;
+    let value = if dimension.dimension_type == 4 {
+        2.0 * stored
+    } else {
+        stored
+    };
+    value.is_finite().then_some(value)
+}
+
+pub(in crate::decode) fn diameter_projection_loss(
+    scan: &ContainerScan,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    let count = scan
+        .features
+        .definitions
+        .iter()
+        .filter_map(|definition| definition.dimensions.as_ref())
+        .flat_map(|table| &table.rows)
+        .filter(|dimension| {
+            dimension.dimension_type == 4
+                && dimension.value.resolved().is_some()
+                && dimension_measurement_value(dimension).is_none()
+        })
+        .count();
+    (count != 0).then(|| crate::loss::CreoLossCode::SectionDiameterValueUnresolved.note(format!(
+        "{count} diameter parameter(s) retain native radius values whose doubled values are not finite."
+    )))
+}
+
 fn push_feature_source_parameter(
     content: &mut cadmpeg_ir::features::FeatureContent,
     id: ParameterId,
@@ -336,7 +368,7 @@ pub(in super::super) fn transfer_feature_dimensions(
         if let Some(auxiliary) = dimension.auxiliary_value {
             insert_dimension_property(&mut properties, "auxiliary_value", auxiliary);
         }
-        if dimension.value.resolved().is_none() {
+        if dimension_measurement_value(dimension).is_none() {
             insert_dimension_property(&mut properties, "value_state", "unresolved");
         }
         if let Some(token) = dimension.value.unresolved_token() {
@@ -350,11 +382,9 @@ pub(in super::super) fn transfer_feature_dimensions(
                 insert_dimension_property(&mut properties, "value_token", HexToken(token));
             }
         }
-        let expression = dimension_expression(dimension.value.resolved())?;
-        let value = dimension
-            .value
-            .resolved()
-            .and_then(|value| match dimension.unit() {
+        let expression = dimension_expression(dimension_measurement_value(dimension))?;
+        let value =
+            dimension_measurement_value(dimension).and_then(|value| match dimension.unit() {
                 crate::feature::definitions::DimensionUnit::Radians => {
                     Angle::new(value).map(ParameterValue::Angle)
                 }

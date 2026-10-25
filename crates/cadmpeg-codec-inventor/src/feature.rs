@@ -17,12 +17,12 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::Sketch;
 use cadmpeg_ir::{
     features::{
-        edge_treatments::{ChamferGroup, ChamferSpec, FilletGroup, RadiusSpec},
+        edge_treatments::{ChamferForm, ChamferGroup, ChamferSpec, FilletGroup, RadiusSpec},
         holes::HoleKind,
-        BooleanOp, DesignParameter, DistinctMembers, ExtrudeDirection, ExtrudeExtent, ExtrudeSide,
-        ExtrudeStart, ExtrusionDirectionSource, FaceSelection, Feature, FeatureContent,
-        FeatureDefinition, FeatureId, FeatureOperation, FeatureResultTopology, LinearTermination,
-        ParameterValue,
+        BooleanOp, DesignParameter, DistinctMembers, EdgeSelection, ExtrudeDirection,
+        ExtrudeExtent, ExtrudeSide, ExtrudeStart, ExtrusionDirectionSource, FaceSelection, Feature,
+        FeatureContent, FeatureDefinition, FeatureId, FeatureOperation, FeatureResultTopology,
+        LinearTermination, ParameterValue,
     },
     scalar::{Angle, Length},
 };
@@ -37,6 +37,7 @@ use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 use crate::{design::DesignInventory, sketch::SketchInventory};
 
+pub(crate) mod base;
 mod edge_selection;
 mod history;
 mod hole;
@@ -514,14 +515,14 @@ pub(crate) struct PmDcEntityStyleLinkPayload {
     entity_type: u32,
 }
 
-/// Link from a selection to one entity of a `PmDc` kernel body.
+/// Link from a selection to one entity of its segment's kernel body.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct PmDcKernelEntityLinkPayload {
     save_version_major: u8,
     header_value: u32,
     header_id: u16,
     pub(crate) selection_source: u32,
-    state: u8,
+    pub(crate) state: u8,
     pub(crate) body: crate::pmdc::PmDcReference,
     entity_id: u32,
     entity_type: u32,
@@ -575,7 +576,7 @@ pub(crate) fn inventory(
         issues: Vec::new(),
     };
     for segment in &document.segments {
-        if segment.kind != SegmentKind::PmDc {
+        if !matches!(segment.kind, SegmentKind::PmDc | SegmentKind::PmBRep) {
             continue;
         }
         let Some(version) = segment.registry.map(|join| join.version_major) else {
@@ -599,6 +600,9 @@ pub(crate) fn inventory(
                 .entry(record.ordinal)
                 .and_modify(|previous| *previous = None)
                 .or_insert_with(|| Some(type_id_string(record.type_id)));
+            if segment.kind == SegmentKind::PmBRep && record.type_id != KERNEL_ENTITY_LINK_TYPE {
+                continue;
+            }
             let parsed = match record.type_id {
                 FEATURE_TYPE => parse_feature(record.payload, version).and_then(|feature| {
                     push_record(
@@ -1427,6 +1431,9 @@ fn parse_label(
     .map_err(CodecError::malformed)
 }
 
+const BASE_CLASS_ID: ClassId = ClassId(NativeBytes::new([
+    0x2d, 0x11, 0xa9, 0x0c, 0xd0, 0x11, 0x8b, 0x83, 0x00, 0x08, 0x19, 0xb0, 0x05, 0x24, 0xdc, 0x09,
+]));
 const EXTRUSION_CLASS_ID: ClassId = ClassId(NativeBytes::new([
     0x31, 0x11, 0xa9, 0x0c, 0xd0, 0x11, 0x8b, 0x83, 0x00, 0x08, 0x19, 0xb0, 0x05, 0x24, 0xdc, 0x09,
 ]));
@@ -1482,6 +1489,13 @@ const NATIVE_CLASSES: &[([u8; 16], &str)] = &[
             0xdc, 0x09,
         ],
         "Base",
+    ),
+    (
+        [
+            0x12, 0x96, 0x3c, 0xb8, 0xd1, 0x11, 0x8a, 0x28, 0x60, 0x00, 0x8b, 0xb8, 0x01, 0xf3,
+            0x1b, 0xb0,
+        ],
+        "Shell",
     ),
     (
         [
@@ -1641,6 +1655,7 @@ const NATIVE_CLASSES: &[([u8; 16], &str)] = &[
 
 #[derive(Clone, Copy)]
 pub(crate) enum FeatureFamily {
+    Base,
     Extrusion,
     Fillet,
     Chamfer,
@@ -1655,6 +1670,7 @@ impl FeatureFamily {
     /// The feature-label classes whose records use this family's layout.
     pub(crate) fn class_ids(self) -> &'static [ClassId] {
         match self {
+            Self::Base => &[BASE_CLASS_ID],
             Self::Extrusion => &[EXTRUSION_CLASS_ID],
             Self::Fillet => &[FILLET_CLASS_ID, CORNER_ROUND_CLASS_ID],
             Self::Chamfer => &[CHAMFER_CLASS_ID],
@@ -1668,6 +1684,7 @@ impl FeatureFamily {
 
     pub(crate) fn output_slot(self) -> usize {
         match self {
+            Self::Base => 1,
             Self::Extrusion => 26,
             Self::Fillet => 15,
             Self::Chamfer => 11,
@@ -1681,6 +1698,7 @@ impl FeatureFamily {
 
     pub(crate) fn from_class_id(class_id: ClassId) -> Option<Self> {
         [
+            Self::Base,
             Self::Extrusion,
             Self::Fillet,
             Self::Chamfer,
@@ -1699,6 +1717,9 @@ impl FeatureFamily {
         matches!(
             (self, definition),
             (
+                Self::Base,
+                FeatureDefinition::Operation(FeatureOperation::StoredGeometry {})
+            ) | (
                 Self::Extrusion | Self::Plate,
                 FeatureDefinition::Operation(FeatureOperation::Extrude { .. })
             ) | (
@@ -1725,6 +1746,7 @@ impl FeatureFamily {
 
     pub(crate) fn from_definition(definition: &FeatureDefinition) -> Option<Self> {
         match definition {
+            FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}) => Some(Self::Base),
             FeatureDefinition::Operation(FeatureOperation::Extrude { .. }) => Some(Self::Extrusion),
             FeatureDefinition::Operation(FeatureOperation::Fillet { .. }) => Some(Self::Fillet),
             FeatureDefinition::Operation(FeatureOperation::Chamfer { .. }) => Some(Self::Chamfer),
@@ -1976,6 +1998,7 @@ pub(crate) fn project(
             FeatureFamily::from_class_id(label.class_id()).map(|family| (label, family))
         }) {
             Some((label, family)) => match family {
+                FeatureFamily::Base => None,
                 FeatureFamily::Extrusion => project_extrusion(ctx, feature, label, &index),
                 FeatureFamily::Fillet => project_fillet(ctx, feature, label, &index),
                 FeatureFamily::Chamfer => project_chamfer(ctx, feature, label, &index),
@@ -2090,10 +2113,21 @@ pub(crate) fn project(
         }
     }
     edge_selection::bind_generated(&mut features, &mut result_topologies)?;
+    let unresolved_chamfers = features
+        .iter()
+        .filter(|feature| {
+            matches!(feature.evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. })
+                    if groups.iter().any(|group| group.spec.is_unresolved()))
+        })
+        .count();
     Ok(FeatureProjection {
-        unresolved_features: total.checked_sub(neutral).ok_or_else(|| {
-            CodecError::malformed("Inventor feature projection exceeds inventory")
-        })?,
+        unresolved_features: total
+            .checked_sub(neutral)
+            .and_then(|unresolved| unresolved.checked_add(unresolved_chamfers))
+            .ok_or_else(|| {
+                CodecError::malformed("Inventor feature projection exceeds inventory")
+            })?,
         unresolved_states: unresolved_states.min(neutral),
         features,
         result_topologies,
@@ -2296,6 +2330,7 @@ fn native_kind(class_id: Option<ClassId>) -> cadmpeg_ir::features::NativeFeature
     };
     if let Some(family) = FeatureFamily::from_class_id(class_id) {
         return match family {
+            FeatureFamily::Base => NativeFeatureKind::Other("Base".into()),
             FeatureFamily::Extrusion => NativeFeatureKind::Extrude,
             FeatureFamily::Fillet => NativeFeatureKind::Fillet,
             FeatureFamily::Chamfer => NativeFeatureKind::Chamfer,
@@ -3067,7 +3102,7 @@ fn project_fillet(
         if !matches!(
             selection.kind,
             PmDcFeaturePropertyKind::WideEnumeration {
-                type_value: 4,
+                type_value: 4 | 0x0002_0004,
                 value: 0
             }
         ) || !matches!(
@@ -3102,7 +3137,12 @@ fn project_fillet(
             .get(),
         )?;
         groups.push(FilletGroup {
-            edges: edge_selection::resolve(edge_collection, index),
+            edges: match selection.kind {
+                PmDcFeaturePropertyKind::WideEnumeration { type_value: 4, .. } => {
+                    edge_selection::resolve(edge_collection, index)
+                }
+                _ => EdgeSelection::Native(set.id()),
+            },
             radius: RadiusSpec::Constant { radius },
             tangency_weight: None,
         });
@@ -3147,9 +3187,7 @@ fn project_chamfer(
     label: &PmDcFeatureLabel,
     index: &ProjectionIndex<'_>,
 ) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
-    if enum16(source, 4, PmDcFeatureEnumFamily::Chamfer, index)? != 0 {
-        return None;
-    }
+    let form = enum16(source, 4, PmDcFeatureEnumFamily::Chamfer, index)?;
     let edges = slot_property(source, 0, index)?;
     let PmDcFeaturePropertyKind::References {
         family: PmDcFeatureReferenceFamily::EdgeCollection,
@@ -3163,6 +3201,51 @@ fn project_chamfer(
     }
     let distance =
         cadmpeg_ir::scalar::PositiveLength::try_from(length_parameter(source, 2, index)?).ok()?;
+    let spec = match form {
+        0 => ChamferSpec::Distance { distance },
+        1 | 2 => {
+            let faces = references(source, 1, PmDcFeatureReferenceFamily::FaceCollection, index)?;
+            if faces.references().is_empty()
+                || !faces.references().iter().all(|reference| {
+                    resolve_property(
+                        source.identity.segment_token.as_str(),
+                        reference.index(),
+                        index,
+                    )
+                    .is_some_and(|property| {
+                        matches!(&property.kind, PmDcFeaturePropertyKind::FaceItem {
+                            index_references, ..
+                        } if !index_references.values().is_empty())
+                    })
+                })
+            {
+                return None;
+            }
+            if form == 1 {
+                cadmpeg_ir::scalar::InteriorAngle::try_from(angle_parameter(source, 10, index)?)
+                    .ok()?;
+                ChamferSpec::Unresolved {
+                    form: Some(ChamferForm::DistanceAngle),
+                }
+            } else {
+                let second = cadmpeg_ir::scalar::PositiveLength::try_from(length_parameter(
+                    source, 3, index,
+                )?)
+                .ok()?;
+                if distance == second {
+                    ChamferSpec::TwoDistances {
+                        first: distance,
+                        second,
+                    }
+                } else {
+                    ChamferSpec::Unresolved {
+                        form: Some(ChamferForm::TwoDistances),
+                    }
+                }
+            }
+        }
+        _ => return None,
+    };
     let flip_direction = boolean(source, 5, index)?;
     let (feature_id, result) = match feature_result(ctx, source, 11, index)? {
         Ok(value) => value,
@@ -3187,8 +3270,12 @@ fn project_chamfer(
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Chamfer {
                     groups: cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
-                        edges: edge_selection::resolve(edges, index),
-                        spec: ChamferSpec::Distance { distance },
+                        edges: if form == 0 {
+                            edge_selection::resolve(edges, index)
+                        } else {
+                            EdgeSelection::Native(source.id())
+                        },
+                        spec,
                     }),
                     flip_direction,
                 }),
@@ -4775,6 +4862,63 @@ mod tests {
             vec![fillet_properties[8].id()]
         );
 
+        for (type_value, value, continuity, admitted) in [
+            (0x0002_0004, 0, Some(false), true),
+            (0x0002_0004, 0, Some(true), false),
+            (0x0002_0004, 0, None, false),
+            (0x0002_0004, 1, Some(false), false),
+            (4, 1, Some(false), false),
+            (5, 0, Some(false), false),
+        ] {
+            let mut properties = fillet_properties.clone();
+            properties[4] = test_property(
+                5,
+                PmDcFeaturePropertyKind::WideEnumeration { type_value, value },
+            );
+            properties[2] = test_property(
+                3,
+                PmDcFeaturePropertyKind::FilletEdgeSet {
+                    edges: reference(5),
+                    radius: reference(21),
+                    selection: reference(6),
+                    continuity: reference(if continuity.is_some() { 7 } else { 0 }),
+                    option: None,
+                },
+            );
+            properties[5] = test_property(
+                6,
+                PmDcFeaturePropertyKind::Boolean {
+                    name: String::new(),
+                    name_value: 0,
+                    value: continuity.unwrap_or(false),
+                },
+            );
+            let index = test_projection_index(
+                &properties,
+                std::slice::from_ref(&raw_radius),
+                std::slice::from_ref(&neutral_radius),
+                &[],
+                &[],
+                &[],
+                &[],
+                &[],
+            );
+            let projected = project_fillet(&ctx, &fillet, &label, &index);
+            if admitted {
+                let (feature, _) = projected
+                    .expect("native selector")
+                    .expect("fillet projection");
+                assert!(matches!(feature.evaluation.definition(),
+                    FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
+                        if matches!(&groups[0].edges, cadmpeg_ir::features::EdgeSelection::Native(id)
+                            if id == &properties[2].id())
+                        && matches!(groups[0].radius, RadiusSpec::Constant { radius } if radius.get() == 2.5)
+                ));
+            } else {
+                assert!(projected.is_none());
+            }
+        }
+
         let mut named_properties = fillet_properties.clone();
         named_properties[6] = test_property(
             7,
@@ -5674,6 +5818,7 @@ mod tests {
         crate::pmdc::PMDC_LIST_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
     }
 
+    mod edge_treatments;
     mod extents;
     mod revolve;
     mod shell;

@@ -134,10 +134,7 @@ pub(in crate::decode) fn resolved_section_radii(
             else {
                 continue;
             };
-            let radius = match dimension.dimension_type {
-                4 => value / 2.0,
-                _ => value,
-            };
+            let radius = value;
             let Some(radius) = PositiveLength::new(radius) else {
                 continue;
             };
@@ -173,8 +170,7 @@ pub(in crate::decode) fn resolved_section_radii(
                 continue;
             };
             let radius = match dimension.dimension_type {
-                3 => value,
-                4 => value / 2.0,
+                3 | 4 => value,
                 _ => continue,
             };
             if let Some(radius) = PositiveLength::new(radius) {
@@ -722,7 +718,7 @@ mod tests {
     }
 
     #[test]
-    fn diameter_underflow_does_not_resolve_circle_radius() {
+    fn diameter_dimension_keeps_small_positive_circle_radius() {
         use crate::feature::definitions::{
             DimensionValue, FeatureCircleSegment, FeatureDimension, FeatureDimensionTable,
             FeatureSegmentTable,
@@ -760,15 +756,15 @@ mod tests {
             }],
             offset: 0,
         });
-        assert!(
+        assert_eq!(
             crate::decode::with_service_context(|ctx| resolved_section_radii(ctx, &definition))
-                .expect("test section solve")
-                .is_empty()
+                .expect("test section solve"),
+            std::collections::BTreeMap::from([(0, f64::from_bits(1))])
         );
     }
 
     #[test]
-    fn relation_diameter_underflow_does_not_resolve_arc_radius() {
+    fn diameter_dimension_keeps_small_positive_relation_radius() {
         use crate::feature::definitions::{
             DimensionValue, FeatureDimension, FeatureDimensionTable, FeatureRelation,
             FeatureRelationTable,
@@ -823,10 +819,10 @@ mod tests {
             triples: None,
             offset: 0,
         });
-        assert!(
+        assert_eq!(
             crate::decode::with_service_context(|ctx| resolved_section_radii(ctx, &definition))
-                .expect("test section solve")
-                .is_empty()
+                .expect("test section solve"),
+            std::collections::BTreeMap::from([(0, f64::from_bits(1))])
         );
     }
 

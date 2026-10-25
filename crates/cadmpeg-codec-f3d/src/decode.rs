@@ -2425,8 +2425,14 @@ impl<'a> F3dDecodeSession<'a> {
         )?;
         let geometry_materials =
             materials::decode_with_body_bindings(ctx, scan, &design_body_bindings)?;
-        let (mut ir, source_attributes, mut native, asm_remainder) =
+        let (mut ir, source_attributes, mut native, mut asm_remainder) =
             build_geometry_ir(ctx, scan, primary_model_brep, brep)?;
+        geometry_admission::admit(
+            ctx,
+            &mut ir,
+            &mut report.losses,
+            &mut asm_remainder.annotation_records,
+        )?;
         // ASM transfer already charged its delta; keep the running counter in
         // sync so a later admit_entities call cannot double-count those bodies.
         let mut admitted_entities = u64_from_index(ir.model.entity_count());
@@ -2879,6 +2885,13 @@ impl<'a> F3dDecodeSession<'a> {
                 }
                 if let DesignState::Projected(design) = design {
                     design.store(&mut self.native);
+                    crate::design::decode::sketch_owners::attach(
+                        ctx,
+                        scan,
+                        &self.native,
+                        &mut self.ir.model,
+                        &mut self.report.losses,
+                    )?;
                     report_design_projection_gaps(&mut self.report, ctx, &self.ir, &self.native)?;
                 }
                 index
@@ -2895,6 +2908,13 @@ impl<'a> F3dDecodeSession<'a> {
                 let projected = match design {
                     DesignState::Projected(design) => {
                         design.store(&mut self.native);
+                        crate::design::decode::sketch_owners::attach(
+                            ctx,
+                            scan,
+                            &self.native,
+                            &mut self.ir.model,
+                            &mut self.report.losses,
+                        )?;
                         true
                     }
                     DesignState::Absent => false,
@@ -5084,6 +5104,7 @@ fn apply_appearance_base_colors(ir: &mut CadIr) {
 }
 
 pub(crate) mod design_intent;
+mod geometry_admission;
 mod prereqs;
 
 #[cfg(test)]

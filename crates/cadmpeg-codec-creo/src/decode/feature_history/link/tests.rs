@@ -236,6 +236,141 @@ fn rowless_generated_profile_rejects_duplicate_entity_ids() {
     ));
 }
 
+fn two_cap_circular_profile_fixture() -> (
+    crate::feature::entity::FeatureEntityTable,
+    [crate::surface::SurfaceRow; 3],
+) {
+    let entry =
+        |entity_id, class_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
+            payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
+            entity_id,
+            prefixed: false,
+            offset: 0,
+            end_offset: 0,
+        };
+    let table = crate::feature::entity::FeatureEntityTable::new(
+        7,
+        29,
+        vec![
+            entry(29, 204, None),
+            entry(30, 203, None),
+            entry(31, 200, Some(11)),
+            entry(32, 200, None),
+        ],
+        &std::collections::BTreeSet::new(),
+        0,
+    )
+    .with_surface_ids([29, 30, 32]);
+    let row = |id, kind| crate::surface::SurfaceRow {
+        id,
+        kind,
+        feature_id: 7,
+        reversed: false,
+        boundary_type: crate::surface::BoundaryType::Code00,
+        next_surface: 0,
+        offset: 0,
+    };
+    (
+        table,
+        [
+            row(29, crate::surface::SurfaceKind::Plane),
+            row(30, crate::surface::SurfaceKind::Plane),
+            row(32, crate::surface::SurfaceKind::Cylinder),
+        ],
+    )
+}
+
+fn circular_profile_admitted(
+    tables: &[crate::feature::entity::FeatureEntityTable],
+    rows: &[crate::surface::SurfaceRow],
+) -> bool {
+    section_entity_is_generated_profile(
+        true,
+        Some(7),
+        11,
+        &[crate::surface::SurfaceKind::Cylinder],
+        tables,
+        rows,
+    )
+}
+
+#[test]
+fn two_cap_circular_profile_binds_the_owned_source() {
+    let (table, rows) = two_cap_circular_profile_fixture();
+    assert!(circular_profile_admitted(
+        std::slice::from_ref(&table),
+        &rows
+    ));
+    for (complete, owner, source) in [
+        (false, Some(7), 11),
+        (true, None, 11),
+        (true, Some(8), 11),
+        (true, Some(7), 12),
+    ] {
+        assert!(!section_entity_is_generated_profile(
+            complete,
+            owner,
+            source,
+            &[crate::surface::SurfaceKind::Cylinder],
+            std::slice::from_ref(&table),
+            &rows,
+        ));
+    }
+}
+
+#[test]
+fn two_cap_circular_profile_requires_unique_owned_carriers() {
+    let (table, rows) = two_cap_circular_profile_fixture();
+    for (index, _) in rows.iter().enumerate() {
+        let mut foreign = rows.clone();
+        foreign[index].feature_id = 8;
+        assert!(!circular_profile_admitted(
+            std::slice::from_ref(&table),
+            &foreign
+        ));
+    }
+    let mut duplicate = rows.to_vec();
+    duplicate.push(rows[0].clone());
+    assert!(!circular_profile_admitted(
+        std::slice::from_ref(&table),
+        &duplicate
+    ));
+    let mut wrong_family = rows;
+    wrong_family[2].kind = crate::surface::SurfaceKind::Plane;
+    assert!(!circular_profile_admitted(
+        std::slice::from_ref(&table),
+        &wrong_family
+    ));
+}
+
+#[test]
+fn two_cap_circular_profile_rejects_competing_or_mixed_tables() {
+    let (mut table, rows) = two_cap_circular_profile_fixture();
+    assert!(!circular_profile_admitted(
+        &[table.clone(), table.clone()],
+        &rows
+    ));
+    table
+        .entries
+        .push(crate::feature::entity::FeatureEntityTableEntry {
+            payload: crate::feature::entity::entry_payload(200, Some(12), None, None),
+            entity_id: 33,
+            prefixed: false,
+            offset: 0,
+            end_offset: 0,
+        });
+    assert!(!circular_profile_admitted(
+        std::slice::from_ref(&table),
+        &rows
+    ));
+    let (mut table, rows) = two_cap_circular_profile_fixture();
+    table.entries[1].entity_id = table.entries[0].entity_id;
+    assert!(!circular_profile_admitted(
+        std::slice::from_ref(&table),
+        &rows
+    ));
+}
+
 fn ordered_binding_fixture() -> (
     crate::feature::entity::FeatureEntityTable,
     crate::feature::definitions::FeatureOrderTable,

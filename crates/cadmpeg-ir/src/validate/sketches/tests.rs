@@ -1248,3 +1248,91 @@ fn spatial_sketch_endpoint_helper_preserves_session_depth_refusal() {
         Err(limit)
     );
 }
+
+#[test]
+fn diameter_constraints_check_the_bound_circular_radius() {
+    use crate::features::{DesignParameter, DimensionDisplay, ParameterId, ParameterValue};
+    use crate::sketches::{
+        Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintDefinitionInput,
+        SketchConstraintId, SketchEntity, SketchEntityId, SketchId,
+    };
+    let mut ir = CadIr::empty();
+    let sketch = SketchId::mint("test:model:sketch#diameter").unwrap();
+    ir.model.sketches.push(Sketch {
+        id: sketch.clone(),
+        name: None,
+        configuration: None,
+        visible: None,
+        placement: crate::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: crate::sketches::SketchProfiles::default(),
+        native_ref: None,
+    });
+    let entity = SketchEntityId::mint("test:model:circle#diameter").unwrap();
+    ir.model.sketch_entities.push(SketchEntity::new(
+        entity.clone(),
+        sketch.clone(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+            center: Point2::new(0.0, 0.0),
+            radius: Length::new(7.0).unwrap(),
+        })
+        .unwrap(),
+    ));
+    let parameter = ParameterId::mint("test:model:parameter#diameter").unwrap();
+    ir.model.parameters.push(DesignParameter {
+        id: parameter.clone(),
+        owner: None,
+        ordinal: 0,
+        name: "diameter".into(),
+        expression: String::new(),
+        display: Some(DimensionDisplay::Diameter),
+        value: None,
+        dependencies: crate::features::DistinctMembers::default(),
+        properties: std::collections::BTreeMap::default(),
+        pmi: None,
+        native_ref: None,
+    });
+    let id = SketchConstraintId::mint("test:model:constraint#diameter").unwrap();
+    ir.model.sketch_constraints.push(SketchConstraint {
+        id: id.clone(),
+        sketch,
+        definition: SketchConstraintDefinition::try_from(
+            SketchConstraintDefinitionInput::Diameter { entity, parameter },
+        )
+        .unwrap(),
+        name: None,
+        driving: None,
+        active: None,
+        virtual_space: None,
+        visible: None,
+        orientation: None,
+        label_distance: None,
+        label_position: None,
+        metadata: None,
+        native_ref: None,
+    });
+    ir.finalize();
+    for (value, active, rejects) in [
+        (14.0, None, false),
+        (7.0, None, true),
+        (14.0 + TEST_LINEAR_TOLERANCE, None, false),
+        (7.0, Some(false), false),
+    ] {
+        ir.model.parameters[0].value = Some(ParameterValue::Length(Length::new(value).unwrap()));
+        ir.model.sketch_constraints[0].active = active;
+        let report = validate_neutral(&ir, Vec::new()).unwrap();
+        assert_eq!(
+            report
+                .findings
+                .iter()
+                .any(|finding| finding.check == Check::GeometricConsistency
+                    && finding.entity.as_deref() == Some(id.as_str())
+                    && finding.message.contains("twice the circular radius")),
+            rejects
+        );
+    }
+}

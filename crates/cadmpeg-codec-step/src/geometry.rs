@@ -363,6 +363,13 @@ pub(crate) fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> 
     })
 }
 
+/// Whether [`pcurve`] writes `geometry` without a `CURVE_REPLICA`: it is not
+/// placed, or its placement is baked into its basis.
+pub(crate) fn pcurve_placement_bakes(geometry: &PcurveGeometry) -> bool {
+    !matches!(geometry, PcurveGeometry::Transformed(_))
+        || bake::placed_pcurve(Transform2::identity(), geometry).is_some()
+}
+
 /// Emit a pcurve in the reversed parameter chart of a negative-angle cone.
 /// The half-turn maps each `(u, v)` to `(-u, -v)` without changing the curve's
 /// own parameter or sense.

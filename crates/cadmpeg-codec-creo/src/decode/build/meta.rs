@@ -35,6 +35,9 @@ pub(super) fn source_meta(
     classification: &crate::dialect::DialectClassification,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(SourceMeta, cadmpeg_ir::report::decode::Coverage), cadmpeg_core::CodecError> {
+    if let Some(loss) = super::super::feature_history::dimensions::diameter_projection_loss(scan) {
+        losses.push(loss);
+    }
     let mut attributes = BTreeMap::new();
     let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
     insert_source_attribute(&mut attributes, "version_line", &scan.framing.version_line);
