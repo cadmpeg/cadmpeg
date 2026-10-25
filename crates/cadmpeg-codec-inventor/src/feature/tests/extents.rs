@@ -271,6 +271,54 @@ fn plane_surface(ordinal: u32) -> PmDcFeatureProperty {
     )
 }
 
+fn typed_extent_extrusion(version: u8, type_value: i16) -> Option<Feature> {
+    let property = Located::new(
+        PmDcFeaturePropertyPayload {
+            save_version_major: version,
+            header: test_header(),
+            kind: PmDcFeaturePropertyKind::Enumeration {
+                family: PmDcFeatureEnumFamily::Extent,
+                type_value,
+                value: 1,
+            },
+        },
+        crate::record_identity::RecordTypeId::from_bytes(crate::feature::EXTENT_TYPE),
+        segment(),
+        22,
+    );
+    extent_extrusion(1, false, &[(6, 22)], vec![property])
+}
+
+#[test]
+fn versioned_extent_types_project_the_same_one_sided_extrusion() {
+    let expected = typed_extent_extrusion(21, 11).expect("type-11 distance extrusion");
+    assert!(matches!(
+        extrude_definition(&expected).0,
+        ExtrudeExtent::OneSided {
+            side: ExtrudeSide {
+                termination: LinearTermination::Blind { length },
+                draft: None,
+            }
+        } if length.get() == 12.0
+    ));
+    for version in [22, 23, 25, 28, 29, 30, 31] {
+        let actual = typed_extent_extrusion(version, 12).expect("type-12 distance extrusion");
+        assert_eq!(
+            actual.evaluation.definition(),
+            expected.evaluation.definition()
+        );
+    }
+}
+
+#[test]
+fn unrelated_and_wrong_version_extent_types_are_rejected() {
+    for version in [21, 22, 29] {
+        assert!(typed_extent_extrusion(version, 13).is_none());
+    }
+    assert!(typed_extent_extrusion(21, 12).is_none());
+    assert!(typed_extent_extrusion(22, 11).is_none());
+}
+
 #[test]
 fn extrusion_extent_branches_project_exactly() {
     let symmetric = extent_extrusion(2, true, &[], Vec::new()).expect("symmetric distance");
