@@ -188,6 +188,9 @@ pub(in super::super) fn section_entity_is_generated_profile(
     if !expected_kinds.contains(&crate::surface::SurfaceKind::Cylinder) {
         return false;
     }
+    if two_cap_circular_profile_source(feature_id, source_entity_id, tables, rows) {
+        return true;
+    }
     let mut blind_cylinders = tables
         .iter()
         .filter(|table| table.feature_id == feature_id)
@@ -216,6 +219,55 @@ pub(in super::super) fn section_entity_is_generated_profile(
             .then_some(cylinder.entity_id)
         });
     blind_cylinders.next().is_some() && blind_cylinders.next().is_none()
+}
+
+fn two_cap_circular_profile_source(
+    feature_id: u32,
+    source_entity_id: u32,
+    tables: &[crate::feature::entity::FeatureEntityTable],
+    rows: &[crate::surface::SurfaceRow],
+) -> bool {
+    let Some(table) = exactly_one(tables.iter().filter(|table| {
+        table.feature_id == feature_id && table.surface_ids_iter().next().is_some()
+    })) else {
+        return false;
+    };
+    let [first, second, profile, cylinder] = table.entries.as_slice() else {
+        return false;
+    };
+    if table.table_class_id != 29
+        || [
+            first.class_id(),
+            second.class_id(),
+            profile.class_id(),
+            cylinder.class_id(),
+        ] != [204, 203, 200, 200]
+        || first.source_entity_id().is_some()
+        || second.source_entity_id().is_some()
+        || profile.source_entity_id() != Some(source_entity_id)
+        || cylinder.source_entity_id().is_some()
+        || !table.contains_non_surface_entity_id(profile.entity_id)
+        || table.contains_surface_id(profile.entity_id)
+        || table.surface_ids_iter().count() != 3
+        || table.entries.iter().enumerate().any(|(index, entry)| {
+            table.entries[..index]
+                .iter()
+                .any(|prior| prior.entity_id == entry.entity_id)
+        })
+    {
+        return false;
+    }
+    [
+        (first, crate::surface::SurfaceKind::Plane),
+        (second, crate::surface::SurfaceKind::Plane),
+        (cylinder, crate::surface::SurfaceKind::Cylinder),
+    ]
+    .into_iter()
+    .all(|(entry, kind)| {
+        table.contains_surface_id(entry.entity_id)
+            && crate::surface::unique_surface_row(rows, entry.entity_id)
+                .is_some_and(|row| row.feature_id == feature_id && row.kind == kind)
+    })
 }
 
 fn generated_profile_table_shape(table: &crate::feature::entity::FeatureEntityTable) -> bool {

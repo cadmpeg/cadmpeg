@@ -4051,6 +4051,12 @@ source-bearing profile entry is non-surface. Each cap plane has one
 unambiguous placed equation from its outline or positional frame; conflicting
 equations do not establish the cap. The materialized cylinder entry is the
 single neutral carrier for both generated cylinder uses.
+The source identifier of the non-surface profile entry selects the section
+entity with that external identifier. The section owner and entity identity
+must each be unique. A complete saved circle joined through its unique
+`order_table` row is a closed one-entity profile when the two cap planes and
+cylinder are unique rows owned by the same feature. Competing materialized
+generated tables or duplicate generated identifiers do not select a profile.
 The owning feature definition selects the emitted section sketch when that
 sketch has a resolved profile chain and otherwise retains the native circular
 profile reference. When the feature definition is absent or does not match the

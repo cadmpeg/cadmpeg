@@ -275,6 +275,12 @@ that gate.
   is supported. Retained
   unknown rows in the same plane, cylinder, or extrusion family do not
   invalidate this proof; every materialized carrier and cap must still agree.
+- The four-entry circular sweep table binds its non-surface source circle to
+  the owning sketch profile when both cap planes and the cylinder have unique
+  same-feature rows. Competing tables and duplicate identities remain native.
+- Cap tables with mixed profile entries retain unproved profile and extent joins
+  outside the defined circular forms. Independently resolved carriers remain
+  available (`SP-44`).
 - Unbound `geom_type = 2c` rows with a complete direction prefix and
   lane-specific six-slot straight-directrix frame transfer as unbounded plane
   carriers. Rows owned by a cubic replay remain on the replay-bound path.
