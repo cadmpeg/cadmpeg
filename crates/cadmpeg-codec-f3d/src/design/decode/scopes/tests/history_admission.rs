@@ -135,10 +135,31 @@ fn refuses_duplicate_scope_envelopes_without_one_history_binding() {
 
     assert!(with_test_ctx(|ctx| admit_history_bound_scope_variants(
         ctx,
-        &mut scopes,
+        &mut scopes.clone(),
         &histories,
         &Default::default()
     ))
+    .is_err());
+
+    for byte_offset in [100, 200] {
+        let primary = std::collections::HashSet::from([("f3d:stream".to_owned(), byte_offset)]);
+        let mut selected = scopes.clone();
+        let superseded = with_test_ctx(|ctx| {
+            admit_history_bound_scope_variants(ctx, &mut selected, &histories, &primary)
+        })
+        .expect("primary envelope");
+        assert_eq!(superseded, 1);
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].byte_offset(), byte_offset);
+    }
+
+    let primary = std::collections::HashSet::from([
+        ("f3d:stream".to_owned(), 100),
+        ("f3d:stream".to_owned(), 200),
+    ]);
+    assert!(with_test_ctx(|ctx| {
+        admit_history_bound_scope_variants(ctx, &mut scopes, &histories, &primary)
+    })
     .is_err());
 }
 

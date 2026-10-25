@@ -9187,12 +9187,15 @@ name = "clockwise"
 offset = 24
 type = "u8"
 source = "spec"
-anchor = "offset 24 is the clockwise Boolean"
+anchor = "Offset 24 is the clockwise Boolean"
+note = "`SpirePrimitive` stores the clockwise Boolean at offset 24."
 
-[[record.gap]]
+[[record.field]]
+name = "left_hand"
 offset = 25
-size = 1
-note = "The structural constant starts at offset 26."
+type = "u8"
+source = "spec"
+anchor = "offset 25 is the left-hand Boolean"
 
 [[record.field]]
 name = "structural_constant"

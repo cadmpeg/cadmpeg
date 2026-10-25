@@ -996,12 +996,12 @@ fn non_similarity_pcurve_replica_is_reported_and_strict_export_rejects() {
         .expect("decode sheet pcurve")
         .into_parts()
         .0;
-    // A circle under an unequal scale is neither a circle nor a similarity
-    // replica of one.
+    // A parabola under an unequal scale is not a similarity replica of one,
+    // and unlike a conic it has no exact spline export.
     ir.model.pcurves[0].geometry = cadmpeg_ir::geometry::pcurve::PcurveGeometry::Transformed(
         cadmpeg_ir::geometry::pcurve::PlacedPcurve::try_new(
-            Box::new(cadmpeg_ir::geometry::pcurve::PcurveGeometry::Circle(
-                cadmpeg_ir::geometry::pcurve::CirclePcurve::try_new(
+            Box::new(cadmpeg_ir::geometry::pcurve::PcurveGeometry::Parabola(
+                cadmpeg_ir::geometry::pcurve::ParabolaPcurve::try_new(
                     cadmpeg_ir::math::Point2::new(0.0, 0.0),
                     cadmpeg_ir::math::Point2::new(1.0, 0.0),
                     cadmpeg_ir::math::Point2::new(0.0, 1.0),

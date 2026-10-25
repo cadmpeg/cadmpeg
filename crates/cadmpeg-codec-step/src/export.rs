@@ -3157,7 +3157,8 @@ impl<'a> Builder<'a> {
             )
             .ok()
             .flatten();
-        let aligned = pcurves::align_spline_to_edge(&pcurve.geometry, range, edge);
+        let lowered = pcurves::lower_placed_conic(&pcurve.geometry, use_.use_.parameter_range);
+        let aligned = pcurves::align_spline_to_edge(&lowered, range, edge);
         let shift = self
             .pcurve_period_shifts
             .get(use_.coedge)
@@ -3261,8 +3262,9 @@ impl<'a> Builder<'a> {
         let Some(range) = edge.param_range() else {
             return Ok(None);
         };
+        let lowered = pcurves::lower_placed_conic(&pcurve.geometry, use_.parameter_range);
         if !matches!(
-            pcurve.geometry,
+            lowered.as_ref(),
             cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { .. }
         ) {
             return Ok(None);
@@ -3272,7 +3274,7 @@ impl<'a> Builder<'a> {
         };
         let directed =
             self.directed_use_range(&pcurve.geometry, use_.parameter_range, surface, edge)?;
-        let aligned = pcurves::align_spline_to_edge(&pcurve.geometry, directed, edge);
+        let aligned = pcurves::align_spline_to_edge(&lowered, directed, edge);
         let at = |parameter: f64| {
             Ok::<_, cadmpeg_core::decode::ResourceLimit>(
                 cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(

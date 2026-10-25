@@ -315,7 +315,10 @@ pub(in crate::decode) fn section_equation_unsigned_coordinate_distance_rows(
             let value = section_equation_dimension_scalar_value(
                 dimension,
                 equality_value,
-                dimension_row.value.resolved()?.abs(),
+                crate::decode::feature_history::dimensions::dimension_measurement_value(
+                    dimension_row,
+                )?
+                .abs(),
                 false,
             )?;
             Some(SectionUnsignedCoordinateDistance {
