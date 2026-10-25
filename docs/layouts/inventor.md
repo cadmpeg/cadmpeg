@@ -467,3 +467,17 @@ Parsed by:
 | 47 | 4 | `map_count` | `u32` | little | spec | map_count u32 = 0 |
 | 51 | 4 | `source_value` | `u32` | little | spec | source_value u32 |
 | 55 | 4 | `option_reference` | `u32` | little | spec | option_reference u32 |
+
+## `pm_dc_edge_selector_prefix`
+
+Spec §13 · layout: byte offsets · size: 22 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `state` | `i32` | little | spec | The fixed selector prefix after the content header contains |
+| 4 | 1 | `enabled` | `u8` | little | spec | The fixed selector prefix after the content header contains |
+| 5 | 1 | `form` | `u8` | little | spec | The fixed selector prefix after the content header contains |
+| 6 | 4 | `body_reference` | `u32` | little | spec | The fixed selector prefix after the content header contains |
+| 10 | 4 | `topology` | `u32` | little | spec | The fixed selector prefix after the content header contains |
+| 14 | 4 | `qualifier` | `u32` | little | spec | The fixed selector prefix after the content header contains |
+| 18 | 4 | `naming_form` | `u32` | little | spec | The fixed selector prefix after the content header contains |

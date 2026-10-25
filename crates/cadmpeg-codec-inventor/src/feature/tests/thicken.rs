@@ -148,6 +148,7 @@ fn fixture() -> Fixture {
         ],
     );
     let inventory = owner::FeatureInventory {
+        edge_names: std::collections::HashMap::new(),
         record_types: [(
             segment(),
             [
