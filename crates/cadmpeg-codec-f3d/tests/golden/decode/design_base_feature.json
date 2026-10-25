@@ -629,36 +629,24 @@
             "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-scope#3026",
             "base_feature_construction": {
               "body_entity_fields": [],
-              "body_entity_suffix_offsets": [],
               "body_entity_suffixes": [],
               "body_reference_fields": [],
-              "body_reference_record_offsets": [],
               "body_reference_records": [],
               "metadata_field": "000000000000",
               "metadata_record": 0,
-              "metadata_record_offset": 3063,
               "repeated_reference_fields": [],
               "result_fields": [],
-              "result_record_offsets": [],
               "result_records": []
             },
-            "byte_offset": 3026,
             "class_tag": "268",
             "feature_ordinal": 1,
-            "feature_ordinal_offset": 3211,
-            "frame_length": 267,
+            "generation": {
+              "form": "envelope"
+            },
             "history_state_id": 0,
-            "history_state_id_offset": 3179,
             "kind": "Base Feature",
-            "kind_offset": 3187,
-            "paired_byte_offset": 3293,
             "paired_class_tag": "261",
-            "previous_history_state_id_offset": 0,
             "record_index": 1400,
-            "reference_count_offset": 3164,
-            "reference_member_offsets": [
-              3169
-            ],
             "reference_members": [
               985
             ]
@@ -1811,7 +1799,7 @@
     "metadata": {
       "active_brep": "FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
       "active_brep_sha256": "38630ab6494f356459e0ee34e122e2a86685f44db32f30456c5b4fbb02a7cf6c",
-      "document_local_sha256": "761b4faa15432073ac68e081d41470763cec3779cbc75b28217bfcb8ec5c0b94",
+      "document_local_sha256": "8ac92e3c42ae2d4cb48aee91e659c047ac329ee42e0a56cd62d6ca2f222f5704",
       "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh:body-visibility#42.asm_body_key_offset": "25",
       "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh:body-visibility#42.byte_offset": "719",
       "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:construction-recipe#2866.byte_offset": "2866",
@@ -2000,6 +1988,23 @@
       "f3d:FusionAssetName[Active]/FusionACTSegmentType1/MetaStream.dat:design-type#898.version_offset": "942"
     },
     "record_layout": {
+      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-scope#3026": {
+        "stream": "zip:4:file:0:12037:FusionAssetName[Active]/Design1/BulkStream.dat",
+        "offset": 3026,
+        "byte_len": 267,
+        "reads": {},
+        "pointers": {
+          "base_feature_construction.metadata_record_offset": 3063,
+          "byte_offset": 3026,
+          "feature_ordinal_offset": 3211,
+          "history_state_id_offset": 3179,
+          "kind_offset": 3187,
+          "paired_byte_offset": 3293,
+          "reference_count_offset": 3164,
+          "reference_member_offsets.0": 3169
+        },
+        "payloads": {}
+      },
       "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:lost-edge-reference#2951": {
         "stream": "zip:4:file:0:12037:FusionAssetName[Active]/Design1/BulkStream.dat",
         "offset": 2951,

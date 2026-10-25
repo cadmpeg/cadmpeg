@@ -757,22 +757,14 @@
         "design_parameter_scopes": [
           {
             "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-scope#3026",
-            "byte_offset": 3026,
             "class_tag": "268",
             "feature_ordinal": 1,
-            "feature_ordinal_offset": 3078,
-            "frame_length": 134,
-            "history_state_id_offset": 3062,
+            "generation": {
+              "form": "envelope"
+            },
             "kind": "Form",
-            "kind_offset": 3070,
-            "paired_byte_offset": 3160,
             "paired_class_tag": "261",
-            "previous_history_state_id_offset": 0,
             "record_index": 1400,
-            "reference_count_offset": 3047,
-            "reference_member_offsets": [
-              3052
-            ],
             "reference_members": [
               1500
             ]
@@ -1936,7 +1928,7 @@
     "metadata": {
       "active_brep": "FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
       "active_brep_sha256": "38630ab6494f356459e0ee34e122e2a86685f44db32f30456c5b4fbb02a7cf6c",
-      "document_local_sha256": "bc37d46c4acb98dd54fba9ffa831707850dbb9038ff0bac4229bb4cd2de8fb11",
+      "document_local_sha256": "b60a1eded8295f4a706466b4a64bf0c391f0ec29a3da031c17004ef6ea1ad6cf",
       "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh:body-visibility#42.asm_body_key_offset": "25",
       "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh:body-visibility#42.byte_offset": "719",
       "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:construction-recipe#2866.byte_offset": "2866",
@@ -2126,6 +2118,22 @@
       "f3d:FusionAssetName[Active]/FusionACTSegmentType1/MetaStream.dat:design-type#898.version_offset": "942"
     },
     "record_layout": {
+      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-scope#3026": {
+        "stream": "zip:4:file:0:12644:FusionAssetName[Active]/Design1/BulkStream.dat",
+        "offset": 3026,
+        "byte_len": 134,
+        "reads": {},
+        "pointers": {
+          "byte_offset": 3026,
+          "feature_ordinal_offset": 3078,
+          "history_state_id_offset": 3062,
+          "kind_offset": 3070,
+          "paired_byte_offset": 3160,
+          "reference_count_offset": 3047,
+          "reference_member_offsets.0": 3052
+        },
+        "payloads": {}
+      },
       "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:lost-edge-reference#2951": {
         "stream": "zip:4:file:0:12644:FusionAssetName[Active]/Design1/BulkStream.dat",
         "offset": 2951,

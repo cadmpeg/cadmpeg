@@ -627,49 +627,29 @@
         "design_parameter_scopes": [
           {
             "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-scope#3042",
-            "byte_offset": 3042,
             "class_tag": "268",
             "copy_paste_bodies_operation": {
-              "body_group_byte_offset": 3278,
               "body_group_class_tag": "264",
               "body_group_record_index": 1500,
               "body_operand_record_indices": [
                 1600
               ],
-              "body_operand_record_offsets": [
-                3304
-              ],
-              "copied_body_entity_suffix_offsets": [
-                3387
-              ],
               "copied_body_entity_suffixes": [
                 8422
               ],
-              "relation_byte_offset": 3347,
               "relation_class_tag": "264",
               "relation_record_index": 1700,
-              "source_body_entity_suffix_offsets": [
-                3372
-              ],
               "source_body_entity_suffixes": [
                 985
               ]
             },
             "feature_ordinal": 1,
-            "feature_ordinal_offset": 3157,
-            "frame_length": 225,
-            "history_state_id_offset": 3119,
+            "generation": {
+              "form": "envelope"
+            },
             "kind": "CopyPasteBodies",
-            "kind_offset": 3127,
-            "paired_byte_offset": 3267,
             "paired_class_tag": "261",
-            "previous_history_state_id_offset": 3210,
             "record_index": 1400,
-            "reference_count_offset": 3093,
-            "reference_member_offsets": [
-              3098,
-              3109
-            ],
             "reference_members": [
               1500,
               1600
@@ -1841,7 +1821,7 @@
     "metadata": {
       "active_brep": "FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
       "active_brep_sha256": "38630ab6494f356459e0ee34e122e2a86685f44db32f30456c5b4fbb02a7cf6c",
-      "document_local_sha256": "e35ef68d3c695a0529e279bfe8ebbda2af744d75b7f03108350cdcbfcf22d1c1",
+      "document_local_sha256": "f893e5912a20dd0bfbc2d655a7c3514061a85b7992e4f2e21e40d49c9a7dbcc6",
       "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh:body-visibility#42.asm_body_key_offset": "25",
       "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh:body-visibility#42.byte_offset": "735",
       "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:construction-recipe#2882.byte_offset": "2882",
@@ -2038,6 +2018,29 @@
       "f3d:FusionAssetName[Active]/FusionACTSegmentType1/MetaStream.dat:design-type#898.version_offset": "942"
     },
     "record_layout": {
+      "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-scope#3042": {
+        "stream": "zip:4:file:0:11088:FusionAssetName[Active]/Design1/BulkStream.dat",
+        "offset": 3042,
+        "byte_len": 225,
+        "reads": {},
+        "pointers": {
+          "byte_offset": 3042,
+          "copy_paste_bodies_operation.body_group_byte_offset": 3278,
+          "copy_paste_bodies_operation.body_operand_record_offsets.0": 3304,
+          "copy_paste_bodies_operation.copied_body_entity_suffix_offsets.0": 3387,
+          "copy_paste_bodies_operation.relation_byte_offset": 3347,
+          "copy_paste_bodies_operation.source_body_entity_suffix_offsets.0": 3372,
+          "feature_ordinal_offset": 3157,
+          "history_state_id_offset": 3119,
+          "kind_offset": 3127,
+          "paired_byte_offset": 3267,
+          "previous_history_state_id_offset": 3210,
+          "reference_count_offset": 3093,
+          "reference_member_offsets.0": 3098,
+          "reference_member_offsets.1": 3109
+        },
+        "payloads": {}
+      },
       "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:lost-edge-reference#2967": {
         "stream": "zip:4:file:0:11088:FusionAssetName[Active]/Design1/BulkStream.dat",
         "offset": 2967,
