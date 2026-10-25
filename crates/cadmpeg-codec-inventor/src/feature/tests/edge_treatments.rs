@@ -292,6 +292,7 @@ fn unresolved_chamfer_dimensions_remain_in_loss_count_after_ordinal_filtering() 
                 sketches: &[],
                 entities: &[],
                 profile_bodies: &[],
+                result_model: None,
             },
         )
         .expect("feature projection");

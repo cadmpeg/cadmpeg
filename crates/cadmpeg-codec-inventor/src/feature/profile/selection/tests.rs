@@ -8,6 +8,7 @@ fn edge(start: f64, end: f64) -> ProfileEdge {
         start: Point3::new(start, 0.0, 0.0),
         end: Point3::new(end, 0.0, 0.0),
         middle: None,
+        spline: None,
     }
 }
 
