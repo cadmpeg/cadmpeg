@@ -4591,8 +4591,8 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
             && frame.trailing_records().first().is_none_or(|record| {
                 group
                     .role_offset()
-                    .checked_sub(10)
-                    .is_some_and(|expected_offset| record.offset == expected_offset)
+                    .checked_sub(record.offset)
+                    .is_some_and(|span| matches!(span, 10 | 50))
             })
             && member_run_end.is_some_and(|end| group.role_offset() >= end)
             && group.role().raw().trailing_zeros() >= 32
@@ -6049,27 +6049,38 @@ fn validate_construction_operand_identities<'a>(
                             && header.class_tag == path.following_class_tag
                     })
         });
-        let chain_entry_shape = if let Some(path) = identity.tracking_path() {
-            !identity.wrappers().is_empty()
-                || (identity.wrappers().is_empty()
-                    && transform.is_some_and(|transform| {
-                        path.wrapper_record_index() == transform.following_record_index()
-                            && path.wrapper_byte_offset() == transform.following_byte_offset()
-                            && path.wrapper_class_tag == transform.following_class_tag
-                    }))
-                || (identity.wrappers().is_empty()
-                    && transform.is_none()
-                    && group.is_some_and(|group| {
-                        group
-                            .frame
-                            .trailing_records()
-                            .first()
-                            .map(|record| &record.value)
-                            == Some(&path.wrapper_record_index())
-                    }))
-        } else {
-            true
-        };
+        let chain_entry = identity
+            .wrappers()
+            .first()
+            .map(|wrapper| {
+                (
+                    wrapper.record_index,
+                    wrapper.byte_offset,
+                    &wrapper.class_tag,
+                )
+            })
+            .or_else(|| {
+                identity.tracking_path().map(|path| {
+                    (
+                        path.wrapper_record_index(),
+                        path.wrapper_byte_offset(),
+                        &path.wrapper_class_tag,
+                    )
+                })
+            })
+            .unwrap_or((
+                identity.following_record_index(),
+                identity.following_byte_offset(),
+                identity.following_class_tag(),
+            ));
+        let chain_entry_shape = transform.is_none_or(|transform| {
+            chain_entry
+                == (
+                    transform.following_record_index(),
+                    transform.following_byte_offset(),
+                    &transform.following_class_tag,
+                )
+        });
         let following_shape =
             if identity.tracking_path().is_some() || !identity.wrappers().is_empty() {
                 true
@@ -6112,16 +6123,13 @@ fn validate_construction_operand_identities<'a>(
                 .trailing_records()
                 .first()
                 .map(|record| record.value);
-            identity
-                .wrappers()
-                .first()
-                .map(|wrapper| wrapper.record_index)
+            transform
+                .map(super::records::topology::construction::DesignConstructionOperandTransform::record_index)
                 .or_else(|| {
-                    group
-                        .frame
-                        .trailing_transforms()
+                    identity
+                        .wrappers()
                         .first()
-                        .map(super::records::topology::construction::DesignConstructionOperandTransform::record_index)
+                        .map(|wrapper| wrapper.record_index)
                 })
                 .or_else(|| {
                     identity
