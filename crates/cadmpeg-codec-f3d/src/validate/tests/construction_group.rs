@@ -197,3 +197,44 @@ fn hole_construction_group_accepts_its_retained_auxiliary_role() {
         assert_eq!(findings.len(), 1);
     });
 }
+
+#[test]
+fn thread_face_group_does_not_require_a_specialized_thread_payload() {
+    use crate::records::{
+        feature::scope::{DesignFeatureKind, DesignParameterScope},
+        identity::ReferenceRun,
+        topology::{
+            construction::DesignConstructionOperandRole, extrude_selection::DesignOperandRole,
+        },
+    };
+    crate::test_support::with_decode_context(|decode| {
+        let ir = cadmpeg_ir::CadIr::empty();
+        let mut native = native(true, false);
+        let mut scope = DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:design-parameter-scope#10",
+            DesignFeatureKind::Thread,
+            10,
+        );
+        scope
+            .try_edit(|draft| {
+                draft.reference_members = ReferenceRun::unlocated(vec![100, 101]);
+                draft.layout_fixture_references();
+                draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+                draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        native.design_parameter_scopes = vec![scope];
+        native.design_construction_operand_groups[0].operand_role =
+            DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X10);
+        let ctx = super::super::Ctx::new(&ir, &native, decode);
+        let mut findings = Vec::new();
+        super::super::validate_construction_operand_groups(&ctx, &mut findings);
+        assert!(findings.is_empty(), "{findings:?}");
+        native.design_construction_operand_groups[0].operand_role =
+            DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X5);
+        let ctx = super::super::Ctx::new(&ir, &native, decode);
+        super::super::validate_construction_operand_groups(&ctx, &mut findings);
+        assert_eq!(findings.len(), 1);
+    });
+}
