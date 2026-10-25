@@ -330,6 +330,14 @@ fn unformed_dependents_of_a_given_up_part_are_named_by_its_one_loss() {
             ["step:native:record#9".to_owned()]
         )
         .is_err());
+    let unchanged = output.losses().to_vec();
+    let other_arena = DecodeArena::new();
+    let (other_ctx, _) =
+        DecodeContext::from_root_bytes(source, &other_arena, &DecodePolicy::service()).unwrap();
+    assert!(output
+        .drop_with_given_up(&other_ctx, &part, ["step:native:record#foreign".to_owned()])
+        .is_err());
+    assert_eq!(output.losses(), unchanged);
     output
         .drop_with_given_up(
             &ctx,
@@ -348,4 +356,10 @@ fn unformed_dependents_of_a_given_up_part_are_named_by_its_one_loss() {
     assert!(output.losses()[0].message.ends_with(
         r#"dropped=["step:native:record#3","step:native:record#4","step:native:record#5"]"#
     ));
+    let unchanged = output.losses().to_vec();
+    ctx.take_record_captures().unwrap();
+    assert!(output
+        .drop_with_given_up(&ctx, &part, ["step:native:record#sealed".to_owned()])
+        .is_err());
+    assert_eq!(output.losses(), unchanged);
 }

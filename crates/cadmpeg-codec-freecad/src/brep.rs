@@ -1,7 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounded framing for text and binary exact-shape side entries.
 
+pub(crate) mod owners;
+pub(crate) mod records;
+mod table;
+use table::ReadTable;
+pub(crate) mod source;
+mod source_rows;
 pub(crate) mod triangulation;
+#[cfg(test)]
+use source::{parse_binary_prefix, parse_text};
 
 use triangulation::TextTriangulation;
 
@@ -51,8 +59,59 @@ pub(crate) struct ShapePayloadRecord {
     pub(crate) property: String,
     /// Side-entry identity.
     pub(crate) entry: String,
-    /// Carrier payload.
+    /// Canonical polygon identities, in source table order.
+    pub(crate) rows: Vec<String>,
+    /// Canonical nonpolygon tables and transient polygon values.
     pub(crate) payload: ShapePayload,
+}
+
+impl ShapePayloadRecord {
+    pub(crate) fn declared_text_counts(&self) -> Option<&BTreeMap<String, usize>> {
+        match &self.payload {
+            ShapePayload::Text { facts, .. } => Some(&facts.declared_counts),
+            ShapePayload::Empty | ShapePayload::Binary { .. } => None,
+        }
+    }
+    pub(crate) fn has_unread_tables(&self) -> bool {
+        self.payload.shape_set().is_some_and(|facts| {
+            facts.locations.as_read().is_none()
+                || facts.curve2ds.as_read().is_none()
+                || facts.curves.as_read().is_none()
+                || facts.polygon3d_refs.as_read().is_none()
+                || facts.indexed_polygon_refs.as_read().is_none()
+                || facts.surfaces.as_read().is_none()
+                || facts.triangulations.as_read().is_none()
+                || facts.tshapes.0.as_read().is_none()
+                || facts.roots.as_read().is_none()
+        })
+    }
+    pub(crate) fn polygon_references(&self) -> impl Iterator<Item = &str> {
+        self.payload.shape_set().into_iter().flat_map(|facts| {
+            facts
+                .polygon3d_refs
+                .iter()
+                .chain(&facts.indexed_polygon_refs)
+                .map(String::as_str)
+        })
+    }
+    pub(crate) fn source_index(&self, table: u8, index: usize) -> usize {
+        index
+            .checked_sub(1)
+            .and_then(|offset| self.payload.shape_set()?.indices.get(&table)?.get(offset))
+            .copied()
+            .unwrap_or(index)
+    }
+    pub(crate) fn row_identity(&self, table: u8, index: usize) -> Option<&str> {
+        let facts = self.payload.shape_set()?;
+        if table != 3 && table != 4 {
+            return Some(self.id.as_str());
+        }
+        let source_index = self.source_index(table, index);
+        facts
+            .row_ids
+            .get(&(table, source_index))
+            .map(String::as_str)
+    }
 }
 
 /// Supported text topology grammar versions.
@@ -177,26 +236,33 @@ impl ShapePayload {
 }
 
 /// Versioned prefix tables shared by text and binary shape sets.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct ShapeSet {
+    /// Source indices retained only in this transient projection cache.
+    indices: BTreeMap<u8, Vec<usize>>,
+    /// Original readable text table counts survive loss of individual rows.
+    declared_counts: BTreeMap<String, usize>,
+    row_ids: BTreeMap<(u8, usize), String>,
+    polygon3d_refs: ReadTable<String>,
+    indexed_polygon_refs: ReadTable<String>,
     /// Ordered location table with resolved transforms.
-    locations: Vec<TextLocation>,
+    locations: ReadTable<TextLocation>,
     /// Ordered parameter-space curve table.
-    curve2ds: Vec<TextCurve2d>,
+    curve2ds: ReadTable<TextCurve2d>,
     /// Ordered 3D curve table.
-    curves: Vec<TextCurve>,
+    curves: ReadTable<TextCurve>,
     /// Ordered standalone 3D polygons.
-    polygons3d: Vec<TextPolygon3d>,
+    polygons3d: ReadTable<TextPolygon3d>,
     /// Ordered polygons indexing triangulation nodes.
-    polygons_on_triangulations: Vec<TextPolygonOnTriangulation>,
+    polygons_on_triangulations: ReadTable<TextPolygonOnTriangulation>,
     /// Ordered exact surface table.
-    surfaces: Vec<TextSurface>,
+    surfaces: ReadTable<TextSurface>,
     /// Ordered display triangulation table.
-    triangulations: Vec<TextTriangulation>,
+    triangulations: ReadTable<TextTriangulation>,
     /// Ordered subshape-first topology records.
     tshapes: TextTShapes,
     /// Root shape uses stored after the shape set.
-    roots: Vec<TextShapeUse>,
+    roots: ReadTable<TextShapeUse>,
 }
 
 /// Immutable tables from one validated shape set.
@@ -231,23 +297,75 @@ impl<'a> Tables<'a> {
 }
 
 impl ShapeSet {
+    fn admit_table(&mut self, table: usize) {
+        match table {
+            0 => self.locations.admit_empty(),
+            1 => self.curve2ds.admit_empty(),
+            2 => self.curves.admit_empty(),
+            3 => {
+                self.polygons3d.admit_empty();
+                self.polygon3d_refs.admit_empty();
+            }
+            4 => {
+                self.polygons_on_triangulations.admit_empty();
+                self.indexed_polygon_refs.admit_empty();
+            }
+            5 => self.surfaces.admit_empty(),
+            6 => self.triangulations.admit_empty(),
+            7 => self.tshapes.0.admit_empty(),
+            _ => {}
+        }
+    }
+
     fn section_counts(&self) -> BTreeMap<String, usize> {
-        [
-            ("Locations", self.locations.len()),
-            ("Curve2ds", self.curve2ds.len()),
-            ("Curves", self.curves.len()),
-            ("Polygon3D", self.polygons3d.len()),
-            (
-                "PolygonOnTriangulations",
-                self.polygons_on_triangulations.len(),
-            ),
-            ("Surfaces", self.surfaces.len()),
-            ("Triangulations", self.triangulations.len()),
-            ("TShapes", self.tshapes.len()),
-        ]
-        .into_iter()
-        .map(|(name, count)| (name.to_owned(), count))
-        .collect()
+        self.declared_counts.clone()
+    }
+
+    fn wire_indices(&self) -> BTreeMap<u8, &[usize]> {
+        self.indices
+            .iter()
+            // Polygon slots have one canonical home: their own row.index.
+            .filter(|(table, _)| !matches!(**table, 3 | 4))
+            .map(|(table, indices)| (*table, indices.as_slice()))
+            .collect()
+    }
+
+    fn validate_source_counts(&self) -> Result<(), String> {
+        for (table, name) in source::TABLES.iter().enumerate() {
+            let Some(count) = self.declared_counts.get(*name) else {
+                continue;
+            };
+            let actual = match table {
+                0 => self.locations.len(),
+                1 => self.curve2ds.len(),
+                2 => self.curves.len(),
+                3 => self.polygon3d_refs.len().max(self.polygons3d.len()),
+                4 => self
+                    .indexed_polygon_refs
+                    .len()
+                    .max(self.polygons_on_triangulations.len()),
+                5 => self.surfaces.len(),
+                6 => self.triangulations.len(),
+                7 => self.tshapes.len(),
+                _ => {
+                    return Err(format!(
+                        "unknown B-rep source table {name} at index {table}"
+                    ));
+                }
+            };
+            if *count > 1_000_000 || actual > *count {
+                return Err(format!("text shape-set source count for {name} is invalid"));
+            }
+            let table = u8::try_from(table).map_err(|_| "invalid B-rep table index")?;
+            if self
+                .indices
+                .get(&table)
+                .is_some_and(|indices| indices.iter().any(|index| *index == 0 || index > count))
+            {
+                return Err(format!("text shape-set source index exceeds {name} count"));
+            }
+        }
+        Ok(())
     }
 
     fn shape_type_counts(&self) -> BTreeMap<String, usize> {
@@ -290,6 +408,7 @@ impl ShapeSet {
     /// so the same table bounds and subshape-first relation must be checked at
     /// that admission boundary.
     fn validate(&self) -> Result<(), String> {
+        self.validate_source_counts()?;
         for (position, location) in self.locations.iter().enumerate() {
             for factor in &location.factors {
                 validate_one_based(factor.location, position, "location factor reference")?;
@@ -612,39 +731,42 @@ struct ShapePayloadRecordWire {
 
 #[derive(Deserialize)]
 struct TextFactsWire {
+    #[serde(default)]
+    source_indices: BTreeMap<u8, Vec<usize>>,
     topology_version: u8,
     section_counts: BTreeMap<String, usize>,
-    shape_types: BTreeMap<String, usize>,
-    locations: Vec<TextLocation>,
-    curve2ds: Vec<TextCurve2d>,
-    curves: Vec<TextCurve>,
-    surfaces: Vec<TextSurface>,
-    polygons3d: Vec<TextPolygon3d>,
-    polygons_on_triangulations: Vec<TextPolygonOnTriangulation>,
-    triangulations: Vec<TextTriangulation>,
-    tshapes: TextTShapes,
-    roots: Vec<TextShapeUse>,
+    shape_types: Option<BTreeMap<String, usize>>,
+    locations: Option<Vec<TextLocation>>,
+    curve2ds: Option<Vec<TextCurve2d>>,
+    curves: Option<Vec<TextCurve>>,
+    surfaces: Option<Vec<TextSurface>>,
+    polygons3d: Option<Vec<String>>,
+    polygons_on_triangulations: Option<Vec<String>>,
+    triangulations: Option<Vec<TextTriangulation>>,
+    tshapes: Option<TextTShapes>,
+    roots: Option<Vec<TextShapeUse>>,
 }
 
 #[derive(Deserialize)]
 struct BinaryFactsWire {
+    #[serde(default)]
+    source_indices: BTreeMap<u8, Vec<usize>>,
     topology_version: u8,
-    locations: Vec<TextLocation>,
-    curve2ds: Vec<TextCurve2d>,
-    curves: Vec<TextCurve>,
-    polygons3d: Vec<TextPolygon3d>,
-    polygons_on_triangulations: Vec<TextPolygonOnTriangulation>,
-    surfaces: Vec<TextSurface>,
-    triangulations: Vec<TextTriangulation>,
-    tshapes: TextTShapes,
-    roots: Vec<TextShapeUse>,
+    locations: Option<Vec<TextLocation>>,
+    curve2ds: Option<Vec<TextCurve2d>>,
+    curves: Option<Vec<TextCurve>>,
+    polygons3d: Option<Vec<String>>,
+    polygons_on_triangulations: Option<Vec<String>>,
+    surfaces: Option<Vec<TextSurface>>,
+    triangulations: Option<Vec<TextTriangulation>>,
+    tshapes: Option<TextTShapes>,
+    roots: Option<Vec<TextShapeUse>>,
 }
 
 /// The retained wire shape, borrowed from the record it states.
 ///
 /// Reading owns the tables it builds; writing needs no copy of them. The text
-/// form states two censuses beside its tables, and they are derived, so only
-/// they are owned here.
+/// form retains source table counts and derives its admitted shape-kind census.
 #[derive(Serialize)]
 struct ShapePayloadRecordOut<'a> {
     id: &'a str,
@@ -657,47 +779,71 @@ struct ShapePayloadRecordOut<'a> {
 
 #[derive(Serialize)]
 struct TextFactsOut<'a> {
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    source_indices: BTreeMap<u8, &'a [usize]>,
     topology_version: u8,
     section_counts: BTreeMap<String, usize>,
-    shape_types: BTreeMap<String, usize>,
-    locations: &'a [TextLocation],
-    curve2ds: &'a [TextCurve2d],
-    curves: &'a [TextCurve],
-    surfaces: &'a [TextSurface],
-    polygons3d: &'a [TextPolygon3d],
-    polygons_on_triangulations: &'a [TextPolygonOnTriangulation],
-    triangulations: &'a [TextTriangulation],
-    tshapes: &'a TextTShapes,
-    roots: &'a [TextShapeUse],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    shape_types: Option<BTreeMap<String, usize>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    locations: Option<&'a [TextLocation]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    curve2ds: Option<&'a [TextCurve2d]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    curves: Option<&'a [TextCurve]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    surfaces: Option<&'a [TextSurface]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    polygons3d: Option<&'a [String]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    polygons_on_triangulations: Option<&'a [String]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    triangulations: Option<&'a [TextTriangulation]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tshapes: Option<&'a TextTShapes>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    roots: Option<&'a [TextShapeUse]>,
 }
 
 #[derive(Serialize)]
 struct BinaryFactsOut<'a> {
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    source_indices: BTreeMap<u8, &'a [usize]>,
     topology_version: u8,
-    locations: &'a [TextLocation],
-    curve2ds: &'a [TextCurve2d],
-    curves: &'a [TextCurve],
-    polygons3d: &'a [TextPolygon3d],
-    polygons_on_triangulations: &'a [TextPolygonOnTriangulation],
-    surfaces: &'a [TextSurface],
-    triangulations: &'a [TextTriangulation],
-    tshapes: &'a TextTShapes,
-    roots: &'a [TextShapeUse],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    locations: Option<&'a [TextLocation]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    curve2ds: Option<&'a [TextCurve2d]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    curves: Option<&'a [TextCurve]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    polygons3d: Option<&'a [String]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    polygons_on_triangulations: Option<&'a [String]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    surfaces: Option<&'a [TextSurface]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    triangulations: Option<&'a [TextTriangulation]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tshapes: Option<&'a TextTShapes>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    roots: Option<&'a [TextShapeUse]>,
 }
 
 impl<'a> BinaryFactsOut<'a> {
     fn new(facts: &'a ShapeSet, version: BinaryTopologyVersion) -> Self {
         Self {
             topology_version: version.number(),
-            locations: &facts.locations,
-            curve2ds: &facts.curve2ds,
-            curves: &facts.curves,
-            polygons3d: &facts.polygons3d,
-            polygons_on_triangulations: &facts.polygons_on_triangulations,
-            surfaces: &facts.surfaces,
-            triangulations: &facts.triangulations,
-            tshapes: &facts.tshapes,
-            roots: &facts.roots,
+            source_indices: facts.wire_indices(),
+            locations: facts.locations.as_read(),
+            curve2ds: facts.curve2ds.as_read(),
+            curves: facts.curves.as_read(),
+            polygons3d: facts.polygon3d_refs.as_read(),
+            polygons_on_triangulations: facts.indexed_polygon_refs.as_read(),
+            surfaces: facts.surfaces.as_read(),
+            triangulations: facts.triangulations.as_read(),
+            tshapes: facts.tshapes.0.as_read().map(|_| &facts.tshapes),
+            roots: facts.roots.as_read(),
         }
     }
 }
@@ -706,17 +852,18 @@ impl<'a> TextFactsOut<'a> {
     fn new(facts: &'a ShapeSet, version: TextTopologyVersion) -> Self {
         Self {
             topology_version: version.number(),
+            source_indices: facts.wire_indices(),
             section_counts: facts.section_counts(),
-            shape_types: facts.shape_type_counts(),
-            locations: &facts.locations,
-            curve2ds: &facts.curve2ds,
-            curves: &facts.curves,
-            surfaces: &facts.surfaces,
-            polygons3d: &facts.polygons3d,
-            polygons_on_triangulations: &facts.polygons_on_triangulations,
-            triangulations: &facts.triangulations,
-            tshapes: &facts.tshapes,
-            roots: &facts.roots,
+            shape_types: facts.tshapes.0.as_read().map(|_| facts.shape_type_counts()),
+            locations: facts.locations.as_read(),
+            curve2ds: facts.curve2ds.as_read(),
+            curves: facts.curves.as_read(),
+            surfaces: facts.surfaces.as_read(),
+            polygons3d: facts.polygon3d_refs.as_read(),
+            polygons_on_triangulations: facts.indexed_polygon_refs.as_read(),
+            triangulations: facts.triangulations.as_read(),
+            tshapes: facts.tshapes.0.as_read().map(|_| &facts.tshapes),
+            roots: facts.roots.as_read(),
         }
     }
 }
@@ -726,17 +873,34 @@ impl TryFrom<BinaryFactsWire> for ShapeSet {
 
     fn try_from(value: BinaryFactsWire) -> Result<Self, Self::Error> {
         let facts = Self {
-            locations: value.locations,
-            curve2ds: value.curve2ds,
-            curves: value.curves,
-            polygons3d: value.polygons3d,
-            polygons_on_triangulations: value.polygons_on_triangulations,
-            surfaces: value.surfaces,
-            triangulations: value.triangulations,
-            tshapes: value.tshapes,
-            roots: value.roots,
+            indices: value.source_indices,
+            declared_counts: BTreeMap::new(),
+            row_ids: BTreeMap::new(),
+            locations: value.locations.into(),
+            curve2ds: value.curve2ds.into(),
+            curves: value.curves.into(),
+            polygons3d: value
+                .polygons3d
+                .as_ref()
+                .filter(|rows| rows.is_empty())
+                .map(|_| Vec::new())
+                .into(),
+            polygon3d_refs: value.polygons3d.into(),
+            polygons_on_triangulations: value
+                .polygons_on_triangulations
+                .as_ref()
+                .filter(|rows| rows.is_empty())
+                .map(|_| Vec::new())
+                .into(),
+            indexed_polygon_refs: value.polygons_on_triangulations.into(),
+            surfaces: value.surfaces.into(),
+            triangulations: value.triangulations.into(),
+            tshapes: value.tshapes.unwrap_or_default(),
+            roots: value.roots.into(),
         };
-        facts.validate()?;
+        if facts.polygon3d_refs.is_empty() && facts.indexed_polygon_refs.is_empty() {
+            facts.validate()?;
+        }
         Ok(facts)
     }
 }
@@ -773,23 +937,45 @@ impl TryFrom<ShapePayloadRecordWire> for ShapePayloadRecord {
             (ShapePayloadForm::Text, Some(text), None) => {
                 let version = TextTopologyVersion::try_from(text.topology_version)?;
                 let facts = ShapeSet {
-                    locations: text.locations,
-                    curve2ds: text.curve2ds,
-                    curves: text.curves,
-                    polygons3d: text.polygons3d,
-                    polygons_on_triangulations: text.polygons_on_triangulations,
-                    surfaces: text.surfaces,
-                    triangulations: text.triangulations,
-                    tshapes: text.tshapes,
-                    roots: text.roots,
+                    indices: text.source_indices,
+                    declared_counts: text.section_counts,
+                    row_ids: BTreeMap::new(),
+                    locations: text.locations.into(),
+                    curve2ds: text.curve2ds.into(),
+                    curves: text.curves.into(),
+                    polygons3d: text
+                        .polygons3d
+                        .as_ref()
+                        .filter(|rows| rows.is_empty())
+                        .map(|_| Vec::new())
+                        .into(),
+                    polygon3d_refs: text.polygons3d.into(),
+                    polygons_on_triangulations: text
+                        .polygons_on_triangulations
+                        .as_ref()
+                        .filter(|rows| rows.is_empty())
+                        .map(|_| Vec::new())
+                        .into(),
+                    indexed_polygon_refs: text.polygons_on_triangulations.into(),
+                    surfaces: text.surfaces.into(),
+                    triangulations: text.triangulations.into(),
+                    tshapes: text.tshapes.unwrap_or_default(),
+                    roots: text.roots.into(),
                 };
-                facts.validate()?;
-                if text.section_counts != facts.section_counts() {
-                    return Err(
-                        "text shape-set section_counts disagrees with table lengths".to_owned()
-                    );
+
+                if facts.polygon3d_refs.is_empty() && facts.indexed_polygon_refs.is_empty() {
+                    facts.validate()?;
                 }
-                if text.shape_types != facts.shape_type_counts() {
+                if facts
+                    .declared_counts
+                    .keys()
+                    .any(|name| !source::TABLES.contains(&name.as_str()))
+                {
+                    return Err("text shape-set section_counts has invalid table names".to_owned());
+                }
+                facts.validate_source_counts()?;
+                if text.shape_types != facts.tshapes.0.as_read().map(|_| facts.shape_type_counts())
+                {
                     return Err("text shape-set shape_types disagrees with TShape kinds".to_owned());
                 }
                 ShapePayload::Text { version, facts }
@@ -807,6 +993,7 @@ impl TryFrom<ShapePayloadRecordWire> for ShapePayloadRecord {
             id: wire.id,
             property: wire.property,
             entry: wire.entry,
+            rows: Vec::new(),
             payload,
         })
     }
@@ -1665,7 +1852,7 @@ impl<'a> TextTShapeOut<'a> {
 /// Topology records whose one-based identity is their collection position.
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(try_from = "Vec<TextTShapeWire>")]
-pub(crate) struct TextTShapes(Vec<TextTShape>);
+pub(crate) struct TextTShapes(ReadTable<TextTShape>);
 
 impl Serialize for TextTShapes {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -1699,7 +1886,7 @@ impl std::ops::Deref for TextTShapes {
 impl From<Vec<TextTShape>> for TextTShapes {
     fn from(shapes: Vec<TextTShape>) -> Self {
         // Native records have no independent index; position defines identity.
-        Self(shapes)
+        Self(shapes.into())
     }
 }
 
@@ -1720,7 +1907,7 @@ impl TryFrom<Vec<TextTShapeWire>> for TextTShapes {
                 wire.try_into()
             })
             .collect::<Result<Vec<_>, _>>()
-            .map(Self)
+            .map(|rows: Vec<TextTShape>| Self(rows.into()))
     }
 }
 
@@ -1976,9 +2163,9 @@ impl Serialize for NestedCurve2d {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct LocationFactor {
     /// One-based index of an earlier location.
-    location: usize,
+    pub(crate) location: usize,
     /// Signed composition power.
-    power: i64,
+    pub(crate) power: i64,
 }
 
 /// One text B-rep location record.
@@ -2311,93 +2498,6 @@ pub(crate) fn surface_parameter_affine(surface: &TextSurface) -> SurfaceParamete
     }
 }
 
-/// Bind every exact-shape property to and frame its payload.
-pub(crate) fn parse_payloads(
-    ctx: &crate::property_reader::PropertyReader<'_, '_>,
-    properties: &[PropertyRecord],
-    entries: &[EntryRecord],
-    sources: &crate::entry_sources::EntrySources<'_>,
-) -> Result<Vec<ShapePayloadRecord>, CodecError> {
-    let mut entries_by_name = BTreeMap::new();
-    for entry in entries {
-        entries_by_name.insert(entry.name(), entry);
-    }
-    let mut payloads = Vec::new();
-    for property in properties
-        .iter()
-        .filter(|property| property.type_name == "Part::PropertyPartShape")
-    {
-        let Some(name) = direct_shape_entry(ctx, property)? else {
-            continue;
-        };
-        let Some(entry) = entries_by_name.get(name.as_str()) else {
-            return Err(CodecError::malformed(format_args!(
-                "missing exact-shape entry {name}"
-            )));
-        };
-        let source = sources.view(entry)?;
-        let bytes = source.window();
-        let payload = if bytes.is_empty() {
-            ShapePayload::Empty
-        } else if name
-            .rsplit_once('.')
-            .is_some_and(|(_, extension)| extension.eq_ignore_ascii_case("bin"))
-        {
-            let (facts, version) = parse_binary_prefix(bytes)?;
-            ShapePayload::Binary { facts, version }
-        } else {
-            let (facts, version) = parse_text(bytes)?;
-            ShapePayload::Text { facts, version }
-        };
-        payloads.push(ShapePayloadRecord {
-            id: crate::native::native_child_id("shape-payload", &property.id, &name),
-            property: property.id.clone(),
-            entry: entry.id().to_owned(),
-            payload,
-        });
-    }
-    Ok(payloads)
-}
-
-fn direct_shape_entry(
-    ctx: &crate::property_reader::PropertyReader<'_, '_>,
-    property: &PropertyRecord,
-) -> Result<Option<String>, CodecError> {
-    let property_xml = ctx.property_xml(property)?;
-    let document = ctx
-        .parse_xml(property_xml.as_ref(), "FreeCAD XML tree")
-        .map_err(|error| {
-            let CodecError::Malformed(error) = error else {
-                return error;
-            };
-            CodecError::malformed(format_args!(
-                "invalid exact-shape property XML {}: {error}",
-                property.id
-            ))
-        })?;
-    let root = document.root_element();
-    if !matches!(root.tag_name().name(), "Property" | "_Property") {
-        return Err(CodecError::malformed(format_args!(
-            "exact-shape property {} has no property record root",
-            property.id
-        )));
-    }
-    let mut parts = root.children().filter(|node| node.has_tag_name("Part"));
-    let Some(part) = parts.next() else {
-        return Ok(None);
-    };
-    if parts.next().is_some() {
-        return Err(CodecError::malformed(format_args!(
-            "exact-shape property {} has multiple direct Part carriers",
-            property.id
-        )));
-    }
-    Ok(part
-        .attribute("file")
-        .filter(|file| !file.is_empty())
-        .map(str::to_owned))
-}
-
 /// Derive an exhaustive family census from successfully parsed exact-shape payloads.
 pub(crate) fn carrier_census(
     ctx: &DecodeContext<'_>,
@@ -2414,8 +2514,11 @@ pub(crate) fn carrier_census(
         let curve2ds = &facts.curve2ds;
         let curves = &facts.curves;
         let surfaces = &facts.surfaces;
-        let polygons3d = facts.polygons3d.len();
-        let indexed = facts.polygons_on_triangulations.len();
+        let polygons3d = facts.polygon3d_refs.len().max(facts.polygons3d.len());
+        let indexed = facts
+            .indexed_polygon_refs
+            .len()
+            .max(facts.polygons_on_triangulations.len());
         let triangulations = facts.triangulations.len();
         let tshapes = &facts.tshapes;
         let mut record = crate::native::CarrierCensusRecord {
@@ -2551,411 +2654,6 @@ fn census_surface(
     Ok(())
 }
 
-fn parse_text(bytes: &[u8]) -> Result<(ShapeSet, TextTopologyVersion), CodecError> {
-    let text = std::str::from_utf8(bytes)
-        .map_err(|_| CodecError::Malformed("text B-rep is not UTF-8".into()))?;
-    let headers = [
-        ("CASCADE Topology V1, (c) Matra-Datavision", 1),
-        ("CASCADE Topology V2, (c) Matra-Datavision", 2),
-        ("CASCADE Topology V3, (c) Open Cascade", 3),
-    ];
-    let mut topology_version = None;
-    for (header, version) in headers {
-        let count = text.matches(header).count();
-        if count > 1 {
-            return Err(CodecError::Malformed(
-                "text B-rep has duplicate topology headers".into(),
-            ));
-        }
-        if count == 1 && topology_version.replace(version).is_some() {
-            return Err(CodecError::Malformed(
-                "text B-rep has multiple topology headers".into(),
-            ));
-        }
-    }
-    let topology_version = topology_version.ok_or_else(|| {
-        CodecError::Malformed("text B-rep has no supported topology header".into())
-    })?;
-    let tokens = text.split_ascii_whitespace().collect::<Vec<_>>();
-    let mut section_counts = BTreeMap::new();
-    let mut previous_section = None;
-    for section in [
-        "Locations",
-        "Curve2ds",
-        "Curves",
-        "Polygon3D",
-        "PolygonOnTriangulations",
-        "Surfaces",
-        "Triangulations",
-    ] {
-        let (index, count) = text_brep_section(&tokens, section, previous_section)?;
-        previous_section = Some(index);
-        section_counts.insert(section.to_owned(), count);
-    }
-    let (tshapes, declared_shapes) = text_brep_section(&tokens, "TShapes", previous_section)?;
-    section_counts.insert("TShapes".to_owned(), declared_shapes);
-    let mut shape_types = BTreeMap::new();
-    for token in &tokens[tshapes + 2..] {
-        let name = match *token {
-            "Ve" => "vertex",
-            "Ed" => "edge",
-            "Wi" => "wire",
-            "Fa" => "face",
-            "Sh" => "shell",
-            "So" => "solid",
-            "CS" => "compsolid",
-            "Co" => "compound",
-            _ => continue,
-        };
-        if let Some(count) = shape_types.get_mut(name) {
-            *count += 1;
-        } else {
-            shape_types.insert(name.to_owned(), 1);
-        }
-    }
-    if shape_types.values().sum::<usize>() != declared_shapes {
-        return Err(CodecError::malformed(format_args!(
-            "TShapes declares {declared_shapes} records but the shape-type census found {}",
-            shape_types.values().sum::<usize>()
-        )));
-    }
-    let locations = parse_locations(&tokens, &section_counts)?;
-    let curve2ds = parse_geometry_table(
-        &tokens,
-        &section_counts,
-        "Curve2ds",
-        "Curves",
-        parse_curve2d,
-    )?;
-    let curves =
-        parse_geometry_table(&tokens, &section_counts, "Curves", "Polygon3D", parse_curve)?;
-    let surfaces = parse_geometry_table(
-        &tokens,
-        &section_counts,
-        "Surfaces",
-        "Triangulations",
-        parse_surface,
-    )?;
-    let polygons3d = parse_polygons3d(&tokens, &section_counts)?;
-    let polygons_on_triangulations = parse_polygons_on_triangulations(&tokens, &section_counts)?;
-    let triangulations = parse_triangulations(&tokens, &section_counts, topology_version)?;
-    let (tshapes, roots) = parse_tshapes(&tokens, &section_counts, topology_version)?;
-    let facts = ShapeSet {
-        locations,
-        curve2ds,
-        curves,
-        polygons3d,
-        polygons_on_triangulations,
-        surfaces,
-        triangulations,
-        tshapes: tshapes.into(),
-        roots,
-    };
-    if shape_types != facts.shape_type_counts() {
-        return Err(CodecError::Malformed(
-            "TShapes shape-type census disagrees with parsed records".into(),
-        ));
-    }
-    facts.validate().map_err(CodecError::Malformed)?;
-    Ok((
-        facts,
-        TextTopologyVersion::try_from(topology_version).map_err(CodecError::Malformed)?,
-    ))
-}
-
-/// The token position of one text B-rep section marker and its declared count.
-fn text_brep_section(
-    tokens: &[&str],
-    section: &str,
-    previous_section: Option<usize>,
-) -> Result<(usize, usize), CodecError> {
-    let mut section_tokens = tokens
-        .iter()
-        .enumerate()
-        .filter(|(_, token)| **token == section);
-    let Some((index, _)) = section_tokens.next() else {
-        return Err(CodecError::malformed(format_args!(
-            "text B-rep has no {section} table"
-        )));
-    };
-    if section_tokens.next().is_some() {
-        return Err(CodecError::Malformed(
-            "text B-rep has duplicate section markers".into(),
-        ));
-    }
-    let count = tokens
-        .get(index + 1)
-        .and_then(|value| value.parse::<usize>().ok())
-        .ok_or_else(|| CodecError::malformed(format_args!("invalid {section} count")))?;
-    if count > 1_000_000 {
-        return Err(CodecError::malformed(format_args!(
-            "{section} count limit exceeded"
-        )));
-    }
-    if previous_section.is_some_and(|previous| index <= previous) {
-        return Err(CodecError::malformed(format_args!(
-            "text B-rep {section} table is out of order"
-        )));
-    }
-    Ok((index, count))
-}
-
-fn parse_binary_prefix(bytes: &[u8]) -> Result<(ShapeSet, BinaryTopologyVersion), CodecError> {
-    let mut cursor = BinaryCursor::new(bytes);
-    let version = loop {
-        let line = cursor.line("binary B-rep version")?;
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let version = line
-            .strip_prefix("Open CASCADE Topology V")
-            .and_then(|tail| tail.as_bytes().first())
-            .and_then(|byte| byte.checked_sub(b'0'))
-            .filter(|version| (1..=4).contains(version))
-            .ok_or_else(|| CodecError::Malformed("unsupported binary B-rep header".into()))?;
-        break version;
-    };
-    let location_count = cursor.section_count("Locations")?;
-    // Each location consumes at least its 1-byte kind discriminant.
-    let mut locations: Vec<TextLocation> = Vec::new();
-    for index in 0..location_count {
-        let kind = cursor.u8("binary location kind")?;
-        let location = match kind {
-            1 => {
-                let mut rows = [[FiniteReal::ZERO; 4]; 3];
-                for row in &mut rows {
-                    for value in row {
-                        *value = cursor.finite_f64("binary location transform")?;
-                    }
-                }
-                let transform = Transform::from_finite_rows(rows);
-                invert_affine(transform)?;
-                TextLocation {
-                    factors: Vec::new(),
-                    transform,
-                }
-            }
-            2 => {
-                let mut factors = Vec::new();
-                let mut transform = Transform::identity();
-                loop {
-                    if factors.len() >= 1_000_000 {
-                        return Err(CodecError::Malformed(
-                            "binary location factor-count limit exceeded".into(),
-                        ));
-                    }
-                    let referenced = cursor.i32("binary location factor")?;
-                    if referenced == 0 {
-                        break;
-                    }
-                    let referenced = usize::try_from(referenced).map_err(|_| {
-                        CodecError::Malformed("negative binary location factor".into())
-                    })?;
-                    if referenced == 0 || referenced > locations.len() {
-                        return Err(CodecError::malformed(format_args!(
-                            "binary location {} references unavailable location {referenced}",
-                            index + 1
-                        )));
-                    }
-                    let power = cursor.i32("binary location power")?;
-                    let powered =
-                        transform_power(locations[referenced - 1].transform, i64::from(power))?;
-                    transform = powered
-                        .compose(transform)
-                        .map_err(location_transform_error)?;
-                    factors.push(LocationFactor {
-                        location: referenced,
-                        power: i64::from(power),
-                    });
-                }
-                TextLocation { factors, transform }
-            }
-            other => {
-                return Err(CodecError::malformed(format_args!(
-                    "invalid binary location type {other}"
-                )));
-            }
-        };
-        locations.push(location);
-    }
-    let curve_count = cursor.section_count("Curve2ds")?;
-    // Each parameter curve consumes at least its 1-byte kind discriminant.
-    let mut curve2ds = Vec::new();
-    for _ in 0..curve_count {
-        curve2ds.push(parse_binary_curve2d(&mut cursor, 0)?);
-    }
-    let curve_count = cursor.section_count("Curves")?;
-    // Each 3D curve consumes at least its 1-byte kind discriminant.
-    let mut curves = Vec::new();
-    for _ in 0..curve_count {
-        curves.push(parse_binary_curve(&mut cursor, 0)?);
-    }
-    let polygon_count = cursor.section_count("Polygon3D")?;
-    // Each 3D polygon consumes at least a 4-byte node count, a 1-byte flag, and an 8-byte deflection.
-    let mut polygons3d = Vec::new();
-    for _ in 0..polygon_count {
-        let node_count = cursor.count("binary 3D polygon node count")?;
-        let has_parameters = cursor.bool("binary 3D polygon parameter flag")?;
-        let deflection = cursor.finite_f64("binary 3D polygon deflection")?;
-        let nodes = cursor.read_counted(node_count, |cursor| {
-            cursor.finite_point3("binary 3D polygon node")
-        })?;
-        let parameters = has_parameters
-            .then(|| {
-                cursor.read_counted(node_count, |cursor| {
-                    cursor.finite_f64("binary 3D polygon parameter")
-                })
-            })
-            .transpose()?;
-        polygons3d.push(TextPolygon3d {
-            deflection: admit_polygon_deflection(deflection)?,
-            nodes,
-            parameters,
-        });
-    }
-    let indexed_polygon_count = cursor.section_count("PolygonOnTriangulations")?;
-    // Each indexed polygon consumes at least a 4-byte node count, an 8-byte deflection, and a 1-byte flag.
-    let mut polygons_on_triangulations = Vec::new();
-    for _ in 0..indexed_polygon_count {
-        let node_count = cursor.count("binary indexed polygon node count")?;
-        let nodes = cursor.read_counted(node_count, |cursor| {
-            let node = cursor.i32("binary indexed polygon node")?;
-            u32::try_from(node).map_err(|_| {
-                CodecError::Malformed("non-positive binary indexed polygon node".into())
-            })
-        })?;
-        if nodes.contains(&0) {
-            return Err(CodecError::Malformed(
-                "binary indexed polygon node indices are one-based".into(),
-            ));
-        }
-        let deflection = cursor.finite_f64("binary indexed polygon deflection")?;
-        let has_parameters = cursor.bool("binary indexed polygon parameter flag")?;
-        let parameters = has_parameters
-            .then(|| {
-                cursor.read_counted(node_count, |cursor| {
-                    cursor.finite_f64("binary indexed polygon parameter")
-                })
-            })
-            .transpose()?;
-        polygons_on_triangulations.push(TextPolygonOnTriangulation {
-            nodes,
-            deflection: admit_polygon_deflection(deflection)?,
-            parameters,
-        });
-    }
-    let surface_count = cursor.section_count("Surfaces")?;
-    // Each surface consumes at least its 1-byte kind discriminant.
-    let mut surfaces = Vec::new();
-    for _ in 0..surface_count {
-        surfaces.push(parse_binary_surface(&mut cursor, 0)?);
-    }
-    let triangulation_count = cursor.section_count("Triangulations")?;
-    // Each triangulation consumes at least two 4-byte counts, a 1-byte flag, and an 8-byte deflection.
-    let mut triangulations = Vec::new();
-    for _ in 0..triangulation_count {
-        let node_count = cursor.count("binary triangulation node count")?;
-        let triangle_count = cursor.count("binary triangulation triangle count")?;
-        let has_uv = cursor.bool("binary triangulation UV flag")?;
-        let has_normals = version >= 4 && cursor.bool("binary triangulation normal flag")?;
-        let deflection = cursor.finite_f64("binary triangulation deflection")?;
-        let nodes = cursor.read_counted(node_count, |cursor| {
-            cursor.finite_point3("binary triangulation node")
-        })?;
-        let uv_nodes = has_uv
-            .then(|| {
-                cursor.read_counted(node_count, |cursor| {
-                    cursor.finite_point2("binary triangulation UV node")
-                })
-            })
-            .transpose()?;
-        let triangles = cursor.read_counted(triangle_count, |cursor| {
-            let mut triangle = [0_u32; 3];
-            for node in &mut triangle {
-                let value = cursor.i32("binary triangulation triangle node")?;
-                *node = u32::try_from(value)
-                    .map_err(|_| CodecError::Malformed("negative binary triangle node".into()))?;
-            }
-            Ok(triangle)
-        })?;
-        let normals = has_normals
-            .then(|| {
-                cursor.read_counted(node_count, |cursor| {
-                    cursor.finite_vector3_f32("binary triangulation normal")
-                })
-            })
-            .transpose()?;
-        triangulations.push(
-            TextTriangulation::from_admitted_parts(deflection, nodes, uv_nodes, triangles, normals)
-                .map_err(CodecError::Malformed)?,
-        );
-    }
-    let tshape_count = cursor.section_count("TShapes")?;
-    // Each TShape consumes at least its 1-byte kind discriminant.
-    let mut tshapes = Vec::new();
-    for index in 0..tshape_count {
-        tshapes.push(parse_binary_tshape(
-            &mut cursor,
-            version,
-            index + 1,
-            tshape_count,
-            BinaryGeometryCounts {
-                curves: curve_count,
-                curves2d: curve2ds.len(),
-                surfaces: surfaces.len(),
-                locations: locations.len(),
-                polygons3d: polygons3d.len(),
-                indexed_polygons: polygons_on_triangulations.len(),
-                triangulations: triangulations.len(),
-            },
-        )?);
-    }
-    let roots = if cursor.remaining() == 0 {
-        Vec::new()
-    } else {
-        if cursor.remaining() != 12 {
-            return Err(CodecError::Malformed(
-                "binary B-rep root record has invalid length".into(),
-            ));
-        }
-        let shape = cursor.i32("binary root shape")?;
-        let location = cursor.i32("binary root location")?;
-        let orientation = cursor.i32("binary root orientation")?;
-        if shape == -1 && location == -1 && orientation == -1 {
-            Vec::new()
-        } else {
-            vec![TextShapeUse {
-                shape: checked_binary_reference(shape, tshape_count, false, "root shape")?,
-                location: checked_binary_reference(
-                    location,
-                    locations.len(),
-                    true,
-                    "root location",
-                )?
-                .into(),
-                orientation: binary_orientation(orientation)?,
-            }]
-        }
-    };
-    let facts = ShapeSet {
-        locations,
-        curve2ds,
-        curves,
-        polygons3d,
-        polygons_on_triangulations,
-        surfaces,
-        triangulations,
-        tshapes: tshapes.into(),
-        roots,
-    };
-    facts.validate().map_err(CodecError::Malformed)?;
-    Ok((
-        facts,
-        BinaryTopologyVersion::try_from(version).map_err(CodecError::Malformed)?,
-    ))
-}
-
 #[derive(Clone, Copy)]
 struct BinaryGeometryCounts {
     curves: usize,
@@ -2982,6 +2680,7 @@ fn parse_binary_tshape(
         triangulations: triangulation_count,
         ..
     } = counts;
+    cursor.mark_census(source::census::Lane::Shape, 1)?;
     let kind = match cursor.u8("binary TShape kind")? {
         0 => TextShapeKind::Compound,
         1 => TextShapeKind::CompSolid,
@@ -3088,6 +2787,7 @@ fn parse_binary_tshape(
             let degenerated = cursor.bool("binary edge degenerated flag")?;
             let mut representations = Vec::new();
             loop {
+                let representation_start = cursor.view.position();
                 let representation_kind = cursor.u8("binary edge representation kind")?;
                 if representation_kind == 0 {
                     break;
@@ -3097,12 +2797,15 @@ fn parse_binary_tshape(
                         "binary edge representation-count limit exceeded".into(),
                     ));
                 }
-                representations.push(parse_binary_edge_representation(
-                    cursor,
-                    version,
-                    representation_kind,
-                    counts,
-                )?);
+                let representation =
+                    parse_binary_edge_representation(cursor, version, representation_kind, counts)?;
+                if matches!(representation_kind, 2 | 3) {
+                    cursor.representation_marks.push((
+                        representations.len(),
+                        representation_start..cursor.view.position(),
+                    ));
+                }
+                representations.push(representation);
             }
             TextTShapeGeometry::Edge {
                 tolerance,
@@ -3434,6 +3137,7 @@ fn parse_binary_surface(
             "binary surface nesting exceeds {MAX_GEOMETRY_NESTING_DEPTH}"
         )));
     }
+    cursor.mark_census(source::census::Lane::Surface, 1)?;
     Ok(match cursor.u8("binary surface kind")? {
         1 => {
             let origin = cursor.finite_point3("binary plane origin")?;
@@ -3640,6 +3344,7 @@ fn parse_binary_curve(
             "binary 3D curve nesting exceeds {MAX_GEOMETRY_NESTING_DEPTH}"
         )));
     }
+    cursor.mark_census(source::census::Lane::Curve, 1)?;
     Ok(match cursor.u8("binary 3D curve kind")? {
         1 => TextCurve::Line {
             origin: cursor.finite_point3("binary line origin")?,
@@ -3779,6 +3484,7 @@ fn parse_binary_curve2d(
             "binary parameter-curve nesting exceeds {MAX_GEOMETRY_NESTING_DEPTH}"
         )));
     }
+    cursor.mark_census(source::census::Lane::Curve2d, 1)?;
     Ok(match cursor.u8("binary parameter-curve kind")? {
         1 => TextCurve2d::Line {
             origin: cursor.finite_point2("binary line origin")?,
@@ -3886,17 +3592,32 @@ fn parse_binary_curve2d(
 
 struct BinaryCursor<'a> {
     view: View<'a>,
+    census_marks: Vec<(View<'a>, source::census::Lane)>,
+    representation_marks: Vec<(usize, std::ops::Range<usize>)>,
 }
 
 impl<'a> BinaryCursor<'a> {
+    #[cfg(test)]
     fn new(bytes: &'a [u8]) -> Self {
         Self {
             view: View::over_retained(bytes),
+            census_marks: Vec::new(),
+            representation_marks: Vec::new(),
         }
     }
 
     fn remaining(&self) -> usize {
         self.view.remaining()
+    }
+
+    fn mark_census(&mut self, lane: source::census::Lane, width: usize) -> Result<(), CodecError> {
+        let start = self.view.position();
+        let view = self
+            .view
+            .child(start, start + width)
+            .ok_or_else(|| CodecError::malformed("cut-short census discriminator"))?;
+        self.census_marks.push((view, lane));
+        Ok(())
     }
 
     fn read_counted<T>(
@@ -3909,10 +3630,6 @@ impl<'a> BinaryCursor<'a> {
             values.push(read(self)?);
         }
         Ok(values)
-    }
-
-    fn truncated(label: &str) -> CodecError {
-        CodecError::malformed(format_args!("truncated {label}"))
     }
 
     /// Clamps a declared element count to what the unread bytes can hold.
@@ -3928,8 +3645,8 @@ impl<'a> BinaryCursor<'a> {
         .ok_or_else(|| CodecError::malformed(format_args!("{label} count exceeds remaining input")))
     }
 
-    fn take(&mut self, count: usize, label: &str) -> Result<&'a [u8], CodecError> {
-        self.view.take(count).ok_or_else(|| Self::truncated(label))
+    fn take(&mut self, count: usize, _label: &str) -> Result<&'a [u8], CodecError> {
+        Ok(self.view.req_take(count)?)
     }
 
     fn line(&mut self, label: &str) -> Result<&'a str, CodecError> {
@@ -3963,8 +3680,8 @@ impl<'a> BinaryCursor<'a> {
             .ok_or_else(|| CodecError::malformed(format_args!("invalid binary {name} count")))
     }
 
-    fn u8(&mut self, label: &str) -> Result<u8, CodecError> {
-        self.view.u8().ok_or_else(|| Self::truncated(label))
+    fn u8(&mut self, _label: &str) -> Result<u8, CodecError> {
+        Ok(self.view.req_u8()?)
     }
 
     fn bool(&mut self, label: &str) -> Result<bool, CodecError> {
@@ -3977,12 +3694,12 @@ impl<'a> BinaryCursor<'a> {
         }
     }
 
-    fn u16(&mut self, label: &str) -> Result<u16, CodecError> {
-        self.view.u16_le().ok_or_else(|| Self::truncated(label))
+    fn u16(&mut self, _label: &str) -> Result<u16, CodecError> {
+        Ok(self.view.req_u16_le()?)
     }
 
-    fn i32(&mut self, label: &str) -> Result<i32, CodecError> {
-        self.view.i32_le().ok_or_else(|| Self::truncated(label))
+    fn i32(&mut self, _label: &str) -> Result<i32, CodecError> {
+        Ok(self.view.req_i32_le()?)
     }
 
     fn count(&mut self, label: &str) -> Result<usize, CodecError> {
@@ -3994,13 +3711,13 @@ impl<'a> BinaryCursor<'a> {
     }
 
     fn finite_f64(&mut self, label: &str) -> Result<FiniteReal, CodecError> {
-        let value = self.view.f64_le().ok_or_else(|| Self::truncated(label))?;
+        let value = self.view.req_f64_le()?;
         FiniteReal::new(value)
             .ok_or_else(|| CodecError::malformed(format_args!("non-finite {label}")))
     }
 
     fn f32(&mut self, label: &str) -> Result<FiniteBinary32, CodecError> {
-        let value = self.view.f32_le().ok_or_else(|| Self::truncated(label))?;
+        let value = self.view.req_f32_le()?;
         FiniteBinary32::new(value)
             .ok_or_else(|| CodecError::malformed(format_args!("non-finite {label}")))
     }
@@ -4056,126 +3773,6 @@ impl<'a> BinaryCursor<'a> {
     }
 }
 
-fn parse_locations(
-    tokens: &[&str],
-    section_counts: &BTreeMap<String, usize>,
-) -> Result<Vec<TextLocation>, CodecError> {
-    let start = tokens
-        .iter()
-        .position(|token| *token == "Locations")
-        .ok_or_else(|| CodecError::Malformed("text B-rep has no Locations table".into()))?
-        + 2;
-    let end = tokens
-        .iter()
-        .position(|token| *token == "Curve2ds")
-        .ok_or_else(|| CodecError::Malformed("text B-rep has no Curve2ds table".into()))?;
-    let count = section_counts.get("Locations").copied().unwrap_or(0);
-    let mut cursor = TokenCursor::new(&tokens[start..end]);
-    // Each location consumes at least its one type token.
-    let mut locations: Vec<TextLocation> = Vec::new();
-    for index in 0..count {
-        let kind = cursor.integer("location type")?;
-        let location = match kind {
-            1 => {
-                let mut rows = [[FiniteReal::ZERO; 4]; 3];
-                for row in &mut rows {
-                    for value in row {
-                        *value = cursor.finite_real("location transform value")?;
-                    }
-                }
-                let transform = Transform::from_finite_rows(rows);
-                invert_affine(transform)?;
-                TextLocation {
-                    factors: Vec::new(),
-                    transform,
-                }
-            }
-            2 => {
-                let mut factors = Vec::new();
-                let mut transform = Transform::identity();
-                loop {
-                    let referenced = cursor.integer("location factor index")?;
-                    if referenced == 0 {
-                        break;
-                    }
-                    let referenced = usize::try_from(referenced).map_err(|_| {
-                        CodecError::Malformed("negative location factor index".into())
-                    })?;
-                    if referenced == 0 || referenced > locations.len() {
-                        return Err(CodecError::malformed(format_args!(
-                            "location {} references unavailable location {referenced}",
-                            index + 1
-                        )));
-                    }
-                    if factors.len() >= 1_000_000 {
-                        return Err(CodecError::Malformed(
-                            "location factor-count limit exceeded".into(),
-                        ));
-                    }
-                    let power = cursor.integer("location factor power")?;
-                    let powered = transform_power(locations[referenced - 1].transform, power)?;
-                    transform = powered
-                        .compose(transform)
-                        .map_err(location_transform_error)?;
-                    factors.push(LocationFactor {
-                        location: referenced,
-                        power,
-                    });
-                }
-                TextLocation { factors, transform }
-            }
-            other => {
-                return Err(CodecError::malformed(format_args!(
-                    "invalid location type {other} at table index {}",
-                    index + 1
-                )));
-            }
-        };
-        locations.push(location);
-    }
-    if !cursor.is_empty() {
-        return Err(CodecError::Malformed(
-            "text B-rep Locations table contains trailing tokens".into(),
-        ));
-    }
-    Ok(locations)
-}
-
-fn parse_geometry_table<T>(
-    tokens: &[&str],
-    section_counts: &BTreeMap<String, usize>,
-    table: &str,
-    next_table: &str,
-    mut parse: impl FnMut(&mut TokenCursor<'_>, usize, usize) -> Result<T, CodecError>,
-) -> Result<Vec<T>, CodecError> {
-    let start = tokens
-        .iter()
-        .position(|token| *token == table)
-        .ok_or_else(|| CodecError::malformed(format_args!("text B-rep has no {table} table")))?
-        + 2;
-    let end = tokens
-        .iter()
-        .position(|token| *token == next_table)
-        .ok_or_else(|| {
-            CodecError::malformed(format_args!("text B-rep has no {next_table} table"))
-        })?;
-    let count = section_counts.get(table).copied().unwrap_or(0);
-    let mut cursor = TokenCursor::new(tokens.get(start..end).ok_or_else(|| {
-        CodecError::malformed(format_args!("text B-rep {table} table has invalid bounds"))
-    })?);
-    // Every row consumes at least its type token.
-    let mut curves = Vec::new();
-    for index in 0..count {
-        curves.push(parse(&mut cursor, 0, index + 1)?);
-    }
-    if !cursor.is_empty() {
-        return Err(CodecError::malformed(format_args!(
-            "text B-rep {table} table contains trailing tokens"
-        )));
-    }
-    Ok(curves)
-}
-
 fn parse_curve2d(
     cursor: &mut TokenCursor<'_>,
     depth: usize,
@@ -4186,6 +3783,7 @@ fn parse_curve2d(
             "text B-rep 2D curve nesting exceeds {MAX_GEOMETRY_NESTING_DEPTH}"
         )));
     }
+    cursor.mark_census(source::census::Lane::Curve2d)?;
     let kind = cursor.integer("2D curve type")?;
     Ok(match kind {
         1 => TextCurve2d::Line {
@@ -4334,253 +3932,6 @@ fn invert_affine(transform: Transform) -> Result<Transform, CodecError> {
         .map_err(location_transform_error)
 }
 
-fn parse_polygons3d(
-    tokens: &[&str],
-    section_counts: &BTreeMap<String, usize>,
-) -> Result<Vec<TextPolygon3d>, CodecError> {
-    let mut cursor = section_cursor(tokens, "Polygon3D", "PolygonOnTriangulations")?;
-    let count = section_counts.get("Polygon3D").copied().unwrap_or(0);
-    // Each polygon consumes at least a node-count, flag, and deflection token.
-    let mut polygons = Vec::new();
-    for _ in 0..count {
-        let node_count = cursor.count("3D polygon node count", 1_000_000)?;
-        let has_parameters = cursor.boolean("3D polygon parameter flag")?;
-        let deflection = cursor.finite_real("3D polygon deflection")?;
-        // Each node consumes its three point tokens.
-        let mut nodes = Vec::new();
-        for _ in 0..node_count {
-            nodes.push(cursor.finite_point("3D polygon node")?);
-        }
-        let parameters = if has_parameters {
-            // Each parameter consumes its one token.
-            let mut parameters = Vec::new();
-            for _ in 0..node_count {
-                parameters.push(cursor.finite_real("3D polygon parameter")?);
-            }
-            Some(parameters)
-        } else {
-            None
-        };
-        polygons.push(TextPolygon3d {
-            deflection: admit_polygon_deflection(deflection)?,
-            nodes,
-            parameters,
-        });
-    }
-    ensure_section_consumed(&cursor, "Polygon3D")?;
-    Ok(polygons)
-}
-
-fn parse_polygons_on_triangulations(
-    tokens: &[&str],
-    section_counts: &BTreeMap<String, usize>,
-) -> Result<Vec<TextPolygonOnTriangulation>, CodecError> {
-    let mut cursor = section_cursor(tokens, "PolygonOnTriangulations", "Surfaces")?;
-    let count = section_counts
-        .get("PolygonOnTriangulations")
-        .copied()
-        .unwrap_or(0);
-    // Each polygon consumes at least a node-count, marker, deflection, and flag token.
-    let mut polygons = Vec::new();
-    for _ in 0..count {
-        let node_count = cursor.count("polygon-on-triangulation node count", 1_000_000)?;
-        // Each node index consumes its one token.
-        let mut nodes = Vec::new();
-        for _ in 0..node_count {
-            let node = cursor.count(
-                "polygon-on-triangulation node index",
-                usize::try_from(u32::MAX).map_err(|_| {
-                    CodecError::Malformed("B-rep node limit exceeds address space".into())
-                })?,
-            )?;
-            if node == 0 {
-                return Err(CodecError::Malformed(
-                    "polygon-on-triangulation node index is zero".into(),
-                ));
-            }
-            nodes.push(
-                u32::try_from(node)
-                    .map_err(|_| CodecError::Malformed("B-rep integer exceeds u32".into()))?,
-            );
-        }
-        if cursor.next("polygon-on-triangulation parameter marker")? != "p" {
-            return Err(CodecError::Malformed(
-                "polygon-on-triangulation has no parameter marker".into(),
-            ));
-        }
-        let deflection = cursor.finite_real("polygon-on-triangulation deflection")?;
-        let has_parameters = cursor.boolean("polygon-on-triangulation parameter flag")?;
-        let parameters = if has_parameters {
-            // Each parameter consumes its one token.
-            let mut parameters = Vec::new();
-            for _ in 0..node_count {
-                parameters.push(cursor.finite_real("polygon-on-triangulation parameter")?);
-            }
-            Some(parameters)
-        } else {
-            None
-        };
-        polygons.push(TextPolygonOnTriangulation {
-            nodes,
-            deflection: admit_polygon_deflection(deflection)?,
-            parameters,
-        });
-    }
-    ensure_section_consumed(&cursor, "PolygonOnTriangulations")?;
-    Ok(polygons)
-}
-
-fn parse_triangulations(
-    tokens: &[&str],
-    section_counts: &BTreeMap<String, usize>,
-    topology_version: u8,
-) -> Result<Vec<TextTriangulation>, CodecError> {
-    let mut cursor = section_cursor(tokens, "Triangulations", "TShapes")?;
-    let count = section_counts.get("Triangulations").copied().unwrap_or(0);
-    // Each triangulation consumes at least two counts, a flag, and a deflection token.
-    let mut triangulations = Vec::new();
-    for _ in 0..count {
-        let node_count = cursor.count("triangulation node count", 1_000_000)?;
-        let triangle_count = cursor.count("triangulation triangle count", 1_000_000)?;
-        let has_uv = cursor.boolean("triangulation UV flag")?;
-        let has_normals = topology_version >= 3 && cursor.boolean("triangulation normal flag")?;
-        let deflection = cursor.finite_real("triangulation deflection")?;
-        // Each node consumes its three point tokens.
-        let mut nodes = Vec::new();
-        for _ in 0..node_count {
-            nodes.push(cursor.finite_point("triangulation node")?);
-        }
-        let uv_nodes = if has_uv {
-            // Each UV node consumes its two point2 tokens.
-            let mut uv_nodes = Vec::new();
-            for _ in 0..node_count {
-                uv_nodes.push(cursor.finite_point2("triangulation UV node")?);
-            }
-            Some(uv_nodes)
-        } else {
-            None
-        };
-        // Each triangle consumes its three index tokens.
-        let mut triangles = Vec::new();
-        for _ in 0..triangle_count {
-            let mut triangle = [0_u32; 3];
-            for node in &mut triangle {
-                let index = cursor.count("triangulation node index", node_count)?;
-                if index == 0 {
-                    return Err(CodecError::Malformed(
-                        "triangulation node index is zero".into(),
-                    ));
-                }
-                *node = u32::try_from(index)
-                    .map_err(|_| CodecError::Malformed("B-rep integer exceeds u32".into()))?;
-            }
-            triangles.push(triangle);
-        }
-        let normals = if has_normals {
-            // Each normal consumes its three vector tokens.
-            let mut normals = Vec::new();
-            for _ in 0..node_count {
-                normals.push(cursor.finite_vector("triangulation normal")?);
-            }
-            Some(normals)
-        } else {
-            None
-        };
-        triangulations.push(
-            TextTriangulation::from_admitted_parts(deflection, nodes, uv_nodes, triangles, normals)
-                .map_err(CodecError::Malformed)?,
-        );
-    }
-    ensure_section_consumed(&cursor, "Triangulations")?;
-    Ok(triangulations)
-}
-
-fn section_cursor<'a>(
-    tokens: &'a [&'a str],
-    section: &str,
-    following: &str,
-) -> Result<TokenCursor<'a>, CodecError> {
-    let start = tokens
-        .iter()
-        .position(|token| *token == section)
-        .ok_or_else(|| CodecError::malformed(format_args!("text B-rep has no {section} table")))?
-        + 2;
-    let end = tokens
-        .iter()
-        .position(|token| *token == following)
-        .ok_or_else(|| {
-            CodecError::malformed(format_args!("text B-rep has no {following} table"))
-        })?;
-    Ok(TokenCursor::new(&tokens[start..end]))
-}
-
-fn ensure_section_consumed(cursor: &TokenCursor<'_>, section: &str) -> Result<(), CodecError> {
-    if cursor.is_empty() {
-        Ok(())
-    } else {
-        Err(CodecError::malformed(format_args!(
-            "text B-rep {section} table contains trailing tokens"
-        )))
-    }
-}
-
-fn parse_tshapes(
-    tokens: &[&str],
-    section_counts: &BTreeMap<String, usize>,
-    topology_version: u8,
-) -> Result<(Vec<TextTShape>, Vec<TextShapeUse>), CodecError> {
-    let start = tokens
-        .iter()
-        .position(|token| *token == "TShapes")
-        .ok_or_else(|| CodecError::Malformed("text B-rep has no TShapes table".into()))?
-        + 2;
-    let count = section_counts.get("TShapes").copied().unwrap_or(0);
-    let mut cursor = TokenCursor::new(&tokens[start..]);
-    // Each TShape consumes at least its one kind token.
-    let mut shapes = Vec::new();
-    for index in 1..=count {
-        let token = cursor.next("TShape kind")?;
-        let kind = parse_shape_kind(token)?;
-        let geometry = parse_tshape_geometry(kind, &mut cursor, section_counts, topology_version)?;
-        let flags_token = cursor.next("TShape flags")?;
-        let flags = parse_shape_flags(flags_token, topology_version)?;
-        let mut children = Vec::new();
-        loop {
-            if cursor.peek() == Some("*") {
-                cursor.next("TShape child terminator")?;
-                break;
-            }
-            let child = parse_shape_use(&mut cursor, count, section_counts)?;
-            if child.shape >= index {
-                return Err(CodecError::malformed(format_args!(
-                    "TShape {index} references non-prior child {}",
-                    child.shape
-                )));
-            }
-            children.push(child);
-        }
-        shapes.push(TextTShape {
-            geometry,
-            flags,
-            children,
-        });
-    }
-    let mut roots = Vec::new();
-    while !cursor.is_empty() {
-        if cursor.peek() == Some("*") {
-            cursor.next("root shape terminator")?;
-            break;
-        }
-        roots.push(parse_shape_use(&mut cursor, count, section_counts)?);
-    }
-    if !cursor.is_empty() {
-        return Err(CodecError::Malformed(
-            "text B-rep contains tokens after root shape terminator".into(),
-        ));
-    }
-    Ok((shapes, roots))
-}
-
 fn parse_shape_kind(token: &str) -> Result<TextShapeKind, CodecError> {
     match token {
         "Ve" => Ok(TextShapeKind::Vertex),
@@ -4634,12 +3985,22 @@ fn parse_vertex_geometry(
             ));
         }
         let location_of = |cursor: &mut TokenCursor<'_>| {
-            parse_reference(cursor, "vertex location", counts["Locations"], true)
+            parse_reference(
+                cursor,
+                "vertex location",
+                counts.get("Locations").copied(),
+                true,
+            )
         };
         let representation = match kind {
             1 => TextPointRepresentation::Curve3d {
                 parameter,
-                curve: parse_reference(cursor, "vertex curve", counts["Curves"], false)?,
+                curve: parse_reference(
+                    cursor,
+                    "vertex curve",
+                    counts.get("Curves").copied(),
+                    false,
+                )?,
                 location: location_of(cursor)?,
             },
             2 => TextPointRepresentation::Pcurve {
@@ -4647,16 +4008,26 @@ fn parse_vertex_geometry(
                 curve: parse_reference(
                     cursor,
                     "vertex parameter curve",
-                    counts["Curve2ds"],
+                    counts.get("Curve2ds").copied(),
                     false,
                 )?,
-                surface: parse_reference(cursor, "vertex surface", counts["Surfaces"], false)?,
+                surface: parse_reference(
+                    cursor,
+                    "vertex surface",
+                    counts.get("Surfaces").copied(),
+                    false,
+                )?,
                 location: location_of(cursor)?,
             },
             3 => TextPointRepresentation::Surface {
                 parameter,
                 second_parameter: cursor.finite_real("vertex second surface parameter")?,
-                surface: parse_reference(cursor, "vertex surface", counts["Surfaces"], false)?,
+                surface: parse_reference(
+                    cursor,
+                    "vertex surface",
+                    counts.get("Surfaces").copied(),
+                    false,
+                )?,
                 location: location_of(cursor)?,
             },
             other => {
@@ -4685,6 +4056,7 @@ fn parse_edge_geometry(
     let degenerated = cursor.boolean("edge degenerated flag")?;
     let mut representations = Vec::new();
     loop {
+        let representation_start = cursor.index;
         let kind = cursor.integer("edge representation kind")?;
         if kind == 0 {
             break;
@@ -4694,12 +4066,23 @@ fn parse_edge_geometry(
                 "edge representation-count limit exceeded".into(),
             ));
         }
-        representations.push(parse_edge_representation(
-            kind,
-            cursor,
-            counts,
-            topology_version,
-        )?);
+        let representation = parse_edge_representation(kind, cursor, counts, topology_version)?;
+        if matches!(kind, 2 | 3) {
+            if let Some(ranges) = cursor.ranges {
+                let first = ranges
+                    .get(representation_start)
+                    .ok_or_else(|| CodecError::malformed("pcurve source start is absent"))?;
+                let last = cursor
+                    .index
+                    .checked_sub(1)
+                    .and_then(|index| ranges.get(index))
+                    .ok_or_else(|| CodecError::malformed("pcurve source end is absent"))?;
+                cursor
+                    .representation_marks
+                    .push((representations.len(), first.start..last.end));
+            }
+        }
+        representations.push(representation);
     }
     Ok(TextTShapeGeometry::Edge {
         tolerance,
@@ -4720,9 +4103,18 @@ fn parse_edge_representation(
         .map_err(|_| CodecError::Malformed("invalid edge representation kind".into()))?;
     match kind {
         1 => {
-            let curve = parse_reference(cursor, "edge 3D curve", counts["Curves"], false)?;
-            let location =
-                parse_reference(cursor, "edge curve location", counts["Locations"], true)?;
+            let curve = parse_reference(
+                cursor,
+                "edge 3D curve",
+                counts.get("Curves").copied(),
+                false,
+            )?;
+            let location = parse_reference(
+                cursor,
+                "edge curve location",
+                counts.get("Locations").copied(),
+                true,
+            )?;
             let parameter_range = parse_range(cursor, "edge curve")?;
             Ok(TextEdgeRepresentation::Curve3d {
                 curve,
@@ -4731,12 +4123,17 @@ fn parse_edge_representation(
             })
         }
         2 | 3 => {
-            let curve = parse_reference(cursor, "edge parameter curve", counts["Curve2ds"], false)?;
+            let curve = parse_reference(
+                cursor,
+                "edge parameter curve",
+                counts.get("Curve2ds").copied(),
+                false,
+            )?;
             let secondary = if kind == 3 {
                 let (secondary, joined_continuity) = parse_reference_suffix(
                     cursor,
                     "edge secondary parameter curve",
-                    counts["Curve2ds"],
+                    counts.get("Curve2ds").copied(),
                 )?;
                 let continuity = match joined_continuity {
                     Some(continuity) => continuity,
@@ -4746,9 +4143,18 @@ fn parse_edge_representation(
             } else {
                 None
             };
-            let surface = parse_reference(cursor, "edge surface", counts["Surfaces"], false)?;
-            let location =
-                parse_reference(cursor, "edge surface location", counts["Locations"], true)?;
+            let surface = parse_reference(
+                cursor,
+                "edge surface",
+                counts.get("Surfaces").copied(),
+                false,
+            )?;
+            let location = parse_reference(
+                cursor,
+                "edge surface location",
+                counts.get("Locations").copied(),
+                true,
+            )?;
             let parameter_range = parse_range(cursor, "edge parameter curve")?;
             let uv_endpoints = if topology_version == 2 {
                 Some([
@@ -4780,24 +4186,28 @@ fn parse_edge_representation(
         4 => {
             let continuity_token = cursor.next("edge continuity")?;
             let continuity = continuity_token.to_owned();
-            let first_surface =
-                parse_reference(cursor, "edge regularity surface", counts["Surfaces"], false)?;
+            let first_surface = parse_reference(
+                cursor,
+                "edge regularity surface",
+                counts.get("Surfaces").copied(),
+                false,
+            )?;
             let location = parse_reference(
                 cursor,
                 "edge regularity location",
-                counts["Locations"],
+                counts.get("Locations").copied(),
                 true,
             )?;
             let second_surface = parse_reference(
                 cursor,
                 "edge second regularity surface",
-                counts["Surfaces"],
+                counts.get("Surfaces").copied(),
                 false,
             )?;
             let second_location = parse_reference(
                 cursor,
                 "edge second regularity location",
-                counts["Locations"],
+                counts.get("Locations").copied(),
                 true,
             )?;
             Ok(TextEdgeRepresentation::Regularity {
@@ -4807,23 +4217,32 @@ fn parse_edge_representation(
             })
         }
         5 => {
-            let polygon = parse_reference(cursor, "edge 3D polygon", counts["Polygon3D"], false)?;
-            let location =
-                parse_reference(cursor, "edge polygon location", counts["Locations"], true)?;
+            let polygon = parse_reference(
+                cursor,
+                "edge 3D polygon",
+                counts.get("Polygon3D").copied(),
+                false,
+            )?;
+            let location = parse_reference(
+                cursor,
+                "edge polygon location",
+                counts.get("Locations").copied(),
+                true,
+            )?;
             Ok(TextEdgeRepresentation::Polygon3d { polygon, location })
         }
         6 | 7 => {
             let polygon = parse_reference(
                 cursor,
                 "edge polygon on triangulation",
-                counts["PolygonOnTriangulations"],
+                counts.get("PolygonOnTriangulations").copied(),
                 false,
             )?;
             let secondary = if kind == 7 {
                 Some(parse_reference(
                     cursor,
                     "edge second polygon on triangulation",
-                    counts["PolygonOnTriangulations"],
+                    counts.get("PolygonOnTriangulations").copied(),
                     false,
                 )?)
             } else {
@@ -4832,13 +4251,13 @@ fn parse_edge_representation(
             let triangulation = parse_reference(
                 cursor,
                 "edge triangulation",
-                counts["Triangulations"],
+                counts.get("Triangulations").copied(),
                 false,
             )?;
             let location = parse_reference(
                 cursor,
                 "edge triangulation location",
-                counts["Locations"],
+                counts.get("Locations").copied(),
                 true,
             )?;
             Ok(if let Some(secondary) = secondary {
@@ -4867,14 +4286,24 @@ fn parse_face_geometry(
 ) -> Result<TextTShapeGeometry, CodecError> {
     let natural_restriction = cursor.boolean("face natural-restriction flag")?;
     let tolerance = cursor.finite_real("face tolerance")?;
-    let surface = parse_reference(cursor, "face surface", counts["Surfaces"], true)?;
-    let location = parse_reference(cursor, "face location", counts["Locations"], true)?;
-    let triangulation = if cursor.peek() == Some("2") {
+    let surface = parse_reference(
+        cursor,
+        "face surface",
+        counts.get("Surfaces").copied(),
+        true,
+    )?;
+    let location = parse_reference(
+        cursor,
+        "face location",
+        counts.get("Locations").copied(),
+        true,
+    )?;
+    let triangulation = if cursor.peek()? == Some("2") {
         cursor.next("face triangulation marker")?;
         Some(parse_reference(
             cursor,
             "face triangulation",
-            counts["Triangulations"],
+            counts.get("Triangulations").copied(),
             false,
         )?)
     } else {
@@ -4934,7 +4363,12 @@ fn parse_shape_use(
         )));
     }
     let shape = shape_count - encoded + 1;
-    let location = parse_reference(cursor, "shape use location", counts["Locations"], true)?;
+    let location = parse_reference(
+        cursor,
+        "shape use location",
+        counts.get("Locations").copied(),
+        true,
+    )?;
     Ok(TextShapeUse {
         shape,
         orientation,
@@ -4945,10 +4379,18 @@ fn parse_shape_use(
 fn parse_reference(
     cursor: &mut TokenCursor<'_>,
     label: &str,
-    maximum: usize,
+    maximum: Option<usize>,
     allow_zero: bool,
 ) -> Result<usize, CodecError> {
-    let value = cursor.count(label, maximum)?;
+    let value = cursor
+        .next(label)?
+        .parse::<usize>()
+        .map_err(|_| CodecError::malformed(format_args!("invalid {label}")))?;
+    if maximum.is_some_and(|maximum| value > maximum) {
+        return Err(CodecError::malformed(format_args!(
+            "{label} limit exceeded"
+        )));
+    }
     if value == 0 && !allow_zero {
         return Err(CodecError::malformed(format_args!("{label} index is zero")));
     }
@@ -4958,7 +4400,7 @@ fn parse_reference(
 fn parse_reference_suffix(
     cursor: &mut TokenCursor<'_>,
     label: &str,
-    maximum: usize,
+    maximum: Option<usize>,
 ) -> Result<(usize, Option<String>), CodecError> {
     let token = cursor.next(label)?;
     let split = token
@@ -4968,7 +4410,7 @@ fn parse_reference_suffix(
     let value = reference
         .parse::<usize>()
         .map_err(|_| CodecError::malformed(format_args!("invalid {label}")))?;
-    if value == 0 || value > maximum {
+    if value == 0 || maximum.is_some_and(|maximum| value > maximum) {
         return Err(CodecError::malformed(format_args!(
             "{label} limit exceeded"
         )));
@@ -4999,6 +4441,7 @@ fn parse_surface(
             "text B-rep surface nesting exceeds {MAX_GEOMETRY_NESTING_DEPTH}"
         )));
     }
+    cursor.mark_census(source::census::Lane::Surface)?;
     let kind = cursor.integer("surface type")?;
     Ok(match kind {
         1 => parse_analytic_surface(AnalyticSurfaceKind::Plane, cursor)?,
@@ -5428,6 +4871,7 @@ fn parse_curve(
             "text B-rep 3D curve nesting exceeds {MAX_GEOMETRY_NESTING_DEPTH}"
         )));
     }
+    cursor.mark_census(source::census::Lane::Curve)?;
     let kind = cursor.integer("curve type")?;
     Ok(match kind {
         1 => TextCurve::Line {
@@ -5612,15 +5056,42 @@ fn grid_rows<T>(values: Vec<T>, width: usize) -> Result<Vec<Vec<T>>, CodecError>
 struct TokenCursor<'a> {
     tokens: &'a [&'a str],
     index: usize,
+    source: Option<View<'a>>,
+    ranges: Option<&'a [std::ops::Range<usize>]>,
+    discriminator: Option<&'a str>,
+    census_marks: Vec<(View<'a>, source::census::Lane)>,
+    representation_marks: Vec<(usize, std::ops::Range<usize>)>,
 }
 
 impl<'a> TokenCursor<'a> {
     fn new(tokens: &'a [&'a str]) -> Self {
-        Self { tokens, index: 0 }
+        Self {
+            tokens,
+            index: 0,
+            source: None,
+            ranges: None,
+            discriminator: None,
+            census_marks: Vec::new(),
+            representation_marks: Vec::new(),
+        }
     }
 
     fn is_empty(&self) -> bool {
         self.index >= self.tokens.len()
+    }
+
+    fn mark_census(&mut self, lane: source::census::Lane) -> Result<(), CodecError> {
+        if let Some(source) = self.source {
+            let range = self
+                .ranges
+                .and_then(|ranges| ranges.get(self.index))
+                .ok_or_else(|| CodecError::malformed("cut-short census discriminator"))?;
+            let view = source
+                .child(range.start, range.end)
+                .ok_or_else(|| CodecError::malformed("census discriminator exceeds source"))?;
+            self.census_marks.push((view, lane));
+        }
+        Ok(())
     }
 
     fn remaining(&self) -> usize {
@@ -5642,8 +5113,17 @@ impl<'a> TokenCursor<'a> {
         })
     }
 
-    fn peek(&self) -> Option<&'a str> {
-        self.tokens.get(self.index).copied()
+    fn peek(&mut self) -> Result<Option<&'a str>, CodecError> {
+        if let Some(token) = self.discriminator {
+            return Ok(Some(token));
+        }
+        if self.is_empty() {
+            return Ok(None);
+        }
+        let token = self.next("B-rep lookahead token")?;
+        self.index -= 1;
+        self.discriminator = Some(token);
+        Ok(Some(token))
     }
 
     fn integer(&mut self, label: &str) -> Result<i64, CodecError> {
@@ -5707,9 +5187,27 @@ impl<'a> TokenCursor<'a> {
     }
 
     fn next(&mut self, label: &str) -> Result<&'a str, CodecError> {
+        if let Some(token) = self.discriminator.take() {
+            self.index += 1;
+            return Ok(token);
+        }
         let token = self.tokens.get(self.index).copied().ok_or_else(|| {
             CodecError::malformed(format_args!("truncated {label} in text B-rep Curves table"))
         })?;
+        let token = if let Some(source) = self.source {
+            let range = self
+                .ranges
+                .and_then(|ranges| ranges.get(self.index))
+                .ok_or_else(|| CodecError::malformed("B-rep token has no source range"))?;
+            let mut view = source
+                .child(range.start, range.end)
+                .ok_or_else(|| CodecError::malformed("B-rep token exceeds its source"))?;
+            let bytes = view.req_take(range.len())?;
+            std::str::from_utf8(bytes)
+                .map_err(|_| CodecError::malformed("B-rep token is not UTF-8"))?
+        } else {
+            token
+        };
         self.index += 1;
         Ok(token)
     }
@@ -5729,45 +5227,67 @@ where
     I::try_from(native::model_id(kind, parent, child)).map_err(CodecError::malformed)
 }
 
-pub(crate) fn transfer_text_curves(
+pub(crate) fn transfer_text_curves<'owner>(
     ctx: &DecodeContext<'_>,
     payloads: &[ShapePayloadRecord],
-    properties: &[PropertyRecord],
+    properties: impl Into<owners::Properties<'owner>>,
+    sources: Option<&source::projection::ProjectionSources<'_>>,
 ) -> Result<CurveTransfer, CodecError> {
+    let properties = properties.into();
     let mut transfer = CurveTransfer::default();
     for payload in payloads {
         let Some(curves) = payload.payload.shape_set().map(|set| &set.curves) else {
             continue;
         };
-        let object_id = properties
-            .iter()
-            .find(|property| property.id == payload.property)
-            .map_or(payload.property.as_str(), |property| {
-                property.owner.as_str()
-            });
-        let association = SourceObjectAssociation {
-            geometry_role: None,
-            format: cadmpeg_ir::CodecFormat::Fcstd,
-            object_id: cadmpeg_core::text::NonBlankString::new(object_id.to_owned())
-                .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?,
-            instance_path: Vec::new(),
-        };
+        let association =
+            properties
+                .owner(ctx, &payload.property)?
+                .map(|object_id| SourceObjectAssociation {
+                    geometry_role: None,
+                    format: cadmpeg_ir::CodecFormat::Fcstd,
+                    object_id,
+                    instance_path: Vec::new(),
+                });
         for (index, curve) in curves.iter().enumerate() {
-            let id: CurveId = model_identity("curve", &payload.id, &(index + 1).to_string())?;
-            append_text_curve(ctx, curve, id, &association, &mut transfer)?;
+            let id: CurveId = model_identity(
+                "curve",
+                &payload.id,
+                &payload.source_index(2, index + 1).to_string(),
+            )?;
+            let start = transfer.curves.len();
+            let procedural_start = transfer.procedural.len();
+            let original = sources
+                .map(|sources| sources.curve(payload, index + 1))
+                .transpose()?;
+            let principal = append_text_curve(
+                ctx,
+                curve,
+                id,
+                association.as_ref(),
+                &mut transfer,
+                original,
+            )?;
+            for record in &mut transfer.curves[start..] {
+                record.native_ref = payload.row_identity(2, index + 1).map(str::to_owned);
+                if let Some(source) = &mut record.source_object {
+                    source.geometry_role = Some(cadmpeg_ir::SourceGeometryRole::Support);
+                }
+            }
+            if let Some(source) = &mut transfer.curves[principal].source_object {
+                source.geometry_role = None;
+            }
+            for (_, record) in &mut transfer.procedural[procedural_start..] {
+                record.native_ref = payload.row_identity(2, index + 1).map(str::to_owned);
+            }
         }
     }
     Ok(transfer)
 }
 
-fn append_text_curve(
+pub(crate) fn curve_geometry(
     ctx: &DecodeContext<'_>,
     curve: &TextCurve,
-    id: CurveId,
-    association: &SourceObjectAssociation,
-    transfer: &mut CurveTransfer,
-) -> Result<usize, CodecError> {
-    let _depth = ctx.enter_nested("FreeCAD curve transfer nesting")?;
+) -> Result<CurveGeometry, CodecError> {
     let geometry = match curve {
         TextCurve::Line { origin, direction } => {
             let direction = UnitVector3::new(direction.get()).ok_or_else(|| {
@@ -5888,75 +5408,125 @@ fn append_text_curve(
             ))
         }
         TextCurve::Nurbs(nurbs) => CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.clone())),
-        TextCurve::Trimmed {
-            parameter_range,
-            basis,
-        } => {
+        TextCurve::Trimmed { basis, .. } => {
+            let _depth = ctx.enter_nested("FreeCAD curve geometry nesting")?;
+            curve_geometry(ctx, basis.curve())?
+        }
+        TextCurve::Offset { .. } => {
+            CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None })
+        }
+    };
+    Ok(geometry)
+}
+
+fn curve_input<'a>(
+    ctx: &DecodeContext<'_>,
+    source: Option<&source::projection::geometry::GeometrySource<'_>>,
+    id: &str,
+    fallback: &'a TextCurve,
+) -> Result<std::borrow::Cow<'a, TextCurve>, CodecError> {
+    source
+        .map(|source| source.read_curve(ctx, id).map(std::borrow::Cow::Owned))
+        .unwrap_or_else(|| Ok(std::borrow::Cow::Borrowed(fallback)))
+}
+
+fn append_text_curve<'owner>(
+    ctx: &DecodeContext<'_>,
+    curve: &TextCurve,
+    id: CurveId,
+    association: impl Into<Option<&'owner SourceObjectAssociation>>,
+    transfer: &mut CurveTransfer,
+    source: Option<source::projection::geometry::GeometrySource<'_>>,
+) -> Result<usize, CodecError> {
+    let association = association.into();
+    let _depth = ctx.enter_nested("FreeCAD curve transfer nesting")?;
+    let input = curve_input(ctx, source.as_ref(), id.as_str(), curve)?;
+    let curve = input.as_ref();
+    let geometry = curve_geometry(ctx, curve)?;
+    match curve {
+        TextCurve::Trimmed { basis, .. } => {
             let basis_id: CurveId = model_identity("curve", id.as_str(), "basis")?;
-            let basis_index =
-                append_text_curve(ctx, basis.curve(), basis_id.clone(), association, transfer)?;
+            let basis_source = source.as_ref().map(|source| source.basis()).transpose()?;
+            append_text_curve(
+                ctx,
+                basis.curve(),
+                basis_id.clone(),
+                association,
+                transfer,
+                basis_source,
+            )?;
+            let construction_id: ProceduralCurveId =
+                model_identity("curve", id.as_str(), "construction")?;
+            let construction = curve_input(ctx, source.as_ref(), construction_id.as_str(), curve)?;
+            let TextCurve::Trimmed {
+                parameter_range,
+                basis,
+            } = construction.as_ref()
+            else {
+                return Err(CodecError::malformed(
+                    "trimmed curve construction source differs",
+                ));
+            };
+            let basis_geometry = curve_geometry(ctx, basis.curve())?;
             let parameter_range = crate::topology_transfer::normalize_occt_curve_range(
-                transfer.curves[basis_index]
-                    .geometry
-                    .solved()
-                    .ok_or_else(|| {
-                        cadmpeg_core::CodecError::NotImplemented(
-                            "carrier has no solved geometry".into(),
-                        )
-                    })?,
+                basis_geometry.solved().ok_or_else(|| {
+                    CodecError::NotImplemented("carrier has no solved geometry".into())
+                })?,
                 Some(*parameter_range),
             )
             .unwrap_or(*parameter_range);
-            let procedural_id: CurveId = id.clone();
-            let admitted_payload =
+            let admitted =
                 cadmpeg_ir::geometry::curve_payloads::SubsetCurveConstruction::from_finite_parts(
                     basis_id,
                     parameter_range,
                     true,
                     None,
                 )
-                .map_err(cadmpeg_core::CodecError::malformed)?;
-            let construction_id: ProceduralCurveId =
-                model_identity("curve", id.as_str(), "construction")?;
+                .map_err(CodecError::malformed)?;
             transfer.procedural.push((
-                procedural_id,
-                ProceduralCurve::new(
-                    construction_id,
-                    ProceduralCurveDefinition::Subset(admitted_payload),
-                ),
+                id.clone(),
+                ProceduralCurve::new(construction_id, ProceduralCurveDefinition::Subset(admitted)),
             ));
-            transfer.curves[basis_index].geometry.clone()
         }
-        TextCurve::Offset {
-            distance,
-            direction,
-            basis,
-        } => {
+        TextCurve::Offset { basis, .. } => {
             let basis_id: CurveId = model_identity("curve", id.as_str(), "basis")?;
-            append_text_curve(ctx, basis.curve(), basis_id.clone(), association, transfer)?;
-            let procedural_id: CurveId = id.clone();
-            let admitted_payload = cadmpeg_ir::geometry::curve_payloads::OffsetCurveConstruction::from_admitted_direction(
-                basis_id, *distance, *direction,
-            ).map_err(cadmpeg_core::CodecError::malformed)?;
+            let basis_source = source.as_ref().map(|source| source.basis()).transpose()?;
+            append_text_curve(
+                ctx,
+                basis.curve(),
+                basis_id.clone(),
+                association,
+                transfer,
+                basis_source,
+            )?;
             let construction_id: ProceduralCurveId =
                 model_identity("curve", id.as_str(), "construction")?;
+            let construction = curve_input(ctx, source.as_ref(), construction_id.as_str(), curve)?;
+            let TextCurve::Offset {
+                distance,
+                direction,
+                ..
+            } = construction.as_ref()
+            else {
+                return Err(CodecError::malformed(
+                    "offset curve construction source differs",
+                ));
+            };
+            let admitted = cadmpeg_ir::geometry::curve_payloads::OffsetCurveConstruction::from_admitted_direction(basis_id,*distance,*direction).map_err(CodecError::malformed)?;
             transfer.procedural.push((
-                procedural_id,
-                ProceduralCurve::new(
-                    construction_id,
-                    ProceduralCurveDefinition::Offset(admitted_payload),
-                ),
+                id.clone(),
+                ProceduralCurve::new(construction_id, ProceduralCurveDefinition::Offset(admitted)),
             ));
-            CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None })
         }
-    };
+        _ => {}
+    }
     let index = transfer.curves.len();
     transfer.curves.push(Curve {
         native_ref: None,
         parameter_range: None,
         id,
         geometry,
-        source_object: Some((association).clone()),
+        source_object: association.cloned(),
     });
     Ok(index)
 }
@@ -5967,54 +5537,80 @@ pub(crate) struct SurfaceTransfer {
     pub(crate) procedural: Vec<(SurfaceId, ProceduralSurface)>,
 }
 
-pub(crate) fn transfer_text_surfaces(
+pub(crate) fn transfer_text_surfaces<'owner>(
     ctx: &DecodeContext<'_>,
     payloads: &[ShapePayloadRecord],
-    properties: &[PropertyRecord],
+    properties: impl Into<owners::Properties<'owner>>,
     curve_transfer: &mut CurveTransfer,
+    sources: Option<&source::projection::ProjectionSources<'_>>,
 ) -> Result<SurfaceTransfer, CodecError> {
+    let properties = properties.into();
     let mut transfer = SurfaceTransfer::default();
     for payload in payloads {
         let Some(surfaces) = payload.payload.shape_set().map(|set| &set.surfaces) else {
             continue;
         };
-        let object_id = properties
-            .iter()
-            .find(|property| property.id == payload.property)
-            .map_or(payload.property.as_str(), |property| {
-                property.owner.as_str()
-            });
-        let association = SourceObjectAssociation {
-            geometry_role: None,
-            format: cadmpeg_ir::CodecFormat::Fcstd,
-            object_id: cadmpeg_core::text::NonBlankString::new(object_id.to_owned())
-                .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?,
-            instance_path: Vec::new(),
-        };
+        let association =
+            properties
+                .owner(ctx, &payload.property)?
+                .map(|object_id| SourceObjectAssociation {
+                    geometry_role: None,
+                    format: cadmpeg_ir::CodecFormat::Fcstd,
+                    object_id,
+                    instance_path: Vec::new(),
+                });
         for (index, surface) in surfaces.iter().enumerate() {
-            let id: SurfaceId = model_identity("surface", &payload.id, &(index + 1).to_string())?;
-            append_text_surface(
+            let id: SurfaceId = model_identity(
+                "surface",
+                &payload.id,
+                &payload.source_index(5, index + 1).to_string(),
+            )?;
+            let start = transfer.surfaces.len();
+            let procedural_start = transfer.procedural.len();
+            let curve_start = curve_transfer.curves.len();
+            let curve_procedural_start = curve_transfer.procedural.len();
+            let original = sources
+                .map(|sources| sources.surface(payload, index + 1))
+                .transpose()?;
+            let principal = append_text_surface(
                 ctx,
                 surface,
                 id,
-                &association,
+                association.as_ref(),
                 curve_transfer,
                 &mut transfer,
+                original,
             )?;
+            for record in &mut transfer.surfaces[start..] {
+                record.native_ref = payload.row_identity(5, index + 1).map(str::to_owned);
+                if let Some(source) = &mut record.source_object {
+                    source.geometry_role = Some(cadmpeg_ir::SourceGeometryRole::Support);
+                }
+            }
+            if let Some(source) = &mut transfer.surfaces[principal].source_object {
+                source.geometry_role = None;
+            }
+            for (_, record) in &mut transfer.procedural[procedural_start..] {
+                record.native_ref = payload.row_identity(5, index + 1).map(str::to_owned);
+            }
+            for record in &mut curve_transfer.curves[curve_start..] {
+                if let Some(source) = &mut record.source_object {
+                    source.geometry_role = Some(cadmpeg_ir::SourceGeometryRole::Support);
+                }
+                record.native_ref = payload.row_identity(5, index + 1).map(str::to_owned);
+            }
+            for (_, record) in &mut curve_transfer.procedural[curve_procedural_start..] {
+                record.native_ref = payload.row_identity(5, index + 1).map(str::to_owned);
+            }
         }
     }
     Ok(transfer)
 }
 
-fn append_text_surface(
+pub(crate) fn surface_geometry(
     ctx: &DecodeContext<'_>,
     surface: &TextSurface,
-    id: SurfaceId,
-    association: &SourceObjectAssociation,
-    curve_transfer: &mut CurveTransfer,
-    transfer: &mut SurfaceTransfer,
-) -> Result<usize, CodecError> {
-    let _depth = ctx.enter_nested("FreeCAD surface transfer nesting")?;
+) -> Result<SurfaceGeometry, CodecError> {
     let geometry = match surface {
         TextSurface::Plane {
             origin,
@@ -6140,132 +5736,97 @@ fn append_text_surface(
         TextSurface::Nurbs(nurbs) => {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs.clone()))
         }
-        TextSurface::Extrusion {
-            direction,
-            directrix,
-        } => {
-            let directrix_id: CurveId = model_identity("surface", id.as_str(), "directrix")?;
-            append_text_curve(
-                ctx,
-                directrix.curve(),
-                directrix_id.clone(),
-                association,
-                curve_transfer,
-            )?;
-            let admitted_payload =
-                cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::legacy(
-                    directrix_id,
-                    None,
-                    *direction,
-                    None,
-                    None,
-                );
-            let procedural_id: SurfaceId = id.clone();
-            let construction_id: ProceduralSurfaceId =
-                model_identity("surface", id.as_str(), "construction")?;
-            transfer.procedural.push((
-                procedural_id,
-                ProceduralSurface::new(
-                    construction_id,
-                    ProceduralSurfaceDefinition::Extrusion(admitted_payload),
-                    None,
-                ),
-            ));
+        TextSurface::Trimmed { basis, .. } => {
+            let _depth = ctx.enter_nested("FreeCAD surface geometry nesting")?;
+            surface_geometry(ctx, basis.surface())?
+        }
+        TextSurface::Extrusion { .. }
+        | TextSurface::Revolution { .. }
+        | TextSurface::Offset { .. } => {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None })
         }
-        TextSurface::Revolution {
-            axis_origin,
-            axis_direction,
-            directrix,
-        } => {
+    };
+    Ok(geometry)
+}
+
+fn surface_input<'a>(
+    ctx: &DecodeContext<'_>,
+    source: Option<&source::projection::geometry::GeometrySource<'_>>,
+    id: &str,
+    fallback: &'a TextSurface,
+) -> Result<std::borrow::Cow<'a, TextSurface>, CodecError> {
+    source
+        .map(|source| source.read_surface(ctx, id).map(std::borrow::Cow::Owned))
+        .unwrap_or_else(|| Ok(std::borrow::Cow::Borrowed(fallback)))
+}
+
+fn append_text_surface<'owner>(
+    ctx: &DecodeContext<'_>,
+    surface: &TextSurface,
+    id: SurfaceId,
+    association: impl Into<Option<&'owner SourceObjectAssociation>>,
+    curve_transfer: &mut CurveTransfer,
+    transfer: &mut SurfaceTransfer,
+    source: Option<source::projection::geometry::GeometrySource<'_>>,
+) -> Result<usize, CodecError> {
+    let association = association.into();
+    let _depth = ctx.enter_nested("FreeCAD surface transfer nesting")?;
+    let input = surface_input(ctx, source.as_ref(), id.as_str(), surface)?;
+    let surface = input.as_ref();
+    let geometry = surface_geometry(ctx, surface)?;
+    match surface {
+        TextSurface::Extrusion { directrix, .. } | TextSurface::Revolution { directrix, .. } => {
             let directrix_id: CurveId = model_identity("surface", id.as_str(), "directrix")?;
+            let directrix_source = source
+                .as_ref()
+                .map(|source| source.directrix())
+                .transpose()?;
             append_text_curve(
                 ctx,
                 directrix.curve(),
                 directrix_id.clone(),
                 association,
                 curve_transfer,
+                directrix_source,
             )?;
-            let procedural_id: SurfaceId = id.clone();
-            let admitted_payload =
-                cadmpeg_ir::geometry::surface_payloads::admit_revolution_axis_from_parts(
-                    *axis_origin,
-                    *axis_direction,
-                )
-                .and_then(|axis| {
-                    cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
+            let construction_id: ProceduralSurfaceId =
+                model_identity("surface", id.as_str(), "construction")?;
+            let construction =
+                surface_input(ctx, source.as_ref(), construction_id.as_str(), surface)?;
+            let definition = match construction.as_ref() {
+                TextSurface::Extrusion { direction, .. } => ProceduralSurfaceDefinition::Extrusion(
+                    cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::legacy(
                         directrix_id,
-                        axis,
-                        [0.0, std::f64::consts::TAU],
+                        None,
+                        *direction,
                         None,
                         None,
-                        true,
-                        cadmpeg_ir::geometry::CacheContract::from_form(None),
-                    )
-                })
-                .map_err(cadmpeg_core::CodecError::malformed)?;
-            let construction_id: ProceduralSurfaceId =
-                model_identity("surface", id.as_str(), "construction")?;
-            transfer.procedural.push((
-                procedural_id,
-                ProceduralSurface::new(
-                    construction_id,
-                    ProceduralSurfaceDefinition::Revolution(admitted_payload),
-                    None,
+                    ),
                 ),
-            ));
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None })
-        }
-        TextSurface::Trimmed {
-            parameter_ranges,
-            basis,
-        } => {
-            let basis_parameters = surface_parameter_affine(basis.surface());
-            let parameter_ranges = [
-                parameter_ranges[0].map(|value| {
-                    value
-                        .get()
-                        .mul_add(basis_parameters.u_scale, basis_parameters.u_offset)
-                }),
-                parameter_ranges[1].map(|value| {
-                    value
-                        .get()
-                        .mul_add(basis_parameters.v_scale, basis_parameters.v_offset)
-                }),
-            ];
-            let basis_id: SurfaceId = model_identity("surface", id.as_str(), "basis")?;
-            let basis_index = append_text_surface(
-                ctx,
-                basis.surface(),
-                basis_id.clone(),
-                association,
-                curve_transfer,
-                transfer,
-            )?;
-            let procedural_id: SurfaceId = id.clone();
-            let admitted_payload =
-                cadmpeg_ir::geometry::surface_payloads::SubsetSurfaceConstruction::try_new(
-                    basis_id,
-                    parameter_ranges,
-                    None,
-                    None,
-                    None,
-                )
-                .map_err(cadmpeg_core::CodecError::malformed)?;
-            let construction_id: ProceduralSurfaceId =
-                model_identity("surface", id.as_str(), "construction")?;
+                TextSurface::Revolution {
+                    axis_origin,
+                    axis_direction,
+                    ..
+                } => {
+                    let admitted = cadmpeg_ir::geometry::surface_payloads::admit_revolution_axis_from_parts(*axis_origin,*axis_direction)
+                        .and_then(|axis| cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(directrix_id,axis,[0.0,std::f64::consts::TAU],None,None,true,cadmpeg_ir::geometry::CacheContract::from_form(None)))
+                        .map_err(CodecError::malformed)?;
+                    ProceduralSurfaceDefinition::Revolution(admitted)
+                }
+                _ => {
+                    return Err(CodecError::malformed(
+                        "swept surface construction source differs",
+                    ));
+                }
+            };
             transfer.procedural.push((
-                procedural_id,
-                ProceduralSurface::new(
-                    construction_id,
-                    ProceduralSurfaceDefinition::Subset(admitted_payload),
-                    None,
-                ),
+                id.clone(),
+                ProceduralSurface::new(construction_id, definition, None),
             ));
-            transfer.surfaces[basis_index].geometry.clone()
         }
-        TextSurface::Offset { distance, basis } => {
+        TextSurface::Trimmed { basis, .. } | TextSurface::Offset { basis, .. } => {
             let basis_id: SurfaceId = model_identity("surface", id.as_str(), "basis")?;
+            let basis_source = source.as_ref().map(|source| source.basis()).transpose()?;
             append_text_surface(
                 ctx,
                 basis.surface(),
@@ -6273,37 +5834,61 @@ fn append_text_surface(
                 association,
                 curve_transfer,
                 transfer,
+                basis_source,
             )?;
-            let admitted_payload =
-                cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::legacy(
-                    basis_id,
-                    *distance,
-                    None,
-                    None,
-                    false,
-                    cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
-                    None,
-                );
-            let procedural_id: SurfaceId = id.clone();
             let construction_id: ProceduralSurfaceId =
                 model_identity("surface", id.as_str(), "construction")?;
-            transfer.procedural.push((
-                procedural_id,
-                ProceduralSurface::new(
-                    construction_id,
-                    ProceduralSurfaceDefinition::Offset(admitted_payload),
-                    None,
+            let construction =
+                surface_input(ctx, source.as_ref(), construction_id.as_str(), surface)?;
+            let definition = match construction.as_ref() {
+                TextSurface::Trimmed {
+                    parameter_ranges,
+                    basis,
+                } => {
+                    let affine = surface_parameter_affine(basis.surface());
+                    let ranges = [
+                        parameter_ranges[0]
+                            .map(|value| value.get().mul_add(affine.u_scale, affine.u_offset)),
+                        parameter_ranges[1]
+                            .map(|value| value.get().mul_add(affine.v_scale, affine.v_offset)),
+                    ];
+                    let admitted =
+                        cadmpeg_ir::geometry::surface_payloads::SubsetSurfaceConstruction::try_new(
+                            basis_id, ranges, None, None, None,
+                        )
+                        .map_err(CodecError::malformed)?;
+                    ProceduralSurfaceDefinition::Subset(admitted)
+                }
+                TextSurface::Offset { distance, .. } => ProceduralSurfaceDefinition::Offset(
+                    cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::legacy(
+                        basis_id,
+                        *distance,
+                        None,
+                        None,
+                        false,
+                        cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+                        None,
+                    ),
                 ),
+                _ => {
+                    return Err(CodecError::malformed(
+                        "derived surface construction source differs",
+                    ));
+                }
+            };
+            transfer.procedural.push((
+                id.clone(),
+                ProceduralSurface::new(construction_id, definition, None),
             ));
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None })
         }
-    };
+        _ => {}
+    }
     let index = transfer.surfaces.len();
     transfer.surfaces.push(Surface {
         native_ref: None,
         id,
         geometry,
-        source_object: Some((association).clone()),
+        source_object: association.cloned(),
     });
     Ok(index)
 }

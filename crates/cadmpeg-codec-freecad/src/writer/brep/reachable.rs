@@ -15,7 +15,15 @@ pub(super) struct Reach {
     pub(super) pcurves: HashSet<String>,
 }
 impl Reach {
-    pub(super) fn bodies(ir: &CadIr, bodies: &[&Body]) -> Self {
+    pub(super) fn bodies(
+        ir: &CadIr,
+        bodies: &[&Body],
+        row_owners: &std::collections::BTreeMap<String, String>,
+    ) -> Self {
+        let payloads: HashSet<_> = bodies
+            .iter()
+            .filter_map(|body| body.native_ref.as_deref())
+            .collect();
         let regions: HashSet<_> = bodies.iter().flat_map(|body| &body.regions).collect();
         let shells: HashSet<_> = ir
             .model
@@ -73,10 +81,17 @@ impl Reach {
                 .curves
                 .iter()
                 .filter(|curve| {
-                    curve
-                        .source_object
-                        .as_ref()
-                        .is_some_and(|source| owners.contains(source.object_id.as_str()))
+                    curve.native_ref.as_deref().map_or_else(
+                        || {
+                            curve
+                                .source_object
+                                .as_ref()
+                                .is_some_and(|source| owners.contains(source.object_id.as_str()))
+                        },
+                        |native| {
+                            payloads.contains(row_owners.get(native).map_or(native, String::as_str))
+                        },
+                    )
                 })
                 .map(|curve| curve.id.to_string()),
         );
@@ -85,20 +100,31 @@ impl Reach {
                 .surfaces
                 .iter()
                 .filter(|surface| {
-                    surface
-                        .source_object
-                        .as_ref()
-                        .is_some_and(|source| owners.contains(source.object_id.as_str()))
+                    surface.native_ref.as_deref().map_or_else(
+                        || {
+                            surface
+                                .source_object
+                                .as_ref()
+                                .is_some_and(|source| owners.contains(source.object_id.as_str()))
+                        },
+                        |native| {
+                            payloads.contains(row_owners.get(native).map_or(native, String::as_str))
+                        },
+                    )
                 })
                 .map(|surface| surface.id.to_string()),
         );
+        output.remove_inline(ir);
+        output
+    }
+    fn remove_inline(&mut self, ir: &CadIr) {
         let mut inline_curves = HashSet::new();
         let mut inline_surfaces = HashSet::new();
         for surface in ir
             .model
             .surfaces
             .iter()
-            .filter(|surface| output.surfaces.contains(surface.id.as_str()))
+            .filter(|surface| self.surfaces.contains(surface.id.as_str()))
         {
             if surface.geometry.procedural_construction().is_some()
                 && super::super::geometry::surface_record(ir, surface).is_some_and(|row| {
@@ -126,7 +152,7 @@ impl Reach {
             .model
             .curves
             .iter()
-            .filter(|curve| output.curves.contains(curve.id.as_str()))
+            .filter(|curve| self.curves.contains(curve.id.as_str()))
         {
             if curve.geometry.procedural_construction().is_some()
                 && super::super::geometry::curve_record(ir, curve)
@@ -147,23 +173,59 @@ impl Reach {
                 }
             }
         }
-        output.curves.retain(|id| {
+        self.curves.retain(|id| {
             !inline_curves.contains(id)
                 || ir.model.edges.iter().any(|edge| {
-                    output.edges.contains(edge.id.as_str())
+                    self.edges.contains(edge.id.as_str())
                         && edge.curve().is_some_and(|curve| curve.as_str() == id)
                 })
         });
-        output.surfaces.retain(|id| {
+        self.surfaces.retain(|id| {
             !inline_surfaces.contains(id)
                 || ir.model.faces.iter().any(|face| {
-                    output.faces.contains(face.id.as_str()) && face.surface.as_str() == id
+                    self.faces.contains(face.id.as_str()) && face.surface.as_str() == id
                 })
         });
+    }
+    /// Select the actual current graph of one canonical native payload.
+    pub(super) fn payload(
+        ir: &CadIr,
+        bodies: &[&Body],
+        payload: &str,
+        row_owners: &std::collections::BTreeMap<String, String>,
+    ) -> Self {
+        let mut output = Self::bodies(ir, bodies, row_owners);
+        let owns = |native: Option<&str>| {
+            native.is_some_and(|id| row_owners.get(id).map_or(id, String::as_str) == payload)
+        };
+        macro_rules! select {
+            ($arena:ident) => {
+                output.$arena.extend(
+                    ir.model
+                        .$arena
+                        .iter()
+                        .filter(|row| owns(row.native_ref.as_deref()))
+                        .map(|row| row.id.to_string()),
+                );
+            };
+        }
+        select!(faces);
+        select!(loops);
+        select!(coedges);
+        select!(edges);
+        select!(vertices);
+        select!(curves);
+        select!(surfaces);
+        select!(pcurves);
+        output.complete(ir);
+        output.remove_inline(ir);
         output
     }
-    pub(super) fn unowned(ir: &CadIr) -> Self {
-        let owned = Self::bodies(ir, &ir.model.bodies.iter().collect::<Vec<_>>());
+    pub(super) fn unowned(
+        ir: &CadIr,
+        row_owners: &std::collections::BTreeMap<String, String>,
+    ) -> Self {
+        let owned = Self::bodies(ir, &ir.model.bodies.iter().collect::<Vec<_>>(), row_owners);
         let mut output = Self::default();
         output.faces.extend(
             ir.model

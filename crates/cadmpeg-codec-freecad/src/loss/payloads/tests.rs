@@ -30,13 +30,16 @@ fn typed_filename_never_admits_an_opaque_design_payload_to_patch() {
             .unwrap();
         assert_eq!(
             decoded.source_fidelity().unrepresented(),
-            ArenaClasses::from([ArenaClass::Design])
+            ArenaClasses::from([ArenaClass::Model, ArenaClass::Design])
         );
         assert!(decoded
             .report()
             .losses
             .iter()
-            .any(|loss| loss.code.local_code() == "source.design-payload-unrepresented"));
+            .any(|loss| loss.code.local_code() == "source.bytes-undecoded"
+                && loss.severity == cadmpeg_ir::report::Severity::Warning
+                && loss.provenance.is_some()));
+        crate::fidelity::b1::assert_classified_spans(&decoded);
         let plan = FcstdCodec
             .plan(
                 EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
@@ -50,7 +53,7 @@ fn typed_filename_never_admits_an_opaque_design_payload_to_patch() {
         assert!(matches!(
             plan.report().synthesis_cause(),
             Some(SynthesisCause::SourceUnrepresented { classes })
-                if *classes == ArenaClasses::from([ArenaClass::Design])
+                if *classes == ArenaClasses::from([ArenaClass::Model, ArenaClass::Design])
         ));
         let mut bytes = Vec::new();
         plan.write_to(&mut bytes).unwrap();
@@ -68,7 +71,11 @@ fn typed_filename_never_admits_an_opaque_design_payload_to_patch() {
             .unwrap()
             .iter()
             .all(|property| property.name != "Proxy"));
-        assert!(output.source_fidelity().unrepresented().is_empty());
+        assert_eq!(
+            output.source_fidelity().unrepresented(),
+            ArenaClasses::from([ArenaClass::Model, ArenaClass::Design])
+        );
+        crate::fidelity::b1::assert_classified_spans(&output);
     }
 }
 
@@ -87,16 +94,14 @@ fn unowned_archive_payload_is_reported_conservatively() {
         decoded.source_fidelity().unrepresented(),
         ArenaClasses::from([ArenaClass::Model, ArenaClass::Design])
     );
-    for code in [
-        "source.model-payload-unrepresented",
-        "source.design-payload-unrepresented",
-    ] {
-        assert!(decoded
-            .report()
-            .losses
-            .iter()
-            .any(|loss| loss.code.local_code() == code));
-    }
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "source.bytes-undecoded"
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
+            && loss.provenance.is_some()));
+    crate::fidelity::b1::assert_classified_spans(&decoded);
 }
 
 #[test]
@@ -111,8 +116,9 @@ fn inline_python_bytes_do_not_become_typed_content_by_xml_framing() {
         .unwrap();
     assert_eq!(
         decoded.source_fidelity().unrepresented(),
-        ArenaClasses::from([ArenaClass::Design])
+        ArenaClasses::from([ArenaClass::Model, ArenaClass::Design])
     );
+    crate::fidelity::b1::assert_classified_spans(&decoded);
     let plan = FcstdCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
@@ -145,11 +151,11 @@ fn json_python_values_are_typed_editable_data_not_encoded_content_sources() {
     let decoded = FcstdCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert!(
-        decoded.source_fidelity().unrepresented().is_empty(),
-        "{:?}",
-        decoded.report().losses
+    assert_eq!(
+        decoded.source_fidelity().unrepresented(),
+        ArenaClasses::from([ArenaClass::Model, ArenaClass::Design])
     );
+    crate::fidelity::b1::assert_classified_spans(&decoded);
     let mut ir = decoded.ir().clone();
     let mut properties = ir
         .native
@@ -202,5 +208,9 @@ fn json_python_values_are_typed_editable_data_not_encoded_content_sources() {
         property.values()[0].decoded_json,
         Some(serde_json::json!({"safe":false,"edited":[1,2,3]}).into())
     );
-    assert!(output.source_fidelity().unrepresented().is_empty());
+    assert_eq!(
+        output.source_fidelity().unrepresented(),
+        ArenaClasses::from([ArenaClass::Model, ArenaClass::Design])
+    );
+    crate::fidelity::b1::assert_classified_spans(&output);
 }

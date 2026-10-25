@@ -369,6 +369,47 @@ impl<'a> ArchiveSnapshot<'a> {
         self.recovery.as_ref().and_then(|recovery| recovery.tail)
     }
 
+    /// Locate a reached local signature whose fixed header or name is cut short.
+    /// No entry identity is supplied until its actual name is complete.
+    ///
+    /// # Errors
+    /// Rejects a recovered range outside this archive's actual input window.
+    pub fn recovery_header(&self) -> Result<Option<View<'a>>, CodecError> {
+        self.recovery
+            .as_ref()
+            .and_then(|recovery| recovery.incomplete_header)
+            .map(|range| {
+                let start = usize::try_from(range.start)
+                    .ok()
+                    .and_then(|start| self.root.start().checked_add(start));
+                let end = usize::try_from(range.end)
+                    .ok()
+                    .and_then(|end| self.root.start().checked_add(end));
+                start
+                    .zip(end)
+                    .and_then(|(start, end)| self.root.child(start, end))
+                    .ok_or_else(|| CodecError::malformed("incomplete ZIP header escapes source"))
+            })
+            .transpose()
+    }
+
+    /// Read the required fields of the actual incomplete local header.
+    ///
+    /// # Errors
+    /// Returns the bounded source error at its missing fixed field or filename.
+    pub fn read_recovery_header(&self, ctx: &DecodeContext<'a>) -> Result<(), CodecError> {
+        ctx.require_source(self.root)?;
+        let mut header = self
+            .recovery_header()?
+            .ok_or_else(|| CodecError::malformed("archive has no incomplete local header"))?;
+        header.req_take(crate::layout::local_header::NAME_LENGTH)?;
+        let name_len = usize::from(header.req_u16_le()?);
+        let extra_len = usize::from(header.req_u16_le()?);
+        header.req_take(name_len)?;
+        header.req_take(extra_len)?;
+        Ok(())
+    }
+
     /// Opens an exact entry name as a named, source-tracked stored or expanded view.
     pub fn open(&self, ctx: &DecodeContext<'a>, name: &str) -> Result<View<'a>, CodecError> {
         let entry = self

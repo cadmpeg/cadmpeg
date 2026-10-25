@@ -53,32 +53,34 @@ fn complete_vector_components_flow_into_kept_values_and_neutral_vectors_with_exa
         );
         assert_eq!(
             capture.reads(),
-            &std::collections::BTreeMap::from([(
+            &normalized_map(&std::collections::BTreeMap::from([(
                 "file".into(),
-                vec![
-                    attribute_range(&bytes, "name", "ExtraVector"),
-                    attribute_range(&bytes, "type", "App::PropertyVector"),
-                    attribute_range(&bytes, "valueX", raw_x),
-                    attribute_range(&bytes, "valueY", "&#45;2"),
-                    attribute_range(&bytes, "valueZ", "3"),
+                [
+                    attribute_reads(&bytes, "name", "ExtraVector"),
+                    attribute_reads(&bytes, "type", "App::PropertyVector"),
+                    attribute_reads(&bytes, "valueX", raw_x),
+                    attribute_reads(&bytes, "valueY", "&#45;2"),
+                    attribute_reads(&bytes, "valueZ", "3"),
+                    attribute_reads(&bytes, "Vendor", "opaque-extra"),
                 ]
-            )])
+                .concat()
+            )]))
         );
     }
 }
 
 #[test]
 fn partial_nonfinite_nested_multiple_vendor_and_overwritten_vectors_get_no_component_credit() {
-    for (type_name, carrier, value_count, kept_text) in [
-        ("App::PropertyVector", "<PropertyVector valueX='1' valueY='2'/>", 1, "1"),
-        ("App::PropertyVector", "<PropertyVector valueX='bad' valueY='2' valueZ='3'/>", 1, "bad"),
-        ("App::PropertyVector", "<PropertyVector valueX='NaN' valueY='2' valueZ='3'/>", 1, "NaN"),
-        ("App::PropertyVector", "<PropertyVector valueX='inf' valueY='2' valueZ='3'/>", 1, "inf"),
-        ("App::PropertyVector", "<PropertyVector valueX='1' valueY='2' valueZ='3'><Vendor value='opaque'/></PropertyVector>", 2, "opaque"),
-        ("App::PropertyVector", "<PropertyVector valueX='1' valueY='2' valueZ='3'/><PropertyVector valueX='4' valueY='5' valueZ='6'/>", 2, "6"),
-        ("Vendor::PropertyVector", "<PropertyVector valueX='1' valueY='2' valueZ='3'/>", 1, "3"),
-        ("App::PropertyVector", "<Vector valueX='1' valueY='2' valueZ='3'/>", 1, "3"),
-        ("App::PropertyVector", "<PropertyVector xmlns:v='urn:vendor' valueX='1' v:valueX='9' valueY='2' valueZ='3'/>", 1, "9"),
+    for (type_name, carrier, selected_x, failures) in [
+        ("App::PropertyVector", "<PropertyVector valueX='1' valueY='2'/>", None, 1),
+        ("App::PropertyVector", "<PropertyVector valueX='bad' valueY='2' valueZ='3'/>", None, 1),
+        ("App::PropertyVector", "<PropertyVector valueX='NaN' valueY='2' valueZ='3'/>", None, 1),
+        ("App::PropertyVector", "<PropertyVector valueX='inf' valueY='2' valueZ='3'/>", None, 1),
+        ("App::PropertyVector", "<PropertyVector valueX='1' valueY='2' valueZ='3'><Vendor value='opaque'/></PropertyVector>", Some("1"), 1),
+        ("App::PropertyVector", "<PropertyVector valueX='1' valueY='2' valueZ='3'/><PropertyVector valueX='4' valueY='5' valueZ='6'/>", Some("1"), 1),
+        ("Vendor::PropertyVector", "<PropertyVector valueX='1' valueY='2' valueZ='3'/>", None, 0),
+        ("App::PropertyVector", "<Vector valueX='1' valueY='2' valueZ='3'/>", None, 1),
+        ("App::PropertyVector", "<PropertyVector xmlns:v='urn:vendor' valueX='1' v:valueX='9' valueY='2' valueZ='3'/>", Some("9"), 0),
     ] {
         let xml = document(&format!("<Property name='Uncredited' type='{type_name}'>{carrier}</Property>"), 1);
         let arena = DecodeArena::new();
@@ -87,12 +89,23 @@ fn partial_nonfinite_nested_multiple_vendor_and_overwritten_vectors_get_no_compo
         let dom = roxmltree::Document::parse(&xml).unwrap();
         let graph = parse_document_source(&ctx, view, &dom, Vocabulary::Objects).unwrap();
         let property = &graph.properties[0];
-        assert!(matches!(property.body, Some(crate::native::PropertyBody::Persisted { .. })));
-        assert_eq!(property.values().len(), value_count, "{carrier}");
-        assert!(property.values().iter().any(|value| value.attributes.values().any(|text| text == kept_text)), "original native field stays: {carrier}");
+        // #215 rejects the damaged value part; readable roots and their peers survive.
+        assert_eq!(property.values().len(), usize::from(selected_x.is_some()), "{carrier}");
+        assert_eq!(property.body.is_some(), selected_x.is_some() || type_name.starts_with("Vendor::"));
+        let mut expected = identity_ranges(&xml, "Uncredited", type_name);
+        if let Some(x) = selected_x {
+            let key = if x == "9" { "v:valueX" } else { "valueX" };
+            expected.extend(attribute_reads(&xml, key, x));
+            expected.extend(attribute_reads(&xml, "valueY", "2"));
+            expected.extend(attribute_reads(&xml, "valueZ", "3"));
+            assert_eq!(property.values()[0].attributes["valueX"], x);
+            assert_eq!(property.values()[0].attributes["valueY"], "2");
+            assert_eq!(property.values()[0].attributes["valueZ"], "3");
+        }
+        assert_eq!(graph.losses.iter().filter(|loss| loss.code.local_code() == "record.unreadable").count(), failures, "{carrier}");
         let captures = property_captures(&ctx, &graph);
         assert_eq!(captures.len(), 1);
-        assert_eq!(captures[0].reads(), &std::collections::BTreeMap::from([("file".into(), identity_ranges(&xml, "Uncredited", type_name))]), "{carrier}");
+        assert_eq!(captures[0].reads(), &normalized_map(&std::collections::BTreeMap::from([("file".into(), expected)])), "{carrier}");
     }
 }
 
@@ -102,23 +115,13 @@ fn discarding_a_real_vector_property_producer_rolls_back_all_component_reads() {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, view) = DecodeContext::from_root_bytes(xml.as_bytes(), &arena, &policy).unwrap();
-    let dom = roxmltree::Document::parse(xml).unwrap();
-    let source = Source::new(&ctx, view, &dom).unwrap();
     let mut losses = Vec::new();
-    let result: Result<(), CodecError> =
-        source.record("discarded-vector", dom.root_element(), || {
-            let property = crate::persistence::parse_persisted_property(
-                dom.root_element(),
-                "Owner",
-                0,
-                &mut losses,
-                Some(&source),
-                false,
-            )?;
-            assert_eq!(property.values()[0].attributes["valueX"], "1");
-            assert!(crate::attributes::values(&property).is_some());
-            Err(CodecError::malformed("discard the actual vector producer"))
-        });
+    let result: Result<(), CodecError> = ctx.record("discarded-vector", view, || {
+        let property = parse_property(&ctx, view, &mut losses)?;
+        assert_eq!(property.values()[0].attributes["valueX"], "1");
+        assert!(crate::attributes::values(&property).is_some());
+        Err(CodecError::malformed("discard the actual vector producer"))
+    });
     assert!(result.is_err());
     assert!(losses.is_empty());
     assert!(ctx.take_record_captures().unwrap().is_empty());

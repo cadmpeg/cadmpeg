@@ -189,6 +189,19 @@ pub(super) fn preserve(
     if !ir.scope.model {
         return Ok(());
     }
+    let namespace = ir.native.namespace("fcstd");
+    let native_objects = namespace
+        .map(|namespace| namespace.arena_as::<crate::native::ObjectRecord>("objects"))
+        .transpose()?
+        .unwrap_or_default();
+    let native_products = namespace
+        .map(|namespace| namespace.arena_as::<crate::native::ProductNodeRecord>("product_nodes"))
+        .transpose()?
+        .unwrap_or_default();
+    let native_joints = namespace
+        .map(|namespace| namespace.arena_as::<crate::native::joint::JointRecord>("joints"))
+        .transpose()?
+        .unwrap_or_default();
     for object in objects {
         let definition = ir
             .model
@@ -200,6 +213,23 @@ pub(super) fn preserve(
             .occurrences
             .iter()
             .find(|record| names.get(record.id.as_str()) == Some(&object.name));
+        if definition.is_none()
+            && occurrence.is_none()
+            && !object.properties.contains_key(DEFINITION)
+            && !object.properties.contains_key(OCCURRENCE)
+            && native_objects.iter().any(|native| {
+                names.get(native.id().as_str()) == Some(&object.name)
+                    && !crate::product::has_product_role(
+                        native.id().as_str(),
+                        &native_products,
+                        &native_joints,
+                    )
+            })
+        {
+            // This native object has no product semantics to control. Its
+            // property absence remains part of the current native content.
+            continue;
+        }
         flag(object, DEFINITION, definition.is_some());
         flag(object, OCCURRENCE, occurrence.is_some());
         for name in [SOURCE, LABEL, NAME, VISIBLE, LOCAL, HAS_LINKED, LINKED] {

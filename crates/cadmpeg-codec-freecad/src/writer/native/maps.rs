@@ -10,6 +10,9 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 use std::collections::{BTreeMap, HashMap};
 
+mod legacy;
+mod relocate;
+
 fn hex(value: i64) -> String {
     if value < 0 {
         format!("-{:x}", value.unsigned_abs())
@@ -23,6 +26,7 @@ pub(crate) fn write(
     objects: &mut [Object],
     names: &HashMap<String, String>,
     properties: &[PropertyRecord],
+    native_only: bool,
     archive_entries: &mut BTreeMap<String, Vec<u8>>,
     losses: &mut Vec<LossNote>,
     outcomes: &mut cadmpeg_ir::codec::write::NativeDispositions,
@@ -56,26 +60,35 @@ pub(crate) fn write(
     for table in tables {
         let Some(entries) = table.entries() else {
             losses.push(
-                FreecadLossCode::ExportNativePropertyNotTransferred
-                    .note(format!("string table {} has no typed entries", table.id())),
-            );
-            continue;
-        };
-        let Some(save_all) = table.save_all else {
-            losses.push(
-                FreecadLossCode::ExportNativePropertyNotTransferred.note(format!(
-                    "string table {} has no admitted save-all policy",
+                cadmpeg_ir::codec::write::ExportLossCode::SourceUndecodedOmitted.note(format!(
+                    "string table {} omits its unavailable source payload; no entry count is invented",
                     table.id()
                 )),
             );
+            super::super::dispositions::record(
+                outcomes,
+                "string_tables",
+                &table.id(),
+                cadmpeg_ir::codec::write::NativeDisposition::Dropped,
+            );
             continue;
         };
-        let Some(threshold) = table.threshold else {
-            losses.push(
-                FreecadLossCode::ExportNativePropertyNotTransferred.note(format!(
-                    "string table {} has no admitted threshold",
-                    table.id()
-                )),
+        let (Some(save_all), Some(threshold)) = (table.save_all, table.threshold) else {
+            let missing = [
+                ("save_all", table.save_all.is_none()),
+                ("threshold", table.threshold.is_none()),
+            ]
+            .into_iter()
+            .filter_map(|(field, missing)| missing.then_some(field))
+            .collect::<Vec<_>>();
+            losses.push(cadmpeg_ir::codec::write::ExportLossCode::SourceUndecodedOmitted.note(format!(
+                "string table {} omits its payload because source metadata fields {missing:?} were not decoded", table.id()
+            )));
+            super::super::dispositions::record(
+                outcomes,
+                "string_tables",
+                &table.id(),
+                cadmpeg_ir::codec::write::NativeDisposition::Dropped,
             );
             continue;
         };
@@ -102,9 +115,22 @@ pub(crate) fn write(
             })?;
             index
         };
-        table_indices.insert(table.index, output_index);
+        table_indices.insert(table.id(), output_index);
+        let absent = entries
+            .iter()
+            .enumerate()
+            .filter_map(|(index, entry)| entry.is_none().then_some(index))
+            .collect::<Vec<_>>();
+        if !absent.is_empty() {
+            losses.push(
+                cadmpeg_ir::codec::write::ExportLossCode::SourceUndecodedOmitted.note(format!(
+                    "string table {} omits undecoded source record positions {absent:?}",
+                    table.id()
+                )),
+            );
+        }
         let mut content = String::new();
-        for entry in entries {
+        for entry in entries.iter().flatten() {
             content.push_str(&hex(entry.string_id));
             content.push('.');
             let flags = format!("{:x}", entry.flags);
@@ -122,7 +148,10 @@ pub(crate) fn write(
             content.push('\n');
         }
         let file = format!("Cadmpeg.StringHasher.{output_index}.txt");
-        let stream = format!("StringTableStart v1 {}\n{content}", entries.len());
+        let stream = format!(
+            "StringTableStart v1 {}\n{content}",
+            entries.iter().flatten().count()
+        );
         let carrier = format!("<StringHasher saveall=\"{}\" threshold=\"{threshold}\" count=\"0\" new=\"1\"/><StringHasher2 file=\"{file}\"/>", u8::from(save_all));
         if let Some(owner) = &table.owner_property {
             let property = properties
@@ -134,7 +163,7 @@ pub(crate) fn write(
                 .and_then(|name| objects.iter_mut().find(|object| object.name == *name))
                 .and_then(|object| object.properties.get_mut(&property.name));
             let Some(shape) = shape else {
-                table_indices.remove(&table.index);
+                table_indices.remove(&table.id());
                 next_hasher = output_index;
                 losses.push(
                     FreecadLossCode::ExportNativePropertyNotTransferred.note(format!(
@@ -148,7 +177,7 @@ pub(crate) fn write(
         } else if dictionary.is_empty() {
             dictionary = carrier;
         } else {
-            table_indices.remove(&table.index);
+            table_indices.remove(&table.id());
             losses.push(
                 FreecadLossCode::ExportNativePropertyNotTransferred.note(format!(
                     "string table {} is a second root hasher with no output owner",
@@ -165,7 +194,18 @@ pub(crate) fn write(
             cadmpeg_ir::codec::write::NativeDisposition::Written,
         );
     }
-    for map in namespace.arena_as::<ElementMapRecord>("element_maps")? {
+    let maps = namespace.arena_as::<ElementMapRecord>("element_maps")?;
+    let payloads = if native_only {
+        crate::brep::records::payloads_untracked(namespace)?
+    } else {
+        Vec::new()
+    };
+    let mut node_ids = maps
+        .iter()
+        .flat_map(|map| map.maps.iter().map(|node| node.map_id))
+        .collect::<std::collections::BTreeSet<_>>();
+    for original in maps {
+        let map = &original;
         let Some(property) = properties
             .iter()
             .find(|property| property.id == map.property)
@@ -195,61 +235,200 @@ pub(crate) fn write(
             );
             continue;
         };
-        if map
-            .maps
-            .iter()
-            .flat_map(|node| &node.groups)
-            .flat_map(|group| &group.names)
-            .flatten()
-            .flat_map(|name| &name.topology_ids)
-            .any(|id| !names.contains_key(id))
-        {
-            losses.push(
-                FreecadLossCode::ExportNativePropertyNotTransferred
-                    .note(format!("element map {} refers to omitted topology", map.id)),
-            );
-            continue;
-        }
         let hasher = map
-            .hasher_index
-            .and_then(|index| table_indices.get(&index))
+            .string_table
+            .as_ref()
+            .and_then(|id| table_indices.get(id))
             .copied();
-        if map.hasher_index.is_some() && hasher.is_none() {
+        if map.string_table.is_some() && hasher.is_none() {
             losses.push(
-                FreecadLossCode::ExportNativePropertyNotTransferred.note(format!(
-                    "element map {} refers to an omitted string table",
+                cadmpeg_ir::codec::write::ExportLossCode::SourceUndecodedOmitted.note(format!(
+                    "element map {} omits its payload because its required string table was omitted",
                     map.id
                 )),
             );
+            super::super::dispositions::record(
+                outcomes,
+                "element_maps",
+                &map.id,
+                cadmpeg_ir::codec::write::NativeDisposition::Dropped,
+            );
             continue;
         }
+        let payloads = payloads
+            .iter()
+            .filter(|payload| payload.property == original.property)
+            .collect::<Vec<_>>();
+        let indices = if let [payload] = payloads.as_slice() {
+            crate::topology_transfer::canonical_indices::for_payload(payload)?
+        } else {
+            Vec::new()
+        };
+        let (map, disposition) = relocate::apply(
+            &original,
+            indices
+                .into_iter()
+                .map(|(kind, index)| (kind, index, index)),
+            losses,
+            &mut node_ids,
+        )?;
+        let disposition = if native_only
+            && disposition == cadmpeg_ir::codec::write::NativeDisposition::Regenerated
+        {
+            cadmpeg_ir::codec::write::NativeDisposition::Written
+        } else {
+            disposition
+        };
+        if let Some(rows) = &map.legacy_records {
+            let mut updated = shape.clone();
+            if !legacy::part_attributes(&mut updated, &map.version, hasher)? {
+                losses.push(
+                    FreecadLossCode::ExportNativePropertyNotTransferred
+                        .note(format!("element map {} has no emitted Part value", map.id)),
+                );
+                continue;
+            }
+            let source_rows = original.legacy_records.as_deref().ok_or_else(|| {
+                CodecError::malformed("relocated legacy map has no canonical legacy rows")
+            })?;
+            if let Some(carrier) =
+                legacy::carrier(&map.id, rows, source_rows, archive_entries, losses)?
+            {
+                *shape = updated.replacen("</Property>", &format!("{carrier}</Property>"), 1);
+                super::super::dispositions::record(outcomes, "element_maps", &map.id, disposition);
+            } else {
+                super::super::dispositions::record(
+                    outcomes,
+                    "element_maps",
+                    &map.id,
+                    cadmpeg_ir::codec::write::NativeDisposition::Dropped,
+                );
+            }
+            continue;
+        }
+        let absent = missing_positions(&original);
+        if !absent.is_empty() {
+            losses.push(cadmpeg_ir::codec::write::ExportLossCode::SourceUndecodedOmitted.note(format!(
+                "element map {} omits undecoded source positions {absent:?}; held sparse name chains use exact supported child-map associations where possible", map.id
+            )));
+        }
+        let postfix_indices = map
+            .postfixes
+            .iter()
+            .enumerate()
+            .filter_map(|(index, postfix)| postfix.as_ref().map(|postfix| (index + 1, postfix)))
+            .enumerate()
+            .map(|(new, (old, _))| (old, new + 1))
+            .collect::<BTreeMap<_, _>>();
+        let map_indices = map
+            .maps
+            .indexed()
+            .enumerate()
+            .map(|(new, (old, _))| (old, new + 1))
+            .collect::<BTreeMap<_, _>>();
         let mut content = format!(
             "{} PostfixCount {} {} MapCount {}\n",
             map.map_id,
-            map.postfixes.len(),
-            map.postfixes.join(" "),
-            map.maps.iter().len()
+            map.postfixes.iter().flatten().count(),
+            map.postfixes
+                .iter()
+                .flatten()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(" "),
+            map.maps.iter().count()
         );
-        for (index, node) in map.maps.iter().enumerate() {
+        for (index, (_, node)) in map.maps.indexed().enumerate() {
             content.push_str("ElementMap ");
             content.push_str(&(index + 1).to_string());
             content.push(' ');
             content.push_str(&node.map_id.to_string());
             content.push(' ');
-            content.push_str(&node.groups.len().to_string());
+            content.push_str(
+                &node
+                    .groups
+                    .iter()
+                    .flatten()
+                    .filter(|group| group.names.iter().all(Option::is_some))
+                    .count()
+                    .to_string(),
+            );
             content.push('\n');
-            for group in &node.groups {
+            for group in node
+                .groups
+                .iter()
+                .flatten()
+                .filter(|group| group.names.iter().all(Option::is_some))
+            {
                 content.push_str(&group.indexed_name);
                 content.push_str(" ChildCount ");
-                content.push_str(&group.children.len().to_string());
+                content.push_str(&group.children.iter().flatten().count().to_string());
                 content.push(' ');
-                content.push_str(&group.children.join(" "));
+                for child in group.children.iter().flatten() {
+                    let mut fields = child
+                        .split_ascii_whitespace()
+                        .map(str::to_owned)
+                        .collect::<Vec<_>>();
+                    if let Some(index) = fields
+                        .get(4)
+                        .and_then(|value| value.parse::<usize>().ok())
+                        .filter(|index| *index != 0)
+                    {
+                        let mapped = map_indices.get(&index).ok_or_else(|| {
+                            CodecError::InvalidInput(
+                                "element-map child names an absent map node".into(),
+                            )
+                        })?;
+                        fields[4] = mapped.to_string();
+                    }
+                    content.push_str(&fields.join(" "));
+                    content.push(' ');
+                }
                 content.push_str(" NameCount ");
                 content.push_str(&group.names.len().to_string());
                 content.push('\n');
-                for chain in &group.names {
+                for chain in group.names.iter().flatten() {
                     for name in chain {
-                        content.push_str(&name.encoded);
+                        let mut fields = name
+                            .encoded
+                            .split('.')
+                            .map(str::to_owned)
+                            .collect::<Vec<_>>();
+                        let postfix_position = if let Some(prefix) = fields[0].strip_prefix(':') {
+                            let original = usize::from_str_radix(prefix, 16).map_err(|_| {
+                                CodecError::InvalidInput(
+                                    "invalid element-map dictionary index".into(),
+                                )
+                            })?;
+                            fields[0] = format!(
+                                ":{:x}",
+                                postfix_indices.get(&original).ok_or_else(|| {
+                                    CodecError::InvalidInput(
+                                        "mapped name refers to an absent dictionary entry".into(),
+                                    )
+                                })?
+                            );
+                            2
+                        } else {
+                            1
+                        };
+                        let original = fields
+                            .get(postfix_position)
+                            .and_then(|value| usize::from_str_radix(value, 16).ok())
+                            .ok_or_else(|| {
+                                CodecError::InvalidInput("mapped name has no postfix index".into())
+                            })?;
+                        if original != 0 {
+                            fields[postfix_position] = format!(
+                                "{:x}",
+                                postfix_indices.get(&original).ok_or_else(|| {
+                                    CodecError::InvalidInput(
+                                        "mapped name refers to an absent postfix".into(),
+                                    )
+                                })?
+                            );
+                        }
+                        content.push_str(&fields.join("."));
                         content.push(' ');
                     }
                     content.push_str("0\n");
@@ -257,24 +436,65 @@ pub(crate) fn write(
             }
             content.push_str("EndMap\n");
         }
-        let part_attributes = format!(
-            "<Part ElementMap=\"{}\"{} ",
-            xml::escaped(&map.version),
-            hasher.map_or_else(String::new, |index| format!(" HasherIndex=\"{index}\""))
-        );
-        *shape = shape.replacen("<Part ", &part_attributes, 1);
+        if !legacy::part_attributes(shape, &map.version, hasher)? {
+            losses.push(
+                FreecadLossCode::ExportNativePropertyNotTransferred
+                    .note(format!("element map {} has no emitted Part value", map.id)),
+            );
+            continue;
+        }
+        let count = map
+            .declared_count
+            .map(|count| format!(" count=\"{count}\""))
+            .unwrap_or_default();
         let map_xml = format!(
-            "<ElementMap new=\"1\" count=\"0\"/><ElementMap2 count=\"{}\">{}</ElementMap2>",
-            map.declared_count.unwrap_or(0),
+            "<ElementMap new=\"1\" count=\"0\"/><ElementMap2{count}>{}</ElementMap2>",
             xml::escaped(&content)
         );
         *shape = shape.replacen("</Property>", &format!("{map_xml}</Property>"), 1);
-        super::super::dispositions::record(
-            outcomes,
-            "element_maps",
-            &map.id,
-            cadmpeg_ir::codec::write::NativeDisposition::Written,
-        );
+        super::super::dispositions::record(outcomes, "element_maps", &map.id, disposition);
     }
     Ok(dictionary)
 }
+
+fn missing_positions(map: &ElementMapRecord) -> Vec<String> {
+    let mut absent = Vec::new();
+    for (index, postfix) in map.postfixes.iter().enumerate() {
+        if postfix.is_none() {
+            absent.push(format!("postfix[{index}]"));
+        }
+    }
+    let admitted = map
+        .maps
+        .indexed()
+        .map(|(index, _)| index)
+        .collect::<std::collections::BTreeSet<_>>();
+    for index in 1..=map.maps.slot_count() {
+        if !admitted.contains(&index) {
+            absent.push(format!("node[{index}]"));
+        }
+    }
+    for (node_index, node) in map.maps.indexed() {
+        for (group_index, group) in node.groups.iter().enumerate() {
+            let path = format!("node[{node_index}].group[{group_index}]");
+            let Some(group) = group else {
+                absent.push(path);
+                continue;
+            };
+            for (index, child) in group.children.iter().enumerate() {
+                if child.is_none() {
+                    absent.push(format!("{path}.child[{index}]"));
+                }
+            }
+            for (index, chain) in group.names.iter().enumerate() {
+                if chain.is_none() {
+                    absent.push(format!("{path}.name_chain[{index}]"));
+                }
+            }
+        }
+    }
+    absent
+}
+
+#[cfg(test)]
+mod tests;

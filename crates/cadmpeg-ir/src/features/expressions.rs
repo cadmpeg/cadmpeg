@@ -198,6 +198,19 @@ impl From<&str> for Expression {
 }
 
 impl crate::schema::rewrite::typed::RewriteIdentities for ExpressionToken {
+    fn visit_dependency_references(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        visitor: &mut dyn FnMut(
+            crate::schema::rewrite::typed::prune::DependencyReference<'_>,
+        ) -> Result<(), cadmpeg_core::CodecError>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        match self {
+            Self::Parameter(id) => id.visit_dependency_references(ctx, visitor),
+            Self::Text(_) => Ok(()),
+        }
+    }
+
     fn visit_identity_references(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -223,6 +236,20 @@ impl crate::schema::rewrite::typed::RewriteIdentities for ExpressionToken {
     }
 }
 impl crate::schema::rewrite::typed::RewriteIdentities for Expression {
+    fn visit_dependency_references(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        visitor: &mut dyn FnMut(
+            crate::schema::rewrite::typed::prune::DependencyReference<'_>,
+        ) -> Result<(), cadmpeg_core::CodecError>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        // Tokens compose one formula; losing an operand cannot prune a token.
+        for token in &self.tokens {
+            token.visit_dependency_references(ctx, visitor)?;
+        }
+        Ok(())
+    }
+
     fn visit_identity_references(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,

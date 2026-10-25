@@ -5,6 +5,7 @@
 //! codec has. This module carries out what that gate settled, and gates nothing
 //! of its own.
 
+mod application_payloads;
 mod attributes;
 pub(crate) mod body_styles;
 mod brep;
@@ -20,6 +21,7 @@ mod parameters;
 mod pcurves;
 mod presentation;
 pub(crate) mod products;
+mod property_payloads;
 mod synthesis;
 mod synthesis_graph;
 pub(crate) mod target;
@@ -103,27 +105,26 @@ fn write_seekable(
         .to_vec();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) =
+    let (ctx, document_root) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&document_xml, &arena, &policy)?;
     let written_xml = crate::container::admit_document(&ctx, &document_xml)?;
-    let mut written_graph = crate::persistence::parse_document(
+    let declared_entries = crate::container::parts::declared_entries(&entries);
+    let no_payloads = std::collections::BTreeMap::new();
+    let context =
+        crate::element_map::adopted::Context::new(&no_payloads, document.file_version.value())
+            .with_declared_entries(&declared_entries);
+    let written_graph = crate::persistence::parse_document_source_with_context(
+        &ctx,
+        document_root,
         &written_xml,
         crate::persistence::Vocabulary::from_declaration(schema_version)?,
+        &context,
     )?;
     validate_declarations(
         &objects,
         &extensions,
         &written_graph.objects,
         &written_graph.extensions,
-    )?;
-    let mut entry_views = std::collections::BTreeMap::new();
-    for entry in &entries {
-        entry_views.insert(entry.name().to_owned(), payloads[entry.name()]);
-    }
-    crate::persistence::resolve_side_entries(
-        &mut written_graph.properties,
-        &entry_views,
-        &mut written_graph.losses,
     )?;
     validate_properties(&properties, &written_graph.properties)?;
     for property in &written_graph.properties {
@@ -315,9 +316,6 @@ fn same_property_semantics(left: &PropertyRecord, right: &PropertyRecord) -> boo
     match (&left.body, &right.body) {
         (None, None) => true,
         (Some(PropertyBody::Transient), Some(PropertyBody::Transient)) => true,
-        (Some(PropertyBody::Unreadable(left)), Some(PropertyBody::Unreadable(right))) => {
-            left == right
-        }
         (
             Some(PropertyBody::Persisted {
                 values: left_values,
@@ -330,7 +328,8 @@ fn same_property_semantics(left: &PropertyRecord, right: &PropertyRecord) -> boo
                 side_entries: right_side_entries,
             }),
         ) => {
-            left_values.len() == right_values.len()
+            left_values.slot_count() == right_values.slot_count()
+                && left_values.len() == right_values.len()
                 && left_values.iter().zip(right_values).all(|(left, right)| {
                     serde_json::to_value(left).ok() == serde_json::to_value(right).ok()
                 })

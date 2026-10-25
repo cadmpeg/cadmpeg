@@ -10,6 +10,11 @@ use cadmpeg_ir::{CadIr, CodecFormat, SourceFidelity};
 use serde_json::Value;
 
 use super::{graph::Document, Allowances};
+mod changes;
+pub mod damage;
+mod fallback;
+mod zip;
+pub(super) use changes::check_changes;
 
 /// One decoded document and its original, independently retained source facts.
 ///
@@ -33,13 +38,12 @@ impl Allowances {
     ///
     /// Every failure must have its real deterministic unknown stub, exact raw
     /// source image and layout, and one Error `decode/record.unreadable` loss.
-    /// Only prior record layouts wholly contained in those original intervals
-    /// seed removal. Required reference fields propagate removal; variable list
-    /// entries use the comparator's existing list-holder pruning.
+    /// Prior complete extents and genuine semantic reads witness affected
+    /// records. Neutral records follow their actual native reference. Required
+    /// references propagate removal; variable lists retain their independent fields.
     ///
-    /// A partial overlap never permits dropping the owner or changing its fields.
-    /// Partial-field allowances, export allowances and Cross projection remain
-    /// separate requirements. Native dispositions or human loss text grant none.
+    /// Affected survivors may gain no key or variant tag. Unaffected records
+    /// remain exact. Native dispositions or human loss text grant no permission.
     ///
     /// # Errors
     /// Refuses inconsistent scope/format, invalid failure homes, missing source
@@ -50,6 +54,36 @@ impl Allowances {
         report: &DecodeReport,
         root_stream: &str,
         source: impl FnMut(&str, Range<u64>) -> Option<&'source [u8]>,
+    ) -> Result<Self, String> {
+        Self::given_up_witnessed(before, outcome, report, root_stream, source, &[])
+    }
+
+    /// Compare content-only damage to an explicitly authenticated original part.
+    /// For a sequential part, real reads in its suffix through the original
+    /// parent end are affected, even when the first failed read occurs later.
+    ///
+    /// # Errors
+    /// Rejects a foreign target, changed framing, or invalid give-up evidence.
+    pub fn given_up_damaged<'source>(
+        before: DecodeSnapshot<'_>,
+        outcome: DecodeSnapshot<'_>,
+        report: &DecodeReport,
+        root_stream: &str,
+        original: impl FnMut(&str, Range<u64>) -> Option<&'source [u8]>,
+        mut source: impl FnMut(&str, Range<u64>) -> Option<&'source [u8]>,
+        target: &damage::DamageTarget<'_>,
+    ) -> Result<Self, String> {
+        let witnesses = target.witness(before, original, &mut source)?;
+        Self::given_up_witnessed(before, outcome, report, root_stream, source, &witnesses)
+    }
+
+    fn given_up_witnessed<'source>(
+        before: DecodeSnapshot<'_>,
+        outcome: DecodeSnapshot<'_>,
+        report: &DecodeReport,
+        root_stream: &str,
+        source: impl FnMut(&str, Range<u64>) -> Option<&'source [u8]>,
+        witnesses: &[(String, u64, u64)],
     ) -> Result<Self, String> {
         before
             .document
@@ -82,7 +116,7 @@ impl Allowances {
             root_stream,
             source,
         )?;
-        let extents = outcome
+        let mut extents = outcome
             .fidelity
             .parts()
             .values()
@@ -108,9 +142,14 @@ impl Allowances {
                 return Err("unreadable loss has no exact given-up source part".into());
             }
         }
+        extents.extend(
+            witnesses
+                .iter()
+                .map(|(stream, offset, length)| (stream.as_str(), *offset, *length)),
+        );
         let value = serde_json::to_value(before.document).map_err(|error| error.to_string())?;
         let records = Document::read(&value, &BTreeSet::new())?;
-        let mut removed = BTreeSet::new();
+        let mut affected = BTreeSet::new();
         for record in &records.records {
             let Some(layout) = before.fidelity.record_layout().get(&record.id) else {
                 continue;
@@ -122,14 +161,24 @@ impl Allowances {
             let enclosing = extents
                 .range((layout.stream(), 0, 0)..=(layout.stream(), layout.offset(), u64::MAX))
                 .next_back();
-            if layout.byte_len() != 0
+            let wholly_contained = layout.byte_len() != 0
                 && enclosing.is_some_and(|(stream, start, length)| {
                     *stream == layout.stream()
                         && layout.offset() >= *start
                         && start.checked_add(*length).is_some_and(|stop| end <= stop)
+                });
+            let read_intersects = layout.reads().iter().any(|(stream, reads)| {
+                reads.iter().any(|read| {
+                    extents.iter().any(|(failed_stream, start, length)| {
+                        stream.as_str() == *failed_stream
+                            && start
+                                .checked_add(*length)
+                                .is_some_and(|end| read.start < end && *start < read.end)
+                    })
                 })
-            {
-                removed.insert(record.id.clone());
+            });
+            if wholly_contained || read_intersects {
+                affected.insert(record.id.clone());
             }
         }
         // Use §5.3's reference definition: a string equal to an actual record
@@ -142,15 +191,67 @@ impl Allowances {
                 users.entry(target).or_default().insert(record.id.clone());
             }
         }
-        let mut queue = removed.iter().cloned().collect::<VecDeque<_>>();
+        before
+            .document
+            .visit_neutral_provenance(&mut |record| {
+                if let Some(native) = record.native_ref() {
+                    users
+                        .entry(native.to_owned())
+                        .or_default()
+                        .insert(record.id().to_owned());
+                }
+                Ok(())
+            })
+            .map_err(|error| error.to_string())?;
+        let outcome_value =
+            serde_json::to_value(outcome.document).map_err(|error| error.to_string())?;
+        let current = Document::read(&outcome_value, &BTreeSet::new())?;
+        let mut removable = affected
+            .iter()
+            .filter(|id| !current.ids.contains_key(*id))
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        let mut queue = removable.iter().cloned().collect::<VecDeque<_>>();
         while let Some(target) = queue.pop_front() {
             for owner in users.get(&target).into_iter().flatten() {
-                if removed.insert(owner.clone()) {
+                if !current.ids.contains_key(owner) && removable.insert(owner.clone()) {
                     queue.push_back(owner.clone());
                 }
             }
         }
-        Ok(Self { removed })
+        let missing = records
+            .ids
+            .keys()
+            .filter(|id| !current.ids.contains_key(*id))
+            .cloned()
+            .collect();
+        let mut fallbacks = BTreeSet::new();
+        for record in records.records.iter().filter(|record| {
+            current.ids.contains_key(&record.id)
+                && !affected.contains(&record.id)
+                && fallback::has_missing_reference(&record.value, &removable)
+        }) {
+            let mut original = record.value.clone();
+            let now = &current.records[current.ids[&record.id]].value;
+            if fallback::mask_fields(&record.arena, &mut original, now, &missing)? != 0 {
+                fallbacks.insert(record.id.clone());
+            }
+        }
+        let removed = removable
+            .into_iter()
+            .filter(|id| !current.ids.contains_key(id))
+            .collect();
+        let changed = affected
+            .into_iter()
+            .filter(|id| current.ids.contains_key(id))
+            .collect();
+        Ok(Self {
+            removed,
+            changed,
+            fallbacks,
+            given_up: true,
+            lost_classes: BTreeSet::new(),
+        })
     }
 }
 
@@ -171,9 +272,15 @@ fn required_references(
                 required_references(value, identities, required);
             }
         }
-        // These records list a reference; the existing comparison prunes only
-        // the affected entry, retaining independent fields on its list holder.
-        Value::Array(_) => {}
+        Value::Array(entries) => {
+            // Only a reference that is itself an array element is listed.
+            // A scalar field inside an array's object still needs its target.
+            for entry in entries {
+                if matches!(entry, Value::Object(_) | Value::Array(_)) {
+                    required_references(entry, identities, required);
+                }
+            }
+        }
         _ => {}
     }
 }

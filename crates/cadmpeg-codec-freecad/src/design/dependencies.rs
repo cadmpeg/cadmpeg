@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Separate structural feature references from derived expression edges.
 
-use crate::native::PropertyRecord;
+use crate::native::{ObjectRecord, PropertyRecord};
 use cadmpeg_core::{decode::DecodeContext, CodecError};
 use cadmpeg_ir::{
     features::{FeatureId, FeatureOperation},
@@ -13,6 +13,7 @@ use std::collections::{BTreeMap, BTreeSet};
 pub(super) fn structural(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
+    objects: &[ObjectRecord],
     properties: &[PropertyRecord],
 ) -> Result<(), CodecError> {
     let known: BTreeSet<_> = ir
@@ -140,11 +141,24 @@ pub(super) fn structural(
                 }
             }
         }
+        let declared = feature.native_ref.as_ref().and_then(|owner| {
+            objects
+                .iter()
+                .find(|object| object.id() == owner && !super::is_body(&object.type_name))
+        });
         let retained = feature
             .dependencies
             .iter()
             .filter(|dependency| {
                 explicit.contains(*dependency)
+                    || (native
+                        && declared.is_some_and(|object| {
+                            object
+                                .dependencies
+                                .iter()
+                                .filter_map(|target| owners.get(target))
+                                .any(|target| target == *dependency)
+                        }))
                     || (native
                         && !formula_edges
                             .get(&feature.id)

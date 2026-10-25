@@ -21,13 +21,19 @@ fn selected_root_metadata_is_read_but_shadowed_aliases_and_extra_values_stay_b1(
     assert_eq!(facts[0].program_version.as_deref(), Some("Ω & version"));
     let fidelity = decoded.source_fidelity();
     let layout = &fidelity.record_layout()[&facts[0].id];
-    let expected: Vec<_> = ["7", "Ω &amp; version"]
-        .iter()
-        .map(|text| {
-            let start = document.find(text).unwrap();
-            u64_from_index(start)..u64_from_index(start + text.len())
-        })
-        .collect();
+    let expected: Vec<_> = [
+        "Document",
+        "FileVersion",
+        "7",
+        "ProgramVersion",
+        "Ω &amp; version",
+    ]
+    .iter()
+    .map(|text| {
+        let start = document.find(text).unwrap();
+        u64_from_index(start)..u64_from_index(start + text.len())
+    })
+    .collect();
     assert_eq!(layout.reads()[layout.stream()], expected);
     for unread in ["8", "discarded", "unknown"] {
         let start = u64_from_index(document.find(unread).unwrap());
@@ -64,12 +70,19 @@ fn an_invalid_file_version_is_kept_with_no_numeric_read_credit_and_no_alias_subs
     assert_eq!(facts[0].program_version.as_deref(), Some("authored"));
     let fidelity = decoded.source_fidelity();
     let layout = &fidelity.record_layout()[&facts[0].id];
-    let start = document.find("authored").unwrap();
-    assert_eq!(
-        layout.reads()[layout.stream()],
-        [u64_from_index(start)..u64_from_index(start + "authored".len())]
-    );
-    for unread in ["bad", "9"] {
+    let expected = [
+        "Document",
+        "FileVersion",
+        "bad",
+        "ProgramVersion",
+        "authored",
+    ]
+    .map(|field| {
+        let start = document.find(field).unwrap();
+        u64_from_index(start)..u64_from_index(start + field.len())
+    });
+    assert_eq!(layout.reads()[layout.stream()], expected);
+    for unread in ["9"] {
         let start = u64_from_index(document.find(unread).unwrap());
         let end = start + u64_from_index(unread.len());
         assert!(fidelity.b1_spans()[layout.stream()]
@@ -100,5 +113,5 @@ fn absent_root_metadata_keeps_existing_native_defaults_without_source_reads() {
     assert_eq!(facts[0].file_version.as_str(), "0");
     assert_eq!(facts[0].program_version, None);
     let layout = &decoded.source_fidelity().record_layout()[&facts[0].id];
-    assert!(layout.reads().is_empty());
+    assert_eq!(layout.reads()[layout.stream()], [1..9]);
 }

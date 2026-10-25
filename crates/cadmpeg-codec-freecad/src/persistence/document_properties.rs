@@ -1,211 +1,240 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Document-owned values are born in their actual XML property scopes.
+//! Property records and values from recovering source element boundaries.
 
 use crate::native::PropertyRecord;
-use cadmpeg_core::decode::{DecodeContext, View};
+use crate::xml_framing::XmlSource;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartLevel, PartOutput, PartSpec};
+use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput};
 use std::collections::BTreeMap;
 
-mod value_parts;
+pub(crate) mod pending;
+pub(crate) mod value_parts;
+pub(crate) use pending::finish_pending;
 
 #[derive(Default)]
 pub(crate) struct RootProperties {
     pub(crate) properties: Vec<PropertyRecord>,
     pub(crate) sources: BTreeMap<String, crate::fidelity::ValueSourceRanges>,
-    pub(crate) given_up: bool,
+    pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
-pub(crate) fn selected(node: roxmltree::Node<'_, '_>) -> bool {
-    let tag = match node.attribute("type") {
-        Some("App::PropertyString") => "String",
-        Some(
-            "App::PropertyInteger" | "App::PropertyIntegerConstraint" | "App::PropertyPercent",
-        ) => "Integer",
-        Some("App::PropertyBool") => "Bool",
-        Some(
-            "App::PropertyFloat"
-            | "App::PropertyFloatConstraint"
-            | "App::PropertyLength"
-            | "App::PropertyAngle"
-            | "App::PropertyDistance"
-            | "App::PropertyQuantity"
-            | "App::PropertyQuantityConstraint",
-        ) => "Float",
-        Some("App::PropertyVector") => "PropertyVector",
-        _ => return false,
-    };
-    if !node.has_tag_name("Property")
-        || node
-            .descendants()
-            .filter(roxmltree::Node::is_element)
-            .any(|value| {
-                value.attributes().any(|attribute| {
-                    matches!(attribute.name(), "file" | "File") && !attribute.value().is_empty()
-                })
-            })
-    {
-        return false;
-    }
-    if node.attribute("group").is_some()
-        && ["ro", "hide"].into_iter().any(|key| {
-            node.attributes()
-                .find(|attribute| attribute.namespace().is_none() && attribute.name() == key)
-                .is_some_and(|attribute| crate::native::parse_bool(attribute.value()).is_none())
-        })
-    {
-        return false;
-    }
-    let mut elements = node.children().filter(roxmltree::Node::is_element);
-    let Some(value) = elements.next() else {
-        return false;
-    };
-    let string = tag == "String";
-    if !value.has_tag_name(tag)
-        || elements.next().is_some()
-        || value.children().any(|child| child.is_element())
-    {
-        return false;
-    }
-    if !string && value.first_child().is_some() {
-        return false;
-    }
-    if tag == "PropertyVector"
-        && super::direct_vector_value(node, "App::PropertyVector") != Some(value)
-    {
-        return false;
-    }
-    if let Some(text) = value.first_child().filter(roxmltree::Node::is_text) {
-        let raw = &node.document().input_text().as_bytes()[text.range()];
-        let suffix = &node.document().input_text().as_bytes()[text.range().end..value.range().end];
-        if value.last_child() != Some(text) || raw.contains(&b'<') || !suffix.starts_with(b"</") {
-            return false;
-        }
-    }
-    true
-}
-
-pub(crate) fn decode<'source>(
+pub(crate) fn prepare_scanned<'source>(
     ctx: &DecodeContext<'source>,
-    view: View<'source>,
-    xml: &roxmltree::Document<'_>,
+    source: &XmlSource<'source>,
+    root: usize,
+    context: &crate::element_map::adopted::Context<'_, 'source>,
     output: &mut PartOutput,
 ) -> Result<Option<RootProperties>, CodecError> {
-    if ctx.container_only() {
+    let containers: Vec<_> = source
+        .children(root)
+        .filter(|index| source.name(*index).is_ok_and(|name| name == "Properties"))
+        .collect();
+    if containers.is_empty() {
         return Ok(None);
     }
-    let mut containers = xml
-        .root_element()
-        .children()
-        .filter(|node| node.has_tag_name("Properties"));
-    let Some(container) = containers.next() else {
-        return Ok(None);
-    };
-    if containers.next().is_some() {
-        return Err(CodecError::malformed(
-            "Document.xml has multiple root Properties containers",
-        ));
+    if containers.len() != 1 {
+        for index in containers {
+            ctx.decode_part(
+                output,
+                source.extent(index)?,
+                source.spec(index, "freecad.properties")?,
+                |_stage| {
+                    Err::<(), _>(CodecError::malformed(
+                        "Document.xml has multiple root Properties containers",
+                    ))
+                },
+            )?;
+        }
+        return Ok(Some(RootProperties {
+            ..RootProperties::default()
+        }));
     }
-    if !container.children().any(selected) {
-        return Ok(None);
-    }
-    Ok(Some(decode_owned(
+    prepare_owned_scanned(
         ctx,
-        view,
-        xml,
-        container,
+        source,
+        containers[0],
         &crate::native::native_id("document", "0"),
+        context,
         output,
-    )?))
+    )
+    .map(Some)
 }
 
-pub(crate) fn decode_owned<'source>(
+pub(crate) fn prepare_owned_scanned<'source>(
     ctx: &DecodeContext<'source>,
-    view: View<'source>,
-    xml: &roxmltree::Document<'_>,
-    container: roxmltree::Node<'_, '_>,
+    source: &XmlSource<'source>,
+    index: usize,
     owner: &str,
+    context: &crate::element_map::adopted::Context<'_, 'source>,
     output: &mut PartOutput,
 ) -> Result<RootProperties, CodecError> {
-    let source = super::source::Source::new(ctx, view, xml)?;
-    let (extent, fields) = crate::xml_framing::element_fields(ctx, view, container)?;
-    let properties_level = PartLevel::parse("freecad.properties")
-        .ok_or_else(|| CodecError::malformed("properties level is absent from Appendix C"))?;
     let result = ctx.decode_part(
         output,
-        extent,
-        PartSpec::new(properties_level, fields),
-        |properties_stage| {
-            let count = container
-                .children()
-                .filter(|node| node.has_tag_name("Property") || node.has_tag_name("_Property"))
-                .count();
-            let bytes = count
-                .checked_mul(size_of::<Option<&str>>())
-                .ok_or_else(|| {
-                    CodecError::malformed("document property name inventory overflows")
-                })?;
-            ctx.retain_bytes(
-                cadmpeg_core::decode::u64_from_index(bytes),
-                "FreeCAD document property names",
-            )?;
-            let mut names = ctx.alloc_filled(count, None, "FreeCAD document property names")?;
-            for (name, property) in names.iter_mut().zip(
-                container
-                    .children()
-                    .filter(|node| node.has_tag_name("Property") || node.has_tag_name("_Property")),
-            ) {
-                *name = property.attribute("name");
-                if name.is_none() && !selected(property) {
-                    return Err(CodecError::malformed(
-                        "property element has no name attribute",
-                    ));
+        source.extent(index)?,
+        source.spec(index, "freecad.properties")?,
+        |stage| {
+            source.validate(index)?;
+            let children: Vec<_> = source
+                .children(index)
+                .filter(|index| {
+                    source
+                        .name(*index)
+                        .is_ok_and(|name| matches!(name, "Property" | "_Property"))
+                })
+                .collect();
+            let mut names = BTreeMap::<String, usize>::new();
+            for &child in &children {
+                match source.peek_attribute(ctx, child, "name") {
+                    Ok(Some(name)) => {
+                        *names.entry(name).or_default() += 1;
+                    }
+                    Ok(None) => {}
+                    Err(error @ CodecError::Io(_)) => return Err(error),
+                    Err(CodecError::ResourceLimit(limit))
+                        if limit.scope == cadmpeg_core::decode::LimitScope::Session =>
+                    {
+                        return Err(CodecError::ResourceLimit(limit));
+                    }
+                    Err(_) => {}
                 }
-            }
-            names.sort_unstable();
-            if names
-                .windows(2)
-                .any(|pair| pair[0].is_some() && pair[0] == pair[1])
-            {
-                return Err(CodecError::malformed("duplicate document property name"));
             }
             let mut result = RootProperties::default();
-            for (order, node) in container
-                .children()
-                .filter(|node| node.has_tag_name("Property"))
-                .enumerate()
-            {
-                if !selected(node) {
+            let mut pending = Vec::new();
+            let transient = children
+                .iter()
+                .filter(|index| source.name(**index).is_ok_and(|name| name == "_Property"))
+                .count();
+            let attributes = source.peek_attributes(ctx, index)?;
+            for (field, actual) in [
+                ("Count", children.len() - transient),
+                ("TransientCount", transient),
+            ] {
+                if field == "TransientCount" && transient == 0 && !attributes.contains_key(field) {
                     continue;
                 }
-                let (extent, fields) = crate::xml_framing::element_fields(ctx, view, node)?;
-                let level = PartLevel::parse("freecad.property").ok_or_else(|| {
-                    CodecError::malformed("property level is absent from Appendix C")
-                })?;
-                if let Some(property) = ctx.decode_part(
-                    properties_stage,
-                    extent,
-                    PartSpec::new(level, fields),
-                    |stage| {
-                        let name = super::required_attr(node, "name")?;
-                        let id = crate::native::native_child_id("property", owner, name);
-                        source.record(&id, node, || {
-                            value_parts::decode(ctx, view, &source, node, owner, order, stage)
+                if attributes
+                    .get(field)
+                    .and_then(|text| text.parse::<usize>().ok())
+                    != Some(actual)
+                {
+                    let loss =
+                        crate::loss::FreecadLossCode::PersistenceCountNoncanonical.note(format!(
+                            "Properties {field}={:?}; reading {actual} framed elements",
+                            attributes.get(field)
+                        ));
+                    result.losses.push(loss);
+                }
+            }
+            let mut persisted_order = 0;
+            let mut transient_order = 0;
+            for child in children {
+                let transient = source.name(child)? == "_Property";
+                let order = if transient {
+                    let order = transient_order;
+                    transient_order += 1;
+                    order
+                } else {
+                    let order = persisted_order;
+                    persisted_order += 1;
+                    order
+                };
+                let parsed = ctx.decode_part(
+                    stage,
+                    source.extent(child)?,
+                    source.spec(child, "freecad.property")?,
+                    |_property_stage| {
+                        let name = source
+                            .peek_attribute(ctx, child, "name")?
+                            .ok_or_else(|| CodecError::malformed("Property has no name"))?;
+                        let id = crate::native::native_child_id("property", owner, &name);
+                        ctx.record_owner(&id, source.extent(child)?, || {
+                            source.validate(child)?;
+                            if names.get(&name).is_some_and(|count| *count > 1) {
+                                let kind = if owner == crate::native::native_id("document", "0") {
+                                    "document"
+                                } else {
+                                    "object"
+                                };
+                                return Err(CodecError::malformed(format_args!(
+                                    "duplicate property name {name} for {kind} {owner}"
+                                )));
+                            }
+                            value_parts::prepare_header(ctx, source, child, owner, order)
                         })
                     },
-                )? {
+                )?;
+                if let Some((property, record_owner)) = parsed {
+                    let extent = source.extent(child)?;
+                    let offset = source.view().start();
                     result.sources.insert(
                         property.id.clone(),
-                        crate::fidelity::property_source(node, &property)?,
+                        crate::fidelity::ValueSourceRanges::new_slots(
+                            property.id.clone(),
+                            extent.start() - offset..extent.end() - offset,
+                            Vec::new(),
+                        )?,
                     );
+                    let parent = stage.parent(ctx, extent, "freecad.property")?;
+                    pending.push(pending::PendingProperty::new(
+                        child,
+                        property.clone(),
+                        record_owner,
+                        parent,
+                    ));
                     result.properties.push(property);
                 }
             }
-            Ok(result)
+            Ok((result, pending))
         },
     )?;
-    Ok(result.unwrap_or(RootProperties {
-        given_up: true,
-        ..RootProperties::default()
-    }))
+    match result {
+        Some((result, pending)) => {
+            context.pending_properties.borrow_mut().extend(pending);
+            Ok(result)
+        }
+        None => Ok(RootProperties::default()),
+    }
 }
+
+/// Completes a standalone root property collection through the global producer scheduler.
+#[cfg(test)]
+pub(crate) fn decode_scanned<'source>(
+    ctx: &DecodeContext<'source>,
+    source: &XmlSource<'source>,
+    root: usize,
+    context: &crate::element_map::adopted::Context<'_, 'source>,
+    output: &mut PartOutput,
+) -> Result<Option<RootProperties>, CodecError> {
+    let Some(mut result) = prepare_scanned(ctx, source, root, context, output)? else {
+        return Ok(None);
+    };
+    let mut finished = finish_pending(ctx, source, context, output)?;
+    if let Some(complete) = finished.remove(&crate::native::native_id("document", "0")) {
+        result.properties = complete.properties;
+        result.sources = complete.sources;
+    }
+    Ok(Some(result))
+}
+
+/// Completes one owner when no other document owner remains to be prepared.
+#[cfg(test)]
+pub(crate) fn decode_owned_scanned<'source>(
+    ctx: &DecodeContext<'source>,
+    source: &XmlSource<'source>,
+    index: usize,
+    owner: &str,
+    context: &crate::element_map::adopted::Context<'_, 'source>,
+    output: &mut PartOutput,
+) -> Result<RootProperties, CodecError> {
+    let mut result = prepare_owned_scanned(ctx, source, index, owner, context, output)?;
+    let mut finished = finish_pending(ctx, source, context, output)?;
+    if let Some(complete) = finished.remove(owner) {
+        result.properties = complete.properties;
+        result.sources = complete.sources;
+    }
+    Ok(result)
+}
+
+#[cfg(test)]
+mod tests;

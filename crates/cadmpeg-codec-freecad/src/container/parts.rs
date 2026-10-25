@@ -2,35 +2,83 @@
 //! Optional member opening under actual archive and compressed-member scopes.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::rc::Rc;
 
 use cadmpeg_container::ArchiveSnapshot;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceDimension, ResourceLimit, View};
+use cadmpeg_core::decode::{
+    u64_from_index, DecodeContext, RecordOwner, ResourceDimension, ResourceLimit,
+    SourceExtentProof, View,
+};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartLevel, PartOutput, PartSpec};
+
+pub(crate) type EntryOwners<'source> = BTreeMap<String, Rc<EntryOwner<'source>>>;
+
+pub(crate) struct EntryOwner<'source> {
+    owner: RecordOwner<'source>,
+    archive: Rc<ArchiveSnapshot<'source>>,
+    entry: usize,
+    proof: SourceExtentProof,
+}
+impl<'source> std::ops::Deref for EntryOwner<'source> {
+    type Target = RecordOwner<'source>;
+    fn deref(&self) -> &Self::Target {
+        &self.owner
+    }
+}
+impl<'source> EntryOwner<'source> {
+    pub(crate) fn new(
+        ctx: &DecodeContext<'source>,
+        owner: RecordOwner<'source>,
+        archive: Rc<ArchiveSnapshot<'source>>,
+        entry: usize,
+    ) -> Result<Self, CodecError> {
+        let declaration = archive
+            .entries()
+            .get(entry)
+            .ok_or_else(|| CodecError::malformed("entry name has no admitted declaration"))?;
+        let source = archive.entry_name_source(declaration)?;
+        Ok(Self {
+            owner,
+            proof: ctx.source_extent_proof(source)?,
+            archive,
+            entry,
+        })
+    }
+    pub(crate) fn read_name(&self, ctx: &DecodeContext<'_>) -> Result<String, CodecError> {
+        ctx.require_source_authority(&self.proof)?;
+        let entry = &self.archive.entries()[self.entry];
+        ctx.require_source_ancestry(&self.proof, self.archive.entry_name_source(entry)?)?;
+        self.archive.read_entry_name(ctx, entry)
+    }
+}
+
+pub(crate) fn archive_source<'source>(
+    ctx: &DecodeContext<'source>,
+    root: View<'source>,
+) -> Result<Rc<ArchiveSnapshot<'source>>, CodecError> {
+    let archive = ArchiveSnapshot::new(ctx, root)?;
+    Ok(Rc::new(archive))
+}
 
 #[derive(Default)]
 pub(super) struct OptionalMembers<'source> {
     pub(super) data: BTreeMap<String, View<'source>>,
     pub(super) failed: BTreeSet<String>,
+    pub(super) parents: BTreeMap<String, cadmpeg_ir::source_fidelity::parts::PartParent>,
+    pub(super) records: Vec<crate::native::EntryRecord>,
+    pub(super) owners: EntryOwners<'source>,
 }
 
 pub(super) fn open_optional<'source>(
     ctx: &DecodeContext<'source>,
-    archive: &ArchiveSnapshot<'source>,
+    archive: &Rc<ArchiveSnapshot<'source>>,
     output: &mut PartOutput,
 ) -> Result<OptionalMembers<'source>, CodecError> {
     let frames = archive.member_frames(ctx)?;
-    for entry in archive.entries() {
-        if !crate::native::is_safe_entry_name(&entry.name) {
-            return Err(CodecError::malformed(format_args!(
-                "unsafe ZIP entry path {:?}",
-                entry.name
-            )));
-        }
-    }
     let stage = output;
     let mut members = OptionalMembers::default();
-    for (entry, frame) in archive.entries().iter().zip(&frames) {
+    for (index, (entry, frame)) in archive.entries().iter().zip(&frames).enumerate() {
         if entry.name == "Document.xml" {
             continue;
         }
@@ -41,55 +89,141 @@ pub(super) fn open_optional<'source>(
             )));
         };
         let name = entry.name.as_str();
-        ctx.retain_bytes(
-            u64_from_index(
-                name.len()
-                    .checked_add(size_of::<(String, View<'_>)>())
-                    .ok_or_else(|| CodecError::malformed("optional ZIP member index overflows"))?,
-            ),
-            "FreeCAD optional member source index",
-        )?;
         let payload =
-            ctx.decode_part(stage, frame.header(), header_spec(ctx, frame)?, |_stage| {
-                archive.read_member_header(ctx, frame)
+            ctx.decode_part(stage, frame.header(), header_spec(ctx, frame)?, |_header| {
+                let id = crate::native::native_id("entry", name);
+                let (value, owner) = ctx.record_owner(&id, frame.header(), || {
+                    let payload = archive.read_member_header(ctx, frame)?;
+                    let actual_name = archive.read_entry_name(ctx, entry)?;
+                    if actual_name != name || !crate::native::is_safe_entry_name(&actual_name) {
+                        return Err(CodecError::malformed(
+                            "ZIP source name disagrees with its safe navigation identity",
+                        ));
+                    }
+                    let role = super::classify(&actual_name);
+                    let record = crate::native::EntryRecord::new(
+                        crate::native::native_id("entry", &actual_name),
+                        actual_name,
+                        role,
+                        Vec::new(),
+                    )?;
+                    Ok((payload, record))
+                })?;
+                Ok((value.0, value.1, owner))
             })?;
-        let Some(payload) = payload else {
-            members.failed.insert(name.to_owned());
+        let Some((payload, record, owner)) = payload else {
+            members.failed.insert(source_key(ctx, name)?);
             continue;
         };
-        match ctx.decode_part(stage, payload.view(), spec("zip.entry")?, |_stage| {
+        retain_owner(
+            ctx,
+            record.name(),
+            owner,
+            archive,
+            index,
+            &mut members.owners,
+        )?;
+        members.records.push(record);
+        let payload_view = payload.view();
+        match ctx.decode_part(stage, payload_view, spec("zip.entry")?, |_stage| {
             archive.open_member(ctx, payload)
         })? {
             Some(view) => {
-                members.data.insert(name.to_owned(), view);
+                let parent = stage.parent(ctx, payload_view, "zip.entry")?;
+                members.parents.insert(source_key(ctx, name)?, parent);
+                members.data.insert(source_key(ctx, name)?, view);
             }
             None => {
-                members.failed.insert(name.to_owned());
+                members.failed.insert(source_key(ctx, name)?);
             }
         }
     }
     Ok(members)
 }
 
+fn source_key(ctx: &DecodeContext<'_>, name: &str) -> Result<String, CodecError> {
+    let mut key = ctx.alloc_filled(name.len(), 0_u8, "FreeCAD archive entry source index key")?;
+    key.copy_from_slice(name.as_bytes());
+    String::from_utf8(key).map_err(CodecError::malformed)
+}
+
+fn retain_owner<'source>(
+    ctx: &DecodeContext<'source>,
+    name: &str,
+    owner: RecordOwner<'source>,
+    archive: &Rc<ArchiveSnapshot<'source>>,
+    entry: usize,
+    owners: &mut EntryOwners<'source>,
+) -> Result<(), CodecError> {
+    let key = source_key(ctx, name)?;
+    if owners
+        .insert(
+            key,
+            Rc::new(EntryOwner::new(ctx, owner, Rc::clone(archive), entry)?),
+        )
+        .is_some()
+    {
+        return Err(CodecError::malformed(
+            "duplicate archive entry source owner",
+        ));
+    }
+    Ok(())
+}
+
+pub(super) fn incomplete_local_header<'source>(
+    ctx: &DecodeContext<'source>,
+    archive: &ArchiveSnapshot<'source>,
+    output: &mut PartOutput,
+) -> Result<(), CodecError> {
+    let Some(header) = archive.recovery_header()? else {
+        return Ok(());
+    };
+    let capture = ctx.capture_part_extent(header)?;
+    let mut framing = ctx.alloc_filled(4, 0..0, "incomplete ZIP header framing")?;
+    let mut fields = 0;
+    for (start, end) in [(0, 4), (6, 8), (18, 22), (26, 30)] {
+        let end = end.min(header.window().len());
+        if start < end {
+            framing[fields] =
+                capture.offset() + u64_from_index(start)..capture.offset() + u64_from_index(end);
+            fields += 1;
+        }
+    }
+    framing.truncate(fields);
+    let level = PartLevel::parse("zip.local_header")
+        .ok_or_else(|| CodecError::malformed("ZIP header level is absent from Appendix C"))?;
+    ctx.decode_part(output, header, PartSpec::new(level, framing), |_stage| {
+        archive.read_recovery_header(ctx)
+    })?;
+    Ok(())
+}
+
 pub(super) struct Document<'source> {
     pub(super) view: View<'source>,
-    pub(super) xml: roxmltree::Document<'source>,
     pub(super) facts: crate::native::DocumentFacts,
     pub(super) schema: String,
+    pub(super) source_whitespace: Vec<View<'source>>,
     pub(super) root_properties: Option<crate::persistence::document_properties::RootProperties>,
-    pub(super) object_declarations: Option<crate::persistence::object_parts::ObjectDeclarations>,
+    pub(super) object_declarations:
+        Option<crate::persistence::object_parts::ObjectDeclarations<'source>>,
     pub(super) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
 pub(super) struct DocumentRead<'source> {
+    pub(super) record: Option<crate::native::EntryRecord>,
     pub(super) document: Option<Document<'source>>,
+    pub(super) view: Option<View<'source>>,
     pub(super) pointers: BTreeMap<String, BTreeMap<String, u64>>,
 }
 
 pub(super) fn document<'source>(
     ctx: &DecodeContext<'source>,
-    archive: &ArchiveSnapshot<'source>,
+    archive: &Rc<ArchiveSnapshot<'source>>,
     stage: &mut PartOutput,
+    entries: &BTreeMap<String, View<'source>>,
+    parents: &BTreeMap<String, cadmpeg_ir::source_fidelity::parts::PartParent>,
+    records: &[crate::native::EntryRecord],
+    owners: &mut EntryOwners<'source>,
 ) -> Result<DocumentRead<'source>, CodecError> {
     let index = archive
         .entries()
@@ -100,115 +234,294 @@ pub(super) fn document<'source>(
     let frame = frames[index].ok_or_else(|| {
         CodecError::malformed("Document.xml has no provable local-header and payload boundary")
     })?;
-    let payload = ctx.decode_part(stage, frame.header(), header_spec(ctx, frame)?, |_stage| {
-        archive.read_member_header(ctx, frame)
+    let payload = ctx.decode_part(stage, frame.header(), header_spec(ctx, frame)?, |_header| {
+        let id = crate::native::native_id("entry", "Document.xml");
+        let (value, owner) = ctx.record_owner(&id, frame.header(), || {
+            let payload = archive.read_member_header(ctx, frame)?;
+            let actual_name = archive.read_entry_name(ctx, &archive.entries()[index])?;
+            if actual_name != "Document.xml" {
+                return Err(CodecError::malformed(
+                    "Document.xml source name disagrees with its navigation identity",
+                ));
+            }
+            let role = super::classify(&actual_name);
+            let record = crate::native::EntryRecord::new(
+                crate::native::native_id("entry", &actual_name),
+                actual_name,
+                role,
+                Vec::new(),
+            )?;
+            Ok((payload, record))
+        })?;
+        Ok((value.0, value.1, owner))
     })?;
-    let Some(payload) = payload else {
+    let Some((payload, record, owner)) = payload else {
         return Ok(DocumentRead {
+            record: None,
             document: None,
+            view: None,
             pointers: BTreeMap::new(),
         });
     };
+    retain_owner(ctx, record.name(), owner, archive, index, owners)?;
+    let mut declared_entries = declared_entries(records);
+    declared_entries.insert(record.name().to_owned());
     let result = ctx.decode_part(stage, payload.view(), spec("zip.entry")?, |member| {
         let view = archive.open_member(ctx, payload)?;
         let document = ctx
             .decode_part(member, view, spec("freecad.document_xml")?, |document| {
-                let xml = super::admit_document(ctx, view.window())?;
-                if let Some((_, count)) = super::xml_envelope_counts(view.window()) {
-                    ctx.charge_entities(count, "admit FCStd document objects")?;
+                let source = std::rc::Rc::new(crate::xml_framing::XmlSource::new(ctx, view)?);
+                if source
+                    .elements()
+                    .iter()
+                    .filter(|element| element.parent().is_none())
+                    .count()
+                    != 1
+                {
+                    return Err(CodecError::malformed(
+                        "Document.xml does not have one root element",
+                    ));
                 }
-                let mut losses = Vec::new();
-                let source = crate::persistence::source::Source::new(ctx, view, &xml)?;
-                let root = xml.root_element();
-                if !root.has_tag_name("Document") {
+                let root = source
+                    .elements()
+                    .iter()
+                    .position(|element| element.parent().is_none())
+                    .ok_or_else(|| CodecError::malformed("Document.xml has no framed root"))?;
+                if source.name(root)? != "Document" {
                     return Err(CodecError::WrongFormat(
                         "Document.xml root is not Document".into(),
                     ));
                 }
-                let (extent, framing) = crate::xml_framing::element_fields(ctx, view, root)?;
-                let level = PartLevel::parse("freecad.document").ok_or_else(|| {
-                    CodecError::malformed("document level is absent from Appendix C")
-                })?;
+                let mut losses = Vec::new();
                 let facts = ctx.decode_part(
                     document,
-                    extent,
-                    PartSpec::new(level, framing),
+                    source.extent(root)?,
+                    source.spec(root, "freecad.document")?,
                     |root_stage| {
-                        source.record(&crate::native::native_id("document", "0"), root, || {
-                            let (facts, schema) =
-                                super::parse_document_impl(&xml, &mut losses, Some(&source))?;
-                            root_stage.insert_native(ctx, "document", facts.clone())?;
-                            let root_properties = crate::persistence::document_properties::decode(
-                                ctx, view, &xml, root_stage,
-                            )?;
-                            let object_declarations = crate::persistence::object_parts::decode(
+                        source.validate(root)?;
+                        if !source.peek_text(ctx, root)?.trim().is_empty() {
+                            return Err(CodecError::malformed(
+                                "Document has non-whitespace direct text",
+                            ));
+                        }
+                        let id = crate::native::native_id("document", "0");
+                        ctx.record(&id, source.extent(root)?, || {
+                            let (mut facts, schema) =
+                                super::document_facts(ctx, &source, root, &mut losses)?;
+                            let vocabulary =
+                                crate::persistence::Vocabulary::from_declaration(&schema)?;
+                            let context = crate::element_map::adopted::Context::new(
+                                entries,
+                                facts.file_version.value(),
+                            )
+                            .with_parents(parents)
+                            .with_entry_owners(owners)
+                            .with_declared_entries(&declared_entries);
+                            for child in source.children(root) {
+                                if matches!(source.name(child)?, "StringHasher" | "StringHasher2") {
+                                    ctx.decode_part(
+                                        root_stage,
+                                        source.extent(child)?,
+                                        source.spec(child, "freecad.string_hasher")?,
+                                        |stage| {
+                                            crate::element_map::adopted::decode(
+                                                ctx, &source, child, None, None, &context, stage,
+                                            )
+                                        },
+                                    )?;
+                                }
+                            }
+                            let mut root_properties =
+                                crate::persistence::document_properties::prepare_scanned(
+                                    ctx, &source, root, &context, root_stage,
+                                )?;
+                            let mut object_declarations =
+                                crate::persistence::object_parts::decode_scanned(
+                                    ctx, &source, root, vocabulary, &context, root_stage,
+                                )?;
+                            crate::persistence::object_parts::finish_properties(
                                 ctx,
-                                view,
-                                &xml,
-                                crate::persistence::Vocabulary::from_declaration(&schema)?,
+                                &source,
+                                &context,
+                                &mut root_properties,
+                                &mut object_declarations,
                                 root_stage,
                             )?;
-                            Ok((facts, schema, root_properties, object_declarations))
+                            facts.domains = object_declarations
+                                .sources
+                                .values()
+                                .map(|source| source.domain(ctx))
+                                .collect::<Result<Vec<_>, _>>()?
+                                .into_iter()
+                                .flatten()
+                                .collect::<BTreeSet<_>>()
+                                .into_iter()
+                                .collect();
+                            root_stage.insert_native(ctx, "document", facts.clone())?;
+                            let mut source_whitespace = context.take_source_whitespace();
+                            crate::xml_framing::append_whitespace(
+                                ctx,
+                                &mut source_whitespace,
+                                source.insignificant(ctx)?,
+                            )?;
+                            Ok((
+                                facts,
+                                schema,
+                                root_properties,
+                                Some(object_declarations),
+                                source_whitespace,
+                            ))
                         })
                     },
                 )?;
                 Ok(facts.map(
-                    |(facts, schema, root_properties, object_declarations)| Document {
-                        view,
-                        xml,
-                        facts,
-                        schema,
-                        root_properties,
-                        object_declarations,
-                        losses,
+                    |(facts, schema, root_properties, object_declarations, source_whitespace)| {
+                        Document {
+                            view,
+                            facts,
+                            schema,
+                            source_whitespace,
+                            root_properties,
+                            object_declarations,
+                            losses,
+                        }
                     },
                 ))
             })
             .map(Option::flatten)?;
         let mut pointers = BTreeMap::new();
         if document.is_none() {
-            let (id, fields) = keep_entry(ctx, &archive.entries()[index], view, member)?;
+            let (id, fields) = keep_entry(&archive.entries()[index], view)?;
             pointers.insert(id, fields);
         }
-        Ok(DocumentRead { document, pointers })
+        Ok((document, pointers, view))
     })?;
-    Ok(result.unwrap_or(DocumentRead {
-        document: None,
-        pointers: BTreeMap::new(),
-    }))
+    let (document, pointers, view) = match result {
+        Some((document, pointers, view)) => (document, pointers, Some(view)),
+        None => (None, BTreeMap::new(), None),
+    };
+    Ok(DocumentRead {
+        record: Some(record),
+        document,
+        view,
+        pointers,
+    })
 }
 
 pub(super) fn keep_readable_entries(
-    ctx: &DecodeContext<'_>,
     archive: &ArchiveSnapshot<'_>,
     opened: &OptionalMembers<'_>,
-    stage: &mut PartOutput,
 ) -> Result<BTreeMap<String, BTreeMap<String, u64>>, CodecError> {
     let mut pointers = BTreeMap::new();
     for entry in archive.entries() {
         let Some(view) = opened.data.get(&entry.name).copied() else {
             continue;
         };
-        let (id, fields) = keep_entry(ctx, entry, view, stage)?;
+        let (id, fields) = keep_entry(entry, view)?;
         pointers.insert(id, fields);
     }
     Ok(pointers)
 }
 
-fn keep_entry(
+pub(crate) fn opaque_side_entries(
     ctx: &DecodeContext<'_>,
+    scan: &super::Scan<'_>,
+    output: &mut PartOutput,
+) -> Result<(), CodecError> {
+    opaque_members(ctx, &scan.data, &scan.entry_parents, output)
+}
+
+pub(crate) fn declared_entries(records: &[crate::native::EntryRecord]) -> BTreeSet<String> {
+    records
+        .iter()
+        .map(|entry| entry.name().to_owned())
+        .collect()
+}
+
+pub(crate) fn merge_entry_contents(
+    ctx: &DecodeContext<'_>,
+    records: &mut [crate::native::EntryRecord],
+    updates: impl IntoIterator<Item = crate::native::entry_contents::EntryContentUpdate>,
+) -> Result<(), CodecError> {
+    for update in updates {
+        let entry = records
+            .iter_mut()
+            .find(|entry| entry.id() == update.entry_id())
+            .ok_or_else(|| {
+                CodecError::malformed("entry contents have no admitted header producer")
+            })?;
+        update.apply(ctx, entry)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn stage_entries(
+    ctx: &DecodeContext<'_>,
+    records: Vec<crate::native::EntryRecord>,
+    properties: &[crate::native::PropertyRecord],
+    gui: &crate::gui::Graph,
+    output: &mut PartOutput,
+) -> Result<(), CodecError> {
+    for mut entry in records {
+        for (name, owner) in properties
+            .iter()
+            .flat_map(|property| {
+                property
+                    .side_entries()
+                    .iter()
+                    .map(move |name| (name, property.id.as_str()))
+            })
+            .chain(gui.properties.iter().flat_map(|property| {
+                property
+                    .side_entries
+                    .iter()
+                    .map(move |name| (name, property.id.as_str()))
+            }))
+            .chain(gui.documents.iter().flat_map(|document| {
+                document.states.iter().flat_map(|state| {
+                    state
+                        .side_entries
+                        .iter()
+                        .map(move |name| (name, state.id.as_str()))
+                })
+            }))
+        {
+            if name == entry.name() {
+                entry.add_reference(owner)?;
+            }
+        }
+        output.insert_native(ctx, "entries", entry)?;
+    }
+    Ok(())
+}
+
+pub(super) fn opaque_members(
+    ctx: &DecodeContext<'_>,
+    sources: &BTreeMap<String, View<'_>>,
+    parents: &BTreeMap<String, cadmpeg_ir::source_fidelity::parts::PartParent>,
+    output: &mut PartOutput,
+) -> Result<(), CodecError> {
+    for (name, source) in sources {
+        let Some(parent) = parents.get(name) else {
+            continue;
+        };
+        if !output.has_descendant(parent)? {
+            ctx.decode_part(
+                output,
+                *source,
+                spec("freecad.opaque_side_entry")?.with_parent(parent),
+                |_stage| Ok(()),
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn keep_entry(
     entry: &cadmpeg_container::EntryRecord,
     view: View<'_>,
-    stage: &mut PartOutput,
 ) -> Result<(String, BTreeMap<String, u64>), CodecError> {
     let id = crate::native::native_id("entry", &entry.name);
-    let record = crate::native::EntryRecord::new(
-        id.clone(),
-        entry.name.clone(),
-        super::classify(&entry.name),
-        Vec::new(),
-    )?;
-    ctx.record(&id, view, || stage.insert_native(ctx, "entries", record))?;
     Ok((
         id,
         crate::source_archive::entry_pointers(entry, u64_from_index(view.window().len()))?,
@@ -250,8 +563,18 @@ pub(crate) fn append(
     ir: &mut cadmpeg_ir::CadIr,
     fidelity: &mut cadmpeg_ir::SourceFidelity,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<(), CodecError> {
-    let (model, mut native, source, mut diagnostics) = output.into_parts(ctx)?.into_parts();
+) -> Result<
+    (
+        Vec<String>,
+        cadmpeg_ir::source_fidelity::parts::FinalizedFailureRegistry,
+        cadmpeg_ir::source_fidelity::parts::PrunedPartCaptures,
+    ),
+    CodecError,
+> {
+    let ((model, mut native, source, mut diagnostics), dropped, mut failures, pruning) = output
+        .into_parts(ctx)?
+        .into_parts_with_failure_registry_and_capture_pruning(ctx)?;
+    failures.offset_losses(losses.len())?;
     if model.entity_count() != 0 {
         let mut session = cadmpeg_ir::draft::CommitSession::new(&mut *ir, ctx, None)?;
         session.model_append_transaction(|stage| {
@@ -290,7 +613,7 @@ pub(crate) fn append(
     }
     fidelity.append(source)?;
     losses.append(&mut diagnostics);
-    Ok(())
+    Ok((dropped, failures, pruning))
 }
 
 #[cfg(test)]

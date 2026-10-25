@@ -124,8 +124,7 @@ pub(crate) fn broken_optional_member_archive() -> Vec<u8> {
     ])
 }
 
-/// Scanning these stored fixtures represents `FileVersion`, without crediting
-/// optional member bytes, GUI framing, or inventory navigation as semantic reads.
+/// Scanning represents actual declaration names and retained document metadata.
 pub(crate) fn assert_only_document_file_version_capture(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &crate::container::Scan<'_>,
@@ -135,13 +134,6 @@ pub(crate) fn assert_only_document_file_version_capture(
     assert_eq!(document.window(), expected);
     assert_eq!(scan.document.file_version.as_str(), "1");
     let extent = ctx.capture_part_extent(document).unwrap();
-    let marker = b"FileVersion='";
-    let value = expected
-        .windows(marker.len())
-        .position(|bytes| bytes == marker)
-        .unwrap()
-        + marker.len();
-    let value = u64::try_from(value).unwrap();
     let member = scan
         .archive
         .entry("Document.xml")
@@ -165,24 +157,89 @@ pub(crate) fn assert_only_document_file_version_capture(
         }
     );
     let captures = ctx.take_record_captures().unwrap();
-    let [capture] = captures.as_slice() else {
-        panic!("only the represented DocumentFacts producer may capture: {captures:?}");
-    };
-    assert_eq!(capture.id(), crate::native::native_id("document", "0"));
+    let mut expected_ids = scan
+        .entry_records
+        .iter()
+        .map(|entry| entry.id().to_owned())
+        .collect::<std::collections::BTreeSet<_>>();
+    expected_ids.insert(crate::native::native_id("document", "0"));
+    assert_eq!(
+        captures
+            .iter()
+            .map(|capture| capture.id().to_owned())
+            .collect::<std::collections::BTreeSet<_>>(),
+        expected_ids
+    );
+    assert_eq!(captures.len(), expected_ids.len());
+    let capture = captures
+        .iter()
+        .find(|capture| capture.id() == crate::native::native_id("document", "0"))
+        .expect("document producer");
     assert_eq!(capture.stream(), extent.stream());
     assert_eq!(capture.offset(), extent.offset());
     assert_eq!(capture.byte_len(), u64::try_from(expected.len()).unwrap());
+    let mut from = 0;
+    let reads = [b"Document".as_slice(), b"FileVersion", b"1"].map(|field| {
+        let start = from
+            + expected[from..]
+                .windows(field.len())
+                .position(|part| part == field)
+                .unwrap();
+        from = start + field.len();
+        u64::try_from(start).unwrap()..u64::try_from(from).unwrap()
+    });
     assert_eq!(
         capture.reads(),
         &std::collections::BTreeMap::from([
             (
                 extent.stream().to_owned(),
-                vec![extent.offset() + value..extent.offset() + value + 1]
+                reads
+                    .iter()
+                    .map(|range| extent.offset() + range.start..extent.offset() + range.end)
+                    .collect()
             ),
             (
                 "file".to_owned(),
-                vec![member.start + value..member.start + value + 1]
+                reads
+                    .iter()
+                    .map(|range| member.start + range.start..member.start + range.end)
+                    .collect()
             ),
         ])
     );
+    let frames = scan.archive.member_frames(ctx).unwrap();
+    for (entry, frame) in scan.archive.entries().iter().zip(frames) {
+        if !scan
+            .entry_records
+            .iter()
+            .any(|kept| kept.name() == entry.name)
+        {
+            assert!(!captures
+                .iter()
+                .any(|capture| capture.id() == crate::native::native_id("entry", &entry.name)));
+            continue;
+        }
+        let frame = frame.expect("fixture local header");
+        let capture = captures
+            .iter()
+            .find(|capture| capture.id() == crate::native::native_id("entry", &entry.name))
+            .expect("actual entry producer");
+        let name = scan.archive.entry_name_source(entry).unwrap();
+        assert_eq!(capture.stream(), "file");
+        assert_eq!(
+            capture.offset(),
+            u64::try_from(frame.header().start()).unwrap()
+        );
+        assert_eq!(
+            capture.byte_len(),
+            u64::try_from(frame.header().window().len()).unwrap()
+        );
+        assert_eq!(
+            capture.reads(),
+            &std::collections::BTreeMap::from([(
+                "file".to_owned(),
+                vec![u64::try_from(name.start()).unwrap()..u64::try_from(name.end()).unwrap()]
+            )])
+        );
+    }
 }

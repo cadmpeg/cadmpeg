@@ -4,6 +4,8 @@ use std::ops::Range;
 
 use crate::decode::{ByteRange, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, View};
 use crate::CodecError;
+mod independent;
+mod sequential;
 
 #[test]
 fn disjoint_producers_return_actual_values_in_one_primary_capture() {
@@ -768,6 +770,60 @@ fn nested_transactions_keep_fragment_read_staging_uncharged_through_every_parent
         &BTreeMap::from([(
             "file".into(),
             std::iter::once(0..3).collect::<Vec<std::ops::Range<u64>>>()
+        )])
+    );
+}
+
+#[test]
+fn sequential_fragment_reads_once_retains_prior_prefix_and_rolls_back_failed_suffix() {
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(b"HABC!later", &arena, &DecodePolicy::default())
+            .expect("create tracked fixture source context");
+    let ((), owner) = ctx
+        .record_owner(
+            "aggregate",
+            root.child(0, 1)
+                .expect("select bounded original source extent"),
+            || {
+                assert_eq!(root.read_at(0, 1), Some(b"H".as_slice()));
+                Ok(())
+            },
+        )
+        .expect("declare actual primary source owner");
+    let mut calls = 0;
+    let tail = root
+        .child(1, root.end())
+        .expect("select bounded original source extent");
+    let value = ctx
+        .sequential_record_fragment(&owner, tail, || {
+            calls += 1;
+            let mut input = tail;
+            let actual = input.req_take(3)?;
+            Ok((actual.to_vec(), 3))
+        })
+        .expect("commit sequential source continuation");
+    assert_eq!(value, (b"ABC".to_vec(), 3));
+    assert_eq!(calls, 1);
+    let failed: Result<((), usize), CodecError> = ctx.sequential_record_fragment(
+        &owner,
+        root.child(4, root.end())
+            .expect("select bounded original source extent"),
+        || {
+            assert_eq!(root.read_at(4, 1), Some(b"!".as_slice()));
+            Err(CodecError::malformed("failed semantic row"))
+        },
+    );
+    assert!(failed.is_err());
+    let captures = ctx
+        .take_record_captures()
+        .expect("extract committed source record captures");
+    assert_eq!(captures.len(), 1);
+    assert_eq!(
+        captures[0].reads(),
+        &BTreeMap::from([(
+            "file".into(),
+            std::iter::once(0..4).collect::<Vec<std::ops::Range<u64>>>()
         )])
     );
 }

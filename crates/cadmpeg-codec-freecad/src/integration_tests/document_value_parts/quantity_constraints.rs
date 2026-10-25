@@ -42,7 +42,8 @@ fn quantity_constraint_source_values_and_bounds_reach_their_actual_homes_with_ex
             .arena_as::<crate::native::PropertyRecord>("properties")
             .unwrap();
         let original = crate::persistence::parse_document(
-            &scan.document_xml,
+            &crate::container::admit_document(&ctx, scan.data["Document.xml"].window())
+                .expect("valid source XML"),
             crate::persistence::Vocabulary::Objects,
         )
         .unwrap();
@@ -100,12 +101,19 @@ fn quantity_constraint_source_values_and_bounds_reach_their_actual_homes_with_ex
         let mut expected_reads = Vec::new();
         let mut from = 0;
         for raw in [
+            "name",
             "Constrained",
+            "type",
             "App::PropertyQuantityConstraint",
+            "status",
             "9",
+            "group",
             "Custom",
+            "doc",
             "A&amp;B",
+            "ro",
             "true",
+            "Float",
             "value",
             raw,
             "unit",

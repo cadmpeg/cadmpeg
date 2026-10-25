@@ -7,6 +7,72 @@ use serde::{Deserialize, Serialize};
 
 use crate::ids::{AttributeId, BodyId, CoedgeId, EdgeId, FaceId, LoopId, ShellId, VertexId};
 use crate::scalar::FiniteReal;
+use crate::units::FiniteVector;
+
+/// One ordered map entry. Repeated keys remain distinct entries.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct AttributeMapEntry {
+    /// Map key.
+    pub key: String,
+    /// Map value.
+    pub value: String,
+}
+
+/// A property expression with typed parameter references.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct AttributeExpression {
+    /// Property path selected by the expression.
+    pub path: String,
+    /// Ordered text fragments and parameter references.
+    pub expression: crate::features::Expression,
+    /// Optional expression comment.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_comment"
+    )]
+    pub comment: Option<String>,
+}
+
+/// A position and quaternion, in component order x, y, z, w.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct AttributePlacement {
+    /// Position coordinates.
+    pub position: FiniteVector<3>,
+    /// Quaternion components, with at least one nonzero component.
+    pub quaternion: FiniteVector<4>,
+}
+
+/// A numeric collection with known slots or unknown whole arity.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    tag = "kind",
+    content = "values",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
+pub enum AttributeNumericList {
+    /// Finite scalars. A null list has unknown arity; a null item is unavailable.
+    Float(
+        #[cfg_attr(feature = "schema", schemars(with = "Option<Vec<Option<f64>>>"))]
+        Option<Vec<Option<FiniteReal>>>,
+    ),
+    /// Three-component finite vectors with the same nullable slot semantics.
+    Vector(Option<Vec<Option<FiniteVector<3>>>>),
+    /// Curvature records retain their eight numeric components and slot positions.
+    Curvature(Option<Vec<Option<FiniteVector<8>>>>),
+    /// Position and quaternion values with the same nullable slot semantics.
+    Placement(Option<Vec<Option<AttributePlacement>>>),
+    /// Packed color integers with the same nullable slot semantics.
+    Color(Option<Vec<Option<u32>>>),
+}
 
 /// An entity which owns a source attribute.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -90,6 +156,28 @@ pub enum AttributeValue {
     Reference(String),
     /// A fixed- or variable-length numeric vector value.
     Vector(#[cfg_attr(feature = "schema", schemars(with = "Vec<f64>"))] Vec<FiniteReal>),
+    /// Ordered map entries, including repeated keys.
+    Map(Vec<AttributeMapEntry>),
+    /// A property expression not consumed by a held parameter.
+    Expression(AttributeExpression),
+    /// A local object reference with ordered subelement names.
+    SubReference {
+        /// Identity of the referenced local object.
+        object: String,
+        /// Ordered subelement names.
+        subelements: Vec<String>,
+    },
+    /// A reference into another document.
+    ExternalReference {
+        /// External document identifier or path.
+        document: String,
+        /// Object name in that external document.
+        object: String,
+        /// Ordered subelement names.
+        subelements: Vec<String>,
+    },
+    /// A numeric collection that preserves unavailable positions and whole arity.
+    NumericList(AttributeNumericList),
 }
 
 impl AttributeValue {
@@ -145,5 +233,11 @@ mod tests {
 }
 
 mod identity_rewrite;
+mod value_rewrite;
+
+#[cfg(test)]
+mod value_tests;
 
 cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
+
+cadmpeg_core::named_optional_field!(deserialize_comment, String, "comment");

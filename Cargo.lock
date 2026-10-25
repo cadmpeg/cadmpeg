@@ -509,8 +509,10 @@ dependencies = [
 name = "cadmpeg-test-support"
 version = "0.6.3"
 dependencies = [
+ "cadmpeg-container",
  "cadmpeg-core",
  "cadmpeg-ir",
+ "flate2",
  "serde",
  "serde_json",
  "thiserror",

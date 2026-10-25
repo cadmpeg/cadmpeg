@@ -193,7 +193,7 @@ fn full_registry_and_canonical_wire_preserve_geometry_native_references() {
         vec![crate::NativeRecord::new(SOURCE.try_into().unwrap(), serde_json::Map::new()).unwrap()],
     );
     let mut arenas = std::collections::BTreeSet::new();
-    super::super::visit_native_references(&ir.model, &mut |arena, _, _, native| {
+    crate::schema::native_links::visit_native_references(&ir.model, &mut |arena, _, _, native| {
         if native == Some(SOURCE) {
             arenas.insert(arena);
         }

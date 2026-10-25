@@ -93,7 +93,7 @@ fn entry_reference_index_preserves_order_and_deduplicates_property_markers() {
                     family: crate::native::PropertyFamily::File,
                     status: None,
                     body: Some(crate::native::PropertyBody::Persisted {
-                        values: Vec::new(),
+                        values: Vec::new().into(),
                         links: Vec::new(),
 
                         side_entries: vec![
@@ -107,7 +107,22 @@ fn entry_reference_index_preserves_order_and_deduplicates_property_markers() {
                 property
             })
             .collect();
-        let entries = super::entry_records(scan, &properties).unwrap();
+        let source_entry = &scan.entries[0];
+        let mut entry = crate::native::EntryRecord::new(
+            crate::native::native_id("entry", &source_entry.name),
+            source_entry.name.clone(),
+            source_entry.role,
+            Vec::new(),
+        )
+        .unwrap();
+        for property in &properties {
+            for name in property.side_entries() {
+                if name == entry.name() {
+                    entry.add_reference(&property.id).unwrap();
+                }
+            }
+        }
+        let entries = [entry];
         assert_eq!(
             entries[0].referenced_by(),
             [
@@ -157,7 +172,7 @@ fn x62_object_envelope_is_admitted_before_the_xml_tree() {
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::Entities
-                && limit.operation == "admit FCStd document objects"
+                && limit.operation == "part native entity"
     ));
 }
 
@@ -180,7 +195,7 @@ fn x62_prefixed_object_envelope_is_admitted_before_the_xml_tree() {
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::Entities
-                && limit.operation == "admit FCStd document objects"
+                && limit.operation == "part native entity"
     ));
 }
 
@@ -218,7 +233,11 @@ fn zstd_member_past_the_window_allowance_is_an_unreadable_entry_without_a_refusa
         loss.message
     );
     assert_eq!(
-        scan.failed_members,
+        scan.entries
+            .iter()
+            .filter(|entry| !scan.data.contains_key(&entry.name))
+            .map(|entry| entry.name.clone())
+            .collect::<std::collections::BTreeSet<_>>(),
         std::collections::BTreeSet::from(["thumbnails/Thumbnail.png".into()])
     );
     assert!(scan.data.contains_key("Document.xml"));
@@ -238,11 +257,29 @@ fn zstd_member_past_the_window_allowance_is_an_unreadable_entry_without_a_refusa
 #[test]
 fn xml_envelope_scan_skips_comments_cdata_and_quoted_brackets() {
     let bytes = br#"<Document SchemaVersion="4"><!-- <Objects><Object/> --><Note attr=">"> <![CDATA[<Object/>]]> </Note><Objects><Object/><Object/></Objects></Document>"#;
-    let (bound, objects) = super::xml_envelope_counts(bytes).expect("lexical XML count");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, source) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("source");
+    let scan = crate::xml_framing::XmlSource::new(&ctx, source).expect("lexical XML scan");
+    let objects = scan
+        .elements()
+        .iter()
+        .filter(|element| element.name().window() == b"Object")
+        .count();
     assert_eq!(objects, 2);
     let parsed = roxmltree::Document::parse(std::str::from_utf8(bytes).expect("UTF-8 XML"))
         .expect("XML document");
-    assert!(bound >= cadmpeg_core::decode::u64_from_index(parsed.descendants().count()));
+    assert_eq!(
+        scan.elements().len(),
+        parsed
+            .descendants()
+            .filter(roxmltree::Node::is_element)
+            .count()
+    );
 }
 
 #[test]
@@ -290,18 +327,61 @@ fn frames_streaming_data_descriptor_separately_from_padding() {
 pub(crate) fn rejects_unsafe_names() {
     let xml = b"<Document SchemaVersion=\"4\" FileVersion=\"1\"/>";
     let unsafe_name = archive_entries(&[("../Document.xml", xml), ("Document.xml", xml)]);
-    let error = FcstdCodec
+    let summary = FcstdCodec
         .inspect(
-            &mut Cursor::new(unsafe_name),
+            &mut Cursor::new(&unsafe_name),
             &cadmpeg_core::decode::InspectOptions::default(),
         )
-        .expect_err("unsafe path must fail");
-    assert!(error.to_string().contains("unsafe ZIP entry path"));
+        .unwrap();
+    assert_eq!(
+        summary
+            .losses
+            .iter()
+            .filter(|loss| loss.code.local_code() == "record.unreadable"
+                && loss.message.contains("safe navigation identity"))
+            .count(),
+        1
+    );
+    let result = FcstdCodec
+        .decode(&mut Cursor::new(&unsafe_name), &DecodeOptions::default())
+        .unwrap();
+    let unknowns = result.ir().native_unknowns("fcstd").unwrap();
+    let [unknown] = unknowns.as_slice() else {
+        panic!("one actual unsafe-name header")
+    };
+    let part = &result.source_fidelity().parts()[&unknown.id];
+    assert_eq!(part.level().as_str(), "zip.local_header");
+    assert_eq!(
+        part.state(),
+        &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}
+    );
+    let from = usize::try_from(part.offset()).unwrap();
+    let to = from + usize::try_from(part.byte_len()).unwrap();
+    assert_eq!(
+        result
+            .source_fidelity()
+            .retained_record(unknown.id.as_str())
+            .unwrap()
+            .data(),
+        Some(&unsafe_name[from..to])
+    );
+    let entries = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<crate::native::EntryRecord>("entries")
+        .unwrap();
+    assert_eq!(
+        entries.iter().map(|entry| entry.name()).collect::<Vec<_>>(),
+        ["Document.xml"]
+    );
 }
 
 #[test]
 fn inspects_and_closes_physical_ledger() {
-    let bytes = archive("<Document SchemaVersion=\"4\" FileVersion=\"1\" ProgramVersion=\"1.0\"><Object/></Document>");
+    let document = "<Document SchemaVersion=\"4\" FileVersion=\"1\" ProgramVersion=\"1.0\"><Object/></Document>";
+    let bytes = archive(document);
     let archive_len = cadmpeg_core::decode::u64_from_index(bytes.len());
     let summary = FcstdCodec
         .inspect(
@@ -320,7 +400,33 @@ fn inspects_and_closes_physical_ledger() {
             },
         )
         .expect("decode");
-    assert!(result.report().losses.is_empty());
+    // #214 keeps unconsumed header fields and the unregistered root child as
+    // actual B1 spans; closing the physical ledger does not credit those bytes.
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code.local_code() == "source.bytes-undecoded"
+            && loss.severity == cadmpeg_ir::report::Severity::Warning));
+    let stream = result
+        .source_fidelity()
+        .parts()
+        .values()
+        .find(|part| part.level().as_str() == "freecad.document_xml")
+        .unwrap()
+        .stream();
+    let unknown = u64::try_from(document.find("<Object/>").unwrap()).unwrap();
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss
+            .provenance
+            .as_ref()
+            .is_some_and(|location| location.stream_name() == Some(stream)
+                && location.offset == unknown
+                && location.byte_len() == Some(u64::try_from("<Object/>".len()).unwrap()))));
+    crate::fidelity::b1::assert_classified_spans(&result);
     let ledger: Vec<cadmpeg_ir::source_fidelity::freecad::ArchiveSpan> =
         crate::test_support::source_fidelity::layout(result.source_fidelity(), "physical-ledger");
     assert_eq!(ledger.first().map(|span| span.span.start()), Some(0));
@@ -396,7 +502,7 @@ fn decode_keeps_document_objects_and_model_entities_additive() {
             error,
             cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::Entities
-                    && limit.operation == "admit FCStd entities"
+                    && limit.operation == "part native entity"
         ),
         "{error:?}"
     );
@@ -457,6 +563,78 @@ fn retains_every_reference_to_a_shared_side_entry() {
             &DecodeOptions::default(),
         )
         .expect("shared side entry");
+    let invalid = result.ir().native.namespace("fcstd").unwrap();
+    let headers = invalid
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap();
+    assert_eq!(headers.len(), 2);
+    assert!(headers.iter().all(|property| property.body.is_none()));
+    let invalid_entries = invalid
+        .arena_as::<crate::native::EntryRecord>("entries")
+        .unwrap();
+    let shared = invalid_entries
+        .iter()
+        .find(|entry| entry.name() == "Shared.bin")
+        .unwrap();
+    assert!(shared.referenced_by().is_empty());
+    assert_eq!(
+        crate::test_support::source_fidelity::entry_bytes(result.source_fidelity(), shared.id()),
+        b"shared"
+    );
+    let failures = result
+        .source_fidelity()
+        .parts()
+        .iter()
+        .filter(|(_, part)| {
+            part.state() == &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(failures.len(), 2);
+    let mut offsets = failures
+        .iter()
+        .map(|(_, part)| part.offset())
+        .collect::<Vec<_>>();
+    offsets.sort_unstable();
+    assert_eq!(
+        offsets,
+        document
+            .match_indices("<File file=")
+            .map(|(offset, _)| u64::try_from(offset).unwrap())
+            .collect::<Vec<_>>()
+    );
+    for (id, part) in failures {
+        assert_eq!(part.level().as_str(), "freecad.property_value");
+        assert_eq!(
+            part.byte_len(),
+            u64::try_from(b"<File file=\"Shared.bin\"/>".len()).unwrap()
+        );
+        assert_eq!(
+            result
+                .source_fidelity()
+                .retained_record(id.as_str())
+                .unwrap()
+                .data(),
+            Some(b"<File file=\"Shared.bin\"/>".as_slice())
+        );
+        assert_eq!(
+            result.source_fidelity().parts()[part.parent().unwrap()]
+                .level()
+                .as_str(),
+            "freecad.property"
+        );
+    }
+    // #224 routes the registered FileIncluded grammar exactly. A separate valid
+    // carrier verifies every reverse reference without changing the invalid input.
+    let valid_document = document.replace("<File file=", "<FileIncluded file=");
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", valid_document.as_bytes()),
+                ("Shared.bin", b"shared"),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
     let namespace = result.ir().native.namespace("fcstd").expect("namespace");
     let entries = namespace
         .arena_as::<crate::native::EntryRecord>("entries")

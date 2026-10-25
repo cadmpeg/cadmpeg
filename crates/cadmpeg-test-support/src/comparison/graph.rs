@@ -5,19 +5,45 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::hash::digest::Sha256Digest;
 use serde_json::{Number, Value};
+mod canonical;
 
+#[derive(Clone)]
 pub(super) struct Record {
     pub(super) arena: String,
     pub(super) id: String,
     pub(super) value: Value,
+    pub(super) structure: Value,
 }
 
+#[derive(Clone)]
 pub(super) struct Document {
     pub(super) records: Vec<Record>,
     pub(super) ids: BTreeMap<String, usize>,
 }
 
 impl Document {
+    pub(super) fn prune_records(
+        &mut self,
+        identities: &BTreeSet<String>,
+        original: &Value,
+    ) -> Result<(), String> {
+        self.exclude_records(identities);
+        for record in &mut self.records {
+            filter_lists(&mut record.value, identities);
+        }
+        canonical::apply(original, identities, &mut self.records)
+    }
+    pub(super) fn exclude_records(&mut self, identities: &BTreeSet<String>) {
+        self.records
+            .retain(|record| !identities.contains(&record.id));
+        self.ids = self
+            .records
+            .iter()
+            .enumerate()
+            .map(|(index, record)| (record.id.clone(), index))
+            .collect();
+    }
+
     pub(super) fn read(document: &Value, removed: &BTreeSet<String>) -> Result<Self, String> {
         let model = document
             .get("model")
@@ -102,6 +128,7 @@ fn append(
             .remove("id")
             .and_then(|id| id.as_str().map(str::to_owned))
             .ok_or_else(|| format!("{arena} has a record without a string id"))?;
+        let structure = Value::Object(value.clone());
         value.remove("native_ref");
         value.remove("source");
         if let Some(ordinal) = value.get("ordinal") {
@@ -122,6 +149,7 @@ fn append(
                 .push((ordinal, records.len()));
         }
         records.push(Record {
+            structure,
             arena: arena.clone(),
             id,
             value: Value::Object(value),
@@ -140,7 +168,7 @@ fn append(
     Ok(())
 }
 
-fn filter_lists(value: &mut Value, removed: &BTreeSet<String>) {
+pub(in crate::comparison) fn filter_lists(value: &mut Value, removed: &BTreeSet<String>) {
     match value {
         Value::Array(values) => {
             values.retain(|value| !refers_to_removed(value, removed));

@@ -446,3 +446,48 @@ fn empty_physical_parts_share_boundaries_without_owning_sibling_bytes() {
         .validate(&ctx, &frames)
         .expect("an empty extent owns no bytes");
 }
+
+#[test]
+fn damage_content_preserves_every_descendant_delimiter_without_mixing_source_spaces() {
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(b"0123456789", &arena, &DecodePolicy::default()).unwrap();
+    let frames = vec![
+        FramedPart::new(
+            &ctx,
+            level("step.exchange"),
+            root,
+            FrameParent::File,
+            vec![0..1, 9..10],
+            vec![],
+        )
+        .unwrap(),
+        FramedPart::new(
+            &ctx,
+            level("step.data_section"),
+            root.child(1, 9).unwrap(),
+            FrameParent::Part(0),
+            vec![1..2, 8..9],
+            vec![],
+        )
+        .unwrap(),
+        FramedPart::new(
+            &ctx,
+            level("step.simple_entity_instance"),
+            root.child(2, 8).unwrap(),
+            FrameParent::Part(1),
+            vec![2..3, 7..8],
+            vec![],
+        )
+        .unwrap(),
+    ];
+    assert_eq!(frames[0].content_ranges_in(&frames).unwrap(), vec![3..7]);
+    assert_eq!(frames[1].content_ranges_in(&frames).unwrap(), vec![3..7]);
+    let foreign = frame(&ctx, "step.exchange", root, FrameParent::File);
+    assert!(foreign.content_ranges_in(&frames).is_err());
+    let cycle = vec![
+        frame(&ctx, "step.exchange", root, FrameParent::File),
+        frame(&ctx, "step.data_section", root, FrameParent::Part(1)),
+    ];
+    assert!(cycle[0].content_ranges_in(&cycle).is_err());
+}

@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! GUI synthesis from neutral presentation and typed native value trees.
 
-mod colors;
+pub(super) mod colors;
 mod document;
+mod materials;
 
 use super::xml::{self, Object};
 use crate::loss::FreecadLossCode;
@@ -16,6 +17,7 @@ pub(super) struct Provider {
     name: String,
     expanded: Option<bool>,
     properties: BTreeMap<String, String>,
+    extensions: Vec<String>,
     native: BTreeMap<String, GuiPropertyRecord>,
 }
 
@@ -25,6 +27,7 @@ impl Provider {
             name,
             expanded: None,
             properties: BTreeMap::new(),
+            extensions: Vec::new(),
             native: BTreeMap::new(),
         }
     }
@@ -68,12 +71,19 @@ fn native(
     names: &HashMap<String, String>,
     live: &HashSet<&str>,
     losses: &mut Vec<LossNote>,
+    entries: &mut BTreeMap<String, Vec<u8>>,
+    outcomes: &mut cadmpeg_ir::codec::write::NativeDispositions,
+    emitted_meshes: &mut HashSet<String>,
+    has_geometry: &mut bool,
+    native_only: bool,
 ) -> Result<BTreeMap<String, Provider>, CodecError> {
     let Some(namespace) = ir.native.namespace("fcstd") else {
         return Ok(BTreeMap::new());
     };
     let mut records = namespace.arena_as::<GuiViewProviderRecord>("gui_view_providers")?;
     let properties = namespace.arena_as::<GuiPropertyRecord>("gui_properties")?;
+    let mut extensions = namespace.arena_as::<crate::native::ExtensionRecord>("extensions")?;
+    extensions.sort_by_key(|extension| extension.order);
     records.sort_by_key(|provider| provider.order);
     let mut providers = BTreeMap::new();
     for record in records {
@@ -104,17 +114,88 @@ fn native(
             };
         let mut provider = Provider::new(name.clone());
         provider.expanded = record.expanded;
-        for property in properties
+        for mut property in properties
             .iter()
             .filter(|property| property.owner == record.id)
+            .cloned()
         {
-            match native_property(property)? {
+            if super::application_payloads::gui_kernel_deleted(ir, &property)? {
+                super::dispositions::record(
+                    outcomes,
+                    "gui_properties",
+                    &property.id,
+                    cadmpeg_ir::codec::write::NativeDisposition::Dropped,
+                );
+                continue;
+            }
+            crate::gui::validate_property_links(&property)?;
+            if property.values.has_missing()
+                || super::xml::expression_metadata_omitted(
+                    &property.type_name,
+                    &property.values,
+                    &property.links,
+                )?
+            {
+                losses.push(
+                    cadmpeg_ir::codec::write::ExportLossCode::SourceUndecodedOmitted.note(format!(
+                        "GUI property {} omits undecoded value or unassociated reference metadata parts",
+                        property.id
+                    )),
+                );
+            }
+
+            let mut payload_members = super::property_payloads::write_gui(
+                ir,
+                Some(namespace),
+                &property,
+                entries,
+                losses,
+                outcomes,
+            )?;
+            let mut property_has_geometry = false;
+            let kernel = super::application_payloads::write_gui_property(
+                ir,
+                &mut property,
+                entries,
+                outcomes,
+                losses,
+                &mut property_has_geometry,
+            )?;
+            payload_members.extend(kernel.members);
+            emitted_meshes.extend(kernel.meshes);
+            for additional in kernel.additional {
+                if let Some(value) = xml::native_gui_payloads(&additional, names, &payload_members)?
+                {
+                    provider.properties.insert(additional.name.clone(), value);
+                    provider.native.insert(additional.name.clone(), additional);
+                }
+            }
+            let (shape_members, shape_meshes) = super::brep::native_tables::gui::write_property(
+                ir,
+                &mut property,
+                entries,
+                outcomes,
+                losses,
+                &mut property_has_geometry,
+                native_only,
+            )?;
+            payload_members.extend(shape_members);
+            provider
+                .native
+                .insert(property.name.clone(), property.clone());
+            match xml::native_gui_payloads(&property, names, &payload_members)? {
                 Some(value) => {
+                    *has_geometry |= property_has_geometry;
+                    emitted_meshes.extend(shape_meshes);
                     provider.properties.insert(property.name.clone(), value);
                     provider
                         .native
                         .insert(property.name.clone(), property.clone());
                 }
+                None if matches!(
+                    property.type_name.as_str(),
+                    "App::PropertyColorList" | "App::PropertyMaterialList"
+                ) => {}
                 None => losses.push(FreecadLossCode::ExportNativePropertyNotTransferred.note(
                     format!(
                         "GUI property {} has no typed writable side payload and is omitted",
@@ -122,6 +203,90 @@ fn native(
                     ),
                 )),
             }
+        }
+        for extension in extensions
+            .iter()
+            .filter(|extension| extension.owner == record.id)
+        {
+            let mut content = Vec::new();
+            for mut property in properties
+                .iter()
+                .filter(|property| property.owner == extension.id)
+                .cloned()
+            {
+                if super::application_payloads::gui_kernel_deleted(ir, &property)? {
+                    super::dispositions::record(
+                        outcomes,
+                        "gui_properties",
+                        &property.id,
+                        cadmpeg_ir::codec::write::NativeDisposition::Dropped,
+                    );
+                    continue;
+                }
+                crate::gui::validate_property_links(&property)?;
+                if property.values.has_missing()
+                    || super::xml::expression_metadata_omitted(
+                        &property.type_name,
+                        &property.values,
+                        &property.links,
+                    )?
+                {
+                    losses.push(cadmpeg_ir::codec::write::ExportLossCode::SourceUndecodedOmitted.note(format!("GUI property {} omits undecoded value or unassociated reference metadata parts",property.id)));
+                }
+
+                let mut payload_members = super::property_payloads::write_gui(
+                    ir,
+                    Some(namespace),
+                    &property,
+                    entries,
+                    losses,
+                    outcomes,
+                )?;
+                let mut property_has_geometry = false;
+                let kernel = super::application_payloads::write_gui_property(
+                    ir,
+                    &mut property,
+                    entries,
+                    outcomes,
+                    losses,
+                    &mut property_has_geometry,
+                )?;
+                payload_members.extend(kernel.members);
+                emitted_meshes.extend(kernel.meshes);
+                for additional in kernel.additional {
+                    if let Some(value) =
+                        xml::native_gui_payloads(&additional, names, &payload_members)?
+                    {
+                        content.push(value);
+                    }
+                }
+                let (shape_members, shape_meshes) =
+                    super::brep::native_tables::gui::write_property(
+                        ir,
+                        &mut property,
+                        entries,
+                        outcomes,
+                        losses,
+                        &mut property_has_geometry,
+                        native_only,
+                    )?;
+                payload_members.extend(shape_members);
+                if let Some(value) = xml::native_gui_payloads(&property, names, &payload_members)? {
+                    *has_geometry |= property_has_geometry;
+                    emitted_meshes.extend(shape_meshes);
+                    content.push(value);
+                } else {
+                    losses.push(
+                        cadmpeg_ir::codec::write::ExportLossCode::SourceUndecodedOmitted.note(
+                            format!(
+                                "GUI extension property {} has no writable typed value",
+                                property.id
+                            ),
+                        ),
+                    );
+                }
+            }
+            provider.extensions.push(format!("<Extension name=\"{}\" type=\"{}\"><Properties Count=\"{}\">{}</Properties></Extension>",xml::escaped(&extension.name),xml::escaped(&extension.type_name),content.len(),content.join("")));
         }
         providers.insert(name, provider);
     }
@@ -168,13 +333,6 @@ fn neutral_views(
             .entry(name.clone())
             .or_insert_with(|| Provider::new(name));
         provider.expanded = view.expanded;
-        for (name, property) in &provider.native {
-            if property.values.iter().any(|value| {
-                value.attributes.contains_key("value") || value.attributes.contains_key("Value")
-            }) {
-                provider.properties.remove(name);
-            }
-        }
         for name in [
             "Visibility",
             "DisplayMode",
@@ -260,11 +418,44 @@ pub(super) fn write(
     objects: &[Object],
     entries: &mut BTreeMap<String, Vec<u8>>,
     losses: &mut Vec<LossNote>,
+    outcomes: &mut cadmpeg_ir::codec::write::NativeDispositions,
+    emitted_meshes: &mut HashSet<String>,
+    has_geometry: &mut bool,
+    native_only: bool,
 ) -> Result<String, CodecError> {
     let live: HashSet<_> = objects.iter().map(|object| object.name.as_str()).collect();
-    let mut providers = native(ir, names, &live, losses)?;
+    let mut providers = native(
+        ir,
+        names,
+        &live,
+        losses,
+        entries,
+        outcomes,
+        emitted_meshes,
+        has_geometry,
+        native_only,
+    )?;
     neutral_views(ir, names, &live, &mut providers, losses)?;
     colors::write(ir, names, body_names, &mut providers, entries, losses)?;
+    materials::write(
+        ir,
+        names,
+        body_names,
+        &mut providers,
+        entries,
+        losses,
+        outcomes,
+    )?;
+    for provider in providers.values() {
+        for property in provider.native.values().filter(|property| {
+            matches!(
+                property.type_name.as_str(),
+                "App::PropertyColorList" | "App::PropertyMaterialList"
+            ) && !provider.properties.contains_key(&property.name)
+        }) {
+            losses.push(cadmpeg_ir::codec::write::ExportLossCode::SourceUndecodedOmitted.note(format!("GUI property {} has no uniquely associated current list or complete topology assignments and is omitted", property.id)));
+        }
+    }
     for view in &ir.model.view_presentations {
         let provider = view
             .object
@@ -316,7 +507,15 @@ pub(super) fn write(
         content.push_str(&xml::escaped(&provider.name));
         content.push('"');
         content.push_str(&expanded);
-        content.push_str("><Properties Count=\"");
+        content.push('>');
+        if !provider.extensions.is_empty() {
+            content.push_str(&format!(
+                "<Extensions Count=\"{}\">{}</Extensions>",
+                provider.extensions.len(),
+                provider.extensions.join("")
+            ));
+        }
+        content.push_str("<Properties Count=\"");
         content.push_str(&provider.properties.len().to_string());
         content.push_str("\">");
         content.push_str(&provider.properties.values().cloned().collect::<String>());

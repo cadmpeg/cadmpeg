@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Shared synthetic `FCStd` archive fixtures for crate tests.
 
+pub(crate) mod b1;
+pub(crate) mod expression_names;
+pub(crate) mod framing;
 pub(crate) mod mutation;
 pub(crate) mod source_fidelity;
 pub(crate) mod test_archive;
@@ -35,4 +38,26 @@ pub(crate) fn entry_fixture(
 ) -> crate::test_support::source_fidelity::EntryFixture {
     crate::test_support::source_fidelity::EntryFixture::try_new(id, name, role, references, data)
         .expect("valid entry fixture")
+}
+
+pub(crate) fn topology_occurrences(
+    ir: &cadmpeg_ir::CadIr,
+) -> Vec<crate::topology_transfer::TopologyOccurrence> {
+    let namespace = ir.native.namespace("fcstd").expect("native shape records");
+    let payloads = crate::brep::records::payloads_untracked(namespace).unwrap();
+    let properties = namespace
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap();
+    let mut projected = cadmpeg_ir::CadIr::empty();
+    projected.model.curves.clone_from(&ir.model.curves);
+    projected.model.surfaces.clone_from(&ir.model.surfaces);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    crate::topology_transfer::transfer(
+        &ctx,
+        &mut projected,
+        &payloads,
+        &properties,
+        &mut Vec::new(),
+    )
+    .unwrap()
 }

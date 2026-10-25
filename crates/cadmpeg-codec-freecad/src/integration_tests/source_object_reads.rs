@@ -42,11 +42,19 @@ fn object_declaration_reads_leave_data_payloads_exact_and_property_reads_in_thei
     let name_start = declaration_start + "<Object name='".len();
     let type_start = document.find("type='App::Feature'").unwrap() + "type='".len();
     let data_name_start = data_start + "<Object name='".len();
+    let vendor_key = document.find("Vendor='opaque-extra'").unwrap();
+    let vendor_value = vendor_key + "Vendor='".len();
     assert_eq!(
         layout.reads()[layout.stream()],
         [
+            u64_from_index(name_start - "name='".len())..u64_from_index(name_start - "='".len()),
             u64_from_index(name_start)..u64_from_index(name_start + "A&amp;B".len()),
+            u64_from_index(type_start - "type='".len())..u64_from_index(type_start - "='".len()),
             u64_from_index(type_start)..u64_from_index(type_start + "App::Feature".len()),
+            u64_from_index(vendor_key)..u64_from_index(vendor_key + "Vendor".len()),
+            u64_from_index(vendor_value)..u64_from_index(vendor_value + "opaque-extra".len()),
+            u64_from_index(data_name_start - "name='".len())
+                ..u64_from_index(data_name_start - "='".len()),
             u64_from_index(data_name_start)..u64_from_index(data_name_start + "A&#38;B".len()),
         ]
     );
@@ -64,11 +72,22 @@ fn object_declaration_reads_leave_data_payloads_exact_and_property_reads_in_thei
         let start = document.find(&format!("{key}='{raw}'")).unwrap() + key.len() + "='".len();
         u64_from_index(start)..u64_from_index(start + raw.len())
     };
+    let key_range = |key: &str, raw: &str| {
+        let at = document.find(&format!("{key}='{raw}'")).unwrap();
+        u64_from_index(at)..u64_from_index(at + key.len())
+    };
     assert_eq!(
         property_layout.reads()[property_layout.stream()],
         [
+            key_range("name", "Length"),
             range("name", "Length"),
+            key_range("type", "App::PropertyFloat"),
             range("type", "App::PropertyFloat"),
+            {
+                let at = document.find("<Float value='3.5'").unwrap() + 1;
+                u64_from_index(at)..u64_from_index(at + "Float".len())
+            },
+            key_range("value", "3.5"),
             range("value", "3.5")
         ]
     );
@@ -76,8 +95,8 @@ fn object_declaration_reads_leave_data_payloads_exact_and_property_reads_in_thei
     assert!(fidelity.b1_spans()[layout.stream()]
         .spans()
         .iter()
-        .any(|span| {
+        .all(|span| {
             let unread = span.range();
-            unread.start <= extra.start && extra.end <= unread.end
+            unread.end <= extra.start || unread.start >= extra.end
         }));
 }

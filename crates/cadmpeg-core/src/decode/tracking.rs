@@ -11,6 +11,9 @@ mod authority;
 mod batches;
 pub use authority::DecodeSessionToken;
 mod owners;
+mod primary_index;
+mod retirement;
+mod source_proof;
 mod streams;
 use super::{
     u64_from_index, DecodePolicy, ResourceDimension, ResourceFailure, ResourceLimit, SpaceId, View,
@@ -18,6 +21,8 @@ use super::{
 use crate::CodecError;
 pub use batches::RecordBatchId;
 pub use owners::RecordOwner;
+pub use retirement::RecordCaptureAuthority;
+pub use source_proof::SourceExtentProof;
 use streams::{Origin, Streams};
 pub use streams::{SourceOrigin, SourceSegment, SourceStream};
 
@@ -88,10 +93,12 @@ struct Session {
     streams: Streams,
     frames: Vec<Frame>,
     committed: Vec<RecordCapture>,
+    primaries: primary_index::PrimaryIndex,
     next_token: usize,
     error: Option<&'static str>,
     sealed: bool,
     context_alive: bool,
+    source_identity: Option<std::sync::Arc<()>>,
     activated: bool,
 }
 
@@ -103,6 +110,8 @@ struct Frame {
     captures: Vec<RecordCapture>,
     deltas: Vec<ReadDelta>,
     part_attempts: Option<Vec<String>>,
+    retired: Vec<retirement::CaptureKey>,
+    primaries: Vec<usize>,
 }
 
 #[derive(Debug)]
@@ -646,6 +655,9 @@ impl SessionHandle<'_> {
                     }
                 }
             }
+            if let Some(owner) = frame.record.as_ref().and_then(|record| record.owner) {
+                session.primaries.set_active(owner.token(), false);
+            }
             if let Some(mut record) = frame.record.take() {
                 // A continuation is working storage: `coalesce` folds it into
                 // its primary capture and charges only what the primary gains.
@@ -701,6 +713,14 @@ impl SessionHandle<'_> {
             if let Some(parent) = session.frames.last_mut() {
                 reserve_captures(&session.budget, &mut parent.captures, &frame.captures)?;
                 parent.captures.extend(frame.captures);
+                reserve_working(&session.budget, &mut parent.retired, frame.retired.len())?;
+                parent.retired.extend(frame.retired);
+                reserve_working(
+                    &session.budget,
+                    &mut parent.primaries,
+                    frame.primaries.len(),
+                )?;
+                parent.primaries.extend(frame.primaries);
                 for delta in frame.deltas {
                     for range in delta.ranges {
                         merge_delta(
@@ -719,6 +739,19 @@ impl SessionHandle<'_> {
                 }
                 reserve_captures(&session.budget, &mut session.committed, &frame.captures)?;
                 session.committed.extend(frame.captures);
+                if !frame.retired.is_empty() {
+                    session.committed.retain(|record| {
+                        !record.owner.is_some_and(|owner| {
+                            session
+                                .primaries
+                                .get(owner.token())
+                                .is_some_and(|primary| primary.retired)
+                        })
+                    });
+                    for key in frame.retired {
+                        session.primaries.remove(key.token);
+                    }
+                }
             }
             Ok(())
         })
@@ -766,7 +799,17 @@ impl SessionHandle<'_> {
             .and_then(|slot| slot.state.as_mut())
         {
             if let Some(position) = session.frames.iter().position(|frame| frame.token == token) {
-                session.frames.truncate(position);
+                for frame in session.frames.drain(position..) {
+                    if let Some(owner) = frame.record.and_then(|record| record.owner) {
+                        session.primaries.set_active(owner.token(), false);
+                    }
+                    for key in frame.retired {
+                        session.primaries.set_retired(key.token, false);
+                    }
+                    for token in frame.primaries {
+                        session.primaries.remove(token);
+                    }
+                }
             }
         }
     }
@@ -796,6 +839,7 @@ impl SessionHandle<'_> {
                 ));
             }
             session.sealed = true;
+            session.primaries.clear();
             let mut captures = std::mem::take(&mut session.committed);
             owners::coalesce(&session.budget, &mut captures)?;
             Ok(captures)
@@ -811,10 +855,12 @@ impl Session {
             streams: Streams::default(),
             frames: Vec::new(),
             committed: Vec::new(),
+            primaries: primary_index::PrimaryIndex::default(),
             next_token: 0,
             error: None,
             sealed: false,
             context_alive: true,
+            source_identity: None,
             activated: false,
         }
     }
@@ -845,7 +891,7 @@ impl Session {
 
     fn push_frame(
         &mut self,
-        record: Option<RecordCapture>,
+        mut record: Option<RecordCapture>,
         part: bool,
     ) -> Result<usize, CodecError> {
         if let Some(record) = record.as_ref().filter(|record| {
@@ -863,6 +909,24 @@ impl Session {
         self.next_token = token
             .checked_add(1)
             .ok_or_else(|| CodecError::malformed("read scope identities exhausted"))?;
+        if let Some(record) = &mut record {
+            record
+                .owner
+                .get_or_insert_with(|| owners::CaptureOwner::primary(token));
+        }
+        let mut primaries = Vec::new();
+        if let Some(record) = &record {
+            if let Some(owner) = record.owner {
+                if owner.is_continuation() {
+                    self.primaries.set_active(owner.token(), true);
+                } else {
+                    reserve_working(&self.budget, &mut primaries, 1)?;
+                    self.primaries
+                        .register(&self.budget, record.batch, &record.id, token)?;
+                    primaries.push(token);
+                }
+            }
+        }
         self.frames.push(Frame {
             token,
             batch: None,
@@ -870,6 +934,8 @@ impl Session {
             captures: Vec::new(),
             deltas: Vec::new(),
             part_attempts: part.then(Vec::new),
+            retired: Vec::new(),
+            primaries,
         });
         Ok(token)
     }
@@ -879,16 +945,7 @@ impl Session {
             return Err(CodecError::malformed("record identity is empty"));
         }
         let batch = self.frames.iter().rev().find_map(|frame| frame.batch);
-        let duplicate = self
-            .committed
-            .iter()
-            .chain(self.frames.iter().flat_map(|frame| frame.captures.iter()))
-            .any(|record| record.batch == batch && record.id == id)
-            || self
-                .frames
-                .iter()
-                .filter_map(|frame| frame.record.as_ref())
-                .any(|record| record.batch == batch && record.id == id);
+        let duplicate = self.primaries.find(batch, id).is_some();
         if duplicate {
             return Err(CodecError::malformed("duplicate record read scope"));
         }
@@ -972,9 +1029,7 @@ fn reserve_captures(
         .checked_mul(size_of::<RecordCapture>())
         .ok_or_else(|| budget.retained_allocation_failed(u64::MAX, "record tracking capacity"))?;
     values.try_reserve_exact(incoming.len()).map_err(|_| {
-        budget
-            .retained_allocation_failed(u64_from_index(bytes), "record tracking storage")
-            .into()
+        budget.retained_allocation_failed(u64_from_index(bytes), "record tracking storage")
     })
 }
 
@@ -1010,6 +1065,21 @@ fn copy_working(budget: &DecodeBudget, value: &str) -> Result<String, CodecError
     })?;
     text.push_str(value);
     Ok(text)
+}
+
+fn source_identity(session: &mut Session) -> Result<std::sync::Weak<()>, CodecError> {
+    if session.source_identity.is_none() {
+        session.budget.retain_bytes(
+            u64_from_index(size_of::<[usize; 2]>()),
+            "decode source authority",
+        )?;
+        session.source_identity = Some(std::sync::Arc::new(()));
+    }
+    session
+        .source_identity
+        .as_ref()
+        .map(std::sync::Arc::downgrade)
+        .ok_or_else(|| CodecError::malformed("source authority was not initialized"))
 }
 
 fn copy_string(budget: &DecodeBudget, value: &str) -> Result<String, CodecError> {
@@ -1128,6 +1198,45 @@ impl<'a> ReadTransaction<'a> {
     }
     pub(super) fn take_part_attempts(&mut self) -> Result<Vec<String>, CodecError> {
         self.session.take_part_attempts(self.token)
+    }
+
+    pub(super) fn narrow_record(&self, consumed: usize) -> Result<(), CodecError> {
+        self.session.session(|session| {
+            let frame = session
+                .frames
+                .last_mut()
+                .filter(|frame| frame.token == self.token)
+                .ok_or_else(|| CodecError::malformed("sequential record scope is not innermost"))?;
+            let record = frame
+                .record
+                .as_mut()
+                .ok_or_else(|| CodecError::malformed("sequential record capture is absent"))?;
+            let length = u64_from_index(consumed);
+            if length > record.byte_len {
+                return Err(CodecError::malformed(
+                    "sequential record extent exceeds its source",
+                ));
+            }
+            let end = record
+                .offset
+                .checked_add(length)
+                .ok_or_else(|| CodecError::malformed("sequential record extent overflows"))?;
+            for delta in &frame.deltas {
+                if delta.owner == self.token
+                    && session.streams.name(delta.space)? == record.stream
+                    && delta
+                        .ranges
+                        .iter()
+                        .any(|range| range.start < record.offset || range.end > end)
+                {
+                    return Err(CodecError::malformed(
+                        "sequential record read exceeds consumed extent",
+                    ));
+                }
+            }
+            record.byte_len = length;
+            Ok(())
+        })
     }
 
     /// Merge reads and captures into the containing transaction.

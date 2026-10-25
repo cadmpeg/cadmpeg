@@ -144,6 +144,19 @@ fn walk<'a>(
             });
         local(&mut fields, entry, limit)?;
     }
+    if let Some(range) = snapshot
+        .recovery
+        .as_ref()
+        .and_then(|recovery| recovery.incomplete_header)
+    {
+        for (offset, length) in [(0, 4), (6, 2), (18, 4), (26, 4)] {
+            let start = add(range.start, offset)?;
+            let end = add(start, length)?.min(range.end);
+            if start < end {
+                fields.range(start, end)?;
+            }
+        }
+    }
     for entry in snapshot
         .entries
         .iter()

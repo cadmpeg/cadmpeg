@@ -802,14 +802,14 @@ impl Annotations {
     }
 
     /// Append disjoint tables.
-    pub fn append(&mut self, mut other: Self) -> Result<(), AnnotationIdentityCollision> {
+    pub fn append(&mut self, other: Self) -> Result<(), AnnotationIdentityCollision> {
         for id in other.provenance.keys().chain(other.exactness.keys()) {
             if self.provenance.contains_key(id) || self.exactness.contains_key(id) {
                 return Err(AnnotationIdentityCollision { id: id.to_owned() });
             }
         }
-        self.provenance.append(&mut other.provenance);
-        self.exactness.append(&mut other.exactness);
+        self.provenance.extend(other.provenance);
+        self.exactness.extend(other.exactness);
         Ok(())
     }
 }

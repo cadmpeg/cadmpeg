@@ -13,6 +13,7 @@ use std::io::{Cursor, Write};
 use xml::Object;
 
 pub(super) fn write(ir: &CadIr, schema: &str) -> Result<ExportBody, CodecError> {
+    let native_only = !ir.scope.model;
     let projected = super::native_geometry::project(ir)?;
     let (ir, mut losses) = projected.as_ref().map_or_else(
         || (ir, Vec::new()),
@@ -32,6 +33,14 @@ pub(super) fn write(ir: &CadIr, schema: &str) -> Result<ExportBody, CodecError> 
         .map(|namespace| namespace.arena_as::<PropertyRecord>("properties"))
         .transpose()?
         .unwrap_or_default();
+    let native_payloads = namespace
+        .map(|namespace| crate::brep::records::payloads_untracked(namespace))
+        .transpose()?
+        .unwrap_or_default();
+    let gui_properties = namespace
+        .map(|namespace| namespace.arena_as::<crate::native::GuiPropertyRecord>("gui_properties"))
+        .transpose()?
+        .unwrap_or_default();
     if let Some(namespace) = namespace {
         let entries = namespace.arena_as::<crate::native::EntryRecord>("entries")?;
         super::validate_entry_names(&entries)?;
@@ -39,7 +48,7 @@ pub(super) fn write(ir: &CadIr, schema: &str) -> Result<ExportBody, CodecError> 
     for property in &native_properties {
         xml::validate(property)?;
     }
-    names = super::names::prepare(ir, &native_objects, &native_properties);
+    names = super::names::prepare(ir, &native_objects, &native_properties, &native_payloads);
     let mut entries = BTreeMap::<String, Vec<u8>>::new();
     // Source-only objects remain typed content. A neutral counterpart owns its
     // complete object and is regenerated below, so stale native properties can
@@ -76,6 +85,7 @@ pub(super) fn write(ir: &CadIr, schema: &str) -> Result<ExportBody, CodecError> 
         if represented
             || (ir.scope.design
                 && crate::design::is_design_object(&original.type_name)
+                && !crate::application_geometry::projects_object(original)
                 && neutral_feature.is_none())
         {
             continue;
@@ -86,10 +96,7 @@ pub(super) fn write(ir: &CadIr, schema: &str) -> Result<ExportBody, CodecError> 
             .unwrap_or_else(|| original.name().to_owned());
         native_names.insert(name.clone());
         names.insert(original.id().as_str().to_owned(), name.clone());
-        let label = neutral_feature
-            .and_then(|feature| feature.name.as_deref())
-            .unwrap_or(original.name());
-        let mut object = Object::new(name, &original.type_name, label);
+        let mut object = Object::from_native(name, &original.type_name);
         object
             .declaration_attributes
             .clone_from(&original.attributes);
@@ -154,18 +161,33 @@ pub(super) fn write(ir: &CadIr, schema: &str) -> Result<ExportBody, CodecError> 
         }
         objects.push(object);
     }
+    let numeric_attributes =
+        super::attributes::prepare_numeric(ir, &native_properties, &mut entries, &mut losses)?;
     // Native values are emitted from their typed tree. Retained XML and entry
     // bytes are not consulted. Every opaque payload has an explicit loss.
     let objects_names: HashSet<_> = objects.iter().map(|object| object.name.clone()).collect();
     for property in &native_properties {
-        if crate::attributes::projection_held(ir)
-            && !crate::attributes::consumed(ir, property, &native_objects)
-            && crate::attributes::values(property).is_some()
-        {
-            // Canonical attributes own these values and their deletion.
+        if numeric_attributes.claimed.contains(&property.id) {
             continue;
         }
         if !super::native::property_held(ir, property, &native_objects) {
+            continue;
+        }
+        if crate::attributes::projection_held(ir)
+            && crate::attributes::target(ir, &property.owner)?.is_some()
+            && !crate::attributes::consumed(ir, property, &native_objects)
+            && (crate::attributes::values(property).is_some()
+                || crate::attributes::numeric_kind(&property.type_name))
+        {
+            // A deleted canonical attribute intentionally omits its native property.
+            if ir
+                .model
+                .attributes
+                .iter()
+                .any(|attribute| attribute.native_ref.as_deref() == Some(property.id.as_str()))
+            {
+                note_omitted_value_parts(property, &mut losses)?;
+            }
             continue;
         }
         if property.type_name == "Part::PropertyPartShape" {
@@ -178,8 +200,11 @@ pub(super) fn write(ir: &CadIr, schema: &str) -> Result<ExportBody, CodecError> 
             let neutral_owned = !native_names.contains(&object.name);
             if neutral_owned
                 && (object.properties.contains_key(&property.name)
-                    || crate::property_policy::has_neutral_form(&property.name))
+                    || crate::attributes::consumed(ir, property, &native_objects))
             {
+                if object.properties.contains_key(&property.name) {
+                    note_omitted_value_parts(property, &mut losses)?;
+                }
                 continue;
             }
             if property
@@ -202,13 +227,25 @@ pub(super) fn write(ir: &CadIr, schema: &str) -> Result<ExportBody, CodecError> 
                 );
                 continue;
             }
-            match xml::native_named(property, &names)? {
-                Some(property_xml) => object.set(&property.name, property_xml),
+            let payload_members = super::property_payloads::write(
+                namespace,
+                &property.id,
+                &property.type_name,
+                property.values(),
+                &mut entries,
+                &mut losses,
+                &mut native_dispositions,
+            )?;
+            match xml::native_named_payloads(property, &names, &payload_members)? {
+                Some(property_xml) => {
+                    note_omitted_value_parts(property, &mut losses)?;
+                    object.set(&property.name, property_xml);
+                }
                 None => {
-                    if matches!(
-                        property.body.as_ref(),
-                        None | Some(crate::native::PropertyBody::Unreadable(_))
-                    ) {
+                    if property.body.is_none()
+                        || xml::has_omitted_value_parts(property)
+                        || has_unassociated_reference_parts(property)?
+                    {
                         losses.push(cadmpeg_ir::codec::write::ExportLossCode::SourceUndecodedOmitted.note(format!(
                             "property {} ({}) on object {} is omitted because its value is not held",
                             property.id, property.name, property.owner,
@@ -231,25 +268,33 @@ pub(super) fn write(ir: &CadIr, schema: &str) -> Result<ExportBody, CodecError> 
                         property.id
                     )),
                 );
-            } else if let Some(property_xml) = xml::native(property)? {
+            } else if let Some(property_xml) = {
+                let payload_members = super::property_payloads::write(
+                    namespace,
+                    &property.id,
+                    &property.type_name,
+                    property.values(),
+                    &mut entries,
+                    &mut losses,
+                    &mut native_dispositions,
+                )?;
+                xml::native_named_payloads(property, &names, &payload_members)?
+            } {
+                note_omitted_value_parts(property, &mut losses)?;
                 document_properties.insert(property.name.clone(), property_xml);
             } else {
-                losses.push(
+                losses.push(if has_unassociated_reference_parts(property)? {
+                    cadmpeg_ir::codec::write::ExportLossCode::SourceUndecodedOmitted.note(format!(
+                        "document property {} is omitted because its reference carrier has no proven native slot", property.id
+                    ))
+                } else {
                     FreecadLossCode::ExportNativePropertyNotTransferred
-                        .note(format!("document property {} is omitted", property.id)),
-                );
+                        .note(format!("document property {} is omitted", property.id))
+                });
             }
         }
     }
     super::native::operands(ir, &mut objects, &names, &native_properties, &mut losses)?;
-    super::attributes::write(
-        ir,
-        &names,
-        &mut objects,
-        &mut document_properties,
-        &mut losses,
-        &native_properties,
-    )?;
     // Neutral display names and suppression always win over typed source values.
     for feature in &ir.model.features {
         if let Some(object) = names
@@ -272,8 +317,19 @@ pub(super) fn write(ir: &CadIr, schema: &str) -> Result<ExportBody, CodecError> 
         }
     }
     let mut body_names = HashMap::new();
-    let mut shape_groups = BTreeMap::<String, Vec<&cadmpeg_ir::topology::Body>>::new();
+    let mut shape_groups =
+        BTreeMap::<(String, String, Option<usize>), Vec<&cadmpeg_ir::topology::Body>>::new();
     for (index, body) in ir.model.bodies.iter().enumerate() {
+        if body.native_ref.as_ref().is_some_and(|native| {
+            native_payloads.iter().any(|payload| {
+                &payload.id == native
+                    && gui_properties
+                        .iter()
+                        .any(|property| property.id == payload.property)
+            })
+        }) {
+            continue;
+        }
         let proposed = names
             .get(body.id.as_str())
             .cloned()
@@ -284,10 +340,33 @@ pub(super) fn write(ir: &CadIr, schema: &str) -> Result<ExportBody, CodecError> 
             format!("Shape{index}")
         };
         body_names.insert(body.id.as_str().to_owned(), name.clone());
-        shape_groups.entry(name).or_default().push(body);
+        let payload = body
+            .native_ref
+            .as_ref()
+            .and_then(|native| native_payloads.iter().find(|payload| &payload.id == native));
+        let property = payload.and_then(|payload| {
+            native_properties
+                .iter()
+                .find(|property| property.id == payload.property)
+        });
+        let property_name = property.map_or("Shape", |property| property.name.as_str());
+        let list_ordinal = property
+            .filter(|property| property.type_name == "Part::PropertyTopoShapeList")
+            .and_then(|property| {
+                native_payloads
+                    .iter()
+                    .filter(|payload| payload.property == property.id)
+                    .position(|candidate| payload.is_some_and(|payload| payload.id == candidate.id))
+            });
+        shape_groups
+            .entry((name, property_name.to_owned(), list_ordinal))
+            .or_default()
+            .push(body);
     }
-    for (name, bodies) in shape_groups {
-        let Some(bytes) = brep::serialize(ir, &bodies)? else {
+    let mut emitted_generated_meshes = std::collections::HashSet::new();
+    let mut emitted_polygon_homes = HashMap::new();
+    for ((name, property_name, list_ordinal), bodies) in shape_groups {
+        let Some(serialized) = brep::serialize(ir, &bodies)? else {
             for body in bodies {
                 losses.push(FreecadLossCode::ExportGeometryNotTransferred.note(format!(
                     "body {} is omitted because a required carrier has no OCCT text encoding",
@@ -304,16 +383,32 @@ pub(super) fn write(ir: &CadIr, schema: &str) -> Result<ExportBody, CodecError> 
                 bodies[0].name.as_deref().unwrap_or(bodies[0].id.as_str()),
             ));
         }
-        let file = format!("{name}.brp");
+        let file = if let Some(ordinal) = list_ordinal {
+            format!(
+                "{name}.{}.{ordinal}.brp",
+                cadmpeg_ir::ids::IdentityKey::encode_segment(&property_name)
+            )
+        } else if property_name == "Shape" {
+            format!("{name}.brp")
+        } else {
+            format!(
+                "{name}.{}.brp",
+                cadmpeg_ir::ids::IdentityKey::encode_segment(&property_name)
+            )
+        };
+        brep::occurrences::assign_names(&serialized.topology, &body_names, &mut names, &mut losses);
+        emitted_generated_meshes.extend(serialized.meshes);
+        emitted_polygon_homes.insert(file.clone(), serialized.polygon_homes);
+        let bytes = serialized.bytes;
         entries.insert(file.clone(), bytes);
         let object = objects
             .iter_mut()
             .find(|object| object.name == name)
             .ok_or_else(|| CodecError::malformed("body owner is absent"))?;
         object.set(
-            "Shape",
+            &property_name,
             xml::property(
-                "Shape",
+                &property_name,
                 "Part::PropertyPartShape",
                 &xml::element("Part", &[("file", file)]),
             ),
@@ -352,12 +447,29 @@ pub(super) fn write(ir: &CadIr, schema: &str) -> Result<ExportBody, CodecError> 
         // the same placement twice. Keep canonical construction placements and
         // typed native placements; body-only objects use their BRep root.
     }
-    if let Some(bytes) = brep::unowned(ir, &mut losses)? {
+    let payload_owners = native_payloads
+        .iter()
+        .filter(|payload| {
+            gui_properties
+                .iter()
+                .any(|property| property.id == payload.property)
+                || native_properties
+                    .iter()
+                    .find(|property| property.id == payload.property)
+                    .and_then(|property| names.get(&property.owner))
+                    .is_some_and(|name| objects.iter().any(|object| &object.name == name))
+        })
+        .map(|payload| payload.id.clone())
+        .collect();
+    if let Some(serialized) = brep::unowned(ir, &mut losses, &payload_owners)? {
+        emitted_generated_meshes.extend(serialized.meshes);
+        let bytes = serialized.bytes;
         let mut name = "FreeGeometry".to_owned();
         while objects.iter().any(|object| object.name == name) {
             name.push('_');
         }
         let file = format!("{name}.brp");
+        emitted_polygon_homes.insert(file.clone(), serialized.polygon_homes);
         entries.insert(file.clone(), bytes);
         let mut object = Object::new(name, "Part::Feature", "Independent geometry");
         object.set(
@@ -371,11 +483,44 @@ pub(super) fn write(ir: &CadIr, schema: &str) -> Result<ExportBody, CodecError> 
         object.mark_geometry_written();
         objects.push(object);
     }
+    let mut emitted_meshes = brep::native_tables::write(
+        ir,
+        &mut objects,
+        &names,
+        &native_properties,
+        &native_payloads,
+        &mut entries,
+        &emitted_polygon_homes,
+        native_only,
+        &mut native_dispositions,
+        &mut losses,
+    )?;
+    emitted_meshes.extend(emitted_generated_meshes);
     design::sketches(ir, &mut objects, &mut names, &mut losses)?;
     super::parameters::prepare(ir, &mut objects, &mut names)?;
     design::spreadsheets(ir, &mut objects, &mut names)?;
-    super::parameters::write(ir, &mut objects, &names, &mut losses)?;
     super::products::write(ir, &mut objects, &mut names, &body_names, &mut losses)?;
+    super::parameters::write(ir, &mut objects, &names, &mut losses)?;
+    super::attributes::write(
+        ir,
+        &names,
+        &mut objects,
+        &mut document_properties,
+        &mut losses,
+        &native_properties,
+        &numeric_attributes,
+        &mut entries,
+        &mut native_dispositions,
+    )?;
+    emitted_meshes.extend(super::application_payloads::write(
+        ir,
+        &mut objects,
+        &names,
+        &native_properties,
+        &mut entries,
+        &mut native_dispositions,
+        &mut losses,
+    )?);
     // Product and feature labels are independent neutral fields even when
     // FreeCAD stores both on the same object. Preserve the product label in a
     // dynamic property while the visible object Label follows the feature.
@@ -428,12 +573,39 @@ pub(super) fn write(ir: &CadIr, schema: &str) -> Result<ExportBody, CodecError> 
         &mut objects,
         &names,
         &native_properties,
+        native_only,
         &mut entries,
         &mut losses,
         &mut native_dispositions,
     )?;
     super::synthesis_graph::close(&mut objects, &mut losses)?;
-    if objects.iter().all(Object::geometry_empty)
+    let document = xml::document(&objects, &document_properties, schema);
+    let document = if dictionaries.is_empty() {
+        document
+    } else {
+        document.replacen(
+            "<StringHasher saveall=\"0\" threshold=\"0\" count=\"0\"></StringHasher>",
+            &dictionaries,
+            1,
+        )
+    };
+    let document_reduced = xml::report_reductions(&document, "Document.xml", &mut losses)?;
+    entries.insert("Document.xml".into(), document.into_bytes());
+    let mut gui_has_geometry = false;
+    let gui = super::presentation::write(
+        ir,
+        &names,
+        &body_names,
+        &objects,
+        &mut entries,
+        &mut losses,
+        &mut native_dispositions,
+        &mut emitted_meshes,
+        &mut gui_has_geometry,
+        native_only,
+    )?;
+    if !gui_has_geometry
+        && objects.iter().all(Object::geometry_empty)
         && document_properties.values().all(|property| {
             roxmltree::Document::parse(property).is_ok_and(|xml| {
                 let root = xml.root_element();
@@ -457,20 +629,6 @@ pub(super) fn write(ir: &CadIr, schema: &str) -> Result<ExportBody, CodecError> 
                 .note("the emitted FCStd document has no geometry"),
         );
     }
-    let document = xml::document(&objects, &document_properties, schema);
-    let document = if dictionaries.is_empty() {
-        document
-    } else {
-        document.replacen(
-            "<StringHasher saveall=\"0\" threshold=\"0\" count=\"0\"></StringHasher>",
-            &dictionaries,
-            1,
-        )
-    };
-    let document_reduced = xml::report_reductions(&document, "Document.xml", &mut losses)?;
-    entries.insert("Document.xml".into(), document.into_bytes());
-    let gui =
-        super::presentation::write(ir, &names, &body_names, &objects, &mut entries, &mut losses)?;
     let gui_reduced = xml::report_reductions(&gui, "GuiDocument.xml", &mut losses)?;
     super::dispositions::gui(ir, &names, &gui, &mut native_dispositions)?;
     if !gui.is_empty() {
@@ -531,10 +689,53 @@ pub(super) fn write(ir: &CadIr, schema: &str) -> Result<ExportBody, CodecError> 
             )));
         }
     }
-    let mut dispositions = super::coverage::complete(ir, &mut losses);
+    let mut dispositions = super::coverage::complete(ir, &emitted_meshes, &mut losses);
     super::coverage::xml_reductions(&mut dispositions, document_reduced, gui_reduced);
     let mut body = ExportBody::synthesized(bytes, ir, ArenaCoverage::Declared(dispositions));
     body.native_dispositions = native_dispositions;
     body.losses = losses;
     Ok(body)
+}
+
+fn has_unassociated_reference_parts(
+    property: &crate::native::PropertyRecord,
+) -> Result<bool, CodecError> {
+    match &property.body {
+        Some(crate::native::PropertyBody::Persisted { values, links, .. }) => {
+            super::xml::expression_metadata_omitted(&property.type_name, values, links)
+        }
+        _ => Ok(false),
+    }
+}
+
+/// A partial native value tree is writable only after omitting its missing parts.
+fn note_omitted_value_parts(
+    property: &crate::native::PropertyRecord,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<(), CodecError> {
+    if let Some(crate::native::PropertyBody::Persisted { values, .. }) = &property.body {
+        if !values.has_missing()
+            && !super::xml::expression_metadata_omitted(
+                &property.type_name,
+                values,
+                property.links(),
+            )?
+        {
+            return Ok(());
+        }
+        let missing: Vec<_> = (0..values.slot_count())
+            .filter(|order| {
+                values
+                    .binary_search_by_key(order, |value| value.order)
+                    .is_err()
+            })
+            .collect();
+        losses.push(
+            cadmpeg_ir::codec::write::ExportLossCode::SourceUndecodedOmitted.note(format!(
+                "property {} ({}) omits undecoded value or unassociated reference metadata at source positions {:?}",
+                property.id, property.name, missing,
+            )),
+        );
+    }
+    Ok(())
 }

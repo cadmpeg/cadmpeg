@@ -1,20 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
-//! A dependency-free declaration keeps its name-derived identity.
+//! Typed application declarations and their ordered dependency references.
 
 use super::ObjectRecord;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::schema::rewrite::typed::prune::{
+    DependencyPosition, DependencyReference, ReferencePruneEffect,
+};
 use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
 use serde::{Deserialize, Serialize};
 
 pub(crate) struct ObjectDeclaration(ObjectRecord);
 impl ObjectDeclaration {
     pub(crate) fn new(record: ObjectRecord) -> Result<Self, CodecError> {
-        if !record.dependencies.is_empty() || record.dependency_allow_partial.is_some() {
-            return Err(CodecError::malformed(
-                "dependency-free object declaration has dependencies",
-            ));
-        }
         Ok(Self(record))
     }
 }
@@ -32,9 +30,38 @@ impl RewriteIdentities for ObjectDeclaration {
     fn visit_identity_references(
         &self,
         _ctx: &DecodeContext<'_>,
-        _visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>,
+        visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>,
     ) -> Result<(), CodecError> {
+        for dependency in &self.0.dependencies {
+            visitor(dependency)?;
+        }
         Ok(())
+    }
+    fn visit_dependency_references(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        visitor: &mut dyn FnMut(DependencyReference<'_>) -> Result<(), CodecError>,
+    ) -> Result<(), CodecError> {
+        for (index, target) in self.0.dependencies.iter().enumerate() {
+            visitor(DependencyReference {
+                target,
+                position: DependencyPosition::List {
+                    length: self.0.dependencies.len(),
+                    index,
+                },
+                field: Some("dependencies"),
+            })?;
+        }
+        Ok(())
+    }
+    fn prune_reference_lists(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        deleted: &std::collections::BTreeSet<String>,
+    ) -> Result<ReferencePruneEffect, CodecError> {
+        let effect = cadmpeg_ir::schema::rewrite::typed::prune::analyze(self, ctx, deleted)?;
+        self.0.dependencies.retain(|id| !deleted.contains(id));
+        Ok(effect)
     }
     fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(
         mut self,
@@ -46,6 +73,9 @@ impl RewriteIdentities for ObjectDeclaration {
             self.0.name().clone(),
         )
         .map_err(CodecError::Malformed)?;
+        for dependency in &mut self.0.dependencies {
+            *dependency = map.identity(dependency)?;
+        }
         Ok(self)
     }
     fn rewrite_native_value<F: FnMut(&str) -> Result<String, CodecError>>(
@@ -65,6 +95,16 @@ impl RewriteIdentities for ObjectDeclaration {
             super::object_identity::ObjectIdentity::try_new(map.identity(id)?, name.to_owned())
                 .map_err(CodecError::Malformed)?;
         value["id"] = identity.id().clone().into();
+        let dependencies = value
+            .get_mut("dependencies")
+            .and_then(serde_json::Value::as_array_mut)
+            .ok_or_else(|| CodecError::malformed("object dependencies are absent"))?;
+        for dependency in dependencies {
+            let id = dependency
+                .as_str()
+                .ok_or_else(|| CodecError::malformed("object dependency is not text"))?;
+            *dependency = map.identity(id)?.into();
+        }
         Ok(())
     }
 }
@@ -96,14 +136,25 @@ mod tests {
             serde_json::to_value(&original).unwrap()
         );
         let mut changed = IdentityMap::new(|id: &str| Ok(id.replace("#", "#changed-")));
-        assert!(ObjectDeclaration::new(original.clone())
+        let changed = ObjectDeclaration::new(original.clone())
             .unwrap()
             .rewrite_identities(&ctx, &mut changed)
-            .is_err());
+            .unwrap();
+        let mut expected = serde_json::to_value(&original).unwrap();
+        expected["id"] = original.id().replace("#", "#changed-").into();
+        assert_eq!(serde_json::to_value(changed).unwrap(), expected);
         let mut with_dependency = original;
         with_dependency
             .dependencies
             .push("test:native:object#dependency".into());
-        assert!(ObjectDeclaration::new(with_dependency).is_err());
+        let with_dependency = ObjectDeclaration::new(with_dependency).unwrap();
+        let mut refs = Vec::new();
+        with_dependency
+            .visit_identity_references(&ctx, &mut |id| {
+                refs.push(id.to_owned());
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(refs, ["test:native:object#dependency"]);
     }
 }

@@ -659,26 +659,14 @@ mod native_elision {
 /// arenas. Every input the codec admits is cut to geometry depth.
 #[test]
 fn geometry_depth_agrees_with_full_depth() {
-    let summary =
-        cadmpeg_test_support::depth::assert_geometry_agrees_with_full_with(
-            &FcstdCodec,
-            &harness().fixture_inputs(),
-            |decoded| {
-                let declared = crate::loss::unrepresented(
-                    &decoded.report().losses,
-                    decoded
-                        .ir()
-                        .native
-                        .namespace("fcstd")
-                        .expect("FreeCAD native source records"),
-                )
-                .expect("classify retained source records");
-                for class in declared {
-                    assert!(decoded.source_fidelity().unrepresented().contains(&class),
-                    "source loss left class {class} unrepresented without a fidelity declaration");
-                }
-            },
-        );
+    let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full_resolving(
+        &FcstdCodec,
+        &harness().fixture_inputs(),
+        |decoded| {
+            crate::fidelity::b1::assert_classified_spans(decoded);
+        },
+        |decoded| crate::test_support::expression_names::resolver(decoded.ir()),
+    );
     assert_eq!(summary.cut, summary.inputs - summary.refused, "{summary:?}");
 }
 

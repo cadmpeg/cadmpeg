@@ -16,6 +16,41 @@ fn archive(xml: &str) -> Vec<u8> {
     zip_fixture::archive(&[RawEntry::stored("Document.xml", xml.as_bytes())])
 }
 
+fn literal_field_reads(
+    source: &str,
+    fields: &[(&str, &str)],
+    offset: u64,
+) -> Vec<std::ops::Range<u64>> {
+    let mut ranges: Vec<_> = fields
+        .iter()
+        .flat_map(|(name, raw)| {
+            let token = format!("{name}='{raw}'");
+            let start = source.find(&token).unwrap();
+            let mut fields = vec![offset + start as u64..offset + (start + name.len()) as u64];
+            if !raw.is_empty() {
+                let value_start = start + name.len() + "='".len();
+                fields.push(offset + value_start as u64..offset + (value_start + raw.len()) as u64);
+            }
+            fields
+        })
+        .collect();
+    let start = source.find("<PropertyVector").unwrap() + 1;
+    ranges.push(offset + start as u64..offset + (start + "PropertyVector".len()) as u64);
+    ranges.sort_by_key(|range| range.start);
+    let mut merged: Vec<std::ops::Range<u64>> = Vec::new();
+    for range in ranges {
+        if let Some(previous) = merged
+            .last_mut()
+            .filter(|previous| previous.end == range.start)
+        {
+            previous.end = range.end;
+        } else {
+            merged.push(range);
+        }
+    }
+    merged
+}
+
 #[test]
 fn vector_native_and_neutral_values_come_from_exact_fields_in_a_nonzero_archive_window() {
     for (raw_x, x) in [("1&#x2e;5", 1.5), ("2.5", 2.5)] {
@@ -50,7 +85,8 @@ fn vector_native_and_neutral_values_come_from_exact_fields_in_a_nonzero_archive_
         assert_eq!(kept.values()[0].attributes["valueZ"], "3");
         assert_eq!(kept.values()[0].attributes["extra"], "native-only");
         let pure = crate::persistence::parse_document(
-            &scan.document_xml,
+            &crate::container::admit_document(&ctx, scan.data["Document.xml"].window())
+                .expect("valid source XML"),
             crate::persistence::Vocabulary::Objects,
         )
         .unwrap();
@@ -74,25 +110,18 @@ fn vector_native_and_neutral_values_come_from_exact_fields_in_a_nonzero_archive_
             origin.offset() + u64::try_from(xml.find(&property).unwrap()).unwrap()
         );
         assert_eq!(capture.byte_len(), u64::try_from(property.len()).unwrap());
-        let mut from = 0;
-        let expected = [
-            raw_name,
-            "App::PropertyVector",
-            "valueX",
-            raw_x,
-            "valueY",
-            "-2",
-            "valueZ",
-            "3",
-            "extra",
-            "native-only",
-        ]
-        .map(|spelling| {
-            let at = from + property[from..].find(spelling).unwrap();
-            from = at + spelling.len();
-            let start = origin.offset() + u64::try_from(xml.find(&property).unwrap() + at).unwrap();
-            start..start + u64::try_from(spelling.len()).unwrap()
-        });
+        let expected = literal_field_reads(
+            &property,
+            &[
+                ("name", raw_name),
+                ("type", "App::PropertyVector"),
+                ("valueX", raw_x),
+                ("valueY", "-2"),
+                ("valueZ", "3"),
+                ("extra", "native-only"),
+            ],
+            origin.offset() + xml.find(&property).unwrap() as u64,
+        );
         assert_eq!(capture.reads()[capture.stream()], expected);
         let start = origin.offset() + u64::try_from(xml.find("unheld").unwrap()).unwrap();
         assert!(capture.reads()[capture.stream()]
@@ -213,7 +242,7 @@ fn incomplete_nonfinite_text_and_dynamic_fallback_vectors_keep_the_generic_nativ
         (
             "<PropertyVector valueX='1' valueY='2' valueZ='3'>retained text</PropertyVector>",
             "",
-            true,
+            false,
         ),
         (
             "<PropertyVector valueX='1' valueY='2' valueZ='3'/>",
@@ -242,15 +271,25 @@ fn incomplete_nonfinite_text_and_dynamic_fallback_vectors_keep_the_generic_nativ
             .arena_as::<crate::native::PropertyRecord>("properties")
             .unwrap();
         assert_eq!(properties, pure.properties);
-        assert!(matches!(
-            properties[0].body,
-            Some(crate::native::PropertyBody::Persisted { .. })
-        ));
-        assert!(!decoded
+        // Registered numeric value failures belong to the actual property_value leaf (#215).
+        assert_eq!(properties[0].body.is_some(), projected);
+        assert_eq!(properties[0].values().len(), usize::from(projected));
+        assert!(decoded
             .source_fidelity()
             .parts()
             .values()
-            .any(|part| part.level().as_str() == "freecad.property"));
+            .any(|part| part.level().as_str() == "freecad.property"
+                && part.state() == &PartState::Decoded {}));
+        let failed: Vec<_> = decoded
+            .source_fidelity()
+            .parts()
+            .values()
+            .filter(|part| part.state() == &PartState::GivenUp {})
+            .collect();
+        assert_eq!(failed.len(), usize::from(!projected));
+        if !projected {
+            assert_eq!(failed[0].level().as_str(), "freecad.property_value");
+        }
         if projected {
             assert_eq!(
                 decoded
@@ -270,17 +309,17 @@ fn incomplete_nonfinite_text_and_dynamic_fallback_vectors_keep_the_generic_nativ
                 .attributes
                 .iter()
                 .any(|attribute| attribute.name == "Vector"));
-            assert!(decoded
-                .report()
-                .losses
-                .iter()
-                .any(|loss| loss.code.local_code() == "attribute.property-unprojected"));
         }
-        assert!(!decoded
+        let errors: Vec<_> = decoded
             .report()
             .losses
             .iter()
-            .any(|loss| loss.code.local_code() == "record.unreadable"));
+            .filter(|loss| loss.code.local_code() == "record.unreadable")
+            .collect();
+        assert_eq!(errors.len(), usize::from(!projected));
+        if !projected {
+            assert_eq!(errors[0].severity, cadmpeg_ir::report::Severity::Error);
+        }
     }
 }
 
@@ -323,11 +362,12 @@ fn a_failed_archive_parent_discards_already_born_vector_fields_and_capture() {
         fidelity.parts()[&unknown.id].level().as_str(),
         "zip.archive"
     );
+    // All actual entry headers are admitted before any XML producer runs. This
+    // malformed later header gives up the archive before a property is reached.
     assert!(fidelity
         .parts()
         .values()
-        .any(|part| part.level().as_str() == "freecad.property"
-            && matches!(part.state(), PartState::Covered { by } if by == &unknown.id)));
+        .all(|part| part.level().as_str() != "freecad.property"));
     let id = crate::native::native_child_id(
         "property",
         &crate::native::native_id("document", "0"),

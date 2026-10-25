@@ -73,7 +73,8 @@ fn bool_and_float_native_and_neutral_values_flow_from_exact_original_attribute_r
             panic!("one kept scalar")
         };
         let pure = crate::persistence::parse_document(
-            &scan.document_xml,
+            &crate::container::admit_document(&ctx, scan.data["Document.xml"].window())
+                .expect("valid source XML"),
             crate::persistence::Vocabulary::Objects,
         )
         .unwrap();
@@ -99,13 +100,23 @@ fn bool_and_float_native_and_neutral_values_flow_from_exact_original_attribute_r
         );
         assert_eq!(capture.byte_len(), u64::try_from(property.len()).unwrap());
         let mut from = 0;
-        let expected_reads =
-            ["Input", type_name, "value", raw, "extra", "native-only"].map(|text| {
-                let at = from + property[from..].find(text).unwrap();
-                from = at + text.len();
-                let start = origin.offset() + u64::try_from(start + at).unwrap();
-                start..start + u64::try_from(text.len()).unwrap()
-            });
+        let expected_reads = [
+            "name",
+            "Input",
+            "type",
+            type_name,
+            tag,
+            "value",
+            raw,
+            "extra",
+            "native-only",
+        ]
+        .map(|text| {
+            let at = from + property[from..].find(text).unwrap();
+            from = at + text.len();
+            let start = origin.offset() + u64::try_from(start + at).unwrap();
+            start..start + u64::try_from(text.len()).unwrap()
+        });
         assert_eq!(capture.reads()[capture.stream()], expected_reads);
         let unheld = origin.offset() + u64::try_from(xml.find("unheld").unwrap()).unwrap();
         assert!(capture.reads()[capture.stream()]
@@ -347,16 +358,13 @@ fn scalar_native_and_neutral_births_are_rolled_back_with_the_failed_archive_pare
         );
         assert!(!decoded.source_fidelity().record_layout().contains_key(&id));
     }
-    assert_eq!(
-        decoded
-            .source_fidelity()
-            .parts()
-            .values()
-            .filter(|part| part.level().as_str() == "freecad.property"
-                && matches!(part.state(), PartState::Covered { by } if by == &unknown.id))
-            .count(),
-        2
-    );
+    assert!(decoded.source_fidelity().parts().values().all(|part| part
+        .level()
+        .as_str()
+        .split_once('.')
+        .unwrap()
+        .0
+        != "freecad"));
     assert_eq!(decoded.source_fidelity().retained_records().len(), 1);
     assert_eq!(
         crate::source_archive::image(decoded.source_fidelity()).unwrap(),
@@ -390,11 +398,7 @@ fn unsupported_scalar_shapes_and_dynamic_fallbacks_retain_the_generic_native_mea
                 .arena_as::<crate::native::PropertyRecord>("properties")
                 .unwrap();
             assert_eq!(properties, pure.properties);
-            assert!(!decoded
-                .source_fidelity()
-                .parts()
-                .values()
-                .any(|part| part.level().as_str() == "freecad.property"));
+            crate::test_support::source_fidelity::assert_single_property_part(&decoded, &xml);
             if !dynamic.is_empty() {
                 let layout = &decoded.source_fidelity().record_layout()[properties[0].id.as_str()];
                 let reads = &layout.reads()[layout.stream()];

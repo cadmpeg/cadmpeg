@@ -61,8 +61,11 @@ fn integer_values_and_extra_fields_are_born_from_exact_nonzero_source_ranges() {
         assert_eq!(capture.byte_len(), u64::try_from(property.len()).unwrap());
         let mut from = 0;
         let expected_reads = [
+            "name",
             "Count",
+            "type",
             "App::PropertyInteger",
+            "Integer",
             "value",
             raw,
             "extra",
@@ -199,21 +202,65 @@ fn integer_text_and_unrecognized_dynamic_flags_keep_the_unchanged_generic_produc
             .arena_as::<crate::native::PropertyRecord>("properties")
             .unwrap();
         assert_eq!(properties, pure.properties);
-        assert!(!decoded
-            .source_fidelity()
-            .parts()
-            .values()
-            .any(|part| part.level().as_str() == "freecad.property"));
-        assert_eq!(
-            decoded
+        crate::test_support::source_fidelity::assert_single_property_part(&decoded, &xml);
+        let [property] = properties.as_slice() else {
+            panic!("one retained integer header")
+        };
+        assert_eq!(property.name, "Count");
+        assert_eq!(property.type_name, "App::PropertyInteger");
+        if extra.contains("text") {
+            crate::test_support::source_fidelity::assert_failed_xml_parts(
+                &decoded,
+                &xml,
+                &[("freecad.property_value", extra)],
+            );
+            assert!(property.body.is_none());
+            assert!(serde_json::to_value(property).unwrap()["values"].is_null());
+            assert!(!decoded
                 .ir()
                 .model
                 .attributes
                 .iter()
-                .find(|attribute| attribute.name == "Count")
-                .unwrap()
-                .values,
-            [AttributeValue::Integer(7)]
-        );
+                .any(|attribute| attribute.name == "Count"));
+            let unknowns = decoded.ir().native_unknowns("fcstd").unwrap();
+            let [unknown] = unknowns.as_slice() else {
+                panic!("one failed integer value")
+            };
+            assert_eq!(unknown.links.len(), 1);
+            assert_eq!(unknown.links[0].as_str(), property.id);
+            let fidelity = decoded.source_fidelity();
+            assert_eq!(
+                fidelity
+                    .retained_record(unknown.id.as_str())
+                    .unwrap()
+                    .data(),
+                Some(extra.as_bytes())
+            );
+            let errors = decoded
+                .report()
+                .losses
+                .iter()
+                .filter(|loss| loss.severity == cadmpeg_ir::report::Severity::Error)
+                .collect::<Vec<_>>();
+            assert_eq!(errors.len(), 1);
+            assert_eq!(errors[0].code.local_code(), "record.unreadable");
+        } else {
+            assert_eq!(
+                decoded
+                    .ir()
+                    .model
+                    .attributes
+                    .iter()
+                    .find(|attribute| attribute.name == "Count")
+                    .unwrap()
+                    .values,
+                [AttributeValue::Integer(7)]
+            );
+            let flags = property.dynamic.as_ref().unwrap();
+            assert_eq!(flags.group, "Custom");
+            assert_eq!(flags.read_only, Some(true));
+            assert_eq!(flags.hidden, None);
+            crate::test_support::source_fidelity::assert_failed_xml_parts(&decoded, &xml, &[]);
+        }
     }
 }

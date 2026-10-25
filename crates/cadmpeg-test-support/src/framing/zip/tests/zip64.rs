@@ -386,3 +386,78 @@ fn cut_short_and_impossible_64bit_fields_never_become_whole_window_extents() {
         });
     }
 }
+
+#[test]
+fn recompressed_zip64_members_keep_sentinels_descriptors_and_shifted_end_records() {
+    for mask in 0_u8..8 {
+        let sentinels = [mask & 1 != 0, mask & 2 != 0, mask & 4 != 0];
+        for descriptor in [None, Some(false), Some(true)] {
+            let mut input = fixture(sentinels, descriptor);
+            input.bytes[12..14].copy_from_slice(&8_u16.to_le_bytes());
+            input.bytes[input.central + 10..input.central + 12]
+                .copy_from_slice(&8_u16.to_le_bytes());
+            if sentinels[0] || sentinels[1] {
+                put64(&mut input.bytes, input.payload - 8, 10);
+            } else {
+                put(&mut input.bytes, 22, 10);
+            }
+            if sentinels[1] {
+                put64(
+                    &mut input.bytes,
+                    input.extra + 4 + usize::from(sentinels[0]) * 8,
+                    10,
+                );
+            } else {
+                put(&mut input.bytes, input.central + 20, 10);
+            }
+            if let Some((start, signed, wide)) = input.descriptor {
+                let compressed = start + usize::from(signed) * 4 + 4;
+                if wide {
+                    put64(&mut input.bytes, compressed, 10);
+                } else {
+                    put(&mut input.bytes, compressed, 10);
+                }
+            }
+            put64(
+                &mut input.bytes,
+                input.end64 + 48,
+                u64::try_from(input.central + 5 - 4).unwrap(),
+            );
+            put64(
+                &mut input.bytes,
+                input.locator + 8,
+                u64::try_from(input.end64 + 5 - 4).unwrap(),
+            );
+            input
+                .bytes
+                .splice(input.payload..input.payload, [1, 5, 0, 250, 255]);
+            source(&input.bytes, |ctx, view| {
+                let mut frames = Vec::new();
+                let original = frame(ctx, view, &mut frames).unwrap();
+                assert_eq!(super::rebuild_member::plain(&original[0]), b"ABCDE");
+                let rebuilt =
+                    crate::framing::zip::rebuild_member(ctx, view, b"data", b"VWXYZ").unwrap();
+                assert_eq!(&rebuilt[..4], b"stub");
+                assert_eq!(&rebuilt[rebuilt.len() - 4..], b"tail");
+                source(&rebuilt, |ctx, view| {
+                    let mut parts = Vec::new();
+                    let entries = frame(ctx, view, &mut parts).unwrap();
+                    assert_eq!(entries[0].method(), 8);
+                    assert_eq!(super::rebuild_member::plain(&entries[0]), b"VWXYZ");
+                    let end = parts
+                        .iter()
+                        .find(|part| part.level().as_str() == "zip.zip64_end_record")
+                        .unwrap();
+                    assert_eq!(&end.view().window()[56..], b"EXTRA");
+                    assert_eq!(
+                        parts
+                            .iter()
+                            .filter(|part| part.level().as_str() == "zip.data_descriptor")
+                            .count(),
+                        usize::from(descriptor.is_some())
+                    );
+                });
+            });
+        }
+    }
+}

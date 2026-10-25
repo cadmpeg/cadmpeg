@@ -16,6 +16,9 @@ use cadmpeg_core::CodecError;
 use serde::{de::DeserializeOwned, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
+mod late;
+pub(super) use late::prune_late_model;
+
 /// Dependency finalization outcome.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PartDependencyPruning {
@@ -64,10 +67,12 @@ impl NativeOwner {
 
 #[derive(Debug)]
 pub(super) struct FailureHome {
-    id: UnknownId,
+    pub(super) id: UnknownId,
     pub(super) dropped: BTreeSet<String>,
     pub(super) loss_index: usize,
-    prefix: String,
+    pub(super) prefix: String,
+    pub(super) source: cadmpeg_core::decode::SourceExtentProof,
+    pub(super) late_sponsored: bool,
 }
 #[derive(Debug)]
 struct Edge {
@@ -101,6 +106,7 @@ impl PartOutput {
         id: UnknownId,
         dropped: Vec<String>,
         prefix: String,
+        extent: cadmpeg_core::decode::View<'_>,
     ) -> Result<(), CodecError> {
         let bytes = dropped
             .iter()
@@ -108,6 +114,7 @@ impl PartOutput {
             .and_then(|sum| sum.checked_add(size_of::<FailureHome>()))
             .ok_or_else(|| CodecError::malformed("part failure staging storage overflows"))?;
         ctx.retain_bytes(u64_from_index(bytes), "part failure staging")?;
+        let source = ctx.source_extent_proof(extent)?;
         super::reserve_output(ctx, self.staged, &mut self.failures, 1)?;
         self.failures.push(FailureHome {
             id,
@@ -118,6 +125,8 @@ impl PartOutput {
                 .checked_sub(1)
                 .ok_or_else(|| CodecError::malformed("part failure has no diagnostic"))?,
             prefix,
+            source,
+            late_sponsored: false,
         });
         Ok(())
     }
@@ -141,6 +150,7 @@ impl PartOutput {
             .iter_mut()
             .find(|failure| failure.id.as_str() == part)
             .ok_or_else(|| CodecError::malformed("dependent records name no given-up part"))?;
+        ctx.require_source_authority(&failure.source)?;
         for id in dependents {
             if !failure.dropped.contains(&id) {
                 ctx.retain_bytes(

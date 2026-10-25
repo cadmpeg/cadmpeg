@@ -96,6 +96,23 @@ impl FcstdCodec {
     }
 }
 
+fn sponsor_unformed(
+    ctx: &DecodeContext<'_>,
+    failures: &mut cadmpeg_ir::source_fidelity::parts::FinalizedFailureRegistry,
+    omissions: Vec<design::UnformedProjection>,
+) -> Result<(), CodecError> {
+    for omission in omissions {
+        if omission.ids.is_empty() {
+            continue;
+        }
+        let home = omission.homes.first().ok_or_else(|| {
+            CodecError::malformed("unformed dependent record has no actual source cause")
+        })?;
+        failures.sponsor_unformed(ctx, home, omission.ids)?;
+    }
+    Ok(())
+}
+
 fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, CodecError> {
     let Some(namespace) = ir.native.namespace("fcstd") else {
         return Ok(Vec::new());
@@ -145,14 +162,22 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
     );
     let attachments =
         arena!(namespace.arena_as_for_decode::<native::AttachmentRecord>(ctx, "attachments"));
-    let shape_payloads =
-        arena!(namespace.arena_as_for_decode::<brep::ShapePayloadRecord>(ctx, "shape_payloads"));
+    let shape_payloads = arena!(brep::records::payloads(ctx, namespace));
     let carrier_census =
         arena!(namespace.arena_as_for_decode::<native::CarrierCensusRecord>(ctx, "carrier_census"));
     let design_census =
         arena!(namespace.arena_as_for_decode::<native::DesignCensusRecord>(ctx, "design_census"));
 
     let mut findings = Vec::new();
+    for (id, detail) in product::semantic_issues(&product_nodes, &properties)? {
+        findings.push(finding(Check::PayloadIntegrity, detail, Some(id)));
+    }
+    for (id, detail) in arena!(brep::records::validate(ctx, namespace, &shape_payloads)) {
+        findings.push(finding(Check::PayloadIntegrity, detail, Some(id)));
+    }
+    for (id, detail) in application_geometry::parts::validate(&entries) {
+        findings.push(finding(Check::PayloadIntegrity, detail, Some(id)));
+    }
     for arena in namespace.arenas().keys() {
         if arena != "unknowns" && !native::ARENAS.contains(&arena.as_str()) {
             findings.push(finding(
@@ -183,10 +208,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             ));
         }
     }
-    let derived_census = ir
-        .scope
-        .design
-        .then(|| design::census(&objects, &ir.model.features));
+    let derived_census = ir.scope.design.then(|| design::census(&objects, &ir.model));
     match derived_census {
         None => {}
         Some(Ok(expected)) if design_census == expected => {}
@@ -276,12 +298,18 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         ));
     }
     for attachment in &attachments {
-        let missing_support = attachment.supports.iter().flatten().any(|support| {
-            support.document().is_none()
-                && support
-                    .object()
-                    .is_some_and(|object| !object_ids.contains(object))
-        });
+        let missing_support = attachment
+            .supports
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .flatten()
+            .any(|support| {
+                support.document().is_none()
+                    && support
+                        .object()
+                        .is_some_and(|object| !object_ids.contains(object))
+            });
         if !object_ids.contains(attachment.object.as_str()) || missing_support {
             findings.push(finding(
                 Check::NativeLinks,
@@ -294,11 +322,21 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         }
     }
     match attachment::transfer(&objects, &properties) {
-        Ok(expected) if attachments != expected => findings.push(finding(
-            Check::NativeLinks,
-            "FCStd attachment graph does not match the application property graph",
-            None,
-        )),
+        Ok(expected)
+            if attachments.len() != expected.len()
+                || attachments.iter().any(|actual| {
+                    expected
+                        .iter()
+                        .find(|expected| expected.id == actual.id)
+                        .is_none_or(|expected| !actual.agrees_with(expected))
+                }) =>
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "FCStd attachment graph does not match the application property graph",
+                None,
+            ))
+        }
         Err(error) => findings.push(finding(
             Check::NativeLinks,
             format!("FCStd attachment properties are malformed: {error}"),
@@ -311,7 +349,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         .map(|provider| provider.id.as_str())
         .collect::<HashSet<_>>();
     let has_gui_entry = entry_names.contains("GuiDocument.xml");
-    if gui_documents.len() != usize::from(has_gui_entry) {
+    if gui_documents.len() > usize::from(has_gui_entry) {
         findings.push(finding(
             Check::Counts,
             "FCStd GUI document record does not match GuiDocument.xml presence",
@@ -319,6 +357,20 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         ));
     }
     for document in &gui_documents {
+        if document
+            .states
+            .iter()
+            .any(|state| state.values.iter().any(|value| value.item_index.is_some()))
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                format!(
+                    "{} has an enumeration item ordinal outside an enumeration property",
+                    document.id
+                ),
+                Some(document.id.clone()),
+            ));
+        }
         if document.states.iter().any(|state| {
             state
                 .side_entries
@@ -346,7 +398,18 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         }
     }
     for property in &gui_properties {
-        if !gui_provider_ids.contains(property.owner.as_str())
+        if let Err(error) = gui::validate_property_links(property) {
+            findings.push(finding(
+                Check::PayloadIntegrity,
+                error.to_string(),
+                Some(property.id.clone()),
+            ));
+        }
+        if !(gui_provider_ids.contains(property.owner.as_str())
+            || extensions.iter().any(|extension| {
+                extension.id == property.owner
+                    && gui_provider_ids.contains(extension.owner.as_str())
+            }))
             || property
                 .side_entries
                 .iter()
@@ -501,7 +564,9 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
     let mut extension_names = HashSet::new();
     let mut extension_types = HashSet::new();
     for extension in &extensions {
-        if !object_ids.contains(extension.owner.as_str()) {
+        if !object_ids.contains(extension.owner.as_str())
+            && !gui_provider_ids.contains(extension.owner.as_str())
+        {
             findings.push(finding(
                 Check::ReferentialIntegrity,
                 format!("{} has missing owner {}", extension.id, extension.owner),
@@ -544,12 +609,22 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             .links()
             .iter()
             .flatten()
+            .filter(|target| target.document().is_none())
             .filter_map(crate::native::LinkTarget::object)
         {
-            if target.starts_with("fcstd:native:object#") && !object_ids.contains(target) {
+            if !object_ids.contains(target) {
                 findings.push(finding(
                     Check::ReferentialIntegrity,
                     format!("{} has missing link target {target}", property.id),
+                    Some(property.id.clone()),
+                ));
+            }
+        }
+        for entry in property.side_entries() {
+            if !entry_names.contains(entry.as_str()) {
+                findings.push(finding(
+                    Check::ReferentialIntegrity,
+                    format!("{} has missing side entry {entry}", property.id),
                     Some(property.id.clone()),
                 ));
             }
@@ -560,56 +635,44 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             .owner_property
             .as_ref()
             .is_some_and(|owner| !property_ids.contains(owner.as_str()))
-            || table
-                .source_entry
-                .as_ref()
-                .is_some_and(|entry| !entry_names.contains(entry.as_str()))
         {
             let table_id = table.id();
             findings.push(finding(
                 Check::ReferentialIntegrity,
-                format!("{table_id} has a missing property or side-entry link"),
+                format!("{table_id} has a missing property link"),
                 Some(table_id),
             ));
         }
     }
-    let topology_ids = ir
-        .model
-        .vertices
-        .iter()
-        .map(|entity| entity.id.as_str())
-        .chain(ir.model.edges.iter().map(|entity| entity.id.as_str()))
-        .chain(ir.model.loops.iter().map(|entity| entity.id.as_str()))
-        .chain(ir.model.faces.iter().map(|entity| entity.id.as_str()))
-        .chain(ir.model.shells.iter().map(|entity| entity.id.as_str()))
-        .chain(ir.model.bodies.iter().map(|entity| entity.id.as_str()))
-        .collect::<HashSet<_>>();
     for map in &element_maps {
         if !property_ids.contains(map.property.as_str())
             || map
-                .hasher_index
-                .is_some_and(|index| index >= string_tables.len())
-            || map
-                .source_entry
+                .string_table
                 .as_ref()
-                .is_some_and(|entry| !entry_names.contains(entry.as_str()))
+                .is_some_and(|id| !string_tables.iter().any(|table| table.id() == *id))
+            || map.hasher_index.is_some() != map.string_table.is_some()
+            || map.string_table.as_ref().is_some_and(|id| {
+                string_tables
+                    .iter()
+                    .find(|table| table.id() == *id)
+                    .is_some_and(|table| Some(table.index) != map.hasher_index)
+            })
         {
             findings.push(finding(
                 Check::ReferentialIntegrity,
-                format!(
-                    "{} has a missing property, string table, or side entry",
-                    map.id
-                ),
+                format!("{} has a missing property or string table", map.id),
                 Some(map.id.clone()),
             ));
         }
         let known_string_ids = map
-            .hasher_index
-            .and_then(|index| string_tables.get(index))
+            .string_table
+            .as_ref()
+            .and_then(|id| string_tables.iter().find(|table| table.id() == *id))
             .and_then(native::StringTableRecord::entries)
             .map(|entries| {
                 entries
                     .iter()
+                    .flatten()
                     .map(|entry| entry.string_id)
                     .collect::<HashSet<_>>()
             });
@@ -618,7 +681,9 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             .root()
             .groups
             .iter()
+            .flatten()
             .flat_map(|group| &group.names)
+            .flatten()
             .flatten()
         {
             if let Some(known_ids) = &known_string_ids {
@@ -629,17 +694,6 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
                         Some(map.id.clone()),
                     ));
                 }
-            }
-            if name
-                .topology_ids
-                .iter()
-                .any(|id| !topology_ids.contains(id.as_str()))
-            {
-                findings.push(finding(
-                    Check::ReferentialIntegrity,
-                    format!("{} references missing neutral topology", map.id),
-                    Some(map.id.clone()),
-                ));
             }
         }
     }
@@ -760,30 +814,42 @@ impl CodecBackend for FcstdCodec {
         ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        container::inspect(ctx, root)
+        let (decoded, mut summary) = Self::decode_source(ctx, root)?;
+        summary.losses = decoded.body.losses;
+        summary.notes = decoded.body.notes;
+        Ok(summary)
     }
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
-        let (mut scan, parts) = match container::attempt(ctx, root)? {
+        Self::decode_source(ctx, root).map(|(decoded, _)| decoded)
+    }
+}
+
+impl FcstdCodec {
+    fn decode_source(
+        ctx: &DecodeContext<'_>,
+        root: View<'_>,
+    ) -> Result<(Decoded, ContainerSummary), CodecError> {
+        let (mut scan, mut parts) = match container::attempt(ctx, root)? {
             container::ScanOutcome::Readable { scan, parts } => (scan, parts),
             container::ScanOutcome::GivenUp {
                 summary,
                 parts,
                 pointers,
+                source,
             } => {
-                return archive_recovery::decoded(ctx, root, summary, parts, pointers);
+                let inspected = summary.clone();
+                let decoded =
+                    archive_recovery::decoded(ctx, root, summary, parts, pointers, source)?;
+                return Ok((decoded, inspected));
             }
         };
-        let gui_source = if ctx.container_only() {
-            None
-        } else {
-            scan.data
-                .get("GuiDocument.xml")
-                .map(|source| gui::source::parse(ctx, *source))
-                .transpose()?
-        };
-        let source_admission = fidelity::b1::prepare(ctx, root, &scan, gui_source.as_ref())?;
-        let legacy_source_evidence = !source_admission.is_complete();
+        let summary = container::summarize(&scan);
+        let gui_source = scan
+            .data
+            .get("GuiDocument.xml")
+            .map(|source| gui::source::parse(ctx, *source))
+            .transpose()?;
         let mut admitted_entities = 0_u64;
         let mut attributes = container::source_attributes(&scan)?;
         let summary_notes = container::summary_notes(&scan);
@@ -829,19 +895,20 @@ impl CodecBackend for FcstdCodec {
             archive_capture.stream(),
             archive_capture.offset(),
             root.window(),
-            cadmpeg_ir::ArenaClasses::new(),
         )?;
 
-        let entry_sources = entry_sources::EntrySources::new(ctx, &scan.data)?;
+        let entry_sources = entry_sources::EntrySources::new(ctx, &scan.data)?
+            .with_parents(&scan.entry_parents)
+            .with_owners(&scan.entry_owners);
         let mut geometry_transferred = false;
         let mut cycle_affected_design_objects = BTreeSet::new();
-        let mut gui_losses = Vec::new();
+        let gui_losses;
         let mut transfer_losses = Vec::new();
         // One `classify` call feeds the report identity, loss, and notes.
         let primary = dialect::FcstdDialect::classify(&scan.document, &scan.schema_version);
         let dialects = cadmpeg_core::dialect::DialectLayers::of(primary);
         let mut ir = CadIr::decoded(SourceMeta::classified(dialects.clone(), attributes));
-        ir.set_scope(ctx.depth().required_scope())
+        ir.set_scope(container::located_scope(ctx.depth(), parts.fidelity()))
             .map_err(CodecError::malformed)?;
         if let Some((name, source)) = thumbnail {
             let capture = ctx.capture_part_extent(source)?;
@@ -861,70 +928,78 @@ impl CodecBackend for FcstdCodec {
                 cadmpeg_ir::Exactness::ByteExact,
             )?;
             source_fidelity.annotations = annotations.build();
-            ctx.retain_bytes(
-                cadmpeg_core::decode::u64_from_index(bytes.len()),
-                "retain FCStd thumbnail",
-            )?;
+            let unknown = ctx.record(id.as_str(), source, || {
+                Ok(UnknownRecord::unavailable(
+                    id.clone(),
+                    capture.offset(),
+                    cadmpeg_core::decode::u64_from_index(bytes.len()),
+                    cadmpeg_ir::hash::sha256_hex(bytes),
+                    vec![native::native_id("document", "0")],
+                ))
+            })?;
             source_fidelity.attach_native_unknown_records(
                 &mut ir,
                 "fcstd",
-                [UnknownRecord::retained(
-                    id,
-                    capture.offset(),
-                    bytes.to_vec(),
-                    vec![native::native_id("document", "0")],
-                )]
-                .into(),
+                [unknown].into(),
                 ctx,
             )?;
         }
         let mut part_losses = Vec::new();
-        container::parts::append(ctx, parts, &mut ir, &mut source_fidelity, &mut part_losses)?;
-        let namespace = ir.native.namespace_mut("fcstd");
-
-        let decode_document = !ctx.container_only();
-        if decode_document {
-            let document_xml = &scan.document_xml;
-            let mut graph = persistence::parse_document_source_with_properties(
-                ctx,
-                *scan
-                    .data
-                    .get("Document.xml")
-                    .ok_or_else(|| CodecError::malformed("properties have no document source"))?,
-                document_xml,
-                persistence::Vocabulary::from_declaration(&scan.schema_version)?,
+        let mut source_failures;
+        let capture_pruning;
+        {
+            let mut entry_updates = std::mem::take(
+                &mut scan
+                    .object_declarations
+                    .as_mut()
+                    .ok_or_else(|| {
+                        CodecError::malformed("decoded object part schedule is unavailable")
+                    })?
+                    .entry_contents,
+            );
+            let mut entry_interpretations = std::mem::take(
+                &mut scan
+                    .object_declarations
+                    .as_mut()
+                    .ok_or_else(|| CodecError::malformed("entry source schedule is unavailable"))?
+                    .entry_interpretations,
+            );
+            let mut graph = persistence::graph(
                 scan.document_properties.as_ref(),
-                scan.object_declarations.as_ref(),
-            )?;
-            scan.losses.extend(graph.losses);
-            persistence::resolve_side_entries(&mut graph.properties, &scan.data, &mut scan.losses)?;
-            let property_reader = property_reader::PropertyReader::source(
-                ctx,
-                *scan
-                    .data
-                    .get("Document.xml")
-                    .ok_or_else(|| CodecError::malformed("properties have no document source"))?,
-                &graph.property_sources,
-            )?;
-            for property in &graph.properties {
-                if let Some(class) = fidelity::property(
-                    &property_reader,
-                    &mut source_fidelity,
-                    property,
-                    &graph.objects,
-                    legacy_source_evidence,
-                )? {
-                    let code = match class {
-                        cadmpeg_ir::ArenaClass::Model => {
-                            FreecadLossCode::SourceModelPayloadUnrepresented
-                        }
-                        cadmpeg_ir::ArenaClass::Design => {
-                            FreecadLossCode::SourceDesignPayloadUnrepresented
-                        }
-                    };
-                    scan.losses.push(code.note(format!("property {} Python payload has no decoded value; opaque encoding retained only in fidelity", property.id)));
-                }
-            }
+                scan.object_declarations.as_ref().ok_or_else(|| {
+                    CodecError::malformed("decoded document has no object part schedule")
+                })?,
+            );
+            let mut expression_bindings = design::ExpressionBindings::default();
+            let declared_object_ids = &scan
+                .object_declarations
+                .as_ref()
+                .ok_or_else(|| CodecError::malformed("decoded declaration census is unavailable"))?
+                .declared_objects;
+            let admitted_object_ids = &scan
+                .object_declarations
+                .as_ref()
+                .ok_or_else(|| {
+                    CodecError::malformed("decoded admitted object census is unavailable")
+                })?
+                .admitted_objects;
+            let object_sources = &scan
+                .object_declarations
+                .as_ref()
+                .ok_or_else(|| {
+                    CodecError::malformed("decoded object source authorities are unavailable")
+                })?
+                .sources;
+            scan.losses.append(&mut graph.losses);
+            let property_xml = scan
+                .object_declarations
+                .as_ref()
+                .and_then(|declarations| declarations.xml_source.as_deref())
+                .ok_or_else(|| CodecError::malformed("original property scanner is unavailable"))?;
+            let property_reader = property_reader::PropertyReader::typed(ctx)
+                .with_xml_source(property_xml)
+                .with_object_sources(object_sources)
+                .with_property_sources(&graph.property_sources);
             for (id, range) in &graph.object_sources {
                 fidelity::captured_object_layout_payloads(
                     ctx,
@@ -955,7 +1030,7 @@ impl CodecBackend for FcstdCodec {
                 )?;
             }
             for (id, range) in &graph.extension_sources {
-                fidelity::xml_layout_payload(
+                fidelity::captured_xml_layout_payload(
                     ctx,
                     *scan
                         .data
@@ -966,12 +1041,11 @@ impl CodecBackend for FcstdCodec {
                     &mut layout_payloads,
                 )?;
             }
-            let mut entry_records = container::entry_records(&scan, &graph.properties)?;
+            let mut entry_records = std::mem::take(&mut scan.entry_records);
             for entry in &entry_records {
-                let source = scan.data.get(entry.name()).ok_or_else(|| {
-                    CodecError::malformed("archive entry has no genuine source View")
-                })?;
-                ctx.record(entry.id(), *source, || Ok::<(), CodecError>(()))?;
+                let Some(source) = scan.data.get(entry.name()) else {
+                    continue;
+                };
                 if layout_pointers
                     .insert(
                         entry.id().to_owned(),
@@ -989,294 +1063,402 @@ impl CodecBackend for FcstdCodec {
                     ));
                 }
             }
-            let shape_payloads = brep::parse_payloads(
+            let mut brep_projection_sources =
+                brep::source::projection::ProjectionSources::default();
+            let shape_payloads = brep::source::decode_payloads(
                 &property_reader,
                 &graph.properties,
                 &entry_records,
                 &entry_sources,
+                &mut parts,
+                &mut brep_projection_sources,
             )?;
-            let (string_tables, mut element_maps) = element_map::parse(
+            entry_updates.extend(application_geometry::parts::decode(
                 &property_reader,
-                document_xml,
-                scan.document.file_version.value(),
                 &graph.properties,
                 &entry_records,
                 &entry_sources,
-                &mut scan.losses,
-                Some(&mut element_map::SourceLayouts {
-                    document: *scan.data.get("Document.xml").ok_or_else(|| {
-                        CodecError::malformed("string table has no document source")
-                    })?,
-                    entries: &scan.data,
-                    fidelity: &mut source_fidelity,
-                    payloads: &mut layout_payloads,
-                }),
-            )?;
-            namespace.set_arena(ctx, "objects", &graph.objects)?;
-            namespace.set_arena(ctx, "extensions", &graph.extensions)?;
-            namespace.set_arena(ctx, "properties", &graph.properties)?;
-            namespace.set_arena(ctx, "shape_payloads", &shape_payloads)?;
-            namespace.set_arena(
+                &mut entry_interpretations,
+                &mut parts,
+            )?);
+            let mut element_maps = parts
+                .native()
+                .namespace("fcstd")
+                .map(|namespace| {
+                    namespace.arena_as_for_decode::<native::element_map::ElementMapRecord>(
+                        ctx,
+                        "element_maps",
+                    )
+                })
+                .transpose()?
+                .unwrap_or_default();
+            let declared_entries = container::parts::declared_entries(&entry_records);
+            let (mut gui_graph, gui_whitespace, gui_entry_interpretations) =
+                if let Some(gui_source) = gui_source {
+                    gui_source.decode_with_whitespace(
+                        ctx,
+                        &gui::GuiSources {
+                            entries: &scan.data,
+                            declared_entries: Some(&declared_entries),
+                            declared_objects: Some(declared_object_ids),
+                            admitted_objects: Some(admitted_object_ids),
+                            object_sources: Some(object_sources),
+                            entry_parents: Some(&scan.entry_parents),
+                            entry_owners: Some(&scan.entry_owners),
+                            entry_interpretations: Some(&entry_interpretations),
+                            gui_entry_interpretations: None,
+                            objects: &graph.objects,
+                            properties: &graph.properties,
+                            payloads: &shape_payloads,
+                            element_maps: &element_maps,
+                            topology_occurrences: &[],
+                            requires_alpha_conversion: gui::requires_alpha_conversion(
+                                scan.document.program_version.as_deref(),
+                            ),
+                        },
+                        &mut parts,
+                    )?
+                } else {
+                    (gui::Graph::default(), Vec::new(), Default::default())
+                };
+            crate::xml_framing::append_whitespace(
                 ctx,
-                "carrier_census",
-                &brep::carrier_census(ctx, &shape_payloads)?,
+                &mut scan.source_whitespace,
+                gui_whitespace,
             )?;
-            namespace.set_arena(ctx, "string_tables", string_tables.as_slice())?;
-            let product_nodes = product::transfer(&graph.objects, &graph.properties, &scan.data)?;
+            brep::source::decode_gui_payloads(
+                &property_reader,
+                &gui_graph.properties,
+                &entry_records,
+                &entry_sources,
+                &mut parts,
+                &mut brep_projection_sources,
+            )?;
+            entry_updates.append(&mut gui_graph.entry_contents);
+            container::parts::merge_entry_contents(ctx, &mut entry_records, entry_updates)?;
+            container::parts::opaque_side_entries(ctx, &scan, &mut parts)?;
+            container::parts::stage_entries(
+                ctx,
+                entry_records,
+                &graph.properties,
+                &gui_graph,
+                &mut parts,
+            )?;
+            let (dropped, failures, pruning) = container::parts::append(
+                ctx,
+                parts,
+                &mut ir,
+                &mut source_fidelity,
+                &mut part_losses,
+            )?;
+            source_failures = failures;
+            capture_pruning = pruning;
+            for id in dropped {
+                layout_payloads.remove(&id);
+                layout_pointers.remove(&id);
+                gui_graph.provider_sources.retain(|(owner, _)| owner != &id);
+                gui_graph.value_sources.retain(|source| source.id() != id);
+                gui_graph.state_sources.remove(&id);
+                gui_graph.property_sources.remove(&id);
+            }
+            let mut failure_homes =
+                property_reader::failure_homes(ctx, &ir, &source_fidelity, &source_failures)?;
+            scan.object_declarations
+                .as_ref()
+                .ok_or_else(|| {
+                    CodecError::malformed("decoded object source authorities are unavailable")
+                })?
+                .bind_failure_homes(ctx, &source_failures, &mut failure_homes)?;
+            let namespace = ir.native.namespace_mut("fcstd");
+            graph.objects = namespace.arena_as_for_decode(ctx, "objects")?;
+            graph.extensions = namespace.arena_as_for_decode(ctx, "extensions")?;
+            graph.properties = namespace.arena_as_for_decode(ctx, "properties")?;
+            let shape_payloads = brep::records::payloads(ctx, namespace)?;
+            let string_tables =
+                namespace.arena_as_for_decode::<native::StringTableRecord>(ctx, "string_tables")?;
+            element_maps = namespace.arena_as_for_decode(ctx, "element_maps")?;
+            entry_records = namespace.arena_as_for_decode(ctx, "entries")?;
+            gui_graph.documents = namespace.arena_as_for_decode(ctx, "gui_documents")?;
+            gui_graph.providers = namespace.arena_as_for_decode(ctx, "gui_view_providers")?;
+            gui_graph.properties = namespace.arena_as_for_decode(ctx, "gui_properties")?;
+            let payload_sources = &scan
+                .object_declarations
+                .as_ref()
+                .ok_or_else(|| CodecError::malformed("payload source suppliers are unavailable"))?
+                .payload_sources;
+            let product_nodes = product::transfer_source(
+                ctx,
+                &graph.objects,
+                &graph.properties,
+                &entry_records,
+                object_sources,
+                payload_sources,
+            )?;
+            let property_reader = property_reader
+                .with_object_sources(object_sources)
+                .with_property_sources(&graph.property_sources)
+                .with_payload_sources(payload_sources)
+                .with_entries(entry_records.as_slice())
+                .with_failures(&failure_homes);
             namespace.set_arena(ctx, "product_nodes", &product_nodes)?;
-            let joint_records =
-                joint::transfer(&property_reader, &graph.objects, &graph.properties)?;
+            let (product_nodes, unavailable_products) =
+                product::for_projection(product_nodes, &graph.properties)?;
+            let (joint_records, joint_unformed) = joint::transfer_source(
+                &property_reader,
+                &graph.objects,
+                &graph.properties,
+                object_sources,
+            )?;
+            let mut unavailable_joints = BTreeSet::new();
+            for omission in &joint_unformed {
+                for id in &omission.ids {
+                    unavailable_joints.insert(id.clone());
+                }
+            }
+            sponsor_unformed(ctx, &mut source_failures, joint_unformed)?;
             namespace.set_arena(ctx, "joints", &joint_records)?;
-            let drawings = drawing::transfer(&property_reader, &graph.objects, &graph.properties)?;
-            drawing::transfer_neutral(
+            let drawings = drawing::transfer_source(
                 &property_reader,
-                &mut ir.model,
-                &drawings,
+                &graph.objects,
                 &graph.properties,
+                object_sources,
             )?;
+            if !ctx.container_only() {
+                drawing::transfer_neutral(
+                    &property_reader,
+                    &mut ir.model,
+                    &drawings,
+                    &graph.properties,
+                )?;
+            }
             namespace.set_arena(ctx, "drawings", &drawings)?;
-            let annotations =
-                annotation::transfer(&property_reader, &graph.objects, &graph.properties)?;
-            annotation::transfer_neutral(
+            let (annotations, annotation_unformed) = annotation::transfer_source(
                 &property_reader,
-                &mut ir.model,
-                &annotations,
+                &graph.objects,
                 &graph.properties,
-                &drawings,
+                object_sources,
             )?;
+            sponsor_unformed(ctx, &mut source_failures, annotation_unformed)?;
+            if !ctx.container_only() {
+                annotation::transfer_neutral(
+                    &property_reader,
+                    &mut ir.model,
+                    &annotations,
+                    &graph.properties,
+                    &drawings,
+                )?;
+            }
             namespace.set_arena(ctx, "annotations", &annotations)?;
-            application::install(
+            application::install_source(
                 ctx,
                 namespace,
                 &graph.objects,
                 &graph.properties,
                 &entry_records,
+                object_sources,
+                &scan.entry_owners,
             )?;
-            let attachments = attachment::transfer(&graph.objects, &graph.properties)?;
-            namespace.set_arena(ctx, "attachments", &attachments)?;
-            let mut curve_transfer =
-                brep::transfer_text_curves(ctx, &shape_payloads, &graph.properties)?;
-            let surface_transfer = brep::transfer_text_surfaces(
-                ctx,
-                &shape_payloads,
-                &graph.properties,
-                &mut curve_transfer,
-            )?;
-            geometry_transferred =
-                !curve_transfer.curves.is_empty() || !surface_transfer.surfaces.is_empty();
-            ir.model.curves = curve_transfer.curves;
-            ir.model
-                .add_procedural_curves(curve_transfer.procedural)?
-                .map_err(CodecError::malformed)?;
-            ir.model.surfaces = surface_transfer.surfaces;
-            ir.model
-                .add_procedural_surfaces(surface_transfer.procedural)?
-                .map_err(CodecError::malformed)?;
-            geometry_transferred |= application_geometry::transfer(
+            let (attachments, attachment_unformed) = attachment::transfer_source(
                 &property_reader,
-                &mut ir,
+                &graph.objects,
                 &graph.properties,
-                &entry_records,
-                &entry_sources,
-                &mut admitted_entities,
+                object_sources,
             )?;
-            let topology_occurrences = topology_transfer::transfer(
-                ctx,
-                &mut ir,
-                &shape_payloads,
-                &graph.properties,
-                &mut transfer_losses,
-            )?;
-            topology_transfer::apply_body_names(&mut ir, &shape_payloads, &graph.properties);
-            if ctx.depth() == DecodeDepth::Full {
-                let (cycle_affected, design_losses) = design::transfer(
+            sponsor_unformed(ctx, &mut source_failures, attachment_unformed)?;
+            namespace.set_arena(ctx, "attachments", &attachments)?;
+            let gui_shape_owners = brep::owners::gui(ctx, ir.native.namespace("fcstd"))?;
+            let topology_occurrences = if ctx.container_only() {
+                Vec::new()
+            } else {
+                let mut curve_transfer = brep::transfer_text_curves(
+                    ctx,
+                    &shape_payloads,
+                    brep::owners::Properties::new(&graph.properties, &gui_shape_owners),
+                    Some(&brep_projection_sources),
+                )?;
+                let surface_transfer = brep::transfer_text_surfaces(
+                    ctx,
+                    &shape_payloads,
+                    brep::owners::Properties::new(&graph.properties, &gui_shape_owners),
+                    &mut curve_transfer,
+                    Some(&brep_projection_sources),
+                )?;
+                geometry_transferred =
+                    !curve_transfer.curves.is_empty() || !surface_transfer.surfaces.is_empty();
+                ir.model.curves = curve_transfer.curves;
+                ir.model
+                    .add_procedural_curves(curve_transfer.procedural)?
+                    .map_err(CodecError::malformed)?;
+                ir.model.surfaces = surface_transfer.surfaces;
+                ir.model
+                    .add_procedural_surfaces(surface_transfer.procedural)?
+                    .map_err(CodecError::malformed)?;
+                geometry_transferred |= application_geometry::parts::transfer(
                     &property_reader,
                     &mut ir,
+                    &graph.properties,
+                    &mut admitted_entities,
+                    Some(&entry_sources),
+                    scan.data.get("GuiDocument.xml").copied(),
+                    &gui_graph.property_sources,
+                )?;
+                let topology_occurrences = topology_transfer::transfer_with_sources(
+                    ctx,
+                    &mut ir,
+                    &shape_payloads,
+                    brep::owners::Properties::new(&graph.properties, &gui_shape_owners),
+                    &mut transfer_losses,
+                    Some(&brep_projection_sources),
+                )?;
+                topology_transfer::apply_body_names(&mut ir, &shape_payloads, &graph.properties);
+                if ctx.depth() == DecodeDepth::Full {
+                    let (cycle_affected, design_losses, unformed, bindings) = design::transfer(
+                        &property_reader,
+                        &mut ir,
+                        &graph.objects,
+                        &graph.properties,
+                        &shape_payloads,
+                        scan.document.program_version.as_deref(),
+                        Some(&property_reader::EngineFailureSources::new(
+                            ctx,
+                            &source_fidelity,
+                            &source_failures,
+                        )?),
+                    )?;
+                    sponsor_unformed(ctx, &mut source_failures, unformed)?;
+                    cycle_affected_design_objects = cycle_affected;
+                    transfer_losses.extend(design_losses);
+                    expression_bindings = bindings;
+                }
+                ctx.admit_entities(
+                    cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
+                    &mut admitted_entities,
+                    "admit FCStd entities",
+                )?;
+                let link_occurrences = product::link_occurrence_count(&product_nodes)?;
+                ctx.admit_entities(
+                    cadmpeg_core::decode::u64_from_index(ir.model.entity_count())
+                        .checked_add(link_occurrences)
+                        .ok_or_else(|| CodecError::malformed("FCStd entity count overflows u64"))?,
+                    &mut admitted_entities,
+                    "admit FCStd link occurrences",
+                )?;
+                let (product_definitions, occurrences) = product::transfer_neutral(
+                    &property_reader,
+                    &product_nodes,
+                    &joint_records,
                     &graph.objects,
                     &graph.properties,
                     &shape_payloads,
-                    &entry_records,
-                    &entry_sources,
-                    scan.document.program_version.as_deref(),
+                    &ir.model.bodies,
+                    &unavailable_products,
                 )?;
-                cycle_affected_design_objects = cycle_affected;
-                transfer_losses.extend(design_losses);
-            }
-            ctx.admit_entities(
-                cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
-                &mut admitted_entities,
-                "admit FCStd entities",
-            )?;
-            let link_occurrences = product::link_occurrence_count(&product_nodes)?;
-            ctx.admit_entities(
-                cadmpeg_core::decode::u64_from_index(ir.model.entity_count())
-                    .checked_add(link_occurrences)
-                    .ok_or_else(|| CodecError::malformed("FCStd entity count overflows u64"))?,
-                &mut admitted_entities,
-                "admit FCStd link occurrences",
-            )?;
-            let (product_definitions, occurrences) = product::transfer_neutral(
-                &property_reader,
-                &product_nodes,
-                &joint_records,
-                &graph.objects,
-                &graph.properties,
-                &shape_payloads,
-                &ir.model.bodies,
-            )?;
-            ir.model.product_definitions = product_definitions;
-            ir.model.occurrences = occurrences;
-            ir.model.assembly_joints =
-                joint::transfer_neutral(&joint_records, &ir.model.occurrences)?;
-            for feature in &mut ir.model.features {
-                if feature.native_ref.as_deref().is_some_and(|object| {
-                    joint_records.iter().any(|record| {
-                        record.object() == object
-                            && ir
-                                .model
-                                .assembly_joints
-                                .iter()
-                                .any(|joint| joint.native_ref.as_deref() == Some(record.id()))
-                    })
-                }) {
-                    feature.suppressed = None;
+                ir.model.product_definitions = product_definitions;
+                ir.model.occurrences = occurrences;
+                ir.model.assembly_joints = joint::transfer_neutral(
+                    &joint_records,
+                    &ir.model.occurrences,
+                    &graph.properties,
+                    &unavailable_joints,
+                )?;
+                for feature in &mut ir.model.features {
+                    if feature.native_ref.as_deref().is_some_and(|object| {
+                        joint_records.iter().any(|record| {
+                            record.object() == object
+                                && ir
+                                    .model
+                                    .assembly_joints
+                                    .iter()
+                                    .any(|joint| joint.native_ref.as_deref() == Some(record.id()))
+                        })
+                    }) {
+                        feature.suppressed = None;
+                    }
                 }
-            }
-            writer::ordinals::apply(&graph.properties, &mut ir)?;
-            ctx.admit_entities(
-                cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
-                &mut admitted_entities,
-                "admit FCStd entities",
-            )?;
-            if ctx.depth() == DecodeDepth::Full {
-                let design_census = design::census(&graph.objects, &ir.model.features)?;
-                ir.native
-                    .namespace_mut("fcstd")
-                    .set_arena(ctx, "design_census", &design_census)?;
-            }
-            element_map::bind_topology(&mut element_maps, &topology_occurrences);
-            let mut gui_graph = if let Some(gui_source) = gui_source {
-                gui_source.transfer(
+                writer::ordinals::apply(&graph.properties, &mut ir)?;
+                ctx.admit_entities(
+                    cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
+                    &mut admitted_entities,
+                    "admit FCStd entities",
+                )?;
+                if ctx.depth() == DecodeDepth::Full {
+                    let design_census = design::census_source(
+                        &property_reader,
+                        &graph.objects,
+                        &graph.properties,
+                        &ir.model,
+                        scan.document.program_version.as_deref(),
+                        &expression_bindings,
+                        Some(&property_reader::EngineFailureSources::new(
+                            ctx,
+                            &source_fidelity,
+                            &source_failures,
+                        )?),
+                    )?;
+                    ir.native.namespace_mut("fcstd").set_arena(
+                        ctx,
+                        "design_census",
+                        &design_census,
+                    )?;
+                }
+                topology_occurrences
+            };
+            if !ctx.container_only() {
+                gui::project_records(
                     ctx,
                     &mut ir,
+                    &mut gui_graph,
                     &gui::GuiSources {
                         entries: &scan.data,
+                        declared_entries: Some(&declared_entries),
+                        declared_objects: Some(declared_object_ids),
+                        admitted_objects: Some(admitted_object_ids),
+                        object_sources: Some(object_sources),
+                        entry_parents: Some(&scan.entry_parents),
+                        entry_owners: Some(&scan.entry_owners),
+                        entry_interpretations: Some(&entry_interpretations),
+                        gui_entry_interpretations: Some(&gui_entry_interpretations),
                         objects: &graph.objects,
                         properties: &graph.properties,
                         payloads: &shape_payloads,
                         element_maps: &element_maps,
+                        topology_occurrences: &topology_occurrences,
                         requires_alpha_conversion: gui::requires_alpha_conversion(
                             scan.document.program_version.as_deref(),
                         ),
                     },
-                )?
-            } else {
-                gui::Graph::default()
-            };
-            if gui_graph.untyped && legacy_source_evidence {
-                let source = *scan.data.get("GuiDocument.xml").ok_or_else(|| {
-                    CodecError::malformed("untyped GUI document has no actual source")
-                })?;
-                let capture = ctx.capture_part_extent(source)?;
-                fidelity::evidence(
-                    &mut source_fidelity,
-                    &native::native_id("entry", "GuiDocument.xml"),
-                    capture.stream(),
-                    capture.offset(),
-                    source.window(),
-                    [cadmpeg_ir::ArenaClass::Model].into_iter().collect(),
                 )?;
             }
-            for source in gui_graph.state_sources.values() {
-                fidelity::state_layout_payloads(
+            fidelity::gui_layout_payloads(
+                ctx,
+                &scan.data,
+                &gui_graph,
+                &mut layout_payloads,
+                &mut layout_pointers,
+            )?;
+            if !ctx.container_only() {
+                writer::body_styles::apply(&mut ir, &shape_payloads, &graph.properties)?;
+                let property_reader = property_reader.with_part_failures(&source_failures);
+                let (attribute_losses, attribute_unformed) = attributes::transfer_source(
                     ctx,
-                    *scan
-                        .data
-                        .get("GuiDocument.xml")
-                        .ok_or_else(|| CodecError::malformed("GUI state has no source entry"))?,
-                    source,
-                    &mut layout_payloads,
-                    &mut layout_pointers,
+                    &mut ir,
+                    &graph.objects,
+                    &graph.properties,
+                    *scan.data.get("Document.xml").ok_or_else(|| {
+                        CodecError::malformed("attribute projection has no source document")
+                    })?,
+                    &graph.property_sources,
+                    &property_reader,
+                    &expression_bindings,
                 )?;
+                sponsor_unformed(ctx, &mut source_failures, attribute_unformed)?;
+                transfer_losses.extend(attribute_losses);
             }
-            for source in gui_graph
-                .value_sources
-                .iter()
-                .filter(|source| gui_graph.property_sources.contains_key(source.id()))
-                .chain(
-                    gui_graph
-                        .property_sources
-                        .values()
-                        .filter(|source| !source.has_values()),
-                )
-            {
-                fidelity::gui_property_layout_payloads(
-                    ctx,
-                    *scan
-                        .data
-                        .get("GuiDocument.xml")
-                        .ok_or_else(|| CodecError::malformed("GUI property has no source entry"))?,
-                    source,
-                    &mut layout_payloads,
-                    &mut layout_pointers,
-                )?;
-            }
-            for (id, range) in &gui_graph.provider_sources {
-                let view = scan
-                    .data
-                    .get("GuiDocument.xml")
-                    .ok_or_else(|| CodecError::malformed("GUI provider has no source entry"))?;
-                fidelity::xml_layout_payload(ctx, *view, id, range.clone(), &mut layout_payloads)?;
-            }
-            writer::body_styles::apply(&mut ir, &shape_payloads, &graph.properties)?;
             gui_losses = std::mem::take(&mut gui_graph.losses);
             ctx.admit_entities(
                 cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
                 &mut admitted_entities,
                 "admit FCStd entities",
-            )?;
-            for (entry_name, owner) in gui_graph
-                .properties
-                .iter()
-                .flat_map(|property| {
-                    property
-                        .side_entries
-                        .iter()
-                        .map(move |entry| (entry.as_str(), property.id.as_str()))
-                })
-                .chain(gui_graph.documents.iter().flat_map(|document| {
-                    document.states.iter().flat_map(|state| {
-                        state
-                            .side_entries
-                            .iter()
-                            .map(move |entry| (entry.as_str(), state.id.as_str()))
-                    })
-                }))
-            {
-                if let Some(entry) = entry_records
-                    .iter_mut()
-                    .find(|entry| entry.name() == entry_name)
-                {
-                    entry.add_reference(owner)?;
-                }
-            }
-            ir.native
-                .namespace_mut("fcstd")
-                .set_arena(ctx, "entries", &entry_records)?;
-            ir.native.namespace_mut("fcstd").set_arena(
-                ctx,
-                "gui_documents",
-                &gui_graph.documents,
-            )?;
-            ir.native.namespace_mut("fcstd").set_arena(
-                ctx,
-                "gui_view_providers",
-                &gui_graph.providers,
-            )?;
-            ir.native.namespace_mut("fcstd").set_arena(
-                ctx,
-                "gui_properties",
-                &gui_graph.properties,
             )?;
             let logical_ledger = container::logical_ledger(
                 &entry_records,
@@ -1308,46 +1490,11 @@ impl CodecBackend for FcstdCodec {
             ir.native
                 .namespace_mut("fcstd")
                 .set_arena(ctx, "element_maps", &element_maps)?;
-        } else {
-            let physical_byte_len = scan.ledger.last().map_or(0, |span| span.span.end());
-            let coverage = container::byte_coverage(
-                &scan.ledger,
-                &[],
-                &entry_sources,
-                &[],
-                physical_byte_len,
-            )?;
-            source_fidelity.insert_freecad_ledgers(
-                archive_capture.stream().to_owned(),
-                cadmpeg_ir::source_fidelity::freecad::FreecadSourceLedgers {
-                    physical_ledger: std::mem::take(&mut scan.ledger),
-                    logical_ledger: Vec::new(),
-                    byte_coverage: coverage,
-                },
-            )?;
         }
-        if !ctx.container_only() {
-            let objects = ir
-                .native
-                .namespace("fcstd")
-                .map(|namespace| namespace.arena_as::<native::ObjectRecord>("objects"))
-                .transpose()?
-                .unwrap_or_default();
-            let properties = ir
-                .native
-                .namespace("fcstd")
-                .map(|namespace| namespace.arena_as::<native::PropertyRecord>("properties"))
-                .transpose()?
-                .unwrap_or_default();
-            transfer_losses.extend(attributes::transfer_with_document_properties(
-                &mut ir,
-                &objects,
-                &properties,
-                scan.document_properties.as_ref(),
-            )?);
-        }
+        source_failures.prune_late_model(ctx, &mut ir.model)?;
+        source_failures.apply(ctx, &source_fidelity, &mut part_losses)?;
         let mut losses = if ctx.container_only() {
-            Vec::new()
+            gui_losses
         } else {
             semantic_losses(&ir, &cycle_affected_design_objects, gui_losses)
         };
@@ -1355,20 +1502,10 @@ impl CodecBackend for FcstdCodec {
         // is read with the schema-4 strategy on either path, so the charge is
         // not conditioned on the branch.
         losses.extend(transfer_losses);
-        losses.extend(scan.losses);
+        losses.append(&mut scan.losses);
         let dialect_losses = dialect::FcstdDialect::dialect_loss(dialects.primary());
         losses.extend(dialect_losses);
         losses.extend(part_losses);
-        losses.extend(loss::payloads::decode_losses(
-            ctx,
-            &ir,
-            &entry_sources,
-            &mut source_fidelity,
-            legacy_source_evidence,
-        )?);
-        if legacy_source_evidence {
-            fidelity::mark_unreadable(&ir, &mut source_fidelity)?;
-        }
         let document_digest = writer::target::document_local_sha256(ctx, &ir)?;
         source_fidelity.metadata.insert(
             cadmpeg_ir::hash::DOCUMENT_FINGERPRINT_METADATA_KEY.into(),
@@ -1379,25 +1516,33 @@ impl CodecBackend for FcstdCodec {
             &mut admitted_entities,
             "admit FCStd entities",
         )?;
-        fidelity::install_layouts(ctx, &mut source_fidelity, layout_payloads, layout_pointers)?;
-        if let fidelity::b1::Admission::Complete(inventory) = source_admission {
-            inventory.finalize(ctx, &ir, &mut source_fidelity, &mut losses)?;
-        }
+        let inventory = fidelity::b1::prepare(ctx, root, &scan)?;
+        fidelity::install_layouts(
+            ctx,
+            &mut source_fidelity,
+            layout_payloads,
+            layout_pointers,
+            Some(capture_pruning),
+        )?;
+        inventory.finalize(ctx, &ir, &mut source_fidelity, &mut losses)?;
         let scope = ir.scope;
-        Ok(Decoded {
-            ir,
-            body: DecodeBody {
-                transfer: cadmpeg_ir::report::decode::DecodeTransfer {
-                    scope,
-                    geometry_transferred,
+        Ok((
+            Decoded {
+                ir,
+                body: DecodeBody {
+                    transfer: cadmpeg_ir::report::decode::DecodeTransfer {
+                        scope,
+                        geometry_transferred,
+                    },
+                    coverage: cadmpeg_ir::report::decode::Coverage::default(),
+                    losses,
+                    notes: summary_notes,
+                    transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
                 },
-                coverage: cadmpeg_ir::report::decode::Coverage::default(),
-                losses,
-                notes: summary_notes,
-                transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
+                source_fidelity,
             },
-            source_fidelity,
-        })
+            summary,
+        ))
     }
 }
 
@@ -1431,7 +1576,14 @@ fn semantic_losses(
             .as_ref()
             .is_some_and(|id| cycle_affected_design_objects.contains(id));
         if cycle_affected {
-            push_semantic_loss(&mut losses, FreecadLossCode::FeatureCyclicHistory, &["FCStd design dependencies contain a cycle; the current dependency graph is retained"], feature.native_ref.as_deref());
+            push_semantic_loss(
+                &mut losses,
+                FreecadLossCode::FeatureCyclicHistory,
+                &[
+                    "FCStd design dependencies contain a cycle; the current dependency graph is retained",
+                ],
+                feature.native_ref.as_deref(),
+            );
         }
         let definition = match feature.evaluation.definition() {
             cadmpeg_ir::features::FeatureDefinition::PostProcess { operation, .. }
@@ -1440,6 +1592,9 @@ fn semantic_losses(
         let cadmpeg_ir::features::FeatureOperation::Native { kind, .. } = definition else {
             continue;
         };
+        if design::is_registered_design_kind(kind.as_str()) {
+            continue;
+        }
         let code = FreecadLossCode::FeatureNativeKindRetained;
         let suffix = " is retained natively but has no neutral semantics";
         push_semantic_loss(

@@ -76,7 +76,8 @@ fn selected_families_keep_exact_native_neutral_and_read_values_in_real_child_sco
             .arena_as::<crate::native::PropertyRecord>("properties")
             .unwrap();
         let pure = crate::persistence::parse_document(
-            &scan.document_xml,
+            &crate::container::admit_document(&ctx, scan.data["Document.xml"].window())
+                .expect("valid source XML"),
             crate::persistence::Vocabulary::Objects,
         )
         .unwrap();
@@ -133,9 +134,18 @@ fn selected_families_keep_exact_native_neutral_and_read_values_in_real_child_sco
             .unwrap();
         let mut expected_reads = Vec::new();
         let mut from = 0;
-        for raw in ["Input", family, "9", "Custom", "kept"]
-            .into_iter()
-            .chain(value_reads)
+        let tag = child
+            .strip_prefix('<')
+            .unwrap()
+            .split_whitespace()
+            .next()
+            .unwrap();
+        for raw in [
+            "name", "Input", "type", family, "status", "9", "group", "Custom", "doc", "kept",
+        ]
+        .into_iter()
+        .chain(std::iter::once(tag))
+        .chain(value_reads)
         {
             let at = from + property[from..].find(raw).unwrap();
             from = at + raw.len();

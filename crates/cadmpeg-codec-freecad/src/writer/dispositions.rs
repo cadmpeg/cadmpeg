@@ -18,6 +18,17 @@ pub(super) fn record(
     id: &str,
     status: NativeDisposition,
 ) {
+    if arena == "entries"
+        && status == NativeDisposition::Written
+        && outcomes
+            .namespaces
+            .get("fcstd")
+            .and_then(|namespace| namespace.arenas.get(arena))
+            .and_then(|arena| arena.records.get(id))
+            .is_some_and(|record| *record == NativeDisposition::Regenerated)
+    {
+        return;
+    }
     outcomes.set_record("fcstd", arena, id, status);
 }
 
@@ -69,14 +80,12 @@ pub(super) fn emitted(
                 .is_some_and(|object| object.properties.contains_key(&property.name))
         };
         if emitted {
-            let attribute_id = crate::native::model_id("attribute", &property.id, "property");
-            let neutral = (crate::attributes::projection_held(ir)
-                && crate::attributes::consumed(ir, property, &native_objects))
-                || ir
-                    .model
-                    .attributes
-                    .iter()
-                    .any(|attribute| attribute.id.as_str() == attribute_id);
+            let neutral =
+                (crate::attributes::projection_held(ir)
+                    && crate::attributes::consumed(ir, property, &native_objects))
+                    || ir.model.attributes.iter().any(|attribute| {
+                        attribute.native_ref.as_deref() == Some(property.id.as_str())
+                    });
             record(
                 outcomes,
                 "properties",
@@ -89,28 +98,14 @@ pub(super) fn emitted(
             );
         }
     }
-    for payload in namespace.arena_as::<crate::brep::ShapePayloadRecord>("shape_payloads")? {
-        if properties
-            .iter()
-            .find(|property| property.id == payload.property)
-            .and_then(|property| {
-                names
-                    .get(&property.owner)
-                    .and_then(|name| objects.iter().find(|object| &object.name == name))
-                    .map(|object| object.properties.contains_key(&property.name))
-            })
-            .unwrap_or(false)
-        {
-            record(
-                outcomes,
-                "shape_payloads",
-                &payload.id,
-                NativeDisposition::Regenerated,
-            );
-        }
-    }
     for entry in namespace.arena_as::<crate::native::EntryRecord>("entries")? {
-        if entries.contains_key(entry.name()) {
+        if entries.contains_key(entry.name())
+            && !outcomes
+                .namespaces
+                .get("fcstd")
+                .and_then(|namespace| namespace.arenas.get("entries"))
+                .is_some_and(|arena| arena.records.contains_key(entry.id()))
+        {
             record(
                 outcomes,
                 "entries",
@@ -193,10 +188,15 @@ pub(super) fn gui(
             .iter()
             .filter(|property| property.owner == provider.id)
         {
-            if emitted.descendants().any(|node| {
-                node.has_tag_name("Property")
-                    && node.attribute("name") == Some(property.name.as_str())
-            }) {
+            if emitted
+                .children()
+                .filter(|node| node.has_tag_name("Properties"))
+                .flat_map(|node| node.children())
+                .any(|node| {
+                    node.has_tag_name("Property")
+                        && node.attribute("name") == Some(property.name.as_str())
+                })
+            {
                 record(
                     outcomes,
                     "gui_properties",
@@ -206,6 +206,63 @@ pub(super) fn gui(
                     } else {
                         NativeDisposition::Written
                     },
+                );
+            }
+        }
+    }
+    for extension in namespace.arena_as::<crate::native::ExtensionRecord>("extensions")? {
+        let Some(provider) = providers
+            .iter()
+            .find(|provider| provider.id == extension.owner)
+        else {
+            continue;
+        };
+        let name = provider
+            .object
+            .as_ref()
+            .and_then(|object| names.get(object.as_str()))
+            .map_or(provider.name.as_str(), String::as_str);
+        let emitted = document
+            .descendants()
+            .find(|node| node.has_tag_name("ViewProvider") && node.attribute("name") == Some(name))
+            .and_then(|provider| {
+                provider
+                    .children()
+                    .find(|node| node.has_tag_name("Extensions"))
+            })
+            .and_then(|container| {
+                container.children().find(|node| {
+                    node.has_tag_name("Extension")
+                        && node.attribute("name") == Some(extension.name.as_str())
+                })
+            });
+        let Some(emitted) = emitted else {
+            continue;
+        };
+        record(
+            outcomes,
+            "extensions",
+            &extension.id,
+            NativeDisposition::Written,
+        );
+        for property in properties
+            .iter()
+            .filter(|property| property.owner == extension.id)
+        {
+            if emitted
+                .children()
+                .filter(|node| node.has_tag_name("Properties"))
+                .flat_map(|node| node.children())
+                .any(|node| {
+                    node.has_tag_name("Property")
+                        && node.attribute("name") == Some(property.name.as_str())
+                })
+            {
+                record(
+                    outcomes,
+                    "gui_properties",
+                    &property.id,
+                    NativeDisposition::Written,
                 );
             }
         }

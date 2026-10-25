@@ -5,6 +5,46 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::Codec;
 
 #[test]
+fn modern_mapped_names_validate_current_encoded_dictionary_and_derived_fields() {
+    let dictionary = (0..11).map(|index| format!("p{index}")).collect::<Vec<_>>();
+    let valid = serde_json::json!({
+        "id":"fcstd:native:element-map#consistent", "property":"fcstd:native:property#Shape",
+        "version":"1", "hasher_index":null, "string_table":null, "source_entry":null,
+        "map_id":0, "declared_count":null, "postfixes":dictionary,
+        "maps":[{"index":1,"map_id":0,"groups":[{"indexed_name":"Face","children":[],
+            "names":[[],[{"encoded":":a.2.0.a","resolved":"p92","string_ids":[10]}]]}]}]
+    });
+    serde_json::from_value::<super::ElementMapRecord>(valid.clone()).unwrap();
+    for field in ["resolved", "string_ids", "encoded"] {
+        let mut invalid = valid.clone();
+        invalid["maps"][0]["groups"][0]["names"][1][0][field] = match field {
+            "resolved" => serde_json::json!("stale"),
+            "string_ids" => serde_json::json!([11]),
+            _ => serde_json::json!(":a.2.0.b"),
+        };
+        assert!(
+            serde_json::from_value::<super::ElementMapRecord>(invalid)
+                .unwrap_err()
+                .to_string()
+                .contains("derived fields"),
+            "{field}"
+        );
+    }
+    let mut edited = valid;
+    edited["postfixes"][9] = serde_json::json!("current");
+    edited["maps"][0]["groups"][0]["names"][1][0]["resolved"] = serde_json::json!("current2");
+    let current: super::ElementMapRecord = serde_json::from_value(edited).unwrap();
+    assert_eq!(
+        current.maps.root().groups[0].as_ref().unwrap().names[1]
+            .as_ref()
+            .unwrap()[0]
+            .resolved
+            .as_deref(),
+        Some("current2")
+    );
+}
+
+#[test]
 fn child_map_reference_is_rejected_by_complete_cadir_admission() {
     let mut ir = crate::FcstdCodec
         .decode(
@@ -108,6 +148,7 @@ fn element_map_nodes_admit_only_contiguous_one_based_wire_indices() {
             "property": "fcstd:native:property#Shape",
             "version": "1.0",
             "hasher_index": null,
+            "string_table": null,
             "source_entry": null,
             "map_id": 0,
             "declared_count": 0,
@@ -170,11 +211,11 @@ fn element_map_wire_rejects_forward_and_negative_child_map_indices() {
 fn element_map_child_admission_checks_constructors_and_wire_fields() {
     let node = |descriptor: &str| super::ElementMapNode {
         map_id: 0,
-        groups: vec![super::ElementMapGroup {
+        groups: vec![Some(super::ElementMapGroup {
             indexed_name: "Face".into(),
-            children: vec![descriptor.into()],
+            children: vec![Some(descriptor.into())],
             names: Vec::new(),
-        }],
+        })],
     };
     for descriptor in [
         "1 0 3 1 1 ;postfix 0",
@@ -228,6 +269,7 @@ fn element_map_declared_count_is_independent_xml_metadata() {
         "property": "fcstd:native:property#Shape",
         "version": "1.0",
         "hasher_index": null,
+            "string_table": null,
         "source_entry": null,
         "map_id": 0,
         "declared_count": 999,
@@ -245,25 +287,100 @@ fn topology_binding_preserves_empty_indexed_name_slots() {
         encoded: ";stable.0".into(),
         resolved: Some("stable".into()),
         string_ids: Vec::new(),
-        topology_ids: Vec::new(),
     };
     let group = ElementMapGroup {
         indexed_name: "Edge".into(),
         children: Vec::new(),
-        names: vec![Vec::new(), vec![mapped_name()], Vec::new()],
+        names: vec![
+            Some(Vec::new()),
+            Some(vec![mapped_name()]),
+            Some(Vec::new()),
+        ],
     };
-    let mut nodes = ElementMapNodes::try_from(vec![ElementMapNode {
+    let nodes = ElementMapNodes::try_from(vec![ElementMapNode {
         map_id: 0,
-        groups: vec![group],
+        groups: vec![Some(group)],
     }])
     .expect("valid name group");
-    nodes.bind_root_topology("Edge", 1, "edge-first-placement");
-    nodes.bind_root_topology("Edge", 2, "unmapped-edge");
-    nodes.bind_root_topology("Edge", 1, "edge-second-placement");
-    let group = &nodes.root().groups[0];
-
+    let occurrences = [
+        (1, "edge-first-placement"),
+        (2, "unmapped-edge"),
+        (1, "edge-second-placement"),
+    ]
+    .map(
+        |(source_index, id)| crate::topology_transfer::TopologyOccurrence {
+            property: "property".into(),
+            indexed_name: "Edge",
+            source_index,
+            topology_id: id.into(),
+        },
+    );
+    let group = nodes.root().groups[0].as_ref().unwrap();
     assert_eq!(
-        group.names[1][0].topology_ids,
+        crate::element_map::topology_ids(&nodes, group, &occurrences, "property", 1)
+            .collect::<Vec<_>>(),
         ["edge-first-placement", "edge-second-placement"]
     );
+    assert_eq!(
+        crate::element_map::topology_ids(&nodes, group, &occurrences, "property", 2).count(),
+        0
+    );
+    assert!(
+        serde_json::to_value(nodes).unwrap()[0]["groups"][0]["names"][1][0]
+            .get("topology_ids")
+            .is_none()
+    );
+}
+
+#[test]
+fn legacy_rows_preserve_null_positions_and_validate_their_grouped_projection() {
+    let rows = vec![
+        Some(super::LegacyMapRecord {
+            indexed_name: "Face1".into(),
+            mapped_name: "first".into(),
+            string_ids: vec![1],
+        }),
+        None,
+        Some(super::LegacyMapRecord {
+            indexed_name: "Face3".into(),
+            mapped_name: "third".into(),
+            string_ids: vec![3],
+        }),
+    ];
+    let map = super::ElementMapRecord {
+        id: "fcstd:native:element-map#test".into(),
+        property: "fcstd:native:property#Shape".into(),
+        version: "legacy".into(),
+        hasher_index: None,
+        string_table: None,
+        source_entry: None,
+        map_id: 0,
+        declared_count: Some(3),
+        maps: super::legacy::project(&rows).unwrap(),
+        legacy_records: Some(rows),
+        postfixes: Vec::new(),
+    };
+    let wire = serde_json::to_value(&map).unwrap();
+    assert_eq!(wire["legacy_records"][1], serde_json::Value::Null);
+    assert_eq!(
+        wire["maps"][0]["groups"][0]["names"][2],
+        serde_json::Value::Null
+    );
+    assert_eq!(
+        wire["maps"][0]["groups"][0]["names"][3][0]["resolved"],
+        "third"
+    );
+    assert_eq!(
+        serde_json::from_value::<super::ElementMapRecord>(wire.clone()).unwrap(),
+        map
+    );
+    let mut changed = wire.clone();
+    changed["legacy_records"][2]["indexed_name"] = "Face2".into();
+    assert!(serde_json::from_value::<super::ElementMapRecord>(changed)
+        .unwrap_err()
+        .to_string()
+        .contains("canonical legacy_records"));
+    assert!(wire["maps"][0]["groups"][0]["names"][3][0]
+        .get("topology_ids")
+        .is_none());
 }

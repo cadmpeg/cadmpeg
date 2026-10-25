@@ -2,6 +2,7 @@
 //! Identity-insensitive equality with one bijection for the complete written graph.
 use cadmpeg_ir::{ArenaName, CadIr};
 use serde_json::Value;
+mod diagnostic;
 pub(super) mod mark;
 mod refine;
 use std::collections::{BTreeMap, HashMap};
@@ -354,7 +355,8 @@ pub(super) fn assert_agree(
     let right = graph(right, arenas);
     assert!(
         agrees(&left, &right),
-        "written neutral content differs: no global identity bijection preserves record counts, values, nested order, and references"
+        "written neutral content differs: no global identity bijection preserves record counts, values, nested order, and references; {}",
+        diagnostic::difference(&left, &right)
     );
 }
 

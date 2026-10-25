@@ -630,3 +630,102 @@ fn a_record_attempt_is_charged_the_same_at_every_part_depth() {
     });
     assert_eq!(charges, [charges[0]; 3]);
 }
+
+#[test]
+fn sequential_parser_runs_once_and_commits_exact_consumed_part_and_record_extents() {
+    let arena = DecodeArena::new();
+    let (ctx, root) = DecodeContext::from_root_bytes(b"ABCrest", &arena, &DecodePolicy::default())
+        .expect("create tracked fixture source context");
+    let calls = std::cell::Cell::new(0);
+    let part = ctx
+        .sequential_part_transaction(root, || {
+            ctx.sequential_record("row", root, || {
+                calls.set(calls.get() + 1);
+                let mut cursor = root;
+                assert_eq!(cursor.req_take(3)?, b"ABC");
+                Ok((3, 3))
+            })
+        })
+        .expect("commit bounded sequential part transaction");
+    assert_eq!(calls.get(), 1);
+    assert_eq!(part.capture().byte_len(), 3);
+    assert_eq!(
+        part.result()
+            .expect("obtain successful sequential parse result"),
+        &3
+    );
+    let captures = ctx
+        .take_record_captures()
+        .expect("extract committed source record captures");
+    assert_eq!(captures.len(), 1);
+    assert_eq!(captures[0].byte_len(), 3);
+    assert_eq!(captures[0].reads()["file"], vec![0..3]);
+}
+
+#[test]
+fn failed_sequential_suffix_discards_its_reads_and_keeps_the_accepted_prefix() {
+    let arena = DecodeArena::new();
+    let (ctx, root) = DecodeContext::from_root_bytes(b"AB?later", &arena, &DecodePolicy::default())
+        .expect("create tracked fixture source context");
+    ctx.sequential_part_transaction(root, || {
+        ctx.sequential_record("prefix", root, || {
+            let mut cursor = root;
+            cursor.req_take(2)?;
+            Ok(((), 2))
+        })
+    })
+    .expect("commit bounded sequential part transaction");
+    let remaining = root
+        .child(2, 8)
+        .expect("select bounded original source extent");
+    let calls = std::cell::Cell::new(0);
+    let outcome = ctx
+        .sequential_part_transaction(remaining, || {
+            ctx.sequential_record("failed", remaining, || {
+                calls.set(calls.get() + 1);
+                let mut cursor = remaining;
+                cursor.req_u8()?;
+                Err::<((), usize), _>(CodecError::malformed("bad sequential row"))
+            })
+        })
+        .expect("commit bounded sequential part transaction");
+    assert_eq!(calls.get(), 1);
+    assert!(outcome.result().is_err());
+    assert_eq!(
+        (outcome.capture().offset(), outcome.capture().byte_len()),
+        (2, 6)
+    );
+    assert_eq!(outcome.capture().attempted_record_ids(), ["failed"]);
+    let captures = ctx
+        .take_record_captures()
+        .expect("extract committed source record captures");
+    assert_eq!(
+        captures
+            .iter()
+            .map(crate::decode::RecordCapture::id)
+            .collect::<Vec<_>>(),
+        ["prefix"]
+    );
+    assert_eq!(captures[0].reads()["file"], vec![0..2]);
+}
+
+#[test]
+fn sequential_record_cannot_credit_a_read_past_its_consumed_prefix() {
+    let arena = DecodeArena::new();
+    let (ctx, root) = DecodeContext::from_root_bytes(b"AB", &arena, &DecodePolicy::default())
+        .expect("create tracked fixture source context");
+    let error = ctx
+        .sequential_record("row", root, || {
+            let mut cursor = root;
+            cursor.req_take(2)?;
+            Ok(((), 1))
+        })
+        .expect_err("reject reads beyond the declared consumed prefix");
+    assert!(
+        matches!(error, CodecError::Malformed(message) if message == "sequential record read exceeds consumed extent")
+    );
+    assert!(ctx
+        .take_record_captures()
+        .expect("extract committed source record captures")
+        .is_empty());
+}

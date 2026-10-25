@@ -138,3 +138,50 @@ fn marker_looking_text_in_hollerith_is_never_interpreted_as_a_reference() {
 }
 
 mod linkage;
+
+#[test]
+fn unsupported_structured_values_omit_only_the_named_attribute() {
+    use cadmpeg_ir::attributes::{AttributeExpression, AttributeMapEntry, AttributeNumericList};
+    let point = cadmpeg_ir::ids::PointId::mint("test:model:point#owner").unwrap();
+    for value in [
+        AttributeValue::Map(vec![AttributeMapEntry {
+            key: "a".into(),
+            value: "1".into(),
+        }]),
+        AttributeValue::Expression(AttributeExpression {
+            path: "Placement.Base.x".into(),
+            expression: cadmpeg_ir::features::Expression::text("3"),
+            comment: None,
+        }),
+        AttributeValue::SubReference {
+            object: point.to_string(),
+            subelements: vec!["Face1".into()],
+        },
+        AttributeValue::ExternalReference {
+            document: "other.FCStd".into(),
+            object: "Box".into(),
+            subelements: Vec::new(),
+        },
+        AttributeValue::NumericList(AttributeNumericList::Float(Some(vec![None]))),
+    ] {
+        let mut ir = CadIr::empty();
+        let id = cadmpeg_ir::ids::AttributeId::mint("test:model:attribute#structured").unwrap();
+        ir.model.attributes.push(SourceAttribute {
+            native_ref: None,
+            id: id.clone(),
+            target: AttributeTarget::Point(point.clone()),
+            name: "metadata".into(),
+            values: vec![value],
+        });
+        let mut owner = entity(116, 0, "0,0,0;".into());
+        owner.status = EntityStatus::Independent;
+        owner.source_targets.push(point.to_string());
+        let mut entities = vec![owner];
+        let exported = append(&ir, &mut entities, crate::IgesVersion::V5_3);
+        assert_eq!(entities.len(), 1);
+        assert!(entities[0].property_links.is_empty());
+        assert!(exported.preserved.is_empty());
+        assert_eq!(exported.losses.len(), 1);
+        assert!(exported.losses[0].message.contains(id.as_str()));
+    }
+}

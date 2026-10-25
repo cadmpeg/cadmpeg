@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Current expression links between native controls and canonical parameters.
 //!
-//! A row declares a control's role. Its target is always read from the current
-//! typed `ExpressionEngine` expression; the row contains no identity, value,
-//! cached definition, source digest, or historical authority.
+//! Current `ExpressionEngine` bindings identify controls and their measurements.
 
 use crate::native::PropertyRecord;
 use cadmpeg_core::CodecError;
@@ -116,8 +114,7 @@ fn cache_quantity_matches(
     )
 }
 
-/// Reconstruct bindings only from a verified current expression. Unverified
-/// rows remain ordinary typed native metadata, with an explicit decode loss.
+/// Reconstruct bindings from verified current expression paths and values.
 pub(crate) fn apply(
     ir: &mut CadIr,
     properties: &[PropertyRecord],
@@ -150,32 +147,34 @@ pub(crate) fn apply(
         .iter()
         .map(|parameter| (&parameter.id, parameter))
         .collect::<BTreeMap<_, _>>();
-    for property in properties.iter().filter(|property| {
-        property.name == PROPERTY
-            && property
-                .dynamic
-                .as_ref()
-                .is_some_and(|dynamic| dynamic.group == "CADIR")
-    }) {
+    for property in properties
+        .iter()
+        .filter(|property| property.name == "ExpressionEngine")
+    {
         let mut controls = BTreeSet::new();
         for value in property
             .values()
             .iter()
-            .filter(|value| value.tag == "String")
+            .filter(|value| value.tag == "Expression")
         {
-            let row: ControlLink =
-                serde_json::from_str(value.attributes.get("value").ok_or_else(|| {
-                    CodecError::malformed("control-link row lacks its typed value")
-                })?)
-                .map_err(CodecError::malformed)?;
-            if !controls.insert(row.control.clone()) {
-                return Err(CodecError::malformed("duplicate native control link"));
+            let Some(path) = value.attributes.get("path") else {
+                continue;
+            };
+            if !controls.insert(path) {
+                return Err(CodecError::malformed("duplicate expression control path"));
             }
             let control = source_controls
-                .get(&(property.owner.as_str(), row.control.as_str()))
+                .get(&(property.owner.as_str(), path.as_str()))
                 .and_then(|native| parameters_by_native.get(native).copied());
+            let Some(measurement) = control.and_then(|control| {
+                [Measurement::Direct, Measurement::Diameter]
+                    .into_iter()
+                    .find(|measurement| target(&control.expression, *measurement).is_some())
+            }) else {
+                continue;
+            };
             let verified = control.and_then(|control| {
-                let target = target(&control.expression, row.measurement)?;
+                let target = target(&control.expression, measurement)?;
                 let parameter = parameters_by_id.get(target)?;
                 let stale = control.owner.as_ref().is_some_and(|owner| {
                     ir.model
@@ -187,21 +186,21 @@ pub(crate) fn apply(
                     && cache_quantity_matches(
                         control.value.as_ref(),
                         parameter.value.as_ref(),
-                        row.measurement,
+                        measurement,
                     )
                     && (stale
                         || cache_agrees(
                             control.value.as_ref(),
                             parameter.value.as_ref(),
-                            row.measurement,
+                            measurement,
                         )))
-                .then(|| (control.id.clone(), target.clone(), row.measurement))
+                .then(|| (control.id.clone(), target.clone(), measurement))
             });
             if let Some((control, parameter, measurement)) = verified {
                 aliases.insert(control, (parameter, measurement));
             } else {
                 losses.push(crate::loss::FreecadLossCode::ExpressionReferenceUnresolved.note(format!(
-                    "native control {}:{} has no matching current single-parameter expression and evaluated control for its declared measurement", property.owner, row.control
+                    "native control {}:{} has no matching current single-parameter expression and evaluated control for its declared measurement", property.owner, path
                 )));
             }
         }
@@ -297,6 +296,91 @@ fn replace_dimensions(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn expression_engine_alone_identifies_current_control_bindings() {
+        use crate::native::{PropertyBody, PropertyFamily, ValueRecord};
+        use cadmpeg_ir::features::DesignParameter;
+        let dimension = ParameterId::mint("test:design:parameter#dimension").unwrap();
+        let control = ParameterId::mint("test:design:parameter#Length").unwrap();
+        let parameter = |id: ParameterId, native: Option<&str>, expression: Expression, ordinal| {
+            DesignParameter {
+                id,
+                owner: None,
+                ordinal,
+                name: "Length".into(),
+                expression,
+                driving: true,
+                display: None,
+                value: Some(ParameterValue::Length(
+                    cadmpeg_ir::scalar::Length::new(6.0).unwrap(),
+                )),
+                properties: BTreeMap::new(),
+                pmi: None,
+                native_ref: native.map(str::to_owned),
+            }
+        };
+        let mut ir = CadIr::empty();
+        ir.model.parameters = vec![
+            parameter(dimension.clone(), None, "6 mm".into(), 0),
+            parameter(
+                control.clone(),
+                Some("test:native:property#Length"),
+                Expression {
+                    tokens: vec![ExpressionToken::Parameter(dimension.clone())],
+                },
+                1,
+            ),
+        ];
+        let property = |id: &str, name: &str, values: Vec<ValueRecord>| PropertyRecord {
+            id: id.into(),
+            owner: "test:native:object#Pad".into(),
+            name: name.into(),
+            type_name: "App::PropertyExpressionEngine".into(),
+            family: PropertyFamily::Unknown,
+            status: None,
+            dynamic: None,
+            order: 0,
+            body: Some(PropertyBody::Persisted {
+                values: values.into(),
+                links: Vec::new(),
+                side_entries: Vec::new(),
+            }),
+        };
+        let properties = [
+            property("test:native:property#Length", "Length", Vec::new()),
+            property(
+                "test:native:property#ExpressionEngine",
+                "ExpressionEngine",
+                vec![ValueRecord {
+                    item_index: None,
+                    link_index: None,
+                    tag: "Expression".into(),
+                    order: 0,
+                    parent: None,
+                    attributes: BTreeMap::from([
+                        ("path".into(), "Length".into()),
+                        ("expression".into(), "dimension".into()),
+                    ]),
+                    decoded_json: None,
+                    text: None,
+                }],
+            ),
+        ];
+        let mut without_engine = ir.clone();
+        assert!(apply(&mut without_engine, &properties[..1])
+            .unwrap()
+            .is_empty());
+        assert_eq!(without_engine.model.parameters.len(), 2);
+        assert!(apply(&mut ir, &properties).unwrap().is_empty());
+        assert_eq!(ir.model.parameters.len(), 1);
+        assert_eq!(ir.model.parameters[0].id, dimension);
+        assert!(!ir
+            .model
+            .parameters
+            .iter()
+            .any(|parameter| parameter.id == control));
+    }
 
     #[test]
     fn bridge_requires_current_cache_agreement_and_quantity() {

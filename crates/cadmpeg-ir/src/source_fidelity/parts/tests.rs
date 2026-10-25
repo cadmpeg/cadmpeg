@@ -684,3 +684,60 @@ fn a_given_up_part_linked_to_a_neutral_owner_takes_the_owner_class() {
 mod state;
 
 mod attempted_owners;
+
+#[test]
+fn sequential_parts_keep_exact_prefix_then_one_suffix_home_without_a_second_parser_pass() {
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(b"12?later", &arena, &DecodePolicy::default()).unwrap();
+    let level = PartLevel::parse("freecad.brep_binary_record").unwrap();
+    let mut output = PartOutput::new(CodecFormat::Fcstd);
+    let calls = std::cell::Cell::new(0);
+    ctx.decode_sequential_part(&mut output, root, PartSpec::new(level, vec![]), |_| {
+        calls.set(calls.get() + 1);
+        ctx.sequential_record("fcstd:native:row#first", root, || {
+            let mut cursor = root;
+            assert_eq!(cursor.req_take(2)?, b"12");
+            Ok(((), 2))
+        })
+    })
+    .unwrap()
+    .unwrap();
+    let remaining = root.child(2, 8).unwrap();
+    assert!(ctx
+        .decode_sequential_part(&mut output, remaining, PartSpec::new(level, vec![]), |_| {
+            calls.set(calls.get() + 1);
+            ctx.sequential_record("fcstd:native:row#failed", remaining, || {
+                let mut cursor = remaining;
+                cursor.req_u8()?;
+                Err::<((), usize), _>(CodecError::malformed("bad row"))
+            })
+        })
+        .unwrap()
+        .is_none());
+    assert_eq!(calls.get(), 2);
+    let parts = output.fidelity().parts.values().collect::<Vec<_>>();
+    assert_eq!(parts.len(), 2);
+    assert!(parts.iter().any(|part| part.offset() == 0
+        && part.byte_len() == 2
+        && matches!(part.state(), PartState::Decoded {})));
+    assert!(parts.iter().any(|part| part.offset() == 2
+        && part.byte_len() == 6
+        && matches!(part.state(), PartState::GivenUp {})));
+    let namespace = output.native().namespace("fcstd").unwrap();
+    assert_eq!(
+        namespace
+            .arena_as::<NativeUnknownRecord>("unknowns")
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(output.losses().len(), 1);
+    assert!(output.losses()[0]
+        .message
+        .contains("freecad.brep_binary_record"));
+    let captures = ctx.take_record_captures().unwrap();
+    assert_eq!(captures.len(), 1);
+    assert_eq!(captures[0].id(), "fcstd:native:row#first");
+    assert_eq!(captures[0].reads()["file"], vec![0..2]);
+}

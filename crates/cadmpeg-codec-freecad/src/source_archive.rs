@@ -148,22 +148,72 @@ impl<'source, 'fidelity> OriginalArchive<'source, 'fidelity> {
             .record_layout()
             .get(&crate::native::native_id("entry", name))
             .ok_or_else(|| CodecError::malformed("original ZIP member has no source layout"))?;
-        if entry_pointers(entry, layout.byte_len())? != *layout.pointers() {
+        let index = self
+            .archive
+            .entries()
+            .iter()
+            .position(|candidate| candidate.name == name)
+            .ok_or_else(|| CodecError::malformed("original ZIP entry has no declaration index"))?;
+        let frames = self.archive.member_frames(ctx)?;
+        let frame = frames[index].ok_or_else(|| {
+            CodecError::malformed("original ZIP entry has no proven header and payload")
+        })?;
+        let header = ctx.capture_part_extent(frame.header())?;
+        if header.stream() != layout.stream()
+            || header.offset() != layout.offset()
+            || header.byte_len() != layout.byte_len()
+        {
             return Err(CodecError::malformed(
-                "original ZIP member disagrees with archive source ranges",
+                "original ZIP member header disagrees with source layout",
             ));
         }
         let view = self.archive.open(ctx, name)?;
         let capture = ctx.capture_part_extent(view)?;
-        if capture.stream() != layout.stream()
-            || capture.offset() != layout.offset()
-            || capture.byte_len() != layout.byte_len()
+        if entry_pointers(entry, capture.byte_len())? != *layout.pointers() {
+            return Err(CodecError::malformed(
+                "original ZIP member disagrees with archive source ranges",
+            ));
+        }
+        let stream = self.member_stream(name)?;
+        if capture.stream() != stream
+            || capture.offset() != 0
+            || self
+                .fidelity
+                .b1_spans()
+                .get(&stream)
+                .is_none_or(|actual| actual.byte_len() != capture.byte_len())
         {
             return Err(CodecError::malformed(
-                "original ZIP member disagrees with source layout",
+                "original ZIP member payload disagrees with its actual source stream",
             ));
         }
         Ok(view)
+    }
+
+    fn member_stream(&self, name: &str) -> Result<String, CodecError> {
+        let archive = original_record(self.fidelity)?;
+        Ok(format!(
+            "zip:{}:{}:{}:{}:{}",
+            archive.stream().len(),
+            archive.stream(),
+            archive.offset(),
+            archive.byte_len(),
+            name
+        ))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn entry_for_id(
+        &self,
+        ctx: &DecodeContext<'source>,
+        id: &str,
+    ) -> Result<Option<View<'source>>, CodecError> {
+        self.archive
+            .entries()
+            .iter()
+            .find(|entry| crate::native::native_id("entry", &entry.name) == id)
+            .map(|entry| self.open(ctx, &entry.name))
+            .transpose()
     }
 
     #[cfg(test)]
@@ -173,13 +223,7 @@ impl<'source, 'fidelity> OriginalArchive<'source, 'fidelity> {
         layout: &RecordLayout,
     ) -> Result<View<'source>, CodecError> {
         for entry in self.archive.entries() {
-            let id = crate::native::native_id("entry", &entry.name);
-            if self
-                .fidelity
-                .record_layout()
-                .get(&id)
-                .is_some_and(|candidate| candidate.stream() == layout.stream())
-            {
+            if self.member_stream(&entry.name)? == layout.stream() {
                 return self.open(ctx, &entry.name);
             }
         }

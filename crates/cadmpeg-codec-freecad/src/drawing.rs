@@ -14,10 +14,20 @@ use crate::native::{
     sole_named_property, DrawingRecord, ObjectRecord, PropertyRecord, TechDrawKind, ValueRecord,
 };
 
-pub(crate) fn transfer(
-    ctx: &crate::property_reader::PropertyReader<'_, '_>,
+pub(crate) fn transfer_source<'source>(
+    ctx: &crate::property_reader::PropertyReader<'_, 'source>,
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
+    sources: &BTreeMap<String, crate::persistence::object_parts::ObjectSource<'source>>,
+) -> Result<Vec<DrawingRecord>, CodecError> {
+    transfer_impl(ctx, objects, properties, Some(sources))
+}
+
+fn transfer_impl<'source>(
+    ctx: &crate::property_reader::PropertyReader<'_, 'source>,
+    objects: &[ObjectRecord],
+    properties: &[PropertyRecord],
+    sources: Option<&BTreeMap<String, crate::persistence::object_parts::ObjectSource<'source>>>,
 ) -> Result<Vec<DrawingRecord>, CodecError> {
     let mut by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
     for property in properties {
@@ -33,73 +43,87 @@ pub(crate) fn transfer(
         .iter()
         .filter(|object| is_registered_drawing_type(&object.type_name))
     {
-        let source = by_owner
-            .get(object.id().as_str())
-            .map_or(&[][..], Vec::as_slice);
-        let mut owned = Vec::new();
-        owned.extend_from_slice(source);
-        ensure_unique_property_names(&owned)?;
-        let kind = if is_page_type(&object.type_name) {
-            let view_links = typed_property(&owned, "Views", "App::PropertyLinkList")?
-                .map_or(&[][..], PropertyRecord::links);
-            let mut views = Vec::new();
-            for link in view_links.iter().flatten() {
-                if let Some(name) = link.object() {
-                    views.push(name.to_owned());
+        ctx.begin_projection(object.id())?;
+        let id = crate::native::native_id("drawing", object.name());
+        let construct = |actual_object: String| -> Result<DrawingRecord, CodecError> {
+            let source = by_owner
+                .get(object.id().as_str())
+                .map_or(&[][..], Vec::as_slice);
+            let mut owned = Vec::new();
+            owned.extend_from_slice(source);
+            ensure_unique_property_names(&owned)?;
+            let kind = if is_page_type(&object.type_name) {
+                let view_links = typed_property(&owned, "Views", "App::PropertyLinkList")?
+                    .map_or(&[][..], PropertyRecord::links);
+                let mut views = Vec::new();
+                for link in view_links.iter().flatten() {
+                    if let Some(name) = link.object() {
+                        views.push(name.to_owned());
+                    }
+                }
+                let template_link = typed_single_link(&owned, "Template", "App::PropertyLink")?;
+                let template = template_link
+                    .and_then(|link| link.object())
+                    .map(ToOwned::to_owned);
+                TechDrawKind::Page {
+                    runtime: if object.type_name == "TechDraw::DrawPage" {
+                        crate::native::TechDrawPageKind::Page
+                    } else {
+                        crate::native::TechDrawPageKind::Python
+                    },
+                    views,
+                    template,
+                }
+            } else {
+                TechDrawKind::try_new(object.type_name.clone(), Vec::new(), None)
+                    .map_err(CodecError::malformed)?
+            };
+            let mut sources = Vec::new();
+            for name in [
+                "Source",
+                "XSource",
+                "Sources",
+                "References2D",
+                "References3D",
+                "Source3d",
+            ] {
+                let links = source_links(&owned, name)?;
+                sources.extend(links);
+            }
+            let mut relationships = BTreeMap::new();
+            for property in owned.iter().filter(|property| !property.links().is_empty()) {
+                let mut links = Vec::new();
+                for link in property.links() {
+                    links.push(link.clone());
+                }
+                relationships.insert(property.name.clone(), links);
+            }
+            let mut side_entries = Vec::new();
+            for property in &owned {
+                for name in property.side_entries() {
+                    side_entries.push(name.to_owned());
                 }
             }
-            let template_link = typed_single_link(&owned, "Template", "App::PropertyLink")?;
-            let template = template_link
-                .and_then(|link| link.object())
-                .map(ToOwned::to_owned);
-            TechDrawKind::Page {
-                runtime: if object.type_name == "TechDraw::DrawPage" {
-                    crate::native::TechDrawPageKind::Page
-                } else {
-                    crate::native::TechDrawPageKind::Python
-                },
-                views,
-                template,
-            }
-        } else {
-            TechDrawKind::try_new(object.type_name.clone(), Vec::new(), None)
-                .map_err(CodecError::malformed)?
+            Ok(DrawingRecord {
+                id: id.clone(),
+                object: actual_object,
+                kind,
+                sources,
+                relationships,
+                parameters: drawing_parameters(ctx, &owned)?,
+                side_entries,
+            })
         };
-        let mut sources = Vec::new();
-        for name in [
-            "Source",
-            "XSource",
-            "Sources",
-            "References2D",
-            "References3D",
-            "Source3d",
-        ] {
-            let links = source_links(&owned, name)?;
-            sources.extend(links);
-        }
-        let mut relationships = BTreeMap::new();
-        for property in owned.iter().filter(|property| !property.links().is_empty()) {
-            let mut links = Vec::new();
-            for link in property.links() {
-                links.push(link.clone());
-            }
-            relationships.insert(property.name.clone(), links);
-        }
-        let mut side_entries = Vec::new();
-        for property in &owned {
-            for name in property.side_entries() {
-                side_entries.push(name.to_owned());
-            }
-        }
-        drawings.push(DrawingRecord {
-            id: crate::native::native_id("drawing", object.name()),
-            object: object.id().to_owned(),
-            kind,
-            sources,
-            relationships,
-            parameters: drawing_parameters(ctx, &owned)?,
-            side_entries,
-        });
+        let record = match sources {
+            Some(sources) => sources
+                .get(object.id().as_str())
+                .ok_or_else(|| {
+                    CodecError::malformed("derived native record has no genuine object source")
+                })?
+                .record(ctx, &id, construct)?,
+            None => construct(object.id().to_owned())?,
+        };
+        drawings.push(record);
     }
     Ok(drawings)
 }
@@ -119,6 +143,7 @@ pub(crate) fn transfer_neutral(
         );
     }
     for (order, record) in records.iter().enumerate() {
+        ctx.begin_projection(&record.object)?;
         let mut owned = Vec::new();
         owned.extend(
             properties
@@ -155,6 +180,11 @@ pub(crate) fn transfer_neutral(
         let position = match (x, y) {
             (None, None) => None,
             (Some(x), Some(y)) => Some([x, y]),
+            _ if ctx.missing_value(sole_named_property("drawing", &owned, "X")?, "X")?
+                || ctx.missing_value(sole_named_property("drawing", &owned, "Y")?, "Y")? =>
+            {
+                None
+            }
             _ => {
                 return Err(CodecError::malformed(format_args!(
                     "drawing {} position requires both X and Y",
@@ -327,7 +357,11 @@ fn scalar_property(
     properties: &[&PropertyRecord],
     name: &str,
 ) -> Result<Option<FiniteReal>, CodecError> {
-    let Some(property) = sole_named_property("drawing", properties, name)? else {
+    let property = sole_named_property("drawing", properties, name)?;
+    if ctx.missing_value(property, name)? {
+        return Ok(None);
+    }
+    let Some(property) = property else {
         return Ok(None);
     };
     let Some(value) = root_value(ctx, property, name)? else {
@@ -349,7 +383,11 @@ fn vector_property(
     properties: &[&PropertyRecord],
     name: &str,
 ) -> Result<Option<FiniteVector<3>>, CodecError> {
-    let Some(property) = sole_named_property("drawing", properties, name)? else {
+    let property = sole_named_property("drawing", properties, name)?;
+    if ctx.missing_value(property, name)? {
+        return Ok(None);
+    }
+    let Some(property) = property else {
         return Ok(None);
     };
     let Some(value) = root_value(ctx, property, name)? else {
@@ -502,7 +540,11 @@ fn drawing_parameters(
     ];
     let mut parameters = BTreeMap::new();
     for name in NAMES {
-        let Some(property) = sole_named_property("drawing", properties, name)? else {
+        let property = sole_named_property("drawing", properties, name)?;
+        if ctx.missing_value(property, name)? {
+            continue;
+        }
+        let Some(property) = property else {
             continue;
         };
         validate_drawing_property(ctx, name, property)?;
@@ -514,8 +556,11 @@ fn drawing_parameters(
         parameters.insert((*name).to_owned(), value);
     }
     for name in VALIDATED_ONLY_NAMES {
-        if let Some(property) = sole_named_property("drawing", properties, name)? {
-            validate_drawing_property(ctx, name, property)?;
+        let property = sole_named_property("drawing", properties, name)?;
+        if !ctx.missing_value(property, name)? {
+            if let Some(property) = property {
+                validate_drawing_property(ctx, name, property)?;
+            }
         }
     }
     Ok(parameters)
@@ -647,10 +692,10 @@ fn root_value<'a>(
     }
     match selected_order {
         None => Ok(None),
-        Some(selected_order) => property
+        Some(_) => property
             .values()
             .iter()
-            .find(|value| value.order == selected_order)
+            .find(|value| value.parent.is_none() && value.tag == expected_tag)
             .map(Some)
             .ok_or_else(|| {
                 CodecError::malformed(format_args!(

@@ -41,9 +41,11 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
         .arena_as::<serde_json::Value>("applications")
         .expect("applications");
     let xml_bytes = |record: &serde_json::Value| {
-        let start = usize::try_from(record["byte_start"].as_u64().unwrap()).unwrap();
-        let end = usize::try_from(record["byte_end"].as_u64().unwrap()).unwrap();
-        &document.as_bytes()[start..end]
+        let id = record["property"]
+            .as_str()
+            .or_else(|| record["object"].as_str())
+            .unwrap();
+        crate::test_support::source_fidelity::bytes(result.source_fidelity(), id)
     };
     assert_eq!(records.len(), 5);
     let by_domain = records
@@ -63,24 +65,34 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
     assert_eq!(by_domain["Unqualified"]["type_name"], "LocalType");
     let report = &by_domain["Fem"]["property_records"][0];
     assert_eq!(report["object"], by_domain["Fem"]["object"]);
-    assert!(report["byte_start"].as_u64().unwrap() < report["byte_end"].as_u64().unwrap());
+    let report_layout =
+        &result.source_fidelity().record_layout()[report["property"].as_str().unwrap()];
+    assert_ne!(report_layout.byte_len(), 0);
     assert_eq!(
-        report["byte_len"],
+        report_layout.byte_len(),
         cadmpeg_core::decode::u64_from_index(xml_bytes(report).len())
     );
     assert_eq!(
-        report["sha256"],
-        cadmpeg_ir::hash::sha256_hex(xml_bytes(report))
+        xml_bytes(report),
+        &document.as_bytes()[usize::try_from(report_layout.offset()).unwrap()
+            ..usize::try_from(report_layout.offset() + report_layout.byte_len()).unwrap()]
     );
+    assert!(report.get("byte_len").is_none() && report.get("sha256").is_none());
     assert_eq!(report["payloads"].as_array().unwrap().len(), 1);
     let payload = &report["payloads"][0];
     assert_eq!(payload["name"], "analysis.dat");
-    assert_eq!(payload["byte_len"], b"finite-element-results".len());
-    assert!(payload.get("data").is_none());
+    let payload_bytes = crate::test_support::source_fidelity::entry_bytes(
+        result.source_fidelity(),
+        payload["entry"].as_str().unwrap(),
+    );
+    assert_eq!(payload_bytes, b"finite-element-results");
+    assert_eq!(payload_bytes.len(), b"finite-element-results".len());
     assert_eq!(
-        payload["sha256"],
+        cadmpeg_ir::hash::sha256_hex(&payload_bytes),
         cadmpeg_ir::hash::sha256_hex(b"finite-element-results")
     );
+    assert!(payload.get("data").is_none());
+    assert!(payload.get("byte_len").is_none() && payload.get("sha256").is_none());
     let python = &by_domain["Path"]["property_records"][0];
     assert_eq!(python["inert"], true);
     assert!(String::from_utf8_lossy(xml_bytes(python)).contains("serialized-but-inert"));
@@ -91,9 +103,23 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
             .unwrap()
             .iter()
             .all(|property| property.get("data").is_none()));
-        record["byte_start"].as_u64().unwrap() < record["byte_end"].as_u64().unwrap()
-            && record["byte_len"] == cadmpeg_core::decode::u64_from_index(xml_bytes(record).len())
-            && record["sha256"] == cadmpeg_ir::hash::sha256_hex(xml_bytes(record))
+        assert!(
+            record.get("byte_start").is_none()
+                && record.get("byte_end").is_none()
+                && record.get("byte_len").is_none()
+                && record.get("sha256").is_none()
+        );
+        let bytes = xml_bytes(record);
+        let layout = &result.source_fidelity().record_layout()[record["object"].as_str().unwrap()];
+        let start = usize::try_from(layout.pointers()["byte_start"]).unwrap();
+        let end = usize::try_from(layout.pointers()["byte_end"]).unwrap();
+        assert!(start < end);
+        assert_eq!(bytes.len(), end - start);
+        assert_eq!(
+            cadmpeg_ir::hash::sha256_hex(bytes),
+            cadmpeg_ir::hash::sha256_hex(&document.as_bytes()[start..end])
+        );
+        true
     }));
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
@@ -159,10 +185,12 @@ fn absent_object_data_keeps_empty_ranges_and_digest() {
         .arena_as::<serde_json::Value>("applications")
         .unwrap();
     assert!(records[0].get("data").is_none());
-    assert_eq!(records[0]["byte_start"], 0);
-    assert_eq!(records[0]["byte_end"], 0);
-    assert_eq!(records[0]["byte_len"], 0);
-    assert_eq!(records[0]["sha256"], cadmpeg_ir::hash::sha256_hex(&[]));
+    // #214: authored records without source do not invent zero-length evidence.
+    for field in ["byte_start", "byte_end", "byte_len", "sha256"] {
+        assert!(records[0].get(field).is_none());
+    }
+    assert_eq!(records[0]["object"], objects[0].id().as_str());
+    assert_eq!(records[0]["type_name"], "Vendor::Feature");
     assert!(super::matches_native(
         &cadmpeg_test_support::service_decode_context(),
         &namespace,
@@ -327,51 +355,224 @@ fn producer_specific_side_entries_remain_whole_until_their_grammar_is_registered
     );
     let mut archive = vec![("Document.xml", document.as_bytes())];
     archive.extend(cases.iter().map(|(name, _, _, payload)| (*name, *payload)));
+    let original = archive_entries(&archive);
     let result = FcstdCodec
-        .decode(
-            &mut Cursor::new(archive_entries(&archive)),
-            &DecodeOptions::default(),
-        )
-        .expect("producer-specific opaque side entries");
-
+        .decode(&mut Cursor::new(&original), &DecodeOptions::default())
+        .expect("registered entries recover locally and keep every independent member");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &original,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    let physical = cadmpeg_container::ArchiveSnapshot::new(&ctx, root).unwrap();
+    let mut expected_failures = 0;
+    for (name, _, _, payload) in &cases {
+        let view = physical.open(&ctx, name).unwrap();
+        assert_eq!(view.window(), *payload);
+        let entry = assert_whole_named_entry(&result, name, payload);
+        if *name == "Distances" {
+            assert_distance_slots(&result, &entry);
+        }
+        let level = match *name {
+            "FilletEdges" => Some("freecad.fillet_edges_entry"),
+            "Shapes.0.brp" => Some("freecad.brep_text_header"),
+            "GreyValues" | "PointNormals" | "MeshNormals" | "PointCurvatures"
+            | "MeshCurvatures" => Some("freecad.f32_record_list_entry"),
+            _ => None,
+        };
+        let homes = if *name == "Material" {
+            vec![
+                ("freecad.mesh_material_binding", 0, 4),
+                (
+                    "freecad.mesh_material_array",
+                    4,
+                    u64::try_from(payload.len()).unwrap() - 4,
+                ),
+            ]
+        } else {
+            level
+                .map(|level| (level, 0, u64::try_from(payload.len()).unwrap()))
+                .into_iter()
+                .collect()
+        };
+        if !homes.is_empty() {
+            expected_failures += homes.len();
+            let capture = ctx.capture_part_extent(view).unwrap();
+            let failed = result
+                .source_fidelity()
+                .parts()
+                .values()
+                .filter(|part| {
+                    part.stream() == capture.stream()
+                        && matches!(
+                            part.state(),
+                            cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}
+                        )
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(
+                failed.len(),
+                homes.len(),
+                "exact independent failure homes for {name}"
+            );
+            let errors = result
+                .report()
+                .losses
+                .iter()
+                .filter(|loss| {
+                    loss.code.local_code() == "record.unreadable"
+                        && loss
+                            .provenance
+                            .as_ref()
+                            .is_some_and(|source| source.stream_name() == Some(capture.stream()))
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(errors.len(), homes.len());
+            for (level, offset, length) in homes {
+                let found = failed
+                    .iter()
+                    .filter(|part| {
+                        part.level().as_str() == level
+                            && part.offset() == offset
+                            && part.byte_len() == length
+                    })
+                    .collect::<Vec<_>>();
+                assert_eq!(found.len(), 1, "one original bounded {level}");
+                let found = errors
+                    .iter()
+                    .filter(|error| {
+                        error.provenance.as_ref().is_some_and(|source| {
+                            source.offset == offset && source.byte_len() == Some(length)
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                assert_eq!(found.len(), 1);
+                assert_eq!(found[0].severity, cadmpeg_ir::report::Severity::Error);
+            }
+        }
+    }
+    assert_eq!(
+        result
+            .source_fidelity()
+            .parts()
+            .values()
+            .filter(|part| matches!(
+                part.state(),
+                cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}
+            ))
+            .count(),
+        expected_failures
+    );
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code.local_code() == "record.unreadable")
+            .count(),
+        expected_failures
+    );
+    crate::fidelity::b1::assert_classified_spans(&result);
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
+}
+fn assert_whole_named_entry(
+    result: &cadmpeg_ir::codec::DecodeResult,
+    name: &str,
+    payload: &[u8],
+) -> crate::native::EntryRecord {
     let namespace = result.ir().native.namespace("fcstd").expect("namespace");
-    let entries = namespace
+    let entry = namespace
         .arena_as::<crate::native::EntryRecord>("entries")
-        .expect("entries");
-    let spans = result
+        .expect("entries")
+        .into_iter()
+        .find(|entry| entry.name() == name)
+        .expect("side entry");
+    let spans = &result
         .source_fidelity()
         .freecad_ledgers()
         .values()
         .next()
         .expect("FCStd source ledgers")
-        .logical_ledger
-        .clone();
-    for (name, _, _, payload) in cases {
-        let entry = entries
+        .logical_ledger;
+    assert_eq!(
+        crate::test_support::source_fidelity::entry_bytes(result.source_fidelity(), entry.id()),
+        payload
+    );
+    let layout = &result.source_fidelity().record_layout()[entry.id()];
+    let header = result
+        .source_fidelity()
+        .parts()
+        .values()
+        .find(|part| {
+            part.level().as_str() == "zip.local_header"
+                && part.stream() == layout.stream()
+                && part.offset() == layout.offset()
+        })
+        .expect("entry identity is produced from its actual local header");
+    assert_eq!(layout.byte_len(), header.byte_len());
+    assert_eq!(
+        header.state(),
+        &cadmpeg_ir::source_fidelity::parts::PartState::Decoded {}
+    );
+    let span = spans
+        .iter()
+        .find(|span| span.entry == name)
+        .expect("side-entry span");
+    assert_eq!(span.span.start(), 0);
+    assert_eq!(
+        span.span.end(),
+        cadmpeg_core::decode::u64_from_index(payload.len())
+    );
+    assert_eq!(span.classification.as_str(), "named_opaque");
+    assert_eq!(span.classification.owner(), Some(entry.id()));
+    entry
+}
+
+fn assert_distance_slots(
+    result: &cadmpeg_ir::codec::DecodeResult,
+    entry: &crate::native::EntryRecord,
+) {
+    let property = crate::native::native_child_id(
+        "property",
+        &crate::native::native_id("object", "Owner"),
+        "Payload0",
+    );
+    assert!(entry.referenced_by().iter().any(|owner| owner == &property));
+    let [crate::native::entry_contents::EntryContents::F32 {
+        values: crate::native::entry_contents::F32Values::Scalar(distances),
+    }] = entry.contents()
+    else {
+        panic!("one registered scalar distance interpretation");
+    };
+    assert_eq!(distances.len(), 2);
+    let layout = &result.source_fidelity().record_layout()[entry.id()];
+    for (ordinal, (value, expected)) in distances.iter().zip([1.5, 2.5]).enumerate() {
+        assert_eq!(value.expect("readable distance slot").get(), expected);
+        let offset = 4 + u64::try_from(ordinal).unwrap() * 4;
+        let rows = result
+            .source_fidelity()
+            .parts()
+            .values()
+            .filter(|part| {
+                part.level().as_str() == "freecad.f32_record"
+                    && part.offset() == offset
+                    && part.byte_len() == 4
+                    && layout.reads().contains_key(part.stream())
+            })
+            .collect::<Vec<_>>();
+        let [row] = rows.as_slice() else {
+            panic!("one original located distance slot");
+        };
+        assert_eq!(
+            row.state(),
+            &cadmpeg_ir::source_fidelity::parts::PartState::Decoded {}
+        );
+        assert!(layout.reads()[row.stream()]
             .iter()
-            .find(|entry| entry.name() == name)
-            .expect("side entry");
-        assert_eq!(
-            crate::test_support::source_fidelity::entry_bytes(result.source_fidelity(), entry.id()),
-            payload
-        );
-        assert_eq!(
-            result.source_fidelity().record_layout()[entry.id()].byte_len(),
-            cadmpeg_core::decode::u64_from_index(payload.len())
-        );
-        let span = spans
-            .iter()
-            .find(|span| span.entry == name)
-            .expect("side-entry span");
-        assert_eq!(span.span.start(), 0);
-        assert_eq!(
-            span.span.end(),
-            cadmpeg_core::decode::u64_from_index(payload.len())
-        );
-        assert_eq!(span.classification.as_str(), "named_opaque");
-        assert_eq!(span.classification.owner(), Some(entry.id()));
+            .any(|read| read.start <= offset && offset + 4 <= read.end));
     }
-    assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }
 
 #[test]
@@ -400,7 +601,7 @@ fn repeated_application_payloads_borrow_entry_identity_without_source_evidence()
             family: crate::native::PropertyFamily::File,
             status: None,
             body: Some(crate::native::PropertyBody::Persisted {
-                values: Vec::new(),
+                values: Vec::new().into(),
                 links: Vec::new(),
                 side_entries: vec!["shared.bin".into()],
             }),
@@ -418,7 +619,7 @@ fn repeated_application_payloads_borrow_entry_identity_without_source_evidence()
     let identity = entry.id().as_ptr();
     let objects = [object];
     let entries = [entry.record];
-    let records = super::wire_records(&objects, &properties, &entries);
+    let records = super::wire_records(&objects, &properties, &entries, None).unwrap();
     for property in &records[0].property_records {
         assert_eq!(property.payloads[0].entry.as_ptr(), identity);
         assert_eq!(property.payloads[0].entry, entries[0].id());
@@ -449,7 +650,7 @@ fn external_component_census_matches_its_typed_native_records() {
     let entries = namespace
         .arena_as::<crate::native::EntryRecord>("entries")
         .unwrap();
-    let mut expected = super::wire_records(&objects, &properties, &entries);
+    let mut expected = super::wire_records(&objects, &properties, &entries, None).unwrap();
     expected.sort_by(|left, right| left.id.cmp(&right.id));
     let actual = namespace.arenas().get("applications").unwrap();
     let expected_json = serde_json::to_value(&expected).unwrap();

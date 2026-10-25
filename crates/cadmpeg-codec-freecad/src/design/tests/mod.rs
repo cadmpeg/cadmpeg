@@ -7,6 +7,7 @@ mod history;
 pub(crate) mod holes_extrude;
 mod ordering;
 pub(crate) mod primitives;
+mod projection_assertions;
 mod resource_admission;
 pub(crate) mod sketches;
 mod taper;
@@ -32,7 +33,7 @@ fn singular_reference_link_keeps_one_selector_and_rejects_two() {
             family: crate::native::PropertyFamily::Unknown,
             status: None,
             body: Some(crate::native::PropertyBody::Persisted {
-                values: Vec::new(),
+                values: Vec::new().into(),
                 links: vec![link],
                 side_entries: Vec::new(),
             }),
@@ -64,7 +65,9 @@ fn sketch_placement_runtime_type_error_is_malformed() {
     let expected = "sketch Placement placement carrier has runtime type App::PropertyString";
     assert!(matches!(super::validate_sketch_placement(&[&property]),
         Err(cadmpeg_core::CodecError::Malformed(message)) if message == expected));
-    assert!(matches!(super::sketch_frame(&[&property]),
+    let context = cadmpeg_test_support::service_decode_context();
+    let reader = crate::property_reader::PropertyReader::typed(&context);
+    assert!(matches!(super::sketch_frame(&reader, &[&property]),
         Err(cadmpeg_core::CodecError::Malformed(message)) if message == expected));
 }
 
@@ -100,7 +103,7 @@ fn extrusion_definition(result: &cadmpeg_ir::codec::DecodeResult) -> &FeatureDef
 /// Native feature fallback retains typed records; unreadable payloads also
 /// charge their own Warning and explicitly block design patch/replay.
 fn assert_native_retention(result: &cadmpeg_ir::codec::DecodeResult, expected: usize) {
-    use crate::native::{ObjectRecord, PropertyBody, PropertyRecord};
+    use crate::native::{ObjectRecord, PropertyRecord};
     use cadmpeg_ir::features::FeatureOperation;
     let namespace = result
         .ir()
@@ -138,7 +141,7 @@ fn assert_native_retention(result: &cadmpeg_ir::codec::DecodeResult, expected: u
     }
     let unreadable = properties
         .iter()
-        .filter(|property| matches!(property.body, Some(PropertyBody::Unreadable(_))))
+        .filter(|property| matches!(property.body, None))
         .collect::<Vec<_>>();
     let losses = &result.report().losses;
     assert_eq!(
@@ -189,12 +192,7 @@ fn assert_unreadable_properties(
         .expect("typed properties");
     let actual = properties
         .iter()
-        .filter(|property| {
-            matches!(
-                property.body,
-                Some(crate::native::PropertyBody::Unreadable(_))
-            )
-        })
+        .filter(|property| matches!(property.body, None))
         .map(|property| (property.owner.clone(), property.name.clone()))
         .collect::<std::collections::BTreeSet<_>>();
     let expected: std::collections::BTreeSet<_> = expected

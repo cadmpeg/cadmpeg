@@ -23,7 +23,7 @@ fn an_entity_spelled_property_keeps_its_identity_and_status_while_opaque_bytes_r
     assert_eq!(property.name, "A&B");
     assert_eq!(property.type_name, "Vendor::Future");
     assert_eq!(property.status, Some(7));
-    assert_eq!(property.values()[0].attributes["value"], "opaque-state");
+    assert!(property.values().is_empty());
     assert_eq!(
         property.id,
         crate::native::native_child_id(
@@ -34,13 +34,30 @@ fn an_entity_spelled_property_keeps_its_identity_and_status_while_opaque_bytes_r
     );
     let fidelity = decoded.source_fidelity();
     let layout = &fidelity.record_layout()[&property.id];
+    let element = roxmltree::Document::parse(document)
+        .unwrap()
+        .descendants()
+        .find(|node| node.has_tag_name("Property"))
+        .unwrap()
+        .range();
+    assert_eq!(
+        crate::test_support::source_fidelity::bytes(fidelity, &property.id),
+        &document.as_bytes()[element]
+    );
     let range = |name: &str, raw: &str| {
         let start = document.find(&format!("{name}='{raw}'")).unwrap() + name.len() + "='".len();
         u64_from_index(start)..u64_from_index(start + raw.len())
     };
+    let key_range = |key: &str, raw: &str| {
+        let at = document.find(&format!("{key}='{raw}'")).unwrap();
+        u64_from_index(at)..u64_from_index(at + key.len())
+    };
     let expected = [
+        key_range("name", "A&amp;B"),
         range("name", "A&amp;B"),
+        key_range("type", "Vendor::Futu&#x72;e"),
         range("type", "Vendor::Futu&#x72;e"),
+        key_range("status", "007"),
         range("status", "007"),
     ];
     assert_eq!(layout.reads()[layout.stream()], expected);

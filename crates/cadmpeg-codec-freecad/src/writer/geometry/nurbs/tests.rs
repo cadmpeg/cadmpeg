@@ -28,7 +28,7 @@ fn read(curves: &str, curve_count: usize, surfaces: &str, surface_count: usize) 
             family: PropertyFamily::Geometry,
             status: None,
             body: Some(PropertyBody::Persisted {
-                values: Vec::new(),
+                values: Vec::new().into(),
                 links: Vec::new(),
                 side_entries: vec!["Shape.brp".into()],
             }),
@@ -49,7 +49,7 @@ fn read(curves: &str, curve_count: usize, surfaces: &str, surface_count: usize) 
         &[&entry],
         &DecodePolicy::default(),
         |ctx, sources| {
-            crate::brep::parse_payloads(
+            crate::brep::source::parse_payloads(
                 ctx,
                 &[property.property.clone()],
                 &[entry.record.clone()],

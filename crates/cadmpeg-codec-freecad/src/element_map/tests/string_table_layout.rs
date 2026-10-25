@@ -1,88 +1,76 @@
 // SPDX-License-Identifier: Apache-2.0
-//! String-table raw fields retain their decoded text with genuine provenance.
+//! Naming records retain genuine XML and side-entry reads through source parts.
 
-use super::*;
-use crate::element_map::SourceLayouts;
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::decode::{DecodeArena, DecodePolicy, SourceOrigin};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, SourceOrigin};
+use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput};
 use std::collections::BTreeMap;
 
 #[test]
 fn inline_entities_unicode_cdata_and_nested_elements_use_a_real_expanded_stream() {
-    // Dotted components refer to earlier string ids, so ids 2 and 1 precede
-    // the two source records whose raw payloads and deltas this control checks.
     let xml = "<Document><StringHasher count='4'>\n2.c seed-two\n1.c seed-one\n<![CDATA[a.c.2 Ω]]>&amp;β\n<Unknown>ignored nested payload</Unknown>-3.c.-1 second\u{2003}\n</StringHasher></Document>";
     let arena = DecodeArena::new();
     let (ctx, root) =
         DecodeContext::from_root_bytes(xml.as_bytes(), &arena, &DecodePolicy::service()).unwrap();
     let root = ctx.name_stream(root, "Document.xml").unwrap();
-    let document = roxmltree::Document::parse(xml).unwrap();
-    let carrier = document
-        .descendants()
-        .find(|node| node.has_tag_name("StringHasher"))
-        .unwrap();
+    let source = crate::xml_framing::XmlSource::new(&ctx, root).unwrap();
+    let index = source.children(0).next().unwrap();
     let entries = BTreeMap::new();
-    let mut fidelity = cadmpeg_ir::SourceFidelity::default();
-    let mut pending = BTreeMap::new();
-    let property_ranges = BTreeMap::new();
-    let reader =
-        crate::property_reader::PropertyReader::source(&ctx, root, &property_ranges).unwrap();
-    let sources = crate::entry_sources::EntrySources::new(&ctx, &entries).unwrap();
-    let (tables, maps) = super::super::parse(
-        &reader,
-        &document,
-        Some(0),
-        &[],
-        &[],
-        &sources,
-        &mut Vec::new(),
-        Some(&mut SourceLayouts {
-            document: root,
-            entries: &entries,
-            fidelity: &mut fidelity,
-            payloads: &mut pending,
-        }),
+    let context = crate::element_map::adopted::Context::new(&entries, Some(0));
+    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Fcstd);
+    ctx.decode_part(
+        &mut output,
+        source.extent(index).unwrap(),
+        source.spec(index, "freecad.string_hasher").unwrap(),
+        |stage| {
+            crate::element_map::adopted::decode(&ctx, &source, index, None, None, &context, stage)
+        },
     )
     .unwrap();
-    crate::fidelity::install_layouts(&ctx, &mut fidelity, pending, BTreeMap::new()).unwrap();
-    let table = &tables.as_slice()[0];
-    assert!(maps.is_empty());
-    assert_eq!(table.entries().unwrap()[2].string_id, 10);
-    assert_eq!(table.entries().unwrap()[2].components, [2]);
-    assert_eq!(table.entries().unwrap()[2].payload, "Ω&β");
-    assert_eq!(table.entries().unwrap()[3].string_id, 13);
-    assert_eq!(table.entries().unwrap()[3].components, [1]);
-    assert_eq!(table.entries().unwrap()[3].payload, "second");
-    let layout = &fidelity.record_layout()[&table.id()];
-    assert_eq!(layout.offset(), 0);
+    assert!(output.losses().is_empty(), "{:?}", output.losses());
+    let tables = output
+        .native()
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<crate::native::StringTableRecord>("string_tables")
+        .unwrap();
+    let table = &tables[0];
+    let entries = table.entries().unwrap();
+    assert_eq!(entries[2].as_ref().unwrap().string_id, 10);
+    assert_eq!(entries[2].as_ref().unwrap().components, [2]);
+    assert_eq!(entries[2].as_ref().unwrap().payload, "Ω&β");
+    assert_eq!(entries[3].as_ref().unwrap().string_id, 13);
+    assert_eq!(entries[3].as_ref().unwrap().components, [1]);
+    assert_eq!(entries[3].as_ref().unwrap().payload, "second");
+    let streams = ctx.source_streams().unwrap();
+    let expanded = streams
+        .iter()
+        .find(|stream| stream.name().starts_with("fcstd:naming-text:"))
+        .unwrap();
     assert_eq!(
-        layout.byte_len(),
+        expanded.byte_len(),
         u64::try_from("\n2.c seed-two\n1.c seed-one\na.c.2 Ω&β\n-3.c.-1 second\u{2003}\n".len())
             .unwrap()
     );
-    assert_eq!(
-        layout.payloads()["entries.2.raw"].as_ref(),
-        "a.c.2 Ω&β".as_bytes()
-    );
-    assert_eq!(
-        layout.payloads()["entries.3.raw"].as_ref(),
-        b"-3.c.-1 second"
-    );
-    assert!(fidelity.retained_records().is_empty());
-    let streams = ctx.source_streams().unwrap();
-    let stream = streams
-        .iter()
-        .find(|stream| stream.name() == layout.stream())
-        .unwrap();
-    assert_eq!(stream.byte_len(), layout.byte_len());
-    match stream.origin() {
+    match expanded.origin() {
         SourceOrigin::Expanded { parent, extent } => {
             assert_eq!(parent, "Document.xml");
-            assert_eq!(extent.start, u64::try_from(carrier.range().start).unwrap());
-            assert_eq!(extent.end, u64::try_from(carrier.range().end).unwrap());
+            assert_eq!(
+                extent.start,
+                u64::try_from(source.extent(index).unwrap().start()).unwrap()
+            );
+            assert_eq!(
+                extent.end,
+                u64::try_from(source.extent(index).unwrap().end()).unwrap()
+            );
         }
         origin => panic!("decoded XML text needs an actual expanded origin, got {origin:?}"),
     }
+    let captures = ctx.take_record_captures().unwrap();
+    let capture = captures
+        .iter()
+        .find(|capture| capture.id() == table.id())
+        .unwrap();
+    assert!(!capture.reads().is_empty());
     let native = serde_json::to_value(table).unwrap();
     assert_eq!(native["entries"][2]["payload"], "Ω&β");
     assert!(native["entries"]
@@ -121,45 +109,50 @@ fn side_entry_raw_ranges_use_the_registered_member_view_and_preserve_multiline_p
             "table.txt",
         )
         .unwrap();
-    let document = roxmltree::Document::parse(std::str::from_utf8(xml).unwrap()).unwrap();
-    let entry = legacy_entry("table.txt", side);
+    let source = crate::xml_framing::XmlSource::new(&ctx, document_view).unwrap();
     let entries = BTreeMap::from([("table.txt".into(), side_view)]);
-    let mut fidelity = cadmpeg_ir::SourceFidelity::default();
-    let mut pending = BTreeMap::new();
-    let property_ranges = BTreeMap::new();
-    let reader =
-        crate::property_reader::PropertyReader::source(&ctx, document_view, &property_ranges)
-            .unwrap();
-    let sources = crate::entry_sources::EntrySources::new(&ctx, &entries).unwrap();
-    let (tables, _) = super::super::parse(
-        &reader,
-        &document,
-        Some(1),
-        &[],
-        &[entry.record.clone()],
-        &sources,
-        &mut Vec::new(),
-        Some(&mut SourceLayouts {
-            document: document_view,
-            entries: &entries,
-            fidelity: &mut fidelity,
-            payloads: &mut pending,
-        }),
-    )
-    .unwrap();
-    crate::fidelity::install_layouts(&ctx, &mut fidelity, pending, BTreeMap::new()).unwrap();
-    let table = &tables.as_slice()[0];
-    assert_eq!(table.entries().unwrap()[0].payload, "Ω\nsecond");
-    let layout = &fidelity.record_layout()[&table.id()];
-    assert_eq!(layout.stream(), "table.txt");
-    assert_eq!(layout.offset(), 0);
-    assert_eq!(layout.byte_len(), u64::try_from(side.len()).unwrap());
+    let context = crate::element_map::adopted::Context::new(&entries, Some(1));
+    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Fcstd);
+    for index in source.children(0) {
+        ctx.decode_part(
+            &mut output,
+            source.extent(index).unwrap(),
+            source.spec(index, "freecad.string_hasher").unwrap(),
+            |stage| {
+                crate::element_map::adopted::decode(
+                    &ctx, &source, index, None, None, &context, stage,
+                )
+            },
+        )
+        .unwrap();
+    }
+    assert!(output.losses().is_empty(), "{:?}", output.losses());
+    let tables = output
+        .native()
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<crate::native::StringTableRecord>("string_tables")
+        .unwrap();
     assert_eq!(
-        layout.payloads()["entries.0.raw"].as_ref(),
-        "1.0 1:Ω\nsecond".as_bytes()
+        tables[0].entries().unwrap()[0].as_ref().unwrap().payload,
+        "Ω\nsecond"
     );
+    let captures = ctx.take_record_captures().unwrap();
+    let capture = captures
+        .iter()
+        .find(|capture| capture.id() == tables[0].id())
+        .unwrap();
+    assert!(capture.reads().contains_key("table.txt"));
     assert_eq!(ctx.source_streams().unwrap().len(), 3);
-    assert!(fidelity.retained_records().is_empty());
+    let parts = output
+        .fidelity()
+        .parts()
+        .values()
+        .map(|part| part.level().as_str())
+        .collect::<Vec<_>>();
+    assert!(parts.contains(&"freecad.string_table_entry"));
+    assert!(parts.contains(&"freecad.string_table_header"));
+    assert!(parts.contains(&"freecad.string_table_record"));
 }
 
 #[test]
@@ -179,34 +172,12 @@ fn raw_ranges_keep_the_original_trimmed_field_semantics_without_changing_payload
 fn detached_inline_source_cannot_manufacture_a_logical_record_extent() {
     let xml = "<Document><StringHasher count='1'>1.c value</StringHasher></Document>";
     let arena = DecodeArena::new();
-    let (ctx, root) =
+    let (ctx, _) =
         DecodeContext::from_root_bytes(xml.as_bytes(), &arena, &DecodePolicy::service()).unwrap();
-    let document = roxmltree::Document::parse(xml).unwrap();
-    let entries = BTreeMap::new();
-    let mut fidelity = cadmpeg_ir::SourceFidelity::default();
-    let before = fidelity.clone();
-    let mut pending = BTreeMap::new();
-    let property_ranges = BTreeMap::new();
-    let reader =
-        crate::property_reader::PropertyReader::source(&ctx, root, &property_ranges).unwrap();
-    let sources = crate::entry_sources::EntrySources::new(&ctx, &entries).unwrap();
-    assert!(super::super::parse(
-        &reader,
-        &document,
-        Some(0),
-        &[],
-        &[],
-        &sources,
-        &mut Vec::new(),
-        Some(&mut SourceLayouts {
-            document: cadmpeg_core::decode::View::over_retained(xml.as_bytes()),
-            entries: &entries,
-            fidelity: &mut fidelity,
-            payloads: &mut pending,
-        })
+    assert!(crate::xml_framing::XmlSource::new(
+        &ctx,
+        cadmpeg_core::decode::View::over_retained(xml.as_bytes())
     )
     .is_err());
-    assert!(pending.is_empty());
-    assert_eq!(fidelity, before);
     assert!(ctx.take_record_captures().unwrap().is_empty());
 }

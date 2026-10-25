@@ -72,6 +72,8 @@ fn x65_backslash_entry_is_refused_by_constructor_reader_and_native_record() {
 fn property_edits_use_value_order_when_raw_xml_is_identical() {
     let mut values = (0..2)
         .map(|order| ValueRecord {
+            item_index: None,
+            link_index: None,
             parent: None,
             tag: "String".into(),
             order,
@@ -92,7 +94,7 @@ fn property_edits_use_value_order_when_raw_xml_is_identical() {
         family: crate::native::PropertyFamily::List,
         status: None,
         body: Some(crate::native::PropertyBody::Persisted {
-            values,
+            values: values.into(),
             links: Vec::new(),
             side_entries: Vec::new(),
         }),
@@ -110,6 +112,8 @@ fn property_edits_use_value_order_when_raw_xml_is_identical() {
 #[test]
 fn xml_serialization_preserves_normalized_whitespace() {
     let value = ValueRecord {
+        item_index: None,
+        link_index: None,
         parent: None,
         tag: "String".into(),
         order: 0,
@@ -127,7 +131,7 @@ fn xml_serialization_preserves_normalized_whitespace() {
         status: None,
         order: 0,
         body: Some(crate::native::PropertyBody::Persisted {
-            values: vec![value],
+            values: vec![value].into(),
             links: Vec::new(),
             side_entries: Vec::new(),
         }),
@@ -269,6 +273,13 @@ fn writer_rejects_direct_link_carrier_graph_drift() {
         .iter_mut()
         .find(|property| property.name == "Support")
         .expect("Support property");
+    let target = support.links()[0]
+        .as_ref()
+        .unwrap()
+        .object()
+        .unwrap()
+        .to_owned();
+    assert_eq!(crate::native::id_key(&target), "Target");
     support.values_mut().expect("persisted property")[0]
         .attributes
         .insert("value".into(), "Missing".into());
@@ -280,11 +291,64 @@ fn writer_rejects_direct_link_carrier_graph_drift() {
         )
         .expect("replace properties");
 
-    let error = FcstdCodec
+    // #213 Rule D / W2: typed LinkTarget owns the reference. A stale literal
+    // source spelling cannot replace that current canonical target.
+    let plan = FcstdCodec
         .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("writer must check the written semantic graph");
-    assert!(error.to_string().contains("value or link graph"));
+        .expect("the current typed link graph is valid");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let written = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let properties = written
+        .ir()
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap();
+    let support = properties
+        .iter()
+        .find(|property| property.name == "Support")
+        .unwrap();
+    assert_eq!(
+        support.links()[0].as_ref().unwrap().object(),
+        Some(target.as_str())
+    );
+    assert_eq!(support.values()[0].attributes["value"], "Target");
+    let attribute = written
+        .ir()
+        .model
+        .attributes
+        .iter()
+        .find(|attribute| attribute.name == "Support")
+        .unwrap();
+    assert_eq!(
+        attribute.values,
+        [cadmpeg_ir::attributes::AttributeValue::Reference(
+            target.clone()
+        )]
+    );
+    let target_feature = written
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Target"))
+        .unwrap();
+    let owner = written
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Owner"))
+        .unwrap();
+    assert_eq!(target_feature.native_ref.as_deref(), Some(target.as_str()));
+    assert!(
+        matches!(&attribute.target, cadmpeg_ir::attributes::AttributeTarget::Record { arena, id } if arena.as_str() == "features" && id == owner.id.as_str())
+    );
+    assert!(crate::test_support::validate_native(written.ir()).is_empty());
 }
 
 #[test]

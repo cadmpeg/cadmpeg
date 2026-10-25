@@ -8,8 +8,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::Value;
 
-mod given_up;
+pub mod given_up;
 mod graph;
+mod scope;
 
 pub use given_up::DecodeSnapshot;
 
@@ -22,6 +23,10 @@ use graph::Document;
 #[derive(Debug, Default)]
 pub struct Allowances {
     removed: BTreeSet<String>,
+    changed: BTreeSet<String>,
+    fallbacks: BTreeSet<String>,
+    given_up: bool,
+    lost_classes: BTreeSet<cadmpeg_ir::document::ArenaClass>,
 }
 
 /// Which document content the comparison covers.
@@ -50,9 +55,37 @@ pub fn assert_decodes_agree(before: &Value, after: &Value, allowances: &Allowanc
 
 fn agree(before: &Value, after: &Value, allowances: &Allowances, mode: Mode) -> Result<(), String> {
     let Mode::Same = mode;
-    cadmpeg_ir::compare::values_agree(&header(before)?, &header(after)?)?;
-    let mut before = Document::read(before, &allowances.removed)?;
+    let (before_header, after_header) = scope::headers(before, after, allowances)?;
+    cadmpeg_ir::compare::values_agree(&before_header, &after_header)?;
+    let original_before = before;
+    let mut before = Document::read(before, &BTreeSet::new())?;
     let mut after = Document::read(after, &BTreeSet::new())?;
+    if allowances.given_up {
+        given_up::check_changes(
+            &before,
+            &after,
+            &allowances.changed,
+            &allowances.fallbacks,
+            &allowances.removed,
+            original_before,
+        )?;
+    }
+    before.prune_records(&allowances.removed, original_before)?;
+    before.exclude_records(&allowances.changed);
+    after.exclude_records(&allowances.changed);
+    before.exclude_records(&allowances.fallbacks);
+    after.exclude_records(&allowances.fallbacks);
+    // Unique identities and arenas were validated above. Exact same-identity
+    // values provide a constructive pairing; additions are already permitted
+    // by Mode::Same. Any difference keeps the full identity-independent path.
+    if before.records.iter().all(|record| {
+        after.ids.get(&record.id).is_some_and(|index| {
+            let current = &after.records[*index];
+            record.arena == current.arena && record.value == current.value
+        })
+    }) {
+        return Ok(());
+    }
     let (before_colours, after_colours) = graph::colours(&before, &after);
     let mut pairs = BTreeMap::new();
     let mut used = BTreeSet::new();

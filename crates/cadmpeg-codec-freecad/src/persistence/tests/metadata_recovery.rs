@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Independent metadata admission and bounded property indexing.
 
-use crate::native::PropertyBody;
 use std::fmt::Write as _;
 
 #[test]
@@ -72,39 +71,69 @@ fn malformed_unused_links_remain_explicitly_source_only() {
             super::parse(document.as_bytes(), "4", ctx)
         })
         .expect("source-only link");
-        assert!(matches!(
-            graph.properties[0].body,
-            Some(PropertyBody::Unreadable(_))
-        ));
-        assert!(graph.properties[0].links().is_empty());
-        assert!(graph.properties[0].values().is_empty());
-        assert!(
-            document[graph.property_sources[&graph.properties[0].id].record_range()]
-                .contains(payload)
-        );
-        assert!(graph.losses.iter().any(|loss| loss.code
-            == crate::loss::FreecadLossCode::PersistencePayloadUnresolved
-                .note(String::new())
-                .code));
-        let wire = serde_json::to_value(&graph.properties[0]).expect("serialize");
-        let property: crate::native::PropertyRecord =
-            serde_json::from_value(wire).expect("deserialize source-only property");
         let decoded = cadmpeg_ir::Codec::decode(
             &crate::FcstdCodec,
             &mut std::io::Cursor::new(crate::test_support::test_archive::archive(&document)),
             &cadmpeg_ir::DecodeOptions::default(),
         )
         .expect("source-only property with its fidelity");
-        let source = decoded
+        let level = if payload.is_empty() {
+            "freecad.property"
+        } else {
+            "freecad.property_value"
+        };
+        let given_up: Vec<_> = decoded
             .source_fidelity()
-            .retained_record(&property.id)
-            .expect("property source");
-        let xml =
-            crate::test_support::source_fidelity::bytes(decoded.source_fidelity(), &property.id);
-        let range = graph.property_sources[&property.id].record_range();
-        assert_eq!(xml, document[range.clone()].as_bytes());
-        assert_eq!(source.offset(), u64::try_from(range.start).unwrap());
-        assert_eq!(property, graph.properties[0]);
+            .parts()
+            .iter()
+            .filter(|(_, part)| {
+                part.level().as_str() == level
+                    && matches!(
+                        part.state(),
+                        cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}
+                    )
+            })
+            .collect();
+        assert_eq!(given_up.len(), 1);
+        let (id, part) = given_up[0];
+        let unreadable: Vec<_> = decoded
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code.local_code() == "record.unreadable")
+            .collect();
+        assert_eq!(unreadable.len(), 1);
+        assert_eq!(unreadable[0].severity, cadmpeg_ir::report::Severity::Error);
+        assert!(unreadable[0].message.contains(level));
+        let range = usize::try_from(part.offset()).unwrap()
+            ..usize::try_from(part.offset() + part.byte_len()).unwrap();
+        assert_eq!(
+            crate::test_support::source_fidelity::bytes(decoded.source_fidelity(), id.as_str()),
+            document[range].as_bytes()
+        );
+        if payload.is_empty() {
+            assert!(graph.properties.is_empty());
+        } else {
+            let property = &graph.properties[0];
+            assert!(property.body.is_none());
+            assert!(property.links().is_empty());
+            assert!(property.values().is_empty());
+            assert!(
+                document[graph.property_sources[&property.id].record_range()].contains(payload)
+            );
+            let wire = serde_json::to_value(property).expect("serialize");
+            assert!(wire.get("payload_error").is_none());
+            assert_eq!(
+                serde_json::from_value::<crate::native::PropertyRecord>(wire)
+                    .expect("deserialize source-only property"),
+                *property
+            );
+        }
+        assert!(graph
+            .losses
+            .iter()
+            .any(|loss| loss.code.local_code() == "record.unreadable"
+                && loss.message.contains(level)));
     }
 }
 

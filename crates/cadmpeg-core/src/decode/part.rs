@@ -103,12 +103,32 @@ impl DecodeContext<'_> {
         extent: View<'_>,
         decode: impl FnOnce() -> Result<T, CodecError>,
     ) -> Result<PartOutcome<T>, CodecError> {
+        self.sequential_part_transaction(extent, || {
+            decode().map(|value| (value, extent.window().len()))
+        })
+    }
+
+    /// Decode one sequential record once and finish its extent at the consumed prefix.
+    /// A recoverable failure owns the complete unread parent suffix.
+    pub fn sequential_part_transaction<T>(
+        &self,
+        extent: View<'_>,
+        decode: impl FnOnce() -> Result<(T, usize), CodecError>,
+    ) -> Result<PartOutcome<T>, CodecError> {
         let mut capture = self.capture_part_extent(extent)?;
         let mut transaction = match super::tracking::ReadTransaction::begin_part(self.budget) {
             Ok(transaction) => transaction,
             Err(error) => return self.finish_given_up(capture, error),
         };
-        let result = decode();
+        let result = decode().and_then(|(value, consumed)| {
+            if consumed > extent.window().len() {
+                return Err(CodecError::malformed(
+                    "sequential part exceeds its parent extent",
+                ));
+            }
+            capture.byte_len = super::u64_from_index(consumed);
+            Ok(value)
+        });
         if let Some(limit) = self
             .resource_refusal()
             .filter(|limit| limit.scope == LimitScope::Session)
@@ -135,6 +155,7 @@ impl DecodeContext<'_> {
                 })
             }
             Err(error) => {
+                capture.byte_len = super::u64_from_index(extent.window().len());
                 capture.attempted_record_ids = transaction.take_part_attempts()?;
                 drop(transaction);
                 self.finish_given_up(capture, error)

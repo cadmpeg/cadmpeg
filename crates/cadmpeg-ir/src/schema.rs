@@ -3,6 +3,9 @@
 
 use serde::Serialize;
 
+/// Typed native-reference access over the complete neutral arena registry.
+pub mod native_links;
+
 /// Generated-schema identities for compiled dimension and D10 types.
 #[cfg(feature = "schema")]
 pub mod query;

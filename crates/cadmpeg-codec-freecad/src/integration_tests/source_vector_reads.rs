@@ -27,24 +27,15 @@ fn current_vector_fields_retain_exact_source_reads_without_crediting_opaque_extr
     };
     assert_eq!(native.name, "ExtraVector");
     assert_eq!(native.values()[0].attributes["Vendor"], "opaque-extra");
-    let projected = decoded
+    assert!(decoded
         .ir()
         .model
         .attributes
         .iter()
-        .find(|attribute| attribute.native_ref.as_deref() == Some(native.id.as_str()))
-        .expect("the current decoded vector attribute");
-    assert_eq!(projected.name, "ExtraVector");
-    let [cadmpeg_ir::attributes::AttributeValue::Vector(coordinates)] = projected.values.as_slice()
-    else {
-        panic!("finite vector: {projected:?}")
-    };
+        .all(|attribute| attribute.native_ref.as_deref() != Some(native.id.as_str())));
     assert_eq!(
-        coordinates
-            .iter()
-            .map(|coordinate| coordinate.get())
-            .collect::<Vec<_>>(),
-        [1.25, -2.0, 3.0]
+        ["valueX", "valueY", "valueZ"].map(|key| native.values()[0].attributes[key].as_str()),
+        ["1.25", "-2", "3"]
     );
     let fidelity = decoded.source_fidelity();
     let layout = &fidelity.record_layout()[&native.id];
@@ -59,8 +50,14 @@ fn current_vector_fields_retain_exact_source_reads_without_crediting_opaque_extr
     assert_eq!(
         layout.reads()[layout.stream()],
         [
+            key("name", "ExtraVector"),
             range("name", "ExtraVector"),
+            key("type", "App::PropertyVector"),
             range("type", "App::PropertyVector"),
+            {
+                let at = document.find("<PropertyVector ").unwrap() + 1;
+                u64_from_index(at)..u64_from_index(at + "PropertyVector".len())
+            },
             key("valueX", "1.25"),
             range("valueX", "1.25"),
             key("valueY", "-2"),
@@ -109,12 +106,52 @@ fn current_vector_fields_retain_exact_source_reads_without_crediting_opaque_extr
         changed_native.values()[0].attributes["Vendor"],
         "current-extra"
     );
-    let changed_vector = changed
+    assert!(changed
         .ir()
         .model
         .attributes
         .iter()
-        .find(|attribute| attribute.native_ref.as_deref() == Some(changed_native.id.as_str()))
-        .unwrap();
-    assert_eq!(changed_vector.values, projected.values);
+        .all(|attribute| attribute.native_ref.as_deref() != Some(changed_native.id.as_str())));
+    assert_eq!(
+        ["valueX", "valueY", "valueZ"]
+            .map(|key| changed_native.values()[0].attributes[key].as_str()),
+        ["1.25", "-2", "3"]
+    );
+}
+
+#[test]
+fn vector_with_a_real_neutral_owner_keeps_coordinates_when_native_extras_change() {
+    let document = "<Document SchemaVersion='4' FileVersion='1'><Objects Count='1'><Object name='Owner' type='App::Part'/></Objects><ObjectData Count='1'><Object name='Owner'><Properties Count='1'><Property name='ExtraVector' type='App::PropertyVector'><PropertyVector valueX='1.25' valueY='-2' valueZ='3' Vendor='opaque-extra'/></Property></Properties></Object></ObjectData></Document>";
+    let decode = |xml: &str| {
+        crate::FcstdCodec
+            .decode(
+                &mut Cursor::new(crate::test_support::test_archive::archive(xml)),
+                &DecodeOptions::default(),
+            )
+            .unwrap()
+    };
+    let before = decode(document);
+    let after = decode(&document.replace("opaque-extra", "current-extra"));
+    for decoded in [&before, &after] {
+        let [attribute] = decoded.ir().model.attributes.as_slice() else {
+            panic!("one owned vector attribute")
+        };
+        assert_eq!(attribute.name, "ExtraVector");
+        let [cadmpeg_ir::attributes::AttributeValue::Vector(coordinates)] =
+            attribute.values.as_slice()
+        else {
+            panic!("finite vector")
+        };
+        assert_eq!(
+            coordinates
+                .iter()
+                .map(|coordinate| coordinate.get())
+                .collect::<Vec<_>>(),
+            [1.25, -2., 3.]
+        );
+        assert!(
+            matches!(&attribute.target, cadmpeg_ir::attributes::AttributeTarget::Record { arena, id } if arena.as_str() == "product_definitions" && decoded.ir().model.contains_record(*arena, id))
+        );
+    }
+    assert_eq!(before.ir().model.attributes, after.ir().model.attributes);
 }

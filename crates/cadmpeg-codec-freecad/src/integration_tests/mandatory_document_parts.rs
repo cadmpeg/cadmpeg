@@ -56,7 +56,11 @@ fn bounded_xml_utf8_and_schema_failures_preserve_the_same_successful_peer() {
         assert_eq!(decoded.ir().model.entity_count(), 0);
         let identity = decoded.ir().source.as_ref().unwrap();
         assert_eq!(identity.format(), "fcstd");
-        assert!(identity.dialects().is_none());
+        let root_survives = matches!(case, 0 | 3);
+        assert_eq!(identity.dialects().is_some(), root_survives);
+        if let Some(dialects) = identity.dialects() {
+            assert_eq!(dialects.primary().dialect().as_str(), "fcstd:schema-4");
+        }
         let namespace = decoded.ir().native.namespace("fcstd").unwrap();
         let entries = namespace
             .arena_as::<crate::native::EntryRecord>("entries")
@@ -73,10 +77,13 @@ fn bounded_xml_utf8_and_schema_failures_preserve_the_same_successful_peer() {
             .unwrap();
         assert_eq!(document_entry, expected_document);
         assert_eq!(entries.len(), 2);
-        assert!(namespace
-            .arena_as::<crate::native::DocumentFacts>("document")
-            .unwrap()
-            .is_empty());
+        assert_eq!(
+            namespace
+                .arena_as::<crate::native::DocumentFacts>("document")
+                .unwrap()
+                .len(),
+            usize::from(root_survives)
+        );
         let unknowns = decoded.ir().native_unknowns("fcstd").unwrap();
         let [unknown] = unknowns.as_slice() else {
             panic!("one failed document")
@@ -90,20 +97,40 @@ fn bounded_xml_utf8_and_schema_failures_preserve_the_same_successful_peer() {
             ])
         );
         let part = &fidelity.parts()[&unknown.id];
-        let root_framed = case >= 2;
-        assert_eq!(
-            part.level().as_str(),
-            if root_framed {
-                "freecad.document"
-            } else {
-                "freecad.document_xml"
-            }
-        );
+        let (expected_level, raw, offset) = match case {
+            0 => (
+                "freecad.objects",
+                b"<Objects>".as_slice(),
+                document
+                    .windows(b"<Objects>".len())
+                    .position(|part| part == b"<Objects>")
+                    .unwrap(),
+            ),
+            1 => ("freecad.document", document, 0),
+            2 => ("freecad.document", document, 0),
+            3 => (
+                "freecad.objects",
+                b"<Objects/>".as_slice(),
+                document
+                    .windows(b"<Objects/>".len())
+                    .rposition(|part| part == b"<Objects/>")
+                    .unwrap(),
+            ),
+            _ => unreachable!(),
+        };
+        assert_eq!(part.level().as_str(), expected_level);
         assert_eq!(part.state(), &PartState::GivenUp {});
-        assert_eq!(part.offset(), 0);
-        assert_eq!(part.byte_len(), u64::try_from(document.len()).unwrap());
+        assert_eq!(part.offset(), u64::try_from(offset).unwrap());
+        assert_eq!(part.byte_len(), u64::try_from(raw.len()).unwrap());
         let parent = &fidelity.parts()[part.parent().unwrap()];
-        let parent = if root_framed {
+        let parent = if root_survives {
+            assert_eq!(parent.level().as_str(), "freecad.document");
+            assert_eq!(parent.state(), &PartState::Decoded {});
+            &fidelity.parts()[parent.parent().unwrap()]
+        } else {
+            parent
+        };
+        let parent = if expected_level != "freecad.document_xml" {
             assert_eq!(parent.level().as_str(), "freecad.document_xml");
             assert_eq!(parent.state(), &PartState::Decoded {});
             &fidelity.parts()[parent.parent().unwrap()]
@@ -115,17 +142,20 @@ fn bounded_xml_utf8_and_schema_failures_preserve_the_same_successful_peer() {
         let archive = &fidelity.parts()[parent.parent().unwrap()];
         assert_eq!(archive.level().as_str(), "zip.archive");
         assert_eq!(archive.state(), &PartState::Decoded {});
-        assert_eq!(fidelity.parts().len(), 6 + usize::from(root_framed));
+        assert_eq!(fidelity.parts().len(), [9, 8, 8, 11][case]);
         let retained = fidelity.retained_record(unknown.id.as_str()).unwrap();
-        assert_eq!(retained.data(), Some(document));
+        assert_eq!(retained.data(), Some(raw));
         assert_eq!(retained.stream(), part.stream());
-        assert_eq!(retained.sha256(), cadmpeg_ir::hash::sha256_hex(document));
+        assert_eq!(retained.sha256(), cadmpeg_ir::hash::sha256_hex(raw));
         assert!(fidelity.record_layout()[unknown.id.as_str()]
             .reads()
             .is_empty());
-        assert!(!fidelity
-            .record_layout()
-            .contains_key(&crate::native::native_id("document", "0")));
+        assert_eq!(
+            fidelity
+                .record_layout()
+                .contains_key(&crate::native::native_id("document", "0")),
+            root_survives
+        );
         assert_eq!(crate::source_archive::image(fidelity).unwrap(), bytes);
         let failed = decoded
             .report()
@@ -171,7 +201,7 @@ fn bounded_xml_utf8_and_schema_failures_preserve_the_same_successful_peer() {
             .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
             .unwrap();
         assert_eq!(inspection.format(), "fcstd");
-        assert!(inspection.dialects().is_none());
+        assert_eq!(inspection.dialects(), identity.dialects());
         assert_eq!(
             inspection
                 .entries
@@ -196,26 +226,32 @@ fn bounded_xml_utf8_and_schema_failures_preserve_the_same_successful_peer() {
             archive.open(&ctx, "peer.bin").unwrap().window(),
             b"readable peer"
         );
-        assert_eq!(
-            archive
-                .part(&ctx, unknown.id.as_str(), "Document.xml")
-                .unwrap(),
-            document
-        );
+        if root_survives {
+            let reopened = archive.open(&ctx, "Document.xml").unwrap();
+            assert_eq!(
+                reopened.child(offset, offset + raw.len()).unwrap().window(),
+                raw
+            );
+        } else {
+            assert_eq!(
+                archive
+                    .part(&ctx, unknown.id.as_str(), "Document.xml")
+                    .unwrap(),
+                raw
+            );
+        }
         let mut shifted = serde_json::to_value(fidelity).unwrap();
         for map in ["parts", "retained_records", "record_layout"] {
             shifted[map][unknown.id.as_str()]["offset"] = serde_json::json!(part.offset() + 1);
         }
-        if root_framed {
-            for range in shifted["parts"][unknown.id.as_str()]["framing_bytes"]
-                .as_array_mut()
-                .unwrap()
-            {
-                let start = range["start"].as_u64().unwrap();
-                let end = range["end"].as_u64().unwrap();
-                range["start"] = serde_json::json!(start + 1);
-                range["end"] = serde_json::json!(end + 1);
-            }
+        for range in shifted["parts"][unknown.id.as_str()]["framing_bytes"]
+            .as_array_mut()
+            .unwrap()
+        {
+            let start = range["start"].as_u64().unwrap();
+            let end = range["end"].as_u64().unwrap();
+            range["start"] = serde_json::json!(start + 1);
+            range["end"] = serde_json::json!(end + 1);
         }
         let shifted: cadmpeg_ir::SourceFidelity = serde_json::from_value(shifted).unwrap();
         assert!(crate::source_archive::OriginalArchive::new(&ctx, root, &shifted).is_err());
@@ -265,8 +301,9 @@ fn a_mandatory_member_decompression_failure_keeps_its_stored_extent_and_peer() {
         .unwrap()
         .arena_as::<crate::native::EntryRecord>("entries")
         .unwrap();
-    assert_eq!(entries.len(), 1);
-    assert_eq!(entries[0].name(), "peer.bin");
+    assert_eq!(entries.len(), 2);
+    assert!(entries.iter().any(|entry| entry.name() == "peer.bin"));
+    assert!(entries.iter().any(|entry| entry.name() == "Document.xml"));
     assert!(decoded.ir().source.as_ref().unwrap().dialects().is_none());
     assert_eq!(
         crate::source_archive::image(decoded.source_fidelity()).unwrap(),
@@ -330,7 +367,24 @@ fn an_unframeable_mandatory_header_gives_up_only_the_real_archive_parent() {
             cadmpeg_ir::ArenaClass::Design
         ])
     );
-    assert_eq!(fidelity.parts().len(), 1);
+    assert_eq!(fidelity.parts().len(), 3);
+    for child in fidelity
+        .parts()
+        .values()
+        .filter(|part| part.parent().is_some())
+    {
+        assert!(matches!(
+            child.level().as_str(),
+            "zip.local_header" | "zip.entry"
+        ));
+        assert_eq!(
+            child.state(),
+            &PartState::Covered {
+                by: unknown.id.clone()
+            }
+        );
+        assert_eq!(child.parent(), Some(&unknown.id));
+    }
     let part = &fidelity.parts()[&unknown.id];
     assert_eq!(part.level().as_str(), "zip.archive");
     assert_eq!(part.offset(), 0);

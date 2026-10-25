@@ -14,12 +14,13 @@ use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::transform::Transform;
 
+use super::source::parse_payloads;
 use super::{
     normalize_periodic_surface, parse_analytic_surface, parse_binary_edge_representation,
-    parse_binary_prefix, parse_edge_representation, parse_payloads, parse_text,
-    AnalyticSurfaceKind, BinaryCursor, LocationRef, ShapePayload, ShapePayloadRecord, TableRef,
-    TextCurve, TextCurve2d, TextEdgeRepresentation, TextShapeKind, TextSurface, TextTShape,
-    TextTShapeGeometry, TextTShapeWire, TextTShapes, TokenCursor,
+    parse_binary_prefix, parse_edge_representation, parse_text, AnalyticSurfaceKind, BinaryCursor,
+    LocationRef, ShapePayload, ShapePayloadRecord, TableRef, TextCurve, TextCurve2d,
+    TextEdgeRepresentation, TextShapeKind, TextSurface, TextTShape, TextTShapeGeometry,
+    TextTShapeWire, TextTShapes, TokenCursor,
 };
 use crate::native::PropertyRecord;
 use crate::test_support::test_archive::archive_entries;
@@ -74,19 +75,25 @@ fn test_parse_payloads(
 fn indexed_polygon_admits_only_aligned_parameters() {
     let node = cadmpeg_ir::features::FinitePoint3::ZERO;
     let mut facts = super::ShapeSet {
-        locations: Vec::new(),
-        curve2ds: Vec::new(),
-        curves: Vec::new(),
+        indices: Default::default(),
+        declared_counts: Default::default(),
+        row_ids: Default::default(),
+        polygon3d_refs: Vec::new().into(),
+        indexed_polygon_refs: Vec::new().into(),
+        locations: Vec::new().into(),
+        curve2ds: Vec::new().into(),
+        curves: Vec::new().into(),
         polygons3d: vec![super::TextPolygon3d {
             deflection: cadmpeg_ir::scalar::NonNegativeReal::ZERO,
             nodes: vec![node],
             parameters: Some(vec![]),
-        }],
-        polygons_on_triangulations: Vec::new(),
-        surfaces: Vec::new(),
-        triangulations: Vec::new(),
+        }]
+        .into(),
+        polygons_on_triangulations: Vec::new().into(),
+        surfaces: Vec::new().into(),
+        triangulations: Vec::new().into(),
         tshapes: Vec::new().into(),
-        roots: Vec::new(),
+        roots: Vec::new().into(),
     };
     assert!(facts.validate().is_err());
     facts.polygons3d[0].parameters = Some(vec![
@@ -573,7 +580,7 @@ fn binds_only_the_direct_shape_entry_as_typed_payload() {
             family: crate::native::PropertyFamily::Geometry,
             status: None,
             body: Some(crate::native::PropertyBody::Persisted {
-                values: Vec::new(),
+                values: Vec::new().into(),
                 links: Vec::new(),
                 side_entries: vec!["empty.brp".into(), "empty-2.brp".into()],
             }),
@@ -614,7 +621,7 @@ fn ignores_nested_shape_part_carriers() {
             family: crate::native::PropertyFamily::Geometry,
             status: None,
             body: Some(crate::native::PropertyBody::Persisted {
-                values: Vec::new(),
+                values: Vec::new().into(),
                 links: Vec::new(),
                 side_entries: vec!["nested.brp".into()],
             }),
@@ -638,7 +645,7 @@ fn rejects_duplicate_direct_shape_part_carriers() {
             family: crate::native::PropertyFamily::Geometry,
             status: None,
             body: Some(crate::native::PropertyBody::Persisted {
-                values: Vec::new(),
+                values: Vec::new().into(),
                 links: Vec::new(),
                 side_entries: vec!["first.brp".into(), "second.brp".into()],
             }),
@@ -681,7 +688,7 @@ fn ignores_non_shape_runtime_names_when_framing_payloads() {
             family: crate::native::PropertyFamily::Unknown,
             status: None,
             body: Some(crate::native::PropertyBody::Persisted {
-                values: Vec::new(),
+                values: Vec::new().into(),
                 links: Vec::new(),
                 side_entries: vec!["custom.brp".into()],
             }),
@@ -796,7 +803,7 @@ fn recursive_brep_carriers_retain_checked_fields_across_native_json() {
     let facts = test_parse_text(input.as_bytes())
         .expect("recursive surfaces")
         .0;
-    for surface in facts.surfaces {
+    for surface in &facts.surfaces {
         let wire = serde_json::to_value(&surface).unwrap();
         let admitted: TextSurface = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(admitted).unwrap(), wire);
@@ -1321,6 +1328,7 @@ fn transfers_zero_radius_brep_circles_as_degenerate_curves() {
             cadmpeg_ir::ids::CurveId::mint("fcstd:test:curve#1").expect("identity grammar"),
             &association,
             &mut transfer,
+            None,
         )
     })
     .unwrap();
@@ -1442,6 +1450,7 @@ fn transfers_occt_revolution_surface_parameter_order() {
             &association,
             &mut curves,
             &mut surfaces,
+            None,
         )
     })
     .unwrap();
@@ -1479,6 +1488,7 @@ fn transfers_a_signed_cone_half_angle_without_moving_the_frame() {
             &association,
             &mut curves,
             &mut surfaces,
+            None,
         )
     })
     .expect("a signed half angle is a b-rep cone the reader admits");

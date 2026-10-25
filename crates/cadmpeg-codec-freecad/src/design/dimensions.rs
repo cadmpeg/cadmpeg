@@ -130,12 +130,19 @@ pub(super) fn bind(
     definition: FeatureDefinition,
     owner: &FeatureId,
     parameters: &[DesignParameter],
+    attempts: &[crate::property_reader::ParameterAttempt],
 ) -> Result<FeatureDefinition, CodecError> {
     let mut ids: BTreeMap<&str, &ParameterId> = parameters
         .iter()
         .filter(|parameter| parameter.owner.as_ref() == Some(owner))
         .map(|parameter| (parameter.name.as_str(), &parameter.id))
         .collect();
+    ids.extend(
+        attempts
+            .iter()
+            .filter(|attempt| attempt.owner.as_ref() == Some(owner))
+            .map(|attempt| (attempt.name.as_str(), &attempt.id)),
+    );
     let mut value = serde_json::to_value(&definition).map_err(CodecError::malformed)?;
     let operation = if value["definition"] == "post_process" {
         if value["fuzzy_tolerance"]["kind"] == "explicit" {

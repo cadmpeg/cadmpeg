@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Owned dependency finalization before a part stage releases document fields.
 
-use super::{PartDependencyPruning, PartOutput};
+use super::{FinalizedFailureRegistry, PartDependencyPruning, PartOutput};
 use crate::document::Model;
 use crate::native::Native;
 use crate::report::loss::LossNote;
@@ -9,12 +9,26 @@ use crate::SourceFidelity;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
+type FinalizedFields = (Model, Native, SourceFidelity, Vec<LossNote>);
+type FieldsWithFailures = (FinalizedFields, Vec<String>, FinalizedFailureRegistry);
+type FieldsWithPruning = (FinalizedFields, Vec<String>, PrunedPartCaptures);
+type FieldsWithFailuresAndPruning = (
+    FinalizedFields,
+    Vec<String>,
+    FinalizedFailureRegistry,
+    PrunedPartCaptures,
+);
+
 /// A dependency-closed stage whose component tuple can be released.
 ///
 /// The constructor is private. Source-byte B1 derivation remains a separate
 /// required operation before the document is exportable.
 #[derive(Debug)]
-pub struct FinalizedPartOutput(PartOutput, PrunedPartCaptures);
+pub struct FinalizedPartOutput {
+    output: PartOutput,
+    dropped_records: Vec<String>,
+    pruning: PrunedPartCaptures,
+}
 
 /// Actual dependency-pruned identities from one finalized producer stage.
 ///
@@ -80,16 +94,81 @@ impl FinalizedPartOutput {
         PrunedPartCaptures,
     ) {
         (
-            self.0.model,
-            self.0.native,
-            self.0.fidelity,
-            self.0.losses,
-            self.1,
+            self.output.model,
+            self.output.native,
+            self.output.fidelity,
+            self.output.losses,
+            self.pruning,
         )
     }
     /// Consume dependency-closed records and their source facts.
     pub fn into_parts(self) -> (Model, Native, SourceFidelity, Vec<LossNote>) {
-        (self.0.model, self.0.native, self.0.fidelity, self.0.losses)
+        self.into_parts_with_dropped().0
+    }
+
+    /// Actual identities removed by this output's single dependency closure.
+    pub fn dropped_records(&self) -> &[String] {
+        &self.dropped_records
+    }
+
+    /// Move the actual failed invocation authorities beside finalized fields.
+    ///
+    /// # Errors
+    /// Propagates source authority storage refusal.
+    pub fn into_parts_with_failure_registry(
+        mut self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<FieldsWithFailures, CodecError> {
+        let failures = FinalizedFailureRegistry::new(
+            ctx,
+            self.output.codec,
+            std::mem::take(&mut self.output.failures),
+        )?;
+        let (parts, dropped) = self.into_parts_with_dropped();
+        Ok((parts, dropped, failures))
+    }
+
+    /// Move finalized fields, failure homes, and their capture-pruning proof.
+    pub fn into_parts_with_failure_registry_and_capture_pruning(
+        mut self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<FieldsWithFailuresAndPruning, CodecError> {
+        let failures = FinalizedFailureRegistry::new(
+            ctx,
+            self.output.codec,
+            std::mem::take(&mut self.output.failures),
+        )?;
+        let (parts, dropped, pruning) = self.into_parts_with_dropped_and_capture_pruning();
+        Ok((parts, dropped, failures, pruning))
+    }
+
+    /// Move finalized fields and both exact dependency-closure handoffs.
+    pub fn into_parts_with_dropped_and_capture_pruning(self) -> FieldsWithPruning {
+        (
+            (
+                self.output.model,
+                self.output.native,
+                self.output.fidelity,
+                self.output.losses,
+            ),
+            self.dropped_records,
+            self.pruning,
+        )
+    }
+
+    /// Move finalized fields and the actual deleted identities to their owner.
+    pub fn into_parts_with_dropped(
+        self,
+    ) -> ((Model, Native, SourceFidelity, Vec<LossNote>), Vec<String>) {
+        (
+            (
+                self.output.model,
+                self.output.native,
+                self.output.fidelity,
+                self.output.losses,
+            ),
+            self.dropped_records,
+        )
     }
 }
 
@@ -119,10 +198,11 @@ impl PartOutput {
         }
         dropped.sort_unstable();
         dropped.dedup();
-        Ok(FinalizedPartOutput(
-            self,
-            PrunedPartCaptures { session, dropped },
-        ))
+        Ok(FinalizedPartOutput {
+            output: self,
+            dropped_records,
+            pruning: PrunedPartCaptures { session, dropped },
+        })
     }
 }
 

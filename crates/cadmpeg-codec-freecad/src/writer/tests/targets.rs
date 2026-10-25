@@ -160,10 +160,14 @@ fn no_fidelity_or_missing_layout_uses_synthesis_in_the_selected_schema() {
         output.report().write_path(),
         WritePath::Synthesized { .. }
     ));
-    assert!(matches!(
-        output.report().synthesis_cause(),
-        Some(SynthesisCause::PatchDeclined { .. })
-    ));
+    assert!(
+        matches!(
+            output.report().synthesis_cause(),
+            Some(SynthesisCause::PatchDeclined { .. })
+        ),
+        "{:?}",
+        output.report().synthesis_cause()
+    );
     assert_eq!(
         decode(&bytes(output))
             .report()
@@ -268,10 +272,16 @@ fn neutral_edits_and_unrepresented_source_never_reach_the_patch_path() {
         output.report().write_path(),
         WritePath::Synthesized { .. }
     ));
-    assert!(matches!(
+    // #214 B1 now derives this source's unrepresented classes from genuine
+    // unread spans. That law takes precedence over the later patch gate.
+    let unrepresented = decoded.source_fidelity().unrepresented();
+    assert!(!unrepresented.is_empty());
+    assert_eq!(
         output.report().synthesis_cause(),
-        Some(SynthesisCause::PatchDeclined { .. })
-    ));
+        Some(&SynthesisCause::SourceUnrepresented {
+            classes: unrepresented
+        })
+    );
     let reread = decode(&bytes(output));
     assert!(reread
         .ir()
@@ -292,8 +302,11 @@ fn neutral_edits_and_unrepresented_source_never_reach_the_patch_path() {
         output.report().write_path(),
         WritePath::Synthesized { .. }
     ));
-    assert!(
-        matches!(output.report().synthesis_cause(),Some(SynthesisCause::SourceUnrepresented{classes}) if classes.contains(&cadmpeg_ir::ArenaClass::Design))
+    assert_eq!(
+        output.report().synthesis_cause(),
+        Some(&SynthesisCause::SourceUnrepresented {
+            classes: fidelity.unrepresented()
+        })
     );
     assert_eq!(
         bytes(inherited(&decoded)),

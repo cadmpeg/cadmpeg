@@ -56,6 +56,29 @@ fn default_allowances_reject_record_removal() {
 }
 
 #[test]
+fn scope_loss_requires_proof_for_every_removed_row_and_no_surviving_class_rows() {
+    use cadmpeg_ir::document::ArenaClass;
+    let before =
+        json!({"scope":{"model":true,"design":true},"model":{"points":[{"id":"p","x":1}]}});
+    let after = json!({"scope":{"model":false,"design":false},"model":{"points":[]}});
+    assert!(!accepts(&before, &after));
+    let mut allowances = Allowances {
+        given_up: true,
+        lost_classes: [ArenaClass::Model, ArenaClass::Design].into(),
+        ..Allowances::default()
+    };
+    assert!(agree(&before, &after, &allowances, Mode::Same).is_err());
+    allowances.removed.insert("p".into());
+    assert!(agree(&before, &after, &allowances, Mode::Same).is_ok());
+    let mut held = after.clone();
+    held["model"]["points"] = json!([{"id":"q","x":1}]);
+    assert!(agree(&before, &held, &allowances, Mode::Same).is_err());
+    assert!(agree(&after, &before, &allowances, Mode::Same).is_err());
+    allowances.given_up = false;
+    assert!(agree(&before, &after, &allowances, Mode::Same).is_err());
+}
+
+#[test]
 fn extra_record_passes() {
     let before = document(json!([{"id":"a","x":1.0}]));
     let after = document(json!([{"id":"x","x":1.0},{"id":"y","x":2.0}]));
@@ -104,6 +127,7 @@ fn shell_can_lose_only_an_allowed_face_entry() {
     let (before, after) = face_removal();
     let allowances = Allowances {
         removed: ["f2".to_owned()].into(),
+        ..Allowances::default()
     };
     assert!(agree(&before, &after, &allowances, Mode::Same).is_ok());
 }
@@ -149,6 +173,7 @@ fn removal_in_a_nested_list_preserves_the_holder() {
         json!({"model":{"faces":[],"shells":[{"id":"t","groups":[{"name":"kept","members":[]}]}]}});
     let allowances = Allowances {
         removed: ["f".to_owned()].into(),
+        ..Allowances::default()
     };
     assert!(agree(&before, &after, &allowances, Mode::Same).is_ok());
     let mut dropped_holder = after;

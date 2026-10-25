@@ -10,6 +10,39 @@ use cadmpeg_ir::{Codec, DecodeOptions};
 use std::fmt::Write as _;
 use std::io::Cursor;
 
+fn assert_failed_value_home(decoded: &cadmpeg_ir::codec::DecodeResult, xml: &str, value: &str) {
+    let unknowns = decoded.ir().native_unknowns("fcstd").unwrap();
+    assert_eq!(unknowns.len(), 1);
+    let fidelity = decoded.source_fidelity();
+    let part = &fidelity.parts()[&unknowns[0].id];
+    assert_eq!(part.level().as_str(), "freecad.property_value");
+    assert_eq!(
+        part.state(),
+        &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}
+    );
+    assert_eq!(
+        part.offset(),
+        u64::try_from(xml.find(value).unwrap()).unwrap()
+    );
+    assert_eq!(part.byte_len(), u64::try_from(value.len()).unwrap());
+    let retained = fidelity.retained_record(unknowns[0].id.as_str()).unwrap();
+    assert_eq!(retained.data(), Some(value.as_bytes()));
+    assert_eq!(retained.stream(), part.stream());
+    assert_eq!(retained.offset(), part.offset());
+    let losses = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "record.unreadable")
+        .collect::<Vec<_>>();
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].severity, cadmpeg_ir::report::Severity::Error);
+    let source = losses[0].provenance.as_ref().unwrap();
+    assert_eq!(source.stream_name(), Some(part.stream()));
+    assert_eq!(source.offset, part.offset());
+    assert_eq!(source.byte_len(), Some(part.byte_len()));
+}
+
 #[test]
 fn damaged_first_optional_frame_preserves_detection_and_the_required_document() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
@@ -205,7 +238,18 @@ fn unreadable_optional_payload_retains_stored_bytes_and_checked_geometry() {
     let admitted = namespace
         .arena_as::<crate::native::EntryRecord>("entries")
         .expect("admitted entries");
-    assert!(!admitted.iter().any(|entry| entry.name() == "Thumbnail.png"));
+    let entry = admitted
+        .iter()
+        .find(|entry| entry.name() == "Thumbnail.png")
+        .expect("the readable local header remains an independent native record");
+    let layout = &decoded.source_fidelity().record_layout()[entry.id()];
+    assert_eq!(layout.offset(), file.header_start);
+    assert_eq!(
+        layout.byte_len(),
+        file.data_start.unwrap() - file.header_start
+    );
+    assert!(entry.referenced_by().is_empty());
+    crate::fidelity::b1::assert_classified_spans(&decoded);
 }
 
 #[test]
@@ -308,21 +352,62 @@ fn unrelated_missing_attachments_recover_but_shape_sidecars_remain_required() {
             &mut Cursor::new(archive(&document)),
             &DecodeOptions::default(),
         );
+        let decoded = result.expect("an absent side entry does not erase readable XML");
+        let namespace = decoded.ir().native.namespace("fcstd").unwrap();
+        let properties = namespace.arena_as::<PropertyRecord>("properties").unwrap();
+        assert_eq!(properties.len(), 1);
+        let property = &properties[0];
+        assert_eq!(property.name, "Payload");
+        assert!(property.side_entries().is_empty());
+        let entries = namespace
+            .arena_as::<crate::native::EntryRecord>("entries")
+            .unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].name(), "Document.xml");
+        let failed = decoded
+            .source_fidelity()
+            .parts()
+            .values()
+            .filter(|part| {
+                part.state() == &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}
+            })
+            .collect::<Vec<_>>();
         if required {
-            assert!(result.is_err());
+            assert_eq!(property.values().len(), 1);
+            assert_eq!(property.values()[0].tag, "Part");
+            assert_eq!(property.values()[0].attributes["file"], "shape.brp");
+            assert!(failed.is_empty());
+            assert!(namespace
+                .arena_as::<crate::brep::ShapePayloadRecord>("shape_payloads")
+                .unwrap()
+                .is_empty());
         } else {
-            let decoded = result.expect("missing unrelated attachment");
-            assert!(decoded.report().losses.iter().any(|loss| loss.code
-                == crate::loss::FreecadLossCode::PersistenceSideEntryUnresolved
-                    .note(String::new())
-                    .code));
-            assert!(crate::validate_native(
-                &cadmpeg_test_support::service_decode_context(),
-                decoded.ir()
-            )
-            .expect("validation")
-            .is_empty());
+            assert!(property.body.is_none());
+            assert_eq!(failed.len(), 1);
+            let part = failed[0];
+            assert_eq!(part.level().as_str(), "freecad.property_value");
+            assert_eq!(
+                part.offset(),
+                u64::try_from(document.find(payload).unwrap()).unwrap()
+            );
+            assert_eq!(part.byte_len(), u64::try_from(payload.len()).unwrap());
+            let losses = decoded
+                .report()
+                .losses
+                .iter()
+                .filter(|loss| loss.code.local_code() == "record.unreadable")
+                .collect::<Vec<_>>();
+            assert_eq!(losses.len(), 1);
+            assert_eq!(losses[0].severity, cadmpeg_ir::report::Severity::Error);
+            assert_failed_value_home(&decoded, &document, payload);
         }
+        assert!(crate::validate_native(
+            &cadmpeg_test_support::service_decode_context(),
+            decoded.ir()
+        )
+        .expect("validation")
+        .is_empty());
+        crate::fidelity::b1::assert_classified_spans(&decoded);
     }
 }
 
@@ -457,6 +542,39 @@ fn source_only_properties_synthesize_with_explicit_omissions() {
         let decoded = FcstdCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
+        let original_properties = decoded
+            .ir()
+            .native
+            .namespace("fcstd")
+            .unwrap()
+            .arena_as::<PropertyRecord>("properties")
+            .unwrap();
+        assert_eq!(original_properties.len(), 1);
+        let property = &original_properties[0];
+        assert_eq!(property.name, "Unused");
+        assert!(property.body.is_none());
+        crate::fidelity::b1::assert_classified_spans(&decoded);
+        let failed = decoded
+            .source_fidelity()
+            .parts()
+            .values()
+            .filter(|part| {
+                part.state() == &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(failed.len(), 1);
+        assert_eq!(failed[0].level().as_str(), "freecad.property_value");
+        let value = if payload.contains("App::PropertyLink") {
+            "<String value=\"wrong payload\"/>"
+        } else {
+            "<File name=\"missing-notes.txt\"/>"
+        };
+        assert_eq!(
+            failed[0].offset(),
+            u64::try_from(xml.find(value).unwrap()).unwrap()
+        );
+        assert_eq!(failed[0].byte_len(), u64::try_from(value.len()).unwrap());
+        assert_failed_value_home(&decoded, &xml, value);
         let mut written = Vec::new();
         let report = FcstdCodec
             .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
@@ -474,10 +592,22 @@ fn source_only_properties_synthesize_with_explicit_omissions() {
             .arena_as::<PropertyRecord>("properties")
             .unwrap();
         assert!(properties.is_empty());
-        assert!(report
+        let omissions = report
             .losses
             .iter()
-            .any(|loss| loss.code.local_code() == "metadata.native-property-not-transferred"));
+            .filter(|loss| {
+                loss.code.local_code() != "native.records-omitted"
+                    && loss.message.contains(&property.id)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(omissions.len(), 1);
+        assert_eq!(
+            omissions[0].code,
+            cadmpeg_ir::codec::write::ExportLossCode::SourceUndecodedOmitted
+                .note(String::new())
+                .code
+        );
+        assert_eq!(omissions[0].severity, cadmpeg_ir::report::Severity::Warning);
         assert!(matches!(
             report.write_path(),
             cadmpeg_ir::report::export::WritePath::Synthesized { .. }

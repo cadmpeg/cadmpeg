@@ -5131,13 +5131,34 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        if !self.ir.model.attributes.is_empty() {
+        let document = self.ir;
+        let mut other_attributes = 0;
+        for attribute in &document.model.attributes {
+            if attribute.values.iter().any(|value| {
+                matches!(
+                    value,
+                    cadmpeg_ir::attributes::AttributeValue::Map(_)
+                        | cadmpeg_ir::attributes::AttributeValue::Expression(_)
+                        | cadmpeg_ir::attributes::AttributeValue::SubReference { .. }
+                        | cadmpeg_ir::attributes::AttributeValue::ExternalReference { .. }
+                        | cadmpeg_ir::attributes::AttributeValue::NumericList(_)
+                )
+            }) {
+                self.loss(
+                    StepLossCode::SourceAttributeNotWritten,
+                    format!(
+                        "source attribute {} ({}) was not written to STEP",
+                        attribute.id, attribute.name
+                    ),
+                );
+            } else {
+                other_attributes += 1;
+            }
+        }
+        if other_attributes != 0 {
             self.loss(
                 StepLossCode::SourceAttributeNotWritten,
-                format!(
-                    "{} source attribute record(s) were not written to STEP",
-                    self.ir.model.attributes.len()
-                ),
+                format!("{other_attributes} source attribute record(s) were not written to STEP"),
             );
         }
         let reduced_surfaces: BTreeSet<_> = self

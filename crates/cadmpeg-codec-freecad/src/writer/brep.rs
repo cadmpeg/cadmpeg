@@ -7,41 +7,109 @@ use cadmpeg_ir::topology::{Body, BodyKind, Sense};
 use std::collections::HashMap;
 
 use super::geometry;
+mod facets;
+pub(super) mod native_tables;
+pub(super) mod occurrences;
+#[cfg(test)]
+mod prototypes;
 mod reachable;
 use reachable::Reach;
 
 const LOCATION_SIMILARITY_TOLERANCE: f64 = 1.0e-12;
 
+#[derive(Clone, PartialEq)]
 struct Shape {
     kind: &'static str,
     geometry: String,
-    children: Vec<(usize, Sense)>,
+    children: Vec<ShapeUse>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ShapeUse {
+    index: usize,
+    sense: Sense,
+    location: usize,
+}
+
+impl ShapeUse {
+    fn new(index: usize, sense: Sense) -> Self {
+        Self {
+            index,
+            sense,
+            location: 0,
+        }
+    }
+}
+
+pub(super) struct Serialization {
+    pub(super) bytes: Vec<u8>,
+    pub(super) meshes: std::collections::HashSet<String>,
+    pub(super) topology: Vec<occurrences::EmittedOccurrence>,
+    pub(super) polygon_homes: HashMap<String, Vec<usize>>,
 }
 
 /// A carrier that has no `FCStd` encoding is an entity loss, not an invalid
 /// document. The caller omits its containing body and reports the reason.
-pub(super) fn serialize(ir: &CadIr, bodies: &[&Body]) -> Result<Option<Vec<u8>>, CodecError> {
+pub(super) fn serialize(ir: &CadIr, bodies: &[&Body]) -> Result<Option<Serialization>, CodecError> {
     if bodies.iter().any(|body| {
         body.transform
             .is_some_and(|transform| !location_supported(transform))
     }) {
         return Ok(None);
     }
-    serialize_inner(ir, bodies, false)
+    serialize_inner(ir, bodies, false, &std::collections::HashSet::new(), None)
+}
+
+/// Regenerate a canonical payload from its complete current forward-linked graph.
+pub(super) fn serialize_payload(
+    ir: &CadIr,
+    payload: &crate::brep::ShapePayloadRecord,
+) -> Result<Option<Serialization>, CodecError> {
+    let bodies = ir
+        .model
+        .bodies
+        .iter()
+        .filter(|body| body.native_ref.as_deref() == Some(payload.id.as_str()))
+        .collect::<Vec<_>>();
+    if bodies.iter().any(|body| {
+        body.transform
+            .is_some_and(|value| !location_supported(value))
+    }) {
+        return Ok(None);
+    }
+    serialize_inner(
+        ir,
+        &bodies,
+        true,
+        &std::collections::HashSet::new(),
+        Some(&payload.id),
+    )
 }
 
 pub(super) fn unowned(
     ir: &CadIr,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<Option<Vec<u8>>, CodecError> {
-    let reachable = Reach::unowned(ir);
+    payload_owners: &std::collections::HashSet<String>,
+) -> Result<Option<Serialization>, CodecError> {
+    let row_owners = ir
+        .native
+        .namespace("fcstd")
+        .map(crate::brep::records::row_owners)
+        .transpose()?
+        .unwrap_or_default();
+    let reachable = Reach::unowned(ir, &row_owners);
     for curve in ir
         .model
         .curves
         .iter()
         .filter(|curve| reachable.curves.contains(curve.id.as_str()))
     {
-        if geometry::curve_record(ir, curve).is_none() {
+        if geometry::curve_record(ir, curve).is_none()
+            && (facets::polyline(curve).is_none()
+                || !ir.model.edges.iter().any(|edge| {
+                    reachable.edges.contains(edge.id.as_str()) && edge.curve() == Some(&curve.id)
+                }))
+        {
             losses.push(
                 crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
                     "standalone curve {} has no OCCT encoding and is omitted",
@@ -78,7 +146,7 @@ pub(super) fn unowned(
             )),
         );
     }
-    let bytes = serialize_inner(ir, &[], true)?;
+    let bytes = serialize_inner(ir, &[], true, payload_owners, None)?;
     if bytes.is_none()
         && (!reachable.faces.is_empty()
             || !reachable.edges.is_empty()
@@ -96,11 +164,59 @@ fn serialize_inner(
     ir: &CadIr,
     bodies: &[&Body],
     free: bool,
-) -> Result<Option<Vec<u8>>, CodecError> {
-    let reachable = if free {
-        Reach::unowned(ir)
+    payload_owners: &std::collections::HashSet<String>,
+    payload: Option<&str>,
+) -> Result<Option<Serialization>, CodecError> {
+    let row_owners = ir
+        .native
+        .namespace("fcstd")
+        .map(crate::brep::records::row_owners)
+        .transpose()?
+        .unwrap_or_default();
+    let rooted = Reach::bodies(ir, bodies, &row_owners);
+    let mut reachable = if let Some(payload) = payload {
+        Reach::payload(ir, bodies, payload, &row_owners)
+    } else if free {
+        Reach::unowned(ir, &row_owners)
     } else {
-        Reach::bodies(ir, bodies)
+        Reach::bodies(ir, bodies, &row_owners)
+    };
+    if free && payload.is_none() {
+        reachable.curves.retain(|id| {
+            !ir.model.curves.iter().any(|value| {
+                value.id.as_str() == id
+                    && value.native_ref.as_ref().is_some_and(|owner| {
+                        payload_owners.contains(row_owners.get(owner).unwrap_or(owner))
+                    })
+            })
+        });
+        reachable.surfaces.retain(|id| {
+            !ir.model.surfaces.iter().any(|value| {
+                value.id.as_str() == id
+                    && value.native_ref.as_ref().is_some_and(|owner| {
+                        payload_owners.contains(row_owners.get(owner).unwrap_or(owner))
+                    })
+            })
+        });
+    }
+    let kernel_entries = ir
+        .native
+        .namespace("fcstd")
+        .map(|namespace| namespace.arena_as::<crate::native::EntryRecord>("entries"))
+        .transpose()?
+        .unwrap_or_default();
+    let kernel_point = |point: &cadmpeg_ir::topology::Point| {
+        point.native_ref.as_deref().is_some_and(|native| {
+            kernel_entries.iter().any(|entry| {
+                entry.id() == native
+                    && entry.contents().iter().any(|contents| {
+                        matches!(
+                            contents,
+                            crate::native::entry_contents::EntryContents::Points { .. }
+                        )
+                    })
+            })
+        })
     };
     let Reach {
         faces,
@@ -116,6 +232,13 @@ fn serialize_inner(
     let mut curves = Vec::new();
     let mut curve_ids = HashMap::new();
     let mut curve_slots = HashMap::new();
+    let mut polygons = Vec::new();
+    let mut polygon_ids = HashMap::new();
+    let mut polygon_homes = HashMap::<String, Vec<usize>>::new();
+    let native_polygons = ir
+        .native
+        .namespace("fcstd")
+        .and_then(|namespace| namespace.arenas().get("polygons3d"));
     for curve in ir
         .model
         .curves
@@ -141,6 +264,17 @@ fn serialize_inner(
                 curve.id.as_str(),
                 (index, register_location(location, &mut locations)),
             );
+        } else if let Some(row) = facets::polyline(curve) {
+            polygons.push(row);
+            polygon_ids.insert(curve.id.as_str(), polygons.len());
+            if let Some(home) = curve.native_ref.as_ref().filter(|home| {
+                native_polygons.is_some_and(|rows| rows.iter().any(|row| row.id() == home.as_str()))
+            }) {
+                polygon_homes
+                    .entry(home.clone())
+                    .or_default()
+                    .push(polygons.len());
+            }
         }
     }
     let mut surfaces = Vec::new();
@@ -180,6 +314,22 @@ fn serialize_inner(
                 surface.id.as_str(),
                 (index, register_location(location, &mut locations), chart),
             );
+        }
+    }
+    let mut facet_faces = facets::faces(ir, &faces)?;
+    if let Some(payload) = payload {
+        for mesh in ir
+            .model
+            .tessellations
+            .iter()
+            .filter(|mesh| mesh.native_ref.as_deref() == Some(payload))
+        {
+            if !facet_faces.emitted.contains(mesh.id.as_str()) {
+                if let Some(row) = facets::mesh_record(mesh, None)? {
+                    facet_faces.rows.push(row);
+                    facet_faces.emitted.insert(mesh.id.to_string());
+                }
+            }
         }
     }
     let mut pcurves = Vec::new();
@@ -273,10 +423,13 @@ fn serialize_inner(
     }
     if free {
         for point in ir.model.points.iter().filter(|point| {
-            !ir.model
-                .vertices
-                .iter()
-                .any(|vertex| vertex.point == point.id)
+            !kernel_point(point)
+                && payload.is_none_or(|payload| point.native_ref.as_deref() == Some(payload))
+                && !ir
+                    .model
+                    .vertices
+                    .iter()
+                    .any(|vertex| vertex.point == point.id)
         }) {
             indices.insert(point.id.as_str(), shapes.len());
             shapes.push(Shape {
@@ -322,6 +475,9 @@ fn serialize_inner(
             String::new()
         } else {
             match edge.curve() {
+                Some(curve) if polygon_ids.contains_key(curve.as_str()) => {
+                    format!("5 {} 0", polygon_ids[curve.as_str()])
+                }
                 Some(curve) => {
                     let Some((curve, location)) = curve_ids.get(curve.as_str()) else {
                         continue;
@@ -353,6 +509,9 @@ fn serialize_inner(
                 .find(|wire| wire.id == coedge.owner_loop)
                 .and_then(|wire| ir.model.faces.iter().find(|face| face.id == wire.face))
                 .ok_or_else(|| CodecError::malformed("coedge has an absent loop or face"))?;
+            if coedge.pcurves.is_empty() {
+                continue;
+            }
             let Some((surface, surface_location, _)) = surface_ids.get(face.surface.as_str())
             else {
                 complete = false;
@@ -437,7 +596,10 @@ fn serialize_inner(
                     .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get),
                 u8::from(degenerate)
             ),
-            children: vec![(start, Sense::Forward), (end, Sense::Reversed)],
+            children: vec![
+                ShapeUse::new(start, Sense::Forward),
+                ShapeUse::new(end, Sense::Reversed),
+            ],
         });
     }
     for wire in ir
@@ -458,7 +620,7 @@ fn serialize_inner(
                     CodecError::malformed(format_args!("loop {} references absent coedge", wire.id))
                 })?;
             if let Some(index) = indices.get(coedge.edge.as_str()) {
-                children.push((*index, coedge.sense));
+                children.push(ShapeUse::new(*index, coedge.sense));
             } else {
                 complete = false;
             }
@@ -478,16 +640,23 @@ fn serialize_inner(
         .iter()
         .filter(|face| faces.contains(face.id.as_str()))
     {
-        let Some((surface, surface_location, _)) = surface_ids.get(face.surface.as_str()) else {
+        if facet_faces.ambiguous.contains(face.id.as_str()) {
             continue;
-        };
+        }
+        let analytic = surface_ids.get(face.surface.as_str());
+        let triangulation = facet_faces.indices.get(face.id.as_str());
+        if analytic.is_none() && triangulation.is_none() {
+            continue;
+        }
+        let (surface, surface_location) =
+            analytic.map_or((0, 0), |(surface, location, _)| (*surface, *location));
         let mut children = Vec::new();
         let mut complete = true;
         for wire in &face.loops {
             if let Some(index) = indices.get(wire.as_str()) {
                 // Neutral coedge senses already include the face orientation.
                 // Cancel that parent orientation on the wire reference.
-                children.push((*index, face.sense));
+                children.push(ShapeUse::new(*index, face.sense));
             } else {
                 complete = false;
             }
@@ -497,15 +666,17 @@ fn serialize_inner(
             shapes.push(Shape {
                 kind: "Fa",
                 geometry: format!(
-                    "0 {} {surface} {surface_location}",
+                    "0 {} {surface} {surface_location}{}",
                     face.tolerance
-                        .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get)
+                        .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get),
+                    triangulation.map_or_else(String::new, |index| format!(" 2 {index}"))
                 ),
                 children,
             });
         }
     }
     let mut roots = Vec::new();
+    let mut body_roots = Vec::new();
     for body in bodies {
         let mut regions = Vec::new();
         for region_id in &body.regions {
@@ -541,19 +712,19 @@ fn serialize_inner(
                         .iter()
                         .find(|value| value.id == *face_id)
                         .ok_or_else(|| CodecError::malformed("shell references absent face"))?;
-                    children.push((*index, face.sense));
+                    children.push(ShapeUse::new(*index, face.sense));
                 }
                 for edge in shell.wire_edges() {
                     let Some(index) = indices.get(edge.as_str()) else {
                         return Ok(None);
                     };
-                    children.push((*index, Sense::Forward));
+                    children.push(ShapeUse::new(*index, Sense::Forward));
                 }
                 for vertex in shell.free_vertices() {
                     let Some(index) = indices.get(vertex.as_str()) else {
                         return Ok(None);
                     };
-                    children.push((*index, Sense::Forward));
+                    children.push(ShapeUse::new(*index, Sense::Forward));
                 }
                 let index = shapes.len();
                 shapes.push(Shape {
@@ -561,7 +732,10 @@ fn serialize_inner(
                     geometry: String::new(),
                     children,
                 });
-                shells.push((index, Sense::Forward));
+                if shapes[index].kind == "Sh" {
+                    indices.insert(shell.id.as_str(), index);
+                }
+                shells.push(ShapeUse::new(index, Sense::Forward));
             }
             let index = shapes.len();
             shapes.push(Shape {
@@ -581,20 +755,23 @@ fn serialize_inner(
                 geometry: String::new(),
                 children: shells,
             });
-            regions.push((index, Sense::Forward));
+            if shapes[index].kind == "So" {
+                indices.insert(region.id.as_str(), index);
+            }
+            regions.push(ShapeUse::new(index, Sense::Forward));
         }
         if regions.is_empty() {
             return Ok(None);
         }
         let root = if regions.len() == 1 {
-            let region = regions[0].0;
+            let region = regions[0].index;
             if body.kind == BodyKind::Sheet && shapes[region].children.len() == 1 {
-                shapes[region].children[0].0
+                shapes[region].children[0].index
             } else if body.kind == BodyKind::Wire {
                 let children = shapes[region]
                     .children
                     .iter()
-                    .flat_map(|(shell, _)| shapes[*shell].children.clone())
+                    .flat_map(|usage| shapes[usage.index].children.clone())
                     .collect();
                 let root = shapes.len();
                 shapes.push(Shape {
@@ -608,7 +785,7 @@ fn serialize_inner(
                 shapes.push(Shape {
                     kind: "Co",
                     geometry: String::new(),
-                    children: vec![(region, Sense::Forward)],
+                    children: vec![ShapeUse::new(region, Sense::Forward)],
                 });
                 root
             } else {
@@ -623,33 +800,58 @@ fn serialize_inner(
             });
             root
         };
+        if shapes[root].kind == "Co" {
+            indices.insert(body.id.as_str(), root);
+        }
+        if shapes[root].kind == "Wi" && body.regions.len() == 1 {
+            if let Some(region) = ir
+                .model
+                .regions
+                .iter()
+                .find(|value| value.id == body.regions[0])
+            {
+                if region.shells.len() == 1 {
+                    indices.insert(region.shells[0].as_str(), root);
+                }
+            }
+        }
+        body_roots.push((
+            root,
+            body.id.as_str().to_owned(),
+            body.transform.unwrap_or_default(),
+        ));
         let location = register_location(body.transform.unwrap_or_default(), &mut locations);
-        roots.push((root, location));
+        roots.push(ShapeUse {
+            index: root,
+            sense: Sense::Forward,
+            location,
+        });
     }
     if free {
         for point in ir.model.points.iter().filter(|point| {
-            !ir.model
-                .vertices
-                .iter()
-                .any(|vertex| vertex.point == point.id)
+            !kernel_point(point)
+                && payload.is_none_or(|payload| point.native_ref.as_deref() == Some(payload))
+                && !ir
+                    .model
+                    .vertices
+                    .iter()
+                    .any(|vertex| vertex.point == point.id)
         }) {
             if let Some(index) = indices.get(point.id.as_str()) {
-                roots.push((*index, 0));
+                roots.push(ShapeUse::new(*index, Sense::Forward));
             }
         }
-        for face in ir
-            .model
-            .faces
-            .iter()
-            .filter(|face| faces.contains(face.id.as_str()))
-        {
+        for face in ir.model.faces.iter().filter(|face| {
+            faces.contains(face.id.as_str()) && !rooted.faces.contains(face.id.as_str())
+        }) {
             let Some(index) = indices.get(face.id.as_str()) else {
                 return Ok(None);
             };
-            roots.push((*index, 0));
+            roots.push(ShapeUse::new(*index, Sense::Forward));
         }
         for wire in ir.model.loops.iter().filter(|wire| {
             loops.contains(wire.id.as_str())
+                && !rooted.loops.contains(wire.id.as_str())
                 && !ir.model.faces.iter().any(|face| {
                     faces.contains(face.id.as_str()) && face.loops.iter().any(|id| id == &wire.id)
                 })
@@ -657,11 +859,12 @@ fn serialize_inner(
             let Some(index) = indices.get(wire.id.as_str()) else {
                 return Ok(None);
             };
-            roots.push((*index, 0));
+            roots.push(ShapeUse::new(*index, Sense::Forward));
         }
         for edge in
             ir.model.edges.iter().filter(|edge| {
                 edges.contains(edge.id.as_str())
+                    && !rooted.edges.contains(edge.id.as_str())
                     && !ir.model.coedges.iter().any(|coedge| {
                         coedges.contains(coedge.id.as_str()) && coedge.edge == edge.id
                     })
@@ -670,10 +873,11 @@ fn serialize_inner(
             let Some(index) = indices.get(edge.id.as_str()) else {
                 return Ok(None);
             };
-            roots.push((*index, 0));
+            roots.push(ShapeUse::new(*index, Sense::Forward));
         }
         for vertex in ir.model.vertices.iter().filter(|vertex| {
             vertices.contains(vertex.id.as_str())
+                && !rooted.vertices.contains(vertex.id.as_str())
                 && !ir.model.edges.iter().any(|edge| {
                     edges.contains(edge.id.as_str())
                         && (edge.start == vertex.id || edge.end == vertex.id)
@@ -682,46 +886,80 @@ fn serialize_inner(
             let Some(index) = indices.get(vertex.id.as_str()) else {
                 return Ok(None);
             };
-            roots.push((*index, 0));
+            roots.push(ShapeUse::new(*index, Sense::Forward));
         }
-        if roots.is_empty() && curves.is_empty() && surfaces.is_empty() {
+        if roots.is_empty()
+            && curves.is_empty()
+            && surfaces.is_empty()
+            && polygons.is_empty()
+            && facet_faces.rows.is_empty()
+        {
             return Ok(None);
         }
     }
-    let mut output = format!("\nCASCADE Topology V3, (c) Open Cascade\nLocations {}\n{}\nCurve2ds {}\n{}\nCurves {}\n{}\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces {}\n{}\nTriangulations 0\nTShapes {}\n", locations.len(), locations.join("\n"), pcurves.len(), pcurves.join("\n"), curves.len(), curves.join("\n"), surfaces.len(), surfaces.join("\n"), shapes.len());
+    let uses = indices
+        .iter()
+        .map(|(id, index)| (*id, ShapeUse::new(*index, Sense::Forward)))
+        .collect();
+    let location_rows = locations.iter().map(location_row).collect::<Vec<_>>();
+    let mut output = format!("\nCASCADE Topology V3, (c) Open Cascade\nLocations {}\n{}\nCurve2ds {}\n{}\nCurves {}\n{}\nPolygon3D {}\n{}\nPolygonOnTriangulations 0\nSurfaces {}\n{}\nTriangulations {}\n{}\nTShapes {}\n", locations.len(), location_rows.join("\n"), pcurves.len(), pcurves.join("\n"), curves.len(), curves.join("\n"), polygons.len(), polygons.join("\n"), surfaces.len(), surfaces.join("\n"), facet_faces.rows.len(), facet_faces.rows.join("\n"), shapes.len());
     for shape in &shapes {
         output.push_str(shape.kind);
         output.push('\n');
         output.push_str(&shape.geometry);
         output.push_str("\n\n0101101\n");
-        for (index, sense) in &shape.children {
-            output.push(if *sense == Sense::Forward { '+' } else { '-' });
-            output.push_str(&(shapes.len() - index).to_string());
-            output.push_str(" 0 ");
+        for usage in &shape.children {
+            output.push(if usage.sense == Sense::Forward {
+                '+'
+            } else {
+                '-'
+            });
+            output.push_str(&(shapes.len() - usage.index).to_string());
+            output.push(' ');
+            output.push_str(&usage.location.to_string());
+            output.push(' ');
         }
         output.push_str("*\n");
     }
     if roots.is_empty() {
         output.push_str("*\n");
     }
-    for (root, location) in roots {
-        output.push('+');
-        output.push_str(&(shapes.len() - root).to_string());
+    let topology = occurrences::emitted(ir, &shapes, &uses, &body_roots, &roots, &locations)?;
+    for usage in roots {
+        output.push(if usage.sense == Sense::Forward {
+            '+'
+        } else {
+            '-'
+        });
+        output.push_str(&(shapes.len() - usage.index).to_string());
         output.push(' ');
-        output.push_str(&location.to_string());
+        output.push_str(&usage.location.to_string());
         output.push('\n');
     }
-    Ok(Some(output.into_bytes()))
+    Ok(Some(Serialization {
+        bytes: output.into_bytes(),
+        meshes: facet_faces.emitted,
+        topology,
+        polygon_homes,
+    }))
 }
 
 fn register_location(
     transform: cadmpeg_ir::transform::Transform,
-    locations: &mut Vec<String>,
+    locations: &mut Vec<cadmpeg_ir::transform::Transform>,
 ) -> usize {
     if transform == cadmpeg_ir::transform::Transform::identity() {
         return 0;
     }
-    let row = format!(
+    if let Some(index) = locations.iter().position(|existing| *existing == transform) {
+        return index + 1;
+    }
+    locations.push(transform);
+    locations.len()
+}
+
+fn location_row(transform: &cadmpeg_ir::transform::Transform) -> String {
+    format!(
         "1\n{}",
         transform
             .affine_rows()
@@ -733,12 +971,7 @@ fn register_location(
                 .join(" "))
             .collect::<Vec<_>>()
             .join("\n")
-    );
-    if let Some(index) = locations.iter().position(|existing| existing == &row) {
-        return index + 1;
-    }
-    locations.push(row);
-    locations.len()
+    )
 }
 
 /// OCCT Locations hold similarities, not arbitrary affine deformations.

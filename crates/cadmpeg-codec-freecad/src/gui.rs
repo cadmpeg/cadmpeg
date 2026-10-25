@@ -1,12 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Transfer of `GuiDocument.xml` object appearance into neutral presentation records.
 
+mod appearance_producer;
+mod identities;
+mod material_attributes;
+mod materials;
+mod presentation;
+use materials::transfer_shape_appearances;
+pub(crate) mod payloads;
 mod schema;
 pub(crate) mod source;
+pub(crate) mod value_grammar;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::document::CadIr;
@@ -22,16 +31,30 @@ use cadmpeg_ir::SourceProvenance;
 
 use crate::brep::ShapePayloadRecord;
 use crate::loss::FreecadLossCode;
-use crate::native::element_map::{ElementMapGroup, ElementMapRecord};
+use crate::native::element_map::{ElementMapGroup, ElementMapNodes, ElementMapRecord};
 use crate::native::{
     parse_bool, GuiDocumentRecord, GuiPropertyRecord, GuiStateRecord, GuiViewProviderRecord,
     ObjectRecord, PropertyRecord, ValueRecord,
 };
 
-use schema::Admission as GuiSchemaAdmission;
+/// Checks that typed local target slots agree with the retained GUI carriers.
+pub(crate) fn validate_property_links(property: &GuiPropertyRecord) -> Result<(), CodecError> {
+    if property.type_name != "App::PropertyEnumeration"
+        && property
+            .values
+            .iter()
+            .any(|value| value.item_index.is_some())
+    {
+        return Err(CodecError::malformed(
+            "GUI enumeration item ordinal belongs to a different runtime property",
+        ));
+    }
+    crate::writer::xml::validate_gui(property)
+}
 
 #[derive(Default)]
 pub(crate) struct Graph {
+    pub(crate) entry_contents: Vec<crate::native::entry_contents::EntryContentUpdate>,
     pub(crate) documents: Vec<GuiDocumentRecord>,
     pub(crate) providers: Vec<GuiViewProviderRecord>,
     pub(crate) provider_sources: Vec<(String, std::ops::Range<usize>)>,
@@ -49,6 +72,7 @@ struct AppearancePlan {
     body_updates: Vec<BodyUpdate>,
     body_visibility_owners: HashSet<String>,
     appearances: Vec<Appearance>,
+    attributes: Vec<cadmpeg_ir::attributes::SourceAttribute>,
     bindings: Vec<AppearanceBinding>,
     remove_appearances: HashSet<AppearanceId>,
     presentation_documents: Vec<PresentationDocument>,
@@ -57,35 +81,23 @@ struct AppearancePlan {
 
 struct BodyUpdate {
     id: cadmpeg_ir::ids::BodyId,
-    visible: Assignment<Option<bool>>,
-    color: Option<Color>,
+    visible: Option<bool>,
 }
 
 fn push_body_update(
     plan: &mut AppearancePlan,
     id: &cadmpeg_ir::ids::BodyId,
-    visible: Assignment<Option<bool>>,
-    color: Result<Option<Color>, CodecError>,
-) -> Result<(), CodecError> {
+    visible: Option<bool>,
+) {
     let id = id.clone();
-    let color = color?;
-    plan.body_updates.push(BodyUpdate { id, visible, color });
-    Ok(())
-}
-
-enum Assignment<T> {
-    Keep,
-    Set(T),
+    plan.body_updates.push(BodyUpdate { id, visible });
 }
 
 impl AppearancePlan {
     fn apply(self, ir: &mut CadIr) {
         for update in self.body_updates {
             if let Some(body) = ir.model.bodies.iter_mut().find(|body| body.id == update.id) {
-                if let Assignment::Set(visible) = update.visible {
-                    body.visible = visible;
-                }
-                body.color = update.color;
+                body.visible = update.visible;
             }
         }
         ir.model
@@ -95,6 +107,7 @@ impl AppearancePlan {
             .appearances
             .retain(|appearance| !self.remove_appearances.contains(&appearance.id));
         ir.model.appearances.extend(self.appearances);
+        ir.model.attributes.extend(self.attributes);
         ir.model.appearance_bindings.extend(self.bindings);
         ir.model
             .presentation_documents
@@ -178,195 +191,115 @@ pub(crate) fn requires_alpha_conversion(program_version: Option<&str>) -> bool {
 
 pub(crate) struct GuiSources<'a, 'b> {
     pub(crate) entries: &'a BTreeMap<String, View<'b>>,
+    pub(crate) entry_owners: Option<&'a crate::container::parts::EntryOwners<'b>>,
+    pub(crate) entry_interpretations: Option<&'a payloads::sources::EntryInterpretations<'b>>,
+    pub(crate) gui_entry_interpretations: Option<&'a payloads::sources::EntryInterpretations<'b>>,
+    pub(crate) declared_entries: Option<&'a std::collections::BTreeSet<String>>,
+    pub(crate) declared_objects: Option<&'a std::collections::BTreeSet<String>>,
+    pub(crate) admitted_objects: Option<&'a std::collections::BTreeSet<String>>,
+    pub(crate) entry_parents:
+        Option<&'a BTreeMap<String, cadmpeg_ir::source_fidelity::parts::PartParent>>,
     pub(crate) objects: &'a [ObjectRecord],
+    pub(crate) object_sources:
+        Option<&'a BTreeMap<String, crate::persistence::object_parts::ObjectSource<'b>>>,
     pub(crate) properties: &'a [PropertyRecord],
     pub(crate) payloads: &'a [ShapePayloadRecord],
     pub(crate) element_maps: &'a [ElementMapRecord],
+    pub(crate) topology_occurrences: &'a [crate::topology_transfer::TopologyOccurrence],
     pub(crate) requires_alpha_conversion: bool,
 }
 
-pub(crate) fn transfer(
-    ctx: &DecodeContext<'_>,
+#[cfg(test)]
+pub(crate) fn transfer<'source>(
+    ctx: &DecodeContext<'source>,
     ir: &mut CadIr,
     bytes: &[u8],
-    sources: &GuiSources<'_, '_>,
+    sources: &GuiSources<'_, 'source>,
 ) -> Result<Graph, CodecError> {
-    match transfer_xml(ctx, ir, bytes, sources) {
-        Err(error @ (CodecError::Malformed(_) | CodecError::Truncated { .. })) => {
-            Ok(source_only_graph(None, &error))
-        }
-        result => result,
+    let source = sources
+        .entries
+        .get("GuiDocument.xml")
+        .copied()
+        .ok_or_else(|| CodecError::malformed("GUI transfer has no original source View"))?;
+    if source.window().as_ptr() != bytes.as_ptr() || source.window().len() != bytes.len() {
+        return Err(CodecError::malformed(
+            "GUI transfer bytes differ from its source View",
+        ));
     }
+    let mut output =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::Fcstd);
+    source::parse(ctx, source)?.transfer(ctx, ir, sources, &mut output)
 }
 
-fn source_only_graph(schema_declaration: Option<&str>, error: &CodecError) -> Graph {
+pub(crate) fn project_native(
+    ir: &mut CadIr,
+    namespace: &cadmpeg_ir::native::NativeNamespace,
+    sources: &GuiSources<'_, '_>,
+) -> Result<Graph, CodecError> {
     let mut graph = Graph {
-        untyped: true,
+        documents: namespace.arena_as("gui_documents")?,
+        providers: namespace.arena_as("gui_view_providers")?,
+        properties: namespace.arena_as("gui_properties")?,
         ..Graph::default()
     };
-    graph.documents.push(GuiDocumentRecord {
-        id: ("fcstd:gui:document#0").to_owned(),
-        schema_version: schema_declaration.map(ToOwned::to_owned),
-        attributes: BTreeMap::new(),
-        states: Vec::new(),
-    });
-    graph
-        .losses
-        .push(FreecadLossCode::SourceGuiMetadataUnresolved.note(format!(
-        "GuiDocument.xml remains source-only: {error}; independently decoded geometry is retained"
-    )));
-    graph
-}
-
-fn transfer_xml(
-    ctx: &DecodeContext<'_>,
-    ir: &mut CadIr,
-    bytes: &[u8],
-    sources: &GuiSources<'_, '_>,
-) -> Result<Graph, CodecError> {
-    let xml = parse_xml(ctx, bytes)?;
-    transfer_document(ir, &xml, sources, None)
-}
-
-fn parse_xml<'input>(
-    ctx: &DecodeContext<'_>,
-    bytes: &'input [u8],
-) -> Result<roxmltree::Document<'input>, CodecError> {
-    let text = std::str::from_utf8(bytes)
-        .map_err(|_| CodecError::Malformed("GuiDocument.xml is not UTF-8".into()))?;
-    ctx.parse_xml(text, "FreeCAD XML tree").map_err(|error| {
-        let CodecError::Malformed(error) = error else {
-            return error;
-        };
-        CodecError::malformed(format_args!("invalid GuiDocument.xml: {error}"))
-    })
-}
-
-fn transfer_document(
-    ir: &mut CadIr,
-    xml: &roxmltree::Document<'_>,
-    sources: &GuiSources<'_, '_>,
-    source: Option<&crate::persistence::source::Source<'_, '_>>,
-) -> Result<Graph, CodecError> {
-    let schema_declaration = crate::container::canonical_attribute(
-        xml.root_element(),
-        "SchemaVersion",
-        "schemaVersion",
-    )?;
-    let admission = schema::classify(schema_declaration.as_deref());
-    let parse = || {
-        let selected = match source {
-            Some(source) => {
-                let root = xml.root_element();
-                let key = if root.attribute("SchemaVersion").is_some() {
-                    "SchemaVersion"
-                } else {
-                    "schemaVersion"
-                };
-                root.attributes()
-                    .find(|attribute| attribute.namespace().is_none() && attribute.name() == key)
-                    .map(|attribute| source.attribute(&attribute))
-                    .transpose()?
-            }
-            None => schema_declaration.clone(),
-        };
-        let neutral_schema_version = schema::classify(selected.as_deref()).neutral_schema_version();
-        transfer_schema_one(
-            ir,
-            xml,
-            selected.as_deref(),
-            neutral_schema_version,
-            sources,
-        )
-    };
-    // The source value constructs the kept GUI document and presentation schema.
-    // A rejected provider transfer rolls this scope back before source-only recovery.
-    let transferred = match source {
-        Some(source) => source.record("fcstd:gui:document#0", xml.root_element(), parse),
-        None => parse(),
-    };
-    let mut graph = match transferred {
-        Ok((graph, plan)) => {
-            plan.apply(ir);
-            graph
-        }
-        Err(error @ (CodecError::Malformed(_) | CodecError::Truncated { .. })) => {
-            source_only_graph(schema_declaration.as_deref(), &error)
-        }
-        Err(error) => return Err(error),
-    };
-    if let GuiSchemaAdmission::Unverified { declaration } = admission {
-        let declaration = declaration.as_deref().unwrap_or("missing");
+    let schema = schema::classify(
         graph
-            .losses
-            .push(FreecadLossCode::SourceGuiSchemaUnverified.note(format!(
-                "GuiDocument.xml declares schema {declaration}; attempted the schema-1 vocabulary"
-            )));
-    }
+            .documents
+            .first()
+            .and_then(|document| document.schema_version.as_deref()),
+    )
+    .neutral_schema_version();
+    let (plan, mut losses) = project_graph(
+        ir,
+        &graph,
+        sources,
+        schema,
+        &mut appearance_producer::Current,
+    )?;
+    plan.apply(ir);
+    graph.losses.append(&mut losses);
     Ok(graph)
 }
 
-fn transfer_schema_one(
-    ir: &CadIr,
-    xml: &roxmltree::Document<'_>,
-    schema_declaration: Option<&str>,
-    neutral_schema_version: Option<u32>,
+pub(crate) fn project_records(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    graph: &mut Graph,
     sources: &GuiSources<'_, '_>,
-) -> Result<(Graph, AppearancePlan), CodecError> {
-    let entries = sources.entries;
-    let objects = sources.objects;
-    let properties = sources.properties;
-    let payloads = sources.payloads;
-    let requires_alpha_conversion = sources.requires_alpha_conversion;
-    let root = xml.root_element();
-    let mut plan = AppearancePlan::default();
-    let camera_count = root
-        .children()
-        .filter(|node| node.has_tag_name("Camera"))
-        .count();
-    let mut states = Vec::new();
-    let mut state_sources = BTreeMap::new();
-    for (order, node) in root
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .filter(|node| !node.has_tag_name("ViewProviderData"))
-        .enumerate()
-    {
-        let state = gui_state(order, node)?;
-        state_sources.insert(
-            state.id.clone(),
-            crate::fidelity::state_source(node, &state)?,
-        );
-        states.push(state);
-    }
-    let document = GuiDocumentRecord {
-        id: "fcstd:gui:document#0".into(),
-        schema_version: schema_declaration.map(ToOwned::to_owned),
-        attributes: root
-            .attributes()
-            .map(|attribute| Ok((attribute.name().to_owned(), attribute.value().to_owned())))
-            .collect::<Result<_, CodecError>>()?,
-        states,
-    };
-    let mut objects_by_name = HashMap::new();
-    for object in objects {
-        objects_by_name.insert(object.name().as_str(), object.id().as_str());
-    }
-    let mut native_providers = Vec::new();
-    let mut provider_sources = Vec::new();
-    let mut property_sources = BTreeMap::new();
-    let mut native_properties = Vec::new();
-    let mut losses = Vec::new();
-    // Absence declares no camera state; it does not omit a source record.
-    if camera_count > 1 {
-        losses.push(FreecadLossCode::SourceGuiMetadataUnresolved.note(
-            format!("GuiDocument.xml contains {camera_count} Camera records; camera selection is unresolved")
-        ));
-    }
+) -> Result<(), CodecError> {
+    let schema = schema::classify(
+        graph
+            .documents
+            .first()
+            .and_then(|document| document.schema_version.as_deref()),
+    )
+    .neutral_schema_version();
+    let (plan, mut losses) = project_graph(
+        ir,
+        graph,
+        sources,
+        schema,
+        &mut appearance_producer::Decoded { ctx, sources },
+    )?;
+    plan.apply(ir);
+    graph.losses.append(&mut losses);
+    Ok(())
+}
 
+fn project_graph(
+    ir: &CadIr,
+    graph: &Graph,
+    sources: &GuiSources<'_, '_>,
+    neutral_schema_version: Option<u32>,
+    producer: &mut impl appearance_producer::Producer,
+) -> Result<(AppearancePlan, Vec<LossNote>), CodecError> {
+    let mut plan = AppearancePlan::default();
+    let mut losses = Vec::new();
+    let requires_alpha_conversion = sources.requires_alpha_conversion;
     let mut payloads_by_owner = Vec::new();
-    for payload in payloads {
-        if let Some(property) = properties
+    for payload in sources.payloads {
+        if let Some(property) = sources
+            .properties
             .iter()
             .find(|property| property.id == payload.property)
         {
@@ -377,100 +310,29 @@ fn transfer_schema_one(
             ));
         }
     }
-    let mut view_provider_data = xml
-        .descendants()
-        .filter(|node| node.has_tag_name("ViewProviderData"));
-    let first_view_provider_data = view_provider_data.next();
-    if view_provider_data.next().is_some() {
-        return Err(CodecError::Malformed(
-            "GuiDocument.xml has multiple ViewProviderData containers".into(),
-        ));
-    }
-    let mut providers = Vec::new();
-    providers.extend(
-        xml.descendants()
-            .filter(|node| node.has_tag_name("ViewProvider")),
-    );
-    if let Some(container) = first_view_provider_data {
-        let declared = container
-            .attribute("Count")
-            .and_then(|value| value.parse::<usize>().ok())
-            .ok_or_else(|| CodecError::Malformed("invalid ViewProviderData Count".into()))?;
-        if declared != providers.len() {
-            return Err(CodecError::malformed(format_args!(
-                "ViewProviderData Count={declared} but {} records were found",
-                providers.len()
-            )));
-        }
-    }
-    for (provider_order, provider) in providers.into_iter().enumerate() {
-        let Some(name) = provider.attribute("name") else {
-            return Err(CodecError::Malformed("ViewProvider has no name".into()));
-        };
-        if native_providers
-            .iter()
-            .any(|record: &GuiViewProviderRecord| record.name == name)
-        {
-            return Err(CodecError::Malformed(
-                "GuiDocument.xml has duplicate ViewProvider names".into(),
-            ));
-        }
-        provider_sources.push((
-            crate::native::native_id("gui-view-provider", name),
-            provider.range(),
-        ));
+    for provider in &graph.providers {
+        let name = provider.name.as_str();
         let provider_key = provider_identity_key(name);
-        let Some(object_id) = objects_by_name.get(name).copied() else {
-            append_native_provider(
-                provider,
-                provider_order,
-                None,
-                &mut native_providers,
-                &mut native_properties,
-                &mut property_sources,
-            )?;
-            continue;
-        };
-        append_native_provider(
-            provider,
-            provider_order,
-            Some(object_id),
-            &mut native_providers,
-            &mut native_properties,
-            &mut property_sources,
-        )?;
-        let properties_node = unique_child(provider, "Properties")?.ok_or_else(|| {
-            CodecError::malformed(format_args!("ViewProvider {name} has no Properties"))
-        })?;
-        let mut property_nodes = Vec::new();
-        property_nodes.extend(
-            properties_node
-                .children()
-                .filter(|node| node.has_tag_name("Property")),
-        );
+        let property_nodes = graph
+            .properties
+            .iter()
+            .filter(|property| property.owner == provider.id)
+            .collect::<Vec<_>>();
         let mut values = HashMap::new();
-        for property in property_nodes.iter().copied().filter(|property| {
-            property
-                .attribute("name")
-                .and_then(presentation_property_type)
-                .is_some_and(|expected| property.attribute("type") == Some(expected))
-        }) {
-            if let (Some(name), Some(value)) = (
-                property.attribute("name"),
-                property.children().find(roxmltree::Node::is_element),
-            ) {
-                values.insert(name, value);
+        for property in &property_nodes {
+            if presentation_property_type(&property.name) == Some(property.type_name.as_str()) {
+                if let Some(value) = property.values.iter().find(|value| value.parent.is_none()) {
+                    values.insert(property.name.as_str(), value);
+                }
             }
         }
         let property_provenance = |property_name: &str, type_name: &str| {
             let offset = property_nodes
                 .iter()
-                .find(|property| {
-                    property.attribute("name") == Some(property_name)
-                        && property.attribute("type") == Some(type_name)
-                })
-                .map_or(0, |property| {
-                    cadmpeg_core::decode::u64_from_index(property.range().start)
+                .find(|property| property.name == property_name && property.type_name == type_name)
+                .and_then(|property| graph.property_sources.get(&property.id))
+                .map_or(0, |source| {
+                    cadmpeg_core::decode::u64_from_index(source.record_range().start)
                 });
             gui_provider_property_provenance(name, property_name, offset)
         };
@@ -489,6 +351,20 @@ fn transfer_schema_one(
             .and_then(|value| value.parse::<u32>().ok())
             .map(|value| convert_packed_alpha(value, requires_alpha_conversion));
         let material = values.get("ShapeMaterial");
+        let Some(object_id) = provider.object.as_ref().map(|object| object.as_str()) else {
+            if packed_color.is_some() || material.is_some() {
+                plan.appearances.push(object_style(
+                    name,
+                    &provider_key,
+                    packed_color,
+                    material.copied(),
+                    transparency,
+                    &property_nodes,
+                    requires_alpha_conversion,
+                )?);
+            }
+            continue;
+        };
         let body_ids = {
             select_shape_bodies(
                 ir,
@@ -502,14 +378,7 @@ fn transfer_schema_one(
             plan.body_visibility_owners.insert(object_id.to_owned());
         }
         for body_id in &body_ids {
-            push_body_update(
-                &mut plan,
-                body_id,
-                Assignment::Set(visibility),
-                packed_color
-                    .map(|packed| decode_color(packed, transparency))
-                    .transpose(),
-            )?;
+            push_body_update(&mut plan, body_id, visibility);
         }
         if let Some(file) = values
             .get("DiffuseColor")
@@ -523,11 +392,24 @@ fn transfer_schema_one(
                     provider_key: &provider_key,
                     object_id,
                     entry_name: file,
+                    property: &property_nodes
+                        .iter()
+                        .find(|property| {
+                            property.name == "DiffuseColor"
+                                && property.type_name == "App::PropertyColorList"
+                        })
+                        .ok_or_else(|| {
+                            CodecError::malformed(
+                                "registered color property has no source identity",
+                            )
+                        })?
+                        .id,
                     kind: TopologyColorKind::Face,
                     provenance: property_provenance("DiffuseColor", "App::PropertyColorList"),
                 },
                 sources,
                 &mut losses,
+                producer,
             )?;
         }
         let payload_prefixes = shape_payload_prefixes(&payloads_by_owner, object_id);
@@ -547,6 +429,10 @@ fn transfer_schema_one(
                 PrimitiveAppearanceSource {
                     provider_name: name,
                     object_id,
+                    native_ref: property_nodes
+                        .iter()
+                        .find(|property| property.name == "LineColor")
+                        .map(|property| property.id.as_str()),
                     packed_color: color,
                     style: PrimitiveStyle::Line(PrimitiveSize::from_source(width)),
                     payload_prefixes: &payload_prefixes,
@@ -566,11 +452,24 @@ fn transfer_schema_one(
                     provider_key: &provider_key,
                     object_id,
                     entry_name: file,
+                    property: &property_nodes
+                        .iter()
+                        .find(|property| {
+                            property.name == "LineColorArray"
+                                && property.type_name == "App::PropertyColorList"
+                        })
+                        .ok_or_else(|| {
+                            CodecError::malformed(
+                                "registered color property has no source identity",
+                            )
+                        })?
+                        .id,
                     kind: TopologyColorKind::Edge,
                     provenance: property_provenance("LineColorArray", "App::PropertyColorList"),
                 },
                 sources,
                 &mut losses,
+                producer,
             )?;
         }
         if let Some(color) = values
@@ -589,6 +488,10 @@ fn transfer_schema_one(
                 PrimitiveAppearanceSource {
                     provider_name: name,
                     object_id,
+                    native_ref: property_nodes
+                        .iter()
+                        .find(|property| property.name == "PointColor")
+                        .map(|property| property.id.as_str()),
                     packed_color: color,
                     style: PrimitiveStyle::Point(PrimitiveSize::from_source(size)),
                     payload_prefixes: &payload_prefixes,
@@ -608,57 +511,40 @@ fn transfer_schema_one(
                     provider_key: &provider_key,
                     object_id,
                     entry_name: file,
+                    property: &property_nodes
+                        .iter()
+                        .find(|property| {
+                            property.name == "PointColorArray"
+                                && property.type_name == "App::PropertyColorList"
+                        })
+                        .ok_or_else(|| {
+                            CodecError::malformed(
+                                "registered color property has no source identity",
+                            )
+                        })?
+                        .id,
                     kind: TopologyColorKind::Vertex,
                     provenance: property_provenance("PointColorArray", "App::PropertyColorList"),
                 },
                 sources,
                 &mut losses,
+                producer,
             )?;
         }
-        // ShapeColor is the display colour stored on each body. A physical
-        // material has a distinct colour and must not inherit that display fact.
-        let Some(material) = material else {
+        if packed_color.is_none() && material.is_none() {
             continue;
-        };
-        let material_color = material
-            .attribute("diffuseColor")
-            .and_then(|value| value.parse::<u32>().ok())
-            .map(|value| convert_packed_alpha(value, requires_alpha_conversion))
-            .map(|packed| decode_color(packed, None))
-            .transpose()?;
-        let appearance_id = object_appearance_id(&provider_key)?;
-        let mut material_properties = BTreeMap::new();
-        {
-            for (source, target) in [
-                ("shininess", cadmpeg_core::nonblank_literal!("shininess")),
-                (
-                    "transparency",
-                    cadmpeg_core::nonblank_literal!("material_transparency"),
-                ),
-            ] {
-                if let Some(value) = material
-                    .attribute(source)
-                    .and_then(|value| value.parse::<f64>().ok())
-                    .and_then(cadmpeg_ir::scalar::FiniteReal::new)
-                {
-                    material_properties.insert(target, value);
-                }
-            }
         }
-        plan.appearances.push(Appearance {
-            native_ref: None,
-            id: appearance_id.clone(),
-            name: Some(format!("{name} shape appearance")),
-            asset_guid: None,
-            library_id: None,
-            visual_guid: None,
-            physical_token: None,
-            schema: Some("FCStd ViewProvider ShapeMaterial".into()),
-            category: None,
-            base_color: material_color,
-            textures: Vec::new(),
-            properties: material_properties,
-        });
+        let appearance = object_style(
+            name,
+            &provider_key,
+            packed_color,
+            material.copied(),
+            transparency,
+            &property_nodes,
+            requires_alpha_conversion,
+        )?;
+        let appearance_id = appearance.id.clone();
+        plan.appearances.push(appearance);
         for (index, body) in body_ids.into_iter().enumerate() {
             plan.bindings.push(AppearanceBinding {
                 native_ref: None,
@@ -674,53 +560,93 @@ fn transfer_schema_one(
             });
         }
     }
-    let mut value_sources = property_sources
-        .values()
-        .filter(|source| source.has_values())
-        .cloned()
-        .collect::<Vec<_>>();
-    value_sources.extend(
-        state_sources
-            .values()
-            .filter(|source| source.has_values())
-            .cloned(),
-    );
-    let mut graph = Graph {
-        documents: vec![document],
-        providers: native_providers,
-        provider_sources,
-        value_sources,
-        state_sources,
-        property_sources,
-        properties: native_properties,
-        losses,
-        untyped: false,
-    };
-    let material_lists =
-        validate_gui_list_payloads(&graph.properties, entries, requires_alpha_conversion)?;
-    let mut material_losses = Vec::new();
+    let material_lists = payloads::material_lists(ir, graph, requires_alpha_conversion)?;
     transfer_shape_appearances(
         ir,
         &mut plan,
-        &graph,
+        graph,
         &material_lists,
         sources,
-        &mut material_losses,
+        &mut losses,
+        producer,
     )?;
-    append_graph_losses(&mut graph, material_losses);
-    let mut presentation_losses = Vec::new();
-    transfer_neutral_presentation(
+    presentation::transfer(
         &mut plan,
-        &graph,
+        graph,
         neutral_schema_version,
-        &mut presentation_losses,
+        &mut losses,
+        producer,
     )?;
-    append_graph_losses(&mut graph, presentation_losses);
-    Ok((graph, plan))
+    Ok((plan, losses))
 }
 
-fn append_graph_losses(graph: &mut Graph, losses: Vec<LossNote>) {
-    graph.losses.extend(losses);
+fn object_style(
+    name: &str,
+    provider_key: &IdentityKey,
+    packed_color: Option<u32>,
+    material: Option<&ValueRecord>,
+    transparency: Option<f32>,
+    property_nodes: &[&GuiPropertyRecord],
+    requires_alpha_conversion: bool,
+) -> Result<Appearance, CodecError> {
+    let material_color = material
+        .and_then(|material| material.attribute("diffuseColor"))
+        .and_then(|value| value.parse::<u32>().ok())
+        .map(|value| convert_packed_alpha(value, requires_alpha_conversion))
+        .map(|packed| decode_color(packed, None))
+        .transpose()?;
+    let appearance_id = object_appearance_id(provider_key)?;
+    let mut material_properties = BTreeMap::new();
+    {
+        for (source, target) in [
+            ("shininess", cadmpeg_core::nonblank_literal!("shininess")),
+            (
+                "transparency",
+                cadmpeg_core::nonblank_literal!("material_transparency"),
+            ),
+        ] {
+            if let Some(value) = material
+                .and_then(|material| material.attribute(source))
+                .and_then(|value| value.parse::<f64>().ok())
+                .and_then(cadmpeg_ir::scalar::FiniteReal::new)
+            {
+                material_properties.insert(target, value);
+            }
+        }
+    }
+    Ok(Appearance {
+        native_ref: property_nodes
+            .iter()
+            .find(|property| {
+                property.name
+                    == if packed_color.is_some() {
+                        "ShapeColor"
+                    } else {
+                        "ShapeMaterial"
+                    }
+            })
+            .map(|property| property.id.clone()),
+        id: appearance_id.clone(),
+        name: Some(format!("{name} shape appearance")),
+        asset_guid: None,
+        library_id: None,
+        visual_guid: None,
+        physical_token: None,
+        schema: Some("FCStd ViewProvider ShapeMaterial".into()),
+        category: None,
+        base_color: packed_color
+            .map(|packed| decode_color(packed, transparency))
+            .transpose()?
+            .or(material_color),
+        textures: Vec::new(),
+        properties: material_properties,
+    })
+}
+
+impl ValueRecord {
+    fn attribute(&self, name: &str) -> Option<&str> {
+        self.attributes.get(name).map(String::as_str)
+    }
 }
 
 fn push_gui_appearance_loss(
@@ -790,160 +716,6 @@ fn gui_named_entries<'a>(
 /// A property whose key is blank is charged to `losses` and the rest of the
 /// property set survives: a blank key is one unreadable property of one record,
 /// not a reason to answer no GUI presentation at all.
-fn transfer_neutral_presentation(
-    plan: &mut AppearancePlan,
-    graph: &Graph,
-    neutral_schema_version: Option<u32>,
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<(), CodecError> {
-    let mut state_losses = Vec::new();
-    for document in &graph.documents {
-        let mut presentation = PresentationDocument::new(PresentationId::compose(
-            &cadmpeg_ir::identity_namespace!("fcstd", "presentation", "document"),
-            cadmpeg_ir::identity_key!("0"),
-        ));
-        presentation.schema_version = neutral_schema_version;
-        presentation.native_ref = Some(document.id.clone());
-        let mut states = Vec::new();
-        let camera_count = document
-            .states
-            .iter()
-            .filter(|state| state.kind == "Camera")
-            .count();
-        for (order, state) in document.states.iter().enumerate() {
-            let (attributes, refused) = gui_named_entries(
-                || format!("the gui {} state", state.kind),
-                state
-                    .attributes
-                    .iter()
-                    .map(|(name, value)| (name.as_str(), value.as_str())),
-            );
-            note_refused_gui_keys(&mut state_losses, &refused);
-            let kind = if state.kind == "Camera" && camera_count == 1 {
-                match camera_state_value(state, &mut state_losses) {
-                    Ok(camera) => PresentationStateKind::Camera(camera),
-                    Err(error @ (CodecError::Malformed(_) | CodecError::Truncated { .. })) => {
-                        state_losses.push(
-                            FreecadLossCode::SourceGuiMetadataUnresolved
-                                .note(format!("GUI Camera remains native: {error}")),
-                        );
-                        PresentationStateKind::Native(state.kind.clone())
-                    }
-                    Err(error) => return Err(error),
-                }
-            } else {
-                PresentationStateKind::Native(state.kind.clone())
-            };
-            let mut assets = Vec::new();
-            for entry in &state.side_entries {
-                assets.push(crate::native::native_id("entry", entry));
-            }
-            states.push(PresentationState {
-                kind,
-                order: u32::try_from(order)
-                    .map_err(|_| CodecError::malformed("GUI state order exceeds u32"))?,
-                attributes,
-                assets,
-            });
-        }
-        presentation
-            .set_states(states)
-            .map_err(CodecError::malformed)?;
-        plan.presentation_documents.push(presentation);
-    }
-    losses.append(&mut state_losses);
-
-    let mut properties = HashMap::<&str, Vec<&GuiPropertyRecord>>::new();
-    for property in &graph.properties {
-        if !properties.contains_key(property.owner.as_str()) {
-            properties.insert(property.owner.as_str(), Vec::new());
-        }
-        if let Some(owned) = properties.get_mut(property.owner.as_str()) {
-            owned.push(property);
-        }
-    }
-    for provider in &graph.providers {
-        let owned = properties
-            .get(provider.id.as_str())
-            .map(Vec::as_slice)
-            .unwrap_or_default();
-        let property_value = |name: &str, type_name: &str| {
-            owned
-                .iter()
-                .find(|property| property.name == name && property.type_name == type_name)
-                .and_then(|property| gui_property_value(property))
-        };
-        let line_width = property_value("LineWidth", "App::PropertyFloatConstraint")
-            .and_then(|value| value.parse::<f64>().ok());
-        let point_size = property_value("PointSize", "App::PropertyFloatConstraint")
-            .and_then(|value| value.parse::<f64>().ok());
-        let line_width = line_width
-            .map(|value| {
-                cadmpeg_ir::scalar::NonNegativeReal::new(value).ok_or_else(|| {
-                    CodecError::malformed("line_width must be finite and nonnegative")
-                })
-            })
-            .transpose()?;
-        let point_size = point_size
-            .map(|value| {
-                cadmpeg_ir::scalar::NonNegativeReal::new(value).ok_or_else(|| {
-                    CodecError::malformed("point_size must be finite and nonnegative")
-                })
-            })
-            .transpose()?;
-        let (_, refused) = gui_named_entries(
-            || provider.id.clone(),
-            owned.iter().filter_map(|property| {
-                // Dedicated neutral fields own these values. Keeping another
-                // textual copy would make independent edits disagree.
-                if presentation_property_type(&property.name).is_some() {
-                    return None;
-                }
-                gui_property_value(property).map(|value| (property.name.as_str(), value))
-            }),
-        );
-        note_refused_gui_keys(losses, &refused);
-        plan.view_presentations.push(ViewPresentation {
-            id: PresentationId::mint(crate::native::model_id(
-                "presentation-view",
-                &provider.id,
-                "state",
-            ))
-            .map_err(CodecError::malformed)?,
-            object: provider
-                .object
-                .as_ref()
-                .map(|object| object.as_str().to_owned()),
-            order: u32::try_from(provider.order).map_err(|_| {
-                CodecError::malformed(format_args!(
-                    "FreeCAD ordinal {} exceeds u32",
-                    provider.order
-                ))
-            })?,
-            expanded: provider.expanded,
-            visible: if provider
-                .object
-                .as_ref()
-                .is_some_and(|object| plan.body_visibility_owners.contains(object.as_str()))
-            {
-                None
-            } else {
-                property_value("Visibility", "App::PropertyBool").and_then(parse_bool)
-            },
-            display_mode: property_value("DisplayMode", "App::PropertyEnumeration")
-                .map(ToOwned::to_owned),
-            selection_style: property_value("SelectionStyle", "App::PropertyEnumeration")
-                .map(ToOwned::to_owned),
-            line_width,
-            point_size,
-            // Every original property remains typed in gui_properties. Neutral
-            // presentation owns only its dedicated semantic fields (§8).
-            properties: BTreeMap::new(),
-            native_ref: Some(provider.id.clone()),
-        });
-    }
-    Ok(())
-}
 
 fn gui_property_value(property: &GuiPropertyRecord) -> Option<&str> {
     property.values.iter().find_map(|value| {
@@ -1119,6 +891,7 @@ impl PrimitiveSize {
 struct PrimitiveAppearanceSource<'a> {
     provider_name: &'a str,
     object_id: &'a str,
+    native_ref: Option<&'a str>,
     packed_color: u32,
     style: PrimitiveStyle,
     payload_prefixes: &'a [String],
@@ -1148,6 +921,7 @@ fn transfer_primitive_appearance(
     let PrimitiveAppearanceSource {
         provider_name,
         object_id,
+        native_ref,
         packed_color,
         style,
         payload_prefixes,
@@ -1178,11 +952,10 @@ fn transfer_primitive_appearance(
         return Ok(());
     }
     let provider_key = provider_identity_key(provider_name);
-    let (appearance_id, label, property, size, binding_key, object_type, precedence) = match style {
+    let (appearance_id, label, size, binding_key, object_type, precedence) = match style {
         PrimitiveStyle::Line(width) => (
             edge_appearance_id(&provider_key)?,
             "line",
-            cadmpeg_core::nonblank_literal!("line_width"),
             width,
             cadmpeg_ir::identity_key!("edge"),
             "ViewProvider Edge",
@@ -1191,7 +964,6 @@ fn transfer_primitive_appearance(
         PrimitiveStyle::Point(size) => (
             vertex_appearance_id(&provider_key)?,
             "point",
-            cadmpeg_core::nonblank_literal!("point_size"),
             size,
             cadmpeg_ir::identity_key!("vertex"),
             "ViewProvider Vertex",
@@ -1215,7 +987,7 @@ fn transfer_primitive_appearance(
         );
     }
     plan.appearances.push(Appearance {
-        native_ref: None,
+        native_ref: native_ref.map(ToOwned::to_owned),
         id: appearance_id.clone(),
         name: Some(format!("{provider_name} {label} appearance")),
         asset_guid: None,
@@ -1239,13 +1011,11 @@ fn transfer_primitive_appearance(
             })?,
         )),
         textures: Vec::new(),
-        properties: admitted_size
-            .map(|width| [(property, width)].into())
-            .unwrap_or_default(),
+        properties: BTreeMap::new(),
     });
     for (index, target) in targets.into_iter().enumerate() {
         plan.bindings.push(AppearanceBinding {
-            native_ref: None,
+            native_ref: native_ref.map(ToOwned::to_owned),
             id: binding_id(format_args!(
                 "fcstd:appearance:binding#{binding_key}:{provider_key}:{index}"
             ))?,
@@ -1260,767 +1030,6 @@ fn transfer_primitive_appearance(
             )]
             .into(),
         });
-    }
-    Ok(())
-}
-
-fn gui_state(order: usize, node: roxmltree::Node<'_, '_>) -> Result<GuiStateRecord, CodecError> {
-    let mut values = Vec::new();
-    let mut value_indices = HashMap::new();
-    for (value_order, value) in node
-        .descendants()
-        .filter(|value| value.is_element() && *value != node)
-        .enumerate()
-    {
-        value_indices.insert(value.id(), value_order);
-        values.push(ValueRecord {
-            parent: value
-                .parent()
-                .and_then(|parent| value_indices.get(&parent.id()).copied()),
-            tag: value.tag_name().name().to_owned(),
-            order: value_order,
-            attributes: value
-                .attributes()
-                .map(|attribute| Ok((attribute.name().to_owned(), attribute.value().to_owned())))
-                .collect::<Result<_, CodecError>>()?,
-            decoded_json: None,
-            text: value.text().map(ToOwned::to_owned),
-        });
-    }
-    let mut side_entries = Vec::new();
-    for value in node
-        .descendants()
-        .filter(roxmltree::Node::is_element)
-        .flat_map(|element| element.attributes())
-        .filter(|attribute| matches!(attribute.name(), "file" | "File"))
-        .map(|attribute| attribute.value())
-        .filter(|value| !value.is_empty())
-    {
-        side_entries.push(value.to_owned());
-    }
-    let kind = node.tag_name().name().to_owned();
-    let attributes = node
-        .attributes()
-        .map(|attribute| Ok((attribute.name().to_owned(), attribute.value().to_owned())))
-        .collect::<Result<_, CodecError>>()?;
-    let key = format!("{kind}:{order}");
-    Ok(GuiStateRecord {
-        id: crate::native::native_id("gui-state", &key),
-        kind,
-        attributes,
-        values,
-        side_entries,
-    })
-}
-
-fn unique_child<'a, 'input>(
-    parent: roxmltree::Node<'a, 'input>,
-    tag: &str,
-) -> Result<Option<roxmltree::Node<'a, 'input>>, CodecError> {
-    let mut children = parent
-        .children()
-        .filter(|child| child.is_element() && child.has_tag_name(tag));
-    let Some(first) = children.next() else {
-        return Ok(None);
-    };
-    if children.next().is_some() {
-        return Err(CodecError::Malformed(
-            "GUI record has multiple child containers".into(),
-        ));
-    }
-    Ok(Some(first))
-}
-
-fn append_native_provider(
-    provider: roxmltree::Node<'_, '_>,
-    order: usize,
-    object: Option<&str>,
-    providers: &mut Vec<GuiViewProviderRecord>,
-    properties: &mut Vec<GuiPropertyRecord>,
-    property_sources: &mut BTreeMap<String, crate::fidelity::ValueSourceRanges>,
-) -> Result<(), CodecError> {
-    let name = provider
-        .attribute("name")
-        .ok_or_else(|| CodecError::Malformed("ViewProvider has no name".into()))?;
-    let id = crate::native::native_id("gui-view-provider", name);
-
-    providers.push(GuiViewProviderRecord {
-        id: id.clone(),
-        object: object
-            .map(|object| {
-                cadmpeg_core::text::NonBlankString::new(object.to_owned()).ok_or_else(|| {
-                    CodecError::Malformed("GUI provider object must not be empty".into())
-                })
-            })
-            .transpose()?,
-        name: name.to_owned(),
-        expanded: provider.attribute("expanded").and_then(parse_bool),
-        order,
-    });
-    let Some(container) = unique_child(provider, "Properties")? else {
-        return Err(CodecError::malformed(format_args!(
-            "ViewProvider {name} has no Properties"
-        )));
-    };
-    let mut nodes = Vec::new();
-    nodes.extend(
-        container
-            .children()
-            .filter(|node| node.has_tag_name("Property")),
-    );
-    let property_nodes = nodes;
-    let declared = container
-        .attribute("Count")
-        .and_then(|value| value.parse::<usize>().ok())
-        .ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "ViewProvider {name} has invalid property count"
-            ))
-        })?;
-    if declared != property_nodes.len() {
-        return Err(CodecError::malformed(format_args!(
-            "ViewProvider {name} declares {declared} properties but contains {}",
-            property_nodes.len()
-        )));
-    }
-    for (property_order, property) in property_nodes.into_iter().enumerate() {
-        let property_name = property.attribute("name").ok_or_else(|| {
-            CodecError::malformed(format_args!("ViewProvider {name} property has no name"))
-        })?;
-        if properties
-            .iter()
-            .rev()
-            .take(property_order)
-            .any(|record| record.owner == id && record.name == property_name)
-        {
-            return Err(CodecError::Malformed(
-                "ViewProvider has duplicate property names".into(),
-            ));
-        }
-        let type_name = property.attribute("type").ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "ViewProvider {name}.{property_name} has no type"
-            ))
-        })?;
-        validate_gui_property(property, property_name, type_name)?;
-        let mut values = Vec::new();
-        let mut value_indices = HashMap::new();
-        for (value_order, value) in property
-            .descendants()
-            .filter(|value| value.is_element() && *value != property)
-            .enumerate()
-        {
-            value_indices.insert(value.id(), value_order);
-            values.push(ValueRecord {
-                parent: value
-                    .parent()
-                    .and_then(|parent| value_indices.get(&parent.id()).copied()),
-                tag: value.tag_name().name().to_owned(),
-                order: value_order,
-                attributes: value
-                    .attributes()
-                    .map(|attribute| {
-                        Ok((attribute.name().to_owned(), attribute.value().to_owned()))
-                    })
-                    .collect::<Result<_, CodecError>>()?,
-                decoded_json: None,
-                text: value.text().map(ToOwned::to_owned),
-            });
-        }
-        let mut side_entries = Vec::new();
-        for value in values
-            .iter()
-            .flat_map(|value| value.attributes.iter())
-            .filter(|(attribute, _)| {
-                matches!(attribute.as_str(), "file" | "File")
-                    && !crate::persistence::is_xlink_type(type_name)
-            })
-            .map(|(_, value)| value.as_str())
-            .filter(|value| !value.is_empty())
-        {
-            side_entries.push(value.to_owned());
-        }
-        let record = GuiPropertyRecord {
-            id: crate::native::native_child_id("gui-property", &id, property_name),
-            owner: id.clone(),
-            name: property_name.to_owned(),
-            type_name: type_name.to_owned(),
-            status: property
-                .attribute("status")
-                .and_then(|value| value.parse().ok()),
-            order: property_order,
-            values,
-            side_entries,
-        };
-        property_sources.insert(
-            record.id.clone(),
-            crate::fidelity::gui_property_source(property, &record)?,
-        );
-        properties.push(record);
-    }
-    Ok(())
-}
-
-fn validate_gui_property(
-    property: roxmltree::Node<'_, '_>,
-    property_name: &str,
-    type_name: &str,
-) -> Result<(), CodecError> {
-    if is_visual_layer_list(property_name, type_name) {
-        return validate_visual_layer_list(property, property_name);
-    }
-    if is_gui_link_type(type_name) {
-        return crate::persistence::validate_link_property(property, type_name);
-    }
-    match type_name {
-        "Mesh::PropertyMeshKernel" => {
-            return validate_gui_geometry_value(property, property_name, "Mesh");
-        }
-        "Points::PropertyPointKernel" => {
-            return validate_gui_geometry_value(property, property_name, "Points");
-        }
-        "TechDraw::PropertyGeomFormatList" => {
-            return validate_gui_techdraw_list(
-                property,
-                property_name,
-                "GeomFormatList",
-                "GeomFormat",
-                validate_gui_geom_format_record,
-            );
-        }
-        "TechDraw::PropertyCosmeticVertexList" => {
-            return validate_gui_techdraw_list(
-                property,
-                property_name,
-                "CosmeticVertexList",
-                "CosmeticVertex",
-                validate_gui_cosmetic_vertex_record,
-            );
-        }
-        "TechDraw::PropertyCosmeticEdgeList" => {
-            return validate_gui_techdraw_list(
-                property,
-                property_name,
-                "CosmeticEdgeList",
-                "CosmeticEdge",
-                validate_gui_cosmetic_edge_record,
-            );
-        }
-        "TechDraw::PropertyCenterLineList" => {
-            return validate_gui_techdraw_list(
-                property,
-                property_name,
-                "CenterLineList",
-                "CenterLine",
-                validate_gui_center_line_record,
-            );
-        }
-        "App::PropertyExpressionEngine" => {
-            return validate_gui_expression_engine(property, property_name);
-        }
-        "Materials::PropertyMaterial" => {
-            return validate_gui_material_reference(property, property_name);
-        }
-        "Part::PropertyPartShape" => {
-            return validate_gui_part_shape(property, property_name);
-        }
-        "Part::PropertyGeometryList" => {
-            return validate_gui_geometry_list(property, property_name);
-        }
-        "Part::PropertyFilletEdges" => {
-            return validate_gui_filletedges(property, property_name);
-        }
-        "Part::PropertyTopoShapeList" => {
-            return validate_gui_shape_list(property, property_name);
-        }
-        "Sketcher::PropertyConstraintList" => {
-            return validate_gui_constraint_list(property, property_name);
-        }
-        "Part::PropertyShapeHistory" | "Part::PropertyShapeCache" => return Ok(()),
-        _ => {}
-    }
-    let Some(tag) = gui_value_tag(type_name) else {
-        return Ok(());
-    };
-    let expected_tag = tag.as_str();
-    let mut roots = property.children().filter(roxmltree::Node::is_element);
-    let root = roots.next().ok_or_else(|| {
-        CodecError::malformed(format_args!(
-            "GUI property {property_name} requires one {expected_tag} value"
-        ))
-    })?;
-    let second_root = roots.next();
-    let has_more_roots = roots.next().is_some();
-    if !root.has_tag_name(expected_tag) {
-        return Err(CodecError::malformed(format_args!(
-            "GUI property {property_name} requires a leading {expected_tag} value"
-        )));
-    }
-    let scalar = |attribute: &str| {
-        root.attribute(attribute).ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "GUI property {property_name} {expected_tag} has no {attribute} attribute"
-            ))
-        })
-    };
-    match tag {
-        GuiValueTag::Bool => {
-            if parse_bool(scalar("value")?).is_none() {
-                return Err(CodecError::malformed(format_args!(
-                    "GUI property {property_name} has an invalid Boolean"
-                )));
-            }
-        }
-        GuiValueTag::Integer => {
-            scalar("value")?.parse::<i64>().map_err(|_| {
-                CodecError::malformed(format_args!(
-                    "GUI property {property_name} has an invalid integer"
-                ))
-            })?;
-            if is_gui_integer_constraint_type(type_name) {
-                validate_gui_constraint_attributes(root, property_name, true)?;
-            }
-            if type_name == "App::PropertyEnumeration" {
-                validate_gui_enumeration(root, second_root, has_more_roots, property_name)?;
-                return Ok(());
-            }
-        }
-        GuiValueTag::Float => {
-            let value = scalar("value")?.parse::<f64>().map_err(|_| {
-                CodecError::malformed(format_args!(
-                    "GUI property {property_name} has an invalid float"
-                ))
-            })?;
-            if !value.is_finite() {
-                return Err(CodecError::malformed(format_args!(
-                    "GUI property {property_name} has a non-finite float"
-                )));
-            }
-            if is_gui_float_constraint_type(type_name) {
-                validate_gui_constraint_attributes(root, property_name, false)?;
-            }
-        }
-        GuiValueTag::String
-        | GuiValueTag::Python
-        | GuiValueTag::ColorList
-        | GuiValueTag::MaterialList => {
-            let attribute = if matches!(tag, GuiValueTag::ColorList | GuiValueTag::MaterialList) {
-                "file"
-            } else {
-                "value"
-            };
-            scalar(attribute)?;
-            if matches!(tag, GuiValueTag::ColorList | GuiValueTag::MaterialList)
-                && has_nested_gui_elements(root)
-            {
-                return Err(gui_nested_value_error(property_name, expected_tag));
-            }
-            if type_name == "App::PropertyPersistentObject" {
-                if has_more_roots
-                    || !second_root.is_some_and(|node| node.has_tag_name("PersistentObject"))
-                {
-                    return Err(CodecError::malformed(format_args!(
-                        "GUI property {property_name} has an invalid persistent-object envelope"
-                    )));
-                }
-                return Ok(());
-            }
-            if tag == GuiValueTag::MaterialList {
-                let version = root
-                    .attribute("version")
-                    .map(str::parse::<u32>)
-                    .transpose()
-                    .map_err(|_| {
-                        CodecError::malformed(format_args!(
-                            "GUI property {property_name} has an invalid material-list version"
-                        ))
-                    })?
-                    .unwrap_or(0);
-                if version > 3 {
-                    return Err(CodecError::NotImplemented(format!(
-                        "FCStd GUI material-list version {version}"
-                    )));
-                }
-            }
-        }
-        GuiValueTag::PropertyColor => {
-            scalar("value")?.parse::<u32>().map_err(|_| {
-                CodecError::malformed(format_args!(
-                    "GUI property {property_name} has an invalid color"
-                ))
-            })?;
-        }
-        GuiValueTag::PropertyVector => {
-            for attribute in ["valueX", "valueY", "valueZ"] {
-                let value = scalar(attribute)?.parse::<f64>().map_err(|_| {
-                    CodecError::malformed(format_args!(
-                        "GUI property {property_name} has an invalid vector"
-                    ))
-                })?;
-                if !value.is_finite() {
-                    return Err(CodecError::malformed(format_args!(
-                        "GUI property {property_name} has a non-finite vector"
-                    )));
-                }
-            }
-        }
-        GuiValueTag::PropertyMaterial => validate_gui_material(root, property_name)?,
-        GuiValueTag::BoolList => {
-            if !scalar("value")?
-                .bytes()
-                .all(|byte| matches!(byte, b'0' | b'1'))
-            {
-                return Err(CodecError::malformed(format_args!(
-                    "GUI property {property_name} has an invalid Boolean list"
-                )));
-            }
-            if has_nested_gui_elements(root) {
-                return Err(gui_nested_value_error(property_name, "BoolList"));
-            }
-        }
-        GuiValueTag::StringList => validate_gui_string_list(root, property_name)?,
-        GuiValueTag::IntegerList => validate_gui_integer_list(root, property_name, false)?,
-        GuiValueTag::IntegerSet => validate_gui_integer_list(root, property_name, true)?,
-        GuiValueTag::Map => validate_gui_map(root, property_name)?,
-        GuiValueTag::PropertyMatrix => {
-            for row in 1..=4 {
-                for column in 1..=4 {
-                    let attribute = format!("a{row}{column}");
-                    let value = scalar(&attribute)?.parse::<f64>().map_err(|_| {
-                        CodecError::malformed(format_args!(
-                            "GUI property {property_name} has an invalid matrix value"
-                        ))
-                    })?;
-                    if !value.is_finite() {
-                        return Err(CodecError::malformed(format_args!(
-                            "GUI property {property_name} has a non-finite matrix value"
-                        )));
-                    }
-                }
-            }
-        }
-        GuiValueTag::PropertyPlacement => validate_gui_placement(root, property_name)?,
-        GuiValueTag::PropertyRotation => {
-            for attribute in ["A", "Ox", "Oy", "Oz"] {
-                let value = scalar(attribute)?.parse::<f64>().map_err(|_| {
-                    CodecError::malformed(format_args!(
-                        "GUI property {property_name} has an invalid rotation"
-                    ))
-                })?;
-                if !value.is_finite() {
-                    return Err(CodecError::malformed(format_args!(
-                        "GUI property {property_name} has a non-finite rotation"
-                    )));
-                }
-            }
-        }
-        GuiValueTag::Uuid | GuiValueTag::Path => {
-            scalar("value")?;
-        }
-        GuiValueTag::FloatList | GuiValueTag::VectorList | GuiValueTag::PlacementList => {
-            scalar("file")?;
-            if has_nested_gui_elements(root) {
-                return Err(gui_nested_value_error(property_name, expected_tag));
-            }
-        }
-        GuiValueTag::FileIncluded => {
-            let has_file = root.attribute("file").is_some();
-            let has_data = root.attribute("data").is_some();
-            if has_file == has_data {
-                return Err(CodecError::malformed(format_args!(
-                    "GUI property {property_name} FileIncluded requires exactly one file or data attribute"
-                )));
-            }
-            if has_nested_gui_elements(root) {
-                return Err(gui_nested_value_error(property_name, "FileIncluded"));
-            }
-        }
-    }
-    if second_root.is_some() {
-        return Err(CodecError::malformed(format_args!(
-            "GUI property {property_name} requires exactly one {expected_tag} value"
-        )));
-    }
-    Ok(())
-}
-
-fn validate_gui_string_list(
-    root: roxmltree::Node<'_, '_>,
-    property_name: &str,
-) -> Result<(), CodecError> {
-    let count = gui_list_count(root, property_name, "StringList")?;
-    if root.children().filter(roxmltree::Node::is_element).count() != count
-        || root
-            .children()
-            .filter(roxmltree::Node::is_element)
-            .any(|value| !value.has_tag_name("String") || value.attribute("value").is_none())
-    {
-        return Err(CodecError::malformed(format_args!(
-            "GUI property {property_name} StringList count or value is invalid"
-        )));
-    }
-    if root
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .any(has_nested_gui_elements)
-    {
-        return Err(gui_nested_value_error(property_name, "StringList value"));
-    }
-    Ok(())
-}
-
-fn validate_gui_integer_list(
-    root: roxmltree::Node<'_, '_>,
-    property_name: &str,
-    require_sorted_unique: bool,
-) -> Result<(), CodecError> {
-    let tag = if require_sorted_unique {
-        "IntegerSet"
-    } else {
-        "IntegerList"
-    };
-    let count = gui_list_count(root, property_name, tag)?;
-    if root.children().filter(roxmltree::Node::is_element).count() != count
-        || root
-            .children()
-            .filter(roxmltree::Node::is_element)
-            .any(|value| !value.has_tag_name("I"))
-    {
-        return Err(CodecError::malformed(format_args!(
-            "GUI property {property_name} {tag} count or value is invalid"
-        )));
-    }
-    if root
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .any(has_nested_gui_elements)
-    {
-        return Err(gui_nested_value_error(property_name, tag));
-    }
-    let mut previous = None;
-    for value in root.children().filter(roxmltree::Node::is_element) {
-        let number = value
-            .attribute("v")
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "GUI property {property_name} {tag} value has no v attribute"
-                ))
-            })?
-            .parse::<i64>()
-            .map_err(|_| {
-                CodecError::malformed(format_args!(
-                    "GUI property {property_name} {tag} value is not an integer"
-                ))
-            })?;
-        if require_sorted_unique && previous.is_some_and(|previous| number <= previous) {
-            return Err(CodecError::malformed(format_args!(
-                "GUI property {property_name} IntegerSet is not sorted and unique"
-            )));
-        }
-        previous = Some(number);
-    }
-    Ok(())
-}
-
-fn validate_gui_map(root: roxmltree::Node<'_, '_>, property_name: &str) -> Result<(), CodecError> {
-    let count = gui_list_count(root, property_name, "Map")?;
-    if root.children().filter(roxmltree::Node::is_element).count() != count
-        || root
-            .children()
-            .filter(roxmltree::Node::is_element)
-            .any(|value| !value.has_tag_name("Item"))
-    {
-        return Err(CodecError::malformed(format_args!(
-            "GUI property {property_name} Map count or item tag is invalid"
-        )));
-    }
-    if root
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .any(has_nested_gui_elements)
-    {
-        return Err(gui_nested_value_error(property_name, "Map item"));
-    }
-    let mut previous_key = None;
-    for value in root.children().filter(roxmltree::Node::is_element) {
-        let key = value.attribute("key").ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "GUI property {property_name} Map item has no key"
-            ))
-        })?;
-        if value.attribute("value").is_none() {
-            return Err(CodecError::malformed(format_args!(
-                "GUI property {property_name} Map item has no value"
-            )));
-        }
-        if previous_key.is_some_and(|previous| key <= previous) {
-            return Err(CodecError::malformed(format_args!(
-                "GUI property {property_name} Map keys are not sorted and unique"
-            )));
-        }
-        previous_key = Some(key);
-    }
-    Ok(())
-}
-
-fn gui_list_count(
-    root: roxmltree::Node<'_, '_>,
-    property_name: &str,
-    tag: &str,
-) -> Result<usize, CodecError> {
-    root.attribute("count")
-        .ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "GUI property {property_name} {tag} has no count"
-            ))
-        })?
-        .parse::<usize>()
-        .map_err(|_| {
-            CodecError::malformed(format_args!(
-                "GUI property {property_name} {tag} has an invalid count"
-            ))
-        })
-}
-
-fn has_nested_gui_elements(node: roxmltree::Node<'_, '_>) -> bool {
-    node.children().any(|child| child.is_element())
-}
-
-fn gui_nested_value_error(property_name: &str, value_name: &str) -> CodecError {
-    CodecError::malformed(format_args!(
-        "GUI property {property_name} {value_name} has nested element values"
-    ))
-}
-
-fn validate_gui_constraint_attributes(
-    root: roxmltree::Node<'_, '_>,
-    property_name: &str,
-    integer: bool,
-) -> Result<(), CodecError> {
-    for attribute in ["min", "max", "step"] {
-        let Some(value) = root.attribute(attribute) else {
-            continue;
-        };
-        if integer {
-            value.parse::<i64>().map_err(|_| {
-                gui_constraint_error(property_name, "an invalid integer", attribute)
-            })?;
-        } else {
-            let value = value
-                .parse::<f64>()
-                .map_err(|_| gui_constraint_error(property_name, "an invalid float", attribute))?;
-            if !value.is_finite() {
-                return Err(gui_constraint_error(
-                    property_name,
-                    "a non-finite",
-                    attribute,
-                ));
-            }
-        }
-    }
-    Ok(())
-}
-
-fn gui_constraint_error(property_name: &str, detail: &str, attribute: &str) -> CodecError {
-    CodecError::malformed(format_args!(
-        "GUI property {property_name} has {detail} {attribute}"
-    ))
-}
-
-fn validate_gui_placement(
-    root: roxmltree::Node<'_, '_>,
-    property_name: &str,
-) -> Result<(), CodecError> {
-    for attribute in ["Px", "Py", "Pz"] {
-        let value = root
-            .attribute(attribute)
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "GUI property {property_name} placement has no {attribute}"
-                ))
-            })?
-            .parse::<f64>()
-            .map_err(|_| {
-                CodecError::malformed(format_args!(
-                    "GUI property {property_name} placement has an invalid {attribute}"
-                ))
-            })?;
-        if !value.is_finite() {
-            return Err(CodecError::malformed(format_args!(
-                "GUI property {property_name} placement has a non-finite {attribute}"
-            )));
-        }
-    }
-    let axis_attributes = ["A", "Ox", "Oy", "Oz"];
-    let quaternion_attributes = ["Q0", "Q1", "Q2", "Q3"];
-    let has_axis = root.attribute("A").is_some();
-    let orientation = if has_axis {
-        &axis_attributes[..]
-    } else {
-        &quaternion_attributes[..]
-    };
-    for &attribute in orientation {
-        let value = root
-            .attribute(attribute)
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "GUI property {property_name} placement has no {attribute}"
-                ))
-            })?
-            .parse::<f64>()
-            .map_err(|_| {
-                CodecError::malformed(format_args!(
-                    "GUI property {property_name} placement has an invalid {attribute}"
-                ))
-            })?;
-        if !value.is_finite() {
-            return Err(CodecError::malformed(format_args!(
-                "GUI property {property_name} placement has a non-finite {attribute}"
-            )));
-        }
-    }
-    Ok(())
-}
-
-fn validate_gui_enumeration(
-    integer: roxmltree::Node<'_, '_>,
-    custom_list: Option<roxmltree::Node<'_, '_>>,
-    has_more_roots: bool,
-    property_name: &str,
-) -> Result<(), CodecError> {
-    let custom = integer.attribute("CustomEnum").is_some();
-    if !custom && custom_list.is_none() {
-        return Ok(());
-    }
-    let custom_list = match custom_list {
-        Some(node) if custom && !has_more_roots && node.has_tag_name("CustomEnumList") => node,
-        _ => {
-            return Err(CodecError::malformed(format_args!(
-                "GUI property {property_name} has an invalid custom enumeration envelope"
-            )))
-        }
-    };
-    let count = custom_list
-        .attribute("count")
-        .and_then(|value| value.parse::<usize>().ok())
-        .ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "GUI property {property_name} has an invalid custom enumeration count"
-            ))
-        })?;
-    if custom_list
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .count()
-        != count
-        || custom_list
-            .children()
-            .filter(roxmltree::Node::is_element)
-            .any(|value| !value.has_tag_name("Enum") || value.attribute("value").is_none())
-    {
-        return Err(CodecError::malformed(format_args!(
-            "GUI property {property_name} custom enumeration count or value is invalid"
-        )));
     }
     Ok(())
 }
@@ -2262,1710 +1271,18 @@ fn is_gui_custom_type(type_name: &str) -> bool {
     )
 }
 
-fn validate_gui_geometry_value(
-    property: roxmltree::Node<'_, '_>,
-    property_name: &str,
-    expected_tag: &str,
-) -> Result<(), CodecError> {
-    let mut roots = property.children().filter(roxmltree::Node::is_element);
-    let Some(root) = roots.next().filter(|_| roots.next().is_none()) else {
-        return Err(CodecError::malformed(format_args!(
-            "GUI property {property_name} requires exactly one {expected_tag} value"
-        )));
-    };
-    if !root.has_tag_name(expected_tag) {
-        return Err(CodecError::malformed(format_args!(
-            "GUI property {property_name} requires a leading {expected_tag} value"
-        )));
-    }
-
-    let mut side_references = property
-        .descendants()
-        .filter(roxmltree::Node::is_element)
-        .flat_map(|node| {
-            node.attributes()
-                .filter(|attribute| matches!(attribute.name(), "file" | "File"))
-                .map(move |attribute| (node, attribute.value()))
-        })
-        .filter(|(_, value)| !value.is_empty())
-        .map(|(node, _)| node);
-    let first_side_reference = side_references.next();
-    let has_more_side_references = side_references.next().is_some();
-    let direct_file = root
-        .attribute("file")
-        .is_some_and(|value| !value.is_empty());
-    if first_side_reference.is_some() != direct_file
-        || has_more_side_references
-        || first_side_reference.is_some_and(|node| node != root)
-    {
-        return Err(CodecError::malformed(format_args!(
-            "GUI property {property_name} {expected_tag} has an unowned side-entry reference"
-        )));
-    }
-    if expected_tag == "Points" {
-        validate_gui_points_transform(root, property_name)?;
-    }
-    Ok(())
-}
-
-fn validate_gui_points_transform(
-    root: roxmltree::Node<'_, '_>,
-    property_name: &str,
-) -> Result<(), CodecError> {
-    let Some(text) = root.attribute("mtrx") else {
-        return Ok(());
-    };
-    let mut count = 0usize;
-    let mut finite = true;
-    for token in text.split_whitespace() {
-        let value = token.parse::<f64>().map_err(|_| {
-            CodecError::malformed(format_args!(
-                "GUI property {property_name} Points transform has an invalid scalar"
-            ))
-        })?;
-        finite &= value.is_finite();
-        count += 1;
-    }
-    if count != 16 || !finite {
-        return Err(CodecError::malformed(format_args!(
-            "GUI property {property_name} Points transform must contain 16 finite scalars"
-        )));
-    }
-    Ok(())
-}
-
-fn validate_gui_techdraw_list(
-    property: roxmltree::Node<'_, '_>,
-    property_name: &str,
-    list_tag: &str,
-    record_tag: &str,
-    mut validate: impl FnMut(roxmltree::Node<'_, '_>, &str) -> Result<(), CodecError>,
-) -> Result<(), CodecError> {
-    let mut roots = property.children().filter(roxmltree::Node::is_element);
-    let Some(root) = roots.next().filter(|_| roots.next().is_none()) else {
-        return Err(gui_techdraw_error(
-            property_name,
-            &format!("requires exactly one {list_tag} value"),
-        ));
-    };
-    if !root.has_tag_name(list_tag) {
-        return Err(gui_techdraw_error(
-            property_name,
-            &format!("requires a leading {list_tag} value"),
-        ));
-    }
-    let count = root
-        .attribute("count")
-        .ok_or_else(|| gui_techdraw_error(property_name, &format!("{list_tag} has no count")))?
-        .parse::<usize>()
-        .map_err(|_| {
-            gui_techdraw_error(property_name, &format!("{list_tag} has an invalid count"))
-        })?;
-    if root.children().filter(roxmltree::Node::is_element).count() != count {
-        return Err(gui_techdraw_error(
-            property_name,
-            &format!("{list_tag} count does not match its records"),
-        ));
-    }
-    for record in root.children().filter(roxmltree::Node::is_element) {
-        if !record.has_tag_name(record_tag)
-            || record.attribute("type") != Some(format!("TechDraw::{record_tag}").as_str())
-        {
-            return Err(gui_techdraw_error(
-                property_name,
-                &format!("{list_tag} has an invalid record type"),
-            ));
-        }
-        validate(record, property_name)?;
-    }
-    Ok(())
-}
-
-fn gui_record_fields<'a, 'input>(
-    record: roxmltree::Node<'a, 'input>,
-) -> Vec<roxmltree::Node<'a, 'input>> {
-    record
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .collect()
-}
-
-fn validate_gui_geom_format_record(
-    record: roxmltree::Node<'_, '_>,
-    property_name: &str,
-) -> Result<(), CodecError> {
-    let fields = gui_record_fields(record);
-    if !(5..=6).contains(&fields.len()) {
-        return Err(gui_techdraw_error(
-            property_name,
-            "GeomFormat has an invalid field sequence",
-        ));
-    }
-    for (field, expected_tag) in
-        fields
-            .iter()
-            .zip(["GeomIndex", "Style", "Weight", "Color", "Visible"])
-    {
-        if !field.has_tag_name(expected_tag) || field.children().any(|node| node.is_element()) {
-            return Err(gui_techdraw_error(
-                property_name,
-                "GeomFormat has a nested or out-of-order field",
-            ));
-        }
-        if field.attribute("value").is_none() {
-            return Err(gui_techdraw_error(
-                property_name,
-                "GeomFormat field has no value",
-            ));
-        }
-    }
-    if let Some(line_number) = fields.get(5) {
-        if !(line_number.has_tag_name("LineNumber") || line_number.has_tag_name("ISOLineNumber"))
-            || line_number.children().any(|node| node.is_element())
-        {
-            return Err(gui_techdraw_error(
-                property_name,
-                "GeomFormat has an invalid line-number field",
-            ));
-        }
-        parse_gui_techdraw_integer(*line_number, property_name)?;
-    }
-    parse_gui_techdraw_integer(fields[0], property_name)?;
-    parse_gui_techdraw_integer(fields[1], property_name)?;
-    let weight = fields[2]
-        .attribute("value")
-        .and_then(|value| value.parse::<f64>().ok())
-        .ok_or_else(|| gui_techdraw_error(property_name, "GeomFormat has an invalid weight"))?;
-    if !weight.is_finite() {
-        return Err(gui_techdraw_error(
-            property_name,
-            "GeomFormat has a non-finite weight",
-        ));
-    }
-    let Some(color) = fields[3].attribute("value") else {
-        return Err(gui_techdraw_error(property_name, "GeomFormat has no color"));
-    };
-    if !(color.len() == 7 || color.len() == 9)
-        || !color.starts_with('#')
-        || !color.bytes().skip(1).all(|byte| byte.is_ascii_hexdigit())
-    {
-        return Err(gui_techdraw_error(
-            property_name,
-            "GeomFormat has an invalid color",
-        ));
-    }
-    if parse_bool(fields[4].attribute("value").unwrap_or_default()).is_none() {
-        return Err(gui_techdraw_error(
-            property_name,
-            "GeomFormat has an invalid visibility",
-        ));
-    }
-    Ok(())
-}
-
-fn validate_gui_center_line_record(
-    record: roxmltree::Node<'_, '_>,
-    property_name: &str,
-) -> Result<(), CodecError> {
-    let fields = gui_record_fields(record);
-    let prefix = [
-        "Start",
-        "End",
-        "Mode",
-        "HShift",
-        "VShift",
-        "Rotate",
-        "Extend",
-        "Type",
-        "Flip",
-        "Faces",
-        "Edges",
-        "CLPoints",
-        "Style",
-        "Weight",
-        "Color",
-        "Visible",
-        "GeometryType",
-    ];
-    if fields.len() < prefix.len() + 10 + 1 {
-        return Err(gui_techdraw_error(
-            property_name,
-            "CenterLine has an incomplete field sequence",
-        ));
-    }
-    for (field, expected_tag) in fields.iter().take(prefix.len()).zip(prefix) {
-        if !field.has_tag_name(expected_tag) {
-            return Err(gui_techdraw_error(
-                property_name,
-                "CenterLine has an out-of-order field",
-            ));
-        }
-    }
-    for index in [2, 3, 4, 5, 6, 7, 8, 12, 13, 14, 15, 16] {
-        if fields[index].children().any(|node| node.is_element()) {
-            return Err(gui_techdraw_error(
-                property_name,
-                "CenterLine has a nested field",
-            ));
-        }
-    }
-    validate_gui_techdraw_point(fields[0], property_name)?;
-    validate_gui_techdraw_point(fields[1], property_name)?;
-    let mode = parse_gui_techdraw_integer_value(fields[2], property_name, "Mode")?;
-    if !(0..=2).contains(&mode) {
-        return Err(gui_techdraw_error(
-            property_name,
-            "CenterLine has an unsupported Mode",
-        ));
-    }
-    for field in fields.iter().skip(3).take(4) {
-        parse_gui_techdraw_finite(*field, property_name)?;
-    }
-    let line_type = parse_gui_techdraw_integer_value(fields[7], property_name, "Type")?;
-    if !(0..=2).contains(&line_type) {
-        return Err(gui_techdraw_error(
-            property_name,
-            "CenterLine has an unsupported Type",
-        ));
-    }
-    validate_gui_techdraw_boolean(fields[8], property_name)?;
-    validate_gui_center_line_string_collection(
-        fields[9],
-        property_name,
-        "Faces",
-        "FaceCount",
-        "Face",
-    )?;
-    validate_gui_center_line_string_collection(
-        fields[10],
-        property_name,
-        "Edges",
-        "EdgeCount",
-        "Edge",
-    )?;
-    validate_gui_center_line_string_collection(
-        fields[11],
-        property_name,
-        "CLPoints",
-        "CLPointCount",
-        "CLPoint",
-    )?;
-    parse_gui_techdraw_integer_named(fields[12], property_name, "Style")?;
-    parse_gui_techdraw_finite(fields[13], property_name)?;
-    validate_gui_techdraw_color(fields[14], property_name)?;
-    validate_gui_techdraw_boolean(fields[15], property_name)?;
-    let geometry_type = TechDrawGeometryType::try_from(parse_gui_techdraw_integer_value(
-        fields[16],
-        property_name,
-        "GeometryType",
-    )?)
-    .map_err(|()| {
-        gui_techdraw_error(
-            property_name,
-            "TechDraw geometry has an unsupported GeometryType",
-        )
-    })?;
-    validate_gui_techdraw_geometry_branch(
-        &fields,
-        prefix.len(),
-        property_name,
-        geometry_type,
-        true,
-    )?;
-    Ok(())
-}
-
-fn validate_gui_center_line_string_collection(
-    field: roxmltree::Node<'_, '_>,
-    property_name: &str,
-    container_tag: &str,
-    count_attribute: &str,
-    item_tag: &str,
-) -> Result<(), CodecError> {
-    if !field.has_tag_name(container_tag) {
-        return Err(gui_techdraw_error(
-            property_name,
-            "CenterLine has an invalid collection field",
-        ));
-    }
-    let count = field
-        .attribute(count_attribute)
-        .ok_or_else(|| gui_techdraw_error(property_name, "CenterLine collection has no count"))?
-        .parse::<usize>()
-        .map_err(|_| {
-            gui_techdraw_error(property_name, "CenterLine collection has an invalid count")
-        })?;
-    if field.children().filter(roxmltree::Node::is_element).count() != count {
-        return Err(gui_techdraw_error(
-            property_name,
-            "CenterLine collection count does not match its records",
-        ));
-    }
-    for item in field.children().filter(roxmltree::Node::is_element) {
-        if !item.has_tag_name(item_tag)
-            || item.attribute("value").is_none()
-            || item.children().any(|node| node.is_element())
-        {
-            return Err(gui_techdraw_error(
-                property_name,
-                "CenterLine collection has an invalid item",
-            ));
-        }
-    }
-    Ok(())
-}
-
-fn validate_gui_cosmetic_edge_record(
-    record: roxmltree::Node<'_, '_>,
-    property_name: &str,
-) -> Result<(), CodecError> {
-    let fields = gui_record_fields(record);
-    if fields.len() < 16 {
-        return Err(gui_techdraw_error(
-            property_name,
-            "CosmeticEdge has an incomplete field sequence",
-        ));
-    }
-    let format_fields = ["Style", "Weight", "Color", "Visible", "GeometryType"];
-    for (field, expected_tag) in fields.iter().take(format_fields.len()).zip(format_fields) {
-        if !field.has_tag_name(expected_tag) || field.children().any(|node| node.is_element()) {
-            return Err(gui_techdraw_error(
-                property_name,
-                "CosmeticEdge has a nested or out-of-order format field",
-            ));
-        }
-        if field.attribute("value").is_none() {
-            return Err(gui_techdraw_error(
-                property_name,
-                "CosmeticEdge format field has no value",
-            ));
-        }
-    }
-    parse_gui_techdraw_integer_named(fields[0], property_name, "Style")?;
-    parse_gui_techdraw_finite(fields[1], property_name)?;
-    validate_gui_techdraw_color(fields[2], property_name)?;
-    validate_gui_techdraw_boolean(fields[3], property_name)?;
-    let geometry_type = TechDrawGeometryType::try_from(
-        fields[4]
-            .attribute("value")
-            .ok_or_else(|| {
-                gui_techdraw_error(property_name, "CosmeticEdge GeometryType has no value")
-            })?
-            .parse::<i64>()
-            .map_err(|_| {
-                gui_techdraw_error(property_name, "CosmeticEdge GeometryType is not an integer")
-            })?,
-    )
-    .map_err(|()| {
-        gui_techdraw_error(
-            property_name,
-            "TechDraw geometry has an unsupported GeometryType",
-        )
-    })?;
-
-    validate_gui_techdraw_geometry_branch(
-        &fields,
-        format_fields.len(),
-        property_name,
-        geometry_type,
-        false,
-    )?;
-    Ok(())
-}
-
-/// A `TechDraw` `GeomType` discriminant supported by the GUI validator.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum TechDrawGeometryType {
-    Circle,
-    ArcOfCircle,
-    Generic,
-}
-
-impl TechDrawGeometryType {
-    fn as_i64(self) -> i64 {
-        match self {
-            Self::Circle => 1,
-            Self::ArcOfCircle => 2,
-            Self::Generic => 7,
-        }
-    }
-}
-
-impl TryFrom<i64> for TechDrawGeometryType {
-    type Error = ();
-
-    fn try_from(value: i64) -> Result<Self, Self::Error> {
-        match value {
-            1 => Ok(Self::Circle),
-            2 => Ok(Self::ArcOfCircle),
-            7 => Ok(Self::Generic),
-            _ => Err(()),
-        }
-    }
-}
-
-fn validate_gui_techdraw_geometry_branch(
-    fields: &[roxmltree::Node<'_, '_>],
-    base_start: usize,
-    property_name: &str,
-    expected_geometry_type: TechDrawGeometryType,
-    allow_iso_line_number: bool,
-) -> Result<(), CodecError> {
-    if fields.len() < base_start + 10 {
-        return Err(gui_techdraw_error(
-            property_name,
-            "TechDraw geometry has no complete BaseGeom sequence",
-        ));
-    }
-    validate_gui_techdraw_base_geom(
-        &fields[base_start..base_start + 10],
-        property_name,
-        expected_geometry_type,
-    )?;
-    let mut cursor = base_start + 10;
-    let branch_field_count = match expected_geometry_type {
-        TechDrawGeometryType::Circle => 2,
-        TechDrawGeometryType::ArcOfCircle => 9,
-        TechDrawGeometryType::Generic => 1,
-    };
-    let required_fields = cursor + branch_field_count;
-    if fields.len() != required_fields && fields.len() != required_fields + 1 {
-        return Err(gui_techdraw_error(
-            property_name,
-            "TechDraw geometry has an invalid branch field sequence",
-        ));
-    }
-
-    match expected_geometry_type {
-        TechDrawGeometryType::Circle => {
-            if !fields[cursor].has_tag_name("Center") {
-                return Err(gui_techdraw_error(
-                    property_name,
-                    "TechDraw circle has an invalid center field",
-                ));
-            }
-            validate_gui_techdraw_point(fields[cursor], property_name)?;
-            cursor += 1;
-            if !fields[cursor].has_tag_name("Radius") {
-                return Err(gui_techdraw_error(
-                    property_name,
-                    "TechDraw circle has an invalid radius field",
-                ));
-            }
-            parse_gui_techdraw_finite(fields[cursor], property_name)?;
-            if fields[cursor].children().any(|node| node.is_element()) {
-                return Err(gui_techdraw_error(
-                    property_name,
-                    "TechDraw circle has a nested radius field",
-                ));
-            }
-            cursor += 1;
-        }
-        TechDrawGeometryType::ArcOfCircle => {
-            if !fields[cursor].has_tag_name("Center") {
-                return Err(gui_techdraw_error(
-                    property_name,
-                    "TechDraw arc has an invalid center field",
-                ));
-            }
-            validate_gui_techdraw_point(fields[cursor], property_name)?;
-            cursor += 1;
-            if !fields[cursor].has_tag_name("Radius") {
-                return Err(gui_techdraw_error(
-                    property_name,
-                    "TechDraw arc has an invalid radius field",
-                ));
-            }
-            parse_gui_techdraw_finite(fields[cursor], property_name)?;
-            if fields[cursor].children().any(|node| node.is_element()) {
-                return Err(gui_techdraw_error(
-                    property_name,
-                    "TechDraw arc has a nested radius field",
-                ));
-            }
-            cursor += 1;
-            for expected_tag in ["Start", "End", "Middle"] {
-                if !fields[cursor].has_tag_name(expected_tag) {
-                    return Err(gui_techdraw_error(
-                        property_name,
-                        "TechDraw arc has an out-of-order point field",
-                    ));
-                }
-                validate_gui_techdraw_point(fields[cursor], property_name)?;
-                cursor += 1;
-            }
-            for expected_tag in ["StartAngle", "EndAngle"] {
-                if !fields[cursor].has_tag_name(expected_tag) {
-                    return Err(gui_techdraw_error(
-                        property_name,
-                        "TechDraw arc has an out-of-order angle field",
-                    ));
-                }
-                parse_gui_techdraw_finite(fields[cursor], property_name)?;
-                if fields[cursor].children().any(|node| node.is_element()) {
-                    return Err(gui_techdraw_error(
-                        property_name,
-                        "TechDraw arc has a nested angle field",
-                    ));
-                }
-                cursor += 1;
-            }
-            for expected_tag in ["Clockwise", "Large"] {
-                if !fields[cursor].has_tag_name(expected_tag) {
-                    return Err(gui_techdraw_error(
-                        property_name,
-                        "TechDraw arc has an out-of-order Boolean field",
-                    ));
-                }
-                validate_gui_techdraw_boolean(fields[cursor], property_name)?;
-                cursor += 1;
-            }
-        }
-        TechDrawGeometryType::Generic => {
-            if !fields[cursor].has_tag_name("Points") {
-                return Err(gui_techdraw_error(
-                    property_name,
-                    "TechDraw generic geometry has no Points field",
-                ));
-            }
-            validate_gui_techdraw_points(fields[cursor], property_name)?;
-            cursor += 1;
-        }
-    }
-
-    if cursor < fields.len() {
-        let line_number = fields[cursor].has_tag_name("LineNumber")
-            || (allow_iso_line_number && fields[cursor].has_tag_name("ISOLineNumber"));
-        if cursor + 1 != fields.len() || !line_number {
-            return Err(gui_techdraw_error(
-                property_name,
-                "TechDraw geometry has an invalid trailing field",
-            ));
-        }
-        parse_gui_techdraw_integer_named(fields[cursor], property_name, "LineNumber")?;
-        if fields[cursor].children().any(|node| node.is_element()) {
-            return Err(gui_techdraw_error(
-                property_name,
-                "TechDraw geometry line number is nested",
-            ));
-        }
-    }
-    Ok(())
-}
-
-fn validate_gui_techdraw_base_geom(
-    fields: &[roxmltree::Node<'_, '_>],
-    property_name: &str,
-    expected_geometry_type: TechDrawGeometryType,
-) -> Result<(), CodecError> {
-    let expected = [
-        "GeomType",
-        "ExtractType",
-        "EdgeClass",
-        "HLRVisible",
-        "Reversed",
-        "Ref3D",
-        "Cosmetic",
-        "Source",
-        "SourceIndex",
-        "CosmeticTag",
-    ];
-    let geometry_type_value = gui_techdraw_base_geom_value(fields[0], expected[0], property_name)?;
-    for (field, expected_tag) in fields.iter().zip(expected).skip(1) {
-        gui_techdraw_base_geom_value(*field, expected_tag, property_name)?;
-    }
-    let geometry_type = geometry_type_value
-        .parse::<i64>()
-        .map_err(|_| gui_techdraw_error(property_name, "TechDraw GeomType is not an integer"))?;
-    if geometry_type != expected_geometry_type.as_i64() {
-        return Err(gui_techdraw_error(
-            property_name,
-            "TechDraw GeometryType and GeomType disagree",
-        ));
-    }
-    for index in [1, 2, 5, 7, 8] {
-        parse_gui_techdraw_integer_named(fields[index], property_name, expected[index])?;
-    }
-    for index in [3, 4, 6] {
-        validate_gui_techdraw_boolean(fields[index], property_name)?;
-    }
-    Ok(())
-}
-
-fn gui_techdraw_base_geom_value<'a>(
-    field: roxmltree::Node<'a, '_>,
-    expected_tag: &str,
-    property_name: &str,
-) -> Result<&'a str, CodecError> {
-    if !field.has_tag_name(expected_tag) || field.children().any(|node| node.is_element()) {
-        return Err(gui_techdraw_error(
-            property_name,
-            "TechDraw BaseGeom has a nested or out-of-order field",
-        ));
-    }
-    field
-        .attribute("value")
-        .ok_or_else(|| gui_techdraw_error(property_name, "TechDraw BaseGeom field has no value"))
-}
-
-fn validate_gui_techdraw_points(
-    field: roxmltree::Node<'_, '_>,
-    property_name: &str,
-) -> Result<(), CodecError> {
-    let count = field
-        .attribute("PointsCount")
-        .ok_or_else(|| gui_techdraw_error(property_name, "TechDraw Points has no count"))?
-        .parse::<usize>()
-        .map_err(|_| gui_techdraw_error(property_name, "TechDraw Points has an invalid count"))?;
-    if field.children().filter(roxmltree::Node::is_element).count() != count {
-        return Err(gui_techdraw_error(
-            property_name,
-            "TechDraw Points count does not match its records",
-        ));
-    }
-    for point in field.children().filter(roxmltree::Node::is_element) {
-        if !point.has_tag_name("Point") || point.children().any(|node| node.is_element()) {
-            return Err(gui_techdraw_error(
-                property_name,
-                "TechDraw Points has an invalid point record",
-            ));
-        }
-        validate_gui_techdraw_point(point, property_name)?;
-    }
-    Ok(())
-}
-
-fn validate_gui_cosmetic_vertex_record(
-    record: roxmltree::Node<'_, '_>,
-    property_name: &str,
-) -> Result<(), CodecError> {
-    let fields = gui_record_fields(record);
-    if !(15..=16).contains(&fields.len()) {
-        return Err(gui_techdraw_error(
-            property_name,
-            "CosmeticVertex has an invalid field sequence",
-        ));
-    }
-    let base_fields = [
-        "Point",
-        "Extract",
-        "HLRVisible",
-        "Ref3D",
-        "IsCenter",
-        "Cosmetic",
-        "CosmeticLink",
-        "CosmeticTag",
-    ];
-    for (field, expected_tag) in fields.iter().zip(base_fields) {
-        if !field.has_tag_name(expected_tag) {
-            break;
-        }
-        if field.children().any(|node| node.is_element()) {
-            return Err(gui_techdraw_error(
-                property_name,
-                "CosmeticVertex has a nested field",
-            ));
-        }
-    }
-    if fields
-        .iter()
-        .zip(base_fields)
-        .any(|(field, expected_tag)| !field.has_tag_name(expected_tag))
-    {
-        return Err(gui_techdraw_error(
-            property_name,
-            "CosmeticVertex has an out-of-order field",
-        ));
-    }
-    let mut cursor = base_fields.len();
-    if fields[cursor].has_tag_name("VertexTag") {
-        validate_gui_techdraw_uuid(fields[cursor], property_name, "VertexTag")?;
-        cursor += 1;
-    }
-    let tail_fields = [
-        "PermaPoint",
-        "LinkGeom",
-        "Color",
-        "Size",
-        "Style",
-        "Visible",
-        "Tag",
-    ];
-    if fields.len() != cursor + tail_fields.len()
-        || fields[cursor..]
-            .iter()
-            .zip(tail_fields)
-            .any(|(field, expected_tag)| !field.has_tag_name(expected_tag))
-    {
-        return Err(gui_techdraw_error(
-            property_name,
-            "CosmeticVertex has an out-of-order field",
-        ));
-    }
-    for field in &fields {
-        if field.children().any(|node| node.is_element()) {
-            return Err(gui_techdraw_error(
-                property_name,
-                "CosmeticVertex has a nested field",
-            ));
-        }
-    }
-    validate_gui_techdraw_point(fields[0], property_name)?;
-    parse_gui_techdraw_integer_named(fields[1], property_name, "Extract")?;
-    validate_gui_techdraw_boolean(fields[2], property_name)?;
-    parse_gui_techdraw_integer_named(fields[3], property_name, "Ref3D")?;
-    validate_gui_techdraw_boolean(fields[4], property_name)?;
-    validate_gui_techdraw_boolean(fields[5], property_name)?;
-    parse_gui_techdraw_integer_named(fields[6], property_name, "CosmeticLink")?;
-    if fields[7].attribute("value").is_none() {
-        return Err(gui_techdraw_error(
-            property_name,
-            "CosmeticVertex CosmeticTag has no value",
-        ));
-    }
-    validate_gui_techdraw_point(fields[cursor], property_name)?;
-    parse_gui_techdraw_integer_named(fields[cursor + 1], property_name, "LinkGeom")?;
-    validate_gui_techdraw_color(fields[cursor + 2], property_name)?;
-    parse_gui_techdraw_finite(fields[cursor + 3], property_name)?;
-    parse_gui_techdraw_integer_named(fields[cursor + 4], property_name, "Style")?;
-    validate_gui_techdraw_boolean(fields[cursor + 5], property_name)?;
-    validate_gui_techdraw_uuid(fields[cursor + 6], property_name, "Tag")?;
-    Ok(())
-}
-
-fn validate_gui_techdraw_point(
-    field: roxmltree::Node<'_, '_>,
-    property_name: &str,
-) -> Result<(), CodecError> {
-    if field.children().any(|node| node.is_element()) {
-        return Err(gui_techdraw_error(
-            property_name,
-            "TechDraw point has a nested field",
-        ));
-    }
-    for attribute in ["X", "Y", "Z"] {
-        let value = field
-            .attribute(attribute)
-            .ok_or_else(|| gui_techdraw_error(property_name, "point has no coordinate"))?
-            .parse::<f64>()
-            .map_err(|_| gui_techdraw_error(property_name, "point has an invalid coordinate"))?;
-        if !value.is_finite() {
-            return Err(gui_techdraw_error(
-                property_name,
-                "point has a non-finite coordinate",
-            ));
-        }
-    }
-    Ok(())
-}
-
-fn validate_gui_techdraw_boolean(
-    field: roxmltree::Node<'_, '_>,
-    property_name: &str,
-) -> Result<(), CodecError> {
-    let value = field
-        .attribute("value")
-        .ok_or_else(|| gui_techdraw_error(property_name, "TechDraw Boolean has no value"))?;
-    if parse_bool(value).is_none() {
-        return Err(gui_techdraw_error(
-            property_name,
-            "TechDraw has an invalid Boolean",
-        ));
-    }
-    Ok(())
-}
-
-fn validate_gui_techdraw_color(
-    field: roxmltree::Node<'_, '_>,
-    property_name: &str,
-) -> Result<(), CodecError> {
-    let color = field
-        .attribute("value")
-        .ok_or_else(|| gui_techdraw_error(property_name, "TechDraw color has no value"))?;
-    if !(color.len() == 7 || color.len() == 9)
-        || !color.starts_with('#')
-        || !color.bytes().skip(1).all(|byte| byte.is_ascii_hexdigit())
-    {
-        return Err(gui_techdraw_error(
-            property_name,
-            "TechDraw has an invalid color",
-        ));
-    }
-    Ok(())
-}
-
-fn parse_gui_techdraw_finite(
-    field: roxmltree::Node<'_, '_>,
-    property_name: &str,
-) -> Result<(), CodecError> {
-    let value = field
-        .attribute("value")
-        .ok_or_else(|| gui_techdraw_error(property_name, "TechDraw scalar has no value"))?
-        .parse::<f64>()
-        .map_err(|_| gui_techdraw_error(property_name, "TechDraw scalar is invalid"))?;
-    if !value.is_finite() {
-        return Err(gui_techdraw_error(
-            property_name,
-            "TechDraw scalar is non-finite",
-        ));
-    }
-    Ok(())
-}
-
-fn parse_gui_techdraw_integer_named(
-    field: roxmltree::Node<'_, '_>,
-    property_name: &str,
-    field_name: &str,
-) -> Result<(), CodecError> {
-    parse_gui_techdraw_integer_value(field, property_name, field_name).map(|_| ())
-}
-
-fn parse_gui_techdraw_integer_value(
-    field: roxmltree::Node<'_, '_>,
-    property_name: &str,
-    field_name: &str,
-) -> Result<i64, CodecError> {
-    field
-        .attribute("value")
-        .ok_or_else(|| gui_techdraw_error(property_name, "TechDraw integer has no value"))?
-        .parse::<i64>()
-        .map_err(|_| {
-            gui_techdraw_error(
-                property_name,
-                &format!("TechDraw {field_name} integer is invalid"),
-            )
-        })
-}
-
-fn validate_gui_techdraw_uuid(
-    field: roxmltree::Node<'_, '_>,
-    property_name: &str,
-    field_name: &str,
-) -> Result<(), CodecError> {
-    let value = field
-        .attribute("value")
-        .ok_or_else(|| gui_techdraw_error(property_name, "CosmeticVertex tag has no value"))?;
-    let bytes = value.as_bytes();
-    let valid = bytes.len() == 36
-        && [8, 13, 18, 23].iter().all(|&index| bytes[index] == b'-')
-        && bytes
-            .iter()
-            .enumerate()
-            .filter(|(index, _)| ![8, 13, 18, 23].contains(index))
-            .all(|(_, byte)| byte.is_ascii_hexdigit());
-    if !valid {
-        return Err(gui_techdraw_error(
-            property_name,
-            &format!("CosmeticVertex {field_name} is not a UUID"),
-        ));
-    }
-    Ok(())
-}
-
-fn parse_gui_techdraw_integer(
-    field: roxmltree::Node<'_, '_>,
-    property_name: &str,
-) -> Result<(), CodecError> {
-    field
-        .attribute("value")
-        .ok_or_else(|| gui_techdraw_error(property_name, "GeomFormat field has no value"))?
-        .parse::<i64>()
-        .map(|_| ())
-        .map_err(|_| gui_techdraw_error(property_name, "GeomFormat has an invalid integer"))
-}
-
-fn gui_techdraw_error(property_name: &str, detail: &str) -> CodecError {
-    CodecError::malformed(format_args!("GUI property {property_name} {detail}"))
-}
-
-fn validate_visual_layer_list(
-    property: roxmltree::Node<'_, '_>,
-    property_name: &str,
-) -> Result<(), CodecError> {
-    let mut roots = property.children().filter(roxmltree::Node::is_element);
-    let Some(root) = roots.next().filter(|_| roots.next().is_none()) else {
-        return Err(CodecError::malformed(format_args!(
-            "GUI property {property_name} requires exactly one VisualLayerList value"
-        )));
-    };
-    if !root.has_tag_name("VisualLayerList") {
-        return Err(CodecError::malformed(format_args!(
-            "GUI property {property_name} requires a leading VisualLayerList value"
-        )));
-    }
-    let count = root
-        .attribute("count")
-        .ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "GUI property {property_name} VisualLayerList has no count"
-            ))
-        })?
-        .parse::<usize>()
-        .map_err(|_| {
-            CodecError::malformed(format_args!(
-                "GUI property {property_name} VisualLayerList has an invalid count"
-            ))
-        })?;
-    if root.children().filter(roxmltree::Node::is_element).count() != count
-        || root
-            .children()
-            .filter(roxmltree::Node::is_element)
-            .any(|layer| !layer.has_tag_name("VisualLayer"))
-    {
-        return Err(CodecError::malformed(format_args!(
-            "GUI property {property_name} VisualLayerList count or record tag is invalid"
-        )));
-    }
-    for layer in root.children().filter(roxmltree::Node::is_element) {
-        if !matches!(layer.attribute("visible"), Some("true" | "false")) {
-            return Err(CodecError::malformed(format_args!(
-                "GUI property {property_name} VisualLayer has an invalid visible value"
-            )));
-        }
-        layer
-            .attribute("linePattern")
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "GUI property {property_name} VisualLayer has no linePattern"
-                ))
-            })?
-            .parse::<u32>()
-            .map_err(|_| {
-                CodecError::malformed(format_args!(
-                    "GUI property {property_name} VisualLayer has an invalid linePattern"
-                ))
-            })?;
-        let line_width = layer
-            .attribute("lineWidth")
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "GUI property {property_name} VisualLayer has no lineWidth"
-                ))
-            })?
-            .parse::<f64>()
-            .map_err(|_| {
-                CodecError::malformed(format_args!(
-                    "GUI property {property_name} VisualLayer has an invalid lineWidth"
-                ))
-            })?;
-        if !line_width.is_finite() {
-            return Err(CodecError::malformed(format_args!(
-                "GUI property {property_name} VisualLayer has a non-finite lineWidth"
-            )));
-        }
-    }
-    Ok(())
-}
-
-fn validate_gui_material(
-    value: roxmltree::Node<'_, '_>,
-    property_name: &str,
-) -> Result<(), CodecError> {
-    for attribute in [
-        "ambientColor",
-        "diffuseColor",
-        "specularColor",
-        "emissiveColor",
-    ] {
-        value
-            .attribute(attribute)
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "GUI property {property_name} material has no {attribute}"
-                ))
-            })?
-            .parse::<u32>()
-            .map_err(|_| {
-                CodecError::malformed(format_args!(
-                    "GUI property {property_name} material has an invalid {attribute}"
-                ))
-            })?;
-    }
-    for attribute in ["shininess", "transparency"] {
-        let scalar = value
-            .attribute(attribute)
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "GUI property {property_name} material has no {attribute}"
-                ))
-            })?
-            .parse::<f64>()
-            .map_err(|_| {
-                CodecError::malformed(format_args!(
-                    "GUI property {property_name} material has an invalid {attribute}"
-                ))
-            })?;
-        if !scalar.is_finite() {
-            return Err(CodecError::malformed(format_args!(
-                "GUI property {property_name} material has a non-finite {attribute}"
-            )));
-        }
-    }
-    Ok(())
-}
-
-fn validate_gui_expression_engine(
-    property: roxmltree::Node<'_, '_>,
-    property_name: &str,
-) -> Result<(), CodecError> {
-    let mut roots = property.children().filter(roxmltree::Node::is_element);
-    let Some(root) = roots.next().filter(|_| roots.next().is_none()) else {
-        return Err(CodecError::malformed(format_args!(
-            "GUI property {property_name} requires one ExpressionEngine value"
-        )));
-    };
-    if !root.has_tag_name("ExpressionEngine") {
-        return Err(CodecError::malformed(format_args!(
-            "GUI property {property_name} requires a leading ExpressionEngine value"
-        )));
-    }
-    let count = gui_list_count(root, property_name, "ExpressionEngine")?;
-    if root
-        .children()
-        .filter(|child| child.is_element() && child.has_tag_name("Expression"))
-        .count()
-        != count
-        || root
-            .children()
-            .filter(|child| child.is_element() && child.has_tag_name("Expression"))
-            .any(|expression| {
-                expression.attribute("path").is_none()
-                    || expression.attribute("expression").is_none()
-            })
-    {
-        return Err(CodecError::malformed(format_args!(
-            "GUI property {property_name} ExpressionEngine count or expression is invalid"
-        )));
-    }
-    Ok(())
-}
-
-fn validate_gui_material_reference(
-    property: roxmltree::Node<'_, '_>,
-    property_name: &str,
-) -> Result<(), CodecError> {
-    let mut roots = property.children().filter(roxmltree::Node::is_element);
-    let Some(root) = roots.next().filter(|_| roots.next().is_none()) else {
-        return Err(CodecError::malformed(format_args!(
-            "GUI property {property_name} requires one PropertyMaterial value"
-        )));
-    };
-    if !root.has_tag_name("PropertyMaterial") || root.attribute("uuid").is_none() {
-        return Err(CodecError::malformed(format_args!(
-            "GUI property {property_name} material reference is invalid"
-        )));
-    }
-    Ok(())
-}
-
-fn validate_gui_part_shape(
-    property: roxmltree::Node<'_, '_>,
-    property_name: &str,
-) -> Result<(), CodecError> {
-    let mut roots = property.children().filter(roxmltree::Node::is_element);
-    let first = roots.next();
-    if first.is_none_or(|root| root.has_tag_name("Part"))
-        && roots.all(|root| root.has_tag_name("ElementMap"))
-    {
-        return Ok(());
-    }
-    Err(CodecError::malformed(format_args!(
-        "GUI property {property_name} Part shape value is invalid"
-    )))
-}
-
-fn validate_gui_geometry_list(
-    property: roxmltree::Node<'_, '_>,
-    property_name: &str,
-) -> Result<(), CodecError> {
-    let mut roots = property.children().filter(roxmltree::Node::is_element);
-    let Some(root) = roots.next().filter(|_| roots.next().is_none()) else {
-        return Err(CodecError::malformed(format_args!(
-            "GUI property {property_name} requires one GeometryList value"
-        )));
-    };
-    if !root.has_tag_name("GeometryList") {
-        return Err(CodecError::malformed(format_args!(
-            "GUI property {property_name} requires a leading GeometryList value"
-        )));
-    }
-    let count = gui_list_count(root, property_name, "GeometryList")?;
-    if root.children().filter(roxmltree::Node::is_element).count() != count
-        || root
-            .children()
-            .filter(roxmltree::Node::is_element)
-            .any(|geometry| !geometry.has_tag_name("Geometry"))
-    {
-        return Err(CodecError::malformed(format_args!(
-            "GUI property {property_name} GeometryList count or record tag is invalid"
-        )));
-    }
-    Ok(())
-}
-
-fn validate_gui_filletedges(
-    property: roxmltree::Node<'_, '_>,
-    property_name: &str,
-) -> Result<(), CodecError> {
-    let mut roots = property.children().filter(roxmltree::Node::is_element);
-    let Some(root) = roots.next().filter(|_| roots.next().is_none()) else {
-        return Err(CodecError::malformed(format_args!(
-            "GUI property {property_name} requires one FilletEdges value"
-        )));
-    };
-    if !root.has_tag_name("FilletEdges") || root.attribute("file").is_none() {
-        return Err(CodecError::malformed(format_args!(
-            "GUI property {property_name} FilletEdges value is invalid"
-        )));
-    }
-    Ok(())
-}
-
-fn validate_gui_shape_list(
-    property: roxmltree::Node<'_, '_>,
-    property_name: &str,
-) -> Result<(), CodecError> {
-    let mut roots = property.children().filter(roxmltree::Node::is_element);
-    let Some(root) = roots.next().filter(|_| roots.next().is_none()) else {
-        return Err(CodecError::malformed(format_args!(
-            "GUI property {property_name} requires one ShapeList value"
-        )));
-    };
-    if !root.has_tag_name("ShapeList") {
-        return Err(CodecError::malformed(format_args!(
-            "GUI property {property_name} requires a leading ShapeList value"
-        )));
-    }
-    let count = gui_list_count(root, property_name, "ShapeList")?;
-    if root.children().filter(roxmltree::Node::is_element).count() != count
-        || root
-            .children()
-            .filter(roxmltree::Node::is_element)
-            .any(|shape| {
-                !shape.has_tag_name("TopoShape")
-                    || (shape.attribute("file").is_none()
-                        && shape.attribute("binary").is_none()
-                        && shape.attribute("brep").is_none())
-            })
-    {
-        return Err(CodecError::malformed(format_args!(
-            "GUI property {property_name} ShapeList count or record is invalid"
-        )));
-    }
-    Ok(())
-}
-
-fn validate_gui_constraint_list(
-    property: roxmltree::Node<'_, '_>,
-    property_name: &str,
-) -> Result<(), CodecError> {
-    let mut roots = property.children().filter(roxmltree::Node::is_element);
-    let Some(root) = roots.next().filter(|_| roots.next().is_none()) else {
-        return Err(CodecError::malformed(format_args!(
-            "GUI property {property_name} requires one ConstraintList value"
-        )));
-    };
-    if !root.has_tag_name("ConstraintList") {
-        return Err(CodecError::malformed(format_args!(
-            "GUI property {property_name} requires a leading ConstraintList value"
-        )));
-    }
-    let count = gui_list_count(root, property_name, "ConstraintList")?;
-    if root.children().filter(roxmltree::Node::is_element).count() != count
-        || root
-            .children()
-            .filter(roxmltree::Node::is_element)
-            .any(|constraint| !constraint.has_tag_name("Constrain"))
-    {
-        return Err(CodecError::malformed(format_args!(
-            "GUI property {property_name} ConstraintList count or record tag is invalid"
-        )));
-    }
-    Ok(())
-}
-
-#[derive(Clone)]
-struct GuiMaterial {
-    ambient: u32,
-    diffuse: u32,
-    specular: u32,
-    emissive: u32,
-    shininess: FiniteBinary32,
-    transparency: FiniteBinary32,
-    image: String,
-    image_path: String,
-    uuid: String,
-}
-
-fn validate_gui_list_payloads(
-    properties: &[GuiPropertyRecord],
-    entries: &BTreeMap<String, View<'_>>,
-    requires_alpha_conversion: bool,
-) -> Result<HashMap<String, Vec<GuiMaterial>>, CodecError> {
-    let mut material_lists = HashMap::new();
-    for property in properties {
-        if property.side_entries.is_empty() {
-            continue;
-        }
-        if property.type_name == "Part::PropertyTopoShapeList" {
-            for entry_name in &property.side_entries {
-                entries.get(entry_name).ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "GUI property {} references missing side entry {entry_name}",
-                        property.id
-                    ))
-                })?;
-            }
-            continue;
-        }
-        let entry_name = property.side_entries.first().ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "GUI property {} has no side entry",
-                property.id
-            ))
-        })?;
-        if property.side_entries.len() != 1 {
-            return Err(CodecError::malformed(format_args!(
-                "GUI property {} references more than one side entry",
-                property.id
-            )));
-        }
-        let view = *entries.get(entry_name).ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "GUI property {} references missing side entry {entry_name}",
-                property.id
-            ))
-        })?;
-        match property.type_name.as_str() {
-            "App::PropertyColorList" => {
-                parse_color_list(view, entry_name, requires_alpha_conversion)?;
-            }
-            "App::PropertyFloatList" => {
-                parse_float_list(view, entry_name)?;
-            }
-            "Part::PropertyFilletEdges" => {
-                parse_fillet_edges(view, entry_name)?;
-            }
-            "App::PropertyMaterialList" => {
-                let version = property
-                    .values
-                    .iter()
-                    .find(|value| value.tag == "MaterialList")
-                    .and_then(|value| value.attributes.get("version"))
-                    .map(|value| {
-                        value.parse::<u32>().map_err(|_| {
-                            CodecError::malformed(format_args!(
-                                "GUI material list {} has an invalid version",
-                                property.id
-                            ))
-                        })
-                    })
-                    .transpose()?
-                    .unwrap_or(0);
-                material_lists.insert(
-                    property.id.clone(),
-                    parse_material_list(view, version, &property.id, requires_alpha_conversion)?,
-                );
-            }
-            "App::PropertyPlacementList" => {
-                parse_placement_list(view, entry_name)?;
-            }
-            "App::PropertyVectorList" => {
-                parse_vector_list(view, entry_name)?;
-            }
-            _ => {}
-        }
-    }
-    Ok(material_lists)
-}
-
-fn parse_color_list(
-    mut view: View<'_>,
-    entry_name: &str,
-    requires_alpha_conversion: bool,
-) -> Result<Vec<u32>, CodecError> {
-    let count = view.req_u32_le()?;
-    let count = view
-        .counted(count.into(), 4)
-        .ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "color-list entry {entry_name} count exceeds its payload"
-            ))
-        })?
-        .get();
-    let mut colors = Vec::new();
-    for _ in 0..count {
-        colors.push(convert_packed_alpha(
-            view.req_u32_le()?,
-            requires_alpha_conversion,
-        ));
-    }
-    if !view.is_empty() {
-        return Err(CodecError::malformed(format_args!(
-            "color-list entry {entry_name} has trailing bytes"
-        )));
-    }
-    Ok(colors)
-}
-
-fn read_gui_counted<'a, T>(
-    view: &mut View<'a>,
-    count: u32,
-    element_size: usize,
-    mut read: impl FnMut(&mut View<'a>) -> Option<T>,
-) -> Option<Vec<T>> {
-    let count = view.counted(count.into(), element_size)?;
-    let mut values = Vec::new();
-    for _ in 0..count.get() {
-        values.push(read(view)?);
-    }
-    Some(values)
-}
-
-fn parse_float_list(mut view: View<'_>, entry_name: &str) -> Result<(), CodecError> {
-    let count = view.req_u32_le()?;
-    let values = read_gui_counted(&mut view, count, 8, View::f64_le).ok_or_else(|| {
-        CodecError::malformed(format_args!(
-            "float-list entry {entry_name} count exceeds its payload"
-        ))
-    })?;
-    if values.iter().any(|value| !value.is_finite()) {
-        return Err(CodecError::malformed(format_args!(
-            "float-list entry {entry_name} has a non-finite value"
-        )));
-    }
-    if !view.is_empty() {
-        return Err(CodecError::malformed(format_args!(
-            "float-list entry {entry_name} has trailing bytes"
-        )));
-    }
-    Ok(())
-}
-
-fn parse_vector_list(mut view: View<'_>, entry_name: &str) -> Result<(), CodecError> {
-    let count = view.req_u32_le()?;
-    let values = read_gui_counted(&mut view, count, 24, |view| {
-        Some((view.f64_le()?, view.f64_le()?, view.f64_le()?))
-    })
-    .ok_or_else(|| {
-        CodecError::malformed(format_args!(
-            "vector-list entry {entry_name} count exceeds its payload"
-        ))
-    })?;
-    if values
-        .iter()
-        .flat_map(|value| [value.0, value.1, value.2])
-        .any(|value| !value.is_finite())
-    {
-        return Err(CodecError::malformed(format_args!(
-            "vector-list entry {entry_name} has a non-finite value"
-        )));
-    }
-    if !view.is_empty() {
-        return Err(CodecError::malformed(format_args!(
-            "vector-list entry {entry_name} has trailing bytes"
-        )));
-    }
-    Ok(())
-}
-
-fn parse_placement_list(mut view: View<'_>, entry_name: &str) -> Result<(), CodecError> {
-    let count = view.req_u32_le()?;
-    let values = read_gui_counted(&mut view, count, 56, |view| {
-        Some([
-            view.f64_le()?,
-            view.f64_le()?,
-            view.f64_le()?,
-            view.f64_le()?,
-            view.f64_le()?,
-            view.f64_le()?,
-            view.f64_le()?,
-        ])
-    })
-    .ok_or_else(|| {
-        CodecError::malformed(format_args!(
-            "placement-list entry {entry_name} count exceeds its payload"
-        ))
-    })?;
-    if values.iter().flatten().any(|value| !value.is_finite()) {
-        return Err(CodecError::malformed(format_args!(
-            "placement-list entry {entry_name} has a non-finite value"
-        )));
-    }
-    if !view.is_empty() {
-        return Err(CodecError::malformed(format_args!(
-            "placement-list entry {entry_name} has trailing bytes"
-        )));
-    }
-    Ok(())
-}
-
-fn parse_fillet_edges(mut view: View<'_>, entry_name: &str) -> Result<(), CodecError> {
-    let count = view.req_u32_le()?;
-    let values = read_gui_counted(&mut view, count, 20, |view| {
-        Some((view.i32_le()?, view.f64_le()?, view.f64_le()?))
-    })
-    .ok_or_else(|| {
-        CodecError::malformed(format_args!(
-            "fillet-edges entry {entry_name} count exceeds its payload"
-        ))
-    })?;
-    if values
-        .iter()
-        .any(|(_, radius1, radius2)| !radius1.is_finite() || !radius2.is_finite())
-    {
-        return Err(CodecError::malformed(format_args!(
-            "fillet-edges entry {entry_name} has a non-finite radius"
-        )));
-    }
-    if !view.is_empty() {
-        return Err(CodecError::malformed(format_args!(
-            "fillet-edges entry {entry_name} has trailing bytes"
-        )));
-    }
-    Ok(())
-}
-
-fn parse_material_list(
-    mut view: View<'_>,
-    version: u32,
-    property_id: &str,
-    requires_alpha_conversion: bool,
-) -> Result<Vec<GuiMaterial>, CodecError> {
-    let (count, has_strings) = match version {
-        0 | 1 => {
-            let header = view.i32_le().ok_or_else(|| {
-                CodecError::malformed(format_args!("GUI material list {property_id} is truncated"))
-            })?;
-            let count = if header < 0 {
-                view.u32_le().ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "GUI material list {property_id} is truncated"
-                    ))
-                })?
-            } else {
-                u32::try_from(header).map_err(|_| {
-                    CodecError::malformed(format_args!(
-                        "GUI material list {property_id} has a negative count"
-                    ))
-                })?
-            };
-            (count, false)
-        }
-        2 => (
-            view.u32_le().ok_or_else(|| {
-                CodecError::malformed(format_args!("GUI material list {property_id} is truncated"))
-            })?,
-            false,
-        ),
-        3 => (
-            view.u32_le().ok_or_else(|| {
-                CodecError::malformed(format_args!("GUI material list {property_id} is truncated"))
-            })?,
-            true,
-        ),
-        _ => {
-            return Err(CodecError::NotImplemented(format!(
-                "FCStd GUI material-list version {version}"
-            )));
-        }
-    };
-    let raw_materials = read_gui_counted(&mut view, count, 24, |view| {
-        Some((
-            [
-                view.u32_le()?,
-                view.u32_le()?,
-                view.u32_le()?,
-                view.u32_le()?,
-            ],
-            [view.f32_le()?, view.f32_le()?],
-        ))
-    })
-    .ok_or_else(|| {
-        CodecError::malformed(format_args!(
-            "GUI material list {property_id} count exceeds its payload"
-        ))
-    })?;
-    let mut materials = Vec::new();
-    for ([ambient, diffuse, specular, emissive], [shininess, transparency]) in raw_materials {
-        let invalid = || {
-            CodecError::malformed(format_args!(
-                "GUI material list {property_id} has non-finite scalars"
-            ))
-        };
-        materials.push(GuiMaterial {
-            ambient,
-            diffuse,
-            specular,
-            emissive,
-            shininess: FiniteBinary32::new(shininess).ok_or_else(invalid)?,
-            transparency: FiniteBinary32::new(transparency).ok_or_else(invalid)?,
-            image: String::new(),
-            image_path: String::new(),
-            uuid: String::new(),
-        });
-    }
-    if requires_alpha_conversion {
-        for material in &mut materials {
-            material.ambient = convert_packed_alpha(material.ambient, true);
-            material.diffuse = convert_packed_alpha(material.diffuse, true);
-            material.specular = convert_packed_alpha(material.specular, true);
-            material.emissive = convert_packed_alpha(material.emissive, true);
-        }
-    }
-    if has_strings {
-        for material in &mut materials {
-            material.image = read_material_string(&mut view, property_id)?;
-            material.image_path = read_material_string(&mut view, property_id)?;
-            material.uuid = read_material_string(&mut view, property_id)?;
-        }
-    }
-    if !view.is_empty() {
-        return Err(CodecError::malformed(format_args!(
-            "GUI material list {property_id} has trailing bytes"
-        )));
-    }
-    Ok(materials)
-}
-
-fn read_material_string(view: &mut View<'_>, property_id: &str) -> Result<String, CodecError> {
-    let length = view.u32_le().ok_or_else(|| {
-        CodecError::malformed(format_args!(
-            "GUI material list {property_id} string is truncated"
-        ))
-    })?;
-    let length = view
-        .counted(length.into(), 1)
-        .ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "GUI material list {property_id} string exceeds its payload"
-            ))
-        })?
-        .get();
-    let bytes = view.take(length).ok_or_else(|| {
-        CodecError::malformed(format_args!(
-            "GUI material list {property_id} string exceeds its payload"
-        ))
-    })?;
-    String::from_utf8(bytes.to_vec()).map_err(|_| {
-        CodecError::malformed(format_args!(
-            "GUI material list {property_id} string is not UTF-8"
-        ))
-    })
-}
-
-fn transfer_shape_appearances(
-    ir: &CadIr,
-    plan: &mut AppearancePlan,
-    graph: &Graph,
-    material_lists: &HashMap<String, Vec<GuiMaterial>>,
-    sources: &GuiSources<'_, '_>,
-    losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
-    let properties = sources.properties;
-    let payloads = sources.payloads;
-    let element_maps = sources.element_maps;
-    for provider in &graph.providers {
-        let provider_key = provider_identity_key(&provider.name);
-        let Some(object_id) = provider
-            .object
-            .as_ref()
-            .map(cadmpeg_core::text::NonBlankString::as_str)
-        else {
-            continue;
-        };
-        let Some(property) = graph.properties.iter().find(|property| {
-            property.owner == provider.id
-                && property.name == "ShapeAppearance"
-                && property.type_name == "App::PropertyMaterialList"
-        }) else {
-            continue;
-        };
-        let Some(materials) = material_lists.get(&property.id) else {
-            continue;
-        };
-        let body_ids = displayed_shape_bodies(ir, object_id, properties, payloads)?;
-        let group = displayed_shape_group(object_id, properties, payloads, element_maps, "Face")?;
-        let mapped_count = match group {
-            None => 0,
-            Some(group) => match group.names.len() {
-                0 => 0,
-                length => length - 1,
-            },
-        };
-        if materials.len() == 1 {
-            let legacy_id = object_appearance_id(&provider_key)?;
-            plan.bindings
-                .retain(|binding| binding.appearance != legacy_id);
-            plan.appearances
-                .retain(|appearance| appearance.id != legacy_id);
-            plan.remove_appearances.insert(legacy_id);
-        } else {
-            let Some(_) = group else {
-                continue;
-            };
-            if mapped_count == 0 {
-                continue;
-            }
-            if materials.len() != mapped_count {
-                push_gui_appearance_loss(losses, FreecadLossCode::AppearanceTopologyColorCountMismatch, format_args!(
-                        "FCStd provider {} ShapeAppearance material count {} does not match {} mapped Face subelements; native material list retained and neutral face override withheld",
-                        provider.name, materials.len(), mapped_count
-                    ), SourceProvenance::in_stream(
-                        "fcstd",
-                        cadmpeg_ir::stream_name!("GuiDocument.xml"),
-                        cadmpeg_core::decode::u64_from_index(
-                            graph.property_sources.get(&property.id).ok_or_else(|| {
-                                CodecError::malformed("GUI property has no original source range")
-                            })?.record_range().start,
-                        ),
-                    )
-                    .with_tag(property.id.clone()));
-                continue;
-            }
-        }
-        for (index, material) in materials.iter().enumerate() {
-            let appearance_id = shape_material_appearance_id(&provider_key, index)?;
-            plan.appearances.push(material_appearance(
-                appearance_id.clone(),
-                &provider.name,
-                index,
-                material,
-            )?);
-            if materials.len() == 1 {
-                for (body_index, body) in body_ids.iter().enumerate() {
-                    push_body_update(
-                        plan,
-                        body,
-                        Assignment::Keep,
-                        decode_color(material.diffuse, Some(material.transparency.get())).map(Some),
-                    )?;
-                    plan.bindings.push(AppearanceBinding {
-                        native_ref: None,
-                        id: binding_id(format_args!(
-                            "fcstd:appearance:binding#shape-material:{provider_key}:{body_index}"
-                        ))?,
-                        target: AppearanceTarget::Body(body.clone()),
-                        appearance: appearance_id.clone(),
-                        source_entity_id: Some(object_id.to_owned()),
-                        object_type: Some("ViewProvider ShapeAppearance".into()),
-                        visible: None,
-                        channels: BTreeMap::new(),
-                    });
-                }
-            } else if let Some(group) = group {
-                bind_material_faces(
-                    ir,
-                    plan,
-                    group,
-                    index,
-                    &appearance_id,
-                    (&provider_key, object_id),
-                )?;
-            }
-        }
-    }
-    Ok(())
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct GuiMaterial {
+    pub(crate) ambient: u32,
+    pub(crate) diffuse: u32,
+    pub(crate) specular: u32,
+    pub(crate) emissive: u32,
+    pub(crate) shininess: FiniteBinary32,
+    pub(crate) transparency: FiniteBinary32,
+    pub(crate) image: Option<String>,
+    pub(crate) image_path: Option<String>,
+    pub(crate) uuid: Option<String>,
 }
 
 fn displayed_shape_bodies(
@@ -4040,7 +1357,7 @@ fn displayed_shape_group<'a>(
     payloads: &[ShapePayloadRecord],
     element_maps: &'a [ElementMapRecord],
     indexed_name: &str,
-) -> Result<Option<&'a ElementMapGroup>, CodecError> {
+) -> Result<Option<(&'a ElementMapNodes, &'a ElementMapGroup)>, CodecError> {
     let Some(payload) = displayed_shape_payload(object_id, properties, payloads)? else {
         return Ok(None);
     };
@@ -4060,6 +1377,7 @@ fn displayed_shape_group<'a>(
     let mut groups = root
         .groups
         .iter()
+        .flatten()
         .filter(|group| group.indexed_name == indexed_name);
     let Some(group) = groups.next() else {
         return Ok(None);
@@ -4070,105 +1388,7 @@ fn displayed_shape_group<'a>(
             payload.property
         )));
     }
-    Ok(Some(group))
-}
-
-fn material_appearance(
-    id: AppearanceId,
-    provider_name: &str,
-    index: usize,
-    material: &GuiMaterial,
-) -> Result<Appearance, CodecError> {
-    let scalar = |name: &str, value: f64| {
-        cadmpeg_ir::scalar::FiniteReal::new(value)
-            .ok_or_else(|| CodecError::malformed(format_args!("GUI material {name} is non-finite")))
-    };
-    Ok(Appearance {
-        native_ref: None,
-        id,
-        name: Some(format!("{provider_name} face {} material", index + 1)),
-        asset_guid: (!material.uuid.is_empty()).then(|| material.uuid.clone()),
-        library_id: None,
-        visual_guid: None,
-        physical_token: None,
-        schema: Some("FCStd ShapeAppearance".into()),
-        category: None,
-        base_color: Some(decode_color(
-            material.diffuse,
-            Some(material.transparency.get()),
-        )?),
-        textures: Vec::new(),
-        properties: [
-            (
-                cadmpeg_core::nonblank_literal!("ambient_packed"),
-                scalar("ambient_packed", f64::from(material.ambient))?,
-            ),
-            (
-                cadmpeg_core::nonblank_literal!("specular_packed"),
-                scalar("specular_packed", f64::from(material.specular))?,
-            ),
-            (
-                cadmpeg_core::nonblank_literal!("emissive_packed"),
-                scalar("emissive_packed", f64::from(material.emissive))?,
-            ),
-            (
-                cadmpeg_core::nonblank_literal!("shininess"),
-                material.shininess.into(),
-            ),
-            (
-                cadmpeg_core::nonblank_literal!("transparency"),
-                material.transparency.into(),
-            ),
-        ]
-        .into(),
-    })
-}
-
-fn bind_material_faces(
-    ir: &CadIr,
-    plan: &mut AppearancePlan,
-    group: &ElementMapGroup,
-    material_index: usize,
-    appearance_id: &AppearanceId,
-    provider: (&IdentityKey, &str),
-) -> Result<(), CodecError> {
-    let (provider_key, object_id) = provider;
-    let mut bound = HashSet::new();
-    for topology_id in group.names[material_index + 1]
-        .iter()
-        .flat_map(|name| &name.topology_ids)
-    {
-        if !bound.insert(topology_id.as_str()) {
-            continue;
-        }
-        let Some(face) = ir
-            .model
-            .faces
-            .iter()
-            .find(|face| face.id.as_str() == *topology_id)
-        else {
-            continue;
-        };
-        let face = face.id.clone();
-        let binding_index = ir.model.appearance_bindings.len() + plan.bindings.len();
-        plan.bindings.push(AppearanceBinding {
-            native_ref: None,
-            id: binding_id(format_args!(
-                "fcstd:appearance:binding#shape-material:{provider_key}:{binding_index}"
-            ))?,
-            target: AppearanceTarget::Face(face),
-            appearance: appearance_id.clone(),
-            source_entity_id: Some(object_id.to_owned()),
-            object_type: Some("ViewProvider ShapeAppearance".into()),
-            visible: None,
-            channels: [(
-                cadmpeg_core::nonblank_literal!("precedence"),
-                "face_over_object".into(),
-            )]
-            .into(),
-        });
-    }
-    Ok(())
+    Ok(Some((&map.maps, group)))
 }
 
 #[derive(Clone, Copy)]
@@ -4209,6 +1429,7 @@ struct TopologyColorRequest<'a> {
     provider_key: &'a IdentityKey,
     object_id: &'a str,
     entry_name: &'a str,
+    property: &'a str,
     kind: TopologyColorKind,
     provenance: SourceProvenance,
 }
@@ -4219,137 +1440,112 @@ fn transfer_topology_colors(
     request: TopologyColorRequest<'_>,
     sources: &GuiSources<'_, '_>,
     losses: &mut Vec<LossNote>,
+    producer: &mut impl appearance_producer::Producer,
 ) -> Result<(), CodecError> {
     let TopologyColorRequest {
         provider_name,
         provider_key,
         object_id,
         entry_name,
+        property,
         kind,
         provenance,
     } = request;
-    let entries = sources.entries;
-    let properties = sources.properties;
-    let payloads = sources.payloads;
-    let element_maps = sources.element_maps;
-    let requires_alpha_conversion = sources.requires_alpha_conversion;
-    let view = *entries.get(entry_name).ok_or_else(|| {
-        CodecError::malformed(format_args!(
-            "color list references missing entry {entry_name}"
-        ))
-    })?;
-    let colors = parse_color_list(view, entry_name, requires_alpha_conversion)?;
-    let count = colors.len();
-    let Some(group) =
-        displayed_shape_group(object_id, properties, payloads, element_maps, kind.name())?
+    let entry_id = crate::native::native_id("entry", entry_name);
+    let entries = ir
+        .native
+        .namespace("fcstd")
+        .map(|namespace| namespace.arena_as::<crate::native::EntryRecord>("entries"))
+        .transpose()?
+        .unwrap_or_default();
+    let Some(values) = entries
+        .iter()
+        .find(|entry| entry.id() == entry_id)
+        .and_then(|entry| {
+            entry.contents().iter().find_map(|content| match content {
+                crate::native::entry_contents::EntryContents::Color { values } => Some(values),
+                _ => None,
+            })
+        })
     else {
         return Ok(());
     };
-    // FreeCAD uses a single list entry as a uniform color for every mapped subelement.
-    let mapped_count = match group.names.len() {
-        0 => 0,
-        length => length - 1,
-    };
-    if mapped_count == 0 {
-        return Ok(());
+    let count = values.len();
+    let group = displayed_shape_group(
+        object_id,
+        sources.properties,
+        sources.payloads,
+        sources.element_maps,
+        kind.name(),
+    )?;
+    let mapped_count = group.map_or(0, |(_, group)| {
+        crate::element_map::topology_index_count(group)
+    });
+    let matched = group.is_some() && mapped_count > 0 && (count == 1 || count == mapped_count);
+    if group.is_some() && count != 1 && count != mapped_count {
+        push_gui_appearance_loss(losses, FreecadLossCode::AppearanceTopologyColorCountMismatch, format_args!("FCStd provider {provider_name} {} color count {count} does not match {mapped_count} mapped subelements; indexed bindings withheld", kind.name()), provenance);
     }
-    if count != 1 && mapped_count != count {
-        push_gui_appearance_loss(losses, FreecadLossCode::AppearanceTopologyColorCountMismatch, format_args!(
-                "FCStd provider {provider_name} {} color count {count} does not match {mapped_count} mapped subelements; native color list retained and neutral override withheld",
-                kind.name()
-            ), provenance);
-        return Ok(());
-    }
-    for (index, packed) in colors.into_iter().enumerate() {
+    for (index, value) in values.iter().enumerate() {
+        let Some(value) = value else { continue };
         let appearance_id = topology_appearance_id(kind, provider_key, index)?;
-        let uniform_names = (count == 1)
-            .then_some(&group.names)
-            .into_iter()
-            .flat_map(|groups| groups.iter().flatten());
-        let indexed_names = (count != 1)
-            .then_some(&group.names[index + 1])
-            .into_iter()
-            .flat_map(|names| names.iter());
-        let mut emitted_appearance = false;
+        plan.appearances
+            .push(producer.color(appearance_producer::ColorRequest {
+                id: appearance_id.clone(),
+                provider: provider_name,
+                property,
+                object: object_id,
+                entry: &entry_id,
+                index,
+                kind,
+                value: *value,
+                alpha: sources.requires_alpha_conversion,
+            })?);
+        let Some((nodes, group)) = group.filter(|_| matched) else {
+            continue;
+        };
+        let Some(displayed) =
+            displayed_shape_payload(object_id, sources.properties, sources.payloads)?
+        else {
+            continue;
+        };
+        let indices = crate::element_map::topology_indices(
+            nodes,
+            group,
+            sources.topology_occurrences,
+            &displayed.property,
+        )
+        .filter(|source_index| count == 1 || *source_index == index + 1);
         let mut bound_topology = HashSet::new();
-        for topology_id in uniform_names
-            .chain(indexed_names)
-            .flat_map(|name| &name.topology_ids)
-        {
-            if !bound_topology.insert(topology_id.as_str()) {
+        for topology_id in indices.flat_map(|source_index| {
+            crate::element_map::topology_ids(
+                nodes,
+                group,
+                sources.topology_occurrences,
+                &displayed.property,
+                source_index,
+            )
+        }) {
+            if !bound_topology.insert(topology_id) {
                 continue;
-            }
-            if !match kind {
-                TopologyColorKind::Face => ir
-                    .model
-                    .faces
-                    .iter()
-                    .any(|face| face.id.as_str() == topology_id.as_str()),
-                TopologyColorKind::Edge => ir
-                    .model
-                    .edges
-                    .iter()
-                    .any(|edge| edge.id.as_str() == topology_id.as_str()),
-                TopologyColorKind::Vertex => ir
-                    .model
-                    .vertices
-                    .iter()
-                    .any(|vertex| vertex.id.as_str() == topology_id.as_str()),
-            } {
-                continue;
-            }
-            if !emitted_appearance {
-                plan.appearances.push(Appearance {
-                    native_ref: None,
-                    id: appearance_id.clone(),
-                    name: Some(format!(
-                        "{provider_name} {}{} appearance",
-                        kind.name(),
-                        index + 1
-                    )),
-                    asset_guid: None,
-                    library_id: None,
-                    visual_guid: None,
-                    physical_token: None,
-                    schema: Some(kind.schema().into()),
-                    category: None,
-                    base_color: Some(Color::from_rgba8(
-                        u8::try_from((packed >> 24) & 0xff).map_err(|_| {
-                            CodecError::Malformed("GUI color channel exceeds byte range".into())
-                        })?,
-                        u8::try_from((packed >> 16) & 0xff).map_err(|_| {
-                            CodecError::Malformed("GUI color channel exceeds byte range".into())
-                        })?,
-                        u8::try_from((packed >> 8) & 0xff).map_err(|_| {
-                            CodecError::Malformed("GUI color channel exceeds byte range".into())
-                        })?,
-                        u8::try_from(packed & 0xff).map_err(|_| {
-                            CodecError::Malformed("GUI color channel exceeds byte range".into())
-                        })?,
-                    )),
-                    textures: Vec::new(),
-                    properties: BTreeMap::new(),
-                });
-                emitted_appearance = true;
             }
             let target = match kind {
                 TopologyColorKind::Face => ir
                     .model
                     .faces
                     .iter()
-                    .find(|face| face.id.as_str() == topology_id.as_str())
+                    .find(|face| face.id.as_str() == topology_id)
                     .map(|face| AppearanceTarget::Face(face.id.clone())),
                 TopologyColorKind::Edge => ir
                     .model
                     .edges
                     .iter()
-                    .find(|edge| edge.id.as_str() == topology_id.as_str())
+                    .find(|edge| edge.id.as_str() == topology_id)
                     .map(|edge| AppearanceTarget::Edge(edge.id.clone())),
                 TopologyColorKind::Vertex => ir
                     .model
                     .vertices
                     .iter()
-                    .find(|vertex| vertex.id.as_str() == topology_id.as_str())
+                    .find(|vertex| vertex.id.as_str() == topology_id)
                     .map(|vertex| AppearanceTarget::Vertex(vertex.id.clone())),
             };
             let Some(target) = target else {
@@ -4416,7 +1612,7 @@ fn convert_packed_alpha(value: u32, required: bool) -> u32 {
 
 #[cfg(test)]
 mod color_tests {
-    use super::{decode_color, parse_material_list, requires_alpha_conversion};
+    use super::{decode_color, requires_alpha_conversion};
 
     #[test]
     fn packed_alpha_is_used_without_a_transparency_property() {
@@ -4439,6 +1635,18 @@ mod color_tests {
         assert!(!requires_alpha_conversion(None));
     }
 
+    fn actual_material_reader(bytes: &[u8]) -> cadmpeg_ir::codec::DecodeResult {
+        use cadmpeg_ir::Codec;
+        let xml=b"<Document SchemaVersion='1'><ViewProviderData Count='1'><ViewProvider name='A'><Properties Count='1'><Property name='property' type='App::PropertyMaterialList'><MaterialList file='Materials' version='0'/></Property></Properties></ViewProvider></ViewProviderData></Document>";
+        let archive=crate::test_support::test_archive::archive_entries(&[("Document.xml",b"<Document SchemaVersion='4'><Objects Count='0'/><ObjectData Count='0'/></Document>"),("GuiDocument.xml",xml),("Materials",bytes)]);
+        crate::FcstdCodec
+            .decode(
+                &mut std::io::Cursor::new(archive),
+                &cadmpeg_ir::DecodeOptions::default(),
+            )
+            .unwrap()
+    }
+
     #[test]
     fn legacy_material_list_accepts_the_negative_version_marker() {
         let mut bytes = Vec::new();
@@ -4450,15 +1658,33 @@ mod color_tests {
         bytes.extend_from_slice(&0.5_f32.to_le_bytes());
         bytes.extend_from_slice(&0.25_f32.to_le_bytes());
 
-        let materials = {
-            parse_material_list(
-                cadmpeg_core::decode::View::over_retained(&bytes),
-                0,
-                "property",
-                true,
-            )
-        }
-        .expect("material list");
+        let output = actual_material_reader(&bytes);
+        let graph = super::Graph {
+            properties: output
+                .ir()
+                .native
+                .namespace("fcstd")
+                .unwrap()
+                .arena_as("gui_properties")
+                .unwrap(),
+            ..Default::default()
+        };
+        assert!(output
+            .source_fidelity()
+            .parts()
+            .values()
+            .all(|part| !matches!(
+                part.state(),
+                cadmpeg_ir::source_fidelity::parts::PartState::GivenUp { .. }
+            )));
+        let materials = super::payloads::material_lists(output.ir(), &graph, true)
+            .unwrap()
+            .into_values()
+            .next()
+            .unwrap()
+            .materials
+            .into_values()
+            .collect::<Vec<_>>();
         assert_eq!(materials.len(), 1);
         assert_eq!(materials[0].ambient, 0x1122_33ff);
         assert_eq!(materials[0].diffuse, 0x4455_66bf);
@@ -4475,17 +1701,45 @@ mod color_tests {
             }
             bytes.extend_from_slice(&shininess.to_le_bytes());
             bytes.extend_from_slice(&transparency.to_le_bytes());
-            let error = {
-                parse_material_list(
-                    cadmpeg_core::decode::View::over_retained(&bytes),
-                    0,
-                    "property",
-                    false,
-                )
-            }
-            .err()
-            .expect("nonfinite material scalar");
-            assert!(error.to_string().contains("has non-finite scalars"));
+            // #215 bounds a nonfinite source scalar to its actual material row.
+            let output = actual_material_reader(&bytes);
+            let namespace = output.ir().native.namespace("fcstd").unwrap();
+            assert_eq!(
+                namespace
+                    .arena_as::<crate::native::GuiPropertyRecord>("gui_properties")
+                    .unwrap()
+                    .len(),
+                1
+            );
+            let entries = namespace
+                .arena_as::<crate::native::EntryRecord>("entries")
+                .unwrap();
+            let slots = entries
+                .iter()
+                .flat_map(|entry| entry.contents())
+                .find_map(|content| match content {
+                    crate::native::entry_contents::EntryContents::Material { values, .. } => {
+                        Some(values)
+                    }
+                    _ => None,
+                })
+                .unwrap();
+            assert_eq!(slots.len(), 1); // The readable count establishes the original slot.
+            assert!(slots[0].fixed.is_none());
+            let failed = output
+                .source_fidelity()
+                .parts()
+                .values()
+                .filter(|part| {
+                    matches!(
+                        part.state(),
+                        cadmpeg_ir::source_fidelity::parts::PartState::GivenUp { .. }
+                    )
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(failed.len(), 1);
+            assert_eq!(failed[0].level().as_str(), "freecad.material_list_material");
+            assert_eq!(failed[0].byte_len(), 24);
         }
     }
 }
@@ -4507,7 +1761,7 @@ mod shape_association_tests {
             family: PropertyFamily::Geometry,
             status: None,
             body: Some(crate::native::PropertyBody::Persisted {
-                values: Vec::new(),
+                values: Default::default(),
                 links: Vec::new(),
                 side_entries: Vec::new(),
             }),
@@ -4518,6 +1772,7 @@ mod shape_association_tests {
     fn shape_payload(id: &str, property: &str) -> ShapePayloadRecord {
         ShapePayloadRecord {
             id: id.into(),
+            rows: Vec::new(),
             property: property.into(),
             entry: "Shape.brp".into(),
             payload: ShapePayload::Empty,
@@ -4530,13 +1785,18 @@ mod shape_association_tests {
             property: property.into(),
             version: "1.0".into(),
             hasher_index: None,
+            string_table: None,
             source_entry: None,
             map_id: 1,
             declared_count: Some(0),
+            legacy_records: None,
             postfixes: Vec::new(),
-            maps: vec![ElementMapNode { map_id: 1, groups }]
-                .try_into()
-                .expect("valid shape-association map"),
+            maps: vec![ElementMapNode {
+                map_id: 1,
+                groups: groups.into_iter().map(Some).collect(),
+            }]
+            .try_into()
+            .expect("valid shape-association map"),
         }
     }
 

@@ -2,15 +2,26 @@
 #![allow(clippy::unwrap_used)]
 //! Integration contracts over synthesized `FCStd` archives and application graphs.
 
+mod application_kernels;
 mod archive_recovery;
+mod attribute_values;
 mod content_scope;
+mod derived_native_recovery;
 mod design_ordinals;
+mod independent_brep_framing;
 mod mandatory_document_parts;
 mod metadata_recovery;
+mod native_payload_links;
 mod object_declaration_parts;
+mod opaque_source;
+mod property_recovery;
+mod public_binary;
 mod source_b1;
 mod source_ledgers;
 mod source_parts;
+mod whole_source_entrypoints;
+mod whole_source_forms;
+mod xml_recovery_controls;
 
 use super::FcstdCodec;
 use crate::test_support::test_archive::{
@@ -93,7 +104,7 @@ fn thumbnail_copy_refuses_at_matching_retained_limit() {
     assert_decode_refusal_at(
         &bytes,
         cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "retain FCStd thumbnail",
+        "retain FCStd source image",
     );
 }
 
@@ -736,16 +747,105 @@ fn an_undeclared_schema_version_alone_recovers_the_schema_four_content() {
 /// fails, under an undeclared version exactly as under schema 4.
 #[test]
 fn a_structurally_alien_document_under_a_foreign_version_still_fails() {
-    // The schema-2 `Features` vocabulary is alien to the `Objects` strategy the
-    // undeclared version attempts, so the parse fails on the missing section.
+    // #224 dispatches both physical envelopes; #215 gives up each actual
+    // wrong-vocabulary container while retaining the independently read root.
     let alien = "<Features Count=\"0\"></Features><FeatureData Count=\"0\"></FeatureData>";
     for version in ["5", "4"] {
-        let bytes = archive(&format!(
-            "<Document SchemaVersion=\"{version}\" FileVersion=\"1\">{alien}</Document>"
-        ));
-        FcstdCodec
-            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-            .expect_err("alien element vocabulary must fail");
+        let document =
+            format!("<Document SchemaVersion=\"{version}\" FileVersion=\"1\">{alien}</Document>");
+        let bytes = archive(&document);
+        let decoded = FcstdCodec
+            .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(decoded.ir().scope, cadmpeg_ir::ContentScope::full());
+        assert_eq!(decoded.ir().model.entity_count(), 0);
+        let namespace = decoded.ir().native.namespace("fcstd").unwrap();
+        assert!(namespace
+            .arena_as::<crate::native::ObjectRecord>("objects")
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            namespace
+                .arena_as::<crate::native::DocumentFacts>("document")
+                .unwrap()
+                .len(),
+            1
+        );
+        let dialect = decoded
+            .ir()
+            .source
+            .as_ref()
+            .unwrap()
+            .dialects()
+            .unwrap()
+            .primary();
+        assert_eq!(
+            dialect.dialect().as_str(),
+            if version == "4" {
+                "fcstd:schema-4"
+            } else {
+                "fcstd:unknown"
+            }
+        );
+        assert_eq!(
+            dialect
+                .declared()
+                .iter()
+                .find(|(key, _)| key.as_str() == "schema_version")
+                .unwrap()
+                .1,
+            version
+        );
+        let fidelity = decoded.source_fidelity();
+        let unknowns = decoded.ir().native_unknowns("fcstd").unwrap();
+        assert_eq!(unknowns.len(), 2);
+        for (level, raw) in [
+            ("freecad.objects", "<Features Count=\"0\"></Features>"),
+            (
+                "freecad.object_data_section",
+                "<FeatureData Count=\"0\"></FeatureData>",
+            ),
+        ] {
+            let unknown = unknowns
+                .iter()
+                .find(|unknown| fidelity.parts()[&unknown.id].level().as_str() == level)
+                .unwrap();
+            let part = &fidelity.parts()[&unknown.id];
+            assert_eq!(
+                part.state(),
+                &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}
+            );
+            assert_eq!(
+                part.offset(),
+                u64::try_from(document.find(raw).unwrap()).unwrap()
+            );
+            assert_eq!(part.byte_len(), u64::try_from(raw.len()).unwrap());
+            let parent = &fidelity.parts()[part.parent().unwrap()];
+            assert_eq!(parent.level().as_str(), "freecad.document");
+            assert_eq!(
+                parent.state(),
+                &cadmpeg_ir::source_fidelity::parts::PartState::Decoded {}
+            );
+            assert_eq!(
+                fidelity
+                    .retained_record(unknown.id.as_str())
+                    .unwrap()
+                    .data(),
+                Some(raw.as_bytes())
+            );
+        }
+        let errors = decoded
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code.local_code() == "record.unreadable")
+            .collect::<Vec<_>>();
+        assert_eq!(errors.len(), 2);
+        assert!(errors
+            .iter()
+            .all(|loss| loss.severity == cadmpeg_ir::report::Severity::Error));
+        crate::test_support::framing::assert_xml_parts_agree(&bytes, &decoded);
+        assert!(crate::test_support::validate_native(decoded.ir()).is_empty());
     }
 }
 
@@ -771,3 +871,7 @@ mod document_vector_parts;
 mod document_value_parts;
 
 mod source_native_missing_values;
+
+mod property_binary_framing;
+
+mod xml_damage_matrix;

@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Element-map recovery unit tests.
 
-use super::{
-    node_text_bytes, parse_element_map, parse_legacy_string_ids, parse_string_table,
-    validate_string_hasher_framing,
-};
+use super::{node_text_bytes, parse_element_map, parse_legacy_string_ids, parse_string_table};
 use crate::native::PropertyRecord;
 use crate::test_support::test_archive::{
     archive, archive_entries, assert_valid_document, GEOMETRY,
@@ -14,6 +11,9 @@ use cadmpeg_core::decode::DecodePolicy;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::{Cursor, Read};
+
+mod failed_string_dependencies;
+mod hex_dictionary;
 
 fn test_parse(
     document: &[u8],
@@ -82,7 +82,7 @@ fn test_property(
             family: crate::native::PropertyFamily::Unknown,
             status: None,
             body: Some(crate::native::PropertyBody::Persisted {
-                values: Vec::new(),
+                values: Vec::new().into(),
                 links: Vec::new(),
                 side_entries: Vec::new(),
             }),
@@ -94,13 +94,62 @@ fn test_property(
 
 #[test]
 fn restores_absolute_and_relative_string_table_headers() {
-    let records = test_parse_string_table(b"a.c.2 alpha\n-3.c.-1 beta\n", 2, false)
-        .expect("parse relative string table");
+    use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeContext};
+    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartLevel, PartOutput, PartSpec};
+    let input = b"a.c.2 alpha\n-3.c.-1 beta\n";
+    let arena = DecodeArena::new();
+    let (ctx, source) =
+        DecodeContext::from_root_bytes(input, &arena, &DecodePolicy::default()).unwrap();
+    let split = input.iter().position(|byte| *byte == b'\n').unwrap() + 1;
+    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Fcstd);
+    let mut records = Vec::new();
+    for range in [0..split, split..input.len()] {
+        let view = source.child(range.start, range.end).unwrap();
+        let header_end = view
+            .window()
+            .iter()
+            .position(u8::is_ascii_whitespace)
+            .unwrap();
+        let flag_start = view.window().iter().position(|byte| *byte == b'.').unwrap();
+        let flag_end = view.window()[flag_start + 1..]
+            .iter()
+            .position(|byte| *byte == b'.')
+            .map(|at| flag_start + at + 2)
+            .unwrap();
+        let framing = vec![
+            u64_from_index(range.start + flag_start)..u64_from_index(range.start + flag_end),
+            u64_from_index(range.start + header_end)..u64_from_index(range.start + header_end + 1),
+            u64_from_index(range.end - 1)..u64_from_index(range.end),
+        ];
+        let record = ctx
+            .decode_part(
+                &mut output,
+                view,
+                PartSpec::new(
+                    PartLevel::parse("freecad.string_hasher_record").unwrap(),
+                    framing,
+                ),
+                |_stage| super::parts::read_record(view, records.last()),
+            )
+            .unwrap()
+            .unwrap();
+        records.push(record);
+    }
+    assert!(output.losses().is_empty());
     assert_eq!(records[0].string_id, 10);
     assert_eq!(records[0].components, [2]);
     assert_eq!(records[1].string_id, 13);
     assert_eq!(records[1].components, [1]);
     assert_eq!(records[1].payload, "beta");
+    assert!(crate::native::StringTableRecord::try_new(
+        0,
+        None,
+        Some(false),
+        Some(0),
+        None,
+        Some(records)
+    )
+    .is_err());
 }
 
 #[test]
@@ -110,11 +159,21 @@ fn parses_map_nodes_and_mapped_name_chains() {
             ;Generated.0.a 0 :1.a.0.b 0 EndMap";
     let parsed = test_parse_element_map(input, false).expect("parse element map");
     assert_eq!(parsed.map_id, 7);
-    assert_eq!(parsed.postfixes, [":tag"]);
-    assert_eq!(parsed.maps[0].groups[0].names.len(), 2);
-    assert_eq!(parsed.maps[0].groups[0].names[1][0].string_ids, [11]);
+    assert_eq!(parsed.postfixes, [Some(":tag".into())]);
+    assert_eq!(parsed.maps[0].groups[0].as_ref().unwrap().names.len(), 2);
     assert_eq!(
-        parsed.maps[0].groups[0].names[1][0].resolved.as_deref(),
+        parsed.maps[0].groups[0].as_ref().unwrap().names[1]
+            .as_ref()
+            .unwrap()[0]
+            .string_ids,
+        [11]
+    );
+    assert_eq!(
+        parsed.maps[0].groups[0].as_ref().unwrap().names[1]
+            .as_ref()
+            .unwrap()[0]
+            .resolved
+            .as_deref(),
         Some(":tag10")
     );
 }
@@ -138,7 +197,19 @@ fn accepts_document_and_direct_shape_string_hasher_roots() {
 </Document>"#,
     )
     .expect("framed string hashers");
-    validate_string_hasher_framing(xml.root_element()).expect("valid roots");
+    let output = adapters::hasher_parts(xml.input_text().as_bytes()).unwrap();
+    assert!(output.losses().is_empty(), "{:?}", output.losses());
+    assert_eq!(
+        output
+            .native()
+            .namespace("fcstd")
+            .unwrap()
+            .arenas()
+            .get("string_tables")
+            .unwrap()
+            .len(),
+        2
+    );
 }
 
 #[test]
@@ -151,7 +222,13 @@ fn accepts_legacy_document_string_hasher_carrier() {
     )
     .expect("legacy string table carrier");
     assert_eq!(tables.as_slice().len(), 1);
-    assert_eq!(tables.as_slice()[0].entries().unwrap()[0].payload, "legacy");
+    assert_eq!(
+        tables.as_slice()[0].entries().unwrap()[0]
+            .as_ref()
+            .unwrap()
+            .payload,
+        "legacy"
+    );
     assert!(maps.is_empty());
 }
 
@@ -163,7 +240,7 @@ fn rejects_nested_string_hasher_carrier() {
 </Property></Document>"#,
     )
     .expect("nested string hasher");
-    assert!(validate_string_hasher_framing(xml.root_element()).is_err());
+    assert_hasher_failures(xml.input_text(), &["StringHasher"]);
 }
 
 #[test]
@@ -174,14 +251,14 @@ fn rejects_duplicate_direct_string_hasher_carriers() {
 </Property></Document>"#,
     )
     .expect("duplicate string hashers");
-    assert!(validate_string_hasher_framing(xml.root_element()).is_err());
+    assert_hasher_failures(xml.input_text(), &["StringHasher", "StringHasher"]);
 }
 
 #[test]
 fn rejects_orphan_string_hasher2_carrier() {
     let xml = roxmltree::Document::parse("<Document><StringHasher2/></Document>")
         .expect("orphan string hasher successor");
-    assert!(validate_string_hasher_framing(xml.root_element()).is_err());
+    assert_hasher_failures(xml.input_text(), &["StringHasher2"]);
 }
 
 #[test]
@@ -190,7 +267,7 @@ fn rejects_non_successor_string_hasher2_carrier() {
         r#"<Document><StringHasher new="1"/><Wrapper/><StringHasher2/></Document>"#,
     )
     .expect("non-successor string hasher");
-    assert!(validate_string_hasher_framing(xml.root_element()).is_err());
+    assert_hasher_failures(xml.input_text(), &["StringHasher", "StringHasher2"]);
 }
 
 #[test]
@@ -238,13 +315,24 @@ fn admits_legacy_direct_element_carrier() {
     assert_eq!(maps.len(), 1);
     assert_eq!(maps[0].declared_count, Some(3));
     assert_eq!(maps[0].source_entry, None);
-    assert_eq!(maps[0].maps[0].groups[0].indexed_name, "Edge");
     assert_eq!(
-        maps[0].maps[0].groups[0].names[1][0].resolved.as_deref(),
+        maps[0].maps[0].groups[0].as_ref().unwrap().indexed_name,
+        "Edge"
+    );
+    assert_eq!(
+        maps[0].maps[0].groups[0].as_ref().unwrap().names[1]
+            .as_ref()
+            .unwrap()[0]
+            .resolved
+            .as_deref(),
         Some("EdgeStable")
     );
     assert_eq!(
-        maps[0].maps[0].groups[1].names[1][0].resolved.as_deref(),
+        maps[0].maps[0].groups[1].as_ref().unwrap().names[1]
+            .as_ref()
+            .unwrap()[0]
+            .resolved
+            .as_deref(),
         Some("FaceStable")
     );
 }
@@ -295,7 +383,7 @@ fn unverified_file_version_withholds_only_nonempty_inline_legacy_maps() {
                 if let Some(loss) = losses.first() {
                     assert_eq!(
                         loss.code,
-                        crate::loss::FreecadLossCode::ElementMapVersionUnresolved
+                        cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
                             .note("")
                             .code
                     );
@@ -319,7 +407,9 @@ Edge1 EdgeStable 1 7
     let (_, maps) = test_parse(br#"<Document FileVersion="2"/>"#, 2, &[property], &[])
         .expect("legacy inline element map");
     assert_eq!(maps[0].declared_count, Some(2));
-    let edge = &maps[0].maps[0].groups[0].names[1][0];
+    let edge = &maps[0].maps[0].groups[0].as_ref().unwrap().names[1]
+        .as_ref()
+        .unwrap()[0];
     assert_eq!(edge.resolved.as_deref(), Some("EdgeStable"));
     assert_eq!(edge.string_ids, [7]);
 }
@@ -340,8 +430,17 @@ fn admits_legacy_side_entry_record_stream() {
     .expect("legacy side-entry record stream");
     assert_eq!(maps[0].declared_count, Some(2));
     assert_eq!(maps[0].source_entry.as_deref(), Some("Shape.Map.txt"));
-    assert_eq!(maps[0].maps[0].groups[0].indexed_name, "Edge");
-    assert_eq!(maps[0].maps[0].groups[0].names[1][0].string_ids, [7]);
+    assert_eq!(
+        maps[0].maps[0].groups[0].as_ref().unwrap().indexed_name,
+        "Edge"
+    );
+    assert_eq!(
+        maps[0].maps[0].groups[0].as_ref().unwrap().names[1]
+            .as_ref()
+            .unwrap()[0]
+            .string_ids,
+        [7]
+    );
 }
 
 #[test]
@@ -367,7 +466,10 @@ EndMap\n";
     )
     .expect("legacy v1 side-entry map");
     assert_eq!(maps[0].declared_count, Some(3));
-    assert_eq!(maps[0].maps[0].groups[0].children.len(), 1);
+    assert_eq!(
+        maps[0].maps[0].groups[0].as_ref().unwrap().children.len(),
+        1
+    );
 }
 
 #[test]
@@ -428,25 +530,11 @@ fn rejects_legacy_element_count_and_side_entry_errors() {
         "Part::PropertyPartShape",
         r#"<Property><Part/><ElementMap file="Missing.Map.txt"/></Property>"#,
     );
-    assert!(matches!(
-        {
-            let xml = roxmltree::Document::parse(missing.source.as_str()).unwrap();
-            let marker = xml
-                .root_element()
-                .children()
-                .find(|node| node.has_tag_name("ElementMap"))
-                .unwrap();
-            super::parse_legacy_element_map(
-                marker,
-                Some(1),
-                &std::collections::HashMap::new(),
-                &missing.id,
-                &mut Vec::new(),
-            )
-            .map(|_| ())
-        },
-        Err(cadmpeg_core::CodecError::Malformed(_))
-    ));
+    // #215: an unavailable side file does not make its readable XML carrier
+    // malformed. Its filename survives in the property; no map is invented.
+    let (_, maps) = test_parse(br#"<Document FileVersion="1"/>"#, 1, &[missing], &[])
+        .expect("readable map filename without an available payload");
+    assert!(maps.is_empty());
 
     let trailing = test_property(
         "Part::PropertyPartShape",
@@ -586,7 +674,10 @@ Co 1001000 +2 0 *
         .arena_as::<crate::native::StringTableRecord>("string_tables")
         .expect("required invariant");
     assert_eq!(tables.len(), 1);
-    assert_eq!(tables[0].entries().unwrap()[0].string_id, 10);
+    assert_eq!(
+        tables[0].entries().unwrap()[0].as_ref().unwrap().string_id,
+        10
+    );
     let maps = namespace
         .arena_as::<crate::native::element_map::ElementMapRecord>("element_maps")
         .expect("required invariant");
@@ -596,18 +687,35 @@ Co 1001000 +2 0 *
         .find(|map| map.property.ends_with("#Shape:Shape"))
         .expect("displayed Shape element map");
     assert_eq!(shape_map.hasher_index, Some(0));
+    assert_eq!(
+        shape_map.string_table.as_deref(),
+        Some("fcstd:native:string-table#0")
+    );
     let groups = &shape_map.maps[0].groups;
-    assert_eq!(groups[0].names[1][0].topology_ids.len(), 1);
-    assert_eq!(groups[1].names[1][0].topology_ids.len(), 1);
-    assert_eq!(groups[1].names[2][0].topology_ids.len(), 1);
-    assert_eq!(groups[2].names[1][0].topology_ids.len(), 1);
-    assert_eq!(groups[2].names[2][0].topology_ids.len(), 1);
-    let shape_face_ids = groups[0]
-        .names
-        .iter()
-        .flatten()
-        .flat_map(|name| &name.topology_ids)
-        .map(String::as_str)
+    let occurrences = crate::test_support::topology_occurrences(result.ir());
+    for (group, index) in [(0, 1), (1, 1), (1, 2), (2, 1), (2, 2)] {
+        assert_eq!(
+            super::topology_ids(
+                &shape_map.maps,
+                groups[group].as_ref().unwrap(),
+                &occurrences,
+                &shape_map.property,
+                index
+            )
+            .count(),
+            1
+        );
+    }
+    let shape_face_ids = (0..groups[0].as_ref().unwrap().names.len())
+        .flat_map(|index| {
+            super::topology_ids(
+                &shape_map.maps,
+                groups[0].as_ref().unwrap(),
+                &occurrences,
+                &shape_map.property,
+                index,
+            )
+        })
         .collect::<std::collections::HashSet<_>>();
     assert!(result.ir().model.appearance_bindings.iter().any(|binding| {
         matches!(
@@ -670,7 +778,7 @@ fn retains_interleaved_new_string_hasher_payload_source_only() {
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code.local_code() == "element-map.metadata-unresolved"));
+        .any(|loss| loss.code.local_code() == "record.unreadable"));
     assert!(crate::test_support::validate_native(recovered.ir()).is_empty());
 }
 
@@ -679,7 +787,7 @@ fn retains_interleaved_new_string_hasher_payload_source_only_when_parsed_directl
     let document = br#"<Document><StringHasher new="1" count="0"/><Interleaved/><StringHasher2 count="0"/></Document>"#;
     let (tables, maps) =
         test_parse(document, 0, &[], &[]).expect("naming carrier remains source-only");
-    assert_eq!(tables.as_slice()[0].entries(), None);
+    assert!(tables.as_slice().is_empty());
     assert!(maps.is_empty());
 }
 
@@ -812,22 +920,25 @@ fn ownership_distinguishes_enclosing_ended_and_future_property_ranges() {
     let mut future = test_property("App::PropertyString", "<Property/>");
     future.id = "fcstd:test:property#Future".into();
     let future_source = " ".repeat(20);
-    let ownership = ownership_ranges(&[
+    let external_ranges = [
         (&future.property, 200, future_source.as_str()),
         (&ended.property, 5, ended_source.as_str()),
         (&enclosing.property, 0, enclosing_source.as_str()),
-    ]);
-    let xml = roxmltree::Document::parse(std::str::from_utf8(text).unwrap()).unwrap();
-    let table = xml
-        .descendants()
-        .find(|node| node.has_tag_name("StringHasher"))
+    ];
+    assert!(external_ranges
+        .iter()
+        .any(|(_, start, source)| *start == 0 && source.len() > text.len()));
+    // #214 source ownership comes from the real carrier parent, not external spans.
+    let output = adapters::hasher_parts(text).unwrap();
+    assert!(output.losses().is_empty());
+    let tables = output
+        .native()
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<crate::native::StringTableRecord>("string_tables")
         .unwrap();
-    assert_eq!(
-        super::owning_property(table, &ownership)
-            .unwrap()
-            .as_deref(),
-        Some("fcstd:test:property#Shape")
-    );
+    assert_eq!(tables.len(), 1);
+    assert_eq!(tables[0].owner_property, None);
 }
 
 #[test]
@@ -838,19 +949,22 @@ fn rejects_ambiguous_string_table_property_ownership() {
     let mut second = test_property("App::PropertyString", "<Property/>");
     second.id = "fcstd:test:property#Other".into();
     let second_source = " ".repeat(1000);
-    let ownership = ownership_ranges(&[
+    let external_ranges = [
         (&first.property, 0, first_source.as_str()),
         (&second.property, 0, second_source.as_str()),
-    ]);
-    let document = roxmltree::Document::parse(std::str::from_utf8(xml).unwrap()).unwrap();
-    let table = document
-        .descendants()
-        .find(|node| node.has_tag_name("StringHasher"))
+    ];
+    assert_eq!(external_ranges[0].1, external_ranges[1].1);
+    // The two fabricated spans cannot create two actual XML parents (#214).
+    let output = adapters::hasher_parts(xml).unwrap();
+    assert!(output.losses().is_empty());
+    let tables = output
+        .native()
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<crate::native::StringTableRecord>("string_tables")
         .unwrap();
-    assert!(matches!(
-        super::owning_property(table, &ownership),
-        Err(cadmpeg_core::CodecError::Malformed(_))
-    ));
+    assert_eq!(tables.len(), 1);
+    assert_eq!(tables[0].owner_property, None);
 }
 
 #[test]
@@ -894,14 +1008,14 @@ fn unreadable_child_map_reference_keeps_independent_geometry() {
         .report()
         .losses
         .iter()
-        .any(
-            |loss| loss.code.local_code() == "element-map.metadata-unresolved"
-                && loss.message.contains("mapIndex")
-        ));
+        .any(|loss| loss.code.local_code() == "record.unreadable"
+            && loss.message.contains("mapIndex")));
     assert!(crate::test_support::validate_native(recovered.ir()).is_empty());
 }
 
+pub(super) mod adapters;
 mod metadata_recovery;
+mod naming_framing;
 
 fn parse(
     ctx: &crate::property_reader::PropertyReader<'_, '_>,
@@ -918,30 +1032,14 @@ fn parse(
     ),
     CodecError,
 > {
-    let text = std::str::from_utf8(document)
-        .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))?;
-    let admitted_xml = ctx.parse_xml(text, "FreeCAD XML tree").map_err(|error| {
-        let CodecError::Malformed(error) = error else {
-            return error;
-        };
-        CodecError::malformed(format_args!("invalid Document.xml: {error}"))
-    })?;
-    let records = properties
-        .iter()
-        .map(|property| property.property.clone())
-        .collect::<Vec<_>>();
-    super::parse(
-        ctx,
-        &admitted_xml,
+    let _ = entry_sources;
+    adapters::parse(
+        document,
         file_version,
-        &records,
-        &entries
-            .iter()
-            .map(|entry| entry.record.clone())
-            .collect::<Vec<_>>(),
-        entry_sources,
+        properties,
+        entries,
+        ctx.policy(),
         losses,
-        None,
     )
 }
 
@@ -955,10 +1053,7 @@ fn empty_legacy_element_map_markers_are_typed_absence_not_unread_payloads() {
         let result = FcstdCodec
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
             .unwrap();
-        assert!(
-            result.source_fidelity().unrepresented().is_empty(),
-            "{marker}"
-        );
+        crate::test_support::b1::assert_report(&result);
         assert!(result
             .ir()
             .native
@@ -967,11 +1062,19 @@ fn empty_legacy_element_map_markers_are_typed_absence_not_unread_payloads() {
             .arena_as::<crate::native::element_map::ElementMapRecord>("element_maps")
             .unwrap()
             .is_empty());
-        let evidence = result
+        assert!(result
             .source_fidelity()
-            .retained_record("fcstd:native:property#Shape:Shape")
-            .unwrap();
-        assert!(evidence.untyped().is_empty());
+            .record_layout()
+            .contains_key("fcstd:native:property#Shape:Shape"));
+        assert!(result
+            .source_fidelity()
+            .parts()
+            .values()
+            .filter(|part| part.level().as_str() == "freecad.property_value")
+            .all(|part| matches!(
+                part.state(),
+                cadmpeg_ir::source_fidelity::parts::PartState::Decoded {}
+            )));
     }
     let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object name="Shape" type="Part::Feature"/></Objects><ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part/><ElementMap count="bad"/></Property></Properties></Object></ObjectData></Document>"#;
     let source = archive(xml);
@@ -980,28 +1083,93 @@ fn empty_legacy_element_map_markers_are_typed_absence_not_unread_payloads() {
         .unwrap();
     assert_eq!(
         result.source_fidelity().unrepresented(),
-        cadmpeg_ir::ArenaClasses::from([cadmpeg_ir::ArenaClass::Model])
+        cadmpeg_ir::ArenaClasses::from([
+            cadmpeg_ir::ArenaClass::Model,
+            cadmpeg_ir::ArenaClass::Design,
+        ])
     );
+    crate::fidelity::b1::assert_classified_spans(&result);
     assert!(result.report().losses.iter().any(|loss| loss.code
-        == crate::loss::FreecadLossCode::ElementMapMetadataUnresolved
+        == cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
             .note("")
             .code));
 }
 
 mod string_table_layout;
 
-fn ownership_ranges<'a>(
-    ranges: &[(&'a PropertyRecord, usize, &str)],
-) -> Vec<super::OwnershipPrefix<'a>> {
-    super::ownership_index(
-        ranges
-            .iter()
-            .map(|(property, start, text)| super::OwnershipPrefix {
-                start: u64::try_from(*start).unwrap(),
-                furthest: property,
-                furthest_end: u64::try_from(start.checked_add(text.len()).unwrap()).unwrap(),
-                second_furthest: None,
-            })
-            .collect(),
-    )
+fn assert_hasher_failures(xml: &str, tags: &[&str]) {
+    use cadmpeg_ir::source_fidelity::parts::PartState;
+    let output = adapters::hasher_parts(xml.as_bytes()).unwrap();
+    let mut failed = output
+        .fidelity()
+        .parts()
+        .values()
+        .filter(|part| part.state() == &PartState::GivenUp {})
+        .collect::<Vec<_>>();
+    failed.sort_by_key(|part| part.offset());
+    let source = roxmltree::Document::parse(xml).unwrap();
+    let expected = source
+        .descendants()
+        .filter(|node| {
+            node.is_element() && matches!(node.tag_name().name(), "StringHasher" | "StringHasher2")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(failed.len(), tags.len());
+    assert_eq!(output.losses().len(), tags.len());
+    for ((part, expected), tag) in failed.iter().zip(expected).zip(tags) {
+        assert_eq!(expected.tag_name().name(), *tag);
+        assert_eq!(
+            part.offset(),
+            u64::try_from(expected.range().start).unwrap()
+        );
+        assert_eq!(
+            part.byte_len(),
+            u64::try_from(expected.range().len()).unwrap()
+        );
+    }
+}
+
+#[test]
+fn cross_owner_string_table_dependencies_are_resolved_before_map_value_callbacks() {
+    let xml = r#"<Document SchemaVersion="4" FileVersion="2"><Objects Count="2"><Object name="A" type="Part::Feature"/><Object name="B" type="Part::Feature"/></Objects><ObjectData Count="2"><Object name="A"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="" HasherIndex="1" ElementMap="1"/><StringHasher count="1">1.c first
+</StringHasher><ElementMap new="1"/><ElementMap2>7 PostfixCount 0 MapCount 1 ElementMap 1 7 1 Face ChildCount 0 NameCount 2 0 ;A.0.2 0 EndMap</ElementMap2></Property></Properties></Object><Object name="B"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="" HasherIndex="0" ElementMap="1"/><StringHasher count="1">2.c second
+</StringHasher><ElementMap new="1"/><ElementMap2>8 PostfixCount 0 MapCount 1 ElementMap 1 8 1 Face ChildCount 0 NameCount 2 0 ;B.0.1 0 EndMap</ElementMap2></Property></Properties></Object></ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(&mut Cursor::new(archive(xml)), &DecodeOptions::default())
+        .unwrap();
+    let namespace = result.ir().native.namespace("fcstd").unwrap();
+    let tables = namespace
+        .arena_as::<crate::native::StringTableRecord>("string_tables")
+        .unwrap();
+    assert_eq!(tables.len(), 2);
+    let maps = namespace
+        .arena_as::<crate::native::element_map::ElementMapRecord>("element_maps")
+        .unwrap();
+    assert_eq!(maps.len(), 2);
+    for (owner, index, string_id) in [("A", 1, 2), ("B", 0, 1)] {
+        let property = crate::native::native_child_id(
+            "property",
+            &crate::native::native_id("object", owner),
+            "Shape",
+        );
+        let map = maps.iter().find(|map| map.property == property).unwrap();
+        assert_eq!(map.hasher_index, Some(index));
+        assert_eq!(
+            map.string_table.as_deref(),
+            Some(crate::native::native_id("string-table", index.to_string()).as_str())
+        );
+        assert_eq!(
+            map.maps.root().groups[0].as_ref().unwrap().names[1]
+                .as_ref()
+                .unwrap()[0]
+                .string_ids,
+            [string_id]
+        );
+    }
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "record.unreadable"));
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }

@@ -236,6 +236,28 @@ Native records retain typed references into the neutral model. Format-neutral co
 
 Tessellations are display meshes independent of exact B-rep geometry. Appearances describe visual or physical assets. Appearance bindings assign appearances to topology entities or native source carriers. A binding's optional `visible` field is `None` when the source provides no binding-level visibility value and is `false` when that binding is explicitly hidden; binding visibility does not change visibility on a shared geometry carrier. Drawings preserve page, view, and annotation entities. A drawing's optional `visible` field is `None` when the source provides no drawing-level visibility value and is `false` when that drawing entity is explicitly hidden; drawing visibility does not change visibility on its relationships or contents. PMI annotations preserve semantic and graphical annotation entities. A PMI annotation's optional `visible` field is `None` when the source provides no annotation-level visibility value and is `false` when that annotation occurrence is explicitly hidden; annotation visibility does not change visibility on a shared geometry or tessellation carrier. Presentation layers group model or presentation items. A layer's optional `visible` field is `None` when the source provides no layer-level visibility value and is `false` when the layer is explicitly hidden; layer visibility does not change visibility on its assigned items. Attributes attach source-native values to supported targets.
 
+`AttributeValue` uses a `kind` tag and a `value` payload. Alongside scalar,
+vector, and simple-reference values, structured attributes have these forms:
+
+| Kind | Payload | Reference semantics |
+| --- | --- | --- |
+| `map` | Ordered `{key, value}` string entries | Keys and values are literal; duplicates remain ordered. |
+| `expression` | `{path, expression, comment?}` | Expression `Parameter` tokens reference held design parameters; `Text` tokens and the path/comment are literal. |
+| `sub_reference` | `{object, subelements}` | `object` is a canonical identity; ordered selectors are literal. |
+| `external_reference` | `{document, object, subelements}` | Document/object names and ordered selectors are literal external names. |
+| `numeric_list` | A tagged `float`, `vector`, `placement`, `color`, or `curvature` list | No identity references. |
+
+A numeric list's `values` is null when whole arity is unknown. Otherwise it is an
+ordered array whose null entries retain missing semantic positions; an empty array
+means a genuinely known empty list. Float values are finite, vectors contain three
+finite coordinates, and colors are packed unsigned 32-bit values. Curvature rows contain
+eight finite values: the two principal curvatures and their two XYZ principal directions. Placement values
+contain `position` (three finite coordinates) and `quaternion` (four finite components,
+not all zero); source quaternion normalization is preserved. Identity rewriting visits
+local subreferences and expression parameter tokens, and never interprets external
+names or map strings as identities. Writers emit a supported structured grammar or
+report a named unsupported-attribute loss rather than stringify the value.
+
 `Tessellation.triangles` preserves source winding. Each triangle index addresses
 `vertices`. `feature_edges` is the
 source-classified undirected feature-edge set. The list is lexicographically

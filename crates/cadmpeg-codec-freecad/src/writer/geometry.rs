@@ -303,12 +303,17 @@ pub(super) fn curve_layout_key(
     ir: &cadmpeg_ir::CadIr,
     value: &cadmpeg_ir::geometry::Curve,
 ) -> String {
-    if let Some((base, _)) = value.id.as_str().rsplit_once("%40") {
-        if let Some(SolvedCurveGeometry::Transformed(placed)) = value.geometry.solved() {
-            if ir.model.curves.iter().any(|curve| {
-                curve.id.as_str() == base && curve.geometry.solved() == Some(placed.basis())
-            }) {
-                return base.to_owned();
+    if let (Some(home), Some(SolvedCurveGeometry::Transformed(placed))) =
+        (value.native_ref.as_deref(), value.geometry.solved())
+    {
+        let mut bases = ir.model.curves.iter().filter(|curve| {
+            curve.id != value.id
+                && curve.native_ref.as_deref() == Some(home)
+                && curve.geometry.solved() == Some(placed.basis())
+        });
+        if let Some(base) = bases.next() {
+            if bases.next().is_none() {
+                return base.id.to_string();
             }
         }
     }
@@ -318,14 +323,22 @@ pub(super) fn surface_layout_key(
     ir: &cadmpeg_ir::CadIr,
     value: &cadmpeg_ir::geometry::Surface,
 ) -> String {
-    if let Some((base, _)) = value.id.as_str().rsplit_once("%40") {
-        if let Some(SolvedSurfaceGeometry::Transformed(placed)) = value.geometry.solved() {
-            if ir.model.surfaces.iter().any(|surface| {
-                surface.id.as_str() == base && surface.geometry.solved() == Some(placed.basis())
-            }) {
-                return base.to_owned();
+    if let (Some(home), Some(SolvedSurfaceGeometry::Transformed(placed))) =
+        (value.native_ref.as_deref(), value.geometry.solved())
+    {
+        let mut bases = ir.model.surfaces.iter().filter(|surface| {
+            surface.id != value.id
+                && surface.native_ref.as_deref() == Some(home)
+                && surface.geometry.solved() == Some(placed.basis())
+        });
+        if let Some(base) = bases.next() {
+            if bases.next().is_none() {
+                return base.id.to_string();
             }
         }
     }
     value.id.to_string()
 }
+
+#[cfg(test)]
+mod tests;

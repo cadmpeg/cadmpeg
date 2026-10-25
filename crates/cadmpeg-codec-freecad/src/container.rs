@@ -3,7 +3,7 @@
 
 use cadmpeg_core::container::ContainerRole;
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::Path;
 
 use cadmpeg_container::ArchiveSnapshot;
@@ -76,7 +76,7 @@ pub(crate) fn has_document_markers(
 /// Fully scanned container used by inspection and decode.
 pub(crate) struct Scan<'a> {
     /// Actual source archive retained transiently for entry-origin framing.
-    pub(crate) archive: ArchiveSnapshot<'a>,
+    pub(crate) archive: std::rc::Rc<ArchiveSnapshot<'a>>,
     /// Recoverable container metadata diagnostics.
     pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     /// Container summary entries.
@@ -85,14 +85,15 @@ pub(crate) struct Scan<'a> {
     pub(crate) document: DocumentFacts,
     /// Declared persistence schema version, owned by the source declaration.
     pub(crate) schema_version: String,
-    /// One admitted persistence tree shared by all document readers.
-    pub(crate) document_xml: roxmltree::Document<'a>,
+    pub(crate) source_whitespace: Vec<View<'a>>,
+    pub(crate) entry_records: Vec<crate::native::EntryRecord>,
+    pub(crate) entry_owners: parts::EntryOwners<'a>,
+    pub(crate) entry_parents: BTreeMap<String, cadmpeg_ir::source_fidelity::parts::PartParent>,
     pub(crate) document_properties: Option<crate::persistence::document_properties::RootProperties>,
-    pub(crate) object_declarations: Option<crate::persistence::object_parts::ObjectDeclarations>,
+    pub(crate) object_declarations:
+        Option<crate::persistence::object_parts::ObjectDeclarations<'a>>,
     /// Exact physical archive partition.
     pub(crate) ledger: Vec<ArchiveSpan>,
-    /// Independently framed members given up by the shared part helper.
-    pub(crate) failed_members: BTreeSet<String>,
     /// Inflated entry views, each retaining its [`SpaceId`](cadmpeg_core::decode::SpaceId).
     pub(crate) data: BTreeMap<String, View<'a>>,
 }
@@ -106,25 +107,30 @@ pub(crate) enum ScanOutcome<'a> {
         summary: ContainerSummary,
         parts: cadmpeg_ir::source_fidelity::parts::PartOutput,
         pointers: BTreeMap<String, BTreeMap<String, u64>>,
+        source: Option<crate::archive_recovery::Source<'a>>,
     },
 }
 
-pub(crate) fn inspect(
-    ctx: &DecodeContext<'_>,
-    root: View<'_>,
-) -> Result<ContainerSummary, CodecError> {
-    match attempt(ctx, root)? {
-        ScanOutcome::Readable { scan, parts } => {
-            let mut summary = summarize(&scan);
-            summary.losses.extend(parts.into_parts(ctx)?.into_parts().3);
-            Ok(summary)
-        }
-        ScanOutcome::GivenUp {
-            mut summary, parts, ..
-        } => {
-            summary.losses.extend(parts.into_parts(ctx)?.into_parts().3);
-            Ok(summary)
-        }
+pub(crate) fn located_scope(
+    depth: cadmpeg_core::decode::DecodeDepth,
+    fidelity: &cadmpeg_ir::SourceFidelity,
+) -> cadmpeg_ir::ContentScope {
+    let document_found = fidelity.parts().values().any(|part| {
+        matches!(
+            part.level().as_str(),
+            "freecad.document_xml" | "freecad.document"
+        )
+    });
+    let gui_found = fidelity.parts().values().any(|part| {
+        matches!(
+            part.level().as_str(),
+            "freecad.gui_document_xml" | "freecad.gui_document"
+        )
+    });
+    cadmpeg_ir::ContentScope {
+        model: (document_found || gui_found)
+            && depth != cadmpeg_core::decode::DecodeDepth::Container,
+        design: document_found && depth == cadmpeg_core::decode::DecodeDepth::Full,
     }
 }
 
@@ -141,7 +147,35 @@ pub(crate) fn scan_for_decode<'a>(
     root: View<'a>,
 ) -> Result<(Scan<'a>, cadmpeg_ir::source_fidelity::parts::PartOutput), CodecError> {
     match attempt(ctx, root)? {
-        ScanOutcome::Readable { scan, parts } => Ok((scan, parts)),
+        ScanOutcome::Readable {
+            mut scan,
+            mut parts,
+        } => {
+            let updates = scan
+                .object_declarations
+                .as_mut()
+                .map(|decl| std::mem::take(&mut decl.entry_contents))
+                .unwrap_or_default();
+            parts::merge_entry_contents(ctx, &mut scan.entry_records, updates)?;
+            parts::stage_entries(
+                ctx,
+                scan.entry_records.clone(),
+                &[],
+                &gui::Graph::default(),
+                &mut parts,
+            )?;
+            if !ctx.container_only() {
+                if let Some(properties) = &scan.document_properties {
+                    let document = scan.data.get("Document.xml").copied().ok_or_else(|| {
+                        CodecError::malformed("attribute projection has no source document")
+                    })?;
+                    crate::test_support::source_fidelity::project_document_attributes(
+                        ctx, document, properties, &mut parts,
+                    );
+                }
+            }
+            Ok((scan, parts))
+        }
         ScanOutcome::GivenUp { .. } => Err(CodecError::malformed("FCStd archive was given up")),
     }
 }
@@ -151,7 +185,7 @@ pub(crate) fn attempt<'a>(
     root: View<'a>,
 ) -> Result<ScanOutcome<'a>, CodecError> {
     use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput};
-    let archive = ArchiveSnapshot::new(ctx, root)?;
+    let archive = parts::archive_source(ctx, root)?;
     if archive.entry("Document.xml").is_none() {
         return Err(CodecError::WrongFormat(
             "ZIP has no root Document.xml".into(),
@@ -166,10 +200,28 @@ pub(crate) fn attempt<'a>(
     );
     let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::Fcstd);
     let outcome = ctx.decode_part(&mut parts, root, parts::archive_spec()?, |stage| {
+        let mut opened = parts::open_optional(ctx, &archive, stage)?;
+        parts::incomplete_local_header(ctx, &archive, stage)?;
         let parts::DocumentRead {
+            record,
             document,
+            view,
             mut pointers,
-        } = parts::document(ctx, &archive, stage)?;
+        } = parts::document(
+            ctx,
+            &archive,
+            stage,
+            &opened.data,
+            &opened.parents,
+            &opened.records,
+            &mut opened.owners,
+        )?;
+        if let Some(record) = record {
+            opened.records.push(record);
+        }
+        if let Some(view) = view {
+            opened.data.insert("Document.xml".to_owned(), view);
+        }
         if let Some(document) = &document {
             let matched = crate::dialect::FcstdDialect::classify(&document.facts, &document.schema);
             summary = ContainerSummary::classified(
@@ -182,38 +234,84 @@ pub(crate) fn attempt<'a>(
                 Vec::new(),
             );
         }
-        let opened = parts::open_optional(ctx, &archive, stage)?;
         let Some(document) = document else {
-            pointers.extend(parts::keep_readable_entries(ctx, &archive, &opened, stage)?);
-            return Ok((None, pointers));
+            let declared_entries = parts::declared_entries(&opened.records);
+            let (gui, source_whitespace, entry_interpretations) =
+                if let Some(source) = opened.data.get("GuiDocument.xml") {
+                    crate::gui::source::parse(ctx, *source)?.decode_with_whitespace(
+                        ctx,
+                        &crate::gui::GuiSources {
+                            entries: &opened.data,
+                            declared_entries: Some(&declared_entries),
+                            declared_objects: Some(&std::collections::BTreeSet::new()),
+                            admitted_objects: Some(&std::collections::BTreeSet::new()),
+                            entry_parents: Some(&opened.parents),
+                            entry_owners: Some(&opened.owners),
+                            entry_interpretations: None,
+                            gui_entry_interpretations: None,
+                            objects: &[],
+                            object_sources: None,
+                            properties: &[],
+                            payloads: &[],
+                            element_maps: &[],
+                            topology_occurrences: &[],
+                            requires_alpha_conversion: false,
+                        },
+                        stage,
+                    )?
+                } else {
+                    (crate::gui::Graph::default(), Vec::new(), Default::default())
+                };
+            parts::opaque_members(ctx, &opened.data, &opened.parents, stage)?;
+            pointers.extend(parts::keep_readable_entries(&archive, &opened)?);
+            return Ok((
+                None,
+                pointers,
+                Some(crate::archive_recovery::Source {
+                    archive,
+                    entries: opened.data,
+                    entry_parents: opened.parents,
+                    entry_records: opened.records,
+                    entry_owners: opened.owners,
+                    entry_interpretations,
+                    gui,
+                    source_whitespace,
+                }),
+            ));
         };
-        Ok((Some(scan_impl(archive, document, opened)?), BTreeMap::new()))
+        Ok((
+            Some(scan_impl(archive, document, opened)?),
+            BTreeMap::new(),
+            None,
+        ))
     })?;
     match outcome {
-        Some((Some(scan), _)) => Ok(ScanOutcome::Readable { scan, parts }),
-        Some((None, pointers)) => Ok(ScanOutcome::GivenUp {
+        Some((Some(scan), _, _)) => Ok(ScanOutcome::Readable { scan, parts }),
+        Some((None, pointers, source)) => Ok(ScanOutcome::GivenUp {
             summary,
             parts,
             pointers,
+            source,
         }),
         None => Ok(ScanOutcome::GivenUp {
             summary,
             parts,
             pointers: BTreeMap::new(),
+            source: None,
         }),
     }
 }
 
 fn scan_impl<'a>(
-    archive: ArchiveSnapshot<'a>,
+    archive: std::rc::Rc<ArchiveSnapshot<'a>>,
     document: parts::Document<'a>,
     mut opened: parts::OptionalMembers<'a>,
 ) -> Result<Scan<'a>, CodecError> {
     let parts::Document {
         view: document_view,
-        xml: document_xml,
         facts: document,
         schema: schema_version,
+        source_whitespace,
         root_properties: document_properties,
         object_declarations,
         losses,
@@ -221,11 +319,6 @@ fn scan_impl<'a>(
     let mut data = BTreeMap::new();
     for file in archive.entries() {
         let name = file.name.clone();
-        if !crate::native::is_safe_entry_name(&name) {
-            return Err(CodecError::malformed(format_args!(
-                "unsafe ZIP entry path {name:?}"
-            )));
-        }
         let view = if file.name == "Document.xml" {
             document_view
         } else if let Some(view) = opened.data.remove(&file.name) {
@@ -255,61 +348,15 @@ fn scan_impl<'a>(
         archive,
         document,
         schema_version,
-        document_xml,
+        source_whitespace,
+        entry_parents: opened.parents,
+        entry_records: opened.records,
+        entry_owners: opened.owners,
         document_properties,
         object_declarations,
-        failed_members: opened.failed,
         ledger,
         data,
     })
-}
-
-pub(crate) fn entry_records(
-    scan: &Scan<'_>,
-    properties: &[PropertyRecord],
-) -> Result<Vec<EntryRecord>, CodecError> {
-    let mut records = Vec::new();
-    let mut unreadable_names = HashSet::new();
-    unreadable_names.extend(scan.failed_members.iter().map(String::as_str));
-    let references = {
-        let mut references = HashMap::<&str, Vec<usize>>::new();
-        for (index, property) in properties.iter().enumerate() {
-            for name in property.side_entries() {
-                let owners = references.entry(name.as_str()).or_default();
-                // Repeated side-entry markers in one property yield one owner.
-                if owners.last() != Some(&index) {
-                    owners.push(index);
-                }
-            }
-        }
-        Ok::<_, CodecError>(references)
-    }?;
-    for entry in &scan.entries {
-        if !scan.data.contains_key(&entry.name) {
-            if unreadable_names.contains(entry.name.as_str()) {
-                // Stored source-only bytes have no expanded-byte coverage.
-                continue;
-            }
-            return Err(CodecError::malformed(format_args!(
-                "entry {} disappeared after scan",
-                entry.name
-            )));
-        };
-        let owners = references
-            .get(entry.name.as_str())
-            .map_or(&[][..], Vec::as_slice);
-        let mut referenced_by = Vec::new();
-        for &index in owners {
-            referenced_by.push(properties[index].id.clone());
-        }
-        records.push(EntryRecord::new(
-            crate::native::native_id("entry", &entry.name),
-            entry.name.clone(),
-            entry.role,
-            referenced_by,
-        )?);
-    }
-    Ok(records)
 }
 
 pub(crate) fn source_attributes(
@@ -416,143 +463,6 @@ fn classify(name: &str) -> ContainerRole {
     }
 }
 
-pub(crate) fn canonical_attribute(
-    root: roxmltree::Node<'_, '_>,
-    canonical: &str,
-    alias: &str,
-) -> Result<Option<String>, CodecError> {
-    match (root.attribute(canonical), root.attribute(alias)) {
-        (Some(_), Some(_)) => Err(CodecError::malformed(format_args!(
-            "Document element has both {canonical} and {alias} attributes"
-        ))),
-        (Some(value), None) => Ok(Some(value.to_owned())),
-        (None, Some(_)) => Err(CodecError::malformed(format_args!(
-            "Document element uses unsupported {alias}; expected {canonical}"
-        ))),
-        (None, None) => Ok(None),
-    }
-}
-
-fn unique_section<'a, 'input>(
-    root: roxmltree::Node<'a, 'input>,
-    tag: &str,
-) -> Result<Option<roxmltree::Node<'a, 'input>>, CodecError> {
-    let mut sections = root.children().filter(|node| node.has_tag_name(tag));
-    let first = sections.next();
-    if sections.next().is_some() {
-        Err(CodecError::malformed(format_args!(
-            "Document.xml has duplicate {tag} sections"
-        )))
-    } else {
-        Ok(first)
-    }
-}
-
-// This allocation-free lexical pass admits the XML tree and direct object
-// declarations before roxmltree constructs any nodes. Syntax errors remain
-// owned by the complete XML parser.
-pub(crate) fn xml_envelope_counts(bytes: &[u8]) -> Option<(u64, u64)> {
-    let mut offset = 0;
-    let mut depth = 0_usize;
-    // Include the document node. Count lexical text and markup nodes as an upper
-    // bound because roxmltree can merge adjacent text into one stored node.
-    let mut nodes = 1_u64;
-    let mut objects = 0_u64;
-    let mut envelope = None;
-    while offset < bytes.len() {
-        if bytes[offset] != b'<' {
-            let next = bytes[offset..]
-                .iter()
-                .position(|byte| *byte == b'<')
-                .map_or(bytes.len(), |delta| offset + delta);
-            nodes = nodes.checked_add(1)?;
-            offset = next;
-            continue;
-        }
-        let rest = &bytes[offset..];
-        if let Some((prefix, suffix)) = [
-            (b"<!--".as_slice(), b"-->".as_slice()),
-            (b"<![CDATA[".as_slice(), b"]]>".as_slice()),
-            (b"<?".as_slice(), b"?>".as_slice()),
-        ]
-        .into_iter()
-        .find(|(prefix, _)| rest.starts_with(prefix))
-        {
-            nodes = nodes.checked_add(1)?;
-            let tail = &rest[prefix.len()..];
-            let end = tail
-                .windows(suffix.len())
-                .position(|window| window == suffix)?;
-            offset += prefix.len() + end + suffix.len();
-            continue;
-        }
-        if rest.starts_with(b"<!") {
-            nodes = nodes.checked_add(1)?;
-            offset = scan_tag_end(bytes, offset + 2)? + 1;
-            continue;
-        }
-        let closing = rest.get(1) == Some(&b'/');
-        let name_start = offset + if closing { 2 } else { 1 };
-        let mut name_end = name_start;
-        while let Some(byte) = bytes.get(name_end) {
-            if byte.is_ascii_whitespace() || *byte == b'/' || *byte == b'>' {
-                break;
-            }
-            name_end += 1;
-        }
-        if name_end == name_start {
-            return None;
-        }
-        let end = scan_tag_end(bytes, name_end)?;
-        let name = bytes[name_start..name_end]
-            .rsplit(|byte| *byte == b':')
-            .next()
-            .unwrap_or(&bytes[name_start..name_end]);
-        if closing {
-            depth = depth.checked_sub(1)?;
-            if depth == 1 {
-                envelope = None;
-            }
-        } else {
-            nodes = nodes.checked_add(1)?;
-            if depth == 1 && (name == b"Objects" || name == b"Features") {
-                envelope = Some(if name == b"Objects" {
-                    b"Object".as_slice()
-                } else {
-                    b"Feature".as_slice()
-                });
-            } else if depth == 2 && envelope == Some(name) {
-                objects = objects.checked_add(1)?;
-            }
-            let self_closing = bytes[name_end..end]
-                .iter()
-                .rev()
-                .find(|byte| !byte.is_ascii_whitespace())
-                == Some(&b'/');
-            if !self_closing {
-                depth = depth.checked_add(1)?;
-            } else if depth == 1 {
-                envelope = None;
-            }
-        }
-        offset = end + 1;
-    }
-    (depth == 0).then_some((nodes, objects))
-}
-
-fn scan_tag_end(bytes: &[u8], start: usize) -> Option<usize> {
-    let mut quote = None;
-    for (offset, &byte) in bytes.iter().enumerate().skip(start) {
-        match (quote, byte) {
-            (None, b'\'' | b'"') => quote = Some(byte),
-            (Some(open), close) if open == close => quote = None,
-            (None, b'>') => return Some(offset),
-            _ => {}
-        }
-    }
-    None
-}
-
 /// Parse the persistence tree once, charging its nesting depth.
 pub(crate) fn admit_document<'input>(
     ctx: &DecodeContext<'_>,
@@ -574,117 +484,111 @@ pub(crate) fn admit_document<'input>(
     Ok(admitted_xml)
 }
 
-/// Read container metadata from the admitted persistence tree.
+/// Read container metadata through the recovering source scanner.
 #[cfg(test)]
 pub(crate) fn parse_document(
     xml: &roxmltree::Document<'_>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(DocumentFacts, String), CodecError> {
-    parse_document_impl(xml, losses, None)
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, view) = DecodeContext::from_root_bytes(
+        xml.input_text().as_bytes(),
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )?;
+    let source = crate::xml_framing::XmlSource::new(&ctx, view)?;
+    let root = source
+        .elements()
+        .iter()
+        .position(|element| element.parent().is_none())
+        .ok_or_else(|| CodecError::malformed("Document.xml has no root"))?;
+    document_facts(&ctx, &source, root, losses)
 }
 
-fn parse_document_impl(
-    xml: &roxmltree::Document<'_>,
+pub(super) fn document_facts(
+    ctx: &DecodeContext<'_>,
+    source: &crate::xml_framing::XmlSource<'_>,
+    root: usize,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-    source: Option<&crate::persistence::source::Source<'_, '_>>,
 ) -> Result<(DocumentFacts, String), CodecError> {
-    let root = xml.root_element();
-    if root.tag_name().name() != "Document" {
-        return Err(CodecError::WrongFormat(format!(
-            "Document.xml root is {}, expected Document",
-            root.tag_name().name()
-        )));
-    }
-    let schema_version = canonical_attribute(root, "SchemaVersion", "schemaVersion")?
-        .ok_or_else(|| CodecError::WrongFormat("Document.xml has no SchemaVersion".into()))?;
-    let file_version = metadata_attribute(
-        root,
-        "FileVersion",
-        "fileVersion",
-        crate::loss::FreecadLossCode::FileVersionNoncanonical,
-        losses,
-        source,
-    )?
-    .unwrap_or_else(|| "0".into());
-    let vocabulary = crate::persistence::Vocabulary::from_declaration(&schema_version)?;
-    let file_version = crate::native::FileVersion::from(file_version);
-    if file_version.value().is_none() {
-        losses.push(crate::loss::FreecadLossCode::FileVersionUnverified.note(
-            format!("Document FileVersion {:?} is not an unsigned integer; version-dependent inline element maps remain source-only", file_version.as_str())
+    let attributes = source.peek_attributes(ctx, root)?;
+    if source.name(root)? != "Document" {
+        return Err(CodecError::WrongFormat(
+            "Document.xml root is not Document".into(),
         ));
     }
-    let (declaration_tag, data_tag, record_tag) = vocabulary.tags();
-    // discarded-value: the data section's uniqueness is the check; ? states its refusal and the node has no reader
-    let _ = unique_section(root, data_tag)?;
-    let declarations = unique_section(root, declaration_tag)?;
-    let mut object_count = 0;
-    let mut domain_set = BTreeSet::new();
-    for node in declarations
-        .into_iter()
-        .flat_map(|section| section.children())
-        .filter(|node| node.has_tag_name(record_tag))
-    {
-        object_count += 1;
-        if let Some((domain, _)) = node
-            .attribute("type")
-            .and_then(|name| name.split_once("::"))
-        {
-            if !domain_set.contains(domain) {
-                domain_set.insert(domain.to_owned());
-            }
-        }
+    if attributes.contains_key("schemaVersion") {
+        return Err(CodecError::malformed(
+            "Document uses unsupported schemaVersion metadata",
+        ));
     }
-    let mut domains = Vec::new();
-    domains.extend(domain_set);
-    let program_version = metadata_attribute(
-        root,
+    let schema = source
+        .peek_attribute(ctx, root, "SchemaVersion")?
+        .ok_or_else(|| CodecError::WrongFormat("Document.xml has no SchemaVersion".into()))?;
+    let vocabulary = crate::persistence::Vocabulary::from_declaration(&schema)?;
+    let mut metadata = |canonical,
+                        alias,
+                        code: crate::loss::FreecadLossCode|
+     -> Result<Option<String>, CodecError> {
+        if let Some(alias_value) = attributes.get(alias) {
+            let message = if attributes
+                .get(canonical)
+                .is_some_and(|value| value != alias_value)
+            {
+                format!("Document has conflicting {canonical} and {alias} declarations; retaining canonical {canonical}")
+            } else {
+                format!("Document uses {alias} metadata; read as {canonical}")
+            };
+            losses.push(code.note(message));
+        }
+        source.attribute(
+            ctx,
+            root,
+            if attributes.contains_key(canonical) {
+                canonical
+            } else {
+                alias
+            },
+        )
+    };
+    let file_version = crate::native::FileVersion::from(
+        metadata(
+            "FileVersion",
+            "fileVersion",
+            crate::loss::FreecadLossCode::FileVersionNoncanonical,
+        )?
+        .unwrap_or_else(|| "0".into()),
+    );
+    let program_version = metadata(
         "ProgramVersion",
         "programVersion",
         crate::loss::FreecadLossCode::ProgramVersionNoncanonical,
-        losses,
-        source,
     )?;
-    let document = DocumentFacts {
-        id: crate::native::native_id("document", "0"),
-        file_version,
-        program_version,
-        root_name: root.tag_name().name().into(),
-        object_count,
-        domains,
-    };
-    Ok((document, schema_version))
-}
-
-/// Canonical metadata controls interpretation when a noncanonical alias conflicts.
-fn metadata_attribute(
-    root: roxmltree::Node<'_, '_>,
-    canonical: &str,
-    alias: &str,
-    code: crate::loss::FreecadLossCode,
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-    source: Option<&crate::persistence::source::Source<'_, '_>>,
-) -> Result<Option<String>, CodecError> {
-    let value = root.attribute(canonical);
-    if let Some(alias_value) = root.attribute(alias) {
-        let message = if value.is_some_and(|value| value != alias_value) {
-            format!("Document has conflicting {canonical} and {alias} declarations; retaining canonical {canonical}")
-        } else {
-            format!("Document uses {alias} metadata; read as {canonical}")
-        };
-        losses.push(code.note(message));
+    if file_version.value().is_none() {
+        losses.push(crate::loss::FreecadLossCode::FileVersionUnverified.note(format!("Document FileVersion {:?} is not an unsigned integer; version-dependent inline element maps remain source-only", file_version.as_str())));
     }
-    let Some(attribute) = root.attributes().find(|attribute| {
-        attribute.namespace().is_none()
-            && attribute.name() == if value.is_some() { canonical } else { alias }
-    }) else {
-        return Ok(None);
-    };
-    match source
-        .filter(|_| canonical != "FileVersion" || attribute.value().parse::<usize>().is_ok())
+    let (objects, _, record) = vocabulary.tags();
+    let mut object_count = 0;
+    for section in source
+        .children(root)
+        .filter(|index| source.name(*index).is_ok_and(|name| name == objects))
     {
-        Some(source) => source.attribute(&attribute).map(Some),
-        None => Ok(Some(attribute.value().to_owned())),
+        object_count += source
+            .children(section)
+            .filter(|index| source.name(*index).is_ok_and(|name| name == record))
+            .count();
     }
+    Ok((
+        DocumentFacts {
+            id: crate::native::native_id("document", "0"),
+            file_version,
+            program_version,
+            root_name: source.read_name(root)?.to_owned(),
+            object_count,
+            domains: Vec::new(),
+        },
+        schema,
+    ))
 }
 
 pub(crate) fn logical_ledger(
@@ -714,7 +618,7 @@ pub(crate) fn logical_ledger(
         typed_entries.insert(name);
     }
     let mut output = Vec::new();
-    for entry in entries {
+    for entry in entries.iter().filter(|entry| sources.contains(entry)) {
         let entry_len = sources.byte_len(entry)?;
         if typed_entries.contains(entry.id()) || typed_entries.contains(entry.name()) {
             push_logical_span(
@@ -765,14 +669,19 @@ pub(crate) fn logical_ledger(
                         property.id.clone(),
                     ));
                 }
-                for source in gui.state_sources.values() {
-                    let range = source.record_range();
-                    ranges.push((
-                        cadmpeg_core::decode::u64_from_index(range.start),
-                        cadmpeg_core::decode::u64_from_index(range.end),
-                        "typed",
-                        source.id().to_owned(),
-                    ));
+                for document in &gui.documents {
+                    for state in &document.states {
+                        let source = gui.state_sources.get(&state.id).ok_or_else(|| {
+                            CodecError::malformed("GUI state has no original source range")
+                        })?;
+                        let range = source.record_range();
+                        ranges.push((
+                            cadmpeg_core::decode::u64_from_index(range.start),
+                            cadmpeg_core::decode::u64_from_index(range.end),
+                            "typed",
+                            document.id.clone(),
+                        ));
+                    }
                 }
             }
             ranges.sort_by_key(|left| left.0);
@@ -827,11 +736,14 @@ pub(crate) fn byte_coverage(
     logical: &[LogicalSpan],
     physical_byte_len: u64,
 ) -> Result<ByteCoverageRecord, CodecError> {
-    let logical_byte_len = entries.iter().try_fold(0_u64, |total, entry| {
-        total
-            .checked_add(sources.byte_len(entry)?)
-            .ok_or_else(|| CodecError::malformed("logical entry byte length sum overflows u64"))
-    })?;
+    let logical_byte_len = entries
+        .iter()
+        .filter(|entry| sources.contains(entry))
+        .try_fold(0_u64, |total, entry| {
+            total
+                .checked_add(sources.byte_len(entry)?)
+                .ok_or_else(|| CodecError::malformed("logical entry byte length sum overflows u64"))
+        })?;
     let mut classification_bytes = BTreeMap::new();
     let mut named_opaque_entries = BTreeSet::new();
     for span in logical {
@@ -866,7 +778,7 @@ pub(crate) fn byte_coverage(
         .iter()
         .all(|span| entries.iter().any(|entry| entry.name() == span.entry));
     if logical_exact {
-        for entry in entries {
+        for entry in entries.iter().filter(|entry| sources.contains(entry)) {
             let entry_len = sources.byte_len(entry)?;
             let mut spans = Vec::new();
             for span in logical.iter().filter(|span| span.entry == entry.name()) {

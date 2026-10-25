@@ -69,28 +69,53 @@ fn registering_another_real_stream_invalidates_the_complete_inventory_proof() {
 
 #[test]
 fn known_non_xml_grammars_remain_pending_and_vendor_payloads_remain_opaque() {
-    for (value, pending) in [
-        (
-            "<Property type='App::PropertyFloatList'><FloatList file='values'/></Property>",
-            true,
-        ),
-        (
-            "<Property type='Vendor::PropertyFloatList'><FloatList file='values'/></Property>",
-            false,
-        ),
-        (
-            "<Property type='Part::PropertyPartShape'><Part file='shape'/></Property>",
-            true,
-        ),
-        (
-            "<Property type='App::PropertyFileIncluded'><FileIncluded file='opaque'/></Property>",
-            false,
-        ),
-        ("<StringHasher count='0'/>", true),
+    for value in [
+        "<Property type='App::PropertyFloatList'><FloatList file='values'/></Property>",
+        "<Property type='Vendor::PropertyFloatList'><FloatList file='values'/></Property>",
+        "<Property type='Part::PropertyPartShape'><Part file='shape'/></Property>",
+        "<Property type='App::PropertyFileIncluded'><FileIncluded file='opaque'/></Property>",
+        "<StringHasher count='0'/>",
     ] {
         let source = format!("<Document>{value}</Document>");
-        let xml = roxmltree::Document::parse(&source).unwrap();
-        assert_eq!(pending_grammar(&xml), pending, "{source}");
+        let bytes = crate::test_support::test_archive::archive(&source);
+        let arena = DecodeArena::new();
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+        let inventory = match crate::container::attempt(&ctx, root).unwrap() {
+            crate::container::ScanOutcome::Readable { scan, .. } => {
+                prepare(&ctx, root, &scan).unwrap()
+            }
+            crate::container::ScanOutcome::GivenUp {
+                source: Some(recovered),
+                parts,
+                ..
+            } => {
+                let failed = parts
+                    .fidelity()
+                    .parts()
+                    .values()
+                    .filter(|part| {
+                        part.state() == &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}
+                    })
+                    .collect::<Vec<_>>();
+                assert_eq!(failed.len(), 1);
+                assert_eq!(failed[0].level().as_str(), "freecad.document");
+                assert_eq!(failed[0].offset(), 0);
+                assert_eq!(failed[0].byte_len(), u64::try_from(source.len()).unwrap());
+                prepare_sources(
+                    &ctx,
+                    root,
+                    &recovered.archive,
+                    &recovered.entries,
+                    &recovered.source_whitespace,
+                )
+                .unwrap()
+            }
+            crate::container::ScanOutcome::GivenUp { source: None, .. } => {
+                panic!("the framed XML member remains available")
+            }
+        };
+        assert!(inventory.is_complete(&ctx).unwrap(), "{source}");
     }
 }
 
@@ -195,11 +220,14 @@ fn an_unlisted_registered_stream_prevents_complete_source_grammar_admission() {
         "unlisted",
     )
     .unwrap();
-    assert!(matches!(
-        prepare(&ctx, root, &scan, None).unwrap(),
-        Admission::Pending
-    ));
+    let inventory = prepare(&ctx, root, &scan).unwrap();
+    assert!(inventory.is_complete(&ctx).unwrap());
+    assert_eq!(inventory.0["unlisted"].byte_len, 2);
+    assert!(inventory.0["unlisted"].framing.is_empty());
+    assert!(inventory.0["unlisted"].insignificant.is_empty());
     crate::test_support::test_archive::assert_only_document_file_version_capture(&ctx, &scan);
 }
 
 mod gui;
+
+mod projection;

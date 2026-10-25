@@ -10,11 +10,15 @@ use serde::{de::DeserializeOwned, Serialize};
 
 mod captures;
 mod dependencies;
+mod failures;
 mod finalization;
+mod parent;
 mod parser;
 pub use captures::CapturedRecordLayout;
 pub use dependencies::PartDependencyPruning;
+pub use failures::{FinalizedFailureRegistry, GivenUpHome};
 pub use finalization::{FinalizedPartOutput, PrunedPartCaptures};
+pub use parent::PartParent;
 pub use parser::ParserPartOutput;
 
 use super::{PartLevel, PartRecord, PartSpec, PartState};
@@ -44,6 +48,7 @@ pub struct PartOutput {
     record_batches: Vec<(String, Option<cadmpeg_core::decode::RecordBatchId>)>,
     native_owners: std::collections::BTreeMap<String, dependencies::NativeOwner>,
     failures: Vec<dependencies::FailureHome>,
+    parents: std::collections::BTreeMap<UnknownId, std::sync::Arc<parent::ParentAnchor>>,
     // A part's stage moves its records into the parent output on commit.
     // Their storage is charged once, when the root output receives them.
     staged: bool,
@@ -63,6 +68,7 @@ impl PartOutput {
             record_batches: Vec::new(),
             native_owners: std::collections::BTreeMap::new(),
             failures: Vec::new(),
+            parents: std::collections::BTreeMap::new(),
             staged: false,
         }
     }
@@ -239,7 +245,7 @@ impl PartOutput {
                 arena.append(&mut records);
             }
         }
-        self.native_owners.append(&mut other.native_owners);
+        self.native_owners.extend(other.native_owners);
         for failure in &mut other.failures {
             failure.loss_index = failure
                 .loss_index
@@ -248,6 +254,7 @@ impl PartOutput {
         }
         reserve_output(ctx, staged, &mut self.failures, other.failures.len())?;
         self.failures.append(&mut other.failures);
+        self.parents.extend(other.parents);
         self.ids.append(&mut other.ids);
         ctx.reserve_working(
             &mut self.record_batches,
@@ -271,6 +278,16 @@ pub trait DecodeParts {
         extent: View<'_>,
         spec: PartSpec,
         decode: impl FnOnce(&mut PartOutput) -> Result<T, CodecError>,
+    ) -> Result<Option<T>, CodecError>;
+
+    /// Decode one sequential record once, committing only its consumed prefix.
+    /// A failed parser gives up the unread suffix of the containing schedule.
+    fn decode_sequential_part<T>(
+        &self,
+        output: &mut PartOutput,
+        remaining: View<'_>,
+        spec: PartSpec,
+        decode: impl FnOnce(&mut PartOutput) -> Result<(T, usize), CodecError>,
     ) -> Result<Option<T>, CodecError>;
 
     /// Run a real parser callback without access to a semantic record stage.
@@ -330,18 +347,45 @@ impl DecodeParts for DecodeContext<'_> {
         spec: PartSpec,
         decode: impl FnOnce(&mut PartOutput) -> Result<T, CodecError>,
     ) -> Result<Option<T>, CodecError> {
+        self.decode_sequential_part(output, extent, spec, |stage| {
+            decode(stage).map(|value| (value, extent.window().len()))
+        })
+    }
+
+    fn decode_sequential_part<T>(
+        &self,
+        output: &mut PartOutput,
+        extent: View<'_>,
+        spec: PartSpec,
+        decode: impl FnOnce(&mut PartOutput) -> Result<(T, usize), CodecError>,
+    ) -> Result<Option<T>, CodecError> {
         output.bind_context(self)?;
         // Framing bytes come from the format's header fields, which damaged
         // input can corrupt. A framing error is a failure of this part only.
+        let declared_parent = spec
+            .parent
+            .as_ref()
+            .map(|parent| parent.validate(self, extent))
+            .transpose()?;
         let framing = spec.validate(extent);
         let framing_valid = framing.is_ok();
         let mut staged = PartOutput::stage(output.codec);
         staged.bind_context(self)?;
-        let outcome = self.part_transaction(extent, || {
+        let outcome = self.sequential_part_transaction(extent, || {
             framing?;
-            let value = decode(&mut staged)?;
+            let (value, consumed) = decode(&mut staged)?;
+            let prefix = extent
+                .child(
+                    extent.start(),
+                    extent
+                        .start()
+                        .checked_add(consumed)
+                        .ok_or_else(|| CodecError::malformed("sequential extent overflows"))?,
+                )
+                .ok_or_else(|| CodecError::malformed("sequential extent exceeds its parent"))?;
+            spec.validate(prefix)?;
             output.preflight(&staged)?;
-            Ok(value)
+            Ok((value, consumed))
         })?;
         let (capture, result) = outcome.into_parts();
         let id = part_id(
@@ -379,7 +423,8 @@ impl DecodeParts for DecodeContext<'_> {
         } else {
             PartSpec::new(spec.level, Vec::new())
         };
-        let record = PartRecord::captured(&capture, spec, state);
+        let mut record = PartRecord::captured(&capture, spec, state);
+        record.parent = declared_parent;
         match result {
             Ok(value) => {
                 staged.fidelity.parts.insert(id, record);
@@ -387,6 +432,12 @@ impl DecodeParts for DecodeContext<'_> {
                 Ok(Some(value))
             }
             Err(error) => {
+                let independent = parent::independent_state(self, &mut staged, &id)?;
+                let independently_failed = independent
+                    .failures
+                    .iter()
+                    .flat_map(|failure| failure.dropped.iter().map(String::as_str))
+                    .collect::<BTreeSet<_>>();
                 let mut dropped = Vec::new();
                 reserve(self, &mut dropped, staged.ids.len())?;
                 for dropped_id in &staged.ids {
@@ -395,7 +446,9 @@ impl DecodeParts for DecodeContext<'_> {
                 }
                 let mut dropped_set = dropped.into_iter().collect::<BTreeSet<_>>();
                 for attempted in capture.attempted_record_ids() {
-                    if !dropped_set.contains(attempted) {
+                    if !dropped_set.contains(attempted)
+                        && !independently_failed.contains(attempted.as_str())
+                    {
                         self.retain_bytes(
                             u64_from_index(attempted.len()),
                             "discarded parser record identity",
@@ -425,7 +478,7 @@ impl DecodeParts for DecodeContext<'_> {
                 parts.insert(id.clone(), record);
                 // All staged model/native/retention/layout/loss state is dropped.
                 drop(staged);
-                let mut replacement = PartOutput::stage(output.codec);
+                let mut replacement = independent;
                 replacement.bind_context(self)?;
                 let links = capture
                     .record_id()
@@ -448,14 +501,14 @@ impl DecodeParts for DecodeContext<'_> {
                     u64_from_index(native.text_len()),
                     "given-up part native stub",
                 )?;
-                let mut unknowns = Vec::new();
-                reserve_output(self, true, &mut unknowns, 1)?;
-                unknowns.push(native);
-                replacement
+                let unknowns = replacement
                     .native
                     .namespace_mut(output.codec.as_str())
                     .arenas_mut()
-                    .insert("unknowns".to_owned(), unknowns);
+                    .entry("unknowns".to_owned())
+                    .or_default();
+                reserve_output(self, true, unknowns, 1)?;
+                unknowns.push(native);
                 let length = extent.window().len();
                 self.retain_bytes(u64_from_index(length), "given-up part source bytes")?;
                 let mut bytes = self.alloc_filled(length, 0u8, "given-up part source bytes")?;
@@ -480,7 +533,7 @@ impl DecodeParts for DecodeContext<'_> {
                     id.as_str().to_owned(),
                     RecordLayout::from_part_capture(&capture),
                 );
-                replacement.fidelity.parts = parts;
+                replacement.fidelity.parts.append(&mut parts);
                 let prefix = format!(
                     "{} stream={} offset={} length={} record={} error={}",
                     replacement.fidelity.parts[&id].level.as_str(),
@@ -510,7 +563,7 @@ impl DecodeParts for DecodeContext<'_> {
                         .note(message)
                         .with_provenance(provenance),
                 )?;
-                replacement.record_failure(self, id, dropped, prefix)?;
+                replacement.record_failure(self, id, dropped, prefix, extent)?;
                 output.append(self, replacement)?;
                 Ok(None)
             }
@@ -608,18 +661,7 @@ fn reserve_output<T>(
     if !staged {
         return reserve(ctx, values, additional);
     }
-    let bytes = additional
-        .checked_mul(size_of::<T>())
-        .ok_or_else(|| CodecError::malformed("part stage storage overflows"))?;
-    values.try_reserve_exact(additional).map_err(|_| {
-        cadmpeg_core::decode::ResourceLimit::allocation_failed(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-            ctx.policy().limits.max_retained_bytes,
-            u64_from_index(bytes),
-            "part stage storage",
-        )
-        .into()
-    })
+    ctx.reserve_working(values, additional, "part stage storage")
 }
 
 fn reserve<T>(
@@ -627,24 +669,15 @@ fn reserve<T>(
     values: &mut Vec<T>,
     additional: usize,
 ) -> Result<(), CodecError> {
-    let required = values
-        .len()
-        .checked_add(additional)
-        .ok_or_else(|| CodecError::malformed("part output capacity overflows"))?;
-    if required > values.capacity() {
-        let bytes = required
-            .abs_diff(values.capacity())
-            .checked_mul(size_of::<T>())
-            .ok_or_else(|| CodecError::malformed("part output storage overflows"))?;
-        ctx.retain_bytes(u64_from_index(bytes), "part output storage")?;
-        values.try_reserve_exact(additional).map_err(|_| {
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                ctx.policy().limits.max_retained_bytes,
-                u64_from_index(bytes),
-                "part output storage",
-            )
-        })?;
-    }
-    Ok(())
+    let previous = values.capacity();
+    ctx.reserve_working(values, additional, "part output storage")?;
+    let bytes = values
+        .capacity()
+        .checked_sub(previous)
+        .and_then(|additional| additional.checked_mul(size_of::<T>()))
+        .ok_or_else(|| CodecError::malformed("part output storage overflows"))?;
+    ctx.retain_bytes(u64_from_index(bytes), "part output storage")
 }
+
+#[cfg(test)]
+mod tests;

@@ -25,7 +25,7 @@ fn pattern_scalar(name: &str, value: f64) -> crate::test_support::source_fidelit
             family: PropertyFamily::Quantity,
             status: None,
             body: Some(PropertyBody::Persisted {
-                values: Vec::new(),
+                values: Vec::new().into(),
                 links: Vec::new(),
                 side_entries: Vec::new(),
             }),
@@ -44,19 +44,10 @@ fn uniform_pattern_intervals_yield_one_location_per_occurrence() {
         &[&length],
         &[],
         &DecodePolicy::default(),
-        |ctx, sources| {
-            crate::design::pattern_locations(
-                ctx,
-                &properties,
-                "",
-                4,
-                0,
-                ("Length", "Offset"),
-                &[],
-                sources,
-            )
-            .expect("compute the pattern locations")
-            .expect("uniform locations")
+        |ctx, _sources| {
+            crate::design::pattern_locations(ctx, &properties, "", 4, 0, ("Length", "Offset"))
+                .expect("compute the pattern locations")
+                .expect("uniform locations")
         },
     );
     assert_eq!(admitted.len(), 4);
@@ -235,6 +226,18 @@ fn distinguishes_absent_and_malformed_partdesign_boolean_type() {
                 &DecodeOptions::default(),
             )
             .expect("PartDesign boolean selector");
+        // #224 retains Native for a failed control, at its #215 home; a valid
+        // first direct root survives a damaged extra root.
+        if type_property.contains("value=\"bad\"") || type_property.contains("<Wrapper>") {
+            super::projection_assertions::assert_native_projection_from_failed_control(
+                &result, "Boolean", "Type",
+            );
+            continue;
+        }
+        let duplicate_root = type_property.contains("/><Integer");
+        if duplicate_root {
+            super::projection_assertions::assert_failed_value(&result, "Boolean", "Type");
+        }
         let definition = result
             .ir()
             .model
@@ -244,7 +247,7 @@ fn distinguishes_absent_and_malformed_partdesign_boolean_type() {
             .expect("Boolean feature")
             .evaluation
             .definition();
-        if expected_native {
+        if expected_native && !duplicate_root {
             assert!(matches!(
                 definition,
                 FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) if kind.as_str() == "PartDesign::Boolean"
@@ -425,7 +428,7 @@ pub(crate) fn transfers_uniform_irregular_and_two_axis_patterns() {
             } if result.ir().dimension_value(count_value) == Some(3) && actual_spacing.resolved_spacing(result.ir(), count_value).expect("evaluated pattern spacing").get() == 4.0)
     ));
     assert_eq!(feature("Uniform").dependencies.len(), 1);
-    assert!(result.report().losses.is_empty());
+    crate::test_support::b1::assert_report(&result);
     assert_valid_document(result.ir());
     let census = result
         .ir()

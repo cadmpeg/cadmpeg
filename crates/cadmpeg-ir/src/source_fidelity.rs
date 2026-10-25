@@ -557,7 +557,7 @@ impl SourceFidelity {
 
     /// Append source metadata after checking all tables for identity collisions.
     /// Failure leaves this source metadata unchanged.
-    pub fn append(&mut self, mut other: Self) -> Result<(), cadmpeg_core::CodecError> {
+    pub fn append(&mut self, other: Self) -> Result<(), cadmpeg_core::CodecError> {
         for stream in other.freecad_ledgers.keys() {
             if self.freecad_ledgers.contains_key(stream) {
                 return Err(CodecError::malformed(format_args!(
@@ -601,12 +601,12 @@ impl SourceFidelity {
             }
         }
         self.annotations.append(other.annotations)?;
-        self.retained_records.append(&mut other.retained_records);
-        self.metadata.append(&mut other.metadata);
-        self.record_layout.append(&mut other.record_layout);
-        self.parts.append(&mut other.parts);
-        self.b1_spans.append(&mut other.b1_spans);
-        self.freecad_ledgers.append(&mut other.freecad_ledgers);
+        self.retained_records.extend(other.retained_records);
+        self.metadata.extend(other.metadata);
+        self.record_layout.extend(other.record_layout);
+        self.parts.extend(other.parts);
+        self.b1_spans.extend(other.b1_spans);
+        self.freecad_ledgers.extend(other.freecad_ledgers);
         Ok(())
     }
 

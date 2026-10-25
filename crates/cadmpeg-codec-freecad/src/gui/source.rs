@@ -3,22 +3,19 @@
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+#[cfg(test)]
 use cadmpeg_ir::CadIr;
 
 use super::{Graph, GuiSources};
-use crate::xml_framing::XmlFraming;
+#[cfg(test)]
+use crate::xml_framing::XmlSource;
+use cadmpeg_ir::source_fidelity::parts::PartOutput;
+
+mod parts;
+pub(crate) mod presentation;
 
 pub(crate) struct Source<'a> {
     source: View<'a>,
-    parsed: Parsed<'a>,
-}
-
-enum Parsed<'a> {
-    Admitted {
-        xml: roxmltree::Document<'a>,
-        framing: XmlFraming<'a>,
-    },
-    Unreadable(Graph),
 }
 
 /// Parse the original member once before source inventory admission.
@@ -27,57 +24,64 @@ pub(crate) fn parse<'a>(
     source: View<'a>,
 ) -> Result<Source<'a>, CodecError> {
     ctx.capture_part_extent(source)?;
-    let parsed = match super::parse_xml(ctx, source.window()) {
-        Ok(xml) => {
-            let framing = crate::xml_framing::frame(ctx, source, &xml, true)?;
-            Parsed::Admitted { xml, framing }
-        }
-        Err(error @ (CodecError::Malformed(_) | CodecError::Truncated { .. })) => {
-            Parsed::Unreadable(super::source_only_graph(None, &error))
-        }
-        Err(error) => return Err(error),
-    };
-    Ok(Source { source, parsed })
+    Ok(Source { source })
 }
 
 impl<'a> Source<'a> {
+    #[cfg(test)]
     pub(crate) fn view(&self) -> View<'a> {
         self.source
     }
 
-    pub(crate) fn document(&self) -> Option<&roxmltree::Document<'a>> {
-        match &self.parsed {
-            Parsed::Admitted { xml, .. } => Some(xml),
-            Parsed::Unreadable(_) => None,
-        }
+    #[cfg(test)]
+    pub(crate) fn scanner(&self, ctx: &DecodeContext<'_>) -> Result<XmlSource<'a>, CodecError> {
+        XmlSource::new(ctx, self.source)
     }
 
-    pub(crate) fn framing(&self) -> Option<&XmlFraming<'a>> {
-        match &self.parsed {
-            Parsed::Admitted { framing, .. } => Some(framing),
-            Parsed::Unreadable(_) => None,
-        }
+    /// Construct typed GUI fields without projecting neutral presentation.
+    #[cfg(test)]
+    pub(crate) fn decode(
+        self,
+        ctx: &DecodeContext<'a>,
+        sources: &GuiSources<'_, 'a>,
+        output: &mut PartOutput,
+    ) -> Result<Graph, CodecError> {
+        self.decode_with_whitespace(ctx, sources, output)
+            .map(|(graph, _, _)| graph)
     }
 
-    /// Consume the same DOM after the application objects and topology exist.
+    /// Return navigation facts from the genuine bounded GUI XML callback.
+    pub(crate) fn decode_with_whitespace(
+        self,
+        ctx: &DecodeContext<'a>,
+        sources: &GuiSources<'_, 'a>,
+        output: &mut PartOutput,
+    ) -> Result<
+        (
+            Graph,
+            Vec<View<'a>>,
+            super::payloads::sources::EntryInterpretations<'a>,
+        ),
+        CodecError,
+    > {
+        parts::decode(ctx, self.source, sources, output)
+    }
+
+    #[cfg(test)]
     pub(crate) fn transfer(
         self,
         ctx: &DecodeContext<'a>,
         ir: &mut CadIr,
-        sources: &GuiSources<'_, '_>,
+        sources: &GuiSources<'_, 'a>,
+        output: &mut PartOutput,
     ) -> Result<Graph, CodecError> {
-        match self.parsed {
-            Parsed::Admitted { xml, .. } => {
-                let source = crate::persistence::source::Source::new(ctx, self.source, &xml)?;
-                match super::transfer_document(ir, &xml, sources, Some(&source)) {
-                    Err(error @ (CodecError::Malformed(_) | CodecError::Truncated { .. })) => {
-                        Ok(super::source_only_graph(None, &error))
-                    }
-                    result => result,
-                }
-            }
-            Parsed::Unreadable(graph) => Ok(graph),
-        }
+        let (mut graph, _, memo) = parts::decode(ctx, self.source, sources, output)?;
+        let sources = GuiSources {
+            gui_entry_interpretations: Some(&memo),
+            ..*sources
+        };
+        super::project_records(ctx, ir, &mut graph, &sources)?;
+        Ok(graph)
     }
 }
 

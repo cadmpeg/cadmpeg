@@ -69,6 +69,90 @@ fn complete_nested_and_empty_elements_keep_exact_xml_framing() {
 }
 
 #[test]
+fn invalid_encoded_attribute_bytes_never_extend_the_proved_xml_name_or_framing() {
+    for encoding in [
+        XmlEncoding::Utf8,
+        XmlEncoding::Utf16Le,
+        XmlEncoding::Utf16Be,
+    ] {
+        let encode = |text: &str| match encoding {
+            XmlEncoding::Utf8 => text.as_bytes().to_vec(),
+            XmlEncoding::Utf16Le => text.encode_utf16().flat_map(u16::to_le_bytes).collect(),
+            XmlEncoding::Utf16Be => text.encode_utf16().flat_map(u16::to_be_bytes).collect(),
+        };
+        let original = encode("<root><target key='value'/><peer/></root>");
+        let width = if encoding == XmlEncoding::Utf8 { 1 } else { 2 };
+        for fill in [0, 0xff] {
+            let mut bytes = original.clone();
+            let start = "<root><target".len() * width;
+            let end = "<root><target key='value'".len() * width;
+            bytes[start..end].fill(fill);
+            let arena = DecodeArena::new();
+            let (ctx, root) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+                    .expect("create tracked fixture source context");
+            let scan = ctx
+                .scan_xml_elements(root, encoding, "XML name damage")
+                .expect("scan bounded XML fixture");
+            assert_eq!(
+                names(&scan),
+                [encode("root"), encode("target"), encode("peer")]
+            );
+            let target = scan.elements()[1];
+            assert_eq!(target.extent().start(), "<root>".len() * width);
+            assert_eq!(
+                target.extent().end(),
+                "<root><target key='value'/>".len() * width
+            );
+            assert_eq!(
+                target
+                    .framing()
+                    .map(|view| view.start()..view.end())
+                    .collect::<Vec<_>>(),
+                vec!["<root>".len() * width..start, end..end + 2 * width]
+            );
+            assert_eq!(target.termination(), XmlTermination::EmptyElement);
+            assert!(ctx
+                .take_record_captures()
+                .expect("extract committed source record captures")
+                .is_empty());
+        }
+    }
+}
+
+#[test]
+fn xml_names_retain_valid_utf8_and_utf16_unicode_name_characters() {
+    let name = "ns:π\u{301}\u{10400}";
+    let text = format!("<{name} key='value'><peer/></{name}>");
+    for encoding in [
+        XmlEncoding::Utf8,
+        XmlEncoding::Utf16Le,
+        XmlEncoding::Utf16Be,
+    ] {
+        let encode = |text: &str| match encoding {
+            XmlEncoding::Utf8 => text.as_bytes().to_vec(),
+            XmlEncoding::Utf16Le => text.encode_utf16().flat_map(u16::to_le_bytes).collect(),
+            XmlEncoding::Utf16Be => text.encode_utf16().flat_map(u16::to_be_bytes).collect(),
+        };
+        let bytes = encode(&text);
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("create tracked fixture source context");
+        let scan = ctx
+            .scan_xml_elements(root, encoding, "Unicode XML names")
+            .expect("scan bounded XML fixture");
+        assert_eq!(names(&scan), [encode(name), encode("peer")]);
+        assert_eq!(scan.elements()[0].extent().window(), bytes);
+        assert_eq!(scan.elements()[0].termination(), XmlTermination::EndTag);
+        assert!(scan.faults().is_empty());
+        assert!(ctx
+            .take_record_captures()
+            .expect("extract committed source record captures")
+            .is_empty());
+    }
+}
+
+#[test]
 fn comments_cdata_pi_quotes_and_doctype_subsets_do_not_create_elements() {
     let bytes = br#"<?xml version="1.0"?><!DOCTYPE root [<!ENTITY x "</root><fake/>"><!-- ]> <fake/> --><?inside ]> ?>]><root value="</root><fake/>" other='>'><!-- </root><fake/> --><![CDATA[</root><fake/>]]><?inside <fake/> ?><good/></root>"#;
     let arena = DecodeArena::new();

@@ -38,11 +38,14 @@ fn entity_spelled_property_identity_and_status_flow_into_kept_fields_in_a_nonzer
         assert_eq!(captures[0].id(), property.id);
         assert_eq!(
             captures[0].reads()["file"],
-            [
-                attribute_range(&bytes, "name", raw_name),
-                attribute_range(&bytes, "type", "Vendor::Futu&#x72;e"),
-                attribute_range(&bytes, "status", raw_status)
-            ]
+            merge_ranges(
+                [
+                    attribute_reads(&bytes, "name", raw_name),
+                    attribute_reads(&bytes, "type", "Vendor::Futu&#x72;e"),
+                    attribute_reads(&bytes, "status", raw_status)
+                ]
+                .concat()
+            )
         );
     }
 }
@@ -57,15 +60,12 @@ fn invalid_status_and_unreadable_payload_bytes_do_not_gain_identity_read_credit(
         let dom = roxmltree::Document::parse(&xml).unwrap();
         let graph = parse_document_source(&ctx, view, &dom, Vocabulary::Objects).unwrap();
         assert_eq!(graph.properties[0].status, None);
-        assert!(matches!(
-            graph.properties[0].body,
-            Some(crate::native::PropertyBody::Unreadable(_))
-        ));
+        assert!(matches!(graph.properties[0].body, None));
         let captures = property_captures(&ctx, &graph);
         assert_eq!(captures.len(), 1);
         assert_eq!(
             captures[0].reads()["file"],
-            identity_ranges(&xml, "Invalid", "App::PropertyBool")
+            merge_ranges(identity_ranges(&xml, "Invalid", "App::PropertyBool"))
         );
     }
 }
@@ -87,6 +87,6 @@ fn a_transient_declaration_reads_its_kept_identity_and_status_without_a_payload(
     let captures = property_captures(&ctx, &graph);
     assert_eq!(captures.len(), 1);
     let mut expected = identity_ranges(xml, "Preview", "App::PropertyString");
-    expected.push(attribute_range(xml, "status", "152"));
-    assert_eq!(captures[0].reads()["file"], expected);
+    expected.extend(attribute_reads(xml, "status", "152"));
+    assert_eq!(captures[0].reads()["file"], merge_ranges(expected));
 }

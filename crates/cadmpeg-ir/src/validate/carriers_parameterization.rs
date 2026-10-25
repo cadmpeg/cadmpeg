@@ -59,6 +59,25 @@ pub(super) fn check_carrier_reachability(
             }
         }
     });
+    // A projected standalone carrier may have no source object. Its forward
+    // native_ref still identifies its actual retained typed producer. Opaque
+    // unknowns and absent identities cannot establish that ownership.
+    let mut typed_native = std::collections::BTreeSet::new();
+    view.visit(|_, arena, records| -> Result<(), CodecError> {
+        if arena != "unknowns" {
+            for record in records.records() {
+                let id = record.id();
+                if !typed_native.contains(id) {
+                    ctx.retain_bytes(
+                        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<&str>()),
+                        "typed native carrier owner identity",
+                    )?;
+                    typed_native.insert(id);
+                }
+            }
+        }
+        Ok(())
+    })?;
     let mut surfaces = BorrowedIdentities::new();
     let mut curves = BorrowedIdentities::new();
     let mut pcurves = BorrowedIdentities::new();
@@ -80,12 +99,22 @@ pub(super) fn check_carrier_reachability(
         }
     }
     for surface in &ir.model.surfaces {
-        if surface.source_object.is_some() {
+        if surface.source_object.is_some()
+            || surface
+                .native_ref
+                .as_deref()
+                .is_some_and(|id| typed_native.contains(id))
+        {
             surfaces.insert_unique(surface.id.as_str(), ());
         }
     }
     for curve in &ir.model.curves {
-        if curve.source_object.is_some() {
+        if curve.source_object.is_some()
+            || curve
+                .native_ref
+                .as_deref()
+                .is_some_and(|id| typed_native.contains(id))
+        {
             curves.insert_unique(curve.id.as_str(), ());
         }
     }
@@ -110,7 +139,12 @@ pub(super) fn check_carrier_reachability(
         points.insert_unique(vertex.point.as_str(), ());
     }
     for point in &ir.model.points {
-        if point.source_object.is_some() {
+        if point.source_object.is_some()
+            || point
+                .native_ref
+                .as_deref()
+                .is_some_and(|id| typed_native.contains(id))
+        {
             points.insert_unique(point.id.as_str(), ());
         }
     }

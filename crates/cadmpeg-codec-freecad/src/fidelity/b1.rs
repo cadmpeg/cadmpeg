@@ -6,26 +6,18 @@ use std::ops::Range;
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceDimension, ResourceLimit, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::source_fidelity::b1::{classification::ClassificationIndex, partition_stream};
+use cadmpeg_ir::source_fidelity::b1::{
+    classification::ClassificationIndex, partition_root_stream, partition_stream, SourceRootDomain,
+};
 use cadmpeg_ir::source_fidelity::parts::PartState;
 use cadmpeg_ir::{CadIr, SourceFidelity};
 
 const INVENTORY: &str = "FreeCAD source framing inventory";
 
-pub(crate) enum Admission {
-    Complete(Inventory),
-    Pending,
-}
-
-impl Admission {
-    pub(crate) fn is_complete(&self) -> bool {
-        matches!(self, Self::Complete(_))
-    }
-}
-
 #[derive(Default)]
 struct Stream {
     byte_len: u64,
+    root: Option<SourceRootDomain>,
     framing: Vec<Range<u64>>,
     insignificant: Vec<Range<u64>>,
 }
@@ -36,120 +28,66 @@ pub(crate) fn prepare(
     ctx: &DecodeContext<'_>,
     root: View<'_>,
     scan: &crate::container::Scan<'_>,
-    gui_source: Option<&crate::gui::source::Source<'_>>,
-) -> Result<Admission, CodecError> {
-    let gui_framing = if let Some(actual) = scan.data.get("GuiDocument.xml") {
-        let Some(source) = gui_source else {
-            return Ok(Admission::Pending);
-        };
-        if ctx.capture_part_extent(source.view())? != ctx.capture_part_extent(*actual)? {
-            return Err(CodecError::malformed(
-                "GUI XML framing is not from the selected actual member",
-            ));
-        }
-        let (Some(document), Some(framing)) = (source.document(), source.framing()) else {
-            return Ok(Admission::Pending);
-        };
-        if !framing.supported() || pending_grammar(document) {
-            return Ok(Admission::Pending);
-        }
-        Some(framing)
-    } else {
-        if gui_source.is_some() {
-            return Err(CodecError::malformed(
-                "GUI XML framing has no selected actual member",
-            ));
-        }
-        None
-    };
-    if pending_grammar(&scan.document_xml) {
-        return Ok(Admission::Pending);
-    }
-    let mut actual = ctx.source_streams()?;
-    actual.sort_unstable_by(|left, right| left.name().cmp(right.name()));
-    let root_extent = ctx.capture_part_extent(root)?;
-    let stream = actual
-        .binary_search_by(|stream| stream.name().cmp(root_extent.stream()))
-        .map(|index| &actual[index])
-        .map_err(|_| CodecError::malformed("source framing has no actual registered stream"))?;
-    if root_extent.offset() != 0 || root_extent.byte_len() != stream.byte_len() {
-        return Ok(Admission::Pending);
-    }
-    let mut inventory = Inventory(BTreeMap::new());
-    inventory.stream(ctx, root, &actual)?;
-    for source in scan.data.values() {
-        inventory.stream(ctx, *source, &actual)?;
-    }
-    if inventory.0.len() != actual.len() {
-        return Ok(Admission::Pending);
-    }
-    let frames = match scan.archive.framing_views(ctx) {
-        Ok(frames) => frames,
-        Err(CodecError::Malformed(_) | CodecError::Truncated { .. }) => {
-            return Ok(Admission::Pending);
-        }
-        Err(error) => return Err(error),
-    };
-    for view in frames {
-        inventory.range(ctx, view, false)?;
-    }
-    let document = *scan.data.get("Document.xml").ok_or_else(|| {
-        CodecError::malformed("source framing requires its genuine Document.xml member")
-    })?;
-    let xml = crate::xml_framing::frame(ctx, document, &scan.document_xml, false)?;
-    if !xml.supported() {
-        return Ok(Admission::Pending);
-    }
-    for view in xml.framing() {
-        inventory.range(ctx, *view, false)?;
-    }
-    for view in xml.insignificant() {
-        inventory.range(ctx, *view, true)?;
-    }
-    if let Some(gui) = gui_framing {
-        for view in gui.framing() {
-            inventory.range(ctx, *view, false)?;
-        }
-        for view in gui.insignificant() {
-            inventory.range(ctx, *view, true)?;
-        }
-    }
-    Ok(Admission::Complete(inventory))
+) -> Result<Inventory, CodecError> {
+    prepare_sources(
+        ctx,
+        root,
+        &scan.archive,
+        &scan.data,
+        &scan.source_whitespace,
+    )
 }
 
-fn pending_grammar(xml: &roxmltree::Document<'_>) -> bool {
-    xml.descendants()
-        .filter(|node| node.is_element())
-        .any(|node| {
-            matches!(
-                node.tag_name().name(),
-                "StringHasher" | "StringHasher2" | "ElementMap" | "ElementMap2"
-            ) || matches!(node.tag_name().name(), "Property" | "_Property")
-                && node.attribute("type").is_some_and(|kind| {
-                    matches!(
-                        kind,
-                        "Part::PropertyPartShape"
-                            | "Mesh::PropertyMeshKernel"
-                            | "Points::PropertyPointKernel"
-                            | "App::PropertyColorList"
-                            | "App::PropertyMaterialList"
-                            | "App::PropertyFloatList"
-                            | "App::PropertyVectorList"
-                            | "App::PropertyPlacementList"
-                            | "Part::PropertyFilletEdges"
-                            | "Points::PropertyGreyValueList"
-                            | "Inspection::PropertyDistanceList"
-                            | "Points::PropertyNormalList"
-                            | "Mesh::PropertyNormalList"
-                            | "Points::PropertyCurvatureList"
-                            | "Mesh::PropertyCurvatureList"
-                            | "Mesh::PropertyMaterial"
-                    )
-                })
-        })
+pub(crate) fn prepare_sources(
+    ctx: &DecodeContext<'_>,
+    root: View<'_>,
+    archive: &cadmpeg_container::ArchiveSnapshot<'_>,
+    sources: &BTreeMap<String, View<'_>>,
+    source_whitespace: &[View<'_>],
+) -> Result<Inventory, CodecError> {
+    let mut actual = ctx.source_streams()?;
+    actual.sort_unstable_by(|left, right| left.name().cmp(right.name()));
+    let mut inventory = Inventory(BTreeMap::new());
+    inventory.root(ctx, root, &actual)?;
+    for source in sources.values() {
+        inventory.stream(ctx, *source, &actual)?;
+    }
+    for stream in &actual {
+        inventory.registered(ctx, stream)?;
+    }
+    if !inventory.is_complete(ctx)? {
+        return Err(CodecError::malformed(
+            "source framing inventory misses a registered stream",
+        ));
+    }
+    for view in archive.framing_views(ctx)? {
+        inventory.range(ctx, view, false)?;
+    }
+    for view in source_whitespace {
+        inventory.range(ctx, *view, true)?;
+    }
+    Ok(inventory)
 }
 
 impl Inventory {
+    fn root(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        source: View<'_>,
+        actual: &[cadmpeg_core::decode::SourceStream],
+    ) -> Result<(), CodecError> {
+        let domain = SourceRootDomain::capture(ctx, source)?;
+        let at = actual
+            .binary_search_by(|stream| stream.name().cmp(domain.stream()))
+            .map_err(|_| CodecError::malformed("codec root has no actual source inventory"))?;
+        self.registered(ctx, &actual[at])?;
+        let stream = self
+            .0
+            .get_mut(domain.stream())
+            .ok_or_else(|| CodecError::malformed("codec root source inventory disappeared"))?;
+        stream.root = Some(domain);
+        Ok(())
+    }
     fn stream(
         &mut self,
         ctx: &DecodeContext<'_>,
@@ -166,7 +104,15 @@ impl Inventory {
                 "source framing requires the whole actual stream View",
             ));
         }
-        if let Some(previous) = self.0.get(capture.stream()) {
+        self.registered(ctx, actual)
+    }
+
+    fn registered(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        actual: &cadmpeg_core::decode::SourceStream,
+    ) -> Result<(), CodecError> {
+        if let Some(previous) = self.0.get(actual.name()) {
             if previous.byte_len != actual.byte_len() {
                 return Err(CodecError::malformed(
                     "conflicting source framing stream length",
@@ -174,24 +120,22 @@ impl Inventory {
             }
             return Ok(());
         }
-        let bytes = capture
-            .stream()
+        let bytes = actual
+            .name()
             .len()
             .checked_add(size_of::<(String, Stream)>())
             .map(u64_from_index)
             .ok_or_else(|| CodecError::malformed("source framing stream storage overflows"))?;
-        ctx.retain_bytes(bytes, INVENTORY)?;
         let mut name = String::new();
-        name.try_reserve_exact(capture.stream().len())
-            .map_err(|_| {
-                ResourceLimit::allocation_failed(
-                    ResourceDimension::RetainedBytes,
-                    ctx.policy().limits.max_retained_bytes,
-                    bytes,
-                    INVENTORY,
-                )
-            })?;
-        name.push_str(capture.stream());
+        name.try_reserve_exact(actual.name().len()).map_err(|_| {
+            ResourceLimit::allocation_failed(
+                ResourceDimension::RetainedBytes,
+                ctx.policy().limits.max_retained_bytes,
+                bytes,
+                INVENTORY,
+            )
+        })?;
+        name.push_str(actual.name());
         self.0.insert(
             name,
             Stream {
@@ -234,26 +178,43 @@ impl Inventory {
 
     fn is_complete(&self, ctx: &DecodeContext<'_>) -> Result<bool, CodecError> {
         let actual = ctx.source_streams()?;
-        Ok(actual.len() == self.0.len()
+        Ok(self.matches_actual(&actual))
+    }
+
+    fn matches_actual(&self, actual: &[cadmpeg_core::decode::SourceStream]) -> bool {
+        actual.len() == self.0.len()
             && actual.iter().all(|stream| {
                 self.0
                     .get(stream.name())
                     .is_some_and(|entry| entry.byte_len == stream.byte_len())
-            }))
+            })
     }
 
     pub(crate) fn finalize(
-        self,
+        mut self,
         ctx: &DecodeContext<'_>,
         ir: &CadIr,
         fidelity: &mut SourceFidelity,
         losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     ) -> Result<(), CodecError> {
-        if !self.is_complete(ctx)? {
+        let mut actual = ctx.source_streams()?;
+        actual.sort_unstable_by(|left, right| left.name().cmp(right.name()));
+        if !self.matches_actual(&actual) {
             return Err(CodecError::malformed(
                 "B1 framing inventory no longer covers every actual stream",
             ));
         }
+        for part in fidelity.parts().values() {
+            let stream = self
+                .0
+                .get_mut(part.stream())
+                .ok_or_else(|| CodecError::malformed("part framing has no actual source stream"))?;
+            for range in part.framing_bytes() {
+                reserve(ctx, &mut stream.framing, 1)?;
+                stream.framing.push(range.clone());
+            }
+        }
+        self.project_alias_ranges(ctx, &actual)?;
         let mut given_up = BTreeMap::<&str, Vec<Range<u64>>>::new();
         for part in fidelity
             .parts()
@@ -276,30 +237,35 @@ impl Inventory {
             }
             let ranges = match given_up.entry(part.stream()) {
                 std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-                std::collections::btree_map::Entry::Vacant(entry) => {
-                    ctx.retain_bytes(
-                        u64_from_index(size_of::<(&str, Vec<Range<u64>>)>()),
-                        INVENTORY,
-                    )?;
-                    entry.insert(Vec::new())
-                }
+                std::collections::btree_map::Entry::Vacant(entry) => entry.insert(Vec::new()),
             };
             reserve(ctx, ranges, 1)?;
             ranges.push(part.offset()..end);
         }
         let mut partitions = Vec::new();
         reserve(ctx, &mut partitions, self.0.len())?;
-        for (name, stream) in &self.0 {
+        for (name, stream) in self.0 {
             let failed = given_up.get(name.as_str()).map_or(&[][..], Vec::as_slice);
-            partitions.push(partition_stream(
-                ctx,
-                name,
-                stream.byte_len,
-                fidelity.record_layout(),
-                &stream.framing,
-                &stream.insignificant,
-                failed,
-            )?);
+            partitions.push(if let Some(root) = stream.root {
+                partition_root_stream(
+                    ctx,
+                    root,
+                    fidelity.record_layout(),
+                    &stream.framing,
+                    &stream.insignificant,
+                    failed,
+                )?
+            } else {
+                partition_stream(
+                    ctx,
+                    &name,
+                    stream.byte_len,
+                    fidelity.record_layout(),
+                    &stream.framing,
+                    &stream.insignificant,
+                    failed,
+                )?
+            });
         }
         let owners = ClassificationIndex::new_with_owner_resolver(ctx, ir, &super::owners::Owners)?;
         fidelity.finalize_b1(ctx, &owners, "fcstd", &partitions, losses)
@@ -314,7 +280,6 @@ fn reserve<T>(
     let bytes = u64_from_index(additional)
         .checked_mul(u64_from_index(size_of::<T>()))
         .ok_or_else(|| CodecError::malformed("source framing inventory allocation overflows"))?;
-    ctx.retain_bytes(bytes, INVENTORY)?;
     values.try_reserve(additional).map_err(|_| {
         ResourceLimit::allocation_failed(
             ResourceDimension::RetainedBytes,
@@ -326,5 +291,33 @@ fn reserve<T>(
     })
 }
 
+mod projection;
+
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+pub(crate) fn assert_classified_spans(decoded: &cadmpeg_ir::codec::DecodeResult) {
+    let fidelity = decoded.source_fidelity();
+    let mut classes = cadmpeg_ir::ArenaClasses::new();
+    for (stream, coverage) in fidelity.b1_spans() {
+        for span in coverage.spans() {
+            classes.extend(span.classes());
+            let range = span.range();
+            assert!(
+                decoded.report().losses.iter().any(|loss| {
+                    loss.provenance.as_ref().is_some_and(|location| {
+                        location.stream_name() == Some(stream.as_str())
+                            && location.offset <= range.start
+                            && location
+                                .byte_len()
+                                .and_then(|len| location.offset.checked_add(len))
+                                .is_some_and(|end| end >= range.end)
+                    })
+                }),
+                "B1 {stream}:{range:?} has no located diagnostic"
+            );
+        }
+    }
+    assert_eq!(fidelity.unrepresented(), classes);
+}

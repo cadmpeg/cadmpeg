@@ -128,8 +128,16 @@ fn document_extent<'source>(
     if level == "freecad.document_xml" {
         return Ok(document);
     }
-    let xml = crate::container::admit_document(ctx, document.window())?;
-    crate::fidelity::relative_xml_extent(document, xml.root_element().range())
+    let source = crate::xml_framing::XmlSource::new(ctx, document)?;
+    let root = source
+        .elements()
+        .iter()
+        .position(|element| element.parent().is_none())
+        .ok_or_else(|| CodecError::malformed("Document.xml has no framed root"))?;
+    if source.name(root)? != "Document" {
+        return Err(CodecError::malformed("Document.xml root is not Document"));
+    }
+    source.extent(root)
 }
 
 fn checked<'a>(

@@ -15,11 +15,33 @@ use crate::native::{
     SemanticAnnotationRecord,
 };
 
-pub(crate) fn transfer(
-    ctx: &crate::property_reader::PropertyReader<'_, '_>,
+pub(crate) fn transfer_source<'source>(
+    ctx: &crate::property_reader::PropertyReader<'_, 'source>,
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
-) -> Result<Vec<SemanticAnnotationRecord>, CodecError> {
+    sources: &BTreeMap<String, crate::persistence::object_parts::ObjectSource<'source>>,
+) -> Result<
+    (
+        Vec<SemanticAnnotationRecord>,
+        Vec<crate::design::UnformedProjection>,
+    ),
+    CodecError,
+> {
+    transfer_impl(ctx, objects, properties, Some(sources))
+}
+
+fn transfer_impl<'source>(
+    ctx: &crate::property_reader::PropertyReader<'_, 'source>,
+    objects: &[ObjectRecord],
+    properties: &[PropertyRecord],
+    sources: Option<&BTreeMap<String, crate::persistence::object_parts::ObjectSource<'source>>>,
+) -> Result<
+    (
+        Vec<SemanticAnnotationRecord>,
+        Vec<crate::design::UnformedProjection>,
+    ),
+    CodecError,
+> {
     let mut by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
     for property in properties {
         if !by_owner.contains_key(property.owner.as_str()) {
@@ -30,85 +52,144 @@ pub(crate) fn transfer(
         }
     }
     let mut records = Vec::new();
+    let mut unformed = Vec::new();
     for object in objects {
         if let Some(kind) = AnnotationRuntimeType::from_label(&object.type_name) {
+            ctx.begin_projection(object.id())?;
+            let id = crate::native::native_id("annotation", object.name());
             let schema = annotation_schema(kind);
-            let source = by_owner
+            let owned = by_owner
                 .get(object.id().as_str())
                 .map_or(&[][..], Vec::as_slice);
-            let mut owned = Vec::new();
-            owned.extend_from_slice(source);
-            let mut source_order = BTreeMap::new();
-            for property in &owned {
-                if let Some(range) = ctx.source_range(property)? {
-                    source_order.insert(property.id.as_str(), (range.start, range.end));
+            if let Some(carrier) = schema.text.filter(|carrier| !carrier.has_format_spec) {
+                let property = sole_named_property("annotation", owned, carrier.property)?;
+                let mut missing = ctx.missing_value(property, carrier.property)?;
+                if let Some(property) = property.filter(|_| !missing) {
+                    if carrier.type_name == "App::PropertyStringList" {
+                        if let Some(root) = property
+                            .values()
+                            .iter()
+                            .find(|value| value.parent.is_none() && value.tag == "StringList")
+                        {
+                            let count = root
+                                .attributes
+                                .get("count")
+                                .and_then(|value| value.parse::<usize>().ok());
+                            let held = property
+                                .values()
+                                .iter()
+                                .filter(|value| {
+                                    value.parent == Some(root.order) && value.tag == "String"
+                                })
+                                .count();
+                            if count.is_some_and(|count| count != held) {
+                                ctx.unavailable(property)?;
+                                missing = true;
+                            }
+                        }
+                    }
+                }
+                if missing {
+                    let homes = ctx.take_unavailable();
+                    if !homes.is_empty() {
+                        unformed.push(crate::design::UnformedProjection {
+                            ids: if ctx.container_only() {
+                                vec![id.clone()]
+                            } else {
+                                vec![
+                                    id.clone(),
+                                    crate::native::model_id(
+                                        "semantic-annotation",
+                                        object.id(),
+                                        "content",
+                                    ),
+                                ]
+                            },
+                            homes,
+                        });
+                    }
+                    continue;
                 }
             }
-            owned.sort_by(|left, right| {
-                match (
-                    source_order.get(left.id.as_str()),
-                    source_order.get(right.id.as_str()),
-                ) {
-                    (Some(left), Some(right)) => left.cmp(right),
-                    _ => (left.order, &left.id).cmp(&(right.order, &right.id)),
-                }
-            });
-            let mut references = BTreeMap::new();
-            let mut parameters = BTreeMap::new();
-            for property in &owned {
-                let name = property.name.clone();
-                if property.links().is_empty() {
-                    let literal_text = schema.text.is_some_and(|carrier| {
-                        !carrier.has_format_spec && carrier.property == property.name
+
+            let construct =
+                |actual_object: String| -> Result<SemanticAnnotationRecord, CodecError> {
+                    let schema = annotation_schema(kind);
+                    let source = by_owner
+                        .get(object.id().as_str())
+                        .map_or(&[][..], Vec::as_slice);
+                    let mut owned = Vec::new();
+                    owned.extend_from_slice(source);
+                    owned.sort_by(|left, right| {
+                        (left.order, &left.id).cmp(&(right.order, &right.id))
                     });
-                    if !literal_text {
-                        if let Some(value) = crate::attributes::semantic_text(property) {
-                            parameters.insert(name, value);
+                    let mut references = BTreeMap::new();
+                    let mut parameters = BTreeMap::new();
+                    for property in &owned {
+                        let name = property.name.clone();
+                        if property.links().is_empty() {
+                            let literal_text = schema.text.is_some_and(|carrier| {
+                                !carrier.has_format_spec && carrier.property == property.name
+                            });
+                            if !literal_text {
+                                if let Some(value) = crate::attributes::semantic_text(property) {
+                                    parameters.insert(name, value);
+                                }
+                            }
+                        } else {
+                            let mut links = Vec::new();
+                            for link in property.links() {
+                                links.push(link.clone());
+                            }
+                            references.insert(name, links);
                         }
                     }
-                } else {
-                    let mut links = Vec::new();
-                    for link in property.links() {
-                        links.push(link.clone());
-                    }
-                    references.insert(name, links);
-                }
-            }
-            let mut text = Vec::new();
-            if let Some(carrier) = schema.text {
-                for property in owned
-                    .iter()
-                    .filter(|property| property.name == carrier.property)
-                {
-                    match strict_text_values(ctx, property, carrier.type_name) {
-                        Ok(values) => {
-                            text.extend(values);
+                    let mut text = Vec::new();
+                    if let Some(carrier) = schema.text {
+                        for property in owned
+                            .iter()
+                            .filter(|property| property.name == carrier.property)
+                        {
+                            match strict_text_values(ctx, property, carrier.type_name) {
+                                Ok(values) => {
+                                    text.extend(values);
+                                }
+                                Err(CodecError::ResourceLimit(limit)) => {
+                                    return Err(CodecError::ResourceLimit(limit))
+                                }
+                                Err(_) => {}
+                            }
                         }
-                        Err(CodecError::ResourceLimit(limit)) => {
-                            return Err(CodecError::ResourceLimit(limit))
-                        }
-                        Err(_) => {}
                     }
-                }
-            }
-            let mut side_entries = Vec::new();
-            for property in &owned {
-                for name in property.side_entries() {
-                    side_entries.push(name.to_owned());
-                }
-            }
-            records.push(SemanticAnnotationRecord {
-                id: crate::native::native_id("annotation", object.name()),
-                object: object.id().to_owned(),
-                kind,
-                text,
-                references,
-                parameters,
-                side_entries,
-            });
+                    let mut side_entries = Vec::new();
+                    for property in &owned {
+                        for name in property.side_entries() {
+                            side_entries.push(name.to_owned());
+                        }
+                    }
+                    Ok(SemanticAnnotationRecord {
+                        id: id.clone(),
+                        object: actual_object,
+                        kind,
+                        text,
+                        references,
+                        parameters,
+                        side_entries,
+                    })
+                };
+            let record = match sources {
+                Some(sources) => sources
+                    .get(object.id().as_str())
+                    .ok_or_else(|| {
+                        CodecError::malformed("derived native record has no genuine object source")
+                    })?
+                    .record(ctx, &id, construct)?,
+                None => construct(object.id().to_owned())?,
+            };
+            records.push(record);
         }
     }
-    Ok(records)
+    Ok((records, unformed))
 }
 
 pub(crate) fn transfer_neutral(
@@ -126,6 +207,7 @@ pub(crate) fn transfer_neutral(
         );
     }
     for (order, record) in records.iter().enumerate() {
+        ctx.begin_projection(&record.object)?;
         let schema = annotation_schema(record.kind);
         let mut owned = Vec::new();
         owned.extend(
@@ -415,6 +497,16 @@ fn annotation_position(
                             "annotation position contains a non-finite coordinate".into(),
                         )
                     }),
+                _ if ctx.missing_value(
+                    sole_named_property("annotation", properties, x_name)?,
+                    x_name,
+                )? || ctx.missing_value(
+                    sole_named_property("annotation", properties, y_name)?,
+                    y_name,
+                )? =>
+                {
+                    Ok(None)
+                }
                 _ => Err(CodecError::malformed(format_args!(
                     "annotation position requires both {x_name} and {y_name}"
                 ))),
@@ -429,7 +521,7 @@ fn optional_scalar_property(
     name: &str,
     type_names: &[&str],
 ) -> Result<Option<f64>, CodecError> {
-    let Some(property) = typed_property(properties, name, type_names)? else {
+    let Some(property) = typed_property(ctx, properties, name, type_names)? else {
         return Ok(None);
     };
     let attributes = direct_value_attributes(ctx, property, "Float", &["value"])?;
@@ -451,7 +543,7 @@ fn optional_vector_property(
     name: &str,
     type_names: &[&str],
 ) -> Result<Option<[f64; 3]>, CodecError> {
-    let Some(property) = typed_property(properties, name, type_names)? else {
+    let Some(property) = typed_property(ctx, properties, name, type_names)? else {
         return Ok(None);
     };
     let attributes = direct_value_attributes(
@@ -484,7 +576,7 @@ fn string_property(
     name: &str,
     type_name: &str,
 ) -> Result<Option<String>, CodecError> {
-    let Some(property) = typed_property(properties, name, &[type_name])? else {
+    let Some(property) = typed_property(ctx, properties, name, &[type_name])? else {
         return Ok(None);
     };
     let attributes = direct_value_attributes(ctx, property, "String", &["value"])?;
@@ -501,11 +593,16 @@ fn string_property(
 }
 
 fn typed_property<'a>(
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&'a PropertyRecord],
     name: &str,
     type_names: &[&str],
 ) -> Result<Option<&'a PropertyRecord>, CodecError> {
-    let Some(property) = sole_named_property("annotation", properties, name)? else {
+    let property = sole_named_property("annotation", properties, name)?;
+    if ctx.missing_value(property, name)? {
+        return Ok(None);
+    }
+    let Some(property) = property else {
         return Ok(None);
     };
     if !type_names.contains(&property.type_name.as_str()) {
@@ -526,7 +623,8 @@ fn validate_text_carriers(
     let Some(carrier) = &schema.text else {
         return Ok(());
     };
-    if let Some(property) = typed_property(properties, carrier.property, &[carrier.type_name])? {
+    if let Some(property) = typed_property(ctx, properties, carrier.property, &[carrier.type_name])?
+    {
         strict_text_values(ctx, property, carrier.type_name)?;
     }
     Ok(())
@@ -597,6 +695,19 @@ fn strict_text_values(
         )));
     }
     if expected_type == "App::PropertyString" {
+        if let Some(value) = property.values().iter().find(|value| {
+            value.parent.is_none()
+                && value.tag == "String"
+                && !value.attributes.contains_key("value")
+        }) {
+            if let Some(text) = &value.text {
+                return Ok(if text.trim().is_empty() {
+                    Vec::new()
+                } else {
+                    vec![text.clone()]
+                });
+            }
+        }
         let attributes = direct_value_attributes(ctx, property, "String", &["value"])?;
         let value = attributes
             .into_iter()
@@ -949,18 +1060,118 @@ pub(crate) mod tests {
             ),
         ];
         for (case, document) in documents {
-            assert!(
-                matches!(
-                    FcstdCodec.decode(
-                        &mut Cursor::new(archive(&document)),
-                        &DecodeOptions::default(),
+            if matches!(
+                case,
+                "vector unsupported attribute" | "format duplicate attribute spellings"
+            ) {
+                assert!(
+                    matches!(
+                        FcstdCodec.decode(
+                            &mut Cursor::new(archive(&document)),
+                            &DecodeOptions::default()
+                        ),
+                        Err(cadmpeg_ir::DecodeFailure::Codec(
+                            cadmpeg_core::CodecError::Malformed(_)
+                        ))
                     ),
-                    Err(cadmpeg_ir::DecodeFailure::Codec(
-                        cadmpeg_core::CodecError::Malformed(_)
-                    ))
-                ),
+                    "{case}"
+                );
+                continue;
+            }
+            let result = FcstdCodec
+                .decode(
+                    &mut Cursor::new(archive(&document)),
+                    &DecodeOptions::default(),
+                )
+                .expect("#215 gives up the source-owned element and retains its peers");
+            assert!(
+                result
+                    .source_fidelity()
+                    .parts()
+                    .values()
+                    .any(|part| part.state()
+                        == &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}),
                 "{case}"
             );
+            let rows = result
+                .ir()
+                .native
+                .namespace("fcstd")
+                .unwrap()
+                .arena_as::<crate::native::SemanticAnnotationRecord>("annotations")
+                .unwrap_or_default();
+            if matches!(
+                case,
+                "nested string list child"
+                    | "string list count mismatch"
+                    | "string list uppercase attribute"
+                    | "string list wrong direct child"
+                    | "property significant text"
+                    | "string uppercase attribute"
+            ) {
+                assert!(
+                    rows.is_empty(),
+                    "missing required literal text cannot form an annotation: {case}"
+                );
+                assert!(result.ir().model.semantic_annotations.is_empty());
+                assert!(
+                    result
+                        .report()
+                        .losses
+                        .iter()
+                        .any(|loss| loss.code.local_code() == "record.unreadable"
+                            && loss
+                                .message
+                                .contains(if case == "string uppercase attribute" {
+                                    "fcstd:native:annotation#Rich"
+                                } else {
+                                    "fcstd:native:annotation#Note"
+                                })),
+                    "{case}"
+                );
+            } else {
+                assert_eq!(rows.len(), 1, "readable annotation remains: {case}");
+                assert_eq!(
+                    rows[0].text,
+                    [if case == "duplicate string list roots" {
+                        "ONE"
+                    } else {
+                        "NOTE"
+                    }]
+                );
+                let row = result.ir().model.semantic_annotations.first().unwrap();
+                if matches!(
+                    case,
+                    "vector wrapper" | "vector missing attribute" | "scalar uppercase attribute"
+                ) {
+                    assert!(row.position.is_none(), "no invented position: {case}");
+                } else {
+                    assert_eq!(
+                        row.position.unwrap().get(),
+                        [1.0, 2.0, 3.0],
+                        "first readable position remains: {case}"
+                    );
+                }
+            }
+            if case == "string uppercase attribute" {
+                let native = result.ir().native.namespace("fcstd").unwrap();
+                assert!(native
+                    .arena_as::<crate::native::AttachmentRecord>("attachments")
+                    .unwrap()
+                    .is_empty());
+                assert!(native
+                    .arena_as::<crate::native::joint::JointRecord>("joints")
+                    .unwrap()
+                    .is_empty());
+                assert!(
+                    result.report().losses.iter().all(|loss| !loss
+                        .message
+                        .contains("fcstd:native:attachment#Rich")
+                        && !loss.message.contains("fcstd:native:joint#Rich")),
+                    "an unavailable owner body does not invent unrelated optional producers"
+                );
+            }
+            assert_valid_document(result.ir());
         }
     }
 
@@ -1054,16 +1265,46 @@ pub(crate) mod tests {
 <Property name="Y" type="App::PropertyDistance"><Float value="20"/></Property>
 </Properties></Object></ObjectData></Document>"#,
         ];
-        for document in documents {
-            assert!(matches!(
-                FcstdCodec.decode(
+        for (index, document) in documents.into_iter().enumerate() {
+            let result = FcstdCodec
+                .decode(
                     &mut Cursor::new(archive(document)),
                     &DecodeOptions::default(),
-                ),
-                Err(cadmpeg_ir::DecodeFailure::Codec(
-                    cadmpeg_core::CodecError::Malformed(_)
-                ))
-            ));
+                )
+                .expect("only actual duplicate XML parts are refused");
+            let expected: &[(&str, &str)] = match index {
+                0 => &[("freecad.property_value", "<Float value=\"11\"/>")],
+                1 => &[
+                    ("freecad.property", "<Property name=\"X\" type=\"App::PropertyDistance\"><Float value=\"10\"/></Property>"),
+                    ("freecad.property", "<Property name=\"X\" type=\"App::PropertyDistance\"><Float value=\"11\"/></Property>"),
+                ],
+                2 => &[("freecad.property_value", "<String value=\"B\"/>")],
+                _ => unreachable!(),
+            };
+            crate::test_support::source_fidelity::assert_failed_xml_parts(
+                &result, document, expected,
+            );
+            let rows = result
+                .ir()
+                .native
+                .namespace("fcstd")
+                .unwrap()
+                .arena_as::<crate::native::SemanticAnnotationRecord>("annotations")
+                .unwrap();
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].parameters["Y"], "20.0");
+            if index == 1 {
+                assert!(!rows[0].parameters.contains_key("X"));
+            } else {
+                assert_eq!(rows[0].parameters["X"], "10.0");
+            }
+            if index < 2 {
+                assert_eq!(rows[0].text, ["NOTE"]);
+            } else {
+                assert_eq!(rows[0].parameters["FormatSpec"], "A");
+            }
+            assert_eq!(result.ir().model.semantic_annotations.len(), 1);
+            assert_valid_document(result.ir());
         }
     }
 

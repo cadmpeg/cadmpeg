@@ -18,6 +18,8 @@ fn drawing_direction_vector_refuses_nonfinite_components() {
         ("valueZ".into(), "0".into()),
     ]);
     let value = |attributes| crate::native::ValueRecord {
+        item_index: None,
+        link_index: None,
         parent: None,
         tag: "PropertyVector".into(),
         order: 0,
@@ -462,16 +464,48 @@ fn rejects_duplicate_drawing_carrier_properties_and_values() {
  <Property name="Scale" type="App::PropertyFloat"><Float value="1"/></Property>
 </Properties></Object></ObjectData></Document>"#,
     ];
-    for document in documents {
-        assert!(matches!(
-            FcstdCodec.decode(
+    for (index, document) in documents.into_iter().enumerate() {
+        let result = FcstdCodec
+            .decode(
                 &mut Cursor::new(archive(document)),
                 &DecodeOptions::default(),
-            ),
-            Err(cadmpeg_ir::DecodeFailure::Codec(
-                cadmpeg_core::CodecError::Malformed(_)
-            ))
-        ));
+            )
+            .expect("duplicate source records fail at their own parts");
+        let expected: &[(&str, &str)] = match index {
+            0 => &[("freecad.property_value", "<Float value=\"11\"/>")],
+            1 => &[
+                ("freecad.property", "<Property name=\"X\" type=\"App::PropertyDistance\"><Float value=\"10\"/></Property>"),
+                ("freecad.property", "<Property name=\"X\" type=\"App::PropertyDistance\"><Float value=\"11\"/></Property>"),
+            ],
+            2 => &[("freecad.property_value", "<PropertyVector valueX=\"1\" valueY=\"0\" valueZ=\"0\"/>")],
+            _ => unreachable!(),
+        };
+        crate::test_support::source_fidelity::assert_failed_xml_parts(&result, document, expected);
+        let rows = result
+            .ir()
+            .native
+            .namespace("fcstd")
+            .unwrap()
+            .arena_as::<crate::native::DrawingRecord>("drawings")
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].parameters["Scale"], "1.0");
+        if index == 1 {
+            assert!(!rows[0].parameters.contains_key("X"));
+            assert_eq!(rows[0].parameters["Y"], "20.0");
+            assert!(result.ir().model.drawings[0].position.is_none());
+        } else if index == 0 {
+            assert_eq!(
+                result.ir().model.drawings[0].position.unwrap().get(),
+                [10.0, 20.0]
+            );
+        } else {
+            assert_eq!(
+                result.ir().model.drawings[0].direction.unwrap().get(),
+                [0.0, 0.0, 1.0]
+            );
+        }
+        assert_valid_document(result.ir());
     }
 }
 
@@ -494,16 +528,42 @@ fn rejects_noncanonical_drawing_scalar_attributes() {
  <Property name="Rotation" type="App::PropertyAngle"><Float value="15.5" unit="deg"/></Property>
 </Properties></Object></ObjectData></Document>"#,
     ];
-    for document in documents {
-        assert!(matches!(
-            FcstdCodec.decode(
-                &mut Cursor::new(archive(document)),
-                &DecodeOptions::default(),
-            ),
-            Err(cadmpeg_ir::DecodeFailure::Codec(
-                cadmpeg_core::CodecError::Malformed(_)
-            ))
-        ));
+    for (index, document) in documents.into_iter().enumerate() {
+        if index == 0 {
+            let result = FcstdCodec
+                .decode(
+                    &mut Cursor::new(archive(document)),
+                    &DecodeOptions::default(),
+                )
+                .expect("invalid known Float is isolated at its own value part");
+            let rows = result
+                .ir()
+                .native
+                .namespace("fcstd")
+                .unwrap()
+                .arena_as::<crate::native::DrawingRecord>("drawings")
+                .unwrap();
+            assert_eq!(rows.len(), 1);
+            assert!(!rows[0].parameters.contains_key("X"));
+            assert!(result.ir().model.drawings[0].position.is_none());
+            assert!(result
+                .source_fidelity()
+                .parts()
+                .values()
+                .any(|part| part.level().as_str() == "freecad.property_value"
+                    && part.state() == &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}));
+            assert_valid_document(result.ir());
+        } else {
+            assert!(matches!(
+                FcstdCodec.decode(
+                    &mut Cursor::new(archive(document)),
+                    &DecodeOptions::default()
+                ),
+                Err(cadmpeg_ir::DecodeFailure::Codec(
+                    cadmpeg_core::CodecError::Malformed(_)
+                ))
+            ));
+        }
     }
 }
 
@@ -643,16 +703,42 @@ fn rejects_invalid_drawing_numeric_admission() {
 <Property name="Direction" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="0"/></Property>
 </Properties></Object></ObjectData></Document>"#,
     ];
-    for document in documents {
-        assert!(matches!(
-            FcstdCodec.decode(
-                &mut Cursor::new(archive(document)),
-                &DecodeOptions::default(),
-            ),
-            Err(cadmpeg_ir::DecodeFailure::Codec(
-                cadmpeg_core::CodecError::Malformed(_)
-            ))
-        ));
+    for (index, document) in documents.into_iter().enumerate() {
+        if index == 1 {
+            let result = FcstdCodec
+                .decode(
+                    &mut Cursor::new(archive(document)),
+                    &DecodeOptions::default(),
+                )
+                .expect("nonfinite Float gives up its value part");
+            let rows = result
+                .ir()
+                .native
+                .namespace("fcstd")
+                .unwrap()
+                .arena_as::<crate::native::DrawingRecord>("drawings")
+                .unwrap();
+            assert_eq!(rows.len(), 1);
+            assert!(!rows[0].parameters.contains_key("X"));
+            assert!(result.ir().model.drawings[0].position.is_none());
+            assert!(result
+                .source_fidelity()
+                .parts()
+                .values()
+                .any(|part| part.level().as_str() == "freecad.property_value"
+                    && part.state() == &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}));
+            assert_valid_document(result.ir());
+        } else {
+            assert!(matches!(
+                FcstdCodec.decode(
+                    &mut Cursor::new(archive(document)),
+                    &DecodeOptions::default()
+                ),
+                Err(cadmpeg_ir::DecodeFailure::Codec(
+                    cadmpeg_core::CodecError::Malformed(_)
+                ))
+            ));
+        }
     }
 }
 

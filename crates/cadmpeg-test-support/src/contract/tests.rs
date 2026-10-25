@@ -405,3 +405,33 @@ fn geometry_projection_removes_only_attributes_owned_by_design_entities() {
         neutral_view(&metadata_edit, &[ArenaClass::Design])
     );
 }
+
+#[test]
+fn geometry_projection_checks_generic_record_target_classes_without_dropping_model_attributes() {
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+    use cadmpeg_ir::{ids::AttributeId, ArenaName};
+    let mut ir = unit_cube().unwrap();
+    for (index, arena) in ["features", "parameters", "sketches", "bodies"]
+        .into_iter()
+        .enumerate()
+    {
+        ir.model.attributes.push(SourceAttribute {
+            native_ref: None,
+            id: AttributeId::mint(format!("synthetic:test:attribute#record-{index}")).unwrap(),
+            target: AttributeTarget::Record {
+                arena: ArenaName::parse(arena).unwrap(),
+                id: ir.model.bodies[0].id.to_string(),
+            },
+            name: arena.into(),
+            values: vec![AttributeValue::Integer(1)],
+        });
+    }
+    let projected = neutral_view(&ir, &[ArenaClass::Design]);
+    assert_eq!(
+        projected["model"]["attributes"].as_array().unwrap().len(),
+        1
+    );
+    assert_eq!(projected["model"]["attributes"][0]["name"], "bodies");
+    ir.model.attributes[3].values = vec![AttributeValue::Integer(2)];
+    assert_ne!(projected, neutral_view(&ir, &[ArenaClass::Design]));
+}

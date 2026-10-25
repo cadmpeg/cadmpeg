@@ -2,7 +2,7 @@
 //! Feature expression bindings and authored `App::VarSet` global parameters.
 
 mod controls;
-mod expressions;
+pub(in crate::writer) mod expressions;
 mod names;
 
 use super::xml::{self, Object};
@@ -263,6 +263,7 @@ pub(super) fn write(
     }
     controls::write(ir, objects, names, &mut expressions, losses)?;
     names::write(ir, objects, names)?;
-    expressions::write(objects, expressions)?;
+    expressions::append_attributes(ir, names, &mut expressions, losses)?;
+    expressions::write(ir, names, objects, expressions)?;
     Ok(())
 }

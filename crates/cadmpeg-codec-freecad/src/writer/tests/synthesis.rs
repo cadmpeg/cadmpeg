@@ -5,7 +5,10 @@ use crate::test_support::test_archive::{CORE_DESIGN_PRODUCT, GEOMETRY};
 use crate::FcstdCodec;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::{Codec, DecodeOptions};
+use cadmpeg_test_support::contract::assert_written_arenas_agree;
 use std::io::Cursor;
+
+mod geometry_counts;
 
 fn synthesized(source: &[u8], target: &str) -> cadmpeg_ir::codec::DecodeResult {
     let decoded = FcstdCodec
@@ -27,7 +30,8 @@ fn synthesized(source: &[u8], target: &str) -> cadmpeg_ir::codec::DecodeResult {
     let output = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
-    cadmpeg_test_support::contract::assert_written_arenas_agree(&report, decoded.ir(), output.ir());
+    geometry_counts::diagnose(decoded.ir(), output.ir());
+    assert_written_arenas_agree(&report, decoded.ir(), output.ir());
     crate::test_support::test_archive::assert_valid_document(output.ir());
     assert!(crate::test_support::validate_native(output.ir()).is_empty());
     output
@@ -226,7 +230,7 @@ fn effective_appearance_preserves_independent_body_style() {
         .losses
         .iter()
         .any(|loss| loss.code.local_code() == "appearance.not-transferred"));
-    cadmpeg_test_support::contract::assert_written_arenas_agree(&report, &ir, output.ir());
+    assert_written_arenas_agree(&report, &ir, output.ir());
 }
 
 #[test]
@@ -288,7 +292,7 @@ fn standalone_authored_product_preserves_absent_label_and_has_no_invented_occurr
     assert_eq!(output.ir().model.product_definitions[0].source_name, None);
     assert_eq!(output.ir().model.product_definitions[0].label, None);
     assert!(output.ir().model.occurrences.is_empty());
-    cadmpeg_test_support::contract::assert_written_arenas_agree(&report, &ir, output.ir());
+    assert_written_arenas_agree(&report, &ir, output.ir());
 }
 
 #[test]
@@ -571,7 +575,7 @@ fn independent_linked_prototype_placement_is_baked_and_retains_its_decomposition
             .unwrap()
             .expect("authored placement")
     );
-    cadmpeg_test_support::contract::assert_written_arenas_agree(&report, &ir, output.ir());
+    assert_written_arenas_agree(&report, &ir, output.ir());
 }
 
 #[test]
@@ -760,7 +764,7 @@ fn exact_editor_feature_expression_constraint_and_appearance_edits_survive() {
                 "{arena}"
             );
         }
-        cadmpeg_test_support::contract::assert_written_arenas_agree(&report, &edited, output.ir());
+        assert_written_arenas_agree(&report, &edited, output.ir());
     }
 }
 
@@ -809,5 +813,137 @@ fn product_metadata_does_not_replace_a_typed_vendor_construction_object() {
         .all(|property| property.name != "ScaleVector"));
     assert!(output.ir().model.features.is_empty());
     assert_eq!(output.ir().model.product_definitions.len(), 2);
-    cadmpeg_test_support::contract::assert_written_arenas_agree(&report, decoded.ir(), output.ir());
+    assert_written_arenas_agree(&report, decoded.ir(), output.ir());
+}
+
+#[test]
+fn partial_link_list_synthesis_reports_missing_slot_and_preserves_authored_null() {
+    for (middle, damaged, count) in [
+        ("<Link Value='unreadable'/>", true, 2),
+        ("<Link value=''/>", false, 3),
+    ] {
+        let xml = format!("<Document SchemaVersion='4'><Properties Count='1'><Property name='CustomLinks' type='App::PropertyLinkList'><LinkList count='3'><Link value='A'/>{middle}<Link value='B'/></LinkList></Property></Properties><Objects Count='2'><Object type='App::DocumentObjectGroup' name='A'/><Object type='App::DocumentObjectGroup' name='B'/></Objects><ObjectData Count='2'><Object name='A'><Properties Count='0'/></Object><Object name='B'><Properties Count='0'/></Object></ObjectData></Document>");
+        let bytes =
+            crate::test_support::test_archive::archive_entries(&[("Document.xml", xml.as_bytes())]);
+        let decoded = FcstdCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        let property = decoded
+            .ir()
+            .native
+            .namespace("fcstd")
+            .unwrap()
+            .arena_as::<crate::native::PropertyRecord>("properties")
+            .unwrap()
+            .into_iter()
+            .find(|property| property.name == "CustomLinks")
+            .unwrap();
+        assert_eq!(property.links().len(), 3);
+        assert!(property.links()[1].is_none());
+        let wire = serde_json::to_value(&property).unwrap();
+        assert_eq!(wire["values"][2].is_null(), damaged);
+        let plan = FcstdCodec
+            .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
+            .unwrap();
+        let omissions: Vec<_> = plan
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| {
+                loss.code
+                    == cadmpeg_ir::codec::write::ExportLossCode::SourceUndecodedOmitted
+                        .note("")
+                        .code
+                    && loss.message.contains(&property.id)
+            })
+            .collect();
+        assert_eq!(omissions.len(), usize::from(damaged));
+        if damaged {
+            assert_eq!(omissions[0].severity, cadmpeg_ir::report::Severity::Warning);
+            assert!(omissions[0].message.contains("[2]"));
+        }
+        let mut output = Vec::new();
+        plan.write_to(&mut output).unwrap();
+        let output = FcstdCodec
+            .decode(&mut Cursor::new(output), &DecodeOptions::default())
+            .unwrap();
+        let emitted = output
+            .ir()
+            .native
+            .namespace("fcstd")
+            .unwrap()
+            .arena_as::<crate::native::PropertyRecord>("properties")
+            .unwrap()
+            .into_iter()
+            .find(|property| property.name == "CustomLinks")
+            .unwrap();
+        assert_eq!(emitted.links().len(), count);
+        assert_eq!(emitted.values()[0].attributes["count"], count.to_string());
+        assert_eq!(
+            emitted.links().iter().filter(|link| link.is_none()).count(),
+            usize::from(!damaged)
+        );
+    }
+}
+
+#[test]
+fn partial_scalar_neutral_projection_reports_one_omission_without_losing_the_scalar() {
+    let xml = "<Document SchemaVersion='4'><Properties Count='1'><Property name='KeptScalar' type='App::PropertyFloat'><Float value='2.5'><Float value='999'/></Float></Property></Properties><Objects Count='0'/><ObjectData Count='0'/></Document>";
+    let bytes =
+        crate::test_support::test_archive::archive_entries(&[("Document.xml", xml.as_bytes())]);
+    let decoded = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let properties = decoded
+        .ir()
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap();
+    let property = properties
+        .iter()
+        .find(|property| property.name == "KeptScalar")
+        .unwrap();
+    assert!(serde_json::to_value(property).unwrap()["values"][1].is_null());
+    assert!(decoded
+        .ir()
+        .model
+        .attributes
+        .iter()
+        .any(|attribute| attribute.native_ref.as_deref() == Some(property.id.as_str())));
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
+        .unwrap();
+    let omissions: Vec<_> = plan
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code
+                == cadmpeg_ir::codec::write::ExportLossCode::SourceUndecodedOmitted
+                    .note("")
+                    .code
+                && loss.message.contains(&property.id)
+        })
+        .collect();
+    assert_eq!(omissions.len(), 1);
+    assert_eq!(omissions[0].severity, cadmpeg_ir::report::Severity::Warning);
+    let mut output = Vec::new();
+    plan.write_to(&mut output).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .unwrap();
+    let emitted = output
+        .ir()
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap()
+        .into_iter()
+        .find(|property| property.name == "KeptScalar")
+        .unwrap();
+    assert_eq!(emitted.values().len(), 1);
+    assert_eq!(emitted.values()[0].attributes["value"], "2.5");
 }

@@ -129,8 +129,11 @@ fn property_native_and_neutral_values_exist_before_later_graph_recovery() {
     let actual = capture.reads().get(capture.stream()).unwrap();
     let start = document.find(GOOD).unwrap();
     let expected = [
+        "name",
         "Good",
+        "type",
         "App::PropertyString",
+        "String",
         "value",
         "A&amp;B",
         "extra",
@@ -138,7 +141,12 @@ fn property_native_and_neutral_values_exist_before_later_graph_recovery() {
     ]
     .into_iter()
     .map(|spelling| {
-        let at = start + GOOD.find(spelling).unwrap();
+        let local = if spelling == "String" {
+            GOOD.find("<String").unwrap() + 1
+        } else {
+            GOOD.find(spelling).unwrap()
+        };
+        let at = start + local;
         u64::try_from(at).unwrap()..u64::try_from(at + spelling.len()).unwrap()
     })
     .collect::<Vec<_>>();
@@ -203,10 +211,9 @@ fn public_decode_keeps_the_good_property_attribute_and_unrelated_integer_once() 
             .collect::<Vec<_>>(),
         ["Bad", "Good", "Other"]
     );
-    assert!(properties.iter().all(|property| !matches!(
-        property.body,
-        Some(crate::native::PropertyBody::Unreadable(_))
-    )));
+    assert!(properties
+        .iter()
+        .all(|property| !matches!(property.body, None)));
     assert_eq!(
         native
             .arena_as::<crate::native::EntryRecord>("entries")
@@ -307,15 +314,13 @@ fn an_archive_parent_failure_discards_already_born_property_native_and_neutral_r
             .as_str(),
         "zip.archive"
     );
-    assert!(decoded
-        .source_fidelity()
-        .parts()
-        .values()
-        .any(|part| part.level().as_str() == "freecad.property"
-            && part.state()
-                == &PartState::Covered {
-                    by: unknown.id.clone()
-                }));
+    assert!(decoded.source_fidelity().parts().values().all(|part| part
+        .level()
+        .as_str()
+        .split_once('.')
+        .unwrap()
+        .0
+        != "freecad"));
     let property_id = crate::native::native_child_id(
         "property",
         &crate::native::native_id("document", "0"),
@@ -403,8 +408,23 @@ fn unrecognized_dynamic_flag_spelling_is_absent_without_read_credit() {
     assert_eq!(dynamic.hidden, None);
     let layout = &decoded.source_fidelity().record_layout()[property.id.as_str()];
     let reads = &layout.reads()[layout.stream()];
-    let expected = ["Flags", "App::PropertyString", "Readouts", "TrUe", "kept"].map(|value| {
-        let at = xml.find(value).unwrap();
+    let mut from = 0;
+    let expected = [
+        "name",
+        "Flags",
+        "type",
+        "App::PropertyString",
+        "group",
+        "Readouts",
+        "ro",
+        "TrUe",
+        "String",
+        "value",
+        "kept",
+    ]
+    .map(|value| {
+        let at = from + xml[from..].find(value).unwrap();
+        from = at + value.len();
         u64::try_from(at).unwrap()..u64::try_from(at + value.len()).unwrap()
     });
     assert_eq!(reads, &expected);
@@ -415,11 +435,7 @@ fn unrecognized_dynamic_flag_spelling_is_absent_without_read_credit() {
             .iter()
             .all(|read| read.end <= range.start || range.end <= read.start));
     }
-    assert!(!decoded
-        .source_fidelity()
-        .parts()
-        .values()
-        .any(|part| part.level().as_str() == "freecad.property"));
+    crate::test_support::source_fidelity::assert_single_property_part(&decoded, xml);
 }
 
 #[test]
@@ -523,9 +539,5 @@ fn unsupported_cdata_text_stays_on_the_existing_native_producer_without_a_fake_p
     };
     assert_eq!(property.values()[0].text.as_deref(), Some("actual text"));
     assert_eq!(property.values()[0].attributes["value"], "kept");
-    assert!(!decoded
-        .source_fidelity()
-        .parts()
-        .values()
-        .any(|part| part.level().as_str() == "freecad.property"));
+    crate::test_support::source_fidelity::assert_single_property_part(&decoded, xml);
 }

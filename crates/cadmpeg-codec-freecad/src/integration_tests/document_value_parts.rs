@@ -214,7 +214,15 @@ fn failed_value_reads_rollback_but_header_and_changed_peer_reads_survive_nonzero
             .iter()
             .all(|read| read.end <= child_start || read.start >= child_end));
         let mut from = 0;
-        let expected_bad = ["Bad", "App::PropertyIntegerConstraint", "Custom"].map(|text| {
+        let expected_bad = [
+            "name",
+            "Bad",
+            "type",
+            "App::PropertyIntegerConstraint",
+            "group",
+            "Custom",
+        ]
+        .map(|text| {
             let at = from + xml[from..].find(text).unwrap();
             from = at + text.len();
             origin.offset() + u64::try_from(at).unwrap()
@@ -228,8 +236,11 @@ fn failed_value_reads_rollback_but_header_and_changed_peer_reads_survive_nonzero
         let base = xml.find(&good).unwrap();
         let mut from = 0;
         let expected_good = [
+            "name",
             "Good",
+            "type",
             "App::PropertyIntegerConstraint",
+            "Integer",
             "value",
             raw,
             "extra",

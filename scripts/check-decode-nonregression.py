@@ -240,6 +240,32 @@ def native_differences(before: Any, after: Any, path: JsonPath = ()) -> list[tup
     return [] if values_agree(before, after) else [(path, 'native structure or value changed')]
 
 
+def expand_freecad_polygons(record: dict, arenas: Mapping, root: JsonPath,
+                           findings: list[Finding]) -> dict:
+    """Resolve only the two #224 ShapeSet lists using actual head records."""
+    expanded = dict(record)
+    for carrier in ('text', 'binary'):
+        facts = record.get(carrier)
+        if not isinstance(facts, dict):
+            continue
+        expanded[carrier] = dict(facts)
+        for arena in ('polygons3d', 'polygons_on_triangulations'):
+            references = facts.get(arena)
+            if not isinstance(references, list):
+                continue
+            rows = index_records(arenas.get(arena, []), ('native', 'fcstd', arena), findings)
+            values = []
+            for index, identity in enumerate(references):
+                if not isinstance(identity, str) or identity not in rows:
+                    findings.append(Finding('polygon-reference', root + (carrier, arena, str(index)),
+                                            'head polygon id names no record'))
+                    values.append(identity)
+                    continue
+                values.append({key: value for key, value in rows[identity].items() if key != 'id'})
+            expanded[carrier][arena] = values
+    return expanded
+
+
 def compare_native(before: Mapping, after: Mapping, evidence: Evidence) -> list[Finding]:
     findings: list[Finding] = []
     for namespace, arenas in before.items():
@@ -267,7 +293,11 @@ def compare_native(before: Mapping, after: Mapping, evidence: Evidence) -> list[
                         findings.append(Finding('layout-value-preservation', root + (identity,) + move.field_path, 'base moved value is absent or unequal in record_layout pointers'))
                     else:
                         witnessed.add(move.field_path)
-                for path, message in native_differences(record, new[identity]):
+                head = new[identity]
+                if (namespace, arena) == ('fcstd', 'shape_payloads'):
+                    head = expand_freecad_polygons(head, after.get(namespace, {}),
+                                                   root + (identity,), findings)
+                for path, message in native_differences(record, head):
                     if any(prefix(path, moved) for moved in witnessed):
                         continue
                     failure = path in FAILURE_FIELD_PATHS.get((namespace, arena), ())

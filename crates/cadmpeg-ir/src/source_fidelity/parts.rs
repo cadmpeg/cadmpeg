@@ -20,8 +20,8 @@ mod levels;
 mod rescope;
 
 pub use helper::{
-    CapturedRecordLayout, DecodeParts, FinalizedPartOutput, ParserPartOutput,
-    PartDependencyPruning, PartOutput, PrunedPartCaptures,
+    CapturedRecordLayout, DecodeParts, FinalizedFailureRegistry, FinalizedPartOutput, GivenUpHome,
+    ParserPartOutput, PartDependencyPruning, PartOutput, PartParent, PrunedPartCaptures,
 };
 pub use rescope::PartIdentityMap;
 
@@ -89,6 +89,7 @@ impl JsonSchema for PartLevel {
 pub struct PartSpec {
     level: PartLevel,
     framing_bytes: Vec<Range<u64>>,
+    parent: Option<PartParent>,
 }
 impl PartSpec {
     /// Bind the table level and exact framing intervals.
@@ -97,7 +98,14 @@ impl PartSpec {
         Self {
             level,
             framing_bytes,
+            parent: None,
         }
+    }
+    /// Bind a genuine previously decoded source parent before this part runs.
+    #[must_use]
+    pub fn with_parent(mut self, parent: &PartParent) -> Self {
+        self.parent = Some(parent.clone());
+        self
     }
     pub(super) fn validate(&self, extent: View<'_>) -> Result<(), CodecError> {
         let start = cadmpeg_core::decode::u64_from_index(extent.start());

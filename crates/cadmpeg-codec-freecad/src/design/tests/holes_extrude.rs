@@ -7,7 +7,7 @@ use crate::FcstdCodec;
 use cadmpeg_ir::{
     features::{
         BooleanOp, ExtrudeExtent, ExtrudeSide, ExtrusionDirectionSource, FeatureDefinition,
-        FeatureOperation, InnerWireTaper, LinearTermination, PathRef,
+        FeatureOperation, InnerWireTaper, LinearTermination, ParameterValue, PathRef,
     },
     scalar::Length,
 };
@@ -1025,13 +1025,27 @@ fn derives_extrusion_direction_from_a_non_sketch_profile_frame() {
             && direction.y.abs() < 1.0e-12
             && direction.z.abs() < 1.0e-12
     ));
+    let profile = result
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Profile"))
+        .expect("native profile feature");
+    assert!(matches!(profile.definition().operation(),
+        FeatureOperation::Native { kind, .. } if kind.as_str() == "Part::Part2DObjectPython"));
+    assert_eq!(
+        profile.native_ref.as_deref(),
+        Some(crate::native::native_id("object", "Profile").as_str())
+    );
+    assert_eq!(result.ir().model.features.len(), 2);
     assert_eq!(result.report().losses.len(), 1);
     assert!(result
         .report()
         .losses
         .iter()
         .all(
-            |loss| loss.code.local_code() == "feature.object-unprojected"
+            |loss| loss.code.local_code() == "feature.native-kind-retained"
                 && loss.severity == cadmpeg_ir::report::Severity::Blocking
                 && loss.message.contains("Profile")
         ));
@@ -1064,16 +1078,28 @@ fn refuses_malformed_non_sketch_profile_frame_before_design_transfer() {
  <Object name="Profile"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0"/></Property></Properties></Object>
  <Object name="Pocket"><Properties Count="3"><Property name="Profile" type="App::PropertyLinkSub"><LinkSub value="Profile" count="0"/></Property><Property name="Length" type="App::PropertyLength"><Float value="5"/></Property><Property name="Type" type="App::PropertyEnumeration"><Integer value="0"/></Property></Properties></Object>
 </ObjectData></Document>"#;
-    let error = FcstdCodec
+    let result = FcstdCodec
         .decode(
             &mut Cursor::new(archive(document)),
             &DecodeOptions::default(),
         )
-        .expect_err("malformed non-sketch profile placement");
+        .expect("#215 gives up only the malformed profile placement");
+    super::projection_assertions::assert_native_projection_from_failed_control(
+        &result,
+        "Profile",
+        "Placement",
+    );
     assert!(matches!(
-        error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+        definition(&result, "Pocket"),
+        FeatureDefinition::Operation(FeatureOperation::Native { kind, .. })
+        if kind.as_str() == "PartDesign::Pocket"
     ));
+    assert!(result.ir().model.parameters.iter().any(|parameter| {
+        parameter.name == "Length"
+            && parameter.value == Some(ParameterValue::Length(Length::new(5.0).unwrap()))
+    }));
+    super::projection_assertions::assert_one_failed_part(&result, "freecad.property_value");
+    assert_valid_document(result.ir());
 }
 
 #[test]
@@ -1516,10 +1542,30 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_selectors() {
                     &DecodeOptions::default(),
                 )
                 .expect("malformed extrusion selector");
-            assert!(matches!(
-                pad_definition(&result),
-                FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) if kind.as_str() == "PartDesign::Pad"
-            ));
+            if value.contains("bad") || value.starts_with("<Wrapper>") {
+                super::projection_assertions::assert_native_projection_from_failed_control(
+                    &result, "Pad", target,
+                );
+                continue;
+            }
+            let duplicate_root = value.contains("/><Integer");
+            if duplicate_root {
+                super::projection_assertions::assert_failed_value(&result, "Pad", target);
+            }
+            if duplicate_root && target == "Type" {
+                assert!(matches!(
+                    pad_definition(&result),
+                    FeatureDefinition::Operation(FeatureOperation::Extrude {
+                        extent: ExtrudeExtent::TwoSided { .. },
+                        ..
+                    })
+                ));
+            } else {
+                assert!(matches!(
+                    pad_definition(&result),
+                    FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) if kind.as_str() == "PartDesign::Pad"
+                ));
+            }
             assert_valid_document(result.ir());
         }
     }

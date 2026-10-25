@@ -250,8 +250,6 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-freecad`  | `src/design.rs`                                    | `MAX_SKETCH_RECORDS`                      | `1_000_000`                                             | 2    | Declared sketch, spreadsheet, dimension and record counts (excess is `Malformed`); spline pole, knot and multiplicity counts, binary point and value lists checked with `View::counted`, and pattern occurrence counts (excess returns `None` and the item is not built).    |
 | `cadmpeg-codec-freecad`  | `src/design.rs`                                    | `MAX_PROFILE_ENDPOINT_CANDIDATES`         | `1 << 24`                                               | 4    | Per-sketch `WorkBudget` for the endpoint candidates sketch profile chaining examines. Exhaustion keeps the sketch, its entities and constraints, with no profiles, and reports `sketch.profile-matching-bounded`.                                                            |
 | `cadmpeg-codec-freecad`  | `src/product.rs`                                   | `MAX_LINK_ARRAY_ELEMENTS`                 | `1_000_000`                                             | 2    | Stated or inferred element count of one link array. Excess is `Malformed`. The link occurrences the arrays project are admitted against `max_entities` before any is built.                                                                                                  |
-| `cadmpeg-codec-freecad`  | `src/persistence.rs`                               | `MAX_OBJECTS`                             | `1_000_000`                                             | 2    | Object elements in `Document.xml`, counted in the parsed tree. Excess returns `NotImplemented`. Entities are charged separately in `container.rs`.                                                                                                                           |
-| `cadmpeg-codec-freecad`  | `src/persistence.rs`                               | `MAX_PROPERTY_VALUE_XML_BYTES`            | `16 * 1024 * 1024`                                      | 2    | Total of the overlapping value-XML ranges one property would copy. Excess keeps the exact XML, builds no value records and reports `PersistencePayloadUnresolved`.                                                                                                           |
 | `cadmpeg-codec-freecad`  | `src/application_geometry.rs`                      | `MAX_ELEMENTS`                            | `1_000_000`                                             | 2    | Mesh point, facet and point-cloud counts. Excess is `Malformed`; the population is then checked against remaining payload bytes.                                                                                                                                             |
 | `cadmpeg-codec-freecad`  | `src/brep.rs`                                      | `MAX_GEOMETRY_NESTING_DEPTH`              | `64`                                                    | 2    | Inline basis nesting of text and binary B-rep curves and surfaces, in the parsers and the `Nested*::try_new` carriers. Excess is `Malformed`.                                                                                                                                |
 | `cadmpeg-codec-freecad`  | `src/element_map.rs`                               | `MAX_TABLE_ENTRIES`                       | `10_000_000`                                            | 2    | String-table header count and naming record count. Excess is `Malformed`; no remaining-bytes check at these sites.                                                                                                                                                           |
@@ -454,16 +452,16 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 223.
+Production `MAX_*` constants: 221.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 30    |
-| 2    | Per-input bound            | 69    |
+| 2    | Per-input bound            | 67    |
 | 3    | Session ceiling            | 0     |
 | 4    | Local work cap             | 103   |
 | N    | Not a decode bound         | 21    |
-|      | Total                      | 223   |
+|      | Total                      | 221   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -471,7 +469,7 @@ The six `ResourceLimits` fields are the session ceilings and are not
 By crate: `cadmpeg-core` 3, `cadmpeg-ir` 10, `cadmpeg-asm` 4,
 `cadmpeg-protein` 3, `cadmpeg` 2, `cadmpeg-codec-step` 8,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 3,
-`cadmpeg-codec-freecad` 11, `cadmpeg-codec-rhino` 29, `cadmpeg-codec-f3d` 18,
+`cadmpeg-codec-freecad` 9, `cadmpeg-codec-rhino` 29, `cadmpeg-codec-f3d` 18,
 `cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 13,
 and `cadmpeg-codec-catia` 57.
 

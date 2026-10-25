@@ -61,6 +61,23 @@ pub(crate) fn plan(
                 || cadmpeg_core::convert::f32_from_f64(normal.y).map(f64::from) != Some(normal.y)
                 || cadmpeg_core::convert::f32_from_f64(normal.z).map(f64::from) != Some(normal.z)
         });
+    for attribute in &input.ir.model.attributes {
+        if attribute.values.iter().any(|value| {
+            matches!(
+                value,
+                cadmpeg_ir::attributes::AttributeValue::Map(_)
+                    | cadmpeg_ir::attributes::AttributeValue::Expression(_)
+                    | cadmpeg_ir::attributes::AttributeValue::SubReference { .. }
+                    | cadmpeg_ir::attributes::AttributeValue::ExternalReference { .. }
+                    | cadmpeg_ir::attributes::AttributeValue::NumericList(_)
+            )
+        }) {
+            losses.push(RhinoLossCode::WriterAttributesOmitted.note(format!(
+                "attribute {} ({}) has no representable Rhino attribute value",
+                attribute.id, attribute.name
+            )));
+        }
+    }
     let model = &input.ir.model;
     for (name, count, code) in [
         (

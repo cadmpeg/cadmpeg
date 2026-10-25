@@ -11,7 +11,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::Color;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-fn packed(color: Color) -> u32 {
+pub(in crate::writer) fn packed(color: Color) -> u32 {
     let byte = |value: f32| -> u32 {
         u32::from(
             (0_u8..=255)
@@ -26,24 +26,30 @@ fn packed(color: Color) -> u32 {
     byte(color.r()) << 24 | byte(color.g()) << 16 | byte(color.b()) << 8 | byte(color.a())
 }
 
-fn object_color(provider: &mut Provider, color: Color) {
-    provider.set(
-        "ShapeColor",
-        "App::PropertyColor",
-        "PropertyColor",
-        packed(color),
-    );
-    provider.set(
-        "Transparency",
-        "App::PropertyPercent",
-        "Integer",
-        ((1.0 - color.a()) * 100.0).round(),
-    );
+fn object_color(provider: &mut Provider, color: Color) -> Result<(), CodecError> {
+    if provider.native.contains_key("ShapeColor") {
+        provider.scalar_override("ShapeColor", &packed(color).to_string())?;
+    } else {
+        provider.set(
+            "ShapeColor",
+            "App::PropertyColor",
+            "PropertyColor",
+            packed(color),
+        );
+    }
+    if provider.native.contains_key("Transparency") {
+        provider.scalar_override(
+            "Transparency",
+            &((1.0 - color.a()) * 100.0).round().to_string(),
+        )?;
+    }
+    Ok(())
 }
 
 fn material(
     provider: &mut Provider,
     appearance: &cadmpeg_ir::appearance::Appearance,
+    losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     let scalar = |name: &str| {
         appearance
@@ -52,57 +58,90 @@ fn material(
             .find(|(key, _)| key.as_str() == name)
             .map(|(_, value)| value.get())
     };
-    let shininess = scalar("shininess");
-    let transparency = scalar("material_transparency");
     if let Some(original) = provider.native.get("ShapeMaterial") {
         let mut property = original.clone();
+        let owns_diffuse = appearance
+            .native_ref
+            .as_deref()
+            .is_none_or(|id| id == original.id);
         for value in &mut property.values {
             if value.tag == "PropertyMaterial" {
-                if let Some(color) = appearance.base_color {
-                    value
-                        .attributes
-                        .insert("diffuseColor".into(), packed(color).to_string());
-                } else {
-                    value.attributes.remove("diffuseColor");
+                if owns_diffuse {
+                    if let Some(color) = appearance.base_color {
+                        value
+                            .attributes
+                            .insert("diffuseColor".into(), packed(color).to_string());
+                    }
                 }
-                if let Some(number) = shininess {
-                    value
-                        .attributes
-                        .insert("shininess".into(), number.to_string());
-                }
-                if let Some(number) = transparency {
-                    value
-                        .attributes
-                        .insert("transparency".into(), number.to_string());
+                for (source, target) in [
+                    ("shininess", "shininess"),
+                    ("material_transparency", "transparency"),
+                ] {
+                    if let Some(number) = scalar(source) {
+                        value.attributes.insert(target.into(), number.to_string());
+                    }
                 }
             }
         }
         if let Some(value) = native_property(&property)? {
             provider.properties.insert("ShapeMaterial".into(), value);
         }
-    } else {
-        let mut attributes = vec![
-            ("ambientColor", "0".into()),
-            ("specularColor", "0".into()),
-            ("emissiveColor", "0".into()),
+    } else if appearance
+        .properties
+        .iter()
+        .any(|(key, _)| matches!(key.as_str(), "shininess" | "material_transparency"))
+    {
+        // A new material needs all six real fields. Missing ambient/specular/
+        // emissive values are not manufactured from a color-only appearance.
+        let fields = [
+            "ambient_packed",
+            "specular_packed",
+            "emissive_packed",
+            "shininess",
+            "material_transparency",
         ];
-        if let Some(color) = appearance.base_color {
-            attributes.push(("diffuseColor", packed(color).to_string()));
+        if let (Some(color), Some(numbers)) = (
+            appearance.base_color,
+            fields.map(scalar).into_iter().collect::<Option<Vec<_>>>(),
+        ) {
+            if numbers[..3]
+                .iter()
+                .any(|number| number.to_string().parse::<u32>().is_err())
+            {
+                losses.push(FreecadLossCode::ExportAppearanceNotTransferred.note(format!(
+                    "appearance {} contains a material color outside the packed unsigned color grammar", appearance.id
+                )));
+                return Ok(());
+            }
+            let mut attributes = vec![("diffuseColor", packed(color).to_string())];
+            for (name, number) in [
+                "ambientColor",
+                "specularColor",
+                "emissiveColor",
+                "shininess",
+                "transparency",
+            ]
+            .into_iter()
+            .zip(numbers)
+            {
+                attributes.push((name, number.to_string()));
+            }
+            provider.properties.insert(
+                "ShapeMaterial".into(),
+                xml::property(
+                    "ShapeMaterial",
+                    "App::PropertyMaterial",
+                    &xml::element("PropertyMaterial", &attributes),
+                ),
+            );
+        } else {
+            losses.push(
+                FreecadLossCode::ExportAppearanceNotTransferred.note(format!(
+                    "appearance {} lacks the six fields required by a new FreeCAD material",
+                    appearance.id
+                )),
+            );
         }
-        if let Some(value) = shininess {
-            attributes.push(("shininess", value.to_string()));
-        }
-        if let Some(value) = transparency {
-            attributes.push(("transparency", value.to_string()));
-        }
-        provider.properties.insert(
-            "ShapeMaterial".into(),
-            xml::property(
-                "ShapeMaterial",
-                "App::PropertyMaterial",
-                &xml::element("PropertyMaterial", &attributes),
-            ),
-        );
     }
     Ok(())
 }
@@ -122,7 +161,7 @@ fn selection(target: &AppearanceTarget) -> Option<(&str, &'static str)> {
     }
 }
 
-fn target_name<'a>(
+pub(super) fn target_name<'a>(
     ir: &CadIr,
     target: &'a AppearanceTarget,
     names: &'a HashMap<String, String>,
@@ -158,30 +197,119 @@ pub(super) fn write(
     entries: &mut BTreeMap<String, Vec<u8>>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
-    // The neutral arenas own both values and absence of their material lanes.
-    // Ambient/specular/emissive members of an object material have no neutral
-    // object-material form and remain typed native content.
+    if !ir.scope.model {
+        return Ok(());
+    }
+    let projected_owners = ir
+        .native
+        .namespace("fcstd")
+        .map(|namespace| {
+            namespace.arena_as::<crate::native::GuiViewProviderRecord>("gui_view_providers")
+        })
+        .transpose()?
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|provider| provider.object.is_some())
+        .map(|provider| provider.id)
+        .collect::<HashSet<_>>();
+    let mut bound = HashSet::new();
     for provider in providers.values_mut() {
-        for name in [
-            "ShapeColor",
-            "Transparency",
-            "DiffuseColor",
-            "LineColorArray",
-            "PointColorArray",
-            "ShapeAppearance",
-        ] {
-            provider.properties.remove(name);
+        for name in ["ShapeColor", "Transparency", "LineColor", "PointColor"] {
+            let Some(property) = provider.native.get(name) else {
+                continue;
+            };
+            let present =
+                ir.model.appearances.iter().any(|appearance| {
+                    appearance.native_ref.as_deref() == Some(property.id.as_str())
+                });
+            let not_projected = match name {
+                "Transparency" => !provider.native.contains_key("ShapeColor"),
+                "LineColor" | "PointColor" => !projected_owners.contains(&property.owner),
+                _ => false,
+            };
+            if !present && !not_projected {
+                provider.properties.remove(name);
+            }
         }
-        if let Some(material) = provider.native.get_mut("ShapeMaterial") {
-            for value in &mut material.values {
-                if value.tag == "PropertyMaterial" {
-                    for name in ["diffuseColor", "transparency", "shininess"] {
-                        value.attributes.remove(name);
+        let owned_style = ir.model.appearances.iter().any(|appearance| {
+            appearance.native_ref.as_ref().is_some_and(|id| {
+                provider.native.values().any(|property| {
+                    &property.id == id
+                        && matches!(property.name.as_str(), "ShapeColor" | "ShapeMaterial")
+                })
+            })
+        });
+        if !owned_style && provider.properties.remove("ShapeMaterial").is_some() {
+            losses.push(FreecadLossCode::ExportNativePropertyNotTransferred.note(format!("provider {} material is omitted because its required neutral appearance is absent",provider.name)));
+        }
+    }
+    // GUI-only and topology-count-mismatched styles still have an exact native
+    // property/slot owner. Their absence of a geometric binding loses no data.
+    let member_records = ir
+        .native
+        .namespace("fcstd")
+        .map(|namespace| namespace.arena_as::<crate::native::EntryRecord>("entries"))
+        .transpose()?
+        .unwrap_or_default();
+    for appearance in &ir.model.appearances {
+        let Some(id) = appearance.native_ref.as_deref() else {
+            continue;
+        };
+        for provider in providers.values_mut() {
+            let property = provider
+                .native
+                .values()
+                .find(|property| property.id == id)
+                .cloned();
+            if let Some(property) = property {
+                match property.name.as_str() {
+                    "ShapeColor" | "LineColor" | "PointColor" => {
+                        if let Some(color) = appearance.base_color {
+                            provider.scalar_override(&property.name, &packed(color).to_string())?;
+                            if property.name == "ShapeColor"
+                                && provider.native.contains_key("Transparency")
+                            {
+                                provider.scalar_override(
+                                    "Transparency",
+                                    &((1.0 - color.a()) * 100.0).round().to_string(),
+                                )?;
+                            }
+                        } else {
+                            provider.properties.remove(&property.name);
+                            losses.push(FreecadLossCode::ExportAppearanceNotTransferred.note(format!("appearance {} has no color for its required native color property",appearance.id)));
+                        }
+                        if property.name == "ShapeColor" {
+                            material(provider, appearance, losses)?;
+                        }
+                        bound.insert(appearance.id.as_str());
                     }
+                    "ShapeMaterial" => {
+                        material(provider, appearance, losses)?;
+                        bound.insert(appearance.id.as_str());
+                    }
+                    _ => {}
                 }
             }
-            if let Some(value) = native_property(material)? {
-                provider.properties.insert("ShapeMaterial".into(), value);
+            if member_records.iter().any(|entry| {
+                entry.id() == id
+                    && provider.native.values().any(|property| {
+                        provider.properties.contains_key(&property.name)
+                            && property.values.iter().any(|value| {
+                                value
+                                    .attributes
+                                    .get("file")
+                                    .is_some_and(|file| file == entry.name())
+                            })
+                            && entry.contents().iter().any(|contents| {
+                                crate::gui::payloads::projection::matches(
+                                    contents,
+                                    &property.type_name,
+                                    &property.values,
+                                )
+                            })
+                    })
+            }) {
+                bound.insert(appearance.id.as_str());
             }
         }
     }
@@ -203,12 +331,11 @@ pub(super) fn write(
             provider.visible(visible);
         }
         if let Some(color) = ir.effective_display_color(&target) {
-            object_color(provider, color);
+            object_color(provider, color)?;
             defaults.insert(name.clone(), packed(color));
         }
     }
     let mut arrays = BTreeMap::<(String, &str), BTreeMap<usize, u32>>::new();
-    let mut bound = HashSet::new();
     for binding in &ir.model.appearance_bindings {
         let appearance = ir
             .model
@@ -261,15 +388,30 @@ pub(super) fn write(
                     );
                 }
             } else {
-                object_color(provider, color);
+                object_color(provider, color)?;
                 defaults.insert(name.clone(), packed(color));
             }
         }
-        material(provider, appearance)?;
+        if selection(&binding.target).is_none() {
+            material(provider, appearance, losses)?;
+        }
         if binding.visible.is_some() || !binding.channels.is_empty() {
             losses.push(FreecadLossCode::ExportAppearanceNotTransferred.note(format!(
                 "appearance binding {} independent visibility/channel gates are reduced to the effective native provider state", binding.id
             )));
+        }
+        if appearance.native_ref.as_deref().is_some_and(|home| {
+            member_records.iter().any(|entry| {
+                entry.id() == home
+                    && entry.contents().iter().any(|content| {
+                        matches!(
+                            content,
+                            crate::native::entry_contents::EntryContents::Material { .. }
+                        )
+                    })
+            })
+        }) {
+            continue;
         }
         for (key, value) in &appearance.properties {
             match key.as_str() {
@@ -370,14 +512,33 @@ pub(super) fn write(
             .map_err(|_| CodecError::malformed("GUI topology color count exceeds u32"))?;
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&count.to_le_bytes());
-        for index in 1..=count {
-            bytes.extend_from_slice(
-                &overrides
+        let selected = (1..=count)
+            .map(|index| {
+                overrides
                     .get(&usize::try_from(index).map_err(CodecError::malformed)?)
                     .copied()
-                    .unwrap_or_else(|| defaults.get(&owner).copied().unwrap_or(0xcccc_ccff))
-                    .to_le_bytes(),
-            );
+                    .or_else(|| defaults.get(&owner).copied())
+                    .ok_or_else(|| {
+                        CodecError::UnsupportedContent(
+                            "topology color array has a slot with no actual color".into(),
+                        )
+                    })
+            })
+            .collect::<Result<Vec<_>, CodecError>>();
+        let selected = match selected {
+            Ok(selected) => selected,
+            Err(CodecError::UnsupportedContent(reason)) => {
+                losses.push(
+                    FreecadLossCode::ExportAppearanceNotTransferred.note(format!(
+                        "provider {owner} {property} override omitted: {reason}"
+                    )),
+                );
+                continue;
+            }
+            Err(error) => return Err(error),
+        };
+        for value in selected {
+            bytes.extend_from_slice(&value.to_le_bytes());
         }
         let filename = format!("{owner}.{property}");
         entries.insert(filename.clone(), bytes);
@@ -406,14 +567,11 @@ mod tests {
             serde_json::from_value(serde_json::json!({"id":"test:model:appearance#empty"}))
                 .unwrap();
         let mut provider = Provider::new("Shape".into());
-        material(&mut provider, &appearance).unwrap();
-        let document = roxmltree::Document::parse(&provider.properties["ShapeMaterial"]).unwrap();
-        let value = document
-            .descendants()
-            .find(|node| node.has_tag_name("PropertyMaterial"))
-            .unwrap();
-        assert!(value.attribute("diffuseColor").is_none());
-        assert!(value.attribute("shininess").is_none());
-        assert!(value.attribute("transparency").is_none());
+        let mut losses = Vec::new();
+        material(&mut provider, &appearance, &mut losses).unwrap();
+        // The known six-field material grammar cannot encode this empty asset.
+        // Omitting it also proves that no absent field was filled with a default.
+        assert!(!provider.properties.contains_key("ShapeMaterial"));
+        assert!(losses.is_empty());
     }
 }

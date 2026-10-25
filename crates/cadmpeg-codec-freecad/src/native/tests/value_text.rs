@@ -16,6 +16,8 @@ fn direct_text_survives_every_value_tag_without_serialization_filtering() {
     ] {
         for text in [None, Some(""), Some("  authored\ntext Ω  ")] {
             let value = ValueRecord {
+                item_index: None,
+                link_index: None,
                 tag: tag.into(),
                 order: 0,
                 parent: None,

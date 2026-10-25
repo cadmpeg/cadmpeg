@@ -1,20 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Transfer of application-owned mesh and point payloads.
 
-use cadmpeg_core::decode::{BoundedCount, View};
+pub(crate) mod parts;
+mod sources;
+
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FinitePoint3;
-use cadmpeg_ir::ids::PointId;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::{FiniteBinary32, FiniteReal};
-use cadmpeg_ir::tessellation::Tessellation;
-use cadmpeg_ir::topology::Point;
 use cadmpeg_ir::SourceObjectAssociation;
 
 use crate::layout::mesh_facet;
 use crate::layout::mesh_kernel_side_entry_header as mesh_hdr;
-use crate::native::{EntryRecord, PropertyRecord};
+#[cfg(test)]
+use crate::native::PropertyRecord;
 
 const MAX_ELEMENTS: usize = 1_000_000;
 const MESH_MAGIC: u32 = mesh_hdr::MAGIC_VALUE;
@@ -38,259 +39,30 @@ pub(crate) fn holds_property(ir: &CadIr, type_name: &str, owner: &str) -> bool {
     }
 }
 
-pub(crate) fn transfer(
-    ctx: &crate::property_reader::PropertyReader<'_, '_>,
-    ir: &mut CadIr,
-    properties: &[PropertyRecord],
-    entries: &[EntryRecord],
-    sources: &crate::entry_sources::EntrySources<'_>,
-    admitted_entities: &mut u64,
-) -> Result<bool, CodecError> {
-    let mut transferred = false;
-    for property in properties {
-        let geometry_kind = match property.type_name.as_str() {
-            "Mesh::PropertyMeshKernel" => GeometryKind::Mesh,
-            "Points::PropertyPointKernel" => GeometryKind::Points,
-            _ => continue,
-        };
-        if property.side_entries().len() > 1 {
-            return Err(CodecError::malformed(format_args!(
-                "geometry property {} references more than one side entry",
-                property.id
-            )));
-        }
-        let root_entry = validate_value_root(ctx, property, geometry_kind.value_tag())?;
-        let side_entry_matches_root = property.side_entries().len()
-            == usize::from(root_entry.is_some())
-            && property.side_entries().first() == root_entry.as_ref();
-        if !side_entry_matches_root {
-            return Err(CodecError::Malformed(
-                "geometry property has an unowned side-entry reference".into(),
-            ));
-        }
-        let Some(entry_name) = root_entry else {
-            continue;
-        };
-        let Some(entry) = entries.iter().find(|entry| entry.name() == entry_name) else {
-            return Err(CodecError::malformed(format_args!(
-                "geometry property {} references missing side entry {entry_name}",
-                property.id
-            )));
-        };
-        let source = sources.view(entry)?;
-        let bytes = source.window();
-        if geometry_kind == GeometryKind::Mesh {
-            ir.model.tessellations.push(parse_mesh(property, bytes)?);
-            transferred = true;
-        } else if geometry_kind == GeometryKind::Points {
-            let points = parse_points(
-                ctx,
-                property,
-                bytes,
-                cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
-                admitted_entities,
-            )?;
-            ir.model.points.extend(points);
-            transferred = true;
-        }
-    }
-    Ok(transferred)
+pub(crate) fn projects_object(object: &crate::native::ObjectRecord) -> bool {
+    matches!(
+        object.type_name.as_str(),
+        "Mesh::Feature" | "Points::Feature"
+    )
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum GeometryKind {
-    Mesh,
-    Points,
-}
-
-impl GeometryKind {
-    fn value_tag(self) -> &'static str {
-        match self {
-            Self::Mesh => "Mesh",
-            Self::Points => "Points",
-        }
-    }
-}
-
-fn validate_value_root(
-    ctx: &crate::property_reader::PropertyReader<'_, '_>,
-    property: &PropertyRecord,
-    expected_tag: &str,
-) -> Result<Option<String>, CodecError> {
-    let property_xml = ctx.property_xml(property)?;
-    let document = ctx
-        .parse_xml(property_xml.as_ref(), "FreeCAD XML tree")
-        .map_err(|error| {
-            let CodecError::Malformed(error) = error else {
-                return error;
-            };
-            CodecError::malformed(format_args!(
-                "invalid geometry property XML {}: {error}",
-                property.id
-            ))
-        })?;
-    let mut roots = document
-        .root_element()
-        .children()
-        .filter(|node| node.is_element() && node.has_tag_name(expected_tag));
-    let root = roots.next();
-    let extra = roots.next().is_some();
-    let Some(root) = root.filter(|_| !extra) else {
-        return Err(CodecError::malformed(format_args!(
-            "geometry property {} must contain exactly one {expected_tag} value root, found {}",
-            property.id,
-            document
-                .root_element()
-                .children()
-                .filter(|node| node.is_element() && node.has_tag_name(expected_tag))
-                .count()
-        )));
-    };
-    Ok(root
-        .attribute("file")
-        .filter(|value| !value.is_empty())
-        .map(str::to_owned))
-}
-
-fn association(property: &PropertyRecord) -> Result<SourceObjectAssociation, CodecError> {
+fn association(object: &str) -> Result<SourceObjectAssociation, CodecError> {
     Ok(SourceObjectAssociation {
         geometry_role: None,
         format: cadmpeg_ir::CodecFormat::Fcstd,
-        object_id: cadmpeg_core::text::NonBlankString::new(property.owner.clone())
+        object_id: cadmpeg_core::text::NonBlankString::new(object.to_owned())
             .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?,
         instance_path: Vec::new(),
     })
 }
 
-fn parse_mesh(property: &PropertyRecord, bytes: &[u8]) -> Result<Tessellation, CodecError> {
-    let mut reader = Reader::new(bytes);
-    let byte_order = reader.mesh_byte_order(&property.id)?;
-    reader.skip(mesh_hdr::LEN - mesh_hdr::INFORMATION)?;
-    let point_count = reader.count(byte_order, "mesh point count")?;
-    let facet_count = reader.count(byte_order, "mesh facet count")?;
-    let vertex_bytes = point_count
-        .checked_mul(12)
-        .and_then(|len| {
-            facet_count
-                .checked_mul(mesh_facet::LEN)
-                .and_then(|facets| len.checked_add(facets))
-        })
-        .and_then(|len| len.checked_add(24))
-        .ok_or_else(|| CodecError::malformed("mesh population extent overflows"))?;
-    if reader.remaining() < vertex_bytes {
-        return Err(CodecError::malformed(
-            "mesh population exceeds remaining payload",
-        ));
-    }
-    let mut vertices = Vec::new();
-    for _ in 0..point_count {
-        vertices.push(reader.point3(byte_order, "mesh point")?);
-    }
-    // Each facet consumes three point indices and three neighbour indices (24 bytes),
-    // so the declared count cannot exceed the unread payload.
-    reader
-        .counted(
-            cadmpeg_core::decode::u64_from_index(facet_count),
-            mesh_facet::LEN,
-        )
-        .ok_or_else(|| {
-            CodecError::Malformed("mesh facet count exceeds remaining payload".into())
-        })?;
-    let mut triangles = Vec::new();
-    for _ in 0..facet_count {
-        let triangle = [
-            reader.index(byte_order, point_count, "mesh facet point")?,
-            reader.index(byte_order, point_count, "mesh facet point")?,
-            reader.index(byte_order, point_count, "mesh facet point")?,
-        ];
-        // The three facet padding words are skipped, not read.
-        for _ in 0..3 {
-            reader.skip(4)?;
-        }
-        triangles.push(triangle);
-    }
-    for _ in 0..6 {
-        let value = reader.f32(byte_order)?;
-        if !value.is_finite() {
-            return Err(CodecError::Malformed(
-                "FCStd mesh bounding box contains a non-finite value".into(),
-            ));
-        }
-    }
-    reader.finish("mesh payload")?;
-    Ok(Tessellation::from_parts(
-        cadmpeg_ir::tessellation::TessellationId::mint(format!("{}:mesh", property.id))
-            .map_err(|error| CodecError::malformed(error.to_string()))?,
-        cadmpeg_ir::tessellation::TessellationMesh::List {
-            vertices,
-            triangles,
-        },
-        Vec::new(),
-    )
-    .map_err(|err| CodecError::Malformed(err.to_string()))?
-    .with_source_object(Some(association(property)?)))
-}
-
-fn parse_points(
-    ctx: &crate::property_reader::PropertyReader<'_, '_>,
-    property: &PropertyRecord,
-    bytes: &[u8],
-    current_entities: u64,
-    admitted_entities: &mut u64,
-) -> Result<Vec<Point>, CodecError> {
-    let mut reader = Reader::new(bytes);
-    let count = reader.count(ByteOrder::Little, "point-cloud point count")?;
-    reader
-        .counted(cadmpeg_core::decode::u64_from_index(count), 12)
-        .ok_or_else(|| CodecError::malformed("point-cloud count exceeds remaining payload"))?;
-    let population = current_entities
-        .checked_add(cadmpeg_core::decode::u64_from_index(count))
-        .ok_or_else(|| CodecError::malformed("FreeCAD point-cloud entity count overflows"))?;
-    ctx.admit_entities(
-        population,
-        admitted_entities,
-        "FreeCAD point-cloud entities",
-    )?;
-    let transform = point_transform(ctx, property)?;
-    let mut points = Vec::new();
-    for index in 0..count {
-        let position = reader.point3(ByteOrder::Little, "point-cloud point")?;
-        points.push(Point::new(
-            PointId::mint(crate::native::model_id(
-                "point",
-                &property.id,
-                index.to_string(),
-            ))
-            .map_err(CodecError::malformed)?,
-            transform_point(transform, position)?,
-            Some(association(property)?),
-        ));
-    }
-    reader.finish("point-cloud payload")?;
-    Ok(points)
-}
-
-fn point_transform(
-    ctx: &crate::property_reader::PropertyReader<'_, '_>,
-    property: &PropertyRecord,
+pub(crate) fn point_transform(
+    values: &[crate::native::ValueRecord],
 ) -> Result<[[FiniteReal; 4]; 4], CodecError> {
-    let property_xml = ctx.property_xml(property)?;
-    let document = ctx
-        .parse_xml(property_xml.as_ref(), "FreeCAD XML tree")
-        .map_err(|error| {
-            let CodecError::Malformed(error) = error else {
-                return error;
-            };
-            CodecError::malformed(format_args!(
-                "invalid point property XML {}: {error}",
-                property.id
-            ))
-        })?;
-    let Some(text) = document
-        .root_element()
-        .children()
-        .find(|node| node.is_element() && node.has_tag_name("Points"))
-        .and_then(|node| node.attribute("mtrx"))
+    let Some(text) = values
+        .iter()
+        .find(|value| value.parent.is_none() && value.tag == "Points")
+        .and_then(|value| value.attributes.get("mtrx"))
     else {
         return Ok(identity());
     };
@@ -339,7 +111,7 @@ fn identity() -> [[FiniteReal; 4]; 4] {
 ///
 /// Finite operands still multiply and add to a non-finite coordinate, which
 /// states no position, so the transformed position carries its own test.
-fn transform_point(
+pub(crate) fn transform_point(
     transform: [[FiniteReal; 4]; 4],
     point: FinitePoint3,
 ) -> Result<FinitePoint3, CodecError> {
@@ -369,25 +141,11 @@ struct Reader<'a> {
 }
 
 impl<'a> Reader<'a> {
+    #[cfg(test)]
     fn new(bytes: &'a [u8]) -> Self {
         Self {
             view: View::over_retained(bytes),
         }
-    }
-
-    fn remaining(&self) -> usize {
-        self.view.remaining()
-    }
-
-    fn counted(&self, count: u64, min_element_size: usize) -> Option<usize> {
-        self.view
-            .counted(count, min_element_size)
-            .map(BoundedCount::get)
-    }
-
-    fn skip(&mut self, count: usize) -> Result<(), CodecError> {
-        self.view.req_take(count)?;
-        Ok(())
     }
 
     fn mesh_byte_order(&mut self, property_id: &str) -> Result<ByteOrder, CodecError> {
@@ -457,21 +215,52 @@ impl<'a> Reader<'a> {
         };
         Ok(FinitePoint3::from_coordinates(x.into(), y.into(), z.into()))
     }
+}
 
-    fn finish(&self, label: &str) -> Result<(), CodecError> {
-        if !self.view.is_empty() {
-            return Err(CodecError::malformed(format_args!(
-                "{label} has {} trailing bytes",
-                self.remaining()
-            )));
-        }
-        Ok(())
-    }
+#[cfg(test)]
+fn parse_points(
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
+    property: &PropertyRecord,
+    bytes: &[u8],
+    current_entities: u64,
+    admitted_entities: &mut u64,
+) -> Result<Vec<cadmpeg_ir::topology::Point>, CodecError> {
+    let view = ctx.test_input_view(bytes)?;
+    let (_, owner) = ctx.record_owner("test:kernel#points", view, || Ok(()))?;
+    let mut output =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::Fcstd);
+    let crate::native::entry_contents::EntryContents::Points { points } =
+        parts::points_value(ctx, view, &owner, property.values(), &mut output)?
+    else {
+        return Err(CodecError::malformed("point parser produced a mesh kernel"));
+    };
+    let transform = point_transform(property.values())?;
+    let mut output = Vec::new();
+    parts::project_points(
+        ctx,
+        &points,
+        current_entities,
+        admitted_entities,
+        |ordinal, point| {
+            Ok(cadmpeg_ir::topology::Point::new(
+                cadmpeg_ir::ids::PointId::mint(crate::native::model_id(
+                    "point",
+                    &property.id,
+                    ordinal.to_string(),
+                ))
+                .map_err(CodecError::malformed)?,
+                transform_point(transform, point)?,
+                Some(association(&property.owner)?),
+            ))
+        },
+        &mut output,
+    )?;
+    Ok(output)
 }
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use super::{parse_mesh, parse_points, ByteOrder, Reader};
+    use super::{parse_points, ByteOrder, Reader};
     use crate::layout::mesh_kernel_side_entry_header as mesh_hdr;
     use crate::native::{PropertyBody, PropertyFamily, PropertyRecord};
     use crate::test_support::test_archive::archive_entries;
@@ -540,6 +329,124 @@ pub(crate) mod tests {
         );
     }
 
+    fn assert_truncated_kernel(bytes: &[u8], mesh: bool) {
+        use crate::native::EntryRecord;
+        use cadmpeg_ir::source_fidelity::parts::PartState;
+        let (object_type, runtime, tag, entry_level, operation) = if mesh {
+            (
+                "Mesh::Feature",
+                "Mesh::PropertyMeshKernel",
+                "Mesh",
+                "freecad.mesh_kernel_entry",
+                "FreeCAD mesh point slots",
+            )
+        } else {
+            (
+                "Points::Feature",
+                "Points::PropertyPointKernel",
+                "Points",
+                "freecad.point_kernel_entry",
+                "FreeCAD point-cloud slots",
+            )
+        };
+        let document = format!("<Document SchemaVersion='4' FileVersion='1'><Objects Count='1'><Object name='Geometry' type='{object_type}'/></Objects><ObjectData Count='1'><Object name='Geometry'><Properties Count='1'><Property name='Geometry' type='{runtime}'><{tag} file='Geometry.bin'/></Property></Properties></Object></ObjectData></Document>");
+        let archive = archive_entries(&[
+            ("Document.xml", document.as_bytes()),
+            ("Geometry.bin", bytes),
+        ]);
+        let options = DecodeOptions::default();
+        let decoded = FcstdCodec
+            .decode(&mut Cursor::new(&archive), &options)
+            .unwrap();
+        let entries = decoded
+            .ir()
+            .native
+            .namespace("fcstd")
+            .unwrap()
+            .arena_as::<EntryRecord>("entries")
+            .unwrap();
+        let entry = entries
+            .iter()
+            .find(|entry| entry.name() == "Geometry.bin")
+            .unwrap();
+        assert!(entry.contents().is_empty());
+        assert!(decoded.ir().model.tessellations.is_empty());
+        assert!(decoded.ir().model.points.is_empty());
+        let parts = decoded.source_fidelity().parts();
+        let failed = parts
+            .values()
+            .filter(|part| part.state() == &(PartState::GivenUp {}))
+            .collect::<Vec<_>>();
+        assert_eq!(failed.len(), 1);
+        assert_eq!(failed[0].level().as_str(), entry_level);
+        assert_eq!(failed[0].offset(), 0);
+        assert_eq!(failed[0].byte_len(), u64::try_from(bytes.len()).unwrap());
+        assert!(
+            !parts.values().any(|part| matches!(
+                part.level().as_str(),
+                "freecad.mesh_point"
+                    | "freecad.mesh_facet"
+                    | "freecad.mesh_bounding_box"
+                    | "freecad.point_kernel_point"
+            )),
+            "unadmitted slot storage creates no row parts"
+        );
+        let layout = &decoded.source_fidelity().record_layout()[entry.id()];
+        let header = parts
+            .values()
+            .find(|part| {
+                part.level().as_str() == "zip.local_header"
+                    && part.stream() == layout.stream()
+                    && part.offset() == layout.offset()
+            })
+            .unwrap();
+        assert_eq!(header.state(), &(PartState::Decoded {}));
+        assert_eq!(header.byte_len(), layout.byte_len());
+        let errors = decoded
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code.local_code() == "record.unreadable")
+            .collect::<Vec<_>>();
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].severity, cadmpeg_ir::report::Severity::Error);
+        let source = errors[0].provenance.as_ref().unwrap();
+        assert_eq!(source.stream_name(), Some(failed[0].stream()));
+        assert_eq!(source.offset, 0);
+        assert_eq!(source.byte_len(), Some(u64::try_from(bytes.len()).unwrap()));
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, root) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&archive, &arena, &options.policy)
+                .unwrap();
+        let count =
+            cadmpeg_core::decode::View::u32_le_at(bytes, if mesh { mesh_hdr::LEN } else { 0 })
+                .unwrap();
+        assert_eq!(count, 1_000_000);
+        let requested = u64::from(count)
+            .checked_mul(cadmpeg_core::decode::u64_from_index(size_of::<
+                Option<cadmpeg_ir::features::FinitePoint3>,
+            >()))
+            .unwrap();
+        assert!(requested > ctx.per_expand_allowance());
+        let resource = cadmpeg_core::decode::ResourceLimit {
+            scope: cadmpeg_core::decode::LimitScope::Part,
+            dimension: cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            reason: cadmpeg_core::decode::ResourceFailure::BudgetExceeded,
+            limit: ctx.per_expand_allowance(),
+            used: 0,
+            additional: requested,
+            operation,
+        };
+        assert!(errors[0].message.contains(&resource.to_string()));
+        let physical = cadmpeg_container::ArchiveSnapshot::new(&ctx, root).unwrap();
+        assert_eq!(physical.open(&ctx, "Geometry.bin").unwrap().window(), bytes);
+        assert_eq!(
+            crate::source_archive::image(decoded.source_fidelity()).unwrap(),
+            archive
+        );
+        crate::fidelity::b1::assert_classified_spans(&decoded);
+    }
+
     #[test]
     fn truncated_mesh_is_malformed() {
         let mut bytes = Vec::new();
@@ -548,24 +455,13 @@ pub(crate) mod tests {
         bytes.extend_from_slice(&[0; mesh_hdr::LEN - mesh_hdr::INFORMATION]);
         bytes.extend_from_slice(&1_000_000_u32.to_le_bytes());
         bytes.extend_from_slice(&0_u32.to_le_bytes());
-        assert!(matches!(parse_mesh(&resource_test_property(), &bytes),
-            Err(CodecError::Malformed(message)) if message == "mesh population exceeds remaining payload"));
+        assert_truncated_kernel(&bytes, true);
     }
 
     #[test]
     fn truncated_point_cloud_is_malformed() {
         let bytes = 1_000_000_u32.to_le_bytes();
-        let property = resource_test_property();
-        crate::test_support::source_fidelity::with_property_reader(
-            &bytes,
-            &[&property],
-            &DecodePolicy::service(),
-            |ctx| {
-                assert!(matches!(parse_points(ctx, &property, &bytes, 0, &mut 0),
-                Err(CodecError::Malformed(message))
-                    if message == "point-cloud count exceeds remaining payload"));
-            },
-        );
+        assert_truncated_kernel(&bytes, false);
     }
 
     #[test]
@@ -647,11 +543,15 @@ pub(crate) mod tests {
             cadmpeg_ir::math::Point3::new(9.0, 18.0, 27.0)
         );
         assert!(result.report().geometry_transferred());
-        assert!(
-            result.report().losses.is_empty(),
-            "{:#?}",
-            result.report().losses
-        );
+        assert!(!result.report().losses.is_empty());
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .all(|loss| loss.code.local_code() == "source.bytes-undecoded"
+                && loss.severity == cadmpeg_ir::report::Severity::Warning
+                && loss.provenance.is_some()));
+        crate::fidelity::b1::assert_classified_spans(&result);
     }
 
     #[test]
@@ -665,7 +565,7 @@ pub(crate) mod tests {
         for value in [1e30_f32, 0.0, 0.0] {
             points.extend_from_slice(&value.to_le_bytes());
         }
-        let error = FcstdCodec
+        let result = FcstdCodec
             .decode(
                 &mut Cursor::new(archive_entries(&[
                     ("Document.xml", document.as_bytes()),
@@ -673,13 +573,122 @@ pub(crate) mod tests {
                 ])),
                 &DecodeOptions::default(),
             )
-            .expect_err("transformed point-cloud position");
+            .expect("the actual overflowing point is a recoverable source row");
 
-        assert!(matches!(
-            error,
-            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message))
-                if message == "transformed point-cloud point contains a non-finite coordinate"
+        // #215 §4.5 gives up the smallest actual source row and keeps its native kernel.
+        assert!(result.ir().model.points.is_empty());
+        let failed = result
+            .source_fidelity()
+            .parts()
+            .values()
+            .filter(|part| {
+                matches!(
+                    part.state(),
+                    cadmpeg_ir::source_fidelity::parts::PartState::GivenUp { .. }
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(failed.len(), 1);
+        assert_eq!(failed[0].level().as_str(), "freecad.point_kernel_point");
+        assert_eq!(failed[0].byte_len(), 12);
+        let kernels = result
+            .ir()
+            .native
+            .namespace("fcstd")
+            .unwrap()
+            .arena_as::<crate::native::EntryRecord>("entries")
+            .unwrap();
+        assert!(kernels.iter().flat_map(|entry| entry.contents()).any(|contents|
+            matches!(contents,crate::native::entry_contents::EntryContents::Points{points} if points == &[None])
         ));
+    }
+
+    // #215 keeps a readable first value; only the extra direct value is bad.
+    // The empty first payload in the first fixture independently fails its own
+    // bounded binary carrier, which must have its own exact loss as well.
+    fn assert_geometry_value_recovery(
+        result: &cadmpeg_ir::codec::DecodeResult,
+        document: &str,
+        values: &str,
+        binary: Option<&str>,
+    ) {
+        let first_end = values.find("/>").unwrap() + 2;
+        let extra = &values[first_end..];
+        let expected_offset = u64::try_from(document.find(values).unwrap() + first_end).unwrap();
+        let failed = result
+            .source_fidelity()
+            .parts()
+            .values()
+            .filter(|part| {
+                matches!(
+                    part.state(),
+                    cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(failed.len(), 1 + usize::from(binary.is_some()));
+        let value = failed
+            .iter()
+            .find(|part| part.level().as_str() == "freecad.property_value")
+            .unwrap();
+        assert_eq!(value.offset(), expected_offset);
+        assert_eq!(value.byte_len(), u64::try_from(extra.len()).unwrap());
+        if let Some(level) = binary {
+            let payload = failed
+                .iter()
+                .find(|part| part.level().as_str() == level)
+                .unwrap();
+            assert_eq!(payload.offset(), 0);
+            assert_eq!(payload.byte_len(), 0);
+        }
+        let errors = result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code.local_code() == "record.unreadable")
+            .collect::<Vec<_>>();
+        assert_eq!(errors.len(), failed.len());
+        for part in failed {
+            let matching = errors
+                .iter()
+                .filter(|loss| {
+                    loss.provenance.as_ref().is_some_and(|source| {
+                        source.stream_name() == Some(part.stream())
+                            && source.offset == part.offset()
+                            && source.byte_len().unwrap_or(0) == part.byte_len()
+                    })
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(matching.len(), 1);
+            assert_eq!(matching[0].severity, cadmpeg_ir::report::Severity::Error);
+        }
+        let namespace = result.ir().native.namespace("fcstd").unwrap();
+        assert_eq!(
+            namespace
+                .arena_as::<crate::native::ObjectRecord>("objects")
+                .unwrap()
+                .len(),
+            1
+        );
+        let properties = namespace
+            .arena_as::<crate::native::PropertyRecord>("properties")
+            .unwrap();
+        assert_eq!(properties.len(), 1);
+        assert_eq!(properties[0].values().len(), 1);
+        assert_eq!(properties[0].values()[0].order, 0);
+        assert!(namespace
+            .arena_as::<crate::native::EntryRecord>("entries")
+            .unwrap()
+            .iter()
+            .flat_map(|entry| entry.contents())
+            .all(|contents| !matches!(
+                contents,
+                crate::native::entry_contents::EntryContents::Mesh { .. }
+                    | crate::native::entry_contents::EntryContents::Points { .. }
+            )));
+        assert!(result.ir().model.points.is_empty());
+        assert!(result.ir().model.tessellations.is_empty());
+        crate::fidelity::b1::assert_classified_spans(result);
     }
 
     #[test]
@@ -702,7 +711,7 @@ pub(crate) mod tests {
 <ObjectData Count="1"><Object name="Geometry"><Properties Count="1"><Property name="Geometry" type="{property_type}">{values}</Property></Properties></Object></ObjectData>
 </Document>"#
             );
-            let error = FcstdCodec
+            let result = FcstdCodec
                 .decode(
                     &mut Cursor::new(archive_entries(&[
                         ("Document.xml", document.as_bytes()),
@@ -711,13 +720,18 @@ pub(crate) mod tests {
                     ])),
                     &DecodeOptions::default(),
                 )
-                .expect_err("multiple typed geometry entries");
+                .expect("#215 retains the readable geometry property and gives up the extra value");
 
-            assert!(matches!(
-                error,
-                cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message))
-                    if message.contains("references more than one side entry")
-            ));
+            assert_geometry_value_recovery(
+                &result,
+                &document,
+                values,
+                Some(if property_type == "Mesh::PropertyMeshKernel" {
+                    "freecad.mesh_kernel_header"
+                } else {
+                    "freecad.point_kernel_entry"
+                }),
+            );
         }
     }
 
@@ -743,7 +757,7 @@ pub(crate) mod tests {
 <ObjectData Count="1"><Object name="Geometry"><Properties Count="1"><Property name="Geometry" type="{property_type}">{values}</Property></Properties></Object></ObjectData>
 </Document>"#
             );
-            let error = FcstdCodec
+            let result = FcstdCodec
                 .decode(
                     &mut Cursor::new(archive_entries(&[
                         ("Document.xml", document.as_bytes()),
@@ -751,13 +765,9 @@ pub(crate) mod tests {
                     ])),
                     &DecodeOptions::default(),
                 )
-                .expect_err("unowned geometry side entry");
+                .expect("#215 gives up only the unowned extra value");
 
-            assert!(matches!(
-                error,
-                cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message))
-                    if message.contains("unowned side-entry reference")
-            ));
+            assert_geometry_value_recovery(&result, &document, values, None);
         }
     }
 
@@ -783,7 +793,7 @@ pub(crate) mod tests {
 <ObjectData Count="1"><Object name="Geometry"><Properties Count="1"><Property name="Geometry" type="{property_type}">{values}</Property></Properties></Object></ObjectData>
 </Document>"#
             );
-            let error = FcstdCodec
+            let result = FcstdCodec
                 .decode(
                     &mut Cursor::new(archive_entries(&[
                         ("Document.xml", document.as_bytes()),
@@ -791,13 +801,9 @@ pub(crate) mod tests {
                     ])),
                     &DecodeOptions::default(),
                 )
-                .expect_err("multiple typed geometry value roots");
+                .expect("#215 retains the first value and gives up the extra value");
 
-            assert!(matches!(
-                error,
-                cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message))
-                    if message.contains("must contain exactly one")
-            ));
+            assert_geometry_value_recovery(&result, &document, values, None);
         }
     }
 

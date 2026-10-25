@@ -114,7 +114,7 @@ fn nested_link_group_children_decode_with_their_instance_parent() {
     let second = occurrence("Second", &definition, Some(&parent));
     ir.model.product_definitions.push(definition);
     ir.model.occurrences.extend([parent, first, second]);
-    let mut names = crate::writer::names::prepare(&ir, &[], &[]);
+    let mut names = crate::writer::names::prepare(&ir, &[], &[], &[]);
     let mut objects = Vec::new();
     let mut losses = Vec::new();
     write(&ir, &mut objects, &mut names, &HashMap::new(), &mut losses).expect("product graph");

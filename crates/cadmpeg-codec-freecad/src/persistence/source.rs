@@ -1,230 +1,116 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Original XML source reads while kept property fields are constructed.
+//! Source fields retained by scanner-owned property records.
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use crate::native::DynamicPropertyMeta;
+use crate::xml_framing::XmlSource;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use std::collections::BTreeMap;
 
-pub(crate) struct Source<'ctx, 'source> {
-    ctx: &'ctx DecodeContext<'source>,
-    view: View<'source>,
+pub(super) fn dynamic(
+    ctx: &DecodeContext<'_>,
+    source: &XmlSource<'_>,
+    index: usize,
+    peek: &BTreeMap<String, String>,
+) -> Result<Option<DynamicPropertyMeta>, CodecError> {
+    let Some(group) = source.attribute(ctx, index, "group")? else {
+        return Ok(None);
+    };
+    let integer = if peek
+        .get("attr")
+        .is_some_and(|text| text.parse::<i64>().is_ok())
+    {
+        source
+            .attribute(ctx, index, "attr")?
+            .and_then(|text| text.parse().ok())
+    } else {
+        None
+    };
+    let boolean = |name| -> Result<Option<bool>, CodecError> {
+        if peek
+            .get(name)
+            .and_then(|text| crate::native::parse_bool(text))
+            .is_none()
+        {
+            return Ok(None);
+        }
+        Ok(source
+            .attribute(ctx, index, name)?
+            .as_deref()
+            .and_then(crate::native::parse_bool))
+    };
+    Ok(Some(DynamicPropertyMeta {
+        group,
+        documentation: source.attribute(ctx, index, "doc")?,
+        attributes: integer,
+        read_only: boolean("ro")?,
+        hidden: boolean("hide")?,
+    }))
 }
 
-impl<'ctx, 'source> Source<'ctx, 'source> {
-    pub(crate) fn new(
-        ctx: &'ctx DecodeContext<'source>,
-        view: View<'source>,
-        xml: &roxmltree::Document<'_>,
-    ) -> Result<Self, CodecError> {
-        ctx.capture_part_extent(view)?;
-        let original = xml.input_text().as_bytes();
-        if original.len() != view.window().len()
-            || !std::ptr::eq(original.as_ptr(), view.window().as_ptr())
+pub(crate) fn value_attributes(
+    ctx: &DecodeContext<'_>,
+    source: &XmlSource<'_>,
+    index: usize,
+    opaque: bool,
+) -> Result<BTreeMap<String, String>, CodecError> {
+    let mut attributes = BTreeMap::new();
+    for key in source.attribute_names(index)?.into_iter().rev() {
+        if key == "xmlns" || key.starts_with("xmlns:") {
+            continue;
+        }
+        let local = key.rsplit(':').next().unwrap_or(key);
+        if attributes.contains_key(local)
+            || opaque && !matches!(local, "file" | "File" | "name" | "Name")
         {
-            return Err(CodecError::malformed(
-                "XML DOM does not borrow its original source View",
-            ));
+            continue;
         }
-        Ok(Self { ctx, view })
+        if let Some(value) = source.attribute(ctx, index, key)? {
+            attributes.insert(local.to_owned(), value);
+        }
     }
+    Ok(attributes)
+}
 
-    pub(crate) fn record<T>(
-        &self,
-        id: &str,
-        node: roxmltree::Node<'_, '_>,
-        parse: impl FnOnce() -> Result<T, CodecError>,
-    ) -> Result<T, CodecError> {
-        let extent = crate::fidelity::relative_xml_extent(self.view, node.range())?;
-        self.ctx.record(id, extent, parse)
-    }
+/// Reads the same last local-name winner as the retained value dictionary.
+pub(crate) fn value_attribute(
+    ctx: &DecodeContext<'_>,
+    source: &XmlSource<'_>,
+    index: usize,
+    local: &str,
+) -> Result<Option<String>, CodecError> {
+    let name = source
+        .attribute_names(index)?
+        .into_iter()
+        .rev()
+        .find(|key| {
+            *key != "xmlns" && !key.starts_with("xmlns:") && key.rsplit(':').next() == Some(local)
+        });
+    name.map_or(Ok(None), |name| source.attribute(ctx, index, name))
+}
 
-    pub(crate) fn required_attribute(
-        &self,
-        node: roxmltree::Node<'_, '_>,
-        name: &str,
-    ) -> Result<String, CodecError> {
-        let attribute = node
-            .attributes()
-            .find(|attribute| attribute.namespace().is_none() && attribute.name() == name)
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "{} element has no {name} attribute",
-                    node.tag_name().name()
-                ))
-            })?;
-        self.attribute(&attribute)
+/// Selects the same source fields as `value_attributes` without retaining them.
+/// Dependency admission uses this navigation before deciding which values survive.
+pub(crate) fn peek_value_attributes(
+    ctx: &DecodeContext<'_>,
+    source: &XmlSource<'_>,
+    index: usize,
+) -> Result<BTreeMap<String, String>, CodecError> {
+    let peek = source.peek_attributes(ctx, index)?;
+    let mut attributes = BTreeMap::new();
+    for key in source.attribute_names(index)?.into_iter().rev() {
+        if key == "xmlns" || key.starts_with("xmlns:") {
+            continue;
+        }
+        let local = key.rsplit(':').next().unwrap_or(key);
+        if attributes.contains_key(local) {
+            continue;
+        }
+        if let Some(value) = peek.get(key) {
+            attributes.insert(local.to_owned(), value.clone());
+        }
     }
-
-    pub(crate) fn status(&self, node: roxmltree::Node<'_, '_>) -> Result<Option<u64>, CodecError> {
-        let Some(attribute) = node
-            .attributes()
-            .find(|attribute| attribute.namespace().is_none() && attribute.name() == "status")
-        else {
-            return Ok(None);
-        };
-        if attribute.value().parse::<u64>().is_err() {
-            return Ok(None);
-        }
-        self.attribute(&attribute)?.parse().map(Some).map_err(|_| {
-            CodecError::malformed("tracked property status differs from its admitted value")
-        })
-    }
-
-    pub(crate) fn attribute(
-        &self,
-        attribute: &roxmltree::Attribute<'_, '_>,
-    ) -> Result<String, CodecError> {
-        let range = attribute.range();
-        let raw = self.view.window().get(range.clone()).ok_or_else(|| {
-            CodecError::malformed("XML attribute escapes its original source View")
-        })?;
-        let equals = raw
-            .iter()
-            .position(|byte| *byte == b'=')
-            .ok_or_else(|| CodecError::malformed("XML attribute has no source equals delimiter"))?;
-        let after_equals = equals
-            .checked_add(1)
-            .ok_or_else(|| CodecError::malformed("XML attribute source delimiter overflows"))?;
-        let quoted = raw.get(after_equals..).ok_or_else(|| {
-            CodecError::malformed("XML attribute source delimiter escapes its extent")
-        })?;
-        let padding = quoted
-            .iter()
-            .take_while(|byte| matches!(byte, b' ' | b'\t' | b'\r' | b'\n'))
-            .count();
-        let quote = *quoted
-            .get(padding)
-            .ok_or_else(|| CodecError::malformed("XML attribute has no source quote delimiter"))?;
-        if !matches!(quote, b'\'' | b'"') || raw.last() != Some(&quote) {
-            return Err(CodecError::malformed(
-                "XML attribute source quotes do not match",
-            ));
-        }
-        let start = range
-            .start
-            .checked_add(equals)
-            .and_then(|value| value.checked_add(1))
-            .and_then(|value| value.checked_add(padding))
-            .and_then(|value| value.checked_add(1))
-            .and_then(|value| self.view.start().checked_add(value))
-            .ok_or_else(|| CodecError::malformed("XML source value start overflows"))?;
-        let end = range
-            .end
-            .checked_sub(1)
-            .and_then(|value| self.view.start().checked_add(value))
-            .ok_or_else(|| CodecError::malformed("XML source value end overflows"))?;
-        if start > end {
-            return Err(CodecError::malformed("XML source value is inverted"));
-        }
-        if start < end {
-            self.view.read_slice(start..end).ok_or_else(|| {
-                CodecError::malformed("XML value read escapes its original source View")
-            })?;
-        }
-        Ok(attribute.value().to_owned())
-    }
-
-    pub(crate) fn retained_attributes(
-        &self,
-        node: roxmltree::Node<'_, '_>,
-    ) -> Result<std::collections::BTreeMap<String, String>, CodecError> {
-        let input = node.document().input_text().as_bytes();
-        if input.len() != self.view.window().len() || input.as_ptr() != self.view.window().as_ptr()
-        {
-            return Err(CodecError::malformed(
-                "retained attribute node does not borrow its source",
-            ));
-        }
-        let mut values = std::collections::BTreeMap::new();
-        for attribute in node.attributes().rev() {
-            if values.contains_key(attribute.name()) {
-                continue;
-            }
-            let range = attribute.range();
-            let raw = self
-                .view
-                .window()
-                .get(range.clone())
-                .ok_or_else(|| CodecError::malformed("attribute name escapes its source"))?;
-            let end = raw
-                .iter()
-                .position(|byte| matches!(byte, b'=' | b' ' | b'\t' | b'\r' | b'\n'))
-                .ok_or_else(|| CodecError::malformed("attribute name has no delimiter"))?;
-            let start = raw[..end]
-                .iter()
-                .rposition(|byte| *byte == b':')
-                .map_or(0, |at| at + 1);
-            if raw.get(start..end) != Some(attribute.name().as_bytes()) {
-                return Err(CodecError::malformed(
-                    "retained attribute name differs from source",
-                ));
-            }
-            let start = self
-                .view
-                .start()
-                .checked_add(range.start)
-                .and_then(|at| at.checked_add(start))
-                .ok_or_else(|| CodecError::malformed("attribute name source start overflows"))?;
-            let end = self
-                .view
-                .start()
-                .checked_add(range.start)
-                .and_then(|at| at.checked_add(end))
-                .ok_or_else(|| CodecError::malformed("attribute name source end overflows"))?;
-            let key = self
-                .view
-                .read_slice(start..end)
-                .ok_or_else(|| CodecError::malformed("attribute name read escapes source"))?;
-            let key = std::str::from_utf8(key)
-                .map_err(|_| CodecError::malformed("attribute name is not UTF-8"))?
-                .to_owned();
-            values.insert(key, self.attribute(&attribute)?);
-        }
-        Ok(values)
-    }
-
-    pub(crate) fn plain_text(
-        &self,
-        element: roxmltree::Node<'_, '_>,
-    ) -> Result<Option<String>, CodecError> {
-        let Some(text) = element.first_child().filter(roxmltree::Node::is_text) else {
-            return Ok(None);
-        };
-        let value = text
-            .text()
-            .ok_or_else(|| CodecError::malformed("XML text node has no value"))?;
-        let range = text.range();
-        let raw =
-            self.view.window().get(range.clone()).ok_or_else(|| {
-                CodecError::malformed("XML text escapes its original source View")
-            })?;
-        let remainder = self
-            .view
-            .window()
-            .get(range.end..element.range().end)
-            .ok_or_else(|| CodecError::malformed("XML text suffix escapes its owning element"))?;
-        if element.last_child() != Some(text)
-            || raw.contains(&b'<')
-            || !remainder.starts_with(b"</")
-        {
-            return Ok(Some(value.to_owned()));
-        }
-        let start = self
-            .view
-            .start()
-            .checked_add(range.start)
-            .ok_or_else(|| CodecError::malformed("XML source text start overflows"))?;
-        let end = self
-            .view
-            .start()
-            .checked_add(range.end)
-            .ok_or_else(|| CodecError::malformed("XML source text end overflows"))?;
-        if start < end {
-            self.view.read_slice(start..end).ok_or_else(|| {
-                CodecError::malformed("XML text read escapes its original source View")
-            })?;
-        }
-        Ok(Some(value.to_owned()))
-    }
+    Ok(attributes)
 }
 
 #[cfg(test)]

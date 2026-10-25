@@ -15,15 +15,14 @@ pub(super) fn agrees(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<(), CodecErr
     };
     let objects = namespace.arena_as::<native::ObjectRecord>("objects")?;
     let properties = namespace.arena_as::<native::PropertyRecord>("properties")?;
-    let property_reader = crate::property_reader::PropertyReader::typed(ctx);
-    let entry_views = BTreeMap::new();
-    let entry_sources = crate::entry_sources::EntrySources::new(ctx, &entry_views)?;
+    let property_reader = crate::property_reader::PropertyReader::typed(ctx)
+        .with_entries(namespace.arena_as::<crate::native::EntryRecord>("entries")?);
     for property in &properties {
         if super::super::xml::native(property)?.is_none() {
             return decline("the typed property has no independent projection");
         }
     }
-    let payloads = namespace.arena_as::<brep::ShapePayloadRecord>("shape_payloads")?;
+    let payloads = crate::brep::records::payloads_untracked(namespace)?;
     let products = namespace.arena_as::<native::ProductNodeRecord>("product_nodes")?;
     let joints = namespace.arena_as::<native::joint::JointRecord>("joints")?;
     let drawings = namespace.arena_as::<native::DrawingRecord>("drawings")?;
@@ -35,8 +34,20 @@ pub(super) fn agrees(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<(), CodecErr
     let mut projected = CadIr::empty();
     projected.native.clone_from(&ir.native);
     projected.source.clone_from(&ir.source);
-    let mut curves = brep::transfer_text_curves(ctx, &payloads, &properties)?;
-    let surfaces = brep::transfer_text_surfaces(ctx, &payloads, &properties, &mut curves)?;
+    let shape_owners = brep::owners::gui(ctx, Some(namespace))?;
+    let mut curves = brep::transfer_text_curves(
+        ctx,
+        &payloads,
+        brep::owners::Properties::new(&properties, &shape_owners),
+        None,
+    )?;
+    let surfaces = brep::transfer_text_surfaces(
+        ctx,
+        &payloads,
+        brep::owners::Properties::new(&properties, &shape_owners),
+        &mut curves,
+        None,
+    )?;
     projected.model.curves = curves.curves;
     projected
         .model
@@ -48,16 +59,15 @@ pub(super) fn agrees(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<(), CodecErr
         .add_procedural_surfaces(surfaces.procedural)?
         .map_err(CodecError::malformed)?;
     let mut losses = Vec::new();
-    let mut maps = namespace.arena_as::<native::element_map::ElementMapRecord>("element_maps")?;
-    let occurrences = crate::topology_transfer::transfer(
+    let maps = namespace.arena_as::<native::element_map::ElementMapRecord>("element_maps")?;
+    let topology_occurrences = crate::topology_transfer::transfer(
         ctx,
         &mut projected,
         &payloads,
-        &properties,
+        brep::owners::Properties::new(&properties, &shape_owners),
         &mut losses,
     )?;
     crate::topology_transfer::apply_body_names(&mut projected, &payloads, &properties);
-    crate::element_map::bind_topology(&mut maps, &occurrences);
     if ir.scope.design {
         crate::design::transfer(
             &property_reader,
@@ -65,11 +75,11 @@ pub(super) fn agrees(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<(), CodecErr
             &objects,
             &properties,
             &payloads,
-            &[],
-            &entry_sources,
             version,
+            None,
         )?;
     }
+    let (products, unavailable_products) = crate::product::for_projection(products, &properties)?;
     let (definitions, occurrences) = crate::product::transfer_neutral(
         &property_reader,
         &products,
@@ -78,11 +88,16 @@ pub(super) fn agrees(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<(), CodecErr
         &properties,
         &payloads,
         &projected.model.bodies,
+        &unavailable_products,
     )?;
     projected.model.product_definitions = definitions;
     projected.model.occurrences = occurrences;
-    projected.model.assembly_joints =
-        crate::joint::transfer_neutral(&joints, &projected.model.occurrences)?;
+    projected.model.assembly_joints = crate::joint::transfer_neutral(
+        &joints,
+        &projected.model.occurrences,
+        &properties,
+        &std::collections::BTreeSet::new(),
+    )?;
     crate::drawing::transfer_neutral(
         &property_reader,
         &mut projected.model,
@@ -97,18 +112,26 @@ pub(super) fn agrees(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<(), CodecErr
         &drawings,
     )?;
     crate::writer::ordinals::apply(&properties, &mut projected)?;
-    if let Some(gui) = gui_xml(namespace)? {
+    if gui_xml(namespace)?.is_some() {
         let entries = BTreeMap::new();
-        crate::gui::transfer(
-            ctx,
+        crate::gui::project_native(
             &mut projected,
-            gui.as_bytes(),
+            namespace,
             &crate::gui::GuiSources {
                 entries: &entries,
+                declared_entries: None,
+                declared_objects: None,
+                admitted_objects: None,
+                entry_parents: None,
+                entry_owners: None,
+                entry_interpretations: None,
+                gui_entry_interpretations: None,
                 objects: &objects,
+                object_sources: None,
                 properties: &properties,
                 payloads: &payloads,
                 element_maps: &maps,
+                topology_occurrences: &topology_occurrences,
                 requires_alpha_conversion: crate::gui::requires_alpha_conversion(version),
             },
         )?;

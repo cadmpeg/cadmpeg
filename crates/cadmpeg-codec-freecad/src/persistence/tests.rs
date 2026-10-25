@@ -21,6 +21,73 @@ fn parse(
     super::parse_document(&xml, super::Vocabulary::from_declaration(schema_version)?)
 }
 
+fn assert_persistence_failures(
+    document: &str,
+    expected: &[&str],
+    message: &str,
+) -> cadmpeg_ir::codec::DecodeResult {
+    use cadmpeg_ir::source_fidelity::parts::PartState;
+    let bytes = archive(document);
+    let decoded = FcstdCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .unwrap();
+    let fidelity = decoded.source_fidelity();
+    let mut levels = Vec::new();
+    for (id, part) in fidelity
+        .parts()
+        .iter()
+        .filter(|(_, part)| part.state() == &PartState::GivenUp {})
+    {
+        levels.push(part.level().as_str());
+        let from = usize::try_from(part.offset()).unwrap();
+        let to = from + usize::try_from(part.byte_len()).unwrap();
+        assert_eq!(
+            fidelity.retained_record(id.as_str()).unwrap().data(),
+            Some(&document.as_bytes()[from..to])
+        );
+    }
+    levels.sort_unstable();
+    let mut expected = expected.to_vec();
+    expected.sort_unstable();
+    assert_eq!(levels, expected, "{document}");
+    let errors = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "record.unreadable")
+        .collect::<Vec<_>>();
+    assert_eq!(errors.len(), expected.len());
+    assert!(
+        errors.iter().all(|loss| loss.message.contains(message)),
+        "{errors:?}"
+    );
+    let stream = fidelity
+        .parts()
+        .values()
+        .find(|part| part.level().as_str() == "freecad.document_xml")
+        .unwrap()
+        .stream();
+    cadmpeg_test_support::contract::parts::check_one_home(
+        cadmpeg_ir::CodecFormat::Fcstd,
+        &decoded.ir().native,
+        fidelity,
+        &decoded.report().losses,
+        "file",
+        |name, range| {
+            let source = if name == "file" {
+                bytes.as_slice()
+            } else if name == stream {
+                document.as_bytes()
+            } else {
+                return None;
+            };
+            source.get(usize::try_from(range.start).ok()?..usize::try_from(range.end).ok()?)
+        },
+    )
+    .unwrap();
+    decoded
+}
+
 #[test]
 fn persistence_extension_identity_joins_order_and_name() {
     let owner = "fcstd:native:object#Body";
@@ -34,15 +101,15 @@ fn persistence_extension_identity_joins_order_and_name() {
 fn persistence_link_diagnostics_become_unreadable_payloads() {
     let cases = [
         ("<Property name=\"L\" type=\"App::PropertyLink\"/>",
-            "App::PropertyLink requires one Link value"),
+            "App::PropertyLink requires one value element", "freecad.property"),
         ("<Property name=\"L\" type=\"App::PropertyLinkList\"><LinkList count=\"bad\"/></Property>",
-            "App::PropertyLinkList count is invalid"),
+            "link count differs from framed child count", "freecad.property_value"),
         ("<Property name=\"L\" type=\"App::PropertyLinkSub\"><LinkSub value=\"A\" count=\"1\"><Sub/></LinkSub></Property>",
-            "Sub element has no value attribute"),
+            "link has no value attribute", "freecad.value_element"),
         ("<Property name=\"L\" type=\"App::PropertyXLink\"><XLink file=\"\" name=\"A\" Object=\"A\"/></Property>",
-            "unsupported link carrier Object"),
+            "link uses ambiguous Object carrier", "freecad.property_value"),
     ];
-    for (property, expected) in cases {
+    for (property, expected, level) in cases {
         let document = format!(
             "<Document SchemaVersion=\"4\"><Objects Count=\"1\"><Object name=\"A\" type=\"T\"/></Objects><ObjectData Count=\"1\"><Object name=\"A\"><Properties Count=\"1\">{property}</Properties></Object></ObjectData></Document>"
         );
@@ -50,14 +117,27 @@ fn persistence_link_diagnostics_become_unreadable_payloads() {
             parse(document.as_bytes(), "4", ctx)
         })
         .expect("bounded invalid link");
-        assert!(matches!(
-            graph.properties[0].body,
-            Some(crate::native::PropertyBody::Unreadable(_))
-        ));
-        assert!(graph
+        if level == "freecad.property" {
+            assert!(graph.properties.is_empty());
+        } else if level == "freecad.value_element" {
+            let retained = &graph.properties[0];
+            assert!(retained.body.is_some());
+            assert_eq!(retained.values().len(), 1);
+            assert_eq!(retained.values()[0].attributes["value"], "A");
+            assert_eq!(retained.links(), &[None]);
+            assert!(serde_json::to_value(retained).unwrap()["values"][1].is_null());
+        } else {
+            assert!(graph.properties[0].body.is_none());
+        }
+        let unreadable: Vec<_> = graph
             .losses
             .iter()
-            .any(|loss| loss.message.contains(expected)));
+            .filter(|loss| loss.code.local_code() == "record.unreadable")
+            .collect();
+        assert_eq!(unreadable.len(), 1);
+        assert_eq!(unreadable[0].severity, cadmpeg_ir::report::Severity::Error);
+        assert!(unreadable[0].message.contains(level));
+        assert!(unreadable[0].message.contains(expected));
     }
 }
 
@@ -178,24 +258,20 @@ fn rejects_duplicate_root_property_containers() {
 <Properties Count="1"><Property name="First" type="App::PropertyString"><String value="one"/></Property></Properties>
 <Properties Count="1"><Property name="Second" type="App::PropertyString"><String value="two"/></Property></Properties>
 <Objects Count="0"/><ObjectData Count="0"/></Document>"#;
-    // #215 §4.5: the ambiguous root gives up, while its ZIP declaration survives.
     let bytes = archive(document);
     let decoded = FcstdCodec
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
-        .expect("the duplicate root containers have a bounded document recovery home");
+        .expect("only the duplicate root Properties elements are given up");
     assert_eq!(decoded.ir().scope, cadmpeg_ir::ContentScope::full());
+    assert_eq!(decoded.report().scope(), cadmpeg_ir::ContentScope::full());
     assert_eq!(decoded.ir().model.entity_count(), 0);
-    assert!(!decoded
-        .ir()
-        .model
-        .attributes
-        .iter()
-        .any(|attribute| matches!(attribute.name.as_str(), "First" | "Second")));
     let native = decoded.ir().native.namespace("fcstd").unwrap();
-    assert!(native
+    let facts = native
         .arena_as::<crate::native::DocumentFacts>("document")
-        .unwrap()
-        .is_empty());
+        .unwrap();
+    assert_eq!(facts.len(), 1);
+    assert_eq!(facts[0].id, crate::native::native_id("document", "0"));
+    assert_eq!(facts[0].object_count, 0);
     assert!(native
         .arena_as::<crate::native::PropertyRecord>("properties")
         .unwrap()
@@ -204,7 +280,7 @@ fn rejects_duplicate_root_property_containers() {
         .arena_as::<crate::native::EntryRecord>("entries")
         .unwrap();
     let [entry] = entries.as_slice() else {
-        panic!("the independently admitted Document.xml entry survives: {entries:?}")
+        panic!("one independently admitted archive entry: {entries:?}")
     };
     assert_eq!(entry.name(), "Document.xml");
     assert_eq!(
@@ -212,94 +288,119 @@ fn rejects_duplicate_root_property_containers() {
         crate::native::native_id("entry", "Document.xml")
     );
     assert!(entry.referenced_by().is_empty());
-
-    let unknowns = decoded.ir().native_unknowns("fcstd").unwrap();
-    let [unknown] = unknowns.as_slice() else {
-        panic!("one failed document root: {unknowns:?}")
-    };
-    assert!(unknown.links.is_empty());
-    assert_eq!(decoded.report().scope(), cadmpeg_ir::ContentScope::full());
     let fidelity = decoded.source_fidelity();
+    let xml = roxmltree::Document::parse(document).unwrap();
     assert_eq!(
         fidelity.unrepresented(),
         cadmpeg_ir::ArenaClasses::from([
             cadmpeg_ir::ArenaClass::Model,
-            cadmpeg_ir::ArenaClass::Design
+            cadmpeg_ir::ArenaClass::Design,
         ])
     );
-    let part = &fidelity.parts()[&unknown.id];
-    assert_eq!(part.level().as_str(), "freecad.document");
-    assert_eq!(
-        part.state(),
-        &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}
-    );
-    assert_eq!(part.offset(), 0);
-    assert_eq!(part.byte_len(), u64::try_from(document.len()).unwrap());
-    let xml = &fidelity.parts()[part.parent().unwrap()];
-    assert_eq!(xml.level().as_str(), "freecad.document_xml");
-    let member = &fidelity.parts()[xml.parent().unwrap()];
-    assert_eq!(member.level().as_str(), "zip.entry");
-    let archive = &fidelity.parts()[member.parent().unwrap()];
-    assert_eq!(archive.level().as_str(), "zip.archive");
-    assert!(archive.parent().is_none());
-    for parent in [xml, member, archive] {
-        assert_eq!(
-            parent.state(),
-            &cadmpeg_ir::source_fidelity::parts::PartState::Decoded {}
-        );
-    }
-    assert_eq!(
-        fidelity
-            .parts()
-            .values()
-            .filter(|candidate| candidate.state()
-                == &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {})
-            .count(),
-        1
-    );
-    assert!(!fidelity.parts().values().any(|candidate| matches!(
-        candidate.level().as_str(),
-        "freecad.properties" | "freecad.property" | "freecad.property_value"
-    )));
-    let retained = fidelity.retained_record(unknown.id.as_str()).unwrap();
-    assert_eq!(retained.data(), Some(document.as_bytes()));
-    assert_eq!(retained.stream(), part.stream());
-    assert_eq!(retained.offset(), part.offset());
-    assert_eq!(retained.byte_len(), part.byte_len());
-    assert_eq!(
-        retained.sha256(),
-        cadmpeg_ir::hash::sha256_hex(document.as_bytes())
-    );
-    assert!(fidelity.record_layout()[unknown.id.as_str()]
-        .reads()
-        .is_empty());
-    for layout in fidelity.record_layout().values() {
-        if let Some(reads) = layout.reads().get(part.stream()) {
-            assert!(reads.iter().all(|range| range.end <= part.offset()
-                || range.start >= part.offset() + part.byte_len()));
-        }
-    }
-    assert!(!fidelity
-        .record_layout()
-        .contains_key(&crate::native::native_id("document", "0")));
-    assert!(fidelity.record_layout().contains_key(entry.id()));
+    let expected = xml
+        .root_element()
+        .children()
+        .filter(|node| node.has_tag_name("Properties"))
+        .map(|node| node.range())
+        .collect::<Vec<_>>();
+    assert_eq!(expected.len(), 2);
+    let unknowns = decoded.ir().native_unknowns("fcstd").unwrap();
+    assert_eq!(unknowns.len(), 2);
     let failures = decoded
         .report()
         .losses
         .iter()
         .filter(|loss| loss.code.local_code() == "record.unreadable")
         .collect::<Vec<_>>();
-    let [failure] = failures.as_slice() else {
-        panic!("one duplicate-root diagnostic: {failures:?}")
-    };
-    assert_eq!(failure.severity, cadmpeg_ir::report::Severity::Error);
-    assert!(failure
-        .message
-        .contains("Document.xml has multiple root Properties containers"));
-    let location = failure.provenance.as_ref().unwrap();
-    assert_eq!(location.stream_name(), Some(part.stream()));
-    assert_eq!(location.offset, part.offset());
-    assert_eq!(location.byte_len(), Some(part.byte_len()));
+    assert_eq!(failures.len(), 2);
+    for range in &expected {
+        let offset = u64::try_from(range.start).unwrap();
+        let length = u64::try_from(range.len()).unwrap();
+        let unknown = unknowns
+            .iter()
+            .find(|unknown| fidelity.parts()[&unknown.id].offset() == offset)
+            .unwrap();
+        assert_eq!(unknown.links.len(), 1);
+        assert_eq!(unknown.links[0].as_str(), facts[0].id);
+        let part = &fidelity.parts()[&unknown.id];
+        assert_eq!(part.level().as_str(), "freecad.properties");
+        assert_eq!(
+            part.state(),
+            &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}
+        );
+        assert_eq!(part.byte_len(), length);
+        let parent = &fidelity.parts()[part.parent().unwrap()];
+        assert_eq!(parent.level().as_str(), "freecad.document");
+        assert_eq!(
+            parent.state(),
+            &cadmpeg_ir::source_fidelity::parts::PartState::Decoded {}
+        );
+        let xml_part = &fidelity.parts()[parent.parent().unwrap()];
+        assert_eq!(xml_part.level().as_str(), "freecad.document_xml");
+        let member = &fidelity.parts()[xml_part.parent().unwrap()];
+        assert_eq!(member.level().as_str(), "zip.entry");
+        let archive = &fidelity.parts()[member.parent().unwrap()];
+        assert_eq!(archive.level().as_str(), "zip.archive");
+        assert!(archive.parent().is_none());
+        for ancestor in [xml_part, member, archive] {
+            assert_eq!(
+                ancestor.state(),
+                &cadmpeg_ir::source_fidelity::parts::PartState::Decoded {}
+            );
+        }
+        let retained = fidelity.retained_record(unknown.id.as_str()).unwrap();
+        assert_eq!(retained.data(), Some(&document.as_bytes()[range.clone()]));
+        assert_eq!(retained.offset(), offset);
+        assert_eq!(retained.byte_len(), length);
+        assert_eq!(retained.stream(), part.stream());
+        assert_eq!(
+            retained.sha256(),
+            cadmpeg_ir::hash::sha256_hex(&document.as_bytes()[range.clone()])
+        );
+        assert!(fidelity.record_layout()[unknown.id.as_str()]
+            .reads()
+            .is_empty());
+        for layout in fidelity.record_layout().values() {
+            if let Some(reads) = layout.reads().get(part.stream()) {
+                assert!(reads
+                    .iter()
+                    .all(|read| read.end <= offset || read.start >= offset + length));
+            }
+        }
+        let failure = failures
+            .iter()
+            .find(|loss| {
+                loss.provenance
+                    .as_ref()
+                    .is_some_and(|location| location.offset == offset)
+            })
+            .unwrap();
+        assert_eq!(failure.severity, cadmpeg_ir::report::Severity::Error);
+        assert!(failure
+            .message
+            .contains("Document.xml has multiple root Properties containers"));
+        let location = failure.provenance.as_ref().unwrap();
+        assert_eq!(location.stream_name(), Some(part.stream()));
+        assert_eq!(location.byte_len(), Some(length));
+    }
+    assert_eq!(
+        fidelity
+            .parts()
+            .values()
+            .filter(
+                |part| part.state() == &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}
+            )
+            .count(),
+        2
+    );
+    assert!(!fidelity.parts().values().any(|part| matches!(
+        part.level().as_str(),
+        "freecad.property" | "freecad.property_value"
+    )));
+    assert!(fidelity
+        .record_layout()
+        .contains_key(&crate::native::native_id("document", "0")));
+    assert!(fidelity.record_layout().contains_key(entry.id()));
     assert_eq!(crate::source_archive::image(fidelity).unwrap(), bytes);
     assert!(crate::test_support::validate_native(decoded.ir()).is_empty());
     assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
@@ -318,7 +419,7 @@ fn rejects_duplicate_property_names_for_one_owner() {
     let bytes = archive(document);
     let decoded = FcstdCodec
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
-        .expect("the duplicate property container has its own bounded recovery home");
+        .expect("each duplicate property has its own bounded recovery home");
     let native = decoded.ir().native.namespace("fcstd").unwrap();
     let objects = native
         .arena_as::<crate::native::ObjectRecord>("objects")
@@ -340,73 +441,92 @@ fn rejects_duplicate_property_names_for_one_owner() {
         .any(|attribute| attribute.name == "Label"));
 
     let unknowns = decoded.ir().native_unknowns("fcstd").unwrap();
-    let [unknown] = unknowns.as_slice() else {
-        panic!("one failed Properties container: {unknowns:?}")
-    };
+    assert_eq!(unknowns.len(), 2);
     let fidelity = decoded.source_fidelity();
-    let part = &fidelity.parts()[&unknown.id];
-    let start = document.find("<Properties Count=\"2\">").unwrap();
-    let end = document.find("</Properties>").unwrap() + "</Properties>".len();
-    assert_eq!(part.level().as_str(), "freecad.properties");
-    assert_eq!(
-        part.state(),
-        &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}
-    );
-    assert_eq!(part.offset(), u64::try_from(start).unwrap());
-    assert_eq!(part.byte_len(), u64::try_from(end - start).unwrap());
-    let parent = &fidelity.parts()[part.parent().unwrap()];
-    assert_eq!(parent.level().as_str(), "freecad.document");
-    assert_eq!(
-        parent.state(),
-        &cadmpeg_ir::source_fidelity::parts::PartState::Decoded {}
-    );
-    assert_eq!(
-        fidelity
-            .parts()
-            .values()
-            .filter(|candidate| candidate.state()
-                == &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {})
-            .count(),
-        1
-    );
-    assert!(!fidelity.parts().values().any(|candidate| matches!(
-        candidate.level().as_str(),
-        "freecad.property" | "freecad.property_value"
-    )));
-    let retained = fidelity.retained_record(unknown.id.as_str()).unwrap();
-    assert_eq!(retained.data(), Some(&document.as_bytes()[start..end]));
-    assert_eq!(retained.stream(), part.stream());
-    assert_eq!(retained.offset(), part.offset());
-    assert_eq!(retained.byte_len(), part.byte_len());
-    assert_eq!(
-        retained.sha256(),
-        cadmpeg_ir::hash::sha256_hex(&document.as_bytes()[start..end])
-    );
-    assert!(fidelity.record_layout()[unknown.id.as_str()]
-        .reads()
-        .is_empty());
-    for layout in fidelity.record_layout().values() {
-        if let Some(reads) = layout.reads().get(part.stream()) {
-            assert!(reads.iter().all(|range| range.end <= part.offset()
-                || range.start >= part.offset() + part.byte_len()));
-        }
-    }
-    assert!(fidelity.record_layout().contains_key(object.id()));
     let failures = decoded
         .report()
         .losses
         .iter()
         .filter(|loss| loss.code.local_code() == "record.unreadable")
         .collect::<Vec<_>>();
-    let [failure] = failures.as_slice() else {
-        panic!("one duplicate-name diagnostic: {failures:?}")
-    };
-    assert_eq!(failure.severity, cadmpeg_ir::report::Severity::Error);
-    assert!(failure.message.contains("duplicate document property name"));
-    let location = failure.provenance.as_ref().unwrap();
-    assert_eq!(location.stream_name(), Some(part.stream()));
-    assert_eq!(location.offset, part.offset());
-    assert_eq!(location.byte_len(), Some(part.byte_len()));
+    assert_eq!(failures.len(), 2);
+    for value in ["one", "two"] {
+        let source = format!("<Property name=\"Label\" type=\"App::PropertyString\"><String value=\"{value}\"/></Property>");
+        let start = document.find(&source).unwrap();
+        let end = start + source.len();
+        let unknown = unknowns
+            .iter()
+            .find(|unknown| fidelity.parts()[&unknown.id].offset() == u64::try_from(start).unwrap())
+            .unwrap();
+        let part = &fidelity.parts()[&unknown.id];
+        assert_eq!(part.level().as_str(), "freecad.property");
+        assert_eq!(
+            part.state(),
+            &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}
+        );
+        assert_eq!(part.offset(), u64::try_from(start).unwrap());
+        assert_eq!(part.byte_len(), u64::try_from(end - start).unwrap());
+        let parent = &fidelity.parts()[part.parent().unwrap()];
+        assert_eq!(parent.level().as_str(), "freecad.properties");
+        assert_eq!(
+            parent.state(),
+            &cadmpeg_ir::source_fidelity::parts::PartState::Decoded {}
+        );
+        let mut ancestor = parent.parent();
+        while let Some(id) = ancestor {
+            let parent = &fidelity.parts()[id];
+            assert_eq!(
+                parent.state(),
+                &cadmpeg_ir::source_fidelity::parts::PartState::Decoded {}
+            );
+            ancestor = parent.parent();
+        }
+        let retained = fidelity.retained_record(unknown.id.as_str()).unwrap();
+        assert_eq!(retained.data(), Some(&document.as_bytes()[start..end]));
+        assert_eq!(retained.stream(), part.stream());
+        assert_eq!(retained.offset(), part.offset());
+        assert_eq!(retained.byte_len(), part.byte_len());
+        assert_eq!(
+            retained.sha256(),
+            cadmpeg_ir::hash::sha256_hex(&document.as_bytes()[start..end])
+        );
+        assert!(fidelity.record_layout()[unknown.id.as_str()]
+            .reads()
+            .is_empty());
+        for layout in fidelity.record_layout().values() {
+            if let Some(reads) = layout.reads().get(part.stream()) {
+                assert!(reads.iter().all(|range| range.end <= part.offset()
+                    || range.start >= part.offset() + part.byte_len()));
+            }
+        }
+        let failure = failures
+            .iter()
+            .find(|loss| loss.provenance.as_ref().unwrap().offset == part.offset())
+            .unwrap();
+        assert_eq!(failure.severity, cadmpeg_ir::report::Severity::Error);
+        assert!(failure
+            .message
+            .contains("duplicate property name Label for object fcstd:native:object#Part"));
+        let location = failure.provenance.as_ref().unwrap();
+        assert_eq!(location.stream_name(), Some(part.stream()));
+        assert_eq!(location.offset, part.offset());
+        assert_eq!(location.byte_len(), Some(part.byte_len()));
+    }
+    assert_eq!(
+        fidelity
+            .parts()
+            .values()
+            .filter(
+                |part| part.state() == &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}
+            )
+            .count(),
+        2
+    );
+    assert!(!fidelity
+        .parts()
+        .values()
+        .any(|part| part.level().as_str() == "freecad.property_value"));
+    assert!(fidelity.record_layout().contains_key(object.id()));
     assert_eq!(crate::source_archive::image(fidelity).unwrap(), bytes);
     assert!(crate::test_support::validate_native(decoded.ir()).is_empty());
     assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
@@ -452,14 +572,13 @@ fn retains_nested_xlink_value_children_as_unreadable_source() {
             .expect("namespace")
             .arena_as::<crate::native::PropertyRecord>("properties")
             .expect("properties");
-        assert!(matches!(
-            properties[0].body,
-            Some(crate::native::PropertyBody::Unreadable(_))
-        ));
-        assert!(decoded.report().losses.iter().any(|loss| loss.code
-            == crate::loss::FreecadLossCode::PersistencePayloadUnresolved
-                .note(String::new())
-                .code));
+        assert!(matches!(properties[0].body, None));
+        assert!(decoded
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code.local_code() == "record.unreadable"
+                && loss.severity == cadmpeg_ir::report::Severity::Error));
         assert!(crate::test_support::validate_native(decoded.ir()).is_empty());
     }
 }
@@ -471,16 +590,27 @@ pub(crate) fn legacy_schema_dispatch_rejects_wrong_envelopes_and_unmatched_objec
         r#"<Document SchemaVersion="3"><Features Count="0"/><FeatureData Count="0"/></Document>"#,
         r#"<Document SchemaVersion="2"><Features Count="1"><Feature type="App::Feature" name="A"/></Features><FeatureData Count="1"><Feature name="B"/></FeatureData></Document>"#,
     ];
-    for document in cases {
-        assert!(matches!(
-            FcstdCodec.decode(
-                &mut Cursor::new(archive(document)),
-                &DecodeOptions::default()
-            ),
-            Err(cadmpeg_ir::DecodeFailure::Codec(
-                cadmpeg_core::CodecError::Malformed(_)
-            ))
-        ));
+    for (case, document) in cases.into_iter().enumerate() {
+        let (levels, message): (&[&str], &str) = if case < 2 {
+            (
+                &["freecad.objects", "freecad.object_data_section"],
+                "wrong schema envelope",
+            )
+        } else {
+            (&["freecad.object_data"], "has no readable declaration")
+        };
+        let decoded = assert_persistence_failures(document, levels, message);
+        let objects = decoded
+            .ir()
+            .native
+            .namespace("fcstd")
+            .unwrap()
+            .arena_as::<crate::native::ObjectRecord>("objects")
+            .unwrap();
+        assert_eq!(objects.len(), usize::from(case == 2));
+        if case == 2 {
+            assert_eq!(objects[0].name(), "A");
+        }
     }
 }
 
@@ -512,8 +642,17 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
             b"\nCASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 0\nCurves 4\n1 10 20 30 1 0 0\n7 0 0 2 3 2 0 0 0 5 0 0 10 0 0 0 3 1 3\n8 0 5 1 0 0 0 1 0 0\n9 2 0 0 1 1 0 0 0 1 0 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 5\n1 0 0 0 0 0 1 1 0 0 0 1 0\n9 0 0 0 0 1 1 2 2 2 2 0 0 0 0 1 0 1 0 0 1 1 0 0 2 1 2 0 2 1 2\n6 0 0 2 1 0 0 0 1 0 0\n7 0 0 0 0 0 1 1 0 0 0 1 0 0\n10 0 1 2 3 11 4 1 0 0 0 0 0 1 1 0 0 0 1 0\nTriangulations 1\n3 1 0 0.01 0 0 0 1 0 0 0 1 0 1 2 3\nTShapes 0\n*",
         ),
     ]);
+    let mut original = zip::ZipArchive::new(Cursor::new(&bytes)).expect("fixture archive");
+    let mut expanded_lengths = std::collections::BTreeMap::new();
+    for index in 0..original.len() {
+        let entry = original.by_index(index).expect("fixture member");
+        expanded_lengths.insert(
+            entry.name().expect("fixture member name").into_owned(),
+            entry.size(),
+        );
+    }
     let result = FcstdCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
         .expect("decode graph");
     let namespace = result.ir().native.namespace("fcstd").expect("namespace");
     let objects = namespace
@@ -584,7 +723,15 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         .iter()
         .find(|property| property.name == "Payload")
         .expect("payload");
-    assert_eq!(payload.side_entries(), vec!["Payload.bin"]);
+    // The original File spelling is not this registered family's FileIncluded
+    // carrier; the independent property declaration and archive member remain.
+    assert!(payload.body.is_none());
+    assert!(payload.side_entries().is_empty());
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code.local_code() == "record.unreadable"
+            && loss.message.contains("freecad.property_value")
+            && loss.message.contains(&payload.id)
+    }));
     let shape = properties
         .iter()
         .find(|property| property.name == "Shape")
@@ -707,7 +854,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         .iter()
         .find(|entry| entry.name() == "Payload.bin")
         .expect("payload entry");
-    assert_eq!(payload_entry.referenced_by(), vec![payload.id.clone()]);
+    assert!(payload_entry.referenced_by().is_empty());
     assert_eq!(
         crate::test_support::source_fidelity::entry_bytes(
             result.source_fidelity(),
@@ -732,7 +879,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         assert_eq!(spans.first().map(|span| span.span.start()), Some(0));
         assert_eq!(
             spans.last().map(|span| span.span.end()),
-            Some(result.source_fidelity().record_layout()[entry.id()].byte_len())
+            Some(expanded_lengths[entry.name()])
         );
         assert!(spans
             .windows(2)
@@ -767,7 +914,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         coverage[0].logical_byte_len,
         entries
             .iter()
-            .map(|entry| result.source_fidelity().record_layout()[entry.id()].byte_len())
+            .map(|entry| expanded_lengths[entry.name()])
             .sum::<u64>()
     );
     assert_eq!(
@@ -780,28 +927,11 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     let findings = crate::test_support::validate_native(result.ir());
     assert!(findings.is_empty(), "{findings:#?}");
 
-    let mut corrupted = result.ir().clone();
-    let missing_payload = ledger
-        .iter()
-        .filter(|span| span.entry != "Payload.bin")
-        .cloned()
-        .collect::<Vec<_>>();
-    corrupted
-        .native
-        .namespace_mut("fcstd")
-        .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
-            "logical_ledger",
-            &missing_payload,
-        )
-        .expect("replace logical ledger");
-    assert!(crate::test_support::validate_native(&corrupted)
-        .iter()
-        .any(|finding| {
-            finding
-                .message
-                .contains("logical ledger omits nonempty entry Payload.bin")
-        }));
+    // #209: source accounting belongs to SourceFidelity, never document arenas.
+    let native_arenas = result.ir().native.namespace("fcstd").unwrap().arenas();
+    for source_only in ["logical_ledger", "physical_ledger", "byte_coverage"] {
+        assert!(!native_arenas.contains_key(source_only));
+    }
 }
 
 #[test]
@@ -814,11 +944,27 @@ fn rejects_inconsistent_object_dependency_envelopes() {
         r#"<Document SchemaVersion="4"><Objects Count="2" Dependencies="1"><ObjectDeps Name="B" Count="0"/><ObjectDeps Name="A" Count="0"/><Object type="App::Feature" name="A"/><Object type="App::Feature" name="B"/></Objects><ObjectData Count="2"><Object name="A"/><Object name="B"/></ObjectData></Document>"#,
     ];
 
-    for document in cases {
-        assert!(matches!(
-            parse_document_graph(document),
-            Err(cadmpeg_core::CodecError::Malformed(_))
-        ));
+    for (case, document) in cases.into_iter().enumerate() {
+        let (levels, message): (&[&str], &str) = match case {
+            0 => (&["freecad.object_deps"], "dependency envelope"),
+            1 => (&["freecad.objects"], "dependency population"),
+            2 => (&["freecad.object_dep"], "never declared"),
+            3 => (&["freecad.object_deps"], "duplicate ObjectDeps name"),
+            _ => (
+                &["freecad.object_deps", "freecad.object_deps"],
+                "dependency envelope",
+            ),
+        };
+        let decoded = assert_persistence_failures(document, levels, message);
+        let objects = decoded
+            .ir()
+            .native
+            .namespace("fcstd")
+            .unwrap()
+            .arena_as::<crate::native::ObjectRecord>("objects")
+            .unwrap();
+        assert_eq!(objects.len(), [1, 0, 1, 2, 2][case]);
+        assert!(objects.iter().all(|object| object.dependencies.is_empty()));
     }
 }
 
@@ -838,16 +984,41 @@ fn rejects_ambiguous_persistence_carriers() {
         r#"<Document SchemaVersion="4"><Objects Count="1"><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A" Extensions="True"><Properties Count="0"/><Extensions Count="0"/></Object></ObjectData></Document>"#,
     ];
 
-    for document in cases {
-        assert!(matches!(
-            FcstdCodec.decode(
-                &mut Cursor::new(archive(document)),
-                &DecodeOptions::default()
+    for (case, document) in cases.into_iter().enumerate() {
+        let (levels, message): (&[&str], &str) = match case {
+            0 | 1 => (&["freecad.document"], "unsupported schemaVersion"),
+            2 => (
+                &["freecad.objects"],
+                "duplicate object declarations section",
             ),
-            Err(cadmpeg_ir::DecodeFailure::Codec(
-                cadmpeg_core::CodecError::Malformed(_)
-            ))
-        ));
+            3 => (
+                &["freecad.object_data_section"],
+                "duplicate object data section",
+            ),
+            4 => (&["freecad.object_deps"], "dependency envelope"),
+            5 => (
+                &["freecad.property", "freecad.property"],
+                "duplicate property name Same",
+            ),
+            6 => (&["freecad.properties"], "duplicate direct Properties"),
+            8 | 9 => (&["freecad.extension"], "duplicate extension name or type"),
+            _ => (
+                &["freecad.extensions"],
+                "duplicate or misordered Extensions",
+            ),
+        };
+        let decoded = assert_persistence_failures(document, levels, message);
+        if case >= 4 {
+            let objects = decoded
+                .ir()
+                .native
+                .namespace("fcstd")
+                .unwrap()
+                .arena_as::<crate::native::ObjectRecord>("objects")
+                .unwrap();
+            assert_eq!(objects.len(), if case == 4 { 2 } else { 1 });
+            assert!(objects.iter().any(|object| object.name() == "A"));
+        }
     }
 }
 
@@ -1008,35 +1179,78 @@ fn property_value_xml_above_the_copy_bound_is_unreadable_with_a_loss() {
         r#"<Properties Count="1"><Property name="P" type="App::PropertyString"><Outer><Middle><Leaf>{payload}</Leaf></Middle></Outer></Property></Properties>"#
     );
     let xml = roxmltree::Document::parse(&document).expect("XML");
-    let mut properties = Vec::new();
-    let mut losses = Vec::new();
-    let mut property_sources = std::collections::BTreeMap::new();
-    super::parse_properties(
-        xml.root_element(),
-        "owner",
-        &mut properties,
-        &mut property_sources,
-        &mut losses,
-        None,
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, view) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        document.as_bytes(),
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
     )
-    .expect("a value copy above the bound skips the values");
-    assert!(matches!(
-        &properties[0].body,
-        Some(crate::native::PropertyBody::Unreadable(detail))
-            if detail.contains("value copy bound")
-    ));
+    .expect("source");
+    let source = crate::xml_framing::XmlSource::new(&ctx, view).expect("source elements");
+    let entries = std::collections::BTreeMap::new();
+    let context = crate::element_map::adopted::Context::new(&entries, Some(1));
+    let mut output =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::Fcstd);
+    let properties = super::document_properties::decode_owned_scanned(
+        &ctx,
+        &source,
+        0,
+        &crate::native::native_id("document", "0"),
+        &context,
+        &mut output,
+    )
+    .expect("source-backed values need no overlapping XML copies");
+    assert_eq!(properties.properties.len(), 1);
+    let property = &properties.properties[0];
+    assert!(property.body.is_none());
+    assert!(property.values().is_empty());
+    assert!(!properties.sources[&property.id].has_values());
     assert_eq!(
-        &document[property_sources[&properties[0].id].record_range()],
+        &document[properties.sources[&property.id].record_range()],
         &document[xml
             .root_element()
             .first_element_child()
             .expect("property")
             .range()]
     );
-    assert!(losses.iter().any(
-        |loss| loss.message.contains("property owner/P is unreadable")
-            && loss.message.contains("value copy bound")
-    ));
+    let failures: Vec<_> = output
+        .fidelity()
+        .parts()
+        .values()
+        .filter(|part| part.state() == &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {})
+        .collect();
+    let [failure] = failures.as_slice() else {
+        panic!("one actual invalid String value: {failures:?}")
+    };
+    let outer = xml
+        .root_element()
+        .first_element_child()
+        .unwrap()
+        .first_element_child()
+        .unwrap();
+    assert_eq!(failure.level().as_str(), "freecad.property_value");
+    assert_eq!(
+        failure.offset(),
+        u64::try_from(outer.range().start).unwrap()
+    );
+    assert_eq!(
+        failure.byte_len(),
+        u64::try_from(outer.range().len()).unwrap()
+    );
+    assert_eq!(output.losses().len(), 1);
+    assert_eq!(output.losses()[0].code.local_code(), "record.unreadable");
+    let text_start = u64::try_from(document.find(&payload).unwrap()).unwrap();
+    let text_end = text_start + u64::try_from(payload.len()).unwrap();
+    let captures = ctx.take_record_captures().unwrap();
+    let capture = captures
+        .iter()
+        .find(|capture| capture.id() == property.id)
+        .unwrap();
+    assert!(capture
+        .reads()
+        .values()
+        .flatten()
+        .all(|range| range.end <= text_start || range.start >= text_end));
 }
 
 #[test]
