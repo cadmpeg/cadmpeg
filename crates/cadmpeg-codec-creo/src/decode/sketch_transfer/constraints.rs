@@ -1660,7 +1660,9 @@ pub(in super::super) fn section_equation_axis_distance_constraints(
             else {
                 return Ok(None);
             };
-            let Some(dimension_value) = dimension.value.resolved() else {
+            let Some(dimension_value) =
+                crate::decode::feature_history::dimensions::dimension_measurement_value(dimension)
+            else {
                 return Ok(None);
             };
             if !matches!(dimension.dimension_type, 1..=5)

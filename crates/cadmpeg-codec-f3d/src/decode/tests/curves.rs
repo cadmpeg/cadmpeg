@@ -24,14 +24,15 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use crate::test_support::smbh_curves_test::{
     synthetic_geometry_with_analytic_offset_supports_smbh,
     synthetic_geometry_with_cacheless_helix_curve_smbh,
-    synthetic_geometry_with_compound_curve_smbh, synthetic_geometry_with_decoy_curve_sense_smbh,
+    synthetic_geometry_with_compound_curve_smbh,
+    synthetic_geometry_with_consistent_exact_curve_smbh,
+    synthetic_geometry_with_decoy_curve_sense_smbh,
     synthetic_geometry_with_embedded_offset_supports_smbh,
-    synthetic_geometry_with_exact_curve_smbh, synthetic_geometry_with_helix_curve_smbh,
-    synthetic_geometry_with_law_curve_smbh, synthetic_geometry_with_procedural_curve_smbh,
-    synthetic_geometry_with_projection_smbh, synthetic_geometry_with_silhouette_smbh,
-    synthetic_geometry_with_spring_smbh, synthetic_geometry_with_subset_curve_smbh,
-    synthetic_geometry_with_surface_curve_smbh, synthetic_geometry_with_surface_intersection_smbh,
-    synthetic_geometry_with_surface_offset_smbh,
+    synthetic_geometry_with_helix_curve_smbh, synthetic_geometry_with_law_curve_smbh,
+    synthetic_geometry_with_procedural_curve_smbh, synthetic_geometry_with_projection_smbh,
+    synthetic_geometry_with_silhouette_smbh, synthetic_geometry_with_spring_smbh,
+    synthetic_geometry_with_subset_curve_smbh, synthetic_geometry_with_surface_curve_smbh,
+    synthetic_geometry_with_surface_intersection_smbh, synthetic_geometry_with_surface_offset_smbh,
     synthetic_geometry_with_two_sided_offset_curve_smbh,
     synthetic_geometry_with_vector_offset_curve_smbh, with_legacy_subtype,
 };
@@ -754,7 +755,9 @@ fn generated_exact_intcurve_preserves_native_construction_source_less() {
 
     let result = F3dCodec
         .decode(
-            &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_exact_curve_smbh())),
+            &mut Cursor::new(f3d_with_smbh(
+                &synthetic_geometry_with_consistent_exact_curve_smbh(),
+            )),
             &DecodeOptions::default(),
         )
         .expect("generated exact intcurve decode");
@@ -801,7 +804,10 @@ fn generated_exact_intcurve_preserves_native_construction_source_less() {
 #[test]
 fn generated_spline_carriers_write_explicit_forward_sense() {
     for (smbh, head) in [
-        (synthetic_geometry_with_exact_curve_smbh(), "intcurve"),
+        (
+            synthetic_geometry_with_consistent_exact_curve_smbh(),
+            "intcurve",
+        ),
         (synthetic_exact_spl_sur_smbh("exact_spl_sur"), "spline"),
     ] {
         let result = F3dCodec
@@ -880,7 +886,7 @@ fn generated_intcurve_sense_uses_token_adjacent_to_subtype() {
 
     assert_eq!(
         decode_curve(synthetic_geometry_with_decoy_curve_sense_smbh()),
-        decode_curve(synthetic_geometry_with_exact_curve_smbh())
+        decode_curve(synthetic_geometry_with_consistent_exact_curve_smbh())
     );
 }
 
@@ -930,7 +936,7 @@ fn generated_legacy_intcurve_aliases_decode_and_write_canonically() {
 
     let cases = [
         with_legacy_subtype(
-            synthetic_geometry_with_exact_curve_smbh(),
+            synthetic_geometry_with_consistent_exact_curve_smbh(),
             "exact_int_cur",
             "exactcur",
         ),

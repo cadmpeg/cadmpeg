@@ -2528,7 +2528,8 @@ their point keys. Function `3` has exactly three argument slots. Its first two
 rows have the same type, either `1` or `2`; its third row has type `0`. The
 third row key is a zero-based ordinal into a complete `dimtab_ptr` row table.
 For dimension types `1` through `5`, the type-0 scalar and the selected
-dimension magnitude are equal non-negative millimetre values, and the equation
+dimension magnitude are equal non-negative millimetre values. For type four,
+that magnitude is the full diameter, twice the stored radius scalar. The equation
 asserts that the absolute difference of the first two coordinates equals that
 magnitude. An inline type-0 scalar, or a value resolved for that row through a
 scalar-equality component, must equal the selected dimension magnitude. A
@@ -2638,6 +2639,9 @@ is present, complete, or contains the same external identifiers. Cross-table
 agreement is required only when deriving solved section topology.
 The `dimtab_ptr` header retains its declared count and table-class reference
 when no dimension row body validates.
+A type-four dimension has diameter display semantics and stores a radius
+scalar in its value body. Its dimension measurement is twice that scalar.
+Other dimension types use their stored scalar as their dimension measurement.
 Every decoded dimension row transfers as a neutral parameter with identity
 scoped by its feature definition, external identifier, and repeated-row
 occurrence. Dimension rows form an ordinal relation target only when the
@@ -2655,7 +2659,8 @@ A type-10 `segtab` row is a full circle. It has no endpoint identifiers;
 the second point slot is the structural value one, `cntrid` selects the center
 point, and `radius` selects the ordinal radius or diameter dimension. A
 type-three selected dimension stores the radius. A type-four selected dimension
-stores the diameter, so half its positive value is the solved geometric radius.
+also stores the radius; its diameter value is twice that stored scalar. The
+positive stored scalar is the solved geometric radius in both forms.
 The dimension join requires a complete dimension table and a unique type-10
 external identifier; it does not require every declared `segtab` row to decode.
 When the type-10 external identifier is not unique, the circular-size relation
@@ -3066,8 +3071,8 @@ A type-five relation with
 unique arc whose endpoint pair, center, and `radius` dimension index match
 those stored operands. Endpoint order does not affect the radius. The selected
 dimension is the neutral radius constraint parameter, except that a type-four
-dimension produces a diameter constraint because its stored value is the full
-diameter.
+dimension produces a diameter constraint whose parameter is twice its stored
+radius.
 
 A type-six relation with sign `1`, complete vectors
 `a=[first_point,second_point,0,1]`, `b=[center_point,0,0,0]`, and a complete
@@ -3076,8 +3081,8 @@ whose endpoint pair, center, and `radius` dimension index match those stored
 operands. Endpoint order does not affect the radius. The `c` selector must be
 complete but does not select a different arc in this form. The selected
 dimension is the neutral radius constraint parameter, except that a type-four
-dimension produces a diameter constraint because its stored value is the full
-diameter. An incomplete selector, incomplete dimension or relation table, or
+dimension produces a diameter constraint whose parameter is twice its stored
+radius. An incomplete selector, incomplete dimension or relation table, or
 ambiguous arc identity remains a native relation.
 
 A type-14 relation with `a=[radius_id,0,0,0]`, `b=[0,0,0,0]`,
@@ -3086,8 +3091,8 @@ type-three `var_arr` radius with that key. An arc's `radius` field selects the
 same radius key. The solved center point and positive radius define its
 unbounded circular carrier before both arc endpoints are available.
 Only a linear selected dimension contributes a solved radius.
-For a type-four diameter dimension, the propagated radius is half the selected
-dimension value.
+For a type-four diameter dimension, the propagated radius is the stored
+dimension scalar; the diameter value is twice that radius.
 The selected dimension is the neutral circular-size constraint parameter when
 exactly one arc's `radius` field names that key and the selected dimension type
 is linear. Type four produces a diameter constraint; other linear types produce
@@ -4051,6 +4056,12 @@ source-bearing profile entry is non-surface. Each cap plane has one
 unambiguous placed equation from its outline or positional frame; conflicting
 equations do not establish the cap. The materialized cylinder entry is the
 single neutral carrier for both generated cylinder uses.
+The source identifier of the non-surface profile entry selects the section
+entity with that external identifier. The section owner and entity identity
+must each be unique. A complete saved circle joined through its unique
+`order_table` row is a closed one-entity profile when the two cap planes and
+cylinder are unique rows owned by the same feature. Competing materialized
+generated tables or duplicate generated identifiers do not select a profile.
 The owning feature definition selects the emitted section sketch when that
 sketch has a resolved profile chain and otherwise retains the native circular
 profile reference. When the feature definition is absent or does not match the

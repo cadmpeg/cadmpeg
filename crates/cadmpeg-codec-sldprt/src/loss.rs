@@ -83,6 +83,9 @@ pub(crate) enum SldprtLossCode {
     FeatureNativeKindRetained,
     /// Native feature-input operation object does not bind uniquely to a feature.
     FeatureInputObjectUnbound,
+    /// The archive walk of a feature-input lane stopped before the stream's
+    /// end, so the lane scalars keep no archive parameter class.
+    FeatureInputArchiveWalkStopped,
     /// Typed feature retains native or unresolved required operation operands.
     FeatureTypedOperandIncomplete,
     /// Thin extrusion retains an ambiguous inline Boolean operation.
@@ -208,6 +211,7 @@ impl SldprtLossCode {
         Self::SketchRelationMultiplyProjected,
         Self::FeatureNativeKindRetained,
         Self::FeatureInputObjectUnbound,
+        Self::FeatureInputArchiveWalkStopped,
         Self::FeatureTypedOperandIncomplete,
         Self::FeatureThinOperationAmbiguous,
         Self::FeatureBodyRetentionUnresolved,
@@ -282,6 +286,7 @@ impl SldprtLossCode {
             Self::SketchRelationMultiplyProjected => "sketch.relation-multiply-projected",
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
             Self::FeatureInputObjectUnbound => "feature.input-object-unbound",
+            Self::FeatureInputArchiveWalkStopped => "feature.input-archive-walk-stopped",
             Self::FeatureTypedOperandIncomplete => "feature.typed-operand-incomplete",
             Self::FeatureThinOperationAmbiguous => "feature.thin-operation-ambiguous",
             Self::FeatureBodyRetentionUnresolved => "feature.body-retention-unresolved",
@@ -371,6 +376,7 @@ impl SldprtLossCode {
             | Self::SketchRelationMultiplyProjected
             | Self::FeatureNativeKindRetained
             | Self::FeatureInputObjectUnbound
+            | Self::FeatureInputArchiveWalkStopped
             | Self::FeatureTypedOperandIncomplete
             | Self::FeatureThinOperationAmbiguous
             | Self::FeatureBodyRetentionUnresolved
@@ -473,6 +479,7 @@ impl SldprtLossCode {
             | Self::SketchRelationMultiplyProjected
             | Self::FeatureNativeKindRetained
             | Self::FeatureInputObjectUnbound
+            | Self::FeatureInputArchiveWalkStopped
             | Self::FeatureTypedOperandIncomplete
             | Self::FeatureThinOperationAmbiguous
             | Self::FeatureBodyRetentionUnresolved => LossTaxonomy::FeatureHistoryRetained,
@@ -645,6 +652,7 @@ mod tests {
                 "sketch.relation-multiply-projected",
                 "feature.native-kind-retained",
                 "feature.input-object-unbound",
+                "feature.input-archive-walk-stopped",
                 "feature.typed-operand-incomplete",
                 "feature.thin-operation-ambiguous",
                 "feature.body-retention-unresolved",
