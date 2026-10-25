@@ -221,11 +221,11 @@ Visibility is a property of a design-view representation. `DesignViewSegment` st
 
 ### DE-07. Other PmDc segment versions
 
-**Question.** Which content-header, stamp, list, and record forms do PmDc segments of major versions 24, 26, and 27 use, what do content-header stamps encode, and what does a sketch point with tail state 2 store after its state?
+**Question.** Which content-header, stamp, list, and record forms do PmDc segments of major versions 24, 26, and 27 use, what do content-header stamps encode, and what roles do the scalar pair and the operand references of a state-2 point have?
 
-**Known.** Segment major versions 23, 25, and 28 through 31 use the header and record forms of the specification. A stamp is −1 or a nonnegative value; nonnegative stamps include values whose hundreds equal the segment major version. Points with tail state 2 occur from segment major version 25 and store more data after the state than an association list and a link list.
+**Known.** Segment major versions 23, 25, and 28 through 31 use the header and record forms of the specification. A stamp is −1 or a nonnegative value; nonnegative stamps include values whose hundreds equal the segment major version. A state-2 point has two finite scalars and two entity references. The point position gives its solved coordinates.
 
-**Need.** Each other version requires its header and record forms before its PmDc records decode. A stamp requires an exact referent before it can affect transfer. A state-2 point requires its complete tail grammar before its sketch can close.
+**Need.** Each other version requires its header and record forms before its PmDc records decode. A stamp requires an exact referent before it can affect transfer. The scalar and operand roles require exact semantics before this association can define a neutral relation.
 
 ### DE-08. Sheet-metal feature records
 
