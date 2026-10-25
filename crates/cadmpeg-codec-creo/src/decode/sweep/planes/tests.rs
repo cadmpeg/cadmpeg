@@ -51,10 +51,9 @@ fn plane_row(id: u32) -> crate::surface::SurfaceRow {
 }
 
 fn plane_surface(id: u32, z: f64) -> Surface {
-    Surface {
-        native_ref: None,
-        id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+    Surface::new(
+        SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, z),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -62,8 +61,8 @@ fn plane_surface(id: u32, z: f64) -> Surface {
             )
             .expect("valid PlaneSurface fixture"),
         )),
-        source_object: None,
-    }
+        None,
+    )
 }
 
 fn plane_outline(id: u32, z: f64) -> crate::surface::OutlinePlane {
@@ -77,10 +76,9 @@ fn plane_outline(id: u32, z: f64) -> crate::surface::OutlinePlane {
 }
 
 fn cylinder_surface(id: u32, origin: Point3, axis: Vector3) -> Surface {
-    Surface {
-        native_ref: None,
-        id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+    Surface::new(
+        SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 origin,
                 axis,
@@ -89,8 +87,8 @@ fn cylinder_surface(id: u32, origin: Point3, axis: Vector3) -> Surface {
             )
             .expect("valid CylinderSurface fixture"),
         )),
-        source_object: None,
-    }
+        None,
+    )
 }
 
 #[test]
@@ -206,12 +204,11 @@ fn feature_plane_extent_reconciles_native_and_transferred_carriers() {
     )
     .is_none());
 
-    ir.model.surfaces[1] = Surface {
-        native_ref: None,
-        id: SurfaceId::mint("creo:visibgeom:surface#32".to_string()).expect("identity grammar"),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
-        source_object: None,
-    };
+    ir.model.surfaces[1] = Surface::new(
+        SurfaceId::mint("creo:visibgeom:surface#32".to_string()).expect("identity grammar"),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+        None,
+    );
     assert_eq!(
         service_feature_plane_equations(
             &scan,

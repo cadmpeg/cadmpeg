@@ -1647,18 +1647,8 @@ fn project_native_composite(
     ]);
     ctx.charge_entities(2, "iges_geometry_composites")?;
     ir.model.vertices.extend([
-        Vertex {
-            native_ref: None,
-            id: start_vertex.clone(),
-            point: start_point,
-            tolerance: None,
-        },
-        Vertex {
-            native_ref: None,
-            id: end_vertex.clone(),
-            point: end_point,
-            tolerance: None,
-        },
+        Vertex::new(start_vertex.clone(), start_point, None),
+        Vertex::new(end_vertex.clone(), end_point, None),
     ]);
     sequences.record_curve(&curve_id, entry.sequence);
     let Some(segments) = cadmpeg_ir::geometry::CompositeCurveSegments::try_from(segments).ok()
@@ -1674,26 +1664,27 @@ fn project_native_composite(
     };
 
     ctx.charge_entities(1, "iges_geometry_composites")?;
-    ir.model.curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: curve_id.clone(),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
-            segments,
-            self_intersect: None,
-        }),
-        source_object: Some(source),
+    ir.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            curve_id.clone(),
+            CurveGeometry::Solved(SolvedCurveGeometry::Composite {
+                segments,
+                self_intersect: None,
+            }),
+            Some(source),
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     });
 
     ctx.charge_entities(1, "iges_geometry_composites")?;
-    ir.model.edges.push(Edge {
-        native_ref: None,
-        id: edge_id.clone(),
-        carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id.clone())),
-        start: start_vertex.clone(),
-        end: end_vertex.clone(),
-        tolerance: None,
-    });
+    ir.model.edges.push(Edge::new(
+        edge_id.clone(),
+        cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id.clone())),
+        start_vertex.clone(),
+        end_vertex.clone(),
+        None,
+    ));
     index.add_model_entity(
         &curve_id,
         ir.model.curves.len() - 1,
@@ -2191,43 +2182,31 @@ fn project_with_type_130_policy(
         ]);
         ctx.charge_entities(2, "iges_geometry_composites")?;
         ir.model.vertices.extend([
-            Vertex {
-                native_ref: None,
-                id: start_vertex.clone(),
-                point: start_point,
-                tolerance: None,
-            },
-            Vertex {
-                native_ref: None,
-                id: end_vertex.clone(),
-                point: end_point,
-                tolerance: None,
-            },
+            Vertex::new(start_vertex.clone(), start_point, None),
+            Vertex::new(end_vertex.clone(), end_point, None),
         ]);
         sequences.record_curve(&curve_id, entry.sequence);
 
         ctx.charge_entities(1, "iges_geometry_composites")?;
-        ir.model.curves.push(Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: curve_id.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
-            source_object: Some(source_object(entry)?),
+        ir.model.curves.push({
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                curve_id.clone(),
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
+                Some(source_object(entry)?),
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         });
 
         ctx.charge_entities(1, "iges_geometry_composites")?;
-        ir.model.edges.push(Edge {
-            native_ref: None,
-            id: edge.clone(),
-            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
-                Some(curve_id.clone()),
-                Some([0.0, cursor]),
-            )
-            .map_err(CodecError::malformed)?,
-            start: start_vertex.clone(),
-            end: end_vertex.clone(),
-            tolerance: None,
-        });
+        ir.model.edges.push(Edge::new(
+            edge.clone(),
+            cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id.clone()), Some([0.0, cursor]))
+                .map_err(CodecError::malformed)?,
+            start_vertex.clone(),
+            end_vertex.clone(),
+            None,
+        ));
         index.add_model_entity(
             &curve_id,
             ir.model.curves.len() - 1,

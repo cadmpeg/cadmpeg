@@ -46,18 +46,20 @@ fn composite_coplanarity_refuses_recursion_depth() {
     use cadmpeg_ir::CadIr;
 
     let child_id = CurveId::mint("iges:model:curve#D1").unwrap();
-    let child = Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: child_id.clone(),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(1.0, 0.0, 0.0),
-            )
-            .unwrap(),
-        )),
-        source_object: None,
+    let child = {
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            child_id.clone(),
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            )),
+            None,
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     };
     let segments = CompositeCurveSegments::try_from(vec![CompositeCurveSegment {
         curve: child_id,

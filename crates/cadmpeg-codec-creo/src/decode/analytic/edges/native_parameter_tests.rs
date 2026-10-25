@@ -620,12 +620,13 @@ fn adjacent_face_pcurves_must_select_the_same_circle_arc() {
         .expect("valid CylinderSurface fixture"),
     ));
     let surfaces = [10, 11]
-        .map(|face| Surface {
-            native_ref: None,
-            id: SurfaceId::mint(format!("creo:visibgeom:surface#{face}"))
-                .expect("identity grammar"),
-            geometry: surface_geometry.clone(),
-            source_object: None,
+        .map(|face| {
+            Surface::new(
+                SurfaceId::mint(format!("creo:visibgeom:surface#{face}"))
+                    .expect("identity grammar"),
+                surface_geometry.clone(),
+                None,
+            )
         })
         .to_vec();
     let points = [[2.0, 0.0, 0.0], [0.0, 2.0, 0.0]];

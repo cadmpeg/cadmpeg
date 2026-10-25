@@ -93,10 +93,9 @@ fn sphere_fixture(center: Point3, axis: Vector3, reference: Vector3) -> Brep {
     let coedge = CoedgeId::mint("test:audit:coedge#1").unwrap();
     let edge = EdgeId::mint("test:audit:edge#1").unwrap();
     let vertex = VertexId::mint("test:audit:vertex#1").unwrap();
-    out.surfaces.push(Surface {
-        native_ref: None,
-        id: surface.clone(),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+    out.surfaces.push(Surface::new(
+        surface.clone(),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
             SphereSurface::try_new(
                 Point3::new(0., 0., 0.),
                 Vector3::new(0., 0., 1.),
@@ -105,54 +104,49 @@ fn sphere_fixture(center: Point3, axis: Vector3, reference: Vector3) -> Brep {
             )
             .unwrap(),
         )),
-        source_object: None,
+        None,
+    ));
+    out.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            curve.clone(),
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                CircleCurve::try_new(center, axis, reference, 1.).unwrap(),
+            )),
+            None,
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     });
-    out.curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: curve.clone(),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-            CircleCurve::try_new(center, axis, reference, 1.).unwrap(),
-        )),
-        source_object: None,
-    });
-    out.faces.push(Face {
-        native_ref: None,
-        id: face.clone(),
-        shell: ShellId::mint("test:audit:shell#1").unwrap(),
+    out.faces.push(Face::new(
+        face.clone(),
+        ShellId::mint("test:audit:shell#1").unwrap(),
         surface,
-        sense: Sense::Forward,
-        loops: FaceLoops::Unspecified {
+        Sense::Forward,
+        FaceLoops::Unspecified {
             loops: vec![owner_loop.clone()],
         },
-        name: None,
-        color: None,
-        tolerance: None,
-    });
-    out.loops.push(Loop {
-        native_ref: None,
-        id: owner_loop.clone(),
+    ));
+    out.loops.push(Loop::new(
+        owner_loop.clone(),
         face,
-        boundary: LoopBoundary::Ring(LoopRing::single(coedge.clone())),
-    });
-    out.coedges.push(Coedge {
-        native_ref: None,
-        id: coedge.clone(),
+        LoopBoundary::Ring(LoopRing::single(coedge.clone())),
+    ));
+    out.coedges.push(Coedge::new(
+        coedge.clone(),
         owner_loop,
-        edge: edge.clone(),
-        radial_next: coedge,
-        sense: Sense::Forward,
-        pcurves: vec![],
-        use_curve: None,
-    });
-    out.edges.push(Edge {
-        native_ref: None,
-        id: edge,
-        carrier: EdgeCarrier::new(Some(curve), Some([0., std::f64::consts::TAU])).unwrap(),
-        start: vertex.clone(),
-        end: vertex,
-        tolerance: None,
-    });
+        edge.clone(),
+        coedge,
+        Sense::Forward,
+        vec![],
+        None,
+    ));
+    out.edges.push(Edge::new(
+        edge,
+        EdgeCarrier::new(Some(curve), Some([0., std::f64::consts::TAU])).unwrap(),
+        vertex.clone(),
+        vertex,
+        None,
+    ));
     out
 }
 fn derive_sphere(out: &mut Brep) {

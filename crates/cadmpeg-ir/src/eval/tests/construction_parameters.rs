@@ -18,12 +18,14 @@ fn line_in_nurbs_carrier() -> (CadIr, CurveId) {
     )
     .unwrap();
     let mut ir = CadIr::empty();
-    ir.model.curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: curve_id.clone(),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
-        source_object: None,
+    ir.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            curve_id.clone(),
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
+            None,
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     });
     (ir, curve_id)
 }
@@ -94,19 +96,18 @@ fn extrusion_partials_preserve_zero_acceleration_at_large_parameter_scale() {
 fn line_construction_keeps_surface_and_directrix_intervals_independent() {
     let curve_id = CurveId::mint("test:model:curve#independent-intervals").unwrap();
     let mut ir = CadIr::empty();
-    ir.model.curves.push(Curve {
-        native_ref: None,
-        id: curve_id.clone(),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+    ir.model.curves.push(Curve::new(
+        curve_id.clone(),
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(
             crate::geometry::analytic::LineCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
         )),
-        parameter_range: Some([2.0, 8.0].try_into().unwrap()),
-        source_object: None,
-    });
+        Some([2.0, 8.0].try_into().unwrap()),
+        None,
+    ));
     let index = crate::index::ModelIndex::build(&ir);
     for reversed in [false, true] {
         for (input, forward, backward) in [(10.0, 2.0, 8.0), (12.0, 5.0, 5.0), (14.0, 8.0, 2.0)] {

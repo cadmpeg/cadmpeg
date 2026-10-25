@@ -55,10 +55,9 @@ fn reconciled_plane_uses_source_carrier_after_millimeter_admission() {
         source_carriers.admit_surface(
             ctx,
             &mut ir,
-            Surface {
-                native_ref: None,
-                id: SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, 7),
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            Surface::new(
+                SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, 7),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                         Point3::new(1.0, 0.0, 0.0),
                         Vector3::new(1.0, 0.0, 0.0),
@@ -66,8 +65,8 @@ fn reconciled_plane_uses_source_carrier_after_millimeter_admission() {
                     )
                     .expect("source plane"),
                 )),
-                source_object: None,
-            },
+                None,
+            ),
         )
     })
     .expect("surface admission");
@@ -277,20 +276,22 @@ fn unique_native_conic_loop_places_its_plane_surface() {
         }],
     ));
     let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.model.curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: CurveId::mint("creo:visibgeom:curve#11".to_string()).expect("identity grammar"),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                Point3::new(2.0, 3.0, 4.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                5.0,
-            )
-            .expect("valid CircleCurve fixture"),
-        )),
-        source_object: None,
+    ir.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            CurveId::mint("creo:visibgeom:curve#11".to_string()).expect("identity grammar"),
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                    Point3::new(2.0, 3.0, 4.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    5.0,
+                )
+                .expect("valid CircleCurve fixture"),
+            )),
+            None,
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     });
 
     let transferred = crate::decode::with_service_context(|ctx| {
@@ -382,24 +383,26 @@ fn unique_nurbs_line_loop_places_its_plane_surface() {
         (11, Point3::new(0.0, 0.0, 4.0), Vector3::new(1.0, 0.0, 0.0)),
         (12, Point3::new(0.0, 2.0, 4.0), Vector3::new(0.0, 1.0, 0.0)),
     ] {
-        ir.model.curves.push(Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: CurveId::mint(format!("creo:visibgeom:curve#{id}")).expect("identity grammar"),
-            geometry: nurbs_curve(
-                1,
-                vec![0.0, 0.0, 1.0, 1.0],
-                vec![
-                    origin,
-                    Point3::new(
-                        origin.x + direction.x,
-                        origin.y + direction.y,
-                        origin.z + direction.z,
-                    ),
-                ],
+        ir.model.curves.push({
+            let (parameter_range, id, geometry, source_object) = (
                 None,
-            ),
-            source_object: None,
+                CurveId::mint(format!("creo:visibgeom:curve#{id}")).expect("identity grammar"),
+                nurbs_curve(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![
+                        origin,
+                        Point3::new(
+                            origin.x + direction.x,
+                            origin.y + direction.y,
+                            origin.z + direction.z,
+                        ),
+                    ],
+                    None,
+                ),
+                None,
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         });
     }
 

@@ -705,21 +705,23 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
     crate::test_support::with_service_context(&[], |decode_ctx| {
         let mut ir = CadIr::empty();
         for (sequence, z) in [(1, 0.0), (3, 0.0)] {
-            ir.model.curves.push(Curve {
-                native_ref: None,
-                parameter_range: None,
-                id: CurveId::mint(format!("iges:model:curve#D{sequence}"))
-                    .expect("identity grammar"),
-                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                    cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                        Point3::new(0.0, 0.0, z),
-                        Vector3::new(0.0, 0.0, 1.0),
-                        Vector3::new(1.0, 0.0, 0.0),
-                        1.0,
-                    )
-                    .unwrap(),
-                )),
-                source_object: None,
+            ir.model.curves.push({
+                let (parameter_range, id, geometry, source_object) = (
+                    None,
+                    CurveId::mint(format!("iges:model:curve#D{sequence}"))
+                        .expect("identity grammar"),
+                    CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                            Point3::new(0.0, 0.0, z),
+                            Vector3::new(0.0, 0.0, 1.0),
+                            Vector3::new(1.0, 0.0, 0.0),
+                            1.0,
+                        )
+                        .unwrap(),
+                    )),
+                    None,
+                );
+                Curve::new(id, geometry, parameter_range, source_object)
             });
         }
         let pattern_plane = (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0));
@@ -877,21 +879,23 @@ fn sectioned_area_form1_allows_a_null_boundary_and_requires_an_island() {
     crate::test_support::with_service_context(&[], |decode_ctx| {
         let mut ir = CadIr::empty();
         for sequence in [1, 3] {
-            ir.model.curves.push(Curve {
-                native_ref: None,
-                parameter_range: None,
-                id: CurveId::mint(format!("iges:model:curve#D{sequence}"))
-                    .expect("identity grammar"),
-                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                    cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                        Point3::new(0.0, 0.0, 0.0),
-                        Vector3::new(0.0, 0.0, 1.0),
-                        Vector3::new(1.0, 0.0, 0.0),
-                        1.0,
-                    )
-                    .unwrap(),
-                )),
-                source_object: None,
+            ir.model.curves.push({
+                let (parameter_range, id, geometry, source_object) = (
+                    None,
+                    CurveId::mint(format!("iges:model:curve#D{sequence}"))
+                        .expect("identity grammar"),
+                    CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                            Point3::new(0.0, 0.0, 0.0),
+                            Vector3::new(0.0, 0.0, 1.0),
+                            Vector3::new(1.0, 0.0, 0.0),
+                            1.0,
+                        )
+                        .unwrap(),
+                    )),
+                    None,
+                );
+                Curve::new(id, geometry, parameter_range, source_object)
             });
         }
         let entry = |sequence, entity_type| DirectoryEntry {

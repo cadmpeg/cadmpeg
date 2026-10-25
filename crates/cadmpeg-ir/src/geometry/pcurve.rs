@@ -2212,6 +2212,24 @@ pub struct Pcurve {
 }
 
 impl Pcurve {
+    /// Construct a pcurve without a native counterpart.
+    #[must_use]
+    pub fn new(id: PcurveId, geometry: PcurveGeometry, metadata: PcurveMetadata) -> Self {
+        Self {
+            native_ref: None,
+            id,
+            geometry,
+            metadata,
+        }
+    }
+
+    /// Attach the actual typed native counterpart, when present.
+    #[must_use]
+    pub fn with_native_ref(mut self, native_ref: Option<String>) -> Self {
+        self.native_ref = native_ref;
+        self
+    }
+
     /// Native wrapper reversal, when the source stores one.
     pub fn wrapper_reversed(&self) -> Option<bool> {
         self.metadata.wrapper_reversed()

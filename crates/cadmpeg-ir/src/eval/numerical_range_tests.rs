@@ -35,48 +35,51 @@ fn fixture(scale: f64) -> (crate::CadIr, SurfaceId) {
         .expect("valid identity");
     let mut ir = CadIr::empty();
     ir.model.curves = vec![
-        Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: profile_id.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                NurbsCurve::from_lanes(
-                    1,
-                    vec![0.0, 0.0, 1.0, 1.0],
-                    vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
-                    None,
-                    false,
-                )
-                .unwrap(),
-            )),
-            source_object: None,
+        {
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                profile_id.clone(),
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                    NurbsCurve::from_lanes(
+                        1,
+                        vec![0.0, 0.0, 1.0, 1.0],
+                        vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+                        None,
+                        false,
+                    )
+                    .unwrap(),
+                )),
+                None,
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         },
-        Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: spine_id.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                NurbsCurve::from_lanes(
-                    1,
-                    vec![0.0, 0.0, 1.0, 1.0],
-                    vec![Point3::new(4.0, 5.0, 6.0), Point3::new(4.0, 5.0, 7.0)],
-                    None,
-                    false,
-                )
-                .unwrap(),
-            )),
-            source_object: None,
+        {
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                spine_id.clone(),
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                    NurbsCurve::from_lanes(
+                        1,
+                        vec![0.0, 0.0, 1.0, 1.0],
+                        vec![Point3::new(4.0, 5.0, 6.0), Point3::new(4.0, 5.0, 7.0)],
+                        None,
+                        false,
+                    )
+                    .unwrap(),
+                )),
+                None,
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         },
     ];
-    ir.model.surfaces.push(Surface {
-        native_ref: None,
-        id: surface_id.clone(),
-        geometry: SurfaceGeometry::Procedural {
+    ir.model.surfaces.push(Surface::new(
+        surface_id.clone(),
+        SurfaceGeometry::Procedural {
             construction: construction_id.clone(),
             cache: None,
         },
-        source_object: None,
-    });
+        None,
+    ));
     ir.model.procedural_surfaces.push(ProceduralSurface::new(
         construction_id,
         ProceduralSurfaceDefinition::Sweep(

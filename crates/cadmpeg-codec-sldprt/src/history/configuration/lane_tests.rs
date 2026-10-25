@@ -69,11 +69,10 @@ fn configuration_lane_loss_uses_stored_ids_not_partition_indices() {
 #[test]
 fn unresolved_configuration_body_membership_reuses_model_surface_carriers() {
     let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-        native_ref: None,
-        id: cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#model-surface")
+    ir.model.surfaces.push(cadmpeg_ir::geometry::Surface::new(
+        cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#model-surface")
             .expect("identity grammar"),
-        geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -81,8 +80,8 @@ fn unresolved_configuration_body_membership_reuses_model_surface_carriers() {
             )
             .unwrap(),
         )),
-        source_object: None,
-    });
+        None,
+    ));
     ir.model.configurations.push(DesignConfiguration {
         bodies: None,
         ..design_configuration("unresolved", 0, Some(0), None)
@@ -94,11 +93,10 @@ fn unresolved_configuration_body_membership_reuses_model_surface_carriers() {
 #[test]
 fn resolved_empty_configuration_body_membership_has_no_surface_carriers() {
     let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-        native_ref: None,
-        id: cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#model-surface")
+    ir.model.surfaces.push(cadmpeg_ir::geometry::Surface::new(
+        cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#model-surface")
             .expect("identity grammar"),
-        geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -106,8 +104,8 @@ fn resolved_empty_configuration_body_membership_has_no_surface_carriers() {
             )
             .unwrap(),
         )),
-        source_object: None,
-    });
+        None,
+    ));
     ir.model
         .configurations
         .push(design_configuration("empty", 0, Some(0), None));
@@ -1663,20 +1661,15 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
     };
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(feature);
-    ir.model.faces.push(Face {
-        native_ref: None,
-        id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
-        shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
-        surface: SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
-        sense: Sense::Forward,
-        loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![LoopId::mint(
-            "test:model:entity#loop",
-        )
-        .expect("identity grammar")]),
-        name: None,
-        color: None,
-        tolerance: None,
-    });
+    ir.model.faces.push(Face::new(
+        FaceId::mint("test:model:entity#face").expect("identity grammar"),
+        ShellId::mint("test:model:entity#shell").expect("identity grammar"),
+        SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
+        Sense::Forward,
+        cadmpeg_ir::topology::FaceLoops::unspecified(vec![
+            LoopId::mint("test:model:entity#loop").expect("identity grammar")
+        ]),
+    ));
     ir.model.configurations.push(with_configuration_id(
         design_configuration("config", 0, Some(0), None),
         1,
@@ -1763,10 +1756,9 @@ fn configuration_frame_alias_binds_without_body_membership() {
     };
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(feature);
-    ir.model.surfaces.push(Surface {
-        native_ref: None,
-        id: SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+    ir.model.surfaces.push(Surface::new(
+        SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 5.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -1774,22 +1766,17 @@ fn configuration_frame_alias_binds_without_body_membership() {
             )
             .unwrap(),
         )),
-        source_object: None,
-    });
-    ir.model.faces.push(Face {
-        native_ref: None,
-        id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
-        shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
-        surface: SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
-        sense: Sense::Forward,
-        loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![LoopId::mint(
-            "test:model:entity#loop",
-        )
-        .expect("identity grammar")]),
-        name: None,
-        color: None,
-        tolerance: None,
-    });
+        None,
+    ));
+    ir.model.faces.push(Face::new(
+        FaceId::mint("test:model:entity#face").expect("identity grammar"),
+        ShellId::mint("test:model:entity#shell").expect("identity grammar"),
+        SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
+        Sense::Forward,
+        cadmpeg_ir::topology::FaceLoops::unspecified(vec![
+            LoopId::mint("test:model:entity#loop").expect("identity grammar")
+        ]),
+    ));
     let mut configuration = design_configuration("config", 0, None, None);
     configuration.bodies = None;
     configuration

@@ -1231,13 +1231,15 @@ fn materialize(
                 .map_err(|error| malformed(face.base.source_offset, error.to_string()))?,
         );
     }
-    Ok(SubdSurface {
-        native_ref: None,
-        id,
-        scheme: SubdScheme::CatmullClark,
-        source_object: None,
-        cage: cadmpeg_ir::subd::SubdCage::new(vertices, edges, faces, Vec::new())
-            .map_err(|error| malformed(level.source_offset, error.to_string()))?,
+    Ok({
+        let (id, scheme, source_object, cage) = (
+            id,
+            SubdScheme::CatmullClark,
+            None,
+            cadmpeg_ir::subd::SubdCage::new(vertices, edges, faces, Vec::new())
+                .map_err(|error| malformed(level.source_offset, error.to_string()))?,
+        );
+        SubdSurface::new(id, scheme, cage, source_object)
     })
 }
 

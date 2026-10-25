@@ -53,19 +53,13 @@ fn curve_surface_model(
     let mut ir = CadIr::empty();
     ir.model
         .curves
-        .extend(ids.iter().zip(curves).map(|(id, geometry)| Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: id.clone(),
-            geometry,
-            source_object: None,
+        .extend(ids.iter().zip(curves).map(|(id, geometry)| {
+            let (parameter_range, id, geometry, source_object) = (None, id.clone(), geometry, None);
+            Curve::new(id, geometry, parameter_range, source_object)
         }));
-    ir.model.surfaces.push(Surface {
-        native_ref: None,
-        id: surface_id.clone(),
-        geometry: geometry.clone(),
-        source_object: None,
-    });
+    ir.model
+        .surfaces
+        .push(Surface::new(surface_id.clone(), geometry.clone(), None));
     ir.model
         .procedural_surfaces
         .push(ProceduralSurface::new(construction, definition(&ids), None));
@@ -210,22 +204,21 @@ fn procedural_curve_model(
     let mut ir = CadIr::empty();
     ir.model
         .curves
-        .extend(ids.iter().zip(curves).map(|(id, geometry)| Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: id.clone(),
-            geometry,
-            source_object: None,
+        .extend(ids.iter().zip(curves).map(|(id, geometry)| {
+            let (parameter_range, id, geometry, source_object) = (None, id.clone(), geometry, None);
+            Curve::new(id, geometry, parameter_range, source_object)
         }));
-    ir.model.curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: owner.clone(),
-        geometry: CurveGeometry::Procedural {
-            construction: construction.clone(),
-            cache: None,
-        },
-        source_object: None,
+    ir.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            owner.clone(),
+            CurveGeometry::Procedural {
+                construction: construction.clone(),
+                cache: None,
+            },
+            None,
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     });
     ir.model
         .add_procedural_curve(&owner, ProceduralCurve::new(construction, definition(&ids)))
@@ -386,12 +379,9 @@ fn an_extrusion_over_a_helix_whose_tangent_overflows_has_its_finite_point() {
         construction: construction.clone(),
         cache: None,
     };
-    ir.model.surfaces.push(Surface {
-        native_ref: None,
-        id: surface.clone(),
-        geometry: geometry.clone(),
-        source_object: None,
-    });
+    ir.model
+        .surfaces
+        .push(Surface::new(surface.clone(), geometry.clone(), None));
     ir.model.procedural_surfaces.push(ProceduralSurface::new(
         construction,
         ProceduralSurfaceDefinition::Extrusion(
@@ -948,15 +938,14 @@ fn an_extrusion_over_a_helix_whose_acceleration_overflows_keeps_its_first_partia
     let surface = SurfaceId::mint("test:model:surface#extrusion").expect("valid identity");
     let construction =
         ProceduralSurfaceId::mint("test:model:procedural#extrusion").expect("valid identity");
-    ir.model.surfaces.push(Surface {
-        native_ref: None,
-        id: surface.clone(),
-        geometry: SurfaceGeometry::Procedural {
+    ir.model.surfaces.push(Surface::new(
+        surface.clone(),
+        SurfaceGeometry::Procedural {
             construction: construction.clone(),
             cache: None,
         },
-        source_object: None,
-    });
+        None,
+    ));
     ir.model.procedural_surfaces.push(ProceduralSurface::new(
         construction,
         ProceduralSurfaceDefinition::Extrusion(

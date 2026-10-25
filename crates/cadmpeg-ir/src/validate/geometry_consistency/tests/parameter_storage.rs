@@ -14,18 +14,17 @@ fn parameter_uniqueness_preserves_first_values_and_negative_zero() {
 
 #[test]
 fn declared_parameter_candidates_keep_order() {
-    let pcurve = crate::geometry::pcurve::Pcurve {
-        native_ref: None,
-        id: "test:model:pcurve#ranges".try_into().unwrap(),
-        geometry: crate::geometry::pcurve::PcurveGeometry::Line(
+    let pcurve = crate::geometry::pcurve::Pcurve::new(
+        "test:model:pcurve#ranges".try_into().unwrap(),
+        crate::geometry::pcurve::PcurveGeometry::Line(
             crate::geometry::pcurve::LinePcurve::try_new(
                 crate::math::Point2::new(0.0, 0.0),
                 crate::math::Point2::new(1.0, 0.0),
             )
             .unwrap(),
         ),
-        metadata: crate::geometry::pcurve::PcurveMetadata::default(),
-    };
+        crate::geometry::pcurve::PcurveMetadata::default(),
+    );
     let ctx = cadmpeg_test_support::service_decode_context();
     let ranges =
         super::super::pcurve_parameter_ranges(&ctx, &pcurve, Some([2.0, 3.0]), Some([0.0, 1.0]))

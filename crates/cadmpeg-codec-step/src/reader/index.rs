@@ -94,25 +94,26 @@ mod tests {
 
     fn carriers() -> CadIr {
         let mut ir = CadIr::empty();
-        ir.model.curves.push(Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: CurveId::from(crate::ids::data(crate::ids::kind!("curve"), 1)),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0))
-                    .expect("finite line"),
-            )),
-            source_object: None,
+        ir.model.curves.push({
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                CurveId::from(crate::ids::data(crate::ids::kind!("curve"), 1)),
+                CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                    LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0))
+                        .expect("finite line"),
+                )),
+                None,
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         });
         ir.model.points.push(Point::new(
             PointId::from(crate::ids::data(crate::ids::kind!("point"), 2)),
             cadmpeg_ir::features::FinitePoint3::ZERO,
             None,
         ));
-        ir.model.surfaces.push(Surface {
-            native_ref: None,
-            id: SurfaceId::from(crate::ids::data(crate::ids::kind!("surface"), 3)),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        ir.model.surfaces.push(Surface::new(
+            SurfaceId::from(crate::ids::data(crate::ids::kind!("surface"), 3)),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -120,8 +121,8 @@ mod tests {
                 )
                 .expect("finite plane"),
             )),
-            source_object: None,
-        });
+            None,
+        ));
         ir
     }
 

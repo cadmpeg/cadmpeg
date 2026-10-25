@@ -1516,17 +1516,15 @@ mod tests {
         let mut ir = CadIr::empty();
         let error = crate::decode::with_service_context(|ctx| {
             crate::decode::source_carriers::SourceUnitCarriers::new(Some(positive(25.4)))
-                .admit_curve(
-                    ctx,
-                    &mut ir,
-                    cadmpeg_ir::geometry::Curve {
-                        native_ref: None,
-                        parameter_range: None,
-                        id: curve_id,
-                        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
-                        source_object: None,
-                    },
-                )
+                .admit_curve(ctx, &mut ir, {
+                    let (parameter_range, id, geometry, source_object) = (
+                        None,
+                        curve_id,
+                        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
+                        None,
+                    );
+                    cadmpeg_ir::geometry::Curve::new(id, geometry, parameter_range, source_object)
+                })
         })
         .expect_err("overflow must refuse");
         assert!(matches!(error, CodecError::NotImplemented(_)));
@@ -1655,14 +1653,13 @@ mod tests {
             source_carriers.admit_surface(
                 ctx,
                 &mut ir,
-                cadmpeg_ir::geometry::Surface {
-                    native_ref: None,
-                    id: surface_id.clone(),
-                    geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(
-                        SolvedSurfaceGeometry::Unknown { record: None },
-                    ),
-                    source_object: None,
-                },
+                cadmpeg_ir::geometry::Surface::new(
+                    surface_id.clone(),
+                    cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+                        record: None,
+                    }),
+                    None,
+                ),
             )
         })
         .expect("surface admission");
@@ -1697,19 +1694,17 @@ mod tests {
         let curve_id =
             cadmpeg_ir::ids::CurveId::mint("test:model:entity#curve").expect("identity grammar");
         crate::decode::with_service_context(|ctx| {
-            source_carriers.admit_curve(
-                ctx,
-                &mut ir,
-                cadmpeg_ir::geometry::Curve {
-                    native_ref: None,
-                    parameter_range: None,
-                    id: curve_id.clone(),
-                    geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(
-                        SolvedCurveGeometry::Unknown { record: None },
-                    ),
-                    source_object: None,
-                },
-            )
+            source_carriers.admit_curve(ctx, &mut ir, {
+                let (parameter_range, id, geometry, source_object) = (
+                    None,
+                    curve_id.clone(),
+                    cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
+                        record: None,
+                    }),
+                    None,
+                );
+                cadmpeg_ir::geometry::Curve::new(id, geometry, parameter_range, source_object)
+            })
         })
         .expect("curve admission");
         let mut curve_definition = cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(
@@ -1857,14 +1852,13 @@ mod tests {
                 crate::decode::source_carriers::SourceUnitCarriers::new(Some(positive(25.4)));
             let surface_id = cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#surface")
                 .expect("identity grammar");
-            ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-                native_ref: None,
-                id: surface_id.clone(),
-                geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(
-                    SolvedSurfaceGeometry::Unknown { record: None },
-                ),
-                source_object: None,
-            });
+            ir.model.surfaces.push(cadmpeg_ir::geometry::Surface::new(
+                surface_id.clone(),
+                cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+                    record: None,
+                }),
+                None,
+            ));
             let surface = cadmpeg_ir::geometry::ProceduralSurface::new(
                 cadmpeg_ir::ids::ProceduralSurfaceId::mint(
                     "test:model:entity#surface-construction",

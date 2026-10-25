@@ -13,18 +13,17 @@ use cadmpeg_ir::{
 const EPS_FIT: f64 = 1e-6;
 #[test]
 fn numerical_audit_trim_domain_check_ignores_surface_knot_units() {
-    let source = Edge {
-        native_ref: None,
-        id: EdgeId::mint("test:audit:edge#1").unwrap(),
-        carrier: EdgeCarrier::new(
+    let source = Edge::new(
+        EdgeId::mint("test:audit:edge#1").unwrap(),
+        EdgeCarrier::new(
             Some(CurveId::mint("test:audit:curve#1").unwrap()),
             Some([0., 1.]),
         )
         .unwrap(),
-        start: VertexId::mint("test:audit:vertex#1").unwrap(),
-        end: VertexId::mint("test:audit:vertex#2").unwrap(),
-        tolerance: None,
-    };
+        VertexId::mint("test:audit:vertex#1").unwrap(),
+        VertexId::mint("test:audit:vertex#2").unwrap(),
+        None,
+    );
     for d in [1., 1e-16] {
         let surface = NurbsSurface::from_lanes(
             NurbsSurfaceAxis::new(1, vec![0., 0., d, d], false),
@@ -49,10 +48,9 @@ fn numerical_audit_trim_domain_check_ignores_surface_knot_units() {
             )
             .unwrap();
             let uv = vec![Point2::new(x * d, 0.), Point2::new(x * d, 1.)];
-            let p = Pcurve {
-                native_ref: None,
-                id: PcurveId::mint("test:audit:pcurve#1").unwrap(),
-                geometry: PcurveGeometry::Nurbs {
+            let p = Pcurve::new(
+                PcurveId::mint("test:audit:pcurve#1").unwrap(),
+                PcurveGeometry::Nurbs {
                     nurbs: PcurveNurbs::from_lanes(
                         1,
                         vec![0., 0., 1., 1.],
@@ -62,7 +60,7 @@ fn numerical_audit_trim_domain_check_ignores_surface_knot_units() {
                     )
                     .unwrap(),
                 },
-                metadata: PcurveMetadata::general(
+                PcurveMetadata::general(
                     None,
                     Some(
                         cadmpeg_ir::units::FiniteVector::new([0., 1.])
@@ -73,7 +71,7 @@ fn numerical_audit_trim_domain_check_ignores_surface_knot_units() {
                             .expect("finite non-negative fixture tolerance"),
                     ),
                 ),
-            };
+            );
             let edge = WritableEdge {
                 source: &source,
                 start: 0,
@@ -159,24 +157,22 @@ fn trim_result_on(
     curve: &NurbsCurve,
     domain: [f64; 2],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let source = Edge {
-        native_ref: None,
-        id: EdgeId::mint("test:overflow:edge#1").unwrap(),
-        carrier: EdgeCarrier::new(
+    let source = Edge::new(
+        EdgeId::mint("test:overflow:edge#1").unwrap(),
+        EdgeCarrier::new(
             Some(CurveId::mint("test:overflow:curve#1").unwrap()),
             Some([0., 1.]),
         )
         .unwrap(),
-        start: VertexId::mint("test:overflow:vertex#1").unwrap(),
-        end: VertexId::mint("test:overflow:vertex#2").unwrap(),
-        tolerance: None,
-    };
-    let p = Pcurve {
-        native_ref: None,
-        id: PcurveId::mint("test:overflow:pcurve#1").unwrap(),
+        VertexId::mint("test:overflow:vertex#1").unwrap(),
+        VertexId::mint("test:overflow:vertex#2").unwrap(),
+        None,
+    );
+    let p = Pcurve::new(
+        PcurveId::mint("test:overflow:pcurve#1").unwrap(),
         geometry,
-        metadata: PcurveMetadata::default(),
-    };
+        PcurveMetadata::default(),
+    );
     let edge = WritableEdge {
         source: &source,
         start: 0,

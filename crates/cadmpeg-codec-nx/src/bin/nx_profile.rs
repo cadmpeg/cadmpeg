@@ -1033,16 +1033,15 @@ mod tests {
 
         let mut ir = CadIr::empty();
         let body = BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar");
-        ir.model.bodies.push(Body {
-            native_ref: None,
-            id: body.clone(),
-            kind: BodyKind::Solid,
-            regions: Vec::new(),
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        });
+        ir.model.bodies.push(Body::new(
+            body.clone(),
+            BodyKind::Solid,
+            Vec::new(),
+            None,
+            None,
+            None,
+            None,
+        ));
         ir.model.features.push(Feature {
             needs_recompute: false,
             id: FeatureId::mint("synthetic:test:id#block".to_string()).expect("identity grammar"),
@@ -1227,16 +1226,15 @@ mod tests {
         use cadmpeg_ir::ids::AppearanceId;
 
         let mut ir = CadIr::empty();
-        let body = cadmpeg_ir::topology::Body {
-            native_ref: None,
-            id: BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar"),
-            kind: cadmpeg_ir::topology::BodyKind::Solid,
-            regions: Vec::new(),
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        };
+        let body = cadmpeg_ir::topology::Body::new(
+            BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar"),
+            cadmpeg_ir::topology::BodyKind::Solid,
+            Vec::new(),
+            None,
+            None,
+            None,
+            None,
+        );
         let appearance_id = AppearanceId::mint("test:model:entity#appearance".to_string())
             .expect("identity grammar");
         ir.model.bodies.push(body.clone());
@@ -1301,16 +1299,15 @@ mod tests {
         use cadmpeg_ir::ids::AppearanceId;
 
         let mut ir = CadIr::empty();
-        let body = cadmpeg_ir::topology::Body {
-            native_ref: None,
-            id: BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar"),
-            kind: cadmpeg_ir::topology::BodyKind::Solid,
-            regions: Vec::new(),
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        };
+        let body = cadmpeg_ir::topology::Body::new(
+            BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar"),
+            cadmpeg_ir::topology::BodyKind::Solid,
+            Vec::new(),
+            None,
+            None,
+            None,
+            None,
+        );
         let appearance_id = AppearanceId::mint("test:model:entity#appearance".to_string())
             .expect("identity grammar");
         ir.model.bodies.push(body.clone());

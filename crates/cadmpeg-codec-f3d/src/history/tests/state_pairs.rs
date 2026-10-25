@@ -1270,79 +1270,69 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
 
     let id = |slot| format!("f3d:brep:entity#{slot}");
     let mut brep = cadmpeg_asm::brep::AsmBrep::default();
-    brep.bodies.push(Body {
-        native_ref: None,
-        id: BodyId::mint(id(1)).expect("identity grammar"),
-        kind: BodyKind::Solid,
-        regions: vec![RegionId::mint(id(2)).expect("identity grammar")],
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
-    });
-    brep.regions.push(Region {
-        native_ref: None,
-        id: RegionId::mint(id(2)).expect("identity grammar"),
-        body: BodyId::mint(id(1)).expect("identity grammar"),
-        shells: vec![ShellId::mint(id(3)).expect("identity grammar")],
-    });
+    brep.bodies.push(Body::new(
+        BodyId::mint(id(1)).expect("identity grammar"),
+        BodyKind::Solid,
+        vec![RegionId::mint(id(2)).expect("identity grammar")],
+        None,
+        None,
+        None,
+        None,
+    ));
+    brep.regions.push(Region::new(
+        RegionId::mint(id(2)).expect("identity grammar"),
+        BodyId::mint(id(1)).expect("identity grammar"),
+        vec![ShellId::mint(id(3)).expect("identity grammar")],
+    ));
     brep.shells.push(Shell::with_face(
         ShellId::mint(id(3)).expect("identity grammar"),
         RegionId::mint(id(2)).expect("identity grammar"),
         FaceId::mint(id(4)).expect("identity grammar"),
     ));
-    brep.faces.push(Face {
-        native_ref: None,
-        id: FaceId::mint(id(4)).expect("identity grammar"),
-        shell: ShellId::mint(id(3)).expect("identity grammar"),
-        surface: SurfaceId::mint(id(20)).expect("identity grammar"),
-        sense: Sense::Forward,
-        loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![
+    brep.faces.push(Face::new(
+        FaceId::mint(id(4)).expect("identity grammar"),
+        ShellId::mint(id(3)).expect("identity grammar"),
+        SurfaceId::mint(id(20)).expect("identity grammar"),
+        Sense::Forward,
+        cadmpeg_ir::topology::FaceLoops::unspecified(vec![
             LoopId::mint(id(5)).expect("identity grammar")
         ]),
-        name: None,
-        color: None,
-        tolerance: None,
-    });
-    brep.loops.push(Loop {
-        native_ref: None,
-        id: LoopId::mint(id(5)).expect("identity grammar"),
-        face: FaceId::mint(id(4)).expect("identity grammar"),
-        boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+    ));
+    brep.loops.push(Loop::new(
+        LoopId::mint(id(5)).expect("identity grammar"),
+        FaceId::mint(id(4)).expect("identity grammar"),
+        cadmpeg_ir::topology::LoopBoundary::Ring(
             cadmpeg_ir::topology::LoopRing::new(
                 vec![CoedgeId::mint(id(6)).expect("identity grammar")],
                 Vec::new(),
             )
             .expect("fixture ring admission"),
         ),
-    });
-    brep.coedges.push(Coedge {
-        native_ref: None,
-        id: CoedgeId::mint(id(6)).expect("identity grammar"),
-        owner_loop: LoopId::mint(id(5)).expect("identity grammar"),
-        edge: EdgeId::mint(id(7)).expect("identity grammar"),
-        radial_next: CoedgeId::mint(id(6)).expect("identity grammar"),
-        sense: Sense::Forward,
-        pcurves: Vec::new(),
-        use_curve: None,
-    });
-    brep.edges.push(Edge {
-        native_ref: None,
-        id: EdgeId::mint(id(7)).expect("identity grammar"),
-        carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(
+    ));
+    brep.coedges.push(Coedge::new(
+        CoedgeId::mint(id(6)).expect("identity grammar"),
+        LoopId::mint(id(5)).expect("identity grammar"),
+        EdgeId::mint(id(7)).expect("identity grammar"),
+        CoedgeId::mint(id(6)).expect("identity grammar"),
+        Sense::Forward,
+        Vec::new(),
+        None,
+    ));
+    brep.edges.push(Edge::new(
+        EdgeId::mint(id(7)).expect("identity grammar"),
+        cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(
             CurveId::mint(id(21)).expect("identity grammar"),
         )),
-        start: VertexId::mint(id(8)).expect("identity grammar"),
-        end: VertexId::mint(id(9)).expect("identity grammar"),
-        tolerance: None,
-    });
+        VertexId::mint(id(8)).expect("identity grammar"),
+        VertexId::mint(id(9)).expect("identity grammar"),
+        None,
+    ));
     for slot in [8, 9] {
-        brep.vertices.push(Vertex {
-            native_ref: None,
-            id: VertexId::mint(id(slot)).expect("identity grammar"),
-            point: PointId::mint(id(slot + 20)).expect("identity grammar"),
-            tolerance: None,
-        });
+        brep.vertices.push(Vertex::new(
+            VertexId::mint(id(slot)).expect("identity grammar"),
+            PointId::mint(id(slot + 20)).expect("identity grammar"),
+            None,
+        ));
     }
 
     let topology = historical_topology(&brep)

@@ -50,12 +50,11 @@ fn free_vertices(transform: Transform) -> CadIr {
         .try_into()
         .expect("shell identity");
     body.regions = vec![region.clone()];
-    ir.model.regions.push(Region {
-        native_ref: None,
-        id: region.clone(),
-        body: body.id.clone(),
-        shells: vec![shell.clone()],
-    });
+    ir.model.regions.push(Region::new(
+        region.clone(),
+        body.id.clone(),
+        vec![shell.clone()],
+    ));
     let mut vertices = Vec::new();
     for (index, position) in [Point3::new(1.0, 2.0, 3.0), Point3::new(-2.0, 1.0, 4.0)]
         .into_iter()
@@ -68,12 +67,9 @@ fn free_vertices(transform: Transform) -> CadIr {
             .try_into()
             .expect("point identity");
         vertices.push(vertex.clone());
-        ir.model.vertices.push(Vertex {
-            native_ref: None,
-            id: vertex,
-            point: point.clone(),
-            tolerance: None,
-        });
+        ir.model
+            .vertices
+            .push(Vertex::new(vertex, point.clone(), None));
         ir.model.points.push(Point::new(
             point,
             FinitePoint3::new(position).expect("finite point"),

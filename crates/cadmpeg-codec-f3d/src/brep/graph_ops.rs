@@ -237,16 +237,15 @@ mod tests {
     fn graph() -> Brep {
         Brep {
             asm: AsmBrep {
-                bodies: vec![Body {
-                    native_ref: None,
-                    id: BodyId::mint("f3d:brep:entity#1").unwrap(),
-                    kind: BodyKind::default(),
-                    regions: vec![],
-                    transform: None,
-                    name: Some("f3d:brep:entity#1".into()),
-                    color: None,
-                    visible: None,
-                }],
+                bodies: vec![Body::new(
+                    BodyId::mint("f3d:brep:entity#1").unwrap(),
+                    BodyKind::default(),
+                    vec![],
+                    None,
+                    Some("f3d:brep:entity#1".into()),
+                    None,
+                    None,
+                )],
                 points: vec![Point::new(
                     PointId::mint("f3d:brep:point#2").unwrap(),
                     FinitePoint3::new(Point3 {
@@ -329,12 +328,11 @@ mod tests {
         let mut model = cadmpeg_ir::examples::unit_cube().unwrap().model;
         let carrier = model.faces[0].surface.clone();
         let support = cadmpeg_ir::ids::SurfaceId::mint("f3d:brep:surface#support").unwrap();
-        model.surfaces.push(Surface {
-            native_ref: None,
-            id: support.clone(),
-            geometry: model.surfaces[0].geometry.clone(),
-            source_object: None,
-        });
+        model.surfaces.push(Surface::new(
+            support.clone(),
+            model.surfaces[0].geometry.clone(),
+            None,
+        ));
         let definition = ProceduralSurface::new(
             "f3d:brep:procedure#replica".try_into().unwrap(),
             ProceduralSurfaceDefinition::Replica {

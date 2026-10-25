@@ -1108,12 +1108,14 @@ pub(super) fn decode(
             if let Some(offset) = parameter_offset {
                 curve_parameter_offsets.insert(id, offset);
             }
-            ir.model.curves.push(Curve {
-                native_ref: None,
-                parameter_range: None,
-                id: CurveId::from(ids::data(kind!("curve"), id)),
-                geometry,
-                source_object: None,
+            ir.model.curves.push({
+                let (parameter_range, id, geometry, source_object) = (
+                    None,
+                    CurveId::from(ids::data(kind!("curve"), id)),
+                    geometry,
+                    None,
+                );
+                Curve::new(id, geometry, parameter_range, source_object)
             });
             typed.insert(id);
         } else {
@@ -1131,12 +1133,14 @@ pub(super) fn decode(
             continue;
         }
         if let Some(nurbs) = nurbs_curve(id, record, &points, &mut losses) {
-            ir.model.curves.push(Curve {
-                native_ref: None,
-                parameter_range: None,
-                id: CurveId::from(ids::data(kind!("curve"), id)),
-                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
-                source_object: None,
+            ir.model.curves.push({
+                let (parameter_range, id, geometry, source_object) = (
+                    None,
+                    CurveId::from(ids::data(kind!("curve"), id)),
+                    CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
+                    None,
+                );
+                Curve::new(id, geometry, parameter_range, source_object)
             });
             typed.insert(id);
         } else {
@@ -1219,12 +1223,10 @@ pub(super) fn decode(
                     transform,
                 },
             );
-            ir.model.curves.push(Curve {
-                native_ref: None,
-                parameter_range: None,
-                id: curve.clone(),
-                geometry: CurveGeometry::Solved(geometry),
-                source_object: None,
+            ir.model.curves.push({
+                let (parameter_range, id, geometry, source_object) =
+                    (None, curve.clone(), CurveGeometry::Solved(geometry), None);
+                Curve::new(id, geometry, parameter_range, source_object)
             });
             let _attached = procedural_admission.add_curve(&mut ir.model, &curve, procedural)?;
             carrier_index.curves.insert(id, curve_index);
@@ -1331,12 +1333,14 @@ pub(super) fn decode(
                 };
             let curve_index = CurveIndex(ir.model.curves.len());
             let copied_geometry = solved_geometry.clone();
-            ir.model.curves.push(Curve {
-                native_ref: None,
-                parameter_range: None,
-                id: curve.clone(),
-                geometry: CurveGeometry::Solved(copied_geometry),
-                source_object: None,
+            ir.model.curves.push({
+                let (parameter_range, id, geometry, source_object) = (
+                    None,
+                    curve.clone(),
+                    CurveGeometry::Solved(copied_geometry),
+                    None,
+                );
+                Curve::new(id, geometry, parameter_range, source_object)
             });
 
             let _attached = procedural_admission.add_curve(&mut ir.model, &curve, procedural)?;
@@ -1385,15 +1389,17 @@ pub(super) fn decode(
                     }
                 };
             let curve_index = CurveIndex(ir.model.curves.len());
-            ir.model.curves.push(Curve {
-                native_ref: None,
-                parameter_range: None,
-                id: curve.clone(),
-                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
-                    segments,
-                    self_intersect,
-                }),
-                source_object: None,
+            ir.model.curves.push({
+                let (parameter_range, id, geometry, source_object) = (
+                    None,
+                    curve.clone(),
+                    CurveGeometry::Solved(SolvedCurveGeometry::Composite {
+                        segments,
+                        self_intersect,
+                    }),
+                    None,
+                );
+                Curve::new(id, geometry, parameter_range, source_object)
             });
             carrier_index.curves.insert(id, curve_index);
             typed.insert(id);
@@ -1463,12 +1469,14 @@ pub(super) fn decode(
                     continue;
                 }
             };
-        ir.model.curves.push(Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: curve.clone(),
-            geometry: CurveGeometry::Solved(copied_geometry),
-            source_object: None,
+        ir.model.curves.push({
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                curve.clone(),
+                CurveGeometry::Solved(copied_geometry),
+                None,
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         });
         let _attached = procedural_admission.add_curve(&mut ir.model, &curve, procedural)?;
         carrier_index.curves.insert(id, curve_index);
@@ -1487,18 +1495,20 @@ pub(super) fn decode(
                 "CURVE_REPLICA #{id} has invalid or unresolved parent/operator"
             )));
             let curve_index = CurveIndex(ir.model.curves.len());
-            ir.model.curves.push(Curve {
-                native_ref: None,
-                parameter_range: None,
-                id: CurveId::from(ids::data(kind!("curve"), id)),
-                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
-                    record: exchange
-                        .records()
-                        .get(&id)
-                        .map(|record| opaque_record_id(id, record))
-                        .transpose()?,
-                }),
-                source_object: None,
+            ir.model.curves.push({
+                let (parameter_range, id, geometry, source_object) = (
+                    None,
+                    CurveId::from(ids::data(kind!("curve"), id)),
+                    CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
+                        record: exchange
+                            .records()
+                            .get(&id)
+                            .map(|record| opaque_record_id(id, record))
+                            .transpose()?,
+                    }),
+                    None,
+                );
+                Curve::new(id, geometry, parameter_range, source_object)
             });
             e.insert(curve_index);
         }
@@ -1543,18 +1553,20 @@ pub(super) fn decode(
         if let std::collections::hash_map::Entry::Vacant(e) = carrier_index.curves.entry(id) {
             let curve = CurveId::from(ids::data(kind!("curve"), id));
             let curve_index = CurveIndex(ir.model.curves.len());
-            ir.model.curves.push(Curve {
-                native_ref: None,
-                parameter_range: None,
-                id: curve.clone(),
-                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
-                    record: exchange
-                        .records()
-                        .get(&id)
-                        .map(|record| opaque_record_id(id, record))
-                        .transpose()?,
-                }),
-                source_object: None,
+            ir.model.curves.push({
+                let (parameter_range, id, geometry, source_object) = (
+                    None,
+                    curve.clone(),
+                    CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
+                        record: exchange
+                            .records()
+                            .get(&id)
+                            .map(|record| opaque_record_id(id, record))
+                            .transpose()?,
+                    }),
+                    None,
+                );
+                Curve::new(id, geometry, parameter_range, source_object)
             });
             losses.push(StepLossCode::DecodeWarning.note(format!(
                 "retained unresolved deferred curve #{id} as an unknown carrier"
@@ -1642,12 +1654,11 @@ pub(super) fn decode(
             }
         };
         let surface = SurfaceId::from(ids::data(kind!("surface"), id));
-        ir.model.surfaces.push(Surface {
-            native_ref: None,
-            id: surface.clone(),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
-            source_object: None,
-        });
+        ir.model.surfaces.push(Surface::new(
+            surface.clone(),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+            None,
+        ));
         let _attached = procedural_admission.add_surface(
             &mut ir.model,
             &surface,
@@ -1751,12 +1762,11 @@ pub(super) fn decode(
                 .map(SurfaceGeometry::Solved),
         };
         if let Some(geometry) = geometry {
-            ir.model.surfaces.push(Surface {
-                native_ref: None,
-                id: SurfaceId::from(ids::data(kind!("surface"), id)),
+            ir.model.surfaces.push(Surface::new(
+                SurfaceId::from(ids::data(kind!("surface"), id)),
                 geometry,
-                source_object: None,
-            });
+                None,
+            ));
             typed.insert(id);
         } else {
             losses.push(
@@ -1772,12 +1782,11 @@ pub(super) fn decode(
             continue;
         }
         if let Some(nurbs) = nurbs_surface(id, record, &points, &mut losses) {
-            ir.model.surfaces.push(Surface {
-                native_ref: None,
-                id: SurfaceId::from(ids::data(kind!("surface"), id)),
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
-                source_object: None,
-            });
+            ir.model.surfaces.push(Surface::new(
+                SurfaceId::from(ids::data(kind!("surface"), id)),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
+                None,
+            ));
             typed.insert(id);
         } else {
             losses.push(StepLossCode::DecodeWarning.note(format!(
@@ -1903,12 +1912,11 @@ pub(super) fn decode(
             let parameter_ranges = [[u_start, u_end], [v_start, v_end]];
             let surface = SurfaceId::from(ids::data(kind!("surface"), id));
             let copied_geometry = solved_geometry.clone();
-            ir.model.surfaces.push(Surface {
-                native_ref: None,
-                id: surface.clone(),
-                geometry: SurfaceGeometry::Solved(copied_geometry),
-                source_object: None,
-            });
+            ir.model.surfaces.push(Surface::new(
+                surface.clone(),
+                SurfaceGeometry::Solved(copied_geometry),
+                None,
+            ));
             let _attached = procedural_admission.add_surface(&mut ir.model, &surface, match (|| {
                     let ranges = parameter_ranges.map(|range| {
                         DirectedParameterRange::from_finite_endpoints(range).map_err(|_| {
@@ -2009,12 +2017,11 @@ pub(super) fn decode(
             };
             let surface_index = SurfaceIndex(ir.model.surfaces.len());
             let copied_geometry = geometry.clone();
-            ir.model.surfaces.push(Surface {
-                native_ref: None,
-                id: surface.clone(),
-                geometry: SurfaceGeometry::Solved(copied_geometry),
-                source_object: None,
-            });
+            ir.model.surfaces.push(Surface::new(
+                surface.clone(),
+                SurfaceGeometry::Solved(copied_geometry),
+                None,
+            ));
             let _attached = procedural_admission.add_surface(
                 &mut ir.model,
                 &surface,
@@ -2057,12 +2064,11 @@ pub(super) fn decode(
                 continue;
             };
             let surface_index = SurfaceIndex(ir.model.surfaces.len());
-            ir.model.surfaces.push(Surface {
-                native_ref: None,
-                id: surface.clone(),
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
-                source_object: None,
-            });
+            ir.model.surfaces.push(Surface::new(
+                surface.clone(),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+                None,
+            ));
             let _attached = procedural_admission.add_surface(&mut ir.model, &surface, match cadmpeg_ir::geometry::surface_payloads::ParallelOffsetSurfaceConstruction::try_new(support, distance * record_scale, self_intersect).map(|admitted_payload| ProceduralSurface::new(
                     ProceduralSurfaceId::from(ids::construction(kind!("offset_surface"), id)),
                     ProceduralSurfaceDefinition::ParallelOffset(admitted_payload),
@@ -2115,12 +2121,11 @@ pub(super) fn decode(
             let geometry = SolvedSurfaceGeometry::Transformed(placed);
             let surface = SurfaceId::from(ids::data(kind!("surface"), id));
             let surface_index = SurfaceIndex(ir.model.surfaces.len());
-            ir.model.surfaces.push(Surface {
-                native_ref: None,
-                id: surface.clone(),
-                geometry: SurfaceGeometry::Solved(geometry),
-                source_object: None,
-            });
+            ir.model.surfaces.push(Surface::new(
+                surface.clone(),
+                SurfaceGeometry::Solved(geometry),
+                None,
+            ));
             let _attached = procedural_admission.add_surface(
                 &mut ir.model,
                 &surface,
@@ -2150,18 +2155,17 @@ pub(super) fn decode(
                 "SURFACE_REPLICA #{id} has invalid or unresolved parent/operator"
             )));
             let surface_index = SurfaceIndex(ir.model.surfaces.len());
-            ir.model.surfaces.push(Surface {
-                native_ref: None,
-                id: SurfaceId::from(ids::data(kind!("surface"), id)),
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+            ir.model.surfaces.push(Surface::new(
+                SurfaceId::from(ids::data(kind!("surface"), id)),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                     record: exchange
                         .records()
                         .get(&id)
                         .map(|record| opaque_record_id(id, record))
                         .transpose()?,
                 }),
-                source_object: None,
-            });
+                None,
+            ));
             e.insert(surface_index);
         }
     }
@@ -2196,18 +2200,20 @@ pub(super) fn decode(
         if let std::collections::hash_map::Entry::Vacant(e) = carrier_index.curves.entry(curve_step)
         {
             let curve_index = CurveIndex(ir.model.curves.len());
-            ir.model.curves.push(Curve {
-                native_ref: None,
-                parameter_range: None,
-                id: CurveId::from(ids::data(kind!("curve"), curve_step)),
-                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
-                    record: exchange
-                        .records()
-                        .get(&curve_step)
-                        .map(|record| opaque_record_id(curve_step, record))
-                        .transpose()?,
-                }),
-                source_object: None,
+            ir.model.curves.push({
+                let (parameter_range, id, geometry, source_object) = (
+                    None,
+                    CurveId::from(ids::data(kind!("curve"), curve_step)),
+                    CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
+                        record: exchange
+                            .records()
+                            .get(&curve_step)
+                            .map(|record| opaque_record_id(curve_step, record))
+                            .transpose()?,
+                    }),
+                    None,
+                );
+                Curve::new(id, geometry, parameter_range, source_object)
             });
             losses.push(StepLossCode::DecodeWarning.note(format!(
                 "retained undecoded topology curve #{curve_step} as an unknown carrier"
@@ -2223,18 +2229,17 @@ pub(super) fn decode(
         let surface = SurfaceId::from(ids::data(kind!("surface"), id));
         if let std::collections::hash_map::Entry::Vacant(e) = carrier_index.surfaces.entry(id) {
             let surface_index = SurfaceIndex(ir.model.surfaces.len());
-            ir.model.surfaces.push(Surface {
-                native_ref: None,
-                id: surface,
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+            ir.model.surfaces.push(Surface::new(
+                surface,
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                     record: exchange
                         .records()
                         .get(&id)
                         .map(|record| opaque_record_id(id, record))
                         .transpose()?,
                 }),
-                source_object: None,
-            });
+                None,
+            ));
             losses.push(StepLossCode::DecodeWarning.note(format!(
                 "retained unresolved deferred surface #{id} as an unknown carrier"
             )));
@@ -2256,18 +2261,17 @@ pub(super) fn decode(
             carrier_index.surfaces.entry(surface_step)
         {
             let surface_index = SurfaceIndex(ir.model.surfaces.len());
-            ir.model.surfaces.push(Surface {
-                native_ref: None,
-                id: SurfaceId::from(ids::data(kind!("surface"), surface_step)),
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+            ir.model.surfaces.push(Surface::new(
+                SurfaceId::from(ids::data(kind!("surface"), surface_step)),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                     record: exchange
                         .records()
                         .get(&surface_step)
                         .map(|record| opaque_record_id(surface_step, record))
                         .transpose()?,
                 }),
-                source_object: None,
-            });
+                None,
+            ));
             losses.push(StepLossCode::DecodeWarning.note(format!(
                 "retained undecoded face surface #{surface_step} from face #{face_id} as an unknown carrier"
             )));
@@ -2336,12 +2340,11 @@ pub(super) fn decode(
             )));
             continue;
         };
-        ir.model.pcurves.push(Pcurve {
-            native_ref: None,
-            id: PcurveId::from(ids::data(kind!("pcurve"), id)),
+        ir.model.pcurves.push(Pcurve::new(
+            PcurveId::from(ids::data(kind!("pcurve"), id)),
             geometry,
-            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
-        });
+            cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
+        ));
         typed.insert(id);
         if let Some(representation) =
             named_parameter(record, "PCURVE", 2).and_then(Value::reference)
@@ -2522,12 +2525,14 @@ fn decode_tessellated_curve_sets(
                 id,
                 source_name.as_deref(),
             );
-            ir.model.curves.push(Curve {
-                native_ref: None,
-                parameter_range: None,
-                id: curve_id,
-                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline)),
-                source_object: Some(super::step_source_association(id)),
+            ir.model.curves.push({
+                let (parameter_range, id, geometry, source_object) = (
+                    None,
+                    curve_id,
+                    CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline)),
+                    Some(super::step_source_association(id)),
+                );
+                Curve::new(id, geometry, parameter_range, source_object)
             });
         }
         for source_id in [id, coordinates_id] {

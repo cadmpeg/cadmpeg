@@ -48,10 +48,9 @@ fn with_projection_context<R>(
 
 #[test]
 fn cosmetic_thread_radius_requires_one_topological_cylinder_face() {
-    let surface = Surface {
-        native_ref: None,
-        id: SurfaceId::mint("test:model:entity#cylinder").expect("identity grammar"),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+    let surface = Surface::new(
+        SurfaceId::mint("test:model:entity#cylinder").expect("identity grammar"),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -60,19 +59,15 @@ fn cosmetic_thread_radius_requires_one_topological_cylinder_face() {
             )
             .unwrap(),
         )),
-        source_object: None,
-    };
-    let face = Face {
-        native_ref: None,
-        id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
-        shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
-        surface: surface.id.clone(),
-        sense: Sense::Forward,
-        loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
-        name: None,
-        color: None,
-        tolerance: None,
-    };
+        None,
+    );
+    let face = Face::new(
+        FaceId::mint("test:model:entity#face").expect("identity grammar"),
+        ShellId::mint("test:model:entity#shell").expect("identity grammar"),
+        surface.id.clone(),
+        Sense::Forward,
+        cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+    );
     assert_eq!(
         unique_cylindrical_face(
             4.0,
@@ -114,10 +109,9 @@ fn cosmetic_thread_radius_requires_one_topological_cylinder_face() {
 
 #[test]
 fn frame_only_plane_support_requires_one_coincident_face() {
-    let surface = Surface {
-        native_ref: None,
-        id: SurfaceId::mint("test:model:entity#plane").expect("identity grammar"),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+    let surface = Surface::new(
+        SurfaceId::mint("test:model:entity#plane").expect("identity grammar"),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 5.0),
                 Vector3::new(0.0, 0.0, -1.0),
@@ -125,19 +119,15 @@ fn frame_only_plane_support_requires_one_coincident_face() {
             )
             .unwrap(),
         )),
-        source_object: None,
-    };
-    let face = Face {
-        native_ref: None,
-        id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
-        shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
-        surface: surface.id.clone(),
-        sense: Sense::Forward,
-        loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
-        name: None,
-        color: None,
-        tolerance: None,
-    };
+        None,
+    );
+    let face = Face::new(
+        FaceId::mint("test:model:entity#face").expect("identity grammar"),
+        ShellId::mint("test:model:entity#shell").expect("identity grammar"),
+        surface.id.clone(),
+        Sense::Forward,
+        cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+    );
 
     assert_eq!(
         unique_planar_face(
@@ -172,10 +162,9 @@ fn frame_only_plane_support_requires_one_coincident_face() {
 
 #[test]
 fn resolved_plane_binds_to_a_face_without_retaining_a_duplicate_frame() {
-    let surface = Surface {
-        native_ref: None,
-        id: SurfaceId::mint("test:model:entity#plane").expect("identity grammar"),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+    let surface = Surface::new(
+        SurfaceId::mint("test:model:entity#plane").expect("identity grammar"),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 5.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -183,19 +172,15 @@ fn resolved_plane_binds_to_a_face_without_retaining_a_duplicate_frame() {
             )
             .unwrap(),
         )),
-        source_object: None,
-    };
-    let face = Face {
-        native_ref: None,
-        id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
-        shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
-        surface: surface.id.clone(),
-        sense: Sense::Forward,
-        loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
-        name: None,
-        color: None,
-        tolerance: None,
-    };
+        None,
+    );
+    let face = Face::new(
+        FaceId::mint("test:model:entity#face").expect("identity grammar"),
+        ShellId::mint("test:model:entity#shell").expect("identity grammar"),
+        surface.id.clone(),
+        Sense::Forward,
+        cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+    );
     let mut features = vec![cadmpeg_ir::features::Feature {
         id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
@@ -246,10 +231,9 @@ fn resolved_plane_binds_to_a_face_without_retaining_a_duplicate_frame() {
 
 #[test]
 fn generic_native_offset_plane_support_stays_native() {
-    let surface = Surface {
-        native_ref: None,
-        id: SurfaceId::mint("test:model:entity#plane").expect("identity grammar"),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+    let surface = Surface::new(
+        SurfaceId::mint("test:model:entity#plane").expect("identity grammar"),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 5.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -257,19 +241,15 @@ fn generic_native_offset_plane_support_stays_native() {
             )
             .unwrap(),
         )),
-        source_object: None,
-    };
-    let face = Face {
-        native_ref: None,
-        id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
-        shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
-        surface: surface.id.clone(),
-        sense: Sense::Forward,
-        loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
-        name: None,
-        color: None,
-        tolerance: None,
-    };
+        None,
+    );
+    let face = Face::new(
+        FaceId::mint("test:model:entity#face").expect("identity grammar"),
+        ShellId::mint("test:model:entity#shell").expect("identity grammar"),
+        surface.id.clone(),
+        Sense::Forward,
+        cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+    );
     let native = "sldprt:feature-input:surface-component-ids:lane:40:200";
     let mut features = vec![cadmpeg_ir::features::Feature {
         id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
@@ -469,10 +449,9 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
         [FeatureId::mint("synthetic:test:id#producer").expect("identity grammar")]
     );
 
-    let surface = Surface {
-        native_ref: None,
-        id: SurfaceId::mint("test:model:entity#cylinder").expect("identity grammar"),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+    let surface = Surface::new(
+        SurfaceId::mint("test:model:entity#cylinder").expect("identity grammar"),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -481,19 +460,15 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
             )
             .unwrap(),
         )),
-        source_object: None,
-    };
-    let topology_face = Face {
-        native_ref: None,
-        id: FaceId::mint("test:model:entity#cylinder-face").expect("identity grammar"),
-        shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
-        surface: surface.id.clone(),
-        sense: Sense::Forward,
-        loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
-        name: None,
-        color: None,
-        tolerance: None,
-    };
+        None,
+    );
+    let topology_face = Face::new(
+        FaceId::mint("test:model:entity#cylinder-face").expect("identity grammar"),
+        ShellId::mint("test:model:entity#shell").expect("identity grammar"),
+        surface.id.clone(),
+        Sense::Forward,
+        cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+    );
     features[1].evaluation.edit(|definition, _| {
         let cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::CosmeticThread { face, diameter, .. },

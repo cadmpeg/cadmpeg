@@ -900,25 +900,26 @@ mod tests {
         ));
 
         let mut ir = CadIr::empty();
-        ir.model.curves.push(Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: CurveId::mint("creo:visibgeom:curve#10".to_string()).expect("identity grammar"),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                    Point3::new(0.0, 0.0, 4.0),
-                    Vector3::new(0.0, 0.0, 1.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                    5.0,
-                )
-                .expect("valid CircleCurve fixture"),
-            )),
-            source_object: None,
+        ir.model.curves.push({
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                CurveId::mint("creo:visibgeom:curve#10".to_string()).expect("identity grammar"),
+                CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                    cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                        Point3::new(0.0, 0.0, 4.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                        5.0,
+                    )
+                    .expect("valid CircleCurve fixture"),
+                )),
+                None,
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         });
-        ir.model.surfaces.push(Surface {
-            native_ref: None,
-            id: SurfaceId::mint("creo:visibgeom:surface#6".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+        ir.model.surfaces.push(Surface::new(
+            SurfaceId::mint("creo:visibgeom:surface#6".to_string()).expect("identity grammar"),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -927,8 +928,8 @@ mod tests {
                 )
                 .expect("valid CylinderSurface fixture"),
             )),
-            source_object: None,
-        });
+            None,
+        ));
 
         let arena = DecodeArena::new();
         let bytes = [0_u8];

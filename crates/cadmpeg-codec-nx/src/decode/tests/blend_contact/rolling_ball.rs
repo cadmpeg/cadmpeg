@@ -36,10 +36,9 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         let second =
             SurfaceId::mint("test:model:entity#synthetic:second-plane").expect("identity grammar");
         ir.model.surfaces.extend([
-            Surface {
-                native_ref: None,
-                id: first.clone(),
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            Surface::new(
+                first.clone(),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                         cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                         Vector3::new(1.0, 0.0, 0.0),
@@ -47,12 +46,11 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                     )
                     .unwrap(),
                 )),
-                source_object: None,
-            },
-            Surface {
-                native_ref: None,
-                id: second.clone(),
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                None,
+            ),
+            Surface::new(
+                second.clone(),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                         cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                         Vector3::new(0.0, 1.0, 0.0),
@@ -60,18 +58,17 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                     )
                     .unwrap(),
                 )),
-                source_object: None,
-            },
+                None,
+            ),
         ]);
         let first_spine_side = SurfaceId::mint("test:model:entity#synthetic:first-spine-side")
             .expect("identity grammar");
         let second_spine_side = SurfaceId::mint("test:model:entity#synthetic:second-spine-side")
             .expect("identity grammar");
         ir.model.surfaces.extend([
-            Surface {
-                native_ref: None,
-                id: first_spine_side.clone(),
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            Surface::new(
+                first_spine_side.clone(),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                         cadmpeg_ir::math::Point3::new(2.0, 0.0, 0.0),
                         Vector3::new(1.0, 0.0, 0.0),
@@ -79,12 +76,11 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                     )
                     .unwrap(),
                 )),
-                source_object: None,
-            },
-            Surface {
-                native_ref: None,
-                id: second_spine_side.clone(),
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                None,
+            ),
+            Surface::new(
+                second_spine_side.clone(),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                         cadmpeg_ir::math::Point3::new(0.0, 2.0, 0.0),
                         Vector3::new(0.0, 1.0, 0.0),
@@ -92,37 +88,38 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                     )
                     .unwrap(),
                 )),
-                source_object: None,
-            },
+                None,
+            ),
         ]);
         let spine = CurveId::mint("test:model:entity#synthetic:spine").expect("identity grammar");
-        ir.model.curves.push(Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: spine.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                    cadmpeg_ir::math::Point3::new(2.0, 2.0, 0.0),
-                    Vector3::new(0.0, 0.0, 1.0),
-                )
-                .unwrap(),
-            )),
-            source_object: None,
+        ir.model.curves.push({
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                spine.clone(),
+                CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                    cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                        cadmpeg_ir::math::Point3::new(2.0, 2.0, 0.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                    )
+                    .unwrap(),
+                )),
+                None,
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         });
         let surface =
             SurfaceId::mint("test:model:entity#synthetic:blend").expect("identity grammar");
         let construction =
             ProceduralSurfaceId::mint("test:model:entity#synthetic:blend-construction")
                 .expect("identity grammar");
-        ir.model.surfaces.push(Surface {
-            native_ref: None,
-            id: surface.clone(),
-            geometry: SurfaceGeometry::Procedural {
+        ir.model.surfaces.push(Surface::new(
+            surface.clone(),
+            SurfaceGeometry::Procedural {
                 construction: construction.clone(),
                 cache: None,
             },
-            source_object: None,
-        });
+            None,
+        ));
         ir.model.procedural_surfaces.push(ProceduralSurface::new(
             construction,
             ProceduralSurfaceDefinition::Blend(
@@ -467,12 +464,14 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
 
         let boundary_curve = CurveId::mint("test:model:entity#synthetic:blend-boundary-curve")
             .expect("identity grammar");
-        ir.model.curves.push(Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: boundary_curve.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
-            source_object: None,
+        ir.model.curves.push({
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                boundary_curve.clone(),
+                CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+                None,
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         });
         let _attached = ir.model.add_procedural_curve(
             &boundary_curve,
@@ -509,21 +508,19 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                 },
             ),
         );
-        ir.model.edges.push(Edge {
-            native_ref: None,
-            id: EdgeId::mint("test:model:entity#synthetic:blend-boundary-edge")
+        ir.model.edges.push(Edge::new(
+            EdgeId::mint("test:model:entity#synthetic:blend-boundary-edge")
                 .expect("identity grammar"),
-            carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(boundary_curve), Some([0.0, 1.0]))
-                .unwrap(),
-            start: VertexId::mint("test:model:entity#synthetic:blend-boundary-start")
+            cadmpeg_ir::topology::EdgeCarrier::new(Some(boundary_curve), Some([0.0, 1.0])).unwrap(),
+            VertexId::mint("test:model:entity#synthetic:blend-boundary-start")
                 .expect("identity grammar"),
-            end: VertexId::mint("test:model:entity#synthetic:blend-boundary-end")
+            VertexId::mint("test:model:entity#synthetic:blend-boundary-end")
                 .expect("identity grammar"),
-            tolerance: Some(
+            Some(
                 cadmpeg_ir::scalar::PositiveReal::new(EPS_TOPOLOGY_TOLERANCE)
                     .expect("positive finite tolerance"),
             ),
-        });
+        ));
         crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(
             geometry_ctx,
             &mut ir,
@@ -647,10 +644,9 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
 
         let third =
             SurfaceId::mint("test:model:entity#synthetic:third-plane").expect("identity grammar");
-        ir.model.surfaces.push(Surface {
-            native_ref: None,
-            id: third.clone(),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        ir.model.surfaces.push(Surface::new(
+            third.clone(),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     cadmpeg_ir::math::Point3::new(0.0, 8.0, 0.0),
                     Vector3::new(0.0, 1.0, 0.0),
@@ -658,37 +654,38 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                 )
                 .unwrap(),
             )),
-            source_object: None,
-        });
+            None,
+        ));
         let outer_spine =
             CurveId::mint("test:model:entity#synthetic:outer-spine").expect("identity grammar");
-        ir.model.curves.push(Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: outer_spine.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                    cadmpeg_ir::math::Point3::new(4.0, 6.0, 0.0),
-                    Vector3::new(0.0, 0.0, 1.0),
-                )
-                .unwrap(),
-            )),
-            source_object: None,
+        ir.model.curves.push({
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                outer_spine.clone(),
+                CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                    cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                        cadmpeg_ir::math::Point3::new(4.0, 6.0, 0.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                    )
+                    .unwrap(),
+                )),
+                None,
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         });
         let outer =
             SurfaceId::mint("test:model:entity#synthetic:outer-blend").expect("identity grammar");
         let outer_construction =
             ProceduralSurfaceId::mint("test:model:entity#synthetic:outer-blend-construction")
                 .expect("identity grammar");
-        ir.model.surfaces.push(Surface {
-            native_ref: None,
-            id: outer.clone(),
-            geometry: SurfaceGeometry::Procedural {
+        ir.model.surfaces.push(Surface::new(
+            outer.clone(),
+            SurfaceGeometry::Procedural {
                 construction: outer_construction.clone(),
                 cache: None,
             },
-            source_object: None,
-        });
+            None,
+        ));
         ir.model.procedural_surfaces.push(ProceduralSurface::new(
             outer_construction,
             ProceduralSurfaceDefinition::Blend(

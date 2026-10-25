@@ -767,29 +767,31 @@ mod tests {
         use crate::ids::CurveId;
         use crate::math::Point3;
 
-        let nurbs = |degree: u32| Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: CurveId::mint("synthetic:tolerance:curve#nurbs").expect("valid identity"),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                NurbsCurve::from_lanes(
-                    degree,
-                    if degree == 1 {
-                        vec![0.0, 0.0, 0.5, 1.0, 1.0]
-                    } else {
-                        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
-                    },
-                    vec![
-                        Point3::new(0.0, 0.0, 0.0),
-                        Point3::new(1.0, 0.0, 0.0),
-                        Point3::new(2.0, 0.0, 0.0),
-                    ],
-                    None,
-                    false,
-                )
-                .expect("test fixture invariant"),
-            )),
-            source_object: None,
+        let nurbs = |degree: u32| {
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                CurveId::mint("synthetic:tolerance:curve#nurbs").expect("valid identity"),
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                    NurbsCurve::from_lanes(
+                        degree,
+                        if degree == 1 {
+                            vec![0.0, 0.0, 0.5, 1.0, 1.0]
+                        } else {
+                            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
+                        },
+                        vec![
+                            Point3::new(0.0, 0.0, 0.0),
+                            Point3::new(1.0, 0.0, 0.0),
+                            Point3::new(2.0, 0.0, 0.0),
+                        ],
+                        None,
+                        false,
+                    )
+                    .expect("test fixture invariant"),
+                )),
+                None,
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         };
 
         let mut left = unit_cube().expect("valid unit cube fixture");

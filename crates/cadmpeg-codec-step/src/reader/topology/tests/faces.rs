@@ -626,15 +626,14 @@ pub(crate) fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
     let face = ir.model.faces[0].id.clone();
     let vertex = ir.model.vertices[0].id.clone();
     let inner = LoopId::mint("zzzz:test:loop#inner").expect("identity grammar");
-    ir.model.loops.push(Loop {
-        native_ref: None,
-        id: inner.clone(),
-        face: face.clone(),
-        boundary: cadmpeg_ir::topology::LoopBoundary::Vertex {
+    ir.model.loops.push(Loop::new(
+        inner.clone(),
+        face.clone(),
+        cadmpeg_ir::topology::LoopBoundary::Vertex {
             vertex,
             pcurves: Vec::new(),
         },
-    });
+    ));
     let outer = ir.model.faces[0].loops.iter().next().unwrap().clone();
     ir.model.faces[0].loops = cadmpeg_ir::topology::FaceLoops::classified(outer, vec![inner]);
     let output = export(&ir);

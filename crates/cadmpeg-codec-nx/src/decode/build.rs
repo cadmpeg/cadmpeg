@@ -331,12 +331,9 @@ pub(super) fn try_decode_geometry(
                 .points
                 .push(Point::new(pid.clone(), position, None));
 
-            ir.model.vertices.push(Vertex {
-                native_ref: None,
-                id: vid.clone(),
-                point: pid.clone(),
-                tolerance: None,
-            });
+            ir.model
+                .vertices
+                .push(Vertex::new(vid.clone(), pid.clone(), None));
             points_by_xmt.insert(node.xmt(), pid);
             counts.points += 1;
         }
@@ -372,12 +369,9 @@ pub(super) fn try_decode_geometry(
             );
             annotations.derived(id.as_str(), "geometry")?;
 
-            ir.model.surfaces.push(Surface {
-                native_ref: None,
-                id: id.clone(),
-                geometry,
-                source_object: None,
-            });
+            ir.model
+                .surfaces
+                .push(Surface::new(id.clone(), geometry, None));
             surfaces_by_xmt.insert(node.xmt(), id);
         }
         for (fi, surf) in nurbs_surfaces.into_iter().enumerate() {
@@ -392,12 +386,9 @@ pub(super) fn try_decode_geometry(
             );
             annotations.derived(id.as_str(), "geometry")?;
 
-            ir.model.surfaces.push(Surface {
-                native_ref: None,
-                id: id.clone(),
-                geometry: surf.geometry,
-                source_object: None,
-            });
+            ir.model
+                .surfaces
+                .push(Surface::new(id.clone(), surf.geometry, None));
             if let Some(node) = graph.at_pos(surf.pos) {
                 surfaces_by_xmt.insert(node.xmt(), id);
             }
@@ -431,14 +422,13 @@ pub(super) fn try_decode_geometry(
                     );
                     annotations.derived(surface_id.as_str(), "geometry")?;
 
-                    ir.model.surfaces.push(Surface {
-                        native_ref: None,
-                        id: surface_id.clone(),
-                        geometry: SurfaceGeometry::Procedural {
+                    ir.model.surfaces.push(Surface::new(
+                        surface_id.clone(),
+                        SurfaceGeometry::Procedural {
                             construction: procedural_id.clone(),
                             cache: None,
                         },
-                        source_object: Some(SourceObjectAssociation {
+                        Some(SourceObjectAssociation {
                             geometry_role: None,
                             format: cadmpeg_ir::CodecFormat::Nx,
                             object_id: cadmpeg_core::text::NonBlankString::new(format!(
@@ -452,7 +442,7 @@ pub(super) fn try_decode_geometry(
                             })?,
                             instance_path: Vec::new(),
                         }),
-                    });
+                    ));
                     (surface_id, None)
                 };
             annotations.note(
@@ -502,14 +492,13 @@ pub(super) fn try_decode_geometry(
             );
             annotations.derived(surface_id.as_str(), "geometry")?;
 
-            ir.model.surfaces.push(Surface {
-                native_ref: None,
-                id: surface_id.clone(),
-                geometry: SurfaceGeometry::Procedural {
+            ir.model.surfaces.push(Surface::new(
+                surface_id.clone(),
+                SurfaceGeometry::Procedural {
                     construction: procedural_id.clone(),
                     cache: None,
                 },
-                source_object: Some(SourceObjectAssociation {
+                Some(SourceObjectAssociation {
                     geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Nx,
                     object_id: cadmpeg_core::text::NonBlankString::new(format!(
@@ -521,7 +510,7 @@ pub(super) fn try_decode_geometry(
                     })?,
                     instance_path: Vec::new(),
                 }),
-            });
+            ));
             annotations.note(
                 procedural_id.as_str(),
                 &source_stream,
@@ -615,12 +604,10 @@ pub(super) fn try_decode_geometry(
             );
             annotations.derived(id.as_str(), "geometry")?;
 
-            ir.model.curves.push(Curve {
-                native_ref: None,
-                parameter_range: None,
-                id: id.clone(),
-                geometry,
-                source_object: None,
+            ir.model.curves.push({
+                let (parameter_range, id, geometry, source_object) =
+                    (None, id.clone(), geometry, None);
+                Curve::new(id, geometry, parameter_range, source_object)
             });
             curves_by_xmt.insert(node.xmt(), id);
         }
@@ -636,12 +623,10 @@ pub(super) fn try_decode_geometry(
             );
             annotations.derived(id.as_str(), "geometry")?;
 
-            ir.model.curves.push(Curve {
-                native_ref: None,
-                parameter_range: None,
-                id: id.clone(),
-                geometry: crv.geometry,
-                source_object: None,
+            ir.model.curves.push({
+                let (parameter_range, id, geometry, source_object) =
+                    (None, id.clone(), crv.geometry, None);
+                Curve::new(id, geometry, parameter_range, source_object)
             });
             if let Some(node) = graph.at_pos(crv.pos) {
                 curves_by_xmt.insert(node.xmt(), id);
@@ -659,12 +644,11 @@ pub(super) fn try_decode_geometry(
             );
             annotations.derived(id.as_str(), "geometry")?;
 
-            ir.model.pcurves.push(Pcurve {
-                native_ref: None,
-                id: id.clone(),
-                geometry: pcurve.geometry,
-                metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
-            });
+            ir.model.pcurves.push(Pcurve::new(
+                id.clone(),
+                pcurve.geometry,
+                cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
+            ));
             if let Some(node) = graph.at_pos(pcurve.pos) {
                 pcurves_by_xmt.insert(node.xmt(), id);
             }
@@ -830,43 +814,47 @@ pub(super) fn try_decode_geometry(
                 annotations.exactness(curve_id.as_str(), Exactness::Unknown);
             }
 
-            ir.model.curves.push(Curve {
-                native_ref: None,
-                parameter_range: None,
-                id: curve_id.clone(),
-                geometry: if let Some(charted) = charted {
-                    CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-                            1,
-                            linear_knots(&charted.samples.parameters()),
-                            charted.samples.points(),
-                            None,
-                            false,
-                        )
-                        .map_err(|error| CodecError::Malformed(error.to_string()))?,
-                    ))
-                } else if uncharted.is_some() {
-                    CurveGeometry::Procedural {
-                        construction: procedural_id.clone(),
-                        cache: None,
-                    }
-                } else {
-                    CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
-                        record: Some(unknown_id.clone()),
-                    })
-                },
-                source_object: Some(SourceObjectAssociation {
-                    geometry_role: None,
-                    format: cadmpeg_ir::CodecFormat::Nx,
-                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                        "nx:s{si}:intersection-record#{}",
-                        construction.xmt
-                    ))
-                    .ok_or_else(|| {
-                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-                    })?,
-                    instance_path: Vec::new(),
-                }),
+            ir.model.curves.push({
+                let (parameter_range, id, geometry, source_object) = (
+                    None,
+                    curve_id.clone(),
+                    if let Some(charted) = charted {
+                        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                                1,
+                                linear_knots(&charted.samples.parameters()),
+                                charted.samples.points(),
+                                None,
+                                false,
+                            )
+                            .map_err(|error| CodecError::Malformed(error.to_string()))?,
+                        ))
+                    } else if uncharted.is_some() {
+                        CurveGeometry::Procedural {
+                            construction: procedural_id.clone(),
+                            cache: None,
+                        }
+                    } else {
+                        CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
+                            record: Some(unknown_id.clone()),
+                        })
+                    },
+                    Some(SourceObjectAssociation {
+                        geometry_role: None,
+                        format: cadmpeg_ir::CodecFormat::Nx,
+                        object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                            "nx:s{si}:intersection-record#{}",
+                            construction.xmt
+                        ))
+                        .ok_or_else(|| {
+                            cadmpeg_core::CodecError::malformed(
+                                "source object_id must not be empty",
+                            )
+                        })?,
+                        instance_path: Vec::new(),
+                    }),
+                );
+                Curve::new(id, geometry, parameter_range, source_object)
             });
             annotations.note(
                 procedural_id.as_str(),
@@ -2009,12 +1997,9 @@ fn finalize_point_topology(
             Some("derived_point_topology"),
         );
         annotations.exactness(vertex_id.as_str(), Exactness::Inferred);
-        ir.model.vertices.push(Vertex {
-            native_ref: None,
-            id: vertex_id.clone(),
-            point: point.id.clone(),
-            tolerance: None,
-        });
+        ir.model
+            .vertices
+            .push(Vertex::new(vertex_id.clone(), point.id.clone(), None));
         free_vertices.push(vertex_id);
     }
 
@@ -2034,24 +2019,22 @@ fn finalize_point_topology(
     );
 
     let region_shells = vec![shell_id];
-    ir.model.regions.push(Region {
-        native_ref: None,
-        id: region_id.clone(),
-        body: body_id.clone(),
-        shells: region_shells,
-    });
+    ir.model.regions.push(Region::new(
+        region_id.clone(),
+        body_id.clone(),
+        region_shells,
+    ));
 
     let body_regions = vec![region_id];
-    ir.model.bodies.push(Body {
-        native_ref: None,
-        id: body_id,
-        kind: BodyKind::General,
-        regions: body_regions,
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
-    });
+    ir.model.bodies.push(Body::new(
+        body_id,
+        BodyKind::General,
+        body_regions,
+        None,
+        None,
+        None,
+        None,
+    ));
     Ok(())
 }
 

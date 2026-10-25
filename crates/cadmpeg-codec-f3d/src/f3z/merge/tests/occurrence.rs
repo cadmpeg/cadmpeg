@@ -164,22 +164,20 @@ fn repeated_occurrence_merge_remaps_typed_graphs_disjointly() {
     let ctx = cadmpeg_test_support::service_decode_context();
     let mut merged = Model::default();
     let mut component = Model::default();
-    component.bodies = vec![Body {
-        native_ref: None,
-        id: BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
-        kind: BodyKind::Solid,
-        regions: vec![RegionId::mint("f3d:brep:entity#2").expect("identity grammar")],
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
-    }];
-    component.regions = vec![Region {
-        native_ref: None,
-        id: RegionId::mint("f3d:brep:entity#2").expect("identity grammar"),
-        body: BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
-        shells: Vec::new(),
-    }];
+    component.bodies = vec![Body::new(
+        BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
+        BodyKind::Solid,
+        vec![RegionId::mint("f3d:brep:entity#2").expect("identity grammar")],
+        None,
+        None,
+        None,
+        None,
+    )];
+    component.regions = vec![Region::new(
+        RegionId::mint("f3d:brep:entity#2").expect("identity grammar"),
+        BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
+        Vec::new(),
+    )];
     for ordinal in 0..2 {
         let occurrence = format!("role/occurrence-{ordinal}");
         let mut scope = OccurrenceScope {
@@ -209,16 +207,15 @@ fn occurrence_merge_preserves_a_body_name_that_spells_its_identity() {
     use cadmpeg_ir::document::EntityRewrite;
     let ctx = cadmpeg_test_support::service_decode_context();
     let source_id = "f3d:model:body#source";
-    let body = Body {
-        native_ref: None,
-        id: BodyId::mint(source_id).unwrap(),
-        kind: BodyKind::Solid,
-        regions: vec![RegionId::mint("f3d:model:region#source").unwrap()],
-        transform: None,
-        name: Some(source_id.into()),
-        color: None,
-        visible: None,
-    };
+    let body = Body::new(
+        BodyId::mint(source_id).unwrap(),
+        BodyKind::Solid,
+        vec![RegionId::mint("f3d:model:region#source").unwrap()],
+        None,
+        Some(source_id.into()),
+        None,
+        None,
+    );
     let scoped = OccurrenceScope {
         ctx: &ctx,
         occurrence: "component-0",

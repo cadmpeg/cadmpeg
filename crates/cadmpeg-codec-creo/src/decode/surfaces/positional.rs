@@ -124,13 +124,10 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
             source_carriers.admit_surface(
                 ctx,
                 ir,
-                Surface {
-                    native_ref: None,
+                Surface::new(
                     id,
-                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-                        sphere_surface,
-                    )),
-                    source_object: Some(SourceObjectAssociation {
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)),
+                    Some(SourceObjectAssociation {
                         geometry_role: None,
                         format: cadmpeg_ir::CodecFormat::Creo,
                         object_id: crate::identity::source_object_id_checked(format_args!(
@@ -140,7 +137,7 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
                         ))?,
                         instance_path: Vec::new(),
                     }),
-                },
+                ),
             )?;
             transferred += 1;
         }
@@ -248,11 +245,10 @@ pub(in super::super) fn transfer_positional_tori(
         source_carriers.admit_surface(
             ctx,
             ir,
-            Surface {
-                native_ref: None,
+            Surface::new(
                 id,
                 geometry,
-                source_object: Some(SourceObjectAssociation {
+                Some(SourceObjectAssociation {
                     geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: crate::identity::source_object_id_checked(format_args!(
@@ -262,7 +258,7 @@ pub(in super::super) fn transfer_positional_tori(
                     ))?,
                     instance_path: Vec::new(),
                 }),
-            },
+            ),
         )?;
         transferred += 1;
     }
@@ -366,15 +362,12 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
             Exactness::Derived,
         )?;
         ctx.charge_entities(1, "admit Creo model curves")?;
-        source_carriers.admit_curve(
-            ctx,
-            ir,
-            Curve {
-                native_ref: None,
-                parameter_range: None,
-                id: curve_id.clone(),
-                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)),
-                source_object: Some(SourceObjectAssociation {
+        source_carriers.admit_curve(ctx, ir, {
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                curve_id.clone(),
+                CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)),
+                Some(SourceObjectAssociation {
                     geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: crate::identity::source_object_id_checked(format_args!(
@@ -383,17 +376,17 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
                     ))?,
                     instance_path: Vec::new(),
                 }),
-            },
-        )?;
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
+        })?;
         ctx.charge_entities(1, "admit Creo model surfaces")?;
         source_carriers.admit_surface(
             ctx,
             ir,
-            Surface {
-                native_ref: None,
-                id: surface_id.clone(),
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
-                source_object: Some(SourceObjectAssociation {
+            Surface::new(
+                surface_id.clone(),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
+                Some(SourceObjectAssociation {
                     geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: crate::identity::source_object_id_checked(format_args!(
@@ -402,7 +395,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
                     ))?,
                     instance_path: Vec::new(),
                 }),
-            },
+            ),
         )?;
         source_carriers.admit_procedural_surface(
             ir,
@@ -585,15 +578,12 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
             Exactness::Derived,
         )?;
         ctx.charge_entities(1, "admit Creo model curves")?;
-        source_carriers.admit_curve(
-            ctx,
-            ir,
-            Curve {
-                native_ref: None,
-                parameter_range: None,
-                id: curve_id.clone(),
-                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix)),
-                source_object: Some(SourceObjectAssociation {
+        source_carriers.admit_curve(ctx, ir, {
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                curve_id.clone(),
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix)),
+                Some(SourceObjectAssociation {
                     geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: crate::identity::source_object_id_checked(format_args!(
@@ -602,17 +592,17 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
                     ))?,
                     instance_path: Vec::new(),
                 }),
-            },
-        )?;
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
+        })?;
         ctx.charge_entities(1, "admit Creo model surfaces")?;
         source_carriers.admit_surface(
             ctx,
             ir,
-            Surface {
-                native_ref: None,
-                id: surface_id.clone(),
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
-                source_object: Some(SourceObjectAssociation {
+            Surface::new(
+                surface_id.clone(),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
+                Some(SourceObjectAssociation {
                     geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: crate::identity::source_object_id_checked(format_args!(
@@ -621,7 +611,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
                     ))?,
                     instance_path: Vec::new(),
                 }),
-            },
+            ),
         )?;
         source_carriers.admit_procedural_surface(
             ir,

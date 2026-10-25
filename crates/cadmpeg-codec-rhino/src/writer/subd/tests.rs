@@ -29,13 +29,12 @@ fn triangle() -> SubdSurface {
             .collect(),
     )
     .unwrap();
-    SubdSurface {
-        native_ref: None,
-        id: "test:model:subd#triangle".try_into().unwrap(),
-        scheme: SubdScheme::CatmullClark,
-        cage: SubdCage::new(vertices, edges, vec![face], Vec::new()).unwrap(),
-        source_object: None,
-    }
+    SubdSurface::new(
+        "test:model:subd#triangle".try_into().unwrap(),
+        SubdScheme::CatmullClark,
+        SubdCage::new(vertices, edges, vec![face], Vec::new()).unwrap(),
+        None,
+    )
 }
 
 fn two_faces() -> SubdSurface {
@@ -68,11 +67,10 @@ fn two_faces() -> SubdSurface {
         )
         .unwrap()
     };
-    SubdSurface {
-        native_ref: None,
-        id: "test:model:subd#two-faces".try_into().unwrap(),
-        scheme: SubdScheme::CatmullClark,
-        cage: SubdCage::new(
+    SubdSurface::new(
+        "test:model:subd#two-faces".try_into().unwrap(),
+        SubdScheme::CatmullClark,
+        SubdCage::new(
             vertices,
             edges,
             vec![
@@ -82,8 +80,8 @@ fn two_faces() -> SubdSurface {
             Vec::new(),
         )
         .unwrap(),
-        source_object: None,
-    }
+        None,
+    )
 }
 
 fn direct_round_trip(source: &SubdSurface, version: RhinoArchiveVersion) -> SubdSurface {
@@ -240,7 +238,16 @@ fn an_admitted_ring_that_repeats_an_edge_is_not_written_as_invalid_native_topolo
         Vec::new(),
     )
     .unwrap();
-    let source = SubdSurface { cage, ..original };
+    let source = {
+        let (cage, native_ref, id, scheme, source_object) = (
+            cage,
+            (original).native_ref,
+            (original).id,
+            (original).scheme,
+            (original).source_object,
+        );
+        SubdSurface::new(id, scheme, cage, source_object).with_native_ref(native_ref)
+    };
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let ctx = DecodeContext::new(&arena, &policy, cadmpeg_core::decode::DecodeDepth::Full);

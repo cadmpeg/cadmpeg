@@ -82,32 +82,35 @@ fn cube_with_a_collapsed_edge(ring_kind: Ring) -> CadIr {
     let curve = CurveId::mint("test:model:curve#collapsed").unwrap();
     let edge = EdgeId::mint("test:model:edge#collapsed").unwrap();
     let coedge = CoedgeId::mint("test:model:coedge#collapsed").unwrap();
-    source.model.curves.push(Curve {
-        native_ref: None,
-        id: curve.clone(),
-        parameter_range: None,
-        source_object: None,
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
-            DegenerateCurve::try_new(position).unwrap(),
-        )),
+    source.model.curves.push({
+        let (id, parameter_range, source_object, geometry) = (
+            curve.clone(),
+            None,
+            None,
+            CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
+                DegenerateCurve::try_new(position).unwrap(),
+            )),
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     });
-    source.model.edges.push(Edge {
-        native_ref: None,
-        id: edge.clone(),
-        carrier: EdgeCarrier::unbounded(Some(curve)),
-        start: if same_vertex { corner.clone() } else { other },
-        end: corner.clone(),
-        tolerance: None,
-    });
-    source.model.coedges.push(Coedge {
-        native_ref: None,
-        id: coedge.clone(),
-        owner_loop: source.model.loops[loop_index].id.clone(),
-        edge,
-        radial_next: coedge.clone(),
-        sense: Sense::Forward,
-        use_curve: None,
-        pcurves: Vec::new(),
+    source.model.edges.push(Edge::new(
+        edge.clone(),
+        EdgeCarrier::unbounded(Some(curve)),
+        if same_vertex { corner.clone() } else { other },
+        corner.clone(),
+        None,
+    ));
+    source.model.coedges.push({
+        let (id, owner_loop, edge, radial_next, sense, use_curve, pcurves) = (
+            coedge.clone(),
+            source.model.loops[loop_index].id.clone(),
+            edge,
+            coedge.clone(),
+            Sense::Forward,
+            None,
+            Vec::new(),
+        );
+        Coedge::new(id, owner_loop, edge, radial_next, sense, pcurves, use_curve)
     });
     let mut coedges = ring;
     coedges.insert(1, coedge.clone());
@@ -121,10 +124,9 @@ fn cube_with_a_collapsed_edge(ring_kind: Ring) -> CadIr {
     }
     if ring_kind == Ring::AloneWithPcurves {
         let pcurve = PcurveId::mint("test:model:pcurve#collapsed").unwrap();
-        source.model.pcurves.push(Pcurve {
-            native_ref: None,
-            id: pcurve.clone(),
-            geometry: PcurveGeometry::Nurbs {
+        source.model.pcurves.push(Pcurve::new(
+            pcurve.clone(),
+            PcurveGeometry::Nurbs {
                 nurbs: PcurveNurbs::new(
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
@@ -135,8 +137,8 @@ fn cube_with_a_collapsed_edge(ring_kind: Ring) -> CadIr {
                 )
                 .unwrap(),
             },
-            metadata: PcurveMetadata::default(),
-        });
+            PcurveMetadata::default(),
+        ));
         for coedge in source
             .model
             .coedges
@@ -154,38 +156,41 @@ fn cube_with_a_collapsed_edge(ring_kind: Ring) -> CadIr {
         let circle = CurveId::mint("test:model:curve#closed-circle").unwrap();
         let circle_edge = EdgeId::mint("test:model:edge#closed-circle").unwrap();
         let circle_coedge = CoedgeId::mint("test:model:coedge#closed-circle").unwrap();
-        source.model.curves.push(Curve {
-            native_ref: None,
-            id: circle.clone(),
-            parameter_range: None,
-            source_object: None,
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                CircleCurve::try_new(
-                    Point3::new(position.x - 0.25, position.y, position.z),
-                    Vector3::new(0.0, 0.0, 1.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                    0.25,
-                )
-                .unwrap(),
-            )),
+        source.model.curves.push({
+            let (id, parameter_range, source_object, geometry) = (
+                circle.clone(),
+                None,
+                None,
+                CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                    CircleCurve::try_new(
+                        Point3::new(position.x - 0.25, position.y, position.z),
+                        Vector3::new(0.0, 0.0, 1.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                        0.25,
+                    )
+                    .unwrap(),
+                )),
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         });
-        source.model.edges.push(Edge {
-            native_ref: None,
-            id: circle_edge.clone(),
-            carrier: EdgeCarrier::unbounded(Some(circle)),
-            start: corner_vertex.clone(),
-            end: corner_vertex,
-            tolerance: None,
-        });
-        source.model.coedges.push(Coedge {
-            native_ref: None,
-            id: circle_coedge.clone(),
-            owner_loop: source.model.loops[loop_index].id.clone(),
-            edge: circle_edge,
-            radial_next: circle_coedge.clone(),
-            sense: Sense::Forward,
-            use_curve: None,
-            pcurves: Vec::new(),
+        source.model.edges.push(Edge::new(
+            circle_edge.clone(),
+            EdgeCarrier::unbounded(Some(circle)),
+            corner_vertex.clone(),
+            corner_vertex,
+            None,
+        ));
+        source.model.coedges.push({
+            let (id, owner_loop, edge, radial_next, sense, use_curve, pcurves) = (
+                circle_coedge.clone(),
+                source.model.loops[loop_index].id.clone(),
+                circle_edge,
+                circle_coedge.clone(),
+                Sense::Forward,
+                None,
+                Vec::new(),
+            );
+            Coedge::new(id, owner_loop, edge, radial_next, sense, pcurves, use_curve)
         });
         coedges = vec![circle_coedge, coedge];
     }

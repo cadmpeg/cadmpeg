@@ -82,40 +82,27 @@ fn add_bounded_curve(
 
     ctx.charge_entities(2, "iges_geometry_conics")?;
     ir.model.vertices.extend([
-        Vertex {
-            native_ref: None,
-            id: start_vertex.clone(),
-            point: start_point,
-            tolerance,
-        },
-        Vertex {
-            native_ref: None,
-            id: end_vertex.clone(),
-            point: end_point,
-            tolerance,
-        },
+        Vertex::new(start_vertex.clone(), start_point, tolerance),
+        Vertex::new(end_vertex.clone(), end_point, tolerance),
     ]);
     sequences.record_curve(&curve, entry.sequence);
 
     ctx.charge_entities(1, "iges_geometry_conics")?;
-    ir.model.curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: curve.clone(),
-        geometry,
-        source_object: Some(source_object(entry)?),
+    ir.model.curves.push({
+        let (parameter_range, id, geometry, source_object) =
+            (None, curve.clone(), geometry, Some(source_object(entry)?));
+        Curve::new(id, geometry, parameter_range, source_object)
     });
 
     ctx.charge_entities(1, "iges_geometry_conics")?;
-    ir.model.edges.push(Edge {
-        native_ref: None,
-        id: edge.clone(),
-        carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve), Some(parameter_range))
+    ir.model.edges.push(Edge::new(
+        edge.clone(),
+        cadmpeg_ir::topology::EdgeCarrier::new(Some(curve), Some(parameter_range))
             .map_err(cadmpeg_core::CodecError::malformed)?,
-        start: start_vertex,
-        end: end_vertex,
+        start_vertex,
+        end_vertex,
         tolerance,
-    });
+    ));
     Ok(edge)
 }
 

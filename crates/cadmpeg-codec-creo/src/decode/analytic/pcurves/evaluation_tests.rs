@@ -47,13 +47,11 @@ fn plane() -> SurfaceGeometry {
 fn model() -> CadIr {
     let mut ir = CadIr::empty();
     for face in [7, 8] {
-        ir.model.surfaces.push(Surface {
-            native_ref: None,
-            id: SurfaceId::mint(format!("creo:visibgeom:surface#{face}"))
-                .expect("surface identity"),
-            geometry: plane(),
-            source_object: None,
-        });
+        ir.model.surfaces.push(Surface::new(
+            SurfaceId::mint(format!("creo:visibgeom:surface#{face}")).expect("surface identity"),
+            plane(),
+            None,
+        ));
     }
     ir
 }

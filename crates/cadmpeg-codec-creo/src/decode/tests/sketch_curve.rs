@@ -724,27 +724,25 @@ fn evaluated_sweep_bodies_are_feature_outputs() {
         "creo:feature:revolution#40:body",
         "creo:feature:revolution#41:body",
     ] {
-        ir.model.bodies.push(Body {
-            native_ref: None,
-            id: BodyId::mint(id.to_string()).expect("identity grammar"),
-            kind: BodyKind::Solid,
-            regions: Vec::new(),
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        });
+        ir.model.bodies.push(Body::new(
+            BodyId::mint(id.to_string()).expect("identity grammar"),
+            BodyKind::Solid,
+            Vec::new(),
+            None,
+            None,
+            None,
+            None,
+        ));
     }
-    ir.model.bodies.push(Body {
-        native_ref: None,
-        id: BodyId::mint("creo:feature:extrusion#43:body".to_string()).expect("identity grammar"),
-        kind: BodyKind::Sheet,
-        regions: Vec::new(),
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
-    });
+    ir.model.bodies.push(Body::new(
+        BodyId::mint("creo:feature:extrusion#43:body".to_string()).expect("identity grammar"),
+        BodyKind::Sheet,
+        Vec::new(),
+        None,
+        None,
+        None,
+        None,
+    ));
     assert_eq!(
         evaluated_sweep_output_bodies(&ir, 40).expect("compute the evaluated sweep output bodies"),
         vec![

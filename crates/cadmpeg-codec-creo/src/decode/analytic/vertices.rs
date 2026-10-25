@@ -1079,31 +1079,35 @@ mod tests {
         let id = CurveId::mint("creo:visibgeom:curve#7".to_string()).expect("identity grammar");
         let mut ir = CadIr::empty();
         ir.model.curves.extend([
-            Curve {
-                native_ref: None,
-                parameter_range: None,
-                id: id.clone(),
-                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                    cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                        Point3::new(0.0, 0.0, 0.0),
-                        Vector3::new(1.0, 0.0, 0.0),
-                    )
-                    .expect("valid LineCurve fixture"),
-                )),
-                source_object: None,
+            {
+                let (parameter_range, id, geometry, source_object) = (
+                    None,
+                    id.clone(),
+                    CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                            Point3::new(0.0, 0.0, 0.0),
+                            Vector3::new(1.0, 0.0, 0.0),
+                        )
+                        .expect("valid LineCurve fixture"),
+                    )),
+                    None,
+                );
+                Curve::new(id, geometry, parameter_range, source_object)
             },
-            Curve {
-                native_ref: None,
-                parameter_range: None,
-                id: id.clone(),
-                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                    cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                        Point3::new(0.0, 1.0, 0.0),
-                        Vector3::new(1.0, 0.0, 0.0),
-                    )
-                    .expect("valid LineCurve fixture"),
-                )),
-                source_object: None,
+            {
+                let (parameter_range, id, geometry, source_object) = (
+                    None,
+                    id.clone(),
+                    CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                            Point3::new(0.0, 1.0, 0.0),
+                            Vector3::new(1.0, 0.0, 0.0),
+                        )
+                        .expect("valid LineCurve fixture"),
+                    )),
+                    None,
+                );
+                Curve::new(id, geometry, parameter_range, source_object)
             },
         ]);
 
@@ -1133,12 +1137,14 @@ mod tests {
             "creo:visibgeom:edge#5",
             "creo:visibgeom:curve#4294967295",
         ] {
-            ir.model.curves.push(Curve {
-                native_ref: None,
-                parameter_range: None,
-                id: CurveId::mint(id.to_owned()).expect("identity grammar"),
-                geometry: line.clone(),
-                source_object: None,
+            ir.model.curves.push({
+                let (parameter_range, id, geometry, source_object) = (
+                    None,
+                    CurveId::mint(id.to_owned()).expect("identity grammar"),
+                    line.clone(),
+                    None,
+                );
+                Curve::new(id, geometry, parameter_range, source_object)
             });
         }
         let index = VisibleModelCurves::new(&ir.model.curves);

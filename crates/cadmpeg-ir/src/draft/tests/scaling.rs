@@ -63,12 +63,11 @@ fn rejected_candidates_keep_the_reusable_admission_facts() {
     };
     assert_eq!(append(asset(0), true), Ok(()));
     let mut dangling = CadIr::empty();
-    dangling.model.vertices.push(crate::topology::Vertex {
-        native_ref: None,
-        id: "test:model:vertex#dangling".try_into().unwrap(),
-        point: "test:model:point#missing".try_into().unwrap(),
-        tolerance: None,
-    });
+    dangling.model.vertices.push(crate::topology::Vertex::new(
+        "test:model:vertex#dangling".try_into().unwrap(),
+        "test:model:point#missing".try_into().unwrap(),
+        None,
+    ));
     // An invalid candidate and a valid one its caller refuses both roll
     // back; the facts still describe the one admitted asset.
     assert_eq!(append(dangling, true), Err(false));

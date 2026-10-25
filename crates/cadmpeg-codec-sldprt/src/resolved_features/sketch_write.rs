@@ -65,15 +65,14 @@ pub(super) fn sketch_brep(
         prefix.clone().colon(cadmpeg_ir::identity_key!("surface")),
     );
     let v_axis = normal.cross(u_axis);
-    ir.model.surfaces.push(Surface {
-        native_ref: None,
-        id: surface_id.clone(),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+    ir.model.surfaces.push(Surface::new(
+        surface_id.clone(),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin, normal, u_axis)
                 .map_err(cadmpeg_core::CodecError::malformed)?,
         )),
-        source_object: None,
-    });
+        None,
+    ));
     let ordered_entities = source
         .model
         .sketch_entities
@@ -212,54 +211,49 @@ pub(super) fn sketch_brep(
                     .colon(profile_index)
                     .colon(use_index),
             );
-            ir.model.curves.push(Curve {
-                native_ref: None,
-                parameter_range: None,
-                id: curve_id.clone(),
-                geometry: generated.curve,
-                source_object: None,
+            ir.model.curves.push({
+                let (parameter_range, id, geometry, source_object) =
+                    (None, curve_id.clone(), generated.curve, None);
+                Curve::new(id, geometry, parameter_range, source_object)
             });
-            ir.model.edges.push(Edge {
-                native_ref: None,
-                id: edge_id.clone(),
-                carrier: cadmpeg_ir::topology::EdgeCarrier::new(
-                    Some(curve_id),
-                    Some(generated.param_range),
-                )
-                .map_err(cadmpeg_core::CodecError::malformed)?,
-                start: start_vertex,
-                end: end_vertex,
-                tolerance: None,
-            });
+            ir.model.edges.push(Edge::new(
+                edge_id.clone(),
+                cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some(generated.param_range))
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                start_vertex,
+                end_vertex,
+                None,
+            ));
             match &mut ring {
                 Some(ring) => ring
                     .try_push(coedge_id.clone())
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 None => ring = Some(cadmpeg_ir::topology::LoopRing::single(coedge_id.clone())),
             }
-            ir.model.coedges.push(Coedge {
-                native_ref: None,
-                id: coedge_id.clone(),
-                owner_loop: loop_id.clone(),
-                edge: edge_id,
-                radial_next: coedge_id,
-                sense: if entity_use.reversed {
-                    Sense::Reversed
-                } else {
-                    Sense::Forward
-                },
-                use_curve: None,
-                pcurves: Vec::new(),
+            ir.model.coedges.push({
+                let (id, owner_loop, edge, radial_next, sense, use_curve, pcurves) = (
+                    coedge_id.clone(),
+                    loop_id.clone(),
+                    edge_id,
+                    coedge_id,
+                    if entity_use.reversed {
+                        Sense::Reversed
+                    } else {
+                        Sense::Forward
+                    },
+                    None,
+                    Vec::new(),
+                );
+                Coedge::new(id, owner_loop, edge, radial_next, sense, pcurves, use_curve)
             });
         }
-        ir.model.loops.push(Loop {
-            native_ref: None,
-            id: loop_id,
-            face: face_id.clone(),
-            boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring.ok_or_else(|| {
+        ir.model.loops.push(Loop::new(
+            loop_id,
+            face_id.clone(),
+            cadmpeg_ir::topology::LoopBoundary::Ring(ring.ok_or_else(|| {
                 cadmpeg_core::CodecError::malformed("sketch profile has no coedges")
             })?),
-        });
+        ));
     }
     for (ordinal, entity) in ordered_entities.iter().enumerate() {
         let SketchGeometryDefinition::Point { position } = *entity.geometry.definition() else {
@@ -290,12 +284,9 @@ pub(super) fn sketch_brep(
         ir.model
             .points
             .push(Point::new(point_id.clone(), finite_position, None));
-        ir.model.vertices.push(Vertex {
-            native_ref: None,
-            id: vertex_id.clone(),
-            point: point_id,
-            tolerance: None,
-        });
+        ir.model
+            .vertices
+            .push(Vertex::new(vertex_id.clone(), point_id, None));
         let edge_id = EdgeId::compose(
             &sketch_namespace(),
             prefix
@@ -317,32 +308,32 @@ pub(super) fn sketch_brep(
                 .colon(cadmpeg_ir::identity_key!("point-coedge"))
                 .colon(ordinal),
         );
-        ir.model.edges.push(Edge {
-            native_ref: None,
-            id: edge_id.clone(),
-            carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(None),
-            start: vertex_id.clone(),
-            end: vertex_id,
-            tolerance: None,
+        ir.model.edges.push(Edge::new(
+            edge_id.clone(),
+            cadmpeg_ir::topology::EdgeCarrier::unbounded(None),
+            vertex_id.clone(),
+            vertex_id,
+            None,
+        ));
+        ir.model.coedges.push({
+            let (id, owner_loop, edge, radial_next, sense, use_curve, pcurves) = (
+                coedge_id.clone(),
+                loop_id.clone(),
+                edge_id,
+                coedge_id.clone(),
+                Sense::Forward,
+                None,
+                Vec::new(),
+            );
+            Coedge::new(id, owner_loop, edge, radial_next, sense, pcurves, use_curve)
         });
-        ir.model.coedges.push(Coedge {
-            native_ref: None,
-            id: coedge_id.clone(),
-            owner_loop: loop_id.clone(),
-            edge: edge_id,
-            radial_next: coedge_id.clone(),
-            sense: Sense::Forward,
-            use_curve: None,
-            pcurves: Vec::new(),
-        });
-        ir.model.loops.push(Loop {
-            native_ref: None,
-            id: loop_id.clone(),
-            face: face_id.clone(),
-            boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                cadmpeg_ir::topology::LoopRing::single(coedge_id),
-            ),
-        });
+        ir.model.loops.push(Loop::new(
+            loop_id.clone(),
+            face_id.clone(),
+            cadmpeg_ir::topology::LoopBoundary::Ring(cadmpeg_ir::topology::LoopRing::single(
+                coedge_id,
+            )),
+        ));
         face_loops.push(loop_id);
     }
     if face_loops.is_empty() {
@@ -351,38 +342,35 @@ pub(super) fn sketch_brep(
             sketch.id.as_str()
         )));
     }
-    ir.model.faces.push(Face {
-        native_ref: None,
-        id: face_id.clone(),
-        shell: shell_id.clone(),
-        surface: surface_id,
-        sense: Sense::Forward,
-        loops: cadmpeg_ir::topology::FaceLoops::unspecified(face_loops),
-        name: sketch.name.clone(),
-        color: None,
-        tolerance: None,
-    });
+    ir.model.faces.push(
+        Face::new(
+            face_id.clone(),
+            shell_id.clone(),
+            surface_id,
+            Sense::Forward,
+            cadmpeg_ir::topology::FaceLoops::unspecified(face_loops),
+        )
+        .with_name(sketch.name.clone()),
+    );
     ir.model.shells.push(Shell::with_face(
         shell_id.clone(),
         region_id.clone(),
         face_id,
     ));
-    ir.model.regions.push(Region {
-        native_ref: None,
-        id: region_id.clone(),
-        body: body_id.clone(),
-        shells: vec![shell_id],
-    });
-    ir.model.bodies.push(Body {
-        native_ref: None,
-        id: body_id,
-        kind: BodyKind::Sheet,
-        regions: vec![region_id],
-        transform: None,
-        name: sketch.name.clone(),
-        color: None,
-        visible: None,
-    });
+    ir.model.regions.push(Region::new(
+        region_id.clone(),
+        body_id.clone(),
+        vec![shell_id],
+    ));
+    ir.model.bodies.push(Body::new(
+        body_id,
+        BodyKind::Sheet,
+        vec![region_id],
+        None,
+        sketch.name.clone(),
+        None,
+        None,
+    ));
     ir.model.finalize();
     Ok(ir)
 }
@@ -586,12 +574,9 @@ fn sketch_vertex(
     ir.model
         .points
         .push(Point::new(point_id.clone(), finite_position, None));
-    ir.model.vertices.push(Vertex {
-        native_ref: None,
-        id: vertex_id.clone(),
-        point: point_id,
-        tolerance: None,
-    });
+    ir.model
+        .vertices
+        .push(Vertex::new(vertex_id.clone(), point_id, None));
     vertices.insert(key, vertex_id.clone());
     Ok(vertex_id)
 }

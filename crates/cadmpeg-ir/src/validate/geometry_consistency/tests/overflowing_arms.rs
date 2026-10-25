@@ -84,10 +84,9 @@ fn a_coedge_placed_pcurve_whose_mapped_points_overflow_misses_the_vertices_by_na
     let mut ir = crate::examples::unit_cube().expect("valid unit cube fixture");
     let id = crate::ids::PcurveId::mint("synthetic:cube:pcurve#placed-overflow")
         .expect("valid identity");
-    ir.model.pcurves.push(crate::geometry::pcurve::Pcurve {
-        native_ref: None,
-        id: id.clone(),
-        geometry: PcurveGeometry::Transformed(
+    ir.model.pcurves.push(crate::geometry::pcurve::Pcurve::new(
+        id.clone(),
+        PcurveGeometry::Transformed(
             crate::geometry::pcurve::PlacedPcurve::try_new(
                 Box::new(PcurveGeometry::Line(
                     crate::geometry::pcurve::LinePcurve::try_new(
@@ -100,8 +99,8 @@ fn a_coedge_placed_pcurve_whose_mapped_points_overflow_misses_the_vertices_by_na
             )
             .unwrap(),
         ),
-        metadata: crate::geometry::pcurve::PcurveMetadata::default(),
-    });
+        crate::geometry::pcurve::PcurveMetadata::default(),
+    ));
     let coedge = ir
         .model
         .coedges
@@ -248,32 +247,32 @@ fn a_charted_tolerant_intersection_whose_end_overflows_misses_its_witnesses_by_n
     let supports = ["test:model:surface#first", "test:model:surface#second"]
         .map(|id| crate::ids::SurfaceId::mint(id).unwrap());
     ir.model.surfaces.extend([
-        crate::geometry::Surface {
-            native_ref: None,
-            id: supports[0].clone(),
-            geometry: plane(Vector3::new(0.0, 0.0, 1.0)),
-            source_object: None,
-        },
-        crate::geometry::Surface {
-            native_ref: None,
-            id: supports[1].clone(),
-            geometry: plane(Vector3::new(0.0, -1.0, 0.0)),
-            source_object: None,
-        },
+        crate::geometry::Surface::new(
+            supports[0].clone(),
+            plane(Vector3::new(0.0, 0.0, 1.0)),
+            None,
+        ),
+        crate::geometry::Surface::new(
+            supports[1].clone(),
+            plane(Vector3::new(0.0, -1.0, 0.0)),
+            None,
+        ),
     ]);
     let curve = crate::ids::CurveId::mint("test:model:curve#intersection").unwrap();
-    ir.model.curves.push(crate::geometry::Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: curve.clone(),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            crate::geometry::analytic::LineCurve::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(1.0, 0.0, 0.0),
-            )
-            .unwrap(),
-        )),
-        source_object: None,
+    ir.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            curve.clone(),
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                crate::geometry::analytic::LineCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            )),
+            None,
+        );
+        crate::geometry::Curve::new(id, geometry, parameter_range, source_object)
     });
     let pcurve = PcurveGeometry::Line(
         crate::geometry::pcurve::LinePcurve::try_new(
@@ -424,10 +423,9 @@ fn make_steep_circular_blend(ir: &mut crate::document::CadIr, surface: &crate::i
         .expect("valid identity");
     let ramp_end = f64::from_bits(3.0_f64.to_bits() + 1);
     ir.model.surfaces.extend([
-        Surface {
-            native_ref: None,
-            id: first.clone(),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+        Surface::new(
+            first.clone(),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                 crate::geometry::nurbs::NurbsSurface::from_lanes(
                     crate::geometry::nurbs::NurbsSurfaceAxis::new(
                         1,
@@ -449,12 +447,11 @@ fn make_steep_circular_blend(ir: &mut crate::document::CadIr, surface: &crate::i
                 )
                 .unwrap(),
             )),
-            source_object: None,
-        },
-        Surface {
-            native_ref: None,
-            id: second.clone(),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            None,
+        ),
+        Surface::new(
+            second.clone(),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 crate::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -462,21 +459,23 @@ fn make_steep_circular_blend(ir: &mut crate::document::CadIr, surface: &crate::i
                 )
                 .unwrap(),
             )),
-            source_object: None,
-        },
+            None,
+        ),
     ]);
-    ir.model.curves.push(crate::geometry::Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: slice.clone(),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            crate::geometry::analytic::LineCurve::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 1.0, 0.0),
-            )
-            .unwrap(),
-        )),
-        source_object: None,
+    ir.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            slice.clone(),
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                crate::geometry::analytic::LineCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 1.0, 0.0),
+                )
+                .unwrap(),
+            )),
+            None,
+        );
+        crate::geometry::Curve::new(id, geometry, parameter_range, source_object)
     });
     ir.model
         .surfaces
@@ -601,10 +600,9 @@ fn a_charted_tolerant_intersection_on_a_blend_whose_support_partial_overflows_mi
     let supports = ["test:model:surface#first", "test:model:surface#second"]
         .map(|id| crate::ids::SurfaceId::mint(id).unwrap());
     ir.model.surfaces.extend(supports.clone().map(|id| {
-        crate::geometry::Surface {
-            native_ref: None,
+        crate::geometry::Surface::new(
             id,
-            geometry: crate::geometry::SurfaceGeometry::Solved(
+            crate::geometry::SurfaceGeometry::Solved(
                 crate::geometry::SolvedSurfaceGeometry::Plane(
                     crate::geometry::analytic::PlaneSurface::try_new(
                         Point3::new(0.0, 0.0, 0.0),
@@ -614,23 +612,25 @@ fn a_charted_tolerant_intersection_on_a_blend_whose_support_partial_overflows_mi
                     .unwrap(),
                 ),
             ),
-            source_object: None,
-        }
+            None,
+        )
     }));
     make_steep_circular_blend(&mut ir, &supports[0]);
     let curve = crate::ids::CurveId::mint("test:model:curve#intersection").unwrap();
-    ir.model.curves.push(crate::geometry::Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: curve.clone(),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            crate::geometry::analytic::LineCurve::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(1.0, 0.0, 0.0),
-            )
-            .unwrap(),
-        )),
-        source_object: None,
+    ir.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            curve.clone(),
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                crate::geometry::analytic::LineCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            )),
+            None,
+        );
+        crate::geometry::Curve::new(id, geometry, parameter_range, source_object)
     });
     let pcurve = PcurveGeometry::Line(
         crate::geometry::pcurve::LinePcurve::try_new(

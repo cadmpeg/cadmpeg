@@ -76,21 +76,23 @@ fn sweep_spine_tangent_with_overflowing_norm_keeps_its_direction() {
 fn law_sweep_maps_wide_profile_interval_into_finite_nurbs_domain() {
     let profile = CurveId::mint("test:model:curve#wide-sweep-profile").unwrap();
     let mut ir = CadIr::empty();
-    ir.model.curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: profile.clone(),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            NurbsCurve::from_lanes(
-                1,
-                vec![0.0, 0.0, 1.0, 1.0],
-                vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
-                None,
-                false,
-            )
-            .unwrap(),
-        )),
-        source_object: None,
+    ir.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            profile.clone(),
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                NurbsCurve::from_lanes(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+                    None,
+                    false,
+                )
+                .unwrap(),
+            )),
+            None,
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     });
     let index = crate::index::ModelIndex::build(&ir);
     let range = [finite(-f64::MAX), finite(f64::MAX)];
@@ -238,48 +240,51 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
         .expect("valid identity");
     let mut ir = CadIr::empty();
     ir.model.curves = vec![
-        Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: profile_id.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                NurbsCurve::from_lanes(
-                    1,
-                    vec![0.0, 0.0, 1.0, 1.0],
-                    vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
-                    None,
-                    false,
-                )
-                .unwrap(),
-            )),
-            source_object: None,
+        {
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                profile_id.clone(),
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                    NurbsCurve::from_lanes(
+                        1,
+                        vec![0.0, 0.0, 1.0, 1.0],
+                        vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+                        None,
+                        false,
+                    )
+                    .unwrap(),
+                )),
+                None,
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         },
-        Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: spine_id.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                NurbsCurve::from_lanes(
-                    1,
-                    vec![0.0, 0.0, 1.0, 1.0],
-                    vec![Point3::new(4.0, 5.0, 6.0), Point3::new(4.0, 5.0, 7.0)],
-                    None,
-                    false,
-                )
-                .unwrap(),
-            )),
-            source_object: None,
+        {
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                spine_id.clone(),
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                    NurbsCurve::from_lanes(
+                        1,
+                        vec![0.0, 0.0, 1.0, 1.0],
+                        vec![Point3::new(4.0, 5.0, 6.0), Point3::new(4.0, 5.0, 7.0)],
+                        None,
+                        false,
+                    )
+                    .unwrap(),
+                )),
+                None,
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         },
     ];
-    ir.model.surfaces.push(Surface {
-        native_ref: None,
-        id: surface_id.clone(),
-        geometry: SurfaceGeometry::Procedural {
+    ir.model.surfaces.push(Surface::new(
+        surface_id.clone(),
+        SurfaceGeometry::Procedural {
             construction: construction_id.clone(),
             cache: None,
         },
-        source_object: None,
-    });
+        None,
+    ));
     ir.model.procedural_surfaces.push(procedural_surface! {
         id: construction_id,
         definition: ProceduralSurfaceDefinition::Sweep(crate::geometry::surface_payloads::SweepSurfacePayload::try_new(profile_id, spine_id, Some(Box::new(SweepSurfaceConstruction {
@@ -539,45 +544,48 @@ pub(super) fn law_sweep_model(first_law: LawExpression) -> (CadIr, SurfaceId) {
     let surface_id = SurfaceId::mint("test:model:entity#cacheless-sweep").expect("valid identity");
     let mut ir = CadIr::empty();
     ir.model.curves = vec![
-        Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: profile_id.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                crate::geometry::analytic::LineCurve::try_new(
-                    Point3::new(0.0, 0.0, 0.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                )
-                .unwrap(),
-            )),
-            source_object: None,
+        {
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                profile_id.clone(),
+                CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                    crate::geometry::analytic::LineCurve::try_new(
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .unwrap(),
+                )),
+                None,
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         },
-        Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: spine_id.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                crate::geometry::analytic::LineCurve::try_new(
-                    Point3::new(7.0, 11.0, 13.0),
-                    Vector3::new(0.0, 0.0, 1.0),
-                )
-                .unwrap(),
-            )),
-            source_object: None,
+        {
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                spine_id.clone(),
+                CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                    crate::geometry::analytic::LineCurve::try_new(
+                        Point3::new(7.0, 11.0, 13.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                    )
+                    .unwrap(),
+                )),
+                None,
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         },
     ];
-    ir.model.surfaces.push(Surface {
-        native_ref: None,
-        id: surface_id.clone(),
-        geometry: SurfaceGeometry::Procedural {
+    ir.model.surfaces.push(Surface::new(
+        surface_id.clone(),
+        SurfaceGeometry::Procedural {
             construction: ProceduralSurfaceId::mint(
                 "test:model:entity#cacheless-sweep-construction",
             )
             .expect("valid identity"),
             cache: None,
         },
-        source_object: None,
-    });
+        None,
+    ));
     ir.model.procedural_surfaces.push(procedural_surface! {
         id: ProceduralSurfaceId::mint("test:model:entity#cacheless-sweep-construction").expect("valid identity"),
         definition: ProceduralSurfaceDefinition::Sweep(crate::geometry::surface_payloads::SweepSurfacePayload::try_new(profile_id, spine_id, Some(Box::new(SweepSurfaceConstruction {

@@ -1455,12 +1455,14 @@ pub(super) fn build_standard_edge_curve(
         CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
     );
     admission.charge()?;
-    ir.model.curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: id.clone(),
-        geometry,
-        source_object: Some(cgm_source("edge-support", support.tag)?),
+    ir.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            id.clone(),
+            geometry,
+            Some(cgm_source("edge-support", support.tag)?),
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     });
     if matches!(
         &support.geometry,
@@ -1637,12 +1639,9 @@ pub(super) fn ensure_native_edge_support_surface(
         "native_edge_support_surface",
         Exactness::ByteExact,
     )?;
-    ir.model.surfaces.push(Surface {
-        native_ref: None,
-        id: id.clone(),
-        geometry,
-        source_object: Some(source),
-    });
+    ir.model
+        .surfaces
+        .push(Surface::new(id.clone(), geometry, Some(source)));
     if let (
         Some(procedural_id),
         crate::families::b5::transfer::ResolvedPcurveSurface::RollingBall {
@@ -2050,12 +2049,14 @@ pub(super) fn attach_standard_circles(
         )?;
         annotations.derived(&id, "geometry.axis")?;
         admission.charge()?;
-        ir.model.curves.push(Curve {
-            native_ref: None,
-            parameter_range: None,
-            id,
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(payload)),
-            source_object: Some(cgm_source("edge-support", support.tag)?),
+        ir.model.curves.push({
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                id,
+                CurveGeometry::Solved(SolvedCurveGeometry::Circle(payload)),
+                Some(cgm_source("edge-support", support.tag)?),
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         });
     }
     Ok(())
@@ -2271,12 +2272,14 @@ pub(super) fn attach_standard_lines(
         annotations.derived(&id, "geometry.origin")?;
         annotations.derived(&id, "geometry.direction")?;
         admission.charge()?;
-        ir.model.curves.push(Curve {
-            native_ref: None,
-            parameter_range: None,
-            id,
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(payload)),
-            source_object: Some(cgm_source("edge-support", support.tag)?),
+        ir.model.curves.push({
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                id,
+                CurveGeometry::Solved(SolvedCurveGeometry::Line(payload)),
+                Some(cgm_source("edge-support", support.tag)?),
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         });
     }
     Ok(())

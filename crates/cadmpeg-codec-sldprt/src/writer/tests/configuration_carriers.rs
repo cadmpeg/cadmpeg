@@ -1216,12 +1216,14 @@ pub(crate) fn semantic_writer_drops_subds_with_loss() {
         )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    decoded.ir_mut().model.subds.push(cadmpeg_ir::SubdSurface {
-        native_ref: None,
-        id: cadmpeg_ir::ids::SubdId::mint("test:sldprt:subd#0").expect("identity grammar"),
-        scheme: cadmpeg_ir::SubdScheme::CatmullClark,
-        source_object: None,
-        cage: cadmpeg_ir::subd::SubdCage::default(),
+    decoded.ir_mut().model.subds.push({
+        let (id, scheme, source_object, cage) = (
+            cadmpeg_ir::ids::SubdId::mint("test:sldprt:subd#0").expect("identity grammar"),
+            cadmpeg_ir::SubdScheme::CatmullClark,
+            None,
+            cadmpeg_ir::subd::SubdCage::default(),
+        );
+        cadmpeg_ir::SubdSurface::new(id, scheme, cage, source_object)
     });
 
     let plan = SldprtCodec

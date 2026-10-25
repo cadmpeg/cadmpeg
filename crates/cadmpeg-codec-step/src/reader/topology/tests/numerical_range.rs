@@ -15,10 +15,9 @@ fn with_context<T>(run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
 fn plane() -> (cadmpeg_ir::CadIr, SurfaceId) {
     let mut ir = cadmpeg_ir::CadIr::empty();
     let id = SurfaceId::mint("test:audit:surface#1").unwrap();
-    ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-        native_ref: None,
-        id: id.clone(),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+    ir.model.surfaces.push(cadmpeg_ir::geometry::Surface::new(
+        id.clone(),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0., 0., 0.),
                 Vector3::new(0., 0., 1.),
@@ -26,8 +25,8 @@ fn plane() -> (cadmpeg_ir::CadIr, SurfaceId) {
             )
             .unwrap(),
         )),
-        source_object: None,
-    });
+        None,
+    ));
     (ir, id)
 }
 #[test]
@@ -117,12 +116,11 @@ fn periodic_surface_selection_keeps_quarter_seeds_across_a_wide_domain() {
         false,
     )
     .expect("wide periodic surface");
-    ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-        native_ref: None,
-        id: id.clone(),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
-        source_object: None,
-    });
+    ir.model.surfaces.push(cadmpeg_ir::geometry::Surface::new(
+        id.clone(),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
+        None,
+    ));
     let pcurve = PcurveGeometry::Line(
         cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
             Point2::new(0.0, 0.0),
@@ -147,18 +145,20 @@ fn periodic_surface_selection_keeps_quarter_seeds_across_a_wide_domain() {
 fn pcurve_locus_accepts_a_wide_finite_line_parameter_interval() {
     let (mut ir, surface_id) = plane();
     let curve_id = CurveId::from(ids::data(kind!("curve"), 54));
-    ir.model.curves.push(cadmpeg_ir::geometry::Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: curve_id,
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(1.0, 0.0, 0.0),
-            )
-            .expect("finite line"),
-        )),
-        source_object: None,
+    ir.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            curve_id,
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("finite line"),
+            )),
+            None,
+        );
+        cadmpeg_ir::geometry::Curve::new(id, geometry, parameter_range, source_object)
     });
     let index = ModelIndex::new_model_only(&ir);
     let (exchange, _) = crate::test_support::with_service_context(
@@ -225,15 +225,19 @@ fn pcurve_locus_finds_an_interior_curve_branch_near_the_float_limit() {
     let controls = (0..control_count)
         .map(|index| Point3::new(if index == control_count / 2 { 1.0 } else { 0.0 }, 0.0, 0.0))
         .collect();
-    ir.model.curves.push(cadmpeg_ir::geometry::Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: curve_id.clone(),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(1, knots, controls, None, false)
+    ir.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            curve_id.clone(),
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                    1, knots, controls, None, false,
+                )
                 .expect("finite many-span curve"),
-        )),
-        source_object: None,
+            )),
+            None,
+        );
+        cadmpeg_ir::geometry::Curve::new(id, geometry, parameter_range, source_object)
     });
     let index = ModelIndex::new_model_only(&ir);
     let midpoint = lower.midpoint(upper);

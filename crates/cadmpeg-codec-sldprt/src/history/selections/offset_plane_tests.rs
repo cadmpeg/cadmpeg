@@ -612,11 +612,9 @@ fn coincident_plane_frame_does_not_infer_an_offset_reference() {
 
 #[test]
 fn planar_face_reference_requires_one_coincident_face() {
-    let surface = Surface {
-        native_ref: None,
-        id: cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#surface")
-            .expect("identity grammar"),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+    let surface = Surface::new(
+        cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 12.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -624,19 +622,15 @@ fn planar_face_reference_requires_one_coincident_face() {
             )
             .unwrap(),
         )),
-        source_object: None,
-    };
-    let face = Face {
-        native_ref: None,
-        id: cadmpeg_ir::ids::FaceId::mint("test:model:entity#face").expect("identity grammar"),
-        shell: cadmpeg_ir::ids::ShellId::mint("test:model:entity#shell").expect("identity grammar"),
-        surface: surface.id.clone(),
-        sense: cadmpeg_ir::topology::Sense::Forward,
-        loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
-        name: None,
-        color: None,
-        tolerance: None,
-    };
+        None,
+    );
+    let face = Face::new(
+        cadmpeg_ir::ids::FaceId::mint("test:model:entity#face").expect("identity grammar"),
+        cadmpeg_ir::ids::ShellId::mint("test:model:entity#shell").expect("identity grammar"),
+        surface.id.clone(),
+        cadmpeg_ir::topology::Sense::Forward,
+        cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+    );
     let surfaces = HashMap::from([(&surface.id, &surface)]);
     let mut selection = FaceSelection::Unresolved;
     resolve_planar_face_selection(
@@ -696,11 +690,9 @@ fn planar_face_reference_requires_one_coincident_face() {
 
 #[test]
 fn offset_plane_face_reference_does_not_mirror_the_serialized_origin() {
-    let surface = Surface {
-        native_ref: None,
-        id: cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#surface")
-            .expect("identity grammar"),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+    let surface = Surface::new(
+        cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, -5.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -708,19 +700,15 @@ fn offset_plane_face_reference_does_not_mirror_the_serialized_origin() {
             )
             .unwrap(),
         )),
-        source_object: None,
-    };
-    let face = Face {
-        native_ref: None,
-        id: cadmpeg_ir::ids::FaceId::mint("test:model:entity#face").expect("identity grammar"),
-        shell: cadmpeg_ir::ids::ShellId::mint("test:model:entity#shell").expect("identity grammar"),
-        surface: surface.id.clone(),
-        sense: cadmpeg_ir::topology::Sense::Forward,
-        loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
-        name: None,
-        color: None,
-        tolerance: None,
-    };
+        None,
+    );
+    let face = Face::new(
+        cadmpeg_ir::ids::FaceId::mint("test:model:entity#face").expect("identity grammar"),
+        cadmpeg_ir::ids::ShellId::mint("test:model:entity#shell").expect("identity grammar"),
+        surface.id.clone(),
+        cadmpeg_ir::topology::Sense::Forward,
+        cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+    );
     let surfaces = HashMap::from([(&surface.id, &surface)]);
     let mut selection = FaceSelection::Native("component-path".into());
     let origin = Point3::new(0.0, 0.0, 5.0);

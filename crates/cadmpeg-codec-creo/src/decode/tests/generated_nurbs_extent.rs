@@ -57,18 +57,19 @@ fn generated_nurbs_extent_reconciles_native_and_transferred_planes() {
             next_surface: 0,
             offset: usize::try_from(id).expect("fixture index fits usize"),
         };
-        let plane = |id, origin, normal| Surface {
-            native_ref: None,
-            id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                    origin,
-                    normal,
-                    Vector3::new(1.0, 0.0, 0.0),
-                )
-                .expect("valid PlaneSurface fixture"),
-            )),
-            source_object: None,
+        let plane = |id, origin, normal| {
+            Surface::new(
+                SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                        origin,
+                        normal,
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .expect("valid PlaneSurface fixture"),
+                )),
+                None,
+            )
         };
         let local_plane =
             |surface_id, origin: [f64; 3], normal: [f64; 3]| crate::surface::PlaneLocalSystem {
@@ -100,31 +101,23 @@ fn generated_nurbs_extent_reconciles_native_and_transferred_planes() {
         ]);
         let mut ir = CadIr::empty();
         ir.model.surfaces.extend([
-            Surface {
-                native_ref: None,
-                id: SurfaceId::mint("creo:visibgeom:surface#31".to_string())
-                    .expect("identity grammar"),
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                    translated_surface(),
-                )),
-                source_object: None,
-            },
+            Surface::new(
+                SurfaceId::mint("creo:visibgeom:surface#31".to_string()).expect("identity grammar"),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(translated_surface())),
+                None,
+            ),
             plane(32, Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)),
             plane(33, Point3::new(0.0, 0.0, 2.0), Vector3::new(0.0, 0.0, -1.0)),
-            Surface {
-                native_ref: None,
-                id: SurfaceId::mint("creo:visibgeom:surface#34".to_string())
-                    .expect("identity grammar"),
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
-                source_object: None,
-            },
-            Surface {
-                native_ref: None,
-                id: SurfaceId::mint("creo:visibgeom:surface#35".to_string())
-                    .expect("identity grammar"),
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
-                source_object: None,
-            },
+            Surface::new(
+                SurfaceId::mint("creo:visibgeom:surface#34".to_string()).expect("identity grammar"),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+                None,
+            ),
+            Surface::new(
+                SurfaceId::mint("creo:visibgeom:surface#35".to_string()).expect("identity grammar"),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+                None,
+            ),
         ]);
         assert_eq!(
             generated_nurbs_translation_extent(

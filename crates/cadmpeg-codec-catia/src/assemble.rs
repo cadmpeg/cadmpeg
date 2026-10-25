@@ -1292,18 +1292,20 @@ mod route_tests {
     fn neutral_model_admissibility_canonicalizes_arena_order() {
         let mut ir = CadIr::empty();
         for key in [9_u32, 10] {
-            ir.model.curves.push(Curve {
-                native_ref: None,
-                parameter_range: None,
-                id: CurveId::mint(format!("catia:test:curve#{key}")).expect("identity grammar"),
-                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                    cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                        Point3::new(0.0, 0.0, f64::from(key)),
-                        Vector3::new(1.0, 0.0, 0.0),
-                    )
-                    .expect("valid LineCurve fixture"),
-                )),
-                source_object: None,
+            ir.model.curves.push({
+                let (parameter_range, id, geometry, source_object) = (
+                    None,
+                    CurveId::mint(format!("catia:test:curve#{key}")).expect("identity grammar"),
+                    CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                            Point3::new(0.0, 0.0, f64::from(key)),
+                            Vector3::new(1.0, 0.0, 0.0),
+                        )
+                        .expect("valid LineCurve fixture"),
+                    )),
+                    None,
+                );
+                Curve::new(id, geometry, parameter_range, source_object)
             });
         }
         let unsorted = cadmpeg_ir::validate::validate_neutral_with_additional_native_identities(
@@ -1351,14 +1353,16 @@ mod route_tests {
         let record_id = UnknownId::mint("catia:test:unknown#0").expect("identity grammar");
         let mut ir = CadIr::empty();
         let curve_id = CurveId::mint("catia:test:curve#0").expect("identity grammar");
-        ir.model.curves.push(Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: curve_id.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
-                record: Some(record_id.clone()),
-            }),
-            source_object: None,
+        ir.model.curves.push({
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                curve_id.clone(),
+                CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
+                    record: Some(record_id.clone()),
+                }),
+                None,
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         });
         ir.model
             .add_procedural_curve(
@@ -1394,29 +1398,29 @@ mod route_tests {
         let mut ir = CadIr::empty();
         let curve_id =
             CurveId::mint("catia:test:curve#curve-0".to_string()).expect("identity grammar");
-        ir.model.curves.push(Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: curve_id.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
-            source_object: None,
+        ir.model.curves.push({
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                curve_id.clone(),
+                CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+                None,
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         });
         let surface_id =
             SurfaceId::mint("catia:test:surface#surface-0".to_string()).expect("identity grammar");
-        ir.model.surfaces.push(Surface {
-            native_ref: None,
-            id: surface_id.clone(),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
-            source_object: None,
-        });
+        ir.model.surfaces.push(Surface::new(
+            surface_id.clone(),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+            None,
+        ));
         let offset_id =
             SurfaceId::mint("catia:test:surface#surface-1".to_string()).expect("identity grammar");
-        ir.model.surfaces.push(Surface {
-            native_ref: None,
-            id: offset_id.clone(),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
-            source_object: None,
-        });
+        ir.model.surfaces.push(Surface::new(
+            offset_id.clone(),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+            None,
+        ));
         assert_eq!(unresolved_carrier_counts(&ir), (1, 2));
 
         ir.model
@@ -1512,21 +1516,15 @@ mod route_tests {
         let chain = |terminal: SurfaceGeometry| {
             let mut ir = CadIr::empty();
             for index in 0..CHAIN {
-                ir.model.surfaces.push(Surface {
-                    native_ref: None,
-                    id: surface_id(index),
-                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
-                        record: None,
-                    }),
-                    source_object: None,
-                });
+                ir.model.surfaces.push(Surface::new(
+                    surface_id(index),
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+                    None,
+                ));
             }
-            ir.model.surfaces.push(Surface {
-                native_ref: None,
-                id: surface_id(CHAIN),
-                geometry: terminal,
-                source_object: None,
-            });
+            ir.model
+                .surfaces
+                .push(Surface::new(surface_id(CHAIN), terminal, None));
             for index in 0..CHAIN {
                 let construction =
                     cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
@@ -1612,12 +1610,14 @@ mod route_tests {
     fn payload_links_the_unknown_curve_carrier() {
         let mut ir = CadIr::empty();
         let id = CurveId::mint("catia:test:curve#link".to_string()).expect("identity grammar");
-        ir.model.curves.push(Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: id.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
-            source_object: None,
+        ir.model.curves.push({
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                id.clone(),
+                CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+                None,
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         });
         let run = |_: &cadmpeg_core::decode::DecodeContext<'_>| {
             let mut payload = UnknownRecord::retained(
@@ -1642,12 +1642,14 @@ mod route_tests {
         let mut ir = CadIr::empty();
         let id =
             CurveId::mint("catia:test:curve#unresolved".to_string()).expect("identity grammar");
-        ir.model.curves.push(Curve {
-            native_ref: None,
-            parameter_range: None,
-            id,
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
-            source_object: None,
+        ir.model.curves.push({
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                id,
+                CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+                None,
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         });
         let mut losses = Vec::new();
         super::insert_unresolved_carrier_loss(&ir, &mut losses);

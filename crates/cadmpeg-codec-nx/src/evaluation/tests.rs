@@ -18,16 +18,15 @@ use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, FeatureId};
 use cadmpeg_ir::ids::BodyId;
 
 fn model_body(id: &str) -> Body {
-    Body {
-        native_ref: None,
-        id: BodyId::mint(id.to_string()).expect("identity grammar"),
-        kind: BodyKind::Solid,
-        regions: Vec::new(),
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
-    }
+    Body::new(
+        BodyId::mint(id.to_string()).expect("identity grammar"),
+        BodyKind::Solid,
+        Vec::new(),
+        None,
+        None,
+        None,
+        None,
+    )
 }
 
 fn complete_block_ir() -> CadIr {

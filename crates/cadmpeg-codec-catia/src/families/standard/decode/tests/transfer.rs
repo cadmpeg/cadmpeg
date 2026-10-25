@@ -51,16 +51,15 @@ fn standard_population_scope_preserves_a_body_name_that_spells_its_identity() {
     use cadmpeg_ir::ids::{BodyId, RegionId};
     use cadmpeg_ir::topology::{Body, BodyKind};
     let source_id = "catia:standard:body#source";
-    let body = Body {
-        native_ref: None,
-        id: BodyId::mint(source_id).unwrap(),
-        kind: BodyKind::Solid,
-        regions: vec![RegionId::mint("catia:standard:region#source").unwrap()],
-        transform: None,
-        name: Some(source_id.into()),
-        color: None,
-        visible: None,
-    };
+    let body = Body::new(
+        BodyId::mint(source_id).unwrap(),
+        BodyKind::Solid,
+        vec![RegionId::mint("catia:standard:region#source").unwrap()],
+        None,
+        Some(source_id.into()),
+        None,
+        None,
+    );
     let scoped = crate::test_support::with_service_context(|ctx| {
         StandardPopulationScope {
             scope: "population-1",
@@ -1083,16 +1082,15 @@ fn population_scope_prefixes_rewritten_body_ids() {
     use cadmpeg_ir::document::EntityRewrite;
     use cadmpeg_ir::ids::BodyId;
     use cadmpeg_ir::topology::{Body, BodyKind};
-    let body = Body {
-        native_ref: None,
-        id: BodyId::mint("catia:standard:body#0").expect("identity"),
-        kind: BodyKind::Solid,
-        regions: Vec::new(),
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
-    };
+    let body = Body::new(
+        BodyId::mint("catia:standard:body#0").expect("identity"),
+        BodyKind::Solid,
+        Vec::new(),
+        None,
+        None,
+        None,
+        None,
+    );
     let admitted = crate::test_support::with_service_context(|ctx| {
         StandardPopulationScope {
             scope: "population-1",

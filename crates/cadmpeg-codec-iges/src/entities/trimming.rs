@@ -255,12 +255,11 @@ fn create_boundary_vertices(
             None,
         ));
         ctx.charge_entities(1, "iges_geometry_trimming")?;
-        candidate.model_mut().vertices.push(Vertex {
-            native_ref: None,
-            id: vertex_id.clone(),
-            point: point_id,
-            tolerance: Some(tolerance),
-        });
+        candidate.model_mut().vertices.push(Vertex::new(
+            vertex_id.clone(),
+            point_id,
+            Some(tolerance),
+        ));
         let mut derivation_endpoints = Vec::new();
         for member in &cluster.members {
             let endpoint = &source_endpoints[*member];
@@ -1884,13 +1883,16 @@ pub(super) fn clone_boundary_edge(edge: &Edge) -> Edge {
             cadmpeg_ir::topology::EdgeCarrier::Bounded(curve.clone(), *range)
         }
     };
-    Edge {
-        native_ref: edge.native_ref.clone(),
-        id: edge.id.clone(),
-        carrier,
-        start: edge.start.clone(),
-        end: edge.end.clone(),
-        tolerance: edge.tolerance,
+    {
+        let (native_ref, id, carrier, start, end, tolerance) = (
+            edge.native_ref.clone(),
+            edge.id.clone(),
+            carrier,
+            edge.start.clone(),
+            edge.end.clone(),
+            edge.tolerance,
+        );
+        Edge::new(id, carrier, start, end, tolerance).with_native_ref(native_ref)
     }
 }
 
@@ -2792,14 +2794,13 @@ pub(super) fn project(
                     }
                 };
                 ctx.charge_entities(1, "iges_geometry_trimming")?;
-                candidate.model_mut().edges.push(Edge {
-                    native_ref: None,
-                    id: edge_id.clone(),
+                candidate.model_mut().edges.push(Edge::new(
+                    edge_id.clone(),
                     carrier,
-                    start: start_vertex,
-                    end: end_vertex,
-                    tolerance: Some(checked_sewing_tolerance),
-                });
+                    start_vertex,
+                    end_vertex,
+                    Some(checked_sewing_tolerance),
+                ));
                 if item
                     .pcurves
                     .iter()
@@ -2828,16 +2829,15 @@ pub(super) fn project(
                     }
 
                     ctx.charge_entities(1, "iges_geometry_trimming")?;
-                    candidate.model_mut().pcurves.push(Pcurve {
-                        native_ref: None,
-                        id: id.clone(),
+                    candidate.model_mut().pcurves.push(Pcurve::new(
+                        id.clone(),
                         geometry,
-                        metadata: PcurveMetadata::general(
+                        PcurveMetadata::general(
                             None,
                             cadmpeg_ir::units::FiniteVector::new(parameter_range),
                             None,
                         ),
-                    });
+                    ));
                     pcurve_uses.push(PcurveUse {
                         pcurve: id,
                         isoparametric: None,
@@ -2846,16 +2846,15 @@ pub(super) fn project(
                 }
                 let coedge_id = coedge_ids[segment_index].clone();
                 ctx.charge_entities(1, "iges_geometry_trimming")?;
-                candidate.model_mut().coedges.push(Coedge {
-                    native_ref: None,
-                    id: coedge_id.clone(),
-                    owner_loop: loop_id.clone(),
-                    edge: edge_id,
-                    radial_next: coedge_id,
-                    sense: item.segment.sense,
-                    pcurves: pcurve_uses,
-                    use_curve: None,
-                });
+                candidate.model_mut().coedges.push(Coedge::new(
+                    coedge_id.clone(),
+                    loop_id.clone(),
+                    edge_id,
+                    coedge_id,
+                    item.segment.sense,
+                    pcurve_uses,
+                    None,
+                ));
             }
             let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new()) else {
                 super::push_geometry_loss(
@@ -2867,12 +2866,11 @@ pub(super) fn project(
                 break;
             };
             ctx.charge_entities(1, "iges_geometry_trimming")?;
-            candidate.model_mut().loops.push(Loop {
-                native_ref: None,
-                id: loop_id.clone(),
-                face: face_id.clone(),
-                boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
-            });
+            candidate.model_mut().loops.push(Loop::new(
+                loop_id.clone(),
+                face_id.clone(),
+                cadmpeg_ir::topology::LoopBoundary::Ring(ring),
+            ));
             if explicit_outer_sequence == Some(sequence) {
                 explicit_outer_loop = Some(loop_id.clone());
             }
@@ -2934,11 +2932,10 @@ pub(super) fn project(
             );
             sequences.record_surface(&derived_surface_id, entry.sequence);
             ctx.charge_entities(1, "iges_geometry_trimming")?;
-            candidate.model_mut().surfaces.push(Surface {
-                native_ref: None,
-                id: derived_surface_id.clone(),
-                geometry: support_geometry,
-                source_object: Some(match source_object(entry) {
+            candidate.model_mut().surfaces.push(Surface::new(
+                derived_surface_id.clone(),
+                support_geometry,
+                Some(match source_object(entry) {
                     Ok(source) => source,
                     Err(error) => {
                         super::push_geometry_loss(
@@ -2949,7 +2946,7 @@ pub(super) fn project(
                         continue;
                     }
                 }),
-            });
+            ));
             let record_bounds = match support_parameter_bounds
                 .map(RecordBounds::try_new)
                 .transpose()
@@ -3003,17 +3000,16 @@ pub(super) fn project(
             None => cadmpeg_ir::topology::FaceLoops::unspecified(loop_ids),
         };
         ctx.charge_entities(1, "iges_geometry_trimming")?;
-        candidate.model_mut().faces.push(Face {
-            native_ref: None,
-            id: face_id.clone(),
-            shell: shell_id.clone(),
-            surface: face_surface_id,
-            sense: Sense::Forward,
-            loops: face_loops,
-            name: None,
-            color: None,
-            tolerance: checked_face_tolerance,
-        });
+        candidate.model_mut().faces.push(
+            Face::new(
+                face_id.clone(),
+                shell_id.clone(),
+                face_surface_id,
+                Sense::Forward,
+                face_loops,
+            )
+            .with_tolerance(checked_face_tolerance),
+        );
         let shell_faces = vec![face_id];
         ctx.charge_entities(1, "iges_geometry_trimming")?;
         let shell = Shell::new(
@@ -3027,24 +3023,22 @@ pub(super) fn project(
         candidate.model_mut().shells.push(shell);
         let region_shells = vec![shell_id];
         ctx.charge_entities(1, "iges_geometry_trimming")?;
-        candidate.model_mut().regions.push(Region {
-            native_ref: None,
-            id: region_id.clone(),
-            body: body_id.clone(),
-            shells: region_shells,
-        });
+        candidate.model_mut().regions.push(Region::new(
+            region_id.clone(),
+            body_id.clone(),
+            region_shells,
+        ));
         let body_regions = vec![region_id];
         ctx.charge_entities(1, "iges_geometry_trimming")?;
-        candidate.model_mut().bodies.push(Body {
-            native_ref: None,
-            id: body_id,
-            kind: BodyKind::Sheet,
-            regions: body_regions,
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        });
+        candidate.model_mut().bodies.push(Body::new(
+            body_id,
+            BodyKind::Sheet,
+            body_regions,
+            None,
+            None,
+            None,
+            None,
+        ));
         candidate.model_mut().finalize();
 
         staged.push((entry, candidate, candidate_boundary_vertex_derivations));

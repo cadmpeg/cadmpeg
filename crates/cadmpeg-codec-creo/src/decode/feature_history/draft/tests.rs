@@ -16,17 +16,13 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Face, FaceLoops, Sense};
 
 fn resolved_hole_face() -> Face {
-    Face {
-        native_ref: None,
-        id: FaceId::mint("creo:visibgeom:face#11").expect("identity grammar"),
-        shell: ShellId::mint("creo:test:shell#1").expect("identity grammar"),
-        surface: SurfaceId::mint("creo:visibgeom:surface#11").expect("identity grammar"),
-        sense: Sense::Forward,
-        loops: FaceLoops::unspecified(Vec::new()),
-        name: None,
-        color: None,
-        tolerance: None,
-    }
+    Face::new(
+        FaceId::mint("creo:visibgeom:face#11").expect("identity grammar"),
+        ShellId::mint("creo:test:shell#1").expect("identity grammar"),
+        SurfaceId::mint("creo:visibgeom:surface#11").expect("identity grammar"),
+        Sense::Forward,
+        FaceLoops::unspecified(Vec::new()),
+    )
 }
 
 #[test]
@@ -158,10 +154,9 @@ fn datum_feature_rejects_conflicting_local_and_transferred_plane_carriers() {
             offset: 1,
         });
     let mut ir = CadIr::empty();
-    ir.model.surfaces.push(Surface {
-        native_ref: None,
-        id: SurfaceId::mint("creo:visibgeom:surface#6".to_string()).expect("identity grammar"),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+    ir.model.surfaces.push(Surface::new(
+        SurfaceId::mint("creo:visibgeom:surface#6".to_string()).expect("identity grammar"),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 1.0, 0.0),
                 Vector3::new(0.0, 1.0, 0.0),
@@ -169,8 +164,8 @@ fn datum_feature_rejects_conflicting_local_and_transferred_plane_carriers() {
             )
             .expect("valid PlaneSurface fixture"),
         )),
-        source_object: None,
-    });
+        None,
+    ));
     assert!(matches!(
         crate::decode::with_service_context(|ctx| schema_feature_definition(
             ctx,
@@ -230,10 +225,9 @@ fn unbounded_plane_scan() -> crate::container::ContainerScan<'static> {
 }
 
 fn plane_surface(origin_y: f64) -> Surface {
-    Surface {
-        native_ref: None,
-        id: SurfaceId::mint("creo:visibgeom:surface#6".to_string()).expect("identity grammar"),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+    Surface::new(
+        SurfaceId::mint("creo:visibgeom:surface#6".to_string()).expect("identity grammar"),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, origin_y, 0.0),
                 Vector3::new(0.0, 1.0, 0.0),
@@ -241,8 +235,8 @@ fn plane_surface(origin_y: f64) -> Surface {
             )
             .expect("valid PlaneSurface fixture"),
         )),
-        source_object: None,
-    }
+        None,
+    )
 }
 
 fn placed_plane() -> crate::surface::OutlinePlane {

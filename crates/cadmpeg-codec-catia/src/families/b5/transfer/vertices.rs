@@ -122,12 +122,11 @@ pub(super) fn emit_vertices(
         )?;
         annotations.derived(vertex_id.as_str(), "point")?;
         admission.charge()?;
-        ir.model.vertices.push(Vertex {
-            native_ref: None,
-            id: vertex_id,
-            point: point_id,
-            tolerance: vertex_tolerances.get(&index).copied(),
-        });
+        ir.model.vertices.push(Vertex::new(
+            vertex_id,
+            point_id,
+            vertex_tolerances.get(&index).copied(),
+        ));
     }
     for (rank, vertex) in graph.vertices.logical_vertices().iter().enumerate() {
         let index = graph.vertices.raw_points().len() + rank;
@@ -166,12 +165,11 @@ pub(super) fn emit_vertices(
         )?;
         annotations.derived(vertex_id.as_str(), "point")?;
         admission.charge()?;
-        ir.model.vertices.push(Vertex {
-            native_ref: None,
-            id: vertex_id,
-            point: point_id,
-            tolerance: vertex_tolerances.get(&index).copied(),
-        });
+        ir.model.vertices.push(Vertex::new(
+            vertex_id,
+            point_id,
+            vertex_tolerances.get(&index).copied(),
+        ));
     }
     Ok(())
 }

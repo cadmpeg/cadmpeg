@@ -592,15 +592,16 @@ fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
     use cadmpeg_ir::ids::BodyId;
     use cadmpeg_ir::topology::{Body, BodyKind};
 
-    let body = |id: &str, kind| Body {
-        native_ref: None,
-        id: BodyId::mint(id).expect("identity grammar"),
-        kind,
-        regions: Vec::new(),
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
+    let body = |id: &str, kind| {
+        Body::new(
+            BodyId::mint(id).expect("identity grammar"),
+            kind,
+            Vec::new(),
+            None,
+            None,
+            None,
+            None,
+        )
     };
     let sweep = |id: &str, outputs: Vec<BodyId>| Feature {
         needs_recompute: false,

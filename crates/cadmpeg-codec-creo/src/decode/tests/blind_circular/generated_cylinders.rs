@@ -200,28 +200,27 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
             body_offset: 34,
         };
         scan.surfaces.parameters.push(parameter);
-        let plane = |id, y, normal| Surface {
-            native_ref: None,
-            id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                    Point3::new(0.0, y, 0.0),
-                    normal,
-                    Vector3::new(1.0, 0.0, 0.0),
-                )
-                .expect("valid PlaneSurface fixture"),
-            )),
-            source_object: None,
+        let plane = |id, y, normal| {
+            Surface::new(
+                SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                        Point3::new(0.0, y, 0.0),
+                        normal,
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .expect("valid PlaneSurface fixture"),
+                )),
+                None,
+            )
         };
         let mut ir = CadIr::empty();
         ir.model.surfaces.extend([
             plane(31, 4.0, Vector3::new(0.0, 1.0, 0.0)),
             plane(32, -4.0, Vector3::new(0.0, -1.0, 0.0)),
-            Surface {
-                native_ref: None,
-                id: SurfaceId::mint("creo:visibgeom:surface#33".to_string())
-                    .expect("identity grammar"),
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+            Surface::new(
+                SurfaceId::mint("creo:visibgeom:surface#33".to_string()).expect("identity grammar"),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                     cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                         Point3::new(2.0, 4.0, 0.0),
                         Vector3::new(0.0, -1.0, 0.0),
@@ -230,8 +229,8 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
                     )
                     .expect("valid CylinderSurface fixture"),
                 )),
-                source_object: None,
-            },
+                None,
+            ),
         ]);
 
         let expected = Some((
@@ -291,12 +290,11 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         scan.surfaces
             .rows
             .push(row(34, crate::surface::SurfaceKind::Plane));
-        ir.model.surfaces.push(Surface {
-            native_ref: None,
-            id: SurfaceId::mint("creo:visibgeom:surface#34".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
-            source_object: None,
-        });
+        ir.model.surfaces.push(Surface::new(
+            SurfaceId::mint("creo:visibgeom:surface#34".to_string()).expect("identity grammar"),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+            None,
+        ));
         assert_eq!(
             generated_bounded_cylinder_extent(
                 &scan,
@@ -312,12 +310,11 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         scan.surfaces
             .rows
             .push(row(35, crate::surface::SurfaceKind::Cylinder));
-        ir.model.surfaces.push(Surface {
-            native_ref: None,
-            id: SurfaceId::mint("creo:visibgeom:surface#35".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
-            source_object: None,
-        });
+        ir.model.surfaces.push(Surface::new(
+            SurfaceId::mint("creo:visibgeom:surface#35".to_string()).expect("identity grammar"),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+            None,
+        ));
         assert_eq!(
             generated_bounded_cylinder_extent(
                 &scan,

@@ -486,30 +486,24 @@ mod tests {
 
     fn model(face_count: usize) -> CadIr {
         let mut ir = CadIr::empty();
-        ir.model.bodies.push(Body {
-            native_ref: None,
-            id: BodyId::mint("catia:test:body#body").expect("identity grammar"),
-            kind: BodyKind::Solid,
-            regions: vec![],
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        });
+        ir.model.bodies.push(Body::new(
+            BodyId::mint("catia:test:body#body").expect("identity grammar"),
+            BodyKind::Solid,
+            vec![],
+            None,
+            None,
+            None,
+            None,
+        ));
         for index in 0..face_count {
-            ir.model.faces.push(Face {
-                native_ref: None,
-                id: FaceId::mint(format!("catia:test:face#face-{index}"))
+            ir.model.faces.push(Face::new(
+                FaceId::mint(format!("catia:test:face#face-{index}")).expect("identity grammar"),
+                ShellId::mint("catia:test:shell#shell").expect("identity grammar"),
+                SurfaceId::mint(format!("catia:test:surface#surface-{index}"))
                     .expect("identity grammar"),
-                shell: ShellId::mint("catia:test:shell#shell").expect("identity grammar"),
-                surface: SurfaceId::mint(format!("catia:test:surface#surface-{index}"))
-                    .expect("identity grammar"),
-                sense: Sense::Forward,
-                loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
-                name: None,
-                color: None,
-                tolerance: None,
-            });
+                Sense::Forward,
+                cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+            ));
         }
         ir
     }
@@ -596,12 +590,24 @@ mod tests {
                         let mut ir = model(face_count);
                         let body = ir.model.bodies[0].clone();
                         ir.model.bodies = (0..body_count)
-                            .map(|index| Body {
-                                id: BodyId::compose(
-                                    &cadmpeg_ir::identity_namespace!("catia", "test", "body"),
-                                    index,
-                                ),
-                                ..body.clone()
+                            .map(|index| {
+                                let (id, __native_base) = (
+                                    BodyId::compose(
+                                        &cadmpeg_ir::identity_namespace!("catia", "test", "body"),
+                                        index,
+                                    ),
+                                    body.clone(),
+                                );
+                                Body::new(
+                                    id,
+                                    __native_base.kind,
+                                    __native_base.regions,
+                                    __native_base.transform,
+                                    __native_base.name,
+                                    __native_base.color,
+                                    __native_base.visible,
+                                )
+                                .with_native_ref(__native_base.native_ref)
                             })
                             .collect();
                         let result = crate::test_support::with_service_context(|ctx| {

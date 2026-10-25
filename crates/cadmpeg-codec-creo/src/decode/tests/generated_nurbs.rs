@@ -104,20 +104,14 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
         ]);
         let mut ir = CadIr::empty();
         ir.model.surfaces.extend([
-            Surface {
-                native_ref: None,
-                id: SurfaceId::mint("creo:visibgeom:surface#31".to_string())
-                    .expect("identity grammar"),
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                    translated_surface(2.0),
-                )),
-                source_object: None,
-            },
-            Surface {
-                native_ref: None,
-                id: SurfaceId::mint("creo:visibgeom:surface#32".to_string())
-                    .expect("identity grammar"),
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            Surface::new(
+                SurfaceId::mint("creo:visibgeom:surface#31".to_string()).expect("identity grammar"),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(translated_surface(2.0))),
+                None,
+            ),
+            Surface::new(
+                SurfaceId::mint("creo:visibgeom:surface#32".to_string()).expect("identity grammar"),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                         Point3::new(0.0, 0.0, 0.0),
                         Vector3::new(0.0, 0.0, 1.0),
@@ -125,13 +119,11 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
                     )
                     .expect("valid PlaneSurface fixture"),
                 )),
-                source_object: None,
-            },
-            Surface {
-                native_ref: None,
-                id: SurfaceId::mint("creo:visibgeom:surface#33".to_string())
-                    .expect("identity grammar"),
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                None,
+            ),
+            Surface::new(
+                SurfaceId::mint("creo:visibgeom:surface#33".to_string()).expect("identity grammar"),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                         Point3::new(0.0, 0.0, 2.0),
                         Vector3::new(0.0, 0.0, -1.0),
@@ -139,22 +131,18 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
                     )
                     .expect("valid PlaneSurface fixture"),
                 )),
-                source_object: None,
-            },
-            Surface {
-                native_ref: None,
-                id: SurfaceId::mint("creo:visibgeom:surface#34".to_string())
-                    .expect("identity grammar"),
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
-                source_object: None,
-            },
-            Surface {
-                native_ref: None,
-                id: SurfaceId::mint("creo:visibgeom:surface#35".to_string())
-                    .expect("identity grammar"),
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
-                source_object: None,
-            },
+                None,
+            ),
+            Surface::new(
+                SurfaceId::mint("creo:visibgeom:surface#34".to_string()).expect("identity grammar"),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+                None,
+            ),
+            Surface::new(
+                SurfaceId::mint("creo:visibgeom:surface#35".to_string()).expect("identity grammar"),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+                None,
+            ),
         ]);
         assert_eq!(
             generated_nurbs_translation_extent(

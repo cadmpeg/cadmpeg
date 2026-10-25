@@ -723,17 +723,15 @@ pub(super) fn transfer_curve_expression_features(
                 Exactness::Derived,
             )?;
             ctx.charge_entities(1, "admit Creo model curves")?;
-            source_carriers.admit_curve(
-                ctx,
-                ir,
-                Curve {
-                    native_ref: None,
-                    parameter_range: None,
-                    id: crate::identity::copy_checked_id(curve_id.as_str())?,
-                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
-                    source_object: None,
-                },
-            )?;
+            source_carriers.admit_curve(ctx, ir, {
+                let (parameter_range, id, geometry, source_object) = (
+                    None,
+                    crate::identity::copy_checked_id(curve_id.as_str())?,
+                    CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+                    None,
+                );
+                Curve::new(id, geometry, parameter_range, source_object)
+            })?;
             source_carriers.admit_procedural_curve(
                 ir,
                 &curve_id,

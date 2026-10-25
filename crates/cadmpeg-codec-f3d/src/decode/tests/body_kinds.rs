@@ -79,36 +79,30 @@ fn a_solid_with_a_collapsed_edge_loop_round_trips_as_a_solid() {
         FinitePoint3::new(Point3::new(5.0, 5.0, 10.0)).unwrap(),
         None,
     ));
-    ir.model.vertices.push(Vertex {
-        native_ref: None,
-        id: vertex.clone(),
-        point,
-        tolerance: None,
-    });
-    ir.model.edges.push(Edge {
-        native_ref: None,
-        id: edge.clone(),
-        carrier: EdgeCarrier::Free,
-        start: vertex.clone(),
-        end: vertex,
-        tolerance: None,
-    });
-    ir.model.coedges.push(Coedge {
-        native_ref: None,
-        id: coedge.clone(),
-        owner_loop: apex_loop.clone(),
+    ir.model
+        .vertices
+        .push(Vertex::new(vertex.clone(), point, None));
+    ir.model.edges.push(Edge::new(
+        edge.clone(),
+        EdgeCarrier::Free,
+        vertex.clone(),
+        vertex,
+        None,
+    ));
+    ir.model.coedges.push(Coedge::new(
+        coedge.clone(),
+        apex_loop.clone(),
         edge,
-        radial_next: coedge.clone(),
-        sense: Sense::Forward,
-        pcurves: Vec::new(),
-        use_curve: None,
-    });
-    ir.model.loops.push(Loop {
-        native_ref: None,
-        id: apex_loop,
-        face: top,
-        boundary: LoopBoundary::Ring(LoopRing::new(vec![coedge], Vec::new()).unwrap()),
-    });
+        coedge.clone(),
+        Sense::Forward,
+        Vec::new(),
+        None,
+    ));
+    ir.model.loops.push(Loop::new(
+        apex_loop,
+        top,
+        LoopBoundary::Ring(LoopRing::new(vec![coedge], Vec::new()).unwrap()),
+    ));
     ir.finalize();
 
     let round_trip = source_less_round_trip(&ir);

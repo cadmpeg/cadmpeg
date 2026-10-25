@@ -42,42 +42,38 @@ fn fixture(cylinders: &[(&str, &str, f64)]) -> CadIr {
                 FinitePoint3::new(Point3::new(radius, 0., z)).unwrap(),
                 None,
             ));
-            ir.model.vertices.push(Vertex {
-                native_ref: None,
-                id: vertex.clone(),
-                point,
-                tolerance: None,
+            ir.model
+                .vertices
+                .push(Vertex::new(vertex.clone(), point, None));
+            ir.model.edges.push({
+                let (id, start, end, carrier, tolerance) = (
+                    edge.clone(),
+                    vertex.clone(),
+                    vertex,
+                    EdgeCarrier::Free,
+                    None,
+                );
+                Edge::new(id, carrier, start, end, tolerance)
             });
-            ir.model.edges.push(Edge {
-                native_ref: None,
-                id: edge.clone(),
-                start: vertex.clone(),
-                end: vertex,
-                carrier: EdgeCarrier::Free,
-                tolerance: None,
-            });
-            ir.model.coedges.push(Coedge {
-                native_ref: None,
-                id: coedge.clone(),
-                owner_loop: boundary.clone(),
+            ir.model.coedges.push(Coedge::new(
+                coedge.clone(),
+                boundary.clone(),
                 edge,
-                radial_next: coedge.clone(),
-                sense: Sense::Forward,
-                pcurves: Vec::new(),
-                use_curve: None,
-            });
-            ir.model.loops.push(Loop {
-                native_ref: None,
-                id: boundary.clone(),
-                face: face.clone(),
-                boundary: LoopBoundary::Ring(LoopRing::single(coedge)),
-            });
+                coedge.clone(),
+                Sense::Forward,
+                Vec::new(),
+                None,
+            ));
+            ir.model.loops.push(Loop::new(
+                boundary.clone(),
+                face.clone(),
+                LoopBoundary::Ring(LoopRing::single(coedge)),
+            ));
             loops.push(boundary);
         }
-        ir.model.surfaces.push(Surface {
-            native_ref: None,
-            id: surface.clone(),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+        ir.model.surfaces.push(Surface::new(
+            surface.clone(),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                     Point3::new(0., 0., 0.),
                     Vector3::new(0., 0., 1.),
@@ -86,19 +82,15 @@ fn fixture(cylinders: &[(&str, &str, f64)]) -> CadIr {
                 )
                 .unwrap(),
             )),
-            source_object: None,
-        });
-        ir.model.faces.push(Face {
-            native_ref: None,
-            id: face.clone(),
-            shell: shell.clone(),
+            None,
+        ));
+        ir.model.faces.push(Face::new(
+            face.clone(),
+            shell.clone(),
             surface,
-            sense: Sense::Forward,
-            loops: FaceLoops::unspecified(loops),
-            name: None,
-            color: None,
-            tolerance: None,
-        });
+            Sense::Forward,
+            FaceLoops::unspecified(loops),
+        ));
         if let Some(existing) = ir.model.shells.iter_mut().find(|s| s.id == shell) {
             existing.add_face(face);
         } else {
@@ -112,22 +104,18 @@ fn fixture(cylinders: &[(&str, &str, f64)]) -> CadIr {
                 )
                 .unwrap(),
             );
-            ir.model.regions.push(Region {
-                native_ref: None,
-                id: region.clone(),
-                body: body.clone(),
-                shells: vec![shell],
-            });
-            ir.model.bodies.push(Body {
-                native_ref: None,
-                id: body,
-                kind: BodyKind::Sheet,
-                regions: vec![region],
-                transform: None,
-                name: None,
-                color: None,
-                visible: None,
-            });
+            ir.model
+                .regions
+                .push(Region::new(region.clone(), body.clone(), vec![shell]));
+            ir.model.bodies.push(Body::new(
+                body,
+                BodyKind::Sheet,
+                vec![region],
+                None,
+                None,
+                None,
+                None,
+            ));
         }
     }
     ir

@@ -508,12 +508,11 @@ fn an_arena_surface_point_that_overflows_reports_the_non_finite_point() {
     let mut ir = crate::CadIr::empty();
     let surface_id = crate::ids::SurfaceId::mint("test:model:surface#overflow".to_string())
         .expect("valid identity");
-    ir.model.surfaces.push(crate::geometry::Surface {
-        native_ref: None,
-        id: surface_id.clone(),
-        geometry: SurfaceGeometry::Solved(overflowing_plane()),
-        source_object: None,
-    });
+    ir.model.surfaces.push(crate::geometry::Surface::new(
+        surface_id.clone(),
+        SurfaceGeometry::Solved(overflowing_plane()),
+        None,
+    ));
     let index = crate::index::ModelIndex::build(&ir);
     let budget = cadmpeg_core::decode::WorkBudget::new(64);
     for point in [
@@ -921,18 +920,12 @@ fn a_subset_whose_support_parameter_overflows_reports_the_support_evaluation() {
     );
     let mut ir = crate::CadIr::empty();
     ir.model.surfaces = vec![
-        crate::geometry::Surface {
-            native_ref: None,
-            id: base_id.clone(),
-            geometry: SurfaceGeometry::Solved(plane.clone()),
-            source_object: None,
-        },
-        crate::geometry::Surface {
-            native_ref: None,
-            id: subset_id.clone(),
-            geometry: SurfaceGeometry::Solved(plane),
-            source_object: None,
-        },
+        crate::geometry::Surface::new(
+            base_id.clone(),
+            SurfaceGeometry::Solved(plane.clone()),
+            None,
+        ),
+        crate::geometry::Surface::new(subset_id.clone(), SurfaceGeometry::Solved(plane), None),
     ];
     // The u range runs down from 1e308 while its sense runs up, so the
     // support parameter at the far end of the span is 2e308.

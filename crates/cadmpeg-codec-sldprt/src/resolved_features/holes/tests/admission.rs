@@ -123,10 +123,9 @@ fn bore_backed_position_projection_projects_one_point_sketch() {
         .set_definition(FeatureDefinition::Operation(FeatureOperation::Sketch {
             sketch: SketchFeatureBinding::Planar(None),
         }));
-    let surfaces = [Surface {
-        native_ref: None,
-        id: SurfaceId::mint("synthetic:test:id#plane").unwrap(),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+    let surfaces = [Surface::new(
+        SurfaceId::mint("synthetic:test:id#plane").unwrap(),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -134,8 +133,8 @@ fn bore_backed_position_projection_projects_one_point_sketch() {
             )
             .unwrap(),
         )),
-        source_object: None,
-    }];
+        None,
+    )];
     let input = [hole, position];
     let mut features = input.clone();
     let mut sketches = Vec::new();

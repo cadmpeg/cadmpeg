@@ -551,12 +551,9 @@ fn a_nurbs_surface_whose_point_overflows_reports_the_point_it_reached() {
 
     let id = SurfaceId::mint("test:model:surface#overflow").expect("valid identity");
     let mut ir = CadIr::empty();
-    ir.model.surfaces.push(Surface {
-        native_ref: None,
-        id: id.clone(),
-        geometry: surface,
-        source_object: None,
-    });
+    ir.model
+        .surfaces
+        .push(Surface::new(id.clone(), surface, None));
     let index = crate::index::ModelIndex::build(&ir);
     assert_eq!(
         model_surface_point_by_id(
@@ -659,21 +656,15 @@ fn procedural_surface_model(
         ProceduralSurfaceId::mint("test:model:procedural#surface").expect("valid identity");
     let mut ir = CadIr::empty();
     ir.model.surfaces.extend([
-        Surface {
-            native_ref: None,
-            id: support_id.clone(),
-            geometry: support,
-            source_object: None,
-        },
-        Surface {
-            native_ref: None,
-            id: surface_id.clone(),
-            geometry: SurfaceGeometry::Procedural {
+        Surface::new(support_id.clone(), support, None),
+        Surface::new(
+            surface_id.clone(),
+            SurfaceGeometry::Procedural {
                 construction: construction.clone(),
                 cache: None,
             },
-            source_object: None,
-        },
+            None,
+        ),
     ]);
     ir.model.procedural_surfaces.push(ProceduralSurface::new(
         construction,
@@ -779,31 +770,31 @@ fn tolerant_intersection_model(pcurve: PcurveGeometry) -> (CadIr, CurveId) {
     let curve = CurveId::mint("test:model:curve#intersection").expect("valid identity");
     let mut ir = CadIr::empty();
     ir.model.surfaces.extend([
-        Surface {
-            native_ref: None,
-            id: supports[0].clone(),
-            geometry: plane(Vector3::new(0.0, 0.0, 1.0), Vector3::new(1.0, 0.0, 0.0)),
-            source_object: None,
-        },
-        Surface {
-            native_ref: None,
-            id: supports[1].clone(),
-            geometry: plane(Vector3::new(0.0, -1.0, 0.0), Vector3::new(1.0, 0.0, 0.0)),
-            source_object: None,
-        },
+        Surface::new(
+            supports[0].clone(),
+            plane(Vector3::new(0.0, 0.0, 1.0), Vector3::new(1.0, 0.0, 0.0)),
+            None,
+        ),
+        Surface::new(
+            supports[1].clone(),
+            plane(Vector3::new(0.0, -1.0, 0.0), Vector3::new(1.0, 0.0, 0.0)),
+            None,
+        ),
     ]);
-    ir.model.curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: curve.clone(),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            crate::geometry::analytic::LineCurve::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(1.0, 0.0, 0.0),
-            )
-            .expect("line fixture"),
-        )),
-        source_object: None,
+    ir.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            curve.clone(),
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                crate::geometry::analytic::LineCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("line fixture"),
+            )),
+            None,
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     });
     ir.model
         .add_procedural_curve(
@@ -898,28 +889,32 @@ fn surface_curve_surface_cycle_exhausts_the_shared_budget_depth() {
 fn acyclic_replica_chain_beyond_sixty_four_frames_retains_its_point() {
     let mut ir = CadIr::empty();
     let mut source = CurveId::mint("test:model:curve#base").expect("valid identity");
-    ir.model.curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: source.clone(),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            crate::geometry::analytic::LineCurve::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(1.0, 0.0, 0.0),
-            )
-            .expect("line fixture"),
-        )),
-        source_object: None,
+    ir.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            source.clone(),
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                crate::geometry::analytic::LineCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("line fixture"),
+            )),
+            None,
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     });
     for ordinal in 0..70 {
         let replica =
             CurveId::mint(format!("test:model:curve#replica-{ordinal}")).expect("valid identity");
-        ir.model.curves.push(Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: replica.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
-            source_object: None,
+        ir.model.curves.push({
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                replica.clone(),
+                CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+                None,
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         });
         ir.model
             .add_procedural_curve(
@@ -965,18 +960,20 @@ fn budgeted_ruled_surface_exhausts_when_its_directrix_cycle_has_no_local_budget(
     let curve = CurveId::mint("test:model:curve#replica").expect("valid identity");
     let surface = SurfaceId::mint("test:model:surface#ruled").expect("valid identity");
     let mut ir = CadIr::empty();
-    ir.model.curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: curve.clone(),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            crate::geometry::analytic::LineCurve::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(1.0, 0.0, 0.0),
-            )
-            .expect("line curve fixture"),
-        )),
-        source_object: None,
+    ir.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            curve.clone(),
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                crate::geometry::analytic::LineCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("line curve fixture"),
+            )),
+            None,
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     });
     ir.model
         .add_procedural_curve(
@@ -990,12 +987,11 @@ fn budgeted_ruled_surface_exhausts_when_its_directrix_cycle_has_no_local_budget(
             ),
         )
         .expect("procedural curve fixture");
-    ir.model.surfaces.push(Surface {
-        native_ref: None,
-        id: surface.clone(),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
-        source_object: None,
-    });
+    ir.model.surfaces.push(Surface::new(
+        surface.clone(),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+        None,
+    ));
     ir.model
         .add_procedural_surface(
             &surface,
@@ -1082,12 +1078,9 @@ fn a_contact_track_evaluates_its_support_where_its_offset_pcurve_point_overflows
     ));
     let id = SurfaceId::mint("test:model:surface#contact").expect("valid identity");
     let mut ir = CadIr::empty();
-    ir.model.surfaces.push(Surface {
-        native_ref: None,
-        id: id.clone(),
-        geometry: plane,
-        source_object: None,
-    });
+    ir.model
+        .surfaces
+        .push(Surface::new(id.clone(), plane, None));
     let index = crate::index::ModelIndex::build(&ir);
     let side = |pcurve| RollingBallSide {
         support_kind: VariableBlendSupportKind::Surface,
@@ -1261,12 +1254,9 @@ fn an_analytic_surface_whose_point_overflows_has_no_partials() {
     ));
     let id = SurfaceId::mint("test:model:surface#plane").expect("valid identity");
     let mut ir = CadIr::empty();
-    ir.model.surfaces.push(Surface {
-        native_ref: None,
-        id: id.clone(),
-        geometry: plane,
-        source_object: None,
-    });
+    ir.model
+        .surfaces
+        .push(Surface::new(id.clone(), plane, None));
     let index = crate::index::ModelIndex::build(&ir);
     assert!(reached(
         crate::eval::model_surface_partials_by_id(

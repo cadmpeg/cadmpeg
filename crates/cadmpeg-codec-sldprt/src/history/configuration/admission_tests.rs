@@ -33,17 +33,16 @@ fn carrier_model() -> cadmpeg_ir::CadIr {
             .unwrap(),
         );
     }
-    ir.model.surfaces.push(Surface {
-        native_ref: None,
-        id: cadmpeg_ir::ids::SurfaceId::mint("synthetic:test:id#polygonal").unwrap(),
-        geometry: SurfaceGeometry::Solved(placed),
-        source_object: Some(SourceObjectAssociation {
+    ir.model.surfaces.push(Surface::new(
+        cadmpeg_ir::ids::SurfaceId::mint("synthetic:test:id#polygonal").unwrap(),
+        SurfaceGeometry::Solved(placed),
+        Some(SourceObjectAssociation {
             geometry_role: None,
             format: CodecFormat::Sldprt,
             object_id: cadmpeg_core::text::NonBlankString::new("carrier").unwrap(),
             instance_path: vec!["Outer".into(), "Inner".into()],
         }),
-    });
+    ));
     for (name, value) in [
         (
             "name",
@@ -96,18 +95,16 @@ fn carrier_model() -> cadmpeg_ir::CadIr {
             false,
         )
         .unwrap();
-        ir.model.surfaces.push(Surface {
-            native_ref: None,
-            id: cadmpeg_ir::ids::SurfaceId::mint(format!("synthetic:test:id#nurbs-{rational}"))
+        ir.model.surfaces.push(Surface::new(
+            cadmpeg_ir::ids::SurfaceId::mint(format!("synthetic:test:id#nurbs-{rational}"))
                 .unwrap(),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(geometry)),
-            source_object: None,
-        });
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(geometry)),
+            None,
+        ));
     }
-    ir.model.surfaces.push(Surface {
-        native_ref: None,
-        id: cadmpeg_ir::ids::SurfaceId::mint("synthetic:test:id#procedural").unwrap(),
-        geometry: SurfaceGeometry::Procedural {
+    ir.model.surfaces.push(Surface::new(
+        cadmpeg_ir::ids::SurfaceId::mint("synthetic:test:id#procedural").unwrap(),
+        SurfaceGeometry::Procedural {
             construction: cadmpeg_ir::ids::ProceduralSurfaceId::mint(
                 "synthetic:test:id#construction",
             )
@@ -116,8 +113,8 @@ fn carrier_model() -> cadmpeg_ir::CadIr {
                 record: Some(cadmpeg_ir::ids::UnknownId::mint("synthetic:test:id#record").unwrap()),
             }),
         },
-        source_object: None,
-    });
+        None,
+    ));
     let mut configuration = design_configuration("carriers", 0, Some(0), None);
     configuration.bodies = None;
     ir.model.configurations.push(configuration);

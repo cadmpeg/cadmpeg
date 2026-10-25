@@ -328,15 +328,12 @@ pub(in super::super) fn transfer_saved_spline_curves(
                 Exactness::Derived,
             )?;
             ctx.charge_entities(1, "admit Creo model curves")?;
-            source_carriers.admit_curve(
-                ctx,
-                ir,
-                Curve {
-                    native_ref: None,
-                    parameter_range: None,
-                    id: curve_id,
-                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(placed)),
-                    source_object: Some(SourceObjectAssociation {
+            source_carriers.admit_curve(ctx, ir, {
+                let (parameter_range, id, geometry, source_object) = (
+                    None,
+                    curve_id,
+                    CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(placed)),
+                    Some(SourceObjectAssociation {
                         geometry_role: None,
                         format: cadmpeg_ir::CodecFormat::Creo,
                         object_id: crate::identity::source_object_id_checked(format_args!(
@@ -344,8 +341,9 @@ pub(in super::super) fn transfer_saved_spline_curves(
                         ))?,
                         instance_path: Vec::new(),
                     }),
-                },
-            )?;
+                );
+                Curve::new(id, geometry, parameter_range, source_object)
+            })?;
             transferred += 1;
         }
     }
@@ -599,11 +597,10 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             source_carriers.admit_surface(
                 ctx,
                 ir,
-                Surface {
-                    native_ref: None,
+                Surface::new(
                     id,
                     geometry,
-                    source_object: Some(SourceObjectAssociation {
+                    Some(SourceObjectAssociation {
                         geometry_role: None,
                         format: cadmpeg_ir::CodecFormat::Creo,
                         object_id: crate::identity::source_object_id_checked(format_args!(
@@ -611,7 +608,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                         ))?,
                         instance_path: Vec::new(),
                     }),
-                },
+                ),
             )?;
             transferred += 1;
         }
@@ -662,11 +659,10 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             source_carriers.admit_surface(
                 ctx,
                 ir,
-                Surface {
-                    native_ref: None,
+                Surface::new(
                     id,
                     geometry,
-                    source_object: Some(SourceObjectAssociation {
+                    Some(SourceObjectAssociation {
                         geometry_role: None,
                         format: cadmpeg_ir::CodecFormat::Creo,
                         object_id: crate::identity::source_object_id_checked(format_args!(
@@ -674,7 +670,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                         ))?,
                         instance_path: Vec::new(),
                     }),
-                },
+                ),
             )?;
             transferred += 1;
         }
@@ -779,15 +775,12 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     Exactness::Derived,
                 )?;
                 ctx.charge_entities(1, "admit Creo model curves")?;
-                source_carriers.admit_curve(
-                    ctx,
-                    ir,
-                    Curve {
-                        native_ref: None,
-                        parameter_range: None,
-                        id: curve_id.clone(),
-                        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix)),
-                        source_object: Some(SourceObjectAssociation {
+                source_carriers.admit_curve(ctx, ir, {
+                    let (parameter_range, id, geometry, source_object) = (
+                        None,
+                        curve_id.clone(),
+                        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix)),
+                        Some(SourceObjectAssociation {
                             geometry_role: None,
                             format: cadmpeg_ir::CodecFormat::Creo,
                             object_id: crate::identity::source_object_id_checked(format_args!(
@@ -795,8 +788,9 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                             ))?,
                             instance_path: Vec::new(),
                         }),
-                    },
-                )?;
+                    );
+                    Curve::new(id, geometry, parameter_range, source_object)
+                })?;
             }
             let surface_id = crate::identity::compose_checked::<SurfaceId>(
                 &crate::identity::VISIBGEOM_SURFACE,
@@ -829,11 +823,10 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             source_carriers.admit_surface(
                 ctx,
                 ir,
-                Surface {
-                    native_ref: None,
-                    id: surface_id.clone(),
-                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
-                    source_object: Some(SourceObjectAssociation {
+                Surface::new(
+                    surface_id.clone(),
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
+                    Some(SourceObjectAssociation {
                         geometry_role: None,
                         format: cadmpeg_ir::CodecFormat::Creo,
                         object_id: crate::identity::source_object_id_checked(format_args!(
@@ -841,7 +834,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                         ))?,
                         instance_path: Vec::new(),
                     }),
-                },
+                ),
             )?;
             let Some((lower_knot, upper_knot)) = directrix_range else {
                 push_saved_spline_loss(

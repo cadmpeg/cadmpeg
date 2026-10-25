@@ -568,12 +568,11 @@ pub(super) fn transfer_closed_face_topology(
             if let Err(error) = admission.charge() {
                 return Some(Err(error));
             }
-            let vertex = Vertex {
-                native_ref: None,
-                id: copied_id!(vertex_ids[index], VertexId),
-                point: copied_id!(point_ids[index], PointId),
-                tolerance: Some(MODEL_POINT_TOLERANCE),
-            };
+            let vertex = Vertex::new(
+                copied_id!(vertex_ids[index], VertexId),
+                copied_id!(point_ids[index], PointId),
+                Some(MODEL_POINT_TOLERANCE),
+            );
             ir.model.vertices.push(vertex);
         }
 
@@ -596,18 +595,17 @@ pub(super) fn transfer_closed_face_topology(
             if let Err(error) = admission.charge() {
                 return Some(Err(error));
             }
-            let pcurve = Pcurve {
-                native_ref: None,
-                id: copied_id!(pcurve.id, PcurveId),
-                geometry: pcurve.geometry.clone(),
-                metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
+            let pcurve = Pcurve::new(
+                copied_id!(pcurve.id, PcurveId),
+                pcurve.geometry.clone(),
+                cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                     None,
                     Some(cadmpeg_ir::units::FiniteVector::new(
                         pcurve.parameter_range,
                     )?),
                     None,
                 ),
-            };
+            );
             ir.model.pcurves.push(pcurve);
         }
 
@@ -677,18 +675,17 @@ pub(super) fn transfer_closed_face_topology(
             if let Err(error) = admission.charge() {
                 return Some(Err(error));
             }
-            let edge = Edge {
-                native_ref: None,
-                id: copied_id!(edge_id, EdgeId),
-                carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+            let edge = Edge::new(
+                copied_id!(edge_id, EdgeId),
+                cadmpeg_ir::topology::EdgeCarrier::new(
                     Some(copied_id!(oriented_curve, CurveId)),
                     param_range,
                 )
                 .ok()?,
-                start: copied_id!(oriented_vertices[0], VertexId),
-                end: copied_id!(oriented_vertices[1], VertexId),
-                tolerance: Some(MODEL_POINT_TOLERANCE),
-            };
+                copied_id!(oriented_vertices[0], VertexId),
+                copied_id!(oriented_vertices[1], VertexId),
+                Some(MODEL_POINT_TOLERANCE),
+            );
             ir.model.edges.push(edge);
             edge_ids.push(edge_id);
         }
@@ -742,13 +739,12 @@ pub(super) fn transfer_closed_face_topology(
             if let Err(error) = admission.charge() {
                 return Some(Err(error));
             }
-            let face_record = Face {
-                native_ref: None,
-                id: copied_id!(face_id, FaceId),
-                shell: copied_id!(shell_id, ShellId),
-                surface: copied_id!(surface_ids_by_position[&run.carrier_pos], SurfaceId),
-                sense: outer_sense,
-                loops: match loop_ids.split_first() {
+            let face_record = Face::new(
+                copied_id!(face_id, FaceId),
+                copied_id!(shell_id, ShellId),
+                copied_id!(surface_ids_by_position[&run.carrier_pos], SurfaceId),
+                outer_sense,
+                match loop_ids.split_first() {
                     // The source states the outer boundary first.
                     Some((outer, inner)) => {
                         let inner = inner.to_vec();
@@ -759,10 +755,7 @@ pub(super) fn transfer_closed_face_topology(
                     }
                     None => cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
                 },
-                name: None,
-                color: None,
-                tolerance: None,
-            };
+            );
             ir.model.faces.push(face_record);
 
             for (loop_index, loop_record) in face.loops.iter().flatten().enumerate() {
@@ -815,12 +808,11 @@ pub(super) fn transfer_closed_face_topology(
                 if let Err(error) = admission.charge() {
                     return Some(Err(error));
                 }
-                let loop_entity = Loop {
-                    native_ref: None,
-                    id: copied_id!(loop_id, LoopId),
-                    face: copied_id!(face_id, FaceId),
-                    boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
-                };
+                let loop_entity = Loop::new(
+                    copied_id!(loop_id, LoopId),
+                    copied_id!(face_id, FaceId),
+                    cadmpeg_ir::topology::LoopBoundary::Ring(ring),
+                );
                 ir.model.loops.push(loop_entity);
 
                 for (member_index, support_record_ordinal) in loop_record
@@ -927,16 +919,15 @@ pub(super) fn transfer_closed_face_topology(
                     if let Err(error) = admission.charge() {
                         return Some(Err(error));
                     }
-                    let coedge = Coedge {
-                        native_ref: None,
-                        id: copied_id!(coedge_id, CoedgeId),
-                        owner_loop: copied_id!(loop_id, LoopId),
-                        edge: copied_id!(edge_ids[edge_index], EdgeId),
-                        radial_next: copied_id!(coedge_id, CoedgeId),
+                    let coedge = Coedge::new(
+                        copied_id!(coedge_id, CoedgeId),
+                        copied_id!(loop_id, LoopId),
+                        copied_id!(edge_ids[edge_index], EdgeId),
+                        copied_id!(coedge_id, CoedgeId),
                         sense,
                         pcurves,
                         use_curve,
-                    };
+                    );
                     ir.model.coedges.push(coedge);
                     coedges_by_support.insert(support_record_ordinal, coedge_id);
                 }
@@ -980,16 +971,15 @@ pub(super) fn transfer_closed_face_topology(
             return Some(Err(error));
         }
         let regions = vec![copied_id!(region_id, RegionId)];
-        let body = Body {
-            native_ref: None,
-            id: copied_id!(body_id, BodyId),
-            kind: BodyKind::Solid,
+        let body = Body::new(
+            copied_id!(body_id, BodyId),
+            BodyKind::Solid,
             regions,
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        };
+            None,
+            None,
+            None,
+            None,
+        );
         ir.model.bodies.push(body);
         admitted!(annotate(
             annotations,
@@ -1011,12 +1001,7 @@ pub(super) fn transfer_closed_face_topology(
             return Some(Err(error));
         }
         let shells = vec![copied_id!(shell_id, ShellId)];
-        let region = Region {
-            native_ref: None,
-            id: copied_id!(region_id, RegionId),
-            body: body_id,
-            shells,
-        };
+        let region = Region::new(copied_id!(region_id, RegionId), body_id, shells);
         ir.model.regions.push(region);
         admitted!(annotate(
             annotations,
@@ -1342,10 +1327,9 @@ mod tests {
             })
             .collect::<HashMap<_, _>>();
         let mut ir = CadIr::empty();
-        ir.model.surfaces.push(Surface {
-            native_ref: None,
-            id: SurfaceId::mint("catia:test:surface#0").expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        ir.model.surfaces.push(Surface::new(
+            SurfaceId::mint("catia:test:surface#0").expect("identity grammar"),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     points[0],
                     Vector3::new(0.0, 0.0, 1.0),
@@ -1353,28 +1337,30 @@ mod tests {
                 )
                 .expect("valid PlaneSurface fixture"),
             )),
-            source_object: None,
-        });
+            None,
+        ));
         for run in &runs {
             for support in &run.supports {
                 let [start, end] = support
                     .model_endpoints
                     .expect("test endpoints")
                     .map(FinitePoint3::get);
-                ir.model.curves.push(Curve {
-                    native_ref: None,
-                    parameter_range: None,
-                    id: curve_ids[&support.record_ordinal].clone(),
-                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                            start,
-                            end.vector_from(start)
-                                .unit()
-                                .expect("non-degenerate test edge"),
-                        )
-                        .expect("valid LineCurve fixture"),
-                    )),
-                    source_object: None,
+                ir.model.curves.push({
+                    let (parameter_range, id, geometry, source_object) = (
+                        None,
+                        curve_ids[&support.record_ordinal].clone(),
+                        CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                                start,
+                                end.vector_from(start)
+                                    .unit()
+                                    .expect("non-degenerate test edge"),
+                            )
+                            .expect("valid LineCurve fixture"),
+                        )),
+                        None,
+                    );
+                    Curve::new(id, geometry, parameter_range, source_object)
                 });
             }
         }
@@ -1543,10 +1529,9 @@ mod tests {
             })
             .collect::<HashMap<_, _>>();
         let mut ir = CadIr::empty();
-        ir.model.surfaces.push(Surface {
-            native_ref: None,
-            id: SurfaceId::mint("catia:test:surface#0").expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        ir.model.surfaces.push(Surface::new(
+            SurfaceId::mint("catia:test:surface#0").expect("identity grammar"),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     points[0],
                     Vector3::new(0.0, 0.0, 1.0),
@@ -1554,8 +1539,8 @@ mod tests {
                 )
                 .expect("valid PlaneSurface fixture"),
             )),
-            source_object: None,
-        });
+            None,
+        ));
         for run in &runs {
             for support in &run.supports {
                 let [start, end] = support
@@ -1584,12 +1569,14 @@ mod tests {
                         .expect("valid LineCurve fixture"),
                     ))
                 };
-                ir.model.curves.push(Curve {
-                    native_ref: None,
-                    parameter_range: None,
-                    id: curve_ids[&support.record_ordinal].clone(),
-                    geometry,
-                    source_object: None,
+                ir.model.curves.push({
+                    let (parameter_range, id, geometry, source_object) = (
+                        None,
+                        curve_ids[&support.record_ordinal].clone(),
+                        geometry,
+                        None,
+                    );
+                    Curve::new(id, geometry, parameter_range, source_object)
                 });
             }
         }
@@ -1650,10 +1637,9 @@ mod tests {
         let curve_ids = HashMap::new();
         let run_with = |ctx: &DecodeContext<'_>| {
             let mut ir = CadIr::empty();
-            ir.model.surfaces.push(Surface {
-                native_ref: None,
-                id: surface_id.clone(),
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            ir.model.surfaces.push(Surface::new(
+                surface_id.clone(),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                         points[0],
                         Vector3::new(0.0, 0.0, 1.0),
@@ -1661,8 +1647,8 @@ mod tests {
                     )
                     .expect("valid plane"),
                 )),
-                source_object: None,
-            });
+                None,
+            ));
             let mut annotations = AnnotationBuilder::new();
             let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
             transfer_closed_face_topology(
@@ -1703,10 +1689,9 @@ mod tests {
         let curve_ids = HashMap::new();
         let run_with = |ctx: &DecodeContext<'_>| {
             let mut ir = CadIr::empty();
-            ir.model.surfaces.push(Surface {
-                native_ref: None,
-                id: surface_id.clone(),
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            ir.model.surfaces.push(Surface::new(
+                surface_id.clone(),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                         points[0],
                         Vector3::new(0.0, 0.0, 1.0),
@@ -1714,8 +1699,8 @@ mod tests {
                     )
                     .expect("valid plane"),
                 )),
-                source_object: None,
-            });
+                None,
+            ));
             transfer_closed_face_topology(
                 &mut crate::families::FamilyEntityAdmission::new(ctx),
                 &mut ir,

@@ -160,15 +160,12 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
             Exactness::Derived,
         )?;
         ctx.charge_entities(1, "admit Creo model curves")?;
-        source_carriers.admit_curve(
-            ctx,
-            ir,
-            Curve {
-                native_ref: None,
-                parameter_range: None,
-                id: crate::identity::copy_checked_id(id.as_str())?,
+        source_carriers.admit_curve(ctx, ir, {
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                crate::identity::copy_checked_id(id.as_str())?,
                 geometry,
-                source_object: Some(SourceObjectAssociation {
+                Some(SourceObjectAssociation {
                     geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: cadmpeg_core::text::NonBlankString::new(format!(
@@ -180,8 +177,9 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
                     })?,
                     instance_path: Vec::new(),
                 }),
-            },
-        )?;
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
+        })?;
         transferred.insert(id);
     }
     Ok(transferred)
@@ -372,15 +370,12 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
             Exactness::Derived,
         )?;
         ctx.charge_entities(1, "admit Creo model curves")?;
-        source_carriers.admit_curve(
-            ctx,
-            ir,
-            Curve {
-                native_ref: None,
-                parameter_range: None,
-                id: crate::identity::copy_checked_id(id.as_str())?,
+        source_carriers.admit_curve(ctx, ir, {
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                crate::identity::copy_checked_id(id.as_str())?,
                 geometry,
-                source_object: Some(SourceObjectAssociation {
+                Some(SourceObjectAssociation {
                     geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: cadmpeg_core::text::NonBlankString::new(format!(
@@ -392,8 +387,9 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
                     })?,
                     instance_path: Vec::new(),
                 }),
-            },
-        )?;
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
+        })?;
         result
             .ids
             .insert(crate::identity::copy_checked_id(id.as_str())?);
@@ -555,11 +551,9 @@ mod tests {
 
         let mut ir = CadIr::empty();
         ir.model.surfaces.extend([
-            Surface {
-                native_ref: None,
-                id: SurfaceId::mint("creo:visibgeom:surface#1".to_string())
-                    .expect("identity grammar"),
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            Surface::new(
+                SurfaceId::mint("creo:visibgeom:surface#1".to_string()).expect("identity grammar"),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                         Point3::new(0.0, 2.0, 0.0),
                         Vector3::new(0.0, 1.0, 0.0),
@@ -567,13 +561,11 @@ mod tests {
                     )
                     .expect("valid PlaneSurface fixture"),
                 )),
-                source_object: None,
-            },
-            Surface {
-                native_ref: None,
-                id: SurfaceId::mint("creo:visibgeom:surface#2".to_string())
-                    .expect("identity grammar"),
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                None,
+            ),
+            Surface::new(
+                SurfaceId::mint("creo:visibgeom:surface#2".to_string()).expect("identity grammar"),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                         Point3::new(0.0, 0.0, 0.0),
                         Vector3::new(0.0, 0.0, 1.0),
@@ -581,15 +573,13 @@ mod tests {
                     )
                     .expect("valid PlaneSurface fixture"),
                 )),
-                source_object: None,
-            },
-            Surface {
-                native_ref: None,
-                id: SurfaceId::mint("creo:visibgeom:surface#3".to_string())
-                    .expect("identity grammar"),
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
-                source_object: None,
-            },
+                None,
+            ),
+            Surface::new(
+                SurfaceId::mint("creo:visibgeom:surface#3".to_string()).expect("identity grammar"),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+                None,
+            ),
         ]);
 
         let transferred = crate::decode::with_service_context(|ctx| {
@@ -662,10 +652,9 @@ mod tests {
             offset: 0,
         }];
 
-        let extrusion = Surface {
-            native_ref: None,
-            id: SurfaceId::mint("creo:visibgeom:surface#1".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+        let extrusion = Surface::new(
+            SurfaceId::mint("creo:visibgeom:surface#1".to_string()).expect("identity grammar"),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                 NurbsSurface::from_lanes(
                     cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                         1,
@@ -688,12 +677,11 @@ mod tests {
                 )
                 .expect("valid test surface"),
             )),
-            source_object: None,
-        };
-        let plane = Surface {
-            native_ref: None,
-            id: SurfaceId::mint("creo:visibgeom:surface#2".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            None,
+        );
+        let plane = Surface::new(
+            SurfaceId::mint("creo:visibgeom:surface#2".to_string()).expect("identity grammar"),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -701,8 +689,8 @@ mod tests {
                 )
                 .expect("valid PlaneSurface fixture"),
             )),
-            source_object: None,
-        };
+            None,
+        );
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(extrusion.clone());
         if duplicate_extrusion {

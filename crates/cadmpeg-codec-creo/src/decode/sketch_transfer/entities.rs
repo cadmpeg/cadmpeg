@@ -868,20 +868,18 @@ pub(super) fn transfer_section_entities(
                 Exactness::Derived,
             )?;
             ctx.charge_entities(1, "admit Creo model curves")?;
-            source_carriers.admit_curve(
-                ctx,
-                ir,
-                Curve {
-                    native_ref: None,
-                    parameter_range: None,
+            source_carriers.admit_curve(ctx, ir, {
+                let (parameter_range, id, geometry, source_object) = (
+                    None,
                     id,
                     geometry,
-                    source_object: Some(placed_source_object(format_args!(
+                    Some(placed_source_object(format_args!(
                         "FeatDefs:section#{}:{suffix}",
                         sketch_identity_scope(sketch_id)
                     ))?),
-                },
-            )?;
+                );
+                Curve::new(id, geometry, parameter_range, source_object)
+            })?;
         }
         for segment in definition
             .segments
@@ -915,20 +913,18 @@ pub(super) fn transfer_section_entities(
                 Exactness::Derived,
             )?;
             ctx.charge_entities(1, "admit Creo model curves")?;
-            source_carriers.admit_curve(
-                ctx,
-                ir,
-                Curve {
-                    native_ref: None,
-                    parameter_range: None,
+            source_carriers.admit_curve(ctx, ir, {
+                let (parameter_range, id, geometry, source_object) = (
+                    None,
                     id,
                     geometry,
-                    source_object: Some(placed_source_object(format_args!(
+                    Some(placed_source_object(format_args!(
                         "FeatDefs:section#{}:{suffix}",
                         sketch_identity_scope(sketch_id)
                     ))?),
-                },
-            )?;
+                );
+                Curve::new(id, geometry, parameter_range, source_object)
+            })?;
         }
         for segment in definition
             .segments
@@ -962,20 +958,18 @@ pub(super) fn transfer_section_entities(
                 Exactness::Derived,
             )?;
             ctx.charge_entities(1, "admit Creo model curves")?;
-            source_carriers.admit_curve(
-                ctx,
-                ir,
-                Curve {
-                    native_ref: None,
-                    parameter_range: None,
+            source_carriers.admit_curve(ctx, ir, {
+                let (parameter_range, id, geometry, source_object) = (
+                    None,
                     id,
                     geometry,
-                    source_object: Some(placed_source_object(format_args!(
+                    Some(placed_source_object(format_args!(
                         "FeatDefs:section#{}:{suffix}",
                         sketch_identity_scope(sketch_id)
                     ))?),
-                },
-            )?;
+                );
+                Curve::new(id, geometry, parameter_range, source_object)
+            })?;
         }
         for (internal_id, external_id, section_geometry, offset, id) in saved_section_geometries {
             if ir.model.curves.iter().any(|existing| existing.id == id) {
@@ -993,15 +987,12 @@ pub(super) fn transfer_section_entities(
                 Exactness::Derived,
             )?;
             ctx.charge_entities(1, "admit Creo model curves")?;
-            source_carriers.admit_curve(
-                ctx,
-                ir,
-                Curve {
-                    native_ref: None,
-                    parameter_range: None,
+            source_carriers.admit_curve(ctx, ir, {
+                let (parameter_range, id, geometry, source_object) = (
+                    None,
                     id,
                     geometry,
-                    source_object: Some(match external_id {
+                    Some(match external_id {
                         Some(external_id) => placed_source_object(format_args!(
                             "FeatDefs:section#{}:{external_id}",
                             sketch_identity_scope(sketch_id)
@@ -1010,8 +1001,9 @@ pub(super) fn transfer_section_entities(
                             "FeatDefs:saved_entity#{internal_id}"
                         ))?,
                     }),
-                },
-            )?;
+                );
+                Curve::new(id, geometry, parameter_range, source_object)
+            })?;
         }
     }
     Ok((entities, profiles))

@@ -65,11 +65,10 @@ fn pcurve_vertex_case() -> (
     }
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     for face_id in [10, 11] {
-        ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-            native_ref: None,
-            id: cadmpeg_ir::ids::SurfaceId::mint(format!("creo:visibgeom:surface#{face_id}"))
+        ir.model.surfaces.push(cadmpeg_ir::geometry::Surface::new(
+            cadmpeg_ir::ids::SurfaceId::mint(format!("creo:visibgeom:surface#{face_id}"))
                 .expect("identity grammar"),
-            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+            cadmpeg_ir::geometry::SurfaceGeometry::Solved(
                 cadmpeg_ir::geometry::SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                         Point3::new(0.0, 0.0, 0.0),
@@ -79,8 +78,8 @@ fn pcurve_vertex_case() -> (
                     .expect("valid PlaneSurface fixture"),
                 ),
             ),
-            source_object: None,
-        });
+            None,
+        ));
     }
     let carriers = [10, 11]
         .into_iter()
@@ -115,13 +114,15 @@ fn pcurve_vertex_result() -> Result<super::SolvedTopologicalVertices, CodecError
 
 fn analytic_vertex_result() -> Result<super::SolvedTopologicalVertices, CodecError> {
     let (mut scan, mut ir, carriers) = pcurve_vertex_case();
-    let make_curve = |curve_id: u32, direction: [f64; 3]| cadmpeg_ir::geometry::Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: cadmpeg_ir::ids::CurveId::mint(format!("creo:visibgeom:curve#{curve_id}"))
-            .expect("identity grammar"),
-        geometry: line([0.0, 0.0, 0.0], direction),
-        source_object: None,
+    let make_curve = |curve_id: u32, direction: [f64; 3]| {
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            cadmpeg_ir::ids::CurveId::mint(format!("creo:visibgeom:curve#{curve_id}"))
+                .expect("identity grammar"),
+            line([0.0, 0.0, 0.0], direction),
+            None,
+        );
+        cadmpeg_ir::geometry::Curve::new(id, geometry, parameter_range, source_object)
     };
     ir.model.curves.push(make_curve(7, [1.0, 0.0, 0.0]));
     let id = crate::topology::HalfEdgeId {

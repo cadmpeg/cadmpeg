@@ -13,11 +13,7 @@ use crate::report::{
 pub(super) fn check_drawings(ir: &CadIr, all_ids: &dyn IdentitySet, findings: &mut Vec<Finding>) {
     let mut orders = std::collections::BTreeSet::new();
     for drawing in &ir.model.drawings {
-        let mut refs_valid = all_ids.contains(&drawing.object)
-            && drawing
-                .native_ref
-                .as_ref()
-                .is_none_or(|reference| all_ids.contains(reference));
+        let mut refs_valid = all_ids.contains(&drawing.object);
         if refs_valid {
             if let Some(id) = &drawing.template {
                 refs_valid = all_ids.contains(id.as_str());
@@ -73,6 +69,33 @@ mod tests {
             );
         }
         ir
+    }
+
+    #[test]
+    fn native_link_validation_reports_a_bad_drawing_link_once() {
+        let mut ir = fixture();
+        ir.model.drawings.truncate(1);
+        let drawing = &mut ir.model.drawings[0];
+        drawing.native_ref = Some(drawing.id.as_str().to_owned());
+        let object = drawing.object.clone();
+        let drawing_id = drawing.id.clone();
+        ir.native.namespace_mut("test").arenas_mut().insert(
+            "records".into(),
+            vec![
+                crate::NativeRecord::new(object.try_into().unwrap(), serde_json::Map::new())
+                    .unwrap(),
+            ],
+        );
+        let report = crate::validate_neutral(&ir, Vec::new()).unwrap();
+        assert_eq!(report.findings.len(), 1, "{:?}", report.findings);
+        assert_eq!(
+            report.findings[0].check,
+            crate::report::check::Check::NativeLinks
+        );
+        assert_eq!(
+            report.findings[0].entity.as_deref(),
+            Some(drawing_id.as_str())
+        );
     }
 
     #[test]

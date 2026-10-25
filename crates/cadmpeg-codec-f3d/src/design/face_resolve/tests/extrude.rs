@@ -73,10 +73,9 @@ fn start_binder_fixture(
         target_plane_operand(&[10])
     };
     let surface_id = faces[0].surface.clone();
-    let surfaces = vec![Surface {
-        native_ref: None,
-        id: surface_id,
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+    let surfaces = vec![Surface::new(
+        surface_id,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 2.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -84,8 +83,8 @@ fn start_binder_fixture(
             )
             .unwrap(),
         )),
-        source_object: None,
-    }];
+        None,
+    )];
     let sketch = Sketch {
         id: SketchId::mint("synthetic:test:id#start-sketch").unwrap(),
         name: None,
@@ -270,30 +269,28 @@ fn selected_face_start_requires_unique_sketch_plane_coincidence() {
         profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: None,
     };
-    let face = |id: &str, surface: &str| Face {
-        native_ref: None,
-        id: FaceId::mint(format!("test:model:face#{id}")).expect("identity grammar"),
-        shell: ShellId::mint("test:model:shell#shell").expect("identity grammar"),
-        surface: SurfaceId::mint(format!("test:model:surface#{surface}"))
-            .expect("identity grammar"),
-        sense: Sense::Forward,
-        loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
-        name: None,
-        color: None,
-        tolerance: None,
+    let face = |id: &str, surface: &str| {
+        Face::new(
+            FaceId::mint(format!("test:model:face#{id}")).expect("identity grammar"),
+            ShellId::mint("test:model:shell#shell").expect("identity grammar"),
+            SurfaceId::mint(format!("test:model:surface#{surface}")).expect("identity grammar"),
+            Sense::Forward,
+            cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+        )
     };
-    let plane = |id: &str, origin: Point3, normal: Vector3| Surface {
-        native_ref: None,
-        id: SurfaceId::mint(format!("test:model:surface#{id}")).expect("identity grammar"),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                origin,
-                normal.unit().unwrap(),
-                Vector3::new(1.0, 0.0, 0.0),
-            )
-            .unwrap(),
-        )),
-        source_object: None,
+    let plane = |id: &str, origin: Point3, normal: Vector3| {
+        Surface::new(
+            SurfaceId::mint(format!("test:model:surface#{id}")).expect("identity grammar"),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    origin,
+                    normal.unit().unwrap(),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            )),
+            None,
+        )
     };
     let faces = [
         face("coincident", "surface-coincident"),
@@ -425,30 +422,28 @@ fn extrude_target_geometry_requires_one_forward_parallel_plane() {
     const TARGET_LINEAR_TOLERANCE: f64 = 1.0e-9;
     const TARGET_ANGULAR_TOLERANCE: f64 = 1.0e-9;
 
-    let face_with_surface = |slot: i64, surface: &str| Face {
-        native_ref: None,
-        id: face(slot),
-        shell: ShellId::mint("test:model:shell#shell").expect("identity grammar"),
-        surface: SurfaceId::mint(format!("test:model:surface#{surface}"))
-            .expect("identity grammar"),
-        sense: Sense::Forward,
-        loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
-        name: None,
-        color: None,
-        tolerance: None,
+    let face_with_surface = |slot: i64, surface: &str| {
+        Face::new(
+            face(slot),
+            ShellId::mint("test:model:shell#shell").expect("identity grammar"),
+            SurfaceId::mint(format!("test:model:surface#{surface}")).expect("identity grammar"),
+            Sense::Forward,
+            cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+        )
     };
-    let plane = |id: &str, origin: Point3, normal: Vector3| Surface {
-        native_ref: None,
-        id: SurfaceId::mint(format!("test:model:surface#{id}")).expect("identity grammar"),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                origin,
-                normal,
-                Vector3::new(0.0, 0.0, 1.0),
-            )
-            .unwrap(),
-        )),
-        source_object: None,
+    let plane = |id: &str, origin: Point3, normal: Vector3| {
+        Surface::new(
+            SurfaceId::mint(format!("test:model:surface#{id}")).expect("identity grammar"),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    origin,
+                    normal,
+                    Vector3::new(0.0, 0.0, 1.0),
+                )
+                .unwrap(),
+            )),
+            None,
+        )
     };
     let faces = [
         face_with_surface(1, "surface-forward"),

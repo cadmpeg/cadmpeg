@@ -29,48 +29,51 @@ fn direct_surface_fixture(
         SurfaceId::mint(format!("test:model:surface#{surface_name}")).expect("valid identity");
     let mut ir = CadIr::empty();
     ir.model.curves = vec![
-        Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: CurveId::mint("test:model:entity#first").expect("valid identity"),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                crate::geometry::nurbs::NurbsCurve::from_lanes(
-                    1,
-                    vec![0.0, 0.0, 1.0, 1.0],
-                    vec![Point3::new(1.0, 2.0, 3.0), Point3::new(3.0, 2.0, 3.0)],
-                    None,
-                    false,
-                )
-                .unwrap(),
-            )),
-            source_object: None,
+        {
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                CurveId::mint("test:model:entity#first").expect("valid identity"),
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                    crate::geometry::nurbs::NurbsCurve::from_lanes(
+                        1,
+                        vec![0.0, 0.0, 1.0, 1.0],
+                        vec![Point3::new(1.0, 2.0, 3.0), Point3::new(3.0, 2.0, 3.0)],
+                        None,
+                        false,
+                    )
+                    .unwrap(),
+                )),
+                None,
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         },
-        Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: CurveId::mint("test:model:entity#second").expect("valid identity"),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                crate::geometry::nurbs::NurbsCurve::from_lanes(
-                    1,
-                    vec![0.0, 0.0, 1.0, 1.0],
-                    vec![Point3::new(5.0, 10.0, 13.0), Point3::new(5.0, 13.0, 13.0)],
-                    None,
-                    false,
-                )
-                .unwrap(),
-            )),
-            source_object: None,
+        {
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                CurveId::mint("test:model:entity#second").expect("valid identity"),
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                    crate::geometry::nurbs::NurbsCurve::from_lanes(
+                        1,
+                        vec![0.0, 0.0, 1.0, 1.0],
+                        vec![Point3::new(5.0, 10.0, 13.0), Point3::new(5.0, 13.0, 13.0)],
+                        None,
+                        false,
+                    )
+                    .unwrap(),
+                )),
+                None,
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         },
     ];
-    ir.model.surfaces.push(Surface {
-        native_ref: None,
-        id: surface_id.clone(),
-        geometry: SurfaceGeometry::Procedural {
+    ir.model.surfaces.push(Surface::new(
+        surface_id.clone(),
+        SurfaceGeometry::Procedural {
             construction: construction_id.clone(),
             cache: None,
         },
-        source_object: None,
-    });
+        None,
+    ));
     ir.model.procedural_surfaces.push(procedural_surface! {
         id: construction_id,
         definition: definition,

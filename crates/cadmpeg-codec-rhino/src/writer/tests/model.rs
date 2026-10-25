@@ -194,24 +194,23 @@ fn planar_brep_serializes_trim_iso_without_changing_its_topology_or_curves() {
 
 #[test]
 fn bounded_free_line_uses_native_endpoints_and_its_declared_domain() {
-    let curve = cadmpeg_ir::geometry::Curve {
-        native_ref: None,
-        id: "test:geometry:curve#bounded-line"
+    let curve = cadmpeg_ir::geometry::Curve::new(
+        "test:geometry:curve#bounded-line"
             .try_into()
             .expect("curve identity"),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::new(
                 cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, -2.0, 3.0))
                     .expect("finite origin"),
                 cadmpeg_ir::units::UnitVector3::Y_AXIS,
             ),
         )),
-        parameter_range: Some(
+        Some(
             cadmpeg_ir::topology::IncreasingParameterInterval::new([-2.0, 6.0])
                 .expect("finite increasing range"),
         ),
-        source_object: None,
-    };
+        None,
+    );
     let (class, payload) = crate::writer::model::WritableObjectCurve::try_new(&curve)
         .expect("bounded finite line")
         .payload()
@@ -229,20 +228,19 @@ fn bounded_free_line_uses_native_endpoints_and_its_declared_domain() {
 
 #[test]
 fn unbounded_or_collapsed_free_line_does_not_invent_a_native_domain_or_geometry() {
-    let mut curve = cadmpeg_ir::geometry::Curve {
-        native_ref: None,
-        id: "test:geometry:curve#unbounded-line"
+    let mut curve = cadmpeg_ir::geometry::Curve::new(
+        "test:geometry:curve#unbounded-line"
             .try_into()
             .expect("curve identity"),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::new(
                 cadmpeg_ir::features::FinitePoint3::ZERO,
                 cadmpeg_ir::units::UnitVector3::X_AXIS,
             ),
         )),
-        parameter_range: None,
-        source_object: None,
-    };
+        None,
+        None,
+    );
     assert!(matches!(
         crate::writer::model::WritableObjectCurve::try_new(&curve),
         Err(cadmpeg_core::CodecError::UnsupportedContent(_))

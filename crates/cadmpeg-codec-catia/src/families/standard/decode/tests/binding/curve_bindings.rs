@@ -63,10 +63,9 @@ fn standard_full_circle_edge_uses_vertex_seam_and_radian_domain() {
         None,
     ));
     let surface_id = SurfaceId::mint("catia:test:surface#surface-0").expect("identity grammar");
-    ir.model.surfaces.push(Surface {
-        native_ref: None,
-        id: surface_id.clone(),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+    ir.model.surfaces.push(Surface::new(
+        surface_id.clone(),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -74,8 +73,8 @@ fn standard_full_circle_edge_uses_vertex_seam_and_radian_domain() {
             )
             .expect("valid PlaneSurface fixture"),
         )),
-        source_object: None,
-    });
+        None,
+    ));
     let support = StandardCurveSupport {
         pos: 0,
         tag: 1,
@@ -667,12 +666,9 @@ fn edge_support_reuses_the_surface_with_matching_source_record() {
     let id = SurfaceId::mint("catia:test:surface#matching".to_owned()).expect("surface identity");
     let geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
     let mut ir = CadIr::empty();
-    ir.model.surfaces.push(Surface {
-        native_ref: None,
-        id: id.clone(),
-        geometry: geometry.clone(),
-        source_object: Some(source),
-    });
+    ir.model
+        .surfaces
+        .push(Surface::new(id.clone(), geometry.clone(), Some(source)));
     let carrier = crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(geometry);
     let matched = crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);

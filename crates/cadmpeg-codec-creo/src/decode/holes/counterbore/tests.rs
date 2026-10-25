@@ -54,28 +54,29 @@ fn boundary_scan() -> crate::container::ContainerScan<'static> {
 }
 
 fn boundary_circle() -> cadmpeg_ir::geometry::Curve {
-    cadmpeg_ir::geometry::Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: CurveId::mint("creo:visibgeom:curve#11".to_string()).expect("identity grammar"),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                1.0,
-            )
-            .expect("valid CircleCurve fixture"),
-        )),
-        source_object: None,
+    {
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            CurveId::mint("creo:visibgeom:curve#11".to_string()).expect("identity grammar"),
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    1.0,
+                )
+                .expect("valid CircleCurve fixture"),
+            )),
+            None,
+        );
+        cadmpeg_ir::geometry::Curve::new(id, geometry, parameter_range, source_object)
     }
 }
 
 fn model_plane(origin: [f64; 3]) -> cadmpeg_ir::geometry::Surface {
-    cadmpeg_ir::geometry::Surface {
-        native_ref: None,
-        id: SurfaceId::mint("creo:visibgeom:surface#1".to_string()).expect("identity grammar"),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+    cadmpeg_ir::geometry::Surface::new(
+        SurfaceId::mint("creo:visibgeom:surface#1".to_string()).expect("identity grammar"),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 origin.into(),
                 [0.0, 0.0, 1.0].into(),
@@ -83,8 +84,8 @@ fn model_plane(origin: [f64; 3]) -> cadmpeg_ir::geometry::Surface {
             )
             .expect("valid PlaneSurface fixture"),
         )),
-        source_object: None,
-    }
+        None,
+    )
 }
 
 #[test]
@@ -466,19 +467,20 @@ fn counterbore_patch_rows_cover_each_source_row() {
             saved_section: None,
             offset: 0,
         });
-    let model_cylinder = |id| cadmpeg_ir::geometry::Surface {
-        native_ref: None,
-        id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                60.0,
-            )
-            .expect("cylinder geometry"),
-        )),
-        source_object: None,
+    let model_cylinder = |id| {
+        cadmpeg_ir::geometry::Surface::new(
+            SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    60.0,
+                )
+                .expect("cylinder geometry"),
+            )),
+            None,
+        )
     };
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model

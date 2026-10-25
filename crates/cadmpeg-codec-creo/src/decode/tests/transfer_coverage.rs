@@ -45,24 +45,27 @@ fn surface_coverage_separates_transferred_unique_rows_from_ambiguous_ids() {
         row(43, crate::surface::SurfaceKind::Cone),
         row(43, crate::surface::SurfaceKind::Cone),
     ];
-    let plane = |id: &str, native_id: u32| Surface {
-        native_ref: None,
-        id: SurfaceId::mint(format!("test:model:surface#{id}")).expect("identity grammar"),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-            )
-            .unwrap(),
-        )),
-        source_object: Some(SourceObjectAssociation {
-            geometry_role: None,
-            format: cadmpeg_ir::CodecFormat::Creo,
-            object_id: cadmpeg_core::text::NonBlankString::new(format!("VisibGeom:{native_id}"))
+    let plane = |id: &str, native_id: u32| {
+        Surface::new(
+            SurfaceId::mint(format!("test:model:surface#{id}")).expect("identity grammar"),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            )),
+            Some(SourceObjectAssociation {
+                geometry_role: None,
+                format: cadmpeg_ir::CodecFormat::Creo,
+                object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                    "VisibGeom:{native_id}"
+                ))
                 .expect("nonempty source identity"),
-            instance_path: Vec::new(),
-        }),
+                instance_path: Vec::new(),
+            }),
+        )
     };
     let mut surfaces = vec![
         plane("derived-id-independent-of-native-id", 41),
@@ -133,25 +136,29 @@ fn curve_coverage_excludes_unknown_carriers_and_ambiguous_ids() {
         instance_path: Vec::new(),
     };
     let curves = vec![
-        Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: CurveId::mint("test:model:entity#typed".to_string()).expect("identity grammar"),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                    Point3::new(0.0, 0.0, 0.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                )
-                .expect("valid LineCurve fixture"),
-            )),
-            source_object: Some(source(41)),
+        {
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                CurveId::mint("test:model:entity#typed".to_string()).expect("identity grammar"),
+                CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                    cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .expect("valid LineCurve fixture"),
+                )),
+                Some(source(41)),
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         },
-        Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: CurveId::mint("test:model:entity#opaque".to_string()).expect("identity grammar"),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
-            source_object: Some(source(42)),
+        {
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                CurveId::mint("test:model:entity#opaque".to_string()).expect("identity grammar"),
+                CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+                Some(source(42)),
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         },
     ];
 

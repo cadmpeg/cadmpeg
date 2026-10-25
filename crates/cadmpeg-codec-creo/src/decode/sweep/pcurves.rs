@@ -82,11 +82,10 @@ pub(super) fn add_extrusion_pcurve(
         Exactness::Derived,
     )?;
     ctx.charge_entities(1, "admit Creo model pcurves")?;
-    let pcurve = Pcurve {
-        native_ref: None,
-        id: id.clone(),
+    let pcurve = Pcurve::new(
+        id.clone(),
         geometry,
-        metadata: PcurveMetadata::general(
+        PcurveMetadata::general(
             None,
             Some(
                 cadmpeg_ir::units::FiniteVector::new(parameter_range)
@@ -95,7 +94,7 @@ pub(super) fn add_extrusion_pcurve(
             ),
             None,
         ),
-    };
+    );
     match admission {
         PcurveAdmission::Pending(source_carriers, source_surface) => {
             source_carriers.admit_pcurve_with_source_surface(ctx, ir, pcurve, source_surface)?;

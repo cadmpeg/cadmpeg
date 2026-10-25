@@ -1027,16 +1027,15 @@ fn native_field_copy_and_typed_rewrite_refuse_at_the_depth_limit() {
         serde_json::from_value(serde_json::json!({"nested": [{"text": "retained"}]})).unwrap(),
     )
     .unwrap();
-    let body = NativeRecord::from_typed(&Body {
-        native_ref: None,
-        id: BodyId::mint("test:model:body#one").unwrap(),
-        kind: BodyKind::Solid,
-        regions: Vec::new(),
-        transform: None,
-        name: Some("test:model:body#one".into()),
-        color: None,
-        visible: None,
-    })
+    let body = NativeRecord::from_typed(&Body::new(
+        BodyId::mint("test:model:body#one").unwrap(),
+        BodyKind::Solid,
+        Vec::new(),
+        None,
+        Some("test:model:body#one".into()),
+        None,
+        None,
+    ))
     .unwrap();
     for rewrite in [false, true] {
         let arena = DecodeArena::new();

@@ -657,12 +657,14 @@ fn generated_source_less_f3d_reports_omitted_subds() {
     source_less
         .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
         .unwrap();
-    source_less.model.subds.push(cadmpeg_ir::SubdSurface {
-        native_ref: None,
-        id: cadmpeg_ir::ids::SubdId::mint("test:f3d:subd#0").expect("identity grammar"),
-        scheme: cadmpeg_ir::SubdScheme::CatmullClark,
-        source_object: None,
-        cage: cadmpeg_ir::subd::SubdCage::default(),
+    source_less.model.subds.push({
+        let (id, scheme, source_object, cage) = (
+            cadmpeg_ir::ids::SubdId::mint("test:f3d:subd#0").expect("identity grammar"),
+            cadmpeg_ir::SubdScheme::CatmullClark,
+            None,
+            cadmpeg_ir::subd::SubdCage::default(),
+        );
+        cadmpeg_ir::SubdSurface::new(id, scheme, cage, source_object)
     });
 
     let (output, report) = synthesize_document(&source_less, None);
@@ -1053,20 +1055,22 @@ fn generated_source_less_reports_auxiliary_geometry_and_source_identity_loss() {
         .any(|loss| loss.code == crate::loss::F3dLossCode::WriterSourceAssociationOmitted.kind()));
 
     source_less.model.surfaces[0].source_object = None;
-    source_less.model.curves.push(cadmpeg_ir::geometry::Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: "generated:test:associated-curve#0"
-            .try_into()
-            .expect("valid identity"),
-        geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-            )
-            .unwrap(),
-        )),
-        source_object: Some(association),
+    source_less.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            "generated:test:associated-curve#0"
+                .try_into()
+                .expect("valid identity"),
+            cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            )),
+            Some(association),
+        );
+        cadmpeg_ir::geometry::Curve::new(id, geometry, parameter_range, source_object)
     });
     source_less
         .model
@@ -1189,38 +1193,38 @@ fn generated_source_less_planar_polygon_plans_dynamic_record_indices() {
     source_less
         .model
         .vertices
-        .push(cadmpeg_ir::topology::Vertex {
-            native_ref: None,
-            id: vertex_id.clone(),
-            point: point_id,
-            tolerance: None,
-        });
+        .push(cadmpeg_ir::topology::Vertex::new(
+            vertex_id.clone(),
+            point_id,
+            None,
+        ));
     let first_vertex = source_less.model.edges[0].start.clone();
     source_less.model.edges[2].end = vertex_id.clone();
     let edge_id = EdgeId::mint("generated:test:edge#3").expect("identity grammar");
-    source_less.model.edges.push(cadmpeg_ir::topology::Edge {
-        native_ref: None,
-        id: edge_id.clone(),
-        carrier: cadmpeg_ir::topology::EdgeCarrier::new(None, Some([0.0, 1.0])).unwrap(),
-        start: vertex_id,
-        end: first_vertex,
-        tolerance: None,
-    });
+    source_less
+        .model
+        .edges
+        .push(cadmpeg_ir::topology::Edge::new(
+            edge_id.clone(),
+            cadmpeg_ir::topology::EdgeCarrier::new(None, Some([0.0, 1.0])).unwrap(),
+            vertex_id,
+            first_vertex,
+            None,
+        ));
     let coedge_id = CoedgeId::mint("generated:test:coedge#3").expect("identity grammar");
     let loop_id = source_less.model.loops[0].id.clone();
     source_less
         .model
         .coedges
-        .push(cadmpeg_ir::topology::Coedge {
-            native_ref: None,
-            id: coedge_id.clone(),
-            owner_loop: loop_id,
-            edge: edge_id,
-            radial_next: coedge_id.clone(),
-            sense: cadmpeg_ir::topology::Sense::Forward,
-            pcurves: Vec::new(),
-            use_curve: None,
-        });
+        .push(cadmpeg_ir::topology::Coedge::new(
+            coedge_id.clone(),
+            loop_id,
+            edge_id,
+            coedge_id.clone(),
+            cadmpeg_ir::topology::Sense::Forward,
+            Vec::new(),
+            None,
+        ));
     let mut coedges = source_less.model.loops[0].coedges().to_vec();
     coedges.push(coedge_id);
     let vertex_uses = source_less.model.loops[0].anchored_vertex_uses().to_vec();
@@ -1311,14 +1315,16 @@ fn generated_source_less_planar_face_writes_straight_edge_carriers() {
         let direction =
             cadmpeg_ir::math::Vector3::new(delta.x / length, delta.y / length, delta.z / length);
         let id = CurveId::mint(format!("generated:test:curve#{index}")).expect("identity grammar");
-        source_less.model.curves.push(Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: id.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::analytic::LineCurve::try_new(start, direction).unwrap(),
-            )),
-            source_object: None,
+        source_less.model.curves.push({
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                id.clone(),
+                CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                    cadmpeg_ir::geometry::analytic::LineCurve::try_new(start, direction).unwrap(),
+                )),
+                None,
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         });
         source_less.model.edges[index].set_curve(Some(id)).unwrap();
         source_less.model.edges[index].carrier = cadmpeg_ir::topology::EdgeCarrier::new(
@@ -1392,12 +1398,10 @@ fn generated_source_less_planar_face_writes_circle_edge_carrier() {
         )
         .unwrap(),
     ));
-    source_less.model.curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: curve_id.clone(),
-        geometry: expected.clone(),
-        source_object: None,
+    source_less.model.curves.push({
+        let (parameter_range, id, geometry, source_object) =
+            (None, curve_id.clone(), expected.clone(), None);
+        Curve::new(id, geometry, parameter_range, source_object)
     });
     source_less.model.edges[0]
         .set_curve(Some(curve_id))
@@ -1482,12 +1486,10 @@ fn generated_source_less_planar_face_writes_ellipse_edge_carrier() {
         )
         .unwrap(),
     ));
-    source_less.model.curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: curve_id.clone(),
-        geometry: expected.clone(),
-        source_object: None,
+    source_less.model.curves.push({
+        let (parameter_range, id, geometry, source_object) =
+            (None, curve_id.clone(), expected.clone(), None);
+        Curve::new(id, geometry, parameter_range, source_object)
     });
     source_less.model.edges[0]
         .set_curve(Some(curve_id))
@@ -1603,41 +1605,33 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
         PointId::mint("synthetic:cylinder-band:point#top").expect("identity grammar"),
     ];
 
-    source_less.model.bodies.push(Body {
-        native_ref: None,
-        id: body.clone(),
-        kind: BodyKind::Sheet,
-        regions: vec![region.clone()],
-        transform: None,
-        name: Some("closed cylinder band".into()),
-        color: None,
-        visible: None,
-    });
-    source_less.model.regions.push(Region {
-        native_ref: None,
-        id: region.clone(),
-        body,
-        shells: vec![shell.clone()],
-    });
+    source_less.model.bodies.push(Body::new(
+        body.clone(),
+        BodyKind::Sheet,
+        vec![region.clone()],
+        None,
+        Some("closed cylinder band".into()),
+        None,
+        None,
+    ));
+    source_less
+        .model
+        .regions
+        .push(Region::new(region.clone(), body, vec![shell.clone()]));
     source_less
         .model
         .shells
         .push(Shell::with_face(shell.clone(), region, face.clone()));
-    source_less.model.faces.push(Face {
-        native_ref: None,
-        id: face.clone(),
+    source_less.model.faces.push(Face::new(
+        face.clone(),
         shell,
-        surface: surface.clone(),
-        sense: Sense::Forward,
-        loops: cadmpeg_ir::topology::FaceLoops::unspecified(loops.to_vec()),
-        name: None,
-        color: None,
-        tolerance: None,
-    });
-    source_less.model.surfaces.push(Surface {
-        native_ref: None,
-        id: surface,
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+        surface.clone(),
+        Sense::Forward,
+        cadmpeg_ir::topology::FaceLoops::unspecified(loops.to_vec()),
+    ));
+    source_less.model.surfaces.push(Surface::new(
+        surface,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -1646,66 +1640,64 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
             )
             .unwrap(),
         )),
-        source_object: None,
-    });
+        None,
+    ));
     for index in 0..2 {
         let z = f64_from_index(index).expect("fixture index is exact in f64") * 10.0;
-        source_less.model.loops.push(Loop {
-            native_ref: None,
-            id: loops[index].clone(),
-            face: face.clone(),
-            boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+        source_less.model.loops.push(Loop::new(
+            loops[index].clone(),
+            face.clone(),
+            cadmpeg_ir::topology::LoopBoundary::Ring(
                 cadmpeg_ir::topology::LoopRing::new(vec![coedges[index].clone()], Vec::new())
                     .expect("fixture ring admission"),
             ),
-        });
-        source_less.model.coedges.push(Coedge {
-            native_ref: None,
-            id: coedges[index].clone(),
-            owner_loop: loops[index].clone(),
-            edge: edges[index].clone(),
-            radial_next: coedges[index].clone(),
-            sense: if index == 0 {
+        ));
+        source_less.model.coedges.push(Coedge::new(
+            coedges[index].clone(),
+            loops[index].clone(),
+            edges[index].clone(),
+            coedges[index].clone(),
+            if index == 0 {
                 Sense::Forward
             } else {
                 Sense::Reversed
             },
-            pcurves: Vec::new(),
-            use_curve: None,
-        });
-        source_less.model.edges.push(Edge {
-            native_ref: None,
-            id: edges[index].clone(),
-            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+            Vec::new(),
+            None,
+        ));
+        source_less.model.edges.push(Edge::new(
+            edges[index].clone(),
+            cadmpeg_ir::topology::EdgeCarrier::new(
                 Some(curves[index].clone()),
                 Some([-std::f64::consts::PI, std::f64::consts::PI]),
             )
             .unwrap(),
-            start: vertices[index].clone(),
-            end: vertices[index].clone(),
-            tolerance: None,
+            vertices[index].clone(),
+            vertices[index].clone(),
+            None,
+        ));
+        source_less.model.curves.push({
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                curves[index].clone(),
+                CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                    cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                        Point3::new(0.0, 0.0, z),
+                        Vector3::new(0.0, 0.0, 1.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                        5.0,
+                    )
+                    .unwrap(),
+                )),
+                None,
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         });
-        source_less.model.curves.push(Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: curves[index].clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                    Point3::new(0.0, 0.0, z),
-                    Vector3::new(0.0, 0.0, 1.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                    5.0,
-                )
-                .unwrap(),
-            )),
-            source_object: None,
-        });
-        source_less.model.vertices.push(Vertex {
-            native_ref: None,
-            id: vertices[index].clone(),
-            point: points[index].clone(),
-            tolerance: None,
-        });
+        source_less.model.vertices.push(Vertex::new(
+            vertices[index].clone(),
+            points[index].clone(),
+            None,
+        ));
         source_less.model.points.push(Point::new(
             points[index].clone(),
             cadmpeg_ir::features::FinitePoint3::new(Point3::new(-5.0, 0.0, z))

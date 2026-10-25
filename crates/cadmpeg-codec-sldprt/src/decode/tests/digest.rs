@@ -12,16 +12,15 @@ use std::collections::BTreeMap;
 
 fn named_body_document() -> CadIr {
     let mut ir = CadIr::empty();
-    ir.model.bodies.push(Body {
-        native_ref: None,
-        id: BodyId::mint("synthetic:test:id#digest-body").unwrap(),
-        kind: BodyKind::default(),
-        regions: Vec::new(),
-        transform: None,
-        name: Some("digest body".to_owned()),
-        color: None,
-        visible: None,
-    });
+    ir.model.bodies.push(Body::new(
+        BodyId::mint("synthetic:test:id#digest-body").unwrap(),
+        BodyKind::default(),
+        Vec::new(),
+        None,
+        Some("digest body".to_owned()),
+        None,
+        None,
+    ));
     ir
 }
 

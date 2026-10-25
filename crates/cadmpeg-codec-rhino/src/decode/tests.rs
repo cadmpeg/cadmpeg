@@ -1176,14 +1176,16 @@ fn extrusion_caps_build_outer_and_hole_loops_with_opposite_face_senses() {
                 let id: cadmpeg_ir::ids::CurveId = format!("rhino:object:curve#cap-{index}")
                     .try_into()
                     .expect("valid identity");
-                ir.model.curves.push(Curve {
-                    native_ref: None,
-                    parameter_range: None,
-                    id: id.clone(),
-                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                        boundary.start_nurbs.clone(),
-                    )),
-                    source_object: Some(association.identity.clone()),
+                ir.model.curves.push({
+                    let (parameter_range, id, geometry, source_object) = (
+                        None,
+                        id.clone(),
+                        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                            boundary.start_nurbs.clone(),
+                        )),
+                        Some(association.identity.clone()),
+                    );
+                    Curve::new(id, geometry, parameter_range, source_object)
                 });
                 CommittedExtrusionBoundary {
                     boundary,

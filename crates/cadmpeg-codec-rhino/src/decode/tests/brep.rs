@@ -22,14 +22,11 @@ fn plane_pcurve_scaling_keeps_the_plane_surface() {
         .try_into()
         .expect("valid identity");
     let mut staged = BrepDraft::default();
-    staged.draft.model_mut().surfaces.push(Surface {
-        native_ref: None,
-        id: surface_id.clone(),
-        geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            plane,
-        )),
-        source_object: None,
-    });
+    staged.draft.model_mut().surfaces.push(Surface::new(
+        surface_id.clone(),
+        cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)),
+        None,
+    ));
     let scale = crate::test_support::millimeter_scale(25.4);
     super::super::scale_plane_pcurves(&mut staged, scale).expect("scale plane pcurves");
     assert_eq!(staged.draft.model().surfaces[0].id, surface_id);
@@ -52,31 +49,31 @@ fn fallback_discards_topology_and_unknown_record_self_link() {
         ],
         ..BrepDraft::default()
     };
-    staged.draft.model_mut().curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: curve_id.clone(),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
-        source_object: None,
+    staged.draft.model_mut().curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            curve_id.clone(),
+            CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+            None,
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     });
-    staged.draft.model_mut().surfaces.push(Surface {
-        native_ref: None,
-        id: surface_id.clone(),
-        geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+    staged.draft.model_mut().surfaces.push(Surface::new(
+        surface_id.clone(),
+        cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
             record: None,
         }),
-        source_object: None,
-    });
-    staged.draft.model_mut().bodies.push(Body {
-        native_ref: None,
-        id: "rhino:object:body#x".try_into().expect("valid identity"),
-        kind: BodyKind::Sheet,
-        regions: Vec::new(),
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
-    });
+        None,
+    ));
+    staged.draft.model_mut().bodies.push(Body::new(
+        "rhino:object:body#x".try_into().expect("valid identity"),
+        BodyKind::Sheet,
+        Vec::new(),
+        None,
+        None,
+        None,
+        None,
+    ));
     staged = staged.free_carrier_fallback("C2 failure");
     assert_eq!(staged.kind, BrepTransferKind::FreeCarrierFallback);
     assert!(staged.draft.model().bodies.is_empty());
@@ -168,12 +165,14 @@ fn fallback_candidate_links_free_carrier_before_full_ir_validation() {
         links: vec![unknown.to_string(), curve_id.to_string()],
         ..BrepDraft::default()
     };
-    staged.draft.model_mut().curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: curve_id.clone(),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(line_nurbs(0.0, 1.0, false))),
-        source_object: None,
+    staged.draft.model_mut().curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            curve_id.clone(),
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(line_nurbs(0.0, 1.0, false))),
+            None,
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     });
     let links = staged.links.clone();
     staged
@@ -206,12 +205,14 @@ fn colliding_staged_ids_are_rejected_without_mutating_the_candidate() {
     let curve_id: cadmpeg_ir::ids::CurveId = "rhino:object:curve#x.c3-0"
         .try_into()
         .expect("valid identity");
-    let curve = Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: curve_id,
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(line_nurbs(0.0, 1.0, false))),
-        source_object: None,
+    let curve = {
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            curve_id,
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(line_nurbs(0.0, 1.0, false))),
+            None,
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     };
     let mut live = CadIr::empty();
     live.model.curves.push(curve.clone());
@@ -679,18 +680,20 @@ fn fallback_keeps_thousands_of_free_carriers() {
     for index in 0..4096 {
         let id: cadmpeg_ir::ids::CurveId =
             format!("rhino:object:curve#{index:08}").try_into().unwrap();
-        staged.draft.model_mut().curves.push(Curve {
-            native_ref: None,
-            id: id.clone(),
-            parameter_range: None,
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                    cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                    cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-                )
-                .unwrap(),
-            )),
-            source_object: None,
+        staged.draft.model_mut().curves.push({
+            let (id, parameter_range, geometry, source_object) = (
+                id.clone(),
+                None,
+                CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                    cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                        cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                        cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .unwrap(),
+                )),
+                None,
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         });
         staged.links.push(id.to_string());
         staged.draft.exactness(&id, cadmpeg_ir::Exactness::Derived);

@@ -32,20 +32,17 @@ fn standalone_geometry_is_not_an_empty_result_without_brep() {
         None,
     ));
     let mut curve = CadIr::empty();
-    curve.model.curves.push(cadmpeg_ir::geometry::Curve {
-        native_ref: None,
-        id: "test:geometry:curve#0".try_into().unwrap(),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+    curve.model.curves.push(cadmpeg_ir::geometry::Curve::new(
+        "test:geometry:curve#0".try_into().unwrap(),
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::new(
                 FinitePoint3::ZERO,
                 cadmpeg_ir::units::UnitVector3::X_AXIS,
             ),
         )),
-        parameter_range: Some(
-            cadmpeg_ir::topology::IncreasingParameterInterval::new([0.0, 1.0]).unwrap(),
-        ),
-        source_object: None,
-    });
+        Some(cadmpeg_ir::topology::IncreasingParameterInterval::new([0.0, 1.0]).unwrap()),
+        None,
+    ));
     let mut mesh = CadIr::empty();
     mesh.model.tessellations.push(
         Tessellation::new(
@@ -59,35 +56,37 @@ fn standalone_geometry_is_not_an_empty_result_without_brep() {
         .unwrap(),
     );
     let mut subd = CadIr::empty();
-    subd.model.subds.push(SubdSurface {
-        native_ref: None,
-        id: "test:geometry:subd#0".try_into().unwrap(),
-        scheme: SubdScheme::CatmullClark,
-        source_object: None,
-        cage: SubdCage::new(
-            triangle()
-                .into_iter()
-                .map(|point| SubdVertex::new(point, SubdVertexTag::Smooth, None).unwrap())
-                .collect(),
-            [[0, 1], [1, 2], [2, 0]]
-                .into_iter()
-                .map(|vertices| {
-                    SubdEdge::new(vertices, [0.0, 0.0], SubdEdgeTag::Smooth, None, [0.0, 0.0])
-                        .unwrap()
-                })
-                .collect(),
-            vec![SubdFace::new(
-                (0..3)
-                    .map(|edge| SubdEdgeUse {
-                        edge,
-                        reversed: false,
+    subd.model.subds.push({
+        let (id, scheme, source_object, cage) = (
+            "test:geometry:subd#0".try_into().unwrap(),
+            SubdScheme::CatmullClark,
+            None,
+            SubdCage::new(
+                triangle()
+                    .into_iter()
+                    .map(|point| SubdVertex::new(point, SubdVertexTag::Smooth, None).unwrap())
+                    .collect(),
+                [[0, 1], [1, 2], [2, 0]]
+                    .into_iter()
+                    .map(|vertices| {
+                        SubdEdge::new(vertices, [0.0, 0.0], SubdEdgeTag::Smooth, None, [0.0, 0.0])
+                            .unwrap()
                     })
                     .collect(),
+                vec![SubdFace::new(
+                    (0..3)
+                        .map(|edge| SubdEdgeUse {
+                            edge,
+                            reversed: false,
+                        })
+                        .collect(),
+                )
+                .unwrap()],
+                Vec::new(),
             )
-            .unwrap()],
-            Vec::new(),
-        )
-        .unwrap(),
+            .unwrap(),
+        );
+        SubdSurface::new(id, scheme, cage, source_object)
     });
     for (arena, ir) in [
         ("points", point),

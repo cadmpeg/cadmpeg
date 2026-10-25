@@ -2603,12 +2603,9 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
 
-        ir.model.pcurves.push(Pcurve {
-            native_ref: None,
-            id: pcurve_id.clone(),
-            geometry,
-            metadata,
-        });
+        ir.model
+            .pcurves
+            .push(Pcurve::new(pcurve_id.clone(), geometry, metadata));
         if let Some(coedge) = ir
             .model
             .coedges
@@ -2746,10 +2743,9 @@ mod tests {
             let surface_id = SurfaceId::mint("test:model:entity#synthetic:support-plane")
                 .expect("identity grammar");
             let mut ir = CadIr::empty();
-            ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-                native_ref: None,
-                id: surface_id.clone(),
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            ir.model.surfaces.push(cadmpeg_ir::geometry::Surface::new(
+                surface_id.clone(),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                         Point3::new(0.0, 0.0, 0.0),
                         cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -2757,8 +2753,8 @@ mod tests {
                     )
                     .unwrap(),
                 )),
-                source_object: None,
-            });
+                None,
+            ));
             let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
             let points = vec![Point3::new(0.0, 0.0, 0.0); MAX_SUPPORT_UV_SAMPLES + 1];
             let values =
@@ -2852,12 +2848,11 @@ mod tests {
                 .expect("valid test surface");
                 let geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs.clone()));
                 let mut ir = CadIr::empty();
-                ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-                    native_ref: None,
-                    id: surface_id.clone(),
-                    geometry: geometry.clone(),
-                    source_object: None,
-                });
+                ir.model.surfaces.push(cadmpeg_ir::geometry::Surface::new(
+                    surface_id.clone(),
+                    geometry.clone(),
+                    None,
+                ));
                 let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
 
                 let fit_budget = GeometryWorkBudget::from_context(geometry_ctx, work_limit);

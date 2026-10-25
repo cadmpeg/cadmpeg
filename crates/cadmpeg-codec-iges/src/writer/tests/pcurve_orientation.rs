@@ -24,19 +24,18 @@ fn a_pcurve_end_whose_support_point_overflows_is_refused_as_non_finite() {
     ));
     let id = PcurveId::mint("test:iges:pcurve#overflow").expect("identity grammar");
     let mut ir = CadIr::empty();
-    ir.model.pcurves.push(Pcurve {
-        native_ref: None,
-        id: id.clone(),
-        geometry: PcurveGeometry::Line(
+    ir.model.pcurves.push(Pcurve::new(
+        id.clone(),
+        PcurveGeometry::Line(
             LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(f64::MAX, 0.0))
                 .expect("valid LinePcurve fixture"),
         ),
-        metadata: PcurveMetadata::general(
+        PcurveMetadata::general(
             None,
             Some(cadmpeg_ir::units::FiniteVector::new([-1.0, 1.0]).expect("finite range")),
             None,
         ),
-    });
+    ));
     let context = pcurve_orientation_context(
         &ir,
         &surface,
@@ -67,16 +66,15 @@ fn a_pcurve_end_whose_support_point_overflows_is_refused_as_non_finite() {
 fn line_pcurve_end_error(surface: &SurfaceGeometry, line: LinePcurve) -> String {
     let id = PcurveId::mint("test:iges:pcurve#overflow").expect("identity grammar");
     let mut ir = CadIr::empty();
-    ir.model.pcurves.push(Pcurve {
-        native_ref: None,
-        id: id.clone(),
-        geometry: PcurveGeometry::Line(line),
-        metadata: PcurveMetadata::general(
+    ir.model.pcurves.push(Pcurve::new(
+        id.clone(),
+        PcurveGeometry::Line(line),
+        PcurveMetadata::general(
             None,
             Some(cadmpeg_ir::units::FiniteVector::new([-1.0, 1.0]).expect("finite range")),
             None,
         ),
-    });
+    ));
     let context = pcurve_orientation_context(
         &ir,
         surface,
@@ -167,31 +165,33 @@ fn a_pcurve_on_an_extrusion_whose_directrix_acceleration_overflows_maps_to_finit
         .expect("identity grammar");
     let id = PcurveId::mint("test:iges:pcurve#extrusion").expect("identity grammar");
     let mut ir = CadIr::empty();
-    ir.model.curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: directrix.clone(),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
-            PlacedCurve::try_new(
-                Box::new(SolvedCurveGeometry::Circle(
-                    cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                        Point3::new(-2.0, 0.0, 0.0),
-                        Vector3::new(0.0, 0.0, 1.0),
-                        Vector3::new(1.0, 0.0, 0.0),
-                        2.0,
-                    )
-                    .expect("valid CircleCurve fixture"),
-                )),
-                cadmpeg_ir::transform::Transform::affine([
-                    [f64::MAX, 0.0, 0.0, 0.0],
-                    [0.0, 1.0, 0.0, 0.0],
-                    [0.0, 0.0, 1.0, 0.0],
-                ])
-                .expect("affine transform"),
-            )
-            .expect("valid PlacedCurve fixture"),
-        )),
-        source_object: None,
+    ir.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            directrix.clone(),
+            CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
+                PlacedCurve::try_new(
+                    Box::new(SolvedCurveGeometry::Circle(
+                        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                            Point3::new(-2.0, 0.0, 0.0),
+                            Vector3::new(0.0, 0.0, 1.0),
+                            Vector3::new(1.0, 0.0, 0.0),
+                            2.0,
+                        )
+                        .expect("valid CircleCurve fixture"),
+                    )),
+                    cadmpeg_ir::transform::Transform::affine([
+                        [f64::MAX, 0.0, 0.0, 0.0],
+                        [0.0, 1.0, 0.0, 0.0],
+                        [0.0, 0.0, 1.0, 0.0],
+                    ])
+                    .expect("affine transform"),
+                )
+                .expect("valid PlacedCurve fixture"),
+            )),
+            None,
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     });
     ir.model.procedural_surfaces.push(ProceduralSurface::new(
         construction.clone(),
@@ -207,19 +207,18 @@ fn a_pcurve_on_an_extrusion_whose_directrix_acceleration_overflows_maps_to_finit
         ),
         None,
     ));
-    ir.model.pcurves.push(Pcurve {
-        native_ref: None,
-        id: id.clone(),
-        geometry: PcurveGeometry::Line(
+    ir.model.pcurves.push(Pcurve::new(
+        id.clone(),
+        PcurveGeometry::Line(
             LinePcurve::try_new(Point2::new(0.0, 1.0), Point2::new(0.0, 1.0))
                 .expect("valid LinePcurve fixture"),
         ),
-        metadata: PcurveMetadata::general(
+        PcurveMetadata::general(
             None,
             Some(cadmpeg_ir::units::FiniteVector::new([-1.0, 1.0]).expect("finite range")),
             None,
         ),
-    });
+    ));
     let surface = SurfaceGeometry::Procedural {
         construction,
         cache: None,

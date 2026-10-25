@@ -837,11 +837,9 @@ fn emit_offset_surface(
         cache: None,
     };
     admit_brep_entity(sink.ctx)?;
-    sink.out.surfaces.push(Surface {
-        native_ref: None,
-        id: surface,
-        source_object: None,
-        geometry,
+    sink.out.surfaces.push({
+        let (id, source_object, geometry) = (surface, None, geometry);
+        Surface::new(id, geometry, source_object)
     });
     Ok(())
 }
@@ -914,11 +912,9 @@ fn ensure_surface_support(
                     Some("procedural_support"),
                 );
                 admit_brep_entity(sink.ctx)?;
-                sink.out.surfaces.push(Surface {
-                    native_ref: None,
-                    id: id.clone(),
-                    source_object: None,
-                    geometry,
+                sink.out.surfaces.push({
+                    let (id, source_object, geometry) = (id.clone(), None, geometry);
+                    Surface::new(id, geometry, source_object)
                 });
             }
             Ok(Some(id))
@@ -973,13 +969,13 @@ fn ensure_surface_support(
                 annotations.exactness(surface.as_str(), Exactness::Unknown);
                 sink.out.stats.unknown_procedural_supports += 1;
                 admit_brep_entity(sink.ctx)?;
-                sink.out.surfaces.push(Surface {
-                    native_ref: None,
-                    id: surface.clone(),
-                    source_object: None,
-                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
-                        record: None,
-                    }),
+                sink.out.surfaces.push({
+                    let (id, source_object, geometry) = (
+                        surface.clone(),
+                        None,
+                        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+                    );
+                    Surface::new(id, geometry, source_object)
                 });
             }
             Ok(Some(surface))
@@ -1725,12 +1721,8 @@ fn decode_graph(
             Some("00_12"),
         );
         admit_brep_entity(ctx)?;
-        out.vertices.push(Vertex {
-            native_ref: None,
-            id: id_vertex(a),
-            point: id_point(point_attr),
-            tolerance: None,
-        });
+        out.vertices
+            .push(Vertex::new(id_vertex(a), id_point(point_attr), None));
     }
 
     // Curves and edges. An edge keeps a curve only when its carrier decodes to a
@@ -1786,12 +1778,8 @@ fn decode_graph(
             out.points
                 .push(Point::new(point_id.clone(), finite_position, None));
             admit_brep_entity(ctx)?;
-            out.vertices.push(Vertex {
-                native_ref: None,
-                id: vertex_id.clone(),
-                point: point_id,
-                tolerance: None,
-            });
+            out.vertices
+                .push(Vertex::new(vertex_id.clone(), point_id, None));
             (vertex_id.clone(), vertex_id)
         } else {
             (id_vertex(start_v), id_vertex(end_v))
@@ -1861,14 +1849,16 @@ fn decode_graph(
                         );
                         annotations.exactness(id_curve(curve_attr).as_str(), Exactness::Unknown);
                         admit_brep_entity(ctx)?;
-                        out.curves.push(Curve {
-                            native_ref: None,
-                            parameter_range: None,
-                            id: id_curve(curve_attr),
-                            source_object: None,
-                            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
-                                record: None,
-                            }),
+                        out.curves.push({
+                            let (parameter_range, id, source_object, geometry) = (
+                                None,
+                                id_curve(curve_attr),
+                                None,
+                                CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
+                                    record: None,
+                                }),
+                            );
+                            Curve::new(id, geometry, parameter_range, source_object)
                         });
                     }
                     curve = Some(id_curve(curve_attr));
@@ -1884,18 +1874,14 @@ fn decode_graph(
             Some("00_10"),
         );
         admit_brep_entity(ctx)?;
-        out.edges.push(Edge {
-            native_ref: None,
-            id: id_edge(e),
-            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
-                curve,
-                parameter_range.map(|(range, _)| range),
-            )
-            .map_err(cadmpeg_core::CodecError::malformed)?,
-            start: start_id,
-            end: end_id,
-            tolerance: None,
-        });
+        out.edges.push(Edge::new(
+            id_edge(e),
+            cadmpeg_ir::topology::EdgeCarrier::new(curve, parameter_range.map(|(range, _)| range))
+                .map_err(cadmpeg_core::CodecError::malformed)?,
+            start_id,
+            end_id,
+            None,
+        ));
         edge_set.insert(e);
     }
 
@@ -2025,16 +2011,15 @@ fn decode_graph(
                         );
                         annotations.exactness(id.as_str(), Exactness::Derived);
                         admit_brep_entity(ctx)?;
-                        out.pcurves.push(Pcurve {
-                            native_ref: None,
-                            id: id.clone(),
+                        out.pcurves.push(Pcurve::new(
+                            id.clone(),
                             geometry,
-                            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
+                            cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                                 None,
                                 Some(finite_range),
                                 Some(fit_tolerance),
                             ),
-                        });
+                        ));
                         Ok(Some(
                             cadmpeg_ir::geometry::DirectedParameterRange::new(parameter_range).map(
                                 |range| {
@@ -2070,15 +2055,17 @@ fn decode_graph(
                     };
                 }
                 admit_brep_entity(ctx)?;
-                out.coedges.push(Coedge {
-                    native_ref: None,
-                    id: id_coedge(ce_attr),
-                    owner_loop: id_loop(*loop_attr),
-                    edge: id_edge(edge_attr),
-                    radial_next: partner.unwrap_or_else(|| id_coedge(ce_attr)),
-                    sense,
-                    use_curve: None,
-                    pcurves,
+                out.coedges.push({
+                    let (id, owner_loop, edge, radial_next, sense, use_curve, pcurves) = (
+                        id_coedge(ce_attr),
+                        id_loop(*loop_attr),
+                        id_edge(edge_attr),
+                        partner.unwrap_or_else(|| id_coedge(ce_attr)),
+                        sense,
+                        None,
+                        pcurves,
+                    );
+                    Coedge::new(id, owner_loop, edge, radial_next, sense, pcurves, use_curve)
                 });
             }
         }
@@ -2103,12 +2090,11 @@ fn decode_graph(
                 continue;
             };
             admit_brep_entity(ctx)?;
-            out.loops.push(Loop {
-                native_ref: None,
-                id: id_loop(*loop_attr),
-                face: id_face(f.bridge_attr),
-                boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
-            });
+            out.loops.push(Loop::new(
+                id_loop(*loop_attr),
+                id_face(f.bridge_attr),
+                cadmpeg_ir::topology::LoopBoundary::Ring(ring),
+            ));
         }
     }
     let loop_set = kept_loops;
@@ -2211,11 +2197,9 @@ fn decode_graph(
                     )?;
                 }
                 admit_brep_entity(ctx)?;
-                out.surfaces.push(Surface {
-                    native_ref: None,
-                    id: id_surf(f.bridge_attr),
-                    source_object: None,
-                    geometry,
+                out.surfaces.push({
+                    let (id, source_object, geometry) = (id_surf(f.bridge_attr), None, geometry);
+                    Surface::new(id, geometry, source_object)
                 });
             }
             _ => {
@@ -2379,11 +2363,10 @@ fn decode_graph(
                         Some("00_38"),
                     );
                     admit_brep_entity(ctx)?;
-                    out.surfaces.push(Surface {
-                        native_ref: None,
-                        id: id_surf(f.bridge_attr),
-                        source_object: None,
-                        geometry,
+                    out.surfaces.push({
+                        let (id, source_object, geometry) =
+                            (id_surf(f.bridge_attr), None, geometry);
+                        Surface::new(id, geometry, source_object)
                     });
                 } else if let Some(SweepSurfaceResolution {
                     geometry,
@@ -2412,11 +2395,13 @@ fn decode_graph(
                         annotations.exactness(id_surf(f.bridge_attr).as_str(), exactness);
                     }
                     admit_brep_entity(ctx)?;
-                    out.surfaces.push(Surface {
-                        native_ref: None,
-                        id: id_surf(f.bridge_attr),
-                        source_object: None,
-                        geometry: SurfaceGeometry::Solved(geometry),
+                    out.surfaces.push({
+                        let (id, source_object, geometry) = (
+                            id_surf(f.bridge_attr),
+                            None,
+                            SurfaceGeometry::Solved(geometry),
+                        );
+                        Surface::new(id, geometry, source_object)
                     });
                 } else {
                     out.stats.unknown_surface_faces += 1;
@@ -2428,13 +2413,15 @@ fn decode_graph(
                     );
                     annotations.exactness(id_surf(f.bridge_attr).as_str(), Exactness::Unknown);
                     admit_brep_entity(ctx)?;
-                    out.surfaces.push(Surface {
-                        native_ref: None,
-                        id: id_surf(f.bridge_attr),
-                        source_object: None,
-                        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
-                            record: None,
-                        }),
+                    out.surfaces.push({
+                        let (id, source_object, geometry) = (
+                            id_surf(f.bridge_attr),
+                            None,
+                            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+                                record: None,
+                            }),
+                        );
+                        Surface::new(id, geometry, source_object)
                     });
                 }
             }
@@ -2455,26 +2442,26 @@ fn decode_graph(
                 None => 0,
             },
         };
-        out.faces.push(Face {
-            native_ref: None,
-            id: id_face(f.bridge_attr),
-            shell: ShellId::compose(&shell_namespace(), shell_attr),
-            surface: id_surf(f.bridge_attr),
-            sense: surface_sense(f.sense, surface_orientation_reversed),
-            loops: cadmpeg_ir::topology::FaceLoops::unspecified(loops),
-            name: None,
-            color: t
-                .bridges()
-                .get(&f.bridge_attr)
-                .and_then(|bridge| bridge.owner)
-                .and_then(|owner| {
-                    out.face_colors
-                        .iter()
-                        .find(|entry| entry.value.face_attr == owner)
-                })
-                .map(|entry| entry.value.color),
-            tolerance: None,
-        });
+        out.faces.push(
+            Face::new(
+                id_face(f.bridge_attr),
+                ShellId::compose(&shell_namespace(), shell_attr),
+                id_surf(f.bridge_attr),
+                surface_sense(f.sense, surface_orientation_reversed),
+                cadmpeg_ir::topology::FaceLoops::unspecified(loops),
+            )
+            .with_color(
+                t.bridges()
+                    .get(&f.bridge_attr)
+                    .and_then(|bridge| bridge.owner)
+                    .and_then(|owner| {
+                        out.face_colors
+                            .iter()
+                            .find(|entry| entry.value.face_attr == owner)
+                    })
+                    .map(|entry| entry.value.color),
+            ),
+        );
     }
     let mut emitted_faces = HashMap::new();
     emitted_faces.extend(out.faces.iter().map(|face| (face.id.as_str(), &face.id)));
@@ -2592,12 +2579,11 @@ fn decode_graph(
                 region_shells.push(shell_id);
             }
             admit_brep_entity(ctx)?;
-            out.regions.push(Region {
-                native_ref: None,
-                id: region_id.clone(),
-                body: body_id.clone(),
-                shells: region_shells,
-            });
+            out.regions.push(Region::new(
+                region_id.clone(),
+                body_id.clone(),
+                region_shells,
+            ));
             body_regions.push(region_id);
         } else {
             for region in native_regions {
@@ -2645,26 +2631,24 @@ fn decode_graph(
                     }
                 }
                 admit_brep_entity(ctx)?;
-                out.regions.push(Region {
-                    native_ref: None,
-                    id: region_id.clone(),
-                    body: body_id.clone(),
-                    shells: region_shells,
-                });
+                out.regions.push(Region::new(
+                    region_id.clone(),
+                    body_id.clone(),
+                    region_shells,
+                ));
                 body_regions.push(region_id);
             }
         }
         admit_brep_entity(ctx)?;
-        out.bodies.push(Body {
-            native_ref: None,
-            id: body_id,
-            kind: body_record.map_or(BodyKind::Solid, |record| record.kind),
-            regions: body_regions,
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        });
+        out.bodies.push(Body::new(
+            body_id,
+            body_record.map_or(BodyKind::Solid, |record| record.kind),
+            body_regions,
+            None,
+            None,
+            None,
+            None,
+        ));
     }
 
     let mut body_ids_by_attr = HashMap::<u16, Option<&str>>::new();
@@ -3065,12 +3049,11 @@ fn derive_planar_pcurves(
             _ => continue,
         };
         let id = PcurveId::compose(&pcurve_namespace(), coedge.id.key());
-        let pcurve = Pcurve {
-            native_ref: None,
-            id: id.clone(),
+        let pcurve = Pcurve::new(
+            id.clone(),
             geometry,
-            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
-        };
+            cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
+        );
         derived.push((coedge.id.clone(), id, pcurve));
     }
     let mut coedge_indices = HashMap::new();
@@ -3427,16 +3410,11 @@ fn derive_cylindrical_pcurves(
         derived.push((
             coedge.id.clone(),
             id.clone(),
-            Pcurve {
-                native_ref: None,
+            Pcurve::new(
                 id,
                 geometry,
-                metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
-                    None,
-                    parameter_range,
-                    None,
-                ),
-            },
+                cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(None, parameter_range, None),
+            ),
         ));
     }
     let mut coedge_indices = HashMap::new();
@@ -3962,10 +3940,9 @@ fn derive_revolved_circle_pcurves(
         derived.push((
             coedge.id.clone(),
             id.clone(),
-            Pcurve {
-                native_ref: None,
+            Pcurve::new(
                 id,
-                geometry: PcurveGeometry::Line(
+                PcurveGeometry::Line(
                     match cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                         cadmpeg_ir::math::Point2::new(phase, v),
                         cadmpeg_ir::math::Point2::new(sense, 0.0),
@@ -3974,8 +3951,8 @@ fn derive_revolved_circle_pcurves(
                         Err(_) => continue,
                     },
                 ),
-                metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
-            },
+                cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
+            ),
         ));
     }
     let mut coedge_indices = HashMap::new();
@@ -4202,12 +4179,11 @@ fn derive_spherical_pcurves(
         derived.push((
             coedge.id.clone(),
             id.clone(),
-            Pcurve {
-                native_ref: None,
+            Pcurve::new(
                 id,
                 geometry,
-                metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
-            },
+                cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
+            ),
         ));
     }
     let mut coedge_indices = HashMap::new();
@@ -4404,16 +4380,15 @@ fn derive_nurbs_isoparametric_pcurves(
         derived.push((
             coedge.id.clone(),
             id.clone(),
-            Pcurve {
-                native_ref: None,
+            Pcurve::new(
                 id,
                 geometry,
-                metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
+                cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                     None,
                     parameter_range,
                     fit_tolerance,
                 ),
-            },
+            ),
             cache,
         ));
     }
@@ -6277,51 +6252,56 @@ fn synthesize_cylinder_seams(
             annotations.exactness(id, Exactness::Derived);
         }
         admit_brep_entity(ctx)?;
-        out.curves.push(Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: curve_id.clone(),
-            source_object: None,
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                match cadmpeg_ir::geometry::analytic::LineCurve::try_new(pa, direction) {
-                    Ok(payload) => payload,
-                    Err(_) => continue,
-                },
-            )),
+        out.curves.push({
+            let (parameter_range, id, source_object, geometry) = (
+                None,
+                curve_id.clone(),
+                None,
+                CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                    match cadmpeg_ir::geometry::analytic::LineCurve::try_new(pa, direction) {
+                        Ok(payload) => payload,
+                        Err(_) => continue,
+                    },
+                )),
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         });
         admit_brep_entity(ctx)?;
-        out.edges.push(Edge {
-            native_ref: None,
-            id: edge_id.clone(),
-            carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some([0.0, norm]))
+        out.edges.push(Edge::new(
+            edge_id.clone(),
+            cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some([0.0, norm]))
                 .map_err(cadmpeg_core::CodecError::malformed)?,
-            start: vertex_a,
-            end: vertex_b,
-            tolerance: None,
-        });
+            vertex_a,
+            vertex_b,
+            None,
+        ));
         coedge_indices.insert(seam_a.clone(), out.coedges.len());
         admit_brep_entity(ctx)?;
-        out.coedges.push(Coedge {
-            native_ref: None,
-            id: seam_a.clone(),
-            owner_loop: loop_a.clone(),
-            edge: edge_id.clone(),
-            radial_next: seam_b.clone(),
-            sense: Sense::Forward,
-            use_curve: None,
-            pcurves: Vec::new(),
+        out.coedges.push({
+            let (id, owner_loop, edge, radial_next, sense, use_curve, pcurves) = (
+                seam_a.clone(),
+                loop_a.clone(),
+                edge_id.clone(),
+                seam_b.clone(),
+                Sense::Forward,
+                None,
+                Vec::new(),
+            );
+            Coedge::new(id, owner_loop, edge, radial_next, sense, pcurves, use_curve)
         });
         coedge_indices.insert(seam_b.clone(), out.coedges.len());
         admit_brep_entity(ctx)?;
-        out.coedges.push(Coedge {
-            native_ref: None,
-            id: seam_b.clone(),
-            owner_loop: loop_a.clone(),
-            edge: edge_id,
-            radial_next: seam_a.clone(),
-            sense: Sense::Reversed,
-            use_curve: None,
-            pcurves: Vec::new(),
+        out.coedges.push({
+            let (id, owner_loop, edge, radial_next, sense, use_curve, pcurves) = (
+                seam_b.clone(),
+                loop_a.clone(),
+                edge_id,
+                seam_a.clone(),
+                Sense::Reversed,
+                None,
+                Vec::new(),
+            );
+            Coedge::new(id, owner_loop, edge, radial_next, sense, pcurves, use_curve)
         });
         let ring_ids = [circle_a.clone(), seam_a, circle_b.clone(), seam_b];
         let mut ring_members = Vec::new();
@@ -6492,12 +6472,14 @@ fn synthesize_sphere_seams(
         );
         annotations.exactness(curve_id.as_str(), Exactness::Derived);
         admit_brep_entity(ctx)?;
-        out.curves.push(Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: curve_id.clone(),
-            source_object: None,
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate)),
+        out.curves.push({
+            let (parameter_range, id, source_object, geometry) = (
+                None,
+                curve_id.clone(),
+                None,
+                CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate)),
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         });
         out.edges[edge_index]
             .set_curve(Some(curve_id))
@@ -6656,12 +6638,8 @@ fn synthesize_sphere_seams(
                 out.points
                     .push(Point::new(point_id.clone(), degenerate.point(), None));
                 admit_brep_entity(ctx)?;
-                out.vertices.push(Vertex {
-                    native_ref: None,
-                    id: vertex_id.clone(),
-                    point: point_id,
-                    tolerance: None,
-                });
+                out.vertices
+                    .push(Vertex::new(vertex_id.clone(), point_id, None));
                 vertex_id
             }
         };
@@ -6675,37 +6653,33 @@ fn synthesize_sphere_seams(
             annotations.exactness(id, Exactness::Derived);
         }
         admit_brep_entity(ctx)?;
-        out.curves.push(Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: curve_id.clone(),
-            source_object: None,
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate)),
+        out.curves.push({
+            let (parameter_range, id, source_object, geometry) = (
+                None,
+                curve_id.clone(),
+                None,
+                CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate)),
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         });
         admit_brep_entity(ctx)?;
-        out.edges.push(Edge {
-            native_ref: None,
-            id: edge_id.clone(),
-            carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id)),
-            start: pole_vertex.clone(),
-            end: pole_vertex,
-            tolerance: None,
-        });
+        out.edges.push(Edge::new(
+            edge_id.clone(),
+            cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id)),
+            pole_vertex.clone(),
+            pole_vertex,
+            None,
+        ));
         let Some(full_turn) = cadmpeg_ir::units::FiniteVector::new([0.0, std::f64::consts::TAU])
         else {
             continue;
         };
         admit_brep_entity(ctx)?;
-        out.pcurves.push(Pcurve {
-            native_ref: None,
-            id: pcurve_id.clone(),
-            geometry: PcurveGeometry::Line(pcurve),
-            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
-                None,
-                Some(full_turn),
-                None,
-            ),
-        });
+        out.pcurves.push(Pcurve::new(
+            pcurve_id.clone(),
+            PcurveGeometry::Line(pcurve),
+            cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(None, Some(full_turn), None),
+        ));
         ring.push(coedge_id.clone());
         coedge_indices.insert(coedge_id.clone(), out.coedges.len());
         let pcurve_uses = vec![cadmpeg_ir::topology::PcurveUse {
@@ -6717,15 +6691,17 @@ fn synthesize_sphere_seams(
             ),
         }];
         admit_brep_entity(ctx)?;
-        out.coedges.push(Coedge {
-            native_ref: None,
-            id: coedge_id.clone(),
-            owner_loop: loop_id.clone(),
-            edge: edge_id,
-            radial_next: coedge_id.clone(),
-            sense: Sense::Forward,
-            use_curve: None,
-            pcurves: pcurve_uses,
+        out.coedges.push({
+            let (id, owner_loop, edge, radial_next, sense, use_curve, pcurves) = (
+                coedge_id.clone(),
+                loop_id.clone(),
+                edge_id,
+                coedge_id.clone(),
+                Sense::Forward,
+                None,
+                pcurve_uses,
+            );
+            Coedge::new(id, owner_loop, edge, radial_next, sense, pcurves, use_curve)
         });
         let ring = cadmpeg_ir::topology::LoopRing::new(ring, Vec::new()).map_err(|error| {
             cadmpeg_core::CodecError::malformed(format_args!(
@@ -6745,12 +6721,10 @@ fn emit_curve(
     carrier: &CurveCarrier,
 ) -> Result<(), cadmpeg_core::CodecError> {
     admit_brep_entity(ctx)?;
-    out.curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: id_curve(carrier.attr),
-        source_object: None,
-        geometry: carrier.geometry.clone(),
+    out.curves.push({
+        let (parameter_range, id, source_object, geometry) =
+            (None, id_curve(carrier.attr), None, carrier.geometry.clone());
+        Curve::new(id, geometry, parameter_range, source_object)
     });
     Ok(())
 }
@@ -7642,44 +7616,44 @@ mod tests {
         use cadmpeg_ir::ids::{CoedgeId, EdgeId, FaceId, LoopId, ShellId, SurfaceId};
         use cadmpeg_ir::topology::{Coedge, Face, Loop, Sense};
 
-        let face = |id: &str, lp: &str| Face {
-            native_ref: None,
-            id: FaceId::mint(format!("test:model:entity#{id}")).expect("identity grammar"),
-            shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
-            surface: SurfaceId::mint(format!("test:model:entity#surface-{id}"))
-                .expect("identity grammar"),
-            sense: Sense::Forward,
-            loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![LoopId::mint(format!(
-                "test:model:entity#{lp}"
-            ))
-            .expect("identity grammar")]),
-            name: None,
-            color: None,
-            tolerance: None,
+        let face = |id: &str, lp: &str| {
+            Face::new(
+                FaceId::mint(format!("test:model:entity#{id}")).expect("identity grammar"),
+                ShellId::mint("test:model:entity#shell").expect("identity grammar"),
+                SurfaceId::mint(format!("test:model:entity#surface-{id}"))
+                    .expect("identity grammar"),
+                Sense::Forward,
+                cadmpeg_ir::topology::FaceLoops::unspecified(vec![LoopId::mint(format!(
+                    "test:model:entity#{lp}"
+                ))
+                .expect("identity grammar")]),
+            )
         };
-        let lp = |id: &str, face: &str, coedge: &str| Loop {
-            native_ref: None,
-            id: LoopId::mint(format!("test:model:entity#{id}")).expect("identity grammar"),
-            face: FaceId::mint(format!("test:model:entity#{face}")).expect("identity grammar"),
-            boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                cadmpeg_ir::topology::LoopRing::new(
-                    vec![CoedgeId::mint(format!("test:model:entity#{coedge}"))
-                        .expect("identity grammar")],
-                    Vec::new(),
-                )
-                .expect("valid loop ring"),
-            ),
+        let lp = |id: &str, face: &str, coedge: &str| {
+            Loop::new(
+                LoopId::mint(format!("test:model:entity#{id}")).expect("identity grammar"),
+                FaceId::mint(format!("test:model:entity#{face}")).expect("identity grammar"),
+                cadmpeg_ir::topology::LoopBoundary::Ring(
+                    cadmpeg_ir::topology::LoopRing::new(
+                        vec![CoedgeId::mint(format!("test:model:entity#{coedge}"))
+                            .expect("identity grammar")],
+                        Vec::new(),
+                    )
+                    .expect("valid loop ring"),
+                ),
+            )
         };
-        let coedge = |id: &str, lp: &str, radial: &str, sense| Coedge {
-            native_ref: None,
-            id: CoedgeId::mint(format!("test:model:entity#{id}")).expect("identity grammar"),
-            owner_loop: LoopId::mint(format!("test:model:entity#{lp}")).expect("identity grammar"),
-            edge: EdgeId::mint("test:model:entity#edge").expect("identity grammar"),
-            radial_next: CoedgeId::mint(format!("test:model:entity#{radial}"))
-                .expect("identity grammar"),
-            sense,
-            use_curve: None,
-            pcurves: Vec::new(),
+        let coedge = |id: &str, lp: &str, radial: &str, sense| {
+            let (id, owner_loop, edge, radial_next, sense, use_curve, pcurves) = (
+                CoedgeId::mint(format!("test:model:entity#{id}")).expect("identity grammar"),
+                LoopId::mint(format!("test:model:entity#{lp}")).expect("identity grammar"),
+                EdgeId::mint("test:model:entity#edge").expect("identity grammar"),
+                CoedgeId::mint(format!("test:model:entity#{radial}")).expect("identity grammar"),
+                sense,
+                None,
+                Vec::new(),
+            );
+            Coedge::new(id, owner_loop, edge, radial_next, sense, pcurves, use_curve)
         };
         let mut brep = super::Brep {
             faces: vec![face("face-a", "loop-a"), face("face-b", "loop-b")],
@@ -7712,43 +7686,43 @@ mod tests {
         use cadmpeg_ir::topology::{Coedge, Face, Loop, Sense};
 
         let mint = |id: &str| format!("test:model:entity#{id}");
-        let face = |id: &str| Face {
-            native_ref: None,
-            id: FaceId::mint(mint(id)).expect("identity grammar"),
-            shell: ShellId::mint(mint("shell")).expect("identity grammar"),
-            surface: SurfaceId::mint(mint(&format!("surface-{id}"))).expect("identity grammar"),
-            sense: Sense::Forward,
-            loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![LoopId::mint(mint(
-                &format!("loop-{id}"),
-            ))
-            .expect("identity grammar")]),
-            name: None,
-            color: None,
-            tolerance: None,
+        let face = |id: &str| {
+            Face::new(
+                FaceId::mint(mint(id)).expect("identity grammar"),
+                ShellId::mint(mint("shell")).expect("identity grammar"),
+                SurfaceId::mint(mint(&format!("surface-{id}"))).expect("identity grammar"),
+                Sense::Forward,
+                cadmpeg_ir::topology::FaceLoops::unspecified(vec![LoopId::mint(mint(&format!(
+                    "loop-{id}"
+                )))
+                .expect("identity grammar")]),
+            )
         };
-        let lp = |face: &str| Loop {
-            native_ref: None,
-            id: LoopId::mint(mint(&format!("loop-{face}"))).expect("identity grammar"),
-            face: FaceId::mint(mint(face)).expect("identity grammar"),
-            boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                cadmpeg_ir::topology::LoopRing::new(
-                    vec![CoedgeId::mint(mint(&format!("coedge-{face}-0")))
-                        .expect("identity grammar")],
-                    Vec::new(),
-                )
-                .expect("valid loop ring"),
-            ),
+        let lp = |face: &str| {
+            Loop::new(
+                LoopId::mint(mint(&format!("loop-{face}"))).expect("identity grammar"),
+                FaceId::mint(mint(face)).expect("identity grammar"),
+                cadmpeg_ir::topology::LoopBoundary::Ring(
+                    cadmpeg_ir::topology::LoopRing::new(
+                        vec![CoedgeId::mint(mint(&format!("coedge-{face}-0")))
+                            .expect("identity grammar")],
+                        Vec::new(),
+                    )
+                    .expect("valid loop ring"),
+                ),
+            )
         };
-        let coedge = |face: &str, index: usize, edge: &str| Coedge {
-            native_ref: None,
-            id: CoedgeId::mint(mint(&format!("coedge-{face}-{index}"))).expect("identity grammar"),
-            owner_loop: LoopId::mint(mint(&format!("loop-{face}"))).expect("identity grammar"),
-            edge: EdgeId::mint(mint(edge)).expect("identity grammar"),
-            radial_next: CoedgeId::mint(mint(&format!("coedge-{face}-{index}")))
-                .expect("identity grammar"),
-            sense: Sense::Forward,
-            use_curve: None,
-            pcurves: Vec::new(),
+        let coedge = |face: &str, index: usize, edge: &str| {
+            let (id, owner_loop, edge, radial_next, sense, use_curve, pcurves) = (
+                CoedgeId::mint(mint(&format!("coedge-{face}-{index}"))).expect("identity grammar"),
+                LoopId::mint(mint(&format!("loop-{face}"))).expect("identity grammar"),
+                EdgeId::mint(mint(edge)).expect("identity grammar"),
+                CoedgeId::mint(mint(&format!("coedge-{face}-{index}"))).expect("identity grammar"),
+                Sense::Forward,
+                None,
+                Vec::new(),
+            );
+            Coedge::new(id, owner_loop, edge, radial_next, sense, pcurves, use_curve)
         };
         let mut brep = super::Brep {
             faces: vec![face("a"), face("b"), face("c")],
@@ -7932,18 +7906,20 @@ mod tests {
 
         let spine = CurveId::mint("test:model:entity#spine").expect("identity grammar");
         let mut brep = super::Brep {
-            curves: vec![Curve {
-                native_ref: None,
-                parameter_range: None,
-                id: spine.clone(),
-                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                    cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                        cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                        cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-                    )
-                    .unwrap(),
-                )),
-                source_object: None,
+            curves: vec![{
+                let (parameter_range, id, geometry, source_object) = (
+                    None,
+                    spine.clone(),
+                    CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                            cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                        )
+                        .unwrap(),
+                    )),
+                    None,
+                );
+                Curve::new(id, geometry, parameter_range, source_object)
             }],
             procedural_surfaces: vec![ProceduralSurface::new(
                 ProceduralSurfaceId::mint("test:model:entity#blend").expect("identity grammar"),
@@ -8498,93 +8474,75 @@ mod tests {
         let coedge_id =
             cadmpeg_ir::ids::CoedgeId::mint("test:model:entity#coedge").expect("identity grammar");
         let mut brep = super::Brep {
-            surfaces: vec![Surface {
-                native_ref: None,
-                id: surface_id.clone(),
-                geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(
-                    SolvedSurfaceGeometry::Cylinder(
-                        cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                            cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-                            cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-                            1000.0,
-                        )
-                        .unwrap(),
-                    ),
-                ),
-                source_object: None,
-            }],
-            curves: vec![Curve {
-                native_ref: None,
-                parameter_range: None,
-                id: curve_id.clone(),
-                geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                    test_nurbs_curve(
-                        2,
-                        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-                        vec![
-                            cadmpeg_ir::math::Point3::new(1000.0, 0.0, 0.0),
-                            cadmpeg_ir::math::Point3::new(1000.0, 0.0, 1000.0),
-                            cadmpeg_ir::math::Point3::new(1000.0, 0.0, 0.0),
-                        ],
-                        None,
-                    ),
+            surfaces: vec![Surface::new(
+                surface_id.clone(),
+                cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                    cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                        cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                        cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                        cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                        1000.0,
+                    )
+                    .unwrap(),
                 )),
-                source_object: None,
+                None,
+            )],
+            curves: vec![{
+                let (parameter_range, id, geometry, source_object) = (
+                    None,
+                    curve_id.clone(),
+                    cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                        test_nurbs_curve(
+                            2,
+                            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                            vec![
+                                cadmpeg_ir::math::Point3::new(1000.0, 0.0, 0.0),
+                                cadmpeg_ir::math::Point3::new(1000.0, 0.0, 1000.0),
+                                cadmpeg_ir::math::Point3::new(1000.0, 0.0, 0.0),
+                            ],
+                            None,
+                        ),
+                    )),
+                    None,
+                );
+                Curve::new(id, geometry, parameter_range, source_object)
             }],
-            faces: vec![Face {
-                native_ref: None,
-                id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
-                shell: cadmpeg_ir::ids::ShellId::mint("test:model:entity#shell")
+            faces: vec![Face::new(
+                FaceId::mint("test:model:entity#face").expect("identity grammar"),
+                cadmpeg_ir::ids::ShellId::mint("test:model:entity#shell")
                     .expect("identity grammar"),
-                surface: surface_id,
-                sense: Sense::Forward,
-                loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![loop_id.clone()]),
-                name: None,
-                color: None,
-                tolerance: None,
-            }],
-            loops: vec![Loop {
-                native_ref: None,
-                id: loop_id.clone(),
-                face: FaceId::mint("test:model:entity#face").expect("identity grammar"),
-                boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+                surface_id,
+                Sense::Forward,
+                cadmpeg_ir::topology::FaceLoops::unspecified(vec![loop_id.clone()]),
+            )],
+            loops: vec![Loop::new(
+                loop_id.clone(),
+                FaceId::mint("test:model:entity#face").expect("identity grammar"),
+                cadmpeg_ir::topology::LoopBoundary::Ring(
                     cadmpeg_ir::topology::LoopRing::new(vec![coedge_id.clone()], Vec::new())
                         .expect("valid loop ring"),
                 ),
-            }],
-            coedges: vec![Coedge {
-                native_ref: None,
-                id: coedge_id,
-                owner_loop: loop_id,
-                edge: edge_id.clone(),
-                radial_next: cadmpeg_ir::ids::CoedgeId::mint("test:model:entity#coedge")
+            )],
+            coedges: vec![Coedge::new(
+                coedge_id,
+                loop_id,
+                edge_id.clone(),
+                cadmpeg_ir::ids::CoedgeId::mint("test:model:entity#coedge")
                     .expect("identity grammar"),
-                sense: Sense::Forward,
-                pcurves: Vec::new(),
-                use_curve: None,
-            }],
-            edges: vec![Edge {
-                native_ref: None,
-                id: edge_id,
-                carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id)),
-                start: start_vertex.clone(),
-                end: end_vertex.clone(),
-                tolerance: None,
-            }],
+                Sense::Forward,
+                Vec::new(),
+                None,
+            )],
+            edges: vec![Edge::new(
+                edge_id,
+                cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id)),
+                start_vertex.clone(),
+                end_vertex.clone(),
+                None,
+            )],
             vertices: vec![
-                Vertex {
-                    native_ref: None,
-                    id: start_vertex,
-                    point: start_point.clone(),
-                    tolerance: None,
-                },
-                Vertex {
-                    native_ref: None,
-                    id: end_vertex,
-                    point: end_point.clone(),
-                    tolerance: None,
-                },
+                Vertex::new(start_vertex, start_point.clone(), None),
+                Vertex::new(end_vertex, end_point.clone(), None),
             ],
             points: vec![
                 Point::new(

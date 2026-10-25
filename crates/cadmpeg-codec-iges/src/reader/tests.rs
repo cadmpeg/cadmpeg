@@ -284,12 +284,11 @@ fn decode_enforces_each_iges_session_resource_dimension() {
 #[test]
 fn semantic_decode_barrier_rejects_invalid_cadir() {
     let mut ir = CadIr::empty();
-    ir.model.vertices.push(Vertex {
-        native_ref: None,
-        id: VertexId::mint("iges:model:vertex#invalid").expect("identity grammar"),
-        point: PointId::mint("iges:model:point#missing").expect("identity grammar"),
-        tolerance: None,
-    });
+    ir.model.vertices.push(Vertex::new(
+        VertexId::mint("iges:model:vertex#invalid").expect("identity grammar"),
+        PointId::mint("iges:model:point#missing").expect("identity grammar"),
+        None,
+    ));
 
     let error = crate::test_support::with_service_context(&[], |ctx| {
         crate::reader::reject_invalid_semantic_ir(ctx, &ir)

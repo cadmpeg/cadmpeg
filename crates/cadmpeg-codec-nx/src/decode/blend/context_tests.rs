@@ -20,12 +20,14 @@ fn spine_model(count: u32) -> (CadIr, CurveId) {
     let nurbs =
         NurbsCurve::from_lanes(1, knots, points, None, false).expect("clamped linear test spine");
     let mut ir = CadIr::empty();
-    ir.model.curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: id.clone(),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
-        source_object: None,
+    ir.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            id.clone(),
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
+            None,
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     });
     (ir, id)
 }

@@ -136,12 +136,13 @@ fn normal_and_split_edges_keep_the_coedge_interval_until_spline_emission() {
             .unwrap()
             .geometry = circle();
         let pcurve = cadmpeg_ir::ids::PcurveId::mint("test:model:pcurve#periodic").unwrap();
-        ir.model.pcurves.push(cadmpeg_ir::geometry::pcurve::Pcurve {
-            native_ref: None,
-            id: pcurve.clone(),
-            geometry: spline(),
-            metadata: PcurveMetadata::default(),
-        });
+        ir.model
+            .pcurves
+            .push(cadmpeg_ir::geometry::pcurve::Pcurve::new(
+                pcurve.clone(),
+                spline(),
+                PcurveMetadata::default(),
+            ));
         for coedge in ir
             .model
             .coedges

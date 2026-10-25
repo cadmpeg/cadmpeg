@@ -201,12 +201,11 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)
             .expect("test root fits policy");
         let mut brep = AsmBrep::default();
-        brep.regions.push(Region {
-            native_ref: None,
-            id: RegionId::mint("sat:brep:region#1").unwrap(),
-            body: BodyId::mint("sat:brep:body#1").unwrap(),
-            shells: Vec::new(),
-        });
+        brep.regions.push(Region::new(
+            RegionId::mint("sat:brep:region#1").unwrap(),
+            BodyId::mint("sat:brep:body#1").unwrap(),
+            Vec::new(),
+        ));
         let mut ir = CadIr::empty();
         let error = transfer_into_ir(&ctx, &mut ir, "test", brep)
             .err()

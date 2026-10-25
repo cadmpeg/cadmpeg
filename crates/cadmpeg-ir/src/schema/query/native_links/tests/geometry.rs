@@ -61,24 +61,25 @@ fn geometry_model() -> crate::CadIr {
     use crate::geometry::{CurveGeometry, ProceduralCurve, ProceduralSurface, SurfaceGeometry};
     let mut ir = crate::examples::unit_cube().unwrap();
     ir.model.bodies[0].name = Some(SOURCE.into());
-    ir.model.pcurves.push(crate::geometry::pcurve::Pcurve {
-        id: "test:model:pcurve#one".try_into().unwrap(),
-        native_ref: None,
-        geometry: crate::geometry::pcurve::PcurveGeometry::Line(
+    ir.model.pcurves.push(crate::geometry::pcurve::Pcurve::new(
+        "test:model:pcurve#one".try_into().unwrap(),
+        crate::geometry::pcurve::PcurveGeometry::Line(
             crate::geometry::pcurve::LinePcurve::try_new(
                 crate::math::Point2::new(0.0, 0.0),
                 crate::math::Point2::new(1.0, 0.0),
             )
             .unwrap(),
         ),
-        metadata: Default::default(),
-    });
-    ir.model.subds.push(crate::subd::SubdSurface {
-        id: "test:model:subd#one".try_into().unwrap(),
-        native_ref: None,
-        scheme: crate::subd::SubdScheme::CatmullClark,
-        source_object: None,
-        cage: crate::subd::SubdCage::new(vec![], vec![], vec![], vec![]).unwrap(),
+        Default::default(),
+    ));
+    ir.model.subds.push({
+        let (id, scheme, source_object, cage) = (
+            "test:model:subd#one".try_into().unwrap(),
+            crate::subd::SubdScheme::CatmullClark,
+            None,
+            crate::subd::SubdCage::new(vec![], vec![], vec![], vec![]).unwrap(),
+        );
+        crate::subd::SubdSurface::new(id, scheme, cage, source_object)
     });
     let curve_id = "test:model:curve#procedural".try_into().unwrap();
     let procedural_curve = ProceduralCurve::new(
@@ -95,16 +96,15 @@ fn geometry_model() -> crate::CadIr {
             .unwrap(),
         ),
     );
-    ir.model.curves.push(crate::geometry::Curve {
-        id: curve_id,
-        native_ref: None,
-        geometry: CurveGeometry::Procedural {
+    ir.model.curves.push(crate::geometry::Curve::new(
+        curve_id,
+        CurveGeometry::Procedural {
             construction: procedural_curve.id.clone(),
             cache: None,
         },
-        parameter_range: None,
-        source_object: None,
-    });
+        None,
+        None,
+    ));
     let surface_id = "test:model:surface#procedural".try_into().unwrap();
     let procedural_surface = ProceduralSurface::new(
         "test:model:procedural-surface#one".try_into().unwrap(),
@@ -120,15 +120,14 @@ fn geometry_model() -> crate::CadIr {
         ),
         None,
     );
-    ir.model.surfaces.push(crate::geometry::Surface {
-        id: surface_id,
-        native_ref: None,
-        geometry: SurfaceGeometry::Procedural {
+    ir.model.surfaces.push(crate::geometry::Surface::new(
+        surface_id,
+        SurfaceGeometry::Procedural {
             construction: procedural_surface.id.clone(),
             cache: None,
         },
-        source_object: None,
-    });
+        None,
+    ));
     ir.model
         .add_procedural_curves(vec![(
             ir.model.curves.last().unwrap().id.clone(),
@@ -193,7 +192,7 @@ fn full_registry_and_canonical_wire_preserve_geometry_native_references() {
         vec![crate::NativeRecord::new(SOURCE.try_into().unwrap(), serde_json::Map::new()).unwrap()],
     );
     let mut arenas = std::collections::BTreeSet::new();
-    super::super::visit_native_references(&ir.model, &mut |arena, _, _, native| {
+    crate::schema::native_links::visit_native_references(&ir.model, &mut |arena, _, _, native| {
         if native == Some(SOURCE) {
             arenas.insert(arena);
         }

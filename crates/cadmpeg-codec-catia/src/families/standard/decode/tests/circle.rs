@@ -72,14 +72,12 @@ fn standard_circle_without_an_admissible_plane_normal_retains_unknown_carrier() 
         SurfaceId::mint("catia:test:surface#sphere-0".to_string()).expect("identity grammar"),
         SurfaceId::mint("catia:test:surface#sphere-1".to_string()).expect("identity grammar"),
     ];
-    ir.model
-        .surfaces
-        .extend(surface_ids.iter().cloned().map(|id| Surface {
-            native_ref: None,
-            id,
-            geometry: sphere_geometry.clone(),
-            source_object: None,
-        }));
+    ir.model.surfaces.extend(
+        surface_ids
+            .iter()
+            .cloned()
+            .map(|id| Surface::new(id, sphere_geometry.clone(), None)),
+    );
     let bindings = [
         (surface_ids[0].clone(), false, 0),
         (surface_ids[1].clone(), false, 1),
@@ -280,10 +278,9 @@ fn numerical_seventh_short_witnessed_arc_retains_its_sweep() {
 fn sphere_section_circle_attaches_one_curve() {
     let mut ir = CadIr::empty();
     let surface_id = SurfaceId::mint("catia:test:surface#sphere-0").expect("identity grammar");
-    ir.model.surfaces.push(Surface {
-        native_ref: None,
-        id: surface_id.clone(),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+    ir.model.surfaces.push(Surface::new(
+        surface_id.clone(),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
             cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -292,8 +289,8 @@ fn sphere_section_circle_attaches_one_curve() {
             )
             .expect("valid sphere"),
         )),
-        source_object: None,
-    });
+        None,
+    ));
     let support = StandardCurveSupport {
         pos: 12,
         tag: 7,
@@ -319,10 +316,9 @@ fn sphere_section_circle_attaches_one_curve() {
 fn sphere_section_circle_between_two_points_builds_an_edge_curve() {
     let mut ir = CadIr::empty();
     let surface_id = SurfaceId::mint("catia:test:surface#sphere-0").expect("identity grammar");
-    ir.model.surfaces.push(Surface {
-        native_ref: None,
-        id: surface_id.clone(),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+    ir.model.surfaces.push(Surface::new(
+        surface_id.clone(),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
             cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -331,8 +327,8 @@ fn sphere_section_circle_between_two_points_builds_an_edge_curve() {
             )
             .expect("valid sphere"),
         )),
-        source_object: None,
-    });
+        None,
+    ));
     for (index, position) in [Point3::new(0.8, 0.0, 0.6), Point3::new(0.0, 0.8, 0.6)]
         .into_iter()
         .enumerate()

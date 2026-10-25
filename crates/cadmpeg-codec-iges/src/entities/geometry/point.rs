@@ -71,11 +71,12 @@ pub(super) fn project(
     let vertex = (!entry.status.is_physically_dependent()
         && (entry.status.subordinate() == Some(Subordinate::Independent)
             || !analytic_surface_location))
-        .then(|| Vertex {
-            native_ref: None,
-            id: crate::ids::vertex(&crate::ids::Stem::directory(entry.sequence)),
-            point: point.clone(),
-            tolerance: None,
+        .then(|| {
+            Vertex::new(
+                crate::ids::vertex(&crate::ids::Stem::directory(entry.sequence)),
+                point.clone(),
+                None,
+            )
         });
     Ok(Some(ProjectedPoint {
         point: Point::new(point, position, Some(source_object(entry)?)),

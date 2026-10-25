@@ -391,3 +391,35 @@ fn full_registry_validation_requires_actual_native_rows_not_neutral_or_staged_id
         }
     }
 }
+
+#[test]
+fn opaque_unknowns_are_not_typed_native_counterparts() {
+    let mut ir = crate::examples::unit_cube().unwrap();
+    let target = "test:native:unknown#geometry";
+    let unknown = crate::unknown::NativeUnknownRecord {
+        id: crate::ids::UnknownId::mint(target).unwrap(),
+        links: Vec::new(),
+    };
+    ir.set_native_unknowns(
+        &cadmpeg_test_support::service_decode_context(),
+        "test",
+        &[unknown],
+    )
+    .unwrap();
+    ir.model.bodies[0].native_ref = Some(target.into());
+    let index = crate::index::ModelIndex::build(&ir);
+    assert!(index.contains(target, crate::index::StandardIndex));
+    assert!(!index.native_record_owns(target));
+    let mut findings = Vec::new();
+    super::check_native_links(
+        crate::native::view::NativeView::new(&ir, None),
+        &index,
+        &mut findings,
+    );
+    assert_eq!(findings.len(), 1);
+    assert_eq!(findings[0].check, Check::NativeLinks);
+    assert_eq!(
+        findings[0].entity.as_deref(),
+        Some(ir.model.bodies[0].id.as_str())
+    );
+}

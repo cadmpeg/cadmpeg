@@ -9,32 +9,29 @@ fn form33_without_unique_body_proof_remains_unresolved() {
     use cadmpeg_ir::ids::{BodyId, FaceId, RegionId, ShellId};
     use cadmpeg_ir::topology::{Body, BodyKind, Region, Shell};
 
-    let body = |slot| Body {
-        native_ref: None,
-        id: BodyId::mint(format!("f3d:brep:body#{slot}")).expect("identity grammar"),
-        kind: BodyKind::Solid,
-        regions: vec![
-            RegionId::mint(format!("test:model:region#{slot}")).expect("identity grammar")
-        ],
-        transform: None,
-        name: None,
-        color: None,
-        visible: Some(true),
+    let body = |slot| {
+        Body::new(
+            BodyId::mint(format!("f3d:brep:body#{slot}")).expect("identity grammar"),
+            BodyKind::Solid,
+            vec![RegionId::mint(format!("test:model:region#{slot}")).expect("identity grammar")],
+            None,
+            None,
+            None,
+            Some(true),
+        )
     };
     let bodies = [body(1), body(2)];
     let regions = [
-        Region {
-            native_ref: None,
-            id: RegionId::mint("test:model:region#1").expect("identity grammar"),
-            body: bodies[0].id.clone(),
-            shells: vec![ShellId::mint("test:model:shell#1").expect("identity grammar")],
-        },
-        Region {
-            native_ref: None,
-            id: RegionId::mint("test:model:region#2").expect("identity grammar"),
-            body: bodies[1].id.clone(),
-            shells: vec![ShellId::mint("test:model:shell#2").expect("identity grammar")],
-        },
+        Region::new(
+            RegionId::mint("test:model:region#1").expect("identity grammar"),
+            bodies[0].id.clone(),
+            vec![ShellId::mint("test:model:shell#1").expect("identity grammar")],
+        ),
+        Region::new(
+            RegionId::mint("test:model:region#2").expect("identity grammar"),
+            bodies[1].id.clone(),
+            vec![ShellId::mint("test:model:shell#2").expect("identity grammar")],
+        ),
     ];
     let shells = [
         Shell::with_face(

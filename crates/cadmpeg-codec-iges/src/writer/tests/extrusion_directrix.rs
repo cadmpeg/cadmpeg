@@ -19,20 +19,22 @@ fn a_type_122_directrix_start_that_overflows_is_refused_as_non_finite() {
     let construction =
         ProceduralSurfaceId::mint("test:iges:procedural#extrusion").expect("identity grammar");
     let mut ir = CadIr::empty();
-    ir.model.curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: directrix.clone(),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                Point3::new(f64::MAX, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                1.0e308,
-            )
-            .expect("valid CircleCurve fixture"),
-        )),
-        source_object: None,
+    ir.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            directrix.clone(),
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                    Point3::new(f64::MAX, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    1.0e308,
+                )
+                .expect("valid CircleCurve fixture"),
+            )),
+            None,
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     });
     ir.model.procedural_surfaces.push(ProceduralSurface::new(
         construction.clone(),
@@ -71,21 +73,23 @@ fn a_type_122_hyperbola_directrix_whose_minor_cosh_alone_overflows_has_finite_en
     let construction =
         ProceduralSurfaceId::mint("test:iges:procedural#extrusion").expect("identity grammar");
     let mut ir = CadIr::empty();
-    ir.model.curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: directrix.clone(),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
-            cadmpeg_ir::geometry::analytic::HyperbolaCurve::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                1.0,
-                f64::MAX,
-            )
-            .expect("valid HyperbolaCurve fixture"),
-        )),
-        source_object: None,
+    ir.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            directrix.clone(),
+            CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
+                cadmpeg_ir::geometry::analytic::HyperbolaCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    1.0,
+                    f64::MAX,
+                )
+                .expect("valid HyperbolaCurve fixture"),
+            )),
+            None,
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     });
     ir.model.procedural_surfaces.push(ProceduralSurface::new(
         construction.clone(),

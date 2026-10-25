@@ -357,10 +357,9 @@ fn reversed_offset_pcurve_reverses_its_basis_and_signed_side() {
         let support = SurfaceId::mint("test:model:entity#nx:test:offset-orientation-support")
             .expect("identity grammar");
         let mut ir = CadIr::empty();
-        ir.model.surfaces.push(Surface {
-            native_ref: None,
-            id: support.clone(),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        ir.model.surfaces.push(Surface::new(
+            support.clone(),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -368,8 +367,8 @@ fn reversed_offset_pcurve_reverses_its_basis_and_signed_side() {
                 )
                 .unwrap(),
             )),
-            source_object: None,
-        });
+            None,
+        ));
         let first = cadmpeg_ir::eval::decode::pcurve_uv(
             cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
             &pcurve,

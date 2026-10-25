@@ -4318,15 +4318,17 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
             .derived(&procedural_id, "definition")
             .map_err(cadmpeg_core::CodecError::from)?;
 
-        ir.model.curves.push(Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: curve_id.clone(),
-            geometry: CurveGeometry::Procedural {
-                construction: procedural_id.clone(),
-                cache: None,
-            },
-            source_object: None,
+        ir.model.curves.push({
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                curve_id.clone(),
+                CurveGeometry::Procedural {
+                    construction: procedural_id.clone(),
+                    cache: None,
+                },
+                None,
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         });
 
         let _attached = procedural_admission.add_curve(&mut ir.model, &curve_id, procedural)?;
@@ -4645,15 +4647,17 @@ mod tests {
         let vertex_id = VertexId::mint("nx:s1:vertex#0").expect("identity grammar");
 
         let mut ir = CadIr::empty();
-        ir.model.curves.push(Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: curve.clone(),
-            geometry: CurveGeometry::Procedural {
-                construction: procedural_id.clone(),
-                cache: None,
-            },
-            source_object: None,
+        ir.model.curves.push({
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                curve.clone(),
+                CurveGeometry::Procedural {
+                    construction: procedural_id.clone(),
+                    cache: None,
+                },
+                None,
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         });
         ir.model
             .add_procedural_curve(
@@ -4682,20 +4686,19 @@ mod tests {
                 ),
             )
             .unwrap();
-        ir.model.coedges.push(Coedge {
-            native_ref: None,
-            id: coedge_id,
-            owner_loop: loop_id.clone(),
-            edge: edge_id.clone(),
-            radial_next: CoedgeId::mint("nx:s0:fin#0").expect("identity grammar"),
-            sense: Sense::Forward,
-            pcurves: vec![PcurveUse {
+        ir.model.coedges.push(Coedge::new(
+            coedge_id,
+            loop_id.clone(),
+            edge_id.clone(),
+            CoedgeId::mint("nx:s0:fin#0").expect("identity grammar"),
+            Sense::Forward,
+            vec![PcurveUse {
                 pcurve: pcurve_id.clone(),
                 isoparametric: None,
                 parameter_range: None,
             }],
-            use_curve: None,
-        });
+            None,
+        ));
 
         ({
             let mut index = super::IntersectionIncidenceIndex::default();
@@ -4709,51 +4712,44 @@ mod tests {
                 pcurves: ir.model.pcurves.len(),
                 procedural_curves: ir.model.procedural_curves.len(),
             };
-            ir.model.faces.push(Face {
-                native_ref: None,
-                id: face_id.clone(),
-                shell: ShellId::mint("nx:s1:shell#0").expect("identity grammar"),
-                surface: completed_surface.clone(),
-                sense: Sense::Forward,
-                loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![loop_id.clone()]),
-                name: None,
-                color: None,
-                tolerance: None,
-            });
-            ir.model.loops.push(Loop {
-                native_ref: None,
-                id: loop_id,
-                face: face_id,
-                boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+            ir.model.faces.push(Face::new(
+                face_id.clone(),
+                ShellId::mint("nx:s1:shell#0").expect("identity grammar"),
+                completed_surface.clone(),
+                Sense::Forward,
+                cadmpeg_ir::topology::FaceLoops::unspecified(vec![loop_id.clone()]),
+            ));
+            ir.model.loops.push(Loop::new(
+                loop_id,
+                face_id,
+                cadmpeg_ir::topology::LoopBoundary::Ring(
                     cadmpeg_ir::topology::LoopRing::new(
                         vec![CoedgeId::mint("nx:s0:fin#0").expect("identity grammar")],
                         Vec::new(),
                     )
                     .expect("valid loop ring"),
                 ),
-            });
-            ir.model.edges.push(Edge {
-                native_ref: None,
-                id: edge_id,
-                carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(
+            ));
+            ir.model.edges.push(Edge::new(
+                edge_id,
+                cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(
                     CurveId::mint("nx:s0:intersection-crv#0").expect("identity grammar"),
                 )),
-                start: vertex_id.clone(),
-                end: vertex_id,
-                tolerance: None,
-            });
-            ir.model.pcurves.push(Pcurve {
-                native_ref: None,
-                id: pcurve_id,
-                geometry: PcurveGeometry::Line(
+                vertex_id.clone(),
+                vertex_id,
+                None,
+            ));
+            ir.model.pcurves.push(Pcurve::new(
+                pcurve_id,
+                PcurveGeometry::Line(
                     cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                         Point2::new(0.0, 0.0),
                         Point2::new(1.0, 0.0),
                     )
                     .unwrap(),
                 ),
-                metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
-            });
+                cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
+            ));
 
             index.complete_from_stream(&mut ir, later_starts);
             let procedural = &ir.model.procedural_curves[0];

@@ -505,11 +505,10 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
         source_carriers.admit_surface(
             ctx,
             ir,
-            Surface {
-                native_ref: None,
+            Surface::new(
                 id,
                 geometry,
-                source_object: Some(SourceObjectAssociation {
+                Some(SourceObjectAssociation {
                     geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: crate::identity::source_object_id_checked(format_args!(
@@ -519,7 +518,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                     ))?,
                     instance_path: Vec::new(),
                 }),
-            },
+            ),
         )?;
         transferred += 1;
     }
@@ -657,11 +656,10 @@ pub(in super::super) fn transfer_positional_spline_replays(
         source_carriers.admit_surface(
             ctx,
             ir,
-            Surface {
-                native_ref: None,
+            Surface::new(
                 id,
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
-                source_object: Some(SourceObjectAssociation {
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
+                Some(SourceObjectAssociation {
                     geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: crate::identity::source_object_id_checked(format_args!(
@@ -671,7 +669,7 @@ pub(in super::super) fn transfer_positional_spline_replays(
                     ))?,
                     instance_path: Vec::new(),
                 }),
-            },
+            ),
         )?;
         transferred += 1;
     }
@@ -841,11 +839,10 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
         source_carriers.admit_surface(
             ctx,
             ir,
-            Surface {
-                native_ref: None,
+            Surface::new(
                 id,
                 geometry,
-                source_object: Some(SourceObjectAssociation {
+                Some(SourceObjectAssociation {
                     geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: crate::identity::source_object_id_checked(format_args!(
@@ -855,7 +852,7 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
                     ))?,
                     instance_path: Vec::new(),
                 }),
-            },
+            ),
         )?;
         transferred += 1;
     }

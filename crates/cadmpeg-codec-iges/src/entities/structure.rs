@@ -1775,28 +1775,26 @@ fn plane_face_draft(
         let coedge_id = crate::ids::coedge(&stem.slot(boundary_index));
 
         ctx.charge_entities(1, "iges_geometry_structure")?;
-        candidate.model_mut().coedges.push(Coedge {
-            native_ref: None,
-            id: coedge_id.clone(),
-            owner_loop: loop_id.clone(),
-            edge: edge_id,
-            radial_next: coedge_id.clone(),
-            sense: Sense::Forward,
-            pcurves: Vec::new(),
-            use_curve: None,
-        });
+        candidate.model_mut().coedges.push(Coedge::new(
+            coedge_id.clone(),
+            loop_id.clone(),
+            edge_id,
+            coedge_id.clone(),
+            Sense::Forward,
+            Vec::new(),
+            None,
+        ));
         let ring_coedges = vec![coedge_id];
         let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(ring_coedges, Vec::new()) else {
             return Err("legacy plane loop ring is invalid".into());
         };
 
         ctx.charge_entities(1, "iges_geometry_structure")?;
-        candidate.model_mut().loops.push(Loop {
-            native_ref: None,
-            id: loop_id.clone(),
-            face: face_id.clone(),
-            boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
-        });
+        candidate.model_mut().loops.push(Loop::new(
+            loop_id.clone(),
+            face_id.clone(),
+            cadmpeg_ir::topology::LoopBoundary::Ring(ring),
+        ));
         loop_ids.push(loop_id);
     }
     let face_loops = if loop_ids.is_empty() {
@@ -1807,17 +1805,16 @@ fn plane_face_draft(
     };
 
     ctx.charge_entities(1, "iges_geometry_structure")?;
-    candidate.model_mut().faces.push(Face {
-        native_ref: None,
-        id: face_id.clone(),
-        shell: shell_id.clone(),
-        surface: crate::ids::surface(&crate::ids::Stem::directory(surface_sequence)),
-        sense: Sense::Forward,
-        loops: face_loops,
-        name: None,
-        color: None,
-        tolerance,
-    });
+    candidate.model_mut().faces.push(
+        Face::new(
+            face_id.clone(),
+            shell_id.clone(),
+            crate::ids::surface(&crate::ids::Stem::directory(surface_sequence)),
+            Sense::Forward,
+            face_loops,
+        )
+        .with_tolerance(tolerance),
+    );
     let shell_faces = vec![face_id];
     let shell = Shell::new(
         shell_id.clone(),
@@ -1833,25 +1830,23 @@ fn plane_face_draft(
     let region_shells = vec![shell_id];
 
     ctx.charge_entities(1, "iges_geometry_structure")?;
-    candidate.model_mut().regions.push(Region {
-        native_ref: None,
-        id: region_id.clone(),
-        body: body_id.clone(),
-        shells: region_shells,
-    });
+    candidate.model_mut().regions.push(Region::new(
+        region_id.clone(),
+        body_id.clone(),
+        region_shells,
+    ));
     let body_regions = vec![region_id];
 
     ctx.charge_entities(1, "iges_geometry_structure")?;
-    candidate.model_mut().bodies.push(Body {
-        native_ref: None,
-        id: body_id,
-        kind: BodyKind::Sheet,
-        regions: body_regions,
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
-    });
+    candidate.model_mut().bodies.push(Body::new(
+        body_id,
+        BodyKind::Sheet,
+        body_regions,
+        None,
+        None,
+        None,
+        None,
+    ));
     candidate.model_mut().finalize();
     Ok(candidate)
 }
@@ -1969,6 +1964,7 @@ fn legacy_single_parent_face(
                 .tail_index(boundary_index),
         );
         edge.id = edge_id.clone();
+        edge.native_ref = None;
         edge.end = edge.start.clone();
         boundary_edges.push(edge);
     }

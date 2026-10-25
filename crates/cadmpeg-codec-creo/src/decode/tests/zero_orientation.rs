@@ -500,10 +500,9 @@ fn full_turn_axis_reads_source_carrier_after_millimeter_admission() {
         source_carriers.admit_surface(
             ctx,
             &mut ir,
-            Surface {
-                native_ref: None,
-                id: SurfaceId::mint("creo:visibgeom:surface#31").expect("identity grammar"),
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+            Surface::new(
+                SurfaceId::mint("creo:visibgeom:surface#31").expect("identity grammar"),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                     cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                         Point3::new(2.0, 3.0, 0.0),
                         Vector3::new(0.0, 1.0, 0.0),
@@ -512,8 +511,8 @@ fn full_turn_axis_reads_source_carrier_after_millimeter_admission() {
                     )
                     .expect("source cylinder"),
                 )),
-                source_object: None,
-            },
+                None,
+            ),
         )
     })
     .expect("millimeter admission");
@@ -555,10 +554,9 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
     }
     let mut ir = CadIr::empty();
     ir.model.surfaces.extend([
-        Surface {
-            native_ref: None,
-            id: SurfaceId::mint("creo:visibgeom:surface#31".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+        Surface::new(
+            SurfaceId::mint("creo:visibgeom:surface#31".to_string()).expect("identity grammar"),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                     Point3::new(2.0, 3.0, 0.0),
                     Vector3::new(0.0, -1.0, 0.0),
@@ -567,12 +565,11 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
                 )
                 .expect("valid CylinderSurface fixture"),
             )),
-            source_object: None,
-        },
-        Surface {
-            native_ref: None,
-            id: SurfaceId::mint("creo:visibgeom:surface#32".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+            None,
+        ),
+        Surface::new(
+            SurfaceId::mint("creo:visibgeom:surface#32".to_string()).expect("identity grammar"),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
                 cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
                     Point3::new(2.0, -5.0, 0.0),
                     Vector3::new(0.0, 1.0, 0.0),
@@ -583,12 +580,11 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
                 )
                 .expect("valid ConeSurface fixture"),
             )),
-            source_object: None,
-        },
-        Surface {
-            native_ref: None,
-            id: SurfaceId::mint("creo:visibgeom:surface#33".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+            None,
+        ),
+        Surface::new(
+            SurfaceId::mint("creo:visibgeom:surface#33".to_string()).expect("identity grammar"),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
                 cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
                     Point3::new(2.0, 8.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -597,8 +593,8 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
                 )
                 .expect("valid SphereSurface fixture"),
             )),
-            source_object: None,
-        },
+            None,
+        ),
     ]);
     let full_turn = RevolveExtent::OneSided {
         termination: AngularTermination::Angle {
@@ -856,16 +852,15 @@ fn named_revolve_transfers_profile_axis() {
             offset: 1,
         });
     let mut ir = CadIr::empty();
-    ir.model.bodies.push(Body {
-        native_ref: None,
-        id: BodyId::mint("creo:feature:revolution#822:body".to_string()).expect("identity grammar"),
-        kind: BodyKind::Solid,
-        regions: Vec::new(),
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
-    });
+    ir.model.bodies.push(Body::new(
+        BodyId::mint("creo:feature:revolution#822:body".to_string()).expect("identity grammar"),
+        BodyKind::Solid,
+        Vec::new(),
+        None,
+        None,
+        None,
+        None,
+    ));
 
     let Some(cadmpeg_ir::features::FeatureDefinition::Operation(
         cadmpeg_ir::features::FeatureOperation::Revolve {
@@ -896,16 +891,15 @@ fn named_revolve_transfers_profile_axis() {
 fn named_extrude_with_evaluated_body_is_new_body() {
     let scan = crate::test_support::empty_container_scan();
     let mut ir = CadIr::empty();
-    ir.model.bodies.push(Body {
-        native_ref: None,
-        id: BodyId::mint("creo:feature:extrusion#822:body".to_string()).expect("identity grammar"),
-        kind: BodyKind::Solid,
-        regions: Vec::new(),
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
-    });
+    ir.model.bodies.push(Body::new(
+        BodyId::mint("creo:feature:extrusion#822:body".to_string()).expect("identity grammar"),
+        BodyKind::Solid,
+        Vec::new(),
+        None,
+        None,
+        None,
+        None,
+    ));
 
     let Some(cadmpeg_ir::features::FeatureDefinition::Operation(
         cadmpeg_ir::features::FeatureOperation::Extrude { op, solid, .. },
@@ -931,16 +925,15 @@ fn named_extrude_with_evaluated_body_is_new_body() {
 fn schema_numbered_extrude_with_evaluated_body_is_new_body() {
     let scan = crate::test_support::empty_container_scan();
     let mut ir = CadIr::empty();
-    ir.model.bodies.push(Body {
-        native_ref: None,
-        id: BodyId::mint("creo:feature:extrusion#822:body".to_string()).expect("identity grammar"),
-        kind: BodyKind::Solid,
-        regions: Vec::new(),
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
-    });
+    ir.model.bodies.push(Body::new(
+        BodyId::mint("creo:feature:extrusion#822:body".to_string()).expect("identity grammar"),
+        BodyKind::Solid,
+        Vec::new(),
+        None,
+        None,
+        None,
+        None,
+    ));
 
     let IrFeatureDefinition::Operation(IrFeatureOperation::Extrude { op, solid, .. }) =
         crate::decode::with_service_context(|ctx| {

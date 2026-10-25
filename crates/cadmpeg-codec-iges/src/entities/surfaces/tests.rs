@@ -229,25 +229,29 @@ fn project_skips_a_revolution_surface_over_its_pole_limit() {
     let edge_id = crate::ids::edge(&generatrix_stem);
 
     let mut ir = CadIr::empty();
-    ir.model.curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: axis_id,
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-            )
-            .unwrap(),
-        )),
-        source_object: None,
+    ir.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            axis_id,
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                )
+                .unwrap(),
+            )),
+            None,
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     });
-    ir.model.curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: generatrix_id.clone(),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(generatrix)),
-        source_object: None,
+    ir.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            generatrix_id.clone(),
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(generatrix)),
+            None,
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     });
     ir.model.points.extend([
         Point::new(
@@ -262,28 +266,16 @@ fn project_skips_a_revolution_surface_over_its_pole_limit() {
         ),
     ]);
     ir.model.vertices.extend([
-        Vertex {
-            native_ref: None,
-            id: start_vertex.clone(),
-            point: start_point,
-            tolerance: None,
-        },
-        Vertex {
-            native_ref: None,
-            id: end_vertex.clone(),
-            point: end_point,
-            tolerance: None,
-        },
+        Vertex::new(start_vertex.clone(), start_point, None),
+        Vertex::new(end_vertex.clone(), end_point, None),
     ]);
-    ir.model.edges.push(Edge {
-        native_ref: None,
-        id: edge_id,
-        carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(generatrix_id), Some(interval))
-            .unwrap(),
-        start: start_vertex,
-        end: end_vertex,
-        tolerance: None,
-    });
+    ir.model.edges.push(Edge::new(
+        edge_id,
+        cadmpeg_ir::topology::EdgeCarrier::new(Some(generatrix_id), Some(interval)).unwrap(),
+        start_vertex,
+        end_vertex,
+        None,
+    ));
 
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();

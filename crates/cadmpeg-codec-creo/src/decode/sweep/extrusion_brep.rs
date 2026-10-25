@@ -391,10 +391,9 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             source_carriers.admit_surface(
                 ctx,
                 ir,
-                Surface {
-                    native_ref: None,
-                    id: copy_id!(id),
-                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                Surface::new(
+                    copy_id!(id),
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                         cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                             Point3::new(
                                 transform.origin()[0] + offset * transform.normal()[0],
@@ -406,8 +405,8 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         )
                         .map_err(cadmpeg_core::CodecError::malformed)?,
                     )),
-                    source_object: None,
-                },
+                    None,
+                ),
             )?;
         }
 
@@ -446,15 +445,8 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     source_carriers
                         .admit_point(ir, Point::new(copy_id!(point_id), finite_position, None))?;
                     ctx.charge_entities(1, "admit Creo model vertices")?;
-                    source_carriers.admit_vertex(
-                        ir,
-                        Vertex {
-                            native_ref: None,
-                            id: copy_id!(vertex_id),
-                            point: point_id,
-                            tolerance: None,
-                        },
-                    )?;
+                    source_carriers
+                        .admit_vertex(ir, Vertex::new(copy_id!(vertex_id), point_id, None))?;
                     arena.push(vertex_id);
                 }
             }
@@ -551,17 +543,11 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         }
                     };
                     ctx.charge_entities(1, "admit Creo model curves")?;
-                    source_carriers.admit_curve(
-                        ctx,
-                        ir,
-                        Curve {
-                            native_ref: None,
-                            parameter_range: None,
-                            id: copy_id!(curve_id),
-                            geometry: curve,
-                            source_object: None,
-                        },
-                    )?;
+                    source_carriers.admit_curve(ctx, ir, {
+                        let (parameter_range, id, geometry, source_object) =
+                            (None, copy_id!(curve_id), curve, None);
+                        Curve::new(id, geometry, parameter_range, source_object)
+                    })?;
                     let param_range = match geometry {
                         ProfileGeometry::Line { .. } => {
                             Some([0.0, (end[0] - start[0]).hypot(end[1] - start[1])])
@@ -591,18 +577,14 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     source_carriers.admit_edge(
                         ctx,
                         ir,
-                        Edge {
-                            native_ref: None,
-                            id: copy_id!(edge_id),
-                            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
-                                Some(curve_id),
-                                param_range,
-                            )
-                            .map_err(cadmpeg_core::CodecError::malformed)?,
-                            start: copy_id!(vertices[index]),
-                            end: copy_id!(vertices[next]),
-                            tolerance: None,
-                        },
+                        Edge::new(
+                            copy_id!(edge_id),
+                            cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), param_range)
+                                .map_err(cadmpeg_core::CodecError::malformed)?,
+                            copy_id!(vertices[index]),
+                            copy_id!(vertices[next]),
+                            None,
+                        ),
                     )?;
                     arena.push(edge_id);
                 }
@@ -610,14 +592,11 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 let edge_id = extrusion_id!(EdgeId, "edge:{}:{}:vertical", profile_index, index);
                 let origin = section_point_in_model(transform, start);
                 ctx.charge_entities(1, "admit Creo model curves")?;
-                source_carriers.admit_curve(
-                    ctx,
-                    ir,
-                    Curve {
-                        native_ref: None,
-                        parameter_range: None,
-                        id: copy_id!(curve_id),
-                        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                source_carriers.admit_curve(ctx, ir, {
+                    let (parameter_range, id, geometry, source_object) = (
+                        None,
+                        copy_id!(curve_id),
+                        CurveGeometry::Solved(SolvedCurveGeometry::Line(
                             cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                                 Point3::new(
                                     origin[0] + span.lower() * transform.normal()[0],
@@ -628,25 +607,22 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             )
                             .map_err(cadmpeg_core::CodecError::malformed)?,
                         )),
-                        source_object: None,
-                    },
-                )?;
+                        None,
+                    );
+                    Curve::new(id, geometry, parameter_range, source_object)
+                })?;
                 ctx.charge_entities(1, "admit Creo model edges")?;
                 source_carriers.admit_edge(
                     ctx,
                     ir,
-                    Edge {
-                        native_ref: None,
-                        id: copy_id!(edge_id),
-                        carrier: cadmpeg_ir::topology::EdgeCarrier::new(
-                            Some(curve_id),
-                            Some([0.0, length]),
-                        )
-                        .map_err(cadmpeg_core::CodecError::malformed)?,
-                        start: copy_id!(bottom_vertices[index]),
-                        end: copy_id!(top_vertices[index]),
-                        tolerance: None,
-                    },
+                    Edge::new(
+                        copy_id!(edge_id),
+                        cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some([0.0, length]))
+                            .map_err(cadmpeg_core::CodecError::malformed)?,
+                        copy_id!(bottom_vertices[index]),
+                        copy_id!(top_vertices[index]),
+                        None,
+                    ),
                 )?;
                 vertical_edges.push(edge_id);
             }
@@ -659,31 +635,29 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 cap_coedge_ids(feature_id, profile_index, count, "bottom-cap", true)?;
             let top_coedges = cap_coedge_ids(feature_id, profile_index, count, "top-cap", false)?;
             ctx.charge_entities(1, "admit Creo model loops")?;
-            ir.model.loops.push(IrLoop {
-                native_ref: None,
-                id: copy_id!(bottom_loop),
-                face: copy_id!(bottom_face),
-                boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+            ir.model.loops.push(IrLoop::new(
+                copy_id!(bottom_loop),
+                copy_id!(bottom_face),
+                cadmpeg_ir::topology::LoopBoundary::Ring(
                     cadmpeg_ir::topology::LoopRing::new(
                         copy_ring_coedges(&bottom_coedges)?,
                         Vec::new(),
                     )
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 ),
-            });
+            ));
             ctx.charge_entities(1, "admit Creo model loops")?;
-            ir.model.loops.push(IrLoop {
-                native_ref: None,
-                id: copy_id!(top_loop),
-                face: copy_id!(top_face),
-                boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+            ir.model.loops.push(IrLoop::new(
+                copy_id!(top_loop),
+                copy_id!(top_face),
+                cadmpeg_ir::topology::LoopBoundary::Ring(
                     cadmpeg_ir::topology::LoopRing::new(
                         copy_ring_coedges(&top_coedges)?,
                         Vec::new(),
                     )
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 ),
-            });
+            ));
             let caps = &cap_pcurves[profile_index];
             for ring_index in 0..count {
                 let edge_index = count - 1 - ring_index;
@@ -706,25 +680,24 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 source_carriers.admit_coedge(
                     ctx,
                     ir,
-                    Coedge {
-                        native_ref: None,
+                    Coedge::new(
                         id,
-                        owner_loop: copy_id!(bottom_loop),
-                        edge: copy_id!(bottom_edges[edge_index]),
-                        radial_next: extrusion_id!(
+                        copy_id!(bottom_loop),
+                        copy_id!(bottom_edges[edge_index]),
+                        extrusion_id!(
                             CoedgeId,
                             "coedge:{}:{}:side-bottom",
                             profile_index,
                             edge_index
                         ),
-                        sense: Sense::Reversed,
-                        pcurves: vec![PcurveUse {
+                        Sense::Reversed,
+                        vec![PcurveUse {
                             pcurve: bottom_pcurve,
                             isoparametric: None,
                             parameter_range: None,
                         }],
-                        use_curve: None,
-                    },
+                        None,
+                    ),
                 )?;
                 let id = copy_id!(top_coedges[ring_index]);
                 let top_pcurve = add_extrusion_pcurve(
@@ -740,25 +713,19 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 source_carriers.admit_coedge(
                     ctx,
                     ir,
-                    Coedge {
-                        native_ref: None,
+                    Coedge::new(
                         id,
-                        owner_loop: copy_id!(top_loop),
-                        edge: copy_id!(top_edges[ring_index]),
-                        radial_next: extrusion_id!(
-                            CoedgeId,
-                            "coedge:{}:{}:side-top",
-                            profile_index,
-                            ring_index
-                        ),
-                        sense: Sense::Forward,
-                        pcurves: vec![PcurveUse {
+                        copy_id!(top_loop),
+                        copy_id!(top_edges[ring_index]),
+                        extrusion_id!(CoedgeId, "coedge:{}:{}:side-top", profile_index, ring_index),
+                        Sense::Forward,
+                        vec![PcurveUse {
                             pcurve: top_pcurve,
                             isoparametric: None,
                             parameter_range: None,
                         }],
-                        use_curve: None,
-                    },
+                        None,
+                    ),
                 )?;
             }
 
@@ -801,12 +768,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 source_carriers.admit_surface(
                     ctx,
                     ir,
-                    Surface {
-                        native_ref: None,
-                        id: copy_id!(surface_id),
-                        geometry: surface_geometry,
-                        source_object: None,
-                    },
+                    Surface::new(copy_id!(surface_id), surface_geometry, None),
                 )?;
                 let face_id = extrusion_id!(FaceId, "face:{}:side:{}", profile_index, index);
                 let loop_id = extrusion_id!(LoopId, "loop:{}:side:{}", profile_index, index);
@@ -827,18 +789,17 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     ),
                 ];
                 ctx.charge_entities(1, "admit Creo model loops")?;
-                ir.model.loops.push(IrLoop {
-                    native_ref: None,
-                    id: copy_id!(loop_id),
-                    face: copy_id!(face_id),
-                    boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+                ir.model.loops.push(IrLoop::new(
+                    copy_id!(loop_id),
+                    copy_id!(face_id),
+                    cadmpeg_ir::topology::LoopBoundary::Ring(
                         cadmpeg_ir::topology::LoopRing::new(
                             copy_ring_coedges(&coedges)?,
                             Vec::new(),
                         )
                         .map_err(cadmpeg_core::CodecError::malformed)?,
                     ),
-                });
+                ));
                 let edge_uses: [(EdgeId, Sense); 4] = [
                     (copy_id!(bottom_edges[index]), Sense::Forward),
                     (copy_id!(vertical_edges[next]), Sense::Forward),
@@ -895,103 +856,88 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     source_carriers.admit_coedge(
                         ctx,
                         ir,
-                        Coedge {
-                            native_ref: None,
-                            id: copy_id!(coedges[use_index]),
-                            owner_loop: copy_id!(loop_id),
-                            edge: copy_id!(edge_uses[use_index].0),
+                        Coedge::new(
+                            copy_id!(coedges[use_index]),
+                            copy_id!(loop_id),
+                            copy_id!(edge_uses[use_index].0),
                             radial_next,
-                            sense: edge_uses[use_index].1,
-                            pcurves: vec![PcurveUse {
+                            edge_uses[use_index].1,
+                            vec![PcurveUse {
                                 pcurve,
                                 isoparametric: None,
                                 parameter_range: None,
                             }],
-                            use_curve: None,
-                        },
+                            None,
+                        ),
                     )?;
                 }
                 ctx.charge_entities(1, "admit Creo model faces")?;
                 source_carriers.admit_face(
                     ir,
-                    Face {
-                        native_ref: None,
-                        id: copy_id!(face_id),
-                        shell: copy_id!(shell_id),
-                        surface: surface_id,
-                        sense: if forward_sides {
+                    Face::new(
+                        copy_id!(face_id),
+                        copy_id!(shell_id),
+                        surface_id,
+                        if forward_sides {
                             Sense::Forward
                         } else {
                             Sense::Reversed
                         },
-                        loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![loop_id]),
-                        name: None,
-                        color: None,
-                        tolerance: None,
-                    },
+                        cadmpeg_ir::topology::FaceLoops::unspecified(vec![loop_id]),
+                    ),
                 )?;
             }
         }
         ctx.charge_entities(1, "admit Creo model faces")?;
         source_carriers.admit_face(
             ir,
-            Face {
-                native_ref: None,
-                id: bottom_face,
-                shell: copy_id!(shell_id),
-                surface: bottom_surface,
-                sense: if forward_caps {
+            Face::new(
+                bottom_face,
+                copy_id!(shell_id),
+                bottom_surface,
+                if forward_caps {
                     Sense::Reversed
                 } else {
                     Sense::Forward
                 },
-                loops: cadmpeg_ir::topology::FaceLoops::unspecified(bottom_loops),
-                name: None,
-                color: None,
-                tolerance: None,
-            },
+                cadmpeg_ir::topology::FaceLoops::unspecified(bottom_loops),
+            ),
         )?;
         ctx.charge_entities(1, "admit Creo model faces")?;
         source_carriers.admit_face(
             ir,
-            Face {
-                native_ref: None,
-                id: top_face,
-                shell: copy_id!(shell_id),
-                surface: top_surface,
-                sense: if forward_caps {
+            Face::new(
+                top_face,
+                copy_id!(shell_id),
+                top_surface,
+                if forward_caps {
                     Sense::Forward
                 } else {
                     Sense::Reversed
                 },
-                loops: cadmpeg_ir::topology::FaceLoops::unspecified(top_loops),
-                name: None,
-                color: None,
-                tolerance: None,
-            },
+                cadmpeg_ir::topology::FaceLoops::unspecified(top_loops),
+            ),
         )?;
         ctx.charge_entities(1, "admit Creo model shells")?;
         ir.model.shells.push(shell);
         ctx.charge_entities(1, "admit Creo model regions")?;
-        ir.model.regions.push(Region {
-            native_ref: None,
-            id: copy_id!(region_id),
-            body: copy_id!(body_id),
-            shells: vec![shell_id],
-        });
+        ir.model.regions.push(Region::new(
+            copy_id!(region_id),
+            copy_id!(body_id),
+            vec![shell_id],
+        ));
         ctx.charge_entities(1, "admit Creo model bodies")?;
         source_carriers.admit_body(
             ir,
-            Body {
-                native_ref: None,
-                id: body_id,
-                kind: BodyKind::Solid,
-                regions: vec![region_id],
-                transform: None,
-                name: None,
-                color: None,
-                visible: None,
-            },
+            Body::new(
+                body_id,
+                BodyKind::Solid,
+                vec![region_id],
+                None,
+                None,
+                None,
+                None,
+            ),
         )?;
         transferred += 1;
     }

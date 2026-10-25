@@ -922,11 +922,10 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
             Vec::new(),
         )
         .unwrap()],
-        loops: vec![Loop {
-            native_ref: None,
-            id: LoopId::mint(id(FORMAT, 4).into_string()).expect("identity grammar"),
-            face: face_id,
-            boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+        loops: vec![Loop::new(
+            LoopId::mint(id(FORMAT, 4).into_string()).expect("identity grammar"),
+            face_id,
+            cadmpeg_ir::topology::LoopBoundary::Ring(
                 cadmpeg_ir::topology::LoopRing::new(
                     vec![cadmpeg_ir::ids::CoedgeId::mint("test:model:coedge#0")
                         .expect("identity grammar")],
@@ -934,7 +933,7 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
                 )
                 .expect("valid loop ring"),
             ),
-        }],
+        )],
         ..AsmBrep::default()
     };
     let by_index = records
@@ -1012,22 +1011,20 @@ fn lump_named_attributes_bind_to_their_owning_body() {
         .collect();
     let body_id = BodyId::mint(id(FORMAT, 1).into_string()).expect("identity grammar");
     let mut brep = AsmBrep {
-        bodies: vec![Body {
-            native_ref: None,
-            id: body_id.clone(),
-            kind: BodyKind::Sheet,
-            regions: vec![RegionId::mint(id(FORMAT, 2).into_string()).expect("identity grammar")],
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        }],
-        regions: vec![Region {
-            native_ref: None,
-            id: RegionId::mint(id(FORMAT, 2).into_string()).expect("identity grammar"),
-            body: body_id.clone(),
-            shells: Vec::new(),
-        }],
+        bodies: vec![Body::new(
+            body_id.clone(),
+            BodyKind::Sheet,
+            vec![RegionId::mint(id(FORMAT, 2).into_string()).expect("identity grammar")],
+            None,
+            None,
+            None,
+            None,
+        )],
+        regions: vec![Region::new(
+            RegionId::mint(id(FORMAT, 2).into_string()).expect("identity grammar"),
+            body_id.clone(),
+            Vec::new(),
+        )],
         ..AsmBrep::default()
     };
 

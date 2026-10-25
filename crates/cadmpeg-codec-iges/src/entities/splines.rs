@@ -200,45 +200,36 @@ fn add_edge(
 
     ctx.charge_entities(2, "iges_geometry_splines")?;
     ir.model.vertices.extend([
-        Vertex {
-            native_ref: None,
-            id: start_vertex.clone(),
-            point: start_point,
-            tolerance: None,
-        },
-        Vertex {
-            native_ref: None,
-            id: end_vertex.clone(),
-            point: end_point,
-            tolerance: None,
-        },
+        Vertex::new(start_vertex.clone(), start_point, None),
+        Vertex::new(end_vertex.clone(), end_point, None),
     ]);
     sequences.record_curve(&curve, entry.sequence);
 
     ctx.charge_entities(1, "iges_geometry_splines")?;
-    ir.model.curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: curve.clone(),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
-        source_object: Some(match source_object(entry) {
-            Ok(source) => source,
-            Err(error) => {
-                super::non_resource_error(error)?;
-                return Ok(None);
-            }
-        }),
+    ir.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            curve.clone(),
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
+            Some(match source_object(entry) {
+                Ok(source) => source,
+                Err(error) => {
+                    super::non_resource_error(error)?;
+                    return Ok(None);
+                }
+            }),
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     });
 
     ctx.charge_entities(1, "iges_geometry_splines")?;
-    ir.model.edges.push(Edge {
-        native_ref: None,
-        id: edge.clone(),
-        carrier: cadmpeg_ir::topology::EdgeCarrier::Bounded(curve, parameter_range.into()),
-        start: start_vertex,
-        end: end_vertex,
-        tolerance: None,
-    });
+    ir.model.edges.push(Edge::new(
+        edge.clone(),
+        cadmpeg_ir::topology::EdgeCarrier::Bounded(curve, parameter_range.into()),
+        start_vertex,
+        end_vertex,
+        None,
+    ));
     Ok(Some(edge))
 }
 
@@ -957,12 +948,11 @@ pub(super) fn project(
         );
 
         ctx.charge_entities(1, "iges_geometry_splines")?;
-        ir.model.surfaces.push(Surface {
-            native_ref: None,
-            id: crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
-            source_object: Some(source_object(entry)?),
-        });
+        ir.model.surfaces.push(Surface::new(
+            crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
+            Some(source_object(entry)?),
+        ));
         if placeholders_truncated {
             super::push_attributed_loss(&mut losses, entry, IgesLossCode::SplineClaimRecovered,
                 format_args!("unused trailing spline-surface placeholders are missing; retained the coefficient-defined patches"));

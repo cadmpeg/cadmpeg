@@ -223,11 +223,9 @@ fn encode_emits_the_versioned_point_targets_for_4_0_and_5_0() {
 fn encode_emits_the_legacy_plane_target_for_4_0_and_5_0() {
     for version in [IgesVersion::V4_0, IgesVersion::V5_0] {
         let mut ir = CadIr::empty();
-        ir.model.surfaces.push(Surface {
-            native_ref: None,
-            id: SurfaceId::mint(format!("test:model:surface#{version:?}"))
-                .expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        ir.model.surfaces.push(Surface::new(
+            SurfaceId::mint(format!("test:model:surface#{version:?}")).expect("identity grammar"),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(4.0, 5.0, 6.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -235,8 +233,8 @@ fn encode_emits_the_legacy_plane_target_for_4_0_and_5_0() {
                 )
                 .unwrap(),
             )),
-            source_object: None,
-        });
+            None,
+        ));
         let plan =
             plan_at(version, &ir, None).unwrap_or_else(|error| panic!("{version:?}: {error}"));
         let mut written = Vec::new();
@@ -576,10 +574,9 @@ fn encode_regenerates_supported_analytic_and_spline_curves() {
 fn encode_regenerates_planar_and_nurbs_surfaces() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.extend([
-        Surface {
-            native_ref: None,
-            id: SurfaceId::mint("test:model:surface#plane").expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        Surface::new(
+            SurfaceId::mint("test:model:surface#plane").expect("identity grammar"),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(4.0, 5.0, 6.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -587,12 +584,11 @@ fn encode_regenerates_planar_and_nurbs_surfaces() {
                 )
                 .unwrap(),
             )),
-            source_object: None,
-        },
-        Surface {
-            native_ref: None,
-            id: SurfaceId::mint("test:model:surface#nurbs").expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+            None,
+        ),
+        Surface::new(
+            SurfaceId::mint("test:model:surface#nurbs").expect("identity grammar"),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                 NurbsSurface::from_lanes(
                     cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                         1,
@@ -615,8 +611,8 @@ fn encode_regenerates_planar_and_nurbs_surfaces() {
                 )
                 .expect("valid test NURBS surface"),
             )),
-            source_object: None,
-        },
+            None,
+        ),
     ]);
 
     let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
@@ -731,10 +727,9 @@ fn encode_reduces_exact_procedural_carriers_to_solved_geometry() {
 fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.extend([
-        Surface {
-            native_ref: None,
-            id: SurfaceId::mint("test:model:surface#cylinder").expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+        Surface::new(
+            SurfaceId::mint("test:model:surface#cylinder").expect("identity grammar"),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                     Point3::new(1.0, 2.0, 3.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -743,12 +738,11 @@ fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
                 )
                 .unwrap(),
             )),
-            source_object: None,
-        },
-        Surface {
-            native_ref: None,
-            id: SurfaceId::mint("test:model:surface#cone").expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+            None,
+        ),
+        Surface::new(
+            SurfaceId::mint("test:model:surface#cone").expect("identity grammar"),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
                 cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
                     Point3::new(-1.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -759,12 +753,11 @@ fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
                 )
                 .unwrap(),
             )),
-            source_object: None,
-        },
-        Surface {
-            native_ref: None,
-            id: SurfaceId::mint("test:model:surface#sphere").expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+            None,
+        ),
+        Surface::new(
+            SurfaceId::mint("test:model:surface#sphere").expect("identity grammar"),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
                 cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
                     Point3::new(0.0, 4.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -773,12 +766,11 @@ fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
                 )
                 .unwrap(),
             )),
-            source_object: None,
-        },
-        Surface {
-            native_ref: None,
-            id: SurfaceId::mint("test:model:surface#torus").expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
+            None,
+        ),
+        Surface::new(
+            SurfaceId::mint("test:model:surface#torus").expect("identity grammar"),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
                 cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
                     Point3::new(0.0, 0.0, 5.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -788,8 +780,8 @@ fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
                 )
                 .unwrap(),
             )),
-            source_object: None,
-        },
+            None,
+        ),
     ]);
 
     crate::writer::tests::assert_degraded_plan(
@@ -807,10 +799,9 @@ fn encode_refuses_a_free_analytic_surface_beside_brep_topology() {
         )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    decoded.ir_mut().model.surfaces.push(Surface {
-        native_ref: None,
-        id: SurfaceId::mint("test:model:surface#free-sphere").expect("identity grammar"),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+    decoded.ir_mut().model.surfaces.push(Surface::new(
+        SurfaceId::mint("test:model:surface#free-sphere").expect("identity grammar"),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
             cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
                 Point3::new(10.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -819,8 +810,8 @@ fn encode_refuses_a_free_analytic_surface_beside_brep_topology() {
             )
             .unwrap(),
         )),
-        source_object: None,
-    });
+        None,
+    ));
 
     crate::writer::tests::assert_degraded_plan(
         plan_at(IgesVersion::V5_3, decoded.ir(), None),
@@ -888,10 +879,9 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
         })
         .collect::<Vec<_>>();
     let mut ir = CadIr::empty();
-    ir.model.surfaces.push(Surface {
-        native_ref: None,
-        id: surface_id.clone(),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+    ir.model.surfaces.push(Surface::new(
+        surface_id.clone(),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -899,8 +889,8 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
             )
             .unwrap(),
         )),
-        source_object: None,
-    });
+        None,
+    ));
     for (index, position) in positions.into_iter().enumerate() {
         ir.model.points.push(Point::new(
             point_ids[index].clone(),
@@ -908,40 +898,40 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
                 .expect("a finite position is a point"),
             None,
         ));
-        ir.model.vertices.push(Vertex {
-            native_ref: None,
-            id: vertex_ids[index].clone(),
-            point: point_ids[index].clone(),
-            tolerance: None,
-        });
+        ir.model.vertices.push(Vertex::new(
+            vertex_ids[index].clone(),
+            point_ids[index].clone(),
+            None,
+        ));
     }
     for index in 0..4 {
         let end = (index + 1) % 4;
-        ir.model.curves.push(Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: curve_ids[index].clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                    positions[index],
-                    positions[index].vector_from(positions[end]),
-                )
-                .unwrap(),
-            )),
-            source_object: None,
+        ir.model.curves.push({
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                curve_ids[index].clone(),
+                CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                    cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                        positions[index],
+                        positions[index].vector_from(positions[end]),
+                    )
+                    .unwrap(),
+                )),
+                None,
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         });
-        ir.model.edges.push(Edge {
-            native_ref: None,
-            id: edge_ids[index].clone(),
-            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+        ir.model.edges.push(Edge::new(
+            edge_ids[index].clone(),
+            cadmpeg_ir::topology::EdgeCarrier::new(
                 Some(curve_ids[index].clone()),
                 Some([0.0, 1.0]),
             )
             .unwrap(),
-            start: vertex_ids[index].clone(),
-            end: vertex_ids[end].clone(),
-            tolerance: None,
-        });
+            vertex_ids[index].clone(),
+            vertex_ids[end].clone(),
+            None,
+        ));
         let start = positions[index];
         let end_position = positions[end];
         let pcurve_end = if index == 0 {
@@ -952,10 +942,9 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
         } else {
             Point2::new(end_position.x, end_position.y)
         };
-        ir.model.pcurves.push(Pcurve {
-            native_ref: None,
-            id: pcurve_ids[index].clone(),
-            geometry: PcurveGeometry::Nurbs {
+        ir.model.pcurves.push(Pcurve::new(
+            pcurve_ids[index].clone(),
+            PcurveGeometry::Nurbs {
                 nurbs: PcurveNurbs::from_lanes(
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
@@ -965,14 +954,14 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
                 )
                 .expect("valid sheet pcurve"),
             },
-            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
+            cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                 None,
                 Some(
                     cadmpeg_ir::units::FiniteVector::new([0.0, 1.0]).expect("finite fixture range"),
                 ),
                 None,
             ),
-        });
+        ));
         let mut pcurve_uses = vec![cadmpeg_ir::topology::PcurveUse {
             pcurve: pcurve_ids[index].clone(),
             isoparametric: Some(false),
@@ -982,10 +971,9 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
             let midpoint = pcurve_end;
             let split_pcurve_id =
                 PcurveId::mint("test:model:pcurve#sheet:split").expect("identity grammar");
-            ir.model.pcurves.push(Pcurve {
-                native_ref: None,
-                id: split_pcurve_id.clone(),
-                geometry: PcurveGeometry::Nurbs {
+            ir.model.pcurves.push(Pcurve::new(
+                split_pcurve_id.clone(),
+                PcurveGeometry::Nurbs {
                     nurbs: PcurveNurbs::from_lanes(
                         1,
                         vec![0.0, 0.0, 1.0, 1.0],
@@ -995,7 +983,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
                     )
                     .expect("valid split sheet pcurve"),
                 },
-                metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
+                cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                     None,
                     Some(
                         cadmpeg_ir::units::FiniteVector::new([0.0, 1.0])
@@ -1003,65 +991,55 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
                     ),
                     None,
                 ),
-            });
+            ));
             pcurve_uses.push(cadmpeg_ir::topology::PcurveUse {
                 pcurve: split_pcurve_id,
                 isoparametric: Some(false),
                 parameter_range: None,
             });
         }
-        ir.model.coedges.push(Coedge {
-            native_ref: None,
-            id: coedge_ids[index].clone(),
-            owner_loop: loop_id.clone(),
-            edge: edge_ids[index].clone(),
-            radial_next: coedge_ids[index].clone(),
-            sense: Sense::Forward,
-            pcurves: pcurve_uses,
-            use_curve: None,
-        });
+        ir.model.coedges.push(Coedge::new(
+            coedge_ids[index].clone(),
+            loop_id.clone(),
+            edge_ids[index].clone(),
+            coedge_ids[index].clone(),
+            Sense::Forward,
+            pcurve_uses,
+            None,
+        ));
     }
-    ir.model.loops.push(Loop {
-        native_ref: None,
-        id: loop_id.clone(),
-        face: face_id.clone(),
-        boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+    ir.model.loops.push(Loop::new(
+        loop_id.clone(),
+        face_id.clone(),
+        cadmpeg_ir::topology::LoopBoundary::Ring(
             cadmpeg_ir::topology::LoopRing::new(coedge_ids.clone(), Vec::new())
                 .expect("valid loop ring"),
         ),
-    });
-    ir.model.faces.push(Face {
-        native_ref: None,
-        id: face_id.clone(),
-        shell: shell_id.clone(),
-        surface: surface_id,
-        sense: Sense::Forward,
-        loops: cadmpeg_ir::topology::FaceLoops::classified(loop_id, Vec::new()),
-        name: None,
-        color: None,
-        tolerance: None,
-    });
+    ));
+    ir.model.faces.push(Face::new(
+        face_id.clone(),
+        shell_id.clone(),
+        surface_id,
+        Sense::Forward,
+        cadmpeg_ir::topology::FaceLoops::classified(loop_id, Vec::new()),
+    ));
     ir.model.shells.push(Shell::with_face(
         shell_id.clone(),
         region_id.clone(),
         face_id,
     ));
-    ir.model.regions.push(Region {
-        native_ref: None,
-        id: region_id,
-        body: body_id.clone(),
-        shells: vec![shell_id],
-    });
-    ir.model.bodies.push(Body {
-        native_ref: None,
-        id: body_id,
-        kind: BodyKind::Sheet,
-        regions: vec![RegionId::mint("test:model:region#sheet").expect("identity grammar")],
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
-    });
+    ir.model
+        .regions
+        .push(Region::new(region_id, body_id.clone(), vec![shell_id]));
+    ir.model.bodies.push(Body::new(
+        body_id,
+        BodyKind::Sheet,
+        vec![RegionId::mint("test:model:region#sheet").expect("identity grammar")],
+        None,
+        None,
+        None,
+        None,
+    ));
 
     let reversed_order = [
         coedge_ids[3].clone(),
@@ -1559,10 +1537,9 @@ fn encode_orients_a_source_less_brep_pcurve_for_a_reversed_edge_use() {
     let start_uv = cadmpeg_ir::eval::analytic_surface_parameters(&surface.geometry, start).unwrap();
     let end_uv = cadmpeg_ir::eval::analytic_surface_parameters(&surface.geometry, end).unwrap();
     let pcurve_id = PcurveId::mint("test:model:pcurve#brep:source-less").expect("identity grammar");
-    decoded.ir_mut().model.pcurves.push(Pcurve {
-        native_ref: None,
-        id: pcurve_id.clone(),
-        geometry: PcurveGeometry::Nurbs {
+    decoded.ir_mut().model.pcurves.push(Pcurve::new(
+        pcurve_id.clone(),
+        PcurveGeometry::Nurbs {
             nurbs: PcurveNurbs::from_lanes(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
@@ -1572,12 +1549,12 @@ fn encode_orients_a_source_less_brep_pcurve_for_a_reversed_edge_use() {
             )
             .expect("valid source-less pcurve"),
         },
-        metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
+        cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
             None,
             Some(cadmpeg_ir::units::FiniteVector::new([0.0, 1.0]).expect("finite fixture range")),
             None,
         ),
-    });
+    ));
     decoded.ir_mut().model.coedges[coedge_index]
         .pcurves
         .push(cadmpeg_ir::topology::PcurveUse {

@@ -5951,12 +5951,10 @@ fn append_text_curve(
         }
     };
     let index = transfer.curves.len();
-    transfer.curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id,
-        geometry,
-        source_object: Some((association).clone()),
+    transfer.curves.push({
+        let (parameter_range, id, geometry, source_object) =
+            (None, id, geometry, Some((association).clone()));
+        Curve::new(id, geometry, parameter_range, source_object)
     });
     Ok(index)
 }
@@ -6299,12 +6297,9 @@ fn append_text_surface(
         }
     };
     let index = transfer.surfaces.len();
-    transfer.surfaces.push(Surface {
-        native_ref: None,
-        id,
-        geometry,
-        source_object: Some((association).clone()),
-    });
+    transfer
+        .surfaces
+        .push(Surface::new(id, geometry, Some((association).clone())));
     Ok(index)
 }
 

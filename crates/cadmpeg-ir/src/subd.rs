@@ -39,6 +39,32 @@ pub struct SubdSurface {
     pub source_object: Option<SourceObjectAssociation>,
 }
 
+impl SubdSurface {
+    /// Construct a subdsurface without a native counterpart.
+    #[must_use]
+    pub fn new(
+        id: SubdId,
+        scheme: SubdScheme,
+        cage: SubdCage,
+        source_object: Option<SourceObjectAssociation>,
+    ) -> Self {
+        Self {
+            native_ref: None,
+            id,
+            scheme,
+            cage,
+            source_object,
+        }
+    }
+
+    /// Attach the actual typed native counterpart, when present.
+    #[must_use]
+    pub fn with_native_ref(mut self, native_ref: Option<String>) -> Self {
+        self.native_ref = native_ref;
+        self
+    }
+}
+
 /// Admission error in a subdivision control cage.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SubdError {

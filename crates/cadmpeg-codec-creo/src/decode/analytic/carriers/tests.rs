@@ -17,12 +17,11 @@ use cadmpeg_ir::math::{Point3, Vector3};
 mod orientations;
 
 fn carrier_surface(id: u32, geometry: SurfaceGeometry) -> Surface {
-    Surface {
-        native_ref: None,
-        id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
+    Surface::new(
+        SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
         geometry,
-        source_object: None,
-    }
+        None,
+    )
 }
 
 fn cylinder_surface(id: u32, radius: f64) -> Surface {
@@ -665,20 +664,22 @@ fn topology_bound_plane_rejects_duplicate_model_curve_ids() {
         }],
     ));
 
-    let curve = Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: CurveId::mint("creo:visibgeom:curve#11".to_string()).expect("identity grammar"),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                Point3::new(2.0, 3.0, 4.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                5.0,
-            )
-            .expect("valid CircleCurve fixture"),
-        )),
-        source_object: None,
+    let curve = {
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            CurveId::mint("creo:visibgeom:curve#11".to_string()).expect("identity grammar"),
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                    Point3::new(2.0, 3.0, 4.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    5.0,
+                )
+                .expect("valid CircleCurve fixture"),
+            )),
+            None,
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     };
     let mut ir = CadIr::empty();
     ir.model.curves.extend([curve.clone(), curve]);

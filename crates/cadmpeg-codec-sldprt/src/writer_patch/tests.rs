@@ -912,18 +912,17 @@ fn unrepresented_source_does_not_redecode_retained_bytes_for_content() {
 #[test]
 fn partition_graph_comparison_includes_pcurve_geometry_and_face_colours() {
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
-    let pcurve = cadmpeg_ir::geometry::pcurve::Pcurve {
-        native_ref: None,
-        id: "test:model:pcurve#patch".try_into().unwrap(),
-        geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
+    let pcurve = cadmpeg_ir::geometry::pcurve::Pcurve::new(
+        "test:model:pcurve#patch".try_into().unwrap(),
+        cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
             cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                 cadmpeg_ir::math::Point2::new(0.0, 0.0),
                 cadmpeg_ir::math::Point2::new(1.0, 0.0),
             )
             .unwrap(),
         ),
-        metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
-    };
+        cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
+    );
     ir.model.pcurves.push(pcurve);
     let native = crate::brep::graph::Brep {
         bodies: ir.model.bodies.clone(),
@@ -993,18 +992,17 @@ fn native_partition_patch_refuses_changed_face_colours_and_pcurves() {
         changed
             .model
             .pcurves
-            .push(cadmpeg_ir::geometry::pcurve::Pcurve {
-                native_ref: None,
-                id: "test:model:pcurve#patch".try_into().unwrap(),
-                geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
+            .push(cadmpeg_ir::geometry::pcurve::Pcurve::new(
+                "test:model:pcurve#patch".try_into().unwrap(),
+                cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
                     cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                         cadmpeg_ir::math::Point2::new(2.0, 0.0),
                         cadmpeg_ir::math::Point2::new(1.0, 0.0),
                     )
                     .unwrap(),
                 ),
-                metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
-            });
+                cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
+            ));
     }
     let error = super::patch_partition(&changed, annotations, &records, 0.001).unwrap_err();
     assert!(error

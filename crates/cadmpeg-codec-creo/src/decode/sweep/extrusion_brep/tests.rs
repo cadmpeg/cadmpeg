@@ -124,18 +124,19 @@ fn admitted_extrusion_fixture() -> (crate::container::ContainerScan<'static>, Ca
         offset: usize::try_from(id).expect("fixture index fits usize"),
     };
     scan.surfaces.rows.extend((31..=36).map(row));
-    let plane = |id, z| Surface {
-        native_ref: None,
-        id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("surface identity"),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                Point3::new(0.0, 0.0, z),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-            )
-            .expect("plane"),
-        )),
-        source_object: None,
+    let plane = |id, z| {
+        Surface::new(
+            SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("surface identity"),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, z),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("plane"),
+            )),
+            None,
+        )
     };
     let mut ir = CadIr::empty();
     ir.model.surfaces.extend([plane(31, 0.0), plane(32, 2.0)]);

@@ -27,10 +27,9 @@ use cadmpeg_ir::units::COINCIDENCE_TOLERANCE;
 fn surface_draft(id: &str) -> ModelDraft {
     let mut draft = ModelDraft::new();
     draft
-        .insert(Surface {
-            native_ref: None,
-            id: SurfaceId::mint(id).expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        .insert(Surface::new(
+            SurfaceId::mint(id).expect("identity grammar"),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -38,8 +37,8 @@ fn surface_draft(id: &str) -> ModelDraft {
                 )
                 .unwrap(),
             )),
-            source_object: None,
-        })
+            None,
+        ))
         .expect("insert surface into draft");
     draft
 }
@@ -62,16 +61,15 @@ fn cross_root_surface_filter_tracks_successful_commits_only() {
 
     let mut rejected_root = surface_draft(rejected_id);
     rejected_root
-        .insert(Vertex {
-            native_ref: None,
-            id: "step:data:vertex#rejected"
+        .insert(Vertex::new(
+            "step:data:vertex#rejected"
                 .try_into()
                 .expect("valid identity"),
-            point: "step:data:point#missing"
+            "step:data:point#missing"
                 .try_into()
                 .expect("valid identity"),
-            tolerance: None,
-        })
+            None,
+        ))
         .expect("insert invalid root reference");
     assert!(session.commit_model(rejected_root).unwrap().is_err());
 
@@ -93,12 +91,11 @@ fn trimmed_pcurve_fit_uses_declared_endpoints() {
         .unwrap(),
     ));
     let mut ir = CadIr::empty();
-    ir.model.surfaces.push(Surface {
-        native_ref: None,
-        id: surface_id.clone(),
-        geometry: surface_geometry.clone(),
-        source_object: None,
-    });
+    ir.model.surfaces.push(Surface::new(
+        surface_id.clone(),
+        surface_geometry.clone(),
+        None,
+    ));
     let pcurve = PcurveGeometry::Trimmed(
         cadmpeg_ir::geometry::pcurve::TrimmedPcurve::try_new(
             [
@@ -150,12 +147,11 @@ fn bounded_pcurve_search_can_miss_an_unsampled_exact_point() {
         .unwrap(),
     ));
     let mut ir = CadIr::empty();
-    ir.model.surfaces.push(Surface {
-        native_ref: None,
-        id: surface_id.clone(),
-        geometry: surface_geometry.clone(),
-        source_object: None,
-    });
+    ir.model.surfaces.push(Surface::new(
+        surface_id.clone(),
+        surface_geometry.clone(),
+        None,
+    ));
 
     // The polar harmonic has a stationary chart tangent at seed 0. Its
     // exact point at pi is outside the default seed set, so the bounded
@@ -713,10 +709,9 @@ fn reordered_shared_step_pcurve_mismatch_omits_optional_use() {
 
 #[test]
 fn shared_surface_carrier_is_staged_once() {
-    let surface = Surface {
-        native_ref: None,
-        id: SurfaceId::mint("step:data:surface#shared").expect("identity grammar"),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+    let surface = Surface::new(
+        SurfaceId::mint("step:data:surface#shared").expect("identity grammar"),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -724,8 +719,8 @@ fn shared_surface_carrier_is_staged_once() {
             )
             .unwrap(),
         )),
-        source_object: None,
-    };
+        None,
+    );
     let body_id = BodyId::mint("step:data:body#shared-surface").expect("identity grammar");
     let region_id = RegionId::mint("step:data:region#shared-surface").expect("identity grammar");
     let built = super::super::staged_topology(super::super::StagedTopologyParts {
@@ -737,22 +732,16 @@ fn shared_surface_carrier_is_staged_once() {
         faces: Vec::new(),
         surfaces: vec![surface.clone(), surface],
         shells: Vec::new(),
-        region: Region {
-            native_ref: None,
-            id: region_id.clone(),
-            body: body_id.clone(),
-            shells: Vec::new(),
-        },
-        body: Body {
-            native_ref: None,
-            id: body_id,
-            kind: BodyKind::Sheet,
-            regions: vec![region_id],
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        },
+        region: Region::new(region_id.clone(), body_id.clone(), Vec::new()),
+        body: Body::new(
+            body_id,
+            BodyKind::Sheet,
+            vec![region_id],
+            None,
+            None,
+            None,
+            None,
+        ),
     })
     .expect("duplicate references to one source surface must stage");
 

@@ -276,30 +276,28 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
     let mut ir = CadIr::empty();
     let bound = BodyId::mint("nx:s2:body#3".to_string()).expect("identity grammar");
     ir.model.bodies.extend([
-        Body {
-            native_ref: None,
-            id: bound.clone(),
-            kind: BodyKind::Solid,
-            regions: vec![
+        Body::new(
+            bound.clone(),
+            BodyKind::Solid,
+            vec![
                 RegionId::mint("test:model:entity#region-2".to_string()).expect("identity grammar")
             ],
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        },
-        Body {
-            native_ref: None,
-            id: BodyId::mint("nx:s3:body#4".to_string()).expect("identity grammar"),
-            kind: BodyKind::Solid,
-            regions: vec![
+            None,
+            None,
+            None,
+            None,
+        ),
+        Body::new(
+            BodyId::mint("nx:s3:body#4".to_string()).expect("identity grammar"),
+            BodyKind::Solid,
+            vec![
                 RegionId::mint("test:model:entity#region-3".to_string()).expect("identity grammar")
             ],
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        },
+            None,
+            None,
+            None,
+            None,
+        ),
     ]);
     let binding = crate::native::segments::SegmentBodyBinding {
         id: "nx:segment-body-bindings:binding#0".to_string(),
@@ -356,17 +354,16 @@ fn segment_bound_bodies_match_bindings_by_exact_stream_prefix() {
         .chain(["nx:s:body#0".into(), "nx:s12x:body#0".into()])
         .collect::<Vec<_>>();
     let mut ir = CadIr::empty();
-    ir.model.bodies.extend(body_ids.iter().map(|id| Body {
-        native_ref: None,
-        id: BodyId::mint(id.clone()).expect("identity grammar"),
-        kind: BodyKind::Solid,
-        regions: vec![
-            RegionId::mint("test:model:entity#region".to_string()).expect("identity grammar"),
-        ],
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
+    ir.model.bodies.extend(body_ids.iter().map(|id| {
+        Body::new(
+            BodyId::mint(id.clone()).expect("identity grammar"),
+            BodyKind::Solid,
+            vec![RegionId::mint("test:model:entity#region".to_string()).expect("identity grammar")],
+            None,
+            None,
+            None,
+            None,
+        )
     }));
     let bindings = (0..256_u32)
         .map(|index| crate::native::segments::SegmentBodyBinding {

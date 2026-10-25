@@ -649,10 +649,9 @@ fn circle_pair_selection_bound_rejects_the_solution_with_a_loss() {
     }
     let surface_id =
         SurfaceId::mint("catia:test:surface#plane".to_string()).expect("identity grammar");
-    ir.model.surfaces.push(Surface {
-        native_ref: None,
-        id: surface_id.clone(),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+    ir.model.surfaces.push(Surface::new(
+        surface_id.clone(),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -660,8 +659,8 @@ fn circle_pair_selection_bound_rejects_the_solution_with_a_loss() {
             )
             .expect("valid PlaneSurface fixture"),
         )),
-        source_object: None,
-    });
+        None,
+    ));
     let bindings = [(surface_id.clone(), false, 0)];
     let surface_indices = HashMap::from([(surface_id, 0)]);
     let support = StandardCurveSupport {
@@ -1307,10 +1306,9 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
     );
     let surface_id =
         SurfaceId::mint("catia:test:surface#surface".to_string()).expect("identity grammar");
-    ir.model.surfaces.push(Surface {
-        native_ref: None,
-        id: surface_id.clone(),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+    ir.model.surfaces.push(Surface::new(
+        surface_id.clone(),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -1318,8 +1316,8 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
             )
             .expect("valid PlaneSurface fixture"),
         )),
-        source_object: None,
-    });
+        None,
+    ));
     let support = StandardCurveSupport {
         pos: 10,
         tag: 20,
@@ -1432,10 +1430,9 @@ fn limit_curve_point_search_bound_skips_the_curve_with_a_loss() {
     );
     let surface_id =
         SurfaceId::mint("catia:test:surface#surface".to_string()).expect("identity grammar");
-    ir.model.surfaces.push(Surface {
-        native_ref: None,
-        id: surface_id.clone(),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+    ir.model.surfaces.push(Surface::new(
+        surface_id.clone(),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -1443,8 +1440,8 @@ fn limit_curve_point_search_bound_skips_the_curve_with_a_loss() {
             )
             .expect("valid PlaneSurface fixture"),
         )),
-        source_object: None,
-    });
+        None,
+    ));
     let support = StandardCurveSupport {
         pos: 10,
         tag: 20,
@@ -1600,10 +1597,9 @@ fn witnessed_cylinder_circle_edge_uses_complementary_angular_range() {
     let mut ir = CadIr::empty();
     let surface_id =
         SurfaceId::mint("catia:test:surface#cylinder".to_string()).expect("identity grammar");
-    ir.model.surfaces.push(Surface {
-        native_ref: None,
-        id: surface_id.clone(),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+    ir.model.surfaces.push(Surface::new(
+        surface_id.clone(),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -1612,8 +1608,8 @@ fn witnessed_cylinder_circle_edge_uses_complementary_angular_range() {
             )
             .expect("valid CylinderSurface fixture"),
         )),
-        source_object: None,
-    });
+        None,
+    ));
     let bindings = [(surface_id.clone(), true, 0), (surface_id.clone(), true, 0)];
     let indices = [(surface_id, 0)].into_iter().collect();
     let support = StandardCurveSupport {

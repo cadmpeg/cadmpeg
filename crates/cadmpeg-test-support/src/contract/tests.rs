@@ -83,13 +83,12 @@ fn translation_moves_polynomial_and_rational_surface_poles_once() {
             NurbsSurface::new(axis(), axis(), poles, false).expect("valid authored test fixture");
         let weights = surface.weights();
         let mut ir = CadIr::empty();
-        ir.model.surfaces.push(Surface {
-            native_ref: None,
-            id: cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#translate")
+        ir.model.surfaces.push(Surface::new(
+            cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#translate")
                 .expect("valid authored test fixture"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
-            source_object: None,
-        });
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
+            None,
+        ));
         translate_model(&mut ir, [13.0, -7.0, 5.0]).expect("valid authored test fixture");
         let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) =
             &ir.model.surfaces[0].geometry

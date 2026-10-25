@@ -26,10 +26,9 @@ pub(crate) fn cyclic_model() -> (CadIr, CurveId, SurfaceId) {
         (support.clone(), Vector3::new(0.0, 0.0, 1.0)),
         (other.clone(), Vector3::new(0.0, -1.0, 0.0)),
     ] {
-        ir.model.surfaces.push(Surface {
-            native_ref: None,
+        ir.model.surfaces.push(Surface::new(
             id,
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 crate::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     normal,
@@ -37,21 +36,23 @@ pub(crate) fn cyclic_model() -> (CadIr, CurveId, SurfaceId) {
                 )
                 .expect("plane fixture"),
             )),
-            source_object: None,
-        });
+            None,
+        ));
     }
-    ir.model.curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: curve.clone(),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            crate::geometry::analytic::LineCurve::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(1.0, 0.0, 0.0),
-            )
-            .expect("line curve fixture"),
-        )),
-        source_object: None,
+    ir.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            curve.clone(),
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                crate::geometry::analytic::LineCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("line curve fixture"),
+            )),
+            None,
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     });
     ir.model
         .add_procedural_curve(

@@ -131,10 +131,9 @@ fn carrier_scan() -> crate::container::ContainerScan<'static> {
 fn source_ir() -> CadIr {
     let mut ir = CadIr::empty();
     ir.model.surfaces.extend([
-        Surface {
-            native_ref: None,
-            id: SurfaceId::mint("creo:visibgeom:surface#1".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+        Surface::new(
+            SurfaceId::mint("creo:visibgeom:surface#1".to_string()).expect("identity grammar"),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -143,12 +142,11 @@ fn source_ir() -> CadIr {
                 )
                 .expect("valid CylinderSurface fixture"),
             )),
-            source_object: None,
-        },
-        Surface {
-            native_ref: None,
-            id: SurfaceId::mint("creo:visibgeom:surface#3".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            None,
+        ),
+        Surface::new(
+            SurfaceId::mint("creo:visibgeom:surface#3".to_string()).expect("identity grammar"),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 5.0_f64.sqrt(), 0.0),
                     Vector3::new(0.0, 1.0, 0.0),
@@ -156,12 +154,11 @@ fn source_ir() -> CadIr {
                 )
                 .expect("valid PlaneSurface fixture"),
             )),
-            source_object: None,
-        },
-        Surface {
-            native_ref: None,
-            id: SurfaceId::mint("creo:visibgeom:surface#4".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            None,
+        ),
+        Surface::new(
+            SurfaceId::mint("creo:visibgeom:surface#4".to_string()).expect("identity grammar"),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -169,12 +166,11 @@ fn source_ir() -> CadIr {
                 )
                 .expect("valid PlaneSurface fixture"),
             )),
-            source_object: None,
-        },
-        Surface {
-            native_ref: None,
-            id: SurfaceId::mint("creo:visibgeom:surface#2".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+            None,
+        ),
+        Surface::new(
+            SurfaceId::mint("creo:visibgeom:surface#2".to_string()).expect("identity grammar"),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                     Point3::new(4.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -183,25 +179,27 @@ fn source_ir() -> CadIr {
                 )
                 .expect("valid CylinderSurface fixture"),
             )),
-            source_object: None,
-        },
+            None,
+        ),
     ]);
     let y = 5.0_f64.sqrt();
-    ir.model.curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: CurveId::mint("creo:visibgeom:curve#10".to_string()).expect("identity grammar"),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            NurbsCurve::from_lanes(
-                1,
-                vec![0.0, 0.0, 1.0, 1.0],
-                vec![Point3::new(2.0, y, 0.0), Point3::new(2.0, y, 5.0)],
-                None,
-                false,
-            )
-            .expect("valid intersection witness curve"),
-        )),
-        source_object: None,
+    ir.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            CurveId::mint("creo:visibgeom:curve#10".to_string()).expect("identity grammar"),
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                NurbsCurve::from_lanes(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point3::new(2.0, y, 0.0), Point3::new(2.0, y, 5.0)],
+                    None,
+                    false,
+                )
+                .expect("valid intersection witness curve"),
+            )),
+            None,
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     });
     ir
 }

@@ -100,12 +100,11 @@ mod tests {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
         let mut ir = crate::CadIr::empty();
-        ir.model.vertices.push(crate::topology::Vertex {
-            native_ref: None,
-            id: "test:model:vertex#owner".try_into().unwrap(),
-            point: "test:model:point#missing".try_into().unwrap(),
-            tolerance: None,
-        });
+        ir.model.vertices.push(crate::topology::Vertex::new(
+            "test:model:vertex#owner".try_into().unwrap(),
+            "test:model:point#missing".try_into().unwrap(),
+            None,
+        ));
         let identities = crate::index::identities::BorrowedIdentities::<()>::new();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();

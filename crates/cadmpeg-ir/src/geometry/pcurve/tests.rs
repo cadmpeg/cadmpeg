@@ -319,17 +319,16 @@ fn pcurve_lift_rejects_non_finite_model_poles() {
 
 #[test]
 fn asm_inline_pcurve_metadata_lives_under_its_own_nested_key() {
-    let pcurve = crate::geometry::pcurve::Pcurve {
-        native_ref: None,
-        id: crate::ids::PcurveId::mint("test:model:pcurve#inline").expect("valid identity"),
-        geometry: crate::geometry::pcurve::PcurveGeometry::Line(
+    let pcurve = crate::geometry::pcurve::Pcurve::new(
+        crate::ids::PcurveId::mint("test:model:pcurve#inline").expect("valid identity"),
+        crate::geometry::pcurve::PcurveGeometry::Line(
             crate::geometry::pcurve::LinePcurve::try_new(
                 crate::math::Point2::new(1.0, 2.0),
                 crate::math::Point2::new(3.0, 4.0),
             )
             .unwrap(),
         ),
-        metadata: crate::geometry::pcurve::PcurveMetadata::AsmInline {
+        crate::geometry::pcurve::PcurveMetadata::AsmInline {
             form: crate::geometry::pcurve::PcurveInlineForm::try_new(
                 false,
                 [true, false, true, false],
@@ -338,7 +337,7 @@ fn asm_inline_pcurve_metadata_lives_under_its_own_nested_key() {
             )
             .unwrap(),
         },
-    };
+    );
     let value = serde_json::to_value(&pcurve).unwrap();
     assert_eq!(
         value,

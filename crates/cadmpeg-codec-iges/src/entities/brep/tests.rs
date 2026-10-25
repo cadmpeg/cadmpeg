@@ -51,44 +51,38 @@ fn brep_surface_endpoint_keeps_evaluator_resource_refusal() {
 fn source_edge_selection_matches_the_edge_occurrence_endpoints() {
     let curve_id = CurveId::mint("test:model:curve#curve").expect("identity grammar");
     let mut ir = CadIr::empty();
-    ir.model.curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: curve_id.clone(),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(1.0, 0.0, 0.0),
-            )
-            .unwrap(),
-        )),
-        source_object: None,
+    ir.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            curve_id.clone(),
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            )),
+            None,
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     });
     ir.model.edges.extend([
-        Edge {
-            native_ref: None,
-            id: EdgeId::mint("test:model:edge#wrong-occurrence").expect("identity grammar"),
-            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
-                Some(curve_id.clone()),
-                Some([10.0, 11.0]),
-            )
-            .unwrap(),
-            start: VertexId::mint("test:model:vertex#wrong-start").expect("identity grammar"),
-            end: VertexId::mint("test:model:vertex#wrong-end").expect("identity grammar"),
-            tolerance: None,
-        },
-        Edge {
-            native_ref: None,
-            id: EdgeId::mint("test:model:edge#matching-occurrence").expect("identity grammar"),
-            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
-                Some(curve_id.clone()),
-                Some([0.0, 2.0]),
-            )
-            .unwrap(),
-            start: VertexId::mint("test:model:vertex#matching-start").expect("identity grammar"),
-            end: VertexId::mint("test:model:vertex#matching-end").expect("identity grammar"),
-            tolerance: None,
-        },
+        Edge::new(
+            EdgeId::mint("test:model:edge#wrong-occurrence").expect("identity grammar"),
+            cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id.clone()), Some([10.0, 11.0]))
+                .unwrap(),
+            VertexId::mint("test:model:vertex#wrong-start").expect("identity grammar"),
+            VertexId::mint("test:model:vertex#wrong-end").expect("identity grammar"),
+            None,
+        ),
+        Edge::new(
+            EdgeId::mint("test:model:edge#matching-occurrence").expect("identity grammar"),
+            cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id.clone()), Some([0.0, 2.0]))
+                .unwrap(),
+            VertexId::mint("test:model:vertex#matching-start").expect("identity grammar"),
+            VertexId::mint("test:model:vertex#matching-end").expect("identity grammar"),
+            None,
+        ),
     ]);
 
     let source_edge = crate::test_support::with_service_context(&[], |ctx| {
@@ -113,46 +107,46 @@ fn source_edge_selection_matches_the_edge_occurrence_endpoints() {
 fn source_edge_selection_rejects_multiple_matching_occurrences() {
     let curve_id = CurveId::mint("test:model:curve#curve").expect("identity grammar");
     let mut ir = CadIr::empty();
-    ir.model.curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: curve_id.clone(),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                1.0,
-            )
-            .unwrap(),
-        )),
-        source_object: None,
+    ir.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            curve_id.clone(),
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    1.0,
+                )
+                .unwrap(),
+            )),
+            None,
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     });
     ir.model.edges.extend([
-        Edge {
-            native_ref: None,
-            id: EdgeId::mint("test:model:edge#first-occurrence").expect("identity grammar"),
-            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+        Edge::new(
+            EdgeId::mint("test:model:edge#first-occurrence").expect("identity grammar"),
+            cadmpeg_ir::topology::EdgeCarrier::new(
                 Some(curve_id.clone()),
                 Some([0.0, std::f64::consts::TAU]),
             )
             .unwrap(),
-            start: VertexId::mint("test:model:vertex#first-start").expect("identity grammar"),
-            end: VertexId::mint("test:model:vertex#first-end").expect("identity grammar"),
-            tolerance: None,
-        },
-        Edge {
-            native_ref: None,
-            id: EdgeId::mint("test:model:edge#second-occurrence").expect("identity grammar"),
-            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+            VertexId::mint("test:model:vertex#first-start").expect("identity grammar"),
+            VertexId::mint("test:model:vertex#first-end").expect("identity grammar"),
+            None,
+        ),
+        Edge::new(
+            EdgeId::mint("test:model:edge#second-occurrence").expect("identity grammar"),
+            cadmpeg_ir::topology::EdgeCarrier::new(
                 Some(curve_id.clone()),
                 Some([std::f64::consts::TAU, 2.0 * std::f64::consts::TAU]),
             )
             .unwrap(),
-            start: VertexId::mint("test:model:vertex#second-start").expect("identity grammar"),
-            end: VertexId::mint("test:model:vertex#second-end").expect("identity grammar"),
-            tolerance: None,
-        },
+            VertexId::mint("test:model:vertex#second-start").expect("identity grammar"),
+            VertexId::mint("test:model:vertex#second-end").expect("identity grammar"),
+            None,
+        ),
     ]);
 
     let result = crate::test_support::with_service_context(&[], |ctx| {
@@ -723,16 +717,15 @@ fn decode_resolves_a_pcurve_shared_by_many_edge_uses_like_a_single_reference() {
 }
 
 fn test_coedge(id: &str, sense: Sense) -> Coedge {
-    Coedge {
-        native_ref: None,
-        id: CoedgeId::mint(id).unwrap(),
-        owner_loop: LoopId::mint("test:model:loop#loop").unwrap(),
-        edge: EdgeId::mint("test:model:edge#edge").unwrap(),
-        radial_next: CoedgeId::mint(id).unwrap(),
+    Coedge::new(
+        CoedgeId::mint(id).unwrap(),
+        LoopId::mint("test:model:loop#loop").unwrap(),
+        EdgeId::mint("test:model:edge#edge").unwrap(),
+        CoedgeId::mint(id).unwrap(),
         sense,
-        pcurves: Vec::new(),
-        use_curve: None,
-    }
+        Vec::new(),
+        None,
+    )
 }
 
 fn scan_coedge<'a>(coedges: &'a [Coedge], id: &CoedgeId) -> Option<&'a Coedge> {

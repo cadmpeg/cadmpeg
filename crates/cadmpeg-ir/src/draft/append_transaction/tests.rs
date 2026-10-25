@@ -26,12 +26,11 @@ fn point_draft(id: &str) -> ModelDraft {
 fn vertex_draft(id: &str, point: &str) -> ModelDraft {
     let mut draft = ModelDraft::new();
     draft
-        .insert(Vertex {
-            native_ref: None,
-            id: id.try_into().expect("vertex identity"),
-            point: point.try_into().expect("point reference"),
-            tolerance: None,
-        })
+        .insert(Vertex::new(
+            id.try_into().expect("vertex identity"),
+            point.try_into().expect("point reference"),
+            None,
+        ))
         .expect("insert candidate vertex");
     draft
 }

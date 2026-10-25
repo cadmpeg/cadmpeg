@@ -99,16 +99,15 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
         )
         .unwrap(),
     );
-    ir.model.pcurves.push(Pcurve {
-        native_ref: None,
-        id: pcurve_id.clone(),
-        geometry: pcurve_geometry.clone(),
-        metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
+    ir.model.pcurves.push(Pcurve::new(
+        pcurve_id.clone(),
+        pcurve_geometry.clone(),
+        cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
             None,
             Some(cadmpeg_ir::units::FiniteVector::new([0.0, 1.0]).expect("finite fixture range")),
             None,
         ),
-    });
+    ));
     let second_face = ir
         .model
         .faces

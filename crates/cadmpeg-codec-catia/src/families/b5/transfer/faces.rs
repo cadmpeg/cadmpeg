@@ -310,16 +310,15 @@ pub(super) fn emit_faces(
     }
     let body_record_id = body_id.clone();
     admission.charge()?;
-    ir.model.bodies.push(Body {
-        native_ref: None,
-        id: body_record_id,
-        kind: ownership.body_kind,
-        regions: body_regions,
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
-    });
+    ir.model.bodies.push(Body::new(
+        body_record_id,
+        ownership.body_kind,
+        body_regions,
+        None,
+        None,
+        None,
+        None,
+    ));
     for (component_index, component_faces) in &components {
         let region_id = region_ids[component_index].clone();
         let shell_id = crate::resource::compose_index_id(
@@ -342,12 +341,9 @@ pub(super) fn emit_faces(
         let region_shell_id = shell_id.clone();
         let region_shells = vec![region_shell_id];
         admission.charge()?;
-        ir.model.regions.push(Region {
-            native_ref: None,
-            id: region_record_id,
-            body: region_body_id,
-            shells: region_shells,
-        });
+        ir.model
+            .regions
+            .push(Region::new(region_record_id, region_body_id, region_shells));
         annotate(
             annotations,
             &shell_id,
@@ -406,17 +402,13 @@ pub(super) fn emit_faces(
         let face_surface_id = surface_ids[&face.surface].clone();
         let face_record_index = ir.model.faces.len();
         admission.charge()?;
-        ir.model.faces.push(Face {
-            native_ref: None,
-            id: face_record_id,
-            shell: face_shell_id,
-            surface: face_surface_id,
-            sense: Sense::Forward,
-            loops: face_loops,
-            name: None,
-            color: None,
-            tolerance: None,
-        });
+        ir.model.faces.push(Face::new(
+            face_record_id,
+            face_shell_id,
+            face_surface_id,
+            Sense::Forward,
+            face_loops,
+        ));
         for loop_id_value in &face.loops {
             let loop_ = &graph.loops[loop_id_value];
             let orientation = &loop_orientation[loop_id_value];
@@ -474,12 +466,11 @@ pub(super) fn emit_faces(
             let loop_record_id = loop_id.clone();
             let loop_face_id = face_id.clone();
             admission.charge()?;
-            ir.model.loops.push(Loop {
-                native_ref: None,
-                id: loop_record_id,
-                face: loop_face_id,
-                boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
-            });
+            ir.model.loops.push(Loop::new(
+                loop_record_id,
+                loop_face_id,
+                cadmpeg_ir::topology::LoopBoundary::Ring(ring),
+            ));
             for member in orientation.member_order() {
                 let edge = loop_.members[member].edge;
                 let reversed = orientation.members[member].reversed;
@@ -522,20 +513,19 @@ pub(super) fn emit_faces(
                     });
                 }
                 admission.charge()?;
-                ir.model.coedges.push(Coedge {
-                    native_ref: None,
-                    id: coedge_record_id,
-                    owner_loop: owner_loop_id,
-                    edge: edge_ref_id,
-                    radial_next: id,
-                    sense: if reversed {
+                ir.model.coedges.push(Coedge::new(
+                    coedge_record_id,
+                    owner_loop_id,
+                    edge_ref_id,
+                    id,
+                    if reversed {
                         Sense::Reversed
                     } else {
                         Sense::Forward
                     },
-                    pcurves: coedge_pcurves,
-                    use_curve: None,
-                });
+                    coedge_pcurves,
+                    None,
+                ));
             }
         }
     }

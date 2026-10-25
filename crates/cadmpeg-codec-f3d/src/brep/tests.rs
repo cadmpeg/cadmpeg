@@ -154,22 +154,16 @@ fn brep_qualification_rewrites_owned_ids_and_cross_references() {
     let region = RegionId::mint("f3d:brep:entity#2").expect("identity grammar");
     let mut brep = Brep {
         asm: AsmBrep {
-            bodies: vec![Body {
-                native_ref: None,
-                id: body.clone(),
-                kind: BodyKind::default(),
-                regions: vec![region.clone()],
-                transform: None,
-                name: None,
-                color: None,
-                visible: None,
-            }],
-            regions: vec![Region {
-                native_ref: None,
-                id: region,
-                body: body.clone(),
-                shells: Vec::new(),
-            }],
+            bodies: vec![Body::new(
+                body.clone(),
+                BodyKind::default(),
+                vec![region.clone()],
+                None,
+                None,
+                None,
+                None,
+            )],
+            regions: vec![Region::new(region, body.clone(), Vec::new())],
 
             body_native_keys: vec![BodyNativeKey {
                 source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
@@ -217,17 +211,16 @@ fn brep_qualification_rewrites_owned_ids_and_cross_references() {
 
 #[test]
 fn body_key_retention_keeps_only_the_selected_connected_graph() {
-    let body = |index, region| Body {
-        native_ref: None,
-        id: BodyId::mint(format!("f3d:brep:entity#{index}")).expect("identity grammar"),
-        kind: BodyKind::default(),
-        regions: vec![
-            RegionId::mint(format!("f3d:brep:entity#{region}")).expect("identity grammar")
-        ],
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
+    let body = |index, region| {
+        Body::new(
+            BodyId::mint(format!("f3d:brep:entity#{index}")).expect("identity grammar"),
+            BodyKind::default(),
+            vec![RegionId::mint(format!("f3d:brep:entity#{region}")).expect("identity grammar")],
+            None,
+            None,
+            None,
+            None,
+        )
     };
     let native_key = |index, key| BodyNativeKey {
         source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
@@ -249,18 +242,16 @@ fn body_key_retention_keeps_only_the_selected_connected_graph() {
                 body(3, 4),
             ],
             regions: vec![
-                Region {
-                    native_ref: None,
-                    id: RegionId::mint("f3d:brep:entity#2").expect("identity grammar"),
-                    body: BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
-                    shells: Vec::new(),
-                },
-                Region {
-                    native_ref: None,
-                    id: RegionId::mint("f3d:brep:entity#4").expect("identity grammar"),
-                    body: BodyId::mint("f3d:brep:entity#3").expect("identity grammar"),
-                    shells: Vec::new(),
-                },
+                Region::new(
+                    RegionId::mint("f3d:brep:entity#2").expect("identity grammar"),
+                    BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
+                    Vec::new(),
+                ),
+                Region::new(
+                    RegionId::mint("f3d:brep:entity#4").expect("identity grammar"),
+                    BodyId::mint("f3d:brep:entity#3").expect("identity grammar"),
+                    Vec::new(),
+                ),
             ],
 
             body_native_keys: vec![native_key(1, 10), native_key(3, 20)],
@@ -289,15 +280,16 @@ fn body_key_retention_keeps_only_the_selected_connected_graph() {
 
 #[test]
 fn body_key_retention_preserves_derived_links_for_reachable_targets() {
-    let body = |index| Body {
-        native_ref: None,
-        id: BodyId::mint(format!("f3d:brep:entity#{index}")).expect("identity grammar"),
-        kind: BodyKind::default(),
-        regions: Vec::new(),
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
+    let body = |index| {
+        Body::new(
+            BodyId::mint(format!("f3d:brep:entity#{index}")).expect("identity grammar"),
+            BodyKind::default(),
+            Vec::new(),
+            None,
+            None,
+            None,
+            None,
+        )
     };
     let native_key = |index, key| BodyNativeKey {
         source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
@@ -410,26 +402,24 @@ fn body_key_retention_preserves_selectorless_neutral_roots() {
     let mut brep = Brep {
         asm: AsmBrep {
             bodies: vec![
-                Body {
-                    native_ref: None,
-                    id: native_body.clone(),
-                    kind: BodyKind::Solid,
-                    regions: Vec::new(),
-                    transform: None,
-                    name: None,
-                    color: None,
-                    visible: None,
-                },
-                Body {
-                    native_ref: None,
-                    id: projected_body.clone(),
-                    kind: BodyKind::Wire,
-                    regions: Vec::new(),
-                    transform: None,
-                    name: None,
-                    color: None,
-                    visible: None,
-                },
+                Body::new(
+                    native_body.clone(),
+                    BodyKind::Solid,
+                    Vec::new(),
+                    None,
+                    None,
+                    None,
+                    None,
+                ),
+                Body::new(
+                    projected_body.clone(),
+                    BodyKind::Wire,
+                    Vec::new(),
+                    None,
+                    None,
+                    None,
+                    None,
+                ),
             ],
 
             body_native_keys: vec![BodyNativeKey {

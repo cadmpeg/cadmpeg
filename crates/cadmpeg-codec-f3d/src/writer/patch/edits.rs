@@ -4014,22 +4014,23 @@ mod tests {
     }
 
     fn curve(id: &str, geometry: SolvedCurveGeometry) -> Vec<Curve> {
-        vec![Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: CurveId::mint(id).expect("identity grammar"),
-            geometry: CurveGeometry::Solved(geometry),
-            source_object: None,
+        vec![{
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                CurveId::mint(id).expect("identity grammar"),
+                CurveGeometry::Solved(geometry),
+                None,
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         }]
     }
 
     fn surface(id: &str, geometry: SolvedSurfaceGeometry) -> Vec<Surface> {
-        vec![Surface {
-            native_ref: None,
-            id: SurfaceId::mint(id).expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(geometry),
-            source_object: None,
-        }]
+        vec![Surface::new(
+            SurfaceId::mint(id).expect("identity grammar"),
+            SurfaceGeometry::Solved(geometry),
+            None,
+        )]
     }
 
     fn cone_surface(radius: f64, half_angle: f64) -> Vec<Surface> {

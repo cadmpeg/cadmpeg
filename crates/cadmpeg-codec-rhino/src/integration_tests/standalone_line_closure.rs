@@ -19,18 +19,17 @@ use crate::{RhinoArchiveVersion, RhinoCodec};
 #[test]
 fn source_less_solved_line_preserves_the_required_record_under_same_comparison() {
     let mut ir = CadIr::empty();
-    ir.model.curves.push(Curve {
-        native_ref: None,
-        id: "test:geometry:curve#0"
+    ir.model.curves.push(Curve::new(
+        "test:geometry:curve#0"
             .try_into()
             .expect("standalone curve identity"),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(LineCurve::new(
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(LineCurve::new(
             FinitePoint3::ZERO,
             UnitVector3::X_AXIS,
         ))),
-        parameter_range: Some(IncreasingParameterInterval::new([0.0, 1.0]).expect("finite range")),
-        source_object: None,
-    });
+        Some(IncreasingParameterInterval::new([0.0, 1.0]).expect("finite range")),
+        None,
+    ));
     let before = serde_json::to_value(&ir).expect("original canonical line document");
     let mut output = Vec::new();
     RhinoCodec

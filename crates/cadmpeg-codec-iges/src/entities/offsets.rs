@@ -1126,22 +1126,24 @@ pub(super) fn project(
             sequences.record_curve(&offset_source_id, entry.sequence);
 
             ctx.charge_entities(1, "iges_geometry_offsets")?;
-            ir.model.curves.push(Curve {
-                native_ref: None,
-                parameter_range: None,
-                id: offset_source_id.clone(),
-                geometry: CurveGeometry::Solved(placed_geometry),
-                source_object: Some(match source_object(entry) {
-                    Ok(source) => source,
-                    Err(error) => {
-                        super::push_geometry_loss(
-                            &mut losses,
-                            entry,
-                            format_args!("{}", super::non_resource_error(error)?),
-                        );
-                        continue;
-                    }
-                }),
+            ir.model.curves.push({
+                let (parameter_range, id, geometry, source_object) = (
+                    None,
+                    offset_source_id.clone(),
+                    CurveGeometry::Solved(placed_geometry),
+                    Some(match source_object(entry) {
+                        Ok(source) => source,
+                        Err(error) => {
+                            super::push_geometry_loss(
+                                &mut losses,
+                                entry,
+                                format_args!("{}", super::non_resource_error(error)?),
+                            );
+                            continue;
+                        }
+                    }),
+                );
+                Curve::new(id, geometry, parameter_range, source_object)
             });
         }
 
@@ -1153,38 +1155,30 @@ pub(super) fn project(
 
         ctx.charge_entities(2, "iges_geometry_offsets")?;
         ir.model.vertices.extend([
-            Vertex {
-                native_ref: None,
-                id: start_vertex.clone(),
-                point: start_point,
-                tolerance: None,
-            },
-            Vertex {
-                native_ref: None,
-                id: end_vertex.clone(),
-                point: end_point,
-                tolerance: None,
-            },
+            Vertex::new(start_vertex.clone(), start_point, None),
+            Vertex::new(end_vertex.clone(), end_point, None),
         ]);
         sequences.record_curve(&curve_id, entry.sequence);
 
         ctx.charge_entities(1, "iges_geometry_offsets")?;
-        ir.model.curves.push(Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: curve_id.clone(),
-            geometry,
-            source_object: Some(match source_object(entry) {
-                Ok(source) => source,
-                Err(error) => {
-                    super::push_geometry_loss(
-                        &mut losses,
-                        entry,
-                        format_args!("{}", super::non_resource_error(error)?),
-                    );
-                    continue;
-                }
-            }),
+        ir.model.curves.push({
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                curve_id.clone(),
+                geometry,
+                Some(match source_object(entry) {
+                    Ok(source) => source,
+                    Err(error) => {
+                        super::push_geometry_loss(
+                            &mut losses,
+                            entry,
+                            format_args!("{}", super::non_resource_error(error)?),
+                        );
+                        continue;
+                    }
+                }),
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         });
         let carrier = match cadmpeg_ir::topology::EdgeCarrier::new(
             Some(curve_id.clone()),
@@ -1198,14 +1192,13 @@ pub(super) fn project(
         };
 
         ctx.charge_entities(1, "iges_geometry_offsets")?;
-        ir.model.edges.push(Edge {
-            native_ref: None,
-            id: edge_id.clone(),
+        ir.model.edges.push(Edge::new(
+            edge_id.clone(),
             carrier,
-            start: start_vertex,
-            end: end_vertex,
-            tolerance: None,
-        });
+            start_vertex,
+            end_vertex,
+            None,
+        ));
 
         ctx.charge_entities(1, "iges_geometry_offsets")?;
         let _attached = procedural_admission.add_curve(&mut ir.model, &curve_id, procedural)?;

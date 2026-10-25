@@ -117,15 +117,19 @@ fn invalid_archive_tolerances_are_rejected_before_output() {
 #[test]
 fn unsupported_curve_is_omitted_with_error() {
     let mut ir = CadIr::empty();
-    ir.model.curves.push(cadmpeg_ir::geometry::Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: cadmpeg_ir::ids::CurveId::mint("rhino:test:curve#a").expect("identity grammar"),
-        geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
-            cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(Point3::new(0.0, 0.0, 0.0))
+    ir.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            cadmpeg_ir::ids::CurveId::mint("rhino:test:curve#a").expect("identity grammar"),
+            cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
+                cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(Point3::new(
+                    0.0, 0.0, 0.0,
+                ))
                 .unwrap(),
-        )),
-        source_object: None,
+            )),
+            None,
+        );
+        cadmpeg_ir::geometry::Curve::new(id, geometry, parameter_range, source_object)
     });
     let plan = RhinoCodec
         .plan(
@@ -148,20 +152,22 @@ fn unsupported_curve_is_omitted_with_error() {
 #[test]
 fn source_less_circle_round_trips_with_its_frame() {
     let mut ir = CadIr::empty();
-    ir.model.curves.push(cadmpeg_ir::geometry::Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: cadmpeg_ir::ids::CurveId::mint("rhino:test:curve#circle").expect("identity grammar"),
-        geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                Point3::new(1.0, 2.0, 3.0),
-                cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
-                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-                4.0,
-            )
-            .unwrap(),
-        )),
-        source_object: None,
+    ir.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            cadmpeg_ir::ids::CurveId::mint("rhino:test:curve#circle").expect("identity grammar"),
+            cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                    Point3::new(1.0, 2.0, 3.0),
+                    cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+                    cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                    4.0,
+                )
+                .unwrap(),
+            )),
+            None,
+        );
+        cadmpeg_ir::geometry::Curve::new(id, geometry, parameter_range, source_object)
     });
     let mut bytes = Vec::new();
     RhinoCodec
@@ -197,25 +203,27 @@ fn source_less_circle_round_trips_with_its_frame() {
 #[test]
 fn rational_nurbs_curve_round_trips_homogeneous_poles() {
     let mut ir = CadIr::empty();
-    ir.model.curves.push(cadmpeg_ir::geometry::Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: cadmpeg_ir::ids::CurveId::mint("rhino:test:curve#nurbs").expect("identity grammar"),
-        geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-                2,
-                vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-                vec![
-                    Point3::new(0.0, 0.0, 0.0),
-                    Point3::new(1.0, 2.0, 0.0),
-                    Point3::new(3.0, 0.0, 0.0),
-                ],
-                Some(vec![1.0, 0.5, 1.0]),
-                false,
-            )
-            .expect("valid rational curve"),
-        )),
-        source_object: None,
+    ir.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            cadmpeg_ir::ids::CurveId::mint("rhino:test:curve#nurbs").expect("identity grammar"),
+            cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                    2,
+                    vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                    vec![
+                        Point3::new(0.0, 0.0, 0.0),
+                        Point3::new(1.0, 2.0, 0.0),
+                        Point3::new(3.0, 0.0, 0.0),
+                    ],
+                    Some(vec![1.0, 0.5, 1.0]),
+                    false,
+                )
+                .expect("valid rational curve"),
+            )),
+            None,
+        );
+        cadmpeg_ir::geometry::Curve::new(id, geometry, parameter_range, source_object)
     });
     let mut bytes = Vec::new();
     RhinoCodec
@@ -260,10 +268,9 @@ fn reversed_unclamped_nurbs_knots_are_native_canonical() {
 #[test]
 fn free_plane_and_rational_nurbs_surface_round_trip() {
     let mut ir = CadIr::empty();
-    ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-        native_ref: None,
-        id: cadmpeg_ir::ids::SurfaceId::mint("rhino:test:surface#plane").expect("identity grammar"),
-        geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+    ir.model.surfaces.push(cadmpeg_ir::geometry::Surface::new(
+        cadmpeg_ir::ids::SurfaceId::mint("rhino:test:surface#plane").expect("identity grammar"),
+        cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(1.0, 2.0, 3.0),
                 cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -271,12 +278,11 @@ fn free_plane_and_rational_nurbs_surface_round_trip() {
             )
             .unwrap(),
         )),
-        source_object: None,
-    });
-    ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-        native_ref: None,
-        id: cadmpeg_ir::ids::SurfaceId::mint("rhino:test:surface#nurbs").expect("identity grammar"),
-        geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+        None,
+    ));
+    ir.model.surfaces.push(cadmpeg_ir::geometry::Surface::new(
+        cadmpeg_ir::ids::SurfaceId::mint("rhino:test:surface#nurbs").expect("identity grammar"),
+        cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
             cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     1,
@@ -300,8 +306,8 @@ fn free_plane_and_rational_nurbs_surface_round_trip() {
             )
             .expect("valid rational surface"),
         )),
-        source_object: None,
-    });
+        None,
+    ));
     ir.finalize();
     let expected = ir
         .model
@@ -620,24 +626,20 @@ fn free_vertex_body_preserves_point_cloud_grouping() {
         cadmpeg_ir::ids::PointId::mint("cadir:model:point#cloud.0").expect("identity grammar"),
         cadmpeg_ir::ids::PointId::mint("cadir:model:point#cloud.1").expect("identity grammar"),
     ];
-    ir.model.bodies.push(cadmpeg_ir::topology::Body {
-        native_ref: None,
-        id: body_id.clone(),
-        kind: cadmpeg_ir::topology::BodyKind::General,
-        regions: vec![region_id.clone()],
-        transform: None,
-        name: Some("survey points".into()),
-        color: Some(
-            cadmpeg_ir::topology::Color::new(1.0, 0.0, 128.0 / 255.0, 1.0).expect("valid color"),
-        ),
-        visible: Some(false),
-    });
-    ir.model.regions.push(cadmpeg_ir::topology::Region {
-        native_ref: None,
-        id: region_id.clone(),
-        body: body_id,
-        shells: vec![shell_id.clone()],
-    });
+    ir.model.bodies.push(cadmpeg_ir::topology::Body::new(
+        body_id.clone(),
+        cadmpeg_ir::topology::BodyKind::General,
+        vec![region_id.clone()],
+        None,
+        Some("survey points".into()),
+        Some(cadmpeg_ir::topology::Color::new(1.0, 0.0, 128.0 / 255.0, 1.0).expect("valid color")),
+        Some(false),
+    ));
+    ir.model.regions.push(cadmpeg_ir::topology::Region::new(
+        region_id.clone(),
+        body_id,
+        vec![shell_id.clone()],
+    ));
     ir.model.shells.push(
         cadmpeg_ir::topology::Shell::new(
             shell_id,
@@ -649,12 +651,11 @@ fn free_vertex_body_preserves_point_cloud_grouping() {
         .unwrap(),
     );
     for (index, (vertex, point)) in vertex_ids.into_iter().zip(point_ids).enumerate() {
-        ir.model.vertices.push(cadmpeg_ir::topology::Vertex {
-            native_ref: None,
-            id: vertex,
-            point: point.clone(),
-            tolerance: None,
-        });
+        ir.model.vertices.push(cadmpeg_ir::topology::Vertex::new(
+            vertex,
+            point.clone(),
+            None,
+        ));
         ir.model.points.push(cadmpeg_ir::topology::Point::new(
             point,
             cadmpeg_ir::features::FinitePoint3::new(Point3::new(
@@ -791,25 +792,27 @@ fn unsupported_retained_native_records_are_refused_before_output() {
 #[test]
 fn noncanonical_nurbs_periodicity_is_omitted_with_error() {
     let mut ir = CadIr::empty();
-    ir.model.curves.push(cadmpeg_ir::geometry::Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: cadmpeg_ir::ids::CurveId::mint("cadir:model:curve#periodic").expect("identity grammar"),
-        geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-                2,
-                vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-                vec![
-                    Point3::new(0.0, 0.0, 0.0),
-                    Point3::new(1.0, 1.0, 0.0),
-                    Point3::new(2.0, 0.0, 0.0),
-                ],
-                None,
-                true,
-            )
-            .expect("valid periodic fixture"),
-        )),
-        source_object: None,
+    ir.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            cadmpeg_ir::ids::CurveId::mint("cadir:model:curve#periodic").expect("identity grammar"),
+            cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                    2,
+                    vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                    vec![
+                        Point3::new(0.0, 0.0, 0.0),
+                        Point3::new(1.0, 1.0, 0.0),
+                        Point3::new(2.0, 0.0, 0.0),
+                    ],
+                    None,
+                    true,
+                )
+                .expect("valid periodic fixture"),
+            )),
+            None,
+        );
+        cadmpeg_ir::geometry::Curve::new(id, geometry, parameter_range, source_object)
     });
     let plan = RhinoCodec
         .plan(
@@ -902,19 +905,18 @@ fn standalone_support_points_and_curves_are_withheld_with_counted_export_loss() 
             .expect("synthetic support fixture is admitted"),
         Some(support.clone()),
     ));
-    ir.model.curves.push(Curve {
-        native_ref: None,
-        id: "test:model:curve#support"
+    ir.model.curves.push(Curve::new(
+        "test:model:curve#support"
             .try_into()
             .expect("synthetic support fixture is admitted"),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(LineCurve::new(
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(LineCurve::new(
             cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                 .expect("synthetic support fixture is admitted"),
             cadmpeg_ir::units::UnitVector3::X_AXIS,
         ))),
-        parameter_range: None,
-        source_object: Some(support),
-    });
+        None,
+        Some(support),
+    ));
     let plan = RhinoCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .expect("synthetic support fixture is admitted");

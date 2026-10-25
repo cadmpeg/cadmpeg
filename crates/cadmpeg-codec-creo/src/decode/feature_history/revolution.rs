@@ -247,11 +247,10 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
             source_carriers.admit_surface(
                 ctx,
                 ir,
-                Surface {
-                    native_ref: None,
-                    id: surface_id,
-                    geometry: surface,
-                    source_object: Some(SourceObjectAssociation {
+                Surface::new(
+                    surface_id,
+                    surface,
+                    Some(SourceObjectAssociation {
                         geometry_role: None,
                         format: cadmpeg_ir::CodecFormat::Creo,
                         object_id: if let Some(id) = native_surface {
@@ -266,7 +265,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                         },
                         instance_path: Vec::new(),
                     }),
-                },
+                ),
             )?;
             transferred += 1;
         }
@@ -311,11 +310,10 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 source_carriers.admit_surface(
                     ctx,
                     ir,
-                    Surface {
-                        native_ref: None,
-                        id: surface_id,
-                        geometry: surface,
-                        source_object: Some(SourceObjectAssociation {
+                    Surface::new(
+                        surface_id,
+                        surface,
+                        Some(SourceObjectAssociation {
                             geometry_role: None,
                             format: cadmpeg_ir::CodecFormat::Creo,
                             object_id: crate::identity::source_object_id_checked(format_args!(
@@ -323,7 +321,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                             ))?,
                             instance_path: Vec::new(),
                         }),
-                    },
+                    ),
                 )?;
                 transferred += 1;
             }
@@ -417,11 +415,10 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
             source_carriers.admit_surface(
                 ctx,
                 ir,
-                Surface {
-                    native_ref: None,
-                    id: surface_id.clone(),
-                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
-                    source_object: Some(SourceObjectAssociation {
+                Surface::new(
+                    surface_id.clone(),
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
+                    Some(SourceObjectAssociation {
                         geometry_role: None,
                         format: cadmpeg_ir::CodecFormat::Creo,
                         object_id: crate::identity::source_object_id_checked(format_args!(
@@ -429,7 +426,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                         ))?,
                         instance_path: Vec::new(),
                     }),
-                },
+                ),
             )?;
             source_carriers.admit_procedural_surface(
                 ir,
@@ -554,15 +551,12 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
             Exactness::Derived,
         )?;
         ctx.charge_entities(1, "admit Creo model curves")?;
-        source_carriers.admit_curve(
-            ctx,
-            ir,
-            Curve {
-                native_ref: None,
-                parameter_range: None,
+        source_carriers.admit_curve(ctx, ir, {
+            let (parameter_range, id, geometry, source_object) = (
+                None,
                 id,
                 geometry,
-                source_object: Some(SourceObjectAssociation {
+                Some(SourceObjectAssociation {
                     geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: cadmpeg_core::text::NonBlankString::new(object_id).ok_or_else(
@@ -574,8 +568,9 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
                     )?,
                     instance_path: Vec::new(),
                 }),
-            },
-        )?;
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
+        })?;
         transferred += 1;
     }
     Ok(transferred)
@@ -649,15 +644,12 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
             Exactness::Derived,
         )?;
         ctx.charge_entities(1, "admit Creo model curves")?;
-        source_carriers.admit_curve(
-            ctx,
-            ir,
-            Curve {
-                native_ref: None,
-                parameter_range: None,
+        source_carriers.admit_curve(ctx, ir, {
+            let (parameter_range, id, geometry, source_object) = (
+                None,
                 id,
                 geometry,
-                source_object: Some(SourceObjectAssociation {
+                Some(SourceObjectAssociation {
                     geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: cadmpeg_core::text::NonBlankString::new(object_id).ok_or_else(
@@ -669,8 +661,9 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
                     )?,
                     instance_path: Vec::new(),
                 }),
-            },
-        )?;
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
+        })?;
         transferred += 1;
     }
     Ok(transferred)

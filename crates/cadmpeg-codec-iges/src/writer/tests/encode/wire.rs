@@ -49,23 +49,19 @@ fn reversed_composite_with_shared_vertex() -> EditableDecodeResult {
             ir.model
                 .points
                 .push(Point::new(point.clone(), position, None));
-            ir.model.vertices.push(Vertex {
-                native_ref: None,
-                id: vertices[index].clone(),
-                point,
-                tolerance: None,
-            });
+            ir.model
+                .vertices
+                .push(Vertex::new(vertices[index].clone(), point, None));
         }
         let edge = EdgeId::mint("test:model:edge#child").unwrap();
         ir.model.shells[0].add_wire_edge(edge.clone());
-        ir.model.edges.push(Edge {
-            native_ref: None,
-            id: edge,
-            carrier: EdgeCarrier::new(Some(curve_id), Some(range)).unwrap(),
-            start: vertices[0].clone(),
-            end: vertices[1].clone(),
-            tolerance: None,
-        });
+        ir.model.edges.push(Edge::new(
+            edge,
+            EdgeCarrier::new(Some(curve_id), Some(range)).unwrap(),
+            vertices[0].clone(),
+            vertices[1].clone(),
+            None,
+        ));
     }
     let second_start = decoded
         .ir()

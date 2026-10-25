@@ -28,12 +28,11 @@ pub fn accepted_empty() -> CadIr {
 /// Vertex → missing point: rejected (`ReferentialIntegrity`).
 pub fn rejected_missing_point(prefix: &str) -> Result<CadIr, FixtureError> {
     let mut ir = CadIr::empty();
-    ir.model.vertices.push(Vertex {
-        native_ref: None,
-        id: VertexId::mint(format!("{prefix}:vertex#0"))?,
-        point: PointId::mint(format!("{prefix}:point#missing"))?,
-        tolerance: None,
-    });
+    ir.model.vertices.push(Vertex::new(
+        VertexId::mint(format!("{prefix}:vertex#0"))?,
+        PointId::mint(format!("{prefix}:point#missing"))?,
+        None,
+    ));
     Ok(ir)
 }
 
@@ -49,12 +48,9 @@ pub fn rejected_missing_region(prefix: &str) -> Result<CadIr, FixtureError> {
     ir.model
         .points
         .push(Point::new(point.clone(), position, None));
-    ir.model.vertices.push(Vertex {
-        native_ref: None,
-        id: vertex.clone(),
-        point,
-        tolerance: None,
-    });
+    ir.model
+        .vertices
+        .push(Vertex::new(vertex.clone(), point, None));
     ir.model.shells.push(Shell::with_free_vertex(
         ShellId::mint(format!("{prefix}:shell#0"))?,
         RegionId::mint(format!("{prefix}:region#missing"))?,

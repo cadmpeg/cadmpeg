@@ -8,10 +8,9 @@ fn numerical_audit_mapped_pcurve_search_ignores_knot_units() {
     const EPS_POINT: f64 = 1e-6;
     let mut ir = crate::CadIr::empty();
     let id = SurfaceId::mint("test:audit:surface#1").unwrap();
-    ir.model.surfaces.push(crate::geometry::Surface {
-        native_ref: None,
-        id: id.clone(),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+    ir.model.surfaces.push(crate::geometry::Surface::new(
+        id.clone(),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             crate::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0., 0., 0.),
                 Vector3::new(0., 0., 1.),
@@ -19,8 +18,8 @@ fn numerical_audit_mapped_pcurve_search_ignores_knot_units() {
             )
             .unwrap(),
         )),
-        source_object: None,
-    });
+        None,
+    ));
     let index = ModelIndex::new_model_only(&ir);
     let context = SurfacePcurveContext {
         model: crate::validate::geometry_consistency::PassEvaluator {

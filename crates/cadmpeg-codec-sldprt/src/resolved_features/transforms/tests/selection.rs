@@ -912,20 +912,21 @@ fn cylinder_centers_resolve_dimensioned_circle_frame() {
     let surfaces = [(14.0, -6.0), (14.0, -14.0), (7.0, -14.0), (7.0, -6.0)]
         .into_iter()
         .enumerate()
-        .map(|(index, (y, z))| Surface {
-            native_ref: None,
-            id: SurfaceId::mint(format!("test:model:entity#cylinder-{index}"))
-                .expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                    Point3::new(19.5, y, z),
-                    Vector3::new(1.0, 0.0, 0.0),
-                    Vector3::new(0.0, 1.0, 0.0),
-                    3.0,
-                )
-                .unwrap(),
-            )),
-            source_object: None,
+        .map(|(index, (y, z))| {
+            Surface::new(
+                SurfaceId::mint(format!("test:model:entity#cylinder-{index}"))
+                    .expect("identity grammar"),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                    cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                        Point3::new(19.5, y, z),
+                        Vector3::new(1.0, 0.0, 0.0),
+                        Vector3::new(0.0, 1.0, 0.0),
+                        3.0,
+                    )
+                    .unwrap(),
+                )),
+                None,
+            )
         })
         .collect::<Vec<_>>();
     let candidates = dimensioned_circle_surface_transforms(&sketch, &surfaces, &circles, 1.0);
@@ -1061,19 +1062,21 @@ fn dimensioned_circle_matching_keeps_large_radius_identity() {
         .unwrap(),
         profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
     };
-    let surface = Surface {
-        native_ref: None,
-        id: SurfaceId::mint("test:model:surface#large-cylinder").unwrap(),
-        source_object: None,
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                2e20,
-            )
-            .unwrap(),
-        )),
+    let surface = {
+        let (id, source_object, geometry) = (
+            SurfaceId::mint("test:model:surface#large-cylinder").unwrap(),
+            None,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    2e20,
+                )
+                .unwrap(),
+            )),
+        );
+        Surface::new(id, geometry, source_object)
     };
     let circles = [((0, 0), GridCoordinate::new(1e20, 1.0))];
     assert!(dimensioned_circle_surface_transforms(&sketch, &[surface], &circles, 1.0).is_empty());

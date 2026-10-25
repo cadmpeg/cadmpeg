@@ -199,12 +199,10 @@ fn topology_vertex(
     ctx.charge_entities(1, "iges_geometry_brep")?;
     candidate.model_mut().points.push(point);
     ctx.charge_entities(1, "iges_geometry_brep")?;
-    candidate.model_mut().vertices.push(Vertex {
-        native_ref: None,
-        id: vertex_id.clone(),
-        point: point_id,
-        tolerance: None,
-    });
+    candidate
+        .model_mut()
+        .vertices
+        .push(Vertex::new(vertex_id.clone(), point_id, None));
     Ok(Some(
         vertex_ids.entry((list, index)).or_insert(vertex_id).clone(),
     ))
@@ -291,12 +289,11 @@ fn project_pcurve_uses(
 
         let id = crate::ids::pcurve(&id_stem.slot(index));
         ctx.charge_entities(1, "iges_geometry_brep")?;
-        candidate.model_mut().pcurves.push(Pcurve {
-            native_ref: None,
-            id: id.clone(),
+        candidate.model_mut().pcurves.push(Pcurve::new(
+            id.clone(),
             geometry,
-            metadata: PcurveMetadata::general(None, Some(parameter_range), checked_tolerance),
-        });
+            PcurveMetadata::general(None, Some(parameter_range), checked_tolerance),
+        ));
         projected.push(PcurveUse {
             pcurve: id,
             isoparametric: Some(*isoparametric),
@@ -1434,18 +1431,16 @@ pub(super) fn project(
                             };
 
                             ctx.charge_entities(1, "iges_geometry_brep")?;
-                            candidate.model_mut().edges.push(Edge {
-                                native_ref: None,
-                                id: id.clone(),
+                            candidate.model_mut().edges.push(Edge::new(
+                                id.clone(),
                                 carrier,
-                                start: vertex_ids
+                                vertex_ids
                                     [&(edge_definition.start_list, edge_definition.start_index)]
                                     .clone(),
-                                end: vertex_ids
-                                    [&(edge_definition.end_list, edge_definition.end_index)]
+                                vertex_ids[&(edge_definition.end_list, edge_definition.end_index)]
                                     .clone(),
-                                tolerance: None,
-                            });
+                                None,
+                            ));
                             edge_ids.insert(edge_key, id.clone());
                             id
                         };
@@ -1484,16 +1479,15 @@ pub(super) fn project(
                         ring.push(coedge_id.clone());
 
                         ctx.charge_entities(1, "iges_geometry_brep")?;
-                        candidate.model_mut().coedges.push(Coedge {
-                            native_ref: None,
-                            id: coedge_id.clone(),
-                            owner_loop: loop_id.clone(),
-                            edge: edge_id,
-                            radial_next: coedge_id.clone(),
-                            sense: *sense,
-                            pcurves: projected,
-                            use_curve: None,
-                        });
+                        candidate.model_mut().coedges.push(Coedge::new(
+                            coedge_id.clone(),
+                            loop_id.clone(),
+                            edge_id,
+                            coedge_id.clone(),
+                            *sense,
+                            projected,
+                            None,
+                        ));
                     }
                     if !valid {
                         break;
@@ -1546,12 +1540,11 @@ pub(super) fn project(
                     };
 
                     ctx.charge_entities(1, "iges_geometry_brep")?;
-                    candidate.model_mut().loops.push(Loop {
-                        native_ref: None,
-                        id: loop_id.clone(),
-                        face: face_id.clone(),
+                    candidate.model_mut().loops.push(Loop::new(
+                        loop_id.clone(),
+                        face_id.clone(),
                         boundary,
-                    });
+                    ));
                     consumed.insert(loop_sequence);
                 }
                 if !valid {
@@ -1575,17 +1568,13 @@ pub(super) fn project(
                 };
 
                 ctx.charge_entities(1, "iges_geometry_brep")?;
-                candidate.model_mut().faces.push(Face {
-                    native_ref: None,
-                    id: face_id.clone(),
-                    shell: shell_id.clone(),
-                    surface: surface_id,
-                    sense: face_sense,
-                    loops: face_loops,
-                    name: None,
-                    color: None,
-                    tolerance: None,
-                });
+                candidate.model_mut().faces.push(Face::new(
+                    face_id.clone(),
+                    shell_id.clone(),
+                    surface_id,
+                    face_sense,
+                    face_loops,
+                ));
                 shell_faces.push(face_id);
                 consumed.insert(face_sequence);
             }
@@ -1644,25 +1633,23 @@ pub(super) fn project(
         );
 
         ctx.charge_entities(1, "iges_geometry_brep")?;
-        candidate.model_mut().regions.push(Region {
-            native_ref: None,
-            id: region_id.clone(),
-            body: body_id.clone(),
-            shells: region_shells,
-        });
+        candidate.model_mut().regions.push(Region::new(
+            region_id.clone(),
+            body_id.clone(),
+            region_shells,
+        ));
         let body_regions = vec![region_id];
 
         ctx.charge_entities(1, "iges_geometry_brep")?;
-        candidate.model_mut().bodies.push(Body {
-            native_ref: None,
-            id: body_id,
-            kind: definition.kind,
-            regions: body_regions,
-            transform: definition.transform,
-            name: None,
-            color: None,
-            visible: None,
-        });
+        candidate.model_mut().bodies.push(Body::new(
+            body_id,
+            definition.kind,
+            body_regions,
+            definition.transform,
+            None,
+            None,
+            None,
+        ));
         candidate.model_mut().finalize();
         drop(pcurve_indexes);
         if commit_session.commit_model(candidate)?.is_err() {

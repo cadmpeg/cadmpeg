@@ -1853,17 +1853,16 @@ fn append_legacy_brep(
         model
             .points
             .push(Point::new(point_id.clone(), finite_position, None));
-        model.vertices.push(Vertex {
-            native_ref: None,
-            id: vertex_id.clone(),
-            point: point_id,
-            tolerance: (tolerance > 0.0)
+        model.vertices.push(Vertex::new(
+            vertex_id.clone(),
+            point_id,
+            (tolerance > 0.0)
                 .then(|| {
                     cadmpeg_ir::scalar::PositiveReal::new(tolerance)
                         .ok_or_else(|| CodecError::malformed("vertex tolerance must be finite"))
                 })
                 .transpose()?,
-        });
+        ));
         vertex_by_class.insert(class, vertex_id);
     }
 
@@ -1890,12 +1889,14 @@ fn append_legacy_brep(
                 legacy_identity_key(format!("{suffix}.edge-{edge_index}"))?,
             );
             let domain = curve_domain(&curve)?;
-            model.curves.push(Curve {
-                native_ref: None,
-                parameter_range: None,
-                id: id.clone(),
-                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
-                source_object: None,
+            model.curves.push({
+                let (parameter_range, id, geometry, source_object) = (
+                    None,
+                    id.clone(),
+                    CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
+                    None,
+                );
+                Curve::new(id, geometry, parameter_range, source_object)
             });
             Some((id, domain))
         } else {
@@ -1908,17 +1909,16 @@ fn append_legacy_brep(
         let vertices = group_vertices
             .get(&root)
             .ok_or_else(|| CodecError::Malformed("V1 edge has no vertices".to_string()))?;
-        model.edges.push(Edge {
-            native_ref: None,
-            id: edge_id.clone(),
-            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+        model.edges.push(Edge::new(
+            edge_id.clone(),
+            cadmpeg_ir::topology::EdgeCarrier::new(
                 curve_id.as_ref().map(|value| value.0.clone()),
                 curve_id.map(|value| value.1),
             )
             .map_err(CodecError::malformed)?,
-            start: vertices[0].clone(),
-            end: vertices[1].clone(),
-            tolerance: group_tolerance
+            vertices[0].clone(),
+            vertices[1].clone(),
+            group_tolerance
                 .get(&root)
                 .copied()
                 .filter(|value| *value > 0.0)
@@ -1927,7 +1927,7 @@ fn append_legacy_brep(
                         .ok_or_else(|| CodecError::malformed("edge tolerance must be finite"))
                 })
                 .transpose()?,
-        });
+        ));
         group_edges.insert(root, edge_id);
     }
     let mut shell_faces = Vec::<cadmpeg_ir::ids::FaceId>::new();
@@ -1943,12 +1943,11 @@ fn append_legacy_brep(
             &cadmpeg_ir::identity_namespace!("rhino", "object", "face"),
             legacy_identity_key(format!("{suffix}.slot-{face_index}"))?,
         );
-        model.surfaces.push(Surface {
-            native_ref: None,
-            id: surface_id.clone(),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(face_record.surface)),
-            source_object: None,
-        });
+        model.surfaces.push(Surface::new(
+            surface_id.clone(),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(face_record.surface)),
+            None,
+        ));
         // Each V1 boundary record states its loop and its role together, so
         // the face's classification is folded from those rows and never
         // recovered from a position in a parallel array.
@@ -1999,9 +1998,7 @@ fn append_legacy_brep(
                         }
                     }
                 }
-                model.pcurves.push(Pcurve { native_ref: None,
-                    id: pcurve_id.clone(),
-                    geometry: PcurveGeometry::Nurbs {
+                model.pcurves.push(Pcurve::new(pcurve_id.clone(), PcurveGeometry::Nurbs {
                         nurbs: PcurveNurbs::from_checked_lanes(
                             trim.pcurve.degree(),
                             pcurve_knots,
@@ -2010,8 +2007,7 @@ fn append_legacy_brep(
                             trim.pcurve.periodic(),
                         )
                         .map_err(|error| CodecError::Malformed(error.to_string()))?,
-                    },
-                    metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
+                    }, cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                         None,
                         Some(
                             cadmpeg_ir::units::FiniteVector::new(pcurve_domain)
@@ -2027,8 +2023,7 @@ fn append_legacy_brep(
                             })
                             .transpose()
                             .map_err(cadmpeg_core::CodecError::malformed)?,
-                    ),
-                });
+                    )));
                 let coedge_id = cadmpeg_ir::ids::CoedgeId::compose(
                     &cadmpeg_ir::identity_namespace!("rhino", "object", "coedge"),
                     legacy_identity_key(format!(
@@ -2040,18 +2035,17 @@ fn append_legacy_brep(
                     .or_default()
                     .push(coedge_id.clone());
                 coedge_ids.push(coedge_id.clone());
-                model.coedges.push(Coedge {
-                    native_ref: None,
-                    id: coedge_id.clone(),
-                    owner_loop: loop_id.clone(),
-                    edge: group_edges[&root].clone(),
-                    radial_next: coedge_id,
-                    sense: if trim.reversed {
+                model.coedges.push(Coedge::new(
+                    coedge_id.clone(),
+                    loop_id.clone(),
+                    group_edges[&root].clone(),
+                    coedge_id,
+                    if trim.reversed {
                         Sense::Reversed
                     } else {
                         Sense::Forward
                     },
-                    pcurves: vec![PcurveUse {
+                    vec![PcurveUse {
                         pcurve: pcurve_id,
                         isoparametric: None,
                         parameter_range: Some(
@@ -2059,18 +2053,17 @@ fn append_legacy_brep(
                                 .map_err(CodecError::malformed)?,
                         ),
                     }],
-                    use_curve: None,
-                });
+                    None,
+                ));
                 global_trim += 1;
             }
             let ring = cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new())
                 .map_err(|error| CodecError::Malformed(error.to_string()))?;
-            model.loops.push(Loop {
-                native_ref: None,
-                id: loop_id.clone(),
-                face: face_id.clone(),
-                boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
-            });
+            model.loops.push(Loop::new(
+                loop_id.clone(),
+                face_id.clone(),
+                cadmpeg_ir::topology::LoopBoundary::Ring(ring),
+            ));
             match loop_record.role {
                 LoopBoundaryRole::Unspecified => {}
                 LoopBoundaryRole::Outer => {
@@ -2099,21 +2092,17 @@ fn append_legacy_brep(
         } else {
             cadmpeg_ir::topology::FaceLoops::unspecified(face_loops)
         };
-        model.faces.push(Face {
-            native_ref: None,
-            id: face_id.clone(),
-            shell: shell_id.clone(),
-            surface: surface_id,
-            sense: if face_record.reversed {
+        model.faces.push(Face::new(
+            face_id.clone(),
+            shell_id.clone(),
+            surface_id,
+            if face_record.reversed {
                 Sense::Reversed
             } else {
                 Sense::Forward
             },
-            loops: face_loops,
-            name: None,
-            color: None,
-            tolerance: None,
-        });
+            face_loops,
+        ));
         shell_faces.push(face_id);
     }
 
@@ -2139,22 +2128,20 @@ fn append_legacy_brep(
         )
         .map_err(|message| cadmpeg_core::CodecError::Malformed(message.to_string()))?,
     );
-    model.regions.push(Region {
-        native_ref: None,
-        id: region_id.clone(),
-        body: body_id.clone(),
-        shells: vec![shell_id],
-    });
-    model.bodies.push(Body {
-        native_ref: None,
-        id: body_id,
-        kind: BodyKind::General,
-        regions: vec![region_id],
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
-    });
+    model.regions.push(Region::new(
+        region_id.clone(),
+        body_id.clone(),
+        vec![shell_id],
+    ));
+    model.bodies.push(Body::new(
+        body_id,
+        BodyKind::General,
+        vec![region_id],
+        None,
+        None,
+        None,
+        None,
+    ));
     draft.commit_model(ir, ctx)?.map_err(CodecError::malformed)
 }
 
@@ -2692,33 +2679,28 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
             ir.model
                 .points
                 .push(Point::new(point_id.clone(), position, None));
-            ir.model.vertices.push(Vertex {
-                native_ref: None,
-                id: vertex_id.clone(),
-                point: point_id,
-                tolerance: None,
-            });
+            ir.model
+                .vertices
+                .push(Vertex::new(vertex_id.clone(), point_id, None));
             ir.model.shells.push(Shell::with_free_vertex(
                 shell_id.clone(),
                 region_id.clone(),
                 vertex_id,
             ));
-            ir.model.regions.push(Region {
-                native_ref: None,
-                id: region_id.clone(),
-                body: body_id.clone(),
-                shells: vec![shell_id],
-            });
-            ir.model.bodies.push(Body {
-                native_ref: None,
-                id: body_id,
-                kind: BodyKind::General,
-                regions: vec![region_id],
-                transform: None,
-                name: None,
-                color: None,
-                visible: None,
-            });
+            ir.model.regions.push(Region::new(
+                region_id.clone(),
+                body_id.clone(),
+                vec![shell_id],
+            ));
+            ir.model.bodies.push(Body::new(
+                body_id,
+                BodyKind::General,
+                vec![region_id],
+                None,
+                None,
+                None,
+                None,
+            ));
             push_v1_record(
                 ctx,
                 &mut typed_source_records,
@@ -2835,12 +2817,14 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                         ];
                         let start = evaluate_nurbs(&segment, parameter_range[0])?;
                         let end = evaluate_nurbs(&segment, parameter_range[1])?;
-                        ir.model.curves.push(Curve {
-                            native_ref: None,
-                            parameter_range: None,
-                            id: curve_id.clone(),
-                            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(segment)),
-                            source_object: None,
+                        ir.model.curves.push({
+                            let (parameter_range, id, geometry, source_object) = (
+                                None,
+                                curve_id.clone(),
+                                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(segment)),
+                                None,
+                            );
+                            Curve::new(id, geometry, parameter_range, source_object)
                         });
                         let start = FinitePoint3::new(start)
                             .ok_or(Point::NON_FINITE_POSITION)
@@ -2853,52 +2837,39 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                             Point::new(end_point.clone(), end, None),
                         ]);
                         ir.model.vertices.extend([
-                            Vertex {
-                                native_ref: None,
-                                id: start_vertex.clone(),
-                                point: start_point,
-                                tolerance: None,
-                            },
-                            Vertex {
-                                native_ref: None,
-                                id: end_vertex.clone(),
-                                point: end_point,
-                                tolerance: None,
-                            },
+                            Vertex::new(start_vertex.clone(), start_point, None),
+                            Vertex::new(end_vertex.clone(), end_point, None),
                         ]);
-                        ir.model.edges.push(Edge {
-                            native_ref: None,
-                            id: edge_id.clone(),
-                            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                        ir.model.edges.push(Edge::new(
+                            edge_id.clone(),
+                            cadmpeg_ir::topology::EdgeCarrier::new(
                                 Some(curve_id),
                                 Some(parameter_range),
                             )
                             .map_err(CodecError::malformed)?,
-                            start: start_vertex,
-                            end: end_vertex,
-                            tolerance: None,
-                        });
+                            start_vertex,
+                            end_vertex,
+                            None,
+                        ));
                         ir.model.shells.push(Shell::with_wire_edge(
                             shell_id.clone(),
                             region_id.clone(),
                             edge_id,
                         ));
-                        ir.model.regions.push(Region {
-                            native_ref: None,
-                            id: region_id.clone(),
-                            body: body_id.clone(),
-                            shells: vec![shell_id],
-                        });
-                        ir.model.bodies.push(Body {
-                            native_ref: None,
-                            id: body_id,
-                            kind: BodyKind::General,
-                            regions: vec![region_id],
-                            transform: None,
-                            name: None,
-                            color: None,
-                            visible: None,
-                        });
+                        ir.model.regions.push(Region::new(
+                            region_id.clone(),
+                            body_id.clone(),
+                            vec![shell_id],
+                        ));
+                        ir.model.bodies.push(Body::new(
+                            body_id,
+                            BodyKind::General,
+                            vec![region_id],
+                            None,
+                            None,
+                            None,
+                            None,
+                        ));
                         decoded_curves += 1;
                     }
                     push_v1_record(

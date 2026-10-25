@@ -284,20 +284,22 @@ fn generated_compound_loft_writes_every_tail_shape_source_less() {
         source_less
             .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
             .unwrap();
-        source_less.model.curves.push(cadmpeg_ir::geometry::Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: line_curve.clone(),
-            geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                    cadmpeg_ir::math::Point3::new(-1.0, 2.0, 3.0),
-                    cadmpeg_ir::math::Vector3::new(4.0, -2.0, 1.0)
-                        .unit()
-                        .unwrap(),
-                )
-                .unwrap(),
-            )),
-            source_object: None,
+        source_less.model.curves.push({
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                line_curve.clone(),
+                cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                    cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                        cadmpeg_ir::math::Point3::new(-1.0, 2.0, 3.0),
+                        cadmpeg_ir::math::Vector3::new(4.0, -2.0, 1.0)
+                            .unit()
+                            .unwrap(),
+                    )
+                    .unwrap(),
+                )),
+                None,
+            );
+            cadmpeg_ir::geometry::Curve::new(id, geometry, parameter_range, source_object)
         });
         source_less.model.procedural_surfaces[0].edit_definition(|definition| {
             let ProceduralSurfaceDefinition::CompoundLoft(definition_payload) = definition else {

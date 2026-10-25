@@ -1204,12 +1204,11 @@ mod tests {
     fn vertex_draft(id: &str, point: &str) -> ModelDraft {
         let mut draft = ModelDraft::new();
         draft
-            .insert(Vertex {
-                native_ref: None,
-                id: id.try_into().expect("valid identity"),
-                point: point.try_into().expect("valid identity"),
-                tolerance: None,
-            })
+            .insert(Vertex::new(
+                id.try_into().expect("valid identity"),
+                point.try_into().expect("valid identity"),
+                None,
+            ))
             .expect("insert vertex into draft");
         draft
     }
@@ -1420,12 +1419,11 @@ mod tests {
         let owner = "test:model:vertex#direct-missing";
         let target = "test:model:point#direct-missing";
         let mut draft = ModelDraft::new();
-        draft.model_mut().vertices.push(Vertex {
-            native_ref: None,
-            id: owner.try_into().expect("valid identity"),
-            point: target.try_into().expect("valid identity"),
-            tolerance: None,
-        });
+        draft.model_mut().vertices.push(Vertex::new(
+            owner.try_into().expect("valid identity"),
+            target.try_into().expect("valid identity"),
+            None,
+        ));
         let mut ir = CadIr::empty();
 
         assert_eq!(
@@ -1613,14 +1611,13 @@ mod tests {
 
         let mut rejected = ModelDraft::new();
         rejected
-            .insert(Vertex {
-                native_ref: None,
-                id: rejected_identity.try_into().expect("valid identity"),
-                point: "test:model:point#missing"
+            .insert(Vertex::new(
+                rejected_identity.try_into().expect("valid identity"),
+                "test:model:point#missing"
                     .try_into()
                     .expect("valid identity"),
-                tolerance: None,
-            })
+                None,
+            ))
             .expect("insert rejected vertex");
         assert!(!session.contains(rejected_identity).unwrap());
         assert!(session.commit_model(rejected).unwrap().is_err());

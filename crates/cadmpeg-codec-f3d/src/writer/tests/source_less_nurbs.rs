@@ -216,12 +216,14 @@ fn generated_source_less_face_writes_rational_nurbs_edge_curve() {
         )
         .expect("valid source-less rational curve"),
     );
-    source_less.model.curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: curve_id.clone(),
-        geometry: CurveGeometry::Solved(expected.clone()),
-        source_object: None,
+    source_less.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            curve_id.clone(),
+            CurveGeometry::Solved(expected.clone()),
+            None,
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     });
     source_less.model.edges[0]
         .set_curve(Some(curve_id))
@@ -460,12 +462,14 @@ fn generated_source_less_two_faces_preserve_shared_radial_edge() {
         )
         .unwrap(),
     );
-    source_less.model.curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: curve_id.clone(),
-        geometry: CurveGeometry::Solved(expected_curve.clone()),
-        source_object: None,
+    source_less.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            curve_id.clone(),
+            CurveGeometry::Solved(expected_curve.clone()),
+            None,
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     });
     source_less.model.edges[0]
         .set_curve(Some(curve_id))
@@ -556,12 +560,7 @@ fn generated_source_less_face_preserves_multiple_loop_chain() {
         source_less
             .model
             .vertices
-            .push(cadmpeg_ir::topology::Vertex {
-                native_ref: None,
-                id: vertex_id,
-                point: point_id,
-                tolerance: None,
-            });
+            .push(cadmpeg_ir::topology::Vertex::new(vertex_id, point_id, None));
     }
     let inner_vertices = source_less.model.vertices[3..]
         .iter()
@@ -570,42 +569,45 @@ fn generated_source_less_face_preserves_multiple_loop_chain() {
     for index in 0..3 {
         let edge_id =
             EdgeId::mint(format!("generated:test:inner_edge#{index}")).expect("identity grammar");
-        source_less.model.edges.push(cadmpeg_ir::topology::Edge {
-            native_ref: None,
-            id: edge_id.clone(),
-            carrier: cadmpeg_ir::topology::EdgeCarrier::new(None, Some([0.0, 1.0])).unwrap(),
-            start: inner_vertices[index].clone(),
-            end: inner_vertices[(index + 1) % 3].clone(),
-            tolerance: None,
-        });
+        source_less
+            .model
+            .edges
+            .push(cadmpeg_ir::topology::Edge::new(
+                edge_id.clone(),
+                cadmpeg_ir::topology::EdgeCarrier::new(None, Some([0.0, 1.0])).unwrap(),
+                inner_vertices[index].clone(),
+                inner_vertices[(index + 1) % 3].clone(),
+                None,
+            ));
         let coedge_id = CoedgeId::mint(format!("generated:test:inner_coedge#{index}"))
             .expect("identity grammar");
         coedge_ids.push(coedge_id.clone());
         source_less
             .model
             .coedges
-            .push(cadmpeg_ir::topology::Coedge {
-                native_ref: None,
-                id: coedge_id.clone(),
-                owner_loop: loop_id.clone(),
-                edge: edge_id,
-                radial_next: coedge_id,
-                sense: cadmpeg_ir::topology::Sense::Reversed,
-                pcurves: Vec::new(),
-                use_curve: None,
-            });
+            .push(cadmpeg_ir::topology::Coedge::new(
+                coedge_id.clone(),
+                loop_id.clone(),
+                edge_id,
+                coedge_id,
+                cadmpeg_ir::topology::Sense::Reversed,
+                Vec::new(),
+                None,
+            ));
     }
 
     let face_id = source_less.model.faces[0].id.clone();
-    source_less.model.loops.push(cadmpeg_ir::topology::Loop {
-        native_ref: None,
-        id: loop_id.clone(),
-        face: face_id,
-        boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-            cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new())
-                .expect("fixture ring admission"),
-        ),
-    });
+    source_less
+        .model
+        .loops
+        .push(cadmpeg_ir::topology::Loop::new(
+            loop_id.clone(),
+            face_id,
+            cadmpeg_ir::topology::LoopBoundary::Ring(
+                cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new())
+                    .expect("fixture ring admission"),
+            ),
+        ));
     let face_loops = source_less.model.faces[0]
         .loops
         .iter()
@@ -696,12 +698,14 @@ fn generated_source_less_multi_face_writes_nurbs_carriers_and_pcurve() {
         )
         .expect("valid shared rational curve"),
     );
-    source_less.model.curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: curve_id.clone(),
-        geometry: CurveGeometry::Solved(expected_curve.clone()),
-        source_object: None,
+    source_less.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            curve_id.clone(),
+            CurveGeometry::Solved(expected_curve.clone()),
+            None,
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     });
     source_less.model.edges[0]
         .set_curve(Some(curve_id))
@@ -897,12 +901,14 @@ fn generated_source_less_multi_face_writes_torus_and_circle_carriers() {
         )
         .unwrap(),
     );
-    source_less.model.curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: curve_id.clone(),
-        geometry: CurveGeometry::Solved(expected_curve.clone()),
-        source_object: None,
+    source_less.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            curve_id.clone(),
+            CurveGeometry::Solved(expected_curve.clone()),
+            None,
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     });
     source_less.model.edges[0]
         .set_curve(Some(curve_id))
@@ -987,12 +993,10 @@ fn generated_source_less_multi_face_writes_cone_sphere_and_ellipse_carriers() {
         )
         .unwrap(),
     ));
-    source_less.model.curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: curve_id.clone(),
-        geometry: ellipse.clone(),
-        source_object: None,
+    source_less.model.curves.push({
+        let (parameter_range, id, geometry, source_object) =
+            (None, curve_id.clone(), ellipse.clone(), None);
+        Curve::new(id, geometry, parameter_range, source_object)
     });
     source_less.model.edges[0]
         .set_curve(Some(curve_id))

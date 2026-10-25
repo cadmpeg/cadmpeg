@@ -203,6 +203,15 @@ A sketch native operand has a nonempty native kind and an optional field. A pres
 
 `native_ref` identifies the full-fidelity native record corresponding to a neutral projection. The neutral definition keeps its own meaning.
 
+The geometry carriers `Body`, `Region`, `Shell`, `Face`, `Loop`, `Coedge`, `Edge`,
+`Vertex`, `Point`, `Curve`, `Surface`, `Pcurve`, `SubdSurface`,
+`ProceduralCurve`, and `ProceduralSurface` each carry optional `native_ref`.
+`Drawing.native_ref` is optional under the same rule. An absent link states no
+native counterpart. A present link names an existing typed native record;
+neutral identities, staged identities, and opaque `unknowns` records are not
+native counterparts. The wire omits an absent link and rejects `null` and
+non-string values.
+
 `source_content` retains the ordered mixed content of a feature. Parameter items
 reference entries in the document parameter arena. A referenced parameter may
 be owned by another feature, including a global equations node, and may occur

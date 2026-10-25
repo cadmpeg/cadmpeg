@@ -61,24 +61,25 @@ fn variable_blend_eval_fixture(
         SurfaceId::mint("test:model:entity#cacheless-variable-blend").expect("valid identity");
     let slice = CurveId::mint("test:model:entity#blend-slice").expect("valid identity");
     let mut ir = CadIr::empty();
-    ir.model.curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: slice.clone(),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            crate::geometry::analytic::LineCurve::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 1.0, 0.0),
-            )
-            .unwrap(),
-        )),
-        source_object: None,
+    ir.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            slice.clone(),
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                crate::geometry::analytic::LineCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 1.0, 0.0),
+                )
+                .unwrap(),
+            )),
+            None,
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     });
     ir.model.surfaces.extend([
-        Surface {
-            native_ref: None,
-            id: first_surface.clone(),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        Surface::new(
+            first_surface.clone(),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 crate::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -86,12 +87,11 @@ fn variable_blend_eval_fixture(
                 )
                 .unwrap(),
             )),
-            source_object: None,
-        },
-        Surface {
-            native_ref: None,
-            id: second_surface.clone(),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            None,
+        ),
+        Surface::new(
+            second_surface.clone(),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 crate::geometry::analytic::PlaneSurface::try_new(
                     second_origin,
                     Vector3::new(1.0, 0.0, 0.0),
@@ -99,20 +99,19 @@ fn variable_blend_eval_fixture(
                 )
                 .unwrap(),
             )),
-            source_object: None,
-        },
-        Surface {
-            native_ref: None,
-            id: blend_surface.clone(),
-            geometry: SurfaceGeometry::Procedural {
+            None,
+        ),
+        Surface::new(
+            blend_surface.clone(),
+            SurfaceGeometry::Procedural {
                 construction: ProceduralSurfaceId::mint(
                     "test:model:entity#variable-blend-construction",
                 )
                 .expect("valid identity"),
                 cache: None,
             },
-            source_object: None,
-        },
+            None,
+        ),
     ]);
     let side = |surface, origin: Point2, direction: Point2| RollingBallSide {
         support_kind: VariableBlendSupportKind::Surface,
@@ -745,15 +744,14 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
     let replica_construction =
         ProceduralSurfaceId::mint("test:model:entity#cacheless-rolling-ball-replica-def")
             .expect("valid identity");
-    ir.model.surfaces.push(Surface {
-        native_ref: None,
-        id: replica_surface.clone(),
-        geometry: SurfaceGeometry::Procedural {
+    ir.model.surfaces.push(Surface::new(
+        replica_surface.clone(),
+        SurfaceGeometry::Procedural {
             construction: replica_construction.clone(),
             cache: None,
         },
-        source_object: None,
-    });
+        None,
+    ));
     ir.model.procedural_surfaces.push(procedural_surface! {
         id: replica_construction,
         definition: ProceduralSurfaceDefinition::Replica {

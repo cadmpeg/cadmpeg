@@ -647,12 +647,11 @@ pub(super) fn emit_surfaces(
         }
         let model_id = id.clone();
         admission.charge()?;
-        ir.model.surfaces.push(Surface {
-            native_ref: None,
-            id: model_id,
-            geometry: plan.geometry,
-            source_object: Some(cgm_source("surface", object_id)?),
-        });
+        ir.model.surfaces.push(Surface::new(
+            model_id,
+            plan.geometry,
+            Some(cgm_source("surface", object_id)?),
+        ));
         match plan.procedure {
             Some(SurfaceProcedure::Extrusion(extrusion)) => {
                 emit_extrusion_procedure(
@@ -680,14 +679,14 @@ pub(super) fn emit_surfaces(
                 )?;
                 annotations.derived(directrix_id.as_str(), "geometry")?;
                 admission.charge()?;
-                ir.model.curves.push(Curve {
-                    native_ref: None,
-                    parameter_range: None,
-                    id: directrix_id.clone(),
-                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                        revolution.directrix,
-                    )),
-                    source_object: None,
+                ir.model.curves.push({
+                    let (parameter_range, id, geometry, source_object) = (
+                        None,
+                        directrix_id.clone(),
+                        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(revolution.directrix)),
+                        None,
+                    );
+                    Curve::new(id, geometry, parameter_range, source_object)
                 });
                 let procedural_id = crate::resource::compose_u32_id(
                     &cadmpeg_ir::identity_namespace!("catia", "b5", "procedural-surface"),
@@ -828,12 +827,14 @@ fn emit_extrusion_procedure(
                 Exactness::Derived,
             )?;
             admission.charge()?;
-            ir.model.curves.push(Curve {
-                native_ref: None,
-                parameter_range: None,
-                id: directrix_id.clone(),
-                geometry: curve,
-                source_object: Some(cgm_source("curve", extrusion.directrix_object_id)?),
+            ir.model.curves.push({
+                let (parameter_range, id, geometry, source_object) = (
+                    None,
+                    directrix_id.clone(),
+                    curve,
+                    Some(cgm_source("curve", extrusion.directrix_object_id)?),
+                );
+                Curve::new(id, geometry, parameter_range, source_object)
             });
         }
         super::ResolvedExtrusionDirectrix::Offset {
@@ -857,12 +858,14 @@ fn emit_extrusion_procedure(
                 Exactness::Derived,
             )?;
             admission.charge()?;
-            ir.model.curves.push(Curve {
-                native_ref: None,
-                parameter_range: None,
-                id: source_id.clone(),
-                geometry: source_curve,
-                source_object: Some(cgm_source("curve", source_object_id)?),
+            ir.model.curves.push({
+                let (parameter_range, id, geometry, source_object) = (
+                    None,
+                    source_id.clone(),
+                    source_curve,
+                    Some(cgm_source("curve", source_object_id)?),
+                );
+                Curve::new(id, geometry, parameter_range, source_object)
             });
             annotate(
                 annotations,
@@ -872,12 +875,14 @@ fn emit_extrusion_procedure(
                 Exactness::Unknown,
             )?;
             admission.charge()?;
-            ir.model.curves.push(Curve {
-                native_ref: None,
-                parameter_range: None,
-                id: directrix_id.clone(),
-                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
-                source_object: Some(cgm_source("curve", extrusion.directrix_object_id)?),
+            ir.model.curves.push({
+                let (parameter_range, id, geometry, source_object) = (
+                    None,
+                    directrix_id.clone(),
+                    CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+                    Some(cgm_source("curve", extrusion.directrix_object_id)?),
+                );
+                Curve::new(id, geometry, parameter_range, source_object)
             });
             let procedure_id = crate::resource::compose_u32_id(
                 &cadmpeg_ir::identity_namespace!("catia", "b5", "extrusion-directrix-procedure"),
@@ -1028,12 +1033,11 @@ mod tests {
         };
         let mut ir = CadIr::empty();
         let surface_id = SurfaceId::mint("catia:test:surface#result-30").expect("identity grammar");
-        ir.model.surfaces.push(Surface {
-            native_ref: None,
-            id: surface_id.clone(),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
-            source_object: None,
-        });
+        ir.model.surfaces.push(Surface::new(
+            surface_id.clone(),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+            None,
+        ));
 
         crate::test_support::with_service_context(|ctx| {
             let mut admission = crate::families::FamilyEntityAdmission::new(ctx);

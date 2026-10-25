@@ -284,29 +284,33 @@ fn unknown_recursive_curve_dependency_is_refused_without_panicking() {
     };
 
     let mut ir = CadIr::empty();
-    ir.model.curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: CurveId::mint("test:model:curve#unknown").expect("identity grammar"),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
-        source_object: None,
+    ir.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            CurveId::mint("test:model:curve#unknown").expect("identity grammar"),
+            CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+            None,
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     });
-    ir.model.curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: CurveId::mint("test:model:curve#composite").expect("identity grammar"),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
-            segments: cadmpeg_ir::geometry::CompositeCurveSegments::try_from(vec![
-                CompositeCurveSegment {
-                    curve: CurveId::mint("test:model:curve#unknown").expect("identity grammar"),
-                    same_sense: true,
-                    transition: CompositeCurveTransition::Continuous,
-                },
-            ])
-            .unwrap(),
-            self_intersect: Some(false),
-        }),
-        source_object: None,
+    ir.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            CurveId::mint("test:model:curve#composite").expect("identity grammar"),
+            CurveGeometry::Solved(SolvedCurveGeometry::Composite {
+                segments: cadmpeg_ir::geometry::CompositeCurveSegments::try_from(vec![
+                    CompositeCurveSegment {
+                        curve: CurveId::mint("test:model:curve#unknown").expect("identity grammar"),
+                        same_sense: true,
+                        transition: CompositeCurveTransition::Continuous,
+                    },
+                ])
+                .unwrap(),
+                self_intersect: Some(false),
+            }),
+            None,
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     });
     let output = export(&ir);
     assert!(!output.contains("COMPOSITE_CURVE("));

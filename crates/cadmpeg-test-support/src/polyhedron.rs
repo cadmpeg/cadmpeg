@@ -52,12 +52,11 @@ pub fn polyhedron(corners: &[[f64; 3]], faces: &[&[usize]]) -> Result<CadIr, Exa
             position,
             None,
         ));
-        ir.model.vertices.push(Vertex {
-            native_ref: None,
-            id: polyhedron_id!(VertexId, "vertex", index),
-            point: polyhedron_id!(PointId, "point", index),
-            tolerance: None,
-        });
+        ir.model.vertices.push(Vertex::new(
+            polyhedron_id!(VertexId, "vertex", index),
+            polyhedron_id!(PointId, "point", index),
+            None,
+        ));
     }
 
     let shell = polyhedron_id!(ShellId, "shell", 0_usize);
@@ -85,20 +84,19 @@ pub fn polyhedron(corners: &[[f64; 3]], faces: &[&[usize]]) -> Result<CadIr, Exa
             };
             let coedge_index = ir.model.coedges.len();
             let id = polyhedron_id!(CoedgeId, "coedge", coedge_index);
-            ir.model.coedges.push(Coedge {
-                native_ref: None,
-                id: id.clone(),
-                owner_loop: loop_id.clone(),
-                edge: polyhedron_id!(EdgeId, "edge", edge_index),
-                radial_next: id.clone(),
-                sense: if from < to {
+            ir.model.coedges.push(Coedge::new(
+                id.clone(),
+                loop_id.clone(),
+                polyhedron_id!(EdgeId, "edge", edge_index),
+                id.clone(),
+                if from < to {
                     Sense::Forward
                 } else {
                     Sense::Reversed
                 },
-                pcurves: Vec::new(),
-                use_curve: None,
-            });
+                Vec::new(),
+                None,
+            ));
             if let Some(uses) = edge_uses.get_mut(edge_index) {
                 uses.push(coedge_index);
             }
@@ -112,32 +110,26 @@ pub fn polyhedron(corners: &[[f64; 3]], faces: &[&[usize]]) -> Result<CadIr, Exa
                 .ok_or(ExampleError::Geometry("polyhedron face has no corners"))?,
         )?;
         let surface = polyhedron_id!(SurfaceId, "surface", face_index);
-        ir.model.surfaces.push(Surface {
-            native_ref: None,
-            id: surface.clone(),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        ir.model.surfaces.push(Surface::new(
+            surface.clone(),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 PlaneSurface::try_new(origin, normal, derive_reference_direction(normal))
                     .map_err(ExampleError::Geometry)?,
             )),
-            source_object: None,
-        });
-        ir.model.loops.push(Loop {
-            native_ref: None,
-            id: loop_id.clone(),
-            face: polyhedron_id!(FaceId, "face", face_index),
-            boundary: LoopBoundary::Ring(LoopRing::new(coedges, Vec::new())?),
-        });
-        ir.model.faces.push(Face {
-            native_ref: None,
-            id: polyhedron_id!(FaceId, "face", face_index),
-            shell: shell.clone(),
+            None,
+        ));
+        ir.model.loops.push(Loop::new(
+            loop_id.clone(),
+            polyhedron_id!(FaceId, "face", face_index),
+            LoopBoundary::Ring(LoopRing::new(coedges, Vec::new())?),
+        ));
+        ir.model.faces.push(Face::new(
+            polyhedron_id!(FaceId, "face", face_index),
+            shell.clone(),
             surface,
-            sense: Sense::Forward,
-            loops: FaceLoops::unspecified(vec![loop_id]),
-            name: None,
-            color: None,
-            tolerance: None,
-        });
+            Sense::Forward,
+            FaceLoops::unspecified(vec![loop_id]),
+        ));
     }
     for uses in &edge_uses {
         for (this, next) in uses.iter().zip(uses.iter().cycle().skip(1)) {
@@ -159,22 +151,20 @@ pub fn polyhedron(corners: &[[f64; 3]], faces: &[&[usize]]) -> Result<CadIr, Exa
         Vec::new(),
         Vec::new(),
     )?);
-    ir.model.regions.push(Region {
-        native_ref: None,
-        id: region.clone(),
-        body: body.clone(),
-        shells: vec![polyhedron_id!(ShellId, "shell", 0_usize)],
-    });
-    ir.model.bodies.push(Body {
-        native_ref: None,
-        id: body,
-        kind: BodyKind::Solid,
-        regions: vec![region],
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
-    });
+    ir.model.regions.push(Region::new(
+        region.clone(),
+        body.clone(),
+        vec![polyhedron_id!(ShellId, "shell", 0_usize)],
+    ));
+    ir.model.bodies.push(Body::new(
+        body,
+        BodyKind::Solid,
+        vec![region],
+        None,
+        None,
+        None,
+        None,
+    ));
     ir.finalize();
     Ok(ir)
 }
@@ -189,25 +179,25 @@ fn push_edge(
     let (dx, dy, dz) = (end.x - start.x, end.y - start.y, end.z - start.z);
     let length = (dx * dx + dy * dy + dz * dz).sqrt();
     let curve = polyhedron_id!(CurveId, "curve", edge_index);
-    ir.model.curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: curve.clone(),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            LineCurve::try_new(start, Vector3::new(dx / length, dy / length, dz / length))
-                .map_err(ExampleError::Geometry)?,
-        )),
-        source_object: None,
+    ir.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            curve.clone(),
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                LineCurve::try_new(start, Vector3::new(dx / length, dy / length, dz / length))
+                    .map_err(ExampleError::Geometry)?,
+            )),
+            None,
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     });
-    ir.model.edges.push(Edge {
-        native_ref: None,
-        id: polyhedron_id!(EdgeId, "edge", edge_index),
-        carrier: EdgeCarrier::new(Some(curve), Some([0.0, length]))
-            .map_err(ExampleError::Geometry)?,
-        start: polyhedron_id!(VertexId, "vertex", from),
-        end: polyhedron_id!(VertexId, "vertex", to),
-        tolerance: None,
-    });
+    ir.model.edges.push(Edge::new(
+        polyhedron_id!(EdgeId, "edge", edge_index),
+        EdgeCarrier::new(Some(curve), Some([0.0, length])).map_err(ExampleError::Geometry)?,
+        polyhedron_id!(VertexId, "vertex", from),
+        polyhedron_id!(VertexId, "vertex", to),
+        None,
+    ));
     Ok(())
 }
 

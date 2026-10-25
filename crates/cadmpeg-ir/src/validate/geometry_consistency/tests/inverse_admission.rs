@@ -9,18 +9,20 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 fn fixture() -> (crate::CadIr, crate::ids::SurfaceId, PcurveGeometry) {
     let id: crate::ids::SurfaceId = "test:model:surface#inverse-admission".try_into().unwrap();
     let mut ir = crate::CadIr::empty();
-    ir.model.surfaces.push(Surface {
-        native_ref: None,
-        id: id.clone(),
-        source_object: None,
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            crate::geometry::analytic::PlaneSurface::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-            )
-            .unwrap(),
-        )),
+    ir.model.surfaces.push({
+        let (id, source_object, geometry) = (
+            id.clone(),
+            None,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                crate::geometry::analytic::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            )),
+        );
+        Surface::new(id, geometry, source_object)
     });
     (
         ir,

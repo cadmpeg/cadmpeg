@@ -226,12 +226,9 @@ fn add_face(
         LoopId::mint(format!("synthetic:test:loop#loop-{name}")).expect("identity grammar");
     let surface_id = SurfaceId::mint(format!("synthetic:test:surface#surface-{name}"))
         .expect("identity grammar");
-    model.surfaces.push(Surface {
-        native_ref: None,
-        id: surface_id.clone(),
-        geometry,
-        source_object: None,
-    });
+    model
+        .surfaces
+        .push(Surface::new(surface_id.clone(), geometry, None));
 
     let coedge_ids = (0..4)
         .map(|index| {
@@ -249,12 +246,7 @@ fn add_face(
             cadmpeg_ir::features::FinitePoint3::new(corner).expect("a finite position is a point"),
             None,
         ));
-        model.vertices.push(Vertex {
-            native_ref: None,
-            id: vertex_id,
-            point: point_id,
-            tolerance: None,
-        });
+        model.vertices.push(Vertex::new(vertex_id, point_id, None));
     }
     for (index, origin) in corners.iter().copied().enumerate() {
         let next = (index + 1) % 4;
@@ -263,55 +255,50 @@ fn add_face(
         let edge_id = EdgeId::mint(format!("synthetic:test:edge#edge-{name}-{index}"))
             .expect("identity grammar");
         let direction = corners[next].vector_from(origin).unit().unwrap();
-        model.curves.push(Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: curve_id.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::analytic::LineCurve::try_new(origin, direction).unwrap(),
-            )),
-            source_object: None,
+        model.curves.push({
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                curve_id.clone(),
+                CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                    cadmpeg_ir::geometry::analytic::LineCurve::try_new(origin, direction).unwrap(),
+                )),
+                None,
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         });
-        model.edges.push(Edge {
-            native_ref: None,
-            id: edge_id.clone(),
-            carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id)),
-            start: VertexId::mint(format!("synthetic:test:vertex#vertex-{name}-{index}"))
+        model.edges.push(Edge::new(
+            edge_id.clone(),
+            cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id)),
+            VertexId::mint(format!("synthetic:test:vertex#vertex-{name}-{index}"))
                 .expect("identity grammar"),
-            end: VertexId::mint(format!("synthetic:test:vertex#vertex-{name}-{next}"))
+            VertexId::mint(format!("synthetic:test:vertex#vertex-{name}-{next}"))
                 .expect("identity grammar"),
-            tolerance: None,
-        });
-        model.coedges.push(Coedge {
-            native_ref: None,
-            id: coedge_ids[index].clone(),
-            owner_loop: loop_id.clone(),
-            edge: edge_id,
-            radial_next: coedge_ids[index].clone(),
-            sense: Sense::Forward,
-            pcurves: Vec::new(),
-            use_curve: None,
-        });
+            None,
+        ));
+        model.coedges.push(Coedge::new(
+            coedge_ids[index].clone(),
+            loop_id.clone(),
+            edge_id,
+            coedge_ids[index].clone(),
+            Sense::Forward,
+            Vec::new(),
+            None,
+        ));
     }
-    model.loops.push(Loop {
-        native_ref: None,
-        id: loop_id.clone(),
-        face: face_id.clone(),
-        boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+    model.loops.push(Loop::new(
+        loop_id.clone(),
+        face_id.clone(),
+        cadmpeg_ir::topology::LoopBoundary::Ring(
             cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new()).expect("valid loop ring"),
         ),
-    });
-    model.faces.push(Face {
-        native_ref: None,
-        id: face_id.clone(),
-        shell: ShellId::mint("synthetic:test:shell#shell").expect("identity grammar"),
-        surface: surface_id,
-        sense: Sense::Forward,
-        loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![loop_id]),
-        name: None,
-        color: None,
-        tolerance: None,
-    });
+    ));
+    model.faces.push(Face::new(
+        face_id.clone(),
+        ShellId::mint("synthetic:test:shell#shell").expect("identity grammar"),
+        surface_id,
+        Sense::Forward,
+        cadmpeg_ir::topology::FaceLoops::unspecified(vec![loop_id]),
+    ));
     face_id
 }
 
@@ -458,10 +445,9 @@ fn add_cylindrical_patch_face(
         LoopId::mint(format!("synthetic:test:loop#loop-{name}")).expect("identity grammar");
     let surface_id = SurfaceId::mint(format!("synthetic:test:surface#surface-{name}"))
         .expect("identity grammar");
-    model.surfaces.push(Surface {
-        native_ref: None,
-        id: surface_id.clone(),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+    model.surfaces.push(Surface::new(
+        surface_id.clone(),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -470,8 +456,8 @@ fn add_cylindrical_patch_face(
             )
             .unwrap(),
         )),
-        source_object: None,
-    });
+        None,
+    ));
 
     let vertex_ids = corners
         .iter()
@@ -487,12 +473,9 @@ fn add_cylindrical_patch_face(
                     .expect("a finite position is a point"),
                 None,
             ));
-            model.vertices.push(Vertex {
-                native_ref: None,
-                id: vertex_id.clone(),
-                point: point_id,
-                tolerance: None,
-            });
+            model
+                .vertices
+                .push(Vertex::new(vertex_id.clone(), point_id, None));
             vertex_id
         })
         .collect::<Vec<_>>();
@@ -542,72 +525,61 @@ fn add_cylindrical_patch_face(
             .expect("identity grammar");
         let edge_id = EdgeId::mint(format!("synthetic:test:edge#edge-{name}-{index}"))
             .expect("identity grammar");
-        model.curves.push(Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: curve_id.clone(),
-            geometry,
-            source_object: None,
+        model.curves.push({
+            let (parameter_range, id, geometry, source_object) =
+                (None, curve_id.clone(), geometry, None);
+            Curve::new(id, geometry, parameter_range, source_object)
         });
-        model.edges.push(Edge {
-            native_ref: None,
-            id: edge_id.clone(),
-            carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id)),
-            start: vertex_ids[index].clone(),
-            end: vertex_ids[next].clone(),
-            tolerance: None,
-        });
-        model.coedges.push(Coedge {
-            native_ref: None,
-            id: coedge_ids[index].clone(),
-            owner_loop: loop_id.clone(),
-            edge: edge_id,
-            radial_next: coedge_ids[index].clone(),
-            sense: Sense::Forward,
-            pcurves: Vec::new(),
-            use_curve: None,
-        });
+        model.edges.push(Edge::new(
+            edge_id.clone(),
+            cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id)),
+            vertex_ids[index].clone(),
+            vertex_ids[next].clone(),
+            None,
+        ));
+        model.coedges.push(Coedge::new(
+            coedge_ids[index].clone(),
+            loop_id.clone(),
+            edge_id,
+            coedge_ids[index].clone(),
+            Sense::Forward,
+            Vec::new(),
+            None,
+        ));
     }
-    model.loops.push(Loop {
-        native_ref: None,
-        id: loop_id.clone(),
-        face: face_id.clone(),
-        boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+    model.loops.push(Loop::new(
+        loop_id.clone(),
+        face_id.clone(),
+        cadmpeg_ir::topology::LoopBoundary::Ring(
             cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new()).expect("valid loop ring"),
         ),
-    });
-    model.faces.push(Face {
-        native_ref: None,
-        id: face_id.clone(),
-        shell: ShellId::mint("synthetic:test:shell#shell").expect("identity grammar"),
-        surface: surface_id,
-        sense: Sense::Forward,
-        loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![loop_id]),
-        name: None,
-        color: None,
-        tolerance: None,
-    });
+    ));
+    model.faces.push(Face::new(
+        face_id.clone(),
+        ShellId::mint("synthetic:test:shell#shell").expect("identity grammar"),
+        surface_id,
+        Sense::Forward,
+        cadmpeg_ir::topology::FaceLoops::unspecified(vec![loop_id]),
+    ));
     face_id
 }
 
 fn model_with_body() -> cadmpeg_ir::document::Model {
     let mut model = cadmpeg_ir::document::Model::default();
-    model.bodies = vec![Body {
-        native_ref: None,
-        id: BodyId::mint("synthetic:test:body#body").expect("identity grammar"),
-        kind: BodyKind::Solid,
-        regions: vec![RegionId::mint("synthetic:test:region#region").expect("identity grammar")],
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
-    }];
-    model.regions = vec![Region {
-        native_ref: None,
-        id: RegionId::mint("synthetic:test:region#region").expect("identity grammar"),
-        body: BodyId::mint("synthetic:test:body#body").expect("identity grammar"),
-        shells: vec![ShellId::mint("synthetic:test:shell#shell").expect("identity grammar")],
-    }];
+    model.bodies = vec![Body::new(
+        BodyId::mint("synthetic:test:body#body").expect("identity grammar"),
+        BodyKind::Solid,
+        vec![RegionId::mint("synthetic:test:region#region").expect("identity grammar")],
+        None,
+        None,
+        None,
+        None,
+    )];
+    model.regions = vec![Region::new(
+        RegionId::mint("synthetic:test:region#region").expect("identity grammar"),
+        BodyId::mint("synthetic:test:body#body").expect("identity grammar"),
+        vec![ShellId::mint("synthetic:test:shell#shell").expect("identity grammar")],
+    )];
 
     model
 }

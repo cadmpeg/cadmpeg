@@ -222,14 +222,13 @@ fn regenerated_shell_wire_members_and_pcurve_uses_have_counted_losses() {
         vec![ir.model.vertices[0].id.clone()],
     )
     .unwrap();
-    let pcurve = Pcurve {
-        native_ref: None,
-        id: "test:model:pcurve#use".try_into().unwrap(),
-        geometry: PcurveGeometry::Line(
+    let pcurve = Pcurve::new(
+        "test:model:pcurve#use".try_into().unwrap(),
+        PcurveGeometry::Line(
             LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)).unwrap(),
         ),
-        metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
-    };
+        cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
+    );
     ir.model.coedges[0]
         .pcurves
         .push(cadmpeg_ir::topology::PcurveUse {

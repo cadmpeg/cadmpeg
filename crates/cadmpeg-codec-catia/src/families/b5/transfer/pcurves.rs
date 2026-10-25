@@ -973,16 +973,15 @@ pub(super) fn emit_pcurves(
             }
             let geometry = geometry.clone();
             admission.charge()?;
-            ir.model.pcurves.push(Pcurve {
-                native_ref: None,
+            ir.model.pcurves.push(Pcurve::new(
                 id,
                 geometry,
-                metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
+                cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                     None,
                     Some(cadmpeg_ir::units::FiniteVector::from(parameter_range)),
                     None,
                 ),
-            });
+            ));
         }
     }
     Ok(pcurve_uses)

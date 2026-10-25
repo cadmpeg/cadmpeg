@@ -62,13 +62,14 @@ mod tests {
         let carrier = cadmpeg_ir::examples::unit_cube().expect("cube").model.edges[0]
             .carrier
             .clone();
-        let edge = |id: usize, start: usize, end: usize| Edge {
-            native_ref: None,
-            id: EdgeId::mint(format!("test:model:edge#{id}")).expect("edge id"),
-            carrier: carrier.clone(),
-            start: VertexId::mint(format!("test:model:vertex#{start}")).expect("vertex id"),
-            end: VertexId::mint(format!("test:model:vertex#{end}")).expect("vertex id"),
-            tolerance: None,
+        let edge = |id: usize, start: usize, end: usize| {
+            Edge::new(
+                EdgeId::mint(format!("test:model:edge#{id}")).expect("edge id"),
+                carrier.clone(),
+                VertexId::mint(format!("test:model:vertex#{start}")).expect("vertex id"),
+                VertexId::mint(format!("test:model:vertex#{end}")).expect("vertex id"),
+                None,
+            )
         };
         let edges = [
             edge(1, 1, 2),

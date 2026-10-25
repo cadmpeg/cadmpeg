@@ -30,12 +30,10 @@ fn cached_subset_retains_local_parameters_for_points_derivatives_and_inversion()
     for sense in [true, false] {
         let mut ir = CadIr::empty();
         for id in [&source, &subset] {
-            ir.model.curves.push(Curve {
-                native_ref: None,
-                parameter_range: None,
-                id: id.clone(),
-                geometry: line.clone(),
-                source_object: None,
+            ir.model.curves.push({
+                let (parameter_range, id, geometry, source_object) =
+                    (None, id.clone(), line.clone(), None);
+                Curve::new(id, geometry, parameter_range, source_object)
             });
         }
         ir.model
@@ -114,18 +112,20 @@ fn subset_curve_over_wide_interval_maps_finite_local_parameter() {
     let subset = CurveId::mint("test:model:curve#wide-subset").unwrap();
     let mut ir = CadIr::empty();
     for id in [&source, &subset] {
-        ir.model.curves.push(Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: id.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                crate::geometry::analytic::LineCurve::try_new(
-                    Point3::new(0.0, 0.0, 0.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                )
-                .unwrap(),
-            )),
-            source_object: None,
+        ir.model.curves.push({
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                id.clone(),
+                CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                    crate::geometry::analytic::LineCurve::try_new(
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .unwrap(),
+                )),
+                None,
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         });
     }
     ir.model

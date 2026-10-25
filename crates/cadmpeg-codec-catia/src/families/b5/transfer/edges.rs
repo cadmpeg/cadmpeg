@@ -402,12 +402,14 @@ pub(super) fn emit_edges(
         }
         let model_curve_id = curve_id.clone();
         admission.charge()?;
-        ir.model.curves.push(Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: model_curve_id,
-            geometry,
-            source_object: Some(cgm_source("edge", edge_id)?),
+        ir.model.curves.push({
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                model_curve_id,
+                geometry,
+                Some(cgm_source("edge", edge_id)?),
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         });
         let procedural = if let Some(helix) = helix {
             Some((
@@ -488,15 +490,14 @@ pub(super) fn emit_edges(
             VertexId::mint,
         )?;
         admission.charge()?;
-        ir.model.edges.push(Edge {
-            native_ref: None,
+        ir.model.edges.push(Edge::new(
             id,
-            carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), edge_range)
+            cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), edge_range)
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             start,
             end,
-            tolerance: edge_tolerance,
-        });
+            edge_tolerance,
+        ));
     }
     Ok(edge_id_map)
 }

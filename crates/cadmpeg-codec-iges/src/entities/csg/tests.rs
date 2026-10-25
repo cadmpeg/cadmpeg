@@ -50,18 +50,20 @@ fn csg_boolean_tree_validation_refuses_recursion() {
 fn profile_closure_rejects_conflicting_edge_occurrences() {
     let curve_id = CurveId::mint("iges:model:curve#D1").expect("identity grammar");
     let mut ir = CadIr::empty();
-    ir.model.curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: curve_id.clone(),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(1.0, 0.0, 0.0),
-            )
-            .unwrap(),
-        )),
-        source_object: None,
+    ir.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            curve_id.clone(),
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            )),
+            None,
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     });
     ir.model.points.extend([
         Point::new(
@@ -78,53 +80,43 @@ fn profile_closure_rejects_conflicting_edge_occurrences() {
         ),
     ]);
     ir.model.vertices.extend([
-        Vertex {
-            native_ref: None,
-            id: VertexId::mint("test:model:vertex#closed-start").expect("identity grammar"),
-            point: PointId::mint("test:model:point#closed-point").expect("identity grammar"),
-            tolerance: None,
-        },
-        Vertex {
-            native_ref: None,
-            id: VertexId::mint("test:model:vertex#closed-end").expect("identity grammar"),
-            point: PointId::mint("test:model:point#closed-point").expect("identity grammar"),
-            tolerance: None,
-        },
-        Vertex {
-            native_ref: None,
-            id: VertexId::mint("test:model:vertex#open-start").expect("identity grammar"),
-            point: PointId::mint("test:model:point#closed-point").expect("identity grammar"),
-            tolerance: None,
-        },
-        Vertex {
-            native_ref: None,
-            id: VertexId::mint("test:model:vertex#open-end").expect("identity grammar"),
-            point: PointId::mint("test:model:point#open-point").expect("identity grammar"),
-            tolerance: None,
-        },
+        Vertex::new(
+            VertexId::mint("test:model:vertex#closed-start").expect("identity grammar"),
+            PointId::mint("test:model:point#closed-point").expect("identity grammar"),
+            None,
+        ),
+        Vertex::new(
+            VertexId::mint("test:model:vertex#closed-end").expect("identity grammar"),
+            PointId::mint("test:model:point#closed-point").expect("identity grammar"),
+            None,
+        ),
+        Vertex::new(
+            VertexId::mint("test:model:vertex#open-start").expect("identity grammar"),
+            PointId::mint("test:model:point#closed-point").expect("identity grammar"),
+            None,
+        ),
+        Vertex::new(
+            VertexId::mint("test:model:vertex#open-end").expect("identity grammar"),
+            PointId::mint("test:model:point#open-point").expect("identity grammar"),
+            None,
+        ),
     ]);
     ir.model.edges.extend([
-        Edge {
-            native_ref: None,
-            id: EdgeId::mint("test:model:edge#closed-occurrence").expect("identity grammar"),
-            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
-                Some(curve_id.clone()),
-                Some([0.0, 1.0]),
-            )
-            .unwrap(),
-            start: VertexId::mint("test:model:vertex#closed-start").expect("identity grammar"),
-            end: VertexId::mint("test:model:vertex#closed-end").expect("identity grammar"),
-            tolerance: None,
-        },
-        Edge {
-            native_ref: None,
-            id: EdgeId::mint("test:model:edge#open-occurrence").expect("identity grammar"),
-            carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some([0.0, 1.0]))
+        Edge::new(
+            EdgeId::mint("test:model:edge#closed-occurrence").expect("identity grammar"),
+            cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id.clone()), Some([0.0, 1.0]))
                 .unwrap(),
-            start: VertexId::mint("test:model:vertex#open-start").expect("identity grammar"),
-            end: VertexId::mint("test:model:vertex#open-end").expect("identity grammar"),
-            tolerance: None,
-        },
+            VertexId::mint("test:model:vertex#closed-start").expect("identity grammar"),
+            VertexId::mint("test:model:vertex#closed-end").expect("identity grammar"),
+            None,
+        ),
+        Edge::new(
+            EdgeId::mint("test:model:edge#open-occurrence").expect("identity grammar"),
+            cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some([0.0, 1.0])).unwrap(),
+            VertexId::mint("test:model:vertex#open-start").expect("identity grammar"),
+            VertexId::mint("test:model:vertex#open-end").expect("identity grammar"),
+            None,
+        ),
     ]);
 
     assert_eq!(super::profile_closed(&ir, 1, EPS_PROFILE_CLOSURE), None);

@@ -324,6 +324,30 @@ pub struct Surface {
     pub source_object: Option<SourceObjectAssociation>,
 }
 
+impl Surface {
+    /// Construct a surface without a native counterpart.
+    #[must_use]
+    pub fn new(
+        id: SurfaceId,
+        geometry: SurfaceGeometry,
+        source_object: Option<SourceObjectAssociation>,
+    ) -> Self {
+        Self {
+            native_ref: None,
+            id,
+            geometry,
+            source_object,
+        }
+    }
+
+    /// Attach the actual typed native counterpart, when present.
+    #[must_use]
+    pub fn with_native_ref(mut self, native_ref: Option<String>) -> Self {
+        self.native_ref = native_ref;
+        self
+    }
+}
+
 /// The analytic or free-form shape of a 3D curve carrier established without a
 /// construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -666,6 +690,32 @@ pub struct Curve {
         deserialize_with = "deserialize_source_object"
     )]
     pub source_object: Option<SourceObjectAssociation>,
+}
+
+impl Curve {
+    /// Construct a curve without a native counterpart.
+    #[must_use]
+    pub fn new(
+        id: CurveId,
+        geometry: CurveGeometry,
+        parameter_range: Option<crate::topology::IncreasingParameterInterval>,
+        source_object: Option<SourceObjectAssociation>,
+    ) -> Self {
+        Self {
+            native_ref: None,
+            id,
+            geometry,
+            parameter_range,
+            source_object,
+        }
+    }
+
+    /// Attach the actual typed native counterpart, when present.
+    #[must_use]
+    pub fn with_native_ref(mut self, native_ref: Option<String>) -> Self {
+        self.native_ref = native_ref;
+        self
+    }
 }
 
 /// Four optional finite parameter bounds retained from one native surface
@@ -1939,6 +1989,13 @@ fn set_variable_blend_cache(
 }
 
 impl ProceduralSurface {
+    /// Attach the actual typed native counterpart, when present.
+    #[must_use]
+    pub fn with_native_ref(mut self, native_ref: Option<String>) -> Self {
+        self.native_ref = native_ref;
+        self
+    }
+
     /// Build a procedural surface from its construction definition.
     pub fn new(
         id: ProceduralSurfaceId,
@@ -7992,6 +8049,13 @@ impl ProceduralCurveDefinition {
 }
 
 impl ProceduralCurve {
+    /// Attach the actual typed native counterpart, when present.
+    #[must_use]
+    pub fn with_native_ref(mut self, native_ref: Option<String>) -> Self {
+        self.native_ref = native_ref;
+        self
+    }
+
     /// Build a procedural curve from its construction definition.
     pub fn new(id: ProceduralCurveId, definition: ProceduralCurveDefinition) -> Self {
         Self {
@@ -8130,15 +8194,15 @@ impl ProceduralSurfaceRow {
 
     /// The carrier and the construction this row states.
     pub(crate) fn into_parts(self) -> (SurfaceId, ProceduralSurface) {
-        (
-            self.surface,
-            ProceduralSurface {
-                native_ref: self.native_ref,
-                id: self.id,
-                definition: self.definition,
-                record_bounds: self.record_bounds,
-            },
-        )
+        (self.surface, {
+            let (native_ref, id, definition, record_bounds) = (
+                self.native_ref,
+                self.id,
+                self.definition,
+                self.record_bounds,
+            );
+            ProceduralSurface::new(id, definition, record_bounds).with_native_ref(native_ref)
+        })
     }
 }
 
@@ -8155,14 +8219,10 @@ impl ProceduralCurveRow {
 
     /// The carrier and the construction this row states.
     pub(crate) fn into_parts(self) -> (CurveId, ProceduralCurve) {
-        (
-            self.curve,
-            ProceduralCurve {
-                native_ref: self.native_ref,
-                id: self.id,
-                definition: self.definition,
-            },
-        )
+        (self.curve, {
+            let (native_ref, id, definition) = (self.native_ref, self.id, self.definition);
+            ProceduralCurve::new(id, definition).with_native_ref(native_ref)
+        })
     }
 }
 

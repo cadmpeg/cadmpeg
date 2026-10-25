@@ -31,24 +31,22 @@ fn shared_vertex_joins_faces_into_one_component() {
     let faces = faces();
     let vertex = VertexId::try_from("step:data:vertex#1").expect("test vertex id");
     let loops = [
-        Loop {
-            native_ref: None,
-            id: LoopId::try_from("step:data:loop#1").expect("test loop id"),
-            face: faces[0].clone(),
-            boundary: LoopBoundary::Vertex {
+        Loop::new(
+            LoopId::try_from("step:data:loop#1").expect("test loop id"),
+            faces[0].clone(),
+            LoopBoundary::Vertex {
                 vertex: vertex.clone(),
                 pcurves: Vec::new(),
             },
-        },
-        Loop {
-            native_ref: None,
-            id: LoopId::try_from("step:data:loop#2").expect("test loop id"),
-            face: faces[1].clone(),
-            boundary: LoopBoundary::Vertex {
+        ),
+        Loop::new(
+            LoopId::try_from("step:data:loop#2").expect("test loop id"),
+            faces[1].clone(),
+            LoopBoundary::Vertex {
                 vertex,
                 pcurves: Vec::new(),
             },
-        },
+        ),
     ];
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
@@ -70,15 +68,16 @@ fn shared_vertex_components_use_spanning_links_and_preserve_partitions() {
         let loops = faces
             .iter()
             .enumerate()
-            .map(|(index, face)| Loop {
-                native_ref: None,
-                id: LoopId::try_from(format!("step:data:loop#{index}")).expect("loop id"),
-                face: face.clone(),
-                boundary: LoopBoundary::Vertex {
-                    vertex: VertexId::try_from(format!("step:data:vertex#{}", index % groups))
-                        .expect("vertex id"),
-                    pcurves: Vec::new(),
-                },
+            .map(|(index, face)| {
+                Loop::new(
+                    LoopId::try_from(format!("step:data:loop#{index}")).expect("loop id"),
+                    face.clone(),
+                    LoopBoundary::Vertex {
+                        vertex: VertexId::try_from(format!("step:data:vertex#{}", index % groups))
+                            .expect("vertex id"),
+                        pcurves: Vec::new(),
+                    },
+                )
             })
             .collect::<Vec<_>>();
         let arena = DecodeArena::new();

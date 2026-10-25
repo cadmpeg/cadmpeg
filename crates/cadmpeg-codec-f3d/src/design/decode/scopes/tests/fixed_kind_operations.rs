@@ -1096,21 +1096,16 @@ fn fixed_kind_edge_and_revolve_operations(
         &[indexed_profile.clone(), indexed_axis.clone()],
         std::slice::from_ref(&axis_selection),
         &[],
-        &[cadmpeg_ir::topology::Face {
-            native_ref: None,
-            id: cadmpeg_ir::ids::FaceId::mint("f3d:brep:entity#40").expect("identity grammar"),
-            shell: cadmpeg_ir::ids::ShellId::mint("test:model:shell#1").expect("identity grammar"),
-            surface: surface_id.clone(),
-            sense: cadmpeg_ir::topology::Sense::Forward,
-            loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
-            name: None,
-            color: None,
-            tolerance: None,
-        }],
-        &[cadmpeg_ir::geometry::Surface {
-            native_ref: None,
-            id: surface_id,
-            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        &[cadmpeg_ir::topology::Face::new(
+            cadmpeg_ir::ids::FaceId::mint("f3d:brep:entity#40").expect("identity grammar"),
+            cadmpeg_ir::ids::ShellId::mint("test:model:shell#1").expect("identity grammar"),
+            surface_id.clone(),
+            cadmpeg_ir::topology::Sense::Forward,
+            cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+        )],
+        &[cadmpeg_ir::geometry::Surface::new(
+            surface_id,
+            cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(4.0, 5.0, 6.0),
                     Vector3::new(0.0, 0.0, -2.0).unit().unwrap(),
@@ -1118,8 +1113,8 @@ fn fixed_kind_edge_and_revolve_operations(
                 )
                 .unwrap(),
             )),
-            source_object: None,
-        }],
+            None,
+        )],
     );
     assert!(matches!(
         feature.evaluation.definition(),
@@ -1199,68 +1194,52 @@ fn fixed_kind_edge_and_revolve_operations(
         ..feature.clone()
     };
     let axis_faces = [
-        cadmpeg_ir::topology::Face {
-            native_ref: None,
-            id: cadmpeg_ir::ids::FaceId::mint("test:model:face#axis-a").expect("identity grammar"),
-            shell: cadmpeg_ir::ids::ShellId::mint("test:model:shell#axis")
+        cadmpeg_ir::topology::Face::new(
+            cadmpeg_ir::ids::FaceId::mint("test:model:face#axis-a").expect("identity grammar"),
+            cadmpeg_ir::ids::ShellId::mint("test:model:shell#axis").expect("identity grammar"),
+            cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#axis-a")
                 .expect("identity grammar"),
-            surface: cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#axis-a")
+            cadmpeg_ir::topology::Sense::Forward,
+            cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+        ),
+        cadmpeg_ir::topology::Face::new(
+            cadmpeg_ir::ids::FaceId::mint("test:model:face#axis-b").expect("identity grammar"),
+            cadmpeg_ir::ids::ShellId::mint("test:model:shell#axis").expect("identity grammar"),
+            cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#axis-b")
                 .expect("identity grammar"),
-            sense: cadmpeg_ir::topology::Sense::Forward,
-            loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
-            name: None,
-            color: None,
-            tolerance: None,
-        },
-        cadmpeg_ir::topology::Face {
-            native_ref: None,
-            id: cadmpeg_ir::ids::FaceId::mint("test:model:face#axis-b").expect("identity grammar"),
-            shell: cadmpeg_ir::ids::ShellId::mint("test:model:shell#axis")
-                .expect("identity grammar"),
-            surface: cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#axis-b")
-                .expect("identity grammar"),
-            sense: cadmpeg_ir::topology::Sense::Forward,
-            loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
-            name: None,
-            color: None,
-            tolerance: None,
-        },
+            cadmpeg_ir::topology::Sense::Forward,
+            cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+        ),
     ];
     let mut axis_surfaces = [
-        cadmpeg_ir::geometry::Surface {
-            native_ref: None,
-            id: cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#axis-a")
+        cadmpeg_ir::geometry::Surface::new(
+            cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#axis-a")
                 .expect("identity grammar"),
-            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(
-                SolvedSurfaceGeometry::Cylinder(
-                    cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                        Point3::new(1.0, 2.0, 3.0),
-                        Vector3::new(0.0, 0.0, 1.0),
-                        Vector3::new(1.0, 0.0, 0.0),
-                        4.0,
-                    )
-                    .unwrap(),
-                ),
-            ),
-            source_object: None,
-        },
-        cadmpeg_ir::geometry::Surface {
-            native_ref: None,
-            id: cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#axis-b")
+            cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                    Point3::new(1.0, 2.0, 3.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    4.0,
+                )
+                .unwrap(),
+            )),
+            None,
+        ),
+        cadmpeg_ir::geometry::Surface::new(
+            cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#axis-b")
                 .expect("identity grammar"),
-            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(
-                SolvedSurfaceGeometry::Cylinder(
-                    cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                        Point3::new(1.0, 2.0, 8.0),
-                        Vector3::new(0.0, 0.0, 1.0),
-                        Vector3::new(1.0, 0.0, 0.0),
-                        5.0,
-                    )
-                    .unwrap(),
-                ),
-            ),
-            source_object: None,
-        },
+            cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                    Point3::new(1.0, 2.0, 8.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    5.0,
+                )
+                .unwrap(),
+            )),
+            None,
+        ),
     ];
     crate::design::feature_project::bind_revolve_face_axes(
         std::slice::from_mut(&mut face_axis_feature),

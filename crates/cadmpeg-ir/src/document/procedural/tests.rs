@@ -14,13 +14,12 @@ fn curves(count: usize) -> (Model, Vec<(CurveId, ProceduralCurve)>) {
     let rows = (0..count)
         .map(|index| {
             let owner = CurveId::mint(format!("test:model:curve#{index:04}")).unwrap();
-            model.curves.push(Curve {
-                native_ref: None,
-                id: owner.clone(),
-                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
-                parameter_range: None,
-                source_object: None,
-            });
+            model.curves.push(Curve::new(
+                owner.clone(),
+                CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+                None,
+                None,
+            ));
             let procedural = ProceduralCurve::new(
                 ProceduralCurveId::mint(format!("test:model:construction#{index:04}")).unwrap(),
                 ProceduralCurveDefinition::Exact { cache: None },
@@ -36,12 +35,11 @@ fn surfaces(count: usize) -> (Model, Vec<(SurfaceId, ProceduralSurface)>) {
     let rows = (0..count)
         .map(|index| {
             let owner = SurfaceId::mint(format!("test:model:surface#{index:04}")).unwrap();
-            model.surfaces.push(Surface {
-                native_ref: None,
-                id: owner.clone(),
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
-                source_object: None,
-            });
+            model.surfaces.push(Surface::new(
+                owner.clone(),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+                None,
+            ));
             let procedural = ProceduralSurface::new(
                 ProceduralSurfaceId::mint(format!("test:model:construction#{index:04}")).unwrap(),
                 ProceduralSurfaceDefinition::Unknown {

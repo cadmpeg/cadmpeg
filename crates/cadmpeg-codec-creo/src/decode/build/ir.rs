@@ -246,24 +246,22 @@ fn transfer_reference_lines(
             Exactness::Derived,
         )?;
         ctx.charge_entities(1, "admit Creo model curves")?;
-        source_carriers.admit_curve(
-            ctx,
-            ir,
-            Curve {
-                native_ref: None,
-                parameter_range: None,
+        source_carriers.admit_curve(ctx, ir, {
+            let (parameter_range, id, geometry, source_object) = (
+                None,
                 id,
-                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                CurveGeometry::Solved(SolvedCurveGeometry::Line(
                     cadmpeg_ir::geometry::analytic::LineCurve::new(line.start(), direction),
                 )),
-                source_object: Some(SourceObjectAssociation {
+                Some(SourceObjectAssociation {
                     geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id,
                     instance_path: Vec::new(),
                 }),
-            },
-        )?;
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
+        })?;
     }
     Ok(())
 }
@@ -321,28 +319,26 @@ fn transfer_reference_circles(
                     "CircleCurve.axis/ref_direction must form an orthonormal frame",
                 )
             })?;
-        source_carriers.admit_curve(
-            ctx,
-            ir,
-            Curve {
-                native_ref: None,
-                parameter_range: None,
+        source_carriers.admit_curve(ctx, ir, {
+            let (parameter_range, id, geometry, source_object) = (
+                None,
                 id,
-                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                     cadmpeg_ir::geometry::analytic::CircleCurve::new(
                         circle.center(),
                         frame,
                         circle.radius(),
                     ),
                 )),
-                source_object: Some(SourceObjectAssociation {
+                Some(SourceObjectAssociation {
                     geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id,
                     instance_path: Vec::new(),
                 }),
-            },
-        )?;
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
+        })?;
     }
     Ok(())
 }
@@ -393,14 +389,11 @@ fn transfer_reference_ellipses(
             Exactness::Derived,
         )?;
         ctx.charge_entities(1, "admit Creo model curves")?;
-        source_carriers.admit_curve(
-            ctx,
-            ir,
-            Curve {
-                native_ref: None,
-                parameter_range: None,
+        source_carriers.admit_curve(ctx, ir, {
+            let (parameter_range, id, geometry, source_object) = (
+                None,
                 id,
-                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
+                CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
                     cadmpeg_ir::geometry::analytic::EllipseCurve::try_from_parts(
                         ellipse.center(),
                         cadmpeg_ir::units::OrthonormalFrame3::from_units(
@@ -417,14 +410,15 @@ fn transfer_reference_ellipses(
                     )
                     .map_err(CodecError::malformed)?,
                 )),
-                source_object: Some(SourceObjectAssociation {
+                Some(SourceObjectAssociation {
                     geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id,
                     instance_path: Vec::new(),
                 }),
-            },
-        )?;
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
+        })?;
     }
     Ok(())
 }
@@ -585,10 +579,9 @@ fn transfer_datum_plane_surfaces(
         source_carriers.admit_surface(
             ctx,
             ir,
-            Surface {
-                native_ref: None,
+            Surface::new(
                 id,
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                         Point3::new(
                             normal[0] * plane.plane().offset(),
@@ -600,13 +593,13 @@ fn transfer_datum_plane_surfaces(
                     )
                     .map_err(CodecError::malformed)?,
                 )),
-                source_object: Some(SourceObjectAssociation {
+                Some(SourceObjectAssociation {
                     geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: source_object_id_checked(format_args!("ActDatums:{}", plane.id))?,
                     instance_path: Vec::new(),
                 }),
-            },
+            ),
         )?;
     }
     Ok(())
@@ -673,10 +666,9 @@ fn transfer_placed_plane_surfaces_into_ir(
         source_carriers.admit_surface(
             ctx,
             ir,
-            Surface {
-                native_ref: None,
+            Surface::new(
                 id,
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                         Point3::from(plane.origin),
                         Vector3::from(plane.normal),
@@ -684,13 +676,13 @@ fn transfer_placed_plane_surfaces_into_ir(
                     )
                     .map_err(CodecError::malformed)?,
                 )),
-                source_object: Some(SourceObjectAssociation {
+                Some(SourceObjectAssociation {
                     geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: source_object_id_checked(format_args!("VisibGeom:{surface_id}"))?,
                     instance_path: Vec::new(),
                 }),
-            },
+            ),
         )?;
     }
     Ok(())

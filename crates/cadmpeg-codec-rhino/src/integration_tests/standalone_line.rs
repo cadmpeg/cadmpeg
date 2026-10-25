@@ -48,18 +48,17 @@ fn native_line_geometry(bytes: &[u8]) -> CurveGeometry {
 
 fn round_trip(origin: Point3, direction: UnitVector3, domain: [f64; 2], endpoints: [Point3; 2]) {
     let mut ir = CadIr::empty();
-    ir.model.curves.push(Curve {
-        native_ref: None,
-        id: "test:geometry:curve#0"
+    ir.model.curves.push(Curve::new(
+        "test:geometry:curve#0"
             .try_into()
             .expect("standalone curve identity"),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(LineCurve::new(
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(LineCurve::new(
             FinitePoint3::new(origin).expect("finite line origin"),
             direction,
         ))),
-        parameter_range: Some(IncreasingParameterInterval::new(domain).expect("finite line range")),
-        source_object: None,
-    });
+        Some(IncreasingParameterInterval::new(domain).expect("finite line range")),
+        None,
+    ));
     assert!(ir.model.bodies.is_empty());
     assert!(ir.native.namespace("rhino").is_none());
     let before = serde_json::to_value(&ir).expect("authored line snapshot");

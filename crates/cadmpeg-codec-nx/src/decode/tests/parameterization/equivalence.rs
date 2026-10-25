@@ -23,10 +23,9 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
         SurfaceId::mint("test:model:entity#support-b").expect("identity grammar"),
     ];
     for support in &supports {
-        ir.model.surfaces.push(Surface {
-            native_ref: None,
-            id: support.clone(),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        ir.model.surfaces.push(Surface::new(
+            support.clone(),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -34,8 +33,8 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
                 )
                 .unwrap(),
             )),
-            source_object: None,
-        });
+            None,
+        ));
     }
     let offsets = [
         SurfaceId::mint("test:model:entity#offset-a").expect("identity grammar"),
@@ -45,15 +44,14 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
         let construction =
             ProceduralSurfaceId::mint(format!("test:model:entity#offset-construction-{ordinal}"))
                 .expect("identity grammar");
-        ir.model.surfaces.push(Surface {
-            native_ref: None,
-            id: surface.clone(),
-            geometry: SurfaceGeometry::Procedural {
+        ir.model.surfaces.push(Surface::new(
+            surface.clone(),
+            SurfaceGeometry::Procedural {
                 construction: construction.clone(),
                 cache: None,
             },
-            source_object: None,
-        });
+            None,
+        ));
         ir.model.procedural_surfaces.push(ProceduralSurface::new(
             construction,
             ProceduralSurfaceDefinition::Offset(
@@ -74,12 +72,14 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
         ));
     }
     let carrier = CurveId::mint("test:model:entity#curve").expect("identity grammar");
-    ir.model.curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: carrier.clone(),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
-        source_object: None,
+    ir.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            carrier.clone(),
+            CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+            None,
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     });
     let _attached = ir.model.add_procedural_curve(
         &carrier,
@@ -205,15 +205,14 @@ fn cyclic_offset_supports_are_not_parameterization_equivalent() {
         let construction =
             ProceduralSurfaceId::mint(format!("test:model:entity#cycle-construction-{index}"))
                 .expect("identity grammar");
-        ir.model.surfaces.push(Surface {
-            native_ref: None,
-            id: surface.clone(),
-            geometry: SurfaceGeometry::Procedural {
+        ir.model.surfaces.push(Surface::new(
+            surface.clone(),
+            SurfaceGeometry::Procedural {
                 construction: construction.clone(),
                 cache: None,
             },
-            source_object: None,
-        });
+            None,
+        ));
         ir.model.procedural_surfaces.push(ProceduralSurface::new(
             construction,
             ProceduralSurfaceDefinition::Offset(

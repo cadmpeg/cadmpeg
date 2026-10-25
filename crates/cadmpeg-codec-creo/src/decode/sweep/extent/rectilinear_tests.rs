@@ -86,18 +86,19 @@ fn generated_fixture(
         next_surface: 0,
         offset: usize::try_from(id).expect("fixture index fits usize"),
     };
-    let plane = |id, origin, normal| Surface {
-        native_ref: None,
-        id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                origin,
-                normal,
-                Vector3::new(0.0, 0.0, 1.0),
-            )
-            .expect("valid PlaneSurface fixture"),
-        )),
-        source_object: None,
+    let plane = |id, origin, normal| {
+        Surface::new(
+            SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    origin,
+                    normal,
+                    Vector3::new(0.0, 0.0, 1.0),
+                )
+                .expect("valid PlaneSurface fixture"),
+            )),
+            None,
+        )
     };
     let mut scan = crate::test_support::empty_container_scan();
     let mut ir = CadIr::empty();
@@ -307,18 +308,19 @@ fn rectilinear_extent_reconciles_native_and_transferred_planes() {
             next_surface: 0,
             offset: usize::try_from(id).expect("fixture index fits usize"),
         };
-        let plane = |id, origin, normal| Surface {
-            native_ref: None,
-            id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                    origin,
-                    normal,
-                    Vector3::new(0.0, 0.0, 1.0),
-                )
-                .expect("valid PlaneSurface fixture"),
-            )),
-            source_object: None,
+        let plane = |id, origin, normal| {
+            Surface::new(
+                SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                        origin,
+                        normal,
+                        Vector3::new(0.0, 0.0, 1.0),
+                    )
+                    .expect("valid PlaneSurface fixture"),
+                )),
+                None,
+            )
         };
         let mut scan = crate::test_support::empty_container_scan();
         scan.surfaces.rows.extend([
@@ -332,13 +334,11 @@ fn rectilinear_extent_reconciles_native_and_transferred_planes() {
         ]);
         let mut ir = CadIr::empty();
         ir.model.surfaces.extend([
-            Surface {
-                native_ref: None,
-                id: SurfaceId::mint("creo:visibgeom:surface#37".to_string())
-                    .expect("identity grammar"),
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
-                source_object: None,
-            },
+            Surface::new(
+                SurfaceId::mint("creo:visibgeom:surface#37".to_string()).expect("identity grammar"),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+                None,
+            ),
             plane(31, Point3::new(0.0, 6.0, 0.0), Vector3::new(0.0, 1.0, 0.0)),
             plane(32, Point3::new(0.0, 48.0, 0.0), Vector3::new(0.0, 1.0, 0.0)),
             plane(33, Point3::new(4.0, 48.0, 0.0), Vector3::new(1.0, 0.0, 0.0)),

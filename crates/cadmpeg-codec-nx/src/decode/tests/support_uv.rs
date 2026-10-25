@@ -359,10 +359,9 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
                 .expect("identity grammar");
         let mut ir = cadmpeg_ir::document::CadIr::empty();
         ir.model.surfaces.extend([
-            Surface {
-                native_ref: None,
-                id: support.clone(),
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+            Surface::new(
+                support.clone(),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                     NurbsSurface::from_lanes(
                         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                             3,
@@ -387,21 +386,19 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
                     )
                     .expect("valid seeded offset support"),
                 )),
-                source_object: None,
-            },
-            Surface {
-                native_ref: None,
-                id: offset.clone(),
-                geometry: SurfaceGeometry::Procedural {
+                None,
+            ),
+            Surface::new(
+                offset.clone(),
+                SurfaceGeometry::Procedural {
                     construction: offset_construction.clone(),
                     cache: None,
                 },
-                source_object: None,
-            },
-            Surface {
-                native_ref: None,
-                id: plane.clone(),
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                None,
+            ),
+            Surface::new(
+                plane.clone(),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                         Point3::new(0.0, 0.0, 0.45),
                         Vector3::new(0.0, 0.0, 1.0),
@@ -409,8 +406,8 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
                     )
                     .unwrap(),
                 )),
-                source_object: None,
-            },
+                None,
+            ),
         ]);
         ir.model.procedural_surfaces.push(ProceduralSurface::new(
             offset_construction,
@@ -430,12 +427,14 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
             ),
             None,
         ));
-        ir.model.curves.push(Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: curve.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
-            source_object: None,
+        ir.model.curves.push({
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                curve.clone(),
+                CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+                None,
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         });
         let _attached = ir.model.add_procedural_curve(
             &curve,

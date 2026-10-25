@@ -217,17 +217,19 @@ fn bounded_analytic_carrier_uses_admitted_source_endpoint_witnesses() {
             .translated(axis.cross(reference), radius * interval[1].sin());
         let declared_end = evaluated_end.translated(Vector3::new(0.0, 0.0005, 0.0), 1.0);
         let mut ir = CadIr::empty();
-        ir.model.curves.push(Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: curve_id.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                    center, axis, reference, radius,
-                )
-                .unwrap(),
-            )),
-            source_object: None,
+        ir.model.curves.push({
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                curve_id.clone(),
+                CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                    cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                        center, axis, reference, radius,
+                    )
+                    .unwrap(),
+                )),
+                None,
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         });
         ir.model.points.extend([
             Point::new(
@@ -244,28 +246,16 @@ fn bounded_analytic_carrier_uses_admitted_source_endpoint_witnesses() {
             ),
         ]);
         ir.model.vertices.extend([
-            Vertex {
-                native_ref: None,
-                id: start_vertex.clone(),
-                point: start_id,
-                tolerance: None,
-            },
-            Vertex {
-                native_ref: None,
-                id: end_vertex.clone(),
-                point: end_id,
-                tolerance: None,
-            },
+            Vertex::new(start_vertex.clone(), start_id, None),
+            Vertex::new(end_vertex.clone(), end_id, None),
         ]);
-        ir.model.edges.push(Edge {
-            native_ref: None,
-            id: EdgeId::mint("test:model:edge#edge").expect("identity grammar"),
-            carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id.clone()), Some(interval))
-                .unwrap(),
-            start: start_vertex,
-            end: end_vertex,
-            tolerance: None,
-        });
+        ir.model.edges.push(Edge::new(
+            EdgeId::mint("test:model:edge#edge").expect("identity grammar"),
+            cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id.clone()), Some(interval)).unwrap(),
+            start_vertex,
+            end_vertex,
+            None,
+        ));
 
         let (carrier, _) =
             bounded_nurbs_for_curve_with_tolerance(&ir, &curve_id, Some(0.001), decode_ctx, None)

@@ -21,14 +21,17 @@ fn swept_plane(height: f64) -> CadIr {
     let directrix = "test:model:curve#surface-cache-directrix"
         .try_into()
         .unwrap();
-    ir.model.curves.push(Curve {
-        native_ref: None,
-        id: directrix,
-        parameter_range: None,
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)).unwrap(),
-        )),
-        source_object: None,
+    ir.model.curves.push({
+        let (id, parameter_range, geometry, source_object) = (
+            directrix,
+            None,
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0))
+                    .unwrap(),
+            )),
+            None,
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     });
     let construction = ProceduralSurface::new(
         "test:model:procedural_surface#cache-check"

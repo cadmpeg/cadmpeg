@@ -73,10 +73,9 @@ fn reconciles_pcurve_endpoints_across_evaluable_face_charts() {
         (1, [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
         (2, [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]),
     ] {
-        ir.model.surfaces.push(Surface {
-            native_ref: None,
-            id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        ir.model.surfaces.push(Surface::new(
+            SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::from(normal),
@@ -84,8 +83,8 @@ fn reconciles_pcurve_endpoints_across_evaluable_face_charts() {
                 )
                 .expect("valid PlaneSurface fixture"),
             )),
-            source_object: None,
-        });
+            None,
+        ));
     }
     assert_eq!(
         mapped_pcurve_endpoints(

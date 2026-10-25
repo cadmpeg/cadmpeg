@@ -40,12 +40,14 @@ pub(super) fn construction(
         })?;
         let id = CurveId::mint(format!("{}.sweep-origin", directrix.as_str()))
             .map_err(|error| error.to_string())?;
-        ir.model.curves.push(Curve {
-            native_ref: None,
-            id: id.clone(),
-            parameter_range: None,
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
-            source_object: Some(source.clone()),
+        ir.model.curves.push({
+            let (id, parameter_range, geometry, source_object) = (
+                id.clone(),
+                None,
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
+                Some(source.clone()),
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         });
         id
     };

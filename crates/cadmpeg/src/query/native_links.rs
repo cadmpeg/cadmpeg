@@ -20,7 +20,7 @@ pub(super) fn run(args: &QueryArgs) -> Result<()> {
     let text = std::str::from_utf8(&bytes).context("CADIR is not UTF-8")?;
     let ir = cadmpeg_ir::CadIr::from_json(text).context("admitting CADIR projection source")?;
     let mut rows = Vec::new();
-    cadmpeg_ir::schema::query::visit_native_references(
+    cadmpeg_ir::schema::native_links::visit_native_references(
         &ir.model,
         &mut |arena, rust_type, id, native_ref| {
             rows.push(Link {

@@ -351,12 +351,11 @@ fn borrowed_reference_walk_preserves_a_callback_resource_refusal() {
     use crate::schema::EntitySchema;
     use cadmpeg_core::decode::{ResourceDimension, ResourceLimit};
     use cadmpeg_core::CodecError;
-    let entity = crate::topology::Vertex {
-        native_ref: None,
-        id: "test:model:vertex#owner".try_into().unwrap(),
-        point: "test:model:point#target".try_into().unwrap(),
-        tolerance: None,
-    };
+    let entity = crate::topology::Vertex::new(
+        "test:model:vertex#owner".try_into().unwrap(),
+        "test:model:point#target".try_into().unwrap(),
+        None,
+    );
     let ctx = cadmpeg_test_support::service_decode_context();
     let limit = ResourceLimit::allocation_failed(
         ResourceDimension::RetainedBytes,

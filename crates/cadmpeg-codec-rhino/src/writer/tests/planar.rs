@@ -296,25 +296,26 @@ fn brep_and_free_geometry_round_trip_in_one_archive() {
             .expect("a finite position is a point"),
         None,
     ));
-    ir.model.curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: CurveId::mint("cadir:model:curve#free").expect("identity grammar"),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                Point3::new(5.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                2.0,
-            )
-            .unwrap(),
-        )),
-        source_object: None,
+    ir.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            CurveId::mint("cadir:model:curve#free").expect("identity grammar"),
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                    Point3::new(5.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    2.0,
+                )
+                .unwrap(),
+            )),
+            None,
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     });
-    ir.model.surfaces.push(Surface {
-        native_ref: None,
-        id: SurfaceId::mint("cadir:model:surface#free").expect("identity grammar"),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+    ir.model.surfaces.push(Surface::new(
+        SurfaceId::mint("cadir:model:surface#free").expect("identity grammar"),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 3.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -322,8 +323,8 @@ fn brep_and_free_geometry_round_trip_in_one_archive() {
             )
             .unwrap(),
         )),
-        source_object: None,
-    });
+        None,
+    ));
     ir.finalize();
     for version in [
         RhinoArchiveVersion::V5,

@@ -122,12 +122,11 @@ fn unencodable_free_surface_keeps_an_independent_solid() {
         )
         .expect("independent solid fixture decodes");
     let mut ir = decoded.ir().clone();
-    ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-        native_ref: None,
-        id: "test:model:surface#free"
+    ir.model.surfaces.push(cadmpeg_ir::geometry::Surface::new(
+        "test:model:surface#free"
             .try_into()
             .expect("valid authored test identity"),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
             cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
                 Point3::new(10.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -136,8 +135,8 @@ fn unencodable_free_surface_keeps_an_independent_solid() {
             )
             .expect("authored sphere has a valid frame and radius"),
         )),
-        source_object: None,
-    });
+        None,
+    ));
     let plan = plan_at(IgesVersion::V5_3, &ir, None)
         .expect("independent solid receives a valid synthesis plan");
     assert!(plan

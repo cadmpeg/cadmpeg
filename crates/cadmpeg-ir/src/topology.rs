@@ -200,6 +200,38 @@ pub struct Body {
     pub visible: Option<bool>,
 }
 
+impl Body {
+    /// Construct a body without a native counterpart.
+    #[must_use]
+    pub fn new(
+        id: BodyId,
+        kind: BodyKind,
+        regions: Vec<RegionId>,
+        transform: Option<Transform>,
+        name: Option<String>,
+        color: Option<Color>,
+        visible: Option<bool>,
+    ) -> Self {
+        Self {
+            native_ref: None,
+            id,
+            kind,
+            regions,
+            transform,
+            name,
+            color,
+            visible,
+        }
+    }
+
+    /// Attach the actual typed native counterpart, when present.
+    #[must_use]
+    pub fn with_native_ref(mut self, native_ref: Option<String>) -> Self {
+        self.native_ref = native_ref;
+        self
+    }
+}
+
 /// A connected region of a body.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -220,6 +252,26 @@ pub struct Region {
     /// Ordered boundary shells. For a solid region, the first shell is the
     /// exterior boundary and all subsequent shells bound voids.
     pub shells: Vec<ShellId>,
+}
+
+impl Region {
+    /// Construct a region without a native counterpart.
+    #[must_use]
+    pub fn new(id: RegionId, body: BodyId, shells: Vec<ShellId>) -> Self {
+        Self {
+            native_ref: None,
+            id,
+            body,
+            shells,
+        }
+    }
+
+    /// Attach the actual typed native counterpart, when present.
+    #[must_use]
+    pub fn with_native_ref(mut self, native_ref: Option<String>) -> Self {
+        self.native_ref = native_ref;
+        self
+    }
 }
 
 /// One member of a shell: a face, a wire edge, or a free vertex.
@@ -301,6 +353,13 @@ pub struct Shell {
 }
 
 impl Shell {
+    /// Attach the actual typed native counterpart, when present.
+    #[must_use]
+    pub fn with_native_ref(mut self, native_ref: Option<String>) -> Self {
+        self.native_ref = native_ref;
+        self
+    }
+
     /// Admits a shell that owns at least one face, wire edge, or free vertex.
     pub fn new(
         id: ShellId,
@@ -516,6 +575,56 @@ pub struct Face {
 }
 
 impl Face {
+    /// Construct a face without a native counterpart.
+    #[must_use]
+    pub fn new(
+        id: FaceId,
+        shell: ShellId,
+        surface: SurfaceId,
+        sense: Sense,
+        loops: FaceLoops,
+    ) -> Self {
+        Self {
+            native_ref: None,
+            id,
+            shell,
+            surface,
+            sense,
+            loops,
+            name: None,
+            color: None,
+            tolerance: None,
+        }
+    }
+
+    /// Attach the actual typed native counterpart, when present.
+    #[must_use]
+    pub fn with_native_ref(mut self, native_ref: Option<String>) -> Self {
+        self.native_ref = native_ref;
+        self
+    }
+
+    /// Set the face name.
+    #[must_use]
+    pub fn with_name(mut self, name: Option<String>) -> Self {
+        self.name = name;
+        self
+    }
+
+    /// Set the face color.
+    #[must_use]
+    pub fn with_color(mut self, color: Option<Color>) -> Self {
+        self.color = color;
+        self
+    }
+
+    /// Set the face tolerance.
+    #[must_use]
+    pub fn with_tolerance(mut self, tolerance: Option<crate::scalar::PositiveReal>) -> Self {
+        self.tolerance = tolerance;
+        self
+    }
+
     /// Role of `id` when it is a member of this face.
     #[must_use]
     pub fn loop_role(&self, id: &LoopId) -> LoopBoundaryRole {
@@ -876,6 +985,24 @@ impl LoopRing {
 }
 
 impl Loop {
+    /// Construct a loop without a native counterpart.
+    #[must_use]
+    pub fn new(id: LoopId, face: FaceId, boundary: LoopBoundary) -> Self {
+        Self {
+            native_ref: None,
+            id,
+            face,
+            boundary,
+        }
+    }
+
+    /// Attach the actual typed native counterpart, when present.
+    #[must_use]
+    pub fn with_native_ref(mut self, native_ref: Option<String>) -> Self {
+        self.native_ref = native_ref;
+        self
+    }
+
     /// Replace the complete coedge ring after checking its local structure.
     pub fn replace_ring(
         &mut self,
@@ -1040,6 +1167,38 @@ pub struct Coedge {
         deserialize_with = "deserialize_use_curve"
     )]
     pub use_curve: Option<CoedgeUseCurve>,
+}
+
+impl Coedge {
+    /// Construct a coedge without a native counterpart.
+    #[must_use]
+    pub fn new(
+        id: CoedgeId,
+        owner_loop: LoopId,
+        edge: EdgeId,
+        radial_next: CoedgeId,
+        sense: Sense,
+        pcurves: Vec<PcurveUse>,
+        use_curve: Option<CoedgeUseCurve>,
+    ) -> Self {
+        Self {
+            native_ref: None,
+            id,
+            owner_loop,
+            edge,
+            radial_next,
+            sense,
+            pcurves,
+            use_curve,
+        }
+    }
+
+    /// Attach the actual typed native counterpart, when present.
+    #[must_use]
+    pub fn with_native_ref(mut self, native_ref: Option<String>) -> Self {
+        self.native_ref = native_ref;
+        self
+    }
 }
 
 /// Next and previous coedge ids from the owning loop ring.
@@ -1387,6 +1546,32 @@ pub struct Edge {
 }
 
 impl Edge {
+    /// Construct a edge without a native counterpart.
+    #[must_use]
+    pub fn new(
+        id: EdgeId,
+        carrier: EdgeCarrier,
+        start: VertexId,
+        end: VertexId,
+        tolerance: Option<crate::scalar::PositiveReal>,
+    ) -> Self {
+        Self {
+            native_ref: None,
+            id,
+            carrier,
+            start,
+            end,
+            tolerance,
+        }
+    }
+
+    /// Attach the actual typed native counterpart, when present.
+    #[must_use]
+    pub fn with_native_ref(mut self, native_ref: Option<String>) -> Self {
+        self.native_ref = native_ref;
+        self
+    }
+
     /// Map the carrier identity without changing its presence or parameter range.
     pub fn map_curve(&mut self, map: impl FnOnce(&CurveId) -> CurveId) {
         self.carrier.map_curve(map);
@@ -1443,6 +1628,30 @@ pub struct Vertex {
     pub tolerance: Option<crate::scalar::PositiveReal>,
 }
 
+impl Vertex {
+    /// Construct a vertex without a native counterpart.
+    #[must_use]
+    pub fn new(
+        id: VertexId,
+        point: PointId,
+        tolerance: Option<crate::scalar::PositiveReal>,
+    ) -> Self {
+        Self {
+            native_ref: None,
+            id,
+            point,
+            tolerance,
+        }
+    }
+
+    /// Attach the actual typed native counterpart, when present.
+    #[must_use]
+    pub fn with_native_ref(mut self, native_ref: Option<String>) -> Self {
+        self.native_ref = native_ref;
+        self
+    }
+}
+
 /// A position carrier for a vertex.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1491,6 +1700,13 @@ struct PointWire {
 }
 
 impl Point {
+    /// Attach the actual typed native counterpart, when present.
+    #[must_use]
+    pub fn with_native_ref(mut self, native_ref: Option<String>) -> Self {
+        self.native_ref = native_ref;
+        self
+    }
+
     /// The refusal of a position with a non-finite coordinate.
     pub const NON_FINITE_POSITION: &'static str = "point position coordinates must be finite";
 
@@ -2081,12 +2297,11 @@ mod tests {
     #[test]
     fn replacing_a_ring_rejects_invalid_contents_without_changing_the_loop() {
         let coedge: super::CoedgeId = "test:model:coedge#0".try_into().unwrap();
-        let mut loop_ = Loop {
-            native_ref: None,
-            id: "test:model:loop#0".try_into().unwrap(),
-            face: "test:model:face#0".try_into().unwrap(),
-            boundary: LoopBoundary::Ring(LoopRing::new(vec![coedge.clone()], Vec::new()).unwrap()),
-        };
+        let mut loop_ = Loop::new(
+            "test:model:loop#0".try_into().unwrap(),
+            "test:model:face#0".try_into().unwrap(),
+            LoopBoundary::Ring(LoopRing::new(vec![coedge.clone()], Vec::new()).unwrap()),
+        );
         let before = loop_.clone();
         assert!(loop_.replace_ring(Vec::new(), Vec::new()).is_err());
         assert_eq!(loop_, before);
@@ -2127,14 +2342,11 @@ mod tests {
                 parameter_range: crate::topology::ParameterInterval::new([0.25, 0.75]).unwrap(),
             })
         );
-        let loop_ = Loop {
-            native_ref: None,
-            id: coedge.owner_loop.clone(),
-            face: "test:model:face#0".try_into().expect("valid identity"),
-            boundary: LoopBoundary::Ring(
-                super::LoopRing::new(vec![coedge.id.clone()], Vec::new()).unwrap(),
-            ),
-        };
+        let loop_ = Loop::new(
+            coedge.owner_loop.clone(),
+            "test:model:face#0".try_into().expect("valid identity"),
+            LoopBoundary::Ring(super::LoopRing::new(vec![coedge.id.clone()], Vec::new()).unwrap()),
+        );
         assert_eq!(
             coedge_ring_neighbors(std::slice::from_ref(&loop_), &coedge),
             Some((coedge.id.clone(), coedge.id.clone()))

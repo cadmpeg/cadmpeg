@@ -4,6 +4,14 @@ CADIR documents, decode sidecars, and command reports now use wire version 8. Re
 
 The document field `scope` replaces recorded decode depth. Its independent `model` and `design` booleans declare which neutral classes are held, and participate in the content digest. A populated class cannot be excluded. Decode transfer reports carry the delivered scope and a geometry-transfer boolean. `DecodeDepth` remains the caller's request vocabulary.
 
+The fifteen geometry carriers (`Body`, `Region`, `Shell`, `Face`, `Loop`,
+`Coedge`, `Edge`, `Vertex`, `Point`, `Curve`, `Surface`, `Pcurve`,
+`SubdSurface`, `ProceduralCurve`, and `ProceduralSurface`) carry optional
+`native_ref`. `Drawing.native_ref` follows the same optional contract. The wire
+omits absent links and rejects `null` and non-string values. Present links must
+resolve to existing typed native records; neutral or staged identities and
+opaque `unknowns` records do not satisfy a native link.
+
 F3D design failure and NX attachment failure now deliver reduced scope and report the missing requested classes. Failure events remain in reports. F3D no longer stores a design failure arena in the document.
 
 Writers synthesize from the document's neutral content and their own typed native records. Retained bytes can select layout and identities, but cannot supply content. `SourceFidelity.unrepresented` identifies source records that have no typed representation. Patch and replay are guarded; declined patches fall back to synthesis and report their reason.

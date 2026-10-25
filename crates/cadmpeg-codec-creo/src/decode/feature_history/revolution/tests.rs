@@ -135,22 +135,24 @@ fn saved_spline_definition() -> crate::feature::definitions::FeatureDefinition {
 }
 
 fn saved_spline_curve() -> Curve {
-    Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: CurveId::mint("creo:featdefs:saved_spline_curve#40:1".to_string())
-            .expect("identity grammar"),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            NurbsCurve::from_lanes(
-                1,
-                vec![0.0, 0.0, 1.0, 1.0],
-                vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 0.0, 1.0)],
-                None,
-                false,
-            )
-            .expect("valid saved-spline curve"),
-        )),
-        source_object: None,
+    {
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            CurveId::mint("creo:featdefs:saved_spline_curve#40:1".to_string())
+                .expect("identity grammar"),
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                NurbsCurve::from_lanes(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 0.0, 1.0)],
+                    None,
+                    false,
+                )
+                .expect("valid saved-spline curve"),
+            )),
+            None,
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     }
 }
 

@@ -464,10 +464,9 @@ fn buf_line_count(buf: &[u8]) -> usize {
 /// interning of shared points/directions.
 pub(super) fn cylinder_surface_doc() -> CadIr {
     let mut ir = CadIr::empty();
-    ir.model.surfaces.push(Surface {
-        native_ref: None,
-        id: SurfaceId::mint("test:model:surface#cyl").expect("identity grammar"),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+    ir.model.surfaces.push(Surface::new(
+        SurfaceId::mint("test:model:surface#cyl").expect("identity grammar"),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -476,8 +475,8 @@ pub(super) fn cylinder_surface_doc() -> CadIr {
             )
             .unwrap(),
         )),
-        source_object: None,
-    });
+        None,
+    ));
     ir
 }
 
@@ -946,19 +945,23 @@ pub(crate) fn analytic_conics_round_trip_through_step() {
     ));
     let mut source = CadIr::empty();
     source.model.curves.extend([
-        Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: CurveId::mint("test:model:curve#parabola").expect("identity grammar"),
-            geometry: parabola.clone(),
-            source_object: None,
+        {
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                CurveId::mint("test:model:curve#parabola").expect("identity grammar"),
+                parabola.clone(),
+                None,
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         },
-        Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: CurveId::mint("test:model:curve#hyperbola").expect("identity grammar"),
-            geometry: hyperbola.clone(),
-            source_object: None,
+        {
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                CurveId::mint("test:model:curve#hyperbola").expect("identity grammar"),
+                hyperbola.clone(),
+                None,
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         },
     ]);
 
@@ -990,18 +993,20 @@ pub(crate) fn analytic_conics_round_trip_through_step() {
 #[test]
 pub(crate) fn standalone_geometry_uses_general_shape_representation() {
     let mut ir = CadIr::empty();
-    ir.model.curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: CurveId::mint("test:model:curve#line").expect("identity grammar"),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(1.0, 0.0, 0.0),
-            )
-            .unwrap(),
-        )),
-        source_object: None,
+    ir.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            CurveId::mint("test:model:curve#line").expect("identity grammar"),
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            )),
+            None,
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     });
     let output = export(&ir);
     assert!(output.contains("SHAPE_REPRESENTATION('',"));
@@ -1479,12 +1484,11 @@ fn analytic_surfaces_map_to_their_step_entities() {
     ];
     for (geom, kw) in cases {
         let mut ir = CadIr::empty();
-        ir.model.surfaces.push(Surface {
-            native_ref: None,
-            id: SurfaceId::mint("test:model:surface#s").expect("identity grammar"),
-            geometry: geom,
-            source_object: None,
-        });
+        ir.model.surfaces.push(Surface::new(
+            SurfaceId::mint("test:model:surface#s").expect("identity grammar"),
+            geom,
+            None,
+        ));
         // Surfaces alone aren't reachable from a shell, so they won't be emitted
         // by the topology walk; emit directly via the geometry module instead.
         let s = emit_surface_only(&ir.model.surfaces[0].geometry);
@@ -1728,18 +1732,20 @@ fn a_linear_sweep_whose_magnitude_overflows_uses_held_carrier() {
     for held_cache in [false, true] {
         let mut ir = CadIr::empty();
         let directrix: CurveId = "test:model:curve#directrix".try_into().unwrap();
-        ir.model.curves.push(Curve {
-            native_ref: None,
-            id: directrix.clone(),
-            parameter_range: None,
-            source_object: None,
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                    Point3::new(0.0, 0.0, 0.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                )
-                .unwrap(),
-            )),
+        ir.model.curves.push({
+            let (id, parameter_range, source_object, geometry) = (
+                directrix.clone(),
+                None,
+                None,
+                CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                    cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .unwrap(),
+                )),
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         });
         let construction = ProceduralSurface::new(
             "test:model:procedural-surface#sweep".try_into().unwrap(),
@@ -1752,23 +1758,25 @@ fn a_linear_sweep_whose_magnitude_overflows_uses_held_carrier() {
             ),
             None,
         );
-        ir.model.surfaces.push(Surface {
-            native_ref: None,
-            id: "test:model:surface#sweep".try_into().unwrap(),
-            source_object: None,
-            geometry: SurfaceGeometry::Procedural {
-                construction: construction.id.clone(),
-                cache: held_cache.then(|| {
-                    SolvedSurfaceGeometry::Plane(
-                        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                            Point3::new(0.0, 0.0, 0.0),
-                            Vector3::new(0.0, 0.0, 1.0),
-                            Vector3::new(1.0, 0.0, 0.0),
+        ir.model.surfaces.push({
+            let (id, source_object, geometry) = (
+                "test:model:surface#sweep".try_into().unwrap(),
+                None,
+                SurfaceGeometry::Procedural {
+                    construction: construction.id.clone(),
+                    cache: held_cache.then(|| {
+                        SolvedSurfaceGeometry::Plane(
+                            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                                Point3::new(0.0, 0.0, 0.0),
+                                Vector3::new(0.0, 0.0, 1.0),
+                                Vector3::new(1.0, 0.0, 0.0),
+                            )
+                            .unwrap(),
                         )
-                        .unwrap(),
-                    )
-                }),
-            },
+                    }),
+                },
+            );
+            Surface::new(id, geometry, source_object)
         });
         ir.model.procedural_surfaces.push(construction);
         let mut bytes = Vec::new();

@@ -67,12 +67,14 @@ fn brep_edge_indexes_preserve_model_curve_multiplicity() {
         solved_vertices,
         mut ir,
     } = brep_edge_index_input();
-    let curve = Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: CurveId::compose(&crate::identity::VISIBGEOM_CURVE, 10),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
-        source_object: None,
+    let curve = {
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            CurveId::compose(&crate::identity::VISIBGEOM_CURVE, 10),
+            CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+            None,
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     };
     ir.model.curves.push(curve.clone());
     let one = { BrepEdgeIndexes::from_rows(&rows, &native_vertices, &solved_vertices, &ir) };
@@ -156,20 +158,22 @@ fn brep_pcurve_candidates_preserve_source_order() {
 
 fn typed_curve_id_fixture() -> CadIr {
     let mut ir = CadIr::empty();
-    let circle = |id: u32| Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: CurveId::mint(format!("creo:visibgeom:curve#{id}")).expect("fixture curve identity"),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                1.0,
-            )
-            .expect("fixture circle"),
-        )),
-        source_object: None,
+    let circle = |id: u32| {
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            CurveId::mint(format!("creo:visibgeom:curve#{id}")).expect("fixture curve identity"),
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    1.0,
+                )
+                .expect("fixture circle"),
+            )),
+            None,
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     };
     ir.model.curves.extend([circle(10), circle(10), circle(20)]);
     ir
@@ -775,20 +779,22 @@ fn native_parameter_loops_admit_proven_two_edge_circles() {
         ((20, 5), vec![([[1.0, 0.0], [-1.0, 0.0]], 0)]),
         ((21, 5), vec![([[-1.0, 0.0], [1.0, 0.0]], 0)]),
     ]);
-    let circle = |id, radius| Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: CurveId::mint(format!("creo:visibgeom:curve#{id}")).expect("identity grammar"),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                radius,
-            )
-            .expect("valid CircleCurve fixture"),
-        )),
-        source_object: None,
+    let circle = |id, radius| {
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            CurveId::mint(format!("creo:visibgeom:curve#{id}")).expect("identity grammar"),
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    radius,
+                )
+                .expect("valid CircleCurve fixture"),
+            )),
+            None,
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     };
     let model_curves = vec![
         circle(10, 2.0),
@@ -968,10 +974,9 @@ fn native_brep_rejects_ambiguous_model_carriers() {
         .collect();
 
     let mut ir = CadIr::empty();
-    ir.model.surfaces.push(Surface {
-        native_ref: None,
-        id: SurfaceId::mint("creo:visibgeom:surface#5".to_string()).expect("identity grammar"),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+    ir.model.surfaces.push(Surface::new(
+        SurfaceId::mint("creo:visibgeom:surface#5".to_string()).expect("identity grammar"),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -979,8 +984,8 @@ fn native_brep_rejects_ambiguous_model_carriers() {
             )
             .expect("valid PlaneSurface fixture"),
         )),
-        source_object: None,
-    });
+        None,
+    ));
     for (id, origin, direction) in [
         (10, Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)),
         (11, Point3::new(1.0, 0.0, 0.0), Vector3::new(0.0, 1.0, 0.0)),
@@ -990,18 +995,20 @@ fn native_brep_rejects_ambiguous_model_carriers() {
             Vector3::new(-1.0, -1.0, 0.0),
         ),
     ] {
-        let curve = Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: CurveId::mint(format!("creo:visibgeom:curve#{id}")).expect("identity grammar"),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                    origin,
-                    direction.unit().expect("valid LineCurve fixture"),
-                )
-                .expect("valid LineCurve fixture"),
-            )),
-            source_object: None,
+        let curve = {
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                CurveId::mint(format!("creo:visibgeom:curve#{id}")).expect("identity grammar"),
+                CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                    cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                        origin,
+                        direction.unit().expect("valid LineCurve fixture"),
+                    )
+                    .expect("valid LineCurve fixture"),
+                )),
+                None,
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         };
         ir.model.curves.extend([curve.clone(), curve]);
     }
@@ -1074,10 +1081,9 @@ fn native_brep_rejects_ambiguous_model_carriers() {
         pcurve.faces = [5, 6].map(std::num::NonZeroU32::new);
         pcurve.face_1_endpoints = pcurve.face_0_endpoints;
     }
-    ir.model.surfaces.push(Surface {
-        native_ref: None,
-        id: SurfaceId::mint("creo:visibgeom:surface#5".to_string()).expect("identity grammar"),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+    ir.model.surfaces.push(Surface::new(
+        SurfaceId::mint("creo:visibgeom:surface#5".to_string()).expect("identity grammar"),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -1085,12 +1091,11 @@ fn native_brep_rejects_ambiguous_model_carriers() {
             )
             .expect("valid PlaneSurface fixture"),
         )),
-        source_object: None,
-    });
-    ir.model.surfaces.push(Surface {
-        native_ref: None,
-        id: SurfaceId::mint("creo:visibgeom:surface#6".to_string()).expect("identity grammar"),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        None,
+    ));
+    ir.model.surfaces.push(Surface::new(
+        SurfaceId::mint("creo:visibgeom:surface#6".to_string()).expect("identity grammar"),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -1098,8 +1103,8 @@ fn native_brep_rejects_ambiguous_model_carriers() {
             )
             .expect("valid PlaneSurface fixture"),
         )),
-        source_object: None,
-    });
+        None,
+    ));
 
     let counts = crate::decode::with_service_context(|ctx| {
         transfer_native_brep(

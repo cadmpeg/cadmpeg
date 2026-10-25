@@ -44,22 +44,20 @@ pub(crate) fn attach_test_body_surface(
     let region_id = RegionId::mint(format!("{body_id}:region")).expect("identity grammar");
     let shell_id = ShellId::mint(format!("{body_id}:shell")).expect("identity grammar");
     if !ir.model.bodies.iter().any(|body| body.id == *body_id) {
-        ir.model.bodies.push(Body {
-            native_ref: None,
-            id: body_id.clone(),
-            kind: BodyKind::Solid,
-            regions: vec![region_id.clone()],
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        });
-        ir.model.regions.push(Region {
-            native_ref: None,
-            id: region_id.clone(),
-            body: body_id.clone(),
-            shells: vec![shell_id.clone()],
-        });
+        ir.model.bodies.push(Body::new(
+            body_id.clone(),
+            BodyKind::Solid,
+            vec![region_id.clone()],
+            None,
+            None,
+            None,
+            None,
+        ));
+        ir.model.regions.push(Region::new(
+            region_id.clone(),
+            body_id.clone(),
+            vec![shell_id.clone()],
+        ));
     }
     let face_id =
         FaceId::mint(format!("{body_id}:face:{}", ir.model.faces.len())).expect("identity grammar");
@@ -77,17 +75,13 @@ pub(crate) fn attach_test_body_surface(
             face_id.clone(),
         ));
     }
-    ir.model.faces.push(Face {
-        native_ref: None,
-        id: face_id,
-        shell: shell_id,
+    ir.model.faces.push(Face::new(
+        face_id,
+        shell_id,
         surface,
-        sense: Sense::Forward,
-        loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
-        name: None,
-        color: None,
-        tolerance: None,
-    });
+        Sense::Forward,
+        cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+    ));
 }
 
 fn be_f64(v: f64) -> [u8; 8] {

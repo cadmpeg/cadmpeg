@@ -40,10 +40,9 @@ fn round_sample_scan() -> crate::container::ContainerScan<'static> {
 
 fn round_sample_ir() -> cadmpeg_ir::document::CadIr {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-        native_ref: None,
-        id: cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#7").expect("identity grammar"),
-        geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+    ir.model.surfaces.push(cadmpeg_ir::geometry::Surface::new(
+        cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#7").expect("identity grammar"),
+        cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -52,8 +51,8 @@ fn round_sample_ir() -> cadmpeg_ir::document::CadIr {
             )
             .expect("cylinder fixture"),
         )),
-        source_object: None,
-    });
+        None,
+    ));
     ir
 }
 
@@ -280,11 +279,10 @@ fn chamfer_uses_transferred_model_plane_carrier() {
         });
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-        native_ref: None,
-        id: cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#31".to_string())
+    ir.model.surfaces.push(cadmpeg_ir::geometry::Surface::new(
+        cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#31".to_string())
             .expect("identity grammar"),
-        geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
@@ -292,8 +290,8 @@ fn chamfer_uses_transferred_model_plane_carrier() {
             )
             .expect("valid PlaneSurface fixture"),
         )),
-        source_object: None,
-    });
+        None,
+    ));
 
     assert_eq!(
         super::chamfer_constant_distance(
@@ -462,11 +460,10 @@ fn chamfer_uses_transferred_model_cone_when_row_parameters_are_opaque() {
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.surfaces.extend([
-        cadmpeg_ir::geometry::Surface {
-            native_ref: None,
-            id: cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#10".to_string())
+        cadmpeg_ir::geometry::Surface::new(
+            cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#10".to_string())
                 .expect("identity grammar"),
-            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+            cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
                 cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
                     cadmpeg_ir::math::Point3::new(0.5, 0.0, 0.0),
                     cadmpeg_ir::math::Vector3::new(-1.0, 0.0, 0.0),
@@ -477,13 +474,12 @@ fn chamfer_uses_transferred_model_cone_when_row_parameters_are_opaque() {
                 )
                 .expect("valid ConeSurface fixture"),
             )),
-            source_object: None,
-        },
-        cadmpeg_ir::geometry::Surface {
-            native_ref: None,
-            id: cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#31".to_string())
+            None,
+        ),
+        cadmpeg_ir::geometry::Surface::new(
+            cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#31".to_string())
                 .expect("identity grammar"),
-            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                     cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
@@ -491,8 +487,8 @@ fn chamfer_uses_transferred_model_cone_when_row_parameters_are_opaque() {
                 )
                 .expect("valid PlaneSurface fixture"),
             )),
-            source_object: None,
-        },
+            None,
+        ),
     ]);
 
     assert_eq!(
@@ -574,11 +570,10 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
     );
 
     for (id, x) in [(3, -9.0), (4, -8.0)] {
-        ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-            native_ref: None,
-            id: cadmpeg_ir::ids::SurfaceId::mint(format!("creo:visibgeom:surface#{id}"))
+        ir.model.surfaces.push(cadmpeg_ir::geometry::Surface::new(
+            cadmpeg_ir::ids::SurfaceId::mint(format!("creo:visibgeom:surface#{id}"))
                 .expect("identity grammar"),
-            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     cadmpeg_ir::math::Point3::new(x, 0.0, 0.0),
                     cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
@@ -586,8 +581,8 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
                 )
                 .expect("valid PlaneSurface fixture"),
             )),
-            source_object: None,
-        });
+            None,
+        ));
     }
     assert_eq!(
         super::round_support_radius(
@@ -788,40 +783,34 @@ fn round_placed_cylinder_radius_rejects_duplicate_model_surfaces() {
     };
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.surfaces.extend([
-        cadmpeg_ir::geometry::Surface {
-            native_ref: None,
-            id: cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#7".to_string())
+        cadmpeg_ir::geometry::Surface::new(
+            cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#7".to_string())
                 .expect("identity grammar"),
-            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(
-                SolvedSurfaceGeometry::Cylinder(
-                    cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                        cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                        cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-                        cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-                        2.0,
-                    )
-                    .expect("valid CylinderSurface fixture"),
-                ),
-            ),
-            source_object: None,
-        },
-        cadmpeg_ir::geometry::Surface {
-            native_ref: None,
-            id: cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#7".to_string())
+            cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                    cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                    cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                    cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                    2.0,
+                )
+                .expect("valid CylinderSurface fixture"),
+            )),
+            None,
+        ),
+        cadmpeg_ir::geometry::Surface::new(
+            cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#7".to_string())
                 .expect("identity grammar"),
-            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(
-                SolvedSurfaceGeometry::Cylinder(
-                    cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                        cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                        cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-                        cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-                        3.0,
-                    )
-                    .expect("valid CylinderSurface fixture"),
-                ),
-            ),
-            source_object: None,
-        },
+            cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                    cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                    cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                    cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                    3.0,
+                )
+                .expect("valid CylinderSurface fixture"),
+            )),
+            None,
+        ),
     ]);
 
     assert_eq!(
@@ -877,23 +866,20 @@ fn round_uses_complete_placed_cylinders_with_cap_and_support_rows() {
     ]);
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     for id in [3, 4] {
-        ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-            native_ref: None,
-            id: cadmpeg_ir::ids::SurfaceId::mint(format!("creo:visibgeom:surface#{id}"))
+        ir.model.surfaces.push(cadmpeg_ir::geometry::Surface::new(
+            cadmpeg_ir::ids::SurfaceId::mint(format!("creo:visibgeom:surface#{id}"))
                 .expect("identity grammar"),
-            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(
-                SolvedSurfaceGeometry::Cylinder(
-                    cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                        cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                        cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-                        cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-                        0.5,
-                    )
-                    .expect("valid CylinderSurface fixture"),
-                ),
-            ),
-            source_object: None,
-        });
+            cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                    cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                    cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                    cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                    0.5,
+                )
+                .expect("valid CylinderSurface fixture"),
+            )),
+            None,
+        ));
     }
 
     assert_eq!(
@@ -946,23 +932,20 @@ fn round_rejects_conflicting_complete_direct_and_placed_cylinder_radii() {
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     for (id, radius) in [(3, 0.5), (4, 0.5)] {
-        ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-            native_ref: None,
-            id: cadmpeg_ir::ids::SurfaceId::mint(format!("creo:visibgeom:surface#{id}"))
+        ir.model.surfaces.push(cadmpeg_ir::geometry::Surface::new(
+            cadmpeg_ir::ids::SurfaceId::mint(format!("creo:visibgeom:surface#{id}"))
                 .expect("identity grammar"),
-            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(
-                SolvedSurfaceGeometry::Cylinder(
-                    cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                        cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                        cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-                        cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-                        radius,
-                    )
-                    .expect("valid CylinderSurface fixture"),
-                ),
-            ),
-            source_object: None,
-        });
+            cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                    cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                    cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                    cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                    radius,
+                )
+                .expect("valid CylinderSurface fixture"),
+            )),
+            None,
+        ));
     }
 
     assert_eq!(

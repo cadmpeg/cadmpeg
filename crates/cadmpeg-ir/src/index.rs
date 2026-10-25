@@ -296,10 +296,11 @@ macro_rules! define_model_index {
                 if !self.include_native {
                     return (identities, false);
                 }
-                self.native_view().for_each(|_, _, records| {
+                self.native_view().for_each(|_, arena, records| {
                     entities += records.len();
                     for record in records.records() {
-                        *identities.entry(record.id(), || true) = true;
+                        let typed = arena != "unknowns";
+                        *identities.entry(record.id(), || typed) |= typed;
                     }
                 });
                 let distinct = entities == identities.slots.len();
@@ -594,15 +595,14 @@ mod tests {
         let exact_construction =
             crate::ids::ProceduralSurfaceId::mint("test:model:procedural#exact")
                 .expect("valid identity");
-        ir.model.surfaces.push(Surface {
-            native_ref: None,
-            id: exact_surface.clone(),
-            geometry: SurfaceGeometry::Procedural {
+        ir.model.surfaces.push(Surface::new(
+            exact_surface.clone(),
+            SurfaceGeometry::Procedural {
                 construction: exact_construction.clone(),
                 cache: None,
             },
-            source_object: None,
-        });
+            None,
+        ));
         ir.model.procedural_surfaces.push(procedural_surface! {
             id: exact_construction.clone(),
             definition: ProceduralSurfaceDefinition::Unknown { record: None, cache: None },
@@ -612,10 +612,9 @@ mod tests {
 
         let cached_surface = crate::ids::SurfaceId::mint("test:model:surface#cached".to_string())
             .expect("valid identity");
-        ir.model.surfaces.push(Surface {
-            native_ref: None,
-            id: cached_surface.clone(),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        ir.model.surfaces.push(Surface::new(
+            cached_surface.clone(),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 crate::geometry::analytic::PlaneSurface::try_new(
                     crate::math::Point3::new(0.0, 0.0, 0.0),
                     crate::math::Vector3::new(0.0, 0.0, 1.0),
@@ -623,8 +622,8 @@ mod tests {
                 )
                 .unwrap(),
             )),
-            source_object: None,
-        });
+            None,
+        ));
         ir.model
             .add_procedural_surface(&cached_surface, procedural_surface! {
                     id: crate::ids::ProceduralSurfaceId::mint("test:model:procedural#cached").expect("valid identity"),

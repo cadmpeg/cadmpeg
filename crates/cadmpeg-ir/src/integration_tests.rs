@@ -22,6 +22,8 @@ use crate::report::{
 use crate::topology::{Body, BodyKind, Point, Region, Shell, Vertex};
 use crate::validate::validate_neutral;
 
+mod native_link_constructors;
+
 const SEG: &str = "[a-z][a-z0-9_-]{0,7}";
 
 fn config() -> ProptestConfig {
@@ -51,20 +53,22 @@ fn free_carrier(object_id: &str) -> SourceObjectAssociation {
 #[test]
 fn source_association_is_a_free_carrier_root() {
     let mut ir = CadIr::empty();
-    ir.model.curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: CurveId::mint("synthetic:source:curve#0").expect("valid identity"),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
-        source_object: Some(SourceObjectAssociation {
-            geometry_role: None,
-            format: crate::CodecFormat::Rhino,
-            object_id: cadmpeg_core::text::NonBlankString::new(
-                "00000000-0000-0000-0000-000000000000",
-            )
-            .expect("nonempty source identity"),
-            instance_path: Vec::new(),
-        }),
+    ir.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            CurveId::mint("synthetic:source:curve#0").expect("valid identity"),
+            CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+            Some(SourceObjectAssociation {
+                geometry_role: None,
+                format: crate::CodecFormat::Rhino,
+                object_id: cadmpeg_core::text::NonBlankString::new(
+                    "00000000-0000-0000-0000-000000000000",
+                )
+                .expect("nonempty source identity"),
+                instance_path: Vec::new(),
+            }),
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     });
     let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(report.is_ok(), "{:?}", report.findings);
@@ -123,32 +127,29 @@ fn insert_free_vertex_shell(
 ) {
     draft.insert(point(point_id)).unwrap();
     draft
-        .insert(Vertex {
-            native_ref: None,
-            id: VertexId::mint(vertex_id).expect("valid identity"),
-            point: PointId::mint(point_id).expect("valid identity"),
-            tolerance: None,
-        })
+        .insert(Vertex::new(
+            VertexId::mint(vertex_id).expect("valid identity"),
+            PointId::mint(point_id).expect("valid identity"),
+            None,
+        ))
         .unwrap();
     draft
-        .insert(Body {
-            native_ref: None,
-            id: BodyId::mint(body_id).expect("valid identity"),
-            kind: BodyKind::Wire,
-            regions: vec![RegionId::mint(region_id).expect("valid identity")],
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        })
+        .insert(Body::new(
+            BodyId::mint(body_id).expect("valid identity"),
+            BodyKind::Wire,
+            vec![RegionId::mint(region_id).expect("valid identity")],
+            None,
+            None,
+            None,
+            None,
+        ))
         .unwrap();
     draft
-        .insert(Region {
-            native_ref: None,
-            id: RegionId::mint(region_id).expect("valid identity"),
-            body: BodyId::mint(body_id).expect("valid identity"),
-            shells: vec![ShellId::mint(shell_id).expect("valid identity")],
-        })
+        .insert(Region::new(
+            RegionId::mint(region_id).expect("valid identity"),
+            BodyId::mint(body_id).expect("valid identity"),
+            vec![ShellId::mint(shell_id).expect("valid identity")],
+        ))
         .unwrap();
     draft
         .insert(Shell::with_free_vertex(
@@ -214,11 +215,11 @@ proptest! {
 
         {
             let mut broken = ir.clone();
-            broken.model.vertices.push(Vertex { native_ref: None,
-                id: "prop:test:vertex#dangling".try_into().expect("valid identity"),
-                point: PointId::mint("x:y:z#missing").expect("valid identity"),
-                tolerance: None,
-            });
+            broken.model.vertices.push(Vertex::new(
+                "prop:test:vertex#dangling".try_into().expect("valid identity"),
+                PointId::mint("x:y:z#missing").expect("valid identity"),
+                None,
+            ));
             broken.finalize();
             let report = validate_neutral(&broken, Vec::new()).expect("validate the neutral model");
             prop_assert!(
@@ -253,11 +254,11 @@ proptest! {
         let missing = "x:y:z#missing";
         let mut dangling = ModelDraft::new();
         dangling
-            .insert(Vertex { native_ref: None,
-                id: vertex_id.clone().try_into().expect("valid identity"),
-                point: missing.try_into().expect("valid identity"),
-                tolerance: None,
-            })
+            .insert(Vertex::new(
+                vertex_id.clone().try_into().expect("valid identity"),
+                missing.try_into().expect("valid identity"),
+                None,
+            ))
             .unwrap();
         let mut base = CadIr::empty();
         let dangling_result = dangling.commit_model(&mut base, &cadmpeg_test_support::service_decode_context()).unwrap();

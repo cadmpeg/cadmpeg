@@ -164,10 +164,9 @@ fn lane_with_position_reference(position_source: u32) -> FeatureInputLane {
 }
 
 fn cylinder(id: usize, x: f64) -> Surface {
-    Surface {
-        native_ref: None,
-        id: SurfaceId::mint(format!("test:model:entity#surface-{id}")).expect("identity grammar"),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+    Surface::new(
+        SurfaceId::mint(format!("test:model:entity#surface-{id}")).expect("identity grammar"),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 Point3::new(x, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -176,8 +175,8 @@ fn cylinder(id: usize, x: f64) -> Surface {
             )
             .unwrap(),
         )),
-        source_object: None,
-    }
+        None,
+    )
 }
 
 fn profile_line(sketch: &SketchId, ordinal: usize, start: Point2, end: Point2) -> SketchEntity {

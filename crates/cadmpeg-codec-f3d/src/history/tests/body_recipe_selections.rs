@@ -133,22 +133,20 @@ fn face_geometry() -> (
 ) {
     use cadmpeg_ir::ids::{BodyId, RegionId, ShellId};
     use cadmpeg_ir::topology::{Body, BodyKind, Region, Shell};
-    let body = Body {
-        native_ref: None,
-        id: BodyId::mint("f3d:brep:body#1").unwrap(),
-        kind: BodyKind::Solid,
-        regions: vec![RegionId::mint("f3d:model:region#1").unwrap()],
-        transform: None,
-        name: None,
-        color: None,
-        visible: Some(true),
-    };
-    let region = Region {
-        native_ref: None,
-        id: RegionId::mint("f3d:model:region#1").unwrap(),
-        body: body.id.clone(),
-        shells: vec![ShellId::mint("f3d:model:shell#1").unwrap()],
-    };
+    let body = Body::new(
+        BodyId::mint("f3d:brep:body#1").unwrap(),
+        BodyKind::Solid,
+        vec![RegionId::mint("f3d:model:region#1").unwrap()],
+        None,
+        None,
+        None,
+        Some(true),
+    );
+    let region = Region::new(
+        RegionId::mint("f3d:model:region#1").unwrap(),
+        body.id.clone(),
+        vec![ShellId::mint("f3d:model:shell#1").unwrap()],
+    );
     let shell = Shell::with_face(
         ShellId::mint("f3d:model:shell#1").unwrap(),
         region.id.clone(),
@@ -232,16 +230,15 @@ fn linked_body() -> Option<cadmpeg_ir::ids::BodyId> {
         ConstructionRecipeSelector,
     };
     let (_, _, operands, _) = selection_fixture();
-    let body = cadmpeg_ir::topology::Body {
-        native_ref: None,
-        id: cadmpeg_ir::ids::BodyId::mint("f3d:brep:body#1").unwrap(),
-        kind: cadmpeg_ir::topology::BodyKind::Solid,
-        regions: Vec::new(),
-        transform: None,
-        name: None,
-        color: None,
-        visible: Some(true),
-    };
+    let body = cadmpeg_ir::topology::Body::new(
+        cadmpeg_ir::ids::BodyId::mint("f3d:brep:body#1").unwrap(),
+        cadmpeg_ir::topology::BodyKind::Solid,
+        Vec::new(),
+        None,
+        None,
+        None,
+        Some(true),
+    );
     let recipe = ConstructionRecipe {
         id: operands[0].recipe_id.clone(),
         byte_offset: Some(0),

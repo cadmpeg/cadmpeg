@@ -183,15 +183,19 @@ fn point_edge_ring_is_written_as_vertex_loop() {
         .points
         .retain(|point| point.id.as_str() != "test:model:point#p1");
     let point_curve = CurveId::mint("test:model:curve#point").expect("identity grammar");
-    ir.model.curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: point_curve.clone(),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
-            cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(Point3::new(0.0, 0.0, 0.0))
+    ir.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            point_curve.clone(),
+            CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
+                cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(Point3::new(
+                    0.0, 0.0, 0.0,
+                ))
                 .unwrap(),
-        )),
-        source_object: None,
+            )),
+            None,
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     });
     let edge = &mut ir.model.edges[0];
     edge.carrier = cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(point_curve));

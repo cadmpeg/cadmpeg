@@ -105,10 +105,9 @@ fn limit_curve_binding_keeps_a_finite_midpoint_on_large_same_sign_domains() {
             ));
         }
         let surface_id = SurfaceId::mint("catia:test:surface#wide-binding").expect("id");
-        ir.model.surfaces.push(Surface {
-            native_ref: None,
-            id: surface_id.clone(),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        ir.model.surfaces.push(Surface::new(
+            surface_id.clone(),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -116,8 +115,8 @@ fn limit_curve_binding_keeps_a_finite_midpoint_on_large_same_sign_domains() {
                 )
                 .expect("plane"),
             )),
-            source_object: None,
-        });
+            None,
+        ));
         let mut knots = vec![domain[0]; 6];
         knots.extend([domain[1]; 6]);
         let curve = NurbsCurve::from_lanes(

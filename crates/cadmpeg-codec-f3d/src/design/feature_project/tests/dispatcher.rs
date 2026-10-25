@@ -1086,12 +1086,14 @@ fn form_dispatcher_binds_the_legacy_single_cage_gate() {
         ),
         native_ref: Some(scope.id.clone()),
     }];
-    let cages = [cadmpeg_ir::SubdSurface {
-        native_ref: None,
-        id: cadmpeg_ir::ids::SubdId::mint("f3d:model:subd#1").expect("identity grammar"),
-        scheme: cadmpeg_ir::subd::SubdScheme::CatmullClark,
-        source_object: None,
-        cage: cadmpeg_ir::subd::SubdCage::default(),
+    let cages = [{
+        let (id, scheme, source_object, cage) = (
+            cadmpeg_ir::ids::SubdId::mint("f3d:model:subd#1").expect("identity grammar"),
+            cadmpeg_ir::subd::SubdScheme::CatmullClark,
+            None,
+            cadmpeg_ir::subd::SubdCage::default(),
+        );
+        cadmpeg_ir::SubdSurface::new(id, scheme, cage, source_object)
     }];
 
     crate::test_support::zip_test::with_scan(&archive, |scan| {
@@ -1215,12 +1217,14 @@ fn form_dispatcher_binds_a_unique_long_cage_list() {
         ),
         native_ref: Some(scope.id.clone()),
     }];
-    let cages = [cadmpeg_ir::SubdSurface {
-        native_ref: None,
-        id: cadmpeg_ir::ids::SubdId::mint("f3d:model:subd#1").expect("identity grammar"),
-        scheme: cadmpeg_ir::subd::SubdScheme::CatmullClark,
-        source_object: None,
-        cage: cadmpeg_ir::subd::SubdCage::default(),
+    let cages = [{
+        let (id, scheme, source_object, cage) = (
+            cadmpeg_ir::ids::SubdId::mint("f3d:model:subd#1").expect("identity grammar"),
+            cadmpeg_ir::subd::SubdScheme::CatmullClark,
+            None,
+            cadmpeg_ir::subd::SubdCage::default(),
+        );
+        cadmpeg_ir::SubdSurface::new(id, scheme, cage, source_object)
     }];
 
     crate::test_support::zip_test::with_scan(&archive, |scan| {

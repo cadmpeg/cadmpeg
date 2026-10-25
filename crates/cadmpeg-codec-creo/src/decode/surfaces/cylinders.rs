@@ -137,13 +137,10 @@ pub(in super::super) fn transfer_active_datum_cylinders(
         source_carriers.admit_surface(
             ctx,
             ir,
-            Surface {
-                native_ref: None,
+            Surface::new(
                 id,
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                    cylinder_surface,
-                )),
-                source_object: Some(SourceObjectAssociation {
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)),
+                Some(SourceObjectAssociation {
                     geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: cadmpeg_core::text::NonBlankString::new(format!(
@@ -155,7 +152,7 @@ pub(in super::super) fn transfer_active_datum_cylinders(
                     })?,
                     instance_path: Vec::new(),
                 }),
-            },
+            ),
         )?;
         surface_ids.admit(
             ir.model.surfaces[surface_position].id.as_str(),
@@ -262,13 +259,10 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
         source_carriers.admit_surface(
             ctx,
             ir,
-            Surface {
-                native_ref: None,
+            Surface::new(
                 id,
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                    cylinder_surface,
-                )),
-                source_object: Some(SourceObjectAssociation {
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)),
+                Some(SourceObjectAssociation {
                     geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: cadmpeg_core::text::NonBlankString::new(format!(
@@ -280,7 +274,7 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
                     })?,
                     instance_path: Vec::new(),
                 }),
-            },
+            ),
         )?;
         transferred += 1;
     }
@@ -344,13 +338,10 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
         source_carriers.admit_surface(
             ctx,
             ir,
-            Surface {
-                native_ref: None,
+            Surface::new(
                 id,
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                    cylinder_surface,
-                )),
-                source_object: Some(SourceObjectAssociation {
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)),
+                Some(SourceObjectAssociation {
                     geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: cadmpeg_core::text::NonBlankString::new(format!(
@@ -361,7 +352,7 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
                     })?,
                     instance_path: Vec::new(),
                 }),
-            },
+            ),
         )?;
         transferred += 1;
     }
@@ -419,11 +410,10 @@ pub(in super::super) fn transfer_hole_cylinders(
             source_carriers.admit_surface(
                 ctx,
                 ir,
-                Surface {
-                    native_ref: None,
+                Surface::new(
                     id,
-                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(geometry)),
-                    source_object: Some(SourceObjectAssociation {
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(geometry)),
+                    Some(SourceObjectAssociation {
                         geometry_role: None,
                         format: cadmpeg_ir::CodecFormat::Creo,
                         object_id: cadmpeg_core::text::NonBlankString::new(format!(
@@ -436,7 +426,7 @@ pub(in super::super) fn transfer_hole_cylinders(
                         })?,
                         instance_path: Vec::new(),
                     }),
-                },
+                ),
             )?;
             transferred += 1;
         }
@@ -554,11 +544,10 @@ pub(in super::super) fn transfer_split_outline_cylinders(
             source_carriers.admit_surface(
                 ctx,
                 ir,
-                Surface {
-                    native_ref: None,
+                Surface::new(
                     id,
-                    geometry: geometry.clone(),
-                    source_object: Some(SourceObjectAssociation {
+                    geometry.clone(),
+                    Some(SourceObjectAssociation {
                         geometry_role: None,
                         format: cadmpeg_ir::CodecFormat::Creo,
                         object_id: cadmpeg_core::text::NonBlankString::new(format!(
@@ -571,7 +560,7 @@ pub(in super::super) fn transfer_split_outline_cylinders(
                         })?,
                         instance_path: Vec::new(),
                     }),
-                },
+                ),
             )?;
             transferred += 1;
         }
@@ -1274,13 +1263,10 @@ pub(in super::super) fn transfer_positional_cylinders(
         source_carriers.admit_surface(
             ctx,
             ir,
-            Surface {
-                native_ref: None,
+            Surface::new(
                 id,
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                    cylinder_surface,
-                )),
-                source_object: Some(SourceObjectAssociation {
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)),
+                Some(SourceObjectAssociation {
                     geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: cadmpeg_core::text::NonBlankString::new(format!(
@@ -1292,7 +1278,7 @@ pub(in super::super) fn transfer_positional_cylinders(
                     })?,
                     instance_path: Vec::new(),
                 }),
-            },
+            ),
         )?;
         summary.transferred += 1;
         summary.round_edge_transferred_carriers +=
@@ -1521,11 +1507,10 @@ pub(in super::super) fn transfer_positional_cones(
         source_carriers.admit_surface(
             ctx,
             ir,
-            Surface {
-                native_ref: None,
+            Surface::new(
                 id,
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)),
-                source_object: Some(SourceObjectAssociation {
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)),
+                Some(SourceObjectAssociation {
                     geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: cadmpeg_core::text::NonBlankString::new(format!(
@@ -1537,7 +1522,7 @@ pub(in super::super) fn transfer_positional_cones(
                     })?,
                     instance_path: Vec::new(),
                 }),
-            },
+            ),
         )?;
         transferred += 1;
     }
@@ -1594,13 +1579,10 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
             source_carriers.admit_surface(
                 ctx,
                 ir,
-                Surface {
-                    native_ref: None,
+                Surface::new(
                     id,
-                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                        sweep.geometry,
-                    )),
-                    source_object: Some(SourceObjectAssociation {
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(sweep.geometry)),
+                    Some(SourceObjectAssociation {
                         geometry_role: None,
                         format: cadmpeg_ir::CodecFormat::Creo,
                         object_id: cadmpeg_core::text::NonBlankString::new(format!(
@@ -1613,7 +1595,7 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
                         })?,
                         instance_path: Vec::new(),
                     }),
-                },
+                ),
             )?;
             transferred += 1;
         }
@@ -1667,11 +1649,10 @@ pub(in super::super) fn transfer_cross_section_planes(
         source_carriers.admit_surface(
             ctx,
             ir,
-            Surface {
-                native_ref: None,
+            Surface::new(
                 id,
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
-                source_object: Some(SourceObjectAssociation {
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
+                Some(SourceObjectAssociation {
                     geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: cadmpeg_core::text::NonBlankString::new(format!(
@@ -1683,7 +1664,7 @@ pub(in super::super) fn transfer_cross_section_planes(
                     })?,
                     instance_path: Vec::new(),
                 }),
-            },
+            ),
         )?;
         transferred += 1;
     }
@@ -1714,11 +1695,10 @@ pub(in super::super) fn transfer_cross_section_planes(
         source_carriers.admit_surface(
             ctx,
             ir,
-            Surface {
-                native_ref: None,
+            Surface::new(
                 id,
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
-                source_object: Some(SourceObjectAssociation {
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
+                Some(SourceObjectAssociation {
                     geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: cadmpeg_core::text::NonBlankString::new(format!(
@@ -1730,7 +1710,7 @@ pub(in super::super) fn transfer_cross_section_planes(
                     })?,
                     instance_path: Vec::new(),
                 }),
-            },
+            ),
         )?;
         transferred += 1;
     }

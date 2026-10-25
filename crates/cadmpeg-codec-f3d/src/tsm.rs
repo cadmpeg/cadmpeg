@@ -1594,19 +1594,21 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
         .strip_suffix(".tsm")
         .unwrap_or(name);
     Ok(ParsedCage {
-        surface: SubdSurface {
-            native_ref: None,
-            id: subd_id(name, source_key)?,
-            scheme: SubdScheme::CatmullClark,
-            source_object: Some(SourceObjectAssociation {
-                geometry_role: None,
-                format: cadmpeg_ir::CodecFormat::F3d,
-                object_id: cadmpeg_core::text::NonBlankString::new(name.to_owned())
-                    .ok_or_else(|| malformed(name, "source object_id must not be empty"))?,
-                instance_path: Vec::new(),
-            }),
-            cage: cadmpeg_ir::subd::SubdCage::new(vertices, edges, faces, symmetries)
-                .map_err(|error| malformed(name, error))?,
+        surface: {
+            let (id, scheme, source_object, cage) = (
+                subd_id(name, source_key)?,
+                SubdScheme::CatmullClark,
+                Some(SourceObjectAssociation {
+                    geometry_role: None,
+                    format: cadmpeg_ir::CodecFormat::F3d,
+                    object_id: cadmpeg_core::text::NonBlankString::new(name.to_owned())
+                        .ok_or_else(|| malformed(name, "source object_id must not be empty"))?,
+                    instance_path: Vec::new(),
+                }),
+                cadmpeg_ir::subd::SubdCage::new(vertices, edges, faces, symmetries)
+                    .map_err(|error| malformed(name, error))?,
+            );
+            SubdSurface::new(id, scheme, cage, source_object)
         },
         unknown_record_kinds,
     })

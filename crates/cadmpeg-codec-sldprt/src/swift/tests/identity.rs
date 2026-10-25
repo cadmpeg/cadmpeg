@@ -416,41 +416,34 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
     use cadmpeg_ir::ids::{BodyId, EdgeId, FaceId, PointId, ShellId, SurfaceId, VertexId};
     use cadmpeg_ir::topology::{Body, BodyKind, Edge, Face, Sense, Vertex};
 
-    let body = Body {
-        native_ref: None,
-        id: BodyId::mint("sldprt:brep:body#11").expect("identity grammar"),
-        kind: BodyKind::default(),
-        regions: Vec::new(),
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
-    };
-    let face = Face {
-        native_ref: None,
-        id: FaceId::mint("sldprt:brep:face#22").expect("identity grammar"),
-        shell: ShellId::mint("sldprt:brep:shell#1").expect("identity grammar"),
-        surface: SurfaceId::mint("sldprt:brep:surf#22").expect("identity grammar"),
-        sense: Sense::Forward,
-        loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
-        name: None,
-        color: None,
-        tolerance: None,
-    };
-    let edge = Edge {
-        native_ref: None,
-        id: EdgeId::mint("sldprt:brep:edge#33").expect("identity grammar"),
-        carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(None),
-        start: VertexId::mint("sldprt:brep:vertex#1").expect("identity grammar"),
-        end: VertexId::mint("sldprt:brep:vertex#2").expect("identity grammar"),
-        tolerance: None,
-    };
-    let vertex = Vertex {
-        native_ref: None,
-        id: VertexId::mint("sldprt:brep:vertex#44").expect("identity grammar"),
-        point: PointId::mint("sldprt:brep:point#44").expect("identity grammar"),
-        tolerance: None,
-    };
+    let body = Body::new(
+        BodyId::mint("sldprt:brep:body#11").expect("identity grammar"),
+        BodyKind::default(),
+        Vec::new(),
+        None,
+        None,
+        None,
+        None,
+    );
+    let face = Face::new(
+        FaceId::mint("sldprt:brep:face#22").expect("identity grammar"),
+        ShellId::mint("sldprt:brep:shell#1").expect("identity grammar"),
+        SurfaceId::mint("sldprt:brep:surf#22").expect("identity grammar"),
+        Sense::Forward,
+        cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+    );
+    let edge = Edge::new(
+        EdgeId::mint("sldprt:brep:edge#33").expect("identity grammar"),
+        cadmpeg_ir::topology::EdgeCarrier::unbounded(None),
+        VertexId::mint("sldprt:brep:vertex#1").expect("identity grammar"),
+        VertexId::mint("sldprt:brep:vertex#2").expect("identity grammar"),
+        None,
+    );
+    let vertex = Vertex::new(
+        VertexId::mint("sldprt:brep:vertex#44").expect("identity grammar"),
+        PointId::mint("sldprt:brep:point#44").expect("identity grammar"),
+        None,
+    );
     let index = TopologyIdentityIndex::from_model(
         crate::swift::PrimaryTopology {
             bodies: std::slice::from_ref(&body),
@@ -501,9 +494,22 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
         })
     );
 
-    let qualified_alternate = Face {
-        id: FaceId::mint("sldprt:brep:face#22@alternate").expect("identity grammar"),
-        ..face.clone()
+    let qualified_alternate = {
+        let (id, __native_base) = (
+            FaceId::mint("sldprt:brep:face#22@alternate").expect("identity grammar"),
+            face.clone(),
+        );
+        Face::new(
+            id,
+            __native_base.shell,
+            __native_base.surface,
+            __native_base.sense,
+            __native_base.loops,
+        )
+        .with_name(__native_base.name)
+        .with_color(__native_base.color)
+        .with_tolerance(__native_base.tolerance)
+        .with_native_ref(__native_base.native_ref)
     };
     let active_with_alternate = TopologyIdentityIndex::from_model(
         crate::swift::PrimaryTopology {
@@ -525,9 +531,22 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
     assert!(index.resolve("schema-e:not-a-number").cloned().is_none());
     assert!(index.resolve("11").is_none());
 
-    let collision = Face {
-        id: FaceId::mint("sldprt:brep:face#11").expect("identity grammar"),
-        ..face.clone()
+    let collision = {
+        let (id, __native_base) = (
+            FaceId::mint("sldprt:brep:face#11").expect("identity grammar"),
+            face.clone(),
+        );
+        Face::new(
+            id,
+            __native_base.shell,
+            __native_base.surface,
+            __native_base.sense,
+            __native_base.loops,
+        )
+        .with_name(__native_base.name)
+        .with_color(__native_base.color)
+        .with_tolerance(__native_base.tolerance)
+        .with_native_ref(__native_base.native_ref)
     };
     let index = TopologyIdentityIndex::from_model(
         crate::swift::PrimaryTopology {
@@ -581,13 +600,23 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
     let conflicting = TopologyIdentityIndex::from_model(
         crate::swift::PrimaryTopology {
             bodies: std::slice::from_ref(&body),
-            faces: &[
-                face.clone(),
-                Face {
-                    id: FaceId::mint("sldprt:brep:face#23").expect("identity grammar"),
-                    ..face.clone()
-                },
-            ],
+            faces: &[face.clone(), {
+                let (id, __native_base) = (
+                    FaceId::mint("sldprt:brep:face#23").expect("identity grammar"),
+                    face.clone(),
+                );
+                Face::new(
+                    id,
+                    __native_base.shell,
+                    __native_base.surface,
+                    __native_base.sense,
+                    __native_base.loops,
+                )
+                .with_name(__native_base.name)
+                .with_color(__native_base.color)
+                .with_tolerance(__native_base.tolerance)
+                .with_native_ref(__native_base.native_ref)
+            }],
             edges: std::slice::from_ref(&edge),
             vertices: std::slice::from_ref(&vertex),
         },

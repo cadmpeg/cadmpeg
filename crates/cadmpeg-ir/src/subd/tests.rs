@@ -15,40 +15,48 @@ use crate::CadIr;
 #[test]
 fn subd_round_trip_and_directed_ring_validation() {
     let mut ir = CadIr::empty();
-    ir.model.subds.push(SubdSurface {
-        native_ref: None,
-        id: SubdId::mint("synthetic:subd:surface#0").expect("valid identity"),
-        scheme: SubdScheme::CatmullClark,
-        source_object: None,
-        cage: crate::subd::SubdCage::new(
-            vec![
-                SubdVertex::new(Point3::new(0.0, 0.0, 0.0), SubdVertexTag::Smooth, None).unwrap(),
-                SubdVertex::new(Point3::new(1.0, 0.0, 0.0), SubdVertexTag::Smooth, None).unwrap(),
-                SubdVertex::new(Point3::new(0.0, 1.0, 0.0), SubdVertexTag::Smooth, None).unwrap(),
-            ],
-            vec![
-                SubdEdge::new([0, 1], [0.0, 0.25], SubdEdgeTag::Smooth, None, [1.0, 1.0]).unwrap(),
-                SubdEdge::new([1, 2], [0.25, 0.0], SubdEdgeTag::SmoothX, None, [1.0, 1.0]).unwrap(),
-                SubdEdge::new([2, 0], [0.0, 0.0], SubdEdgeTag::Smooth, None, [1.0, 1.0]).unwrap(),
-            ],
-            vec![SubdFace::new(vec![
-                SubdEdgeUse {
-                    edge: 0,
-                    reversed: false,
-                },
-                SubdEdgeUse {
-                    edge: 1,
-                    reversed: false,
-                },
-                SubdEdgeUse {
-                    edge: 2,
-                    reversed: false,
-                },
-            ])
-            .unwrap()],
-            Vec::new(),
-        )
-        .unwrap(),
+    ir.model.subds.push({
+        let (id, scheme, source_object, cage) = (
+            SubdId::mint("synthetic:subd:surface#0").expect("valid identity"),
+            SubdScheme::CatmullClark,
+            None,
+            crate::subd::SubdCage::new(
+                vec![
+                    SubdVertex::new(Point3::new(0.0, 0.0, 0.0), SubdVertexTag::Smooth, None)
+                        .unwrap(),
+                    SubdVertex::new(Point3::new(1.0, 0.0, 0.0), SubdVertexTag::Smooth, None)
+                        .unwrap(),
+                    SubdVertex::new(Point3::new(0.0, 1.0, 0.0), SubdVertexTag::Smooth, None)
+                        .unwrap(),
+                ],
+                vec![
+                    SubdEdge::new([0, 1], [0.0, 0.25], SubdEdgeTag::Smooth, None, [1.0, 1.0])
+                        .unwrap(),
+                    SubdEdge::new([1, 2], [0.25, 0.0], SubdEdgeTag::SmoothX, None, [1.0, 1.0])
+                        .unwrap(),
+                    SubdEdge::new([2, 0], [0.0, 0.0], SubdEdgeTag::Smooth, None, [1.0, 1.0])
+                        .unwrap(),
+                ],
+                vec![SubdFace::new(vec![
+                    SubdEdgeUse {
+                        edge: 0,
+                        reversed: false,
+                    },
+                    SubdEdgeUse {
+                        edge: 1,
+                        reversed: false,
+                    },
+                    SubdEdgeUse {
+                        edge: 2,
+                        reversed: false,
+                    },
+                ])
+                .unwrap()],
+                Vec::new(),
+            )
+            .unwrap(),
+        );
+        SubdSurface::new(id, scheme, cage, source_object)
     });
     assert!(validate_neutral(&ir, Vec::new())
         .expect("validate the neutral model")

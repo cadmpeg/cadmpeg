@@ -43,11 +43,10 @@ fn standard_planar_spline_edge_solves_line_and_retains_intersection_construction
         ));
     }
     for index in 0..2 {
-        ir.model.surfaces.push(Surface {
-            native_ref: None,
-            id: SurfaceId::mint(format!("catia:test:surface#surface-{index}"))
+        ir.model.surfaces.push(Surface::new(
+            SurfaceId::mint(format!("catia:test:surface#surface-{index}"))
                 .expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     if index == 0 {
@@ -59,8 +58,8 @@ fn standard_planar_spline_edge_solves_line_and_retains_intersection_construction
                 )
                 .expect("valid PlaneSurface fixture"),
             )),
-            source_object: None,
-        });
+            None,
+        ));
     }
     let support = StandardCurveSupport {
         pos: 12,
@@ -169,10 +168,9 @@ fn standard_sphere_plane_spline_edge_derives_unbounded_circle_carrier() {
     let plane_id =
         SurfaceId::mint("catia:test:surface#plane".to_string()).expect("identity grammar");
     ir.model.surfaces.extend([
-        Surface {
-            native_ref: None,
-            id: sphere_id.clone(),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+        Surface::new(
+            sphere_id.clone(),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
                 cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
                     Point3::new(1.0, 2.0, 3.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -181,12 +179,11 @@ fn standard_sphere_plane_spline_edge_derives_unbounded_circle_carrier() {
                 )
                 .expect("valid SphereSurface fixture"),
             )),
-            source_object: None,
-        },
-        Surface {
-            native_ref: None,
-            id: plane_id.clone(),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            None,
+        ),
+        Surface::new(
+            plane_id.clone(),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(1.0, 3.0, 3.0),
                     Vector3::new(0.0, 1.0, 0.0),
@@ -194,8 +191,8 @@ fn standard_sphere_plane_spline_edge_derives_unbounded_circle_carrier() {
                 )
                 .expect("valid PlaneSurface fixture"),
             )),
-            source_object: None,
-        },
+            None,
+        ),
     ]);
     let support = StandardCurveSupport {
         pos: 12,
@@ -265,10 +262,9 @@ fn standard_cylinder_plane_spline_edge_derives_ellipse_carrier() {
     let plane_id =
         SurfaceId::mint("catia:test:surface#plane".to_string()).expect("identity grammar");
     ir.model.surfaces.extend([
-        Surface {
-            native_ref: None,
-            id: cylinder_id.clone(),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+        Surface::new(
+            cylinder_id.clone(),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 1.0, 0.0),
@@ -277,12 +273,11 @@ fn standard_cylinder_plane_spline_edge_derives_ellipse_carrier() {
                 )
                 .expect("valid CylinderSurface fixture"),
             )),
-            source_object: None,
-        },
-        Surface {
-            native_ref: None,
-            id: plane_id.clone(),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            None,
+        ),
+        Surface::new(
+            plane_id.clone(),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, sqrt_three / 2.0, -0.5),
@@ -290,8 +285,8 @@ fn standard_cylinder_plane_spline_edge_derives_ellipse_carrier() {
                 )
                 .expect("valid PlaneSurface fixture"),
             )),
-            source_object: None,
-        },
+            None,
+        ),
     ]);
     let support = StandardCurveSupport {
         pos: 12,
@@ -373,10 +368,9 @@ fn standard_equal_perpendicular_cylinders_select_one_ellipse_branch() {
     let second_id = SurfaceId::mint("catia:test:surface#second-cylinder".to_string())
         .expect("identity grammar");
     ir.model.surfaces.extend([
-        Surface {
-            native_ref: None,
-            id: first_id.clone(),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+        Surface::new(
+            first_id.clone(),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -385,12 +379,11 @@ fn standard_equal_perpendicular_cylinders_select_one_ellipse_branch() {
                 )
                 .expect("valid CylinderSurface fixture"),
             )),
-            source_object: None,
-        },
-        Surface {
-            native_ref: None,
-            id: second_id.clone(),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+            None,
+        ),
+        Surface::new(
+            second_id.clone(),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -399,8 +392,8 @@ fn standard_equal_perpendicular_cylinders_select_one_ellipse_branch() {
                 )
                 .expect("valid CylinderSurface fixture"),
             )),
-            source_object: None,
-        },
+            None,
+        ),
     ]);
     let support = StandardCurveSupport {
         pos: 12,
@@ -669,13 +662,11 @@ fn same_surface_spline_requires_an_exact_ruled_surface_generator() {
     };
     let solve = |geometry, points: [Point3; 2]| {
         let mut ir = CadIr::empty();
-        ir.model.surfaces.push(Surface {
-            native_ref: None,
-            id: SurfaceId::mint("catia:test:surface#surface".to_string())
-                .expect("identity grammar"),
+        ir.model.surfaces.push(Surface::new(
+            SurfaceId::mint("catia:test:surface#surface".to_string()).expect("identity grammar"),
             geometry,
-            source_object: None,
-        });
+            None,
+        ));
         ir.model
             .points
             .extend(points.into_iter().enumerate().map(|(index, position)| {

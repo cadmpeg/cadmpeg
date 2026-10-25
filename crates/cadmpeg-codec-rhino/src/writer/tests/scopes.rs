@@ -75,12 +75,9 @@ fn add_free_vertex(ir: &mut CadIr) {
         FinitePoint3::new(Point3::new(2.0, 2.0, 2.0)).unwrap(),
         None,
     ));
-    ir.model.vertices.push(Vertex {
-        native_ref: None,
-        id: vertex.clone(),
-        point,
-        tolerance: None,
-    });
+    ir.model
+        .vertices
+        .push(Vertex::new(vertex.clone(), point, None));
     let shell = &ir.model.shells[0];
     ir.model.shells[0] = Shell::new(
         shell.id.clone(),

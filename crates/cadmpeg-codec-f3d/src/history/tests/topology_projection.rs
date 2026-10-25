@@ -56,23 +56,21 @@ fn historical_coedge_neighbors_follow_ring_order() {
     let ids: Vec<_> = (10..110)
         .map(|slot| CoedgeId::mint(format!("test:brep:coedge#{slot}")).unwrap())
         .collect();
-    brep.loops.push(Loop {
-        native_ref: None,
-        id: owner.clone(),
-        face: FaceId::mint("test:brep:face#2").unwrap(),
-        boundary: LoopBoundary::Ring(LoopRing::new(ids.clone(), Vec::new()).unwrap()),
-    });
+    brep.loops.push(Loop::new(
+        owner.clone(),
+        FaceId::mint("test:brep:face#2").unwrap(),
+        LoopBoundary::Ring(LoopRing::new(ids.clone(), Vec::new()).unwrap()),
+    ));
     for id in &ids {
-        brep.coedges.push(Coedge {
-            native_ref: None,
-            id: id.clone(),
-            owner_loop: owner.clone(),
-            edge: EdgeId::mint("test:brep:edge#3").unwrap(),
-            radial_next: id.clone(),
-            sense: Sense::Forward,
-            pcurves: Vec::new(),
-            use_curve: None,
-        });
+        brep.coedges.push(Coedge::new(
+            id.clone(),
+            owner.clone(),
+            EdgeId::mint("test:brep:edge#3").unwrap(),
+            id.clone(),
+            Sense::Forward,
+            Vec::new(),
+            None,
+        ));
     }
     let topology = historical_topology(&brep).unwrap().unwrap();
     assert_eq!(topology.coedge_topology.len(), 100);
@@ -95,14 +93,17 @@ fn appended_tolerant_coedge_curves_join_the_curve_family_in_key_order() {
         ("test:brep:entity#20", 20.0),
         ("test:brep:tolerant-coedge-curve#5", 5.0),
     ] {
-        brep.curves.push(Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: CurveId::mint(id).unwrap(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                LineCurve::try_new(Point3::new(x, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)).unwrap(),
-            )),
-            source_object: None,
+        brep.curves.push({
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                CurveId::mint(id).unwrap(),
+                CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                    LineCurve::try_new(Point3::new(x, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0))
+                        .unwrap(),
+                )),
+                None,
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         });
     }
     let topology = historical_topology(&brep).unwrap().unwrap();

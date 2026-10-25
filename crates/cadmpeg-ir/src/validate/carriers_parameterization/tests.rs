@@ -276,12 +276,11 @@ fn cube_with_one_coedge_pcurve(
 ) -> crate::document::CadIr {
     let id = crate::ids::PcurveId::mint("synthetic:cube:pcurve#nested").expect("valid identity");
     let mut ir = unit_cube().expect("valid unit cube fixture");
-    ir.model.pcurves.push(crate::geometry::pcurve::Pcurve {
-        native_ref: None,
-        id: id.clone(),
+    ir.model.pcurves.push(crate::geometry::pcurve::Pcurve::new(
+        id.clone(),
         geometry,
-        metadata: crate::geometry::pcurve::PcurveMetadata::default(),
-    });
+        crate::geometry::pcurve::PcurveMetadata::default(),
+    ));
     let coedge = ir
         .model
         .coedges
@@ -549,12 +548,11 @@ fn carrier_reachability_preserves_orphan_arena_order() {
     curve.id = "test:model:curve#orphan".try_into().unwrap();
     curve.source_object = None;
     ir.model.curves.push(curve);
-    ir.model.pcurves.push(crate::geometry::pcurve::Pcurve {
-        native_ref: None,
-        id: "test:model:pcurve#orphan".try_into().unwrap(),
-        geometry: line_pcurve_leaf(),
-        metadata: crate::geometry::pcurve::PcurveMetadata::default(),
-    });
+    ir.model.pcurves.push(crate::geometry::pcurve::Pcurve::new(
+        "test:model:pcurve#orphan".try_into().unwrap(),
+        line_pcurve_leaf(),
+        crate::geometry::pcurve::PcurveMetadata::default(),
+    ));
     let mut point = ir.model.points[0].clone();
     point.id = "test:model:point#orphan".try_into().unwrap();
     point.source_object = None;

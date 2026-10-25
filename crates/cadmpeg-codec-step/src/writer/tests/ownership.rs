@@ -93,18 +93,17 @@ fn an_unwritten_vertex_does_not_promote_its_support_point() {
 #[test]
 fn independent_curve_preserves_its_active_parameter_interval() {
     let mut ir = CadIr::empty();
-    ir.model.curves.push(Curve {
-        native_ref: None,
-        id: CurveId::mint("test:model:curve#active").unwrap(),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+    ir.model.curves.push(Curve::new(
+        CurveId::mint("test:model:curve#active").unwrap(),
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::new(
                 cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
                 cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(1.0, 0.0, 0.0)).unwrap(),
             ),
         )),
-        parameter_range: cadmpeg_ir::topology::IncreasingParameterInterval::new([2.0, 3.0]),
-        source_object: None,
-    });
+        cadmpeg_ir::topology::IncreasingParameterInterval::new([2.0, 3.0]),
+        None,
+    ));
     let mut bytes = Vec::new();
     write_step(
         &ir,
@@ -157,12 +156,11 @@ fn independent_exact_surface_preserves_its_active_uv_rectangle() {
     .unwrap();
     let mut ir = CadIr::empty();
     let id = cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#active").unwrap();
-    ir.model.surfaces.push(Surface {
-        native_ref: None,
-        id: id.clone(),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
-        source_object: None,
-    });
+    ir.model.surfaces.push(Surface::new(
+        id.clone(),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
+        None,
+    ));
     ir.model
         .add_procedural_surface(
             &id,
@@ -245,15 +243,14 @@ fn procedural_support_is_not_an_export_root_even_when_construction_fails() {
                 None,
             );
             ir.model.surfaces.push(support);
-            ir.model.surfaces.push(Surface {
-                native_ref: None,
-                id: "test:model:surface#subset".try_into().unwrap(),
-                geometry: SurfaceGeometry::Procedural {
+            ir.model.surfaces.push(Surface::new(
+                "test:model:surface#subset".try_into().unwrap(),
+                SurfaceGeometry::Procedural {
                     construction: construction.id.clone(),
                     cache: None,
                 },
-                source_object: None,
-            });
+                None,
+            ));
             ir.model.procedural_surfaces.push(construction);
             let mut bytes = Vec::new();
             let report = write_step(
@@ -321,27 +318,32 @@ fn standalone_subset_curve_does_not_export_its_untrimmed_basis_as_a_root() {
             SubsetCurveConstruction::try_new(basis.clone(), [2.0, 3.0], true, None).unwrap(),
         ),
     );
-    ir.model.curves.push(Curve {
-        native_ref: None,
-        id: basis,
-        parameter_range: None,
-        source_object: None,
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::analytic::LineCurve::new(
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
-                cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(1.0, 0.0, 0.0)).unwrap(),
-            ),
-        )),
+    ir.model.curves.push({
+        let (id, parameter_range, source_object, geometry) = (
+            basis,
+            None,
+            None,
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                cadmpeg_ir::geometry::analytic::LineCurve::new(
+                    cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+                    cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(1.0, 0.0, 0.0))
+                        .unwrap(),
+                ),
+            )),
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     });
-    ir.model.curves.push(Curve {
-        native_ref: None,
-        id: "test:model:curve#subset".try_into().unwrap(),
-        parameter_range: None,
-        source_object: None,
-        geometry: CurveGeometry::Procedural {
-            construction: construction.id.clone(),
-            cache: None,
-        },
+    ir.model.curves.push({
+        let (id, parameter_range, source_object, geometry) = (
+            "test:model:curve#subset".try_into().unwrap(),
+            None,
+            None,
+            CurveGeometry::Procedural {
+                construction: construction.id.clone(),
+                cache: None,
+            },
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     });
     ir.model.procedural_curves.push(construction);
     let mut bytes = Vec::new();
@@ -382,18 +384,21 @@ fn failed_composite_curve_does_not_export_its_children_as_roots() {
     for missing_child in [false, true] {
         let mut ir = CadIr::empty();
         let child: CurveId = "test:model:curve#child".try_into().unwrap();
-        ir.model.curves.push(Curve {
-            native_ref: None,
-            id: child.clone(),
-            parameter_range: None,
-            source_object: None,
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::analytic::LineCurve::new(
-                    cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
-                    cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(1.0, 0.0, 0.0))
-                        .unwrap(),
-                ),
-            )),
+        ir.model.curves.push({
+            let (id, parameter_range, source_object, geometry) = (
+                child.clone(),
+                None,
+                None,
+                CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                    cadmpeg_ir::geometry::analytic::LineCurve::new(
+                        cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                            .unwrap(),
+                        cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(1.0, 0.0, 0.0))
+                            .unwrap(),
+                    ),
+                )),
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         });
         let mut segments = vec![CompositeCurveSegment {
             curve: child,
@@ -407,15 +412,17 @@ fn failed_composite_curve_does_not_export_its_children_as_roots() {
                 transition: CompositeCurveTransition::Continuous,
             });
         }
-        ir.model.curves.push(Curve {
-            native_ref: None,
-            id: "test:model:curve#composite".try_into().unwrap(),
-            parameter_range: None,
-            source_object: None,
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
-                segments: CompositeCurveSegments::try_from(segments).unwrap(),
-                self_intersect: Some(false),
-            }),
+        ir.model.curves.push({
+            let (id, parameter_range, source_object, geometry) = (
+                "test:model:curve#composite".try_into().unwrap(),
+                None,
+                None,
+                CurveGeometry::Solved(SolvedCurveGeometry::Composite {
+                    segments: CompositeCurveSegments::try_from(segments).unwrap(),
+                    self_intersect: Some(false),
+                }),
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         });
         let mut bytes = Vec::new();
         let report = write_step(

@@ -30,31 +30,32 @@ fn procedural_surface_points_read_the_callers_index() {
     // point, which has no value for it.
     let unknown_id = SurfaceId::mint("test:model:entity#indexed-unknown").unwrap();
     let mut ir = CadIr::empty();
-    ir.model.curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: directrix_id.clone(),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            crate::geometry::analytic::LineCurve::try_new(
-                Point3::new(2.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-            )
-            .unwrap(),
-        )),
-        source_object: None,
+    ir.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            directrix_id.clone(),
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                crate::geometry::analytic::LineCurve::try_new(
+                    Point3::new(2.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                )
+                .unwrap(),
+            )),
+            None,
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     });
     let mut cacheless =
         |surface: &SurfaceId, construction: &str, definition: ProceduralSurfaceDefinition| {
             let construction = ProceduralSurfaceId::mint(construction).unwrap();
-            ir.model.surfaces.push(Surface {
-                native_ref: None,
-                id: surface.clone(),
-                geometry: SurfaceGeometry::Procedural {
+            ir.model.surfaces.push(Surface::new(
+                surface.clone(),
+                SurfaceGeometry::Procedural {
                     construction: construction.clone(),
                     cache: None,
                 },
-                source_object: None,
-            });
+                None,
+            ));
             ir.model
                 .add_procedural_surface(
                     surface,

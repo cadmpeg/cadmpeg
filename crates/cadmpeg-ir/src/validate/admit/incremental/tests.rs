@@ -75,12 +75,11 @@ fn shared_references_and_rejected_identities_keep_combined_admission_guarantees(
         } else {
             "test:model:vertex#rejected"
         };
-        candidate.model.vertices.push(crate::topology::Vertex {
-            native_ref: None,
-            id: id.try_into().unwrap(),
-            point: target.try_into().unwrap(),
-            tolerance: None,
-        });
+        candidate.model.vertices.push(crate::topology::Vertex::new(
+            id.try_into().unwrap(),
+            target.try_into().unwrap(),
+            None,
+        ));
         let suffix = if target == point_id {
             "accepted"
         } else {
@@ -99,22 +98,20 @@ fn shared_references_and_rejected_identities_keep_combined_admission_guarantees(
                 region_id.clone(),
                 id.try_into().unwrap(),
             ));
-        candidate.model.regions.push(crate::topology::Region {
-            native_ref: None,
-            id: region_id.clone(),
-            body: body_id.clone(),
-            shells: vec![shell_id],
-        });
-        candidate.model.bodies.push(crate::topology::Body {
-            native_ref: None,
-            id: body_id,
-            kind: crate::topology::BodyKind::General,
-            regions: vec![region_id],
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        });
+        candidate.model.regions.push(crate::topology::Region::new(
+            region_id.clone(),
+            body_id.clone(),
+            vec![shell_id],
+        ));
+        candidate.model.bodies.push(crate::topology::Body::new(
+            body_id,
+            crate::topology::BodyKind::General,
+            vec![region_id],
+            None,
+            None,
+            None,
+            None,
+        ));
         let before = session.document().clone();
         let result = session
             .try_admit_append(

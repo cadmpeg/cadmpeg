@@ -112,19 +112,20 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
             constructed_marker
         })
         .collect();
-    let surface = |id, x| Surface {
-        native_ref: None,
-        id: SurfaceId::mint(format!("test:model:entity#surface-{id}")).expect("identity grammar"),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                Point3::new(x, 7.0, 10.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                2.1,
-            )
-            .unwrap(),
-        )),
-        source_object: None,
+    let surface = |id, x| {
+        Surface::new(
+            SurfaceId::mint(format!("test:model:entity#surface-{id}")).expect("identity grammar"),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                    Point3::new(x, 7.0, 10.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    2.1,
+                )
+                .unwrap(),
+            )),
+            None,
+        )
     };
     let mut surfaces = vec![surface(0, -9.0), surface(1, 13.0), surface(2, 100.0)];
 
@@ -179,19 +180,20 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
         2
     );
 
-    let opposite_side = |id, x| Surface {
-        native_ref: None,
-        id: SurfaceId::mint(format!("test:model:entity#surface-{id}")).expect("identity grammar"),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                Point3::new(x, 30.0, 10.0),
-                Vector3::new(0.0, 0.0, -1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                2.1,
-            )
-            .unwrap(),
-        )),
-        source_object: None,
+    let opposite_side = |id, x| {
+        Surface::new(
+            SurfaceId::mint(format!("test:model:entity#surface-{id}")).expect("identity grammar"),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                    Point3::new(x, 30.0, 10.0),
+                    Vector3::new(0.0, 0.0, -1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    2.1,
+                )
+                .unwrap(),
+            )),
+            None,
+        )
     };
     surfaces.extend([opposite_side(3, -9.0), opposite_side(4, 13.0)]);
     assert!(
@@ -281,20 +283,21 @@ fn curve_markers_can_contain_unmatched_construction_loci() {
     let surfaces = [-70.0, 70.0]
         .into_iter()
         .enumerate()
-        .map(|(id, x)| Surface {
-            native_ref: None,
-            id: SurfaceId::mint(format!("test:model:entity#carrier-{id}"))
-                .expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                    Point3::new(x, 11.0, 0.0),
-                    Vector3::new(0.0, 0.0, 1.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                    3.0,
-                )
-                .unwrap(),
-            )),
-            source_object: None,
+        .map(|(id, x)| {
+            Surface::new(
+                SurfaceId::mint(format!("test:model:entity#carrier-{id}"))
+                    .expect("identity grammar"),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                    cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                        Point3::new(x, 11.0, 0.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                        3.0,
+                    )
+                    .unwrap(),
+                )),
+                None,
+            )
         })
         .collect::<Vec<_>>();
 
@@ -441,10 +444,9 @@ fn paired_object_loci_select_a_congruent_bore_pattern() {
         2
     );
 
-    surfaces.push(Surface {
-        native_ref: None,
-        id: SurfaceId::mint("test:model:entity#duplicate-locus-bore").expect("identity grammar"),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+    surfaces.push(Surface::new(
+        SurfaceId::mint("test:model:entity#duplicate-locus-bore").expect("identity grammar"),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 Point3::new(1000.0, 1000.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -453,8 +455,8 @@ fn paired_object_loci_select_a_congruent_bore_pattern() {
             )
             .unwrap(),
         )),
-        source_object: None,
-    });
+        None,
+    ));
     assert_eq!(
         marker_pattern_bore_axes(&ctx, &lane, "position", 2.0, &surfaces, None)
             .unwrap()
@@ -1239,10 +1241,9 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
     )
     .with_construction(true)
     .with_native_ref(Some("construction-point".into()));
-    let surface = Surface {
-        native_ref: None,
-        id: SurfaceId::mint("test:model:entity#bore").expect("identity grammar"),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+    let surface = Surface::new(
+        SurfaceId::mint("test:model:entity#bore").expect("identity grammar"),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 Point3::new(12.0, 23.0, 10.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -1251,8 +1252,8 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
             )
             .unwrap(),
         )),
-        source_object: None,
-    };
+        None,
+    );
     let mut features = vec![hole, sketch_feature];
 
     project_spatial_hole_position_sketches(
@@ -1470,10 +1471,9 @@ fn spatial_position_relation_handle_uses_its_model_space_bore_locus() {
             .unwrap(),
     )
     .with_native_ref(Some("relation-handle".into()));
-    let surface = Surface {
-        native_ref: None,
-        id: SurfaceId::mint("test:model:entity#bore").expect("identity grammar"),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+    let surface = Surface::new(
+        SurfaceId::mint("test:model:entity#bore").expect("identity grammar"),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 Point3::new(12.0, 23.0, 10.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -1482,8 +1482,8 @@ fn spatial_position_relation_handle_uses_its_model_space_bore_locus() {
             )
             .unwrap(),
         )),
-        source_object: None,
-    };
+        None,
+    );
     let mut features = vec![hole, sketch_feature];
 
     project_spatial_hole_position_sketches(

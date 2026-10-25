@@ -272,27 +272,22 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
             content: Vec::new(),
         }],
     };
-    let face = Face {
-        native_ref: None,
-        id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
-        shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
-        surface: SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
-        sense: Sense::Forward,
-        loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
-        name: None,
-        color: None,
-        tolerance: None,
-    };
+    let face = Face::new(
+        FaceId::mint("test:model:entity#face").expect("identity grammar"),
+        ShellId::mint("test:model:entity#shell").expect("identity grammar"),
+        SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
+        Sense::Forward,
+        cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+    );
     let transform = cadmpeg_ir::transform::Transform::affine([
         [1.0, 0.0, 0.0, 12.0],
         [0.0, 1.0, 0.0, 0.0],
         [0.0, 0.0, 1.0, 0.0],
     ])
     .expect("affine transform");
-    let surface = Surface {
-        native_ref: None,
-        id: SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(
+    let surface = Surface::new(
+        SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(
             cadmpeg_ir::geometry::PlacedSurface::try_new(
                 Box::new(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -306,8 +301,8 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
             )
             .expect("placed surface"),
         )),
-        source_object: None,
-    };
+        None,
+    );
 
     bind_mirror_surface_planes(
         std::slice::from_mut(&mut feature),

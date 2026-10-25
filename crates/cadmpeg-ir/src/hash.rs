@@ -919,15 +919,17 @@ mod tests {
         for index in 0..4096 {
             let construction =
                 ProceduralCurveId::mint(format!("test:model:construction#{index:04}")).unwrap();
-            ir.model.curves.push(Curve {
-                native_ref: None,
-                parameter_range: None,
-                id: CurveId::mint(format!("test:model:curve#{index:04}")).unwrap(),
-                geometry: CurveGeometry::Procedural {
-                    construction: construction.clone(),
-                    cache: None,
-                },
-                source_object: None,
+            ir.model.curves.push({
+                let (parameter_range, id, geometry, source_object) = (
+                    None,
+                    CurveId::mint(format!("test:model:curve#{index:04}")).unwrap(),
+                    CurveGeometry::Procedural {
+                        construction: construction.clone(),
+                        cache: None,
+                    },
+                    None,
+                );
+                Curve::new(id, geometry, parameter_range, source_object)
             });
             ir.model.procedural_curves.push(ProceduralCurve::new(
                 construction,
@@ -963,15 +965,17 @@ mod tests {
                 ProceduralCurveDefinition::Exact { cache: None },
             ));
             for index in 0..count {
-                ir.model.curves.push(Curve {
-                    native_ref: None,
-                    parameter_range: None,
-                    id: CurveId::mint(format!("test:model:curve#{index}")).unwrap(),
-                    geometry: CurveGeometry::Procedural {
-                        construction: construction.clone(),
-                        cache: None,
-                    },
-                    source_object: None,
+                ir.model.curves.push({
+                    let (parameter_range, id, geometry, source_object) = (
+                        None,
+                        CurveId::mint(format!("test:model:curve#{index}")).unwrap(),
+                        CurveGeometry::Procedural {
+                            construction: construction.clone(),
+                            cache: None,
+                        },
+                        None,
+                    );
+                    Curve::new(id, geometry, parameter_range, source_object)
                 });
             }
             let arena = DecodeArena::new();

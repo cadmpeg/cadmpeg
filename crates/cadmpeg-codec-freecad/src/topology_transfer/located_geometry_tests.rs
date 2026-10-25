@@ -46,10 +46,9 @@ fn located_surfaces_copy_only_their_own_construction_and_reuse_placements() {
     let base = SurfaceId::mint(crate::native::model_id("surface", &payload.id, "1")).unwrap();
     let solved = SurfaceId::mint(crate::native::model_id("surface", &payload.id, "2")).unwrap();
     for id in [&base, &solved] {
-        ir.model.surfaces.push(Surface {
-            native_ref: None,
-            id: id.clone(),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        ir.model.surfaces.push(Surface::new(
+            id.clone(),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -57,8 +56,8 @@ fn located_surfaces_copy_only_their_own_construction_and_reuse_placements() {
                 )
                 .unwrap(),
             )),
-            source_object: None,
-        });
+            None,
+        ));
     }
     ir.model
         .add_procedural_surface(

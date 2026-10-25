@@ -569,15 +569,12 @@ pub(super) fn transfer_fc05_cap_circles(
                 Exactness::Derived,
             )?;
             ctx.charge_entities(1, "admit Creo model curves")?;
-            source_carriers.admit_curve(
-                ctx,
-                ir,
-                Curve {
-                    native_ref: None,
-                    parameter_range: None,
+            source_carriers.admit_curve(ctx, ir, {
+                let (parameter_range, id, geometry, source_object) = (
+                    None,
                     id,
-                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),
-                    source_object: Some(SourceObjectAssociation {
+                    CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),
+                    Some(SourceObjectAssociation {
                         geometry_role: None,
                         format: cadmpeg_ir::CodecFormat::Creo,
                         object_id: cadmpeg_core::text::NonBlankString::new(format!(
@@ -591,8 +588,9 @@ pub(super) fn transfer_fc05_cap_circles(
                         })?,
                         instance_path: Vec::new(),
                     }),
-                },
-            )?;
+                );
+                Curve::new(id, geometry, parameter_range, source_object)
+            })?;
         }
         let surface_id = crate::identity::compose_checked::<SurfaceId>(
             &crate::identity::VISIBGEOM_SURFACE,
@@ -626,13 +624,10 @@ pub(super) fn transfer_fc05_cap_circles(
         source_carriers.admit_surface(
             ctx,
             ir,
-            Surface {
-                native_ref: None,
-                id: surface_id,
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                    cylinder_surface,
-                )),
-                source_object: Some(SourceObjectAssociation {
+            Surface::new(
+                surface_id,
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)),
+                Some(SourceObjectAssociation {
                     geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: cadmpeg_core::text::NonBlankString::new(format!(
@@ -643,7 +638,7 @@ pub(super) fn transfer_fc05_cap_circles(
                     })?,
                     instance_path: Vec::new(),
                 }),
-            },
+            ),
         )?;
     }
     Ok(())

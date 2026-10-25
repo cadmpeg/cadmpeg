@@ -970,10 +970,9 @@ fn cached_face_point_membership_matches_the_source_predicate() {
         ),
     ]);
     let surface_id = SurfaceId::mint("catia:test:surface#surface-0").expect("identity grammar");
-    ir.model.surfaces.push(Surface {
-        native_ref: None,
-        id: surface_id.clone(),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+    ir.model.surfaces.push(Surface::new(
+        surface_id.clone(),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -981,8 +980,8 @@ fn cached_face_point_membership_matches_the_source_predicate() {
             )
             .expect("valid PlaneSurface fixture"),
         )),
-        source_object: None,
-    });
+        None,
+    ));
     let bindings = [(surface_id.clone(), false, 0)];
     let surface_indices = HashMap::from([(surface_id, 0)]);
     let membership = standard_face_point_membership(&ctx, &ir, &bindings, &surface_indices, None)
@@ -1064,12 +1063,9 @@ fn point_face_membership_matches_a_dense_face_point_table() {
         })
         .collect::<Vec<_>>();
     for (id, geometry) in surface_ids.iter().zip(geometries) {
-        ir.model.surfaces.push(Surface {
-            native_ref: None,
-            id: id.clone(),
-            geometry,
-            source_object: None,
-        });
+        ir.model
+            .surfaces
+            .push(Surface::new(id.clone(), geometry, None));
     }
     let surface_indices = surface_ids
         .iter()
@@ -1239,10 +1235,9 @@ fn standard_emission_reverses_face_pcurve_range() {
                 None,
             ),
         ]);
-        ir.model.surfaces.push(Surface {
-            native_ref: None,
-            id: SurfaceId::mint("catia:test:surface#surface-0").expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        ir.model.surfaces.push(Surface::new(
+            SurfaceId::mint("catia:test:surface#surface-0").expect("identity grammar"),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -1250,19 +1245,15 @@ fn standard_emission_reverses_face_pcurve_range() {
                 )
                 .expect("valid PlaneSurface fixture"),
             )),
-            source_object: None,
-        });
-        ir.model.faces.push(Face {
-            native_ref: None,
-            id: FaceId::mint("catia:standard:face#0").expect("identity grammar"),
-            shell: ShellId::mint("catia:test:shell#shell-0").expect("identity grammar"),
-            surface: SurfaceId::mint("catia:test:surface#surface-0").expect("identity grammar"),
-            sense: Sense::Forward,
-            loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
-            name: None,
-            color: None,
-            tolerance: None,
-        });
+            None,
+        ));
+        ir.model.faces.push(Face::new(
+            FaceId::mint("catia:standard:face#0").expect("identity grammar"),
+            ShellId::mint("catia:test:shell#shell-0").expect("identity grammar"),
+            SurfaceId::mint("catia:test:surface#surface-0").expect("identity grammar"),
+            Sense::Forward,
+            cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+        ));
         let bindings = [(
             SurfaceId::mint("catia:test:surface#surface-0").expect("identity grammar"),
             false,
@@ -1590,23 +1581,18 @@ fn a5_owner_binding_binds_no_surface_without_face_bounds() {
     );
     let mut ir = CadIr::empty();
     let surface_id = SurfaceId::mint("catia:standard:surface#a5-limit").expect("identity grammar");
-    ir.model.surfaces.push(Surface {
-        native_ref: None,
-        id: surface_id.clone(),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
-        source_object: None,
-    });
-    ir.model.faces.push(Face {
-        native_ref: None,
-        id: FaceId::mint("catia:standard:face#0").expect("identity grammar"),
-        shell: ShellId::mint("catia:standard:shell#0").expect("identity grammar"),
-        surface: surface_id,
-        sense: Sense::Forward,
-        loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
-        name: None,
-        color: None,
-        tolerance: None,
-    });
+    ir.model.surfaces.push(Surface::new(
+        surface_id.clone(),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+        None,
+    ));
+    ir.model.faces.push(Face::new(
+        FaceId::mint("catia:standard:face#0").expect("identity grammar"),
+        ShellId::mint("catia:standard:shell#0").expect("identity grammar"),
+        surface_id,
+        Sense::Forward,
+        cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+    ));
     let source = StandardConsolidatedSource {
         data: &bytes,
         records: &records,

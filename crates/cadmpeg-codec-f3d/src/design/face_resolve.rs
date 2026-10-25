@@ -3505,17 +3505,13 @@ mod tests {
                 .expect("source construction frame"),
             })
             .expect("FromFace group");
-        let faces = vec![Face {
-            native_ref: None,
-            id: face(10),
-            shell: ShellId::mint("test:model:shell#shell").expect("identity grammar"),
-            surface: SurfaceId::mint("test:model:surface#surface").expect("identity grammar"),
-            sense: Sense::Forward,
-            loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
-            name: None,
-            color: None,
-            tolerance: None,
-        }];
+        let faces = vec![Face::new(
+            face(10),
+            ShellId::mint("test:model:shell#shell").expect("identity grammar"),
+            SurfaceId::mint("test:model:surface#surface").expect("identity grammar"),
+            Sense::Forward,
+            cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+        )];
         (operand, group, faces)
     }
 

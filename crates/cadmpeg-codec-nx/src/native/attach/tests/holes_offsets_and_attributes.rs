@@ -39,12 +39,11 @@ fn insert_test_procedural_surface(
     owner: &SurfaceId,
     procedural: ProceduralSurface,
 ) {
-    ir.model.surfaces.push(Surface {
-        native_ref: None,
-        id: owner.clone(),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
-        source_object: None,
-    });
+    ir.model.surfaces.push(Surface::new(
+        owner.clone(),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+        None,
+    ));
     ir.model.add_procedural_surface(owner, procedural).unwrap();
 }
 
@@ -97,10 +96,9 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
         SurfaceId::mint("test:model:entity#blind-cylinder-surface").expect("identity grammar");
     let cap_surface =
         SurfaceId::mint("test:model:entity#blind-cap-surface").expect("identity grammar");
-    model.surfaces.push(Surface {
-        native_ref: None,
-        id: cylinder_surface.clone(),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+    model.surfaces.push(Surface::new(
+        cylinder_surface.clone(),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -109,12 +107,11 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
             )
             .unwrap(),
         )),
-        source_object: None,
-    });
-    model.surfaces.push(Surface {
-        native_ref: None,
-        id: cap_surface.clone(),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        None,
+    ));
+    model.surfaces.push(Surface::new(
+        cap_surface.clone(),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 3.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -122,8 +119,8 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
             )
             .unwrap(),
         )),
-        source_object: None,
-    });
+        None,
+    ));
     let (entry_loop, cylinder_cap_loop, cap_face_loop) = {
         let mut add_circle_loop =
             |loop_name: &str, edge_name: &str, center: Point3, radius: f64| {
@@ -134,43 +131,42 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
                 let curve_id = CurveId::mint(format!("test:model:entity#{edge_name}-curve"))
                     .expect("identity grammar");
                 if !model.edges.iter().any(|edge| edge.id == edge_id) {
-                    model.curves.push(Curve {
-                        native_ref: None,
-                        parameter_range: None,
-                        id: curve_id.clone(),
-                        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                                center,
-                                Vector3::new(0.0, 0.0, 1.0),
-                                Vector3::new(1.0, 0.0, 0.0),
-                                radius,
-                            )
-                            .unwrap(),
-                        )),
-                        source_object: None,
+                    model.curves.push({
+                        let (parameter_range, id, geometry, source_object) = (
+                            None,
+                            curve_id.clone(),
+                            CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                                    center,
+                                    Vector3::new(0.0, 0.0, 1.0),
+                                    Vector3::new(1.0, 0.0, 0.0),
+                                    radius,
+                                )
+                                .unwrap(),
+                            )),
+                            None,
+                        );
+                        Curve::new(id, geometry, parameter_range, source_object)
                     });
-                    model.edges.push(Edge {
-                        native_ref: None,
-                        id: edge_id.clone(),
-                        carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id)),
-                        start: VertexId::mint("test:model:entity#vertex")
-                            .expect("identity grammar"),
-                        end: VertexId::mint("test:model:entity#vertex").expect("identity grammar"),
-                        tolerance: None,
-                    });
+                    model.edges.push(Edge::new(
+                        edge_id.clone(),
+                        cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id)),
+                        VertexId::mint("test:model:entity#vertex").expect("identity grammar"),
+                        VertexId::mint("test:model:entity#vertex").expect("identity grammar"),
+                        None,
+                    ));
                 }
                 let coedge_id = CoedgeId::mint(format!("test:model:entity#{loop_name}-coedge"))
                     .expect("identity grammar");
-                model.coedges.push(Coedge {
-                    native_ref: None,
-                    id: coedge_id.clone(),
-                    owner_loop: loop_id.clone(),
-                    edge: edge_id,
-                    radial_next: coedge_id,
-                    sense: Sense::Forward,
-                    pcurves: Vec::new(),
-                    use_curve: None,
-                });
+                model.coedges.push(Coedge::new(
+                    coedge_id.clone(),
+                    loop_id.clone(),
+                    edge_id,
+                    coedge_id,
+                    Sense::Forward,
+                    Vec::new(),
+                    None,
+                ));
                 loop_id
             };
         (
@@ -197,45 +193,35 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
     let cylinder_face =
         FaceId::mint("test:model:entity#blind-cylinder-face").expect("identity grammar");
     let cap_face = FaceId::mint("test:model:entity#blind-cap-face").expect("identity grammar");
-    model.faces.push(Face {
-        native_ref: None,
-        id: cylinder_face.clone(),
-        shell: ShellId::mint("test:model:entity#blind-shell").expect("identity grammar"),
-        surface: cylinder_surface,
-        sense: Sense::Reversed,
-        loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![entry_loop, cylinder_cap_loop]),
-        name: None,
-        color: None,
-        tolerance: None,
-    });
-    model.faces.push(Face {
-        native_ref: None,
-        id: cap_face.clone(),
-        shell: ShellId::mint("test:model:entity#blind-shell").expect("identity grammar"),
-        surface: cap_surface,
-        sense: Sense::Forward,
-        loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![cap_face_loop]),
-        name: None,
-        color: None,
-        tolerance: None,
-    });
+    model.faces.push(Face::new(
+        cylinder_face.clone(),
+        ShellId::mint("test:model:entity#blind-shell").expect("identity grammar"),
+        cylinder_surface,
+        Sense::Reversed,
+        cadmpeg_ir::topology::FaceLoops::unspecified(vec![entry_loop, cylinder_cap_loop]),
+    ));
+    model.faces.push(Face::new(
+        cap_face.clone(),
+        ShellId::mint("test:model:entity#blind-shell").expect("identity grammar"),
+        cap_surface,
+        Sense::Forward,
+        cadmpeg_ir::topology::FaceLoops::unspecified(vec![cap_face_loop]),
+    ));
     let body = BodyId::mint("test:model:entity#blind-body").expect("identity grammar");
-    model.bodies.push(Body {
-        native_ref: None,
-        id: body.clone(),
-        kind: BodyKind::Solid,
-        regions: vec![RegionId::mint("test:model:entity#blind-region").expect("identity grammar")],
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
-    });
-    model.regions.push(Region {
-        native_ref: None,
-        id: RegionId::mint("test:model:entity#blind-region").expect("identity grammar"),
-        body: body.clone(),
-        shells: vec![ShellId::mint("test:model:entity#blind-shell").expect("identity grammar")],
-    });
+    model.bodies.push(Body::new(
+        body.clone(),
+        BodyKind::Solid,
+        vec![RegionId::mint("test:model:entity#blind-region").expect("identity grammar")],
+        None,
+        None,
+        None,
+        None,
+    ));
+    model.regions.push(Region::new(
+        RegionId::mint("test:model:entity#blind-region").expect("identity grammar"),
+        body.clone(),
+        vec![ShellId::mint("test:model:entity#blind-shell").expect("identity grammar")],
+    ));
     model.shells.push(
         Shell::new(
             ShellId::mint("test:model:entity#blind-shell").expect("identity grammar"),
@@ -343,22 +329,16 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
         )
         .is_none());
         let mut duplicate_cap = ir.clone();
-        duplicate_cap.model.faces.push(Face {
-            native_ref: None,
-            id: FaceId::mint("test:model:entity#blind-duplicate-cap-face")
-                .expect("identity grammar"),
-            shell: ShellId::mint("test:model:entity#blind-shell").expect("identity grammar"),
-            surface: SurfaceId::mint("test:model:entity#blind-cap-surface")
-                .expect("identity grammar"),
-            sense: Sense::Forward,
-            loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![LoopId::mint(
+        duplicate_cap.model.faces.push(Face::new(
+            FaceId::mint("test:model:entity#blind-duplicate-cap-face").expect("identity grammar"),
+            ShellId::mint("test:model:entity#blind-shell").expect("identity grammar"),
+            SurfaceId::mint("test:model:entity#blind-cap-surface").expect("identity grammar"),
+            Sense::Forward,
+            cadmpeg_ir::topology::FaceLoops::unspecified(vec![LoopId::mint(
                 "test:model:entity#blind-cap-face-loop",
             )
             .expect("identity grammar")]),
-            name: None,
-            color: None,
-            tolerance: None,
-        });
+        ));
         duplicate_cap.model.shells[0].add_face(
             FaceId::mint("test:model:entity#blind-duplicate-cap-face").expect("identity grammar"),
         );
@@ -450,62 +430,56 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
                 let coedge_id = CoedgeId::mint(format!("test:model:entity#{name}-coedge"))
                     .expect("identity grammar");
                 if !model.edges.iter().any(|edge| edge.id == edge_id) {
-                    model.curves.push(Curve {
-                        native_ref: None,
-                        parameter_range: None,
-                        id: curve_id.clone(),
-                        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                                center,
-                                Vector3::new(0.0, 0.0, 1.0),
-                                Vector3::new(1.0, 0.0, 0.0),
-                                radius,
-                            )
-                            .unwrap(),
-                        )),
-                        source_object: None,
+                    model.curves.push({
+                        let (parameter_range, id, geometry, source_object) = (
+                            None,
+                            curve_id.clone(),
+                            CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                                    center,
+                                    Vector3::new(0.0, 0.0, 1.0),
+                                    Vector3::new(1.0, 0.0, 0.0),
+                                    radius,
+                                )
+                                .unwrap(),
+                            )),
+                            None,
+                        );
+                        Curve::new(id, geometry, parameter_range, source_object)
                     });
-                    model.edges.push(Edge {
-                        native_ref: None,
-                        id: edge_id.clone(),
-                        carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id)),
-                        start: VertexId::mint("test:model:entity#vertex")
-                            .expect("identity grammar"),
-                        end: VertexId::mint("test:model:entity#vertex").expect("identity grammar"),
-                        tolerance: None,
-                    });
+                    model.edges.push(Edge::new(
+                        edge_id.clone(),
+                        cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id)),
+                        VertexId::mint("test:model:entity#vertex").expect("identity grammar"),
+                        VertexId::mint("test:model:entity#vertex").expect("identity grammar"),
+                        None,
+                    ));
                 }
-                model.coedges.push(Coedge {
-                    native_ref: None,
-                    id: coedge_id.clone(),
-                    owner_loop: loop_id.clone(),
-                    edge: edge_id,
-                    radial_next: coedge_id,
-                    sense: Sense::Forward,
-                    pcurves: Vec::new(),
-                    use_curve: None,
-                });
+                model.coedges.push(Coedge::new(
+                    coedge_id.clone(),
+                    loop_id.clone(),
+                    edge_id,
+                    coedge_id,
+                    Sense::Forward,
+                    Vec::new(),
+                    None,
+                ));
                 loop_id
             };
         let mut add_face = |id: &str, surface: SurfaceId, sense: Sense, loops: Vec<LoopId>| {
-            model.faces.push(Face {
-                native_ref: None,
-                id: FaceId::mint(format!("test:model:entity#{id}")).expect("identity grammar"),
-                shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
+            model.faces.push(Face::new(
+                FaceId::mint(format!("test:model:entity#{id}")).expect("identity grammar"),
+                ShellId::mint("test:model:entity#shell").expect("identity grammar"),
                 surface,
                 sense,
-                loops: cadmpeg_ir::topology::FaceLoops::unspecified(loops),
-                name: None,
-                color: None,
-                tolerance: None,
-            });
+                cadmpeg_ir::topology::FaceLoops::unspecified(loops),
+            ));
         };
         let bore_surface =
             SurfaceId::mint("test:model:entity#bore-surface").expect("identity grammar");
-        model.surfaces.push(Surface {
-            native_ref: None,
-            id: bore_surface.clone(),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+        model.surfaces.push(Surface::new(
+            bore_surface.clone(),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -514,8 +488,8 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
                 )
                 .unwrap(),
             )),
-            source_object: None,
-        });
+            None,
+        ));
         let bore_loops = vec![
             add_circle_loop("bore-entry", None, Point3::new(0.0, 0.0, 0.0), 2.0),
             add_circle_loop(
@@ -529,10 +503,9 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
 
         let counterbore_surface =
             SurfaceId::mint("test:model:entity#counterbore-surface").expect("identity grammar");
-        model.surfaces.push(Surface {
-            native_ref: None,
-            id: counterbore_surface.clone(),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+        model.surfaces.push(Surface::new(
+            counterbore_surface.clone(),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                     Point3::new(0.0, 0.0, 10.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -541,8 +514,8 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
                 )
                 .unwrap(),
             )),
-            source_object: None,
-        });
+            None,
+        ));
         let counterbore_loops = vec![
             add_circle_loop(
                 "counterbore-shoulder",
@@ -561,10 +534,9 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
 
         let shoulder_surface =
             SurfaceId::mint("test:model:entity#shoulder-surface").expect("identity grammar");
-        model.surfaces.push(Surface {
-            native_ref: None,
-            id: shoulder_surface.clone(),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        model.surfaces.push(Surface::new(
+            shoulder_surface.clone(),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 10.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -572,8 +544,8 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
                 )
                 .unwrap(),
             )),
-            source_object: None,
-        });
+            None,
+        ));
         let shoulder_loops = vec![
             add_circle_loop(
                 "shoulder-inner",
@@ -596,22 +568,20 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
         );
 
         let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
-        model.bodies.push(Body {
-            native_ref: None,
-            id: body.clone(),
-            kind: BodyKind::Solid,
-            regions: vec![RegionId::mint("test:model:entity#region").expect("identity grammar")],
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        });
-        model.regions.push(Region {
-            native_ref: None,
-            id: RegionId::mint("test:model:entity#region").expect("identity grammar"),
-            body: body.clone(),
-            shells: vec![ShellId::mint("test:model:entity#shell").expect("identity grammar")],
-        });
+        model.bodies.push(Body::new(
+            body.clone(),
+            BodyKind::Solid,
+            vec![RegionId::mint("test:model:entity#region").expect("identity grammar")],
+            None,
+            None,
+            None,
+            None,
+        ));
+        model.regions.push(Region::new(
+            RegionId::mint("test:model:entity#region").expect("identity grammar"),
+            body.clone(),
+            vec![ShellId::mint("test:model:entity#shell").expect("identity grammar")],
+        ));
         model.shells.push(
             Shell::new(
                 ShellId::mint("test:model:entity#shell").expect("identity grammar"),
@@ -1542,12 +1512,9 @@ fn feature_projection_index_matches_the_owned_procedural_scan() {
                 cache: None,
             }
         };
-        ir.model.surfaces.push(Surface {
-            native_ref: None,
-            id: surface_id(next(30)),
-            geometry,
-            source_object: None,
-        });
+        ir.model
+            .surfaces
+            .push(Surface::new(surface_id(next(30)), geometry, None));
     }
     for ordinal in 0..40 {
         ir.model.procedural_surfaces.push(ProceduralSurface::new(

@@ -1163,15 +1163,14 @@ pub(super) fn attach_point_edge_carriers(out: &mut AsmBrep, records: &[Record], 
         };
         let curve = brep_id!(format, CurveId, "point-edge-curve", *index);
         edge.carrier = EdgeCarrier::Curve(curve.clone());
-        curves.push(Curve {
-            native_ref: None,
-            id: curve,
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(DegenerateCurve::new(
+        curves.push(Curve::new(
+            curve,
+            CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(DegenerateCurve::new(
                 *position,
             ))),
-            parameter_range: None,
-            source_object: None,
-        });
+            None,
+            None,
+        ));
     }
     out.curves.extend(curves);
 }
@@ -1457,21 +1456,22 @@ mod tests {
             false,
         )
         .unwrap();
-        let edge = Edge {
-            native_ref: None,
-            id: EdgeId::mint("sat:audit:edge#domain").unwrap(),
-            carrier: EdgeCarrier::new(Some(id.clone()), Some([-1e-10, 5e-13])).unwrap(),
-            start: VertexId::mint("sat:audit:vertex#a").unwrap(),
-            end: VertexId::mint("sat:audit:vertex#b").unwrap(),
-            tolerance: None,
-        };
+        let edge = Edge::new(
+            EdgeId::mint("sat:audit:edge#domain").unwrap(),
+            EdgeCarrier::new(Some(id.clone()), Some([-1e-10, 5e-13])).unwrap(),
+            VertexId::mint("sat:audit:vertex#a").unwrap(),
+            VertexId::mint("sat:audit:vertex#b").unwrap(),
+            None,
+        );
         let mut out = super::AsmBrep {
-            curves: vec![Curve {
-                native_ref: None,
-                parameter_range: None,
-                id,
-                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
-                source_object: None,
+            curves: vec![{
+                let (parameter_range, id, geometry, source_object) = (
+                    None,
+                    id,
+                    CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
+                    None,
+                );
+                Curve::new(id, geometry, parameter_range, source_object)
             }],
             edges: vec![edge],
             ..Default::default()

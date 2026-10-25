@@ -459,10 +459,9 @@ mod projected_brep_output_tests {
         let surface_id = SurfaceId::mint("test:model:surface#plane").expect("surface ID");
         let point_id = PointId::mint("test:model:point#free").expect("point ID");
         crate::brep::graph::Brep {
-            surfaces: vec![Surface {
-                native_ref: None,
-                id: surface_id.clone(),
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            surfaces: vec![Surface::new(
+                surface_id.clone(),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     PlaneSurface::try_new(
                         Point3::new(0.0, 0.0, 0.0),
                         Vector3::new(0.0, 0.0, 1.0),
@@ -470,25 +469,20 @@ mod projected_brep_output_tests {
                     )
                     .expect("plane frame"),
                 )),
-                source_object: None,
-            }],
-            faces: vec![Face {
-                native_ref: None,
-                id: FaceId::mint("test:model:face#plane").expect("face ID"),
-                shell: ShellId::mint("test:model:shell#one").expect("shell ID"),
-                surface: surface_id,
-                sense: Sense::Forward,
-                loops: FaceLoops::unspecified(Vec::new()),
-                name: None,
-                color: None,
-                tolerance: None,
-            }],
-            vertices: vec![Vertex {
-                native_ref: None,
-                id: VertexId::mint("test:model:vertex#free").expect("vertex ID"),
-                point: point_id.clone(),
-                tolerance: None,
-            }],
+                None,
+            )],
+            faces: vec![Face::new(
+                FaceId::mint("test:model:face#plane").expect("face ID"),
+                ShellId::mint("test:model:shell#one").expect("shell ID"),
+                surface_id,
+                Sense::Forward,
+                FaceLoops::unspecified(Vec::new()),
+            )],
+            vertices: vec![Vertex::new(
+                VertexId::mint("test:model:vertex#free").expect("vertex ID"),
+                point_id.clone(),
+                None,
+            )],
             points: vec![Point::new(
                 point_id,
                 cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
@@ -507,22 +501,20 @@ mod projected_brep_output_tests {
 
         let mut brep = point_brep();
         for ordinal in 1..32 {
-            brep.vertices.push(Vertex {
-                native_ref: None,
-                id: VertexId::mint(format!("test:model:vertex#{ordinal}")).unwrap(),
-                point: brep.points[0].id.clone(),
-                tolerance: None,
-            });
+            brep.vertices.push(Vertex::new(
+                VertexId::mint(format!("test:model:vertex#{ordinal}")).unwrap(),
+                brep.points[0].id.clone(),
+                None,
+            ));
         }
         // A missing point must not consume a projected entity ordinal.
         brep.vertices.insert(
             1,
-            Vertex {
-                native_ref: None,
-                id: VertexId::mint("test:model:vertex#missing").unwrap(),
-                point: PointId::mint("test:model:point#missing").unwrap(),
-                tolerance: None,
-            },
+            Vertex::new(
+                VertexId::mint("test:model:vertex#missing").unwrap(),
+                PointId::mint("test:model:point#missing").unwrap(),
+                None,
+            ),
         );
         let mut second_face = brep.faces[0].clone();
         second_face.id = FaceId::mint("test:model:face#second").unwrap();

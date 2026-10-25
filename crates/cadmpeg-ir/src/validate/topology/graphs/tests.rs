@@ -40,27 +40,22 @@ fn vertex_loop_model(faces: &[(&str, &[&str])], shells: &[&[&str]]) -> crate::Ca
             .iter()
             .map(|vertex| LoopId::mint(format!("test:model:loop#{face}-{vertex}")).unwrap())
             .collect();
-        ir.model.faces.push(Face {
-            native_ref: None,
-            id: face_id.clone(),
-            shell: shell_id(0),
-            surface: SurfaceId::mint("test:model:surface#plane").unwrap(),
-            sense: Sense::Forward,
-            loops: FaceLoops::unspecified(loop_ids.clone()),
-            name: None,
-            color: None,
-            tolerance: None,
-        });
+        ir.model.faces.push(Face::new(
+            face_id.clone(),
+            shell_id(0),
+            SurfaceId::mint("test:model:surface#plane").unwrap(),
+            Sense::Forward,
+            FaceLoops::unspecified(loop_ids.clone()),
+        ));
         for (loop_id, vertex) in loop_ids.into_iter().zip(*vertices) {
-            ir.model.loops.push(Loop {
-                native_ref: None,
-                id: loop_id,
-                face: face_id.clone(),
-                boundary: LoopBoundary::Vertex {
+            ir.model.loops.push(Loop::new(
+                loop_id,
+                face_id.clone(),
+                LoopBoundary::Vertex {
                     vertex: VertexId::mint(format!("test:model:vertex#{vertex}")).unwrap(),
                     pcurves: Vec::new(),
                 },
-            });
+            ));
         }
     }
     for (index, members) in shells.iter().enumerate() {

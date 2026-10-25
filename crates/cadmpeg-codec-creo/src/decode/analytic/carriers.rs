@@ -187,11 +187,10 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
         source_carriers.admit_surface(
             ctx,
             ir,
-            Surface {
-                native_ref: None,
+            Surface::new(
                 id,
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
-                source_object: Some(SourceObjectAssociation {
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
+                Some(SourceObjectAssociation {
                     geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: crate::identity::source_object_id_checked(format_args!(
@@ -200,7 +199,7 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
                     ))?,
                     instance_path: Vec::new(),
                 }),
-            },
+            ),
         )?;
         transferred += 1;
     }
@@ -275,13 +274,12 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
             source_carriers.admit_surface(
                 ctx,
                 ir,
-                Surface {
-                    native_ref: None,
+                Surface::new(
                     id,
-                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                         record: geometry_section_record(scan, row.offset)?,
                     }),
-                    source_object: Some(SourceObjectAssociation {
+                    Some(SourceObjectAssociation {
                         geometry_role: None,
                         format: cadmpeg_ir::CodecFormat::Creo,
                         object_id: crate::identity::source_object_id_checked(format_args!(
@@ -291,7 +289,7 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
                         ))?,
                         instance_path: Vec::new(),
                     }),
-                },
+                ),
             )?;
         }
     }
@@ -310,17 +308,14 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
             Exactness::Unknown,
         )?;
         ctx.charge_entities(1, "admit Creo model curves")?;
-        source_carriers.admit_curve(
-            ctx,
-            ir,
-            Curve {
-                native_ref: None,
-                parameter_range: None,
+        source_carriers.admit_curve(ctx, ir, {
+            let (parameter_range, id, geometry, source_object) = (
+                None,
                 id,
-                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
+                CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                     record: geometry_section_record(scan, row.offset)?,
                 }),
-                source_object: Some(SourceObjectAssociation {
+                Some(SourceObjectAssociation {
                     geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: crate::identity::source_object_id_checked(format_args!(
@@ -329,8 +324,9 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
                     ))?,
                     instance_path: Vec::new(),
                 }),
-            },
-        )?;
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
+        })?;
     }
     Ok(())
 }

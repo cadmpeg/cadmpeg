@@ -703,16 +703,17 @@ fn non_manifold_incidence_does_not_invent_a_radial_order() {
         .map(|index| {
             let id =
                 CoedgeId::mint(format!("fcstd:test:coedge#{index}")).expect("identity grammar");
-            Coedge {
-                native_ref: None,
-                id: id.clone(),
-                owner_loop: LoopId::mint(format!("fcstd:test:loop#{index}"))
-                    .expect("identity grammar"),
-                edge: edge.clone(),
-                radial_next: id,
-                sense: Sense::Forward,
-                use_curve: None,
-                pcurves: Vec::new(),
+            {
+                let (id, owner_loop, edge, radial_next, sense, use_curve, pcurves) = (
+                    id.clone(),
+                    LoopId::mint(format!("fcstd:test:loop#{index}")).expect("identity grammar"),
+                    edge.clone(),
+                    id,
+                    Sense::Forward,
+                    None,
+                    Vec::new(),
+                );
+                Coedge::new(id, owner_loop, edge, radial_next, sense, pcurves, use_curve)
             }
         })
         .collect::<Vec<_>>();
@@ -723,16 +724,18 @@ fn non_manifold_incidence_does_not_invent_a_radial_order() {
         .map(|index| {
             let id = CoedgeId::mint(format!("fcstd:test:coedge#four-{index}"))
                 .expect("identity grammar");
-            Coedge {
-                native_ref: None,
-                id: id.clone(),
-                owner_loop: LoopId::mint(format!("fcstd:test:loop#four-{index}"))
-                    .expect("identity grammar"),
-                edge: edge.clone(),
-                radial_next: id,
-                sense: Sense::Forward,
-                use_curve: None,
-                pcurves: Vec::new(),
+            {
+                let (id, owner_loop, edge, radial_next, sense, use_curve, pcurves) = (
+                    id.clone(),
+                    LoopId::mint(format!("fcstd:test:loop#four-{index}"))
+                        .expect("identity grammar"),
+                    edge.clone(),
+                    id,
+                    Sense::Forward,
+                    None,
+                    Vec::new(),
+                );
+                Coedge::new(id, owner_loop, edge, radial_next, sense, pcurves, use_curve)
             }
         })
         .collect::<Vec<_>>();
@@ -749,15 +752,17 @@ fn non_manifold_incidence_does_not_invent_a_radial_order() {
     );
 
     let id = CoedgeId::mint("fcstd:test:coedge#single").expect("identity grammar");
-    let mut singleton = vec![Coedge {
-        native_ref: None,
-        id: id.clone(),
-        owner_loop: LoopId::mint("fcstd:test:loop#single").expect("identity grammar"),
-        edge,
-        radial_next: id.clone(),
-        sense: Sense::Forward,
-        use_curve: None,
-        pcurves: Vec::new(),
+    let mut singleton = vec![{
+        let (id, owner_loop, edge, radial_next, sense, use_curve, pcurves) = (
+            id.clone(),
+            LoopId::mint("fcstd:test:loop#single").expect("identity grammar"),
+            edge,
+            id.clone(),
+            Sense::Forward,
+            None,
+            Vec::new(),
+        );
+        Coedge::new(id, owner_loop, edge, radial_next, sense, pcurves, use_curve)
     }];
     close_radial_rings(&mut singleton);
     assert_eq!(singleton[0].radial_next, id);

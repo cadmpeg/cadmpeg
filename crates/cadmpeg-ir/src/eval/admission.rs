@@ -486,23 +486,24 @@ mod tests {
         let mut ir = crate::CadIr::empty();
         let curve = crate::ids::CurveId::mint("test:model:curve#line").unwrap();
         let surface = crate::ids::SurfaceId::mint("test:model:surface#plane").unwrap();
-        ir.model.curves.push(Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: curve.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                crate::geometry::analytic::LineCurve::try_new(
-                    Point3::new(0.0, 0.0, 0.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                )
-                .unwrap(),
-            )),
-            source_object: None,
+        ir.model.curves.push({
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                curve.clone(),
+                CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                    crate::geometry::analytic::LineCurve::try_new(
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .unwrap(),
+                )),
+                None,
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         });
-        ir.model.surfaces.push(Surface {
-            native_ref: None,
-            id: surface.clone(),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        ir.model.surfaces.push(Surface::new(
+            surface.clone(),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 crate::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -510,8 +511,8 @@ mod tests {
                 )
                 .unwrap(),
             )),
-            source_object: None,
-        });
+            None,
+        ));
         let index = crate::index::ModelIndex::build(&ir);
         for route in 0..4 {
             let mut policy = DecodePolicy::service();
@@ -568,12 +569,14 @@ mod tests {
         };
         let mut ir = crate::CadIr::empty();
         let id = crate::ids::CurveId::mint("test:model:curve#cycle").unwrap();
-        ir.model.curves.push(Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: id.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
-            source_object: None,
+        ir.model.curves.push({
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                id.clone(),
+                CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+                None,
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         });
         ir.model
             .add_procedural_curve(
@@ -616,18 +619,20 @@ mod tests {
         use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
         use crate::math::{Point2, Point3, Vector3};
 
-        let line = |id: &CurveId| Curve {
-            native_ref: None,
-            parameter_range: None,
-            id: id.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                crate::geometry::analytic::LineCurve::try_new(
-                    Point3::new(0.0, 0.0, 0.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                )
-                .unwrap(),
-            )),
-            source_object: None,
+        let line = |id: &CurveId| {
+            let (parameter_range, id, geometry, source_object) = (
+                None,
+                id.clone(),
+                CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                    crate::geometry::analytic::LineCurve::try_new(
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .unwrap(),
+                )),
+                None,
+            );
+            Curve::new(id, geometry, parameter_range, source_object)
         };
         let pcurve = PcurveGeometry::Line(
             LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)).unwrap(),
@@ -639,10 +644,9 @@ mod tests {
             let supports = [0, 1]
                 .map(|side| SurfaceId::mint(format!("test:model:surface#{level}-{side}")).unwrap());
             for (side, support) in supports.iter().enumerate() {
-                ir.model.surfaces.push(Surface {
-                    native_ref: None,
-                    id: support.clone(),
-                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                ir.model.surfaces.push(Surface::new(
+                    support.clone(),
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                         crate::geometry::analytic::PlaneSurface::try_new(
                             Point3::new(0.0, 0.0, 0.0),
                             Vector3::new(0.0, 0.0, 1.0),
@@ -650,8 +654,8 @@ mod tests {
                         )
                         .unwrap(),
                     )),
-                    source_object: None,
-                });
+                    None,
+                ));
                 ir.model
                     .add_procedural_surface(
                         support,

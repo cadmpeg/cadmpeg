@@ -405,19 +405,20 @@ fn transformed_curves_and_surfaces_round_trip_through_step_replicas() {
         .expect("placed surface"),
     );
     let mut source = CadIr::empty();
-    source.model.curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: CurveId::mint("test:model:curve#transformed-curve").expect("identity grammar"),
-        geometry: CurveGeometry::Solved(curve_geometry.clone()),
-        source_object: None,
+    source.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            CurveId::mint("test:model:curve#transformed-curve").expect("identity grammar"),
+            CurveGeometry::Solved(curve_geometry.clone()),
+            None,
+        );
+        Curve::new(id, geometry, parameter_range, source_object)
     });
-    source.model.surfaces.push(Surface {
-        native_ref: None,
-        id: SurfaceId::mint("test:model:surface#transformed-surface").expect("identity grammar"),
-        geometry: SurfaceGeometry::Solved(surface_geometry.clone()),
-        source_object: None,
-    });
+    source.model.surfaces.push(Surface::new(
+        SurfaceId::mint("test:model:surface#transformed-surface").expect("identity grammar"),
+        SurfaceGeometry::Solved(surface_geometry.clone()),
+        None,
+    ));
 
     let mut output = Vec::new();
     write_step(

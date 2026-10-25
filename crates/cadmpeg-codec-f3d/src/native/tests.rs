@@ -565,14 +565,16 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
     let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let generated_curve_id = cadmpeg_ir::ids::CurveId::mint("generated:test:tolerant-use-curve#0")
         .expect("identity grammar");
-    source_less.model.curves.push(cadmpeg_ir::geometry::Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: generated_curve_id.clone(),
-        geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            expected.clone(),
-        )),
-        source_object: None,
+    source_less.model.curves.push({
+        let (parameter_range, id, geometry, source_object) = (
+            None,
+            generated_curve_id.clone(),
+            cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                expected.clone(),
+            )),
+            None,
+        );
+        cadmpeg_ir::geometry::Curve::new(id, geometry, parameter_range, source_object)
     });
     let tolerant_coedge = source_less.model.coedges[0].id.clone();
     source_less.model.coedges[0].use_curve = Some(cadmpeg_ir::topology::CoedgeUseCurve {

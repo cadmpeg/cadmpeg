@@ -409,66 +409,68 @@ fn tolerance_allows_a_bounded_carrier_join_within_resolution() {
         let first_end = Point3::new(1.0, 0.0, 0.0);
         let mut ir = CadIr::empty();
         ir.model.curves.extend([
-            Curve {
-                native_ref: None,
-                parameter_range: None,
-                id: first_id.clone(),
-                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(test_nurbs(
-                    1,
-                    vec![0.0, 0.0, 1.0, 1.0],
-                    vec![Point3::new(0.0, 0.0, 0.0), first_end],
+            {
+                let (parameter_range, id, geometry, source_object) = (
                     None,
-                ))),
-                source_object: None,
-            },
-            Curve {
-                native_ref: None,
-                parameter_range: None,
-                id: second_id.clone(),
-                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(test_nurbs(
-                    1,
-                    vec![0.0, 0.0, 1.0, 1.0],
-                    vec![Point3::new(1.0005, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+                    first_id.clone(),
+                    CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(test_nurbs(
+                        1,
+                        vec![0.0, 0.0, 1.0, 1.0],
+                        vec![Point3::new(0.0, 0.0, 0.0), first_end],
+                        None,
+                    ))),
                     None,
-                ))),
-                source_object: None,
+                );
+                Curve::new(id, geometry, parameter_range, source_object)
             },
-            Curve {
-                native_ref: None,
-                parameter_range: None,
-                id: composite_id.clone(),
-                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
-                    segments: cadmpeg_ir::geometry::CompositeCurveSegments::try_from(vec![
-                        CompositeCurveSegment {
-                            curve: first_id.clone(),
-                            same_sense: true,
-                            transition: CompositeCurveTransition::Continuous,
-                        },
-                        CompositeCurveSegment {
-                            curve: second_id.clone(),
-                            same_sense: true,
-                            transition: CompositeCurveTransition::Continuous,
-                        },
-                    ])
-                    .unwrap(),
-                    self_intersect: None,
-                }),
-                source_object: None,
+            {
+                let (parameter_range, id, geometry, source_object) = (
+                    None,
+                    second_id.clone(),
+                    CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(test_nurbs(
+                        1,
+                        vec![0.0, 0.0, 1.0, 1.0],
+                        vec![Point3::new(1.0005, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+                        None,
+                    ))),
+                    None,
+                );
+                Curve::new(id, geometry, parameter_range, source_object)
+            },
+            {
+                let (parameter_range, id, geometry, source_object) = (
+                    None,
+                    composite_id.clone(),
+                    CurveGeometry::Solved(SolvedCurveGeometry::Composite {
+                        segments: cadmpeg_ir::geometry::CompositeCurveSegments::try_from(vec![
+                            CompositeCurveSegment {
+                                curve: first_id.clone(),
+                                same_sense: true,
+                                transition: CompositeCurveTransition::Continuous,
+                            },
+                            CompositeCurveSegment {
+                                curve: second_id.clone(),
+                                same_sense: true,
+                                transition: CompositeCurveTransition::Continuous,
+                            },
+                        ])
+                        .unwrap(),
+                        self_intersect: None,
+                    }),
+                    None,
+                );
+                Curve::new(id, geometry, parameter_range, source_object)
             },
         ]);
         for (index, curve) in [first_id, second_id].into_iter().enumerate() {
-            ir.model.edges.push(Edge {
-                native_ref: None,
-                id: EdgeId::mint(format!("test:model:edge#edge-{index}"))
+            ir.model.edges.push(Edge::new(
+                EdgeId::mint(format!("test:model:edge#edge-{index}")).expect("identity grammar"),
+                cadmpeg_ir::topology::EdgeCarrier::new(Some(curve), Some([0.0, 1.0])).unwrap(),
+                VertexId::mint(format!("test:model:vertex#start-{index}"))
                     .expect("identity grammar"),
-                carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve), Some([0.0, 1.0]))
-                    .unwrap(),
-                start: VertexId::mint(format!("test:model:vertex#start-{index}"))
-                    .expect("identity grammar"),
-                end: VertexId::mint(format!("test:model:vertex#end-{index}"))
-                    .expect("identity grammar"),
-                tolerance: None,
-            });
+                VertexId::mint(format!("test:model:vertex#end-{index}")).expect("identity grammar"),
+                None,
+            ));
         }
         assert!(
             bounded_nurbs_for_curve(&ir, &composite_id, decode_ctx, None)
