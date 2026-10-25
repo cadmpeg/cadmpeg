@@ -1452,3 +1452,59 @@ offset = 55
 type = "u32"
 source = "spec"
 anchor = "option_reference u32"
+
+[[record]]
+name = "pm_dc_edge_selector_prefix"
+kind = "byte"
+section = "13"
+anchor = "The fixed selector prefix after the content header contains"
+size = 22
+
+[[record.field]]
+name = "state"
+offset = 0
+type = "i32"
+source = "spec"
+anchor = "The fixed selector prefix after the content header contains"
+
+[[record.field]]
+name = "enabled"
+offset = 4
+type = "u8"
+source = "spec"
+anchor = "The fixed selector prefix after the content header contains"
+
+[[record.field]]
+name = "form"
+offset = 5
+type = "u8"
+source = "spec"
+anchor = "The fixed selector prefix after the content header contains"
+
+[[record.field]]
+name = "body_reference"
+offset = 6
+type = "u32"
+source = "spec"
+anchor = "The fixed selector prefix after the content header contains"
+
+[[record.field]]
+name = "topology"
+offset = 10
+type = "u32"
+source = "spec"
+anchor = "The fixed selector prefix after the content header contains"
+
+[[record.field]]
+name = "qualifier"
+offset = 14
+type = "u32"
+source = "spec"
+anchor = "The fixed selector prefix after the content header contains"
+
+[[record.field]]
+name = "naming_form"
+offset = 18
+type = "u32"
+source = "spec"
+anchor = "The fixed selector prefix after the content header contains"
