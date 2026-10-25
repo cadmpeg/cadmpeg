@@ -99,3 +99,31 @@ date = 2026-08-28
 level = 1
 files = 120
 result = "stream kind, save format, units, and record inventory identified; sampled decodes clean, validation findings on two files"
+
+[[evaluation]]
+dialect = "pvz:pvs-0301"
+date = 2026-10-24
+level = 3
+files = 14
+result = "decode and check without errors on every package; eleven carry exact B-rep, which validates as connected B-rep and converts to STEP; measured solids close with plausible volumes; eight coedge_pairing warnings in three packages"
+
+[[evaluation]]
+dialect = "pvz:pvs-0303"
+date = 2026-10-24
+level = 2
+files = 7
+result = "decode and check clean; four packages carry placed tessellation only, two carry product structure only, and one carries exact B-rep that validates; tessellation converts to AP242 STEP"
+
+[[evaluation]]
+dialect = "pvz:pvs-0304"
+date = 2026-10-24
+level = 3
+files = 14
+result = "decode and check clean; ten packages carry exact B-rep, which validates as connected B-rep and converts to STEP; measured solids close with plausible volumes"
+
+[[evaluation]]
+dialect = "pvz:pvs-0305"
+date = 2026-10-24
+level = 2
+files = 5
+result = "decode and check clean; packages carry placed tessellation and product structure and no exact streams; tessellation converts to AP242 STEP"

@@ -93,13 +93,13 @@ fn face_collection(marker: u16, references: &[u32]) -> TestResult<PmDcFeaturePro
 }
 
 #[test]
-fn face_items_require_their_record_type_and_nonempty_type_two_indices() -> TestResult {
+fn face_items_require_their_record_type_and_type_two_indices() -> TestResult {
     let valid = face_item(2, &[0, 0x8000_0001, u32::MAX])?;
     assert!(face_property_is_admitted(&valid, |_| None));
     let wire = serde_json::to_value(&valid)?;
     let restored: PmDcFeatureProperty = serde_json::from_value(wire.clone())?;
     assert_eq!(serde_json::to_value(restored)?, wire);
-    assert!(!face_property_is_admitted(&face_item(2, &[])?, |_| None));
+    assert!(face_property_is_admitted(&face_item(2, &[])?, |_| None));
     assert!(!face_property_is_admitted(&face_item(3, &[1])?, |_| None));
     let wrong_type = property(&valid.kind, FACE_COLLECTION_TYPE)?;
     assert!(!face_property_is_admitted(&wrong_type, |_| None));
@@ -132,8 +132,11 @@ fn face_collections_require_decoded_face_items() -> TestResult {
     ] {
         assert!(!face_property_is_admitted(&collection, resolves));
     }
+    let empty_item = face_item(2, &[])?;
+    assert!(face_property_is_admitted(&valid_collection, |_| Some(
+        &empty_item
+    )));
     let invalid_items = [
-        face_item(2, &[])?,
         face_item(3, &[1])?,
         property(&valid_item.kind, FACE_COLLECTION_TYPE)?,
         property(

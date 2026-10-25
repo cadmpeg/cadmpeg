@@ -73,6 +73,31 @@ fn conflicts(native: &crate::native::F3dNative) -> bool {
     })
 }
 
+#[test]
+fn geometry_depth_does_not_require_omitted_extrude_face_groups() {
+    let native = fixed_extrude(
+        DesignExtrudeExtent::OneSidedToFace,
+        DesignFixedExtrudeParameters {
+            along_distance: None,
+            taper_angle: None,
+            against_distance: None,
+            side_two_taper_angle: None,
+            profile_offset: None,
+            side_one_offset: None,
+        },
+    );
+    assert!(conflicts(&native));
+    crate::test_support::with_decode_context(|decode| {
+        let mut value = serde_json::to_value(cadmpeg_ir::CadIr::empty()).unwrap();
+        value["decode_depth"] = serde_json::json!("geometry");
+        let ir = serde_json::from_value(value).unwrap();
+        let ctx = super::super::Ctx::new(&ir, &native, decode);
+        let mut findings = Vec::new();
+        super::super::validate_extrude_parameter_operands(&ctx, &mut findings);
+        assert!(!findings.iter().any(|finding| finding.message == CONFLICT));
+    });
+}
+
 /// Fixed first-side and second-side distance lanes carry a two-sided distance
 /// Extrude. Without the second-side lane the extent has no second distance.
 #[test]

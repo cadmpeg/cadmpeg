@@ -1570,7 +1570,7 @@ Parsed by:
 
 Spec §Assembly operands · layout: byte offsets · size: 26 B
 
-Offsets are relative to the count. The run starts at scope offset 47 in the 399-byte As-built form, offset 362 in the 627-, 637-, 692-, and 748-byte forms and the variable-span class-283/264 and class-347/260 forms, offset 358 in the 633-, 732-, and 744-byte forms, offset 537 in the 945-byte form, offset 530 in the 806- and 861-byte forms, and offset 552 in the 850-byte form.
+Offsets are relative to the count. The run starts at scope offset 47 in the 378- and 399-byte As-built forms, offset 69 in the 422-byte As-built form, offset 80 in the 444-byte As-built form, offset 362 in the 627-, 637-, 692-, and 748-byte forms and the variable-span class-283/264 and class-347/260 forms, offset 358 in the 633-, 732-, and 744-byte forms, offset 537 in the 945-byte form, offset 530 in the 806- and 861-byte forms, and offset 552 in the 850-byte form.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/assembly.rs`
@@ -6238,6 +6238,123 @@ Parsed by:
 | 11 | 11 | `scope` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
 | 22 | 11 | `seed_group` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
 | 33 | 4 | `zero_tail` | `bytes[4]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
+
+## `sketch_geometry_ordinal_collection_reference`
+
+Spec §3.1 · layout: byte offsets · size: 11 B
+
+The reference starts at offset 36 relative to the Geometry-member indexed header.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | byte 36 is `01` · value `1` |
+| 1 | 8 | `target` | `u64` | little | spec | its u64 target at member offset 37 names the ordinal collection |
+| 9 | 2 | `flags` | `bytes[2]` | little | spec | Byte 36 opens a same-segment marked reference; its u64 target at member offset 37 names the ordinal collection. |
+
+## `sketch_ordinal_collection_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 20 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its indexed header is followed by nine zero bytes, a property block carrying `crv_tag_id_idx` |
+| 11 | 9 | `zero_run` | `bytes[9]` | little | spec | Its indexed header is followed by nine zero bytes, a property block carrying `crv_tag_id_idx` |
+
+## `assembly_as_built_scope_378`
+
+Spec §Assembly operands · layout: byte offsets · size: 378 B
+
+Offsets are relative to the primary indexed header. K = 0.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/assembly.rs`
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_alignment.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 43 | 4 | `additional_owner_count` | `u32` | little | spec | offset 43 · value `0` |
+| 47 | 4 | `locator_count` | `u32` | little | spec | stores a u32 count of two |
+| 51 | 11 | `first_locator_reference` | `bytes[11]` | little | spec | two marked same-segment operand-path-locator references |
+| 62 | 11 | `second_locator_reference` | `bytes[11]` | little | spec | two marked same-segment operand-path-locator references |
+| 163 | 4 | `reference_count` | `u32` | little | spec | The reference-table counts are at offsets 163, 185, and 196 · value `9` |
+| 167 | 99 | `reference_members` | `bytes[99]` | little | derived | Each marked reference has eleven bytes; K = 0. |
+
+Unstated regions:
+
+- `0..43` (43 B): Prefix before the owner count.
+- `73..163` (90 B): Scope fields before the reference table.
+- `266..378` (112 B): Scope suffix after the reference table.
+
+## `assembly_as_built_scope_422`
+
+Spec §Assembly operands · layout: byte offsets · size: 422 B
+
+Offsets are relative to the primary indexed header. K = 2.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/assembly.rs`
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_alignment.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 43 | 4 | `additional_owner_count` | `u32` | little | spec | offset 43 · value `2` |
+| 47 | 22 | `additional_owner_references` | `bytes[22]` | little | spec | `47 + 11k` |
+| 69 | 4 | `locator_count` | `u32` | little | spec | stores a u32 count of two |
+| 73 | 11 | `first_locator_reference` | `bytes[11]` | little | spec | two marked same-segment operand-path-locator references |
+| 84 | 11 | `second_locator_reference` | `bytes[11]` | little | spec | two marked same-segment operand-path-locator references |
+| 185 | 4 | `reference_count` | `u32` | little | spec | The reference-table counts are at offsets 163, 185, and 196 · value `11` |
+| 189 | 121 | `reference_members` | `bytes[121]` | little | derived | Each marked reference has eleven bytes; K = 2. |
+
+Unstated regions:
+
+- `0..43` (43 B): Prefix before the owner count.
+- `95..185` (90 B): Scope fields before the reference table.
+- `310..422` (112 B): Scope suffix after the reference table.
+
+## `assembly_as_built_scope_444`
+
+Spec §Assembly operands · layout: byte offsets · size: 444 B
+
+Offsets are relative to the primary indexed header. K = 3.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/assembly.rs`
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_alignment.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 43 | 4 | `additional_owner_count` | `u32` | little | spec | offset 43 · value `3` |
+| 47 | 33 | `additional_owner_references` | `bytes[33]` | little | spec | `47 + 11k` |
+| 80 | 4 | `locator_count` | `u32` | little | spec | stores a u32 count of two |
+| 84 | 11 | `first_locator_reference` | `bytes[11]` | little | spec | two marked same-segment operand-path-locator references |
+| 95 | 11 | `second_locator_reference` | `bytes[11]` | little | spec | two marked same-segment operand-path-locator references |
+| 196 | 4 | `reference_count` | `u32` | little | spec | The reference-table counts are at offsets 163, 185, and 196 · value `12` |
+| 200 | 132 | `reference_members` | `bytes[132]` | little | derived | Each marked reference has eleven bytes; K = 3. |
+
+Unstated regions:
+
+- `0..43` (43 B): Prefix before the owner count.
+- `106..196` (90 B): Scope fields before the reference table.
+- `332..444` (112 B): Scope suffix after the reference table.
+
+## `assembly_as_built_scope_owner_run`
+
+Spec §Assembly operands · layout: byte offsets · size: not stated
+
+This size-less byte record gives the common count and owner-run start in the 378-, 422-, and 444-byte As-built scopes. Offsets are relative to the primary indexed header. The count K controls the number of eleven-byte marked references; K = 0 stores no owner reference.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_alignment.rs`
+- `crates/cadmpeg-codec-f3d/src/validate.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 43 | 4 | `additional_owner_count` | `u32` | little | spec | offset 43 |
+| 47 | 11 | `additional_owner_references` | `bytes[11]` | little | spec | `47 + 11k` |
+
+Unstated regions:
+
+- `0..43` (43 B): Prefix before the common owner count.
 
 ## Not tabulated
 
