@@ -834,6 +834,19 @@ fn coil_scope_discriminators_use_the_fixed_scope_prologue() {
     assert_eq!(scope.coil_section_placement_offset(), Some(107));
     assert_eq!(scope.coil_clockwise(), Some(true));
     assert_eq!(scope.coil_clockwise_offset(), Some(24));
+
+    bytes[24] = 0;
+    let scope = parse_parameter_scope(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        header.record_index,
+        &header.class_tag,
+        header.byte_offset,
+    )
+    .unwrap()
+    .expect("counterclockwise Spire scope");
+    assert_eq!(scope.coil_clockwise(), Some(false));
+    assert_eq!(scope.coil_clockwise_offset(), Some(24));
 }
 
 #[test]
@@ -844,7 +857,7 @@ fn compact_coil_scope_uses_its_own_closed_discriminators() {
     bytes.extend_from_slice(&6644u32.to_le_bytes());
     bytes.resize(120, 0);
     bytes[20..24].copy_from_slice(&1u32.to_le_bytes());
-    bytes[24] = 0;
+    bytes[25] = 1;
     bytes[26..30].copy_from_slice(&4u32.to_le_bytes());
     bytes[30..34].copy_from_slice(&1u32.to_le_bytes());
     bytes[92..96].copy_from_slice(&1u32.to_le_bytes());
@@ -897,6 +910,36 @@ fn compact_coil_scope_uses_its_own_closed_discriminators() {
         Some(DesignCoilSectionPlacement::Inside)
     );
     assert_eq!(scope.coil_clockwise(), Some(false));
+    assert_eq!(scope.coil_clockwise_offset(), Some(25));
+
+    // A right-hand coil travels clockwise viewed along its positive axis.
+    let mut right_hand = bytes.clone();
+    right_hand[25] = 0;
+    let scope = parse_parameter_scope(
+        &right_hand,
+        &crate::design::test_support::indexed_record_offsets_for_test(&right_hand),
+        header.record_index,
+        &header.class_tag,
+        header.byte_offset,
+    )
+    .unwrap()
+    .expect("right-hand compact Coil scope");
+    assert_eq!(scope.coil_clockwise(), Some(true));
+    assert_eq!(scope.coil_clockwise_offset(), Some(25));
+
+    let mut invalid_hand = bytes.clone();
+    invalid_hand[25] = 2;
+    let scope = parse_parameter_scope(
+        &invalid_hand,
+        &crate::design::test_support::indexed_record_offsets_for_test(&invalid_hand),
+        header.record_index,
+        &header.class_tag,
+        header.byte_offset,
+    )
+    .unwrap()
+    .expect("invalid handedness retains the native Coil scope");
+    assert_eq!(scope.coil_clockwise(), None);
+    assert_eq!(scope.coil_clockwise_offset(), None);
 
     for (placement_code, placement) in [
         (1u32, DesignCoilSectionPlacement::Inside),

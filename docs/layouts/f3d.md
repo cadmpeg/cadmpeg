@@ -2765,7 +2765,8 @@ Offsets are relative to the primary indexed scope header. The ordered reference 
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
 | 20 | 4 | `operation` | `u32` | little | spec | Offset 20 value `1` creates a new body |
-| 24 | 1 | `clockwise` | `u8` | little | spec | offset 24 is the clockwise Boolean |
+| 24 | 1 | `clockwise` | `u8` | little | spec | `SpirePrimitive` stores the clockwise Boolean at offset 24. |
+| 25 | 1 | `left_hand` | `u8` | little | spec | offset 25 is the left-hand Boolean |
 | 26 | 4 | `structural_constant` | `u32` | little | spec | offset 26 is u32 `4` |
 | 30 | 4 | `extent` | `u32` | little | spec | Offset 30 selects the driving dimensions |
 | 92 | 4 | `section_placement` | `u32` | little | spec | Offset 92 selects the section position |
@@ -2774,7 +2775,6 @@ Offsets are relative to the primary indexed scope header. The ordered reference 
 Unstated regions:
 
 - `11..20` (9 B): The scope framing precedes the fixed Coil discriminators.
-- `25..26` (1 B): The structural constant starts at offset 26.
 - `34..92` (58 B): The scope reference table and parameter-specific lanes follow the extent discriminator.
 - `96..107` (11 B): The fixed discriminator block retains the section-shape lane at offset 107.
 
