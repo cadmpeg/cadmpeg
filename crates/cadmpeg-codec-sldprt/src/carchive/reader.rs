@@ -493,12 +493,11 @@ impl<'b> Reader<'b> {
         }
         let start = self.p;
         let end = start.checked_add(2 * n).ok_or(Stop::End(start))?;
-        // A short slice decodes the bytes that are there.
-        let bytes = &self.b[start.min(self.b.len())..end.min(self.b.len())];
+        let bytes = self.b.get(start..end).ok_or(Stop::End(start))?;
         let mut units = Vec::new();
         let mut at = 0;
         while at < bytes.len() {
-            units.push(View::u16_le_at(bytes, at).unwrap_or_else(|| u16::from(bytes[at])));
+            units.push(View::u16_le_at(bytes, at).ok_or(Stop::End(start))?);
             at += 2;
         }
         self.p = end;

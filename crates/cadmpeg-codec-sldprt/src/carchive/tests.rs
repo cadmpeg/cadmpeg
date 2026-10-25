@@ -224,6 +224,42 @@ fn every_parameter_class_reports_the_class_and_value_offset() {
     assert_eq!(walk.parameters[0].value, 42.0);
 }
 
+/// A counted string that declares more UTF-16 units than the stream carries
+/// stops the walk, so the parameter is not recorded.
+#[test]
+fn a_truncated_counted_string_stops_the_parameter_walk() {
+    let known = BTreeMap::from([
+        (7, "AngleDim_c".to_owned()),
+        (8, "moLengthParameter_c".to_owned()),
+    ]);
+    let mut object = vec![0x07, 0x80];
+    object.extend_from_slice(&[0; 4]);
+    object.extend_from_slice(&[0x08, 0x80]);
+    object.extend_from_slice(&[0; 2]);
+    object.extend_from_slice(&[0; 16]);
+    object.extend_from_slice(&name_body());
+    object.extend_from_slice(&[0; 2]);
+    object.extend_from_slice(&0.025_f64.to_le_bytes());
+    object.extend_from_slice(&[0; 23]);
+    for _ in 0..4 {
+        object.extend_from_slice(&name_body());
+    }
+    object.extend_from_slice(&[0; 262]);
+    object.extend_from_slice(&name_body());
+    object.extend_from_slice(&[0; 40]);
+
+    let mut complete = object.clone();
+    complete.extend_from_slice(&name_body());
+    let walk = walk_with_known(&stream(7, &complete), &known);
+    assert_eq!(walk.status, Status::End);
+    assert_eq!(walk.parameters.len(), 1);
+
+    object.extend_from_slice(&[0xff, 0xfe, 0xff, 0x02, b'A', 0x00]);
+    let walk = walk_with_known(&stream(7, &object), &known);
+    assert!(matches!(walk.status, Status::Stop(Stop::End(_))));
+    assert!(walk.parameters.is_empty());
+}
+
 #[test]
 fn a_walk_that_meets_an_unknown_class_stops() {
     let known = BTreeMap::from([
