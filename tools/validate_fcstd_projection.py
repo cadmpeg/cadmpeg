@@ -120,20 +120,22 @@ def check_spline_domains():
     finally:
         App.closeDocument(document.Name)
     bodies = json.loads((WORK / "spline_domains.measure.json").read_text())["measure"]["bodies"]
-    faces = [body for body in bodies if body["name"] == "PeriodicFace"]
+    faces = [body for body in bodies if "#PeriodicFace:" in body["body"]]
     edges = json.loads((WORK / "spline_domains.edges.measure.json").read_text())["measure"]["edges"]
     edges = [edge for edge in edges if "#SplineEdge:" in edge["edge"]]
     if len(faces) != 1 or len(edges) != 1:
         raise ValueError("missing spline measurement rows")
     for expected, quantity in ((expected_area, faces[0]["area"]),
                                (expected_length, edges[0]["length"])):
+        allowance = (GEOMETRY_ABSOLUTE_TOLERANCE + quantity.get("numeric_error", 0)
+                     + quantity.get("model_uncertainty", 0))
         if quantity["status"] != "measured" or not math.isclose(
             expected, quantity["value"], rel_tol=GEOMETRY_RELATIVE_TOLERANCE,
-            abs_tol=GEOMETRY_ABSOLUTE_TOLERANCE,
+            abs_tol=allowance,
         ):
             raise ValueError("spline geometry differs from native measurement")
-    return {"periodic_face_area": faces[0]["area"]["value"],
-            "spline_edge_length": edges[0]["length"]["value"]}
+    return {"periodic_face_area": faces[0]["area"], "native_face_area": expected_area,
+            "spline_edge_length": edges[0]["length"], "native_edge_length": expected_length}
 
 
 def check_source_less_shapes():

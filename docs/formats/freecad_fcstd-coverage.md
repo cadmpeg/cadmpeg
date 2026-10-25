@@ -87,7 +87,7 @@ and volume 262.5 cubic mm. Missing native evidence leaves the corresponding asse
 deterministic byte or CADIR checks do not substitute for it.
 
 The native regression workflow runs the authored restoration, input-edit, source-less shape,
-mesh-placement, and filleted STEP cases with FreeCAD 1.0.0. It checks ordinary recomputation of
+mesh-placement, spline-domain, and filleted STEP cases with FreeCAD 1.0.0. It checks ordinary recomputation of
 edited and newly constructed objects separately from the validator's forced design recomputation.
 Run the same gate locally after building the CLI and examples:
 
@@ -108,6 +108,10 @@ face counts, area, volume, and bounds for AP203 edition 1, AP214, and AP242 edit
 compare neutral world vertices with native occurrence transforms because body measurements do not
 cover application tessellations. These regression cases do not substitute for the complete
 manifested-corpus evidence required by the higher profile assertions.
+
+The spline case compares measured edge length and periodic-face area with native geometry using
+the measurement report's numeric error and model uncertainty allowances. Its original file has
+both a rounded 3D spline endpoint and a periodic pcurve that crosses its fundamental knot seam.
 
 ## Design projection boundaries
 
