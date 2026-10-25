@@ -106,3 +106,21 @@ fn external_combine_identity_rejects_mismatched_assets_and_empty_content() {
         );
     }
 }
+
+#[test]
+fn external_combine_identity_draft_refuses_each_stated_null_optional_field_by_name() {
+    for field in [
+        "external_property_key",
+        "external_property_key_offset",
+        "external_version_urn",
+        "external_version_urn_offset",
+    ] {
+        let mut wire = external_wire(true);
+        wire[field] = serde_json::Value::Null;
+        let error = serde_json::from_value::<DesignCombineExternalBodyIdentityDraft>(wire)
+            .unwrap_err()
+            .to_string();
+        assert!(error.starts_with(&format!("{field}:")), "{error}");
+        assert!(error.contains("does not state null"), "{error}");
+    }
+}

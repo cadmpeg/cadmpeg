@@ -22,6 +22,16 @@ cadmpeg_core::named_optional_field!(
     String,
     "external_version_urn"
 );
+cadmpeg_core::named_optional_field!(
+    deserialize_external_property_key_offset,
+    u64,
+    "external_property_key_offset"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_external_version_urn_offset,
+    u64,
+    "external_version_urn_offset"
+);
 /// Serialized prologue form of a `Combine` scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -220,16 +230,16 @@ pub(crate) struct DesignCombineExternalBodyIdentityDraft {
     /// Byte offset of `external_link_name`.
     pub(crate) external_link_name_offset: u64,
     /// Optional property key preceding the version identity.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_external_property_key")]
     pub(crate) external_property_key: Option<DesignRelaxedGuidText>,
     /// Byte offset of `external_property_key` when present.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_external_property_key_offset")]
     pub(crate) external_property_key_offset: Option<u64>,
     /// Optional referenced-document version identity.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_external_version_urn")]
     pub(crate) external_version_urn: Option<String>,
     /// Byte offset of `external_version_urn` when present.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_external_version_urn_offset")]
     pub(crate) external_version_urn_offset: Option<u64>,
     /// Raw selection stamp and binary64 evaluation-scalar bits, separated by the epoch.
     #[serde(default)]
