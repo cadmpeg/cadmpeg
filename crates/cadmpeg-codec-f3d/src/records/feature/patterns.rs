@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Circular and rectangular pattern constructions and their instances.
 
-use crate::records::identity::Located;
+use crate::records::identity::Sourced;
 use crate::records::mesh::{DesignOccurrenceKey, DesignRelaxedGuidText};
 use crate::records::sketch_placement::SketchPlacementMatrix;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
@@ -33,14 +33,16 @@ pub(crate) struct DesignCircularPatternConstruction {
     pub(crate) count: NonZeroU32,
     /// Referenced compact count-parameter owner.
     pub(crate) count_record_index: u32,
-    /// Byte offset of the evaluated count scalar.
-    pub(crate) count_offset: u64,
+    /// Byte offset of the evaluated count scalar of a located scope.
+    #[serde(skip)]
+    pub(crate) count_offset: Option<u64>,
     /// Angular span.
     pub(crate) angle: cadmpeg_ir::scalar::PositiveAngle,
     /// Referenced total-angle scalar.
     pub(crate) angle_record_index: u32,
-    /// Byte offset of the total-angle scalar.
-    pub(crate) angle_offset: u64,
+    /// Byte offset of the total-angle scalar of a located scope.
+    #[serde(skip)]
+    pub(crate) angle_offset: Option<u64>,
     /// Serialized axis construction and its resolved placement.
     pub(crate) axis: DesignCircularPatternAxis,
     /// Referenced axis record.
@@ -95,13 +97,13 @@ pub(crate) enum DesignCircularPatternAxis {
     Inline {
         /// Axis origin in source centimetres.
         origin: [FiniteReal; 3],
-        /// Byte offset of the first origin coordinate.
-        origin_offset: u64,
+        /// Byte offset of the first origin coordinate of a located scope.
+        origin_offset: Option<u64>,
         /// Axis direction; the decoder stores the serialized displacement at unit
         /// length.
         direction: UnitVector3,
-        /// Byte offset of the first direction coordinate.
-        direction_offset: u64,
+        /// Byte offset of the first direction coordinate of a located scope.
+        direction_offset: Option<u64>,
     },
     /// Axis selected through wrappers of one persistent historical topology identity.
     HistoricalEdge {
@@ -149,17 +151,10 @@ impl Clone for DesignCircularPatternAxis {
 }
 
 struct PatternAxisWrapperIndices<'a>(&'a [DesignPatternAxisWrapper]);
-struct PatternAxisIdentityOffsets<'a>(&'a [DesignPatternAxisWrapper]);
 
 impl Serialize for PatternAxisWrapperIndices<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.collect_seq(self.0.iter().map(|wrapper| wrapper.record_index))
-    }
-}
-
-impl Serialize for PatternAxisIdentityOffsets<'_> {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_seq(self.0.iter().map(|wrapper| wrapper.identity_offset))
     }
 }
 
@@ -168,14 +163,11 @@ impl Serialize for PatternAxisIdentityOffsets<'_> {
 enum DesignCircularPatternAxisRef<'a> {
     Inline {
         origin: [FiniteReal; 3],
-        origin_offset: u64,
         direction: [f64; 3],
-        direction_offset: u64,
     },
     HistoricalEdge {
         wrapper_record_indices: PatternAxisWrapperIndices<'a>,
         persistent_identities: [u64; 1],
-        identity_offsets: PatternAxisIdentityOffsets<'a>,
         #[serde(skip_serializing_if = "Option::is_none")]
         resolved_origin: Option<FinitePoint3>,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -187,19 +179,14 @@ impl Serialize for DesignCircularPatternAxis {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let borrowed = match self {
             Self::Inline {
-                origin,
-                origin_offset,
-                direction,
-                direction_offset,
+                origin, direction, ..
             } => DesignCircularPatternAxisRef::Inline {
                 origin: *origin,
-                origin_offset: *origin_offset,
                 direction: [
                     direction.as_raw().x,
                     direction.as_raw().y,
                     direction.as_raw().z,
                 ],
-                direction_offset: *direction_offset,
             },
             Self::HistoricalEdge {
                 wrappers,
@@ -208,7 +195,6 @@ impl Serialize for DesignCircularPatternAxis {
             } => DesignCircularPatternAxisRef::HistoricalEdge {
                 wrapper_record_indices: PatternAxisWrapperIndices(wrappers),
                 persistent_identities: [*persistent_identity],
-                identity_offsets: PatternAxisIdentityOffsets(wrappers),
                 resolved_origin: resolved.map(|axis| axis.origin),
                 resolved_direction: resolved.map(|axis| FiniteVector3::from(axis.direction)),
             },
@@ -221,7 +207,8 @@ impl Serialize for DesignCircularPatternAxis {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct DesignPatternAxisWrapper {
     pub(crate) record_index: u32,
-    pub(crate) identity_offset: u64,
+    /// Byte offset of the wrapper's persistent identity of a located scope.
+    pub(crate) identity_offset: Option<u64>,
 }
 
 /// Axis construction carried by a fixed circular-pattern scope.
@@ -232,13 +219,9 @@ enum DesignCircularPatternAxisWire {
     Inline {
         /// Axis origin in source centimetres.
         origin: [FiniteReal; 3],
-        /// Byte offset of the first origin coordinate.
-        origin_offset: u64,
         /// Axis direction; the decoder stores the serialized displacement at unit
         /// length.
         direction: [f64; 3],
-        /// Byte offset of the first direction coordinate.
-        direction_offset: u64,
     },
     /// Axis selected through wrappers of one persistent historical topology identity.
     HistoricalEdge {
@@ -246,8 +229,6 @@ enum DesignCircularPatternAxisWire {
         wrapper_record_indices: Vec<u32>,
         /// Persistent ASM identities carried by the wrappers.
         persistent_identities: Vec<u64>,
-        /// Identity byte offsets parallel to `wrapper_record_indices`.
-        identity_offsets: Vec<u64>,
         /// Resolved model-space axis, when exact.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         resolved_origin: Option<FinitePoint3>,
@@ -261,9 +242,9 @@ const EPS_CIRCULAR_PATTERN_AXIS_UNIT: f64 = 1.0e-12;
 impl DesignCircularPatternAxis {
     pub(crate) fn inline(
         origin: [FiniteReal; 3],
-        origin_offset: u64,
+        origin_offset: Option<u64>,
         displacement: [f64; 3],
-        direction_offset: u64,
+        direction_offset: Option<u64>,
     ) -> Option<Self> {
         let raw = Vector3::from(displacement);
         let length = raw.x.hypot(raw.y).hypot(raw.z);
@@ -289,26 +270,16 @@ impl TryFrom<DesignCircularPatternAxisWire> for DesignCircularPatternAxis {
 
     fn try_from(wire: DesignCircularPatternAxisWire) -> Result<Self, Self::Error> {
         match wire {
-            DesignCircularPatternAxisWire::Inline {
-                origin,
-                origin_offset,
-                direction,
-                direction_offset,
-            } => Self::inline(origin, origin_offset, direction, direction_offset)
-                .ok_or_else(|| "inline axis direction must be nonzero and finite".into()),
+            DesignCircularPatternAxisWire::Inline { origin, direction } => {
+                Self::inline(origin, None, direction, None)
+                    .ok_or_else(|| "inline axis direction must be nonzero and finite".into())
+            }
             DesignCircularPatternAxisWire::HistoricalEdge {
                 wrapper_record_indices,
                 persistent_identities,
-                identity_offsets,
                 resolved_origin,
                 resolved_direction,
             } => {
-                if wrapper_record_indices.len() != identity_offsets.len() {
-                    return Err(
-                        "wrapper_record_indices and identity_offsets must have equal lengths"
-                            .into(),
-                    );
-                }
                 let [persistent_identity] = persistent_identities.as_slice() else {
                     return Err("persistent_identities must contain one shared identity".into());
                 };
@@ -327,10 +298,9 @@ impl TryFrom<DesignCircularPatternAxisWire> for DesignCircularPatternAxis {
                 Ok(Self::HistoricalEdge {
                     wrappers: wrapper_record_indices
                         .into_iter()
-                        .zip(identity_offsets)
-                        .map(|(record_index, identity_offset)| DesignPatternAxisWrapper {
+                        .map(|record_index| DesignPatternAxisWrapper {
                             record_index,
-                            identity_offset,
+                            identity_offset: None,
                         })
                         .collect::<Vec<_>>()
                         .try_into()
@@ -348,19 +318,14 @@ impl From<DesignCircularPatternAxis> for DesignCircularPatternAxisWire {
     fn from(axis: DesignCircularPatternAxis) -> Self {
         match axis {
             DesignCircularPatternAxis::Inline {
-                origin,
-                origin_offset,
-                direction,
-                direction_offset,
+                origin, direction, ..
             } => Self::Inline {
                 origin,
-                origin_offset,
                 direction: [
                     direction.as_raw().x,
                     direction.as_raw().y,
                     direction.as_raw().z,
                 ],
-                direction_offset,
             },
             DesignCircularPatternAxis::HistoricalEdge {
                 wrappers,
@@ -372,10 +337,6 @@ impl From<DesignCircularPatternAxis> for DesignCircularPatternAxisWire {
                     .map(|wrapper| wrapper.record_index)
                     .collect(),
                 persistent_identities: vec![persistent_identity],
-                identity_offsets: wrappers
-                    .iter()
-                    .map(|wrapper| wrapper.identity_offset)
-                    .collect(),
                 resolved_origin: resolved.map(|axis| axis.origin),
                 resolved_direction: resolved.map(|axis| FiniteVector3::from(axis.direction)),
             },
@@ -453,8 +414,9 @@ pub(crate) struct DesignRectangularPatternConstruction {
     v_extent: f64,
     /// Parameter-owner records for U count, V count, U extent, and V extent.
     pub(crate) owner_record_indices: [u32; 4],
-    /// Evaluated-value offsets parallel to `owner_record_indices`.
-    pub(crate) value_offsets: [u64; 4],
+    /// Evaluated-value offsets parallel to `owner_record_indices` of a
+    /// located scope.
+    pub(crate) value_offsets: Option<[u64; 4]>,
     /// Exact serialized instance sequence when one pattern direction is active.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     instances: Option<DesignRectangularPatternInstances>,
@@ -475,12 +437,14 @@ pub(crate) struct DesignRectangularPatternDirection {
     pub(crate) selection_kind: u32,
     /// Origin in source centimetres.
     pub(crate) origin: [FiniteReal; 3],
-    /// Byte offset of the first origin coordinate.
-    pub(crate) origin_offset: u64,
+    /// Byte offset of the first origin coordinate of a located scope.
+    #[serde(skip)]
+    pub(crate) origin_offset: Option<u64>,
     /// Nonzero displacement in source centimetres.
     pub(crate) displacement: [FiniteReal; 3],
-    /// Byte offset of the first displacement coordinate.
-    pub(crate) displacement_offset: u64,
+    /// Byte offset of the first displacement coordinate of a located scope.
+    #[serde(skip)]
+    pub(crate) displacement_offset: Option<u64>,
 }
 
 impl DesignRectangularPatternDirection {
@@ -520,7 +484,6 @@ struct DesignRectangularPatternConstructionRef<'a> {
     u_extent: f64,
     v_extent: f64,
     owner_record_indices: [u32; 4],
-    value_offsets: [u64; 4],
     #[serde(skip_serializing_if = "Option::is_none")]
     instances: Option<&'a DesignRectangularPatternInstances>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -537,7 +500,6 @@ impl Serialize for DesignRectangularPatternConstruction {
             u_extent: self.u_extent,
             v_extent: self.v_extent,
             owner_record_indices: self.owner_record_indices,
-            value_offsets: self.value_offsets,
             instances: self.instances.as_ref(),
             instance_search_cap: self.instance_search_cap,
             directions: &self.directions,
@@ -558,8 +520,6 @@ pub(crate) struct DesignRectangularPatternConstructionWire {
     pub(crate) v_extent: f64,
     /// Parameter-owner records for U count, V count, U extent, and V extent.
     pub(crate) owner_record_indices: [u32; 4],
-    /// Evaluated-value offsets parallel to `owner_record_indices`.
-    pub(crate) value_offsets: [u64; 4],
     /// Exact serialized instance sequence when one pattern direction is active.
     #[serde(
         default,
@@ -599,7 +559,7 @@ impl TryFrom<DesignRectangularPatternConstructionWire> for DesignRectangularPatt
             u_extent: wire.u_extent,
             v_extent: wire.v_extent,
             owner_record_indices: wire.owner_record_indices,
-            value_offsets: wire.value_offsets,
+            value_offsets: None,
             instances: None,
             instance_search_cap: None,
             directions: Vec::new(),
@@ -622,7 +582,6 @@ impl From<DesignRectangularPatternConstruction> for DesignRectangularPatternCons
             u_extent: value.u_extent,
             v_extent: value.v_extent,
             owner_record_indices: value.owner_record_indices,
-            value_offsets: value.value_offsets,
             instances: value.instances,
             instance_search_cap: value.instance_search_cap,
             directions: value.directions,
@@ -751,7 +710,6 @@ impl Clone for DesignRectangularPatternInstances {
 
 struct PatternRecordIndices<'a>(&'a DesignRectangularPatternInstances);
 struct PatternTransforms<'a>(&'a DesignRectangularPatternInstances);
-struct PatternTransformOffsets<'a>(&'a DesignRectangularPatternInstances);
 struct PatternGeneratedGuids<'a>(&'a [DesignPatternComponentInstance]);
 
 impl Serialize for PatternRecordIndices<'_> {
@@ -763,12 +721,6 @@ impl Serialize for PatternRecordIndices<'_> {
 impl Serialize for PatternTransforms<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.collect_seq(self.0.frames().map(|frame| &frame.transform.value))
-    }
-}
-
-impl Serialize for PatternTransformOffsets<'_> {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_seq(self.0.frames().map(|frame| frame.transform.offset))
     }
 }
 
@@ -789,7 +741,6 @@ struct DesignComponentPatternOccurrencesRef<'a> {
 struct DesignRectangularPatternInstancesRef<'a> {
     record_indices: PatternRecordIndices<'a>,
     transforms: PatternTransforms<'a>,
-    transform_offsets: PatternTransformOffsets<'a>,
     #[serde(skip_serializing_if = "Option::is_none")]
     component_occurrences: Option<DesignComponentPatternOccurrencesRef<'a>>,
 }
@@ -811,7 +762,6 @@ impl Serialize for DesignRectangularPatternInstances {
         DesignRectangularPatternInstancesRef {
             record_indices: PatternRecordIndices(self),
             transforms: PatternTransforms(self),
-            transform_offsets: PatternTransformOffsets(self),
             component_occurrences,
         }
         .serialize(serializer)
@@ -821,7 +771,7 @@ impl Serialize for DesignRectangularPatternInstances {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct DesignPatternInstance {
     pub(crate) record_index: u32,
-    pub(crate) transform: Located<SketchPlacementMatrix>,
+    pub(crate) transform: Sourced<SketchPlacementMatrix>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -863,8 +813,6 @@ pub(super) struct DesignRectangularPatternInstancesWire {
     record_indices: Vec<u32>,
     /// Row-major local-to-model placements parallel to `record_indices`.
     transforms: Vec<SketchPlacementMatrix>,
-    /// Byte offsets of the first transform scalar parallel to `record_indices`.
-    transform_offsets: Vec<u64>,
     /// Component occurrences carried by this run when the pattern repeats a component.
     #[serde(
         default,
@@ -888,22 +836,20 @@ struct DesignComponentPatternOccurrencesWire {
 impl TryFrom<DesignRectangularPatternInstancesWire> for DesignRectangularPatternInstances {
     type Error = String;
     fn try_from(wire: DesignRectangularPatternInstancesWire) -> Result<Self, Self::Error> {
-        if wire.record_indices.len() != wire.transforms.len()
-            || wire.record_indices.len() != wire.transform_offsets.len()
-        {
-            return Err(
-                "record_indices, transforms, and transform_offsets must have equal lengths".into(),
-            );
+        if wire.record_indices.len() != wire.transforms.len() {
+            return Err("record_indices and transforms must have equal lengths".into());
         }
-        let frames = wire
-            .record_indices
-            .into_iter()
-            .zip(wire.transforms)
-            .zip(wire.transform_offsets)
-            .map(|((record_index, value), offset)| DesignPatternInstance {
-                record_index,
-                transform: Located { value, offset },
-            });
+        let frames =
+            wire.record_indices
+                .into_iter()
+                .zip(wire.transforms)
+                .map(|(record_index, value)| DesignPatternInstance {
+                    record_index,
+                    transform: Sourced {
+                        value,
+                        offset: None,
+                    },
+                });
         let Some(component) = wire.component_occurrences else {
             return Ok(Self::Bodies(frames.collect()));
         };
@@ -940,7 +886,6 @@ impl From<DesignRectangularPatternInstances> for DesignRectangularPatternInstanc
     fn from(instances: DesignRectangularPatternInstances) -> Self {
         let record_indices = instances.frames().map(|row| row.record_index).collect();
         let transforms = instances.frames().map(|row| row.transform.value).collect();
-        let transform_offsets = instances.frames().map(|row| row.transform.offset).collect();
         let component_occurrences = match instances {
             DesignRectangularPatternInstances::Bodies(_) => None,
             DesignRectangularPatternInstances::Components {
@@ -959,8 +904,77 @@ impl From<DesignRectangularPatternInstances> for DesignRectangularPatternInstanc
         Self {
             record_indices,
             transforms,
-            transform_offsets,
             component_occurrences,
+        }
+    }
+}
+
+impl crate::records::source_offsets::SourceOffsets for DesignCircularPatternConstruction {
+    fn visit_source_offsets(
+        &mut self,
+        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
+    ) {
+        offsets.offset("count_offset", &mut self.count_offset);
+        offsets.offset("angle_offset", &mut self.angle_offset);
+        match &mut self.axis {
+            DesignCircularPatternAxis::Inline {
+                origin_offset,
+                direction_offset,
+                ..
+            } => offsets.nested("axis", |offsets| {
+                offsets.offset("origin_offset", origin_offset);
+                offsets.offset("direction_offset", direction_offset);
+            }),
+            DesignCircularPatternAxis::HistoricalEdge { wrappers, .. } => {
+                offsets.nested("axis", |offsets| {
+                    let first = wrappers.as_slice()[0];
+                    let current = std::mem::replace(
+                        wrappers,
+                        cadmpeg_ir::features::NonEmptyMembers::one(first),
+                    );
+                    let mut index = 0_usize;
+                    *wrappers = current.map(|mut wrapper| {
+                        offsets.offset(
+                            &format!("identity_offsets.{index}"),
+                            &mut wrapper.identity_offset,
+                        );
+                        index += 1;
+                        wrapper
+                    });
+                });
+            }
+        }
+    }
+}
+
+impl crate::records::source_offsets::SourceOffsets for DesignRectangularPatternConstruction {
+    fn visit_source_offsets(
+        &mut self,
+        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
+    ) {
+        offsets.offsets("value_offsets", &mut self.value_offsets);
+        if let Some(instances) = &mut self.instances {
+            let frames: Vec<&mut DesignPatternInstance> = match instances {
+                DesignRectangularPatternInstances::Bodies(instances) => {
+                    instances.iter_mut().collect()
+                }
+                DesignRectangularPatternInstances::Components {
+                    seed, generated, ..
+                } => std::iter::once(&mut seed.instance)
+                    .chain(generated.iter_mut().map(|row| &mut row.instance))
+                    .collect(),
+            };
+            offsets.nested("instances", |offsets| {
+                for (index, frame) in frames.into_iter().enumerate() {
+                    offsets.sourced(&format!("transform_offsets.{index}"), &mut frame.transform);
+                }
+            });
+        }
+        for (index, direction) in self.directions.iter_mut().enumerate() {
+            offsets.nested(&format!("directions.{index}"), |offsets| {
+                offsets.offset("origin_offset", &mut direction.origin_offset);
+                offsets.offset("displacement_offset", &mut direction.displacement_offset);
+            });
         }
     }
 }
@@ -975,7 +989,7 @@ mod tests {
         RectangularPatternSearchCap, CIRCULAR_PATTERN_AXIS_CLONE_COUNT,
         RECTANGULAR_PATTERN_CONSTRUCTION_CLONE_COUNT, RECTANGULAR_PATTERN_INSTANCES_CLONE_COUNT,
     };
-    use crate::records::identity::Located;
+    use crate::records::identity::Sourced;
     use crate::records::sketch_placement::SketchPlacementMatrix;
     use std::num::NonZeroU32;
 
@@ -988,9 +1002,9 @@ mod tests {
     fn frame(index: u32) -> DesignPatternInstance {
         DesignPatternInstance {
             record_index: index,
-            transform: Located {
+            transform: Sourced {
                 value: SketchPlacementMatrix::IDENTITY,
-                offset: u64::from(index) * 10,
+                offset: Some(u64::from(index) * 10),
             },
         }
     }
@@ -1027,7 +1041,7 @@ mod tests {
             u_extent: 10.0,
             v_extent: 0.0,
             owner_record_indices: [1, 2, 3, 4],
-            value_offsets: [10, 20, 30, 40],
+            value_offsets: Some([10, 20, 30, 40]),
             instances,
             instance_search_cap: None,
             directions: Vec::new(),
@@ -1039,11 +1053,11 @@ mod tests {
             wrappers: vec![
                 DesignPatternAxisWrapper {
                     record_index: 1,
-                    identity_offset: 20,
+                    identity_offset: Some(20),
                 },
                 DesignPatternAxisWrapper {
                     record_index: 2,
-                    identity_offset: 30,
+                    identity_offset: Some(30),
                 },
             ]
             .try_into()
@@ -1067,12 +1081,12 @@ mod tests {
         let zero = cadmpeg_ir::scalar::FiniteReal::new(0.0).unwrap();
         let inline = DesignCircularPatternAxis::Inline {
             origin: [zero; 3],
-            origin_offset: 10,
+            origin_offset: Some(10),
             direction: cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::new(
                 1.0, 0.0, 0.0,
             ))
             .unwrap(),
-            direction_offset: 20,
+            direction_offset: Some(20),
         };
         for axis in [inline, circular_axis(false), circular_axis(true)] {
             let owned = DesignCircularPatternAxisWire::from(axis.clone());
@@ -1222,9 +1236,9 @@ mod tests {
             selection_record_index: record_index + 3,
             selection_kind: 8,
             origin: crate::test_support::reals([0.0, 0.0, 0.0]),
-            origin_offset: 0,
+            origin_offset: Some(0),
             displacement: crate::test_support::reals(displacement),
-            displacement_offset: 24,
+            displacement_offset: Some(24),
         };
         let wire = |directions| DesignRectangularPatternConstructionWire {
             directions,

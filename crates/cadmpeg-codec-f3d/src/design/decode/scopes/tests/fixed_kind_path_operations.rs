@@ -53,7 +53,7 @@ pub(super) fn fixed_kind_path_operations(
         Some(DesignPathFeatureConstruction::Loft(
             crate::records::feature::path_features::DesignLoftConstruction {
                 operation: DesignExtrudeOperation::Join,
-                operation_offset: u64_from_index(loft_start + 29),
+                operation_offset: Some(u64_from_index(loft_start + 29)),
             }
         ))
     );
@@ -62,7 +62,7 @@ pub(super) fn fixed_kind_path_operations(
         let value = Some(DesignPathFeatureConstruction::Loft(
             crate::records::feature::path_features::DesignLoftConstruction {
                 operation: DesignExtrudeOperation::NewBody,
-                operation_offset: u64_from_index(loft_start + 29),
+                operation_offset: Some(u64_from_index(loft_start + 29)),
             },
         ));
         loft_scope
@@ -122,7 +122,7 @@ pub(super) fn fixed_kind_path_operations(
         let value = Some(DesignPathFeatureConstruction::Loft(
             crate::records::feature::path_features::DesignLoftConstruction {
                 operation: DesignExtrudeOperation::Cut,
-                operation_offset: u64_from_index(loft_start + 29),
+                operation_offset: Some(u64_from_index(loft_start + 29)),
             },
         ));
         loft_scope
@@ -205,7 +205,7 @@ pub(super) fn fixed_kind_path_operations(
         let value = Some(DesignPathFeatureConstruction::Loft(
             crate::records::feature::path_features::DesignLoftConstruction {
                 operation: DesignExtrudeOperation::NewBody,
-                operation_offset: u64_from_index(loft_start + 29),
+                operation_offset: Some(u64_from_index(loft_start + 29)),
             },
         ));
         loft_scope
@@ -361,12 +361,12 @@ pub(super) fn fixed_kind_path_operations(
         Some(DesignPathFeatureConstruction::Sweep(
             crate::records::feature::path_features::DesignSweepConstruction {
                 operation: DesignExtrudeOperation::NewBody,
-                operation_offset: u64_from_index(sweep_start + 25),
+                operation_offset: Some(u64_from_index(sweep_start + 25)),
                 values: crate::test_support::reals(sweep_values),
                 record_indexes: [80, 81, 82, 83, 84, 85],
-                value_offsets: std::array::from_fn(|ordinal| {
+                value_offsets: Some(std::array::from_fn(|ordinal| {
                     u64_from_index(sweep_scalar_start + ordinal * 111 + 40)
-                }),
+                })),
             }
         ))
     );
@@ -415,12 +415,12 @@ pub(super) fn fixed_kind_path_operations(
         let value = Some(DesignPathFeatureConstruction::Sweep(
             crate::records::feature::path_features::DesignSweepConstruction {
                 operation: DesignExtrudeOperation::NewBody,
-                operation_offset: u64_from_index(sweep_start + 25),
+                operation_offset: Some(u64_from_index(sweep_start + 25)),
                 values: crate::test_support::reals([0.0, 1.0, 0.0, 1.0, 0.0, 0.0]),
                 record_indexes: [80, 81, 82, 83, 84, 85],
-                value_offsets: std::array::from_fn(|ordinal| {
+                value_offsets: Some(std::array::from_fn(|ordinal| {
                     u64_from_index(sweep_scalar_start + ordinal * 111 + 40)
-                }),
+                })),
             },
         ));
         sweep_scope
@@ -453,12 +453,12 @@ pub(super) fn fixed_kind_path_operations(
         let value = Some(DesignPathFeatureConstruction::Sweep(
             crate::records::feature::path_features::DesignSweepConstruction {
                 operation: DesignExtrudeOperation::NewBody,
-                operation_offset: u64_from_index(sweep_start + 25),
+                operation_offset: Some(u64_from_index(sweep_start + 25)),
                 values: crate::test_support::reals(complete_sweep_values),
                 record_indexes: [80, 81, 82, 83, 84, 85],
-                value_offsets: std::array::from_fn(|ordinal| {
+                value_offsets: Some(std::array::from_fn(|ordinal| {
                     u64_from_index(sweep_scalar_start + ordinal * 111 + 40)
-                }),
+                })),
             },
         ));
         sweep_scope
@@ -605,12 +605,12 @@ pub(super) fn fixed_kind_path_operations(
         let value = Some(DesignPathFeatureConstruction::Sweep(
             crate::records::feature::path_features::DesignSweepConstruction {
                 operation: DesignExtrudeOperation::Cut,
-                operation_offset: u64_from_index(sweep_start + 25),
+                operation_offset: Some(u64_from_index(sweep_start + 25)),
                 values: crate::test_support::reals(complete_sweep_values),
                 record_indexes: [80, 81, 82, 83, 84, 85],
-                value_offsets: std::array::from_fn(|ordinal| {
+                value_offsets: Some(std::array::from_fn(|ordinal| {
                     u64_from_index(sweep_scalar_start + ordinal * 111 + 40)
-                }),
+                })),
             },
         ));
         sweep_scope
@@ -678,16 +678,16 @@ pub(super) fn fixed_kind_path_operations(
         Some(DesignPathFeatureConstruction::Pipe(
             crate::records::feature::path_features::DesignPipeConstruction {
                 operation: DesignExtrudeOperation::NewBody,
-                operation_offset: u64_from_index(pipe_start + 22),
+                operation_offset: Some(u64_from_index(pipe_start + 22)),
                 is_hollow: false,
-                is_hollow_offset: u64_from_index(pipe_start + 21),
+                is_hollow_offset: Some(u64_from_index(pipe_start + 21)),
                 opaque_post_operation: [1, 1].into(),
-                opaque_post_operation_offset: u64_from_index(pipe_start + 26),
+                opaque_post_operation_offset: Some(u64_from_index(pipe_start + 26)),
                 values: crate::test_support::reals(pipe_values),
                 record_indexes: [170, 171, 172, 173],
-                value_offsets: std::array::from_fn(|ordinal| {
+                value_offsets: Some(std::array::from_fn(|ordinal| {
                     u64_from_index(pipe_scalar_start + ordinal * 111 + 40)
-                }),
+                })),
             }
         ))
     );
@@ -772,16 +772,20 @@ pub(super) fn fixed_kind_path_operations(
         Some(DesignPathFeatureConstruction::Pipe(
             crate::records::feature::path_features::DesignPipeConstruction {
                 operation: DesignExtrudeOperation::NewBody,
-                operation_offset: u64_from_index(owner_pipe_start + fixed_pipe_layout::OPERATION),
+                operation_offset: Some(u64_from_index(
+                    owner_pipe_start + fixed_pipe_layout::OPERATION
+                )),
                 is_hollow: false,
-                is_hollow_offset: u64_from_index(owner_pipe_start + fixed_pipe_layout::IS_HOLLOW),
+                is_hollow_offset: Some(u64_from_index(
+                    owner_pipe_start + fixed_pipe_layout::IS_HOLLOW
+                )),
                 opaque_post_operation: [1, 1].into(),
-                opaque_post_operation_offset: u64_from_index(
+                opaque_post_operation_offset: Some(u64_from_index(
                     owner_pipe_start + fixed_pipe_layout::OPAQUE_POST_OPERATION
-                ),
+                )),
                 values: crate::test_support::reals(owner_pipe_values),
                 record_indexes: owner_pipe_record_indexes,
-                value_offsets: [10_000, 10_001, 10_002, 10_003],
+                value_offsets: Some([10_000, 10_001, 10_002, 10_003]),
             }
         ))
     );
@@ -925,17 +929,17 @@ pub(super) fn fixed_kind_path_operations(
             Some(DesignPathFeatureConstruction::Pipe(
                 crate::records::feature::path_features::DesignPipeConstruction {
                     operation: DesignExtrudeOperation::NewBody,
-                    operation_offset: u64_from_index(
+                    operation_offset: Some(u64_from_index(
                         legacy_pipe_start + legacy_pipe_layout::OPERATION
-                    ),
+                    )),
                     is_hollow: true,
-                    is_hollow_offset: u64_from_index(
+                    is_hollow_offset: Some(u64_from_index(
                         legacy_pipe_start + legacy_pipe_layout::IS_HOLLOW
-                    ),
+                    )),
                     opaque_post_operation: [1, 1].into(),
-                    opaque_post_operation_offset: u64_from_index(
+                    opaque_post_operation_offset: Some(u64_from_index(
                         legacy_pipe_start + legacy_pipe_layout::OPAQUE_POST_OPERATION
-                    ),
+                    )),
                     values: crate::test_support::reals(legacy_values),
                     record_indexes: [
                         first_record_index,
@@ -943,9 +947,9 @@ pub(super) fn fixed_kind_path_operations(
                         first_record_index + 2,
                         first_record_index + 3,
                     ],
-                    value_offsets: std::array::from_fn(|ordinal| {
+                    value_offsets: Some(std::array::from_fn(|ordinal| {
                         u64_from_index(legacy_scalar_start + ordinal * 111 + 40)
-                    }),
+                    })),
                 }
             ))
         );
@@ -1095,7 +1099,7 @@ pub(super) fn fixed_kind_path_operations(
         *slot = Some(crate::records::feature::scope::DesignSketchEntityBinding {
             entity_id: crate::records::identity::DesignEntityId::try_from("Sketch_99".to_owned())
                 .expect("valid entity identity"),
-            entity_reference_offset: 0,
+            entity_reference_offset: Some(0),
         });
     }
     let entity = crate::records::entity_header::DesignEntityHeader {

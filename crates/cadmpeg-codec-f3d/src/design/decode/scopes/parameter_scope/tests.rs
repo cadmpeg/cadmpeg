@@ -81,12 +81,12 @@ fn discarded_envelope_source_draft_creates_no_capture() {
             .unwrap();
     let drafts = std::collections::HashMap::from([(
         "discarded-owner".to_owned(),
-        super::AssemblyScopeSource {
+        super::ScopeSource {
             extent: source,
             paths: Vec::new(),
         },
     )]);
-    let pointers = super::capture_assembly_path_layouts(&ctx, &[], drafts).unwrap();
+    let pointers = super::capture_scope_layouts(&ctx, &[], drafts).unwrap();
     assert!(pointers.is_empty());
     assert!(ctx.take_record_captures().unwrap().is_empty());
 }

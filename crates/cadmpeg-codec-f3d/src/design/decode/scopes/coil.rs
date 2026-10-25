@@ -83,10 +83,11 @@ pub(super) fn exact_coil_placement(
             scope.frame_length(),
             scope.reference_members().len(),
         ) {
-            ("393", "258", 427, 8) => {}
-            ("353", "259", 427, 8) => {}
-            (_, _, 411, 7) if matches!(scope.coil_extent(), Some(DesignCoilExtent::Spiral)) => {}
-            (_, _, 432 | 442, 8) => {}
+            ("393", "258", Some(427), 8) => {}
+            ("353", "259", Some(427), 8) => {}
+            (_, _, Some(411), 7)
+                if matches!(scope.coil_extent(), Some(DesignCoilExtent::Spiral)) => {}
+            (_, _, Some(432) | Some(442), 8) => {}
             _ => return None,
         }
         let selection_record_index = *scope.reference_members().values().next()?;
@@ -155,13 +156,15 @@ pub(super) fn exact_coil_placement(
                 for (ordinal, value) in values.into_iter().enumerate() {
                     transform[ordinal / 4][ordinal % 4] = value;
                 }
-                Some(crate::records::identity::Located {
+                Some(crate::records::identity::Sourced {
                     value: crate::records::sketch_placement::SketchPlacementMatrix::try_from(
                         transform,
                     )
                     .ok()?,
-                    offset: u64::try_from(transform_start.checked_add(coil_modern_matrix::MATRIX)?)
-                        .ok()?,
+                    offset: Some(
+                        u64::try_from(transform_start.checked_add(coil_modern_matrix::MATRIX)?)
+                            .ok()?,
+                    ),
                 })
             }
             coil_identity::LEN
@@ -213,13 +216,14 @@ pub(super) fn exact_coil_placement(
                 for (ordinal, value) in values.into_iter().enumerate() {
                     transform[ordinal / 4][ordinal % 4] = value;
                 }
-                Some(crate::records::identity::Located {
+                Some(crate::records::identity::Sourced {
                     value: crate::records::sketch_placement::SketchPlacementMatrix::try_from(
                         transform,
                     )
                     .ok()?,
-                    offset: u64::try_from(transform_start.checked_add(coil_matrix::MATRIX)?)
-                        .ok()?,
+                    offset: Some(
+                        u64::try_from(transform_start.checked_add(coil_matrix::MATRIX)?).ok()?,
+                    ),
                 })
             }
             _ => return None,
@@ -268,14 +272,14 @@ pub(super) fn exact_coil_placement(
         };
         Some(Ok(DesignCoilPlacement {
             selection_record_index,
-            selection_record_byte_offset: u64::try_from(selection_start).ok()?,
+            selection_record_byte_offset: Some(u64::try_from(selection_start).ok()?),
             selection_class_tag: crate::design::decode::text::class_tag_from_view(
                 selection_class_tag,
             )
             .ok()?,
             selection,
             transform_record_index,
-            transform_record_byte_offset: u64::try_from(transform_start).ok()?,
+            transform_record_byte_offset: Some(u64::try_from(transform_start).ok()?),
             transform_class_tag: crate::design::decode::text::class_tag_from_view(
                 transform_class_tag,
             )
@@ -480,7 +484,7 @@ fn exact_coil_face_selection(
             asset_id: prefix.asset_id.try_into().ok()?,
             context_id: prefix.context_id.try_into().ok()?,
             recipe_record_index: face.recipe_record_index(),
-            recipe_record_byte_offset: face.recipe_record_byte_offset(),
+            recipe_record_byte_offset: Some(face.recipe_record_byte_offset()),
             recipe_id,
             recipe_kind: scope::DesignFaceRecipeKind::try_from(recipe.kind).ok()?,
             design: recipe.design.as_ref().map(|design| {
@@ -600,7 +604,7 @@ pub(super) fn exact_coil_discriminators(
         extent: Some(crate::records::identity::MaybeRecordedValue::Located(
             crate::records::identity::RecordedValue {
                 value: extent,
-                offset: u64_from_index(extent_offset),
+                offset: Some(u64_from_index(extent_offset)),
             },
         )),
         section,
@@ -691,7 +695,7 @@ pub(super) fn exact_long_coil_transform(
     let transform = exact_long_coil_transform_values(bytes, start)?;
     Some(coil::DesignCoilTransform {
         transform,
-        transform_offset: u64::try_from(start.checked_add(77)?).ok()?,
+        transform_offset: Some(u64::try_from(start.checked_add(77)?).ok()?),
     })
 }
 

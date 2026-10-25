@@ -413,7 +413,9 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
         ],
         secondary_records: Vec::new(),
     };
-    assert!(parse_construction_operand_identity(&gapped, &group, &gapped_header, 0, None).is_none());
+    assert!(
+        parse_construction_operand_identity(&gapped, &group, &gapped_header, 0, None).is_none()
+    );
     let registry =
         super::super::tracking_registration::Registry::new(std::rc::Rc::new(meta.clone()));
     let gapped_identity =

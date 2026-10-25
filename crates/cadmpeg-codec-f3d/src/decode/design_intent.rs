@@ -155,7 +155,7 @@ pub(super) struct DesignNative {
     pub(super) design_configurations: Vec<NativeDesignConfiguration>,
     /// Phase-1 scopes with their design-intent bindings. Supersedes the
     /// product-prerequisite scopes in native storage.
-    design_parameter_scopes: Vec<DesignParameterScope>,
+    pub(super) design_parameter_scopes: Vec<DesignParameterScope>,
     /// While phase 2 runs, every header it reads, starting from the phase-1
     /// headers. Phase 2 returns only the headers it added.
     design_record_headers: Vec<DesignRecordHeader>,
@@ -1115,26 +1115,29 @@ fn extend_related_design_records(
         };
         if !existing.contains(&(stream, scope.record_index)) {
             existing.insert((stream, scope.record_index));
-            let id = format!("{stream}:design-record-header#{}", scope.byte_offset());
+            let byte_offset = scope
+                .byte_offset()
+                .ok_or_else(|| CodecError::malformed("decoded scope has no source frame"))?;
+            let id = format!("{stream}:design-record-header#{byte_offset}");
             scope_headers.push(crate::records::decal::DesignRecordHeader {
                 id,
                 record_index: scope.record_index,
                 class_tag: scope.class_tag.clone(),
-                byte_offset: Some(scope.byte_offset()),
+                byte_offset: Some(byte_offset),
             });
         }
         if let Some(operation) = scope.copy_paste_bodies_operation() {
             if !existing.contains(&(stream, operation.relation_record_index)) {
                 existing.insert((stream, operation.relation_record_index));
-                let id = format!(
-                    "{stream}:design-record-header#{}",
-                    operation.relation_byte_offset()
-                );
+                let relation_byte_offset = operation.relation_byte_offset().ok_or_else(|| {
+                    CodecError::malformed("decoded CopyPasteBodies relation has no source offset")
+                })?;
+                let id = format!("{stream}:design-record-header#{relation_byte_offset}");
                 scope_headers.push(crate::records::decal::DesignRecordHeader {
                     id,
                     record_index: operation.relation_record_index,
                     class_tag: operation.relation_class_tag.clone(),
-                    byte_offset: Some(operation.relation_byte_offset()),
+                    byte_offset: Some(relation_byte_offset),
                 });
             }
         }
@@ -1460,6 +1463,12 @@ fn extend_related_design_records(
             &design.design_record_headers,
             &prereqs.construction_recipes,
         )?;
+    crate::design::decode::operands::capture_edge_treatment_vertex_operands(
+        ctx,
+        scan,
+        &mut design.design_edge_treatment_vertex_operands,
+        &mut design.source_layout_pointers,
+    )?;
     crate::design::decode::operands::bind_edge_treatment_vertex_candidates(
         &mut design.design_edge_treatment_vertex_operands,
         geometry.persistent_subentity_tags,

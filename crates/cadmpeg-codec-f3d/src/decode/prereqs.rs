@@ -218,7 +218,7 @@ pub(super) fn decode(
             &primary_frames,
         )?;
     let mut source_layout_pointers =
-        crate::design::decode::scopes::parameter_scope::capture_assembly_path_layouts(
+        crate::design::decode::scopes::parameter_scope::capture_scope_layouts(
             ctx,
             &design_parameter_scopes,
             source_layout_drafts,

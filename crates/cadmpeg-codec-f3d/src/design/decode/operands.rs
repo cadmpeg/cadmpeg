@@ -309,6 +309,53 @@ pub(crate) fn decode_edge_treatment_vertex_operands(
     Ok(out)
 }
 
+/// Capture the vertex-recipe envelope of each edge-treatment vertex operand,
+/// from its owning header to the record that closes it, with the recipe's
+/// source offsets as its pointers.
+pub(crate) fn capture_edge_treatment_vertex_operands(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &ContainerScan,
+    operands: &mut [DesignEdgeTreatmentVertexOperand],
+    pointers: &mut std::collections::BTreeMap<String, std::collections::BTreeMap<String, u64>>,
+) -> Result<(), CodecError> {
+    for operand in operands {
+        let malformed =
+            || CodecError::malformed("edge-treatment vertex operand has no source envelope");
+        let stream = native_stream(&operand.id).ok_or_else(malformed)?;
+        let entry = scan
+            .design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+            .ok_or_else(malformed)?;
+        let source = scan.entry_view(&entry.name).ok_or_else(malformed)?;
+        let bound = |offset: Option<u64>| {
+            offset
+                .and_then(|relative| usize::try_from(relative).ok())
+                .and_then(|relative| source.start().checked_add(relative))
+                .ok_or_else(malformed)
+        };
+        let start = bound(operand.recipe.byte_offset())?;
+        let end = bound(operand.recipe.next_byte_offset())?;
+        let extent = source.child(start, end).ok_or_else(malformed)?;
+        ctx.record(&operand.id, extent, || Ok(()))?;
+        let fields = crate::records::source_offsets::collect(operand);
+        for name in fields.keys() {
+            let bytes = name
+                .len()
+                .checked_add(size_of::<(String, u64)>())
+                .ok_or_else(|| CodecError::malformed("vertex pointer storage overflows"))?;
+            ctx.retain_bytes(
+                cadmpeg_core::decode::u64_from_index(bytes),
+                "edge-treatment vertex pointer",
+            )?;
+        }
+        if pointers.insert(operand.id.clone(), fields).is_some() {
+            return Err(CodecError::malformed(
+                "edge-treatment vertex operand source owner is duplicated",
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Bind each `WorkPoint` input to its exact edge, vertex, or `WorkPlane` carrier.
 pub(crate) fn bind_work_point_input_carriers(
     scan: &ContainerScan,
@@ -927,12 +974,7 @@ pub(crate) fn decode_face_operands(
     for scope in scope_index.values().filter(|scope| {
         let is_legacy_as_built_421 = scope.kind()
             == crate::records::feature::scope::DesignFeatureKind::AsBuilt
-            && crate::design::assembly::legacy_as_built_421_generation(
-                scope.frame_length(),
-                scope.class_tag.as_str(),
-                scope.paired_class_tag.as_str(),
-            )
-            .is_some();
+            && crate::design::assembly::scope_legacy_as_built_421_generation(scope).is_some();
         matches!(
             design_feature_family(&scope.kind()),
             Some(
@@ -959,12 +1001,7 @@ pub(crate) fn decode_face_operands(
         let records = cached_borrowed_record_offsets(&mut record_offset_index, stream, bytes);
         let legacy_as_built = scope.kind()
             == crate::records::feature::scope::DesignFeatureKind::AsBuilt
-            && crate::design::assembly::legacy_as_built_421_generation(
-                scope.frame_length(),
-                scope.class_tag.as_str(),
-                scope.paired_class_tag.as_str(),
-            )
-            .is_some();
+            && crate::design::assembly::scope_legacy_as_built_421_generation(scope).is_some();
         for ordinal in (0..scope.reference_members().len())
             .filter(|ordinal| !legacy_as_built || matches!(*ordinal, 1 | 3))
         {
@@ -983,12 +1020,7 @@ pub(crate) fn decode_face_operands(
             };
             let next_byte_offset = if scope.kind()
                 == crate::records::feature::scope::DesignFeatureKind::AsBuilt
-                && crate::design::assembly::legacy_as_built_421_generation(
-                    scope.frame_length(),
-                    scope.class_tag.as_str(),
-                    scope.paired_class_tag.as_str(),
-                )
-                .is_some()
+                && crate::design::assembly::scope_legacy_as_built_421_generation(scope).is_some()
             {
                 scope
                     .reference_members()
@@ -1051,7 +1083,11 @@ pub(crate) fn decode_face_source_groups(
         };
         let bytes = scan.entry_bytes(&entry.name)?;
         let records = cached_borrowed_record_offsets(&mut record_offset_index, stream, bytes);
-        let Ok(scope_start) = usize::try_from(scope.byte_offset()) else {
+        let Ok(scope_start) = usize::try_from(
+            scope
+                .byte_offset()
+                .ok_or_else(crate::records::feature::scope::unlocated_scope)?,
+        ) else {
             continue;
         };
         let reference_headers = face_source_reference_headers(

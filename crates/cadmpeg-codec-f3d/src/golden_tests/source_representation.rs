@@ -321,20 +321,53 @@ const UNREPRESENTED: &[(F3dLossCode, Representation)] = &[
         Representation::Export,
     ),
     (F3dLossCode::DesignIntentUndecoded, Representation::Design),
-    (F3dLossCode::BodyReferenceTailUntyped, Representation::Design),
-    (F3dLossCode::PlacementConstructionUntyped, Representation::Design),
-    (F3dLossCode::ConstructionTrackingPathUntyped, Representation::Design),
-    (F3dLossCode::ComponentDefinitionRevised, Representation::Typed),
+    (
+        F3dLossCode::BodyReferenceTailUntyped,
+        Representation::Design,
+    ),
+    (
+        F3dLossCode::PlacementConstructionUntyped,
+        Representation::Design,
+    ),
+    (
+        F3dLossCode::ConstructionTrackingPathUntyped,
+        Representation::Design,
+    ),
+    (
+        F3dLossCode::ComponentDefinitionRevised,
+        Representation::Typed,
+    ),
     (F3dLossCode::SheetThicknessUnruled, Representation::Typed),
-    (F3dLossCode::FeatureScopeEnvelopeSuperseded, Representation::Typed),
+    (
+        F3dLossCode::FeatureScopeEnvelopeSuperseded,
+        Representation::Typed,
+    ),
     (F3dLossCode::ParameterOwnerUnparsed, Representation::Design),
     (F3dLossCode::FaceAppearanceAmbiguous, Representation::Typed),
-    (F3dLossCode::SketchTextStyleUnprojected, Representation::Typed),
-    (F3dLossCode::SketchPatternStateUnprojected, Representation::Typed),
-    (F3dLossCode::XrefPlacementMetadataMissing, Representation::Model),
-    (F3dLossCode::JointPlacedOccurrenceUnsolved, Representation::Typed),
-    (F3dLossCode::TsplineRadialMapUnresolved, Representation::Typed),
-    (F3dLossCode::UnindexedRecordsRetained, Representation::Design),
+    (
+        F3dLossCode::SketchTextStyleUnprojected,
+        Representation::Typed,
+    ),
+    (
+        F3dLossCode::SketchPatternStateUnprojected,
+        Representation::Typed,
+    ),
+    (
+        F3dLossCode::XrefPlacementMetadataMissing,
+        Representation::Model,
+    ),
+    (
+        F3dLossCode::JointPlacedOccurrenceUnsolved,
+        Representation::Typed,
+    ),
+    (
+        F3dLossCode::TsplineRadialMapUnresolved,
+        Representation::Typed,
+    ),
+    (
+        F3dLossCode::UnindexedRecordsRetained,
+        Representation::Design,
+    ),
 ];
 
 /// Classes with source records that have no typed document representation.

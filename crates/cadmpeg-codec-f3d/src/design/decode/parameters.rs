@@ -1596,7 +1596,9 @@ impl ParsedParameterCompanion {
 fn parse_parameter_companion(frame: &[u8]) -> Option<ParsedParameterCompanion> {
     [companion_prefix::LEN, typed_companion::LEN]
         .into_iter()
-        .find_map(|len| parse_parameter_companion_frame(ParameterFrame::retained(frame.get(..len)?)))
+        .find_map(|len| {
+            parse_parameter_companion_frame(ParameterFrame::retained(frame.get(..len)?))
+        })
 }
 
 /// Parse one companion prefix in the reference spelling its length selects;
@@ -1611,9 +1613,7 @@ fn parse_parameter_companion_frame(prefix: ParameterFrame<'_>) -> Option<ParsedP
 /// Parse the typed-reference companion prefix: the indexed header, twenty
 /// zero bytes, a typed owner reference, the nonzero timestamp, and eight
 /// zero bytes.
-fn parse_typed_parameter_companion(
-    prefix: ParameterFrame<'_>,
-) -> Option<ParsedParameterCompanion> {
+fn parse_typed_parameter_companion(prefix: ParameterFrame<'_>) -> Option<ParsedParameterCompanion> {
     let (class_tag, after_tag) = prefix.ascii(0, 0..=2000, u8::is_ascii_graphic)?;
     let class_tag = crate::design::decode::text::class_tag_from_view(class_tag).ok()?;
     let timestamp_at = typed_companion::TIMESTAMP_MICROS;
@@ -1639,9 +1639,7 @@ fn parse_typed_parameter_companion(
     })
 }
 
-fn parse_plain_parameter_companion(
-    prefix: ParameterFrame<'_>,
-) -> Option<ParsedParameterCompanion> {
+fn parse_plain_parameter_companion(prefix: ParameterFrame<'_>) -> Option<ParsedParameterCompanion> {
     let (class_tag, after_tag) = prefix.ascii(0, 0..=2000, u8::is_ascii_graphic)?;
     let class_tag = crate::design::decode::text::class_tag_from_view(class_tag).ok()?;
     if prefix.len() != companion_prefix::LEN
@@ -1745,7 +1743,7 @@ fn companion_payload<S: std::hash::BuildHasher>(
         .iter()
         .filter(|scope| {
             native_stream(&scope.id) == Some(stream)
-                && scope.byte_offset() >= preamble_limit
+                && scope.byte_offset() >= Some(preamble_limit)
                 && scope.sketch_entity().is_some()
         })
         .filter_map(|scope| {

@@ -220,7 +220,7 @@ mod tests {
         let archive = zip.finish().unwrap().into_inner();
         let stream = crate::ids::native_scope(ENTRY);
         let scope: crate::records::feature::scope::DesignParameterScope =
-            serde_json::from_value(serde_json::json!({
+            crate::records::feature::test_support::located_scope_from_fixture(serde_json::json!({
                 "id": format!("{stream}:scope#1"),
                 "byte_offset": 0,
                 "class_tag": "300",
@@ -250,8 +250,7 @@ mod tests {
                 },
                 "paired_class_tag": "261",
                 "paired_byte_offset": 200
-            }))
-            .unwrap();
+            }));
         let kind = crate::records::feature::scope::DesignFeatureKind::Fillet;
         with_context_scan(&archive, |ctx, scan| {
             let mut pointers = crate::design::decode::sketch::SourcePointers::new();

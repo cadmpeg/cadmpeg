@@ -92,7 +92,7 @@ fn exact_ordered_fixed_extrude_lanes(
         DesignFixedExtrudeDistance::DistanceConstruction(DesignFixedExtrudeScalar {
             value: lane.value,
             record_index,
-            value_offset: lane.value_offset,
+            value_offset: Some(lane.value_offset),
         })
     });
     let mut taper_angle = None;
@@ -124,7 +124,7 @@ fn exact_ordered_fixed_extrude_lanes(
         let scalar = DesignFixedExtrudeScalar {
             value: lane.value,
             record_index,
-            value_offset: lane.value_offset,
+            value_offset: Some(lane.value_offset),
         };
         let nonzero = |scalar: DesignFixedExtrudeScalar| {
             Some(DesignFixedExtrudeScalar {
@@ -212,7 +212,7 @@ fn reference_aware_lane_owners(
     ) {
         return None;
     }
-    let mut at = usize::try_from(operation_offset)
+    let mut at = usize::try_from(operation_offset?)
         .ok()?
         .checked_add(extrude_fields::PROFILE_NORMAL + 3 * 8)?;
     let mut slots = [None; 7];
@@ -226,7 +226,7 @@ fn reference_aware_lane_owners(
             _ => return None,
         }
     }
-    if u64::try_from(at).ok()? != side_extent_discriminator_offsets[0] {
+    if u64::try_from(at).ok()? != side_extent_discriminator_offsets?[0] {
         return None;
     }
     let side_one_offset = match side_extent_discriminators[0] {
@@ -288,7 +288,7 @@ fn exact_named_fixed_extrude_lanes(
         let scalar = DesignFixedExtrudeScalar {
             value: lane.value,
             record_index: *record_index,
-            value_offset: lane.value_offset,
+            value_offset: Some(lane.value_offset),
         };
         let expected_kind = if owners.along_distance == Some(*record_index) {
             "AlongDistance"
@@ -409,7 +409,7 @@ pub(super) fn exact_fixed_fillet_parameters(
     let scalar = |(record_index, scalar): &(u32, FixedScalarFrame)| DesignFixedFilletScalar {
         value: scalar.value,
         record_index: *record_index,
-        value_offset: scalar.value_offset,
+        value_offset: Some(scalar.value_offset),
     };
     let group = |tangency_lane: Option<&(u32, FixedScalarFrame)>, law: DesignFixedFilletLaw| {
         DesignFixedFilletGroup::try_new(tangency_lane.map(scalar), law).ok()
@@ -482,7 +482,7 @@ pub(super) fn exact_fixed_chamfer_parameters(
         Some(DesignFixedChamferDistance {
             value: cadmpeg_ir::scalar::PositiveReal::new(scalar.value.get())?,
             record_index,
-            value_offset: scalar.value_offset,
+            value_offset: Some(scalar.value_offset),
         })
     });
     let first = distances.next()??;

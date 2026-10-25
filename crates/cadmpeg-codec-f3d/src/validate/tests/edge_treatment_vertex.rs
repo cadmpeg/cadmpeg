@@ -46,7 +46,10 @@ fn vertex_recipe_valid_at(recipe_offset: u64) -> bool {
     };
     crate::test_support::with_decode_context(|decode| {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
-        let mut draft = operand().recipe.into_draft();
+        let mut draft = operand()
+            .recipe
+            .into_draft()
+            .expect("located vertex recipe");
         draft.byte_offset = recipe_offset - 47;
         draft.paired_byte_offset = recipe_offset - 31;
         draft.recipe_record_byte_offset = recipe_offset - 15;
@@ -65,7 +68,7 @@ fn vertex_recipe_valid_at(recipe_offset: u64) -> bool {
                 id: "f3d:Design/BulkStream.dat:header#100".into(),
                 record_index: 100,
                 class_tag: vertex.class_tag.clone(),
-                byte_offset: Some(vertex.byte_offset()),
+                byte_offset: vertex.byte_offset(),
             }],
             construction_recipes: vec![ConstructionRecipe {
                 id: vertex.recipe_id.clone(),
@@ -79,6 +82,7 @@ fn vertex_recipe_valid_at(recipe_offset: u64) -> bool {
         };
         let ctx = super::super::Ctx::new(&ir, &native, decode);
         super::super::valid_vertex_recipe(&ctx, &scope, stream, 100, &vertex)
+            && super::super::source_layout::scopes::vertex_recipe_layout_holds(&ctx, &vertex)
     })
 }
 

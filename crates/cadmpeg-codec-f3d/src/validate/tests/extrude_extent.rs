@@ -19,7 +19,7 @@ fn distance(
     DesignFixedExtrudeScalar {
         value: cadmpeg_ir::scalar::NonZeroReal::new(value).unwrap(),
         record_index,
-        value_offset: u64::from(record_index) * 100,
+        value_offset: Some(u64::from(record_index) * 100),
     }
 }
 
@@ -41,19 +41,19 @@ fn fixed_extrude(
         extrude.extrude_prologue = Some(DesignExtrudePrologue::ReferenceAware {
             reference: None,
             operation: DesignExtrudeOperation::NewBody,
-            operation_offset: 28,
+            operation_offset: Some(28),
             direction_face_extend_values: [2, 0],
             side_extent_discriminators: [1, 1],
-            side_extent_discriminator_offsets: [77, 90],
+            side_extent_discriminator_offsets: Some([77, 90]),
             first_side_target_ordinal: None,
             extent,
-            direction_face_extend_offsets: [32, 36],
+            direction_face_extend_offsets: Some([32, 36]),
             direction_reversed: false,
-            direction_reversed_offset: 40,
+            direction_reversed_offset: Some(40),
             solid_operation: true,
-            solid_operation_offset: 41,
+            solid_operation_offset: Some(41),
             start: DesignExtrudeStart::ProfilePlane,
-            start_offset: 42,
+            start_offset: Some(42),
         });
         extrude.fixed_extrude_parameters = Some(fixed);
     }
@@ -109,7 +109,7 @@ fn offset_start_lane_that_is_also_the_parameter_owner_counts_once() {
     let lane = |record_index| DesignFixedExtrudeScalar {
         value: crate::test_support::real(0.5),
         record_index,
-        value_offset: u64::from(record_index) * 100,
+        value_offset: Some(u64::from(record_index) * 100),
     };
     let native = |owned: bool| {
         let mut native = fixed_extrude(

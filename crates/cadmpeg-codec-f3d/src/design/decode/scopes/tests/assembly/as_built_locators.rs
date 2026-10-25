@@ -241,7 +241,7 @@ fn as_built_alignment_uses_locator_frames_and_parameter_owner_lanes() {
             .iter()
             .map(|owner| owner.offset)
             .collect::<Vec<_>>(),
-        [501, 502, 503, 504]
+        [Some(501), Some(502), Some(503), Some(504)]
     );
     let frames = alignment.operand_frames().expect("locator transforms");
     assert_eq!(
@@ -253,8 +253,8 @@ fn as_built_alignment_uses_locator_frames_and_parameter_owner_lanes() {
     assert_eq!(
         frames.each_ref().map(|frame| frame.transform_offset),
         [
-            u64::try_from(first_locator_at + 33).expect("fixture offset fits u64"),
-            u64::try_from(second_locator_at + 33).expect("fixture offset fits u64"),
+            Some(u64::try_from(first_locator_at + 33).expect("fixture offset fits u64")),
+            Some(u64::try_from(second_locator_at + 33).expect("fixture offset fits u64")),
         ]
     );
     let paths = alignment.operand_paths().expect("locator occurrence paths");

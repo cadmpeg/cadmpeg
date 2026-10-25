@@ -137,14 +137,14 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
     {
         *slot = Some(DesignWorkPointConstruction {
             point_record_index: 201,
-            point_record_byte_offset: 0,
+            point_record_byte_offset: Some(0),
             position: crate::test_support::reals([4.0, 3.0, 0.0]),
-            position_offset: 0,
+            position_offset: Some(0),
             rule: crate::records::feature::work_geometry::DesignWorkPointRule::try_from(
                 crate::records::feature::work_geometry::DesignWorkPointRuleForm::Vertex {
                     input: DesignWorkPointInput::try_new(
                         202,
-                        0,
+                        Some(0),
                         Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
                             recipe,
                         })),
@@ -153,7 +153,7 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
                 },
             )
             .expect("compatible WorkPoint rule"),
-            reference_type_offset: 0,
+            reference_type_offset: Some(0),
         });
     }
     let relation = |owner_ref, member_refs| AsmHistoricalRelation {

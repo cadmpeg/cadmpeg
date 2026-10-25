@@ -160,17 +160,17 @@ fn exact_legacy_mirror_scope_tolerance(
         _ => return None,
     };
     let kind_code_units = scope.kind_name().encode_utf16().count();
-    let kind_end = usize::try_from(scope.kind_offset())
+    let kind_end = usize::try_from(scope.kind_offset()?)
         .ok()?
         .checked_add(kind_code_units.checked_mul(2)?)?;
     let previous = usize::try_from(scope.previous_history_state_id_offset()?).ok()?;
     if previous != kind_end.checked_add(previous_state)? {
         return None;
     }
-    let paired = usize::try_from(scope.paired_byte_offset()).ok()?;
+    let paired = usize::try_from(scope.paired_byte_offset()?).ok()?;
     if paired != kind_end.checked_add(tail_length)?
-        || paired.checked_sub(usize::try_from(scope.byte_offset()).ok()?)?
-            != usize::try_from(scope.frame_length()).ok()?
+        || paired.checked_sub(usize::try_from(scope.byte_offset()?).ok()?)?
+            != usize::try_from(scope.frame_length()?).ok()?
     {
         return None;
     }
@@ -213,11 +213,11 @@ fn exact_legacy_mirror_scope_tolerance(
                 repeated_marker_offset.map(u64::try_from).transpose().ok()?,
             ))
             .ok()?,
-            marker_offset: u64::try_from(marker_offset).ok()?,
+            marker_offset: Some(u64::try_from(marker_offset).ok()?),
             first_reference,
-            first_reference_offset: u64::try_from(first_reference_offset).ok()?,
+            first_reference_offset: Some(u64::try_from(first_reference_offset).ok()?),
             second_reference,
-            second_reference_offset: u64::try_from(second_reference_offset).ok()?,
+            second_reference_offset: Some(u64::try_from(second_reference_offset).ok()?),
         },
     ))
 }
@@ -341,9 +341,9 @@ pub(crate) fn bind_mirror_constructions(
         let (plane_scope_record_index, plane_selection_record_index) =
             if let Some((plane_scope_record_index, plane_reference_offset)) = work_plane {
                 (
-                    Some(crate::records::identity::Located {
+                    Some(crate::records::identity::Sourced {
                         value: plane_scope_record_index,
-                        offset: plane_reference_offset,
+                        offset: Some(plane_reference_offset),
                     }),
                     None,
                 )
@@ -436,14 +436,14 @@ pub(crate) fn bind_mirror_constructions(
         {
             let construction = Some(DesignMirrorConstruction {
                 count_record_index,
-                count_offset,
+                count_offset: Some(count_offset),
                 stitch_tolerance,
-                stitch_tolerance_offset,
+                stitch_tolerance_offset: Some(stitch_tolerance_offset),
                 tolerance_source,
                 seed_group_record_index: seed_group.record_index,
                 plane_group_record_index: plane_group.record_index,
                 seed_feature_scope_record_index: seed_feature
-                    .map(|(value, offset)| crate::records::identity::Located { value, offset }),
+                    .map(|(value, offset)| crate::records::identity::Sourced::at(value, offset)),
                 plane_scope_record_index,
                 plane_selection_record_index,
                 plane: None,

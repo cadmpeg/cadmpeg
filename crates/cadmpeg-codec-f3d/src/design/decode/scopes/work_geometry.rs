@@ -298,11 +298,11 @@ fn exact_two_point_work_axis_construction(
     Some(DesignWorkAxisConstruction {
         origin,
         displacement,
-        origin_offset: u64::try_from(axis_start + 25).ok()?,
-        displacement_offset: u64::try_from(axis_start + 49).ok()?,
+        origin_offset: Some(u64::try_from(axis_start + 25).ok()?),
+        displacement_offset: Some(u64::try_from(axis_start + 49).ok()?),
         source: Some(DesignWorkAxisSource::TwoPoint {
             point_record_indices,
-            point_offsets,
+            point_offsets: Some(point_offsets),
         }),
     })
 }
@@ -328,7 +328,7 @@ fn exact_direct_work_axis_construction(
         scope.paired_class_tag.as_str(),
         scope.frame_length(),
     ) {
-        ("302", "262", 268) => (
+        ("302", "262", Some(268)) => (
             "297",
             "262",
             work_axis_297::LEN,
@@ -339,7 +339,7 @@ fn exact_direct_work_axis_construction(
             work_axis_297::REFERENCE_COUNT,
             work_axis_297::REFERENCE_PREAMBLE,
         ),
-        ("361", "258", 254) => (
+        ("361", "258", Some(254)) => (
             "335",
             "258",
             work_axis_335::LEN,
@@ -408,9 +408,10 @@ fn exact_direct_work_axis_construction(
     Some(DesignWorkAxisConstruction {
         origin,
         displacement,
-        origin_offset: u64::try_from(carrier_start.checked_add(axis_values_offset)?).ok()?,
-        displacement_offset: u64::try_from(carrier_start.checked_add(axis_values_offset + 3 * 8)?)
-            .ok()?,
+        origin_offset: Some(u64::try_from(carrier_start.checked_add(axis_values_offset)?).ok()?),
+        displacement_offset: Some(
+            u64::try_from(carrier_start.checked_add(axis_values_offset + 3 * 8)?).ok()?,
+        ),
         source: Some(DesignWorkAxisSource::DirectCarrier {
             carrier_record_index: *carrier_record_index,
             support_record_index: *support_record_index,
@@ -424,7 +425,7 @@ pub(super) fn exact_joint_origin_frame(
     scope: &DesignParameterScope,
 ) -> Option<ScopePlacementFrame> {
     if scope.kind() != scope::DesignFeatureKind::JointOrigin
-        || matches!(scope.frame_length(), 300 | 322 | 344)
+        || matches!(scope.frame_length(), Some(300) | Some(322) | Some(344))
     {
         return None;
     }

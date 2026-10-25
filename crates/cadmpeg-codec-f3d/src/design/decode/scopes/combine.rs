@@ -17,7 +17,7 @@ use crate::layout::combine_standard_operation_prefix as combine_standard;
 use crate::records::feature::combine;
 use crate::records::feature::combine::DesignCombineBodySelection;
 use crate::records::feature::combine::DesignCombineExternalBodyIdentity;
-use crate::records::feature::combine::DesignCombineExternalBodyIdentityWire;
+use crate::records::feature::combine::DesignCombineExternalBodyIdentityDraft;
 use crate::records::feature::combine::DesignCombineForm;
 use crate::records::feature::combine::DesignCombineOperation;
 use crate::records::feature::scope::DesignParameterScope;
@@ -36,13 +36,13 @@ pub(super) fn exact_combine_operation(
         {
             return None;
         }
-        let start = usize::try_from(scope.byte_offset()).ok()?;
+        let start = usize::try_from(scope.byte_offset()?).ok()?;
         let compact = scope.class_tag.as_str() == "387"
             && scope.paired_class_tag.as_str() == "258"
             && parameter_scope_payload_length(scope) == Some(314);
         let extended_reference = scope.class_tag.as_str() == "329"
             && scope.paired_class_tag.as_str() == "261"
-            && scope.frame_length() == 363;
+            && scope.frame_length() == Some(363);
         let (form, operation_offset, keep_tools_offset) = if compact {
             if bytes
                 .get(start + combine_compact::ZERO_RUN_10..start + combine_compact::OPERATION)?
@@ -171,9 +171,9 @@ pub(super) fn exact_combine_operation(
         Some(Ok(DesignCombineOperation {
             form,
             operation,
-            operation_offset: u64::try_from(operation_offset).ok()?,
+            operation_offset: Some(u64::try_from(operation_offset).ok()?),
             keep_tools,
-            keep_tools_offset: u64::try_from(keep_tools_offset).ok()?,
+            keep_tools_offset: Some(u64::try_from(keep_tools_offset).ok()?),
             target_record_index: target,
             tools,
         }))
@@ -228,13 +228,13 @@ pub(super) fn take_external_reference_identity(
                     crate::records::mesh::DesignRelaxedGuidText::try_from(property_key).ok()?;
                 (
                     Some(combine::DesignExternalVersion {
-                        property_key: crate::records::identity::Located {
+                        property_key: crate::records::identity::Sourced {
                             value: property_key,
-                            offset: u64::try_from(property_key_at.checked_add(4)?).ok()?,
+                            offset: Some(u64::try_from(property_key_at.checked_add(4)?).ok()?),
                         },
-                        version_urn: crate::records::identity::Located {
+                        version_urn: crate::records::identity::Sourced {
                             value: version_urn,
-                            offset: u64::try_from(version_urn_at.checked_add(4)?).ok()?,
+                            offset: Some(u64::try_from(version_urn_at.checked_add(4)?).ok()?),
                         },
                     }),
                     end,
@@ -351,13 +351,13 @@ fn exact_combine_external_body_identity(
         ) = match external.version {
             Some(version) => (
                 Some(version.property_key.value),
-                Some(version.property_key.offset),
+                version.property_key.offset,
                 Some(version.version_urn.value),
-                Some(version.version_urn.offset),
+                version.version_urn.offset,
             ),
             None => (None, None, None, None),
         };
-        DesignCombineExternalBodyIdentity::try_from(DesignCombineExternalBodyIdentityWire {
+        DesignCombineExternalBodyIdentity::try_from(DesignCombineExternalBodyIdentityDraft {
             selector_asset_id,
             selector_asset_id_offset: u64::try_from(selector_asset_at.checked_add(4)?).ok()?,
             selector_context_id,

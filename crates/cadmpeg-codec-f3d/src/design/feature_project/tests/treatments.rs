@@ -85,9 +85,9 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
         *slot = Some(DesignDraftOperation {
             angle: cadmpeg_ir::scalar::Angle::new(-0.25).unwrap(),
             angle_record_index: 90,
-            angle_offset: 0,
+            angle_offset: Some(0),
             opposite_angle_record_index: 91,
-            opposite_angle_offset: 0,
+            opposite_angle_offset: Some(0),
         });
     }
     let group = |record_index, member, role| {
@@ -594,12 +594,12 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
                 Some(DesignFixedFilletScalar {
                     value: crate::test_support::real(1.0),
                     record_index: 10,
-                    value_offset: 100,
+                    value_offset: Some(100),
                 }),
                 DesignFixedFilletLaw::Constant(DesignFixedFilletScalar {
                     value: crate::test_support::real(0.5),
                     record_index: 20,
-                    value_offset: 200,
+                    value_offset: Some(200),
                 }),
             )
             .unwrap()],
@@ -962,15 +962,15 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     ));
     for normal in [
         crate::records::feature::surface_ops::DesignSurfacePatchNormalState::Explicit {
-            reversed: crate::records::identity::Located {
+            reversed: crate::records::identity::Sourced {
                 value: false,
-                offset: patch_scope.byte_offset() + 31,
+                offset: patch_scope.byte_offset().map(|offset| offset + 31),
             },
         },
         crate::records::feature::surface_ops::DesignSurfacePatchNormalState::Explicit {
-            reversed: crate::records::identity::Located {
+            reversed: crate::records::identity::Sourced {
                 value: true,
-                offset: patch_scope.byte_offset() + 31,
+                offset: patch_scope.byte_offset().map(|offset| offset + 31),
             },
         },
         crate::records::feature::surface_ops::DesignSurfacePatchNormalState::Unsupported,
@@ -995,7 +995,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             matches!(
                 normal,
                 crate::records::feature::surface_ops::DesignSurfacePatchNormalState::Explicit {
-                    reversed: crate::records::identity::Located { value: false, .. }
+                    reversed: crate::records::identity::Sourced { value: false, .. }
                 }
             )
         );

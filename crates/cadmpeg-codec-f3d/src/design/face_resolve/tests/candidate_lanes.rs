@@ -121,27 +121,27 @@ fn explicit_bounded_face_group_uses_only_its_owned_candidate_lane() {
             })
         );
         group.operand_role = DesignConstructionOperandRole::ExtrudeProfile;
-        let scope: DesignParameterScope = serde_json::from_value(serde_json::json!({
-            "id": "f3d:test:scope#100",
-            "byte_offset": 0,
-            "class_tag": "304",
-            "record_index": 100,
-            "frame_length": 300,
-            "kind": "Extrude",
-            "kind_offset": 32,
-            "feature_ordinal": 1,
-            "feature_ordinal_offset": 228,
-            "history_state_id": 2,
-            "history_state_id_offset": 24,
-            "previous_history_state_id": 1,
-            "previous_history_state_id_offset": 258,
-            "reference_count_offset": 9,
-            "reference_members": [150],
-            "reference_member_offsets": [14],
-            "paired_class_tag": "258",
-            "paired_byte_offset": 300
-        }))
-        .expect("Extrude scope");
+        let scope: DesignParameterScope =
+            crate::records::feature::test_support::located_scope_from_fixture(serde_json::json!({
+                "id": "f3d:test:scope#100",
+                "byte_offset": 0,
+                "class_tag": "304",
+                "record_index": 100,
+                "frame_length": 300,
+                "kind": "Extrude",
+                "kind_offset": 32,
+                "feature_ordinal": 1,
+                "feature_ordinal_offset": 228,
+                "history_state_id": 2,
+                "history_state_id_offset": 24,
+                "previous_history_state_id": 1,
+                "previous_history_state_id_offset": 258,
+                "reference_count_offset": 9,
+                "reference_members": [150],
+                "reference_member_offsets": [14],
+                "paired_class_tag": "258",
+                "paired_byte_offset": 300
+            }));
         assert_eq!(
             resolved_extrude_profile_face_group(
                 decode_ctx,

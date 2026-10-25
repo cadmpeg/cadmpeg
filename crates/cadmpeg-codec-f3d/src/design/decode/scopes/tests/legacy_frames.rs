@@ -112,8 +112,8 @@ fn class_369_shell_scope_uses_ordered_scalar_and_body_group() {
             thickness_record_index: 9_000,
             outward: false,
             thickness_offset,
-            outward_offset: 21,
-        })) if thickness.get() == 0.25 && thickness_offset == u64_from_index(scalar_start + 40)
+            outward_offset: Some(21),
+        })) if thickness.get() == 0.25 && thickness_offset == Some(u64_from_index(scalar_start + 40))
     ));
 
     let mut wrong_pair = scope.clone();
@@ -346,8 +346,11 @@ fn legacy_move_transform_classes_use_the_shared_253_byte_envelope() {
         assert_eq!(decoded.transform, transform.try_into().unwrap());
         assert_eq!(decoded.transform_record_index, record_index);
         assert_eq!(u32::from(decoded.form), form);
-        assert_eq!(decoded.form_offset, u64_from_index(frame_at + 43));
-        assert_eq!(decoded.transform_offset, u64_from_index(frame_at + 48));
+        assert_eq!(decoded.form_offset, Some(u64_from_index(frame_at + 43)));
+        assert_eq!(
+            decoded.transform_offset,
+            Some(u64_from_index(frame_at + 48))
+        );
 
         if class_tag == "456" {
             let paired_class_at = frame_at + 253 + 4;
@@ -450,8 +453,8 @@ fn direct_work_axis_carriers_project_both_admitted_generations() {
             &scope,
         )
         .expect("direct WorkAxis carrier");
-        assert_eq!(construction.origin_offset, 25);
-        assert_eq!(construction.displacement_offset, 49);
+        assert_eq!(construction.origin_offset, Some(25));
+        assert_eq!(construction.displacement_offset, Some(49));
         assert!(matches!(
             construction.source,
             Some(
@@ -586,19 +589,19 @@ fn fixed_extrude_owners_follow_parameter_source_kind_before_lane_ordinal() {
             Some(DesignExtrudePrologue::ReferenceAware {
                 reference: None,
                 operation: DesignExtrudeOperation::NewBody,
-                operation_offset: 28,
+                operation_offset: Some(28),
                 direction_face_extend_values: [1, 2],
                 side_extent_discriminators: [1, 0],
-                side_extent_discriminator_offsets: [77, 90],
+                side_extent_discriminator_offsets: Some([77, 90]),
                 first_side_target_ordinal: None,
                 extent: DesignExtrudeExtent::OneSidedDistance,
-                direction_face_extend_offsets: [32, 36],
+                direction_face_extend_offsets: Some([32, 36]),
                 direction_reversed: false,
-                direction_reversed_offset: 40,
+                direction_reversed_offset: Some(40),
                 solid_operation: true,
-                solid_operation_offset: 41,
+                solid_operation_offset: Some(41),
                 start: DesignExtrudeStart::ProfilePlane,
-                start_offset: 42,
+                start_offset: Some(42),
             });
     }
 
@@ -616,7 +619,7 @@ fn fixed_extrude_owners_follow_parameter_source_kind_before_lane_ordinal() {
             value,
             record_index: 82,
             value_offset,
-        })) if value.get() == -2.5 && value_offset == u64_from_index(along_start + 40)
+        })) if value.get() == -2.5 && value_offset == Some(u64_from_index(along_start + 40))
     ));
     assert!(matches!(
         fixed.taper_angle,
@@ -624,6 +627,6 @@ fn fixed_extrude_owners_follow_parameter_source_kind_before_lane_ordinal() {
             value,
             record_index: 80,
             value_offset,
-        }) if value.get() == -0.013_962_634_015_954_637 && value_offset == u64_from_index(taper_start + 40)
+        }) if value.get() == -0.013_962_634_015_954_637 && value_offset == Some(u64_from_index(taper_start + 40))
     ));
 }

@@ -221,7 +221,9 @@ pub(crate) fn decode_surface_trim_operations(
         operation.id = design_record_id(
             &entry.name,
             ":design-surface-trim-operation#",
-            scope.byte_offset(),
+            scope
+                .byte_offset()
+                .ok_or_else(crate::records::feature::scope::unlocated_scope)?,
         );
 
         out.push(operation);

@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Project parameter-design features and dispatch per feature family.
 
-use cadmpeg_core::decode::u64_from_index;
-
 use crate::design::decode::operands::entity_selection_matches_curve;
 use crate::design::dimensions::expression_identifier_spans;
 use crate::design::edge_resolve::{
@@ -21,7 +19,6 @@ use crate::design::face_resolve::{
 
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
-use crate::layout::coil_long_scope_fixed_prologue as coil_long;
 
 use crate::records::{
     bodies::DesignBodyBinding,
@@ -6682,7 +6679,7 @@ fn project_surface_patch(
         !matches!(
             normal,
             crate::records::feature::surface_ops::DesignSurfacePatchNormalState::Explicit {
-                reversed: crate::records::identity::Located { value: false, .. }
+                reversed: crate::records::identity::Sourced { value: false, .. }
             }
         )
     }) {
@@ -6704,14 +6701,11 @@ fn project_surface_patch(
 
     // The single-group path form stores the group, all of its ordered edge
     // members, and the tool body. It has no per-component settings records.
-    let Some(grouped_path_frame_length) = u64::try_from(scope.reference_members().len())
-        .ok()
-        .and_then(|count| count.checked_mul(11))
-        .and_then(|count| count.checked_add(277))
-    else {
-        return Ok(None);
-    };
-    if scope.frame_length() == grouped_path_frame_length {
+    if scope.generation()
+        == crate::records::feature::scope::generation::DesignScopeGeneration::SurfacePatch(
+            crate::records::feature::scope::generation::DesignSurfacePatchFrame::GroupedPath,
+        )
+    {
         let [group] = groups.as_slice() else {
             return Ok(None);
         };
@@ -7075,7 +7069,10 @@ fn project_replace_face(
     if scope.kind() != crate::records::feature::scope::DesignFeatureKind::ReplaceFace
         || scope.class_tag.as_str() != "301"
         || scope.paired_class_tag.as_str() != "258"
-        || scope.frame_length() != 290
+        || scope.generation()
+            != crate::records::feature::scope::generation::DesignScopeGeneration::ReplaceFace(
+                crate::records::feature::scope::generation::DesignReplaceFaceFrame::Frame290,
+            )
         || scope.reference_members().len() != 4
     {
         return None;
@@ -7373,11 +7370,16 @@ fn project_split_face(
     {
         return Ok(None);
     }
-    let reference_tail_length = or_none!(11_u64.checked_mul(or_none!(u64::try_from(or_none!(
-        reference_count.checked_sub(1)
-    ))
-    .ok())));
-    let frame_base = or_none!(scope.frame_length().checked_sub(reference_tail_length));
+    let frame_base = match scope.generation() {
+        crate::records::feature::scope::generation::DesignScopeGeneration::SplitFace(base) => {
+            match base {
+                crate::records::feature::scope::generation::DesignSplitFaceFrame::Base286 => 286,
+                crate::records::feature::scope::generation::DesignSplitFaceFrame::Base290 => 290,
+                crate::records::feature::scope::generation::DesignSplitFaceFrame::Base291 => 291,
+            }
+        }
+        _ => return Ok(None),
+    };
     let compact = matches!(
         (scope.class_tag.as_str(), scope.paired_class_tag.as_str()),
         ("418", "266") | ("277", "258")
@@ -7464,13 +7466,15 @@ fn project_delete_face(
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
 
     let reference_count = scope.reference_members().len();
-    let reference_bytes =
-        or_none!(11_u64.checked_mul(or_none!(u64::try_from(reference_count).ok())));
-    let base_frame_length = or_none!(scope.frame_length().checked_sub(reference_bytes));
-    let base_kind_offset = or_none!(scope
-        .kind_offset()
-        .checked_sub(scope.byte_offset())
-        .and_then(|offset| offset.checked_sub(reference_bytes)));
+    let (base_frame_length, base_kind_offset) = match scope.generation() {
+        crate::records::feature::scope::generation::DesignScopeGeneration::DeleteFace(frame) => {
+            frame.base_layout()
+        }
+        crate::records::feature::scope::generation::DesignScopeGeneration::SurfaceDeleteFace(
+            frame,
+        ) => frame.base_layout(),
+        _ => return Ok(None),
+    };
     let heal = match scope.kind_name() {
         // The compact frame's fixed scope tail is 77 or 78 bytes.
         "DeleteFace" => match (base_frame_length, base_kind_offset) {
@@ -8537,11 +8541,7 @@ fn project_coil(
             // Boolean target and must not suppress the typed result.
             None
         } else {
-            let expected_role = if scope.coil_operation_offset()
-                == scope
-                    .byte_offset()
-                    .checked_add(u64_from_index(coil_long::OPERATION))
-            {
+            let expected_role = if scope.coil_long_form() {
                 DesignOperandRole::BODIES_A
             } else {
                 DesignOperandRole::BODIES_B

@@ -12,8 +12,8 @@ use crate::records::feature::assembly_features::DesignComponentInsertMatrix;
 use crate::records::feature::scope::DesignFeatureKind;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::scope::DesignScopePayloadMut;
-use crate::records::identity::Located;
 use crate::records::identity::ReferenceRun;
+use crate::records::identity::Sourced;
 use crate::records::parameters::DesignParameterOwner;
 use crate::records::parameters::DesignParameterOwnerWire;
 use crate::records::references::DesignClassTag;
@@ -52,8 +52,8 @@ fn assembly_path_source_layout(
     let paths = alignment.operand_path_refs().unwrap();
     let extent = source
         .child(
-            usize::try_from(scope.byte_offset()).unwrap(),
-            usize::try_from(scope.paired_byte_offset()).unwrap(),
+            usize::try_from(scope.byte_offset().unwrap()).unwrap(),
+            usize::try_from(scope.paired_byte_offset().unwrap()).unwrap(),
         )
         .unwrap();
     let mut pointers = std::collections::BTreeMap::new();
@@ -700,7 +700,7 @@ fn legacy_class_383_258_assembly_uses_its_interleaved_operand_grammar() {
             .iter()
             .map(|owner| owner.offset)
             .collect::<Vec<_>>(),
-        vec![2_008, 2_009, 2_010, 2_011]
+        vec![Some(2_008), Some(2_009), Some(2_010), Some(2_011)]
     );
     let frames = alignment.operand_frames().expect("legacy operand frames");
     assert_eq!(
@@ -888,7 +888,7 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
             .iter()
             .map(|owner| owner.offset)
             .collect::<Vec<_>>(),
-        [2_004, 2_005, 2_006, 2_007]
+        [Some(2_004), Some(2_005), Some(2_006), Some(2_007)]
     );
     let frames = alignment
         .operand_frames()
@@ -1650,28 +1650,28 @@ fn axial_test_alignment(transforms: [[[f64; 4]; 4]; 2]) -> DesignAssemblyAlignme
         0.0,
         [0.0; 3],
         vec![
-            Located {
+            Sourced {
                 value: 90,
-                offset: 1,
+                offset: Some(1),
             },
-            Located {
+            Sourced {
                 value: 91,
-                offset: 2,
+                offset: Some(2),
             },
         ],
         Some(DesignAssemblyAlignmentForm::Frames {
             frames: [
                 DesignAssemblyOperandFrame {
                     reference_record_index: 70,
-                    reference_offset: 1,
+                    reference_offset: Some(1),
                     transform: transforms[0].try_into().unwrap(),
-                    transform_offset: 2,
+                    transform_offset: Some(2),
                 },
                 DesignAssemblyOperandFrame {
                     reference_record_index: 80,
-                    reference_offset: 3,
+                    reference_offset: Some(3),
                     transform: transforms[1].try_into().unwrap(),
-                    transform_offset: 4,
+                    transform_offset: Some(4),
                 },
             ],
         }),
@@ -1691,13 +1691,13 @@ fn axial_test_component_scope(record_index: u32, role: &str) -> DesignParameterS
             carrier_record_index: record_index + 2,
             occurrence_identity: None,
             neutron_role: role.into(),
-            neutron_role_offset: 0,
+            neutron_role_offset: Some(0),
             placement: Some(DesignComponentInsertMatrix {
-                scope: Located {
+                scope: Sourced {
                     value: SketchPlacementMatrix::IDENTITY,
-                    offset: 0,
+                    offset: Some(0),
                 },
-                carrier_offset: Some(0),
+                carrier: Some(Sourced::at((), 0)),
             }),
         });
     }

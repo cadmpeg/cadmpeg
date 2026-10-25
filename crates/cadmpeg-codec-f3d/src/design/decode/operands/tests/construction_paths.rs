@@ -403,7 +403,7 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
             crate::records::feature::path_features::DesignPathFeatureConstruction::Loft(
                 crate::records::feature::path_features::DesignLoftConstruction {
                     operation: crate::records::feature::extrude::DesignExtrudeOperation::Cut,
-                    operation_offset: 0,
+                    operation_offset: Some(0),
                 },
             ),
         );

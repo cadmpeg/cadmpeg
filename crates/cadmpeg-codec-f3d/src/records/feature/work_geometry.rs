@@ -47,8 +47,10 @@ pub(crate) enum DesignWorkAxisSource {
     TwoPoint {
         /// Ordered endpoint carrier record indices.
         point_record_indices: [u32; 2],
-        /// Byte offsets of the first coordinate in each endpoint carrier.
-        point_offsets: [u64; 2],
+        /// Byte offsets of the first coordinate in each endpoint carrier of a
+        /// located scope.
+        #[serde(skip)]
+        point_offsets: Option<[u64; 2]>,
     },
     /// A generation-specific carrier stores the axis directly and has one
     /// additional construction-support record in the enclosing scope.
@@ -67,10 +69,12 @@ pub(crate) struct DesignWorkAxisConstruction {
     pub(crate) origin: [FiniteReal; 3],
     /// Displacement from the first construction point to the second, in centimetres.
     pub(crate) displacement: [FiniteReal; 3],
-    /// Byte offset of the first origin coordinate.
-    pub(crate) origin_offset: u64,
-    /// Byte offset of the first displacement component.
-    pub(crate) displacement_offset: u64,
+    /// Byte offset of the first origin coordinate of a located scope.
+    #[serde(skip)]
+    pub(crate) origin_offset: Option<u64>,
+    /// Byte offset of the first displacement component of a located scope.
+    #[serde(skip)]
+    pub(crate) displacement_offset: Option<u64>,
     /// Native record form that supplied or corroborated the axis geometry.
     #[serde(
         default,
@@ -88,8 +92,8 @@ pub(crate) struct DesignWorkPointInput {
     clone_probe: WorkGeometryCloneProbe,
     /// Referenced Design record index.
     record_index: u32,
-    /// Byte offset of the serialized reference target.
-    pub(crate) reference_offset: u64,
+    /// Byte offset of the serialized reference target of a located scope.
+    pub(crate) reference_offset: Option<u64>,
     /// Exact source carrier selected by this reference, when decoded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     carrier: Option<Box<DesignWorkPointInputCarrier>>,
@@ -98,7 +102,7 @@ pub(crate) struct DesignWorkPointInput {
 impl DesignWorkPointInput {
     pub(crate) fn try_new(
         record_index: u32,
-        reference_offset: u64,
+        reference_offset: Option<u64>,
         carrier: Option<Box<DesignWorkPointInputCarrier>>,
     ) -> Result<Self, String> {
         if matches!(
@@ -132,8 +136,6 @@ impl DesignWorkPointInput {
 struct DesignWorkPointInputWire {
     /// Referenced Design record index.
     record_index: u32,
-    /// Byte offset of the serialized reference target.
-    reference_offset: u64,
     /// Exact source carrier selected by this reference, when decoded.
     #[serde(
         default,
@@ -151,7 +153,7 @@ impl TryFrom<DesignWorkPointInputWire> for DesignWorkPointInput {
             .map(|carrier| carrier.into_model(wire.record_index))
             .transpose()?
             .map(Box::new);
-        Self::try_new(wire.record_index, wire.reference_offset, carrier)
+        Self::try_new(wire.record_index, None, carrier)
     }
 }
 
@@ -159,7 +161,6 @@ impl From<DesignWorkPointInput> for DesignWorkPointInputWire {
     fn from(value: DesignWorkPointInput) -> Self {
         Self {
             record_index: value.record_index,
-            reference_offset: value.reference_offset,
             carrier: value
                 .carrier
                 .map(|carrier| Box::new((*carrier).into_wire(value.record_index))),
@@ -202,10 +203,10 @@ enum DesignWorkPointInputCarrierWire {
         recipe: DesignVertexRecipe,
     },
     WorkPlane {
-        selection: DesignWorkPointPlaneSelectionDraft,
+        selection: DesignWorkPointPlaneSelectionWire,
     },
     SketchPoint {
-        selection: DesignWorkPointSketchPointSelectionDraft,
+        selection: DesignWorkPointSketchPointSelectionWire,
     },
 }
 
@@ -217,10 +218,10 @@ impl DesignWorkPointInputCarrierWire {
             }
             Self::VertexRecipe { recipe } => DesignWorkPointInputCarrier::VertexRecipe { recipe },
             Self::WorkPlane { selection } => DesignWorkPointInputCarrier::WorkPlane {
-                selection: DesignWorkPointPlaneSelection::try_new(record_index, selection)?,
+                selection: DesignWorkPointPlaneSelection::from_wire(record_index, selection)?,
             },
             Self::SketchPoint { selection } => DesignWorkPointInputCarrier::SketchPoint {
-                selection: DesignWorkPointSketchPointSelection::try_new(record_index, selection)?,
+                selection: DesignWorkPointSketchPointSelection::from_wire(record_index, selection)?,
             },
         })
     }
@@ -236,10 +237,10 @@ impl DesignWorkPointInputCarrier {
                 DesignWorkPointInputCarrierWire::VertexRecipe { recipe }
             }
             Self::WorkPlane { selection } => DesignWorkPointInputCarrierWire::WorkPlane {
-                selection: selection.into_draft(record_index),
+                selection: selection.into_wire(record_index),
             },
             Self::SketchPoint { selection } => DesignWorkPointInputCarrierWire::SketchPoint {
-                selection: selection.into_draft(record_index),
+                selection: selection.into_wire(record_index),
             },
         }
     }
@@ -272,32 +273,45 @@ impl DesignVertexResolution {
 pub(crate) struct DesignVertexRecipe {
     #[cfg(test)]
     clone_probe: WorkGeometryCloneProbe,
-    frame: crate::records::frame_chain::RecordFrameChain,
+    /// Indexed record that owns the vertex-recipe envelope.
+    record_index: u32,
+    /// Byte offset of the owning indexed-record header of a located scope.
+    byte_offset: Option<u64>,
     /// Source per-file dynamic primary class tag.
     pub(crate) class_tag: DesignClassTag,
-    /// Byte offset of the same-index paired header.
-    paired_byte_offset: u64,
+    /// Byte offset of the same-index paired header of a located scope.
+    paired_byte_offset: Option<u64>,
     /// Source per-file dynamic paired class tag.
     paired_class_tag: DesignClassTag,
-    /// Byte offset of the vertex-recipe record header.
-    recipe_record_byte_offset: u64,
+    /// Byte offset of the vertex-recipe record header of a located scope.
+    recipe_record_byte_offset: Option<u64>,
     /// Native construction-recipe arena id.
     pub(crate) recipe_id: String,
     /// Complete prefix before the length-prefixed recipe-family name.
     pub(crate) recipe_prefix_bytes: NativeBytes<Vec<u8>>,
     /// Persistent selector/reference entries decoded from the prefix.
     pub(crate) recipe_references: Vec<DesignRecipeReference>,
-    /// Byte offset of the first post-name i32.
-    pub(crate) recipe_program_offset: u64,
+    /// Byte offset of the first post-name i32 of a located scope.
+    pub(crate) recipe_program_offset: Option<u64>,
     /// Complete post-name i32 program.
     pub(crate) recipe_program: Vec<i32>,
     /// Historical state and proven stable vertex slot.
     pub(crate) resolution: Option<DesignVertexResolution>,
-    /// Byte offset of the indexed record closing the envelope.
-    next_byte_offset: u64,
+    /// Byte offset of the indexed record closing the envelope of a located
+    /// scope.
+    next_byte_offset: Option<u64>,
 }
 
+/// Indexed records the vertex-recipe envelope spans after its owner.
+const VERTEX_RECIPE_RECORD_SPAN: u32 = 5;
+/// Records between the owner and the vertex-recipe record.
+const VERTEX_RECIPE_RECORD_DELTA: u32 = 3;
+/// Bytes of the recipe record's indexed header before its prefix.
+const VERTEX_RECIPE_PREFIX_DELTA: u64 = 11;
+
 impl DesignVertexRecipe {
+    /// Admit a decoded envelope, whose offsets increase and whose record
+    /// indices follow the owner.
     pub(crate) fn try_new(draft: DesignVertexRecipeDraft) -> Result<Self, String> {
         if !(draft.byte_offset < draft.paired_byte_offset
             && draft.paired_byte_offset < draft.recipe_record_byte_offset
@@ -308,89 +322,184 @@ impl DesignVertexRecipe {
                     .into(),
             );
         }
-        draft
+        let recipe_prefix_offset = draft
             .recipe_record_byte_offset
-            .checked_add(11)
+            .checked_add(VERTEX_RECIPE_PREFIX_DELTA)
             .ok_or("recipe_prefix_offset overflows")?;
-        let frame = crate::records::frame_chain::RecordFrameChain::try_new(
-            draft.record_index,
-            draft.byte_offset,
-            5,
-            0,
-        )?;
+        if recipe_prefix_offset != draft.recipe_prefix_offset {
+            return Err("recipe_prefix_offset disagrees with frame layout".into());
+        }
+        let mut value = Self::from_fields(VertexRecipeFields {
+            record_index: draft.record_index,
+            class_tag: draft.class_tag,
+            paired_class_tag: draft.paired_class_tag,
+            recipe_record_index: draft.recipe_record_index,
+            recipe_id: draft.recipe_id,
+            recipe_prefix_bytes: draft.recipe_prefix_bytes,
+            recipe_references: draft.recipe_references,
+            recipe_program: draft.recipe_program,
+            resolution: draft.resolution,
+            next_record_index: draft.next_record_index,
+        })?;
+        value.byte_offset = Some(draft.byte_offset);
+        value.paired_byte_offset = Some(draft.paired_byte_offset);
+        value.recipe_record_byte_offset = Some(draft.recipe_record_byte_offset);
+        value.recipe_program_offset = Some(draft.recipe_program_offset);
+        value.next_byte_offset = Some(draft.next_byte_offset);
+        Ok(value)
+    }
+
+    /// Admit the document fields of an envelope.
+    fn from_fields(fields: VertexRecipeFields) -> Result<Self, String> {
+        let VertexRecipeFields {
+            record_index,
+            class_tag,
+            paired_class_tag,
+            recipe_record_index,
+            recipe_id,
+            recipe_prefix_bytes,
+            recipe_references,
+            recipe_program,
+            resolution,
+            next_record_index,
+        } = fields;
+        record_index
+            .checked_add(VERTEX_RECIPE_RECORD_SPAN)
+            .ok_or("record_index frame extent overflows")?;
         let value = Self {
             #[cfg(test)]
             clone_probe: WorkGeometryCloneProbe,
-            frame,
-            class_tag: draft.class_tag,
-            paired_byte_offset: draft.paired_byte_offset,
-            paired_class_tag: draft.paired_class_tag,
-            recipe_record_byte_offset: draft.recipe_record_byte_offset,
-            recipe_id: draft.recipe_id,
-            recipe_prefix_bytes: (draft.recipe_prefix_bytes).into(),
-            recipe_references: draft.recipe_references,
-            recipe_program_offset: draft.recipe_program_offset,
-            recipe_program: draft.recipe_program,
-            resolution: draft.resolution,
-            next_byte_offset: draft.next_byte_offset,
+            record_index,
+            byte_offset: None,
+            class_tag,
+            paired_byte_offset: None,
+            paired_class_tag,
+            recipe_record_byte_offset: None,
+            recipe_id,
+            recipe_prefix_bytes: recipe_prefix_bytes.into(),
+            recipe_references,
+            recipe_program_offset: None,
+            recipe_program,
+            resolution,
+            next_byte_offset: None,
         };
-        if value.recipe_record_index() != draft.recipe_record_index {
+        if value.recipe_record_index() != recipe_record_index {
             return Err("recipe_record_index disagrees with frame layout".into());
         }
-        if value.recipe_prefix_offset() != draft.recipe_prefix_offset {
-            return Err("recipe_prefix_offset disagrees with frame layout".into());
-        }
-        if value.next_record_index() != draft.next_record_index {
+        if value.next_record_index() != next_record_index {
             return Err("next_record_index disagrees with frame layout".into());
         }
         Ok(value)
     }
-    pub(crate) fn into_draft(self) -> DesignVertexRecipeDraft {
+
+    /// The draft of a located envelope.
+    #[cfg(test)]
+    pub(crate) fn into_draft(self) -> Result<DesignVertexRecipeDraft, String> {
         let record_index = self.record_index();
-        let byte_offset = self.byte_offset();
         let recipe_record_index = self.recipe_record_index();
-        let recipe_prefix_offset = self.recipe_prefix_offset();
+        let recipe_prefix_offset = self
+            .recipe_prefix_offset()
+            .ok_or("a vertex recipe read from the wire has no source offsets")?;
         let next_record_index = self.next_record_index();
-        DesignVertexRecipeDraft {
+        let missing = || "a vertex recipe read from the wire has no source offsets".to_owned();
+        Ok(DesignVertexRecipeDraft {
             record_index,
-            byte_offset,
+            byte_offset: self.byte_offset.ok_or_else(missing)?,
             class_tag: self.class_tag,
-            paired_byte_offset: self.paired_byte_offset,
+            paired_byte_offset: self.paired_byte_offset.ok_or_else(missing)?,
             paired_class_tag: self.paired_class_tag,
             recipe_record_index,
-            recipe_record_byte_offset: self.recipe_record_byte_offset,
+            recipe_record_byte_offset: self.recipe_record_byte_offset.ok_or_else(missing)?,
             recipe_id: self.recipe_id,
             recipe_prefix_offset,
             recipe_prefix_bytes: self.recipe_prefix_bytes.into_inner(),
             recipe_references: self.recipe_references,
-            recipe_program_offset: self.recipe_program_offset,
+            recipe_program_offset: self.recipe_program_offset.ok_or_else(missing)?,
             recipe_program: self.recipe_program,
             resolution: self.resolution,
             next_record_index,
-            next_byte_offset: self.next_byte_offset,
-        }
+            next_byte_offset: self.next_byte_offset.ok_or_else(missing)?,
+        })
     }
     pub(crate) fn record_index(&self) -> u32 {
-        self.frame.index(0)
+        self.record_index
     }
-    pub(crate) fn byte_offset(&self) -> u64 {
-        self.frame.offset(0)
+    /// Byte offset of the owning indexed-record header of a located scope.
+    pub(crate) fn byte_offset(&self) -> Option<u64> {
+        self.byte_offset
     }
     pub(crate) fn recipe_record_index(&self) -> u32 {
-        self.frame.index(3)
+        self.record_index + VERTEX_RECIPE_RECORD_DELTA
     }
-    pub(crate) fn recipe_record_byte_offset(&self) -> u64 {
+    /// Byte offset of the vertex-recipe record header of a located scope.
+    pub(crate) fn recipe_record_byte_offset(&self) -> Option<u64> {
         self.recipe_record_byte_offset
     }
-    pub(crate) fn recipe_prefix_offset(&self) -> u64 {
-        self.recipe_record_byte_offset + 11
+    /// Byte offset of the recipe-specific prefix of a located scope.
+    pub(crate) fn recipe_prefix_offset(&self) -> Option<u64> {
+        self.recipe_record_byte_offset?
+            .checked_add(VERTEX_RECIPE_PREFIX_DELTA)
     }
     pub(crate) fn next_record_index(&self) -> u32 {
-        self.frame.index(5)
+        self.record_index + VERTEX_RECIPE_RECORD_SPAN
     }
-    pub(crate) fn next_byte_offset(&self) -> u64 {
+    /// Byte offset of the indexed record closing the envelope of a located
+    /// scope.
+    pub(crate) fn next_byte_offset(&self) -> Option<u64> {
         self.next_byte_offset
     }
+    /// Whether the located offsets increase from the owner header through the
+    /// paired header and the recipe record to the closing record.
+    pub(crate) fn source_layout_valid(&self) -> bool {
+        match (
+            self.byte_offset,
+            self.paired_byte_offset,
+            self.recipe_record_byte_offset,
+            self.recipe_program_offset,
+            self.next_byte_offset,
+        ) {
+            (Some(start), Some(paired), Some(recipe), Some(program), Some(next)) => {
+                start < paired
+                    && paired < recipe
+                    && recipe < next
+                    && recipe
+                        .checked_add(VERTEX_RECIPE_PREFIX_DELTA)
+                        .is_some_and(|prefix| prefix <= program && program < next)
+            }
+            _ => false,
+        }
+    }
+}
+
+impl crate::records::source_offsets::SourceOffsets for DesignVertexRecipe {
+    fn visit_source_offsets(
+        &mut self,
+        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
+    ) {
+        offsets.offset("byte_offset", &mut self.byte_offset);
+        offsets.offset("paired_byte_offset", &mut self.paired_byte_offset);
+        offsets.offset(
+            "recipe_record_byte_offset",
+            &mut self.recipe_record_byte_offset,
+        );
+        offsets.offset("recipe_program_offset", &mut self.recipe_program_offset);
+        offsets.offset("next_byte_offset", &mut self.next_byte_offset);
+        offsets.each("recipe_references", &mut self.recipe_references);
+    }
+}
+
+/// The document fields of a vertex-recipe envelope.
+struct VertexRecipeFields {
+    record_index: u32,
+    class_tag: DesignClassTag,
+    paired_class_tag: DesignClassTag,
+    recipe_record_index: u32,
+    recipe_id: String,
+    recipe_prefix_bytes: Vec<u8>,
+    recipe_references: Vec<DesignRecipeReference>,
+    recipe_program: Vec<i32>,
+    resolution: Option<DesignVertexResolution>,
+    next_record_index: u32,
 }
 
 /// Unadmitted `DesignVertexRecipe` fields.
@@ -434,28 +543,18 @@ pub(crate) struct DesignVertexRecipeDraft {
 struct DesignVertexRecipeWire {
     /// Indexed record that owns the vertex-recipe envelope.
     record_index: u32,
-    /// Byte offset of the owning indexed-record header.
-    byte_offset: u64,
     /// Source per-file dynamic primary class tag.
     class_tag: String,
-    /// Byte offset of the same-index paired header.
-    paired_byte_offset: u64,
     /// Source per-file dynamic paired class tag.
     paired_class_tag: String,
     /// Indexed record containing the vertex recipe.
     recipe_record_index: u32,
-    /// Byte offset of the vertex-recipe record header.
-    recipe_record_byte_offset: u64,
     /// Native construction-recipe arena id.
     recipe_id: String,
-    /// Byte offset of the recipe-specific prefix after the indexed header.
-    recipe_prefix_offset: u64,
     /// Complete prefix before the length-prefixed recipe-family name.
     recipe_prefix_bytes: NativeBytes<Vec<u8>>,
     /// Persistent selector/reference entries decoded from the prefix.
     recipe_references: Vec<DesignRecipeReference>,
-    /// Byte offset of the first post-name i32.
-    recipe_program_offset: u64,
     /// Complete post-name i32 program.
     recipe_program: Vec<i32>,
     /// Historical topology state against which the vertex recipe was evaluated.
@@ -474,29 +573,22 @@ struct DesignVertexRecipeWire {
     resolved_vertex_slot: Option<i64>,
     /// Identity of the indexed record closing the envelope.
     next_record_index: u32,
-    /// Byte offset of the indexed record closing the envelope.
-    next_byte_offset: u64,
 }
 
 impl From<DesignVertexRecipe> for DesignVertexRecipeWire {
     fn from(value: DesignVertexRecipe) -> Self {
-        let value = value.into_draft();
+        let recipe_record_index = value.recipe_record_index();
+        let next_record_index = value.next_record_index();
         Self {
             record_index: value.record_index,
-            byte_offset: value.byte_offset,
             class_tag: value.class_tag.into(),
-            paired_byte_offset: value.paired_byte_offset,
             paired_class_tag: value.paired_class_tag.into(),
-            recipe_record_index: value.recipe_record_index,
-            recipe_record_byte_offset: value.recipe_record_byte_offset,
+            recipe_record_index,
             recipe_id: value.recipe_id,
-            recipe_prefix_offset: value.recipe_prefix_offset,
-            recipe_prefix_bytes: (value.recipe_prefix_bytes).into(),
+            recipe_prefix_bytes: value.recipe_prefix_bytes,
             recipe_references: value.recipe_references,
-            recipe_program_offset: value.recipe_program_offset,
             recipe_program: value.recipe_program,
-            next_record_index: value.next_record_index,
-            next_byte_offset: value.next_byte_offset,
+            next_record_index,
             recipe_state_id: value.resolution.map(|resolution| resolution.state_id),
             resolved_vertex_slot: value.resolution.map(DesignVertexResolution::vertex_slot),
         }
@@ -519,23 +611,17 @@ impl TryFrom<DesignVertexRecipeWire> for DesignVertexRecipe {
                 )
             }
         };
-        Self::try_new(DesignVertexRecipeDraft {
+        Self::from_fields(VertexRecipeFields {
             record_index: value.record_index,
-            byte_offset: value.byte_offset,
             class_tag: value.class_tag.try_into()?,
-            paired_byte_offset: value.paired_byte_offset,
             paired_class_tag: value.paired_class_tag.try_into()?,
             recipe_record_index: value.recipe_record_index,
-            recipe_record_byte_offset: value.recipe_record_byte_offset,
             recipe_id: value.recipe_id,
-            recipe_prefix_offset: value.recipe_prefix_offset,
             recipe_prefix_bytes: value.recipe_prefix_bytes.into_inner(),
             recipe_references: value.recipe_references,
-            recipe_program_offset: value.recipe_program_offset,
             recipe_program: value.recipe_program,
-            next_record_index: value.next_record_index,
-            next_byte_offset: value.next_byte_offset,
             resolution,
+            next_record_index: value.next_record_index,
         })
     }
 }
@@ -555,6 +641,15 @@ pub(crate) struct DesignEdgeTreatmentVertexOperand {
     pub(crate) group_member_ordinal: u32,
     /// Exact persistent vertex-recipe envelope and resolved historical corner.
     pub(crate) recipe: DesignVertexRecipe,
+}
+
+impl crate::records::source_offsets::SourceOffsets for DesignEdgeTreatmentVertexOperand {
+    fn visit_source_offsets(
+        &mut self,
+        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
+    ) {
+        offsets.record("recipe", &mut self.recipe);
+    }
 }
 
 /// Plane through three persistent B-rep vertices.
@@ -684,34 +779,48 @@ pub(crate) struct DesignWorkPointPlaneSelection {
     pub(crate) class_tag: DesignClassTag,
     /// Asset UUID qualifying the selection namespace.
     asset_id: DesignRelaxedGuidText,
-    /// Byte offset of the asset identifier's UTF-16LE code units.
-    asset_id_offset: u64,
+    /// Byte offset of the asset identifier's UTF-16LE code units of a located
+    /// scope.
+    asset_id_offset: Option<u64>,
     /// UUID of the selection context.
     context_id: DesignRelaxedGuidText,
-    /// Byte offset of the context UUID's UTF-16LE code units.
-    context_id_offset: u64,
-    /// Byte offset of the nested identity record.
-    identity_record_offset: u64,
+    /// Byte offset of the context UUID's UTF-16LE code units of a located
+    /// scope.
+    context_id_offset: Option<u64>,
+    /// Byte offset of the nested identity record of a located scope.
+    identity_record_offset: Option<u64>,
     /// Serialized primary identity immediately preceding the `WorkPlane` scope.
     pub(crate) primary_identity: u64,
     /// Selected `WorkPlane` scope record index.
     pub(crate) work_plane_scope_record_index: u32,
 }
 
+/// Bytes from the plane-selection identity record to its primary identity.
+const PLANE_SELECTION_PRIMARY_IDENTITY: u64 = 21;
+/// Bytes from the plane-selection identity record to the closing record.
+const PLANE_SELECTION_IDENTITY_LEN: u64 = 29;
+
 impl DesignWorkPointPlaneSelection {
+    /// Admit a decoded selection.
     pub(crate) fn try_new(
         record_index: u32,
         draft: DesignWorkPointPlaneSelectionDraft,
     ) -> Result<Self, String> {
-        if record_index.checked_add(3) != Some(draft.identity_record_index) {
-            return Err("carrier.identity_record_index must follow record_index by 3".into());
-        }
-        if record_index.checked_add(4) != Some(draft.next_record_index) {
-            return Err("carrier.next_record_index must follow record_index by 4".into());
-        }
+        let mut value = Self::from_wire(
+            record_index,
+            DesignWorkPointPlaneSelectionWire {
+                class_tag: draft.class_tag,
+                asset_id: draft.asset_id,
+                context_id: draft.context_id,
+                identity_record_index: draft.identity_record_index,
+                primary_identity: draft.primary_identity,
+                work_plane_scope_record_index: draft.work_plane_scope_record_index,
+                next_record_index: draft.next_record_index,
+            },
+        )?;
         draft
             .identity_record_offset
-            .checked_add(29)
+            .checked_add(PLANE_SELECTION_IDENTITY_LEN)
             .ok_or("identity_record_offset overflows")?;
         if !(draft.asset_id_offset < draft.context_id_offset
             && draft.context_id_offset < draft.identity_record_offset)
@@ -720,55 +829,107 @@ impl DesignWorkPointPlaneSelection {
                 "asset_id_offset/context_id_offset/identity_record_offset must increase".into(),
             );
         }
-        let value = Self {
-            class_tag: draft.class_tag,
-            asset_id: draft.asset_id,
-            asset_id_offset: draft.asset_id_offset,
-            context_id: draft.context_id,
-            context_id_offset: draft.context_id_offset,
-            identity_record_offset: draft.identity_record_offset,
-            primary_identity: draft.primary_identity,
-            work_plane_scope_record_index: draft.work_plane_scope_record_index,
-        };
-        if value.next_byte_offset() != draft.next_byte_offset {
+        value.asset_id_offset = Some(draft.asset_id_offset);
+        value.context_id_offset = Some(draft.context_id_offset);
+        value.identity_record_offset = Some(draft.identity_record_offset);
+        if value.next_byte_offset() != Some(draft.next_byte_offset) {
             return Err("next_byte_offset disagrees with frame layout".into());
         }
-        if value.primary_identity_offset() != draft.primary_identity_offset {
+        if value.primary_identity_offset() != Some(draft.primary_identity_offset) {
             return Err("primary_identity_offset disagrees with frame layout".into());
         }
         Ok(value)
     }
-    fn into_draft(self, record_index: u32) -> DesignWorkPointPlaneSelectionDraft {
-        let next_byte_offset = self.next_byte_offset();
-        let primary_identity_offset = self.primary_identity_offset();
-        DesignWorkPointPlaneSelectionDraft {
+    fn from_wire(
+        record_index: u32,
+        wire: DesignWorkPointPlaneSelectionWire,
+    ) -> Result<Self, String> {
+        if record_index.checked_add(3) != Some(wire.identity_record_index) {
+            return Err("carrier.identity_record_index must follow record_index by 3".into());
+        }
+        if record_index.checked_add(4) != Some(wire.next_record_index) {
+            return Err("carrier.next_record_index must follow record_index by 4".into());
+        }
+        Ok(Self {
+            class_tag: wire.class_tag,
+            asset_id: wire.asset_id,
+            asset_id_offset: None,
+            context_id: wire.context_id,
+            context_id_offset: None,
+            identity_record_offset: None,
+            primary_identity: wire.primary_identity,
+            work_plane_scope_record_index: wire.work_plane_scope_record_index,
+        })
+    }
+    fn into_wire(self, record_index: u32) -> DesignWorkPointPlaneSelectionWire {
+        DesignWorkPointPlaneSelectionWire {
             class_tag: self.class_tag,
             asset_id: self.asset_id,
-            asset_id_offset: self.asset_id_offset,
             context_id: self.context_id,
-            context_id_offset: self.context_id_offset,
             identity_record_index: record_index + 3,
-            identity_record_offset: self.identity_record_offset,
             primary_identity: self.primary_identity,
-            primary_identity_offset,
             work_plane_scope_record_index: self.work_plane_scope_record_index,
             next_record_index: record_index + 4,
-            next_byte_offset,
         }
     }
-    pub(crate) fn asset_id_offset(&self) -> u64 {
-        self.asset_id_offset
+    fn primary_identity_offset(&self) -> Option<u64> {
+        self.identity_record_offset?
+            .checked_add(PLANE_SELECTION_PRIMARY_IDENTITY)
     }
-    fn primary_identity_offset(&self) -> u64 {
-        self.identity_record_offset + 21
+    fn next_byte_offset(&self) -> Option<u64> {
+        self.identity_record_offset?
+            .checked_add(PLANE_SELECTION_IDENTITY_LEN)
     }
-    fn next_byte_offset(&self) -> u64 {
-        self.identity_record_offset + 29
+    /// Whether the located offsets increase from the asset identifier
+    /// through the context identifier to the identity record.
+    pub(crate) fn source_layout_valid(&self) -> bool {
+        match (
+            self.asset_id_offset,
+            self.context_id_offset,
+            self.identity_record_offset,
+        ) {
+            (Some(asset), Some(context), Some(identity)) => {
+                asset < context
+                    && context < identity
+                    && identity.checked_add(PLANE_SELECTION_IDENTITY_LEN).is_some()
+            }
+            _ => false,
+        }
     }
 }
 
-/// Unadmitted `DesignWorkPointPlaneSelection` fields.
+impl crate::records::source_offsets::SourceOffsets for DesignWorkPointPlaneSelection {
+    fn visit_source_offsets(
+        &mut self,
+        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
+    ) {
+        offsets.offset("asset_id_offset", &mut self.asset_id_offset);
+        offsets.offset("context_id_offset", &mut self.context_id_offset);
+        offsets.offset("identity_record_offset", &mut self.identity_record_offset);
+    }
+}
+
+/// Document fields of a `DesignWorkPointPlaneSelection`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignWorkPointPlaneSelectionWire {
+    /// Source per-file dynamic primary class tag.
+    pub(crate) class_tag: DesignClassTag,
+    /// Asset UUID qualifying the selection namespace.
+    pub(crate) asset_id: DesignRelaxedGuidText,
+    /// UUID of the selection context.
+    pub(crate) context_id: DesignRelaxedGuidText,
+    /// Nested indexed record carrying the persistent identity.
+    pub(crate) identity_record_index: u32,
+    /// Serialized primary identity immediately preceding the `WorkPlane` scope.
+    pub(crate) primary_identity: u64,
+    /// Selected `WorkPlane` scope record index.
+    pub(crate) work_plane_scope_record_index: u32,
+    /// Identity of the indexed record closing the selection envelope.
+    pub(crate) next_record_index: u32,
+}
+
+/// Unadmitted `DesignWorkPointPlaneSelection` fields.
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct DesignWorkPointPlaneSelectionDraft {
     /// Source per-file dynamic primary class tag.
     pub(crate) class_tag: DesignClassTag,
@@ -803,14 +964,16 @@ pub(crate) struct DesignWorkPointSketchPointSelection {
     pub(crate) class_tag: DesignClassTag,
     /// Asset UUID qualifying the selection namespace.
     asset_id: DesignRelaxedGuidText,
-    /// Byte offset of the asset identifier's UTF-16LE code units.
-    asset_id_offset: u64,
+    /// Byte offset of the asset identifier's UTF-16LE code units of a located
+    /// scope.
+    asset_id_offset: Option<u64>,
     /// UUID of the selection context.
     context_id: DesignRelaxedGuidText,
-    /// Byte offset of the context UUID's UTF-16LE code units.
-    context_id_offset: u64,
-    /// Byte offset of the nested identity record.
-    identity_record_offset: u64,
+    /// Byte offset of the context UUID's UTF-16LE code units of a located
+    /// scope.
+    context_id_offset: Option<u64>,
+    /// Byte offset of the nested identity record of a located scope.
+    identity_record_offset: Option<u64>,
     /// Record identity of the owning Sketch entity.
     pub(crate) sketch_record_index: u32,
     /// Persistent identity of the selected sketch point.
@@ -820,15 +983,24 @@ pub(crate) struct DesignWorkPointSketchPointSelection {
 }
 
 impl DesignWorkPointSketchPointSelection {
+    /// Admit a decoded selection.
     pub(crate) fn try_new(
         record_index: u32,
         draft: DesignWorkPointSketchPointSelectionDraft,
     ) -> Result<Self, String> {
-        if record_index.checked_add(3) != Some(draft.identity_record_index)
-            || record_index.checked_add(4) != Some(draft.next_record_index)
-        {
-            return Err("carrier identity/next_record_index disagree with input frame".into());
-        }
+        let mut value = Self::from_wire(
+            record_index,
+            DesignWorkPointSketchPointSelectionWire {
+                class_tag: draft.class_tag,
+                asset_id: draft.asset_id,
+                context_id: draft.context_id,
+                identity_record_index: draft.identity_record_index,
+                sketch_record_index: draft.sketch_record_index,
+                point_persistent_id: draft.point_persistent_id,
+                point_native_id: draft.point_native_id,
+                next_record_index: draft.next_record_index,
+            },
+        )?;
         draft
             .identity_record_offset
             .checked_add(u64_from_index(
@@ -842,68 +1014,118 @@ impl DesignWorkPointSketchPointSelection {
                 "asset_id_offset/context_id_offset/identity_record_offset must increase".into(),
             );
         }
-        let value = Self {
-            class_tag: draft.class_tag,
-            asset_id: draft.asset_id,
-            asset_id_offset: draft.asset_id_offset,
-            context_id: draft.context_id,
-            context_id_offset: draft.context_id_offset,
-            identity_record_offset: draft.identity_record_offset,
-            sketch_record_index: draft.sketch_record_index,
-            point_persistent_id: draft.point_persistent_id,
-            point_native_id: draft.point_native_id,
-        };
-        if value.next_byte_offset() != draft.next_byte_offset {
+        value.asset_id_offset = Some(draft.asset_id_offset);
+        value.context_id_offset = Some(draft.context_id_offset);
+        value.identity_record_offset = Some(draft.identity_record_offset);
+        if value.next_byte_offset() != Some(draft.next_byte_offset) {
             return Err("next_byte_offset disagrees with frame layout".into());
         }
-        if value.sketch_record_index_offset() != draft.sketch_record_index_offset {
+        if value.sketch_record_index_offset() != Some(draft.sketch_record_index_offset) {
             return Err("sketch_record_index_offset disagrees with frame layout".into());
         }
-        if value.point_persistent_id_offset() != draft.point_persistent_id_offset {
+        if value.point_persistent_id_offset() != Some(draft.point_persistent_id_offset) {
             return Err("point_persistent_id_offset disagrees with frame layout".into());
         }
         Ok(value)
     }
-    fn into_draft(self, record_index: u32) -> DesignWorkPointSketchPointSelectionDraft {
-        let next_byte_offset = self.next_byte_offset();
-        let sketch_record_index_offset = self.sketch_record_index_offset();
-        let point_persistent_id_offset = self.point_persistent_id_offset();
-        DesignWorkPointSketchPointSelectionDraft {
+    fn from_wire(
+        record_index: u32,
+        wire: DesignWorkPointSketchPointSelectionWire,
+    ) -> Result<Self, String> {
+        if record_index.checked_add(3) != Some(wire.identity_record_index)
+            || record_index.checked_add(4) != Some(wire.next_record_index)
+        {
+            return Err("carrier identity/next_record_index disagree with input frame".into());
+        }
+        Ok(Self {
+            class_tag: wire.class_tag,
+            asset_id: wire.asset_id,
+            asset_id_offset: None,
+            context_id: wire.context_id,
+            context_id_offset: None,
+            identity_record_offset: None,
+            sketch_record_index: wire.sketch_record_index,
+            point_persistent_id: wire.point_persistent_id,
+            point_native_id: wire.point_native_id,
+        })
+    }
+    fn into_wire(self, record_index: u32) -> DesignWorkPointSketchPointSelectionWire {
+        DesignWorkPointSketchPointSelectionWire {
             class_tag: self.class_tag,
             asset_id: self.asset_id,
-            asset_id_offset: self.asset_id_offset,
             context_id: self.context_id,
-            context_id_offset: self.context_id_offset,
             identity_record_index: record_index + 3,
-            identity_record_offset: self.identity_record_offset,
             sketch_record_index: self.sketch_record_index,
-            sketch_record_index_offset,
             point_persistent_id: self.point_persistent_id,
-            point_persistent_id_offset,
             point_native_id: self.point_native_id,
             next_record_index: record_index + 4,
-            next_byte_offset,
         }
     }
-    pub(crate) fn asset_id_offset(&self) -> u64 {
-        self.asset_id_offset
+    fn sketch_record_index_offset(&self) -> Option<u64> {
+        self.identity_record_offset?.checked_add(u64_from_index(
+            crate::layout::work_point_sketch_point_identity::SKETCH_RECORD_INDEX,
+        ))
     }
-    fn sketch_record_index_offset(&self) -> u64 {
-        self.identity_record_offset
-            + u64_from_index(crate::layout::work_point_sketch_point_identity::SKETCH_RECORD_INDEX)
+    fn point_persistent_id_offset(&self) -> Option<u64> {
+        self.identity_record_offset?.checked_add(u64_from_index(
+            crate::layout::work_point_sketch_point_identity::POINT_PERSISTENT_ID,
+        ))
     }
-    fn point_persistent_id_offset(&self) -> u64 {
-        self.identity_record_offset
-            + u64_from_index(crate::layout::work_point_sketch_point_identity::POINT_PERSISTENT_ID)
+    fn next_byte_offset(&self) -> Option<u64> {
+        self.identity_record_offset?.checked_add(u64_from_index(
+            crate::layout::work_point_sketch_point_identity::LEN,
+        ))
     }
-    fn next_byte_offset(&self) -> u64 {
-        self.identity_record_offset
-            + u64_from_index(crate::layout::work_point_sketch_point_identity::LEN)
+    /// Whether the located offsets increase from the asset identifier
+    /// through the context identifier to the identity record.
+    pub(crate) fn source_layout_valid(&self) -> bool {
+        match (
+            self.asset_id_offset,
+            self.context_id_offset,
+            self.identity_record_offset,
+        ) {
+            (Some(asset), Some(context), Some(identity)) => {
+                asset < context && context < identity && self.next_byte_offset().is_some()
+            }
+            _ => false,
+        }
     }
 }
 
-/// Unadmitted `DesignWorkPointSketchPointSelection` fields.
+impl crate::records::source_offsets::SourceOffsets for DesignWorkPointSketchPointSelection {
+    fn visit_source_offsets(
+        &mut self,
+        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
+    ) {
+        offsets.offset("asset_id_offset", &mut self.asset_id_offset);
+        offsets.offset("context_id_offset", &mut self.context_id_offset);
+        offsets.offset("identity_record_offset", &mut self.identity_record_offset);
+    }
+}
+
+/// Document fields of a `DesignWorkPointSketchPointSelection`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignWorkPointSketchPointSelectionWire {
+    /// Source per-file dynamic primary class tag.
+    pub(crate) class_tag: DesignClassTag,
+    /// Asset UUID qualifying the selection namespace.
+    pub(crate) asset_id: DesignRelaxedGuidText,
+    /// UUID of the selection context.
+    pub(crate) context_id: DesignRelaxedGuidText,
+    /// Nested indexed record carrying the persistent identity.
+    pub(crate) identity_record_index: u32,
+    /// Record identity of the owning Sketch entity.
+    pub(crate) sketch_record_index: u32,
+    /// Persistent identity of the selected sketch point.
+    pub(crate) point_persistent_id: u64,
+    /// Native id of the decoded sketch-point record selected by this frame.
+    pub(crate) point_native_id: String,
+    /// Identity of the indexed record closing the selection envelope.
+    pub(crate) next_record_index: u32,
+}
+
+/// Unadmitted `DesignWorkPointSketchPointSelection` fields.
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct DesignWorkPointSketchPointSelectionDraft {
     /// Source per-file dynamic primary class tag.
     pub(crate) class_tag: DesignClassTag,
@@ -1155,16 +1377,83 @@ impl DesignWorkPointRuleForm {
 pub(crate) struct DesignWorkPointConstruction {
     /// Point-data record selected by the scope.
     pub(crate) point_record_index: u32,
-    /// Byte offset of the point-data record header.
-    pub(crate) point_record_byte_offset: u64,
+    /// Byte offset of the point-data record header of a located scope.
+    #[serde(skip)]
+    pub(crate) point_record_byte_offset: Option<u64>,
     /// Solved point in source model centimetres.
     pub(crate) position: [FiniteReal; 3],
-    /// Byte offset of the first position coordinate.
-    pub(crate) position_offset: u64,
+    /// Byte offset of the first position coordinate of a located scope.
+    #[serde(skip)]
+    pub(crate) position_offset: Option<u64>,
     /// Typed construction rule and its source inputs.
     pub(crate) rule: DesignWorkPointRule,
-    /// Byte offset of the serialized `refType` value.
-    pub(crate) reference_type_offset: u64,
+    /// Byte offset of the serialized `refType` value of a located scope.
+    #[serde(skip)]
+    pub(crate) reference_type_offset: Option<u64>,
+}
+
+impl crate::records::source_offsets::SourceOffsets for DesignWorkPointConstruction {
+    fn visit_source_offsets(
+        &mut self,
+        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
+    ) {
+        offsets.offset(
+            "point_record_byte_offset",
+            &mut self.point_record_byte_offset,
+        );
+        offsets.offset("position_offset", &mut self.position_offset);
+        offsets.offset("reference_type_offset", &mut self.reference_type_offset);
+        for (index, input) in self.rule.form.inputs_mut().iter_mut().enumerate() {
+            offsets.nested(&format!("rule.inputs.{index}"), |offsets| {
+                input.visit_source_offsets(offsets);
+            });
+        }
+    }
+}
+
+impl crate::records::source_offsets::SourceOffsets for DesignWorkPointInput {
+    fn visit_source_offsets(
+        &mut self,
+        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
+    ) {
+        offsets.offset("reference_offset", &mut self.reference_offset);
+        if let Some(carrier) = self.carrier.as_deref_mut() {
+            match carrier {
+                DesignWorkPointInputCarrier::EdgeRecipe { .. } => {}
+                DesignWorkPointInputCarrier::VertexRecipe { recipe } => {
+                    offsets.record("carrier.recipe", recipe);
+                }
+                DesignWorkPointInputCarrier::WorkPlane { selection } => {
+                    offsets.record("carrier.selection", selection);
+                }
+                DesignWorkPointInputCarrier::SketchPoint { selection } => {
+                    offsets.record("carrier.selection", selection);
+                }
+            }
+        }
+    }
+}
+
+impl crate::records::source_offsets::SourceOffsets for DesignWorkAxisConstruction {
+    fn visit_source_offsets(
+        &mut self,
+        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
+    ) {
+        offsets.offset("origin_offset", &mut self.origin_offset);
+        offsets.offset("displacement_offset", &mut self.displacement_offset);
+        if let Some(DesignWorkAxisSource::TwoPoint { point_offsets, .. }) = &mut self.source {
+            offsets.offsets("source.TwoPoint.point_offsets", point_offsets);
+        }
+    }
+}
+
+impl crate::records::source_offsets::SourceOffsets for DesignWorkPlaneConstruction {
+    fn visit_source_offsets(
+        &mut self,
+        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
+    ) {
+        offsets.each("inputs", &mut self.inputs[..]);
+    }
 }
 
 impl DesignWorkPointInput {

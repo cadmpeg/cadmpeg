@@ -18,7 +18,7 @@ use crate::records::feature::patterns::{
 use crate::records::feature::scope::{
     DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut,
 };
-use crate::records::identity::Located;
+use crate::records::identity::Sourced;
 use crate::records::parameters::{
     DesignParameter, DesignParameterDraft, DesignParameterOwner, DesignParameterOwnerWire,
     DesignParameterSource,
@@ -95,6 +95,31 @@ fn the_decoded_sidecar_passes_every_source_layout_check() {
     assert!(!ids(&ir, "design_parameter_owners").is_empty());
     assert!(!ids(&ir, "design_parameter_companions").is_empty());
     assert!(findings(&ir, &fidelity).is_empty());
+}
+
+#[test]
+fn every_golden_fixture_sidecar_passes_every_source_layout_check() {
+    let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden/fixtures");
+    let mut paths: Vec<_> = std::fs::read_dir(&fixtures)
+        .expect("fixture directory")
+        .map(|entry| entry.expect("fixture entry").path())
+        .filter(|path| path.extension().is_some_and(|extension| extension == "f3d"))
+        .collect();
+    paths.sort();
+    assert!(!paths.is_empty());
+    let mut scopes = 0;
+    for path in paths {
+        let source = std::fs::read(&path).expect("read fixture");
+        let Ok(decoded) = F3dCodec.decode(&mut Cursor::new(&source[..]), &DecodeOptions::default())
+        else {
+            continue;
+        };
+        let (ir, _, fidelity) = decoded.into_parts();
+        scopes += ids(&ir, "design_parameter_scopes").len();
+        let found = findings(&ir, &fidelity);
+        assert!(found.is_empty(), "{}: {found:#?}", path.display());
+    }
+    assert!(scopes > 0);
 }
 
 #[test]
@@ -317,10 +342,47 @@ fn lane_owners() -> Vec<DesignParameterOwner> {
         .collect()
 }
 
-/// The lane owners' layouts, with owner `moved` holding its value pointer one
-/// byte away from its lane.
-fn lane_sidecar(owners: &[DesignParameterOwner], moved: Option<usize>) -> SourceFidelity {
-    let pointers = owners
+/// Frame start and length of the lane scope 200.
+const LANE_SCOPE_START: u64 = 500;
+const LANE_SCOPE_LENGTH: u64 = 200;
+
+/// Scope 200 of `kind`, located at its decoded frame.
+fn lane_scope(id: &str, kind: DesignFeatureKind) -> DesignParameterScope {
+    DesignParameterScope::try_new(
+        crate::records::feature::scope::DesignParameterScopeDraft {
+            id: id.to_owned(),
+            byte_offset: LANE_SCOPE_START,
+            class_tag: "256".to_owned().try_into().unwrap(),
+            record_index: 200,
+            frame_length: LANE_SCOPE_LENGTH,
+            kind_offset: 0,
+            feature_ordinal: std::num::NonZeroU32::MIN,
+            feature_ordinal_offset: 0,
+            history_state_id: None,
+            previous_history_state_id: None,
+            previous_history_state_id_offset: None,
+            reference_count_offset: LANE_SCOPE_START + 20,
+            reference_members: crate::records::identity::ReferenceRun::from_columns(
+                vec![10, 20, 30, 40],
+                vec![0; 4],
+                "reference_members",
+            )
+            .unwrap(),
+            payload: kind.try_into().unwrap(),
+            unclosed_construction_operand_groups: Vec::new(),
+            paired_class_tag: "256".to_owned().try_into().unwrap(),
+            paired_byte_offset: 0,
+        }
+        .with_fixture_layout(),
+    )
+    .expect("lane scope frame")
+}
+
+/// The lane owners' layouts and the capture of the scope that names them,
+/// with owner `moved` holding its value pointer one byte away from its lane.
+fn lane_sidecar(native: &F3dNative, moved: Option<usize>) -> SourceFidelity {
+    let owners = &native.design_parameter_owners;
+    let mut pointers = owners
         .iter()
         .zip(LANE_OWNER_STARTS)
         .enumerate()
@@ -329,35 +391,61 @@ fn lane_sidecar(owners: &[DesignParameterOwner], moved: Option<usize>) -> Source
             (
                 owner.id().to_owned(),
                 start,
-                [("byte_offset", start), ("evaluated_value_offset", value)],
+                103,
+                vec![
+                    ("byte_offset".to_owned(), start),
+                    ("evaluated_value_offset".to_owned(), value),
+                ],
             )
         })
         .collect::<Vec<_>>();
-    let layouts = pointers
+    let scope = &native.design_parameter_scopes[0];
+    pointers.push((
+        scope.id.clone(),
+        LANE_SCOPE_START,
+        LANE_SCOPE_LENGTH,
+        crate::records::source_offsets::collect(&mut scope.clone())
+            .into_iter()
+            .collect(),
+    ));
+    let named = pointers
         .iter()
-        .map(|(id, start, pointers)| (id.as_str(), *start, 103, &pointers[..]))
+        .map(|(id, start, length, pointers)| {
+            (
+                id.as_str(),
+                *start,
+                *length,
+                pointers
+                    .iter()
+                    .map(|(name, value)| (name.as_str(), *value))
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect::<Vec<_>>();
+    let layouts = named
+        .iter()
+        .map(|(id, start, length, pointers)| (*id, *start, *length, &pointers[..]))
         .collect::<Vec<_>>();
     crate::test_support::source_layout::sidecar(STREAM, &layouts)
 }
 
 fn rectangular_pattern_namespace() -> F3dNative {
-    let construction =
+    let mut construction =
         DesignRectangularPatternConstruction::try_from(DesignRectangularPatternConstructionWire {
             u_count: 2,
             v_count: 1,
             u_extent: 1.0,
             v_extent: 0.0,
             owner_record_indices: [10, 20, 30, 40],
-            value_offsets: [1_040, 2_040, 3_040, 4_040],
             instances: None,
             instance_search_cap: None,
             directions: Vec::new(),
         })
         .unwrap();
-    let mut scope = DesignParameterScope::empty(
+    construction.value_offsets = Some([1_040, 2_040, 3_040, 4_040]);
+    let mut scope = lane_scope(
         &format!("f3d:{STREAM}:pattern#200"),
         DesignFeatureKind::RectangularPattern,
-        200,
     );
     if let DesignScopePayloadMut::RectangularPattern(slot) = scope.payload_mut() {
         *slot = Some(construction);
@@ -375,15 +463,14 @@ fn alignment_namespace() -> F3dNative {
         [10, 20, 30, 40]
             .into_iter()
             .zip([1_040, 2_040, 3_040, 4_040])
-            .map(|(value, offset)| Located { value, offset })
+            .map(|(value, offset)| Sourced::at(value, offset))
             .collect(),
         None,
     )
     .unwrap();
-    let mut scope = DesignParameterScope::empty(
+    let mut scope = lane_scope(
         &format!("f3d:{STREAM}:assemble#200"),
         DesignFeatureKind::Assemble,
-        200,
     );
     if let DesignScopePayloadMut::Assemble(slot) = scope.payload_mut() {
         *slot = Some(alignment);
@@ -397,12 +484,11 @@ fn alignment_namespace() -> F3dNative {
 #[test]
 fn rectangular_pattern_lanes_name_their_owner_values() {
     let native = rectangular_pattern_namespace();
-    let owners = &native.design_parameter_owners;
-    assert!(loaded_findings(&native, &lane_sidecar(owners, None)).is_empty());
+    assert!(loaded_findings(&native, &lane_sidecar(&native, None)).is_empty());
     let scope = native.design_parameter_scopes[0].id.clone();
     for moved in 0..4 {
         only_finding(
-            &loaded_findings(&native, &lane_sidecar(owners, Some(moved))),
+            &loaded_findings(&native, &lane_sidecar(&native, Some(moved))),
             SCOPE_MESSAGE,
             &scope,
         );
@@ -412,12 +498,11 @@ fn rectangular_pattern_lanes_name_their_owner_values() {
 #[test]
 fn assembly_alignment_lanes_name_their_owner_values() {
     let native = alignment_namespace();
-    let owners = &native.design_parameter_owners;
-    assert!(loaded_findings(&native, &lane_sidecar(owners, None)).is_empty());
+    assert!(loaded_findings(&native, &lane_sidecar(&native, None)).is_empty());
     let scope = native.design_parameter_scopes[0].id.clone();
     for moved in 0..4 {
         only_finding(
-            &loaded_findings(&native, &lane_sidecar(owners, Some(moved))),
+            &loaded_findings(&native, &lane_sidecar(&native, Some(moved))),
             SCOPE_MESSAGE,
             &scope,
         );
@@ -429,7 +514,7 @@ fn a_lane_owner_without_its_value_pointer_fails() {
     let native = rectangular_pattern_namespace();
     let owners = &native.design_parameter_owners;
     let fidelity = with_pointer(
-        &lane_sidecar(owners, None),
+        &lane_sidecar(&native, None),
         owners[2].id(),
         "evaluated_value_offset",
         None,
@@ -439,4 +524,54 @@ fn a_lane_owner_without_its_value_pointer_fails() {
         SCOPE_MESSAGE,
         &native.design_parameter_scopes[0].id,
     );
+}
+
+/// `findings` names only `entity`, each with `message`, at least once.
+fn findings_name_only(findings: &[Finding], message: &str, entity: &str) {
+    assert!(!findings.is_empty());
+    for finding in findings {
+        assert_eq!(finding.message, message, "{findings:#?}");
+        assert_eq!(finding.entity.as_deref(), Some(entity), "{findings:#?}");
+    }
+}
+
+#[test]
+fn a_scope_capture_without_a_lane_pointer_fails() {
+    for (native, lane) in [
+        (
+            rectangular_pattern_namespace(),
+            "rectangular_pattern_construction.value_offsets.1",
+        ),
+        (alignment_namespace(), "assembly_alignment.value_offsets.1"),
+    ] {
+        let scope = native.design_parameter_scopes[0].id.clone();
+        let fidelity = with_pointer(&lane_sidecar(&native, None), &scope, lane, None);
+        findings_name_only(&loaded_findings(&native, &fidelity), SCOPE_MESSAGE, &scope);
+    }
+}
+
+#[test]
+fn a_scope_capture_without_a_frame_pointer_fails() {
+    for name in [
+        "kind_offset",
+        "feature_ordinal_offset",
+        "paired_byte_offset",
+    ] {
+        let native = alignment_namespace();
+        let scope = native.design_parameter_scopes[0].id.clone();
+        let fidelity = with_pointer(&lane_sidecar(&native, None), &scope, name, None);
+        findings_name_only(&loaded_findings(&native, &fidelity), SCOPE_MESSAGE, &scope);
+    }
+}
+
+#[test]
+fn a_scope_capture_with_a_pointer_the_scope_does_not_hold_fails() {
+    let native = alignment_namespace();
+    let scope = native.design_parameter_scopes[0].id.clone();
+    let mut wire =
+        serde_json::to_value(lane_sidecar(&native, None)).expect("serialize the sidecar");
+    wire["record_layout"][&scope]["pointers"]["assembly_alignment.value_offsets.4"] = json!(5_040);
+    let fidelity: SourceFidelity =
+        serde_json::from_value(wire).expect("the edited sidecar is admitted");
+    findings_name_only(&loaded_findings(&native, &fidelity), SCOPE_MESSAGE, &scope);
 }

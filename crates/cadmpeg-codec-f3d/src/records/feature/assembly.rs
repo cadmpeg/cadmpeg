@@ -4,7 +4,7 @@ use super::combine::DesignExternalVersion;
 use super::hole::DesignHoleConstruction;
 use super::work_geometry::DesignWorkPointConstruction;
 use crate::records::dimensions::DesignRecipeReference;
-use crate::records::identity::Located;
+use crate::records::identity::Sourced;
 use crate::records::mesh::{DesignOccurrenceKey, DesignRelaxedGuidText};
 use crate::records::recipes::ConstructionRecipeKind;
 use crate::records::references::DesignClassTag;
@@ -38,7 +38,8 @@ pub(crate) struct DesignAssemblyLimits {
     /// Parameter-owner records for the lower and upper bounds.
     pub(crate) owner_record_indices: [u32; 2],
     /// Evaluated-value offsets parallel to `owner_record_indices`.
-    pub(crate) value_offsets: [u64; 2],
+    #[serde(skip)]
+    pub(crate) value_offsets: Option<[u64; 2]>,
 }
 
 /// Wire fields for finite ordered assembly limits.
@@ -53,8 +54,6 @@ pub(crate) struct DesignAssemblyLimitsWire {
     pub(crate) maximum: f64,
     /// Parameter-owner records for the lower and upper bounds.
     pub(crate) owner_record_indices: [u32; 2],
-    /// Evaluated-value offsets parallel to `owner_record_indices`.
-    pub(crate) value_offsets: [u64; 2],
 }
 
 impl DesignAssemblyLimits {
@@ -77,7 +76,7 @@ impl TryFrom<DesignAssemblyLimitsWire> for DesignAssemblyLimits {
             minimum: wire.minimum,
             maximum: wire.maximum,
             owner_record_indices: wire.owner_record_indices,
-            value_offsets: wire.value_offsets,
+            value_offsets: None,
         })
     }
 }
@@ -87,15 +86,18 @@ pub(crate) struct DesignAssemblySolvedFrame {
     /// Frame-carrier record named by reference-table entry eight.
     pub(crate) reference_record_index: u32,
     /// Byte offset of the frame-carrier reference in the scope.
-    pub(crate) reference_offset: u64,
+    #[serde(skip)]
+    pub(crate) reference_offset: Option<u64>,
     /// Byte offset of the frame-carrier indexed header.
-    pub(crate) record_byte_offset: u64,
+    #[serde(skip)]
+    pub(crate) record_byte_offset: Option<u64>,
     /// Dynamic class of the frame-carrier indexed record.
     pub(crate) class_tag: DesignClassTag,
     /// Row-major solved connector frame.
     pub(crate) transform: SketchPlacementMatrix,
     /// Byte offset of the first matrix scalar.
-    pub(crate) transform_offset: u64,
+    #[serde(skip)]
+    pub(crate) transform_offset: Option<u64>,
 }
 
 /// A construction and its face selection in a legacy assembly operand.
@@ -104,7 +106,7 @@ pub(crate) struct DesignAssemblyLegacyOperand<C> {
     pub(crate) construction_class_tag: DesignClassTag,
     pub(crate) construction: C,
     pub(crate) selection: DesignAssemblyLegacySelection,
-    pub(crate) reference_offset: u64,
+    pub(crate) reference_offset: Option<u64>,
 }
 
 /// The ordered point and hole constructions of a legacy 421-byte assembly.
@@ -124,13 +126,13 @@ impl DesignAssemblyLegacyOperands {
         Self { point, hole }
     }
 
-    pub(crate) fn references(&self) -> [Located<u32>; 2] {
+    pub(crate) fn references(&self) -> [Sourced<u32>; 2] {
         [
-            Located {
+            Sourced {
                 value: self.point.construction.point_record_index,
                 offset: self.point.reference_offset,
             },
-            Located {
+            Sourced {
                 value: self.hole.construction.point_record_index,
                 offset: self.hole.reference_offset,
             },
@@ -185,14 +187,6 @@ impl DesignAssemblyLegacyOperands {
                     .into(),
             );
         }
-        if point.construction_byte_offset != point_construction.point_record_byte_offset
-            || hole.construction_byte_offset != hole_construction.point_record_byte_offset
-        {
-            return Err(
-                "legacy_operand_carriers construction_byte_offset disagrees with construction"
-                    .into(),
-            );
-        }
         let carriers = Self::new(
             DesignAssemblyLegacyOperand {
                 construction_class_tag: point
@@ -228,8 +222,6 @@ impl DesignAssemblyLegacyOperands {
 struct DesignAssemblyLegacyOperandWire {
     /// Primary construction record named by the scope reference table.
     construction_record_index: u32,
-    /// Byte offset of the primary construction record header.
-    construction_byte_offset: u64,
     /// Dynamic class of the primary construction record.
     construction_class_tag: String,
     /// Exact point or point-and-direction construction.
@@ -257,21 +249,25 @@ pub(crate) struct DesignAssemblyLegacySelection {
     /// Indexed selection record.
     pub(crate) record_index: u32,
     /// Byte offset of the selection record header.
-    pub(crate) byte_offset: u64,
+    #[serde(skip)]
+    pub(crate) byte_offset: Option<u64>,
     /// Dynamic class of the selection record.
     pub(crate) class_tag: DesignClassTag,
     /// Asset UUID qualifying the selection namespace.
     pub(crate) asset_id: DesignRelaxedGuidText,
     /// Byte offset of the asset UUID's UTF-16LE payload.
-    pub(crate) asset_id_offset: u64,
+    #[serde(skip)]
+    pub(crate) asset_id_offset: Option<u64>,
     /// Context UUID qualifying the selection.
     pub(crate) context_id: DesignRelaxedGuidText,
     /// Byte offset of the context UUID's UTF-16LE payload.
-    pub(crate) context_id_offset: u64,
+    #[serde(skip)]
+    pub(crate) context_id_offset: Option<u64>,
     /// Indexed record containing the face recipe.
     pub(crate) recipe_record_index: u32,
     /// Byte offset of the recipe record's indexed header.
-    pub(crate) recipe_record_byte_offset: u64,
+    #[serde(skip)]
+    pub(crate) recipe_record_byte_offset: Option<u64>,
     /// Construction-recipe arena id.
     pub(crate) recipe_id: String,
     /// Exact face-recipe family.
@@ -279,7 +275,8 @@ pub(crate) struct DesignAssemblyLegacySelection {
     /// Persistent selector/reference tails carried by the recipe prefix.
     pub(crate) recipe_references: Vec<DesignRecipeReference>,
     /// Byte offset of the indexed record immediately after the recipe.
-    pub(crate) next_byte_offset: u64,
+    #[serde(skip)]
+    pub(crate) next_byte_offset: Option<u64>,
 }
 
 /// Alignment scalars carried by an assembly-operation scope.
@@ -291,7 +288,7 @@ pub(crate) struct DesignAssemblyAlignment {
     /// Signed local-frame translation in source centimetres.
     offset: [FiniteReal; 3],
     /// Parameter-owner records and their evaluated-value locations.
-    pub(crate) owners: Vec<Located<u32>>,
+    pub(crate) owners: Vec<Sourced<u32>>,
     /// Datum, legacy solved-carrier, or qualified-operand form.
     pub(crate) form: Option<DesignAssemblyAlignmentForm>,
     /// How the two operand frames mate, when the scope stores it.
@@ -368,7 +365,7 @@ impl DesignAssemblyAlignment {
     pub(crate) fn try_new(
         angle: f64,
         offset: [f64; 3],
-        owners: Vec<Located<u32>>,
+        owners: Vec<Sourced<u32>>,
         form: Option<DesignAssemblyAlignmentForm>,
     ) -> Result<Self, String> {
         let angle = FiniteReal::new(angle)
@@ -494,7 +491,6 @@ struct DesignAssemblyAlignmentSerde {
     angle: f64,
     offset: [f64; 3],
     owner_record_indices: Vec<u32>,
-    value_offsets: Vec<u64>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -554,14 +550,13 @@ impl TryFrom<DesignAssemblyAlignmentSerde> for DesignAssemblyAlignment {
     type Error = String;
 
     fn try_from(wire: DesignAssemblyAlignmentSerde) -> Result<Self, Self::Error> {
-        if wire.owner_record_indices.len() != wire.value_offsets.len() {
-            return Err("owner_record_indices and value_offsets must have equal lengths".into());
-        }
         let owners = wire
             .owner_record_indices
             .into_iter()
-            .zip(wire.value_offsets)
-            .map(|(value, offset)| Located { value, offset })
+            .map(|value| Sourced {
+                value,
+                offset: None,
+            })
             .collect();
         let form = match (
             wire.legacy_operand_carriers,
@@ -621,7 +616,6 @@ impl Serialize for DesignAssemblyAlignment {
         record.serialize_field("angle", &self.angle.get())?;
         record.serialize_field("offset", &self.offset.map(FiniteReal::get))?;
         record.serialize_field("owner_record_indices", &OwnerRecordIndices(&self.owners))?;
-        record.serialize_field("value_offsets", &OwnerValueOffsets(&self.owners))?;
         match self.form.as_ref() {
             None => {}
             Some(DesignAssemblyAlignmentForm::DatumEnvelope {
@@ -660,10 +654,6 @@ impl Serialize for DesignAssemblyAlignment {
                 let legacy = [
                     LegacyOperandOut {
                         construction_record_index: carriers.point.construction.point_record_index,
-                        construction_byte_offset: carriers
-                            .point
-                            .construction
-                            .point_record_byte_offset,
                         construction_class_tag: carriers.point.construction_class_tag.as_str(),
                         construction: LegacyConstructionOut::Point(&carriers.point.construction),
                         selection: &carriers.point.selection,
@@ -671,10 +661,6 @@ impl Serialize for DesignAssemblyAlignment {
                     },
                     LegacyOperandOut {
                         construction_record_index: carriers.hole.construction.point_record_index,
-                        construction_byte_offset: carriers
-                            .hole
-                            .construction
-                            .point_record_byte_offset,
                         construction_class_tag: carriers.hole.construction_class_tag.as_str(),
                         construction: LegacyConstructionOut::Hole(&carriers.hole.construction),
                         selection: &carriers.hole.selection,
@@ -718,7 +704,7 @@ impl Serialize for DesignAssemblyAlignment {
     }
 }
 
-struct OwnerRecordIndices<'a>(&'a [Located<u32>]);
+struct OwnerRecordIndices<'a>(&'a [Sourced<u32>]);
 
 impl Serialize for OwnerRecordIndices<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -730,22 +716,9 @@ impl Serialize for OwnerRecordIndices<'_> {
     }
 }
 
-struct OwnerValueOffsets<'a>(&'a [Located<u32>]);
-
-impl Serialize for OwnerValueOffsets<'_> {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut seq = serializer.serialize_seq(Some(self.0.len()))?;
-        for owner in self.0 {
-            seq.serialize_element(&owner.offset)?;
-        }
-        seq.end()
-    }
-}
-
 #[derive(Serialize)]
 struct LegacyOperandOut<'a> {
     construction_record_index: u32,
-    construction_byte_offset: u64,
     construction_class_tag: &'a str,
     construction: LegacyConstructionOut<'a>,
     selection: &'a DesignAssemblyLegacySelection,
@@ -770,15 +743,19 @@ pub(crate) enum DesignAssemblyAxialOperandTarget {
         /// Dynamic class of the construction carrier's primary record.
         construction_class_tag: DesignClassTag,
         /// Byte offset of the construction carrier's primary indexed header.
-        construction_byte_offset: u64,
+        #[serde(skip)]
+        construction_byte_offset: Option<u64>,
         /// Byte offset of the construction carrier's transform.
-        construction_transform_offset: u64,
+        #[serde(skip)]
+        construction_transform_offset: Option<u64>,
         /// Byte offsets of the two axis-record indices in the construction carrier.
-        axis_record_index_offsets: [u64; 2],
+        #[serde(skip)]
+        axis_record_index_offsets: Option<[u64; 2]>,
         /// Dynamic class of the construction carrier's paired record.
         construction_paired_class_tag: DesignClassTag,
         /// Byte offset of the construction carrier's paired indexed header.
-        construction_paired_byte_offset: u64,
+        #[serde(skip)]
+        construction_paired_byte_offset: Option<u64>,
         /// Two axis selectors that identify the same connector object.
         selectors: Box<[DesignAssemblyAxialSelectorIdentity; 2]>,
     },
@@ -798,53 +775,53 @@ pub(crate) struct DesignAssemblyAxialSelectorIdentity {
     /// Dynamic class of the axis record's primary indexed header.
     pub(crate) axis_class_tag: DesignClassTag,
     /// Byte offset of the axis record's primary indexed header.
-    pub(crate) axis_byte_offset: u64,
+    pub(crate) axis_byte_offset: Option<u64>,
     /// Dynamic class of the axis record's paired indexed header.
     pub(crate) axis_paired_class_tag: DesignClassTag,
     /// Byte offset of the axis record's paired indexed header.
-    pub(crate) axis_paired_byte_offset: u64,
+    pub(crate) axis_paired_byte_offset: Option<u64>,
     /// Selector record three indices after the axis record.
     pub(crate) selector_record_index: u32,
     /// Dynamic class of the selector record's primary indexed header.
     pub(crate) selector_class_tag: DesignClassTag,
     /// Byte offset of the selector record's primary indexed header.
-    pub(crate) selector_byte_offset: u64,
+    pub(crate) selector_byte_offset: Option<u64>,
     /// Dynamic class of the selector record's paired indexed header.
     pub(crate) selector_paired_class_tag: DesignClassTag,
     /// Byte offset of the selector record's paired indexed header.
-    pub(crate) selector_paired_byte_offset: u64,
+    pub(crate) selector_paired_byte_offset: Option<u64>,
     /// Nested record named by the selector prefix.
     pub(crate) nested_record_index: u32,
     /// Byte offset of `nested_record_index`.
-    pub(crate) nested_record_index_offset: u64,
+    pub(crate) nested_record_index_offset: Option<u64>,
     /// Asset GUID of the enclosing selector.
     pub(crate) selector_asset_id: DesignRelaxedGuidText,
     /// Byte offset of `selector_asset_id`.
-    pub(crate) selector_asset_id_offset: u64,
+    pub(crate) selector_asset_id_offset: Option<u64>,
     /// Context GUID of the enclosing selector.
     pub(crate) selector_context_id: DesignRelaxedGuidText,
     /// Byte offset of `selector_context_id`.
-    pub(crate) selector_context_id_offset: u64,
+    pub(crate) selector_context_id_offset: Option<u64>,
     /// Axis-specific same-segment occurrence reference.
     pub(crate) occurrence_reference: u64,
     /// Byte offset of `occurrence_reference`.
-    pub(crate) occurrence_reference_offset: u64,
+    pub(crate) occurrence_reference_offset: Option<u64>,
     /// Entity reference of the selected object in the referenced document.
     pub(crate) external_object_reference: u64,
     /// Byte offset of `external_object_reference`.
-    pub(crate) external_object_reference_offset: u64,
+    pub(crate) external_object_reference_offset: Option<u64>,
     /// Segment carried by the cross-document object reference.
     pub(crate) external_segment: u32,
     /// Byte offset of `external_segment`.
-    pub(crate) external_segment_offset: u64,
+    pub(crate) external_segment_offset: Option<u64>,
     /// Asset GUID carried by the cross-document object reference.
     pub(crate) external_asset_id: DesignRelaxedGuidText,
     /// Byte offset of `external_asset_id`.
-    pub(crate) external_asset_id_offset: u64,
+    pub(crate) external_asset_id_offset: Option<u64>,
     /// Link name carried by the cross-document object reference.
     pub(crate) external_link_name: String,
     /// Byte offset of `external_link_name`.
-    pub(crate) external_link_name_offset: u64,
+    pub(crate) external_link_name_offset: Option<u64>,
     /// Located property key and referenced-document version identity.
     pub(crate) external_version: Option<DesignExternalVersion>,
     /// Embedded record that carries the selected occurrence role.
@@ -852,11 +829,11 @@ pub(crate) struct DesignAssemblyAxialSelectorIdentity {
     /// Dynamic class of the occurrence-role record.
     pub(crate) role_class_tag: DesignClassTag,
     /// Byte offset of the occurrence-role record's indexed header.
-    pub(crate) role_byte_offset: u64,
+    pub(crate) role_byte_offset: Option<u64>,
     /// Occurrence-role GUID joining this selector to a component insertion.
     pub(crate) occurrence_role: DesignRelaxedGuidText,
     /// Byte offset of `occurrence_role`.
-    pub(crate) occurrence_role_offset: u64,
+    pub(crate) occurrence_role_offset: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -865,54 +842,30 @@ struct DesignAssemblyAxialSelectorIdentityWire {
     axis_record_index: u32,
     /// Dynamic class of the axis record's primary indexed header.
     axis_class_tag: String,
-    /// Byte offset of the axis record's primary indexed header.
-    axis_byte_offset: u64,
     /// Dynamic class of the axis record's paired indexed header.
     axis_paired_class_tag: String,
-    /// Byte offset of the axis record's paired indexed header.
-    axis_paired_byte_offset: u64,
     /// Selector record three indices after the axis record.
     selector_record_index: u32,
     /// Dynamic class of the selector record's primary indexed header.
     selector_class_tag: String,
-    /// Byte offset of the selector record's primary indexed header.
-    selector_byte_offset: u64,
     /// Dynamic class of the selector record's paired indexed header.
     selector_paired_class_tag: String,
-    /// Byte offset of the selector record's paired indexed header.
-    selector_paired_byte_offset: u64,
     /// Nested record named by the selector prefix.
     nested_record_index: u32,
-    /// Byte offset of `nested_record_index`.
-    nested_record_index_offset: u64,
     /// Asset GUID of the enclosing selector.
     selector_asset_id: DesignRelaxedGuidText,
-    /// Byte offset of `selector_asset_id`.
-    selector_asset_id_offset: u64,
     /// Context GUID of the enclosing selector.
     selector_context_id: DesignRelaxedGuidText,
-    /// Byte offset of `selector_context_id`.
-    selector_context_id_offset: u64,
     /// Axis-specific same-segment occurrence reference.
     occurrence_reference: u64,
-    /// Byte offset of `occurrence_reference`.
-    occurrence_reference_offset: u64,
     /// Entity reference of the selected object in the referenced document.
     external_object_reference: u64,
-    /// Byte offset of `external_object_reference`.
-    external_object_reference_offset: u64,
     /// Segment carried by the cross-document object reference.
     external_segment: u32,
-    /// Byte offset of `external_segment`.
-    external_segment_offset: u64,
     /// Asset GUID carried by the cross-document object reference.
     external_asset_id: DesignRelaxedGuidText,
-    /// Byte offset of `external_asset_id`.
-    external_asset_id_offset: u64,
     /// Link name carried by the cross-document object reference.
     external_link_name: String,
-    /// Byte offset of `external_link_name`.
-    external_link_name_offset: u64,
     /// Optional property key preceding the version identity.
     #[serde(
         default,
@@ -920,13 +873,6 @@ struct DesignAssemblyAxialSelectorIdentityWire {
         deserialize_with = "deserialize_external_property_key"
     )]
     external_property_key: Option<DesignRelaxedGuidText>,
-    /// Byte offset of `external_property_key` when present.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_external_property_key_offset"
-    )]
-    external_property_key_offset: Option<u64>,
     /// Optional referenced-document version identity.
     #[serde(
         default,
@@ -934,23 +880,12 @@ struct DesignAssemblyAxialSelectorIdentityWire {
         deserialize_with = "deserialize_external_version_urn"
     )]
     external_version_urn: Option<String>,
-    /// Byte offset of `external_version_urn` when present.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_external_version_urn_offset"
-    )]
-    external_version_urn_offset: Option<u64>,
     /// Embedded record that carries the selected occurrence role.
     role_record_index: u32,
     /// Dynamic class of the occurrence-role record.
     role_class_tag: String,
-    /// Byte offset of the occurrence-role record's indexed header.
-    role_byte_offset: u64,
     /// Occurrence-role GUID joining this selector to a component insertion.
     occurrence_role: DesignRelaxedGuidText,
-    /// Byte offset of `occurrence_role`.
-    occurrence_role_offset: u64,
 }
 
 #[cfg(test)]
@@ -1003,43 +938,25 @@ impl Clone for DesignAssemblyAxialSelectorIdentity {
 struct DesignAssemblyAxialSelectorIdentityWireRef<'a> {
     axis_record_index: u32,
     axis_class_tag: &'a str,
-    axis_byte_offset: u64,
     axis_paired_class_tag: &'a str,
-    axis_paired_byte_offset: u64,
     selector_record_index: u32,
     selector_class_tag: &'a str,
-    selector_byte_offset: u64,
     selector_paired_class_tag: &'a str,
-    selector_paired_byte_offset: u64,
     nested_record_index: u32,
-    nested_record_index_offset: u64,
     selector_asset_id: &'a DesignRelaxedGuidText,
-    selector_asset_id_offset: u64,
     selector_context_id: &'a DesignRelaxedGuidText,
-    selector_context_id_offset: u64,
     occurrence_reference: u64,
-    occurrence_reference_offset: u64,
     external_object_reference: u64,
-    external_object_reference_offset: u64,
     external_segment: u32,
-    external_segment_offset: u64,
     external_asset_id: &'a DesignRelaxedGuidText,
-    external_asset_id_offset: u64,
     external_link_name: &'a str,
-    external_link_name_offset: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     external_property_key: Option<&'a DesignRelaxedGuidText>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    external_property_key_offset: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     external_version_urn: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    external_version_urn_offset: Option<u64>,
     role_record_index: u32,
     role_class_tag: &'a str,
-    role_byte_offset: u64,
     occurrence_role: &'a DesignRelaxedGuidText,
-    occurrence_role_offset: u64,
 }
 
 impl<'a> From<&'a DesignAssemblyAxialSelectorIdentity>
@@ -1049,51 +966,29 @@ impl<'a> From<&'a DesignAssemblyAxialSelectorIdentity>
         Self {
             axis_record_index: record.axis_record_index,
             axis_class_tag: record.axis_class_tag.as_str(),
-            axis_byte_offset: record.axis_byte_offset,
             axis_paired_class_tag: record.axis_paired_class_tag.as_str(),
-            axis_paired_byte_offset: record.axis_paired_byte_offset,
             selector_record_index: record.selector_record_index,
             selector_class_tag: record.selector_class_tag.as_str(),
-            selector_byte_offset: record.selector_byte_offset,
             selector_paired_class_tag: record.selector_paired_class_tag.as_str(),
-            selector_paired_byte_offset: record.selector_paired_byte_offset,
             nested_record_index: record.nested_record_index,
-            nested_record_index_offset: record.nested_record_index_offset,
             selector_asset_id: &record.selector_asset_id,
-            selector_asset_id_offset: record.selector_asset_id_offset,
             selector_context_id: &record.selector_context_id,
-            selector_context_id_offset: record.selector_context_id_offset,
             occurrence_reference: record.occurrence_reference,
-            occurrence_reference_offset: record.occurrence_reference_offset,
             external_object_reference: record.external_object_reference,
-            external_object_reference_offset: record.external_object_reference_offset,
             external_segment: record.external_segment,
-            external_segment_offset: record.external_segment_offset,
             external_asset_id: &record.external_asset_id,
-            external_asset_id_offset: record.external_asset_id_offset,
             external_link_name: record.external_link_name.as_str(),
-            external_link_name_offset: record.external_link_name_offset,
             external_property_key: record
                 .external_version
                 .as_ref()
                 .map(|v| &v.property_key.value),
-            external_property_key_offset: record
-                .external_version
-                .as_ref()
-                .map(|v| v.property_key.offset),
             external_version_urn: record
                 .external_version
                 .as_ref()
                 .map(|v| v.version_urn.value.as_str()),
-            external_version_urn_offset: record
-                .external_version
-                .as_ref()
-                .map(|v| v.version_urn.offset),
             role_record_index: record.role_record_index,
             role_class_tag: record.role_class_tag.as_str(),
-            role_byte_offset: record.role_byte_offset,
             occurrence_role: &record.occurrence_role,
-            occurrence_role_offset: record.occurrence_role_offset,
         }
     }
 }
@@ -1109,41 +1004,69 @@ impl TryFrom<DesignAssemblyAxialSelectorIdentityWire> for DesignAssemblyAxialSel
     fn try_from(wire: DesignAssemblyAxialSelectorIdentityWire) -> Result<Self, Self::Error> {
         Ok(Self {
             axis_record_index: wire.axis_record_index,
-            axis_class_tag: wire.axis_class_tag.try_into().map_err(|error| format!("axis_class_tag: {error}"))?,
-            axis_byte_offset: wire.axis_byte_offset,
-            axis_paired_class_tag: wire.axis_paired_class_tag.try_into().map_err(|error| format!("axis_paired_class_tag: {error}"))?,
-            axis_paired_byte_offset: wire.axis_paired_byte_offset,
+            axis_class_tag: wire
+                .axis_class_tag
+                .try_into()
+                .map_err(|error| format!("axis_class_tag: {error}"))?,
+            axis_byte_offset: None,
+            axis_paired_class_tag: wire
+                .axis_paired_class_tag
+                .try_into()
+                .map_err(|error| format!("axis_paired_class_tag: {error}"))?,
+            axis_paired_byte_offset: None,
             selector_record_index: wire.selector_record_index,
-            selector_class_tag: wire.selector_class_tag.try_into().map_err(|error| format!("selector_class_tag: {error}"))?,
-            selector_byte_offset: wire.selector_byte_offset,
-            selector_paired_class_tag: wire.selector_paired_class_tag.try_into().map_err(|error| format!("selector_paired_class_tag: {error}"))?,
-            selector_paired_byte_offset: wire.selector_paired_byte_offset,
+            selector_class_tag: wire
+                .selector_class_tag
+                .try_into()
+                .map_err(|error| format!("selector_class_tag: {error}"))?,
+            selector_byte_offset: None,
+            selector_paired_class_tag: wire
+                .selector_paired_class_tag
+                .try_into()
+                .map_err(|error| format!("selector_paired_class_tag: {error}"))?,
+            selector_paired_byte_offset: None,
             nested_record_index: wire.nested_record_index,
-            nested_record_index_offset: wire.nested_record_index_offset,
+            nested_record_index_offset: None,
             selector_asset_id: wire.selector_asset_id,
-            selector_asset_id_offset: wire.selector_asset_id_offset,
+            selector_asset_id_offset: None,
             selector_context_id: wire.selector_context_id,
-            selector_context_id_offset: wire.selector_context_id_offset,
+            selector_context_id_offset: None,
             occurrence_reference: wire.occurrence_reference,
-            occurrence_reference_offset: wire.occurrence_reference_offset,
+            occurrence_reference_offset: None,
             external_object_reference: wire.external_object_reference,
-            external_object_reference_offset: wire.external_object_reference_offset,
+            external_object_reference_offset: None,
             external_segment: wire.external_segment,
-            external_segment_offset: wire.external_segment_offset,
+            external_segment_offset: None,
             external_asset_id: wire.external_asset_id,
-            external_asset_id_offset: wire.external_asset_id_offset,
+            external_asset_id_offset: None,
             external_link_name: wire.external_link_name,
-            external_link_name_offset: wire.external_link_name_offset,
-            external_version: match (wire.external_property_key, wire.external_property_key_offset, wire.external_version_urn, wire.external_version_urn_offset) {
-                (None, None, None, None) => None,
-                (Some(key), Some(key_offset), Some(urn), Some(urn_offset)) => Some(DesignExternalVersion { property_key: Located { value: key, offset: key_offset }, version_urn: Located { value: urn, offset: urn_offset } }),
-                _ => return Err("external_property_key, external_property_key_offset, external_version_urn and external_version_urn_offset must occur together".into()),
+            external_link_name_offset: None,
+            external_version: match (wire.external_property_key, wire.external_version_urn) {
+                (None, None) => None,
+                (Some(key), Some(urn)) => Some(DesignExternalVersion {
+                    property_key: Sourced {
+                        value: key,
+                        offset: None,
+                    },
+                    version_urn: Sourced {
+                        value: urn,
+                        offset: None,
+                    },
+                }),
+                _ => {
+                    return Err(
+                        "external_property_key and external_version_urn must occur together".into(),
+                    )
+                }
             },
             role_record_index: wire.role_record_index,
-            role_class_tag: wire.role_class_tag.try_into().map_err(|error| format!("role_class_tag: {error}"))?,
-            role_byte_offset: wire.role_byte_offset,
+            role_class_tag: wire
+                .role_class_tag
+                .try_into()
+                .map_err(|error| format!("role_class_tag: {error}"))?,
+            role_byte_offset: None,
             occurrence_role: wire.occurrence_role,
-            occurrence_role_offset: wire.occurrence_role_offset,
+            occurrence_role_offset: None,
         })
     }
 }
@@ -1154,51 +1077,76 @@ impl From<DesignAssemblyAxialSelectorIdentity> for DesignAssemblyAxialSelectorId
         Self {
             axis_record_index: record.axis_record_index,
             axis_class_tag: record.axis_class_tag.into(),
-            axis_byte_offset: record.axis_byte_offset,
             axis_paired_class_tag: record.axis_paired_class_tag.into(),
-            axis_paired_byte_offset: record.axis_paired_byte_offset,
             selector_record_index: record.selector_record_index,
             selector_class_tag: record.selector_class_tag.into(),
-            selector_byte_offset: record.selector_byte_offset,
             selector_paired_class_tag: record.selector_paired_class_tag.into(),
-            selector_paired_byte_offset: record.selector_paired_byte_offset,
             nested_record_index: record.nested_record_index,
-            nested_record_index_offset: record.nested_record_index_offset,
             selector_asset_id: record.selector_asset_id,
-            selector_asset_id_offset: record.selector_asset_id_offset,
             selector_context_id: record.selector_context_id,
-            selector_context_id_offset: record.selector_context_id_offset,
             occurrence_reference: record.occurrence_reference,
-            occurrence_reference_offset: record.occurrence_reference_offset,
             external_object_reference: record.external_object_reference,
-            external_object_reference_offset: record.external_object_reference_offset,
             external_segment: record.external_segment,
-            external_segment_offset: record.external_segment_offset,
             external_asset_id: record.external_asset_id,
-            external_asset_id_offset: record.external_asset_id_offset,
             external_link_name: record.external_link_name,
-            external_link_name_offset: record.external_link_name_offset,
             external_property_key: record
                 .external_version
                 .as_ref()
                 .map(|version| version.property_key.value.clone()),
-            external_property_key_offset: record
-                .external_version
-                .as_ref()
-                .map(|version| version.property_key.offset),
             external_version_urn: record
                 .external_version
                 .as_ref()
                 .map(|version| version.version_urn.value.clone()),
-            external_version_urn_offset: record
-                .external_version
-                .as_ref()
-                .map(|version| version.version_urn.offset),
             role_record_index: record.role_record_index,
             role_class_tag: record.role_class_tag.into(),
-            role_byte_offset: record.role_byte_offset,
             occurrence_role: record.occurrence_role,
-            occurrence_role_offset: record.occurrence_role_offset,
+        }
+    }
+}
+
+impl SourceOffsets for DesignAssemblyAxialSelectorIdentity {
+    fn visit_source_offsets(&mut self, offsets: &mut OffsetVisitor<'_>) {
+        offsets.offset("axis_byte_offset", &mut self.axis_byte_offset);
+        offsets.offset("axis_paired_byte_offset", &mut self.axis_paired_byte_offset);
+        offsets.offset("selector_byte_offset", &mut self.selector_byte_offset);
+        offsets.offset(
+            "selector_paired_byte_offset",
+            &mut self.selector_paired_byte_offset,
+        );
+        offsets.offset(
+            "nested_record_index_offset",
+            &mut self.nested_record_index_offset,
+        );
+        offsets.offset(
+            "selector_asset_id_offset",
+            &mut self.selector_asset_id_offset,
+        );
+        offsets.offset(
+            "selector_context_id_offset",
+            &mut self.selector_context_id_offset,
+        );
+        offsets.offset(
+            "occurrence_reference_offset",
+            &mut self.occurrence_reference_offset,
+        );
+        offsets.offset(
+            "external_object_reference_offset",
+            &mut self.external_object_reference_offset,
+        );
+        offsets.offset("external_segment_offset", &mut self.external_segment_offset);
+        offsets.offset(
+            "external_asset_id_offset",
+            &mut self.external_asset_id_offset,
+        );
+        offsets.offset(
+            "external_link_name_offset",
+            &mut self.external_link_name_offset,
+        );
+        offsets.offset("role_byte_offset", &mut self.role_byte_offset);
+        offsets.offset("occurrence_role_offset", &mut self.occurrence_role_offset);
+        if let Some(version) = &mut self.external_version {
+            offsets.sourced("external_property_key_offset", &mut version.property_key);
+            offsets.sourced("external_version_urn_offset", &mut version.version_urn);
         }
     }
 }
@@ -1490,11 +1438,13 @@ pub(crate) enum DesignAssemblyOperandQualifier {
         /// Dynamic class of the scope's primary indexed header.
         class_tag: DesignClassTag,
         /// Byte offset of the primary indexed header.
-        byte_offset: u64,
+        #[serde(skip)]
+        byte_offset: Option<u64>,
         /// Dynamic class of the paired indexed header.
         paired_class_tag: DesignClassTag,
         /// Byte offset of the paired indexed header.
-        paired_byte_offset: u64,
+        #[serde(skip)]
+        paired_byte_offset: Option<u64>,
     },
 }
 
@@ -1514,11 +1464,153 @@ pub(crate) struct DesignAssemblyOperandFrame {
     /// Construction record referenced by the operand.
     pub(crate) reference_record_index: u32,
     /// Byte offset of `reference_record_index`.
-    pub(crate) reference_offset: u64,
+    #[serde(skip)]
+    pub(crate) reference_offset: Option<u64>,
     /// Row-major operand-local-to-model transform.
     pub(crate) transform: SketchPlacementMatrix,
     /// Byte offset of the first transform scalar.
-    pub(crate) transform_offset: u64,
+    #[serde(skip)]
+    pub(crate) transform_offset: Option<u64>,
+}
+
+use crate::records::source_offsets::{OffsetVisitor, SourceOffsets};
+
+impl SourceOffsets for DesignAssemblyLimits {
+    fn visit_source_offsets(&mut self, offsets: &mut OffsetVisitor<'_>) {
+        offsets.offsets("value_offsets", &mut self.value_offsets);
+    }
+}
+
+impl SourceOffsets for DesignAssemblySolvedFrame {
+    fn visit_source_offsets(&mut self, offsets: &mut OffsetVisitor<'_>) {
+        offsets.offset("reference_offset", &mut self.reference_offset);
+        offsets.offset("record_byte_offset", &mut self.record_byte_offset);
+        offsets.offset("transform_offset", &mut self.transform_offset);
+    }
+}
+
+impl SourceOffsets for DesignAssemblyLegacySelection {
+    fn visit_source_offsets(&mut self, offsets: &mut OffsetVisitor<'_>) {
+        offsets.offset("byte_offset", &mut self.byte_offset);
+        offsets.offset("asset_id_offset", &mut self.asset_id_offset);
+        offsets.offset("context_id_offset", &mut self.context_id_offset);
+        offsets.offset(
+            "recipe_record_byte_offset",
+            &mut self.recipe_record_byte_offset,
+        );
+        offsets.each("recipe_references", &mut self.recipe_references);
+        offsets.offset("next_byte_offset", &mut self.next_byte_offset);
+    }
+}
+
+impl<C: SourceOffsets> SourceOffsets for DesignAssemblyLegacyOperand<C> {
+    fn visit_source_offsets(&mut self, offsets: &mut OffsetVisitor<'_>) {
+        offsets.offset("reference_offset", &mut self.reference_offset);
+        offsets.record("construction", &mut self.construction);
+        offsets.record("selection", &mut self.selection);
+    }
+}
+
+impl SourceOffsets for DesignAssemblyOperandFrame {
+    fn visit_source_offsets(&mut self, offsets: &mut OffsetVisitor<'_>) {
+        offsets.offset("reference_offset", &mut self.reference_offset);
+        offsets.offset("transform_offset", &mut self.transform_offset);
+    }
+}
+
+impl SourceOffsets for DesignAssemblyAxialOperandTarget {
+    fn visit_source_offsets(&mut self, offsets: &mut OffsetVisitor<'_>) {
+        if let Self::ComponentInsertOccurrence {
+            construction_byte_offset,
+            construction_transform_offset,
+            axis_record_index_offsets,
+            construction_paired_byte_offset,
+            selectors,
+            ..
+        } = self
+        {
+            offsets.offset("construction_byte_offset", construction_byte_offset);
+            offsets.offset(
+                "construction_transform_offset",
+                construction_transform_offset,
+            );
+            offsets.offsets("axis_record_index_offsets", axis_record_index_offsets);
+            offsets.offset(
+                "construction_paired_byte_offset",
+                construction_paired_byte_offset,
+            );
+            offsets.each("selectors", selectors.as_mut_slice());
+        }
+    }
+}
+
+impl SourceOffsets for DesignAssemblyOperandQualifier {
+    fn visit_source_offsets(&mut self, offsets: &mut OffsetVisitor<'_>) {
+        match self {
+            Self::OccurrencePath { .. } => {}
+            Self::AxialTarget { target } => offsets.record("target", target),
+            Self::JointOrigin {
+                byte_offset,
+                paired_byte_offset,
+                ..
+            } => {
+                offsets.offset("byte_offset", byte_offset);
+                offsets.offset("paired_byte_offset", paired_byte_offset);
+            }
+        }
+    }
+}
+
+impl SourceOffsets for DesignAssemblyAlignment {
+    fn visit_source_offsets(&mut self, offsets: &mut OffsetVisitor<'_>) {
+        offsets.sourced_each("value_offsets", &mut self.owners);
+        match self.form.as_mut() {
+            None | Some(DesignAssemblyAlignmentForm::DatumEnvelope { .. }) => {}
+            Some(DesignAssemblyAlignmentForm::LimitsOnly { limits }) => {
+                offsets.record("limits", limits);
+            }
+            Some(DesignAssemblyAlignmentForm::SolvedOnly {
+                solved_frame,
+                limits,
+            }) => {
+                offsets.record("solved_frame", solved_frame);
+                offsets.optional("limits", limits);
+            }
+            Some(DesignAssemblyAlignmentForm::LegacyAsBuilt421 {
+                carriers,
+                solved_frame,
+                limits,
+                ..
+            }) => {
+                offsets.record("legacy_operand_carriers.0", &mut carriers.point);
+                offsets.record("legacy_operand_carriers.1", &mut carriers.hole);
+                offsets.record("solved_frame", solved_frame);
+                offsets.optional("limits", limits);
+            }
+            Some(DesignAssemblyAlignmentForm::Frames { frames }) => {
+                offsets.each("operand_frames", frames);
+            }
+            Some(DesignAssemblyAlignmentForm::Qualified(operands)) => {
+                for (index, operand) in operands.iter_mut().enumerate() {
+                    offsets.record(&format!("operand_frames.{index}"), &mut operand.frame);
+                    offsets.record(
+                        &format!("operand_qualifiers.{index}"),
+                        &mut operand.qualifier,
+                    );
+                }
+            }
+        }
+        for (index, member) in self.additional_members.iter_mut().enumerate() {
+            offsets.record(
+                &format!("additional_operand_frames.{index}"),
+                &mut member.frame,
+            );
+            offsets.record(
+                &format!("additional_operand_qualifiers.{index}"),
+                &mut member.qualifier,
+            );
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1562,19 +1654,9 @@ cadmpeg_core::named_optional_field!(
     "external_property_key"
 );
 cadmpeg_core::named_optional_field!(
-    deserialize_external_property_key_offset,
-    u64,
-    "external_property_key_offset"
-);
-cadmpeg_core::named_optional_field!(
     deserialize_external_version_urn,
     String,
     "external_version_urn"
-);
-cadmpeg_core::named_optional_field!(
-    deserialize_external_version_urn_offset,
-    u64,
-    "external_version_urn_offset"
 );
 
 mod identity_rewrite;

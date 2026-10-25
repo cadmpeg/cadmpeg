@@ -43,10 +43,19 @@ pub(crate) fn validate_source_layout(
     Ok(validate_loaded(&ctx, &Layouts { fidelity }))
 }
 
+mod assembly;
+mod extrude;
+pub(super) mod scopes;
+
 /// Validate the source layout of an already loaded native namespace.
 fn validate_loaded(ctx: &Ctx<'_, '_>, layouts: &Layouts<'_>) -> Vec<Finding> {
     let mut findings = Vec::new();
-    validate_parameter_scope_owner_lanes(ctx, layouts, &mut findings);
+    let located = scopes::LocatedScopes::new(ctx.native, layouts);
+    scopes::validate_scope_layouts(ctx, &located, &mut findings);
+    scopes::validate_mesh_feature_scope_layouts(ctx, &located, &mut findings);
+    scopes::validate_image_scope_layouts(ctx, &located, layouts, &mut findings);
+    scopes::validate_edge_treatment_vertex_layouts(ctx, layouts, &mut findings);
+    validate_parameter_scope_owner_lanes(ctx, layouts, &located, &mut findings);
     validate_parameter_owner_layouts(ctx, layouts, &mut findings);
     validate_parameter_companion_layouts(ctx, layouts, &mut findings);
     findings
@@ -179,65 +188,32 @@ pub(super) fn validate_parameter_companion_layouts(
     }
 }
 
-/// The scope lanes that name a parameter owner and the source position of
-/// the owner's evaluated value: `(owner record index, value offset)`.
-fn scope_owner_lanes(scope: &records::feature::scope::DesignParameterScope) -> Vec<(u32, u64)> {
-    let mut lanes = Vec::new();
-    if let Some(construction) = scope.rectangular_pattern_construction() {
-        lanes.extend(
-            construction
-                .owner_record_indices
-                .into_iter()
-                .zip(construction.value_offsets),
-        );
-    }
-    if let Some(alignment) = scope.assembly_alignment() {
-        lanes.extend(
-            alignment
-                .owners
-                .iter()
-                .map(|lane| (lane.value, lane.offset)),
-        );
-        let as_built_421 = crate::design::assembly::legacy_as_built_421_generation(
-            scope.frame_length(),
-            scope.class_tag.as_str(),
-            scope.paired_class_tag.as_str(),
-        )
-        .is_some();
-        if let Some(limits) = alignment.limits().filter(|_| as_built_421) {
-            lanes.extend(
-                limits
-                    .owner_record_indices
-                    .into_iter()
-                    .zip(limits.value_offsets),
-            );
-        }
-    }
-    lanes
-}
-
 /// A scope lane that names a parameter owner states where that owner's
 /// evaluated value is. The owner's capture holds the same position.
 fn validate_parameter_scope_owner_lanes(
     ctx: &Ctx<'_, '_>,
     layouts: &Layouts<'_>,
+    located: &scopes::LocatedScopes<'_>,
     findings: &mut Vec<Finding>,
 ) {
     if !ctx.holds_design_intent() {
         return;
     }
-    for scope in &ctx.native.design_parameter_scopes {
+    for (position, scope) in ctx.native.design_parameter_scopes.iter().enumerate() {
         let native_stream = design_stream(&scope.id);
-        let valid = scope_owner_lanes(scope)
-            .into_iter()
-            .all(|(record_index, value_offset)| {
-                ctx.owners_by_index
-                    .get(&(native_stream, record_index))
-                    .filter(|owner| owner.scope_record_index() == Some(scope.record_index))
-                    .is_none_or(|owner| {
-                        owner_evaluated_value_offset(ctx, layouts, owner) == Some(value_offset)
-                    })
-            });
+        let valid = located.get(position).is_some_and(|located| {
+            scopes::scope_owner_lanes(located)
+                .into_iter()
+                .all(|(record_index, value_offset)| {
+                    ctx.owners_by_index
+                        .get(&(native_stream, record_index))
+                        .filter(|owner| owner.scope_record_index() == Some(scope.record_index))
+                        .is_none_or(|owner| {
+                            value_offset.is_some()
+                                && owner_evaluated_value_offset(ctx, layouts, owner) == value_offset
+                        })
+                })
+        });
         if !valid {
             push_constant_finding(
                 findings,

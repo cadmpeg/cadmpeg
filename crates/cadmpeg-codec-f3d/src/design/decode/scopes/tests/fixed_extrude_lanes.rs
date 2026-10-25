@@ -55,19 +55,19 @@ fn distance_extrude(extent: DesignExtrudeExtent, references: Vec<u32>) -> Design
             Some(DesignExtrudePrologue::ReferenceAware {
                 reference: None,
                 operation: DesignExtrudeOperation::Join,
-                operation_offset: 28,
+                operation_offset: Some(28),
                 direction_face_extend_values: [direction, 0],
                 side_extent_discriminators: [1, 1],
-                side_extent_discriminator_offsets: [77, 90],
+                side_extent_discriminator_offsets: Some([77, 90]),
                 first_side_target_ordinal: None,
                 extent,
-                direction_face_extend_offsets: [32, 36],
+                direction_face_extend_offsets: Some([32, 36]),
                 direction_reversed: false,
-                direction_reversed_offset: 40,
+                direction_reversed_offset: Some(40),
                 solid_operation: true,
-                solid_operation_offset: 41,
+                solid_operation_offset: Some(41),
                 start: DesignExtrudeStart::ProfilePlane,
-                start_offset: 42,
+                start_offset: Some(42),
             });
     }
     scope
@@ -96,7 +96,7 @@ fn lane(record_index: u32, value: f64, value_offset: u64) -> DesignFixedExtrudeS
     DesignFixedExtrudeScalar {
         value: crate::test_support::real(value),
         record_index,
-        value_offset,
+        value_offset: Some(value_offset),
     }
 }
 
@@ -108,7 +108,7 @@ fn distance_lane(
     DesignFixedExtrudeScalar {
         value: cadmpeg_ir::scalar::NonZeroReal::new(value).unwrap(),
         record_index,
-        value_offset,
+        value_offset: Some(value_offset),
     }
 }
 
@@ -229,7 +229,7 @@ fn slotted_extrude(
                 DesignExtrudeExtent::OneSidedToFace => [2, 0],
                 _ => [1, 0],
             };
-            *side_extent_discriminator_offsets = [extent_at, extent_at + 13];
+            *side_extent_discriminator_offsets = Some([extent_at, extent_at + 13]);
             *prologue_start = start;
         }
     }

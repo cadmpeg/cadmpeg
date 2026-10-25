@@ -226,7 +226,6 @@ fn capped_rectangular_pattern_instance_search_reports_a_loss() {
                     u_extent: 10.0,
                     v_extent: 0.0,
                     owner_record_indices: [11, 12, 13, 14],
-                    value_offsets: [101, 102, 103, 104],
                     instances: None,
                     instance_search_cap: Some(
                         crate::records::feature::patterns::RectangularPatternSearchCap::RunWork,

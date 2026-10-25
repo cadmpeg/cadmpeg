@@ -66,7 +66,12 @@ fn text_fixture_records_preserve_styles_and_refuse_unrepresented_orientation() {
         let wire = serde_json::to_value(&text).unwrap();
         let replay: crate::records::sketch_geometry::SketchText =
             serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(&replay).unwrap(), wire, "{}", case.label);
+        assert_eq!(
+            serde_json::to_value(&replay).unwrap(),
+            wire,
+            "{}",
+            case.label
+        );
         assert_eq!(replay.raw_bytes.data(), None, "{}", case.label);
     }
 }

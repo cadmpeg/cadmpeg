@@ -196,7 +196,7 @@ fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projecti
                 .iter()
                 .map(|owner| owner.offset)
                 .collect::<Vec<_>>(),
-            [1_003, 1_000, 1_001, 1_002]
+            [Some(1_003), Some(1_000), Some(1_001), Some(1_002)]
         );
         let limits = alignment.limits().expect("assembly limits");
         assert_eq!(limits.kind, expected_limit_kind);
@@ -212,23 +212,26 @@ fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projecti
         );
         assert_eq!(
             limits.value_offsets,
-            if reverse_limit_order {
+            Some(if reverse_limit_order {
                 [1_006, 1_005]
             } else {
                 [1_005, 1_006]
-            }
+            })
         );
         assert!(alignment.operand_frames().is_none());
         assert!(alignment.operand_paths().is_none());
         let solved_frame = alignment.solved_frame().expect("solved frame carrier");
         assert_eq!(solved_frame.reference_record_index, 200);
-        assert_eq!(solved_frame.reference_offset, 190 + 8 * 11);
-        assert_eq!(solved_frame.record_byte_offset, u64_from_index(frame_start));
+        assert_eq!(solved_frame.reference_offset, Some(190 + 8 * 11));
+        assert_eq!(
+            solved_frame.record_byte_offset,
+            Some(u64_from_index(frame_start))
+        );
         assert_eq!(solved_frame.class_tag.as_str(), frame_class_tag);
         assert!((solved_frame.transform[0][3] - 9.0).abs() <= EPS_EXACT_FIXTURE);
         assert_eq!(
             solved_frame.transform_offset,
-            u64_from_index(frame_start + transform_offset)
+            Some(u64_from_index(frame_start + transform_offset))
         );
     }
 }

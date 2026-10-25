@@ -84,11 +84,12 @@ pub(crate) struct ParameterScopeSources<'a> {
 /// scopes that own no parameters and therefore have no owner-frame backlink.
 pub(crate) struct DecodedParameterScopes<'a> {
     pub(crate) records: Vec<DesignParameterScope>,
-    pub(crate) source_layout_drafts: HashMap<String, AssemblyScopeSource<'a>>,
+    pub(crate) source_layout_drafts: HashMap<String, ScopeSource<'a>>,
 }
 
-/// Genuine source windows retained only until history-envelope admission.
-pub(crate) struct AssemblyScopeSource<'a> {
+/// Genuine source windows retained only until history-envelope admission:
+/// the scope frame, and the assembly operand paths read from it.
+pub(crate) struct ScopeSource<'a> {
     extent: View<'a>,
     paths: Vec<(usize, super::assembly_path_layout::PathSourceDraft<'a>)>,
 }
@@ -135,8 +136,13 @@ pub(crate) fn decode_parameter_scopes<'a>(
             else {
                 continue;
             };
-            scope.id =
-                design_record_id(&entry.name, ":design-parameter-scope#", scope.byte_offset());
+            scope.id = design_record_id(
+                &entry.name,
+                ":design-parameter-scope#",
+                scope
+                    .byte_offset()
+                    .ok_or_else(crate::records::feature::scope::unlocated_scope)?,
+            );
             let normal = super::super::patch::surface_patch_normal(
                 bytes,
                 &scope,
@@ -148,8 +154,18 @@ pub(crate) fn decode_parameter_scopes<'a>(
             bind_coil_extent_from_parameters(&mut scope, parameters, parameter_owners);
             bind_hem_operation_from_parameters(bytes, &mut scope, parameters, parameter_owners);
             if design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sketch) {
-                let start = usize::try_from(scope.byte_offset()).ok();
-                let end = usize::try_from(scope.paired_byte_offset()).ok();
+                let start = usize::try_from(
+                    scope
+                        .byte_offset()
+                        .ok_or_else(crate::records::feature::scope::unlocated_scope)?,
+                )
+                .ok();
+                let end = usize::try_from(
+                    scope
+                        .paired_byte_offset()
+                        .ok_or_else(crate::records::feature::scope::unlocated_scope)?,
+                )
+                .ok();
                 let frame = start
                     .zip(end)
                     .and_then(|(start, end)| bytes.get(start..end));
@@ -181,6 +197,7 @@ pub(crate) fn decode_parameter_scopes<'a>(
                 {
                     let Some(entity_reference_offset) = scope
                         .byte_offset()
+                        .ok_or_else(crate::records::feature::scope::unlocated_scope)?
                         .checked_add(u64_from_index(relative_offset))
                     else {
                         continue;
@@ -193,7 +210,7 @@ pub(crate) fn decode_parameter_scopes<'a>(
                         let entity_id = entity.entity_id.clone();
                         *slot = Some(scope::DesignSketchEntityBinding {
                             entity_id,
-                            entity_reference_offset,
+                            entity_reference_offset: Some(entity_reference_offset),
                         });
                     }
                 }
@@ -203,11 +220,11 @@ pub(crate) fn decode_parameter_scopes<'a>(
                     if let scope::DesignScopePayloadMut::WorkPlane(slot) = scope.payload_mut() {
                         *slot = Some(scope::DesignWorkPlaneTransform {
                             work_plane_transform: frame.transform,
-                            work_plane_transform_offset: frame.transform_offset,
+                            work_plane_transform_offset: Some(frame.transform_offset),
                             reference: frame.reference.map(|(record_index, offset)| {
                                 scope::DesignWorkPlaneReference {
                                     work_plane_reference: record_index,
-                                    work_plane_reference_offset: offset,
+                                    work_plane_reference_offset: Some(offset),
                                 }
                             }),
                             work_plane_construction: None,
@@ -225,11 +242,11 @@ pub(crate) fn decode_parameter_scopes<'a>(
                     if let scope::DesignScopePayloadMut::JointOrigin(slot) = scope.payload_mut() {
                         *slot = Some(scope::DesignJointOriginTransform {
                             joint_origin_transform: frame.transform,
-                            joint_origin_transform_offset: frame.transform_offset,
+                            joint_origin_transform_offset: Some(frame.transform_offset),
                             reference: frame.reference.map(|(record_index, offset)| {
                                 scope::DesignJointOriginReference {
                                     joint_origin_reference: record_index,
-                                    joint_origin_reference_offset: offset,
+                                    joint_origin_reference_offset: Some(offset),
                                 }
                             }),
                         });
@@ -455,25 +472,31 @@ pub(crate) fn decode_parameter_scopes<'a>(
                     &mut path_sources,
                 )?;
                 if construction.is_some() && !path_sources.is_empty() {
-                    let start = usize::try_from(scope.byte_offset())
-                        .ok()
-                        .and_then(|relative| source.start().checked_add(relative))
-                        .ok_or_else(|| {
-                            CodecError::malformed("assembly scope source start overflows")
-                        })?;
-                    let end = usize::try_from(scope.paired_byte_offset())
-                        .ok()
-                        .and_then(|relative| source.start().checked_add(relative))
-                        .ok_or_else(|| {
-                            CodecError::malformed("assembly scope source end overflows")
-                        })?;
+                    let start = usize::try_from(
+                        scope
+                            .byte_offset()
+                            .ok_or_else(crate::records::feature::scope::unlocated_scope)?,
+                    )
+                    .ok()
+                    .and_then(|relative| source.start().checked_add(relative))
+                    .ok_or_else(|| {
+                        CodecError::malformed("assembly scope source start overflows")
+                    })?;
+                    let end = usize::try_from(
+                        scope
+                            .paired_byte_offset()
+                            .ok_or_else(crate::records::feature::scope::unlocated_scope)?,
+                    )
+                    .ok()
+                    .and_then(|relative| source.start().checked_add(relative))
+                    .ok_or_else(|| CodecError::malformed("assembly scope source end overflows"))?;
                     let extent = source.child(start, end).ok_or_else(|| {
                         CodecError::malformed("assembly scope source extent is invalid")
                     })?;
                     if source_layout_drafts
                         .insert(
                             scope.id.clone(),
-                            AssemblyScopeSource {
+                            ScopeSource {
                                 extent,
                                 paths: path_sources,
                             },
@@ -569,6 +592,16 @@ pub(crate) fn decode_parameter_scopes<'a>(
                 }
             }
 
+            if !source_layout_drafts.contains_key(&scope.id) {
+                let extent = scope_frame_view(source, &scope)?;
+                source_layout_drafts.insert(
+                    scope.id.clone(),
+                    ScopeSource {
+                        extent,
+                        paths: Vec::new(),
+                    },
+                );
+            }
             out.push(scope);
         }
         bind_joint_origin_frames_from_assemblies(bytes, &mut out[stream_scope_start..]);
@@ -582,35 +615,64 @@ pub(crate) fn decode_parameter_scopes<'a>(
     })
 }
 
-/// Capture only scopes retained by the existing history-envelope admission.
+/// The source frame of a decoded scope: its bytes from the primary header to
+/// the paired header.
+fn scope_frame_view<'a>(
+    source: View<'a>,
+    scope: &DesignParameterScope,
+) -> Result<View<'a>, CodecError> {
+    let bound = |offset: Option<u64>| {
+        offset
+            .and_then(|relative| usize::try_from(relative).ok())
+            .and_then(|relative| source.start().checked_add(relative))
+            .ok_or_else(|| CodecError::malformed("parameter scope source frame overflows"))
+    };
+    let start = bound(scope.byte_offset())?;
+    let end = bound(scope.paired_byte_offset())?;
+    source
+        .child(start, end)
+        .ok_or_else(|| CodecError::malformed("parameter scope source frame is invalid"))
+}
+
+/// Capture the frame of every scope retained by the history-envelope
+/// admission, with the reads of its assembly operand paths.
 ///
 /// Pointer values use the format's original BulkStream coordinates. The owning
 /// record extent is the actual scope window; operand records can be elsewhere
 /// in that same stream and their genuine reads retain those source positions.
-pub(crate) fn capture_assembly_path_layouts(
+/// The extent length is the scope frame length.
+pub(crate) fn capture_scope_layouts(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scopes: &[DesignParameterScope],
-    mut drafts: HashMap<String, AssemblyScopeSource<'_>>,
+    mut drafts: HashMap<String, ScopeSource<'_>>,
 ) -> Result<std::collections::BTreeMap<String, std::collections::BTreeMap<String, u64>>, CodecError>
 {
     let mut owners = std::collections::BTreeMap::new();
     for scope in scopes {
         let Some(draft) = drafts.remove(&scope.id) else {
-            continue;
+            return Err(CodecError::malformed(
+                "admitted parameter scope has no source frame",
+            ));
         };
-        let Some(assembly::DesignAssemblyAlignmentForm::Qualified(operands)) = scope
+        let operands = match scope
             .assembly_alignment()
             .and_then(|alignment| alignment.form.as_ref())
-        else {
-            return Err(CodecError::malformed(
-                "assembly source draft has no admitted path content",
-            ));
+        {
+            Some(assembly::DesignAssemblyAlignmentForm::Qualified(operands)) => Some(operands),
+            _ if draft.paths.is_empty() => None,
+            _ => {
+                return Err(CodecError::malformed(
+                    "assembly source draft has no admitted path content",
+                ))
+            }
         };
         let mut pointers = std::collections::BTreeMap::new();
         ctx.record(&scope.id, draft.extent, || {
             for (ordinal, source) in &draft.paths {
                 let Some(assembly::DesignAssemblyOperandQualifier::OccurrencePath { path }) =
-                    operands.get(*ordinal).map(|operand| &operand.qualifier)
+                    operands
+                        .and_then(|operands| operands.get(*ordinal))
+                        .map(|operand| &operand.qualifier)
                 else {
                     return Err(CodecError::malformed(
                         "assembly path source ordinal is invalid",
@@ -636,13 +698,39 @@ pub(crate) fn capture_assembly_path_layouts(
         })?;
         if owners.insert(scope.id.clone(), pointers).is_some() {
             return Err(CodecError::malformed(
-                "admitted assembly source owner is duplicated",
+                "admitted scope source owner is duplicated",
             ));
         }
     }
     // The remaining drafts belong to physical envelopes rejected by the
     // existing history admission. No record scope was opened for them.
     Ok(owners)
+}
+
+/// Add the source offsets of each final scope to the pointers of its capture.
+/// Every scope has a capture; each kept pointer is charged once.
+pub(crate) fn add_scope_source_pointers(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scopes: &mut [DesignParameterScope],
+    pointers: &mut std::collections::BTreeMap<String, std::collections::BTreeMap<String, u64>>,
+) -> Result<(), CodecError> {
+    for scope in scopes {
+        let offsets = crate::records::source_offsets::collect(scope);
+        let owner = pointers.entry(scope.id.clone()).or_default();
+        for (name, offset) in offsets {
+            let bytes = name
+                .len()
+                .checked_add(size_of::<(String, u64)>())
+                .ok_or_else(|| CodecError::malformed("scope pointer storage overflows"))?;
+            ctx.retain_bytes(u64_from_index(bytes), "parameter scope source pointer")?;
+            if owner.insert(name, offset).is_some() {
+                return Err(CodecError::malformed(
+                    "parameter scope source pointer is duplicated",
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 fn first_marked_reference_offsets(frame: &[u8]) -> HashMap<u32, usize> {
@@ -746,7 +834,9 @@ pub(crate) fn admit_history_bound_scope_variants(
         let mut primary = indices.iter().copied().filter(|index| {
             let scope = &scopes[*index];
             native_stream(&scope.id).is_some_and(|stream| {
-                primary_frames.contains(&(stream.to_owned(), scope.byte_offset()))
+                scope
+                    .byte_offset()
+                    .is_some_and(|offset| primary_frames.contains(&(stream.to_owned(), offset)))
             })
         });
         let primary_indexed = match (primary.next(), primary.next()) {
@@ -858,14 +948,15 @@ fn strip_scope_variant_provenance(
         }
         serde_json::Value::Object(fields) => {
             fields.retain(|key, _| {
-                if key.ends_with("_offset") || key.ends_with("_offsets") {
+                if key.ends_with("_offset") || key.ends_with("_offsets") || key.ends_with("_stored")
+                {
                     return false;
                 }
                 if top_level
                     && matches!(
                         key.as_str(),
                         "id" | "class_tag"
-                            | "frame_length"
+                            | "generation"
                             | "history_state_id"
                             | "previous_history_state_id"
                             | "paired_class_tag"
@@ -1328,7 +1419,7 @@ pub(in crate::design::decode) fn parse_parameter_scope(
                 operation: coil_discriminators.as_ref().map(|fields| {
                     crate::records::identity::RecordedValue {
                         value: fields.operation,
-                        offset: fields.operation_offset,
+                        offset: Some(fields.operation_offset),
                     }
                 }),
                 extent: coil_discriminators
@@ -1340,7 +1431,7 @@ pub(in crate::design::decode) fn parse_parameter_scope(
                         Some(offset) => crate::records::identity::MaybeRecordedValue::Located(
                             crate::records::identity::RecordedValue {
                                 value: fields.section,
-                                offset,
+                                offset: Some(offset),
                             },
                         ),
                         None => {
@@ -1352,7 +1443,7 @@ pub(in crate::design::decode) fn parse_parameter_scope(
                         Some(offset) => crate::records::identity::MaybeRecordedValue::Located(
                             crate::records::identity::RecordedValue {
                                 value: fields.section_placement,
-                                offset,
+                                offset: Some(offset),
                             },
                         ),
                         None => crate::records::identity::MaybeRecordedValue::Unlocated(
@@ -1365,7 +1456,7 @@ pub(in crate::design::decode) fn parse_parameter_scope(
                         Some(offset) => crate::records::identity::MaybeRecordedValue::Located(
                             crate::records::identity::RecordedValue {
                                 value: fields.clockwise,
-                                offset,
+                                offset: Some(offset),
                             },
                         ),
                         None => crate::records::identity::MaybeRecordedValue::Unlocated(
@@ -1619,7 +1710,7 @@ pub(crate) fn parameter_scope_payload_length(scope: &DesignParameterScope) -> Op
     let kind_bytes = u64::try_from(scope.kind_name().encode_utf16().count())
         .ok()?
         .checked_mul(2)?;
-    scope.frame_length().checked_sub(kind_bytes)
+    scope.frame_length()?.checked_sub(kind_bytes)
 }
 
 #[cfg(test)]

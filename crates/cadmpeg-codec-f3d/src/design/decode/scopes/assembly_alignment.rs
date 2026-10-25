@@ -115,18 +115,18 @@ pub(super) fn exact_assembly_alignment_with_types<'a>(
             return None;
         }
         let as_built_421 = crate::design::assembly::legacy_as_built_421_generation(
-            scope.frame_length(),
+            scope.frame_length()?,
             scope.class_tag.as_str(),
             scope.paired_class_tag.as_str(),
         )
         .is_some();
         let legacy_class_383 = crate::design::assembly::legacy_class_383_258_scope(
-            scope.frame_length(),
+            scope.frame_length()?,
             scope.class_tag.as_str(),
             scope.paired_class_tag.as_str(),
         );
         let generation = crate::design::assembly::AssemblyScopeGeneration::new(
-            scope.frame_length(),
+            scope.frame_length()?,
             scope.class_tag.as_str(),
             scope.paired_class_tag.as_str(),
         );
@@ -159,7 +159,7 @@ pub(super) fn exact_assembly_alignment_with_types<'a>(
             .map(Ok);
         }
         let (angle, offset, owners) = {
-            if matches!(scope.frame_length(), 671 | 744 | 748)
+            if matches!(scope.frame_length(), Some(671) | Some(744) | Some(748))
                 && generation.operand_frame_variant().is_none()
             {
                 return None;
@@ -167,7 +167,7 @@ pub(super) fn exact_assembly_alignment_with_types<'a>(
             let (alignment_start, alignment_end) = generation.alignment_lane_bounds(lanes.len())?;
             let alignment_lanes = lanes.get(alignment_start..alignment_end)?;
             let placement_ordered = crate::design::assembly::placement_ordered_as_built_scope(
-                scope.frame_length(),
+                scope.frame_length()?,
                 scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
             );
             let (angle, offset) = match alignment_lanes {
@@ -193,7 +193,7 @@ pub(super) fn exact_assembly_alignment_with_types<'a>(
                 ),
                 // A rigid as-built joint has no alignment owners.
                 [] if crate::design::assembly::rigid_as_built_scope(
-                    scope.frame_length(),
+                    scope.frame_length()?,
                     scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
                 ) =>
                 {
@@ -204,9 +204,9 @@ pub(super) fn exact_assembly_alignment_with_types<'a>(
             // Both supported alignment lanes use one fixed four-owner allocation.
             let mut owners = Vec::new();
             for owner in alignment_lanes {
-                owners.push(crate::records::identity::Located {
+                owners.push(crate::records::identity::Sourced {
                     value: owner.record_index(),
-                    offset: owner.evaluated_value_offset()?,
+                    offset: Some(owner.evaluated_value_offset()?),
                 });
             }
             if legacy_class_388 {
@@ -305,10 +305,7 @@ pub(super) fn exact_assembly_alignment_with_types<'a>(
             };
             // A rigid group's members after its first two tie to its first.
             if let Some(leading) = paths.as_ref().filter(|_| {
-                crate::design::assembly::rigid_as_built_scope(
-                    scope.frame_length(),
-                    scope.kind() == scope::DesignFeatureKind::AsBuilt,
-                )
+                crate::design::assembly::scope_is_rigid_as_built(scope)
             }) {
                 let member_paths = match super::assembly_operand_paths::exact_rigid_group_member_paths(
                     source,
@@ -338,10 +335,7 @@ pub(super) fn exact_assembly_alignment_with_types<'a>(
                     let frames = exact_as_built_operand_frames(
                         bytes,
                         &paths,
-                        crate::design::assembly::wide_as_built_scope(
-                            scope.frame_length(),
-                            scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
-                        ),
+                        crate::design::assembly::scope_is_wide_as_built(scope),
                     );
                     let paths = paths.map(|path| {
                         let ordinal = chosen_sources.len();
@@ -437,7 +431,7 @@ pub(super) fn exact_assembly_alignment_with_types<'a>(
             _ => None,
         };
         let frame_sense = sense_at
-            .and_then(|at| usize::try_from(scope.byte_offset()).ok()?.checked_add(at))
+            .and_then(|at| usize::try_from(scope.byte_offset()?).ok()?.checked_add(at))
             .and_then(|at| match bytes.get(at) {
                 Some(1) => Some(assembly::DesignJointFrameSense::Opposed),
                 Some(0) => Some(assembly::DesignJointFrameSense::Aligned),

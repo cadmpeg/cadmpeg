@@ -46,7 +46,7 @@ pub(crate) fn decode_decal_images(
         &crate::records::feature::scope::DesignFeatureKind::Decal,
         pointers,
         |_, stream, scope| {
-            let start = usize::try_from(scope.byte_offset()).ok()?;
+            let start = usize::try_from(scope.byte_offset()?).ok()?;
             Some(super::image::ImageRecord {
                 id: ids::native_design_decal_image_id(stream, start),
                 start,
@@ -140,7 +140,11 @@ fn parse_decal_image(
     scope: &DesignParameterScope,
     read: &super::image::ImageRead<'_, '_>,
 ) -> Result<Option<DesignDecalImage>, CodecError> {
-    let Ok(scope_at) = usize::try_from(scope.byte_offset()) else {
+    let Ok(scope_at) = usize::try_from(
+        scope
+            .byte_offset()
+            .ok_or_else(crate::records::feature::scope::unlocated_scope)?,
+    ) else {
         return Ok(None);
     };
     parse_decal_image_frame(bytes, stream, scope.record_index, scope_at, read)

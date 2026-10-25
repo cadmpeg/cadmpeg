@@ -42,7 +42,7 @@ pub(crate) fn decode_canvas_images(
             let start = canvas_geometry_at(bytes, scope)?;
             // With no primary index, the geometry, paired and asset records
             // run from the geometry record to the scope.
-            let end = usize::try_from(scope.byte_offset())
+            let end = usize::try_from(scope.byte_offset()?)
                 .ok()
                 .filter(|end| *end > start)?;
             Some(super::image::ImageRecord {
@@ -142,7 +142,7 @@ fn canvas_geometry_reference<'a>(
 /// runs locate it (Appendix C `scan_recovery` of `f3d.bulk_class_members`
 /// for `design_canvas_images`).
 fn canvas_geometry_at(bytes: &[u8], scope: &DesignParameterScope) -> Option<usize> {
-    let scope_at = usize::try_from(scope.byte_offset()).ok()?;
+    let scope_at = usize::try_from(scope.byte_offset()?).ok()?;
     let (_, index) = canvas_geometry_reference(scope_at, &|range| bytes.get(range))?;
     next_indexed_record_offset_with_index(bytes, 0, index)
 }
@@ -158,7 +158,7 @@ fn parse_canvas_image(
     read: &super::image::ImageRead<'_, '_>,
 ) -> Result<Option<DesignCanvasImage>, CodecError> {
     let parsed = (|| {
-        let scope_at = usize::try_from(scope.byte_offset()).ok()?;
+        let scope_at = usize::try_from(scope.byte_offset()?).ok()?;
         let (geometry_reference_at, geometry_record_index) =
             canvas_geometry_reference(scope_at, read)?;
         let geometry_at = next_indexed_record_offset_with_index(bytes, 0, geometry_record_index)?;
@@ -244,8 +244,7 @@ fn parse_canvas_layout(
     let (geometry_class_tag, after_geometry_tag) =
         lp_ascii_filtered_view(records, 0, 0..=2000, u8::is_ascii_graphic)?;
     let geometry_prologue =
-        DesignCanvasPrologue::from_layout(layout, records.get(11..offsets.first_boundary)?)
-            .ok()?;
+        DesignCanvasPrologue::from_layout(layout, records.get(11..offsets.first_boundary)?).ok()?;
     if View::u32_le_at(records, after_geometry_tag)? != geometry_record_index {
         return None;
     }
@@ -354,8 +353,7 @@ fn parse_canvas_layout(
     {
         return None;
     }
-    let (asset_name, after_asset_name) =
-        lp_utf16_bounded(records, asset_record_at + 21, 1..=1024)?;
+    let (asset_name, after_asset_name) = lp_utf16_bounded(records, asset_record_at + 21, 1..=1024)?;
     if after_asset_name != records.len() {
         return None;
     }
@@ -442,27 +440,27 @@ mod tests {
             bytes[at..at + 2].copy_from_slice(&unit.to_le_bytes());
         }
         reference(&mut bytes, 305, 10);
-        let scope = serde_json::from_value(serde_json::json!({
-            "id": "f3d:Design/BulkStream.dat:scope#30",
-            "byte_offset": 284,
-            "class_tag": "303",
-            "record_index": 30,
-            "frame_length": 216,
-            "kind": "Canvas",
-            "kind_offset": 316,
-            "feature_ordinal": 1,
-            "feature_ordinal_offset": 428,
-            "history_state_id": 8,
-            "history_state_id_offset": 308,
-            "previous_history_state_id": 7,
-            "previous_history_state_id_offset": 458,
-            "reference_count_offset": 293,
-            "reference_members": [10],
-            "reference_member_offsets": [298],
-            "paired_class_tag": "304",
-            "paired_byte_offset": 500
-        }))
-        .unwrap();
+        let scope =
+            crate::records::feature::test_support::located_scope_from_fixture(serde_json::json!({
+                "id": "f3d:Design/BulkStream.dat:scope#30",
+                "byte_offset": 284,
+                "class_tag": "303",
+                "record_index": 30,
+                "frame_length": 216,
+                "kind": "Canvas",
+                "kind_offset": 316,
+                "feature_ordinal": 1,
+                "feature_ordinal_offset": 428,
+                "history_state_id": 8,
+                "history_state_id_offset": 308,
+                "previous_history_state_id": 7,
+                "previous_history_state_id_offset": 458,
+                "reference_count_offset": 293,
+                "reference_members": [10],
+                "reference_member_offsets": [298],
+                "paired_class_tag": "304",
+                "paired_byte_offset": 500
+            }));
         (bytes, scope)
     }
 
@@ -524,21 +522,12 @@ mod tests {
             bytes[label..label + 6].copy_from_slice(&modern[213..219]);
             bytes[asset + 21..scope_at].copy_from_slice(&modern[270..284]);
             reference(&mut bytes, scope_at + 21, 10);
-            let mut scope_wire = serde_json::to_value(&scope).unwrap();
-            for (field, value) in scope_wire.as_object_mut().unwrap() {
-                if field.ends_with("_offset") && value.is_u64() {
-                    *value = serde_json::json!(
-                        value.as_u64().unwrap() + u64::try_from(scope_at).unwrap() - 284
-                    );
-                } else if field == "reference_member_offsets" {
-                    for offset in value.as_array_mut().unwrap() {
-                        *offset = serde_json::json!(
-                            offset.as_u64().unwrap() + u64::try_from(scope_at).unwrap() - 284
-                        );
-                    }
-                }
+            let mut pointers = crate::records::source_offsets::collect(&mut scope.clone());
+            for offset in pointers.values_mut() {
+                *offset = *offset + u64::try_from(scope_at).unwrap() - 284;
             }
-            let scope = serde_json::from_value(scope_wire).unwrap();
+            let mut scope = scope.clone();
+            crate::records::source_offsets::restore(&mut scope, &pointers);
             let parse = |bytes: &[u8]| {
                 parse_canvas_image(bytes, "Design/BulkStream.dat", &scope, &|range| {
                     bytes.get(range)

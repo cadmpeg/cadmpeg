@@ -43,7 +43,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
             auxiliary_reference_record_indices: Vec::new(),
             settings_record_index: 411,
             bend_radius: cadmpeg_ir::scalar::PositiveReal::new(0.25).expect("positive bend radius"),
-            bend_radius_offset: 156,
+            bend_radius_offset: Some(156),
             height_datum: DesignSheetMetalHeightDatum::InnerFaces,
             bend_position: DesignBendPosition::Adjacent,
             selection: crate::records::feature::sheet_metal::DesignEdgeFlangeSelection::try_new(
@@ -597,7 +597,7 @@ fn edge_flange_to_object_fixture(
             auxiliary_reference_record_indices: Vec::new(),
             settings_record_index: 411,
             bend_radius: cadmpeg_ir::scalar::PositiveReal::new(0.25).expect("positive bend radius"),
-            bend_radius_offset: 156,
+            bend_radius_offset: Some(156),
             height_datum: DesignSheetMetalHeightDatum::OuterFaces,
             bend_position: DesignBendPosition::Inside,
             selection: crate::records::feature::sheet_metal::DesignEdgeFlangeSelection::try_new(
@@ -960,7 +960,7 @@ fn edge_flange_scope_without_a_width_parameter_keeps_its_native_form() {
             auxiliary_reference_record_indices: Vec::new(),
             settings_record_index: 343,
             bend_radius: cadmpeg_ir::scalar::PositiveReal::new(0.25).expect("positive bend radius"),
-            bend_radius_offset: 156,
+            bend_radius_offset: Some(156),
             height_datum: DesignSheetMetalHeightDatum::OuterFaces,
             bend_position: DesignBendPosition::Inside,
             selection: crate::records::feature::sheet_metal::DesignEdgeFlangeSelection::try_new(
@@ -1463,7 +1463,7 @@ fn hem_scope_projects_each_decoded_owner_layout() {
         parameter_owners,
         settings_record_index: 724,
         bend_radius: cadmpeg_ir::scalar::PositiveReal::new(0.25).expect("positive bend radius"),
-        bend_radius_offset: 100,
+        bend_radius_offset: Some(100),
     };
     let project = |record_index: u32,
                    operation: DesignHemOperation,

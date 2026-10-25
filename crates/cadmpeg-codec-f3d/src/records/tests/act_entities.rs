@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::records::act::{ActChannelGroup, ActStreamResidue, ActEntity, ActTableRow};
+use crate::records::act::{ActChannelGroup, ActEntity, ActStreamResidue, ActTableRow};
 use std::collections::BTreeMap;
 
 fn group_wire() -> serde_json::Value {

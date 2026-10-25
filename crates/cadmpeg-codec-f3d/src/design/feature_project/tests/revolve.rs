@@ -23,10 +23,10 @@ fn revolve_projects_with_native_profile() {
         .try_edit(|draft| {
             draft.payload = DesignPathFeatureConstruction::Revolve(DesignRevolveConstruction {
                 operation: crate::records::feature::extrude::DesignExtrudeOperation::NewBody,
-                operation_offset: 0,
+                operation_offset: Some(0),
                 angle: cadmpeg_ir::scalar::PositiveAngle::new(1.0).unwrap(),
                 angle_record_index: 300,
-                angle_offset: 0,
+                angle_offset: Some(0),
                 opposite_angle: None,
             })
             .into();
@@ -136,10 +136,10 @@ fn revolve_projects_design_geometry_z_axis_selection() {
         .try_edit(|draft| {
             draft.payload = DesignPathFeatureConstruction::Revolve(DesignRevolveConstruction {
                 operation: crate::records::feature::extrude::DesignExtrudeOperation::NewBody,
-                operation_offset: 0,
+                operation_offset: Some(0),
                 angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU).unwrap(),
                 angle_record_index: 300,
-                angle_offset: 0,
+                angle_offset: Some(0),
                 opposite_angle: None,
             })
             .into();

@@ -1365,13 +1365,19 @@ fn design_projection_gaps(
             .iter()
             .filter(|relation| {
                 !projected_constraint_refs.contains(relation.id.as_str())
-                    && crate::design::decode::sketch::sketch_pattern_neutral_state(relation) != Some(false)
+                    && crate::design::decode::sketch::sketch_pattern_neutral_state(relation)
+                        != Some(false)
             })
             .count(),
-        unprojected_sketch_pattern_states: native.sketch_relations.iter().filter(|relation| {
-            !projected_constraint_refs.contains(relation.id.as_str())
-                && crate::design::decode::sketch::sketch_pattern_neutral_state(relation) == Some(false)
-        }).count(),
+        unprojected_sketch_pattern_states: native
+            .sketch_relations
+            .iter()
+            .filter(|relation| {
+                !projected_constraint_refs.contains(relation.id.as_str())
+                    && crate::design::decode::sketch::sketch_pattern_neutral_state(relation)
+                        == Some(false)
+            })
+            .count(),
         unprojected_dimensions: {
             let container_only = container_only_dimension_parameters(native);
             let relation_bearing_companions = native
@@ -3007,6 +3013,11 @@ impl<'a> F3dDecodeSession<'a> {
                     return Err(CodecError::malformed("source pointer owner is duplicated"));
                 }
             }
+            crate::design::decode::scopes::parameter_scope::add_scope_source_pointers(
+                self.ctx,
+                &mut design.design_parameter_scopes,
+                &mut source_layout_pointers,
+            )?;
         }
         self.report
             .losses

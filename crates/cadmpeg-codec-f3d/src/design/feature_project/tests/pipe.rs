@@ -37,14 +37,14 @@ fn pipe_dispatcher_requires_shape_evidence_beyond_opaque_bytes() {
         let value = Some(DesignPathFeatureConstruction::Pipe(
             crate::records::feature::path_features::DesignPipeConstruction {
                 operation: DesignExtrudeOperation::NewBody,
-                operation_offset: 26,
+                operation_offset: Some(26),
                 is_hollow: false,
-                is_hollow_offset: 25,
+                is_hollow_offset: Some(25),
                 opaque_post_operation: [1, 1].into(),
-                opaque_post_operation_offset: 30,
+                opaque_post_operation_offset: Some(30),
                 values: crate::test_support::reals([1.0, 1.0, 0.6, 0.15]),
                 record_indexes: [30, 33, 36, 39],
-                value_offsets: [40, 151, 262, 373],
+                value_offsets: Some([40, 151, 262, 373]),
             },
         ));
         scope

@@ -726,7 +726,12 @@ fn fixture_relation_frames_retain_source_bytes_and_rectangular_flags() {
         let json = serde_json::to_string(&relation).unwrap();
         let restored: crate::records::sketch_relations::SketchRelation =
             serde_json::from_str(&json).unwrap();
-        assert_eq!(serde_json::to_string(&restored).unwrap(), json, "{}", case.label);
+        assert_eq!(
+            serde_json::to_string(&restored).unwrap(),
+            json,
+            "{}",
+            case.label
+        );
         assert_eq!(restored.raw_bytes(), None, "{}", case.label);
     }
 }

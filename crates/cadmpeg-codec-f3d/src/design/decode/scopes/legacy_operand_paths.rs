@@ -37,14 +37,14 @@ pub(super) fn exact_legacy_class_388_scope(
 ) -> Option<()> {
     if scope.class_tag.as_str() != "388"
         || scope.paired_class_tag.as_str() != "266"
-        || scope.frame_length() != u64_from_index(class_388_assemble::LEN)
+        || scope.frame_length() != Some(u64_from_index(class_388_assemble::LEN))
         || scope.reference_members().len()
             != index_from_u32(class_388_assemble::REFERENCE_COUNT_VALUE)
     {
         return None;
     }
-    let start = usize::try_from(scope.byte_offset()).ok()?;
-    let paired = usize::try_from(scope.paired_byte_offset()).ok()?;
+    let start = usize::try_from(scope.byte_offset()?).ok()?;
+    let paired = usize::try_from(scope.paired_byte_offset()?).ok()?;
     let zero_prefix = bytes.get(start + 11..start + class_388_assemble::SCOPE_FLAGS)?;
     let scope_flags = bytes.get(
         start + class_388_assemble::SCOPE_FLAGS..start + class_388_assemble::SCOPE_FLAGS + 6,
@@ -198,7 +198,7 @@ pub(super) fn exact_legacy_class_383_operand_paths<'a>(
 ) -> Result<Option<[ParsedOperandPath<'a>; 2]>, CodecError> {
     (|| {
         if !crate::design::assembly::legacy_class_383_258_scope(
-            scope.frame_length(),
+            scope.frame_length()?,
             scope.class_tag.as_str(),
             scope.paired_class_tag.as_str(),
         ) || scope.reference_members().len() != 38
@@ -438,7 +438,7 @@ fn exact_legacy_class_383_operand_path<'a>(
                 return None;
             }
         }
-        let scope_at = usize::try_from(scope.byte_offset()).ok()?;
+        let scope_at = usize::try_from(scope.byte_offset()?).ok()?;
         let locator_reference_at = scope_at.checked_add(spec.scope_operand_reference_offset)?;
         let (locator_record_index, locator_reference_offset) =
             exact_same_segment_record_reference(bytes, locator_reference_at)?;
@@ -575,7 +575,7 @@ pub(super) fn exact_legacy_class_388_operand_paths<'a>(
     let parsed = (|| {
         if !matches!(
             crate::design::assembly::AssemblyScopeGeneration::new(
-                scope.frame_length(),
+                scope.frame_length()?,
                 scope.class_tag.as_str(),
                 scope.paired_class_tag.as_str()
             )
@@ -586,8 +586,8 @@ pub(super) fn exact_legacy_class_388_operand_paths<'a>(
         {
             return None;
         }
-        let scope_at = usize::try_from(scope.byte_offset()).ok()?;
-        let search_start = usize::try_from(scope.paired_byte_offset())
+        let scope_at = usize::try_from(scope.byte_offset()?).ok()?;
+        let search_start = usize::try_from(scope.paired_byte_offset()?)
             .ok()?
             .checked_add(11)?;
         let locator_offsets = [

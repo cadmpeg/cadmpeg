@@ -36,12 +36,12 @@ pub(super) fn exact_assembly_operand_paths<'a>(
 ) -> Result<Option<[ParsedOperandPath<'a>; 2]>, CodecError> {
     let bytes = source.window();
     (|| {
-        let scope_at = usize::try_from(scope.byte_offset()).ok()?;
-        let search_start = usize::try_from(scope.paired_byte_offset())
+        let scope_at = usize::try_from(scope.byte_offset()?).ok()?;
+        let search_start = usize::try_from(scope.paired_byte_offset()?)
             .ok()?
             .checked_add(11)?;
         let locator_offsets = crate::design::assembly::AssemblyScopeGeneration::new(
-            scope.frame_length(),
+            scope.frame_length()?,
             scope.class_tag.as_str(),
             scope.paired_class_tag.as_str(),
         )
@@ -51,10 +51,10 @@ pub(super) fn exact_assembly_operand_paths<'a>(
         )?;
         // A rigid group counts one locator per member; every other form has two.
         let expected = if crate::design::assembly::rigid_as_built_scope(
-            scope.frame_length(),
+            scope.frame_length()?,
             scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
         ) {
-            crate::design::assembly::rigid_group_member_count(scope.frame_length())?
+            crate::design::assembly::rigid_group_member_count(scope.frame_length()?)?
         } else {
             2
         };
@@ -125,9 +125,9 @@ pub(super) fn exact_rigid_group_member_paths<'a>(
     use crate::layout::assembly_rigid_as_built_scope as rigid;
     let bytes = source.window();
     (|| {
-        let members = crate::design::assembly::rigid_group_member_count(scope.frame_length())?;
-        let scope_at = usize::try_from(scope.byte_offset()).ok()?;
-        let search_start = usize::try_from(scope.paired_byte_offset())
+        let members = crate::design::assembly::rigid_group_member_count(scope.frame_length()?)?;
+        let scope_at = usize::try_from(scope.byte_offset()?).ok()?;
+        let search_start = usize::try_from(scope.paired_byte_offset()?)
             .ok()?
             .checked_add(11)?;
         let mut paths = Vec::new();
@@ -198,14 +198,14 @@ fn exact_assembly_operand_path_envelope<'a>(
         );
         // The wide scope's locator: its own record type and prologue.
         let wide = (crate::design::assembly::AssemblyScopeGeneration::new(
-            scope.frame_length(),
+            scope.frame_length()?,
             scope.class_tag.as_str(),
             scope.paired_class_tag.as_str(),
         )
         .operand_frame_variant()
         .is_some_and(crate::design::assembly::AssemblyOperandFrameVariant::is_wide_family)
             || crate::design::assembly::wide_as_built_scope(
-                scope.frame_length(),
+                scope.frame_length()?,
                 scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
             ))
             && stream_types

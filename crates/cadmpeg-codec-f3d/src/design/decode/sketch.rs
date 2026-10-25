@@ -212,8 +212,18 @@ pub(crate) fn decode_sketch_placements(
         let Some(records) = record_offsets.get(&stream_scope) else {
             continue;
         };
-        let start = usize::try_from(scope.byte_offset()).ok();
-        let end = usize::try_from(scope.paired_byte_offset()).ok();
+        let start = usize::try_from(
+            scope
+                .byte_offset()
+                .ok_or_else(crate::records::feature::scope::unlocated_scope)?,
+        )
+        .ok();
+        let end = usize::try_from(
+            scope
+                .paired_byte_offset()
+                .ok_or_else(crate::records::feature::scope::unlocated_scope)?,
+        )
+        .ok();
         let Some(frame) = start
             .zip(end)
             .and_then(|(start, end)| bytes.get(start..end))
@@ -298,8 +308,8 @@ pub(crate) fn decode_sketch_placements(
         let mut matching_scopes = scopes.iter().filter(|scope| {
             design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sketch)
                 && native_stream(&scope.id) == Some(stream)
-                && scope.byte_offset() > entity_offset
-                && next_entity_offset.is_none_or(|end| scope.byte_offset() < end)
+                && scope.byte_offset() > Some(entity_offset)
+                && next_entity_offset.is_none_or(|end| scope.byte_offset() < Some(end))
         });
         if let (Some(scope), None) = (matching_scopes.next(), matching_scopes.next()) {
             placement.scope_record_index = Some(scope.record_index);

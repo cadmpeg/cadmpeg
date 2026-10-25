@@ -1078,9 +1078,9 @@ fn parse_mesh_scope_record(
             Err(error) => return Some(Err(error)),
         };
         (scope.kind() == crate::records::feature::scope::DesignFeatureKind::BaseMeshFeature
-            && scope.byte_offset() == u64::try_from(frame.start).ok()?)
+            && scope.byte_offset() == Some(u64::try_from(frame.start).ok()?))
         .then_some(())?;
-        let paired_at = usize::try_from(scope.paired_byte_offset()).ok()?;
+        let paired_at = usize::try_from(scope.paired_byte_offset()?).ok()?;
         let paired_relative = paired_at.checked_sub(frame.start)?;
         (body_list_end <= paired_relative
             && paired_relative.checked_add(feature_scope_base::LEN) == Some(record.len()))

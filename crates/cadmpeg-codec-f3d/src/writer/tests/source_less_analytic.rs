@@ -1896,6 +1896,6 @@ fn generated_f3d_rewrites_cone_ratio_and_half_angle() {
     );
 }
 
-mod configurations;
 mod closed_edges;
+mod configurations;
 mod family_changes;

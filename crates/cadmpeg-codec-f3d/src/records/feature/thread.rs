@@ -1,16 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Thread constructions, forms, diameters and nominal sizes.
 
-use crate::records::identity::Located;
+use crate::records::identity::Sourced;
 use cadmpeg_ir::scalar::PositiveReal;
 use serde::{ser::SerializeStruct, Deserialize, Serialize, Serializer};
 use std::num::NonZeroU32;
 
-cadmpeg_core::named_optional_field!(
-    deserialize_trailing_reference_offset,
-    u64,
-    "trailing_reference_offset"
-);
 cadmpeg_core::named_optional_field!(
     deserialize_trailing_reference_record_index,
     u32,
@@ -22,7 +17,7 @@ pub(crate) enum DesignThreadForm {
     /// Standard prefix, construction marker, and trailer layout.
     Standard,
     /// Compact construction with an optional reference to its owning Hole scope.
-    Compact(Option<Located<NonZeroU32>>),
+    Compact(Option<Sourced<NonZeroU32>>),
     /// Direct standard prefix with the legacy compact scalar and trailer lanes.
     StandardLegacy,
     /// Compact prefix with the legacy scalar and no-reference trailer lanes.
@@ -35,8 +30,8 @@ pub(crate) enum DesignThreadForm {
 pub(crate) struct DesignThreadConstruction {
     /// Standard, compact, or class-specific legacy construction form.
     pub(crate) form: DesignThreadForm,
-    /// Byte offset of the designation LP-UTF16 field.
-    pub(crate) designation_offset: u64,
+    /// Byte offset of the designation LP-UTF16 field of a located scope.
+    pub(crate) designation_offset: Option<u64>,
     /// Standard thread designation.
     pub(crate) designation: cadmpeg_core::text::NonBlankString,
     /// Validated nominal-size spelling; its numeric value is derived on read.
@@ -129,10 +124,9 @@ impl Serialize for DesignThreadConstruction {
         };
         let mut fields = serializer.serialize_struct(
             "DesignThreadConstructionWire",
-            if trailing_reference.is_some() { 13 } else { 11 },
+            if trailing_reference.is_some() { 11 } else { 10 },
         )?;
         fields.serialize_field("form", &form)?;
-        fields.serialize_field("designation_offset", &self.designation_offset)?;
         fields.serialize_field("designation", self.designation.as_str())?;
         fields.serialize_field("nominal_size_text", &self.nominal_size.0)?;
         fields.serialize_field("nominal_size", &nominal_size)?;
@@ -143,7 +137,6 @@ impl Serialize for DesignThreadConstruction {
         fields.serialize_field("pitch_diameter", &self.diameters.pitch())?;
         if let Some(reference) = trailing_reference {
             fields.serialize_field("trailing_reference_record_index", &reference.value.get())?;
-            fields.serialize_field("trailing_reference_offset", &reference.offset)?;
         }
         fields.serialize_field("face_group_record_indices", &self.face_group_record_indices)?;
         fields.end()
@@ -167,8 +160,6 @@ enum DesignThreadFormWire {
 struct DesignThreadConstructionWire {
     /// Standard, compact, or class-specific legacy construction form.
     form: DesignThreadFormWire,
-    /// Byte offset of the designation LP-UTF16 field.
-    designation_offset: u64,
     /// Standard thread designation.
     designation: String,
     /// Exact nominal-size text interpreted into `nominal_size`.
@@ -192,13 +183,6 @@ struct DesignThreadConstructionWire {
         deserialize_with = "deserialize_trailing_reference_record_index"
     )]
     trailing_reference_record_index: Option<u32>,
-    /// Byte offset of `trailing_reference_record_index`.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_trailing_reference_offset"
-    )]
-    trailing_reference_offset: Option<u64>,
     /// Ordered counted face-selection groups referenced by the scope.
     face_group_record_indices: Vec<u32>,
 }
@@ -215,20 +199,13 @@ impl TryFrom<DesignThreadConstructionWire> for DesignThreadConstruction {
         {
             return Err("nominal_size must match nominal_size_text".into());
         }
-        let reference = match (
-            value.trailing_reference_record_index,
-            value.trailing_reference_offset,
-        ) {
-            (None, None) => None,
-            (Some(value), Some(offset)) => Some(Located {
+        let reference = match value.trailing_reference_record_index {
+            None => None,
+            Some(value) => Some(Sourced {
                 value: NonZeroU32::new(value)
                     .ok_or("trailing_reference_record_index must be nonzero")?,
-                offset,
+                offset: None,
             }),
-            _ => return Err(
-                "trailing_reference_record_index and trailing_reference_offset must occur together"
-                    .into(),
-            ),
         };
         let form = match (value.form, reference) {
             (DesignThreadFormWire::Compact, reference) => DesignThreadForm::Compact(reference),
@@ -241,7 +218,7 @@ impl TryFrom<DesignThreadConstructionWire> for DesignThreadConstruction {
         };
         Ok(Self {
             form,
-            designation_offset: value.designation_offset,
+            designation_offset: None,
             designation: cadmpeg_core::text::NonBlankString::new(value.designation).ok_or("designation must not be empty")?,
             nominal_size,
             profile: cadmpeg_core::text::NonBlankString::new(value.profile).ok_or("profile must not be empty")?,
@@ -250,6 +227,18 @@ impl TryFrom<DesignThreadConstructionWire> for DesignThreadConstruction {
             pitch: PositiveReal::new(value.pitch).ok_or("pitch must be positive finite")?,
             face_group_record_indices: value.face_group_record_indices,
         })
+    }
+}
+
+impl crate::records::source_offsets::SourceOffsets for DesignThreadConstruction {
+    fn visit_source_offsets(
+        &mut self,
+        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
+    ) {
+        offsets.offset("designation_offset", &mut self.designation_offset);
+        if let DesignThreadForm::Compact(Some(reference)) = &mut self.form {
+            offsets.sourced("trailing_reference_offset", reference);
+        }
     }
 }
 

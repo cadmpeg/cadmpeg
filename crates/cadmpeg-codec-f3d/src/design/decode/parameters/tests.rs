@@ -804,15 +804,13 @@ fn legacy_parameter_owner_68_requires_its_admitted_class_and_shape() {
     .and_then(|parsed| parsed.into_record("Design/BulkStream.dat", 0))
     .expect("owner-typed legacy frame");
     assert_eq!(typed.class_tag().as_str(), "318");
-    assert!(
-        super::parse_admitted_legacy_parameter_owner_68(
-            crate::design::decode::parameters::ParameterFrame::over_retained(&malformed),
-            evaluated,
-            0,
-            true
-        )
-        .is_none()
-    );
+    assert!(super::parse_admitted_legacy_parameter_owner_68(
+        crate::design::decode::parameters::ParameterFrame::over_retained(&malformed),
+        evaluated,
+        0,
+        true
+    )
+    .is_none());
     let wire = serde_json::to_value(&typed).unwrap();
     assert!(
         serde_json::from_value::<crate::records::parameters::DesignParameterOwner>(wire).is_ok()

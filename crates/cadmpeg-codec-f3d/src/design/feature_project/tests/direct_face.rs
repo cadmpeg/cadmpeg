@@ -25,23 +25,23 @@ fn scope(kind: DesignFeatureKind) -> DesignParameterScope {
             *slot = Some(DesignOffsetFacesOperation {
                 distance: cadmpeg_ir::scalar::FiniteReal::new(0.25).unwrap(),
                 distance_record_index: 300,
-                distance_offset: 0,
+                distance_offset: Some(0),
             });
         }
         DesignScopePayloadMut::Thicken(slot) => {
             *slot = Some(DesignThickenOperation {
                 signed_thickness: cadmpeg_ir::scalar::FiniteReal::new(0.5).unwrap(),
                 thickness_record_index: 300,
-                thickness_offset: 0,
+                thickness_offset: Some(0),
             });
         }
         DesignScopePayloadMut::Shell(slot) => {
             *slot = Some(DesignShellOperation {
                 thickness: cadmpeg_ir::scalar::PositiveReal::new(0.5).unwrap(),
                 thickness_record_index: 300,
-                thickness_offset: 0,
+                thickness_offset: Some(0),
                 outward: true,
-                outward_offset: 0,
+                outward_offset: Some(0),
             });
         }
         _ => panic!("unsupported direct-face scope fixture"),

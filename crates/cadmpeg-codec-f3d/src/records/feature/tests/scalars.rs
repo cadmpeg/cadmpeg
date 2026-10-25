@@ -57,11 +57,15 @@ fn positive_operation_fields_reject_zero_and_negative_values() {
 fn draft_angle_preserves_signed_and_zero_values() {
     for angle in [-1.0_f64, -0.0, 0.0, 1.0] {
         let wire = serde_json::json!({
-            "angle": angle, "angle_record_index": 3, "angle_offset": 40,
-            "opposite_angle_record_index": 4, "opposite_angle_offset": 80,
+            "angle": angle, "angle_record_index": 3,
+            "opposite_angle_record_index": 4,
         });
         let operation: DesignDraftOperation = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(operation.angle.get().to_bits(), angle.to_bits());
-        assert_eq!(serde_json::to_value(operation).unwrap(), wire);
+        assert_eq!(serde_json::to_value(&operation).unwrap(), wire);
+        crate::records::feature::test_support::assert_located_at(
+            operation,
+            &[("angle_offset", 40), ("opposite_angle_offset", 80)],
+        );
     }
 }

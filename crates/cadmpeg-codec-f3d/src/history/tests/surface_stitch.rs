@@ -50,7 +50,7 @@ fn surface_stitch_fixture() -> StitchFixture {
         crate::records::feature::scope::DesignScopePayload::SurfaceStitch(
             crate::records::feature::surface_ops::DesignSurfaceStitchOperation {
                 gap_tolerance: cadmpeg_ir::scalar::PositiveReal::new(0.01).unwrap(),
-                gap_tolerance_offset: 0,
+                gap_tolerance_offset: Some(0),
                 tolerance_record_index: 300,
                 settings_record_index: 301,
             },

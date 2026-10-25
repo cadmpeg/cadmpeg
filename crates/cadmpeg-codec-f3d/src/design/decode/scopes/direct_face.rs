@@ -27,7 +27,7 @@ pub(super) fn exact_direct_face_operation(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignDirectFaceOperation> {
-    let start = usize::try_from(scope.byte_offset()).ok()?;
+    let start = usize::try_from(scope.byte_offset()?).ok()?;
     if design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Shell)
         && scope.class_tag.as_str() == "369"
         && scope.paired_class_tag.as_str() == "261"
@@ -53,7 +53,7 @@ pub(super) fn exact_direct_face_operation(
                 direct_face::DesignOffsetFacesOperation {
                     distance: scalar.value,
                     distance_record_index,
-                    distance_offset: scalar.value_offset,
+                    distance_offset: Some(scalar.value_offset),
                 },
             ))
         }
@@ -107,7 +107,7 @@ pub(super) fn exact_direct_face_operation(
                 direct_face::DesignThickenOperation {
                     signed_thickness: scalar.value,
                     thickness_record_index,
-                    thickness_offset: scalar.value_offset,
+                    thickness_offset: Some(scalar.value_offset),
                 },
             ))
         }
@@ -184,9 +184,9 @@ pub(super) fn exact_direct_face_operation(
                 direct_face::DesignShellOperation {
                     thickness: cadmpeg_ir::scalar::PositiveReal::new(scalar.value.get())?,
                     thickness_record_index,
-                    thickness_offset: scalar.value_offset,
+                    thickness_offset: Some(scalar.value_offset),
                     outward,
-                    outward_offset: u64::try_from(outward_offset).ok()?,
+                    outward_offset: Some(u64::try_from(outward_offset).ok()?),
                 },
             ))
         }
@@ -258,10 +258,10 @@ pub(super) fn exact_move_operation(
             };
             let next = DesignMoveOperation {
                 transform,
-                transform_offset: u64_from_index(start + transform_offset),
+                transform_offset: Some(u64_from_index(start + transform_offset)),
                 transform_record_index: *record_index,
                 form,
-                form_offset: u64_from_index(start + form_offset),
+                form_offset: Some(u64_from_index(start + form_offset)),
             };
             if candidate.replace(next).is_some() {
                 return None;
@@ -297,7 +297,7 @@ pub(super) fn exact_scale_operation(
         if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Scale) {
             return None;
         }
-        let start = usize::try_from(scope.byte_offset()).ok()?;
+        let start = usize::try_from(scope.byte_offset()?).ok()?;
         let (body_group_record_index, center_record_index, uniform_factor_offset, center) =
             if parameter_scope_payload_length(scope) == Some(303)
                 && scope.reference_members().len() == 5
@@ -332,10 +332,10 @@ pub(super) fn exact_scale_operation(
             } else if scope.kind() == scope::DesignFeatureKind::Scale
                 && matches!(
                     (scope.frame_length(), scope.reference_members().len()),
-                    (307 | 309, 5) | (318, 6)
+                    (Some(307) | Some(309), 5) | (Some(318), 6)
                 )
             {
-                if scope.frame_length() == 309 {
+                if scope.frame_length() == Some(309) {
                     let (guid, _) = crate::bytes::lp_utf16_bounded_view(
                         bytes,
                         start.checked_add(75)?,
@@ -343,11 +343,13 @@ pub(super) fn exact_scale_operation(
                     )?;
                     if !guid.eq_str("00000000-0000-0000-0000-000000000000")
                         || View::u24_le_at(bytes, start.checked_add(151)?)? != 0
-                        || scope.reference_count_offset() != scope.byte_offset().checked_add(154)?
-                        || scope.kind_offset() != scope.byte_offset().checked_add(221)?
-                        || scope.feature_ordinal_offset() != scope.byte_offset().checked_add(231)?
+                        || scope.reference_count_offset()
+                            != Some(scope.byte_offset()?.checked_add(154)?)
+                        || scope.kind_offset() != Some(scope.byte_offset()?.checked_add(221)?)
+                        || scope.feature_ordinal_offset()
+                            != Some(scope.byte_offset()?.checked_add(231)?)
                         || scope.previous_history_state_id_offset()
-                            != scope.byte_offset().checked_add(262)
+                            != scope.byte_offset()?.checked_add(262)
                     {
                         return None;
                     }
@@ -388,9 +390,9 @@ pub(super) fn exact_scale_operation(
             body_group_record_index,
             center_record_index,
             center_position: center
-                .map(|(value, offset)| crate::records::identity::Located { value, offset }),
+                .map(|(value, offset)| crate::records::identity::Sourced { value, offset }),
             uniform_factor,
-            uniform_factor_offset: u64_from_index(uniform_factor_offset),
+            uniform_factor_offset: Some(u64_from_index(uniform_factor_offset)),
         }))
     })()
     .transpose()

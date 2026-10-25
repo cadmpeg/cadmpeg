@@ -162,6 +162,7 @@ impl SketchPlacementMatrix {
         self.0.rows()
     }
     /// The matrix rows in storage order.
+    #[cfg(test)]
     pub(crate) fn iter(&self) -> std::slice::Iter<'_, [f64; 4]> {
         self.0.iter()
     }

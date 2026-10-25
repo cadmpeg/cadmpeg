@@ -53,7 +53,7 @@ pub(super) fn bind_joint_origin_frames_from_assemblies(
             candidates.push((
                 joint_origin,
                 frame.transform,
-                frame.transform_offset,
+                Some(frame.transform_offset),
                 frame.reference,
             ));
         }
@@ -82,7 +82,7 @@ pub(super) fn bind_joint_origin_frames_from_assemblies(
                 reference: reference.map(|(record_index, offset)| {
                     scope::DesignJointOriginReference {
                         joint_origin_reference: record_index,
-                        joint_origin_reference_offset: offset,
+                        joint_origin_reference_offset: Some(offset),
                     }
                 }),
             });
@@ -132,7 +132,7 @@ pub(super) fn bind_axial_assembly_operand_targets(
 ) -> Result<(), CodecError> {
     let mut bindings = Vec::new();
     for (ordinal, scope) in scopes.iter().enumerate() {
-        if !matches!(scope.frame_length(), 705 | 772) {
+        if !matches!(scope.frame_length(), Some(705) | Some(772)) {
             continue;
         }
         let Some(alignment) = scope.assembly_alignment() else {
@@ -220,14 +220,16 @@ fn exact_assembly_axial_operand_target(
                     component_insert_scope_record_index: component_insert.record_index,
                     construction_record_index: component.construction_record_index,
                     construction_class_tag: component.construction_class_tag.try_into().ok()?,
-                    construction_byte_offset: component.construction_byte_offset,
-                    construction_transform_offset: component.construction_transform_offset,
-                    axis_record_index_offsets: component.axis_record_index_offsets,
+                    construction_byte_offset: Some(component.construction_byte_offset),
+                    construction_transform_offset: Some(component.construction_transform_offset),
+                    axis_record_index_offsets: Some(component.axis_record_index_offsets),
                     construction_paired_class_tag: component
                         .construction_paired_class_tag
                         .try_into()
                         .ok()?,
-                    construction_paired_byte_offset: component.construction_paired_byte_offset,
+                    construction_paired_byte_offset: Some(
+                        component.construction_paired_byte_offset,
+                    ),
                     selectors: component.selectors,
                 },
             )
@@ -255,7 +257,7 @@ fn exact_assembly_axial_component_operand(
     scope: &DesignParameterScope,
     frame: &DesignAssemblyOperandFrame,
 ) -> Result<Option<AxialComponentOperand>, CodecError> {
-    if !matches!(scope.frame_length(), 705 | 772)
+    if !matches!(scope.frame_length(), Some(705) | Some(772))
         || scope
             .reference_members()
             .values()
@@ -265,7 +267,12 @@ fn exact_assembly_axial_component_operand(
     {
         return Ok(None);
     }
-    let Some(search_start) = usize::try_from(scope.paired_byte_offset()).ok() else {
+    let Some(search_start) = usize::try_from(
+        scope
+            .paired_byte_offset()
+            .ok_or_else(crate::records::feature::scope::unlocated_scope)?,
+    )
+    .ok() else {
         return Ok(None);
     };
     let mut candidate = None;
@@ -342,7 +349,7 @@ fn exact_assembly_axial_component_operand_at(
                 return None;
             }
         }
-        let search_start = usize::try_from(scope.paired_byte_offset()).ok()?;
+        let search_start = usize::try_from(scope.paired_byte_offset()?).ok()?;
         let first_axis = exact_paired_indexed_record_between(
             bytes,
             records,
@@ -513,36 +520,38 @@ fn exact_assembly_axial_selector(
         Some(Ok(DesignAssemblyAxialSelectorIdentity {
             axis_record_index,
             axis_class_tag: axis.class_tag.try_into().ok()?,
-            axis_byte_offset: u64::try_from(axis.byte_offset).ok()?,
+            axis_byte_offset: Some(u64::try_from(axis.byte_offset).ok()?),
             axis_paired_class_tag: axis.paired_class_tag.try_into().ok()?,
-            axis_paired_byte_offset: u64::try_from(axis.paired_byte_offset).ok()?,
+            axis_paired_byte_offset: Some(u64::try_from(axis.paired_byte_offset).ok()?),
             selector_record_index,
             selector_class_tag: selector_class_tag.try_into().ok()?,
-            selector_byte_offset: u64::try_from(selector_at).ok()?,
+            selector_byte_offset: Some(u64::try_from(selector_at).ok()?),
             selector_paired_class_tag: selector_paired_class_tag.try_into().ok()?,
-            selector_paired_byte_offset: u64::try_from(selector_paired_at).ok()?,
+            selector_paired_byte_offset: Some(u64::try_from(selector_paired_at).ok()?),
             nested_record_index,
-            nested_record_index_offset: u64::try_from(nested_record_index_offset).ok()?,
+            nested_record_index_offset: Some(u64::try_from(nested_record_index_offset).ok()?),
             selector_asset_id,
-            selector_asset_id_offset: u64::try_from(selector_asset_at.checked_add(4)?).ok()?,
+            selector_asset_id_offset: Some(u64::try_from(selector_asset_at.checked_add(4)?).ok()?),
             selector_context_id,
-            selector_context_id_offset: u64::try_from(selector_context_at.checked_add(4)?).ok()?,
+            selector_context_id_offset: Some(
+                u64::try_from(selector_context_at.checked_add(4)?).ok()?,
+            ),
             occurrence_reference,
-            occurrence_reference_offset: u64::try_from(occurrence_reference_offset).ok()?,
+            occurrence_reference_offset: Some(u64::try_from(occurrence_reference_offset).ok()?),
             external_object_reference: external.target,
-            external_object_reference_offset: external.target_offset,
+            external_object_reference_offset: Some(external.target_offset),
             external_segment: external.segment,
-            external_segment_offset: external.segment_offset,
+            external_segment_offset: Some(external.segment_offset),
             external_asset_id: external.asset_id,
-            external_asset_id_offset: external.asset_id_offset,
+            external_asset_id_offset: Some(external.asset_id_offset),
             external_link_name: external.link_name,
-            external_link_name_offset: external.link_name_offset,
+            external_link_name_offset: Some(external.link_name_offset),
             external_version: external.version,
             role_record_index,
             role_class_tag: role_class_tag.try_into().ok()?,
-            role_byte_offset: u64::try_from(role_at).ok()?,
+            role_byte_offset: Some(u64::try_from(role_at).ok()?),
             occurrence_role,
-            occurrence_role_offset: u64::try_from(occurrence_role_at.checked_add(4)?).ok()?,
+            occurrence_role_offset: Some(u64::try_from(occurrence_role_at.checked_add(4)?).ok()?),
         }))
     })()
     .transpose()
@@ -583,12 +592,12 @@ fn exact_single_joint_origin_frame(
     if scope.kind() != scope::DesignFeatureKind::Assemble
         || scope.class_tag.as_str() != "276"
         || scope.paired_class_tag.as_str() != "258"
-        || scope.frame_length() != 604
+        || scope.frame_length() != Some(604)
     {
         return None;
     }
-    let start = usize::try_from(scope.byte_offset()).ok()?;
-    if usize::try_from(scope.paired_byte_offset()).ok()? != start.checked_add(604)?
+    let start = usize::try_from(scope.byte_offset()?).ok()?;
+    if usize::try_from(scope.paired_byte_offset()?).ok()? != start.checked_add(604)?
         || bytes.get(start + 11..start + 24)? != [0; 13]
         || bytes.get(start + 29..start + 36)? != [0; 7]
         || bytes.get(start + 169..start + 175)? != [0; 6]

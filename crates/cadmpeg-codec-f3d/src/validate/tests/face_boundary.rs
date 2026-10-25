@@ -67,27 +67,27 @@ fn native() -> crate::native::F3dNative {
     let mut result = state(7, 20);
     let preceding = state(6, 10);
     result.0.next_ref = Some(preceding.0.node_index);
-    let scope = serde_json::from_value(serde_json::json!({
-        "id": "f3d:test:scope#1811",
-        "byte_offset": 0,
-        "class_tag": "272",
-        "record_index": 1811,
-        "frame_length": 200,
-        "kind": "Loft",
-        "kind_offset": 87,
-        "feature_ordinal": 1,
-        "feature_ordinal_offset": 128,
-        "history_state_id": 7,
-        "history_state_id_offset": 79,
-        "previous_history_state_id": 6,
-        "previous_history_state_id_offset": 158,
-        "reference_count_offset": 9,
-        "reference_members": [1000, 1001, 1819, 1, 2, 3],
-        "reference_member_offsets": [14, 25, 36, 47, 58, 69],
-        "paired_class_tag": "274",
-        "paired_byte_offset": 200
-    }))
-    .unwrap();
+    let scope =
+        crate::records::feature::test_support::located_scope_from_fixture(serde_json::json!({
+            "id": "f3d:test:scope#1811",
+            "byte_offset": 0,
+            "class_tag": "272",
+            "record_index": 1811,
+            "frame_length": 200,
+            "kind": "Loft",
+            "kind_offset": 87,
+            "feature_ordinal": 1,
+            "feature_ordinal_offset": 128,
+            "history_state_id": 7,
+            "history_state_id_offset": 79,
+            "previous_history_state_id": 6,
+            "previous_history_state_id_offset": 158,
+            "reference_count_offset": 9,
+            "reference_members": [1000, 1001, 1819, 1, 2, 3],
+            "reference_member_offsets": [14, 25, 36, 47, 58, 69],
+            "paired_class_tag": "274",
+            "paired_byte_offset": 200
+        }));
     let mut operand: DesignEdgeOperand = serde_json::from_value(serde_json::json!({
         "id": "f3d:test:edge-operand#1",
         "scope_record_index": 1811,

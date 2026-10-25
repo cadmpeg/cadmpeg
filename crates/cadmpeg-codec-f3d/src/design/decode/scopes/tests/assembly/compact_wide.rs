@@ -212,7 +212,7 @@ fn compact_wide_assemble_scope_reads_owners_frames_and_wide_operand_paths() {
     assert_eq!(alignment.angle(), -1.0);
     assert_eq!(alignment.offset(), [0.0, 0.0, 0.5]);
     let frames = alignment.operand_frames().expect("frames");
-    assert_eq!(frames[0].transform_offset, 50);
+    assert_eq!(frames[0].transform_offset, Some(50));
     assert_eq!(frames[1].transform.rows()[2][3], 1.7);
     let paths = alignment.operand_path_refs().expect("both operand paths");
     assert_eq!(

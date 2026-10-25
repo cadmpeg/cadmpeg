@@ -225,9 +225,9 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
         DesignCombineOperation {
             form: DesignCombineForm::Standard,
             operation: cadmpeg_ir::features::BooleanKind::Join,
-            operation_offset: 20,
+            operation_offset: Some(20),
             keep_tools: true,
-            keep_tools_offset: 25,
+            keep_tools_offset: Some(25),
             target_record_index: 96,
             tools: crate::records::feature::combine::DesignCombineTools {
                 first: DesignCombineBodySelection {
@@ -302,7 +302,7 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
     .unwrap()
     .expect("compact Combine construction");
     assert_eq!(compact.operation, cadmpeg_ir::features::BooleanKind::Join);
-    assert_eq!(compact.operation_offset, 21);
+    assert_eq!(compact.operation_offset, Some(21));
     assert!(!compact.keep_tools);
     assert_eq!(compact.form, DesignCombineForm::Compact);
     assert_eq!(compact.target_record_index, 96);
@@ -449,9 +449,9 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
         .expect("extended-reference Combine construction");
     assert_eq!(operation.form, DesignCombineForm::ExtendedReference);
     assert_eq!(operation.operation, cadmpeg_ir::features::BooleanKind::Cut);
-    assert_eq!(operation.operation_offset, 31);
+    assert_eq!(operation.operation_offset, Some(31));
     assert!(operation.keep_tools);
-    assert_eq!(operation.keep_tools_offset, 30);
+    assert_eq!(operation.keep_tools_offset, Some(30));
     assert_eq!(operation.target_record_index, 94);
     assert!(operation.tools.additional.is_empty());
     let tool = &operation.tools.first;
@@ -476,13 +476,13 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
         Some("urn:example:version:4")
     );
     assert_eq!(identity.tail_values(), [11, 12]);
-    assert_eq!(
-        identity.tail_value_offsets()[1],
-        identity.tail_value_offsets()[0] + 12
-    );
+    let tail_value_offsets = identity
+        .tail_value_offsets()
+        .expect("decoded tail value offsets");
+    assert_eq!(tail_value_offsets[1], tail_value_offsets[0] + 12);
 
-    let stamp_at = usize::try_from(identity.tail_value_offsets()[0]).unwrap();
-    let scalar_at = usize::try_from(identity.tail_value_offsets()[1]).unwrap();
+    let stamp_at = usize::try_from(tail_value_offsets[0]).unwrap();
+    let scalar_at = usize::try_from(tail_value_offsets[1]).unwrap();
     let tail_at = stamp_at - crate::layout::combine_external_selector_tail::SELECTION_PAYLOAD_STAMP;
     let epoch_at = tail_at + crate::layout::combine_external_selector_tail::EVALUATION_EPOCH;
     for (epoch, scalar) in [(0_u32, 0.0_f64), (7, 0.375), (u32::MAX, f64::MAX)] {
@@ -496,10 +496,10 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
         assert_eq!(identity.tail_values(), [11, scalar.to_bits()]);
         assert_eq!(
             identity.tail_value_offsets(),
-            [
+            Some([
                 u64::try_from(stamp_at).unwrap(),
                 u64::try_from(scalar_at).unwrap()
-            ]
+            ])
         );
     }
     for scalar in [-0.375_f64, f64::INFINITY, f64::NAN] {
@@ -533,7 +533,12 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
     .is_none());
 
     let mut malformed_external_asset = bytes;
-    malformed_external_asset[usize::try_from(identity.external_asset_id_offset()).unwrap()] = b'g';
+    malformed_external_asset[usize::try_from(
+        identity
+            .external_asset_id_offset()
+            .expect("decoded external asset offset"),
+    )
+    .unwrap()] = b'g';
     let operation = exact_combine_operation(
         &malformed_external_asset,
         &crate::design::test_support::indexed_record_offsets_for_test(&malformed_external_asset),

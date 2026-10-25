@@ -984,9 +984,10 @@ fn identity_source_wrapper_stride_is_checked_without_fabricating_document_locati
 
 #[test]
 fn tracking_fragment_domain_rejects_nonpositive_and_out_of_range_ordinals() {
-    let base =
-        serde_json::to_value(DesignConstructionTrackingPath::try_new(tracking_source(false, false)).unwrap())
-            .unwrap();
+    let base = serde_json::to_value(
+        DesignConstructionTrackingPath::try_new(tracking_source(false, false)).unwrap(),
+    )
+    .unwrap();
     for (selector, kind) in [(1, 1), (1, 3), (3, 3), (i32::MAX, u32::MAX)] {
         let mut wire = base.clone();
         wire["selector"] = json!(selector);

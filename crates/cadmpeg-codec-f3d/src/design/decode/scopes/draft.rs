@@ -73,9 +73,9 @@ pub(super) fn exact_draft_operation_with_owners(
     Some(DesignDraftOperation {
         angle: cadmpeg_ir::scalar::Angle::from_assigned_real(angle),
         angle_record_index,
-        angle_offset,
+        angle_offset: Some(angle_offset),
         opposite_angle_record_index,
-        opposite_angle_offset: opposite_offset,
+        opposite_angle_offset: Some(opposite_offset),
     })
 }
 

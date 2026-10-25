@@ -45,7 +45,7 @@ fn compact_loft_prefix_reads_operation_at_offset_25_for_any_dynamic_class_tag() 
             DesignPathFeatureConstruction::Loft(
                 crate::records::feature::path_features::DesignLoftConstruction {
                     operation: DesignExtrudeOperation::Join,
-                    operation_offset: 25,
+                    operation_offset: Some(25),
                 }
             )
         );

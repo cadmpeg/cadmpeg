@@ -19,7 +19,7 @@ pub(super) fn exact_thread_construction(
     bytes: &[u8],
     scope: &DesignParameterScope,
 ) -> Option<DesignThreadConstruction> {
-    let start = usize::try_from(scope.byte_offset()).ok()?;
+    let start = usize::try_from(scope.byte_offset()?).ok()?;
     if scope.kind() != scope::DesignFeatureKind::Thread
         || scope.reference_members().len() < 2
         || !scope.reference_members().len().is_multiple_of(2)
@@ -167,16 +167,16 @@ pub(super) fn parse_thread_payload(
                 let reference_offset = trailer_offset.checked_add(1)?;
                 let record_index =
                     std::num::NonZeroU32::new(View::u32_le_at(bytes, reference_offset)?)?;
-                DesignThreadForm::Compact(Some(crate::records::identity::Located {
+                DesignThreadForm::Compact(Some(crate::records::identity::Sourced {
                     value: record_index,
-                    offset: u64::try_from(reference_offset).ok()?,
+                    offset: Some(u64::try_from(reference_offset).ok()?),
                 }))
             }
             _ => return None,
         };
         Some(DesignThreadConstruction {
             form,
-            designation_offset: u64::try_from(designation_at).ok()?,
+            designation_offset: Some(u64::try_from(designation_at).ok()?),
             designation: cadmpeg_core::text::NonBlankString::new(designation)?,
             nominal_size,
             profile: cadmpeg_core::text::NonBlankString::new(profile)?,

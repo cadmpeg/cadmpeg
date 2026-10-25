@@ -1127,14 +1127,14 @@ fn component_insert_selection_uses_stream_and_role_not_class_tag() {
             carrier_record_index: 2,
             occurrence_identity: None,
             neutron_role: "role".into(),
-            neutron_role_offset: 0,
+            neutron_role_offset: Some(0),
             placement: Some(
                 crate::records::feature::assembly_features::DesignComponentInsertMatrix {
-                    scope: crate::records::identity::Located {
+                    scope: crate::records::identity::Sourced {
                         value: selected.try_into().unwrap(),
-                        offset: 0,
+                        offset: Some(0),
                     },
-                    carrier_offset: Some(0),
+                    carrier: Some(crate::records::identity::Sourced::at((), 0)),
                 },
             ),
         };
@@ -1143,11 +1143,11 @@ fn component_insert_selection_uses_stream_and_role_not_class_tag() {
             neutron_role: "other".into(),
             placement: Some(
                 crate::records::feature::assembly_features::DesignComponentInsertMatrix {
-                    scope: crate::records::identity::Located {
+                    scope: crate::records::identity::Sourced {
                         value: ignored.try_into().unwrap(),
-                        offset: 0,
+                        offset: Some(0),
                     },
-                    carrier_offset: Some(0),
+                    carrier: Some(crate::records::identity::Sourced::at((), 0)),
                 },
             ),
             ..selected_construction.clone()

@@ -59,7 +59,7 @@ pub(super) fn exact_base_flange_operation(
     let thickness = cadmpeg_ir::scalar::PositiveReal::new(View::f64_le_at(bytes, start + 123)?)?;
     Some(DesignBaseFlangeOperation {
         thickness,
-        thickness_offset: u64::try_from(start + 123).ok()?,
+        thickness_offset: Some(u64::try_from(start + 123).ok()?),
         profile_group_record_index: *profile_group_record_index,
         profile_record_index: *profile_record_index,
         thickness_record_index: *thickness_record_index,
@@ -507,7 +507,7 @@ fn legacy_edge_flange_operation_at(
         auxiliary_reference_record_indices,
         settings_record_index,
         bend_radius,
-        bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
+        bend_radius_offset: Some(u64::try_from(bend_radius_offset).ok()?),
         height_datum,
         bend_position: DesignBendPosition::from_code(View::u32_le_at(
             bytes,
@@ -622,7 +622,7 @@ fn edge_flange_operation_at(
             auxiliary_reference_record_indices: Vec::new(),
             settings_record_index,
             bend_radius,
-            bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
+            bend_radius_offset: Some(u64::try_from(bend_radius_offset).ok()?),
             height_datum,
             bend_position,
             selection: crate::records::feature::sheet_metal::DesignEdgeFlangeSelection::try_new(
@@ -780,7 +780,7 @@ fn edge_flange_to_object_operation_at(
         auxiliary_reference_record_indices: Vec::new(),
         settings_record_index,
         bend_radius,
-        bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
+        bend_radius_offset: Some(u64::try_from(bend_radius_offset).ok()?),
         height_datum,
         bend_position,
         selection: crate::records::feature::sheet_metal::DesignEdgeFlangeSelection::try_new(
@@ -910,10 +910,16 @@ pub(super) fn bind_hem_operation_from_parameters(
             });
         matches.next().is_some_and(|kind| kind == expected) && matches.next().is_none()
     };
-    let Some(start) = usize::try_from(scope.byte_offset()).ok() else {
+    let Some(start) = scope
+        .byte_offset()
+        .and_then(|offset| usize::try_from(offset).ok())
+    else {
         return;
     };
-    let Some(paired_at) = usize::try_from(scope.paired_byte_offset()).ok() else {
+    let Some(paired_at) = scope
+        .paired_byte_offset()
+        .and_then(|offset| usize::try_from(offset).ok())
+    else {
         return;
     };
     {
@@ -1000,7 +1006,7 @@ fn hem_gap_length_operation_at(
         },
         settings_record_index,
         bend_radius,
-        bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
+        bend_radius_offset: Some(u64::try_from(bend_radius_offset).ok()?),
     })
 }
 
@@ -1069,7 +1075,7 @@ fn hem_radius_angle_operation_at(
         },
         settings_record_index,
         bend_radius,
-        bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
+        bend_radius_offset: Some(u64::try_from(bend_radius_offset).ok()?),
     })
 }
 
@@ -1135,7 +1141,7 @@ fn hem_gap_length_radius_operation_at(
         },
         settings_record_index,
         bend_radius,
-        bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
+        bend_radius_offset: Some(u64::try_from(bend_radius_offset).ok()?),
     })
 }
 

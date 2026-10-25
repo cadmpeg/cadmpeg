@@ -1370,7 +1370,7 @@ pub(crate) fn decode_dimension_annotation_frames(
                         })
                 })
                 .min()?;
-            let start = usize::try_from(scope.byte_offset()).ok()?;
+            let start = usize::try_from(scope.byte_offset()?).ok()?;
             (start < end).then_some((start, end, None))
         }) {
             intervals.push(interval);
@@ -2030,9 +2030,9 @@ pub(super) fn companion_owned_interval<'a>(
                     native_stream(&scope.id) == Some(native_scope)
                         && companion
                             .byte_offset()
-                            .is_some_and(|offset| scope.byte_offset() > offset)
+                            .is_some_and(|offset| scope.byte_offset() > Some(offset))
                 })
-                .filter_map(|scope| usize::try_from(scope.byte_offset()).ok()),
+                .filter_map(|scope| usize::try_from(scope.byte_offset()?).ok()),
         )
         .chain(
             headers

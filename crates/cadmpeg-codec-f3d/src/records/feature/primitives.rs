@@ -3,13 +3,12 @@
 
 use super::extrude::DesignExtrudeOperation;
 use super::scope::DesignScopePayload;
-use crate::records::identity::Located;
+use crate::records::identity::Sourced;
 use crate::records::sketch_placement::SketchPlacementMatrix;
 use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(deserialize_transform, SketchPlacementMatrix, "transform");
-cadmpeg_core::named_optional_field!(deserialize_transform_offset, u64, "transform_offset");
 /// Exact construction data of a solid primitive scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "primitive")]
@@ -31,36 +30,42 @@ pub(crate) struct DesignBoxPrimitive {
     pub(crate) length: PositiveReal,
     /// Referenced length owner.
     pub(crate) length_record_index: u32,
-    /// Byte offset of the evaluated length.
-    pub(crate) length_offset: u64,
+    /// Byte offset of the evaluated length of a located scope.
+    #[serde(skip)]
+    pub(crate) length_offset: Option<u64>,
     /// Width along the source y-axis in source centimetres.
     pub(crate) width: PositiveReal,
     /// Referenced width owner.
     pub(crate) width_record_index: u32,
-    /// Byte offset of the evaluated width.
-    pub(crate) width_offset: u64,
+    /// Byte offset of the evaluated width of a located scope.
+    #[serde(skip)]
+    pub(crate) width_offset: Option<u64>,
     /// Height along the source z-axis in source centimetres.
     pub(crate) height: PositiveReal,
     /// Referenced height owner.
     pub(crate) height_record_index: u32,
-    /// Byte offset of the evaluated height.
-    pub(crate) height_offset: u64,
+    /// Byte offset of the evaluated height of a located scope.
+    #[serde(skip)]
+    pub(crate) height_offset: Option<u64>,
     /// Translation along the source x-axis in source centimetres.
     pub(crate) offset_x: FiniteReal,
     /// Referenced x-offset owner.
     pub(crate) offset_x_record_index: u32,
-    /// Byte offset of the evaluated x offset.
-    pub(crate) offset_x_offset: u64,
+    /// Byte offset of the evaluated x offset of a located scope.
+    #[serde(skip)]
+    pub(crate) offset_x_offset: Option<u64>,
     /// Translation along the source y-axis in source centimetres.
     pub(crate) offset_y: FiniteReal,
     /// Referenced y-offset owner.
     pub(crate) offset_y_record_index: u32,
-    /// Byte offset of the evaluated y offset.
-    pub(crate) offset_y_offset: u64,
+    /// Byte offset of the evaluated y offset of a located scope.
+    #[serde(skip)]
+    pub(crate) offset_y_offset: Option<u64>,
     /// Result Boolean operation.
     pub(crate) operation: DesignExtrudeOperation,
-    /// Byte offset of the operation enum.
-    pub(crate) operation_offset: u64,
+    /// Byte offset of the operation enum of a located scope.
+    #[serde(skip)]
+    pub(crate) operation_offset: Option<u64>,
 }
 
 /// Exact `Cylinder` primitive construction.
@@ -74,21 +79,21 @@ pub(crate) struct DesignCylinderPrimitive {
     pub(crate) height: PositiveReal,
     /// Referenced height owner.
     pub(crate) height_record_index: u32,
-    /// Byte offset of the evaluated height.
-    pub(crate) height_offset: u64,
+    /// Byte offset of the evaluated height of a located scope.
+    pub(crate) height_offset: Option<u64>,
     /// Circular diameter in source centimetres.
     pub(crate) diameter: PositiveReal,
     /// Referenced diameter owner.
     pub(crate) diameter_record_index: u32,
-    /// Byte offset of the evaluated diameter.
-    pub(crate) diameter_offset: u64,
+    /// Byte offset of the evaluated diameter of a located scope.
+    pub(crate) diameter_offset: Option<u64>,
     /// Source frame carried by the shifted cylinder form.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) transform: Option<Located<SketchPlacementMatrix>>,
+    pub(crate) transform: Option<Sourced<SketchPlacementMatrix>>,
     /// Result Boolean operation.
     pub(crate) operation: DesignExtrudeOperation,
-    /// Byte offset of the operation enum.
-    pub(crate) operation_offset: u64,
+    /// Byte offset of the operation enum of a located scope.
+    pub(crate) operation_offset: Option<u64>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -97,14 +102,10 @@ struct DesignCylinderPrimitiveWire {
     height: PositiveReal,
     /// Referenced height owner.
     height_record_index: u32,
-    /// Byte offset of the evaluated height.
-    height_offset: u64,
     /// Circular diameter in source centimetres.
     diameter: PositiveReal,
     /// Referenced diameter owner.
     diameter_record_index: u32,
-    /// Byte offset of the evaluated diameter.
-    diameter_offset: u64,
     /// Source frame carried by the shifted cylinder form.
     #[serde(
         default,
@@ -112,17 +113,8 @@ struct DesignCylinderPrimitiveWire {
         deserialize_with = "deserialize_transform"
     )]
     transform: Option<SketchPlacementMatrix>,
-    /// Byte offset of the shifted-form source frame.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_transform_offset"
-    )]
-    transform_offset: Option<u64>,
     /// Result Boolean operation.
     operation: DesignExtrudeOperation,
-    /// Byte offset of the operation enum.
-    operation_offset: u64,
 }
 
 impl From<DesignCylinderPrimitive> for DesignCylinderPrimitiveWire {
@@ -130,14 +122,10 @@ impl From<DesignCylinderPrimitive> for DesignCylinderPrimitiveWire {
         Self {
             height: value.height,
             height_record_index: value.height_record_index,
-            height_offset: value.height_offset,
             diameter: value.diameter,
             diameter_record_index: value.diameter_record_index,
-            diameter_offset: value.diameter_offset,
             transform: value.transform.map(|located| located.value),
-            transform_offset: value.transform.map(|located| located.offset),
             operation: value.operation,
-            operation_offset: value.operation_offset,
         }
     }
 }
@@ -148,13 +136,16 @@ impl TryFrom<DesignCylinderPrimitiveWire> for DesignCylinderPrimitive {
         Ok(Self {
             height: value.height,
             height_record_index: value.height_record_index,
-            height_offset: value.height_offset,
+            height_offset: None,
             diameter: value.diameter,
             diameter_record_index: value.diameter_record_index,
-            diameter_offset: value.diameter_offset,
-            transform: Located::from_wire(value.transform, value.transform_offset, "transform")?,
+            diameter_offset: None,
+            transform: value.transform.map(|value| Sourced {
+                value,
+                offset: None,
+            }),
             operation: value.operation,
-            operation_offset: value.operation_offset,
+            operation_offset: None,
         })
     }
 }
@@ -164,18 +155,21 @@ impl TryFrom<DesignCylinderPrimitiveWire> for DesignCylinderPrimitive {
 pub(crate) struct DesignSpherePrimitive {
     /// Row-major local-to-model placement frame.
     pub(crate) transform: SketchPlacementMatrix,
-    /// Byte offset of the placement matrix.
-    pub(crate) transform_offset: u64,
+    /// Byte offset of the placement matrix of a located scope.
+    #[serde(skip)]
+    pub(crate) transform_offset: Option<u64>,
     /// Sphere diameter in source centimetres.
     pub(crate) diameter: PositiveReal,
     /// Referenced diameter record.
     pub(crate) diameter_record_index: u32,
-    /// Byte offset of the diameter scalar.
-    pub(crate) diameter_offset: u64,
+    /// Byte offset of the diameter scalar of a located scope.
+    #[serde(skip)]
+    pub(crate) diameter_offset: Option<u64>,
     /// Result Boolean operation.
     pub(crate) operation: DesignExtrudeOperation,
-    /// Byte offset of the operation enum.
-    pub(crate) operation_offset: u64,
+    /// Byte offset of the operation enum of a located scope.
+    #[serde(skip)]
+    pub(crate) operation_offset: Option<u64>,
 }
 
 /// Exact `Torus` primitive construction.
@@ -183,24 +177,28 @@ pub(crate) struct DesignSpherePrimitive {
 pub(crate) struct DesignTorusPrimitive {
     /// Row-major local-to-model placement frame.
     pub(crate) transform: SketchPlacementMatrix,
-    /// Byte offset of the placement matrix.
-    pub(crate) transform_offset: u64,
+    /// Byte offset of the placement matrix of a located scope.
+    #[serde(skip)]
+    pub(crate) transform_offset: Option<u64>,
     /// Major diameter in source centimetres.
     pub(crate) major_diameter: PositiveReal,
     /// Referenced major-diameter record.
     pub(crate) major_diameter_record_index: u32,
-    /// Byte offset of the major-diameter scalar.
-    pub(crate) major_diameter_offset: u64,
+    /// Byte offset of the major-diameter scalar of a located scope.
+    #[serde(skip)]
+    pub(crate) major_diameter_offset: Option<u64>,
     /// Tube diameter in source centimetres.
     pub(crate) minor_diameter: PositiveReal,
     /// Referenced minor-diameter record.
     pub(crate) minor_diameter_record_index: u32,
-    /// Byte offset of the minor-diameter scalar.
-    pub(crate) minor_diameter_offset: u64,
+    /// Byte offset of the minor-diameter scalar of a located scope.
+    #[serde(skip)]
+    pub(crate) minor_diameter_offset: Option<u64>,
     /// Result Boolean operation.
     pub(crate) operation: DesignExtrudeOperation,
-    /// Byte offset of the operation enum.
-    pub(crate) operation_offset: u64,
+    /// Byte offset of the operation enum of a located scope.
+    #[serde(skip)]
+    pub(crate) operation_offset: Option<u64>,
 }
 
 impl From<DesignSolidPrimitive> for DesignScopePayload {
@@ -211,6 +209,71 @@ impl From<DesignSolidPrimitive> for DesignScopePayload {
             DesignSolidPrimitive::Sphere(value) => Self::SpherePrimitive(Some(value)),
             DesignSolidPrimitive::Torus(value) => Self::TorusPrimitive(Some(value)),
         }
+    }
+}
+
+impl crate::records::source_offsets::SourceOffsets for DesignSolidPrimitive {
+    fn visit_source_offsets(
+        &mut self,
+        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
+    ) {
+        match self {
+            Self::Box(value) => value.visit_source_offsets(offsets),
+            Self::Cylinder(value) => value.visit_source_offsets(offsets),
+            Self::Sphere(value) => value.visit_source_offsets(offsets),
+            Self::Torus(value) => value.visit_source_offsets(offsets),
+        }
+    }
+}
+
+impl crate::records::source_offsets::SourceOffsets for DesignBoxPrimitive {
+    fn visit_source_offsets(
+        &mut self,
+        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
+    ) {
+        offsets.offset("length_offset", &mut self.length_offset);
+        offsets.offset("width_offset", &mut self.width_offset);
+        offsets.offset("height_offset", &mut self.height_offset);
+        offsets.offset("offset_x_offset", &mut self.offset_x_offset);
+        offsets.offset("offset_y_offset", &mut self.offset_y_offset);
+        offsets.offset("operation_offset", &mut self.operation_offset);
+    }
+}
+
+impl crate::records::source_offsets::SourceOffsets for DesignCylinderPrimitive {
+    fn visit_source_offsets(
+        &mut self,
+        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
+    ) {
+        offsets.offset("height_offset", &mut self.height_offset);
+        offsets.offset("diameter_offset", &mut self.diameter_offset);
+        if let Some(transform) = &mut self.transform {
+            offsets.sourced("transform_offset", transform);
+        }
+        offsets.offset("operation_offset", &mut self.operation_offset);
+    }
+}
+
+impl crate::records::source_offsets::SourceOffsets for DesignSpherePrimitive {
+    fn visit_source_offsets(
+        &mut self,
+        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
+    ) {
+        offsets.offset("transform_offset", &mut self.transform_offset);
+        offsets.offset("diameter_offset", &mut self.diameter_offset);
+        offsets.offset("operation_offset", &mut self.operation_offset);
+    }
+}
+
+impl crate::records::source_offsets::SourceOffsets for DesignTorusPrimitive {
+    fn visit_source_offsets(
+        &mut self,
+        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
+    ) {
+        offsets.offset("transform_offset", &mut self.transform_offset);
+        offsets.offset("major_diameter_offset", &mut self.major_diameter_offset);
+        offsets.offset("minor_diameter_offset", &mut self.minor_diameter_offset);
+        offsets.offset("operation_offset", &mut self.operation_offset);
     }
 }
 

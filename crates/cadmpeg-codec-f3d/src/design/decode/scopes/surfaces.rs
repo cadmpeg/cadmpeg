@@ -51,16 +51,16 @@ pub(super) fn exact_surface_extend_operation(
     };
     Some(DesignSurfaceExtendOperation {
         distance: operation.distance,
-        distance_offset: operation.distance_offset,
+        distance_offset: Some(operation.distance_offset),
         distance_record_index: operation.distance_record_index,
         method,
-        method_offset: operation.mode_offset,
+        method_offset: Some(operation.mode_offset),
         boundary_record_index: operation.boundary_record_index,
         boundary_reference_record_index: operation.boundary_reference_record_index,
-        boundary_reference_offset: operation.boundary_reference_offset,
+        boundary_reference_offset: Some(operation.boundary_reference_offset),
         edge_record_indices: operation.edge_record_indices,
         tolerance: operation.tolerance,
-        tolerance_offset: operation.tolerance_offset,
+        tolerance_offset: Some(operation.tolerance_offset),
     })
 }
 
@@ -84,15 +84,15 @@ pub(super) fn exact_surface_offset_operation(
     Ok(
         (operation.mode == 1).then_some(DesignSurfaceOffsetOperation {
             distance: operation.distance,
-            distance_offset: operation.distance_offset,
+            distance_offset: Some(operation.distance_offset),
             distance_record_index: operation.distance_record_index,
             support: DesignSurfaceOffsetSupport::BoundaryCarrier {
                 boundary_record_index: operation.boundary_record_index,
                 boundary_reference_record_index: operation.boundary_reference_record_index,
-                boundary_reference_offset: operation.boundary_reference_offset,
+                boundary_reference_offset: Some(operation.boundary_reference_offset),
                 edge_record_indices: operation.edge_record_indices,
                 tolerance: operation.tolerance,
-                tolerance_offset: operation.tolerance_offset,
+                tolerance_offset: Some(operation.tolerance_offset),
             },
         }),
     )
@@ -172,7 +172,7 @@ fn exact_surface_offset_face_groups(
 
         Some(Ok(DesignSurfaceOffsetOperation {
             distance: scalar.value,
-            distance_offset: scalar.value_offset,
+            distance_offset: Some(scalar.value_offset),
             distance_record_index: *distance_record_index,
             support: DesignSurfaceOffsetSupport::FaceGroups {
                 group_record_indices,
@@ -412,7 +412,7 @@ pub(super) fn exact_surface_stitch_operation(
     let gap_tolerance = cadmpeg_ir::scalar::PositiveReal::new(scalar.value.get())?;
     Some(DesignSurfaceStitchOperation {
         gap_tolerance,
-        gap_tolerance_offset: scalar.value_offset,
+        gap_tolerance_offset: Some(scalar.value_offset),
         tolerance_record_index,
         settings_record_index,
     })
@@ -529,11 +529,11 @@ pub(super) fn exact_ruled_surface_operation(
         }
         Some(Ok(DesignRuledSurfaceOperation {
             method,
-            method_offset: u64_from_index(method_offset),
+            method_offset: Some(u64_from_index(method_offset)),
             corner,
-            corner_offset: u64_from_index(corner_offset),
+            corner_offset: Some(u64_from_index(corner_offset)),
             alternate_face,
-            alternate_face_offset: u64_from_index(alternate_face_offset),
+            alternate_face_offset: Some(u64_from_index(alternate_face_offset)),
             angle_owner_record_index,
             distance_owner_record_index,
             edge_group_record_indices,

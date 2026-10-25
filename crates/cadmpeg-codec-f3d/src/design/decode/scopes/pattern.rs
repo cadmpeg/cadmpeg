@@ -68,7 +68,7 @@ pub(super) fn exact_rectangular_pattern_construction(
         };
         let u_count_value = exact_count(u_count.evaluated_value().get())?;
         let v_count_value = exact_count(v_count.evaluated_value().get())?;
-        let construction = DesignRectangularPatternConstruction::try_from(
+        let mut construction = DesignRectangularPatternConstruction::try_from(
             patterns::DesignRectangularPatternConstructionWire {
                 u_count: u_count_value,
                 v_count: v_count_value,
@@ -80,18 +80,18 @@ pub(super) fn exact_rectangular_pattern_construction(
                     u_extent.record_index(),
                     v_extent.record_index(),
                 ],
-                value_offsets: [
-                    u_count.evaluated_value_offset()?,
-                    v_count.evaluated_value_offset()?,
-                    u_extent.evaluated_value_offset()?,
-                    v_extent.evaluated_value_offset()?,
-                ],
                 instances: None,
                 instance_search_cap: None,
                 directions: Vec::new(),
             },
         )
         .ok()?;
+        construction.value_offsets = Some([
+            u_count.evaluated_value_offset()?,
+            v_count.evaluated_value_offset()?,
+            u_extent.evaluated_value_offset()?,
+            v_extent.evaluated_value_offset()?,
+        ]);
         Some(construction)
     })();
     let Some(mut construction) = parsed else {
@@ -212,9 +212,9 @@ fn exact_rectangular_pattern_direction(
         selection_record_index,
         selection_kind,
         origin: finite_reals_at(bytes, start + layout::ORIGIN)?,
-        origin_offset: u64::try_from(start.checked_add(layout::ORIGIN)?).ok()?,
+        origin_offset: Some(u64::try_from(start.checked_add(layout::ORIGIN)?).ok()?),
         displacement: finite_reals_at(bytes, start + layout::DISPLACEMENT)?,
-        displacement_offset: u64::try_from(start.checked_add(layout::DISPLACEMENT)?).ok()?,
+        displacement_offset: Some(u64::try_from(start.checked_add(layout::DISPLACEMENT)?).ok()?),
     };
     direction.direction().is_some().then_some(direction)
 }
@@ -382,9 +382,9 @@ fn exact_rectangular_pattern_instances(
         for (record_index, (value, offset)) in record_indices.into_iter().zip(run) {
             instances.push(patterns::DesignPatternInstance {
                 record_index,
-                transform: crate::records::identity::Located {
+                transform: crate::records::identity::Sourced {
                     value: *value,
-                    offset: *offset,
+                    offset: Some(*offset),
                 },
             });
         }
@@ -601,10 +601,10 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
         Some(Ok(DesignCircularPatternConstruction {
             count: std::num::NonZeroU32::new(*count)?,
             count_record_index: *count_record_index,
-            count_offset: *count_offset,
+            count_offset: Some(*count_offset),
             angle: *angle,
             angle_record_index: *angle_record_index,
-            angle_offset: *angle_offset,
+            angle_offset: Some(*angle_offset),
             axis,
             axis_record_index,
             selection_record_index,
@@ -750,7 +750,7 @@ fn exact_legacy_circular_pattern_axis(
                 identity,
                 patterns::DesignPatternAxisWrapper {
                     record_index,
-                    identity_offset,
+                    identity_offset: Some(identity_offset),
                 },
             ));
         }
@@ -888,9 +888,9 @@ fn exact_circular_pattern_axis(
     let displacement = finite_reals_at(bytes, start + 49)?.map(FiniteReal::get);
     patterns::DesignCircularPatternAxis::inline(
         origin,
-        u64::try_from(start.checked_add(25)?).ok()?,
+        Some(u64::try_from(start.checked_add(25)?).ok()?),
         displacement,
-        u64::try_from(start.checked_add(49)?).ok()?,
+        Some(u64::try_from(start.checked_add(49)?).ok()?),
     )
 }
 

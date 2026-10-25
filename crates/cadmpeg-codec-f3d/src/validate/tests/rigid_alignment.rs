@@ -40,12 +40,12 @@ fn rigid_group_frame_requires_its_further_members() {
     };
     let frames = [10, 20].map(|index| DesignAssemblyOperandFrame {
         reference_record_index: index,
-        reference_offset: 0,
+        reference_offset: Some(0),
         transform: cadmpeg_ir::transform::Transform::identity()
             .rows()
             .try_into()
             .unwrap(),
-        transform_offset: 0,
+        transform_offset: Some(0),
     });
     let read = DesignAssemblyAlignment::try_new(
         0.0,

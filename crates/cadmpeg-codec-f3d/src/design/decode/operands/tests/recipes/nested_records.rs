@@ -250,12 +250,16 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     )
     .expect("WorkPoint vertex recipe operand");
     assert_eq!(
-        parsed_vertex.clone().into_draft().paired_byte_offset,
+        parsed_vertex
+            .clone()
+            .into_draft()
+            .expect("decoded vertex recipe")
+            .paired_byte_offset,
         vertex_paired_at
     );
     assert_eq!(parsed_vertex.recipe_record_index(), 203);
     assert_eq!(parsed_vertex.next_record_index(), 205);
-    assert_eq!(parsed_vertex.next_byte_offset(), vertex_next_at);
+    assert_eq!(parsed_vertex.next_byte_offset(), Some(vertex_next_at));
     assert_eq!(
         parsed_vertex.recipe_program,
         [-1, 3, 1, -1, 2, -1, 0, -1, 0, 0]

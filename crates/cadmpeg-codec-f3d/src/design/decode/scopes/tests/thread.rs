@@ -35,7 +35,7 @@ fn thread_scope_decodes_standard_size_and_face_group() {
 
     let expected = DesignThreadConstruction {
         form: DesignThreadForm::Standard,
-        designation_offset: 38,
+        designation_offset: Some(38),
         designation: cadmpeg_core::text::NonBlankString::new("M30x3.5").unwrap(),
         nominal_size: crate::records::feature::thread::DesignThreadNominalSize::try_from(
             "30.0".to_owned(),
@@ -91,7 +91,7 @@ fn thread_scope_decodes_standard_size_and_face_group() {
     let shifted_expected =
         parse_thread_payload(&owner_marked, 42, ThreadPrefix::Standard, vec![988])
             .expect("owner-marked standard Thread payload");
-    assert_eq!(shifted_expected.designation_offset, 42);
+    assert_eq!(shifted_expected.designation_offset, Some(42));
     scope
         .try_edit(|draft| {
             draft.frame_length += 4;
@@ -137,7 +137,7 @@ fn thread_scope_decodes_class_334_legacy_standard_tail() {
 
     let expected = DesignThreadConstruction {
         form: DesignThreadForm::StandardLegacy,
-        designation_offset: 38,
+        designation_offset: Some(38),
         designation: cadmpeg_core::text::NonBlankString::new("M7x1").unwrap(),
         nominal_size: crate::records::feature::thread::DesignThreadNominalSize::try_from(
             "7.0".to_owned(),
@@ -238,7 +238,7 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
 
     let expected = DesignThreadConstruction {
         form: DesignThreadForm::Compact(None),
-        designation_offset: 38,
+        designation_offset: Some(38),
         designation: cadmpeg_core::text::NonBlankString::new("M3.5x0.6").unwrap(),
         nominal_size: crate::records::feature::thread::DesignThreadNominalSize::try_from(
             "3.5".to_owned(),
@@ -261,9 +261,9 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
     referenced[after_profile + 39..after_profile + 43].copy_from_slice(&2075u32.to_le_bytes());
     referenced[after_profile + 43..after_profile + 49].fill(0);
     let mut referenced_expected = expected.clone();
-    referenced_expected.form = DesignThreadForm::Compact(Some(crate::records::identity::Located {
+    referenced_expected.form = DesignThreadForm::Compact(Some(crate::records::identity::Sourced {
         value: std::num::NonZeroU32::new(2075).expect("reference"),
-        offset: u64_from_index(after_profile + 39),
+        offset: Some(u64_from_index(after_profile + 39)),
     }));
     assert_thread_construction(
         parse_thread_payload(&referenced, 38, ThreadPrefix::Compact, vec![988]),
@@ -295,7 +295,8 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
 
     let mut owner_marked = bytes;
     owner_marked.splice(20..20, [1, 0, 0, 0]);
-    plural_expected.designation_offset += 4;
+    plural_expected.designation_offset =
+        plural_expected.designation_offset.map(|offset| offset + 4);
     scope
         .try_edit(|draft| {
             draft.frame_length += 4;
@@ -352,7 +353,7 @@ fn thread_scope_decodes_class_414_legacy_compact_tail() {
 
     let expected = DesignThreadConstruction {
         form: DesignThreadForm::CompactLegacy,
-        designation_offset: 38,
+        designation_offset: Some(38),
         designation: cadmpeg_core::text::NonBlankString::new("M190x8").unwrap(),
         nominal_size: crate::records::feature::thread::DesignThreadNominalSize::try_from(
             "190.0".to_owned(),

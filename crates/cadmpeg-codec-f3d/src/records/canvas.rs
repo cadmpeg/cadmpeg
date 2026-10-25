@@ -278,8 +278,9 @@ impl DesignCanvasGeometry {
             .checked_add(u64_from_index(self.prologue.layout.offsets().scope + 1))
     }
     fn visibility_offset(&self) -> Option<u64> {
-        self.byte_offset?
-            .checked_add(u64_from_index(self.prologue.layout.offsets().first_boundary - 1))
+        self.byte_offset?.checked_add(u64_from_index(
+            self.prologue.layout.offsets().first_boundary - 1,
+        ))
     }
     fn paired_component_reference_offset(&self) -> Option<u64> {
         self.paired_byte_offset()?.checked_add(20)
@@ -447,8 +448,12 @@ impl DesignCanvasImage {
         &self.asset.name
     }
     pub(crate) fn scope_byte_offset(&self) -> Option<u64> {
-        self.asset_byte_offset()?
-            .checked_add(self.asset.frame_length())
+        self.scope_byte_offset_after_asset(self.asset_byte_offset()?)
+    }
+    /// The scope frame offset that follows an asset frame at
+    /// `asset_byte_offset`.
+    pub(crate) fn scope_byte_offset_after_asset(&self, asset_byte_offset: u64) -> Option<u64> {
+        asset_byte_offset.checked_add(self.asset.frame_length())
     }
     fn asset_byte_offset(&self) -> Option<u64> {
         self.geometry

@@ -1,18 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Component insert, derived instance, occurrence and copy-paste component features.
 
-use crate::records::identity::{Located, IDENTITY_MATRIX};
+use crate::records::identity::{Located, Sourced};
 use crate::records::mesh::{DesignOccurrenceKey, DesignRelaxedGuidText};
 use crate::records::references::DesignClassTag;
 use crate::records::sketch_placement::SketchPlacementMatrix;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
 
-cadmpeg_core::named_optional_field!(
-    deserialize_carrier_transform_offset,
-    u64,
-    "carrier_transform_offset"
-);
 cadmpeg_core::named_optional_field!(deserialize_occurrence_identity, u64, "occurrence_identity");
 cadmpeg_core::named_optional_field!(deserialize_transform, SketchPlacementMatrix, "transform");
 cadmpeg_core::named_optional_field!(deserialize_transform_offset, u64, "transform_offset");
@@ -31,9 +26,9 @@ pub(crate) struct DesignComponentInsertConstruction {
     /// Occurrence-role GUID joining the carrier to the external-reference table.
     /// The role also accepts a GUID prefix followed by an underscore and URN, beyond relaxed GUID text.
     pub(crate) neutron_role: String,
-    /// Byte offset of the occurrence-role string payload.
-    pub(crate) neutron_role_offset: u64,
-    /// Explicit scope-local placement and its optional repeated carrier location.
+    /// Byte offset of the occurrence-role string payload of a located scope.
+    pub(crate) neutron_role_offset: Option<u64>,
+    /// Explicit scope-local placement and its optional repeated carrier matrix.
     /// Absence is the encoded identity form.
     pub(crate) placement: Option<DesignComponentInsertMatrix>,
 }
@@ -61,8 +56,9 @@ impl Clone for DesignComponentInsertConstruction {
 /// Scope-local matrix with an optional equal matrix in the grouped carrier.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct DesignComponentInsertMatrix {
-    pub(crate) scope: Located<SketchPlacementMatrix>,
-    pub(crate) carrier_offset: Option<u64>,
+    pub(crate) scope: Sourced<SketchPlacementMatrix>,
+    /// The equal matrix the grouped carrier stores, when it stores one.
+    pub(crate) carrier: Option<Sourced<()>>,
 }
 
 impl DesignComponentInsertConstruction {
@@ -75,16 +71,31 @@ impl DesignComponentInsertConstruction {
             })
     }
 
+    /// Byte offset of the scope-local matrix of a located scope.
+    #[cfg(test)]
     #[must_use]
     pub(crate) fn transform_offset(&self) -> Option<u64> {
-        self.placement.as_ref().map(|matrix| matrix.scope.offset)
+        self.placement
+            .as_ref()
+            .and_then(|matrix| matrix.scope.offset)
     }
 
+    /// Byte offset of the carrier's equal matrix of a located scope.
+    #[cfg(test)]
     #[must_use]
     pub(crate) fn carrier_transform_offset(&self) -> Option<u64> {
         self.placement
             .as_ref()
-            .and_then(|matrix| matrix.carrier_offset)
+            .and_then(|matrix| matrix.carrier)
+            .and_then(|carrier| carrier.offset)
+    }
+
+    /// Whether the grouped carrier stores the equal matrix.
+    #[must_use]
+    pub(crate) fn carrier_stores_transform(&self) -> bool {
+        self.placement
+            .as_ref()
+            .is_some_and(|matrix| matrix.carrier.is_some())
     }
 }
 
@@ -105,26 +116,17 @@ struct DesignComponentInsertConstructionWire {
     /// Occurrence-role GUID joining the carrier to the external-reference table.
     /// The role also accepts a GUID prefix followed by an underscore and URN, beyond relaxed GUID text.
     neutron_role: String,
-    /// Byte offset of the occurrence-role string payload.
-    neutron_role_offset: u64,
-    /// Row-major local occurrence transform in centimetres.
-    transform: SketchPlacementMatrix,
-    /// Byte offset of the first scope-local transform scalar. `None` is the
-    /// stored identity form, which has no scalar block.
+    /// Explicit row-major local occurrence transform in centimetres. Absence
+    /// is the stored identity form, which has no scalar block.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_transform_offset"
+        deserialize_with = "deserialize_transform"
     )]
-    transform_offset: Option<u64>,
-    /// Byte offset of the equal transform's first scalar in the grouped
-    /// carrier; absent when the carrier stores no scalar block.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_carrier_transform_offset"
-    )]
-    carrier_transform_offset: Option<u64>,
+    transform: Option<SketchPlacementMatrix>,
+    /// Whether the grouped carrier stores an equal transform scalar block.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    carrier_transform_stored: bool,
 }
 
 impl Serialize for DesignComponentInsertConstruction {
@@ -136,22 +138,18 @@ impl Serialize for DesignComponentInsertConstruction {
             #[serde(skip_serializing_if = "Option::is_none")]
             occurrence_identity: Option<u64>,
             neutron_role: &'a str,
-            neutron_role_offset: u64,
-            transform: SketchPlacementMatrix,
             #[serde(skip_serializing_if = "Option::is_none")]
-            transform_offset: Option<u64>,
-            #[serde(skip_serializing_if = "Option::is_none")]
-            carrier_transform_offset: Option<u64>,
+            transform: Option<&'a SketchPlacementMatrix>,
+            #[serde(skip_serializing_if = "std::ops::Not::not")]
+            carrier_transform_stored: bool,
         }
         WireRef {
             relation_record_index: self.relation_record_index,
             carrier_record_index: self.carrier_record_index,
             occurrence_identity: self.occurrence_identity,
             neutron_role: &self.neutron_role,
-            neutron_role_offset: self.neutron_role_offset,
-            transform: *self.transform(),
-            transform_offset: self.transform_offset(),
-            carrier_transform_offset: self.carrier_transform_offset(),
+            transform: self.placement.as_ref().map(|matrix| &matrix.scope.value),
+            carrier_transform_stored: self.carrier_stores_transform(),
         }
         .serialize(serializer)
     }
@@ -160,28 +158,20 @@ impl Serialize for DesignComponentInsertConstruction {
 impl TryFrom<DesignComponentInsertConstructionWire> for DesignComponentInsertConstruction {
     type Error = String;
     fn try_from(wire: DesignComponentInsertConstructionWire) -> Result<Self, Self::Error> {
-        let placement = match (wire.transform_offset, wire.carrier_transform_offset) {
-            (Some(offset), carrier_offset) => Some(DesignComponentInsertMatrix {
-                scope: Located {
-                    value: wire.transform,
-                    offset,
+        let placement = match (wire.transform, wire.carrier_transform_stored) {
+            (Some(value), carrier_stored) => Some(DesignComponentInsertMatrix {
+                scope: Sourced {
+                    value,
+                    offset: None,
                 },
-                carrier_offset,
+                carrier: carrier_stored.then_some(Sourced {
+                    value: (),
+                    offset: None,
+                }),
             }),
-            (None, None) => {
-                if wire
-                    .transform
-                    .iter()
-                    .flatten()
-                    .zip(IDENTITY_MATRIX.iter().flatten())
-                    .any(|(value, identity)| value.to_bits() != identity.to_bits())
-                {
-                    return Err("transform must be identity when transform_offset is absent".into());
-                }
-                None
-            }
-            (None, Some(_)) => {
-                return Err("carrier_transform_offset requires transform_offset".into())
+            (None, false) => None,
+            (None, true) => {
+                return Err("carrier_transform_stored requires an explicit transform".into())
             }
         };
         Ok(Self {
@@ -189,7 +179,7 @@ impl TryFrom<DesignComponentInsertConstructionWire> for DesignComponentInsertCon
             carrier_record_index: wire.carrier_record_index,
             occurrence_identity: wire.occurrence_identity,
             neutron_role: wire.neutron_role,
-            neutron_role_offset: wire.neutron_role_offset,
+            neutron_role_offset: None,
             placement,
         })
     }
@@ -198,18 +188,14 @@ impl TryFrom<DesignComponentInsertConstructionWire> for DesignComponentInsertCon
 #[cfg(test)]
 impl From<DesignComponentInsertConstruction> for DesignComponentInsertConstructionWire {
     fn from(record: DesignComponentInsertConstruction) -> Self {
-        let transform = *record.transform();
-        let transform_offset = record.transform_offset();
-        let carrier_transform_offset = record.carrier_transform_offset();
+        let carrier_transform_stored = record.carrier_stores_transform();
         Self {
             relation_record_index: record.relation_record_index,
             carrier_record_index: record.carrier_record_index,
             occurrence_identity: record.occurrence_identity,
             neutron_role: record.neutron_role,
-            neutron_role_offset: record.neutron_role_offset,
-            transform,
-            transform_offset,
-            carrier_transform_offset,
+            transform: record.placement.map(|matrix| matrix.scope.value),
+            carrier_transform_stored,
         }
     }
 }
@@ -229,8 +215,10 @@ pub(crate) struct DesignDerivedInstanceConstruction {
     pub(crate) occurrence_guid: DesignOccurrenceKey,
     /// Row-major local-to-model placement in centimetres.
     pub(crate) transform: SketchPlacementMatrix,
-    /// Byte offset of the first scope-local transform scalar.
-    pub(crate) transform_offset: u64,
+    /// Byte offset of the first scope-local transform scalar of a located
+    /// scope.
+    #[serde(skip)]
+    pub(crate) transform_offset: Option<u64>,
 }
 
 /// Owner-entity offset in the identity-placement frame.
@@ -747,12 +735,48 @@ pub(crate) struct DesignCopyPasteComponentOperation {
     pub(crate) copied_occurrence_guid: DesignOccurrenceKey,
     /// Source placement embedded by the scope.
     pub(crate) source_transform: SketchPlacementMatrix,
-    /// Byte offset of the source placement.
-    pub(crate) source_transform_offset: u64,
+    /// Byte offset of the source placement of a located scope.
+    #[serde(skip)]
+    pub(crate) source_transform_offset: Option<u64>,
     /// Copied placement embedded by both scope and occurrence carrier.
     pub(crate) copied_transform: SketchPlacementMatrix,
-    /// Byte offset of the scope-local copied placement.
-    pub(crate) copied_transform_offset: u64,
+    /// Byte offset of the scope-local copied placement of a located scope.
+    #[serde(skip)]
+    pub(crate) copied_transform_offset: Option<u64>,
+}
+
+impl crate::records::source_offsets::SourceOffsets for DesignComponentInsertConstruction {
+    fn visit_source_offsets(
+        &mut self,
+        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
+    ) {
+        offsets.offset("neutron_role_offset", &mut self.neutron_role_offset);
+        if let Some(matrix) = &mut self.placement {
+            offsets.sourced("transform_offset", &mut matrix.scope);
+            if let Some(carrier) = &mut matrix.carrier {
+                offsets.sourced("carrier_transform_offset", carrier);
+            }
+        }
+    }
+}
+
+impl crate::records::source_offsets::SourceOffsets for DesignDerivedInstanceConstruction {
+    fn visit_source_offsets(
+        &mut self,
+        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
+    ) {
+        offsets.offset("transform_offset", &mut self.transform_offset);
+    }
+}
+
+impl crate::records::source_offsets::SourceOffsets for DesignCopyPasteComponentOperation {
+    fn visit_source_offsets(
+        &mut self,
+        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
+    ) {
+        offsets.offset("source_transform_offset", &mut self.source_transform_offset);
+        offsets.offset("copied_transform_offset", &mut self.copied_transform_offset);
+    }
 }
 
 #[cfg(test)]

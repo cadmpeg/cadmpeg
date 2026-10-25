@@ -52,7 +52,7 @@ fn rigid_as_built_scope_reads_its_two_wide_operand_paths_without_owners() {
         scope.kind(),
         crate::records::feature::scope::DesignFeatureKind::AsBuilt
     );
-    assert_eq!(scope.frame_length(), 269);
+    assert_eq!(scope.frame_length(), Some(269));
     assert_eq!(scope.reference_members().len(), 0);
     // Class tags are per-file dynamic values: the same scope under other tags
     // is the same rigid form, and the kind and frame length identify it.
@@ -71,7 +71,7 @@ fn rigid_as_built_scope_reads_its_two_wide_operand_paths_without_owners() {
     )
     .unwrap()
     .expect("the rigid form under other class tags");
-    assert_eq!(retagged_scope.frame_length(), 269);
+    assert_eq!(retagged_scope.frame_length(), Some(269));
     assert_eq!(retagged_scope.reference_members().len(), 0);
     // The empty table is read only for the `As-built` kind.
     let mut other = bytes.clone();
@@ -174,7 +174,7 @@ fn rigid_group_reads_every_member_after_its_first_two() {
     )
     .unwrap()
     .expect("a three-member rigid group");
-    assert_eq!(scope.frame_length(), 280);
+    assert_eq!(scope.frame_length(), Some(280));
     assert_eq!(scope.reference_members().len(), 0);
     // The empty table's count sits 11 bytes past a two-member group's.
     let mut moved = scope.clone();

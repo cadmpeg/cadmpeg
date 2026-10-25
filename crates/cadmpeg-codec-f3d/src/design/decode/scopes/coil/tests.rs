@@ -435,7 +435,13 @@ fn compact_coil_placement_accepts_identity_and_matrix_frames() {
             }
         );
         assert_eq!(
-            placement.explicit_transform.map(|matrix| matrix.offset),
+            placement.explicit_transform.is_some(),
+            expected_offset.is_some()
+        );
+        assert_eq!(
+            placement
+                .explicit_transform
+                .and_then(|matrix| matrix.offset),
             expected_offset.map(|offset| u64_from_index(transform_start + offset))
         );
         assert_eq!(
@@ -482,7 +488,9 @@ fn modern_coil_placement_accepts_class_450_matrix_frame() {
     );
     assert_eq!(
         placement.explicit_transform.map(|matrix| matrix.offset),
-        Some(u64_from_index(transform_start + coil_modern_matrix::MATRIX))
+        Some(Some(u64_from_index(
+            transform_start + coil_modern_matrix::MATRIX
+        )))
     );
 }
 
@@ -560,7 +568,7 @@ fn compact_coil_placement_accepts_owner_referenced_identity_frame() {
     );
     assert_eq!(
         placement.transform_record_byte_offset,
-        u64_from_index(transform_start)
+        Some(u64_from_index(transform_start))
     );
 }
 
@@ -584,7 +592,7 @@ fn legacy_coil_placement_accepts_identity_frame() {
     );
     assert_eq!(
         placement.transform_record_byte_offset,
-        u64_from_index(transform_start)
+        Some(u64_from_index(transform_start))
     );
     assert_eq!(
         *placement.transform(),
@@ -661,7 +669,7 @@ fn compact_coil_spiral_placement_accepts_seven_reference_form() {
     assert_eq!(placement.transform_record_index, 200);
     assert_eq!(
         placement.transform_record_byte_offset,
-        u64_from_index(transform_start)
+        Some(u64_from_index(transform_start))
     );
 }
 
@@ -765,7 +773,7 @@ fn compact_coil_placement_accepts_face_recipe_selection() {
                 .try_into()
                 .expect("GUID"),
             recipe_record_index: 103,
-            recipe_record_byte_offset: recipes[0].byte_offset.unwrap() - 15,
+            recipe_record_byte_offset: Some(recipes[0].byte_offset.unwrap() - 15),
             recipe_id: recipes[0].id.clone(),
             recipe_kind: crate::records::feature::scope::DesignFaceRecipeKind::Face,
             design: Some(crate::records::recipes::ConstructionRecipeDesign {
@@ -984,7 +992,7 @@ fn compact_coil_new_body_scope_accepts_unlinked_state_trailer() {
     )
     .unwrap()
     .expect("compact Coil new-body scope");
-    assert_eq!(scope.frame_length(), 442);
+    assert_eq!(scope.frame_length(), Some(442));
     assert_eq!(
         scope.kind(),
         crate::records::feature::scope::DesignFeatureKind::CoilPrimitive
@@ -1084,7 +1092,7 @@ fn long_coil_scope_discriminators_use_the_ten_reference_envelope() {
     );
     assert_eq!(new_body.coil_operation_offset(), Some(22));
     let transform = new_body.coil_transform().expect("long Coil placement");
-    assert_eq!(transform.transform_offset, 77);
+    assert_eq!(transform.transform_offset, Some(77));
     assert_eq!(
         transform.transform,
         [
@@ -1105,7 +1113,7 @@ fn long_coil_scope_discriminators_use_the_ten_reference_envelope() {
         let boolean = scope(572, operation);
         assert_eq!(boolean.coil_operation(), Some(expected));
         let transform = boolean.coil_transform().expect("572-byte Coil placement");
-        assert_eq!(transform.transform_offset, 77);
+        assert_eq!(transform.transform_offset, Some(77));
         assert_eq!(
             transform.transform,
             [

@@ -84,7 +84,6 @@ fn rectangular_scope() -> DesignParameterScope {
                     u_extent: 10.0,
                     v_extent: 0.0,
                     owner_record_indices: [11, 12, 13, 14],
-                    value_offsets: [101, 102, 103, 104],
                     instances: None,
                     instance_search_cap: None,
                     directions: Vec::new(),
@@ -111,18 +110,18 @@ fn circular_scope() -> DesignParameterScope {
         *slot = Some(DesignCircularPatternConstruction {
             count: std::num::NonZeroU32::new(3).unwrap(),
             count_record_index: 11,
-            count_offset: 0,
+            count_offset: Some(0),
             angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU).unwrap(),
             angle_record_index: 12,
-            angle_offset: 0,
+            angle_offset: Some(0),
             axis: DesignCircularPatternAxis::Inline {
                 origin: crate::test_support::reals([0.0, 0.0, 0.0]),
-                origin_offset: 0,
+                origin_offset: Some(0),
                 direction: cadmpeg_ir::units::UnitVector3::normalized(
                     cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
                 )
                 .unwrap(),
-                direction_offset: 0,
+                direction_offset: Some(0),
             },
             axis_record_index: 13,
             selection_record_index: 14,
@@ -278,9 +277,9 @@ fn direction_record(
         selection_record_index: record_index + 3,
         selection_kind: 8,
         origin: crate::test_support::reals([0.0, 0.0, 0.0]),
-        origin_offset: 0,
+        origin_offset: Some(0),
         displacement: crate::test_support::reals(displacement),
-        displacement_offset: 24,
+        displacement_offset: Some(24),
     }
 }
 
@@ -304,7 +303,6 @@ fn two_direction_scope(
                     u_extent: 3.0,
                     v_extent: -1.2,
                     owner_record_indices: [11, 12, 13, 14],
-                    value_offsets: [101, 102, 103, 104],
                     instances: None,
                     instance_search_cap: None,
                     directions,
@@ -403,16 +401,15 @@ fn single_direction_scope_with_run(
                     u_extent: 2.0,
                     v_extent: 0.0,
                     owner_record_indices: [11, 12, 13, 14],
-                    value_offsets: [101, 102, 103, 104],
                     instances: Some(DesignRectangularPatternInstances::Bodies(
                         [0.0, 1.0, 2.0]
                             .into_iter()
                             .enumerate()
                             .map(|(index, x)| DesignPatternInstance {
                                 record_index: 40 + u32::try_from(index).unwrap(),
-                                transform: crate::records::identity::Located {
+                                transform: crate::records::identity::Sourced {
                                     value: at(x),
-                                    offset: 1000 * u64::try_from(index).unwrap(),
+                                    offset: Some(1000 * u64::try_from(index).unwrap()),
                                 },
                             })
                             .collect(),

@@ -23,8 +23,9 @@ pub(crate) struct DesignOffsetFacesOperation {
     pub(crate) distance: FiniteReal,
     /// Referenced scalar record.
     pub(crate) distance_record_index: u32,
-    /// Byte offset of the scalar.
-    pub(crate) distance_offset: u64,
+    /// Byte offset of the scalar of a located scope.
+    #[serde(skip)]
+    pub(crate) distance_offset: Option<u64>,
 }
 
 /// Exact `Shell` construction.
@@ -34,12 +35,14 @@ pub(crate) struct DesignShellOperation {
     pub(crate) thickness: cadmpeg_ir::scalar::PositiveReal,
     /// Referenced scalar record.
     pub(crate) thickness_record_index: u32,
-    /// Byte offset of the scalar.
-    pub(crate) thickness_offset: u64,
+    /// Byte offset of the scalar of a located scope.
+    #[serde(skip)]
+    pub(crate) thickness_offset: Option<u64>,
     /// Whether the wall grows outward from the original boundary.
     pub(crate) outward: bool,
-    /// Byte offset of the outward Boolean.
-    pub(crate) outward_offset: u64,
+    /// Byte offset of the outward Boolean of a located scope.
+    #[serde(skip)]
+    pub(crate) outward_offset: Option<u64>,
 }
 
 /// Exact `Thicken` construction.
@@ -49,8 +52,9 @@ pub(crate) struct DesignThickenOperation {
     pub(crate) signed_thickness: FiniteReal,
     /// Referenced scalar record.
     pub(crate) thickness_record_index: u32,
-    /// Byte offset of the scalar.
-    pub(crate) thickness_offset: u64,
+    /// Byte offset of the scalar of a located scope.
+    #[serde(skip)]
+    pub(crate) thickness_offset: Option<u64>,
 }
 
 /// Exact rigid transform carried by a Move feature scope.
@@ -58,14 +62,16 @@ pub(crate) struct DesignThickenOperation {
 pub(crate) struct DesignMoveOperation {
     /// Row-major model-space rigid transform in source centimetres.
     pub(crate) transform: SketchPlacementMatrix,
-    /// Byte offset of the first matrix scalar.
-    pub(crate) transform_offset: u64,
+    /// Byte offset of the first matrix scalar of a located scope.
+    #[serde(skip)]
+    pub(crate) transform_offset: Option<u64>,
     /// Indexed class-349 record carrying `transform`.
     pub(crate) transform_record_index: u32,
     /// Source transform-form discriminator.
     pub(crate) form: DesignMoveForm,
-    /// Byte offset of `form`.
-    pub(crate) form_offset: u64,
+    /// Byte offset of `form` of a located scope.
+    #[serde(skip)]
+    pub(crate) form_offset: Option<u64>,
 }
 
 /// Source Move transform-form code.
@@ -105,12 +111,75 @@ pub(crate) struct DesignDraftOperation {
     pub(crate) angle: Angle,
     /// Referenced draft-angle scalar record.
     pub(crate) angle_record_index: u32,
-    /// Byte offset of the draft-angle scalar.
-    pub(crate) angle_offset: u64,
+    /// Byte offset of the draft-angle scalar of a located scope.
+    #[serde(skip)]
+    pub(crate) angle_offset: Option<u64>,
     /// Zero-valued opposite-side angle scalar record.
     pub(crate) opposite_angle_record_index: u32,
-    /// Byte offset of the opposite-side angle scalar.
-    pub(crate) opposite_angle_offset: u64,
+    /// Byte offset of the opposite-side angle scalar of a located scope.
+    #[serde(skip)]
+    pub(crate) opposite_angle_offset: Option<u64>,
+}
+
+impl crate::records::source_offsets::SourceOffsets for DesignDirectFaceOperation {
+    fn visit_source_offsets(
+        &mut self,
+        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
+    ) {
+        match self {
+            Self::OffsetFaces(operation) => operation.visit_source_offsets(offsets),
+            Self::Shell(operation) => operation.visit_source_offsets(offsets),
+            Self::Thicken(operation) => operation.visit_source_offsets(offsets),
+        }
+    }
+}
+
+impl crate::records::source_offsets::SourceOffsets for DesignOffsetFacesOperation {
+    fn visit_source_offsets(
+        &mut self,
+        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
+    ) {
+        offsets.offset("distance_offset", &mut self.distance_offset);
+    }
+}
+
+impl crate::records::source_offsets::SourceOffsets for DesignShellOperation {
+    fn visit_source_offsets(
+        &mut self,
+        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
+    ) {
+        offsets.offset("thickness_offset", &mut self.thickness_offset);
+        offsets.offset("outward_offset", &mut self.outward_offset);
+    }
+}
+
+impl crate::records::source_offsets::SourceOffsets for DesignThickenOperation {
+    fn visit_source_offsets(
+        &mut self,
+        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
+    ) {
+        offsets.offset("thickness_offset", &mut self.thickness_offset);
+    }
+}
+
+impl crate::records::source_offsets::SourceOffsets for DesignMoveOperation {
+    fn visit_source_offsets(
+        &mut self,
+        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
+    ) {
+        offsets.offset("transform_offset", &mut self.transform_offset);
+        offsets.offset("form_offset", &mut self.form_offset);
+    }
+}
+
+impl crate::records::source_offsets::SourceOffsets for DesignDraftOperation {
+    fn visit_source_offsets(
+        &mut self,
+        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
+    ) {
+        offsets.offset("angle_offset", &mut self.angle_offset);
+        offsets.offset("opposite_angle_offset", &mut self.opposite_angle_offset);
+    }
 }
 
 mod identity_rewrite;

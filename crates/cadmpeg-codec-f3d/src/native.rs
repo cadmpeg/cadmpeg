@@ -1804,17 +1804,6 @@ impl F3dNative {
         for visibility in &self.body_visibilities {
             visibility.retain_source(&mut fidelity);
         }
-        for scope in &self.design_parameter_scopes {
-            for (role, profile) in [
-                ("extrude_profile", scope.extrude_profile()),
-                ("sweep_profile", scope.sweep_profile()),
-                ("base_flange_profile", scope.base_flange_profile()),
-            ] {
-                if let Some(profile) = profile {
-                    profile.retain_source(&mut fidelity, &scope.id, role);
-                }
-            }
-        }
         for group in &self.design_construction_operand_groups {
             group.retain_source(&mut fidelity);
         }

@@ -15,6 +15,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use crate::design::components::ComponentInserts;
 use crate::ids::native_stream;
 use crate::loss::F3dLossCode;
+use crate::records::feature::scope::generation::DesignAssemblyFrame;
 use crate::records::feature::{
     assembly::{
         DesignAssemblyAxialOperandTarget, DesignAssemblyLimitKind, DesignAssemblyOperandQualifier,
@@ -131,6 +132,46 @@ impl AssemblyScopeGeneration {
             ])),
             _ => (None, None, None),
         };
+        Self::classify(
+            operand_frame,
+            lanes,
+            locator_offsets,
+            class_tag,
+            paired_class_tag,
+        )
+    }
+
+    /// Classify a decoded or loaded scope by its generation: the assembly
+    /// frame length the generation names, or no fixed length for the general
+    /// envelope.
+    pub(crate) fn of_scope(scope: &DesignParameterScope) -> Self {
+        match scope
+            .assembly_frame()
+            .and_then(DesignAssemblyFrame::frame_length)
+        {
+            Some(frame_length) => Self::new(
+                frame_length,
+                scope.class_tag.as_str(),
+                scope.paired_class_tag.as_str(),
+            ),
+            None => Self::classify(
+                None,
+                None,
+                None,
+                scope.class_tag.as_str(),
+                scope.paired_class_tag.as_str(),
+            ),
+        }
+    }
+
+    fn classify(
+        operand_frame: Option<AssemblyOperandFrameVariant>,
+        lanes: Option<(usize, usize, usize)>,
+        locator_offsets: Option<[usize; 2]>,
+        class_tag: &str,
+        paired_class_tag: &str,
+    ) -> Self {
+        use AssemblyOperandFrameVariant::Standard;
         if variable_reference_assembly_generation(class_tag, paired_class_tag) {
             Self {
                 operand_frame: Some(Standard),
@@ -247,6 +288,50 @@ pub(crate) fn placement_ordered_as_built_scope(frame_length: u64, as_built: bool
 pub(crate) fn wide_as_built_scope(frame_length: u64, as_built: bool) -> bool {
     rigid_as_built_scope(frame_length, as_built)
         || placement_ordered_as_built_scope(frame_length, as_built)
+}
+
+/// The assembly frame length a scope's generation names. The general
+/// envelope has no fixed frame length.
+pub(crate) fn scope_frame_length(scope: &DesignParameterScope) -> Option<u64> {
+    scope
+        .assembly_frame()
+        .and_then(DesignAssemblyFrame::frame_length)
+}
+
+/// Whether `scope` is a rigid-group `As-built` scope.
+pub(crate) fn scope_is_rigid_as_built(scope: &DesignParameterScope) -> bool {
+    scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt
+        && scope
+            .assembly_frame()
+            .and_then(DesignAssemblyFrame::rigid_members)
+            .is_some()
+}
+
+/// Whether `scope` is the 378-byte `As-built` form with placement-ordered owners.
+pub(crate) fn scope_is_placement_ordered_as_built(scope: &DesignParameterScope) -> bool {
+    scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt
+        && scope.assembly_frame() == Some(DesignAssemblyFrame::Frame378)
+}
+
+/// Whether `scope` is an `As-built` scope with wide operand-path locators.
+pub(crate) fn scope_is_wide_as_built(scope: &DesignParameterScope) -> bool {
+    scope_frame_length(scope).is_some_and(|frame_length| {
+        wide_as_built_scope(
+            frame_length,
+            scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
+        )
+    })
+}
+
+/// The legacy 421-byte `As-built` generation of `scope`, when it has one.
+pub(crate) fn scope_legacy_as_built_421_generation(
+    scope: &DesignParameterScope,
+) -> Option<LegacyAsBuilt421Generation> {
+    legacy_as_built_421_generation(
+        scope_frame_length(scope)?,
+        scope.class_tag.as_str(),
+        scope.paired_class_tag.as_str(),
+    )
 }
 
 /// The member count a rigid `As-built` frame length implies.
@@ -579,10 +664,12 @@ fn project_assembly_joint(
         return Ok(None);
     };
     // A rigid group's joint record has a motion record with no freedom entry.
-    if rigid_as_built_scope(
-        scope.frame_length(),
-        scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
-    ) && motion.is_some_and(|motion| !motion.freedoms.is_empty())
+    if scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt
+        && scope
+            .assembly_frame()
+            .and_then(DesignAssemblyFrame::rigid_members)
+            .is_some()
+        && motion.is_some_and(|motion| !motion.freedoms.is_empty())
     {
         return Err(CodecError::NotImplemented(
             "rigid group joint record states a freedom".into(),
@@ -635,13 +722,9 @@ fn project_assembly_joint(
         // A wide scope always qualifies its operands; frames without
         // qualifiers are an unprojected joint, not an absent one.
         Some(crate::records::feature::assembly::DesignAssemblyAlignmentForm::Frames { .. })
-            if AssemblyScopeGeneration::new(
-                scope.frame_length(),
-                scope.class_tag.as_str(),
-                scope.paired_class_tag.as_str(),
-            )
-            .operand_frame_variant()
-            .is_some_and(AssemblyOperandFrameVariant::is_wide_family) =>
+            if AssemblyScopeGeneration::of_scope(scope)
+                .operand_frame_variant()
+                .is_some_and(AssemblyOperandFrameVariant::is_wide_family) =>
         {
             return Err(CodecError::NotImplemented(
                 "wide assembly joint operand paths are unresolved".into(),
@@ -1012,82 +1095,82 @@ mod tests {
             axis_record_index: 10,
             axis_class_tag: crate::records::references::DesignClassTag::try_from("316".to_owned())
                 .unwrap(),
-            axis_byte_offset: 100,
+            axis_byte_offset: Some(100),
             axis_paired_class_tag: crate::records::references::DesignClassTag::try_from(
                 "261".to_owned(),
             )
             .unwrap(),
-            axis_paired_byte_offset: 120,
+            axis_paired_byte_offset: Some(120),
             selector_record_index: 13,
             selector_class_tag: crate::records::references::DesignClassTag::try_from(
                 "277".to_owned(),
             )
             .unwrap(),
-            selector_byte_offset: 200,
+            selector_byte_offset: Some(200),
             selector_paired_class_tag: crate::records::references::DesignClassTag::try_from(
                 "261".to_owned(),
             )
             .unwrap(),
-            selector_paired_byte_offset: 560,
+            selector_paired_byte_offset: Some(560),
             nested_record_index: 16,
-            nested_record_index_offset: 223,
+            nested_record_index_offset: Some(223),
             selector_asset_id: "abcdefab-cdef-4abc-8def-abcdefabcdef"
                 .to_owned()
                 .try_into()
                 .expect("GUID"),
-            selector_asset_id_offset: 241,
+            selector_asset_id_offset: Some(241),
             selector_context_id: "bcdefabc-defa-4bcd-8efa-bcdefabcdefa"
                 .to_owned()
                 .try_into()
                 .expect("GUID"),
-            selector_context_id_offset: 317,
+            selector_context_id_offset: Some(317),
             occurrence_reference: 1_001,
-            occurrence_reference_offset: 402,
+            occurrence_reference_offset: Some(402),
             external_object_reference: 2_001,
-            external_object_reference_offset: 417,
+            external_object_reference_offset: Some(417),
             external_segment: 7,
-            external_segment_offset: 426,
+            external_segment_offset: Some(426),
             external_asset_id: "abcdefab-cdef-4abc-8def-abcdefabcdef"
                 .to_owned()
                 .try_into()
                 .expect("GUID"),
-            external_asset_id_offset: 434,
+            external_asset_id_offset: Some(434),
             external_link_name: "component-link".into(),
-            external_link_name_offset: 511,
+            external_link_name_offset: Some(511),
             external_version: None,
             role_record_index: 18,
             role_class_tag: crate::records::references::DesignClassTag::try_from("298".to_owned())
                 .unwrap(),
-            role_byte_offset: 600,
+            role_byte_offset: Some(600),
             occurrence_role: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
                 .to_owned()
                 .try_into()
                 .expect("GUID"),
-            occurrence_role_offset: 629,
+            occurrence_role_offset: Some(629),
         }
     }
 
     fn second_selector() -> DesignAssemblyAxialSelectorIdentity {
         let mut selector = selector();
         selector.axis_record_index = 30;
-        selector.axis_byte_offset = 720;
-        selector.axis_paired_byte_offset = 740;
+        selector.axis_byte_offset = Some(720);
+        selector.axis_paired_byte_offset = Some(740);
         selector.selector_record_index = 33;
-        selector.selector_byte_offset = 760;
-        selector.selector_paired_byte_offset = 1_120;
+        selector.selector_byte_offset = Some(760);
+        selector.selector_paired_byte_offset = Some(1_120);
         selector.nested_record_index = 36;
-        selector.nested_record_index_offset = 783;
-        selector.selector_asset_id_offset = 801;
-        selector.selector_context_id_offset = 877;
+        selector.nested_record_index_offset = Some(783);
+        selector.selector_asset_id_offset = Some(801);
+        selector.selector_context_id_offset = Some(877);
         selector.occurrence_reference = 1_002;
-        selector.occurrence_reference_offset = 962;
-        selector.external_object_reference_offset = 977;
-        selector.external_segment_offset = 986;
-        selector.external_asset_id_offset = 994;
-        selector.external_link_name_offset = 1_071;
+        selector.occurrence_reference_offset = Some(962);
+        selector.external_object_reference_offset = Some(977);
+        selector.external_segment_offset = Some(986);
+        selector.external_asset_id_offset = Some(994);
+        selector.external_link_name_offset = Some(1_071);
         selector.role_record_index = 38;
-        selector.role_byte_offset = 1_140;
-        selector.occurrence_role_offset = 1_169;
+        selector.role_byte_offset = Some(1_140);
+        selector.occurrence_role_offset = Some(1_169);
         selector
     }
 
@@ -1137,9 +1220,9 @@ mod tests {
         rows[0][3] = f64::MAX;
         let frames = [1, 2].map(|index| DesignAssemblyOperandFrame {
             reference_record_index: index,
-            reference_offset: 0,
+            reference_offset: Some(0),
             transform: rows.try_into().unwrap(),
-            transform_offset: 0,
+            transform_offset: Some(0),
         });
         let qualifiers =
             [1, 2].map(
@@ -1254,12 +1337,12 @@ mod tests {
         let scopes = |typed: bool, paired: bool| {
             let frames = [10, 20].map(|index| DesignAssemblyOperandFrame {
                 reference_record_index: index,
-                reference_offset: 0,
+                reference_offset: Some(0),
                 transform: cadmpeg_ir::transform::Transform::identity()
                     .rows()
                     .try_into()
                     .unwrap(),
-                transform_offset: 0,
+                transform_offset: Some(0),
             });
             let qualifiers = [11, 21].map(|index| {
                 let mut path = path(index, typed).unwrap();
@@ -1348,12 +1431,12 @@ mod tests {
             |qualifier| crate::records::feature::assembly::DesignQualifiedAssemblyOperand {
                 frame: DesignAssemblyOperandFrame {
                     reference_record_index: 30,
-                    reference_offset: 0,
+                    reference_offset: Some(0),
                     transform: cadmpeg_ir::transform::Transform::identity()
                         .rows()
                         .try_into()
                         .unwrap(),
-                    transform_offset: 0,
+                    transform_offset: Some(0),
                 },
                 qualifier,
             };
@@ -1401,9 +1484,9 @@ mod tests {
         let unresolved = member(DesignAssemblyOperandQualifier::JointOrigin {
             scope_record_index: 99,
             class_tag: "300".to_owned().try_into().unwrap(),
-            byte_offset: 0,
+            byte_offset: Some(0),
             paired_class_tag: "301".to_owned().try_into().unwrap(),
-            paired_byte_offset: 0,
+            paired_byte_offset: Some(0),
         });
         let projection = super::project_assembly_joints(
             &grouped(false, vec![unresolved, third()]),
@@ -1509,9 +1592,9 @@ mod tests {
             rows[2][3] = if index == 2 { 1.0 } else { 0.0 };
             DesignAssemblyOperandFrame {
                 reference_record_index: index,
-                reference_offset: 0,
+                reference_offset: Some(0),
                 transform: rows.try_into().unwrap(),
-                transform_offset: 0,
+                transform_offset: Some(0),
             }
         });
         let qualifiers =
@@ -1670,12 +1753,12 @@ mod tests {
         };
         let frames = [17, 45].map(|index| DesignAssemblyOperandFrame {
             reference_record_index: index,
-            reference_offset: 0,
+            reference_offset: Some(0),
             transform: cadmpeg_ir::transform::Transform::identity()
                 .rows()
                 .try_into()
                 .unwrap(),
-            transform_offset: 0,
+            transform_offset: Some(0),
         });
         let mut scope = DesignParameterScope::empty(
             "f3d:Design/BulkStream.dat:design-parameter-scope#10",
@@ -2082,7 +2165,7 @@ mod tests {
                     carrier_record_index: 202,
                     occurrence_identity: None,
                     neutron_role: "component-role".into(),
-                    neutron_role_offset: 0,
+                    neutron_role_offset: Some(0),
                     placement: None,
                 },
             );
@@ -2096,12 +2179,12 @@ mod tests {
                     "305".to_owned(),
                 )
                 .unwrap(),
-                construction_byte_offset: 1_300,
-                construction_transform_offset: 1_348,
-                axis_record_index_offsets: [1_493, 1_509],
+                construction_byte_offset: Some(1_300),
+                construction_transform_offset: Some(1_348),
+                axis_record_index_offsets: Some([1_493, 1_509]),
                 construction_paired_class_tag:
                     crate::records::references::DesignClassTag::try_from("261".to_owned()).unwrap(),
-                construction_paired_byte_offset: 1_680,
+                construction_paired_byte_offset: Some(1_680),
                 selectors: Box::new([selector(), second_selector()]),
             },
             DesignAssemblyAxialOperandTarget::DocumentRootJointOrigin {
@@ -2220,7 +2303,9 @@ mod tests {
         let first = selector();
         let mut second = first.clone();
         second.occurrence_reference += 1;
-        second.occurrence_reference_offset += 100;
+        second.occurrence_reference_offset = second
+            .occurrence_reference_offset
+            .map(|offset| offset + 100);
         second.selector_asset_id = second
             .selector_asset_id
             .as_str()

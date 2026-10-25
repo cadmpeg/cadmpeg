@@ -1148,9 +1148,9 @@ mod tests {
                 source_occurrence_guid: SOURCE.to_owned().try_into().expect("GUID"),
                 copied_occurrence_guid: COPY.to_owned().try_into().expect("GUID"),
                 source_transform: identity_matrix().try_into().unwrap(),
-                source_transform_offset: 0,
+                source_transform_offset: Some(0),
                 copied_transform: identity_matrix().try_into().unwrap(),
-                copied_transform_offset: 0,
+                copied_transform_offset: Some(0),
             });
         }
 
@@ -1185,7 +1185,7 @@ mod tests {
                 component_guid: COMPONENT.to_owned().try_into().expect("GUID"),
                 occurrence_guid: OCCURRENCE.to_owned().try_into().expect("GUID"),
                 transform: identity_matrix().try_into().unwrap(),
-                transform_offset: 473,
+                transform_offset: Some(473),
             });
         }
         let native_occurrence = DesignComponentOccurrence::try_new(
@@ -1270,7 +1270,7 @@ mod tests {
                     carrier_record_index: record_index + 2,
                     occurrence_identity: None,
                     neutron_role: role.into(),
-                    neutron_role_offset: 0,
+                    neutron_role_offset: Some(0),
                     placement: None,
                 },
             );
@@ -1294,11 +1294,11 @@ mod tests {
         {
             construction.placement = Some(
                 crate::records::feature::assembly_features::DesignComponentInsertMatrix {
-                    scope: crate::records::identity::Located {
+                    scope: crate::records::identity::Sourced {
                         value: matrix.try_into().unwrap(),
-                        offset: 0,
+                        offset: Some(0),
                     },
-                    carrier_offset: None,
+                    carrier: None,
                 },
             );
         }

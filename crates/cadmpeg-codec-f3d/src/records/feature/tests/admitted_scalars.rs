@@ -11,6 +11,7 @@ use crate::records::feature::{
         DesignSurfaceExtendMethod, DesignSurfaceExtendOperation, DesignSurfaceOffsetSupport,
     },
 };
+use crate::records::source_offsets::SourceOffsets;
 use crate::records::topology::edge_identity::DesignEdgeTreatmentRadiusCandidate;
 use cadmpeg_ir::scalar::{PositiveAngle, PositiveReal};
 use serde::de::DeserializeOwned;
@@ -20,9 +21,31 @@ fn positive(value: f64) -> PositiveReal {
     PositiveReal::new(value).expect("positive fixture value")
 }
 
-/// The record round-trips, and replacing `field` with zero is refused with an
-/// error naming `refusal`.
+/// The located record round-trips through its wire and its pointers.
+fn located_round_trip<T>(record: &T) -> serde_json::Value
+where
+    T: Serialize + DeserializeOwned + PartialEq + std::fmt::Debug + Clone + SourceOffsets,
+{
+    let wire = serde_json::to_value(record).expect("serialize record");
+    let pointers = crate::records::source_offsets::collect(&mut record.clone());
+    let mut read = serde_json::from_value::<T>(wire.clone()).expect("round trip");
+    crate::records::source_offsets::restore(&mut read, &pointers);
+    assert_eq!(&read, record);
+    wire
+}
+
+/// The located record round-trips, and replacing `field` with zero is
+/// refused with an error naming `refusal`.
 fn refuses_zero<T>(record: &T, field: &str, refusal: &str)
+where
+    T: Serialize + DeserializeOwned + PartialEq + std::fmt::Debug + Clone + SourceOffsets,
+{
+    refuses_zero_in::<T>(located_round_trip(record), field, refusal);
+}
+
+/// The record, which has no source offsets, round-trips, and replacing
+/// `field` with zero is refused with an error naming `refusal`.
+fn unlocated_refuses_zero<T>(record: &T, field: &str, refusal: &str)
 where
     T: Serialize + DeserializeOwned + PartialEq + std::fmt::Debug,
 {
@@ -31,6 +54,13 @@ where
         &serde_json::from_value::<T>(wire.clone()).expect("round trip"),
         record
     );
+    refuses_zero_in::<T>(wire, field, refusal);
+}
+
+fn refuses_zero_in<T>(wire: serde_json::Value, field: &str, refusal: &str)
+where
+    T: DeserializeOwned + std::fmt::Debug,
+{
     let mut invalid = wire;
     invalid[field] = serde_json::json!(0.0);
     let error = serde_json::from_value::<T>(invalid)
@@ -47,7 +77,7 @@ fn scale_operation_refuses_a_nonpositive_uniform_factor() {
             center_record_index: 105,
             center_position: None,
             uniform_factor: positive(2.5),
-            uniform_factor_offset: 21,
+            uniform_factor_offset: Some(21),
         },
         "uniform_factor",
         "uniform_factor must be positive and finite",
@@ -72,9 +102,9 @@ fn shell_operation_refuses_a_nonpositive_thickness() {
         &DesignShellOperation {
             thickness: positive(0.25),
             thickness_record_index: 7,
-            thickness_offset: 40,
+            thickness_offset: Some(40),
             outward: true,
-            outward_offset: 60,
+            outward_offset: Some(60),
         },
         "thickness",
         "PositiveReal",
@@ -87,7 +117,7 @@ fn chamfer_distance_refuses_a_nonpositive_value() {
         &DesignFixedChamferDistance {
             value: positive(0.04),
             record_index: 9,
-            value_offset: 40,
+            value_offset: Some(40),
         },
         "value",
         "PositiveReal",
@@ -99,16 +129,16 @@ fn surface_extend_operation_refuses_a_nonpositive_tolerance() {
     refuses_zero(
         &DesignSurfaceExtendOperation {
             distance: crate::test_support::real(1.0),
-            distance_offset: 10,
+            distance_offset: Some(10),
             distance_record_index: 3,
             method: DesignSurfaceExtendMethod::Tangent,
-            method_offset: 20,
+            method_offset: Some(20),
             boundary_record_index: 4,
             boundary_reference_record_index: 5,
-            boundary_reference_offset: 24,
+            boundary_reference_offset: Some(24),
             edge_record_indices: vec![6],
             tolerance: positive(1.0e-6),
-            tolerance_offset: 57,
+            tolerance_offset: Some(57),
         },
         "tolerance",
         "PositiveReal",
@@ -120,16 +150,12 @@ fn surface_offset_boundary_carrier_refuses_a_nonpositive_tolerance() {
     let support = DesignSurfaceOffsetSupport::BoundaryCarrier {
         boundary_record_index: 4,
         boundary_reference_record_index: 5,
-        boundary_reference_offset: 24,
+        boundary_reference_offset: Some(24),
         edge_record_indices: vec![6],
         tolerance: positive(1.0e-6),
-        tolerance_offset: 57,
+        tolerance_offset: Some(57),
     };
-    let wire = serde_json::to_value(&support).expect("serialize support");
-    assert_eq!(
-        serde_json::from_value::<DesignSurfaceOffsetSupport>(wire.clone()).expect("round trip"),
-        support
-    );
+    let wire = located_round_trip(&support);
     let mut invalid = wire;
     invalid["value"]["tolerance"] = serde_json::json!(0.0);
     let error = serde_json::from_value::<DesignSurfaceOffsetSupport>(invalid)
@@ -144,18 +170,18 @@ fn circular_pattern_construction_refuses_a_nonpositive_angle() {
         &DesignCircularPatternConstruction {
             count: std::num::NonZeroU32::new(25).unwrap(),
             count_record_index: 11,
-            count_offset: 40,
+            count_offset: Some(40),
             angle: PositiveAngle::new(std::f64::consts::TAU).expect("positive angle"),
             angle_record_index: 12,
-            angle_offset: 80,
+            angle_offset: Some(80),
             axis: DesignCircularPatternAxis::Inline {
                 origin: crate::test_support::reals([1.0, 2.0, 3.0]),
-                origin_offset: 100,
+                origin_offset: Some(100),
                 direction: cadmpeg_ir::units::UnitVector3::normalized(
                     cadmpeg_ir::math::Vector3::new(-1.0, 0.0, 0.0),
                 )
                 .expect("unit axis"),
-                direction_offset: 124,
+                direction_offset: Some(124),
             },
             axis_record_index: 13,
             selection_record_index: 14,
@@ -167,7 +193,7 @@ fn circular_pattern_construction_refuses_a_nonpositive_angle() {
 
 #[test]
 fn edge_treatment_radius_candidate_refuses_a_nonpositive_radius() {
-    refuses_zero(
+    unlocated_refuses_zero(
         &DesignEdgeTreatmentRadiusCandidate {
             edge_slot: 4,
             radius: positive(3.0),
@@ -192,7 +218,7 @@ fn circular_pattern_construction_refuses_zero_count() {
 
 #[test]
 fn mirror_native_plane_refuses_zero_and_nonunit_normals() {
-    let wire = r#"{"count":2,"count_record_index":11,"count_offset":0,"stitch_tolerance":0.001,"stitch_tolerance_offset":51,"stitch_tolerance_record_index":12,"seed_group_record_index":20,"plane_group_record_index":30,"plane_origin":[0.0,0.0,0.0]}"#;
+    let wire = r#"{"count":2,"count_record_index":11,"stitch_tolerance":0.001,"stitch_tolerance_record_index":12,"seed_group_record_index":20,"plane_group_record_index":30,"plane_origin":[0.0,0.0,0.0]}"#;
     let mut value: serde_json::Value = serde_json::from_str(wire).unwrap();
     for normal in [[0.0, 0.0, 0.0], [0.0, 0.0, 2.0]] {
         value["plane_normal"] = serde_json::json!(normal);

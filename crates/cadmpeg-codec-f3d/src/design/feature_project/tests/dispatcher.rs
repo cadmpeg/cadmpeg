@@ -52,9 +52,9 @@ fn dispatcher_projects_datum_feature_scopes() {
         *slot = Some(
             crate::records::feature::work_geometry::DesignWorkPointConstruction {
                 point_record_index: 4,
-                point_record_byte_offset: 0,
+                point_record_byte_offset: Some(0),
                 position: crate::test_support::reals([4.0, 5.0, 6.0]),
-                position_offset: 0,
+                position_offset: Some(0),
                 rule: crate::records::feature::work_geometry::DesignWorkPointRule::try_from(
                     crate::records::feature::work_geometry::DesignWorkPointRuleForm::Native {
                         reference_type: 1,
@@ -62,7 +62,7 @@ fn dispatcher_projects_datum_feature_scopes() {
                     },
                 )
                 .expect("compatible WorkPoint rule"),
-                reference_type_offset: 0,
+                reference_type_offset: Some(0),
             },
         );
     }
@@ -114,13 +114,13 @@ fn dispatcher_projects_scale_point_center_in_neutral_units() {
         *slot = Some(DesignScaleOperation {
             body_group_record_index: 5,
             center_record_index: 6,
-            center_position: Some(crate::records::identity::Located {
+            center_position: Some(crate::records::identity::Sourced {
                 value: crate::test_support::reals([1.25, -2.5, 3.75]),
-                offset: 40,
+                offset: Some(40),
             }),
             uniform_factor: cadmpeg_ir::scalar::PositiveReal::new(2.5)
                 .expect("checked fixture value"),
-            uniform_factor_offset: 20,
+            uniform_factor_offset: Some(20),
         });
     }
 
@@ -302,7 +302,7 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
     let input = |record_index, work_plane_scope_record_index| {
         DesignWorkPointInput::try_new(
             record_index,
-            u64::from(record_index),
+            Some(u64::from(record_index)),
             Some(Box::new(DesignWorkPointInputCarrier::WorkPlane {
                 selection: DesignWorkPointPlaneSelection::try_new(
                     record_index,
@@ -345,16 +345,16 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
     {
         *slot = Some(DesignWorkPointConstruction {
             point_record_index: 41,
-            point_record_byte_offset: 0,
+            point_record_byte_offset: Some(0),
             position: crate::test_support::reals([1.0, 2.0, 3.0]),
-            position_offset: 0,
+            position_offset: Some(0),
             rule: crate::records::feature::work_geometry::DesignWorkPointRule::try_from(
                 crate::records::feature::work_geometry::DesignWorkPointRuleForm::ThreePlaneIntersection {
                     inputs: [input(42, 10), input(46, 20), input(50, 30)],
                 },
             )
             .expect("compatible WorkPoint rule"),
-            reference_type_offset: 0,
+            reference_type_offset: Some(0),
         });
     }
     let mut scopes = planes.to_vec();
@@ -459,14 +459,14 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
     {
         *slot = Some(DesignWorkPointConstruction {
             point_record_index: 21,
-            point_record_byte_offset: 0,
+            point_record_byte_offset: Some(0),
             position: crate::test_support::reals([4.0, 3.0, 0.0]),
-            position_offset: 0,
+            position_offset: Some(0),
             rule: crate::records::feature::work_geometry::DesignWorkPointRule::try_from(
                 crate::records::feature::work_geometry::DesignWorkPointRuleForm::Vertex {
                     input: DesignWorkPointInput::try_new(
                         22,
-                        0,
+                        Some(0),
                         Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
                             recipe,
                         })),
@@ -475,7 +475,7 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
                 },
             )
             .expect("compatible WorkPoint rule"),
-            reference_type_offset: 0,
+            reference_type_offset: Some(0),
         });
     }
     let timeline = DesignFeatureTimeline::try_new(
@@ -620,7 +620,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     {
         let value = Some(DesignBaseFlangeOperation {
             thickness: cadmpeg_ir::scalar::PositiveReal::new(0.2).unwrap(),
-            thickness_offset: 0,
+            thickness_offset: Some(0),
             profile_group_record_index: 100,
             profile_record_index: 101,
             thickness_record_index: 102,
@@ -692,7 +692,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         crate::records::feature::scope::DesignScopePayload::SurfaceStitch(
             DesignSurfaceStitchOperation {
                 gap_tolerance: cadmpeg_ir::scalar::PositiveReal::new(0.01).unwrap(),
-                gap_tolerance_offset: 0,
+                gap_tolerance_offset: Some(0),
                 tolerance_record_index: 302,
                 settings_record_index: 303,
             },
@@ -735,9 +735,9 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
                 .try_into()
                 .expect("GUID"),
             source_transform: crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
-            source_transform_offset: 0,
+            source_transform_offset: Some(0),
             copied_transform: crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
-            copied_transform_offset: 0,
+            copied_transform_offset: Some(0),
         });
     }
 
@@ -752,17 +752,17 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         *slot = Some(
             DesignCopyPasteBodiesOperation::try_new(
                 vec![crate::records::feature::body_ops::DesignCopiedBody {
-                    operand: crate::records::identity::Located {
+                    operand: crate::records::identity::Sourced {
                         value: 502,
-                        offset: 26,
+                        offset: Some(26),
                     },
-                    source: crate::records::identity::Located {
+                    source: crate::records::identity::Sourced {
                         value: 11,
-                        offset: 25,
+                        offset: Some(25),
                     },
-                    copied: crate::records::identity::Located {
+                    copied: crate::records::identity::Sourced {
                         value: 12,
-                        offset: 40,
+                        offset: Some(40),
                     },
                 }],
                 crate::records::feature::body_ops::CopyPasteRecordLocation {
@@ -799,23 +799,23 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
                 crate::records::feature::base_feature::DesignBaseFeatureResultBody {
                     entity: crate::records::feature::base_feature::DesignBaseFeatureEntry {
                         value: 21,
-                        offset: 0,
+                        offset: Some(0),
                         field: [0; 6],
                     },
                     reference: crate::records::feature::base_feature::DesignBaseFeatureEntry {
                         value: 601,
-                        offset: 0,
+                        offset: Some(0),
                         field: [0; 6],
                     },
                     result: crate::records::feature::base_feature::DesignBaseFeatureEntry {
                         value: 603,
-                        offset: 0,
+                        offset: Some(0),
                         field: [0; 6],
                     },
                 },
             ]),
             metadata_record: 602,
-            metadata_record_offset: 0,
+            metadata_record_offset: Some(0),
             metadata_field: vec![0, 0].into(),
         });
     }
@@ -830,7 +830,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     {
         *slot = Some(DesignThreadConstruction {
             form: DesignThreadForm::Compact(None),
-            designation_offset: 0,
+            designation_offset: Some(0),
             designation: cadmpeg_core::text::NonBlankString::new("M3.5x0.6").unwrap(),
             nominal_size: crate::records::feature::thread::DesignThreadNominalSize::try_from(
                 "3.5".to_owned(),

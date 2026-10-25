@@ -30,7 +30,7 @@ pub(super) fn exact_solid_primitive(
     scope: &DesignParameterScope,
     parameter_owners: &[DesignParameterOwner],
 ) -> Option<DesignSolidPrimitive> {
-    let start = usize::try_from(scope.byte_offset()).ok()?;
+    let start = usize::try_from(scope.byte_offset()?).ok()?;
     let (operation, operation_offset, cylinder_transform) = match scope.kind_name() {
         "SpherePrimitive" | "TorusPrimitive" => {
             let operation_offset = start.checked_add(25)?;
@@ -80,7 +80,7 @@ pub(super) fn exact_solid_primitive(
     };
     match scope.kind_name() {
         "SpherePrimitive"
-            if scope.frame_length() == 462
+            if scope.frame_length() == Some(462)
                 && bytes.get(start + 29) == Some(&1)
                 && bytes.get(start + 30) == Some(&1)
                 && bytes.get(start + 41) == Some(&1)
@@ -93,17 +93,17 @@ pub(super) fn exact_solid_primitive(
             Some(DesignSolidPrimitive::Sphere(
                 crate::records::feature::primitives::DesignSpherePrimitive {
                     transform,
-                    transform_offset,
+                    transform_offset: Some(transform_offset),
                     diameter,
                     diameter_record_index,
-                    diameter_offset,
+                    diameter_offset: Some(diameter_offset),
                     operation,
-                    operation_offset: u64_from_index(operation_offset),
+                    operation_offset: Some(u64_from_index(operation_offset)),
                 },
             ))
         }
         "TorusPrimitive"
-            if scope.frame_length() == 486
+            if scope.frame_length() == Some(486)
                 && bytes.get(start + 29) == Some(&1)
                 && bytes.get(start + 30) == Some(&1)
                 && bytes.get(start + 41) == Some(&1)
@@ -123,20 +123,20 @@ pub(super) fn exact_solid_primitive(
             Some(DesignSolidPrimitive::Torus(
                 crate::records::feature::primitives::DesignTorusPrimitive {
                     transform,
-                    transform_offset,
+                    transform_offset: Some(transform_offset),
                     major_diameter,
                     major_diameter_record_index,
-                    major_diameter_offset,
+                    major_diameter_offset: Some(major_diameter_offset),
                     minor_diameter,
                     minor_diameter_record_index,
-                    minor_diameter_offset,
+                    minor_diameter_offset: Some(minor_diameter_offset),
                     operation,
-                    operation_offset: u64_from_index(operation_offset),
+                    operation_offset: Some(u64_from_index(operation_offset)),
                 },
             ))
         }
         "BoxPrimitive" => {
-            if scope.frame_length() < 78 || scope.reference_members().len() < 5 {
+            if scope.frame_length() < Some(78) || scope.reference_members().len() < 5 {
                 return None;
             }
             let [Some(length), Some(width), Some(height), Some(offset_x), Some(offset_y)] =
@@ -151,26 +151,26 @@ pub(super) fn exact_solid_primitive(
                 crate::records::feature::primitives::DesignBoxPrimitive {
                     length: length_value,
                     length_record_index: length.record_index(),
-                    length_offset: length.evaluated_value_offset()?,
+                    length_offset: Some(length.evaluated_value_offset()?),
                     width: width_value,
                     width_record_index: width.record_index(),
-                    width_offset: width.evaluated_value_offset()?,
+                    width_offset: Some(width.evaluated_value_offset()?),
                     height: height_value,
                     height_record_index: height.record_index(),
-                    height_offset: height.evaluated_value_offset()?,
+                    height_offset: Some(height.evaluated_value_offset()?),
                     offset_x: offset_x.evaluated_value(),
                     offset_x_record_index: offset_x.record_index(),
-                    offset_x_offset: offset_x.evaluated_value_offset()?,
+                    offset_x_offset: Some(offset_x.evaluated_value_offset()?),
                     offset_y: offset_y.evaluated_value(),
                     offset_y_record_index: offset_y.record_index(),
-                    offset_y_offset: offset_y.evaluated_value_offset()?,
+                    offset_y_offset: Some(offset_y.evaluated_value_offset()?),
                     operation,
-                    operation_offset: u64_from_index(operation_offset),
+                    operation_offset: Some(u64_from_index(operation_offset)),
                 },
             ))
         }
         "CylinderPrimitive" => {
-            if scope.frame_length() < 78 || scope.reference_members().len() < 2 {
+            if scope.frame_length() < Some(78) || scope.reference_members().len() < 2 {
                 return None;
             }
             let [Some(height), Some(diameter)] =
@@ -184,13 +184,13 @@ pub(super) fn exact_solid_primitive(
                 crate::records::feature::primitives::DesignCylinderPrimitive {
                     height: height_value,
                     height_record_index: height.record_index(),
-                    height_offset: height.evaluated_value_offset()?,
+                    height_offset: Some(height.evaluated_value_offset()?),
                     diameter: diameter_value,
                     diameter_record_index: diameter.record_index(),
-                    diameter_offset: diameter.evaluated_value_offset()?,
+                    diameter_offset: Some(diameter.evaluated_value_offset()?),
                     transform: cylinder_transform,
                     operation,
-                    operation_offset: u64_from_index(operation_offset),
+                    operation_offset: Some(u64_from_index(operation_offset)),
                 },
             ))
         }
@@ -203,7 +203,7 @@ struct ExactShiftedCylinderPrimitivePrologue {
     operation: DesignExtrudeOperation,
     operation_offset: usize,
     transform: Option<
-        crate::records::identity::Located<crate::records::sketch_placement::SketchPlacementMatrix>,
+        crate::records::identity::Sourced<crate::records::sketch_placement::SketchPlacementMatrix>,
     >,
 }
 
@@ -227,8 +227,8 @@ fn exact_shifted_cylinder_primitive_prologue(
         scope.paired_class_tag.as_str(),
         scope.frame_length(),
     ) {
-        ("297" | "375", "258", 352) => true,
-        ("297" | "375", "258", 502) | ("414", "272", 502) => false,
+        ("297" | "375", "258", Some(352)) => true,
+        ("297" | "375", "258", Some(502)) | ("414", "272", Some(502)) => false,
         _ => return None,
     };
     let (
@@ -268,7 +268,7 @@ fn exact_shifted_cylinder_primitive_prologue(
     };
     let reference_count = if compact { 5 } else { 7 };
     if scope.reference_members().len() != reference_count
-        || scope.paired_byte_offset() != u64::try_from(start.checked_add(frame_length)?).ok()?
+        || scope.paired_byte_offset() != Some(u64::try_from(start.checked_add(frame_length)?).ok()?)
         || bytes.get(start + zero_run_10..start + form_marker)? != [0; 10]
         || bytes.get(start + form_marker) != Some(&1)
         || bytes.get(start + reference_gap) != Some(&0)
@@ -325,13 +325,13 @@ fn exact_shifted_cylinder_primitive_prologue(
         feature_ordinal_offset,
         previous_history_state_id_offset,
     ) = match scope.frame_length() {
-        352 => (
+        Some(352) => (
             shifted_cylinder_352::REFERENCE_COUNT,
             shifted_cylinder_352::KIND,
             shifted_cylinder_352::FEATURE_ORDINAL,
             shifted_cylinder_352::PREVIOUS_HISTORY_STATE_ID,
         ),
-        502 => (
+        Some(502) => (
             shifted_cylinder_502::REFERENCE_COUNT,
             shifted_cylinder_502::KIND,
             shifted_cylinder_502::FEATURE_ORDINAL,
@@ -339,16 +339,16 @@ fn exact_shifted_cylinder_primitive_prologue(
         ),
         _ => return None,
     };
-    if scope.reference_count_offset() != absolute(reference_count_offset)?
-        || scope.kind_offset() != absolute(kind_offset)?
-        || scope.feature_ordinal_offset() != absolute(feature_ordinal_offset)?
+    if scope.reference_count_offset() != Some(absolute(reference_count_offset)?)
+        || scope.kind_offset() != Some(absolute(kind_offset)?)
+        || scope.feature_ordinal_offset() != Some(absolute(feature_ordinal_offset)?)
         || scope.previous_history_state_id_offset()
             != Some(absolute(previous_history_state_id_offset)?)
     {
         return None;
     }
     let transform = match scope.frame_length() {
-        352 => {
+        Some(352) => {
             if bytes.get(start + shifted_cylinder_352::COMPACT_TAIL_MARKER) != Some(&1)
                 || View::u32_le_at(bytes, start + shifted_cylinder_352::COMPACT_TAIL_COUNT)? != 1
                 || marked_record_reference(
@@ -376,7 +376,7 @@ fn exact_shifted_cylinder_primitive_prologue(
             }
             None
         }
-        502 => {
+        Some(502) => {
             if bytes.get(start + shifted_cylinder_502::ZERO_BEFORE_MATRIX) != Some(&0)
                 || bytes.get(
                     start + shifted_cylinder_502::ZERO_RUN_8_AFTER_MATRIX
@@ -416,10 +416,10 @@ fn exact_shifted_cylinder_primitive_prologue(
             {
                 return None;
             }
-            Some(crate::records::identity::Located {
+            Some(crate::records::identity::Sourced {
                 value: crate::records::sketch_placement::SketchPlacementMatrix::try_from(transform)
                     .ok()?,
-                offset: u64::try_from(start + shifted_cylinder_502::MATRIX).ok()?,
+                offset: Some(u64::try_from(start + shifted_cylinder_502::MATRIX).ok()?),
             })
         }
         _ => return None,

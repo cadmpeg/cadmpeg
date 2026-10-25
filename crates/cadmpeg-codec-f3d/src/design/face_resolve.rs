@@ -4,6 +4,7 @@
 use crate::design::dimensions::{planar_point, sketch_normal_sign};
 use crate::design::feature_project::design_angle_unit;
 use crate::ids::native_stream;
+use crate::records::feature::scope::generation::{DesignExtrudeFrame, DesignScopeGeneration};
 use crate::records::{
     feature::{
         extrude::{DesignExtrudeExtent, DesignExtrudePrologue},
@@ -42,7 +43,8 @@ pub(crate) fn extrude_omits_zero_side_one_offset(
     side_one_offset_count == 0
         && scope.class_tag.as_str() == "330"
         && scope.paired_class_tag.as_str() == "258"
-        && scope.frame_length() == 476
+        && scope.generation()
+            == DesignScopeGeneration::Extrude(DesignExtrudeFrame::ReferenceAware476)
         && matches!(
             prologue,
             DesignExtrudePrologue::ReferenceAware {
@@ -2691,27 +2693,27 @@ mod tests {
             .expect("legacy SplitFace target operand")
         }
 
-        let scope: DesignParameterScope = serde_json::from_value(serde_json::json!({
-            "id": "f3d:test:scope#100",
-            "byte_offset": 0,
-            "class_tag": "277",
-            "record_index": 100,
-            "frame_length": 407,
-            "kind": "SplitFace",
-            "kind_offset": 65,
-            "feature_ordinal": 1,
-            "feature_ordinal_offset": 335,
-            "history_state_id": 50,
-            "history_state_id_offset": 57,
-            "previous_history_state_id": 49,
-            "previous_history_state_id_offset": 365,
-            "reference_count_offset": 9,
-            "reference_members": [150, 200, 201, 202],
-            "reference_member_offsets": [14, 25, 36, 47],
-            "paired_class_tag": "258",
-            "paired_byte_offset": 407
-        }))
-        .expect("legacy SplitFace scope");
+        let scope: DesignParameterScope =
+            crate::records::feature::test_support::located_scope_from_fixture(serde_json::json!({
+                "id": "f3d:test:scope#100",
+                "byte_offset": 0,
+                "class_tag": "277",
+                "record_index": 100,
+                "frame_length": 407,
+                "kind": "SplitFace",
+                "kind_offset": 65,
+                "feature_ordinal": 1,
+                "feature_ordinal_offset": 335,
+                "history_state_id": 50,
+                "history_state_id_offset": 57,
+                "previous_history_state_id": 49,
+                "previous_history_state_id_offset": 365,
+                "reference_count_offset": 9,
+                "reference_members": [150, 200, 201, 202],
+                "reference_member_offsets": [14, 25, 36, 47],
+                "paired_class_tag": "258",
+                "paired_byte_offset": 407
+            }));
         let group: DesignConstructionOperandGroup =
             DesignConstructionOperandGroup::try_from(DesignConstructionOperandGroupDraft {
                 scope_record_index: 100,
@@ -3080,7 +3082,7 @@ mod tests {
     }
 
     fn loft_scope() -> DesignParameterScope {
-        serde_json::from_value(serde_json::json!({
+        crate::records::feature::test_support::located_scope_from_fixture(serde_json::json!({
             "id": "f3d:test:scope#1811",
             "byte_offset": 0,
             "class_tag": "272",
@@ -3100,7 +3102,6 @@ mod tests {
             "paired_class_tag": "274",
             "paired_byte_offset": 200
         }))
-        .expect("Loft scope")
     }
 
     fn loft_group() -> DesignConstructionOperandGroup {

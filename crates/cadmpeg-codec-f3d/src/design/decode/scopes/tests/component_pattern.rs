@@ -11,7 +11,7 @@ use crate::records::feature::patterns::{
 use crate::records::feature::scope::{
     DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut,
 };
-use crate::records::identity::Located;
+use crate::records::identity::Sourced;
 use crate::records::sketch_placement::SketchPlacementMatrix;
 use std::num::NonZeroU32;
 
@@ -57,20 +57,19 @@ fn component_pattern_keeps_seed_and_generated_instances() {
             u_extent: 1.0,
             v_extent: 0.0,
             owner_record_indices: [1, 2, 3, 4],
-            value_offsets: [10, 20, 30, 40],
             instances: Some(DesignRectangularPatternInstances::Bodies(vec![
                 DesignPatternInstance {
                     record_index: 100,
-                    transform: Located {
+                    transform: Sourced {
                         value: identity,
-                        offset: 0,
+                        offset: Some(0),
                     },
                 },
                 DesignPatternInstance {
                     record_index: 101,
-                    transform: Located {
+                    transform: Sourced {
                         value: identity,
-                        offset: 1209,
+                        offset: Some(1209),
                     },
                 },
             ])),

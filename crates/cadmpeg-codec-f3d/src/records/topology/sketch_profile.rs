@@ -232,55 +232,42 @@ impl Serialize for DesignSketchProfileOperand {
     }
 }
 
-impl DesignSketchProfileOperand {
-    pub(crate) fn retain_source(
-        &self,
-        fidelity: &mut cadmpeg_ir::SourceFidelity,
-        owner: &str,
-        role: &str,
+impl crate::records::source_offsets::SourceOffsets for DesignSketchProfileOperand {
+    fn visit_source_offsets(
+        &mut self,
+        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
     ) {
-        let prefix = format!("{owner}.{role}");
-        let mut retain = |field: &str, offset: Option<u64>| {
-            if let Some(offset) = offset {
-                fidelity
-                    .metadata
-                    .insert(format!("{prefix}.{field}"), offset.to_string());
-            }
-        };
-        retain("byte_offset", self.byte_offset);
-        retain("asset_id_offset", self.asset_id_offset);
-        retain("entity_reference_offset", self.entity_reference_offset);
-        retain("paired_byte_offset", self.paired_byte_offset);
-        if let Some(selection) = &self.region_selection {
-            retain("region_selection.byte_offset", selection.byte_offset);
-            retain(
-                "region_selection.region_count_offset",
-                selection.region_count_offset,
-            );
-            retain(
-                "region_selection.companion_byte_offset",
-                selection.companion_byte_offset,
-            );
-            for (region_index, region) in selection.regions.iter().enumerate() {
-                retain(
-                    &format!("region_selection.regions.{region_index}.member_count_offset"),
-                    region.member_count_offset,
+        offsets.offset("byte_offset", &mut self.byte_offset);
+        offsets.offset("asset_id_offset", &mut self.asset_id_offset);
+        offsets.offset("entity_reference_offset", &mut self.entity_reference_offset);
+        offsets.offset("paired_byte_offset", &mut self.paired_byte_offset);
+        if let Some(selection) = &mut self.region_selection {
+            offsets.nested("region_selection", |offsets| {
+                offsets.offset("byte_offset", &mut selection.byte_offset);
+                offsets.offset("region_count_offset", &mut selection.region_count_offset);
+                offsets.offset(
+                    "companion_byte_offset",
+                    &mut selection.companion_byte_offset,
                 );
-                for (index, member) in region.members.iter().enumerate() {
-                    for (field, offset) in [
-                        ("kind_offset", member.kind_offset),
-                        ("curve_primary_id_offset", member.curve_primary_id_offset),
-                        ("incidence_words_offset", member.incidence_words_offset),
-                    ] {
-                        retain(
-                            &format!(
-                                "region_selection.regions.{region_index}.members.{index}.{field}"
-                            ),
-                            offset,
-                        );
-                    }
+                for (region_index, region) in selection.regions.iter_mut().enumerate() {
+                    offsets.nested(&format!("regions.{region_index}"), |offsets| {
+                        offsets.offset("member_count_offset", &mut region.member_count_offset);
+                        for (index, member) in region.members.iter_mut().enumerate() {
+                            offsets.nested(&format!("members.{index}"), |offsets| {
+                                offsets.offset("kind_offset", &mut member.kind_offset);
+                                offsets.offset(
+                                    "curve_primary_id_offset",
+                                    &mut member.curve_primary_id_offset,
+                                );
+                                offsets.offset(
+                                    "incidence_words_offset",
+                                    &mut member.incidence_words_offset,
+                                );
+                            });
+                        }
+                    });
                 }
-            }
+            });
         }
     }
 }
