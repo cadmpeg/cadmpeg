@@ -86,6 +86,29 @@ report: `source_sha256`, `native_recompute_accepted`, `dimensions_mm`, `solids`,
 and volume 262.5 cubic mm. Missing native evidence leaves the corresponding assertions failed;
 deterministic byte or CADIR checks do not substitute for it.
 
+The native regression workflow runs the authored restoration, input-edit, source-less shape,
+mesh-placement, and filleted STEP cases with FreeCAD 1.0.0. It checks ordinary recomputation of
+edited and newly constructed objects separately from the validator's forced design recomputation.
+Run the same gate locally after building the CLI and examples:
+
+```sh
+cargo build -q -p cadmpeg --no-default-features --features fcstd,step
+cargo build -q -p cadmpeg-codec-freecad --examples
+python3 scripts/run-fcstd-interop.py \
+  --cadmpeg target/debug/cadmpeg \
+  --writer-example target/debug/examples/interop_outputs \
+  --source-less-example target/debug/examples/source_less \
+  --freecad-command 'FreeCADCmd' \
+  --work-dir /tmp/fcstd-interop
+```
+
+The work directory contains native reports, measurement and geometry-comparison reports,
+originals, writer outputs, native resaves, and per-stage logs. STEP import checks require matching
+face counts, area, volume, and bounds for AP203 edition 1, AP214, and AP242 edition 3. Mesh cases
+compare neutral world vertices with native occurrence transforms because body measurements do not
+cover application tessellations. These regression cases do not substitute for the complete
+manifested-corpus evidence required by the higher profile assertions.
+
 ## Design projection boundaries
 
 Neutral sketch profiles are derived from active explicit coincident endpoint constraints. They do
