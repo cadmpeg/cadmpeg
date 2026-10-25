@@ -6,16 +6,6 @@
       "payload_sha256": "a0aeb1e3923d94f1af102e68c8438e86a0eb0fa5a053bf3a211fe1e3cf95a8fe"
     },
     {
-      "name": "BoxCorners",
-      "payload_len": 52,
-      "payload_sha256": "b0430ea9a0cdc1bac8ac17a53156d35f467925840fd9da0a7ffba8e647712991"
-    },
-    {
-      "name": "Dimension.SavedGeometry.0.brp",
-      "payload_len": 154,
-      "payload_sha256": "896636196a9db69f01fe6a3bdccec46f1f1e00b90985671f605b0a0aa8b32912"
-    },
-    {
       "name": "Model.Shape.brp",
       "payload_len": 8913,
       "payload_sha256": "302e5fd40c8bfde50b204348819c9868d64a79e442e962c87673190d85c53e8b"
@@ -24,6 +14,16 @@
       "name": "cc0_template.svg",
       "payload_len": 207,
       "payload_sha256": "38a164c4e77be9189204641ee2739a27204ab78b642ceddeb5d569c95d5e949d"
+    },
+    {
+      "name": "BoxCorners",
+      "payload_len": 52,
+      "payload_sha256": "b0430ea9a0cdc1bac8ac17a53156d35f467925840fd9da0a7ffba8e647712991"
+    },
+    {
+      "name": "Dimension.SavedGeometry.0.brp",
+      "payload_len": 154,
+      "payload_sha256": "896636196a9db69f01fe6a3bdccec46f1f1e00b90985671f605b0a0aa8b32912"
     }
   ],
   "report": {

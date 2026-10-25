@@ -11,9 +11,9 @@
       "payload_sha256": "9a3523babdb58076dfd2c35f8d64fb7849e18a6b7515d7c8b18ebd791799cadd"
     },
     {
-      "name": "Cut.Shape.Map.txt",
-      "payload_len": 645,
-      "payload_sha256": "b91fb726bfa15a3a7cacc7971d88b2ed517aa3ba8b18a6b7e3da7d2bf86f11bd"
+      "name": "Cylinder.Shape.brp",
+      "payload_len": 2646,
+      "payload_sha256": "948e25b6487e76dee3777ffda6e9d03ec9f63e29cf6cbfa5236494ed7cfb2920"
     },
     {
       "name": "Cut.Shape.brp",
@@ -21,9 +21,24 @@
       "payload_sha256": "59f9d453d7448ba49e75c4e4d568a9679c676c3af50190121daa846ac895d581"
     },
     {
-      "name": "Cylinder.Shape.brp",
-      "payload_len": 2646,
-      "payload_sha256": "948e25b6487e76dee3777ffda6e9d03ec9f63e29cf6cbfa5236494ed7cfb2920"
+      "name": "Cut.Shape.Map.txt",
+      "payload_len": 645,
+      "payload_sha256": "b91fb726bfa15a3a7cacc7971d88b2ed517aa3ba8b18a6b7e3da7d2bf86f11bd"
+    },
+    {
+      "name": "Profile.InternalShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "Profile.Shape.brp",
+      "payload_len": 1649,
+      "payload_sha256": "544b5031f22f06afc08ba6ae897abef34e3d18297855458248383a1509ed6b10"
+    },
+    {
+      "name": "Profile.Shape.Map.txt",
+      "payload_len": 267,
+      "payload_sha256": "8f31c0f71c086586367547a6bbfde21c50b20c31bf1bc624b319a5409e7cb75a"
     },
     {
       "name": "DesignedFeature.Shape.brp",
@@ -39,21 +54,6 @@
       "name": "PlacementList",
       "payload_len": 4,
       "payload_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
-    },
-    {
-      "name": "Profile.InternalShape.brp",
-      "payload_len": 0,
-      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-    },
-    {
-      "name": "Profile.Shape.Map.txt",
-      "payload_len": 267,
-      "payload_sha256": "8f31c0f71c086586367547a6bbfde21c50b20c31bf1bc624b319a5409e7cb75a"
-    },
-    {
-      "name": "Profile.Shape.brp",
-      "payload_len": 1649,
-      "payload_sha256": "544b5031f22f06afc08ba6ae897abef34e3d18297855458248383a1509ed6b10"
     },
     {
       "name": "ScaleList",

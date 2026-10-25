@@ -30,6 +30,11 @@ fn unsafe_entry_names_refuse_construction_and_duplicates_remain_writer_limits() 
         Vec::new(),
         Vec::new(),
     );
+    let missing_order_error = crate::writer::restore_entry_order(&mut [entry.clone()], &[])
+        .expect_err("output order cannot be inferred from identity");
+    assert!(missing_order_error
+        .to_string()
+        .contains("no retained restoration order"));
     let duplicate_error = validate_entry_names(&[entry.clone(), entry])
         .expect_err("duplicate output paths are refused");
     assert!(matches!(
@@ -368,4 +373,219 @@ pub(crate) fn writer_rejects_unserialized_declaration_and_stale_payload_edits() 
     assert!(error
         .to_string()
         .contains("entry byte_len/sha256 disagrees with data"));
+}
+
+#[test]
+fn retaining_writes_preserve_physical_restoration_order_after_cadir_finalization() {
+    for schema in ["2", "3", "4"] {
+        let (objects_tag, data_tag) = if schema == "2" {
+            ("Features", "FeatureData")
+        } else {
+            ("Objects", "ObjectData")
+        };
+        let xml = format!(
+            r#"<Document SchemaVersion="{schema}" FileVersion="1"><Properties Count="1"><Property name="Label" type="App::PropertyString"><String value="original"/></Property></Properties><{objects_tag} Count="0"/><{data_tag} Count="0"/></Document>"#
+        );
+        let source = archive_entries(&[
+            ("Document.xml", xml.as_bytes()),
+            ("ZFirst.brp", b"first"),
+            ("ASecond.brp", b"second"),
+            ("GuiDocument.xml", br#"<Document SchemaVersion="1"><ViewProviderData Count="0"/><Camera settings=""/></Document>"#),
+            ("ZGui.bin", b"gui"),
+            ("AOpaque.bin", b"opaque"),
+        ]);
+        let decoded = FcstdCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .expect("required invariant");
+        for edit in [false, true] {
+            let mut ir = decoded.ir().clone();
+            ir.finalize();
+            if edit {
+                FcstdCodec
+                    .set_property_value_attribute(
+                        &mut ir,
+                        crate::FcstdPropertyOwner::Document,
+                        "Label",
+                        0,
+                        "value",
+                        "edited",
+                    )
+                    .expect("required invariant");
+            }
+            let mut output = Vec::new();
+            FcstdCodec
+                .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+                .and_then(|plan| plan.write_to(&mut output))
+                .expect("required invariant");
+            let mut archive =
+                zip::ZipArchive::new(Cursor::new(output)).expect("required invariant");
+            let names = (0..archive.len())
+                .map(|index| {
+                    archive
+                        .by_index(index)
+                        .expect("required invariant")
+                        .name()
+                        .expect("required invariant")
+                        .into_owned()
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(
+                names,
+                [
+                    "Document.xml",
+                    "ZFirst.brp",
+                    "ASecond.brp",
+                    "GuiDocument.xml",
+                    "ZGui.bin",
+                    "AOpaque.bin"
+                ],
+                "schema={schema}, edit={edit}"
+            );
+        }
+    }
+}
+
+#[test]
+fn typed_input_edits_persist_owner_recompute_state_without_touching_outputs_or_noops() {
+    for (status, edited, touched) in [
+        (0_u64, "15", true),
+        (0, "10", false),
+        (1 << 7, "15", false),
+        (1 << 11, "15", true),
+        (1 << 23, "15", false),
+        (1 << 27, "15", false),
+    ] {
+        for declaration in [
+            r#"<Object type="Part::Box" name="Box"/>"#,
+            r#"<Object type="Part::Box" name="Box" Touched="0"/>"#,
+        ] {
+            let xml = format!(
+                r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1">{declaration}</Objects><ObjectData Count="1"><Object name="Box"><Properties Count="1"><Property name="Length" type="App::PropertyLength" status="{status}"><Float value="10"/></Property></Properties></Object></ObjectData></Document>"#
+            );
+            let decoded = FcstdCodec
+                .decode(
+                    &mut Cursor::new(crate::test_support::test_archive::archive(&xml)),
+                    &DecodeOptions::default(),
+                )
+                .expect("decode Box");
+            let mut ir = decoded.ir().clone();
+            FcstdCodec
+                .set_property_value_attribute(
+                    &mut ir,
+                    crate::FcstdPropertyOwner::Object("Box"),
+                    "Length",
+                    0,
+                    "value",
+                    edited,
+                )
+                .expect("edit Length");
+            let objects = ir
+                .native
+                .namespace("fcstd")
+                .expect("namespace")
+                .arena_as::<crate::native::ObjectRecord>("objects")
+                .expect("objects");
+            assert_eq!(
+                objects[0].attributes.get("Touched").map(String::as_str) == Some("1"),
+                touched
+            );
+            let mut bytes = Vec::new();
+            FcstdCodec
+                .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+                .and_then(|plan| plan.write_to(&mut bytes))
+                .expect("write edit");
+            let output = FcstdCodec
+                .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+                .expect("decode edit");
+            let objects = output
+                .ir()
+                .native
+                .namespace("fcstd")
+                .expect("namespace")
+                .arena_as::<crate::native::ObjectRecord>("objects")
+                .expect("objects");
+            assert_eq!(
+                objects[0].attributes.get("Touched").map(String::as_str) == Some("1"),
+                touched
+            );
+        }
+    }
+}
+
+#[test]
+fn schema_two_input_edits_refuse_an_ignored_recompute_marker_but_labels_remain_writable() {
+    let xml = r#"<Document SchemaVersion="2" FileVersion="1"><Features Count="1"><Feature type="Part::Box" name="Box"/></Features><FeatureData Count="1"><Feature name="Box"><Properties Count="2"><Property name="Length" type="App::PropertyLength"><Float value="10"/></Property><Property name="Label" type="App::PropertyString"><String value="Box"/></Property></Properties></Feature></FeatureData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_archive::archive(xml)),
+            &DecodeOptions::default(),
+        )
+        .expect("schema two Box");
+    for (property, value, writable) in [("Length", "15", false), ("Label", "Renamed", true)] {
+        let mut ir = decoded.ir().clone();
+        FcstdCodec
+            .set_property_value_attribute(
+                &mut ir,
+                crate::FcstdPropertyOwner::Object("Box"),
+                property,
+                0,
+                "value",
+                value,
+            )
+            .expect("edit property");
+        let plan = FcstdCodec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit);
+        if writable {
+            assert!(plan.is_ok());
+        } else {
+            assert!(plan
+                .expect_err("schema two has no recompute marker")
+                .to_string()
+                .contains("pending-recompute marker"));
+        }
+    }
+}
+
+#[test]
+fn checked_native_input_record_edits_also_schedule_owner_recomputation() {
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Box" name="Box"/></Objects><ObjectData Count="1"><Object name="Box"><Properties Count="1"><Property name="Length" type="App::PropertyLength"><Float value="10"/></Property></Properties></Object></ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_archive::archive(xml)),
+            &DecodeOptions::default(),
+        )
+        .expect("Box");
+    let mut ir = decoded.ir().clone();
+    let namespace = ir.native.namespace_mut("fcstd");
+    let mut properties = namespace
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .expect("properties");
+    properties[0].values_mut().expect("values")[0]
+        .attributes
+        .insert("value".to_owned(), "15".to_owned());
+    namespace
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "properties",
+            &properties,
+        )
+        .expect("replace values");
+    let mut bytes = Vec::new();
+    FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("write native edit");
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode edit");
+    let objects = output
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("namespace")
+        .arena_as::<crate::native::ObjectRecord>("objects")
+        .expect("objects");
+    assert_eq!(
+        objects[0].attributes.get("Touched").map(String::as_str),
+        Some("1")
+    );
 }

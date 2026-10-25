@@ -11,6 +11,8 @@ use std::collections::HashMap;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::transform::Transform;
 
+use crate::options::StepSchema;
+
 pub(crate) mod target;
 
 /// A STEP instance name such as `#42`.
@@ -35,6 +37,7 @@ enum Refusal {
 
 /// Accumulates DATA instances in allocation order and counts their entity types.
 pub(crate) struct Emitter {
+    schema: StepSchema,
     lines: Vec<String>,
     counts: BTreeMap<&'static str, usize>,
     /// Leaf instances keyed by encoded type and parameters.
@@ -45,12 +48,25 @@ pub(crate) struct Emitter {
 }
 
 impl Emitter {
+    #[cfg(test)]
     pub(crate) fn new() -> Self {
+        Self::for_schema(StepSchema::Ap214)
+    }
+
+    pub(crate) fn for_schema(schema: StepSchema) -> Self {
         Emitter {
+            schema,
             lines: Vec::new(),
             counts: BTreeMap::new(),
             interned: HashMap::new(),
             refusal: Cell::new(None),
+        }
+    }
+
+    pub(crate) fn operator_2d_entity(&self) -> &'static str {
+        match self.schema {
+            StepSchema::Ap203Edition1 => "CARTESIAN_TRANSFORMATION_OPERATOR",
+            _ => "CARTESIAN_TRANSFORMATION_OPERATOR_2D",
         }
     }
 

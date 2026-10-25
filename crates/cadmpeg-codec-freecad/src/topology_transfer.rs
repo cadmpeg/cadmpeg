@@ -49,6 +49,7 @@ use cadmpeg_ir::report::loss::LossNote;
 const EPS_TOPOLOGY_TRANSFER_GEOMETRY: f64 = 1.0e-9;
 const EPS_TOPOLOGY_TRANSFER_DEGENERATE: f64 = 1.0e-10;
 const EPS_TOPOLOGY_TRANSFER_EXACT_GEOMETRY: f64 = 1.0e-12;
+const EPS_TOPOLOGY_TRANSFER_KNOT_ENDPOINT: f64 = 1.0e-12;
 
 struct IndexedPolygon {
     samples: PolylineSamples<FiniteReal, FinitePoint3>,
@@ -1724,6 +1725,7 @@ fn normalize_pcurve_parameter_range(
 ) -> Option<[FiniteReal; 2]> {
     let mut range = range?;
     let domain = match geometry {
+        PcurveGeometry::Nurbs { nurbs } if nurbs.periodic() => return Some(range),
         PcurveGeometry::Nurbs { nurbs } => {
             let degree = usize::try_from(nurbs.degree()).ok()?;
             [
@@ -2619,6 +2621,31 @@ pub(crate) fn normalize_occt_curve_range(
         }
         SolvedCurveGeometry::Transformed(placed) => {
             normalize_occt_curve_range(placed.basis(), range)
+        }
+        SolvedCurveGeometry::Nurbs(nurbs) if !nurbs.periodic() => {
+            let Some(domain) = cadmpeg_ir::eval::nurbs_curve_parameter_domain(nurbs) else {
+                return range;
+            };
+            let domain = domain.endpoints();
+            let mut range = range?;
+            let neighborhood = (0.25 * domain[1] - 0.25 * domain[0]).abs();
+            for parameter in &mut range {
+                let value = parameter.get();
+                if (domain[0]..=domain[1]).contains(&value) {
+                    continue;
+                }
+                let boundary = if value < domain[0] {
+                    domain[0]
+                } else {
+                    domain[1]
+                };
+                let tolerance = (EPS_TOPOLOGY_TRANSFER_KNOT_ENDPOINT * boundary.abs().max(1.0))
+                    .min(neighborhood);
+                if (value - boundary).abs() <= tolerance {
+                    *parameter = FiniteReal::new(boundary)?;
+                }
+            }
+            Some(range)
         }
         _ => range,
     }

@@ -1,0 +1,107 @@
+{
+  "container_kind": "zip",
+  "entries": [
+    {
+      "attributes": {
+        "central_header_offset": "3337",
+        "crc32": "93490318",
+        "data_offset": "42",
+        "header_offset": "0"
+      },
+      "compression": "deflate",
+      "expanded": 5436,
+      "name": "Document.xml",
+      "role": "document",
+      "stored": 1241
+    },
+    {
+      "attributes": {
+        "central_header_offset": "3395",
+        "crc32": "aadb76d2",
+        "data_offset": "1326",
+        "header_offset": "1283"
+      },
+      "compression": "deflate",
+      "expanded": 8938,
+      "name": "Box.Shape.brp",
+      "role": "brep",
+      "stored": 761
+    },
+    {
+      "attributes": {
+        "central_header_offset": "3454",
+        "crc32": "01855cb0",
+        "data_offset": "2132",
+        "header_offset": "2087"
+      },
+      "compression": "deflate",
+      "expanded": 4739,
+      "name": "GuiDocument.xml",
+      "role": "gui-document",
+      "stored": 989
+    },
+    {
+      "attributes": {
+        "central_header_offset": "3515",
+        "crc32": "1e3a7e57",
+        "data_offset": "3165",
+        "header_offset": "3121"
+      },
+      "compression": "deflate",
+      "expanded": 8,
+      "name": "LineColorArray",
+      "role": "auxiliary",
+      "stored": 8
+    },
+    {
+      "attributes": {
+        "central_header_offset": "3575",
+        "crc32": "4be7a05c",
+        "data_offset": "3218",
+        "header_offset": "3173"
+      },
+      "compression": "deflate",
+      "expanded": 8,
+      "name": "PointColorArray",
+      "role": "auxiliary",
+      "stored": 8
+    },
+    {
+      "attributes": {
+        "central_header_offset": "3636",
+        "crc32": "25dcf390",
+        "data_offset": "3271",
+        "header_offset": "3226"
+      },
+      "compression": "deflate",
+      "expanded": 76,
+      "name": "ShapeAppearance",
+      "role": "auxiliary",
+      "stored": 66
+    }
+  ],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "file_version": "1",
+          "program_version": "1.0R39109 (Git)",
+          "schema_version": "4"
+        },
+        "dialect": "fcstd:schema-4"
+      }
+    }
+  },
+  "notes": [
+    "SchemaVersion=4",
+    "FileVersion=1",
+    "document root=Document",
+    "document kind=part",
+    "object count=1",
+    "physical ledger spans=43 coverage=exact",
+    "ProgramVersion=1.0R39109 (Git)"
+  ]
+}
