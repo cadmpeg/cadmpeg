@@ -1793,3 +1793,101 @@ offset = 19
 type = "u32"
 source = "spec"
 anchor = "entity_type u32"
+
+[[record]]
+name = "pm_dc_spline_curve_prefix"
+kind = "byte"
+section = "12"
+anchor = "A form-1 spline curve has this fixed prefix"
+size = 28
+parsed_by = "crates/cadmpeg-codec-inventor/src/sketch/spline.rs"
+note = "Offsets are relative to each spline curve, after the spline record's variable lists."
+
+[[record.field]]
+name = "form"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "form u32"
+value = 1
+
+[[record.field]]
+name = "degree"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "degree u32"
+
+[[record.field]]
+name = "tolerance"
+offset = 8
+type = "f64"
+source = "spec"
+anchor = "tolerance f64"
+
+[[record.field]]
+name = "knot_count"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "knot_count u32"
+
+[[record.field]]
+name = "knot_value"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "knot_value u32"
+
+[[record.field]]
+name = "scalar_width"
+offset = 24
+type = "u32"
+source = "spec"
+anchor = "scalar_width u32"
+value = 8
+
+[[record]]
+name = "pm_dc_spline_curve_tail"
+kind = "byte"
+section = "12"
+anchor = "Its fixed tail is"
+size = 44
+parsed_by = "crates/cadmpeg-codec-inventor/src/sketch/spline.rs"
+note = "Offsets are relative to the byte after the counted pole array."
+
+[[record.field]]
+name = "pole_tolerance"
+offset = 0
+type = "f64"
+source = "spec"
+anchor = "pole_tolerance f64"
+
+[[record.field]]
+name = "values"
+offset = 8
+type = "u32[2]"
+source = "spec"
+anchor = "values u32[2]"
+
+[[record.field]]
+name = "interval"
+offset = 16
+type = "f64[2]"
+source = "spec"
+anchor = "interval f64[2]"
+
+[[record.field]]
+name = "terminal_value"
+offset = 32
+type = "f64"
+source = "spec"
+anchor = "terminal_value f64"
+
+[[record.field]]
+name = "scalar_width"
+offset = 40
+type = "u32"
+source = "spec"
+anchor = "scalar_width u32"
+value = 8

@@ -308,7 +308,7 @@ PmDc references store a one-based record index in bits 0 through 30 and a qualif
 
 A type-8 reference array starts with u16 values `8, 0x3000` and a u32 count. A nonempty array then stores two u16 metadata values and the counted PmDc references. A type-2 reference list starts with u16 values `2, 0x3000` and a u32 count. A nonempty list then stores two u32 metadata values and the counted references.
 
-Planar sketch entities add `entity_flags:u32` and `sketch_reference:u32` after the content header. The sketch reference identifies the owning planar sketch.
+Planar sketch entities add `entity_flags:u32` and `sketch_reference:u32` after the content header. The sketch reference identifies the owning planar sketch. Entity-flag bits `0x40`, `0x1000`, `0x40000`, and `0x80000` do not mark construction geometry. Bit `0x4` of a spline entity does not mark construction geometry.
 
 The planar entity types are:
 
@@ -344,7 +344,34 @@ Sketch coordinates and radii use internal centimetres. Neutral planar coordinate
 
 The point list of a circle or ellipse starts with two members. Two null references mark a closed curve. Two point references mark a bounded curve: the first is its start point and the second its end point. A circle with state 1 is a full circle and has two null leading members. A circle with state 0 is an arc and has two leading point references. An arc runs counterclockwise about the sketch normal from its start point to its end point, on the circle of the stored center and radius. Its end points lie on that circle within the kernel linear tolerance, `1e-6` internal centimetres.
 
-A full circle or a closed ellipse forms a closed profile by itself. Line and arc records form a profile loop when every endpoint in their connected component has degree two and the ordered traversal closes.
+A full circle, a closed ellipse, or a closed periodic polynomial spline forms a closed profile by itself. Line and arc records form a profile loop when every endpoint in their connected component has degree two and the ordered traversal closes.
+
+Type `d42f37f9d11115d3000847b00524dc09` stores a planar spline. After the planar-entity prefix it stores a type-2 point-reference list, nine u32 values, a type-2 u32 list, `state:u32`, a primary spline curve, `curve_state:u8`, two type-2 auxiliary reference lists, three u32 values, `secondary_prefix:u8`, `secondary_present:u32`, `secondary_state:u8`, a secondary spline curve, and nine terminal u32 values.
+
+A form-1 spline curve has this fixed prefix:
+
+```text
+form u32 = 1
+degree u32
+tolerance f64
+knot_count u32
+knot_value u32
+scalar_width u32 = 8
+```
+
+The polynomial branch follows this prefix with `knot_count` f64 knots, two zero u32 values, `scalar_width:u32 = 8`, `pole_count:u32`, `pole_value:u32`, and `scalar_width:u32 = 8`. It then stores `pole_count` two-f64 poles. Its fixed tail is:
+
+```text
+pole_tolerance f64
+values u32[2]
+interval f64[2]
+terminal_value f64
+scalar_width u32 = 8
+```
+
+The poles use internal centimetres. The degree is positive. The knot vector is the full nondecreasing vector, with `knot_count = pole_count + degree + 1`. `curve_state = 2`, curve values `1, 1`, equal primary and secondary curves, equal first and last poles, and clamped endpoint knots define a closed periodic polynomial spline. Each endpoint knot has multiplicity `degree + 1`. Its interval is the knot domain from knot `degree` through knot `pole_count`, with a lower first value than last value. The listed points are not the spline's control polygon or its two boundary endpoints. In this closed branch, the initial nine values, the three auxiliary values, both secondary one-byte values, the spline state, the two knot values, and the curve terminal value are zero. The nine terminal u32 values are `2, 0, 0, 0, 0, 0, 0, 0, 0`; `pole_value` equals `pole_count`.
+
+Type `9e146d7cd1115bd5000847b00524dc09` stores a spline-point relation. After the constraint header it stores a spline reference and a point reference, in that order.
 
 Type `184d8790d011f8d10008cabc0663dc09` stores a compressed 4-by-4 sketch transform after the content header. An optional u32 value `0x203` precedes two u16 masks. For matrix element bit `b`, a clear zero-mask bit and clear value-mask bit select one following f64. A clear zero-mask bit and set value-mask bit select positive one. A set zero-mask bit and clear value-mask bit select zero. Both bits set select negative one. Explicit values occur in row-major order. Translation values use internal centimetres.
 
@@ -461,6 +488,8 @@ A profile body holds one or more closed loops for each selected key. Each of its
 Type `1641d6aad211db2c00083eab1b14dc09` stores one constant-radius fillet edge set. The content header is followed by edge-collection, radius, selection-mode, and continuity references. The continuity reference is null or selects a Boolean record. From segment major version 23 a fifth reference follows; it is null or a `284d8790d011f8d10008cabc0663dc09` Boolean record. Type `514d8790d011f8d10008cabc0663dc09` stores an edge collection as a type-2 reference list after the content header. The members identify type `82695c37d111516b0008a1ba32a3dc09` edge-item records. An edge item stores a type-2 `u32` index-reference list after the content header, an `i32` when the list is not empty, and a final `u32`.
 
 Type `4a374949d211001d00083bab1b14dc09` stores a fillet edge-selection enumeration. It adds `type_value:u32` and `value:u32` after the content header. Type value 4 and value 0 select explicitly listed edges. Type value `0x00020004` with value 0 is a second selection descriptor. The edge set, not its edge collection alone, identifies the native selection for this descriptor.
+
+A single closed periodic polynomial spline is a whole profile ring when its named wire has one edge, the edge's spline degree and full knot vector equal those of the named sketch spline, its ordered poles map to the sketch poles in the sketch plane within the kernel linear tolerance, its parameter interval is the full knot domain, and both edge vertices equal the spline seam within that tolerance. The carrier and sketch curve have no rational weights. This join uses the edge's naming attribute and the consumed sketch's curve-type entity-style link.
 
 Feature-label class identifiers `3111a90cd0118b83000819b00524dc09`, `dc15f7f1d1114205000830b00524dc09`, `3f7100f9d2118b6f6000f0a89dccefb0`, and `1a7d751fd2119c54a00020803603c8c9` identify extrusion, fillet, chamfer, and hole records respectively. Feature-label class identifier `b54dd6f6d311c4966000f2b21d6eefb0` identifies a sheet-metal corner round. Its feature record uses the constant-radius edge-fillet slots and rounds the selected edges. Type `08dcddc3d311d0976000a7a99dccefb0` is a sheet-metal flange record. After the content header it stores `state:i32`, a type-2 reference list, and a u32 value. The list names the plate, bend, and corner feature records that form the flange, in that order. Type `904bc1c4d311ff2860004da99dccefb0` is a sheet-metal face record with the same layout; its list names one plate feature record. The face label's participants are the face's planar sketch and that plate.
 

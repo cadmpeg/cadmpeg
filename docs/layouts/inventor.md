@@ -562,3 +562,38 @@ Parsed by:
 | 11 | 4 | `body_reference` | `u32` | little | spec | body_reference u32 |
 | 15 | 4 | `entity_id` | `u32` | little | spec | entity_id u32 |
 | 19 | 4 | `entity_type` | `u32` | little | spec | entity_type u32 |
+
+## `pm_dc_spline_curve_prefix`
+
+Spec §12 · layout: byte offsets · size: 28 B
+
+Offsets are relative to each spline curve, after the spline record's variable lists.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/sketch/spline.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `form` | `u32` | little | spec | form u32 · value `1` |
+| 4 | 4 | `degree` | `u32` | little | spec | degree u32 |
+| 8 | 8 | `tolerance` | `f64` | little | spec | tolerance f64 |
+| 16 | 4 | `knot_count` | `u32` | little | spec | knot_count u32 |
+| 20 | 4 | `knot_value` | `u32` | little | spec | knot_value u32 |
+| 24 | 4 | `scalar_width` | `u32` | little | spec | scalar_width u32 · value `8` |
+
+## `pm_dc_spline_curve_tail`
+
+Spec §12 · layout: byte offsets · size: 44 B
+
+Offsets are relative to the byte after the counted pole array.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/sketch/spline.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `pole_tolerance` | `f64` | little | spec | pole_tolerance f64 |
+| 8 | 8 | `values` | `u32[2]` | little | spec | values u32[2] |
+| 16 | 16 | `interval` | `f64[2]` | little | spec | interval f64[2] |
+| 32 | 8 | `terminal_value` | `f64` | little | spec | terminal_value f64 |
+| 40 | 4 | `scalar_width` | `u32` | little | spec | scalar_width u32 · value `8` |

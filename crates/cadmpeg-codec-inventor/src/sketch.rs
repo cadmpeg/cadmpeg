@@ -44,10 +44,13 @@ const MIDPOINT_VALUE_VERSION: u8 = 20;
 /// with another bit set has a construction state this decoder does not
 /// resolve.
 const PROFILE_CURVE_FLAGS: u32 = 0x40 | 0x1000 | 0x4_0000 | 0x8_0000;
+const SPLINE_PROFILE_CURVE_FLAGS: u32 = PROFILE_CURVE_FLAGS | 0x4;
 /// Largest departure of a block-instance placement from a rigid motion.
 const EPS_SKETCH_BLOCK_PLACEMENT_RIGID: f64 = 1.0e-9;
 const CIRCLE_STATE_ARC: u8 = 0;
 const CIRCLE_STATE_FULL: u8 = 1;
+
+mod spline;
 
 const SKETCH_TYPE: [u8; 16] = inventor_id(0x9087_4d11);
 const TRANSFORM_TYPE: [u8; 16] = inventor_id(0x9087_4d18);
@@ -175,6 +178,10 @@ type PmDcReferencePairMap = crate::pmdc::PmDcPairedMap<PmDcReference>;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "form", rename_all = "snake_case")]
 pub(crate) enum PmDcSketchConstraintKind {
+    SplinePoint {
+        spline: PmDcReference,
+        point: PmDcReference,
+    },
     Coincident {
         first: PmDcReference,
         second: PmDcReference,
@@ -331,6 +338,9 @@ pub(crate) struct PmDcSketchEntityPayload {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "form", rename_all = "snake_case")]
 pub(crate) enum PmDcSketchEntityKind {
+    Spline {
+        data: Box<spline::SplineRecord>,
+    },
     Point {
         position: [FiniteReal; 2],
         endpoint_of: PmDcReferenceList,
@@ -380,6 +390,7 @@ pub(crate) enum PmDcSketchEntityKind {
 impl PmDcSketchEntityKind {
     pub(crate) fn record_type_id(&self) -> [u8; 16] {
         match self {
+            Self::Spline { .. } => spline::TYPE,
             Self::Point { .. } => POINT_TYPE,
             Self::Line { .. } => LINE_TYPE,
             Self::Circle { .. } => CIRCLE_TYPE,
@@ -636,6 +647,19 @@ pub(crate) fn inventory(
                         )
                     })
                 }
+                SketchRecordTag::Spline => match spline::parse(ctx, record.payload, version) {
+                    Ok(value) => push_record(
+                        ctx,
+                        &mut inventory.entities,
+                        value,
+                        record.type_id,
+                        segment.pair.token.key(),
+                        record.ordinal,
+                        "admit Inventor PmDc spline record",
+                    ),
+                    Err(CodecError::NotImplemented(_)) => continue,
+                    Err(error) => Err(error),
+                },
                 SketchRecordTag::Entity(entity) => parse_entity(entity, record.payload, version)
                     .and_then(|value| {
                         push_record(
@@ -785,11 +809,13 @@ enum SketchConstraintTag {
     PolygonRelation,
     BlockGroup,
     EqualDistance,
+    SplinePoint,
 }
 
 impl SketchConstraintTag {
     fn from_type_id(type_id: [u8; 16]) -> Option<Self> {
         match type_id {
+            spline::POINT_RELATION_TYPE => Some(Self::SplinePoint),
             COINCIDENT_TYPE => Some(Self::Coincident),
             PARALLEL_TYPE => Some(Self::Parallel),
             PERPENDICULAR_TYPE => Some(Self::Perpendicular),
@@ -821,6 +847,7 @@ impl SketchConstraintTag {
 
 #[derive(Clone, Copy)]
 enum SketchRecordTag {
+    Spline,
     Sketch,
     Transform,
     Direction,
@@ -831,6 +858,7 @@ enum SketchRecordTag {
 impl SketchRecordTag {
     fn from_type_id(type_id: [u8; 16]) -> Option<Self> {
         match type_id {
+            spline::TYPE => Some(Self::Spline),
             SKETCH_TYPE => Some(Self::Sketch),
             TRANSFORM_TYPE => Some(Self::Transform),
             DIRECTION_TYPE => Some(Self::Direction),
@@ -1191,6 +1219,10 @@ fn parse_constraint(
         !matches!(tag, SketchConstraintTag::BlockGroup),
     )?;
     let kind = match tag {
+        SketchConstraintTag::SplinePoint => PmDcSketchConstraintKind::SplinePoint {
+            spline: cursor.reference("spline point curve reference")?,
+            point: cursor.reference("spline point reference")?,
+        },
         SketchConstraintTag::Coincident => PmDcSketchConstraintKind::Coincident {
             first: cursor.reference("coincident constraint first reference")?,
             second: cursor.reference("coincident constraint second reference")?,
@@ -1496,12 +1528,18 @@ pub(crate) fn project(
         .entities
         .iter()
         .filter(|entity| {
+            let profile_flags = if matches!(entity.kind, PmDcSketchEntityKind::Spline { .. }) {
+                SPLINE_PROFILE_CURVE_FLAGS
+            } else {
+                PROFILE_CURVE_FLAGS
+            };
             matches!(
                 entity.kind,
                 PmDcSketchEntityKind::Line { .. }
                     | PmDcSketchEntityKind::Circle { .. }
                     | PmDcSketchEntityKind::Ellipse { .. }
-            ) && entity.entity_flags & !PROFILE_CURVE_FLAGS != 0
+                    | PmDcSketchEntityKind::Spline { .. }
+            ) && entity.entity_flags & !profile_flags != 0
         })
         .map(Located::id)
         .collect::<HashSet<_>>();
@@ -1777,6 +1815,29 @@ fn project_constraint(
             .copied()
     };
     let (definition, orientation, members) = match constraint.kind {
+        PmDcSketchConstraintKind::SplinePoint { spline, point } => {
+            let members = [resolve(spline)?, resolve(point)?];
+            (
+                SketchConstraintDefinitionInput::Native {
+                    native_kind: cadmpeg_core::nonblank_literal!("spline_point"),
+                    native_state: Some(u64::from(constraint.header.state.cast_unsigned())),
+                    native_flags: Some(u64::from(constraint.header.content.flags)),
+                    native_properties: std::collections::BTreeMap::new(),
+                    entities: members.iter().map(|entity| entity.id().clone()).collect(),
+                    parameter: None,
+                    operands: vec![
+                        native_operand(
+                            constraint,
+                            cadmpeg_core::nonblank_literal!("spline"),
+                            spline,
+                        ),
+                        native_operand(constraint, cadmpeg_core::nonblank_literal!("point"), point),
+                    ],
+                },
+                None,
+                members,
+            )
+        }
         PmDcSketchConstraintKind::Coincident { first, second } => {
             let members = [resolve(first)?, resolve(second)?];
             (
@@ -2325,6 +2386,26 @@ fn project_placed_geometry(
     let resolve_point =
         |token: &str, reference: u32| placement.point(resolve_point(token, reference, entities)?);
     match &entity.kind {
+        PmDcSketchEntityKind::Spline { data } => {
+            let mut curve = data.closed_curve()?;
+            curve
+                .try_map_control_points(|_, point| {
+                    let point = point.get();
+                    let placed = placement
+                        .point([
+                            FiniteReal::new(point.u).ok_or(())?,
+                            FiniteReal::new(point.v).ok_or(())?,
+                        ])
+                        .ok_or(())?;
+                    cadmpeg_ir::units::FinitePoint2::new(Point2::new(
+                        placed[0].get() * 10.0,
+                        placed[1].get() * 10.0,
+                    ))
+                    .ok_or(())
+                })
+                .ok()?;
+            Some(SketchGeometry::nurbs(curve))
+        }
         PmDcSketchEntityKind::Point { position, .. } => Some(
             SketchGeometry::try_from(SketchGeometryDefinition::Point {
                 position: neutral_point(placement.point(*position)?),
@@ -2667,7 +2748,7 @@ fn build_profiles(entities: &[&SketchEntity]) -> Vec<Vec<SketchEntityUse>> {
             matches!(
                 *entity.geometry.definition(),
                 SketchGeometryDefinition::Circle { .. } | SketchGeometryDefinition::Ellipse { .. }
-            )
+            ) || spline::is_closed(entity)
         })
     {
         profiles.push(vec![SketchEntityUse {
