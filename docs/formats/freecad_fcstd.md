@@ -119,9 +119,9 @@ In schemas 3 and 4, an object declaration's nonzero integer `Touched` attribute 
 recomputation across document restoration. A changed input property with a retained cached shape
 requires this declaration state so ordinary recomputation updates the shape and its dependents.
 A property-value edit with no value change leaves the state unchanged. Document properties and
-object labels do not request object recomputation. Output and no-recompute property status flags
-exempt the property from requesting recomputation. Schema-2 feature declarations have no restored
-`Touched` state.
+object labels do not request object recomputation. Output status bits 7 and 27 and the static
+no-recompute status bit 23 exempt the property from requesting recomputation. Runtime status bit
+11 alone does not exempt it. Schema-2 feature declarations have no restored `Touched` state.
 
 The presence of the `Objects` section's `Dependencies` attribute enables dependency records. An
 enabled section contains exactly `Objects.Count` `ObjectDeps` elements before the object

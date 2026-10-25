@@ -451,7 +451,7 @@ fn typed_input_edits_persist_owner_recompute_state_without_touching_outputs_or_n
         (0_u64, "15", true),
         (0, "10", false),
         (1 << 7, "15", false),
-        (1 << 11, "15", false),
+        (1 << 11, "15", true),
         (1 << 23, "15", false),
         (1 << 27, "15", false),
     ] {

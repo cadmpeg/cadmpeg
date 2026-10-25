@@ -7,7 +7,7 @@ use crate::native::{native_id, ObjectRecord, PropertyFamily, PropertyRecord};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 
-const RECOMPUTE_EXEMPT_PROPERTY_STATUS: u64 = (1 << 7) | (1 << 11) | (1 << 23) | (1 << 27);
+const RECOMPUTE_EXEMPT_PROPERTY_STATUS: u64 = (1 << 7) | (1 << 23) | (1 << 27);
 
 /// Selects the owner of a persisted property.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
