@@ -191,7 +191,7 @@ impl MergeSession<'_, '_> {
                 body: mut component_report,
                 source_fidelity: mut component_fidelity,
             } = component;
-            scope_document_parameters(&mut component_ir.model)?;
+            scope_document_parameters(self.ctx, &mut component_ir.model)?;
             self.stack.push(format!("{}", reference.relative_path));
             let descendants = self.merge(
                 &mut component_ir,
@@ -275,7 +275,9 @@ fn reparent_component_roots(
 }
 
 /// Gives document parameters an equation container before occurrence rescoping.
-fn scope_document_parameters(model: &mut Model) -> Result<(), CodecError> {
+/// The container is an entity the member decode did not admit, so it is
+/// charged here.
+fn scope_document_parameters(ctx: &DecodeContext<'_>, model: &mut Model) -> Result<(), CodecError> {
     use cadmpeg_ir::features::{
         DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation,
         FeatureOperation, FeatureTreeNodeRole, TreeChildren,
@@ -288,6 +290,7 @@ fn scope_document_parameters(model: &mut Model) -> Result<(), CodecError> {
     {
         return Ok(());
     }
+    ctx.charge_entities(1, "F3Z document parameter scope")?;
     let owner = crate::ids::document_parameter_scope_id();
     let first = model
         .features

@@ -467,67 +467,11 @@ fn occurrence_key_separates_same_role_references_with_reset_ordinals() {
 
 #[test]
 fn merged_documents_keep_parameter_names_and_document_local_expression_dependencies() {
-    use crate::design::feature_project::{
-        project_parameter_design_with_edge_identities, ProjectInputs,
-    };
-    use crate::design::test_support::synthetic_feature_timelines;
     use crate::f3z::merge::scope_document_parameters;
-    use crate::records::parameters::{
-        DesignParameter, DesignParameterDraft, DesignParameterSource,
-    };
 
     let ctx = cadmpeg_test_support::service_decode_context();
-    let document = |scalar: f64| {
-        let native = [("Span", "10 mm"), ("HalfSpan", "Span / 2")]
-            .into_iter()
-            .enumerate()
-            .map(|(ordinal, (name, expression))| {
-                DesignParameter::try_from(DesignParameterDraft {
-                    id: format!("f3d:native:parameter#{ordinal}"),
-                    byte_offset: 0,
-                    class_tag: "305".to_owned().try_into().unwrap(),
-                    record_index: u32::try_from(ordinal).unwrap(),
-                    source_ordinal: u32::try_from(ordinal).unwrap(),
-                    source: DesignParameterSource::User {
-                        family_discriminator: None,
-                    },
-                    expression: expression.into(),
-                    expression_offset: 1,
-                    source_kind_offset: 2,
-                    unit: Some(crate::records::identity::RecordedValue {
-                        value: "mm".into(),
-                        offset: 3,
-                    }),
-                    name: name.into(),
-                    name_offset: 4,
-                    evaluated_value: scalar,
-                    evaluated_value_offset: 5,
-                })
-                .unwrap()
-            })
-            .collect::<Vec<_>>();
-        let timelines = synthetic_feature_timelines(&[]);
-        let projected = project_parameter_design_with_edge_identities(
-            &ctx,
-            &ProjectInputs {
-                native: &native,
-                timelines: &timelines,
-                ..ProjectInputs::default()
-            },
-        )
-        .unwrap();
-        let mut model = Model::default();
-        model.parameters = projected.parameters;
-        model.features = projected.features;
-        let mut records = Native::default();
-        records
-            .namespace_mut("f3d")
-            .set_arena(&ctx, "design_parameters", &native)
-            .unwrap();
-        (model, records)
-    };
-    let (mut parent, mut native) = document(1.0);
-    let (mut component, component_native) = document(2.0);
+    let (mut parent, mut native) = parameter_document(&ctx, 1.0);
+    let (mut component, component_native) = parameter_document(&ctx, 2.0);
     let mut owned = component.parameters[1].clone();
     let construction = feature("f3d:model:feature#consumer", 0);
     owned.id = cadmpeg_ir::features::ParameterId::mint("f3d:model:parameter#input").unwrap();
@@ -536,7 +480,7 @@ fn merged_documents_keep_parameter_names_and_document_local_expression_dependenc
     component.parameters.push(owned);
     component.features.push(construction);
 
-    scope_document_parameters(&mut component).unwrap();
+    scope_document_parameters(&ctx, &mut component).unwrap();
     append_feature_history(&parent, &mut component).unwrap();
     parent
         .extend_rewritten(
@@ -602,4 +546,90 @@ fn merged_documents_keep_parameter_names_and_document_local_expression_dependenc
     ir.finalize();
     let report = cadmpeg_ir::validate::validate_neutral(&ir, Vec::new()).unwrap();
     assert!(report.is_ok(), "{:?}", report.findings);
+}
+
+#[test]
+fn document_parameter_scope_is_charged_against_the_entity_budget() {
+    use crate::f3z::merge::scope_document_parameters;
+
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_entities = 0;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap()
+        .0;
+    let (mut model, _) = parameter_document(&cadmpeg_test_support::service_decode_context(), 1.0);
+    let features = model.features.len();
+
+    let error = scope_document_parameters(&ctx, &mut model).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)),
+        "{error:?}"
+    );
+    assert_eq!(model.features.len(), features);
+    assert!(model
+        .parameters
+        .iter()
+        .all(|parameter| parameter.owner.is_none()));
+}
+
+fn parameter_document(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scalar: f64,
+) -> (Model, Native) {
+    use crate::design::feature_project::{
+        project_parameter_design_with_edge_identities, ProjectInputs,
+    };
+    use crate::design::test_support::synthetic_feature_timelines;
+    use crate::records::parameters::{
+        DesignParameter, DesignParameterDraft, DesignParameterSource,
+    };
+
+    let native = [("Span", "10 mm"), ("HalfSpan", "Span / 2")]
+        .into_iter()
+        .enumerate()
+        .map(|(ordinal, (name, expression))| {
+            DesignParameter::try_from(DesignParameterDraft {
+                id: format!("f3d:native:parameter#{ordinal}"),
+                byte_offset: 0,
+                class_tag: "305".to_owned().try_into().unwrap(),
+                record_index: u32::try_from(ordinal).unwrap(),
+                source_ordinal: u32::try_from(ordinal).unwrap(),
+                source: DesignParameterSource::User {
+                    family_discriminator: None,
+                },
+                expression: expression.into(),
+                expression_offset: 1,
+                source_kind_offset: 2,
+                unit: Some(crate::records::identity::RecordedValue {
+                    value: "mm".into(),
+                    offset: 3,
+                }),
+                name: name.into(),
+                name_offset: 4,
+                evaluated_value: scalar,
+                evaluated_value_offset: 5,
+            })
+            .unwrap()
+        })
+        .collect::<Vec<_>>();
+    let timelines = synthetic_feature_timelines(&[]);
+    let projected = project_parameter_design_with_edge_identities(
+        ctx,
+        &ProjectInputs {
+            native: &native,
+            timelines: &timelines,
+            ..ProjectInputs::default()
+        },
+    )
+    .unwrap();
+    let mut model = Model::default();
+    model.parameters = projected.parameters;
+    model.features = projected.features;
+    let mut records = Native::default();
+    records
+        .namespace_mut("f3d")
+        .set_arena(ctx, "design_parameters", &native)
+        .unwrap();
+    (model, records)
 }
