@@ -619,3 +619,67 @@ fn encode_helper_allocation_observes_the_existing_shared_refusal_before_cloning(
     assert_eq!(ctx.resource_refusal(), Some(error));
     assert_eq!(session.finish(), Err(error));
 }
+
+#[test]
+fn failed_backing_allocation_reports_only_live_bytes_and_keeps_the_first_refusal() {
+    let arena = crate::decode::DecodeArena::new();
+    let mut policy = crate::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::MAX;
+    let ctx = crate::decode::DecodeContext::for_encode(&arena, &policy);
+    ctx.retain_bytes(3, "held decoded record").unwrap();
+    let session = EncodeSession::from_context(&ctx).unwrap();
+    let mut survivor = session.buffer();
+    survivor.append(b"keep", "independent live bytes").unwrap();
+    let mut buffer = session.buffer();
+    buffer.append(b"old", "existing target bytes").unwrap();
+    let old_capacity = buffer.bytes.capacity();
+    let old_charge = buffer.capacity();
+    let survivor_charge = survivor.capacity();
+    let live = 3 + crate::decode::u64_from_index(old_charge + survivor_charge);
+    assert_eq!(session.account.retained_used(), live);
+
+    // Vec<u8> cannot reserve a capacity beyond isize::MAX. This real request
+    // deterministically returns capacity overflow before allocating any heap.
+    let additional = isize::MAX.unsigned_abs() + 1;
+    let unused = old_capacity - buffer.len();
+    let growth = additional - unused;
+    assert!(growth > old_capacity);
+    let refusal = buffer
+        .reserve_append(additional, "impossible backing capacity")
+        .expect_err("the actual Vec capacity cannot be represented");
+    assert_eq!(refusal.scope, LimitScope::Session);
+    assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(refusal.reason, ResourceFailure::AllocationFailed);
+    assert_eq!(refusal.limit, policy.limits.max_retained_bytes);
+    assert_eq!(refusal.used, live);
+    assert_eq!(refusal.additional, crate::decode::u64_from_index(growth));
+    assert_eq!(refusal.operation, "impossible backing capacity");
+    assert_eq!(session.account.retained_used(), live);
+    assert_eq!(buffer.bytes.capacity(), old_capacity);
+    assert_eq!(buffer.capacity(), old_charge);
+    assert_eq!(buffer.as_bytes(), b"old");
+    assert_eq!(survivor.as_bytes(), b"keep");
+    assert_eq!(ctx.resource_refusal(), Some(refusal));
+    assert_eq!(session.finish(), Err(refusal));
+    assert_eq!(
+        buffer.reserve_append(1, "later target request"),
+        Err(refusal)
+    );
+    assert_eq!(
+        survivor.append(b"later", "later independent request"),
+        Err(refusal)
+    );
+    assert_eq!(buffer.as_bytes(), b"old");
+    assert_eq!(survivor.as_bytes(), b"keep");
+    drop(buffer);
+    assert_eq!(
+        session.account.retained_used(),
+        live - crate::decode::u64_from_index(old_charge)
+    );
+    drop(survivor);
+    assert_eq!(session.account.retained_used(), 3);
+    assert_eq!(session.finish(), Err(refusal));
+    assert!(
+        matches!(ctx.finish_session(), Err(crate::CodecError::ResourceLimit(actual)) if actual == refusal)
+    );
+}

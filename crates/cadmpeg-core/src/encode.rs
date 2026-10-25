@@ -5,9 +5,7 @@ use std::sync::Arc;
 
 use crate::operation_budget::OperationBudget;
 
-use crate::decode::{
-    DecodeContext, DecodePolicy, LimitScope, ResourceDimension, ResourceFailure, ResourceLimit,
-};
+use crate::decode::{DecodeContext, DecodePolicy, ResourceLimit};
 
 /// One encode operation's cumulative entities and live retained allocations.
 #[derive(Debug)]
@@ -59,10 +57,6 @@ impl EncodeSession {
     /// Returns a prior fused resource failure even if a caller ignored it.
     pub fn finish(&self) -> Result<(), ResourceLimit> {
         self.account.fused().map_or(Ok(()), Err)
-    }
-
-    fn fail(&self, error: ResourceLimit) -> ResourceLimit {
-        self.account.refuse(error)
     }
 }
 
@@ -186,17 +180,15 @@ impl EncodeBuffer<'_> {
             account: &session.account,
             bytes: crate::decode::u64_from_index(growth),
         };
-        self.bytes.try_reserve_exact(unused + growth).map_err(|_| {
-            self.session.fail(ResourceLimit {
-                scope: LimitScope::Session,
-                dimension: ResourceDimension::RetainedBytes,
-                reason: ResourceFailure::AllocationFailed,
-                limit: self.session.account.limits.max_retained_bytes,
-                used: self.session.account.retained_used(),
-                additional: crate::decode::u64_from_index(growth),
-                operation,
-            })
-        })?;
+        if self.bytes.try_reserve_exact(unused + growth).is_err() {
+            // The failed allocation retained no growth. Refund its provisional
+            // reservation before the real caller account records live usage.
+            drop(reservation);
+            return Err(self
+                .session
+                .account
+                .allocation_failed(crate::decode::u64_from_index(growth), operation));
+        }
         self.admit_reserved_capacity(operation, reservation.bytes)?;
         reservation.bytes = 0;
         Ok(())
