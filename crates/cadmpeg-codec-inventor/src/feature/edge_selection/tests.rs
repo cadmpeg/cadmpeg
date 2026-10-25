@@ -307,3 +307,62 @@ fn absent_or_later_producers_keep_the_native_group() {
         assert_eq!(selection, EdgeSelection::Native("native-collection".into()));
     }
 }
+
+#[test]
+fn base_flange_result_carries_the_selected_generated_edge() {
+    use cadmpeg_core::{
+        decode::{DecodeArena, DecodePolicy},
+        text::NonBlankString,
+    };
+    use cadmpeg_ir::features::{
+        FeatureDefinition, FeatureEvaluation, FeatureOperation, FeatureResultMembers,
+        FeatureResultTopology, PlanarProfileRef, SheetMetalThicknessSide,
+    };
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    let mut features = feature_with_generated_group(&ctx);
+    features[0].evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+        FeatureOperation::SheetMetalBaseFlange {
+            profile: PlanarProfileRef::Sketch(
+                cadmpeg_ir::sketches::SketchId::mint("inventor:design:sketch#test-3")
+                    .expect("sketch id"),
+            ),
+            thickness: cadmpeg_ir::scalar::PositiveLength::new(3.0).expect("thickness"),
+            side: SheetMetalThicknessSide::Forward,
+        },
+    ));
+    let mut results = vec![FeatureResultTopology::new(
+        cadmpeg_ir::ids::FeatureResultTopologyId::compose(
+            &cadmpeg_ir::identity_namespace!("inventor", "design", "feature-result"),
+            features[0].id.key(),
+        ),
+        features[0].id.clone(),
+        FeatureResultMembers::new(
+            vec![NonBlankString::new("plate-body").expect("body")],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("members"),
+        Some("plate-collection".into()),
+    )];
+    bind_generated(&mut features, &mut results).expect("bind edge");
+    let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) =
+        features[1].evaluation.definition()
+    else {
+        panic!("fillet")
+    };
+    let EdgeSelection::Generated { edges, .. } = &groups[0].edges else {
+        panic!("generated edges")
+    };
+    assert_eq!(edges[0].feature, features[0].id);
+    assert_eq!(results[0].output_of, edges[0].feature);
+    assert_eq!(results[0].edges()[0].as_str(), edges[0].local_id.as_str());
+    assert_eq!(results[0].bodies()[0].as_str(), "plate-body");
+    assert_eq!(results[0].native_ref.as_deref(), Some("plate-collection"));
+    assert_eq!(
+        features[1].dependencies.as_slice(),
+        [features[0].id.clone()]
+    );
+}

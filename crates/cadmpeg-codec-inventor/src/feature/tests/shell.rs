@@ -178,7 +178,7 @@ fn shell_projects_thickness_native_faces_and_result_without_direction_defaults()
             native_kind(Some(SHELL_CLASS_ID)),
             cadmpeg_ir::features::NativeFeatureKind::Other("Shell".into())
         );
-        assert_eq!(family.output_slot(), 9);
+        assert_eq!(family.output_slot(&super::test_feature(100, 18, &[])), 9);
     }
 }
 

@@ -54,6 +54,9 @@ const END_OF_FEATURES_TYPE: [u8; 16] = [
     0x24, 0xfd, 0x41, 0x8f, 0xd2, 0x11, 0xac, 0x6e, 0x00, 0x08, 0x2a, 0xab, 0x32, 0xa3, 0xdc, 0x09,
 ];
 pub(crate) const BOOLEAN_TYPE: [u8; 16] = inventor_id(0x9087_4d28);
+const PLATE_SIDE_TYPE: [u8; 16] = [
+    0x69, 0xb9, 0x50, 0x5e, 0xfb, 0x4b, 0xba, 0xa9, 0x25, 0xc3, 0xdf, 0xa8, 0x70, 0x81, 0x78, 0x10,
+];
 const SURFACE_BODY_TYPE: [u8; 16] = inventor_id(0x9087_4d47);
 const ENTITY_STYLE_LINK_TYPE: [u8; 16] = inventor_id(0x9087_4d15);
 const PART_OPERATION_TYPE: [u8; 16] = [
@@ -286,6 +289,7 @@ pub(crate) enum PmDcFeatureEnumFamily {
     Fillet,
     Chamfer,
     Auxiliary,
+    PlateSide,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -878,6 +882,7 @@ fn feature_property_parser(type_id: [u8; 16]) -> Option<PropertyParser> {
         CHAMFER_TYPE => Some(parse_chamfer),
         FILLET_EDGE_SELECTION_TYPE => Some(parse_fillet_edge_selection),
         AUXILIARY_ENUM_TYPE => Some(parse_auxiliary_enum),
+        PLATE_SIDE_TYPE => Some(parse_plate_side),
         BOOLEAN_TYPE => Some(parse_boolean),
         BOUNDARY_PATCH_TYPE => Some(parse_boundary_patch),
         SELECTION_LIST_TYPE => Some(parse_selection_list),
@@ -950,6 +955,7 @@ enum_parser!(parse_extent, Extent);
 enum_parser!(parse_hole, Hole);
 enum_parser!(parse_fillet, Fillet);
 enum_parser!(parse_auxiliary_enum, Auxiliary);
+enum_parser!(parse_plate_side, PlateSide);
 
 fn parse_chamfer(
     _: &DecodeContext<'_>,
@@ -1682,13 +1688,19 @@ impl FeatureFamily {
         }
     }
 
-    pub(crate) fn output_slot(self) -> usize {
+    pub(crate) fn output_slot(self, source: &PmDcFeature) -> usize {
         match self {
             Self::Base => 1,
             Self::Extrusion => 26,
             Self::Fillet => 15,
             Self::Chamfer => 11,
             Self::Hole => 24,
+            Self::Plate
+                if source.properties.references().len() == 17
+                    && source.properties.references()[6].index() == 0 =>
+            {
+                15
+            }
             Self::Plate => 6,
             Self::Thicken => 15,
             Self::Shell => 9,
@@ -1720,8 +1732,11 @@ impl FeatureFamily {
                 Self::Base,
                 FeatureDefinition::Operation(FeatureOperation::StoredGeometry {})
             ) | (
-                Self::Extrusion | Self::Plate,
+                Self::Extrusion,
                 FeatureDefinition::Operation(FeatureOperation::Extrude { .. })
+            ) | (
+                Self::Plate,
+                FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange { .. })
             ) | (
                 Self::Fillet,
                 FeatureDefinition::Operation(FeatureOperation::Fillet { .. })
@@ -1748,6 +1763,9 @@ impl FeatureFamily {
         match definition {
             FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}) => Some(Self::Base),
             FeatureDefinition::Operation(FeatureOperation::Extrude { .. }) => Some(Self::Extrusion),
+            FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange { .. }) => {
+                Some(Self::Plate)
+            }
             FeatureDefinition::Operation(FeatureOperation::Fillet { .. }) => Some(Self::Fillet),
             FeatureDefinition::Operation(FeatureOperation::Chamfer { .. }) => Some(Self::Chamfer),
             FeatureDefinition::Operation(FeatureOperation::Hole { .. }) => Some(Self::Hole),
@@ -2835,16 +2853,15 @@ fn project_plate(
         direction_record.direction[1].get(),
         direction_record.direction[2].get(),
     );
-    if stored.dot(*normal.as_raw()) < 1.0 - EPS_FEATURE_PROJECT_HOLE_E10 {
+    let direction = cadmpeg_ir::units::UnitVector3::normalized(stored)?;
+    if direction.as_raw().dot(*normal.as_raw()) < 1.0 - EPS_FEATURE_PROJECT_HOLE_E10 {
         return None;
     }
-    let mut direction = cadmpeg_ir::units::UnitVector3::normalized(stored)?;
-    if boolean(source, 2, index)? {
-        direction = direction.reversed();
-    }
+    let side = plate_side(source, index)?;
     let thickness =
         cadmpeg_ir::scalar::PositiveLength::try_from(length_parameter(source, 3, index)?).ok()?;
-    let (feature_id, result) = match body_result(ctx, source, 6, index)? {
+    let result = plate_result(ctx, source, index)?;
+    let (feature_id, result) = match result {
         Ok(value) => value,
         Err(error) => return Some(Err(error)),
     };
@@ -2862,32 +2879,63 @@ fn project_plate(
         source_text: None,
         source_content: FeatureContent::default(),
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Operation(FeatureOperation::Extrude {
-                profile: ProfileRef::Planar(profile),
-                direction: ExtrudeDirection::Explicit {
-                    vector: cadmpeg_ir::features::FeatureDirection3::from(direction),
-                    source: Some(ExtrusionDirectionSource::Custom {}),
-                },
-                start: ExtrudeStart::ProfilePlane {},
-                extent: ExtrudeExtent::OneSided {
-                    side: ExtrudeSide {
-                        termination: LinearTermination::Blind {
-                            length: cadmpeg_ir::scalar::NonZeroLength::from(thickness),
-                        },
-                        draft: None,
-                    },
-                },
-                op: BooleanOp::NewBody,
-                solid: Some(true),
-                face_maker: None,
-                inner_wire_taper: None,
-                length_along_profile_normal: None,
-                allow_multi_profile_faces: None,
+            FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange {
+                profile,
+                thickness,
+                side,
             }),
         ),
         native_ref: Some(source.id()),
     };
     Some(Ok((feature, result)))
+}
+
+fn plate_side(
+    source: &PmDcFeature,
+    index: &ProjectionIndex<'_>,
+) -> Option<cadmpeg_ir::features::SheetMetalThicknessSide> {
+    Some(match slot_property(source, 2, index)?.kind {
+        PmDcFeaturePropertyKind::Boolean { value, .. } => {
+            if value {
+                cadmpeg_ir::features::SheetMetalThicknessSide::Reverse
+            } else {
+                cadmpeg_ir::features::SheetMetalThicknessSide::Forward
+            }
+        }
+        PmDcFeaturePropertyKind::Enumeration {
+            family: PmDcFeatureEnumFamily::PlateSide,
+            type_value: 2,
+            value: 0,
+        } => cadmpeg_ir::features::SheetMetalThicknessSide::Forward,
+        _ => return None,
+    })
+}
+
+fn plate_result(
+    ctx: &DecodeContext<'_>,
+    source: &PmDcFeature,
+    index: &ProjectionIndex<'_>,
+) -> Option<Result<(FeatureId, FeatureResultTopology), CodecError>> {
+    let output_slot = FeatureFamily::Plate.output_slot(source);
+    if output_slot == 15 {
+        if source.properties.references().get(6)?.index() != 0
+            || enum16(source, 16, PmDcFeatureEnumFamily::PartOperation, index)? != 1
+        {
+            return None;
+        }
+        feature_result(ctx, source, output_slot, index)
+    } else {
+        if [15, 16].iter().any(|slot| {
+            source
+                .properties
+                .references()
+                .get(*slot)
+                .is_some_and(|reference| reference.index() != 0)
+        }) {
+            return None;
+        }
+        body_result(ctx, source, output_slot, index)
+    }
 }
 
 /// The result of a feature whose output slot holds one surface-body record.
@@ -3105,7 +3153,14 @@ fn project_fillet(
                 type_value: 4 | 0x0002_0004,
                 value: 0
             }
-        ) || !matches!(
+        ) {
+            return None;
+        }
+        if continuity.index() == 0 {
+            if label.class_id() != CORNER_ROUND_CLASS_ID {
+                return None;
+            }
+        } else if !matches!(
             resolve_property(
                 source.identity.segment_token.as_str(),
                 continuity.index(),
@@ -3756,7 +3811,9 @@ fn enum16(
         }
         PmDcFeatureEnumFamily::Extent => 11,
         PmDcFeatureEnumFamily::Hole => 3,
-        PmDcFeatureEnumFamily::Fillet | PmDcFeatureEnumFamily::Chamfer => 2,
+        PmDcFeatureEnumFamily::Fillet
+        | PmDcFeatureEnumFamily::Chamfer
+        | PmDcFeatureEnumFamily::PlateSide => 2,
         PmDcFeatureEnumFamily::Auxiliary => return None,
     };
     match property.kind {
@@ -3914,6 +3971,7 @@ impl RecordPayload for PmDcFeatureTerminatorPayload {
 #[cfg(test)]
 mod tests {
     mod holes;
+    mod sheet_metal;
     mod thicken;
 
     use super::{
@@ -3965,10 +4023,13 @@ mod tests {
     }
 
     #[test]
-    fn a_sheet_metal_plate_projects_an_extrusion_with_its_body_result() {
+    fn a_sheet_metal_plate_with_a_bend_stays_native() {
         let family = super::FeatureFamily::from_class_id(super::PLATE_CLASS_ID);
         assert!(matches!(family, Some(super::FeatureFamily::Plate)));
-        assert_eq!(super::FeatureFamily::Plate.output_slot(), 6);
+        assert_eq!(
+            super::FeatureFamily::Plate.output_slot(&test_feature(100, 15, &[])),
+            6
+        );
         // A plate with a bend to an existing face stays native.
         let bent = test_feature(100, 15, &[(4, 7)]);
         let label = test_label(100, 1, super::PLATE_CLASS_ID, &[]);

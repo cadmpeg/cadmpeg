@@ -1455,7 +1455,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             }
             continue;
         }
-        let output_slot = family.output_slot();
+        let output_slot = family.output_slot(raw_feature);
         let expected_collection = raw_feature
             .properties
             .references()

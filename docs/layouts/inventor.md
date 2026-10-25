@@ -597,3 +597,17 @@ Parsed by:
 | 16 | 16 | `interval` | `f64[2]` | little | spec | interval f64[2] |
 | 32 | 8 | `terminal_value` | `f64` | little | spec | terminal_value f64 |
 | 40 | 4 | `scalar_width` | `u32` | little | spec | scalar_width u32 · value `8` |
+
+## `pm_dc_plate_side_fields`
+
+Spec §13 · layout: byte offsets · size: 4 B
+
+Offsets start after the versioned content header and stamps.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `type_value` | `i16` | little | spec | Enumeration type; 2 for the plate thickness side. |
+| 2 | 2 | `value` | `u16` | little | spec | 0 selects thickness along the face-sketch normal. |

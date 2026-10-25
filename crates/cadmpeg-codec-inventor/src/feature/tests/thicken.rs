@@ -287,7 +287,7 @@ fn projects_thicken_with_native_selection_thickness_and_ordered_results() {
     let family = owner::FeatureFamily::from_definition(feature.evaluation.definition())
         .expect("thicken family");
     assert_eq!(family.class_ids(), &[owner::THICKEN_CLASS_ID]);
-    assert_eq!(family.output_slot(), 15);
+    assert_eq!(family.output_slot(&super::test_feature(100, 18, &[])), 15);
 }
 
 #[test]
