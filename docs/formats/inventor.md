@@ -374,6 +374,8 @@ Feature property records use the same 22-byte content header. The following enum
 - `2788f278c54dd7be4313b3986039b52e`: fillet form;
 - `7339fdce7a4e4011bee343897908ba92`: auxiliary feature enumeration.
 
+Types `1990e1b8d311467bc000e39545df724f` and `1790e1b8d311467bc000e39545df724f` use the same enumeration grammar. Their type values are 3 and 4 respectively. Both use the versioned content header of section 12, including its stamps.
+
 Type `3200aa7dd2112b836000f3a89dccefb0` stores the chamfer form. It adds the same `type_value:i16` and `value:u16` fields, followed by a zero u32 terminal value.
 
 The part-operation, extent, hole-form, fillet-form, and chamfer-form records use type values 5, 11, 3, 2, and 2 respectively.
@@ -385,6 +387,8 @@ Type `f1b2bc24d01121dd0008d0bc0663dc09` stores a face collection. After the cont
 Type `ccb59f50d1114f6b0008a1ba32a3dc09` stores a face item. After the content header it stores a type-2 `u32` index-reference list. An empty list selects no face and ends the record without a trailer. A nonempty list is followed by `terminal_value:i32 = -1`, then the record ends. The index values are native topology selectors, not one-based PmDc record references.
 
 Type `7a25f2efd11105af000847b00524dc09` stores a selection list. After the content header it stores one type-2 reference list and ends. Each non-null member selects a record in the same PmDc segment.
+
+Type `9f8f2a40d21120e66000aaabc8433cb0` stores a Boolean with an empty name. It starts with the versioned content header of section 12, including its stamps. The header is followed by `name_count:u32 = 0`, `name_value:u32 = 0`, and `value:u8`. The value is 0 or 1 and ends the record.
 
 Type `dfd51dbbd1116e72000817bd0663dc09` adds a counted UTF-16LE name and three u32 values: the name value, nominal value, and model value. Type `474d8790d011f8d10008cabc0663dc09` adds one body reference. Type `3b2477a4d1118f96000826bd0663dc09` adds an entity-link reference and one u8 value. Type `2c9256724d4d6d709427fd964d84df16` adds transform, point, and value references.
 
@@ -549,6 +553,24 @@ Sweep property slots are:
 | 9 | Sweep orientation enumeration |
 | 10 | Sweep scaling enumeration |
 | 15 | Result object collection |
+
+### 13.3 Split property references
+
+Feature-label class `baa87183d311347bc000e39545df724f` identifies a split feature. For each non-null property reference, the zero-based slot determines the record type:
+
+Slot | Record type
+--- | ---
+0 | `1990e1b8d311467bc000e39545df724f` enumeration
+1 | `284d8790d011f8d10008cabc0663dc09` Boolean
+3 | `1790e1b8d311467bc000e39545df724f` enumeration
+4 | `91739422d11107cf000835bd0663dc09` boundary patch
+5 | `42df52ced011d0d20008ccbc0663dc09` work plane
+6 | `9f8f2a40d21120e66000aaabc8433cb0` Boolean
+7 | `83aadad54f4375dacd1003b260a8a422` body selector
+8 | `474d8790d011f8d10008cabc0663dc09` surface-body wrapper
+9 | `ae70680ed14a1e86d76248b03c2a96e1` object collection
+
+The slot-3 enumeration selects the tool reference. Value 2 selects the work plane in slot 5. Value 3 selects the surface-body wrapper in slot 8. The unused tool reference is null. The work-plane frame follows the grammar and units in section 13.
 
 ## 14. Document kind
 
