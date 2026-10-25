@@ -588,6 +588,12 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
                     add_list(links);
                 }
             }
+            PmDcSketchEntityKind::Spline { data } => {
+                add_list(&data.points);
+                for list in &data.auxiliary {
+                    add_list(list);
+                }
+            }
             PmDcSketchEntityKind::Line {
                 points, auxiliary, ..
             } => {
@@ -2646,6 +2652,9 @@ pub(crate) fn sketch_constraint_references(constraint: &PmDcSketchConstraint) ->
         | PmDcSketchConstraintKind::VerticalAlignment { first, second }
         | PmDcSketchConstraintKind::Collinear { first, second, .. } => {
             references.extend([first.index(), second.index()]);
+        }
+        PmDcSketchConstraintKind::SplinePoint { spline, point } => {
+            references.extend([spline.index(), point.index()]);
         }
         PmDcSketchConstraintKind::Midpoint { entity, point, .. } => {
             references.extend([entity.index(), point.index()]);
