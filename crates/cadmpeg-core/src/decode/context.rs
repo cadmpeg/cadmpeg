@@ -467,6 +467,28 @@ impl<'a> DecodeContext<'a> {
         Ok(())
     }
 
+    /// Move a value into fallible working heap storage.
+    ///
+    /// This does not charge retained output or consume an entity slot.
+    ///
+    /// # Errors
+    ///
+    /// Returns the caller's existing refusal, or records an allocation failure.
+    pub fn alloc_box_working<T>(
+        &self,
+        value: T,
+        operation: &'static str,
+    ) -> Result<Box<T>, CodecError> {
+        if let Some(refusal) = self.resource_refusal() {
+            return Err(refusal.into());
+        }
+        if size_of::<T>() == 0 {
+            return Ok(Box::new(value));
+        }
+        trybox::or_drop(value)
+            .map_err(|_| self.allocation_failed(u64_from_index(size_of::<T>()), operation))
+    }
+
     /// Reserves temporary UTF-8 string storage without charging retained output.
     pub fn reserve_text_working(
         &self,
@@ -907,6 +929,7 @@ impl<'a> ExpandWriter<'_, 'a> {
 #[cfg(test)]
 mod tests {
     mod source_end;
+    mod working_box;
     mod working_storage;
     mod working_text;
 
