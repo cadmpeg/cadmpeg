@@ -192,6 +192,7 @@ fn empty_data() -> super::NativeData {
         pm_graphics_style_collections: Vec::new(),
         pm_graphics_primary_color_styles: Vec::new(),
         face_native_keys: Vec::new(),
+        body_native_keys: Vec::new(),
         presentation_record_issues: Vec::new(),
         pm_dc_parameters: Vec::new(),
         pm_dc_expressions: Vec::new(),

@@ -76,7 +76,7 @@ fn decode_container<'a>(
     } else {
         ctx.depth()
     };
-    let unresolved = if delivered == DecodeDepth::Full {
+    let mut unresolved = if delivered == DecodeDepth::Full {
         project_design(
             ctx,
             &mut ir,
@@ -561,6 +561,16 @@ fn decode_container<'a>(
         _ => None,
     };
     let kernel_brep = kernel_brep.unwrap_or_else(AsmBrep::default);
+    let body_keys = if delivered == DecodeDepth::Full
+        && feature_inventory.labels.iter().any(|label| {
+            crate::feature::FeatureFamily::Base
+                .class_ids()
+                .contains(&label.class_id())
+        }) {
+        kernel_brep.body_native_keys.clone()
+    } else {
+        Vec::new()
+    };
     let face_keys = kernel_brep
         .face_native_keys
         .iter()
@@ -574,6 +584,22 @@ fn decode_container<'a>(
             annotation_records: kernel_annotations,
         },
     ) = transfer_into_ir(ctx, &mut ir, "inventor", kernel_brep)?;
+    if !body_keys.is_empty() {
+        let transferred = crate::feature::base::project(
+            ctx,
+            &container.rse,
+            &feature_inventory,
+            &design_inventory,
+            &body_keys,
+            &mut ir.model,
+        )?;
+        unresolved.features = unresolved
+            .features
+            .checked_sub(transferred)
+            .ok_or_else(|| {
+                CodecError::malformed("Inventor Base projection exceeds unresolved feature count")
+            })?;
+    }
     ir.set_native_unknowns(ctx, "inventor", &[])?;
     let geometry_transferred =
         !(ir.model.surfaces.is_empty() && ir.model.points.is_empty() && ir.model.faces.is_empty());

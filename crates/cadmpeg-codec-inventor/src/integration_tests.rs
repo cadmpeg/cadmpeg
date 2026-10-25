@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+mod base;
+
 use cadmpeg_container::compound::CompoundSnapshot;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
