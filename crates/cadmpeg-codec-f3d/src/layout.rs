@@ -2764,6 +2764,8 @@ pub(crate) mod coil_compact_scope_discriminators {
     pub(crate) const OPERATION: usize = 20;
     /// Offset of `clockwise` (`u8`). Spec §3.1.
     pub(crate) const CLOCKWISE: usize = 24;
+    /// Offset of `left_hand` (`u8`). Spec §3.1.
+    pub(crate) const LEFT_HAND: usize = 25;
     /// Offset of `structural_constant` (`u32`, little-endian). Spec §3.1.
     pub(crate) const STRUCTURAL_CONSTANT: usize = 26;
     /// Offset of `extent` (`u32`, little-endian). Spec §3.1.
