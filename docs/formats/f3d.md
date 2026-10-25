@@ -325,6 +325,8 @@ Reference resolution is member-local and recursive. Each member's `RedirectionsS
 
 Both `.smb` and `.smbh` entries carry an ASM `BinaryFile` token stream. The stream encoding — binary header, record framing, unit rules, topology records, geometry carriers, and the construction-history partition — is specified in [`asm.md`](asm.md).
 
+An active face identity includes its BREP member namespace. A historical face identity includes its feature-input state and belongs to that state's emitted face set. A stable ASM slot number alone does not join a face across BREP members or history states. A native selection identity remains distinct from either neutral identity.
+
 The Design body-map carriers classify binary BREP entries by complete basename. Each basename occurs in exactly one carrier record and resolves to exactly one archive entry. In each Design stream, one or more modern body-map records select the model `.smbh` set. When that stream has no modern map record, its snapshot body-map records select the model `.smb` set. A profile that registers neither body-map family has no Design-level partition; every binary BREP in the manifest-selected Design asset contributes to the model. History streams are selected independently by the header flag ([`asm.md`](asm.md) §1) and every selected history graph is decoded.
 
 ---
