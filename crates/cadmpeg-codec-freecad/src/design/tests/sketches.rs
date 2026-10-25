@@ -862,6 +862,166 @@ pub(crate) fn transfers_bounded_rational_sketch_nurbs() {
 }
 
 #[test]
+fn symmetry_uses_the_third_operand_kind_and_position() {
+    use cadmpeg_ir::sketches::{SketchConstraintDefinitionInput as Constraint, SketchLocus};
+
+    for (name, operands, expected) in [
+        (
+            "root point",
+            r#"First="0" FirstPos="1" Second="2" SecondPos="1" Third="-1" ThirdPos="1""#,
+            "root",
+        ),
+        (
+            "circle center",
+            r#"First="0" FirstPos="1" Second="2" SecondPos="1" Third="5" ThirdPos="3""#,
+            "center",
+        ),
+        (
+            "line midpoint",
+            r#"First="0" FirstPos="1" Second="2" SecondPos="1" Third="1" ThirdPos="3""#,
+            "native",
+        ),
+        (
+            "point entity",
+            r#"First="0" FirstPos="1" Second="2" SecondPos="1" Third="4" ThirdPos="0""#,
+            "point",
+        ),
+        (
+            "whole line",
+            r#"First="0" FirstPos="1" Second="2" SecondPos="1" Third="1" ThirdPos="0""#,
+            "line",
+        ),
+        (
+            "vertical axis",
+            r#"First="0" FirstPos="1" Second="2" SecondPos="1" Third="-2" ThirdPos="0""#,
+            "vertical",
+        ),
+        (
+            "whole circle",
+            r#"First="0" FirstPos="1" Second="2" SecondPos="1" Third="5" ThirdPos="0""#,
+            "native",
+        ),
+        (
+            "root point element lists",
+            r#"ElementIds="0 2 -1" ElementPositions="1 1 1""#,
+            "root",
+        ),
+    ] {
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Sketch"><Properties Count="2">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="6">
+<Geometry type="Part::GeomLineSegment"><LineSegment StartX="-2" StartY="-1" EndX="2" EndY="-1"/></Geometry>
+<Geometry type="Part::GeomLineSegment"><LineSegment StartX="2" StartY="-1" EndX="2" EndY="1"/></Geometry>
+<Geometry type="Part::GeomLineSegment"><LineSegment StartX="2" StartY="1" EndX="-2" EndY="1"/></Geometry>
+<Geometry type="Part::GeomLineSegment"><LineSegment StartX="-2" StartY="1" EndX="-2" EndY="-1"/></Geometry>
+<Geometry type="Part::GeomPoint"><GeomPoint X="0" Y="0" Z="0"/></Geometry>
+<Geometry type="Part::GeomCircle"><Circle CenterX="0" CenterY="0" Radius="5"/></Geometry>
+</GeometryList></Property>
+<Property name="Constraints" type="Sketcher::PropertyConstraintList"><ConstraintList count="1">
+<Constrain Type="14" {operands}/>
+</ConstraintList></Property>
+</Properties></Object></ObjectData></Document>"#
+        );
+        let decoded = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(&document)),
+                &DecodeOptions::default(),
+            )
+            .expect(name);
+        let model = &decoded.ir().model;
+        assert_eq!(model.sketch_constraints.len(), 1, "{name}");
+        let definition = model.sketch_constraints[0].definition.kind();
+        match expected {
+            "root" | "center" | "point" => {
+                let Constraint::PointSymmetric {
+                    first,
+                    second,
+                    center,
+                } = definition
+                else {
+                    panic!("{name}: expected point symmetry");
+                };
+                assert_eq!(
+                    *first,
+                    SketchLocus::Start(model.sketch_entities[0].id().clone())
+                );
+                assert_eq!(
+                    *second,
+                    SketchLocus::Start(model.sketch_entities[2].id().clone())
+                );
+                let expected_center = match expected {
+                    "root" => SketchLocus::Entity(
+                        model
+                            .sketch_entities
+                            .iter()
+                            .find(|entity| entity.id().as_str().ends_with(":reference-root-point"))
+                            .expect("root point")
+                            .id()
+                            .clone(),
+                    ),
+                    "center" => SketchLocus::Center(model.sketch_entities[5].id().clone()),
+                    _ => SketchLocus::Entity(model.sketch_entities[4].id().clone()),
+                };
+                assert_eq!(*center, expected_center, "{name}");
+            }
+            "line" | "vertical" => {
+                let Constraint::Symmetric {
+                    first,
+                    second,
+                    axis,
+                } = definition
+                else {
+                    panic!("{name}: expected mirror symmetry");
+                };
+                assert_eq!(
+                    *first,
+                    SketchLocus::Start(model.sketch_entities[0].id().clone())
+                );
+                assert_eq!(
+                    *second,
+                    SketchLocus::Start(model.sketch_entities[2].id().clone())
+                );
+                let expected_axis = if expected == "line" {
+                    model.sketch_entities[1].id()
+                } else {
+                    model
+                        .sketch_entities
+                        .iter()
+                        .find(|entity| entity.id().as_str().ends_with(":reference-vertical-axis"))
+                        .expect("vertical axis")
+                        .id()
+                };
+                assert_eq!(axis, expected_axis, "{name}");
+            }
+            _ => assert!(matches!(definition, Constraint::Native { .. }), "{name}"),
+        }
+        let native_losses = decoded
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| {
+                loss.code
+                    == crate::loss::FreecadLossCode::SketchNativeConstraint
+                        .note("")
+                        .code
+            })
+            .collect::<Vec<_>>();
+        if expected == "native" {
+            assert_eq!(native_losses.len(), 1);
+            assert_eq!(
+                native_losses[0].severity,
+                cadmpeg_ir::report::Severity::Blocking
+            );
+        } else {
+            assert!(native_losses.is_empty(), "{name}");
+            assert_valid_document(decoded.ir());
+        }
+    }
+}
+
+#[test]
 pub(crate) fn neutralizes_symmetric_locus_distance_and_point_on_object_constraints() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2"><Object type="Sketcher::SketchObject" name="Sketch" id="1"/><Object type="Part::Feature" name="Source" id="2"/></Objects>

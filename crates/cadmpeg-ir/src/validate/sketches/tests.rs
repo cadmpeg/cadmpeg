@@ -632,6 +632,145 @@ fn midpoint_and_fixed_angle_constraints_refuse_an_entity_of_another_kind() {
 }
 
 #[test]
+fn point_symmetry_loci_must_match_their_entities() {
+    use crate::sketches::{
+        Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintDefinitionInput,
+        SketchConstraintId, SketchEntity, SketchEntityId, SketchId, SketchLocus,
+    };
+
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    let sketch = SketchId::mint("synthetic:test:sketch#point-symmetry").unwrap();
+    ir.model.sketches.push(Sketch {
+        id: sketch.clone(),
+        name: None,
+        configuration: None,
+        visible: None,
+        placement: crate::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: crate::sketches::SketchProfiles::try_from(Vec::new()).unwrap(),
+        native_ref: None,
+    });
+    let entity =
+        |name: &str| SketchEntityId::mint(format!("synthetic:test:entity#{name}")).unwrap();
+    for (name, definition) in [
+        (
+            "point",
+            SketchGeometryDefinition::Point {
+                position: Point2::new(0.0, 0.0),
+            },
+        ),
+        (
+            "first",
+            SketchGeometryDefinition::Line {
+                start: Point2::new(-3.0, -1.0),
+                end: Point2::new(-1.0, -1.0),
+            },
+        ),
+        (
+            "second",
+            SketchGeometryDefinition::Line {
+                start: Point2::new(3.0, 1.0),
+                end: Point2::new(1.0, 1.0),
+            },
+        ),
+        (
+            "circle",
+            SketchGeometryDefinition::Circle {
+                center: Point2::new(0.0, 0.0),
+                radius: Length::new(5.0).unwrap(),
+            },
+        ),
+    ] {
+        ir.model.sketch_entities.push(SketchEntity::new(
+            entity(name),
+            sketch.clone(),
+            SketchGeometry::try_from(definition).unwrap(),
+        ));
+    }
+    let symmetry =
+        |first: SketchLocus, center: SketchLocus| SketchConstraintDefinitionInput::PointSymmetric {
+            first,
+            second: SketchLocus::Start(entity("second")),
+            center,
+        };
+    let cases = [
+        (
+            "point-center",
+            symmetry(
+                SketchLocus::Start(entity("first")),
+                SketchLocus::Entity(entity("point")),
+            ),
+            false,
+        ),
+        (
+            "circle-center",
+            symmetry(
+                SketchLocus::Start(entity("first")),
+                SketchLocus::Center(entity("circle")),
+            ),
+            false,
+        ),
+        (
+            "line-center",
+            symmetry(
+                SketchLocus::Start(entity("first")),
+                SketchLocus::Center(entity("first")),
+            ),
+            true,
+        ),
+        (
+            "circle-start",
+            symmetry(
+                SketchLocus::Start(entity("circle")),
+                SketchLocus::Entity(entity("point")),
+            ),
+            true,
+        ),
+    ];
+    for (name, definition, _) in &cases {
+        ir.model.sketch_constraints.push(SketchConstraint {
+            id: SketchConstraintId::mint(format!("synthetic:test:constraint#{name}")).unwrap(),
+            sketch: sketch.clone(),
+            definition: SketchConstraintDefinition::try_from(definition.clone()).unwrap(),
+            name: None,
+            driving: None,
+            active: None,
+            virtual_space: None,
+            visible: None,
+            orientation: None,
+            label_distance: None,
+            label_position: None,
+            metadata: None,
+            native_ref: None,
+        });
+    }
+    ir.finalize();
+
+    let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
+    for (name, _, refused) in cases {
+        let id = format!("synthetic:test:constraint#{name}");
+        let findings = report
+            .findings
+            .iter()
+            .filter(|finding| {
+                finding.entity.as_deref() == Some(id.as_str())
+                    && finding.message == "sketch constraint locus is incompatible with its entity"
+            })
+            .collect::<Vec<_>>();
+        if refused {
+            assert_eq!(findings.len(), 1, "{name}: {findings:?}");
+            assert_eq!(findings[0].check, Check::GeometricConsistency, "{name}");
+        } else {
+            assert!(findings.is_empty(), "{name}: {findings:?}");
+        }
+    }
+}
+
+#[test]
 fn sketch_constraint_native_ref_must_resolve() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     let id =

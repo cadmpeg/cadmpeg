@@ -1312,7 +1312,9 @@ pub(crate) fn decode_plane_support_local_system(
     cache: &ScalarCache,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<(FiniteVector<12>, PlaneSupportFrameLayout)>, CodecError> {
-    if let Some((values, cursor)) = decode_diagonal_z_plane_support(body, cache) {
+    if let Some((values, cursor)) = decode_compact_y_plane_support(body, cache)
+        .or_else(|| decode_diagonal_z_plane_support(body, cache))
+    {
         if cursor != body.len() {
             return Ok(None);
         }
@@ -1860,7 +1862,7 @@ fn decode_plane_support_special_prefix(
     if let Some(frame) = decode_inline_plane_support_image(body, cache) {
         return Some(frame);
     }
-    if let Some(frame) = decode_normal_x_plane_support(body, cache) {
+    if let Some(frame) = decode_compact_x_plane_support(body, cache) {
         return Some(frame);
     }
     if let Some(frame) = decode_compact_axis_plane_support(body, cache) {
@@ -1895,7 +1897,7 @@ fn decode_diagonal_z_plane_support(body: &[u8], cache: &ScalarCache) -> Option<(
     };
     let parameter_sign = sign(a)?;
     sign(b)?;
-    sign(c)?;
+    let normal_sign = sign(c)?;
     let (origin, cursor) = decode_plane_support_origin(body, 7, cache)?;
     Some((
         [
@@ -1907,7 +1909,7 @@ fn decode_diagonal_z_plane_support(body: &[u8], cache: &ScalarCache) -> Option<(
             0.0,
             0.0,
             0.0,
-            1.0,
+            normal_sign,
             origin[0],
             origin[1],
             origin[2],
@@ -1916,24 +1918,34 @@ fn decode_diagonal_z_plane_support(body: &[u8], cache: &ScalarCache) -> Option<(
     ))
 }
 
-/// Expand a compact axis image into the support triples used by the plane-row
-/// solver. The inline image contains two in-plane directions followed by the
-/// model normal; plane support stores the second in-plane direction in its
-/// third triple with a zero rank triple between them.
 fn decode_inline_plane_support_image(
     body: &[u8],
     cache: &ScalarCache,
 ) -> Option<([f64; 12], usize)> {
-    const IMAGE: &[u8] = &[0x18, 0xe4, 0x0f, 0x18, 0x0f, 0x18, 0x10, 0x18, 0xe4];
-    // The older compact support prefix also matches one of the generic image
-    // templates. It has its own support-frame semantics and must reach the
-    // legacy decoder below instead of being replayed as an inline frame.
-    body.starts_with(IMAGE).then_some(())?;
-    let prefix_end = IMAGE.len();
+    let [0x18, 0xe4, a, 0x18, 0x0f, 0x18, c, 0x18, 0xe4] = *body.get(..9)? else {
+        return None;
+    };
+    let parameter_sign = match (a, c) {
+        (0x0f, 0x10) => -1.0,
+        (0x10, 0x0f) => 1.0,
+        _ => return None,
+    };
+    let prefix_end = 9;
     let (origin, cursor) = decode_plane_support_origin(body, prefix_end, cache)?;
     Some((
         [
-            0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, origin[0], origin[1], origin[2],
+            0.0,
+            0.0,
+            parameter_sign,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            origin[0],
+            origin[1],
+            origin[2],
         ],
         cursor,
     ))
@@ -1995,19 +2007,42 @@ fn decode_positional_cylinder_support_coordinate(
     .or_else(|| decode_in_row_lane(body, cursor, cache))
 }
 
-const NORMAL_X_PLANE_SUPPORT_PREFIXES: [&[u8]; 2] = [
-    &[0x0f, 0x18, 0xe6, 0x0f, 0x18, 0x10, 0x18],
-    &[0x18, 0xe4, 0x10, 0xe4, 0x18, 0xe5, 0x0f, 0x18],
-];
-
-fn decode_normal_x_plane_support(body: &[u8], cache: &ScalarCache) -> Option<([f64; 12], usize)> {
-    let prefix = NORMAL_X_PLANE_SUPPORT_PREFIXES
-        .into_iter()
-        .find(|prefix| body.starts_with(prefix))?;
-    let (origin, cursor) = decode_plane_support_origin(body, prefix.len(), cache)?;
+fn decode_compact_y_plane_support(body: &[u8], cache: &ScalarCache) -> Option<([f64; 12], usize)> {
+    let [a, 0x18, 0xe6, b, 0x18, c, 0x18] = *body.get(..7)? else {
+        return None;
+    };
+    let sign = |token| match token {
+        0x0f => Some(1.0),
+        0x10 => Some(-1.0),
+        _ => None,
+    };
+    let parameter = sign(a)?;
+    let normal = sign(b)?;
+    (normal == -parameter * sign(c)?).then_some(())?;
+    let (origin, cursor) = decode_plane_support_origin(body, 7, cache)?;
     Some((
         [
-            0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, origin[0], origin[1], origin[2],
+            parameter, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, normal, 0.0, origin[0], origin[1], origin[2],
+        ],
+        cursor,
+    ))
+}
+
+fn decode_compact_x_plane_support(body: &[u8], cache: &ScalarCache) -> Option<([f64; 12], usize)> {
+    let [0x18, 0xe4, a, b, 0x18, 0xe5, c, 0x18] = *body.get(..8)? else {
+        return None;
+    };
+    let (first_y, second_z) = match (a, b, c) {
+        (0x0f, 0xe4, 0x0f) => (1.0, 1.0),
+        (0x10, 0xe4, 0x0f) => (-1.0, 1.0),
+        (0x10, 0x0f, 0x10) => (1.0, -1.0),
+        (0x0f, 0x10, 0x10) => (-1.0, -1.0),
+        _ => return None,
+    };
+    let (origin, cursor) = decode_plane_support_origin(body, 8, cache)?;
+    Some((
+        [
+            0.0, first_y, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, second_z, origin[0], origin[1], origin[2],
         ],
         cursor,
     ))
@@ -2405,10 +2440,17 @@ mod tests {
         decode_two_chart_first_coordinate, decode_two_chart_second_coordinate, double_xar_tables,
         plane_support_layout, valid_equal_scale_orthogonal_directions, CompactFrameAxes,
         DoubleXarSlot, InlineNonPlaneLocalSystemPrefix, PlaneSupportFrameLayout, ScalarCache,
-        NORMAL_X_PLANE_SUPPORT_PREFIXES, POSITIONAL_SLOT_TABLE_WIDTH,
+        POSITIONAL_SLOT_TABLE_WIDTH,
     };
     use cadmpeg_ir::units::FiniteVector;
     use std::collections::BTreeMap;
+
+    const NORMAL_X_PLANE_SUPPORT_PREFIXES: [[u8; 8]; 4] = [
+        [0x18, 0xe4, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x18],
+        [0x18, 0xe4, 0x10, 0xe4, 0x18, 0xe5, 0x0f, 0x18],
+        [0x18, 0xe4, 0x10, 0x0f, 0x18, 0xe5, 0x10, 0x18],
+        [0x18, 0xe4, 0x0f, 0x10, 0x18, 0xe5, 0x10, 0x18],
+    ];
 
     fn with_depth_limit<T>(
         bytes: &[u8],
@@ -2940,7 +2982,7 @@ mod tests {
     }
 
     #[test]
-    fn plane_support_reuses_the_compact_x_axis_image_as_in_plane_supports() {
+    fn compact_x_plane_support_preserves_parameter_and_normal_signs() {
         let mut body = vec![0x18, 0xe4, 0x0f, 0x18, 0x0f, 0x18, 0x10, 0x18, 0xe4];
         body.extend([0x18, 0x18, 0x18]);
 
@@ -2954,9 +2996,16 @@ mod tests {
             .expect("decode the plane support local system")
             .map(|(values, layout)| (values.get(), layout)),
             Some((
-                [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0,],
+                [0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
                 PlaneSupportFrameLayout::SupportTriples,
             ))
+        );
+
+        body[2] = 0x10;
+        body[6] = 0x0f;
+        assert_eq!(
+            decode_plane_support_local_system_slots(&body, &ScalarCache::default()),
+            Some([0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0])
         );
     }
 
@@ -3189,7 +3238,7 @@ mod tests {
 
         assert_eq!(
             decode_plane_support_local_system_slots(&body, &cache),
-            Some([0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.5, 0.0, 1.0])
+            Some([0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.5, 0.0, 1.0])
         );
         assert_eq!(
             decode_positional_plane_local_system_slots(&body, &cache).map(|slots| slots.get()[9]),
@@ -3209,7 +3258,7 @@ mod tests {
         assert_eq!(layout, PlaneSupportFrameLayout::DirectNormalTriples);
         assert_eq!(
             slots,
-            [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]
+            [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0]
         );
     }
 
@@ -3339,14 +3388,60 @@ mod tests {
     }
 
     #[test]
-    fn normal_x_plane_support_prefixes_decode_rank_and_origin() {
-        let origin = [0x2f, 0x02, 0x00, 0x2a, 0xe8, 0x00, 0x2f, 0x26, 0x00];
+    fn normal_y_plane_support_has_a_signed_direct_parameter_normal_frame() {
+        for (a, b, c, parameter, normal) in [
+            (0x0f, 0x0f, 0x10, 1.0, 1.0),
+            (0x10, 0x0f, 0x0f, -1.0, 1.0),
+            (0x0f, 0x10, 0x0f, 1.0, -1.0),
+            (0x10, 0x10, 0x10, -1.0, -1.0),
+        ] {
+            let prefix = [a, 0x18, 0xe6, b, 0x18, c, 0x18];
+            let origin = [0x2f, 0x02, 0x00, 0x2a, 0xe8, 0x00, 0x2f, 0x26, 0x00];
+            let body = [prefix.as_slice(), &origin].concat();
+            crate::decode::with_service_context(|ctx| {
+                let (slots, layout) = decode_plane_support_local_system(
+                    ctx,
+                    &body,
+                    &ScalarCache::default(),
+                    &mut Vec::new(),
+                )?
+                .expect("complete frame");
+                assert_eq!(layout, PlaneSupportFrameLayout::DirectNormalTriples);
+                assert_eq!(
+                    slots.get(),
+                    [parameter, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, normal, 0.0, 2.25, 0.75, 11.0,]
+                );
+                for invalid in [
+                    &body[..body.len() - 1],
+                    &[body.as_slice(), &[0x18]].concat(),
+                ] {
+                    assert!(decode_plane_support_local_system(
+                        ctx,
+                        invalid,
+                        &ScalarCache::default(),
+                        &mut Vec::new(),
+                    )?
+                    .is_none());
+                }
+                Ok::<(), cadmpeg_core::CodecError>(())
+            })
+            .expect("bounded frame decode");
+        }
+    }
 
-        for prefix in NORMAL_X_PLANE_SUPPORT_PREFIXES {
-            let body = [prefix, &origin].concat();
+    #[test]
+    fn compact_x_plane_support_preserves_both_support_signs() {
+        let origin = [0x2f, 0x02, 0x00, 0x2a, 0xe8, 0x00, 0x2f, 0x26, 0x00];
+        for (prefix, (first_y, second_z)) in NORMAL_X_PLANE_SUPPORT_PREFIXES.into_iter().zip([
+            (1.0, 1.0),
+            (-1.0, 1.0),
+            (1.0, -1.0),
+            (-1.0, -1.0),
+        ]) {
+            let body = [prefix.as_slice(), &origin].concat();
             assert_eq!(
                 decode_plane_support_local_system_slots(&body, &ScalarCache::default()),
-                Some([0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.25, 0.75, 11.0])
+                Some([0.0, first_y, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, second_z, 2.25, 0.75, 11.0])
             );
         }
     }

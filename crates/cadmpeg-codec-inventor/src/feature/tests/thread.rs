@@ -245,6 +245,7 @@ fn thread_projects_native_faces_without_size_or_result_bodies() -> TestResult {
     };
     let expected_face = properties[0].id();
     let inventory = FeatureInventory {
+        edge_names: std::collections::HashMap::new(),
         record_types: std::collections::HashMap::new(),
         features: vec![source],
         pattern_features: Vec::new(),
