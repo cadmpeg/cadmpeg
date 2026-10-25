@@ -67,6 +67,13 @@ def main():
         for row in files
     ):
         raise RuntimeError("native write equivalence failed; see write-report.json")
+    for name in ("restoration_two_boxes", "parametric_box", "filleted_box"):
+        source = reference / f"{name}.FCStd"
+        rewritten = output / f"{name}.FCStd"
+        run([args.cadmpeg.resolve(), "measure", source, "--json", "--report",
+             work / f"{name}.measure.json", "--force"], f"measure-{name}")
+        run([args.cadmpeg.resolve(), "diff", source, rewritten, "--geometry", "--report",
+             work / f"{name}.geometry-diff.json", "--force"], f"diff-{name}")
     for name in ("placed_mesh", "nested_mesh", "linked_mesh"):
         source = reference / f"{name}.FCStd"
         run([args.cadmpeg.resolve(), "check", source], f"check-{name}")

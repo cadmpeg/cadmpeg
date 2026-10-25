@@ -479,16 +479,16 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 267.
+Production `MAX_*` constants: 264.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 33    |
 | 2    | Per-input bound            | 70    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 136   |
+| 4    | Local work cap             | 133   |
 | N    | Not a decode bound         | 28    |
-|      | Total                      | 267   |
+|      | Total                      | 264   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -496,7 +496,7 @@ The six `ResourceLimits` fields are the session ceilings and are not
 By crate: `cadmpeg-core` 3, `cadmpeg-ir` 12, `cadmpeg-measure` 20, `cadmpeg-asm` 4,
 `cadmpeg-protein` 3, `cadmpeg` 2, `cadmpeg-codec-step` 12,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 3,
-`cadmpeg-codec-freecad` 15, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 18,
+`cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 18,
 `cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 17,
 `cadmpeg-codec-catia` 57, and `cadmpeg-codec-pvz` 3.
 
