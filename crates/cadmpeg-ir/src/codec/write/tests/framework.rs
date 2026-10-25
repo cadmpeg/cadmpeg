@@ -123,3 +123,81 @@ fn neutral_omission_lists_every_original_id_in_order_after_the_count() {
         .iter()
         .all(|edge| !losses[0].message.contains(edge.identity())));
 }
+
+struct SourceReuseProbe {
+    write_path: crate::codec::write::WritePath,
+}
+
+impl EncoderBackend for SourceReuseProbe {
+    const FORMAT: FormatId = FormatId::new("test");
+    const REQUEST: DecodeDepth = DecodeDepth::Full;
+    const REUSES_SOURCE: bool = true;
+    type Target = DialectFree;
+    const TARGET: DialectFree = DialectFree;
+
+    fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
+        let mut body = ExportBody::synthesized(vec![42], input.ir, ArenaCoverage::Complete);
+        body.write_path = self.write_path.clone();
+        Ok(body)
+    }
+}
+
+fn source_reuse_paths() -> [crate::codec::write::WritePath; 2] {
+    use crate::codec::write::{PatchConsumption, WritePath};
+    [
+        WritePath::VerbatimReplay,
+        WritePath::Patched {
+            consumption: PatchConsumption::Replayed,
+        },
+    ]
+}
+
+#[test]
+fn source_reuse_with_supplied_fidelity_keeps_the_computed_path_and_payload() {
+    let ir = CadIr::empty();
+    let fidelity = SourceFidelity::default();
+    for write_path in source_reuse_paths() {
+        let expected = write_path.clone().into_report(true);
+        let plan = SourceReuseProbe { write_path }
+            .plan(
+                EncodeInput::new(&ir, Some(&fidelity)),
+                TargetRequest::Inherit,
+            )
+            .expect("source fidelity satisfies the computed reuse invariant");
+        assert_eq!(plan.report().write_path(), &expected);
+        let mut output = Vec::new();
+        plan.write_to(&mut output).unwrap();
+        assert_eq!(output, [42]);
+    }
+}
+
+#[test]
+fn source_reuse_without_offered_fidelity_is_a_debug_invariant_and_release_continues() {
+    let ir = CadIr::empty();
+    for write_path in source_reuse_paths() {
+        let expected = write_path.clone().into_report(false);
+        let backend = SourceReuseProbe { write_path };
+        let result = std::panic::catch_unwind(|| {
+            backend.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        });
+        if cfg!(debug_assertions) {
+            let payload = result.expect_err("a computed reuse invariant fails in debug builds");
+            let message = payload
+                .downcast_ref::<String>()
+                .map(String::as_str)
+                .or_else(|| payload.downcast_ref::<&str>().copied())
+                .expect("the invariant has a message");
+            assert!(
+                message.contains("encoder test reported source-byte reuse without source fidelity")
+            );
+        } else {
+            let plan = result
+                .expect("a computed invariant does not panic in release builds")
+                .expect("a computed invariant does not construct an encode error");
+            assert_eq!(plan.report().write_path(), &expected);
+            let mut output = Vec::new();
+            plan.write_to(&mut output).unwrap();
+            assert_eq!(output, [42]);
+        }
+    }
+}

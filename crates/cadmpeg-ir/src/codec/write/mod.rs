@@ -164,14 +164,12 @@ impl<E: EncoderBackend> Encoder for E {
                 classes: unrepresented,
             });
         }
-        if backend_input.fidelity.is_none()
-            && !matches!(body.write_path, WritePath::Synthesized { .. })
-        {
-            return Err(CodecError::InvalidInput(format!(
-                "encoder {} reported source-byte reuse without source fidelity",
-                E::FORMAT.as_str(),
-            )));
-        }
+        debug_assert!(
+            backend_input.fidelity.is_some()
+                || matches!(body.write_path, WritePath::Synthesized { .. }),
+            "encoder {} reported source-byte reuse without source fidelity",
+            E::FORMAT.as_str(),
+        );
         let ExportBody {
             bytes,
             census,
