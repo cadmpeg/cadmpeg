@@ -13,6 +13,7 @@ import Part
 
 COORDINATE_TOLERANCE = 1e-5
 GEOMETRY_RELATIVE_TOLERANCE = 1e-7
+GEOMETRY_ABSOLUTE_TOLERANCE = 1e-7
 WORK = Path(os.environ["CADMPEG_FCSTD_WORK_DIR"])
 LOCAL_TRIANGLE = (App.Vector(0, 0, 0), App.Vector(2, 0, 0), App.Vector(0, 3, 0))
 
@@ -128,7 +129,7 @@ def check_spline_domains():
                                (expected_length, edges[0]["length"])):
         if quantity["status"] != "measured" or not math.isclose(
             expected, quantity["value"], rel_tol=GEOMETRY_RELATIVE_TOLERANCE,
-            abs_tol=COORDINATE_TOLERANCE,
+            abs_tol=GEOMETRY_ABSOLUTE_TOLERANCE,
         ):
             raise ValueError("spline geometry differs from native measurement")
     return {"periodic_face_area": faces[0]["area"]["value"],
