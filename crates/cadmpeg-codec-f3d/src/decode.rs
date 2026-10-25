@@ -2799,6 +2799,7 @@ impl<'a> F3dDecodeSession<'a> {
                 body_bindings: &prereqs.design_body_bindings,
                 bodies: bodies_final.then_some(&bodies),
                 root_ordinal_start,
+                limits: self.ctx.policy().limits,
             },
         )?;
         self.ir.model.product_definitions.extend(local.definitions);
@@ -2819,11 +2820,15 @@ impl<'a> F3dDecodeSession<'a> {
             .occurrences
             .extend(unresolved_component_inserts);
         self.report.losses.extend(component_inserts.losses());
-        let joints = crate::design::assembly::project_assembly_joints(
+        let joints = crate::design::assembly::project_assembly_joints_with_paths(
             &prereqs.design_parameter_scopes,
             &prereqs.design_component_occurrences,
             &component_inserts,
             &prereqs.design_joint_motions,
+            &crate::design::components::paths::LocalOccurrencePaths::new(
+                &prereqs.design_component_occurrences,
+                &self.ir.model.occurrences,
+            ),
         );
         self.ir.model.assembly_joints = joints.joints;
         self.report.losses.extend(joints.losses);

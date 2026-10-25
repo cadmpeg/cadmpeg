@@ -99,6 +99,9 @@ pub enum Check {
     /// coedges form one closed traversal by vertex identity in another order,
     /// several closed traversals, or none.
     RingOrder,
+    /// A coedge does not list its pcurve uses in traversal order: they form
+    /// one chain from the coedge's end to its start.
+    PcurveOrder,
     /// A face's sense disagrees with the winding of its loops, or the faces
     /// of a body whose shells are closed disagree on its volume: a face's
     /// readings or a shell's volume sign contradict the body's orientation,
@@ -106,8 +109,8 @@ pub enum Check {
     /// tolerance.
     Orientation,
     /// The measurement findings pass ran out of its allowance before it
-    /// checked every face, edge and closed body for [`Self::RingOrder`] and
-    /// [`Self::Orientation`].
+    /// checked every face, edge and closed body for [`Self::RingOrder`],
+    /// [`Self::PcurveOrder`] and [`Self::Orientation`].
     MeasurementIncomplete,
 }
 
@@ -132,6 +135,7 @@ impl fmt::Display for Check {
             Self::GeometricConsistency => "geometric_consistency",
             Self::Counts => "counts",
             Self::RingOrder => "ring_order",
+            Self::PcurveOrder => "pcurve_order",
             Self::Orientation => "orientation",
             Self::MeasurementIncomplete => "measurement_incomplete",
         })
@@ -226,6 +230,7 @@ mod tests {
     fn measurement_checks_are_pinned() -> Result<(), serde_json::Error> {
         for (check, name) in [
             (Check::RingOrder, "ring_order"),
+            (Check::PcurveOrder, "pcurve_order"),
             (Check::Orientation, "orientation"),
             (Check::MeasurementIncomplete, "measurement_incomplete"),
         ] {

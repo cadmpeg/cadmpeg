@@ -146,20 +146,6 @@ name one component definition record can store different carrier GUIDs. The
 binding, the decoder keys the neutral component definition by the carrier GUID.
 Two carriers of one definition then project as two definitions.
 
-### DR-76. Nested local occurrence placement
-
-**Question.** How does a local occurrence whose owner entity is the root entity
-of a non-root component compose into the document frame?
-
-**Known.** `f3d.md` §3.1 "The component-record reference names the component
-definition record." gives the owner entity and the root-instance record. An
-occurrence that the root component contains is a child of the root occurrence,
-and its transform maps the component definition into the root component frame.
-
-**Need.** A reader must place every occurrence of a nested component in each
-occurrence of its containing component. The decoder does not place a nested
-occurrence and reports `assembly.local-occurrence-unplaced`.
-
 ### DR-77. Operation placements of identity-frame carriers
 
 **Question.** Does the `CopyPaste` source placement or the `R-Pattern` first
@@ -260,14 +246,6 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Need.** A writer must place each asset in the correct run. A document with two simulation studies, or with a simulation asset and no toolpath, shows which asset kinds the secondary run holds.
 
-### DR-90. Component of a sketch Geometry member in a multi-component Design
-
-**Question.** Which component numbers a sketch Geometry member ordinal when a Design stream names several components?
-
-**Known.** `f3d.md` §3.1 "The current sketch entity container" counts the ordinals within the component whose entity cluster holds the sketch entity. The validator selects that component as the naming space with the greatest component record index at or below the sketch entity suffix. In single-component Designs the ordinals increase with the sketch entity suffix. In some Designs with 10 to 362 component naming spaces, two sketches that this rule places in one component carry the same ordinal.
-
-**Need.** The entity cluster boundaries of each component, or the owner link from a sketch entity to its component, give the component of each sketch.
-
 ### DR-91. Opposed joint frame mate
 
 **Question.** For a joint whose frame-sense byte is `1` (opposed), how do the two operand frames' in-plane axes relate, and how does the alignment angle apply?
@@ -316,6 +294,16 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Need.** A writer must emit the selection kind, the origin, and the reference at offset 138 for a direction that does not come from a linear edge, and a reader must know whether a kind-`16` origin is a point of a planar face, an axis, or another entity.
 
+### DR-97. Freedom entry second value `0`
+
+**Question.** What does a freedom entry state when its second f64 is `0` rather than π?
+
+**Known.** `f3d.md` "Assembly operands" gives the freedom entry and its second f64. The one zero-lane entry seen is a word-`1` rotation entry whose joint record enables both limit flags, with a −58° minimum and a 0° maximum. Word-`1` rotation entries of unlimited joints and word-`1` translation entries of limited joints store π.
+
+**Need.** A reader must know whether the value bounds the freedom, so that it can tell whether a limited rotation's range is complete without it. Rotations saved with and without limits, and with ranges of different widths, would fix what it states.
+
+**Conflict.** Treating the value as a period or as a range bound states a meaning that one sample does not fix.
+
 ### DR-98. Persistent selection long-tail fields
 
 **Question.** What do the u32 and u64 fields in the fourteen-byte persistent selection tail select?
@@ -326,13 +314,21 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Conflict.** The tail values alone do not assign a new selected entity or an additional member.
 
+### DR-99. Sketch ordinal collection frame tail
+
+**Question.** What fields follow the counted sketch-member run in a Geometry ordinal collection frame?
+
+**Known.** `f3d.md` §3.1 "The current sketch entity container" defines the collection prefix, property block, counted local-reference run, and reciprocal sketch membership. The counted run does not consume the frame. The remaining bytes include nonzero values.
+
+**Need.** A complete field grammar must identify the tail boundaries and reference roles before a writer can construct the full collection frame.
+
 ## 2. External references
 
 ### DR-82. Other joint freedom codes and the limit flags
 
-**Question.** Which degrees of freedom do freedom codes other than `1`, `2`, and `8` name, what do the two joint-record limit flag bytes select, and in which unit is a translation limit stored?
+**Question.** Which degrees of freedom do freedom codes other than `1`, `2`, and `8` name, and what do the two joint-record limit flag bytes select, and does the 444-byte `As-built` form's `SlideRest` owner hold the joint-record rest value?
 
-**Known.** `f3d.md` "Assembly operands" gives the joint and motion records, the freedom entry, codes `1`, `2`, and `8`, and the limit lanes. Freedom codes `0`, `6`, and `7` also occur, alone and in pairs such as `2` with `7`, `0` with `8`, and `2` with `6` and `7`. Both flags are `1` on a joint with a minimum and a maximum.
+**Known.** `f3d.md` "Assembly operands" gives the joint and motion records, the freedom entry, codes `1`, `2`, and `8`, and the limit lanes. Freedom codes `0`, `6`, and `7` also occur, alone and in pairs such as `2` with `7`, `0` with `8`, and `2` with `6` and `7`. Both flags are `1` on a joint with a minimum and a maximum. A slide whose joint record stores −0.5 and 1.6 has `SlideMinimum` and `SlideMaximum` owners of −5 mm and 16 mm, so translation limits are in centimetres. The 444-byte `As-built` form adds `SlideMinimum`, `SlideMaximum`, and `SlideRest` owners at local ordinals four, five, and six. Where both a `SlideRest` owner and a joint-record rest value are stored, both are `0.0`, so the stored values do not show whether the owner holds the rest value. In both 444-byte scopes, its owner stores f64 `0.0` cm and the linked joint rest lane stores f64 `0.0` cm (`0.0` mm). The two value pairs agree; the name is not the only evidence. Both joint rest flags are `1`.
 
 **Need.** Cylindrical, pin-slot, planar, and ball joints combine freedoms. A joint with only one limit needs the flag that enables it.
 
