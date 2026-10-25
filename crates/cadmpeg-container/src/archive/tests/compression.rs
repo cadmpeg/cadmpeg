@@ -273,7 +273,7 @@ fn a_wrong_crc32_is_refused_on_every_method() {
 /// `cadmpeg_core`'s `open_zstd` admits a frame whose buffered output -- its window, or its
 /// declared content size when that is smaller -- fits the per-expansion allowance. For an
 /// archive this small the allowance is its 16 MiB base, so windowLog 24 decodes and one
-/// mantissa step past it is refused as `NotImplemented`, with no session refusal.
+/// mantissa step past it raises a Part resource refusal under #215 section4.5.
 ///
 /// The frames are built here rather than committed, and are deliberately minimal: a header
 /// declaring a window and one raw block. That makes this a boundary test of the ceiling and
@@ -325,12 +325,25 @@ fn the_zstandard_window_cap_is_the_policys_and_bites_on_both_sides() {
                 "windowLog {window_log} mantissa {mantissa}: got {got:?}"
             );
         } else {
-            assert!(
-                matches!(&got, Err(CodecError::NotImplemented(message))
-                    if message.ends_with("per-expansion allowance")),
-                "windowLog {window_log} mantissa {mantissa}: got {got:?}"
+            // #215 section4.5: per-expansion limits give up a part, not a session.
+            let Err(CodecError::ResourceLimit(refusal)) = got else {
+                panic!("windowLog {window_log} mantissa {mantissa}: got {got:?}");
+            };
+            assert_eq!(refusal.scope, cadmpeg_core::decode::LimitScope::Part);
+            assert_eq!(
+                refusal.dimension,
+                cadmpeg_core::decode::ResourceDimension::DecompressedBytes
             );
-            assert_eq!(ctx.resource_refusal(), None);
+            assert_eq!(
+                refusal.reason,
+                cadmpeg_core::decode::ResourceFailure::BudgetExceeded
+            );
+            assert_eq!(refusal.limit, ctx.per_expand_allowance());
+            assert_eq!(refusal.used, 0);
+            let base = 1_u64 << window_log;
+            assert_eq!(refusal.additional, base + (base >> 3) * u64::from(mantissa));
+            assert_eq!(refusal.operation, "Zstandard per-expansion window");
+            assert_eq!(ctx.resource_refusal(), Some(refusal));
         }
     }
 }
@@ -569,7 +582,25 @@ fn no_corruption_of_the_zstandard_frame_yields_wrong_output() {
             swept_bytes.insert(index);
             let mut frame = zip_fixture::ZSTD_GOLDEN_FRAME.to_vec();
             frame[index] ^= delta;
-            match open_one_zstd_entry(&frame, &plain) {
+            // Same archive bytes and caller policy as open_one_zstd_entry; keep
+            // this actual context so refusal limits are checked independently.
+            let bytes = zip_fixture::archive(&[RawEntry::compressed(
+                "payload.bin",
+                zip_fixture::ZSTD,
+                &frame,
+                &plain,
+            )]);
+            let arena = DecodeArena::new();
+            let (ctx, root) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+                    .expect("archive fits root policy");
+            let allowance = ctx.per_expand_allowance();
+            let snapshot = ArchiveSnapshot::new(&ctx, root).expect("archive snapshots");
+            let entry = snapshot.entry("payload.bin").expect("Zstandard record");
+            match snapshot
+                .open(&ctx, &entry.name)
+                .map(|view| view.window().to_vec())
+            {
                 Ok(bytes) if bytes == plain => {
                     accepting.insert(index);
                     if (401..=404).contains(&index) {
@@ -584,11 +615,32 @@ fn no_corruption_of_the_zstandard_frame_yields_wrong_output() {
                 // can end the frame early and leave fewer than four bytes where the next
                 // frame's magic would be.
                 Err(CodecError::Malformed(_) | CodecError::Truncated { .. }) => {}
-                // Flipping the frame descriptor can turn the next byte into a window
-                // descriptor, and a window above the per-expansion allowance is refused as
-                // unsupported rather than as malformed input.
-                Err(CodecError::NotImplemented(message))
-                    if message.starts_with("Zstandard window") => {}
+                // #215 section4.5: exact input-derived window refusal, with
+                // policy admission before the decoder's fixed-width ceiling.
+                Err(CodecError::ResourceLimit(refusal)) => {
+                    let (window, buffered) = zstd_header_buffering(&frame)
+                        .expect("a window refusal requires a complete valid frame header");
+                    let (limit, additional, operation) = if buffered > allowance {
+                        (allowance, buffered, "Zstandard per-expansion window")
+                    } else {
+                        let decoder_limit = 1_u64 << if usize::BITS == 32 { 30 } else { 31 };
+                        assert!(window > decoder_limit, "no window ceiling is exceeded");
+                        (decoder_limit, window, "Zstandard decoder window")
+                    };
+                    assert_eq!(refusal.scope, cadmpeg_core::decode::LimitScope::Part);
+                    assert_eq!(
+                        refusal.dimension,
+                        cadmpeg_core::decode::ResourceDimension::DecompressedBytes
+                    );
+                    assert_eq!(
+                        refusal.reason,
+                        cadmpeg_core::decode::ResourceFailure::BudgetExceeded
+                    );
+                    assert_eq!(refusal.limit, limit);
+                    assert_eq!(refusal.used, 0);
+                    assert_eq!(refusal.additional, additional);
+                    assert_eq!(refusal.operation, operation);
+                }
                 Err(other) => panic!("byte {index} ^ {delta:#04x} gave {other:?}"),
             }
         }
@@ -897,5 +949,115 @@ fn an_unimplemented_compression_method_is_refused_by_number() {
     assert_eq!(
         snapshot.open(&ctx, "payload.bin").expect("opens").window(),
         plain.as_slice()
+    );
+}
+
+/// RFC 8878 section 3.1.1.1: independently read only the declared buffering
+/// facts. This oracle uses original mutated bytes, never decoder output/errors.
+fn zstd_header_buffering(frame: &[u8]) -> Option<(u64, u64)> {
+    if frame.get(..4)? != [0x28, 0xb5, 0x2f, 0xfd] {
+        return None;
+    }
+    let flags = *frame.get(4)?;
+    if flags & 8 != 0 {
+        return None;
+    }
+    let single_segment = flags & 32 != 0;
+    let mut offset = 5;
+    let declared_window = if single_segment {
+        0
+    } else {
+        let descriptor = *frame.get(offset)?;
+        offset += 1;
+        let base = 1_u64 << (10 + u32::from(descriptor >> 3));
+        base + (base >> 3) * u64::from(descriptor & 7)
+    };
+    let dictionary_bytes = [0, 1, 2, 4][usize::from(flags & 3)];
+    frame.get(offset..offset + dictionary_bytes)?;
+    offset += dictionary_bytes;
+    let size_bytes = match flags >> 6 {
+        0 => usize::from(single_segment),
+        1 => 2,
+        2 => 4,
+        _ => 8,
+    };
+    let content_size = if size_bytes == 0 {
+        None
+    } else {
+        let encoded = frame.get(offset..offset + size_bytes)?;
+        let mut bytes = [0_u8; 8];
+        bytes[..size_bytes].copy_from_slice(encoded);
+        let value = u64::from_le_bytes(bytes);
+        Some(if size_bytes == 2 { value + 256 } else { value })
+    };
+    let window = if single_segment {
+        content_size?
+    } else {
+        declared_window
+    };
+    Some((window, content_size.map_or(window, |size| size.min(window))))
+}
+
+#[test]
+fn zstd_window_refusal_oracle_derives_exact_header_fields_and_rejects_truncation() {
+    let window = 1_u64 << 24;
+    // Authored headers exercise unknown size, every FCS width, dictionary
+    // width and single-segment encoding; no run supplies an expected value.
+    for (header, expected) in [
+        (vec![0x28, 0xb5, 0x2f, 0xfd, 0, 0x70], (window, window)),
+        (
+            vec![0x28, 0xb5, 0x2f, 0xfd, 0, 0x71],
+            (window + (window >> 3), window + (window >> 3)),
+        ),
+        (
+            vec![0x28, 0xb5, 0x2f, 0xfd, 0x40, 0x70, 0, 1],
+            (window, 512),
+        ),
+        (
+            vec![0x28, 0xb5, 0x2f, 0xfd, 0x41, 0x70, 99, 0, 1],
+            (window, 512),
+        ),
+        (
+            vec![0x28, 0xb5, 0x2f, 0xfd, 0x42, 0x70, 99, 98, 0, 1],
+            (window, 512),
+        ),
+        (
+            vec![0x28, 0xb5, 0x2f, 0xfd, 0x43, 0x70, 99, 98, 97, 96, 0, 1],
+            (window, 512),
+        ),
+        (
+            vec![0x28, 0xb5, 0x2f, 0xfd, 0x80, 0x70, 0, 4, 0, 0],
+            (window, 1024),
+        ),
+        (
+            vec![0x28, 0xb5, 0x2f, 0xfd, 0x80, 0x70, 0, 0, 0, 2],
+            (window, window),
+        ),
+        (
+            vec![0x28, 0xb5, 0x2f, 0xfd, 0x80, 0x70, 0, 0, 0, 0],
+            (window, 0),
+        ),
+        (
+            vec![0x28, 0xb5, 0x2f, 0xfd, 0xc0, 0x70, 17, 0, 0, 0, 0, 0, 0, 0],
+            (window, 17),
+        ),
+        (vec![0x28, 0xb5, 0x2f, 0xfd, 0x20, 19], (19, 19)),
+        (vec![0x28, 0xb5, 0x2f, 0xfd, 0x20, 0], (0, 0)),
+        (vec![0x28, 0xb5, 0x2f, 0xfd, 0x60, 0, 0], (256, 256)),
+        (vec![0x28, 0xb5, 0x2f, 0xfd, 0xa0, 0, 4, 0, 0], (1024, 1024)),
+        (
+            vec![0x28, 0xb5, 0x2f, 0xfd, 0xe0, 0, 0, 0, 0, 0, 1, 0, 0],
+            (1_u64 << 40, 1_u64 << 40),
+        ),
+    ] {
+        assert_eq!(zstd_header_buffering(&header), Some(expected));
+        for cut in 0..header.len() {
+            assert_eq!(zstd_header_buffering(&header[..cut]), None, "cut {cut}");
+        }
+    }
+    assert_eq!(zstd_header_buffering(&[0, 0xb5, 0x2f, 0xfd, 0, 0x70]), None);
+    assert_eq!(
+        zstd_header_buffering(&[0x28, 0xb5, 0x2f, 0xfd, 8, 0x70]),
+        None
     );
 }

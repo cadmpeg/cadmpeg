@@ -120,14 +120,31 @@ fn zstd_member_with_a_window_past_the_allowance_is_skipped_without_fusing() {
     let (ctx, root) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("root");
     let snapshot = ArchiveSnapshot::new(&ctx, root).expect("index");
-    let Err(CodecError::NotImplemented(message)) = snapshot.open(&ctx, "streamed.bin") else {
-        panic!("a window past the per-expansion allowance is unsupported");
+    // #215 section4.5: the actual located entry owns and acknowledges its Part refusal.
+    let frames = snapshot.member_frames(&ctx).expect("actual member frames");
+    let frame = frames[0].expect("streamed entry frame");
+    let payload = snapshot
+        .read_member_header(&ctx, frame)
+        .expect("actual local header");
+    let outcome = ctx
+        .part_transaction(payload.view(), || snapshot.open_member(&ctx, payload))
+        .expect("Part refusal does not escape its owner");
+    let Err(CodecError::ResourceLimit(refusal)) = outcome.result() else {
+        panic!("a window past the per-expansion allowance must give up its part");
     };
-    assert!(
-        message.starts_with(&format!("Zstandard window of {} bytes", 1_u64 << 27))
-            && message.ends_with("per-expansion allowance"),
-        "{message}"
+    assert_eq!(refusal.scope, cadmpeg_core::decode::LimitScope::Part);
+    assert_eq!(
+        refusal.dimension,
+        cadmpeg_core::decode::ResourceDimension::DecompressedBytes
     );
+    assert_eq!(
+        refusal.reason,
+        cadmpeg_core::decode::ResourceFailure::BudgetExceeded
+    );
+    assert_eq!(refusal.limit, ctx.per_expand_allowance());
+    assert_eq!(refusal.used, 0);
+    assert_eq!(refusal.additional, 1_u64 << 27);
+    assert_eq!(refusal.operation, "Zstandard per-expansion window");
     assert_eq!(ctx.resource_refusal(), None);
     assert_eq!(
         snapshot
