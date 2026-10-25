@@ -46,7 +46,7 @@ pub use disposition::{
 pub use encoders::build_encoder;
 pub use format::Format;
 pub use identify::{resolve_and_inspect_with, InspectError, Inspected, DETECTION_PREFIX_LEN};
-pub use registry::{support, DialectEntry, RegistryLoadError};
+pub use registry::{headline_level, support, DialectEntry, RegistryLoadError};
 pub use views::{
     dialect_provenance, dialect_table, format_rows, DialectProvenance, DialectTableError,
     FormatDialects, FormatRow, UnknownFormat,

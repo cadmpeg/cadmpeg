@@ -66,8 +66,17 @@ struct SupportRow {
     write: WriteDisposition,
 }
 
+/// One `[format.<id>]` block of the capability registry: the format's
+/// published headline level. Its `scored` list is read by the checker only.
+#[derive(Debug, Deserialize)]
+struct FormatSupport {
+    level: u8,
+}
+
 #[derive(Debug, Deserialize)]
 struct Support {
+    #[serde(default)]
+    format: BTreeMap<String, FormatSupport>,
     #[serde(default)]
     support: Vec<SupportRow>,
 }
@@ -78,6 +87,8 @@ pub(crate) struct Registries {
     pub(crate) formats: Vec<String>,
     /// Joined rows in identity-registry order.
     entries: Vec<DialectEntry>,
+    /// Published headline levels by canonical format id.
+    headlines: BTreeMap<String, u8>,
 }
 
 /// Failure to parse or join the embedded dialect registries.
@@ -176,6 +187,11 @@ impl Registries {
             }
         }
         Ok(Self {
+            headlines: support
+                .format
+                .into_iter()
+                .map(|(format, row)| (format, row.level))
+                .collect(),
             formats: identity.format.keys().cloned().collect(),
             entries: identity
                 .dialect
@@ -265,6 +281,18 @@ pub fn support(dialect: &DialectId) -> Result<Option<Disposition>, RegistryLoadE
         .map(|entry| entry.disposition))
 }
 
+/// The published headline read level of a format: the integer `N` of `LN`
+/// that the format-support ladder prints for it, from the format's
+/// `[format.<id>]` block in the embedded capability registry.
+///
+/// `format` is a canonical format id or one of its identity aliases.
+/// Returns `None` for a word that names no format, and for a format that
+/// declares no headline.
+pub fn headline_level(format: &str) -> Result<Option<u8>, RegistryLoadError> {
+    let canonical = canonical_format_name(format)?.unwrap_or(format);
+    Ok(registries()?.headlines.get(canonical).copied())
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
@@ -272,7 +300,8 @@ mod tests {
     use cadmpeg_core::dialect::DialectId;
 
     use super::{
-        is_format_name, registries, support, IdentityRegistry, Registries, RegistryLoadError,
+        format_words, headline_level, is_format_name, registries, support, IdentityRegistry,
+        Registries, RegistryLoadError, SUPPORT_TOML,
     };
     use crate::disposition::WriteDisposition;
     use crate::{build_encoder, Format};
@@ -295,6 +324,47 @@ mod tests {
         let registries = Registries::load().expect("the embedded registries parse");
         assert!(!registries.formats.is_empty());
         assert!(!registries.entries.is_empty());
+    }
+
+    #[test]
+    fn a_format_block_supplies_the_headline_level() {
+        let registries = Registries::load_from(
+            "[format.step]\n[[dialect]]\nid = \"step:ap214\"\ntitle = \"AP214\"\n\n[format.iges]\n",
+            "[format.step]\nlevel = 8\nscored = [\"step:ap214\"]\n\n[[support]]\ndialect = \"step:ap214\"\nread = \"L8\"\nwrite = \"none\"\n",
+        )
+        .expect("the synthetic registries join");
+        assert_eq!(registries.headlines.get("step"), Some(&8));
+        assert_eq!(registries.headlines.get("iges"), None);
+    }
+
+    /// Every `[format.<id>]` block in the embedded table answers for its
+    /// canonical id and each of its aliases; other words answer `None`.
+    #[test]
+    fn headline_level_reads_every_embedded_format_block_and_its_aliases() {
+        #[derive(serde::Deserialize)]
+        struct Block {
+            level: u8,
+        }
+        #[derive(serde::Deserialize)]
+        struct Table {
+            format: BTreeMap<String, Block>,
+        }
+        let table: Table = toml::from_str(SUPPORT_TOML).expect("the embedded support table parses");
+        assert!(!table.format.is_empty());
+        for (format, block) in &table.format {
+            assert!(block.level <= 9, "{format} declares L{}", block.level);
+            for word in format_words(format).expect("the identity registry loads") {
+                assert_eq!(
+                    headline_level(word).expect("the registries load"),
+                    Some(block.level),
+                    "{word}"
+                );
+            }
+        }
+        assert_eq!(
+            headline_level("not-a-format").expect("the registries load"),
+            None
+        );
     }
 
     #[test]
