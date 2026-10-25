@@ -959,10 +959,18 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             table,
         );
     }
+    let occurrence_paths = crate::design::components::paths::LocalOccurrencePaths::new(
+        &prereqs.design_component_occurrences,
+        products.occurrences,
+    );
     crate::design::components::project_derived_instance_features(
         &mut model.features,
         &design.design_parameter_scopes,
     );
+    losses.extend(crate::design::components::paths::bind_feature_paths(
+        &mut model.features,
+        &occurrence_paths,
+    ));
     crate::design::components::bind_unresolved_component_insert_features(
         &mut model.features,
         &design.design_parameter_scopes,

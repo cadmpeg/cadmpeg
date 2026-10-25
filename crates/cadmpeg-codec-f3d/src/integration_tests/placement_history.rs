@@ -148,3 +148,60 @@ fn an_allowance_that_skips_history_binding_keeps_the_placements() {
         bound.result.ir().model.occurrences
     );
 }
+
+#[test]
+fn attributed_local_children_repeat_under_each_containing_instance() {
+    const TOLERANCE: f64 = 1e-12;
+    let (bulk, meta) = crate::test_support::streams_test::nested_local_component_design();
+    let bytes = f3d_with_breps_and_design(
+        &[(
+            "BREP.module.smbh",
+            &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+        )],
+        &bulk,
+        &meta,
+    );
+    let result = super::decode(bytes);
+    let model = &result.ir().model;
+    assert_eq!(model.bodies.len(), 1);
+    assert_eq!(model.product_definitions.len(), 3);
+    assert_eq!(model.occurrences.len(), 7);
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == F3dLossCode::LocalOccurrenceUnplaced.kind()));
+    let graph = cadmpeg_ir::products::AssemblyGraph::new(&model.occurrences).unwrap();
+    let leaves = model
+        .occurrences
+        .iter()
+        .filter(|occurrence| {
+            occurrence.id.as_str().contains(':')
+                && occurrence
+                    .id
+                    .as_str()
+                    .split('#')
+                    .next_back()
+                    .unwrap()
+                    .contains(':')
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(leaves.len(), 4);
+    assert!(leaves
+        .iter()
+        .all(|leaf| leaf.prototype == leaves[0].prototype));
+    for leaf in leaves {
+        let pose = cadmpeg_test_support::assembly::resolved_transform(&graph, &leaf.id).unwrap();
+        let child_b = leaf.id.as_str().ends_with("000000000403");
+        let face = pose
+            .apply_point(cadmpeg_ir::math::Point3::new(
+                if child_b { 0.0 } else { 10.0 },
+                0.0,
+                0.0,
+            ))
+            .unwrap()
+            .get();
+        assert!((face.y - 50.0).abs() < TOLERANCE);
+        assert!((face.x - 30.0).abs() < TOLERANCE);
+    }
+}

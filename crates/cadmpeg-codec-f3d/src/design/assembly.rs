@@ -399,11 +399,28 @@ pub(crate) struct AssemblyJointProjection {
 /// and the `Component Insert` occurrences, and no features. A joint scope
 /// whose operands, frames, limits, or alignment values do not project is
 /// skipped and counted in one loss.
+#[cfg(test)]
 pub(crate) fn project_assembly_joints(
     scopes: &[DesignParameterScope],
     native_occurrences: &[DesignComponentOccurrence],
     inserts: &ComponentInserts,
     motions: &[crate::records::feature::joint_motion::DesignJointMotion],
+) -> AssemblyJointProjection {
+    project_assembly_joints_with_paths(
+        scopes,
+        native_occurrences,
+        inserts,
+        motions,
+        &crate::design::components::paths::LocalOccurrencePaths::default(),
+    )
+}
+
+pub(crate) fn project_assembly_joints_with_paths(
+    scopes: &[DesignParameterScope],
+    native_occurrences: &[DesignComponentOccurrence],
+    inserts: &ComponentInserts,
+    motions: &[crate::records::feature::joint_motion::DesignJointMotion],
+    paths: &super::components::paths::LocalOccurrencePaths,
 ) -> AssemblyJointProjection {
     let mut occurrences = BTreeMap::new();
     for occurrence in native_occurrences {
@@ -437,7 +454,7 @@ pub(crate) fn project_assembly_joints(
             continue;
         };
         let motion = scope_joint_motion(scope, stream, motions);
-        match project_assembly_joint(scope, stream, &occurrences, scopes, inserts, motion) {
+        match project_assembly_joint(scope, stream, &occurrences, scopes, inserts, motion, paths) {
             Ok(Some((mut joint, undecoded))) => {
                 let paired = scope
                     .assembly_alignment()
@@ -486,7 +503,7 @@ pub(crate) fn project_assembly_joints(
                 }
                 joints.entry(joint.id.as_str().to_owned()).or_insert(joint);
                 let members =
-                    rigid_group_member_joints(scope, stream, &occurrences, scopes, inserts);
+                    rigid_group_member_joints(scope, stream, &occurrences, scopes, inserts, paths);
                 paired_joints += members.paired;
                 unprojected_members += members.unprojected;
                 for member in members.joints {
@@ -640,6 +657,7 @@ fn project_assembly_joint(
     scopes: &[DesignParameterScope],
     inserts: &ComponentInserts,
     motion: Option<&crate::records::feature::joint_motion::DesignJointMotion>,
+    paths: &super::components::paths::LocalOccurrencePaths,
 ) -> Result<Option<(AssemblyJoint, Option<String>)>, CodecError> {
     let Some(alignment) = scope.assembly_alignment() else {
         return Ok(None);
@@ -686,6 +704,7 @@ fn project_assembly_joint(
                 occurrences,
                 scopes,
                 inserts,
+                paths,
             )
             .ok_or_else(|| {
                 CodecError::NotImplemented(
@@ -837,6 +856,7 @@ fn rigid_group_member_joints(
     occurrences: &BTreeMap<(&str, String), Option<&DesignComponentOccurrence>>,
     scopes: &[DesignParameterScope],
     inserts: &ComponentInserts,
+    paths: &super::components::paths::LocalOccurrencePaths,
 ) -> RigidGroupMemberJoints {
     let mut projected = RigidGroupMemberJoints::default();
     let Some(alignment) = scope.assembly_alignment() else {
@@ -868,6 +888,7 @@ fn rigid_group_member_joints(
             occurrences,
             scopes,
             inserts,
+            paths,
         );
         let member_frame = super::components::neutral_transform(member.frame.transform.rows());
         let (Some([first_operand, member_operand]), Ok(member_frame)) = (operands, member_frame)
@@ -952,6 +973,7 @@ fn project_qualified_operands(
     occurrences: &BTreeMap<(&str, String), Option<&DesignComponentOccurrence>>,
     scopes: &[DesignParameterScope],
     inserts: &ComponentInserts,
+    paths: &super::components::paths::LocalOccurrencePaths,
 ) -> Option<[JointOperand; 2]> {
     let project = |qualifier: &DesignAssemblyOperandQualifier| -> Option<JointOperand> {
         match qualifier {
@@ -971,6 +993,21 @@ fn project_qualified_operands(
                 let mut subelements = Vec::new();
                 for guid in subelement_guids {
                     subelements.push(guid.value.as_str().to_ascii_lowercase());
+                }
+                let keys = path
+                    .occurrence_guids()
+                    .iter()
+                    .map(|guid| guid.value.as_str().to_ascii_lowercase())
+                    .collect::<Vec<_>>();
+                if let Some((id, consumed)) = paths.resolve(stream, &keys) {
+                    return Some(JointOperand::occurrence(
+                        id,
+                        object,
+                        keys[consumed..].to_vec(),
+                    ));
+                }
+                if occurrence.is_some() && paths.ambiguous(stream, &keys[..1]) {
+                    return None;
                 }
                 Some(match occurrence {
                     Some(_) => JointOperand::occurrence(
@@ -2245,6 +2282,7 @@ mod tests {
                     &BTreeMap::new(),
                     scopes,
                     inserts,
+                    &crate::design::components::paths::LocalOccurrencePaths::default(),
                 )
             };
         let operands = project(&scopes, &inserts).expect("complete axial operands");

@@ -38,6 +38,7 @@ mod history;
 mod hole;
 pub(crate) mod loft_sweep;
 pub(crate) mod profile;
+mod split;
 
 const EPS_FEATURE_PROJECT_HOLE_E10: f64 = 1.0e-10;
 
@@ -868,7 +869,7 @@ fn feature_property_parser(type_id: [u8; 16]) -> Option<PropertyParser> {
         EDGE_ITEM_TYPE => Some(parse_edge_item),
         FACE_ITEM_TYPE => Some(parse_face_item),
         TERMINATION_FLAG_TYPE => Some(parse_termination_flag),
-        _ => None,
+        _ => split::property_parser(type_id),
     }
 }
 
