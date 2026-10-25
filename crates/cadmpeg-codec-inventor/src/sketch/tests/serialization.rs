@@ -24,6 +24,7 @@ fn point_tail_borrowed_wire_refuses_retained_limit_before_clone() {
             vec![PmDcReference::new(3, false).expect("test reference index fits 31 bits")],
         )
         .expect("paired point associations"),
+        links: None,
     };
     let wire = PointTailWire::from(tail.clone());
     assert_eq!(

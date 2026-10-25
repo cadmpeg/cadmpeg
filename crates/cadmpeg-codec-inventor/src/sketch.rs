@@ -28,6 +28,10 @@ use crate::record_identity::{push_record, Located, RecordPayload};
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 
+pub(crate) mod point_tail;
+
+use point_tail::PointPairedAssociation;
+
 const EPS_SKETCH_LINE_CARRIER_MATCHES_E10: f64 = 1.0e-10;
 const EPS_SKETCH_PROJECT_PLACEMENT_E10: f64 = 1.0e-10;
 /// Largest distance, in internal centimetres, between an arc end point and the
@@ -315,6 +319,7 @@ pub(crate) struct PmDcSketchPayload {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "point_tail::SketchEntityWire")]
 pub(crate) struct PmDcSketchEntityPayload {
     save_version_major: u8,
     pub(crate) header: PmDcContentHeader,
@@ -332,13 +337,6 @@ pub(crate) enum PmDcSketchEntityKind {
         center_of: PmDcReferenceList,
         #[serde(flatten)]
         tail: PointTail,
-        /// The type-2 list that ends a point from segment major version 25.
-        #[serde(
-            default,
-            skip_serializing_if = "Option::is_none",
-            deserialize_with = "deserialize_point_links"
-        )]
-        links: Option<PmDcReferenceList>,
     },
     Line {
         points: PmDcReferenceList,
@@ -379,23 +377,48 @@ pub(crate) enum PmDcSketchEntityKind {
     },
 }
 
-cadmpeg_core::named_optional_field!(deserialize_point_links, PmDcReferenceList, "links");
+impl PmDcSketchEntityKind {
+    pub(crate) fn record_type_id(&self) -> [u8; 16] {
+        match self {
+            Self::Point { .. } => POINT_TYPE,
+            Self::Line { .. } => LINE_TYPE,
+            Self::Circle { .. } => CIRCLE_TYPE,
+            Self::Ellipse { .. } => ELLIPSE_TYPE,
+            Self::Polygon { .. } => POLYGON_TYPE,
+            Self::BlockInstance { .. } => BLOCK_INSTANCE_TYPE,
+            Self::BlockMember { .. } => BLOCK_MEMBER_TYPE,
+        }
+    }
+}
 
-/// The absent or complete state and association tail of a sketch point.
+cadmpeg_core::named_optional_field!(deserialize_point_links, PmDcReferenceList, "links");
+cadmpeg_core::named_optional_field!(deserialize_point_paired, PointPairedAssociation, "paired");
+
+/// The absent, ordinary, or paired association tail of a sketch point.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(try_from = "PointTailWire")]
 pub(crate) enum PointTail {
+    /// The record ends after the center-of list.
     Absent,
+    /// A state and a type-2 association list; from segment major version 25,
+    /// also a type-2 link list.
     Present {
         state: u32,
         associations: PmDcReferenceList,
+        links: Option<PmDcReferenceList>,
     },
+    /// The state-2 form of segment major version 25 and later.
+    Paired(PointPairedAssociation),
 }
 
 #[derive(Serialize)]
 struct PointTailRef<'a> {
     state: Option<u32>,
     associations: Option<&'a PmDcReferenceList>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    paired: Option<&'a PointPairedAssociation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    links: Option<&'a PmDcReferenceList>,
 }
 
 impl Serialize for PointTail {
@@ -404,13 +427,24 @@ impl Serialize for PointTail {
             Self::Absent => PointTailRef {
                 state: None,
                 associations: None,
+                paired: None,
+                links: None,
             },
             Self::Present {
                 state,
                 associations,
+                links,
             } => PointTailRef {
                 state: Some(*state),
                 associations: Some(associations),
+                paired: None,
+                links: links.as_ref(),
+            },
+            Self::Paired(paired) => PointTailRef {
+                state: Some(2),
+                associations: None,
+                paired: Some(paired),
+                links: None,
             },
         };
         wire.serialize(serializer)
@@ -421,6 +455,18 @@ impl Serialize for PointTail {
 struct PointTailWire {
     state: Option<u32>,
     associations: Option<PmDcReferenceList>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_point_paired"
+    )]
+    paired: Option<PointPairedAssociation>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_point_links"
+    )]
+    links: Option<PmDcReferenceList>,
 }
 
 impl From<PointTail> for PointTailWire {
@@ -429,13 +475,24 @@ impl From<PointTail> for PointTailWire {
             PointTail::Absent => Self {
                 state: None,
                 associations: None,
+                paired: None,
+                links: None,
             },
             PointTail::Present {
                 state,
                 associations,
+                links,
             } => Self {
                 state: Some(state),
                 associations: Some(associations),
+                paired: None,
+                links,
+            },
+            PointTail::Paired(paired) => Self {
+                state: Some(2),
+                associations: None,
+                paired: Some(paired),
+                links: None,
             },
         }
     }
@@ -445,13 +502,17 @@ impl TryFrom<PointTailWire> for PointTail {
     type Error = &'static str;
 
     fn try_from(wire: PointTailWire) -> Result<Self, Self::Error> {
-        match (wire.state, wire.associations) {
-            (Some(state), Some(associations)) => Ok(Self::Present {
-                state,
-                associations,
-            }),
-            (None, None) => Ok(Self::Absent),
-            _ => Err("point state and associations must be present together"),
+        match (wire.state, wire.associations, wire.paired, wire.links) {
+            (Some(2), None, Some(paired), None) => Ok(Self::Paired(paired)),
+            (Some(state), Some(associations), None, links) if state != 2 || links.is_none() => {
+                Ok(Self::Present {
+                    state,
+                    associations,
+                    links,
+                })
+            }
+            (None, None, None, None) => Ok(Self::Absent),
+            _ => Err("point state and association form disagree"),
         }
     }
 }
@@ -861,25 +922,12 @@ fn parse_point(cursor: &mut Cursor<'_>, version: u8) -> Result<PmDcSketchEntityK
     let position = point2(cursor, "sketch point")?;
     let endpoint_of = reference_list(cursor, 2, "point endpoint-of list")?;
     let center_of = reference_list(cursor, 2, "point center-of list")?;
-    let tail = if cursor.remaining() == 0 {
-        PointTail::Absent
-    } else {
-        PointTail::Present {
-            state: cursor.u32("point tail state")?,
-            associations: reference_list(cursor, 2, "point association list")?,
-        }
-    };
-    let links = if version >= 25 && matches!(tail, PointTail::Present { .. }) {
-        Some(reference_list(cursor, 2, "point link list")?)
-    } else {
-        None
-    };
+    let tail = point_tail::parse_tail(cursor, version)?;
     Ok(PmDcSketchEntityKind::Point {
         position,
         endpoint_of,
         center_of,
         tail,
-        links,
     })
 }
 
@@ -2975,10 +3023,10 @@ mod tests {
         inventory, parse_constraint, parse_direction, parse_entity, parse_sketch, parse_transform,
         placed_endpoint_refs, project, project_placed_geometry, solver_hint, BlockPlacement,
         PmDcSketchConstraint, PmDcSketchConstraintKind, PmDcSketchEntity, PmDcSketchEntityKind,
-        PmDcSketchEntityPayload, PmDcSketchPayload, PmDcTransformPayload, SketchConstraintTag,
-        SketchEntityTag, SketchInventory, BLOCK_INSTANCE_TYPE, CIRCLE_TYPE, COINCIDENT_TYPE,
-        DIRECTION_TYPE, HORIZONTAL_TYPE, LINE_TYPE, MIDPOINT_TYPE, POINT_TYPE, SKETCH_TYPE,
-        TRANSFORM_TYPE,
+        PmDcSketchEntityPayload, PmDcSketchPayload, PmDcTransformPayload, PointTail,
+        SketchConstraintTag, SketchEntityTag, SketchInventory, BLOCK_INSTANCE_TYPE, CIRCLE_TYPE,
+        COINCIDENT_TYPE, DIRECTION_TYPE, HORIZONTAL_TYPE, LINE_TYPE, MIDPOINT_TYPE, POINT_TYPE,
+        SKETCH_TYPE, TRANSFORM_TYPE,
     };
     use crate::container::InventorContainer;
     use crate::pmdc::{PmDcReference, PmDcReferenceList};
@@ -3513,7 +3561,9 @@ mod tests {
         assert_eq!(parsed.header.stamps, [-1, 2908]);
         assert!(matches!(
             parsed.kind,
-            PmDcSketchEntityKind::Point { links: Some(ref links), .. }
+            PmDcSketchEntityKind::Point {
+                tail: PointTail::Present { links: Some(ref links), .. }, ..
+            }
                 if links.references().iter().map(|value| value.index()).collect::<Vec<_>>() == [6]
         ));
 
@@ -4866,5 +4916,6 @@ mod tests {
         ));
     }
 
+    mod point_tail_projection;
     mod serialization;
 }
