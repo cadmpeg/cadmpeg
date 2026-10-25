@@ -154,6 +154,7 @@ fn quantities_that_do_not_apply_are_absent() {
         .model
         .product_definitions
         .push(cadmpeg_ir::products::ProductDefinition {
+            sketches: Vec::default(),
             id: definition.clone(),
             kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
             source_name: None,

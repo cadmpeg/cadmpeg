@@ -24,7 +24,7 @@ CadIr
 
 `source` is absent when the document has no source-container metadata. A present source block contains `format`, `attributes`, and `dialects`. `dialects` is always serialized. It is `null` for an unclassified source and otherwise contains the complete source `DialectLayers`, including the primary and every nested or carried layer. The primary dialect namespace equals `source.format`.
 
-The neutral model arenas, in serialization order, are `bodies`, `regions`, `shells`, `faces`, `loops`, `coedges`, `edges`, `vertices`, `points`, `surfaces`, `curves`, `subds`, `pcurves`, `procedural_surfaces`, `procedural_curves`, `assets`, `features`, `feature_input_topologies`, `configurations`, `parameters`, `sketches`, `sketch_entities`, `sketch_constraints`, `spatial_sketches`, `spatial_sketch_entities`, `spatial_sketch_constraints`, `spreadsheets`, `product_definitions`, `occurrences`, `assembly_joints`, `drawings`, `semantic_annotations`, `presentation_documents`, `view_presentations`, `tessellations`, `appearances`, `appearance_bindings`, `attributes`, `pmi`, and `presentation_layers`. References are string IDs. `subds` contains subdivision-surface control cages and is a free carrier arena.
+The neutral model arenas, in serialization order, are `bodies`, `regions`, `shells`, `faces`, `loops`, `coedges`, `edges`, `vertices`, `points`, `surfaces`, `curves`, `subds`, `pcurves`, `procedural_surfaces`, `procedural_curves`, `assets`, `features`, `feature_input_topologies`, `configurations`, `parameters`, `sketches`, `sketch_entities`, `sketch_constraints`, `spatial_sketches`, `spatial_sketch_entities`, `spatial_sketch_constraints`, `spreadsheets`, `product_definitions`, `occurrences`, `assembly_joints`, `drawings`, `semantic_annotations`, `presentation_documents`, `view_presentations`, `tessellations`, `appearances`, `appearance_bindings`, `attributes`, `pmi`, and `presentation_layers`. References are string IDs. `ProductDefinition.sketches` lists owned planar sketch IDs. Each ID names a member of `model.sketches`, and a sketch belongs to at most one product definition. An absent or empty list owns no sketches. A sketch with no product definition belongs to the design root. `subds` contains subdivision-surface control cages and is a free carrier arena.
 
 Pcurve geometry is a parameter-space line, angular circle, angular ellipse, parabola, hyperbola, first-order harmonic, first-order hyperbolic, polar harmonic, polar NURBS, NURBS, trimmed, or signed-offset curve. Circle and ellipse carriers store independent `x_axis` and `y_axis` parameter directions; a clockwise parameterization has a negated `y_axis`. General harmonic carriers evaluate `center + cosine*cos(t) + sine*sin(t)`; general hyperbolic carriers evaluate `center + cosine*cosh(t) + sine*sinh(t)`. A polar harmonic maps first-order radial-plane and axial harmonic coefficients to `(atan2(y, x), v)` without changing the spatial curve parameter. A polar NURBS evaluates radial-plane and axial control channels with one degree, knot vector, weight vector, and parameter, then maps the radial result through `atan2`. A signed offset adds its distance along the regular basis curve's left unit normal. Point evaluation requires a finite nonzero exact basis tangent; a nested signed offset has no point evaluation.
 
@@ -327,7 +327,7 @@ Structural failures are errors. Same-sense two-member radial rings, unknown anno
 
 ## Version policy and JSON Schema
 
-Readers accept exactly `ir_version: "8"`. The `model.subds` arena is required, including when empty. Source annotations and retained records are excluded from the neutral product model. Recursive affine-transformed curve and surface carriers preserve exact source parameterization under occurrence placement. Maintainers select the IR version for each release. After a release, removing or renaming a product field, or changing its type, units, parameterization, or invariant, requires a new IR version. New product fields carry identity, units, ordering, reference, and validation contracts.
+Readers accept exactly `ir_version: "9"`. The `model.subds` arena is required, including when empty. Source annotations and retained records are excluded from the neutral product model. Recursive affine-transformed curve and surface carriers preserve exact source parameterization under occurrence placement. Maintainers select the IR version for each release. After a release, removing or renaming a product field, or changing its type, units, parameterization, or invariant, requires a new IR version. New product fields carry identity, units, ordering, reference, and validation contracts.
 
 `Sweep.section` is a required sum type and `Sweep.sections` is a same-typed list. A sweep section is unresolved, references a `ProfileRef`, or owns generated section geometry. A generated circular region stores its outer radius and optional inward wall thickness.
 
@@ -341,7 +341,7 @@ The generated document begins with this complete hierarchy and representative ra
 
 ```json
 {
-  "ir_version": "8",
+  "ir_version": "9",
   "decode_depth": "full",
   "units": { "length": "millimeter" },
   "tolerances": { "linear": 1e-6, "angular": 1e-10 },

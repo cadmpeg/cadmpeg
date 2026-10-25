@@ -35,7 +35,36 @@ pub(super) fn check_products(
             add(body.id.as_str(), ());
         }
     });
+    let sketches = BorrowedIdentities::build(|add| {
+        for sketch in &ir.model.sketches {
+            add(sketch.id.as_str(), ());
+        }
+    });
+    let mut sketch_owners = std::collections::BTreeMap::new();
     for definition in &ir.model.product_definitions {
+        for sketch in &definition.sketches {
+            let message = if !sketches.contains(sketch.as_str()) {
+                Some("invalid product sketch reference")
+            } else if let Some(owner) = sketch_owners.insert(sketch, &definition.id) {
+                Some(if owner == &definition.id {
+                    "duplicate product sketch reference"
+                } else {
+                    "sketch has multiple product definitions"
+                })
+            } else {
+                None
+            };
+            if let Some(message) = message {
+                record_finding(
+                    findings,
+                    Check::ReferentialIntegrity,
+                    crate::report::Severity::Error,
+                    Some(definition.id.as_str()),
+                    format_args!("{message}"),
+                );
+                break;
+            }
+        }
         for body in &definition.bodies {
             if !bodies.contains(body.as_str()) {
                 record_finding(

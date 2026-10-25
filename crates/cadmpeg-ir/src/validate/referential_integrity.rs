@@ -132,6 +132,7 @@ mod tests {
         ir.model
             .product_definitions
             .push(crate::products::ProductDefinition {
+                sketches: Vec::default(),
                 id: owner.try_into().unwrap(),
                 kind: crate::products::ProductDefinitionKind::Part,
                 source_name: Some("test:model:name#plain".into()),

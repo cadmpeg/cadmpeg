@@ -440,7 +440,7 @@ fn decode_sketch_visibilities_in_stream(
         "5275CBA4-3D7D-40DC-A651-1DFF3FC8AFBF",
         "sketch ordinal collection",
     )? {
-        let members = (frame.design_type.version == 4
+        let members = ([3, 4].contains(&frame.design_type.version)
             && frame.design_type.module == "Geometry"
             && frame
                 .design_type
@@ -450,7 +450,9 @@ fn decode_sketch_visibilities_in_stream(
                     base.as_str()
                         .eq_ignore_ascii_case(SKETCH_CONTAINER_MEMBER_BASE_TYPE_GUID)
                 }))
-        .then(|| ordinal_collection_members(&bytes[frame.start..frame.end]))
+        .then(|| {
+            ordinal_collection_members(&bytes[frame.start..frame.end], frame.design_type.version)
+        })
         .flatten();
         let Some(members) = members else {
             return Err(crate::design::text::malformed_design(format_args!(
@@ -487,7 +489,10 @@ fn decode_sketch_visibilities_in_stream(
     Ok(out)
 }
 
-fn ordinal_collection_members(bytes: &[u8]) -> Option<impl Iterator<Item = u64> + '_> {
+fn ordinal_collection_members(
+    bytes: &[u8],
+    version: u32,
+) -> Option<impl Iterator<Item = u64> + '_> {
     use crate::layout::sketch_geometry_ordinal_collection_reference as reference;
     use crate::layout::sketch_ordinal_collection_prefix as collection;
     if bytes.get(collection::ZERO_RUN..collection::LEN)? != [0; 9] {
@@ -495,6 +500,14 @@ fn ordinal_collection_members(bytes: &[u8]) -> Option<impl Iterator<Item = u64> 
     }
     let mut cursor = collection::LEN;
     read_property_block(bytes, &mut cursor)?.find("crv_tag_id_idx")?;
+    match version {
+        3 => {
+            cursor = cursor
+                .checked_add(crate::layout::sketch_owner_collection_legacy_list_prefix::LEN)?;
+        }
+        4 => {}
+        _ => return None,
+    }
     let count = View::u32_le_at(bytes, cursor)?;
     cursor += 4;
     let count = cadmpeg_core::decode::bounded_len(

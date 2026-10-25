@@ -11,6 +11,7 @@ use cadmpeg_core::text::NonBlankString;
 
 use crate::ids::{BodyId, OccurrenceId, ProductDefinitionId};
 use crate::scalar::FiniteReal;
+use crate::sketches::SketchId;
 use crate::transform::Transform;
 
 crate::ids::id_type!(
@@ -78,6 +79,9 @@ pub struct ProductDefinition {
     /// Shape bodies owned by this reusable definition.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bodies: Vec<BodyId>,
+    /// Sketches owned by this reusable definition.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sketches: Vec<SketchId>,
     /// Format-native object supplying this definition.
     #[serde(
         default,
