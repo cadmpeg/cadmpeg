@@ -1540,3 +1540,28 @@ offset = 18
 type = "u32"
 source = "spec"
 anchor = "The fixed selector prefix after the content header contains"
+
+[[record]]
+name = "pm_dc_plate_side_fields"
+kind = "byte"
+section = "13"
+anchor = "is followed by `type_value:i16` and `value:u16`, then the record ends"
+size = 4
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature.rs"
+note = "Offsets start after the versioned content header and stamps."
+
+[[record.field]]
+name = "type_value"
+offset = 0
+type = "i16"
+source = "spec"
+anchor = "stamps, is followed by `type_value:i16`"
+note = "Enumeration type; 2 for the plate thickness side."
+
+[[record.field]]
+name = "value"
+offset = 2
+type = "u16"
+source = "spec"
+anchor = "and `value:u16`, then the record ends"
+note = "0 selects thickness along the face-sketch normal."
