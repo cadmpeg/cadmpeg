@@ -171,13 +171,16 @@ jobs:
       CI_PACKAGES: ${{ needs.changes.outputs.packages }}
       CI_FULL: ${{ needs.changes.outputs.full }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
     steps:
       - name: Require valid gate selection
         shell: bash
         run: test "${{ needs.changes.result }}" = success
       - name: Checkout
         uses: actions/checkout@v7.0.1
+        with:
+          # The decode non-regression gate compares against the merge base with main.
+          fetch-depth: 0
 
       - name: Install pinned toolchain
         uses: ./.github/actions/pinned-rust
@@ -204,6 +207,15 @@ jobs:
         # `--all-targets` covers lib, bins, tests, and benches so test-only
         # style debt cannot hide behind crate-root cfg(test) mute lists.
         run: python3 scripts/ci_cargo.py clippy --all-targets
+
+      - name: Decode non-regression
+        # Decodes every fixture with the merge-base build and the head build,
+        # and compares the decodes and the committed decode goldens (#219 §4.4).
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          eval "$(scripts/base-build.sh)"
+          python3 scripts/check-decode-nonregression.py
 
   test:
     needs: changes

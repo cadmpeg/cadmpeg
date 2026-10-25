@@ -231,7 +231,13 @@ class GeneratedArena:
             raise GeneratedSchemaError('ambiguous tagged-union discriminant')
         return tags[0] if tags else None
 
-    def paths(self, records: Sequence[Any]) -> SchemaPaths:
+    def paths(self, records: Sequence[Any], lenient: bool = False) -> SchemaPaths:
+        """Classify the collapsed paths of `records`.
+
+        A lenient classification of a record that its own build's schema does
+        not admit keeps the tag and Dimension paths found before the first
+        disagreement.
+        """
         tags: set[JsonPath] = set()
         dimensions: set[JsonPath] = set()
         companions: set[JsonPath] = set()
@@ -342,10 +348,18 @@ class GeneratedArena:
 
         try:
             for record in records:
-                self._validator(self.schema).validate(record)
+                if not lenient:
+                    self._validator(self.schema).validate(record)
                 walk(self.schema, record, (self.arena.removeprefix('model.'), '#'), self.element)
-        except self._schema_errors + (RecursionError, TypeError, KeyError) as error:
-            raise GeneratedSchemaError(f'generated schema/value mismatch: {error}') from error
+        except self._schema_errors + (RecursionError, TypeError, KeyError, GeneratedSchemaError) as error:
+            if not lenient:
+                if isinstance(error, GeneratedSchemaError):
+                    raise
+                raise GeneratedSchemaError(f'generated schema/value mismatch: {error}') from error
+            active.clear()
+        if lenient:
+            return SchemaPaths(frozenset(tags - ordinary_leaves), frozenset(dimensions - ordinary_wrappers),
+                               frozenset(companions - ordinary_fields))
         if dimensions & ordinary_wrappers or companions & ordinary_fields:
             raise GeneratedSchemaError('collapsed path mixes typed wrapper/companion roles; classify records separately')
         if tags & ordinary_leaves:
