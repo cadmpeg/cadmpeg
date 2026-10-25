@@ -5,6 +5,7 @@
 mod measured_geometry;
 mod metadata_recovery;
 mod ring_traversal;
+mod visibility;
 
 use super::FcstdCodec;
 use crate::test_support::test_archive::{
