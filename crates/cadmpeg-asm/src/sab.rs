@@ -385,6 +385,15 @@ pub(crate) fn lex(
     pos: usize,
     ref_width: RefWidth,
 ) -> Result<(Lexed<'_>, usize), StreamError> {
+    lex_with_origin(bytes, pos, ref_width).map(|(value, end, _)| (value, end))
+}
+
+/// The same lexer consumption, including the actual value-payload interval.
+fn lex_with_origin(
+    bytes: &[u8],
+    pos: usize,
+    ref_width: RefWidth,
+) -> Result<(Lexed<'_>, usize, Option<std::ops::Range<usize>>), StreamError> {
     let err = |reason: &str| StreamError {
         format: StreamFormat::Binary,
         offset: pos,
@@ -495,8 +504,22 @@ pub(crate) fn lex(
             })
         }
     };
-    Ok(out)
+    // This interval belongs to this successful lexical production, not to a
+    // reconstructed AST value. Boolean values are encoded by the tag itself;
+    // subtype and record delimiters have no value payload.
+    let payload_start = match tag {
+        0x0f..=0x11 => None,
+        0x0a | 0x0b => Some(pos),
+        0x07 | 0x0d | 0x0e => Some(p + 1),
+        0x08 => Some(p + 2),
+        0x09 | 0x12 => Some(p + ref_width.bytes()),
+        _ => Some(p),
+    };
+    Ok((out.0, out.1, payload_start.map(|start| start..out.1)))
 }
+
+/// Optional source-bound lexical origin metadata. No codec adopts it here.
+pub mod origins;
 
 /// Frame `bytes[start..limit]` into an indexed record table.
 ///
