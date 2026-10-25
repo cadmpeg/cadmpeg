@@ -153,6 +153,7 @@ fn sketch(ordinal: u32) -> crate::sketch::PmDcSketch {
 /// document model; model root 20 is the flat-pattern model.
 fn inventory() -> (FeatureInventory, Vec<crate::sketch::PmDcSketch>) {
     let inventory = FeatureInventory {
+        edge_names: std::collections::HashMap::new(),
         record_types: std::collections::HashMap::new(),
         features: vec![
             feature(2, 0x6200),

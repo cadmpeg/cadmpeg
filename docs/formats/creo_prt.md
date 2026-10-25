@@ -722,10 +722,21 @@ component. The resulting support directions are `(a, 0, b)` and
 The compact axis form begins `18 0f 18 e5 0f e4 18 e4`; that prefix defines
 support directions `(1, 0, 0)` and `(0, 0, -1)` with a zero middle rank. Its
 three following scalars are the origin coordinates.
-The prefixes `0f 18 e6 0f 18 10 18` and
-`18 e4 10 e4 18 e5 0f 18` each define support directions `(0, 1, 0)` and
-`(0, 0, 1)` with a zero middle rank. Their three following scalars are the
-origin coordinates. The resulting plane normal is `(1, 0, 0)`.
+The positional prefix `A 18 e6 B 18 C 18` uses signed unit tokens `0f` for
+positive one and `10` for negative one. It defines parameter direction
+`(A, 0, 0)`, zero middle triple, and normal `(0, B, 0)`, with `B = -A*C`.
+The second in-plane direction is `(0, 0, C)`. Three origin scalars follow.
+This is a direct-normal frame, not two in-plane support triples.
+
+These positional X-axis images define two in-plane support directions and a
+zero middle triple. Three origin scalars follow each image.
+
+| Image | First support | Second support | Normal |
+| --- | --- | --- | --- |
+| `18 e4 0f e4 18 e5 0f 18` | `(0, 1, 0)` | `(0, 0, 1)` | `(1, 0, 0)` |
+| `18 e4 10 e4 18 e5 0f 18` | `(0, -1, 0)` | `(0, 0, 1)` | `(-1, 0, 0)` |
+| `18 e4 10 0f 18 e5 10 18` | `(0, 1, 0)` | `(0, 0, -1)` | `(-1, 0, 0)` |
+| `18 e4 0f 10 18 e5 10 18` | `(0, -1, 0)` | `(0, 0, -1)` | `(1, 0, 0)` |
 A trailing-rank orthogonal form stores `a, 0, b, e4, 0, m`, a zero-rank
 triple, and three origin coordinates. It has the same `a² + b² = 1`,
 `|m| = |a|`, copied-`b`, and negated-`a` semantics as the prefixed form.
@@ -1912,12 +1923,17 @@ one zero slot. The `18 e5` direction macro and the other compact support
 macros are support-triple forms, not matrix rows.
 
 The seven-byte compact image `A 18 e5 B 18 e5 C`, where each of `A`, `B`,
-and `C` is `0f` or `10`, names a model-Z plane-normal frame. In a plane row,
-it expands to a direct-normal frame with the model-X parameter direction, a
+and `C` is `0f` or `10`, names a model-Z plane-normal frame. In a positional
+plane row, it expands to a direct-normal frame with the model-X parameter direction, a
 zero middle triple, and the model-Z normal. `A = 0f` selects positive model X
-and `A = 10` selects negative model X. The `B` and `C` tokens retain the
-orthogonal compact-image signs; they do not select a different normal
-coordinate.
+and `A = 10` selects negative model X. `C = 0f` selects positive model Z
+and `C = 10` selects negative model Z. `B` does not change either direction.
+
+The positional plane image `18 e4 A 18 0f 18 C 18 e4` has opposite signed unit
+tokens `A` and `C`. `A` selects the model-X normal and `C` selects the model-Z
+parameter direction: `0f` is positive and `10` is negative. Its support-triple
+form contains that parameter direction, a zero middle triple, and positive
+model Y. Its three following scalars are the origin coordinates.
 
 The rank-two body `18 e4 0f e4 18 e5 0f 18 e6` expands to support triples
 `[0, 1, 0]`, `[0, 0, 0]`, and `[1, 0, 0]`, followed by origin `[0, 0, 0]`.
@@ -2120,6 +2136,11 @@ vertices therefore define the curve's oriented endpoint pair when either
 side's closed loop supplies an end vertex. If both sides supply end vertices,
 each must equal the opposite side's start vertex. A missing successor on one
 face does not erase the endpoint relation proved by the other closed face.
+
+The native successor order traverses an outer face boundary clockwise about
+the orientation-adjusted surface normal. Surface-row `orient = 01` preserves
+the stored normal and `orient = f6` negates it. Successor direction and
+surface-row orientation are independent fields.
 
 Every edge represented in a topological vertex orbit contributes both of its
 non-null face carriers to that vertex. The orbit stores outgoing half-edges;
@@ -3401,9 +3422,10 @@ family name. Multiple operation names with the same feature identifier are
 ordered stored-state candidates. No candidate is the current state without a
 state selector. State ordinals are local to one feature identifier and increase
 in byte order from zero. Each candidate retains the prefix-inclusive name
-bytes, the `id`/`ID` spelling, and the offset of the optional prefix. The
-neutral projection retains only operation fields on which all candidates
-agree. A recipe-only state has no stored operation name.
+bytes, the `id`/`ID` spelling, and the offset of the optional prefix. Same-ID
+candidates define a common operation only when their operation family, recipe,
+root schema class, and parent identifier agree. Agreement does not identify a
+current native candidate. A recipe-only state has no stored operation name.
 
 `MdlRefInfo` feature-reference entries encode
 `f7 0x71 <own-ref-id> <reference-type> <feature-id> <name> 00 <own-ref-id> <own-ref-id>`.

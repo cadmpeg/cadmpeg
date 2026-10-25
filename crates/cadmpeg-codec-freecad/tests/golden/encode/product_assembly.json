@@ -21,27 +21,12 @@
       "payload_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
     },
     {
-      "name": "PlacementList1",
-      "payload_len": 4,
-      "payload_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
-    },
-    {
-      "name": "PlacementList2",
-      "payload_len": 4,
-      "payload_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
-    },
-    {
-      "name": "PlacementList3",
-      "payload_len": 172,
-      "payload_sha256": "c3ff9c2008879c70485c9d55853fc62ff79f6fddc81d9c3dae2f8a8d892e5c7a"
-    },
-    {
-      "name": "PlacementList4",
-      "payload_len": 4,
-      "payload_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
-    },
-    {
       "name": "ScaleList",
+      "payload_len": 4,
+      "payload_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+    },
+    {
+      "name": "PlacementList1",
       "payload_len": 4,
       "payload_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
     },
@@ -51,14 +36,29 @@
       "payload_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
     },
     {
+      "name": "PlacementList2",
+      "payload_len": 4,
+      "payload_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+    },
+    {
       "name": "ScaleList2",
       "payload_len": 4,
       "payload_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
     },
     {
+      "name": "PlacementList3",
+      "payload_len": 172,
+      "payload_sha256": "c3ff9c2008879c70485c9d55853fc62ff79f6fddc81d9c3dae2f8a8d892e5c7a"
+    },
+    {
       "name": "ScaleList3",
       "payload_len": 76,
       "payload_sha256": "38dcd8178a26be15b9308ca0615e33aaa8c4d9bdecb4fb8fb07b69b58e44583c"
+    },
+    {
+      "name": "PlacementList4",
+      "payload_len": 4,
+      "payload_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
     },
     {
       "name": "ScaleList4",

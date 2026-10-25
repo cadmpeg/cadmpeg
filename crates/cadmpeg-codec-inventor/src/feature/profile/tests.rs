@@ -41,15 +41,61 @@ fn naming_values(naming_type: i64, associative_id: i64, topology: i64) -> Vec<At
 #[test]
 fn edge_naming_attribute_yields_its_naming_type_and_associative_id() {
     assert_eq!(
-        edge_name(&naming_values(38, 14, 2)),
+        edge_name(super::NAMING_ATTRIBUTE, &naming_values(38, 14, 2)),
         Some(EdgeName {
             naming_type: 38,
             associative_id: 14,
         })
     );
     // A vertex name and a truncated attribute name no sketch curve.
-    assert_eq!(edge_name(&naming_values(38, 14, 1)), None);
-    assert_eq!(edge_name(&naming_values(38, 14, 2)[..9]), None);
+    assert_eq!(
+        edge_name(super::NAMING_ATTRIBUTE, &naming_values(38, 14, 1)),
+        None
+    );
+    assert_eq!(
+        edge_name(super::NAMING_ATTRIBUTE, &naming_values(38, 14, 2)[..9]),
+        None
+    );
+}
+
+#[test]
+fn custom_edge_name_requires_its_family_version_and_exact_integer_layout() {
+    let mut values = naming_values(44, 7, 2);
+    values.splice(
+        5..5,
+        [
+            AttributeValue::String("INV_NMX_GEN_TAG".into()),
+            AttributeValue::Integer(1),
+        ],
+    );
+    assert_eq!(
+        edge_name(super::CUSTOM_NAMING_ATTRIBUTE, &values),
+        Some(EdgeName {
+            naming_type: 44,
+            associative_id: 7,
+        })
+    );
+    assert_eq!(edge_name(super::NAMING_ATTRIBUTE, &values), None);
+    assert_eq!(edge_name("other-attrib", &values), None);
+    assert_eq!(
+        edge_name(super::CUSTOM_NAMING_ATTRIBUTE, &values[..11]),
+        None
+    );
+    values.push(AttributeValue::Integer(0));
+    assert_eq!(edge_name(super::CUSTOM_NAMING_ATTRIBUTE, &values), None);
+    values.pop();
+    values[11] = AttributeValue::Integer(1);
+    assert_eq!(edge_name(super::CUSTOM_NAMING_ATTRIBUTE, &values), None);
+    values[11] = AttributeValue::Integer(2);
+    values[6] = AttributeValue::Integer(2);
+    assert_eq!(edge_name(super::CUSTOM_NAMING_ATTRIBUTE, &values), None);
+    values[6] = AttributeValue::Integer(1);
+    values[5] = AttributeValue::String("other_family".into());
+    assert_eq!(edge_name(super::CUSTOM_NAMING_ATTRIBUTE, &values), None);
+    assert_eq!(
+        edge_name(super::CUSTOM_NAMING_ATTRIBUTE, &naming_values(44, 7, 2)),
+        None
+    );
 }
 
 fn sketch_id() -> SketchId {
@@ -203,6 +249,176 @@ fn index<'a>(
         })
         .collect::<HashMap<_, _>>();
     index
+}
+
+#[test]
+fn a_profile_face_loop_uses_its_body_key_and_custom_edge_names() {
+    use cadmpeg_asm::brep::{records::BodyNativeKey, AsmBrep};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_ir::attributes::{AttributeTarget, SourceAttribute};
+    use cadmpeg_ir::topology::{
+        Coedge, Edge, EdgeCarrier, Face, FaceLoops, Loop, LoopBoundary, LoopRing, Region, Sense,
+        Shell, Vertex,
+    };
+
+    let id = |index| format!("inventor:brep:entity#{index}");
+    let mut brep = AsmBrep::default();
+    brep.regions.push(Region {
+        id: id(2).try_into().expect("synthetic identity"),
+        body: id(1).try_into().expect("synthetic identity"),
+        shells: vec![id(3).try_into().expect("synthetic identity")],
+    });
+    brep.shells.push(
+        Shell::with_faces(
+            id(3).try_into().expect("synthetic identity"),
+            id(2).try_into().expect("synthetic identity"),
+            vec![id(4).try_into().expect("synthetic identity")],
+        )
+        .expect("synthetic profile fixture"),
+    );
+    brep.faces.push(Face {
+        id: id(4).try_into().expect("synthetic identity"),
+        shell: id(3).try_into().expect("synthetic identity"),
+        surface: id(6).try_into().expect("synthetic identity"),
+        sense: Sense::Forward,
+        loops: FaceLoops::Classified {
+            outer: id(5).try_into().expect("synthetic identity"),
+            inner: vec![],
+        },
+        name: None,
+        color: None,
+        tolerance: None,
+    });
+    brep.loops.push(Loop {
+        id: id(5).try_into().expect("synthetic identity"),
+        face: id(4).try_into().expect("synthetic identity"),
+        boundary: LoopBoundary::Ring(
+            LoopRing::new(
+                (21..25)
+                    .map(|i| id(i).try_into().expect("synthetic identity"))
+                    .collect(),
+                vec![],
+            )
+            .expect("synthetic profile fixture"),
+        ),
+    });
+    let points = [(0.0, 0.0), (20.0, 0.0), (20.0, 20.0), (0.0, 20.0)];
+    for (i, (x, y)) in (0..4).zip(points) {
+        brep.points.push(
+            serde_json::from_value(serde_json::json!({
+                "id": id(41+i), "position": {"x": x, "y": y, "z": 0.0}
+            }))
+            .expect("synthetic profile fixture"),
+        );
+        brep.vertices.push(Vertex {
+            id: id(31 + i).try_into().expect("synthetic identity"),
+            point: id(41 + i).try_into().expect("synthetic identity"),
+            tolerance: None,
+        });
+        brep.edges.push(Edge {
+            id: id(11 + i).try_into().expect("synthetic identity"),
+            carrier: EdgeCarrier::unbounded(None),
+            start: id(31 + i).try_into().expect("synthetic identity"),
+            end: id(31 + (i + 1) % 4).try_into().expect("synthetic identity"),
+            tolerance: None,
+        });
+        brep.coedges.push(Coedge {
+            id: id(21 + i).try_into().expect("synthetic identity"),
+            owner_loop: id(5).try_into().expect("synthetic identity"),
+            edge: id(11 + i).try_into().expect("synthetic identity"),
+            radial_next: id(21 + i).try_into().expect("synthetic identity"),
+            sense: Sense::Forward,
+            pcurves: vec![],
+            use_curve: None,
+        });
+        let mut values = naming_values(i64::from(NAMING_TYPE), i64::from(i + 1), 2);
+        values.splice(
+            5..5,
+            [
+                AttributeValue::String("INV_NMX_GEN_TAG".into()),
+                AttributeValue::Integer(1),
+            ],
+        );
+        brep.attributes.push(SourceAttribute {
+            id: format!("inventor:brep:attribute#{}", 51 + i)
+                .try_into()
+                .expect("synthetic profile fixture"),
+            target: AttributeTarget::Edge(id(11 + i).try_into().expect("synthetic identity")),
+            name: super::CUSTOM_NAMING_ATTRIBUTE.into(),
+            values,
+        });
+    }
+    brep.attributes.push(SourceAttribute {
+        id: "inventor:brep:attribute#60"
+            .try_into()
+            .expect("synthetic identity"),
+        target: AttributeTarget::Edge(id(11).try_into().expect("synthetic identity")),
+        name: super::CUSTOM_NAMING_ATTRIBUTE.into(),
+        values: vec![AttributeValue::Integer(0); 5]
+            .into_iter()
+            .chain([AttributeValue::String("other_family".into())])
+            .collect(),
+    });
+    brep.body_native_keys.push(BodyNativeKey {
+        source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+            cadmpeg_asm::asm_format!("inventor"),
+        ),
+        record_index: 1,
+        body: id(1).try_into().expect("synthetic identity"),
+        body_ordinal: 0,
+        source_brep: None,
+        asm_body_key: Some(7),
+    });
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("synthetic profile fixture");
+    let wires = super::profile_wires(&ctx, &brep).expect("synthetic profile fixture");
+    assert_eq!(wires, vec![profile_body((0.0, 0.0)).wires.remove(0)]);
+    brep.coedges.pop();
+    let wires = super::profile_wires(&ctx, &brep).expect("synthetic profile fixture");
+    assert_eq!(wires.len(), 1);
+    assert_eq!(wires[0].key, 7);
+    assert!(wires[0].edges.is_empty());
+}
+
+#[test]
+fn custom_edge_names_restore_a_selected_loop_that_the_sketch_table_lacks() {
+    let (mut sketch, entities) = square_with_hole();
+    sketch.profiles = SketchProfiles::default();
+    let mut body = profile_body((0.0, 0.0));
+    for (offset, edge) in body.wires[0].edges.iter_mut().enumerate() {
+        let associative_id = i64::try_from(offset + 1).expect("fixture id");
+        let mut values = naming_values(i64::from(NAMING_TYPE), associative_id, 2);
+        values.splice(
+            5..5,
+            [
+                AttributeValue::String("INV_NMX_GEN_TAG".into()),
+                AttributeValue::Integer(1),
+            ],
+        );
+        edge.name = edge_name(super::CUSTOM_NAMING_ATTRIBUTE, &values);
+    }
+    let bodies = [body];
+    let links = [kernel_link(20, 7)];
+    let index = index(&bodies, &links, &entities);
+    let profile = index
+        .regions("segment", SKETCH_ORDINAL, &sketch, &[20])
+        .expect("selected square resolves");
+    let PlanarProfileRef::SketchRegions { regions, .. } = profile else {
+        panic!("profile regions");
+    };
+    assert_eq!(
+        regions.as_slice(),
+        [SketchProfileRegion::loops(0, vec![]).expect("region")]
+    );
+    let added = index.into_added_profiles();
+    let loops = &added[sketch.id.as_str()];
+    assert_eq!(loops.len(), 1);
+    assert_eq!(loops[0].len(), 4);
+    for (use_, entity) in loops[0].iter().zip(&entities[..4]) {
+        assert_eq!(&use_.entity, entity.id());
+        assert!(!use_.reversed);
+    }
 }
 
 #[test]
