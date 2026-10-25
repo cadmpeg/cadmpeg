@@ -24,6 +24,17 @@ CODEC_ISSUES = {
 }
 NAME_ATTRIBUTE = 'name'
 
+# The neutral arena owned by each id-bearing AttributeTarget tuple variant.
+ATTRIBUTE_TARGET_ARENAS = {
+    'body': 'bodies', 'face': 'faces', 'shell': 'shells', 'loop': 'loops',
+    'coedge': 'coedges', 'edge': 'edges', 'vertex': 'vertices', 'region': 'regions',
+    'surface': 'surfaces', 'curve': 'curves', 'point': 'points', 'feature': 'features',
+    'sketch': 'sketches', 'parameter': 'parameters', 'product_definition': 'product_definitions',
+    'occurrence': 'occurrences', 'tessellation': 'tessellations', 'pmi': 'pmi',
+    'semantic_annotation': 'semantic_annotations', 'drawing': 'drawings',
+    'view_presentation': 'view_presentations',
+}
+
 
 @dataclass(frozen=True)
 class Finding:
@@ -89,6 +100,22 @@ def same_text(value: Any, expected: str) -> bool:
     return isinstance(value, (str, bool)) and text(value) == expected
 
 
+def attribute_owner(target: Any) -> tuple[str, str] | None:
+    """Read the complete neutral owner from AttributeTarget's adjacent wire form."""
+    if not isinstance(target, dict) or set(target) != {'kind', 'id'}:
+        return None
+    kind, identity = target['kind'], target['id']
+    if kind == 'record':
+        if not isinstance(identity, dict) or set(identity) != {'arena', 'id'}:
+            return None
+        arena, identity = identity['arena'], identity['id']
+    else:
+        arena = ATTRIBUTE_TARGET_ARENAS.get(kind) if isinstance(kind, str) else None
+    if not isinstance(arena, str) or not isinstance(identity, str):
+        return None
+    return arena, identity
+
+
 class Resolvers:
     """Head resolver values and their comparison with base field values."""
 
@@ -103,12 +130,14 @@ class Resolvers:
         return self.values.get((arena, identity), {}).get(key)
 
     def source_name(self, arena: str, identity: str) -> Any:
-        record = records(self.head, arena).get(identity, {})
+        record = records(self.head, arena).get(identity)
+        if record is None:
+            return None
         if isinstance(record.get('name'), str):
             return record['name']
         names = [value.get('value') for attribute in self.head.get('model', {}).get('attributes', [])
                  if attribute.get('name') == NAME_ATTRIBUTE
-                 and isinstance(attribute.get('target'), dict) and attribute['target'].get('id') == identity
+                 and attribute_owner(attribute.get('target')) == (arena, identity)
                  for value in attribute.get('values', []) if value.get('kind') == 'string']
         return names[0] if len(names) == 1 else None
 

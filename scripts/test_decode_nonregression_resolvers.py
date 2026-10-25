@@ -45,6 +45,58 @@ class SourceObjectControls(unittest.TestCase):
                                ('c', 'curves', '#', 'source_object', 'visible'), 'effective-source-object'))
 
 
+    def test_name_attribute_requires_its_typed_owner_kind(self):
+        for kind, expected in [('curve', True), ('face', False), ('document', False), ('bogus', False)]:
+            with self.subTest(kind=kind):
+                head = model(curves=[{'id': 'c'}], faces=[{'id': 'c'}], attributes=[
+                    {'id': 'a', 'name': 'name', 'target': {'kind': kind, 'id': 'c'},
+                     'values': [{'kind': 'string', 'value': 'EDGE1'}]}])
+                self.assertEqual(check(self.base, head, {},
+                                       ('c', 'curves', '#', 'source_object', 'name'),
+                                       'effective-source-object'), expected)
+
+    def test_record_name_attribute_requires_its_arena_and_identity(self):
+        for target, expected in [
+            ({'kind': 'record', 'id': {'arena': 'curves', 'id': 'c'}}, True),
+            ({'kind': 'record', 'id': {'arena': 'faces', 'id': 'c'}}, False),
+            ({'kind': 'record', 'id': {'arena': 'curves', 'id': 'other'}}, False),
+            ({'kind': 'record', 'arena': 'curves', 'id': 'c'}, False),
+            ({'kind': 'record', 'id': 'c'}, False),
+            ({'kind': 'record', 'id': {'arena': 'curves'}}, False),
+        ]:
+            with self.subTest(target=target):
+                head = model(curves=[{'id': 'c'}], faces=[{'id': 'c'}], attributes=[
+                    {'id': 'a', 'name': 'name', 'target': target,
+                     'values': [{'kind': 'string', 'value': 'EDGE1'}]}])
+                self.assertEqual(check(self.base, head, {},
+                                       ('c', 'curves', '#', 'source_object', 'name'),
+                                       'effective-source-object'), expected)
+
+    def test_name_attribute_ambiguity_is_limited_to_its_actual_owner(self):
+        own = {'id': 'a', 'name': 'name', 'target': {'kind': 'curve', 'id': 'c'},
+               'values': [{'kind': 'string', 'value': 'EDGE1'}]}
+        foreign = {'id': 'foreign', 'name': 'name', 'target': {'kind': 'face', 'id': 'c'},
+                   'values': [{'kind': 'string', 'value': 'other face name'}]}
+        head = model(curves=[{'id': 'c'}], faces=[{'id': 'c'}], attributes=[own, foreign])
+        path = ('c', 'curves', '#', 'source_object', 'name')
+        self.assertTrue(check(self.base, head, {}, path, 'effective-source-object'))
+        duplicate = {'id': 'duplicate', 'name': 'name',
+                     'target': {'kind': 'record', 'id': {'arena': 'curves', 'id': 'c'}},
+                     'values': [{'kind': 'string', 'value': 'EDGE1'}]}
+        head['model']['attributes'].append(duplicate)
+        self.assertFalse(check(self.base, head, {}, path, 'effective-source-object'))
+
+    def test_name_attribute_requires_an_existing_neutral_owner(self):
+        for target in [{'kind': 'curve', 'id': 'c'},
+                       {'kind': 'record', 'id': {'arena': 'curves', 'id': 'c'}}]:
+            with self.subTest(target=target):
+                head = model(attributes=[{'id': 'a', 'name': 'name', 'target': target,
+                                          'values': [{'kind': 'string', 'value': 'EDGE1'}]}])
+                self.assertFalse(check(self.base, head, {},
+                                       ('c', 'curves', '#', 'source_object', 'name'),
+                                       'effective-source-object'))
+
+
 class ValueControls(unittest.TestCase):
     def test_scale_composes_into_the_effective_transform(self):
         rows = [[1.0, 0.0, 0.0, 5.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]]
