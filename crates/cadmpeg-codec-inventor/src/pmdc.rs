@@ -457,6 +457,10 @@ impl<'a> Cursor<'a> {
         Self { source }
     }
 
+    pub(crate) fn view(&self) -> View<'_> {
+        self.source
+    }
+
     pub(crate) fn into_view(self) -> View<'a> {
         self.source
     }
@@ -647,6 +651,42 @@ pub(crate) fn reference_list(
     }
     PmDcReferenceList::new(marker, metadata, references).ok_or_else(|| {
         CodecError::Malformed("Inventor PmDc reference list metadata disagrees with length".into())
+    })
+}
+
+pub(crate) fn reference_list_with_context(
+    ctx: &DecodeContext<'_>,
+    cursor: &mut Cursor<'_>,
+    marker: u16,
+    field: &str,
+) -> Result<PmDcReferenceList, CodecError> {
+    let (count, metadata) = list_preamble(cursor, marker, field)?;
+    let mut references = ctx.alloc_filled(
+        count,
+        PmDcReference::from_packed(0),
+        "read Inventor reference list",
+    )?;
+    for reference in &mut references {
+        *reference = cursor.reference("reference-list entry")?;
+    }
+    PmDcReferenceList::new(marker, metadata, references).ok_or_else(|| {
+        CodecError::malformed("Inventor PmDc reference list metadata disagrees with length")
+    })
+}
+
+pub(crate) fn u32_list_with_context(
+    ctx: &DecodeContext<'_>,
+    cursor: &mut Cursor<'_>,
+    marker: u16,
+    field: &str,
+) -> Result<PmDcU32List, CodecError> {
+    let (count, metadata) = list_preamble(cursor, marker, field)?;
+    let mut values = ctx.alloc_filled(count, 0, "read Inventor integer list")?;
+    for value in &mut values {
+        *value = cursor.u32("integer-list value")?;
+    }
+    PmDcU32List::new(marker, metadata, values).ok_or_else(|| {
+        CodecError::malformed("Inventor PmDc integer list metadata disagrees with length")
     })
 }
 
@@ -894,6 +934,33 @@ mod tests {
                 ));
             });
         }
+    }
+
+    #[test]
+    fn context_lists_validate_the_extent_before_allocation() {
+        let mut bytes = vec![2, 0, 0, 0x30];
+        bytes.extend_from_slice(&u32::MAX.to_le_bytes());
+        bytes.extend_from_slice(&[0; 8]);
+        crate::test_support::test_fixtures::parse(&bytes, |ctx, source| {
+            assert!(matches!(
+                super::reference_list_with_context(ctx, &mut Cursor::new(source), 2, "test"),
+                Err(CodecError::Malformed(_))
+            ));
+            assert!(matches!(
+                super::u32_list_with_context(ctx, &mut Cursor::new(source), 2, "test"),
+                Err(CodecError::Malformed(_))
+            ));
+        });
+        bytes[4..8].copy_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        crate::test_support::test_fixtures::parse(&bytes, |ctx, source| {
+            let refs = super::reference_list_with_context(ctx, &mut Cursor::new(source), 2, "test")
+                .expect("one bounded list value");
+            assert_eq!(refs.references(), &[super::PmDcReference::from_packed(1)]);
+            let values = super::u32_list_with_context(ctx, &mut Cursor::new(source), 2, "test")
+                .expect("one bounded list value");
+            assert_eq!(values.values(), &[1]);
+        });
     }
 
     #[test]

@@ -165,6 +165,7 @@ fn square_with_hole() -> (Sketch, Vec<SketchEntity>) {
 
 fn edge(associative_id: i64, start: (f64, f64), end: (f64, f64)) -> ProfileEdge {
     ProfileEdge {
+        spline: None,
         name: Some(EdgeName {
             naming_type: i64::from(NAMING_TYPE),
             associative_id,
@@ -183,6 +184,7 @@ fn edge_through(
     end: (f64, f64),
 ) -> ProfileEdge {
     ProfileEdge {
+        spline: None,
         middle: Some(Point3::new(middle.0, middle.1, 0.0)),
         ..edge(associative_id, start, end)
     }
@@ -845,4 +847,149 @@ fn a_ring_along_part_of_a_circle_runs_through_the_edge_middle() {
     assert!((range[1] - range[0] - PI).abs() < 1.0e-12, "{range:?}");
     assert!(!boundary[0].reversed);
     assert_eq!(boundary[1], boundary_use(16, [0.0, 1.0], true));
+}
+
+#[test]
+fn a_closed_spline_profile_requires_the_full_named_carrier() {
+    use cadmpeg_ir::geometry::{nurbs::NurbsCurve, pcurve::PcurveNurbs};
+    let knots = vec![0., 0., 1., 2., 3., 4., 4.];
+    let points = vec![
+        Point2::new(0., 0.),
+        Point2::new(2., 0.),
+        Point2::new(2., 2.),
+        Point2::new(0., 2.),
+        Point2::new(0., 0.),
+    ];
+    let curve = PcurveNurbs::from_lanes(1, knots.clone(), points.clone(), None, true)
+        .expect("synthetic spline profile");
+    let carrier = NurbsCurve::from_lanes(
+        1,
+        knots,
+        points.iter().map(|p| Point3::new(p.u, p.v, 0.)).collect(),
+        None,
+        true,
+    )
+    .expect("synthetic spline profile");
+    let frame = super::SketchFrame {
+        origin: Point3::new(0., 0., 0.),
+        normal: Vector3::new(0., 0., 1.),
+        u_axis: Vector3::new(1., 0., 0.),
+        v_axis: Vector3::new(0., 1., 0.),
+    };
+    assert!(super::closed_spline_matches(
+        &frame,
+        &curve,
+        &carrier,
+        [0., 4.]
+    ));
+    assert!(!super::closed_spline_matches(
+        &frame,
+        &curve,
+        &carrier,
+        [0., 3.]
+    ));
+    let mut changed = carrier.clone();
+    changed
+        .try_map_control_points(|i, p| {
+            let p = *p.as_raw();
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                p.x + if i == 1 { 1. } else { 0. },
+                p.y,
+                p.z,
+            ))
+            .ok_or(())
+        })
+        .expect("synthetic spline profile");
+    assert!(!super::closed_spline_matches(
+        &frame,
+        &curve,
+        &changed,
+        [0., 4.]
+    ));
+    let tilted = super::SketchFrame {
+        origin: Point3::new(0., 0., 1.),
+        ..frame
+    };
+    assert!(!super::closed_spline_matches(
+        &tilted,
+        &curve,
+        &carrier,
+        [0., 4.]
+    ));
+}
+
+#[test]
+fn a_named_closed_spline_binds_one_profile_and_rejects_other_selections() {
+    use cadmpeg_ir::geometry::{nurbs::NurbsCurve, pcurve::PcurveNurbs};
+    let knots = vec![0., 0., 1., 2., 3., 4., 4.];
+    let points = vec![
+        Point2::new(0., 0.),
+        Point2::new(2., 0.),
+        Point2::new(2., 2.),
+        Point2::new(0., 2.),
+        Point2::new(0., 0.),
+    ];
+    let curve = PcurveNurbs::from_lanes(1, knots.clone(), points.clone(), None, true)
+        .expect("synthetic spline profile");
+    let carrier = NurbsCurve::from_lanes(
+        1,
+        knots,
+        points.iter().map(|p| Point3::new(p.u, p.v, 0.)).collect(),
+        None,
+        true,
+    )
+    .expect("synthetic spline profile");
+    let entities = [entity(11, SketchGeometryDefinition::Nurbs { curve })];
+    let (mut sketch, _) = square_with_hole();
+    sketch.profiles = SketchProfiles::try_from(vec![vec![SketchEntityUse {
+        entity: entities[0].id().clone(),
+        reversed: false,
+    }]])
+    .expect("synthetic spline profile");
+    let mut profile_edge = edge(1, (0., 0.), (0., 0.));
+    profile_edge.spline = Some(Box::new((carrier, [0., 4.])));
+    let mut body = profile_body((0., 0.));
+    body.wires = vec![ProfileWire {
+        key: 7,
+        edges: vec![profile_edge],
+    }];
+    let bodies = [body.clone()];
+    let links = [kernel_link(20, 7)];
+    let selected = index(&bodies, &links, &entities)
+        .regions("segment", SKETCH_ORDINAL, &sketch, &[20])
+        .expect("exact spline profile");
+    assert_eq!(
+        selected,
+        PlanarProfileRef::sketch_regions(
+            sketch.id.clone(),
+            vec![SketchProfileRegion::loops(0, Vec::new()).expect("synthetic spline profile")]
+        )
+        .expect("synthetic spline profile")
+    );
+    for change in 0..5 {
+        let mut changed = body.clone();
+        match change {
+            0 => {
+                changed.wires[0].edges[0]
+                    .name
+                    .as_mut()
+                    .expect("synthetic spline profile")
+                    .associative_id = 2;
+            }
+            1 => {
+                changed.wires[0].edges[0]
+                    .spline
+                    .as_mut()
+                    .expect("synthetic spline profile")
+                    .1 = [0., 3.];
+            }
+            2 => changed.wires[0].key = 8,
+            3 => changed.wires[0].edges[0].end = Point3::new(1., 0., 0.),
+            _ => changed.wires.push(changed.wires[0].clone()),
+        }
+        let bodies = [changed];
+        assert!(index(&bodies, &links, &entities)
+            .regions("segment", SKETCH_ORDINAL, &sketch, &[20])
+            .is_none());
+    }
 }
